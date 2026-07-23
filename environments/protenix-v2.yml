@@ -1,0 +1,11 @@
+name: protenix-v2
+channels:
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.11.15
+  - pip=26.1.2
+  - cuda-nvcc=12.6.85
+  - cuda-libraries-dev=12.6.3
+  - pip:
+      - protenix==2.0.0

@@ -33,7 +33,7 @@ EasyDesign 是一个契约优先、可追溯的七阶段 VHH binder 设计流程
 ## 开发环境与检查
 
 全部环境先使用 Conda 管理。EasyDesign 主环境是 Python 3.11 的 `easydesign-core`；
-BoltzGen、Boltz2、AF3/AFO/Phoenix 等重型工具保持各自独立环境，通过 adapter 调用。
+BoltzGen、Boltz2、Protenix-v2、AF3/AFO 等重型工具保持各自独立环境，通过 adapter 调用。
 
 在普通 Conda 安装中：
 
@@ -44,6 +44,9 @@ make check
 make test
 make build
 ```
+
+Protenix-v2 使用独立的 [`environments/protenix-v2.yml`](environments/protenix-v2.yml)，
+不安装进 `easydesign-core`。模型参数和公共缓存位于 `models/`，不进入 Git。
 
 Proteindigger1 使用 `/root/miniconda3/bin/conda`，环境实际存放在
 `/root/autodl-tmp/conda_envs/`；该站点路径只用于部署，不进入核心代码。

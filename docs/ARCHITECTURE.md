@@ -10,12 +10,13 @@ easydesign-clean/
 ├── README.md                 # 项目入口与当前状态
 ├── PROJECT_CHARTER.md        # 战略、1.0 边界与工程规则
 ├── AGENTS.md                 # Agent 自动工作协议
-├── TODO.md                   # 宏观里程碑
-├── TODO_NOW.md               # 当前任务、阻塞和只追加历史
+├── TODO.md                   # 宏观里程碑和七阶段状态索引
+├── TODO_NOW.md               # 跨阶段当前重点、阻塞和历史索引
 ├── environment.yml           # easydesign-core Conda 环境入口
+├── environments/             # 重型 backend 的独立 Conda 环境声明
 ├── pyproject.toml            # Python 包、运行依赖和开发依赖
 ├── Makefile                  # 环境、检查、测试和构建入口
-├── workflow/                 # 七阶段人类可读契约
+├── workflow/                 # 七阶段契约、动态状态和阶段历史
 ├── src/easydesign/           # 唯一 Python 实现
 ├── configs/                  # 默认值、backend、filter 和执行 profile
 ├── tests/                    # unit、integration、e2e 和 fixture
@@ -50,7 +51,7 @@ src/easydesign/
 │   ├── target_sources/      # PDB/mmCIF、RCSB、序列、UniProt、PSE
 │   ├── hotspot/             # 人工、SASA、界面迁移和注释来源
 │   ├── boltzgen/            # BoltzGen 能力、请求与结果转换
-│   ├── structure_prediction/# Phoenix、AFO、AF3 等通用预测接口
+│   ├── structure_prediction/# Protenix-v2、AFO、AF3 等通用预测接口
 │   └── executors/           # local、Slurm、SMART 执行
 ├── orchestration/           # 规划、执行、恢复和跨阶段协调
 ├── filtering/               # Stage 05/07 共用的版本化筛选框架
@@ -89,7 +90,24 @@ backend adapters ─→ 外部可执行程序或服务
 - CLI/UI 直接读取模型私有输出并形成第二套 pipeline；
 - 通过绝对服务器路径在模块之间传递 artifact。
 
-## 4. 环境拓扑
+## 4. Workflow 文档层级
+
+每个 Stage 的稳定契约、动态状态和历史必须分开：
+
+```text
+workflow/<NN-stage-name>/
+├── README.md                 # 稳定职责、输入输出、不变量和完成门槛
+├── STATUS.md                 # 功能矩阵、Now/Next/Blocked、验证和近期日志
+├── history/
+│   └── YYYY-MM.md            # 已结束的阶段日志，只追加
+└── examples/
+```
+
+顶层 `TODO.md` 只汇总宏观状态并链接七个 `STATUS.md`；`TODO_NOW.md` 只保留跨阶段
+当前重点。实现、测试或契约触及某个 Stage 时必须更新对应 `STATUS.md`，但只有宏观里程碑
+完成门槛变化时才更新 `TODO.md`。
+
+## 5. 环境拓扑
 
 当前统一使用 Conda 管理环境，但每个重型工具仍保持隔离：
 
@@ -98,18 +116,19 @@ easydesign-core (Python 3.11)
 ├── pipeline、manifest、配置、轻量生信、测试和报告
 ├── subprocess/文件协议 → boltzgen 环境
 ├── subprocess/文件协议 → boltz2 环境
-├── subprocess/文件协议 → AF3/AFO/Phoenix 环境
+├── subprocess/文件协议 → protenix-v2/AF3/AFO 环境
 └── executor adapter     → local/Slurm/SMART
 ```
 
 `environment.yml` 创建 `easydesign-core`；`pyproject.toml` 是 Python 依赖的唯一声明源。
+`environments/protenix-v2.yml` 固定 EasyDesign 1.0 当前结构预测后端的独立环境。
 重型 backend 按其上游要求使用独立 Conda 环境、容器或 module。Core 不激活环境，不向
 重型环境安装自身依赖；adapter 使用显式 executable、工作目录、请求文件和结果 manifest。
 
 站点专属环境路径只能出现在未提交的本地 profile 或调用参数中。仓库代码不得硬编码
 `/root/autodl-tmp`、SMART 路径、用户名或密钥。
 
-## 5. 运行目录层级
+## 6. 运行目录层级
 
 ```text
 runs/<project_id>/<run_id>/
@@ -145,7 +164,7 @@ runs/<project_id>/<run_id>/
 Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝对路径，不能包含 `..`，
 不能逃出 run 根目录。
 
-## 6. Manifest 与不可变性
+## 7. Manifest 与不可变性
 
 - `ArtifactRef` 描述 artifact 的逻辑角色、相对路径、格式、大小、SHA-256 和生产者。
 - `Attempt` 记录一次执行的状态、时间、backend、executor、seed、日志和错误。
@@ -171,15 +190,15 @@ Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝�
 - 证据状态：`planned`、`implemented`、`smoke-validated`、
   `scientifically-validated`、`production-ready`。
 
-## 7. 配置与 adapter 边界
+## 8. 配置与 adapter 边界
 
 配置按可移植默认值、项目配置、环境 profile、显式调用参数的顺序解析，最终结果写入
 `config-snapshot/`。密钥只来自环境变量或秘密管理系统。
 
 后端专属字段留在 adapter 内。Core 只接收规范化能力、请求、结果和错误，使 RCSB/UniProt、
-BoltzGen、Phoenix/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶段契约。
+BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶段契约。
 
-## 8. 决策记录
+## 9. 决策记录
 
 - 2026-07-23：从零建立私有 clean repository；旧仓只读；采用七阶段、不可变 manifest、
   可替换 backend 和 Python-API-first 路线。
@@ -188,5 +207,10 @@ BoltzGen、Phoenix/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶段�
   继续独立环境；基础契约使用 Pydantic、规范 JSON、相对路径和 SHA-256。
 - 2026-07-24：M1 基础运行契约完成工程验证；这只证明契约实现可用，不代表任一科学
   Stage 已实现或通过科学验证。
+- 2026-07-24：阶段治理下沉到每个 workflow 的 `STATUS.md` 与 `history/`；顶层
+  TODO/TODO_NOW 只做宏观汇总和索引，避免重复维护七套项目级任务。
+- 2026-07-24：Stage 01 首个机器切片采用 sequence/FASTA → 通用结构预测接口 →
+  Protenix-v2 2.0.0 → Target Bundle；重型环境只通过显式 executable、环境变量和文件
+  协议访问，remote MSA 与 no-MSA 不得静默互换。
 
 重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。

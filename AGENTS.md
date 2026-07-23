@@ -8,11 +8,12 @@
 1. 确认当前仓库、分支和工作树状态；不得覆盖他人未提交修改。
 2. 阅读 `PROJECT_CHARTER.md`、`docs/ARCHITECTURE.md`、`TODO.md` 和
    `TODO_NOW.md`。
-3. 阅读本次涉及的 workflow 阶段 README。
+3. 阅读本次涉及的 workflow 阶段 `README.md` 和 `STATUS.md`。
 4. 判断任务是否属于实质性任务。代码、依赖、配置、契约、架构或科学行为变化都属于
    实质性任务；纯解释、只读检查和错别字修正不属于。
-5. 实质性任务必须在 `TODO_NOW.md` 的 `Now` 中有明确任务、完成门槛和当前状态。若用户
-   指定的新任务尚未记录，Agent 应自行补充后继续执行，不必为此单独询问。
+5. 实质性阶段任务必须在对应 Stage `STATUS.md` 的 `Now` 中有明确任务、完成门槛和
+   当前状态；跨阶段任务才进入顶层 `TODO_NOW.md`。若用户指定的新任务尚未记录，Agent
+   应自行补充后继续执行，不必为此单独询问。
 
 ## 2. 实施规则
 
@@ -33,14 +34,17 @@ Agent 必须自动完成以下收尾工作：
 1. 添加与风险相称的 unit、integration 或 e2e 测试。
 2. 运行 `make check` 和 `make test`；打包或依赖变化还要运行 `make build`。
 3. 接口、目录或依赖方向变化时更新 `docs/ARCHITECTURE.md`。
-4. 阶段行为或契约变化时更新对应 workflow README。
-5. 更新 `TODO_NOW.md`：
+4. 阶段行为或契约变化时更新对应 workflow `README.md`。
+5. 更新每个受影响 Stage 的 `STATUS.md`：
    - 从 `Now` 移除已完成工作或切换到下一个明确任务；
-   - 在当日历史下只追加完成内容、测试证据和 commit；
-   - 未完成且确实受外部条件阻塞时写入 `Blocked`。
-6. 只有宏观里程碑的全部完成门槛通过后，才更新 `TODO.md` 的状态。
-7. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit。
-8. 默认不 push、不创建 remote、不触发外部下单或其他不可逆外部操作。
+   - 更新功能矩阵、验证证据和 Blocked；
+   - 在当日工作日志中只追加决策、测试证据、run/attempt 和 commit。
+6. 跨阶段重点发生变化时更新 `TODO_NOW.md`；阶段内部细节不得复制到顶层。
+7. 只有宏观里程碑的全部完成门槛通过后，才更新 `TODO.md` 的状态。
+8. 每月把已结束的阶段日志归档到该 Stage 的 `history/YYYY-MM.md`；跨阶段历史归档到
+   `docs/history/YYYY-MM/`。历史记录不得改写，有误时追加更正。
+9. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit。
+10. 默认不 push、不创建 remote、不触发外部下单或其他不可逆外部操作。
 
 ## 4. 阻塞与询问
 

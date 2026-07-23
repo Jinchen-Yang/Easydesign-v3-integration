@@ -1,0 +1,22 @@
+backend_name: protenix
+backend_version: 2.0.0
+model_name: protenix-v2
+python_baseline: "3.11"
+default_msa_mode: remote
+default_template_mode: disabled
+parameter_profile: model-default
+runtime:
+  environment_spec: environments/protenix-v2.yml
+  executable_env_var: EASYDESIGN_PROTENIX_EXECUTABLE
+  model_root_env_var: PROTENIX_ROOT_DIR
+  required_first_compile_environment:
+    - CUDA_HOME
+    - PATH
+    - MAX_JOBS
+  site_paths_committed: false
+provenance:
+  package: protenix==2.0.0
+  checkpoint_sha256: 8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599
+failure_policy:
+  remote_msa_fallback: forbidden
+  overwrite_attempt: forbidden

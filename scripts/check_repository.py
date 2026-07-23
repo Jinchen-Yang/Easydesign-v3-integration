@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import sys
 import tomllib
 from pathlib import Path
@@ -109,9 +110,16 @@ def main() -> int:
     for stage in WORKFLOW_STAGES:
         base = ROOT / "workflow" / stage
         readme = base / "README.md"
+        status = base / "STATUS.md"
         require(readme.is_file(), f"缺少 {readme.relative_to(ROOT)}", errors)
         if readme.is_file():
             require(readme.stat().st_size > 1_000, f"阶段文档内容不足: {stage}", errors)
+        require(status.is_file(), f"缺少 {status.relative_to(ROOT)}", errors)
+        if status.is_file():
+            status_text = status.read_text(encoding="utf-8")
+            for heading in ("## 当前结论", "## Now", "## Next", "## Blocked", "## 验证证据"):
+                require(heading in status_text, f"{stage}/STATUS 缺少区块: {heading}", errors)
+        require((base / "history").is_dir(), f"缺少 {stage}/history", errors)
         require((base / "examples/.gitkeep").is_file(), f"缺少 {stage}/examples 占位", errors)
         require(not (base / "CONTRACT.md").exists(), f"{stage} 不应再有独立 CONTRACT", errors)
 
@@ -126,8 +134,7 @@ def main() -> int:
     for relative in expected_docs:
         require((ROOT / relative).is_file(), f"缺少 {relative}", errors)
 
-    markdown_count = len(markdown)
-    require(markdown_count == 18, f"Markdown 数量应为 18，实际为 {markdown_count}", errors)
+    require(len(markdown) <= 30, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
@@ -158,12 +165,28 @@ def main() -> int:
         require("python=3.11" in environment_text, "Conda 环境必须使用 Python 3.11", errors)
         require("-e .[dev]" in environment_text, "Conda 环境未 editable 安装开发依赖", errors)
 
+    protenix_environment = ROOT / "environments/protenix-v2.yml"
+    require(protenix_environment.is_file(), "缺少 Protenix-v2 独立环境声明", errors)
+    if protenix_environment.is_file():
+        protenix_environment_text = protenix_environment.read_text(encoding="utf-8")
+        for requirement in (
+            "name: protenix-v2",
+            "python=3.11.15",
+            "cuda-nvcc=12.6.85",
+            "protenix==2.0.0",
+        ):
+            require(
+                requirement in protenix_environment_text,
+                f"Protenix-v2 环境缺少固定项: {requirement}",
+                errors,
+            )
+
     agent_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for heading in ("开始任务前", "实施规则", "完成任务前", "阻塞与询问"):
         require(heading in agent_text, f"AGENTS 缺少工作协议: {heading}", errors)
 
     todo_now = (ROOT / "TODO_NOW.md").read_text(encoding="utf-8")
-    for heading in ("## Now", "## Next", "## Blocked", "## 只追加工作日志"):
+    for heading in ("## Now", "## Next", "## Blocked", "## 历史索引"):
         require(heading in todo_now, f"TODO_NOW 缺少区块: {heading}", errors)
 
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
@@ -176,7 +199,36 @@ def main() -> int:
 
     require(not (ROOT / "LICENSE").exists(), "IP 决策前不得添加 LICENSE", errors)
     register = ROOT / "resources/provenance/ASSET_REGISTER.tsv"
-    require(register.read_text(encoding="utf-8").count("\n") == 1, "存在未审查资产记录", errors)
+    expected_asset_header = [
+        "asset_id",
+        "path",
+        "source_url",
+        "source_revision_or_checksum",
+        "license",
+        "review_status",
+        "notes",
+    ]
+    with register.open(encoding="utf-8", newline="") as handle:
+        asset_rows = list(csv.reader(handle, delimiter="\t"))
+    require(
+        bool(asset_rows) and asset_rows[0] == expected_asset_header,
+        "资产登记表头异常",
+        errors,
+    )
+    for row_number, row in enumerate(asset_rows[1:], start=2):
+        require(
+            len(row) == len(expected_asset_header),
+            f"资产登记第 {row_number} 行列数异常",
+            errors,
+        )
+        if len(row) != len(expected_asset_header):
+            continue
+        require(all(row), f"资产登记第 {row_number} 行存在空字段", errors)
+        require(
+            row[5] in {"approved-vendored", "approved-runtime-only"},
+            f"资产登记第 {row_number} 行尚未完成审查",
+            errors,
+        )
 
     if errors:
         for error in errors:

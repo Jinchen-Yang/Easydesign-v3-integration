@@ -28,7 +28,7 @@
         ## 不变量
 
         - 规模预算是配置；50,000 只属于未来 SMART production profile。
-- Phoenix/AFO/AF3 等专属字段留在 adapter 内。
+- Protenix-v2/AFO/AF3 等专属字段留在 adapter 内。
 - 预测覆盖率和失败偏差清晰可见。
 
         ## 失败与重试

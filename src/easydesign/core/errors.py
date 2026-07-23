@@ -31,3 +31,15 @@ class ManifestStateError(ContractError):
 
 class SerializationError(ContractError):
     """Manifest JSON 读取、写入或模型校验失败。"""
+
+
+class SequenceInputError(ContractError):
+    """蛋白序列或 FASTA 输入不满足当前 Stage 01 契约。"""
+
+
+class BackendContractError(ContractError):
+    """外部 backend 请求、能力或调用计划违反 adapter 契约。"""
+
+
+class PredictionOutputError(BackendContractError):
+    """结构预测 backend 的正式输出缺失、损坏或不符合约定。"""

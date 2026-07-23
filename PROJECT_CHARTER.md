@@ -73,10 +73,15 @@ filter，是有效的科学负结果，不代表软件失败，也不能包装�
 
 - `README.md`：项目入口与当前状态。
 - `PROJECT_CHARTER.md`：战略、1.0 边界和开发规则。
-- `TODO.md`：宏观里程碑。
-- `TODO_NOW.md`：Now/Next/Blocked 和只追加历史。
-- 每个 workflow 阶段只维护一个中文 `README.md`，同时承担说明和契约。
-- 每月把 `TODO_NOW.md` 的上月历史归档到 `docs/history/YYYY-MM/`。
+- `TODO.md`：宏观里程碑、七阶段状态和阶段状态索引。
+- `TODO_NOW.md`：跨阶段的 Now/Next/Blocked 和项目历史索引，不复制阶段任务。
+- 每个 workflow 阶段维护一个稳定的中文 `README.md`，同时承担说明和契约。
+- 每个 workflow 阶段维护一个动态 `STATUS.md`，记录功能矩阵、Now/Next/Blocked、
+  验证证据和只追加工作日志。
+- 阶段历史每月归档到该阶段的 `history/YYYY-MM.md`；跨阶段历史归档到
+  `docs/history/YYYY-MM/`。
+- Git commit 记录代码差异；历史文档只记录决策理由、验证证据、run/attempt 身份、
+  失败和结论更正，不能复制流水账。
 - 当前开发期只维护中文；公开发行前再建立英文发布文档并进行逐项校对。
 
 ## 7. 知识产权与第三方资产

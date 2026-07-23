@@ -1,0 +1,14 @@
+{
+  "case_id": "apoe-stage01-bootstrap",
+  "description": "旧仓 APOE4 sequence/AFO smoke 使用的 precursor 41-183 片段",
+  "legacy_repository_commit": "bc67fb77fa32b95e609db6a0ca6400946f34f31d",
+  "legacy_repository_path": "package/easydesign_competition/data/apoe/msa/apoe4_fragment.fasta",
+  "legacy_file_sha256": "eba3bec8fb6fc153f385a12081cfde6d14807244dda860bda8377a0c5a1310db",
+  "sequence_length": 143,
+  "sequence_sha256": "7cfb40e9e78b05724e328df0af5ca673f4379ab7011b7655a2922f494668115a",
+  "scientific_identity_status": "legacy-case-identity-not-yet-independently-verified",
+  "notes": [
+    "本 fixture 用于复现旧仓工程案例，不等同于已独立确认的 UniProt 区段。",
+    "Stage 01 的 UniProt adapter 实现后必须重新核对 accession、isoform、物种和残基区间。"
+  ]
+}

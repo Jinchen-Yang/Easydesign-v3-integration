@@ -7,3 +7,6 @@
 - `profiles/smart/`：未来 SMART/Slurm 执行参数。
 
 站点路径和密钥只能放在被忽略的本地配置或环境变量中，不能提交。
+
+`backends/protenix-v2.yaml` 只声明可移植能力、版本和环境变量名；服务器上的可执行文件、
+模型目录和 GPU 选择由本地 profile 或显式调用参数提供。

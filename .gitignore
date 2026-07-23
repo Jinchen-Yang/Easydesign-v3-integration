@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Environments and local configuration
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.yml
+*.local.toml
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*~
+
+# Runtime artifacts and model assets
+runs/*
+!runs/.gitkeep
+models/*
+!models/.gitkeep
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Logs, scheduler outputs, and large archives
+*.log
+slurm-*.out
+*.tar
+*.tar.gz
+*.zip
+
+# Secrets
+*secret*
+*credentials*
+*.pem
+*.key

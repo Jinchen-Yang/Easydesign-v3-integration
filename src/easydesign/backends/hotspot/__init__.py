@@ -1,0 +1,1 @@
+"""Hotspot evidence-source adapters."""

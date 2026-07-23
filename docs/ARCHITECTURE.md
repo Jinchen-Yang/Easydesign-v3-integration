@@ -36,6 +36,7 @@ src/easydesign/
 │   ├── manifests.py         # StageManifest 与 RunManifest
 │   ├── serialization.py     # 规范 JSON 读写
 │   ├── hashing.py           # SHA-256 与完整性验证
+│   ├── timestamps.py        # 时区时间统一为 UTC
 │   └── errors.py            # 稳定、可分类的核心异常
 ├── stages/
 │   ├── s01_target_preparation/
@@ -155,6 +156,15 @@ Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝�
 只是可原子替换的小型指针，不是科学产物。恢复执行先验证上游 checksum 和配置兼容性，
 然后追加新 attempt 和新 run manifest 版本。
 
+当前基础契约还强制：
+
+- 只有成功的 Stage 可以发布正式 output；
+- 正式 output 必须来自该 Stage 被选中的成功 attempt；
+- 下游只能接受编号更早且已经成功的上游 StageManifest；
+- 下游 ArtifactRef 必须与上游声明在身份、路径、大小、SHA-256 和生产者上完全一致；
+- manifest JSON 使用“临时文件 + 原子硬链接”写入，目标存在时拒绝覆盖；
+- RunManifest revision 必须时间递增，并用前一版本规范 JSON 的 SHA-256 串成审计链。
+
 运行状态与证据成熟度分开：
 
 - 执行状态：`pending`、`running`、`succeeded`、`failed`、`cancelled`。
@@ -176,5 +186,7 @@ BoltzGen、Phoenix/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶段�
 - 2026-07-24：开发期只维护中文文档，每阶段只保留一个合并后的 README。
 - 2026-07-24：全部环境先由 Conda 管理；`easydesign-core` 使用 Python 3.11，重型工具
   继续独立环境；基础契约使用 Pydantic、规范 JSON、相对路径和 SHA-256。
+- 2026-07-24：M1 基础运行契约完成工程验证；这只证明契约实现可用，不代表任一科学
+  Stage 已实现或通过科学验证。
 
 重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。

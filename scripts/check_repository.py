@@ -40,6 +40,24 @@ CORE_DEPENDENCIES = {
     "pydantic",
     "pyyaml",
 }
+CORE_MODULES = {
+    "__init__.py",
+    "artifacts.py",
+    "attempts.py",
+    "errors.py",
+    "hashing.py",
+    "manifests.py",
+    "serialization.py",
+    "timestamps.py",
+}
+CORE_TESTS = {
+    "conftest.py",
+    "test_artifacts.py",
+    "test_attempts.py",
+    "test_hashing.py",
+    "test_manifests.py",
+    "test_serialization.py",
+}
 
 
 def require(condition: bool, message: str, errors: list[str]) -> None:
@@ -80,6 +98,13 @@ def main() -> int:
         if path.is_dir() and path.name.startswith("s")
     )
     require(actual_python == PYTHON_STAGES, "Python stage 集合或顺序不一致", errors)
+
+    actual_core_modules = {
+        path.name for path in (ROOT / "src/easydesign/core").glob("*.py")
+    }
+    require(actual_core_modules == CORE_MODULES, "core 基础契约模块集合不一致", errors)
+    actual_core_tests = {path.name for path in (ROOT / "tests/unit/core").glob("*.py")}
+    require(CORE_TESTS <= actual_core_tests, "core 基础契约测试不完整", errors)
 
     for stage in WORKFLOW_STAGES:
         base = ROOT / "workflow" / stage

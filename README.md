@@ -5,6 +5,7 @@ EasyDesign 是一个契约优先、可追溯的七阶段 VHH binder 设计流程
 
 - 当前版本：`0.1.0-dev`（包版本 `0.1.0.dev0`）
 - 仓库基础架构：`implemented`
+- 统一运行契约：`implemented`
 - 七个科学阶段：`planned`
 - 当前范围：VHH 主线；不承诺设计准确率
 

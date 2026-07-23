@@ -1,0 +1,275 @@
+"""StageManifest、RunManifest 与证据成熟度契约。"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .artifacts import ID_PATTERN, SHA256_PATTERN, ArtifactRef
+from .attempts import Attempt, ExecutionStatus
+from .errors import ManifestStateError, UndeclaredArtifactError
+from .timestamps import normalize_aware_datetime
+
+
+class StageId(StrEnum):
+    TARGET_PREPARATION = "01-target-preparation"
+    HOTSPOT_DISCOVERY = "02-hotspot-discovery"
+    BOLTZGEN_CONFIGURATION = "03-boltzgen-configuration"
+    PILOT_GENERATION = "04-pilot-generation"
+    PILOT_FILTERING = "05-pilot-filtering"
+    SCALE_GENERATION_AND_REFOLDING = "06-scale-generation-and-refolding"
+    FINAL_FILTERING_AND_SELECTION = "07-final-filtering-and-selection"
+
+
+class EvidenceStatus(StrEnum):
+    """项目证据成熟度，与一次执行的运行状态分离。"""
+
+    PLANNED = "planned"
+    IMPLEMENTED = "implemented"
+    SMOKE_VALIDATED = "smoke-validated"
+    SCIENTIFICALLY_VALIDATED = "scientifically-validated"
+    PRODUCTION_READY = "production-ready"
+
+
+def _validate_unique_artifacts(artifacts: tuple[ArtifactRef, ...], label: str) -> None:
+    ids = [artifact.artifact_id for artifact in artifacts]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"{label} artifact_id 不能重复")
+
+
+class StageManifest(BaseModel):
+    """一个阶段已接受输入、输出和 attempt 历史的不可变快照。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: str = Field(default="1.0", pattern=r"^[0-9]+\.[0-9]+$")
+    stage_id: StageId
+    contract_version: str = Field(pattern=r"^[0-9]+\.[0-9]+$")
+    status: ExecutionStatus
+    created_at: datetime
+    completed_at: datetime | None = None
+    input_artifacts: tuple[ArtifactRef, ...] = ()
+    output_artifacts: tuple[ArtifactRef, ...] = ()
+    attempts: tuple[Attempt, ...] = ()
+    selected_attempt_id: str | None = Field(default=None, pattern=r"^attempt-[0-9]{4,}$")
+    warnings: tuple[str, ...] = ()
+
+    @field_validator("created_at", "completed_at")
+    @classmethod
+    def normalize_datetime(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else normalize_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        _validate_unique_artifacts(self.input_artifacts, "input")
+        _validate_unique_artifacts(self.output_artifacts, "output")
+        all_ids = [
+            artifact.artifact_id
+            for artifact in self.input_artifacts + self.output_artifacts
+        ]
+        if len(all_ids) != len(set(all_ids)):
+            raise ValueError("同一 StageManifest 的 input/output artifact_id 不能重复")
+
+        attempt_ids = [attempt.attempt_id for attempt in self.attempts]
+        if len(attempt_ids) != len(set(attempt_ids)):
+            raise ValueError("attempt_id 不能重复")
+        attempts_by_id = {attempt.attempt_id: attempt for attempt in self.attempts}
+
+        if self.status.is_terminal:
+            if self.completed_at is None:
+                raise ValueError("终态 stage 必须有 completed_at")
+            if self.completed_at < self.created_at:
+                raise ValueError("stage 完成时间不能早于创建时间")
+        elif self.completed_at is not None:
+            raise ValueError("非终态 stage 不能有 completed_at")
+
+        selected = None
+        if self.selected_attempt_id is not None:
+            selected = next(
+                (
+                    attempt
+                    for attempt in self.attempts
+                    if attempt.attempt_id == self.selected_attempt_id
+                ),
+                None,
+            )
+            if selected is None:
+                raise ValueError("selected_attempt_id 必须引用已声明 attempt")
+
+        if self.status is ExecutionStatus.SUCCEEDED:
+            if selected is None or selected.status is not ExecutionStatus.SUCCEEDED:
+                raise ValueError("succeeded stage 必须选择一个 succeeded attempt")
+            if not self.output_artifacts:
+                raise ValueError("succeeded stage 必须声明至少一个 output artifact")
+        elif self.selected_attempt_id is not None:
+            raise ValueError("只有 succeeded stage 可以选择 attempt")
+
+        if self.status is not ExecutionStatus.SUCCEEDED and self.output_artifacts:
+            raise ValueError("只有 succeeded stage 可以发布 output artifact")
+
+        expected_stage = str(self.stage_id)
+        for artifact in self.output_artifacts:
+            if artifact.producer_stage != expected_stage:
+                raise ValueError(
+                    f"output artifact 的 producer_stage 必须是 {expected_stage}"
+                )
+            producer_attempt = attempts_by_id.get(artifact.producer_attempt or "")
+            if producer_attempt is None:
+                raise ValueError("output artifact 必须引用本 manifest 声明的 attempt")
+            if producer_attempt.status is not ExecutionStatus.SUCCEEDED:
+                raise ValueError("output artifact 必须由 succeeded attempt 产生")
+            if artifact.producer_attempt != self.selected_attempt_id:
+                raise ValueError("output artifact 必须来自 selected attempt")
+        return self
+
+    def require_input(self, artifact_id: str) -> ArtifactRef:
+        """返回声明的输入；未声明时明确失败。"""
+
+        for artifact in self.input_artifacts:
+            if artifact.artifact_id == artifact_id:
+                return artifact
+        raise UndeclaredArtifactError(
+            f"{self.stage_id} 未声明 input artifact: {artifact_id}"
+        )
+
+    def require_output(self, artifact_id: str) -> ArtifactRef:
+        """返回声明的输出；未声明时明确失败。"""
+
+        for artifact in self.output_artifacts:
+            if artifact.artifact_id == artifact_id:
+                return artifact
+        raise UndeclaredArtifactError(
+            f"{self.stage_id} 未声明 output artifact: {artifact_id}"
+        )
+
+    def validate_inputs_declared_by(
+        self,
+        upstream_manifests: tuple[StageManifest, ...],
+    ) -> None:
+        """验证所有带 producer 的输入与上游正式输出完全一致。"""
+
+        stage_ids = [manifest.stage_id for manifest in upstream_manifests]
+        if len(stage_ids) != len(set(stage_ids)):
+            raise UndeclaredArtifactError("同一上游 stage 不能提供多个 manifest")
+
+        current_number = int(str(self.stage_id).split("-", maxsplit=1)[0])
+        for manifest in upstream_manifests:
+            upstream_number = int(str(manifest.stage_id).split("-", maxsplit=1)[0])
+            if upstream_number >= current_number:
+                raise UndeclaredArtifactError(
+                    f"{manifest.stage_id} 不是 {self.stage_id} 的上游阶段"
+                )
+            if manifest.status is not ExecutionStatus.SUCCEEDED:
+                raise UndeclaredArtifactError(
+                    f"{manifest.stage_id} 尚未成功，不能提供正式 artifact"
+                )
+
+        declared = {
+            (str(manifest.stage_id), artifact.artifact_id): artifact
+            for manifest in upstream_manifests
+            for artifact in manifest.output_artifacts
+        }
+        for artifact in self.input_artifacts:
+            if artifact.producer_stage is None:
+                continue
+            key = (artifact.producer_stage, artifact.artifact_id)
+            upstream = declared.get(key)
+            if upstream is None:
+                raise UndeclaredArtifactError(
+                    f"{self.stage_id} 输入未由上游声明: "
+                    f"producer={artifact.producer_stage}, artifact={artifact.artifact_id}"
+                )
+            if upstream != artifact:
+                raise UndeclaredArtifactError(
+                    f"{self.stage_id} 输入与上游声明不一致: artifact={artifact.artifact_id}"
+                )
+
+
+class RunManifest(BaseModel):
+    """一次完整七阶段 run 的版本化不可变快照。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: str = Field(default="1.0", pattern=r"^[0-9]+\.[0-9]+$")
+    revision: int = Field(ge=1)
+    previous_manifest_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    project_id: str = Field(pattern=ID_PATTERN)
+    run_id: str = Field(pattern=ID_PATTERN)
+    easydesign_version: str = Field(min_length=1, max_length=64)
+    code_commit: str = Field(pattern=r"^[0-9a-f]{7,40}$")
+    status: ExecutionStatus
+    evidence_status: EvidenceStatus
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+    config_snapshot: ArtifactRef
+    stage_manifest_refs: tuple[ArtifactRef, ...] = ()
+
+    @field_validator("created_at", "updated_at", "completed_at")
+    @classmethod
+    def normalize_datetime(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else normalize_aware_datetime(value)
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        if self.revision == 1 and self.previous_manifest_sha256 is not None:
+            raise ValueError("revision 1 不能声明 previous manifest")
+        if self.revision > 1 and self.previous_manifest_sha256 is None:
+            raise ValueError("revision > 1 必须声明 previous manifest SHA-256")
+        if self.updated_at < self.created_at:
+            raise ValueError("updated_at 不能早于 created_at")
+
+        if self.status.is_terminal:
+            if self.completed_at is None:
+                raise ValueError("终态 run 必须有 completed_at")
+            if self.completed_at < self.created_at:
+                raise ValueError("run 完成时间不能早于创建时间")
+        elif self.completed_at is not None:
+            raise ValueError("非终态 run 不能有 completed_at")
+
+        stages = [reference.producer_stage for reference in self.stage_manifest_refs]
+        if any(stage is None for stage in stages):
+            raise ValueError("stage manifest ref 必须声明 producer_stage")
+        if len(stages) != len(set(stages)):
+            raise ValueError("每个 stage 只能有一个当前 manifest ref")
+        return self
+
+    def next_revision(
+        self,
+        *,
+        updated_at: datetime,
+        status: ExecutionStatus | None = None,
+        completed_at: datetime | None = None,
+        stage_manifest_refs: tuple[ArtifactRef, ...] | None = None,
+    ) -> Self:
+        """以当前 manifest hash 为前驱创建经过完整校验的新快照。"""
+
+        from .serialization import canonical_model_sha256
+
+        if self.status.is_terminal:
+            raise ManifestStateError("终态 RunManifest 不能再创建后续 revision")
+        if updated_at <= self.updated_at:
+            raise ManifestStateError("新 revision 的 updated_at 必须晚于当前 revision")
+        next_status = self.status if status is None else status
+        if self.status is ExecutionStatus.RUNNING and next_status is ExecutionStatus.PENDING:
+            raise ManifestStateError("RunManifest 状态不能从 running 回退到 pending")
+
+        payload = self.model_dump(mode="python")
+        payload.update(
+            {
+                "revision": self.revision + 1,
+                "previous_manifest_sha256": canonical_model_sha256(self),
+                "updated_at": updated_at,
+                "status": next_status,
+                "completed_at": completed_at,
+                "stage_manifest_refs": (
+                    self.stage_manifest_refs
+                    if stage_manifest_refs is None
+                    else stage_manifest_refs
+                ),
+            }
+        )
+        return self.__class__.model_validate(payload)

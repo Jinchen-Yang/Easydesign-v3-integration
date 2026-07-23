@@ -2,18 +2,18 @@
 
 ## Now
 
-### M1-01：实现基础运行契约
+### M2-01：设计 Stage 01 的 TargetRequest 与 TargetBundle 机器契约
 
-- 状态：`in_progress`
+- 状态：`planned`
 - 完成门槛：
-  - `ArtifactRef`、`Attempt`、`StageManifest`、`RunManifest` 已实现；
-  - JSON round-trip、SHA-256、相对路径和不可变终态规则已实现；
-  - 契约测试、`make check`、`make test`、`make build` 全部通过；
-  - `docs/ARCHITECTURE.md`、`TODO.md` 和本文件与实现一致。
+  - 六类入口共享一个带类型的 `TargetRequest`，且来源选择必须显式；
+  - `TargetBundle` 覆盖结构、序列、残基编号映射、质量报告和来源清单；
+  - 机器契约与 `workflow/01-target-preparation/README.md` 一致；
+  - 正常、缺字段、冲突输入和未知字段的契约测试通过；
+  - 本阶段只定义契约，不下载结构、不调用预测模型。
 
 ## Next
 
-- M2-01：设计 Stage 01 的 `TargetRequest` 与 `TargetBundle` 机器契约。
 - M2-02：先实现本地 PDB/mmCIF 与标准 Target Bundle 两条无网络入口。
 - M2-03：再实现 PDB ID、sequence/FASTA、UniProt 和 PSE adapter。
 
@@ -32,6 +32,10 @@
 - 扩充 `docs/ARCHITECTURE.md`，明确源码子孙层级、依赖方向、环境和运行目录。
 - 扩充 `AGENTS.md`，使 Agent 自动维护测试、架构、workflow、TODO 和本地 commit。
 - 开始 M1-01 基础运行契约。
+- 完成 M1-01：实现 `ArtifactRef`、`Attempt`、`StageManifest`、`RunManifest`、规范
+  JSON、SHA-256、相对路径安全、原子拒绝覆盖和 revision 审计链。
+- M1-01 工程证据：`make check`、43 个 pytest 契约测试和 wheel build 全部通过；
+  提交为 `feat(core): implement foundational run contracts`。
 
 ### 2026-07-23
 

@@ -48,4 +48,6 @@ make build
 Proteindigger1 使用 `/root/miniconda3/bin/conda`，环境实际存放在
 `/root/autodl-tmp/conda_envs/`；该站点路径只用于部署，不进入核心代码。
 
-当前仓库保持私有，没有公开许可证、正式 CLI、UI 或 Git remote。
+当前仓库保持私有，远程托管于
+[`Knitua/Easydesign`](https://github.com/Knitua/Easydesign)；没有公开许可证、正式
+CLI 或 UI。

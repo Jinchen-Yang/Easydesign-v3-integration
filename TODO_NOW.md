@@ -19,7 +19,7 @@
 
 ## Blocked
 
-- 公开许可证和远程托管等待 IP/release 决策。
+- 公开许可证和公开 release 等待 IP/release 决策。
 - 第三方 VHH scaffold 迁移等待来源与权利审查。
 
 ## 只追加工作日志
@@ -36,6 +36,8 @@
   JSON、SHA-256、相对路径安全、原子拒绝覆盖和 revision 审计链。
 - M1-01 工程证据：`make check`、43 个 pytest 契约测试和 wheel build 全部通过；
   提交为 `feat(core): implement foundational run contracts`。
+- 创建私有 GitHub 仓库 `Knitua/Easydesign`，使用仅限本仓库的 Proteindigger1
+  deploy key 推送 `main`；本地与远端 HEAD 验证一致。
 
 ### 2026-07-23
 

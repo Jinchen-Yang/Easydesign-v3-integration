@@ -6,7 +6,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_STAGES = (
     "01-target-preparation",
@@ -32,6 +31,14 @@ ROOT_DOCS = {
     "AGENTS.md",
     "TODO.md",
     "TODO_NOW.md",
+}
+CORE_DEPENDENCIES = {
+    "biopython",
+    "gemmi",
+    "httpx",
+    "numpy",
+    "pydantic",
+    "pyyaml",
 }
 
 
@@ -102,6 +109,41 @@ def main() -> int:
     require(project["version"] == "0.1.0.dev0", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require("scripts" not in project, "基础阶段不得提供公开 CLI", errors)
+    dependency_names = {
+        dependency.split(";", 1)[0]
+        .split("[", 1)[0]
+        .split("<", 1)[0]
+        .split(">", 1)[0]
+        .split("=", 1)[0]
+        .strip()
+        .lower()
+        for dependency in project["dependencies"]
+    }
+    require(
+        CORE_DEPENDENCIES <= dependency_names,
+        f"核心依赖不完整: {sorted(CORE_DEPENDENCIES - dependency_names)}",
+        errors,
+    )
+
+    environment = ROOT / "environment.yml"
+    require(environment.is_file(), "缺少 environment.yml", errors)
+    if environment.is_file():
+        environment_text = environment.read_text(encoding="utf-8")
+        require("name: easydesign-core" in environment_text, "Conda 环境名异常", errors)
+        require("python=3.11" in environment_text, "Conda 环境必须使用 Python 3.11", errors)
+        require("-e .[dev]" in environment_text, "Conda 环境未 editable 安装开发依赖", errors)
+
+    agent_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for heading in ("开始任务前", "实施规则", "完成任务前", "阻塞与询问"):
+        require(heading in agent_text, f"AGENTS 缺少工作协议: {heading}", errors)
+
+    todo_now = (ROOT / "TODO_NOW.md").read_text(encoding="utf-8")
+    for heading in ("## Now", "## Next", "## Blocked", "## 只追加工作日志"):
+        require(heading in todo_now, f"TODO_NOW 缺少区块: {heading}", errors)
+
+    architecture = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
+    for concept in ("ArtifactRef", "Attempt", "StageManifest", "RunManifest", "允许的依赖方向"):
+        require(concept in architecture, f"架构文档缺少概念: {concept}", errors)
 
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for pattern in ("runs/*", "models/*", "*.safetensors", ".env"):

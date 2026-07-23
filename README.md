@@ -29,14 +29,22 @@ EasyDesign 是一个契约优先、可追溯的七阶段 VHH binder 设计流程
 - 仓库和运行架构：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - 旧仓审计基线：[`docs/legacy/BASELINE.md`](docs/legacy/BASELINE.md)
 
-## 开发检查
+## 开发环境与检查
 
-核心包以 Python 3.11 为基线；重型工具通过 adapter 在独立环境运行。
+全部环境先使用 Conda 管理。EasyDesign 主环境是 Python 3.11 的 `easydesign-core`；
+BoltzGen、Boltz2、AF3/AFO/Phoenix 等重型工具保持各自独立环境，通过 adapter 调用。
+
+在普通 Conda 安装中：
 
 ```bash
-make check PYTHON=/path/to/python3.11
-make test PYTHON=/path/to/python3.11
-make build PYTHON=/path/to/python3.11
+conda env create -f environment.yml
+conda activate easydesign-core
+make check
+make test
+make build
 ```
+
+Proteindigger1 使用 `/root/miniconda3/bin/conda`，环境实际存放在
+`/root/autodl-tmp/conda_envs/`；该站点路径只用于部署，不进入核心代码。
 
 当前仓库保持私有，没有公开许可证、正式 CLI、UI 或 Git remote。

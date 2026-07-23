@@ -1,23 +1,17 @@
-# Workflow specifications
+# EasyDesign 七阶段工作流
 
-[简体中文](README.zh-CN.md)
+`workflow/` 是阶段职责面向人的事实来源。编号目录名是稳定工作流标识；Python
+实现使用 `s01_` 至 `s07_`，运行目录镜像相同编号。
 
-`workflow/` is the human-readable source of truth for stage responsibilities.
-Numbered directory names are stable workflow identifiers. Python modules use legal
-names prefixed with `s01_` through `s07_`, and runtime output mirrors the numbered
-names.
+每个阶段只维护一个中文 `README.md`，其中同时包含用途、边界、输入、输出、
+不变量、失败状态、溯源和完成门槛。当前不冻结 JSON Schema；首次实现验证后通过
+ADR 引入机器 schema。
 
-Each stage has a narrative README, a normative CONTRACT, and an examples placeholder.
-Contracts describe artifacts conceptually but do not yet freeze a JSON Schema.
+## 交接规则
 
-## Handoff rule
-
-A stage may read only artifacts declared in accepted upstream manifests. Every stage
-writes a new immutable manifest containing stage identity, contract version, status,
-inputs, outputs, provenance, attempts, warnings, failures, timestamps, and checksums.
-Directory scanning is not an interface.
-
-Runtime layout:
+阶段只能读取已接受的上游 manifest 中声明的 artifact。每个阶段输出新的不可变
+manifest，至少记录阶段与契约版本、状态、输入输出、checksum、配置、代码版本、
+后端/模型身份、attempt、警告、失败和时间。扫描目录不是接口。
 
 ```text
 runs/<project_id>/<run_id>/
@@ -32,4 +26,4 @@ runs/<project_id>/<run_id>/
 └── 07-final-filtering-and-selection/
 ```
 
-A resumed stage creates a new attempt; it never rewrites an earlier attempt.
+恢复执行必须先验证上游 hash 和配置兼容性，再建立新 attempt；不得改写旧 attempt。

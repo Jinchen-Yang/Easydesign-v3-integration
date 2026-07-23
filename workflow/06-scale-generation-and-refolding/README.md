@@ -1,30 +1,58 @@
-# 06 — Scale generation and refolding
+# 06 — 放大生成与高精度复折叠
 
-        [简体中文](README.zh-CN.md) · [Contract](CONTRACT.md)
+        **状态：** `planned`
 
-        ## Purpose
+        **契约版本：** 概念版 `0.1`；首次实现验证后再冻结机器 schema。
 
-        Scale selected strategies and evaluate candidates through a generic structure-prediction backend.
+        ## 目的
 
-        ## Supported use cases
+        放大入选策略，并通过通用结构预测后端评估候选。
 
-        - Generate at an explicit scale budget using the same traced execution contract.
-- Normalize and deduplicate candidates before expensive prediction.
-- Prepare, execute, and collect generic complex-structure prediction requests.
+        ## 支持范围
 
-        ## Boundary
+        - 按显式规模预算放大生成。
+- 在昂贵预测前规范化并去重。
+- 准备、执行和收集通用复合物结构预测请求。
 
-        This stage owns its declared transformation and output validation. External tools
-        are accessed through backend adapters. Orchestration, UI behavior, and downstream
-        scientific decisions are outside this stage.
+        ## 输入
 
-        ## Non-goals
+        - 入选策略、冻结的 Stage 05 证据和规模预算。
+- 生成后端、executor profile、结构预测能力和预算分配规则。
 
-        - Hardcoding 50,000 designs into the stage contract.
-- Binding the contract to Phoenix, AFO, AF3, or any single model brand.
-- Treating a model ranking score as final ordering approval.
+        ## 输出
 
-        ## Implementation status
+        - 带完整溯源的放大候选索引和去重预测请求。
+- 带模型溯源的原始/规范化预测结果。
+- generated、submitted、completed、failed 覆盖报告。
 
-        `planned`. This directory specifies intended behavior; no scientific
-        implementation is implied by the presence of these documents.
+        ## 不变量
+
+        - 规模预算是配置；50,000 只属于未来 SMART production profile。
+- Phoenix/AFO/AF3 等专属字段留在 adapter 内。
+- 预测覆盖率和失败偏差清晰可见。
+
+        ## 失败与重试
+
+        - 预算、后端能力或 executor 不兼容。
+- 候选身份丢失，或预测输出不完整/无法规范化。
+
+        失败必须写成带类型错误信息的终态 attempt，不能转换为空成功。重试建立新 attempt，
+        引用并保留失败 attempt。
+
+        ## 溯源
+
+        Manifest 记录上游 manifest/artifact hash、解析后配置、代码版本、adapter/backend
+        身份与版本、适用时的模型身份、随机种子、executor profile、时间、警告和全部 attempt。
+
+        ## 完成门槛
+
+        - 全部计划任务达到终态并报告覆盖情况。
+- Stage 07 无需扫描后端目录即可消费规范结果。
+
+        ## 非目标
+
+        - 硬编码 50,000。
+- 绑定某个预测器品牌。
+- 把模型分数视为下单批准。
+
+        外部工具只通过 adapter 访问；orchestration、UI 行为和下游决策不属于本阶段。

@@ -1,7 +1,5 @@
-# Examples
+# 示例目录
 
-[简体中文](README.zh-CN.md)
-
-Examples must be minimal, reproducible, redistributable, and explicit about whether
-outputs are planned, mocked for software tests, smoke-validated, or scientifically
-validated. Large run trees belong outside Git.
+这里只放最小、可复现、允许再分发的示例。每个示例必须声明输入 checksum、配置、
+预期 manifest 和证据等级，并区分软件 mock、`smoke-validated` 与
+`scientifically-validated`。大型运行树放在 `runs/` 或外部存储，不进入 Git。

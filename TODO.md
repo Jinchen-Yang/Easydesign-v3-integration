@@ -1,20 +1,18 @@
-# EasyDesign Roadmap
+# EasyDesign 宏观路线图
 
-[简体中文](TODO.zh-CN.md)
+状态定义见 `PROJECT_CHARTER.md`。
 
-Status values are defined by the Project Charter.
-
-| Milestone | Status | Owner | Completion gate |
+| 里程碑 | 状态 | 负责人 | 完成门槛 |
 | --- | --- | --- | --- |
-| M0 Repository foundation | `implemented` | Project team | Clean Git repository, bilingual governance, seven stage contracts, package skeleton, and foundation checks. |
-| M1 Shared run contracts | `planned` | Unassigned | Typed run/stage manifests, immutable attempts, config snapshots, and contract tests. |
-| M2 Stage 01 target preparation | `planned` | Unassigned | Six input routes produce validated Target Bundles with provenance and mapping. |
-| M3 Stage 02 hotspot discovery | `planned` | Unassigned | Hybrid hotspot routes produce comparable evidence-linked candidates. |
-| M4 Stages 03-04 pilot generation | `planned` | Unassigned | VHH YAML matrix and real small BoltzGen pilot complete. |
-| M5 Stage 05 pilot filtering | `planned` | Unassigned | Versioned per-system filters produce an auditable strategy shortlist. |
-| M6 Stages 06-07 scale and selection | `planned` | Unassigned | Generic predictor adapter and final human-approved Top N package complete at smoke scale. |
-| M7 EasyDesign 1.0 | `planned` | Unassigned | Two real end-to-end benchmarks and all six Stage 01 integration paths pass. |
-| M8 Public CLI and release preparation | `planned` | Unassigned | Stable Python API, thin CLI, licensing, security, citation, and release review complete. |
-| M9 UI and product capabilities | `planned` | Unassigned | UI consumes the same API without duplicating scientific logic. |
+| M0 仓库基础 | `implemented` | 项目团队 | 全新 Git 仓库、中文治理、七阶段契约、包骨架和基础检查完成。 |
+| M1 统一运行契约 | `planned` | 待定 | 类型化 run/stage manifest、不可变 attempt、配置快照和契约测试完成。 |
+| M2 Stage 01 target preparation | `planned` | 待定 | 六类入口生成带溯源和编号映射的合格 Target Bundle。 |
+| M3 Stage 02 hotspot discovery | `planned` | 待定 | 混合 hotspot 路径生成可比较、有证据来源的候选。 |
+| M4 Stage 03-04 pilot generation | `planned` | 待定 | VHH YAML 矩阵和真实小批量 BoltzGen pilot 完成。 |
+| M5 Stage 05 pilot filtering | `planned` | 待定 | 体系专属 filter 输出可审计的策略 shortlist。 |
+| M6 Stage 06-07 放大与终筛 | `planned` | 待定 | 通用预测后端和人工批准的 Top N 包在 smoke 规模完成。 |
+| M7 EasyDesign 1.0 | `planned` | 待定 | 两条真实端到端基准和 Stage 01 六类入口测试通过。 |
+| M8 CLI 与 release | `planned` | 待定 | 稳定 Python API、薄 CLI、英文文档、授权、安全和引用审查完成。 |
+| M9 UI 与产品能力 | `planned` | 待定 | UI 调用同一 API，不复制科学逻辑。 |
 
-Detailed current work belongs in `TODO_NOW.md`, not in this roadmap.
+具体当前工作只维护在 `TODO_NOW.md`。

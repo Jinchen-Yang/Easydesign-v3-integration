@@ -1,30 +1,58 @@
-# 07 — Final filtering and selection
+# 07 — 最终筛选与候选选择
 
-        [简体中文](README.zh-CN.md) · [Contract](CONTRACT.md)
+        **状态：** `planned`
 
-        ## Purpose
+        **契约版本：** 概念版 `0.1`；首次实现验证后再冻结机器 schema。
 
-        Apply final evidence rules, preserve diversity, and package an auditable Top N for human approval.
+        ## 目的
 
-        ## Supported use cases
+        应用最终规则、保留多样性，并为人工批准打包可审计 Top N。
 
-        - Apply final structural, interface, confidence, clash, and system-specific gates.
-- Rank and cluster passing candidates under a declared diversity policy.
-- Package sequences, structures, metrics, warnings, and provenance for review.
+        ## 支持范围
 
-        ## Boundary
+        - 最终结构、界面、置信度、clash 和体系专属门槛。
+- 排序、聚类与多样性控制。
+- 序列、结构、指标、警告和溯源审核包。
 
-        This stage owns its declared transformation and output validation. External tools
-        are accessed through backend adapters. Orchestration, UI behavior, and downstream
-        scientific decisions are outside this stage.
+        ## 输入
 
-        ## Non-goals
+        - Stage 06 规范化结果和候选溯源。
+- 最终 filter/ranking profile、Top N 上限、聚类和人工审核规则。
 
-        - Automatically placing synthesis orders in EasyDesign 1.0.
-- Suppressing negative or uncertain evidence to fill Top N.
-- Claiming selected candidates are experimentally validated.
+        ## 输出
 
-        ## Implementation status
+        - 逐 candidate/规则最终决策表。
+- 兼顾排序与多样性的 Top N 建议。
+- 审核包和显式人工批准状态，不产生外部下单副作用。
 
-        `planned`. This directory specifies intended behavior; no scientific
-        implementation is implied by the presence of these documents.
+        ## 不变量
+
+        - Top N 是上限，不用失败候选凑数。
+- 所有排序值和排除原因得到保留。
+- 推荐、批准、下单和实验验证是不同状态。
+
+        ## 失败与重试
+
+        - Profile 无效或必需证据缺失。
+- 无人通过时输出空推荐；审核包无法重建身份时失败。
+
+        失败必须写成带类型错误信息的终态 attempt，不能转换为空成功。重试建立新 attempt，
+        引用并保留失败 attempt。
+
+        ## 溯源
+
+        Manifest 记录上游 manifest/artifact hash、解析后配置、代码版本、adapter/backend
+        身份与版本、适用时的模型身份、随机种子、executor profile、时间、警告和全部 attempt。
+
+        ## 完成门槛
+
+        - 每个候选有最终可审计处置。
+- 人工无需访问隐藏后端状态即可批准或拒绝。
+
+        ## 非目标
+
+        - 在 1.0 自动下单。
+- 隐藏负面证据来凑满 Top N。
+- 宣称实验验证。
+
+        外部工具只通过 adapter 访问；orchestration、UI 行为和下游决策不属于本阶段。

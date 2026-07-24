@@ -145,6 +145,7 @@ class StructurePredictionConfig(BaseModel):
     )
     seeds: tuple[int, ...] = (101,)
     sample_count: int = Field(default=1, ge=1)
+    prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
     cycle_count: int | None = Field(default=None, ge=1)
     diffusion_step_count: int | None = Field(default=None, ge=1)
 
@@ -152,6 +153,10 @@ class StructurePredictionConfig(BaseModel):
     def validate_backend(self) -> Self:
         if self.backend != "protenix-v2":
             raise ValueError("当前 sequence 路径只实现 backend=protenix-v2")
+        if len(self.seeds) != 1 or self.sample_count != 1:
+            raise ValueError(
+                "Stage 01 v0.1 必须恰好一个 seed 和一个 sample，避免静默选择预测结构"
+            )
         return self
 
 

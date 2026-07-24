@@ -229,8 +229,15 @@ structure_prediction:
 server mode、timeout、最大 attempt 数和 backoff；公共 MSA 服务没有可承诺的 SLA。
 
 当前 adapter 已为每个 MSA invocation 绑定 endpoint 和 wall-clock timeout。多 provider
-执行器、ticket/status 历史采集、A3M artifact 发布、sequence-hash cache 与自建
-ColabFold/MMseqs2 profile 仍属于 Stage 01 后续实现，不能仅因 YAML 接口存在就宣称完成。
+执行器由 `orchestration/sequence_prediction.py` 实现：同一 provider 的每次重试和
+provider 切换都会创建新的 immutable attempt；A3M 必须位于当前 attempt work 目录，
+首条 query 必须与规范序列完全一致且 depth 至少为 2。成功后 executor 只选择契约限定的
+单 seed/单 sample，发布与 PSE 路径相同的 `target.cif`、sequence、residue mapping、
+quality、provenance、Target Bundle 和 Stage/Run manifests，并额外发布 `target-msa.a3m`。
+
+Protenix 2.0.0 CLI 不暴露远程 ticket，因此 provenance 会明确记录
+`not-exposed-by-protenix-cli-2.0.0`，不能伪造 ticket。可直接采集 ticket/status 的服务
+worker、sequence-hash cache 与自建 ColabFold/MMseqs2 profile 仍属于后续实现。
 
 旧版目录（只用于解释历史，不再生成）：
 

@@ -83,8 +83,10 @@ ticket、状态历史、timeout、query identity、输出 A3M identity 和实际
 | `custom-colabfold` | 用户显式 URL / `colabfold` | 自建服务接口；当前尚无 EasyDesign 管理的部署 |
 
 同一 provider 可在声明预算内有限重试；`providers` 的后续成员是显式兜底顺序。正式执行器
-必须让每次重试/切换产生新的 immutable attempt。目前已经完成 provider/endpoint 绑定、
-timeout 和 resolved plan；多 provider 执行、ticket/status 采集和本地/缓存 MSA 仍在 TODO。
+让每次重试/切换产生新的 immutable attempt；耗尽 provider 计划后正式失败，不执行
+no-MSA。A3M 必须来自当前 attempt、首条 query 与规范 target 完全相同、depth 至少为 2，
+才允许启动结构预测。Protenix 2.0.0 CLI 不暴露 ticket，必须明确记录“不可见”状态，不能
+伪造 ticket；直接 ticket/status 采集和本地/缓存 MSA 仍在 TODO。
 使用公共 provider 会把 target 序列提交给第三方服务；当前只批准内部研究运行。敏感或商业
 序列在完成服务条款、隐私和数据处理审查前，必须使用经过批准的自建
 `custom-colabfold`/本地 MSA，不得由 UI 静默发送到公共 endpoint。
@@ -130,6 +132,32 @@ PSE attempt 的稳定目录为：
     ├── source-annotations.json
     └── target-bundle.json
 ```
+
+sequence/FASTA MSA-backed attempt 使用同一浅层布局：
+
+```text
+01-target-preparation/attempt-0001/
+├── inputs/
+│   ├── protenix-input.json
+│   └── protenix-input-update-msa.json
+├── work/
+│   ├── msa/
+│   └── prediction/
+├── logs/
+├── attempt-manifest.json
+└── artifacts/
+    ├── target.cif
+    ├── sequence.fasta
+    ├── residue-mapping.json
+    ├── structure-quality.json
+    ├── provenance.json
+    ├── target-msa.a3m
+    └── target-bundle.json
+```
+
+PSE 与 sequence 的正式交接均以 Target Bundle 声明的 `target.cif`（`file_format=mmcif`）
+为准。两者可以有不同序列长度和坐标来源，但文件协议、编号映射和 manifest 链必须一致；
+backend 工作目录中的 PDB/CIF 不属于正式交接。
 
 ## 不变量
 

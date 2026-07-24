@@ -35,6 +35,8 @@ def test_apoe_user_yaml_resolves_sequence_and_prediction_request() -> None:
     assert loaded.msa_execution_plan[0].endpoint == "https://api.colabfold.com"
     assert loaded.msa_execution_plan[0].server_mode == "colabfold"
     assert loaded.msa_execution_plan[0].max_attempts == 3
+    assert loaded.config.structure_prediction is not None
+    assert loaded.config.structure_prediction.prediction_timeout_seconds == 7200
     assert loaded.config.workflow.stop_after_stage == 1
 
 

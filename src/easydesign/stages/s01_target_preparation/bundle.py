@@ -209,6 +209,12 @@ def build_predicted_target_bundle(
     parameter_profile: PredictionParameterProfile,
     resolved_cycle_count: int,
     resolved_diffusion_step_count: int,
+    msa_provider: str | None = None,
+    msa_endpoint: str | None = None,
+    msa_depth: int | None = None,
+    msa_query_sha256: str | None = None,
+    msa_ticket: str | None = None,
+    msa_ticket_status: str | None = None,
 ) -> BuiltTargetBundle:
     """发布 sequence、CIF、映射、质量、溯源和 bundle；任何目标已存在都失败。"""
 
@@ -259,6 +265,12 @@ def build_predicted_target_bundle(
         msa_mode=msa_mode,
         msa_input_sha256=msa_input_sha256,
         msa_server_mode=msa_server_mode,
+        msa_provider=msa_provider,
+        msa_endpoint=msa_endpoint,
+        msa_depth=msa_depth,
+        msa_query_sha256=msa_query_sha256,
+        msa_ticket=msa_ticket,
+        msa_ticket_status=msa_ticket_status,
         template_mode=template_mode,
         parameter_profile=parameter_profile,
         resolved_cycle_count=resolved_cycle_count,

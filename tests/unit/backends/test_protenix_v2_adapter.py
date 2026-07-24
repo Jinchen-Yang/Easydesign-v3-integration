@@ -107,6 +107,7 @@ def test_no_msa_smoke_invocation_is_explicit() -> None:
     assert option_value(invocation.argv, "--use_default_params") == "false"
     assert option_value(invocation.argv, "--cycle") == "1"
     assert option_value(invocation.argv, "--step") == "5"
+    assert invocation.timeout_seconds == 7200
     assert dict(invocation.environment) == {
         "PROTENIX_ROOT_DIR": "/data/models/protenix",
         "CUDA_VISIBLE_DEVICES": "0",
@@ -139,7 +140,7 @@ def test_remote_msa_and_default_prediction_are_separate_invocations() -> None:
     assert "--step" not in prediction.argv
     assert adapter().updated_msa_input_path(
         Path("/run/input.json"), Path("/run/msa")
-    ) == Path("/run/msa/input-update-msa.json")
+    ) == Path("/run/input-update-msa.json")
 
 
 def test_remote_msa_invocation_rejects_other_modes() -> None:

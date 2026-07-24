@@ -5,6 +5,7 @@ python_baseline: "3.11"
 default_msa_mode: remote
 default_template_mode: disabled
 parameter_profile: model-default
+default_prediction_timeout_seconds: 7200
 remote_msa:
   default_provider: colabfold-public
   supported_providers:

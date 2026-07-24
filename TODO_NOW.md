@@ -7,7 +7,7 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `planned` | sequence/FASTA 默认 MSA policy、APOE MSA-backed backend smoke 与单 Target PSE 已跑通，其余四类入口待实现。 | 实现正式 MSA executor、ticket/A3M provenance 与 MSA-backed Target Bundle。 | 公共 ColabFold 无 SLA；正式 executor/cache 未实现，Protenix 官方端点持续 `PENDING`。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 01 | `planned` | sequence/FASTA MSA executor、backend smoke 与单 Target PSE 已实现，其余四类入口待实现。 | 用已提交 executor 发布 APOE 正式 MSA-backed Target Bundle，并验证 Stage 02 读取。 | 公共 ColabFold 无 SLA；正式 APOE run/cache 未完成，Protenix 官方端点持续 `PENDING`。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
@@ -23,8 +23,8 @@
   GPU 不再阻塞当前主线。
 - 详细设备决策、SASA/ScanNet 结果、未实现 annotation 和验证证据：
   [`workflow/02-hotspot-discovery/STATUS.md`](workflow/02-hotspot-discovery/STATUS.md)。
-- Stage 01 已修复默认 MSA provider/endpoint 配置：sequence/FASTA YAML 强制
-  MSA-backed Protenix，默认 ColabFold；正式 executor/Target Bundle 收尾见
+- Stage 01 已实现 MSA-backed sequence executor：默认 ColabFold、有界不可变 attempts、
+  A3M 校验和统一 mmCIF Target Bundle；APOE 正式 run 收尾见
   [`workflow/01-target-preparation/STATUS.md`](workflow/01-target-preparation/STATUS.md)。
 - 顶层摘要同步机制已进入质量门：任何 Stage STATUS 变化都必须自动刷新本文件和
   `TODO.md`。
@@ -33,8 +33,8 @@
 
 - 人工检查 SASA Top 3、ScanNet CPU Top 3 及 PSE 原始颜色 annotation 的重合关系。
 - 定义人工批准区域集及 Stage 03 handoff，禁止自动发布默认赢家。
-- 为 Stage 01 实现按 resolved provider 顺序运行的 MSA executor，记录 ticket/status、
-  A3M identity 和每次 attempt，发布正式 MSA-backed Target Bundle。
+- 用包含新 executor 的已提交代码生成 APOE 正式 MSA-backed Stage 01 run，并验证
+  Target Bundle 可被 Stage 02 直接读取。
 - 建立 sequence-hash MSA cache；自建 ColabFold/MMseqs2 作为后续生产兜底，公共服务不得
   被假定具有 SLA。
 - 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变当前 CPU 主线。
@@ -42,7 +42,8 @@
 ## Blocked
 
 - Stage 01：默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
-  SLA；正式 executor/cache 尚未完成。Protenix 官方 endpoint 持续 `PENDING`，不进入
+  SLA；正式 executor 已实现，真实 APOE run 和 cache 尚未完成。Protenix 官方 endpoint
+  持续 `PENDING`，不进入
   默认 fallback；公共 endpoint 只批准内部研究序列，商业/敏感序列等待隐私、服务条款和
   自建 provider 审查。旧 SMART cache 缺失只影响历史复现。
 - Stage 02 CPU 主线当前没有 runtime 阻塞；人工批准区域集与 Stage 03 handoff 尚未实现。

@@ -182,7 +182,7 @@ class PseSourceAnnotations(BaseModel):
 class PredictionProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     source_kind: SequenceSourceKind
     source_label: str
     sequence_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -193,6 +193,12 @@ class PredictionProvenance(BaseModel):
     msa_mode: MsaMode
     msa_input_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     msa_server_mode: str | None = Field(default=None, pattern=ID_PATTERN)
+    msa_provider: str | None = Field(default=None, pattern=ID_PATTERN)
+    msa_endpoint: str | None = None
+    msa_depth: int | None = Field(default=None, ge=1)
+    msa_query_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    msa_ticket: str | None = Field(default=None, min_length=1, max_length=256)
+    msa_ticket_status: str | None = Field(default=None, min_length=1, max_length=128)
     template_mode: TemplateMode
     parameter_profile: PredictionParameterProfile
     resolved_cycle_count: int = Field(ge=1)
@@ -202,13 +208,38 @@ class PredictionProvenance(BaseModel):
 
     @model_validator(mode="after")
     def validate_msa_evidence(self) -> Self:
+        detailed_values = (
+            self.msa_provider,
+            self.msa_endpoint,
+            self.msa_depth,
+            self.msa_query_sha256,
+            self.msa_ticket,
+            self.msa_ticket_status,
+        )
         if self.msa_mode is MsaMode.DISABLED:
-            if self.msa_input_sha256 is not None or self.msa_server_mode is not None:
+            if (
+                self.msa_input_sha256 is not None
+                or self.msa_server_mode is not None
+                or any(value is not None for value in detailed_values)
+            ):
                 raise ValueError("disabled MSA 不能声明 MSA 产物或服务")
         elif self.msa_input_sha256 is None:
             raise ValueError("启用 MSA 时必须声明消费的 MSA input SHA-256")
         if self.msa_mode is MsaMode.REMOTE and self.msa_server_mode is None:
             raise ValueError("remote MSA 必须声明服务模式")
+        if self.schema_version != "0.1" and self.msa_mode is MsaMode.REMOTE:
+            required = (
+                self.msa_provider,
+                self.msa_endpoint,
+                self.msa_depth,
+                self.msa_query_sha256,
+                self.msa_ticket_status,
+            )
+            if any(value is None for value in required):
+                raise ValueError(
+                    "remote MSA provenance 0.2 "
+                    "缺少 provider/endpoint/depth/query/status"
+                )
         return self
 
 

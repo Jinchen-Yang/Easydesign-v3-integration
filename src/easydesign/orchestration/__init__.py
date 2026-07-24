@@ -28,6 +28,11 @@ from .migration import (
     migrate_run_directories,
 )
 from .pse_import import CompletedPseRun, execute_pse_import
+from .sequence_prediction import (
+    CompletedSequenceRun,
+    SequencePredictionExecutionError,
+    execute_sequence_prediction,
+)
 from .stage02 import CompletedStage02Run, execute_stage02_comparison
 from .workspace import (
     PreparedPseRun,
@@ -46,6 +51,7 @@ from .workspace import (
 __all__ = [
     "EasyDesignRunConfig",
     "CompletedPseRun",
+    "CompletedSequenceRun",
     "CompletedStage02Run",
     "LoadedRunConfig",
     "LoadedPseRunConfig",
@@ -63,6 +69,7 @@ __all__ = [
     "RunMigrationManifest",
     "RunMovePlan",
     "RunWorkspace",
+    "SequencePredictionExecutionError",
     "StructurePredictionConfig",
     "Stage02AutomaticConfig",
     "Stage02Config",
@@ -75,6 +82,7 @@ __all__ = [
     "detect_target_input_format",
     "fingerprint_tree",
     "execute_pse_import",
+    "execute_sequence_prediction",
     "execute_stage02_comparison",
     "initialize_pse_run",
     "initialize_run_workspace",

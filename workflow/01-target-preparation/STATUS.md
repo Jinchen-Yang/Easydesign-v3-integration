@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | sequence/FASTA 默认 MSA policy、APOE MSA-backed backend smoke 与单 Target PSE 已跑通，其余四类入口待实现。 | 实现正式 MSA executor、ticket/A3M provenance 与 MSA-backed Target Bundle。 | 公共 ColabFold 无 SLA；正式 executor/cache 未实现，Protenix 官方端点持续 `PENDING`。 | 2026-07-24 |
+| `planned` | sequence/FASTA MSA executor、backend smoke 与单 Target PSE 已实现，其余四类入口待实现。 | 用已提交 executor 发布 APOE 正式 MSA-backed Target Bundle，并验证 Stage 02 读取。 | 公共 ColabFold 无 SLA；正式 APOE run/cache 未完成，Protenix 官方端点持续 `PENDING`。 | 2026-07-24 |
 
 ## 当前结论
 
@@ -29,6 +29,9 @@
 - 公共 ColabFold 不能被描述成永久稳定或具有 SLA。默认不把当前异常的
   `protenix-official` 放入 fallback；真正稳健的后续兜底是 sequence-hash MSA cache 和
   自建 `custom-colabfold` 服务。
+- 正式 sequence executor 已实现：每次 MSA 重试/切换建立新 attempt，校验 A3M query、
+  depth 和当前 attempt 路径，运行单 seed/单 sample Protenix，再发布与 PSE 对齐的
+  `target.cif`/mapping/quality/provenance/Target Bundle/manifest 链。
 - 先前所谓“ColabFold attempt”只记录了解析模式，没有保存 resolved endpoint 或 ticket，
   因此不能证明它真的请求了 ColabFold；该结论已在历史中追加更正。
 - 当前完成的是 backend 真实 smoke，不是正式 EasyDesign 纵向切片：MSA provider/endpoint、
@@ -55,7 +58,7 @@
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
 | ColabFold remote MSA backend | `smoke-validated` | 显式 endpoint 生成 609-depth APOE MSA；Protenix `use_msa=true` 预测成功 |
 | MSA provider/endpoint policy | `implemented` | 默认 ColabFold preset、resolved plan、wall timeout 与显式 fallback 接口 |
-| MSA-backed Target Bundle 发布 | `planned` | adapter 调用边界已有；endpoint/ticket provenance 和正式发布尚未完成 |
+| MSA-backed Target Bundle 发布 | `implemented` | executor、A3M 校验、不可变重试和统一 mmCIF Bundle 已通过契约测试；APOE 正式 run 待执行 |
 | 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
 
 ## Now
@@ -71,18 +74,18 @@
 完成门槛：
 
 1. MSA query 与规范序列 SHA-256 `7cfb40e9...115a` 严格一致：**backend smoke 已通过**；
-2. MSA 来源、生成方式、文件 SHA-256 和实际深度写入正式 attempt：**未通过**；
+2. MSA 来源、生成方式、文件 SHA-256 和实际深度写入正式 attempt：**实现与测试已通过，真实 run 待执行**；
 3. Protenix-v2 `use_msa=true`、`use_template=false` 真实预测：**低预算 smoke 已通过**；
-4. 同一 adapter 发布含 `msa_input_sha256` 的 Target Bundle：**未通过**；
+4. 同一 adapter 发布含 `msa_input_sha256` 的 Target Bundle：**实现与测试已通过，真实 run 待执行**；
 5. 失败、重试和禁止 fallback 的契约测试：**已通过**。
 6. YAML 默认 MSA、provider/endpoint 一致性和 no-MSA 禁止规则：**已通过**。
 
 ## Next
 
-- 正式 attempt 保存 resolved endpoint、ticket、状态历史、timeout、MSA query/hash/depth
-  和 fallback 状态；验证 A3M 首条 query 与规范序列完全一致。
-- 实现按 resolved provider 顺序执行的 orchestration：同 provider 有界重试、provider
-  切换各建新 attempt，耗尽后终止；不能把接口存在写成 runtime fallback 已完成。
+- 使用包含 executor 的已提交代码创建正式 APOE run，验证 MSA query/hash/depth、
+  `use_msa=true`、模型默认参数、mmCIF/mapping、Target Bundle 和完整 manifest。
+- 将该 Bundle 作为 Stage 02 输入做只读 handoff 验证；不得复用 PSE 138-aa 编号假装两条
+  APOE 输入相同。
 - 用同一 adapter 建立 `use_msa=true`、`use_template=false` 的正式 attempt，先通过低预算
   smoke，再以模型默认参数运行并发布含 MSA provenance 的 Target Bundle。
 - 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
@@ -102,8 +105,8 @@
   序列在条款/隐私审查和自建 provider 完成前仍受阻。
 - 旧失败 attempt 没有保存 resolved endpoint 和 ticket，无法审计“ColabFold attempt”
   实际请求了哪台服务；不能事后把它当成 ColabFold 服务失败证据。
-- MSA-backed 正式 Target Bundle 当前是实现缺口，不再是 APOE 序列、GPU 或公共
-  ColabFold 服务不可用造成的外部阻塞。
+- MSA-backed 正式 Target Bundle executor 已实现；当前只差用已提交 commit 生成真实
+  APOE run，因此不再属于设计或代码阻塞。
 - 旧 SMART cache 未同步到 Proteindigger1；它只影响历史复现，不阻塞新 MSA 主线。
 
 ## 验证证据
@@ -217,6 +220,9 @@
 - 完成并归档 S01-006：sequence/FASTA 正式 YAML 强制 MSA，默认 ColabFold preset 同时绑定
   endpoint/mode，resolved config 保存 timeout/retry/provider 顺序，adapter 禁止环境变量
   覆盖和 no-MSA fallback。
+- 实现 S01-002 正式 executor：有界 MSA attempt、A3M identity/depth 校验、MSA-backed
+  Protenix 预测、统一 `target.cif` Target Bundle 与 Stage/Run manifest 发布；等待已提交
+  代码的 APOE 真实 run 后关闭归档。
 
 ## 历史索引
 

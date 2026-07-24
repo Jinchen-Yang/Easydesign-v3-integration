@@ -121,12 +121,15 @@ class ProtenixV2Adapter:
         ),
         remote_msa_endpoint: str | None = None,
         remote_msa_timeout_seconds: int = 1800,
+        prediction_timeout_seconds: int = 7200,
         extra_environment: tuple[tuple[str, str], ...] = (),
     ) -> None:
         if not executable.is_absolute() or not model_root.is_absolute():
             raise BackendContractError("executable 和 model_root 必须由 profile 提供绝对路径")
         if remote_msa_timeout_seconds < 1:
             raise BackendContractError("remote MSA timeout 必须大于 0")
+        if prediction_timeout_seconds < 1:
+            raise BackendContractError("prediction timeout 必须大于 0")
         resolved_msa = resolve_protenix_msa_provider(
             remote_msa_provider,
             custom_endpoint=remote_msa_endpoint,
@@ -151,6 +154,7 @@ class ProtenixV2Adapter:
         self.remote_msa_endpoint = resolved_msa.endpoint
         self.remote_msa_server_mode = resolved_msa.server_mode
         self.remote_msa_timeout_seconds = remote_msa_timeout_seconds
+        self.prediction_timeout_seconds = prediction_timeout_seconds
         self.extra_environment = extra_environment
 
     def render_input(self, request: StructurePredictionRequest) -> list[dict[str, Any]]:
@@ -211,6 +215,7 @@ class ProtenixV2Adapter:
             backend_version=self.backend_version,
             argv=(str(self.executable), "--version"),
             environment=self._environment(),
+            timeout_seconds=30,
         )
 
     def msa_invocation(
@@ -241,7 +246,8 @@ class ProtenixV2Adapter:
 
     @staticmethod
     def updated_msa_input_path(input_json: Path, msa_output_dir: Path) -> Path:
-        return msa_output_dir / f"{input_json.stem}-update-msa.json"
+        del msa_output_dir
+        return input_json.with_name(f"{input_json.stem}-update-msa.json")
 
     def prediction_invocation(
         self,
@@ -304,6 +310,7 @@ class ProtenixV2Adapter:
             backend_version=self.backend_version,
             argv=tuple(argv),
             environment=self._environment(),
+            timeout_seconds=self.prediction_timeout_seconds,
         )
 
     def collect_products(

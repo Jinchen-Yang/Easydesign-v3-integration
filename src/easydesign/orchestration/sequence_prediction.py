@@ -1,0 +1,664 @@
+"""Stage 01 sequence/FASTA remote-MSA、Protenix 预测与 Target Bundle 发布。"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from easydesign.backends.structure_prediction import (
+    BackendInvocation,
+    PredictionParameterProfile,
+    ProtenixV2Adapter,
+)
+from easydesign.core import (
+    ArtifactRef,
+    Attempt,
+    EasyDesignError,
+    ErrorInfo,
+    ExecutionStatus,
+    RunManifest,
+    StageId,
+    StageManifest,
+    dump_model,
+    load_model,
+    sha256_file,
+)
+from easydesign.stages.s01_target_preparation import (
+    BuiltTargetBundle,
+    build_predicted_target_bundle,
+)
+
+from .config import ResolvedProtenixMsaProviderConfig
+from .workspace import (
+    PreparedSequenceRun,
+    ResolvedRunConfig,
+    RunIndexEntry,
+    upsert_run_index_entries,
+)
+
+AdapterBuilder = Callable[
+    [ResolvedProtenixMsaProviderConfig],
+    ProtenixV2Adapter,
+]
+
+
+class SequencePredictionExecutionError(RuntimeError):
+    """Stage 01 sequence 执行失败，manifest 证据已尽可能保留。"""
+
+
+class _InvocationFailure(SequencePredictionExecutionError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str,
+        retryable: bool,
+        stdout: str = "",
+        stderr: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.retryable = retryable
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+@dataclass(frozen=True, slots=True)
+class _MsaEvidence:
+    updated_input: Path
+    source_a3m: Path
+    published_a3m: Path
+    sha256: str
+    depth: int
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedSequenceRun:
+    prepared: PreparedSequenceRun
+    built_bundle: BuiltTargetBundle
+    msa_artifact: ArtifactRef
+    attempt_manifests: tuple[Path, ...]
+    stage_manifest: Path
+    run_manifest: Path
+
+
+def _strictly_later(candidate: datetime, previous: datetime) -> datetime:
+    return candidate if candidate > previous else previous + timedelta(microseconds=1)
+
+
+def _subprocess_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    return value.decode(errors="replace") if isinstance(value, bytes) else value
+
+
+def _exclusive_text(text: str, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return path
+
+
+def _exclusive_copy(source: Path, destination: Path) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with source.open("rb") as input_handle, destination.open("xb") as output_handle:
+        shutil.copyfileobj(input_handle, output_handle)
+    return destination
+
+
+def _atomic_pointer(text: str, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _artifact(
+    *,
+    run_root: Path,
+    path: Path,
+    artifact_id: str,
+    role: str,
+    file_format: str,
+    attempt_id: str,
+) -> ArtifactRef:
+    return ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=path.relative_to(run_root).as_posix(),
+        artifact_id=artifact_id,
+        role=role,
+        file_format=file_format,
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt=attempt_id,
+    )
+
+
+def _run_invocation(
+    invocation: BackendInvocation,
+    *,
+    error_code: str,
+    retryable: bool,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    environment.update(dict(invocation.environment))
+    try:
+        completed = subprocess.run(
+            list(invocation.argv),
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=invocation.timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise _InvocationFailure(
+            f"Backend 调用超时: timeout={invocation.timeout_seconds}, argv={invocation.argv[:2]}",
+            error_code=f"{error_code}-timeout",
+            retryable=retryable,
+            stdout=_subprocess_text(error.stdout),
+            stderr=_subprocess_text(error.stderr),
+        ) from error
+    if completed.returncode != 0:
+        raise _InvocationFailure(
+            f"Backend 调用失败: returncode={completed.returncode}, argv={invocation.argv[:2]}",
+            error_code=error_code,
+            retryable=retryable,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
+    return completed
+
+
+def _load_single_protein_chain(updated_input: Path) -> dict[str, Any]:
+    try:
+        payload: Any = json.loads(updated_input.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise _InvocationFailure(
+            f"Protenix MSA updated input 无法读取: {updated_input}",
+            error_code="remote-msa-output-invalid",
+            retryable=True,
+        ) from error
+    try:
+        if not isinstance(payload, list) or len(payload) != 1:
+            raise ValueError("顶层不是单任务 list")
+        sequences = payload[0]["sequences"]
+        if not isinstance(sequences, list) or len(sequences) != 1:
+            raise ValueError("不是单 sequence")
+        chain = sequences[0]["proteinChain"]
+        if not isinstance(chain, dict):
+            raise ValueError("proteinChain 不是 mapping")
+        return chain
+    except (KeyError, TypeError, ValueError) as error:
+        raise _InvocationFailure(
+            f"Protenix MSA updated input 不符合单蛋白契约: {updated_input}",
+            error_code="remote-msa-output-invalid",
+            retryable=True,
+        ) from error
+
+
+def _validate_and_publish_msa(
+    *,
+    prepared: PreparedSequenceRun,
+    adapter: ProtenixV2Adapter,
+    attempt_root: Path,
+    msa_output_dir: Path,
+) -> _MsaEvidence:
+    updated = adapter.updated_msa_input_path(
+        attempt_root / "inputs" / "protenix-input.json",
+        msa_output_dir,
+    )
+    if not updated.is_file():
+        raise _InvocationFailure(
+            f"Protenix MSA 未生成 updated input: {updated}",
+            error_code="remote-msa-output-missing",
+            retryable=True,
+        )
+    chain = _load_single_protein_chain(updated)
+    path_value = chain.get("unpairedMsaPath")
+    if not isinstance(path_value, str) or not path_value:
+        raise _InvocationFailure(
+            "Protenix MSA updated input 缺少 unpairedMsaPath",
+            error_code="remote-msa-output-invalid",
+            retryable=True,
+        )
+    source = Path(path_value).resolve()
+    msa_root = msa_output_dir.resolve()
+    if not source.is_relative_to(msa_root) or not source.is_file():
+        raise _InvocationFailure(
+            f"MSA 路径不在当前 attempt work 目录: {source}",
+            error_code="remote-msa-output-invalid",
+            retryable=True,
+        )
+    try:
+        lines = source.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise _InvocationFailure(
+            f"MSA A3M 无法读取: {source}",
+            error_code="remote-msa-output-invalid",
+            retryable=True,
+        ) from error
+    headers = [index for index, line in enumerate(lines) if line.startswith(">")]
+    if not headers or headers[0] + 1 >= len(lines):
+        raise _InvocationFailure(
+            "MSA A3M 缺少 query record",
+            error_code="remote-msa-output-invalid",
+            retryable=True,
+        )
+    query = lines[headers[0] + 1].strip()
+    if query != prepared.loaded_config.target.sequence:
+        raise _InvocationFailure(
+            "MSA A3M query 与规范 target 序列不一致",
+            error_code="remote-msa-query-mismatch",
+            retryable=False,
+        )
+    depth = len(headers)
+    if depth < 2:
+        raise _InvocationFailure(
+            f"MSA 只有 query，没有同源序列: depth={depth}",
+            error_code="remote-msa-insufficient-depth",
+            retryable=True,
+        )
+    published = _exclusive_copy(
+        source,
+        attempt_root / "artifacts" / "target-msa.a3m",
+    )
+    return _MsaEvidence(
+        updated_input=updated,
+        source_a3m=source,
+        published_a3m=published,
+        sha256=sha256_file(published),
+        depth=depth,
+    )
+
+
+def _write_logs(
+    *,
+    run_root: Path,
+    attempt_root: Path,
+    attempt_id: str,
+    logs: dict[str, str],
+) -> tuple[ArtifactRef, ...]:
+    references: list[ArtifactRef] = []
+    for name in sorted(logs):
+        path = _exclusive_text(logs[name], attempt_root / "logs" / f"{name}.log")
+        references.append(
+            _artifact(
+                run_root=run_root,
+                path=path,
+                artifact_id=f"{name}-log",
+                role="backend-log",
+                file_format="text",
+                attempt_id=attempt_id,
+            )
+        )
+    return tuple(references)
+
+
+def _publish_run_revision(
+    *,
+    prepared: PreparedSequenceRun,
+    stage_manifest_path: Path,
+    attempt_id: str,
+    ended_at: datetime,
+    succeeded: bool,
+) -> Path:
+    workspace = prepared.workspace
+    current = load_model(workspace.run_manifest, RunManifest)
+    stage_ref = _artifact(
+        run_root=workspace.run_root,
+        path=stage_manifest_path,
+        artifact_id="stage-01-manifest",
+        role="stage-manifest",
+        file_format="json",
+        attempt_id=attempt_id,
+    )
+    updated = _strictly_later(ended_at, current.updated_at)
+    stop_after_stage = prepared.loaded_config.config.workflow.stop_after_stage
+    if not succeeded:
+        status = ExecutionStatus.FAILED
+        completed_at: datetime | None = updated
+    elif stop_after_stage == 1:
+        status = ExecutionStatus.SUCCEEDED
+        completed_at = updated
+    else:
+        status = ExecutionStatus.RUNNING
+        completed_at = None
+    next_manifest = current.next_revision(
+        updated_at=updated,
+        status=status,
+        completed_at=completed_at,
+        stage_manifest_refs=(stage_ref,),
+    )
+    path = workspace.run_root / "manifests" / "run-manifest.v0002.json"
+    dump_model(next_manifest, path)
+    _atomic_pointer(f"{path.name}\n", workspace.latest_manifest_pointer)
+    upsert_run_index_entries(
+        workspace.runs_root,
+        (
+            RunIndexEntry(
+                category="project-run",
+                path=workspace.run_root.relative_to(workspace.runs_root).as_posix(),
+                layout_version="1",
+                status=str(status),
+                project_id=workspace.project_id,
+                run_id=workspace.run_id,
+                notes=((
+                    "Stage 01 MSA-backed sequence target published."
+                    if succeeded
+                    else "Stage 01 MSA-backed sequence target failed; evidence retained."
+                ),),
+            ),
+        ),
+        generated_at=updated,
+    )
+    return path
+
+
+def execute_sequence_prediction(
+    *,
+    prepared: PreparedSequenceRun,
+    adapter_builder: AdapterBuilder,
+    model_checkpoint_sha256: str,
+    started_at: datetime | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> CompletedSequenceRun:
+    """按 YAML provider 顺序执行 MSA 和单结构预测，并发布完整 Stage 01 交接。"""
+
+    workspace = prepared.workspace
+    request = prepared.loaded_config.prediction_request
+    prediction_config = prepared.loaded_config.config.structure_prediction
+    assert prediction_config is not None
+    start = datetime.now(UTC) if started_at is None else started_at
+    attempts: list[Attempt] = []
+    attempt_paths: list[Path] = []
+    built: BuiltTargetBundle | None = None
+    selected_msa_ref: ArtifactRef | None = None
+    selected_provider: ResolvedProtenixMsaProviderConfig | None = None
+    failure: _InvocationFailure | None = None
+    selected_attempt_id: str | None = None
+    attempt_number = 0
+
+    for provider_index, provider in enumerate(prepared.loaded_config.msa_execution_plan):
+        for provider_attempt in range(provider.max_attempts):
+            attempt_number += 1
+            attempt_id = f"attempt-{attempt_number:04d}"
+            attempt_root = workspace.attempt_root(
+                StageId.TARGET_PREPARATION,
+                attempt_id,
+            )
+            input_json = attempt_root / "inputs" / "protenix-input.json"
+            adapter = adapter_builder(provider)
+            if (
+                adapter.remote_msa_provider != provider.provider
+                or adapter.remote_msa_endpoint != provider.endpoint
+                or adapter.remote_msa_server_mode != provider.server_mode
+                or adapter.remote_msa_timeout_seconds != provider.timeout_seconds
+                or (
+                    adapter.prediction_timeout_seconds
+                    != prediction_config.prediction_timeout_seconds
+                )
+            ):
+                raise SequencePredictionExecutionError(
+                    "adapter_builder 返回的 provider/endpoint/mode/timeout 与 resolved plan 不一致"
+                )
+            if attempt_number == 1:
+                if input_json != prepared.protenix_input or not input_json.is_file():
+                    raise SequencePredictionExecutionError(
+                        "attempt-0001 Protenix input 与 workspace 不一致"
+                    )
+            else:
+                adapter.write_input(request, input_json)
+            attempt_started = _strictly_later(datetime.now(UTC), start)
+            logs: dict[str, str] = {}
+            current_failure: _InvocationFailure | None = None
+            msa_evidence: _MsaEvidence | None = None
+            try:
+                version = _run_invocation(
+                    adapter.version_invocation(),
+                    error_code="protenix-version-probe-failed",
+                    retryable=False,
+                )
+                logs["version-stdout"] = version.stdout
+                logs["version-stderr"] = version.stderr
+                adapter.validate_version_output(version.stdout)
+
+                msa_output = attempt_root / "work" / "msa"
+                msa = _run_invocation(
+                    adapter.msa_invocation(
+                        request,
+                        input_json=input_json,
+                        output_dir=msa_output,
+                    ),
+                    error_code="remote-msa-failed",
+                    retryable=True,
+                )
+                logs["msa-stdout"] = msa.stdout
+                logs["msa-stderr"] = msa.stderr
+                msa_evidence = _validate_and_publish_msa(
+                    prepared=prepared,
+                    adapter=adapter,
+                    attempt_root=attempt_root,
+                    msa_output_dir=msa_output,
+                )
+
+                prediction_output = attempt_root / "work" / "prediction"
+                prediction = _run_invocation(
+                    adapter.prediction_invocation(
+                        request,
+                        input_json=msa_evidence.updated_input,
+                        output_dir=prediction_output,
+                    ),
+                    error_code="protenix-prediction-failed",
+                    retryable=False,
+                )
+                logs["prediction-stdout"] = prediction.stdout
+                logs["prediction-stderr"] = prediction.stderr
+                products = adapter.collect_products(
+                    request,
+                    output_dir=prediction_output,
+                )
+                if len(products) != 1:
+                    raise _InvocationFailure(
+                        f"Stage 01 v0.1 需要恰好一个预测结果，实际 {len(products)}",
+                        error_code="prediction-selection-ambiguous",
+                        retryable=False,
+                    )
+                if request.parameter_profile is PredictionParameterProfile.MODEL_DEFAULT:
+                    cycle_count = 10
+                    diffusion_steps = 200
+                else:
+                    assert request.cycle_count is not None
+                    assert request.diffusion_step_count is not None
+                    cycle_count = request.cycle_count
+                    diffusion_steps = request.diffusion_step_count
+                built = build_predicted_target_bundle(
+                    run_root=workspace.run_root,
+                    attempt_id=attempt_id,
+                    target=prepared.loaded_config.target,
+                    product=products[0],
+                    model_checkpoint_sha256=model_checkpoint_sha256,
+                    msa_mode=request.msa_mode,
+                    msa_input_sha256=msa_evidence.sha256,
+                    msa_server_mode=provider.server_mode,
+                    template_mode=request.template_mode,
+                    parameter_profile=request.parameter_profile,
+                    resolved_cycle_count=cycle_count,
+                    resolved_diffusion_step_count=diffusion_steps,
+                    msa_provider=str(provider.provider),
+                    msa_endpoint=provider.endpoint,
+                    msa_depth=msa_evidence.depth,
+                    msa_query_sha256=prepared.loaded_config.target.sequence_sha256,
+                    msa_ticket=None,
+                    msa_ticket_status="not-exposed-by-protenix-cli-2.0.0",
+                )
+            except _InvocationFailure as error:
+                current_failure = error
+                logs.setdefault("failure-stdout", error.stdout)
+                logs.setdefault("failure-stderr", error.stderr)
+            except (EasyDesignError, OSError, ValueError) as error:
+                current_failure = _InvocationFailure(
+                    str(error) or type(error).__name__,
+                    error_code="sequence-target-publication-failed",
+                    retryable=False,
+                )
+
+            ended = _strictly_later(datetime.now(UTC), attempt_started)
+            log_refs = _write_logs(
+                run_root=workspace.run_root,
+                attempt_root=attempt_root,
+                attempt_id=attempt_id,
+                logs=logs,
+            )
+            if current_failure is None:
+                assert built is not None
+                assert msa_evidence is not None
+                attempt = Attempt(
+                    attempt_id=attempt_id,
+                    status=ExecutionStatus.SUCCEEDED,
+                    created_at=attempt_started,
+                    started_at=attempt_started,
+                    ended_at=ended,
+                    backend_name=adapter.backend_name,
+                    backend_version=adapter.backend_version,
+                    executor_name="local-subprocess",
+                    seed=request.seeds[0],
+                    log_artifacts=log_refs,
+                )
+                selected_attempt_id = attempt_id
+                selected_provider = provider
+                selected_msa_ref = _artifact(
+                    run_root=workspace.run_root,
+                    path=msa_evidence.published_a3m,
+                    artifact_id="target-msa",
+                    role="target-msa",
+                    file_format="a3m",
+                    attempt_id=attempt_id,
+                )
+            else:
+                failure = current_failure
+                attempt = Attempt(
+                    attempt_id=attempt_id,
+                    status=ExecutionStatus.FAILED,
+                    created_at=attempt_started,
+                    started_at=attempt_started,
+                    ended_at=ended,
+                    backend_name=adapter.backend_name,
+                    backend_version=adapter.backend_version,
+                    executor_name="local-subprocess",
+                    seed=request.seeds[0],
+                    log_artifacts=log_refs,
+                    error=ErrorInfo(
+                        code=current_failure.error_code,
+                        message=str(current_failure)[:4096],
+                        retryable=current_failure.retryable,
+                    ),
+                )
+            manifest_path = dump_model(
+                attempt,
+                attempt_root / "attempt-manifest.json",
+            )
+            attempts.append(attempt)
+            attempt_paths.append(manifest_path)
+            if current_failure is None:
+                break
+            if not current_failure.retryable:
+                break
+            is_last_provider_attempt = provider_attempt + 1 == provider.max_attempts
+            is_last_provider = provider_index + 1 == len(
+                prepared.loaded_config.msa_execution_plan
+            )
+            if not (is_last_provider_attempt and is_last_provider):
+                sleep(provider.retry_backoff_seconds)
+        if built is not None or (failure is not None and not failure.retryable):
+            break
+
+    ended = _strictly_later(datetime.now(UTC), start)
+    resolved = load_model(workspace.resolved_config, ResolvedRunConfig)
+    if built is None:
+        output_artifacts: tuple[ArtifactRef, ...] = ()
+        stage_status = ExecutionStatus.FAILED
+    else:
+        assert selected_msa_ref is not None
+        bundle = built.bundle
+        output_artifacts = (
+            bundle.target_structure,
+            bundle.sequence,
+            bundle.residue_mapping,
+            bundle.quality_report,
+            bundle.provenance,
+            selected_msa_ref,
+            built.bundle_artifact,
+        )
+        stage_status = ExecutionStatus.SUCCEEDED
+    assert attempts
+    last_attempt_id = attempts[-1].attempt_id
+    stage = StageManifest(
+        stage_id=StageId.TARGET_PREPARATION,
+        contract_version="0.2",
+        status=stage_status,
+        created_at=start,
+        completed_at=ended,
+        input_artifacts=(resolved.input_snapshot,),
+        output_artifacts=output_artifacts,
+        attempts=tuple(attempts),
+        selected_attempt_id=selected_attempt_id,
+        warnings=(
+            (
+                "Remote public MSA provider receives the target sequence.",
+                "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+            )
+            if selected_provider is not None
+            and str(selected_provider.provider) == "colabfold-public"
+            else (
+                "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+            )
+        ),
+    )
+    stage_manifest = dump_model(
+        stage,
+        workspace.stage_root(StageId.TARGET_PREPARATION)
+        / "stage-manifest.v0001.json",
+    )
+    run_manifest = _publish_run_revision(
+        prepared=prepared,
+        stage_manifest_path=stage_manifest,
+        attempt_id=selected_attempt_id or last_attempt_id,
+        ended_at=ended,
+        succeeded=built is not None,
+    )
+    if built is None:
+        assert failure is not None
+        raise failure
+    assert selected_msa_ref is not None
+    return CompletedSequenceRun(
+        prepared=prepared,
+        built_bundle=built,
+        msa_artifact=selected_msa_ref,
+        attempt_manifests=tuple(attempt_paths),
+        stage_manifest=stage_manifest,
+        run_manifest=run_manifest,
+    )

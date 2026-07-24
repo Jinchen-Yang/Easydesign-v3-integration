@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | sequence/FASTA 与单 Target PSE 已跑通，其余四类入口待实现。 | 补齐结构、RCSB、UniProt、Bundle 输入并完成 MSA-backed 验证。 | APOE MSA 资产缺失，两个公共 MSA 服务超时。 | 2026-07-24 |
+| `planned` | sequence/FASTA、单 Target PSE 与 APOE MSA-backed backend smoke 已跑通，其余四类入口待实现。 | 将显式 MSA provider、endpoint 和 ticket 溯源接入正式 adapter 与 Target Bundle。 | 正式 adapter 尚未记录 resolved endpoint/ticket；Protenix 官方 MSA 端点持续 `PENDING`。 | 2026-07-24 |
 
 ## 当前结论
 
@@ -16,10 +16,16 @@
 - PSE 真实 smoke 保留 138-aa imported 坐标和 101/9/14/14 的 CA 颜色分组；颜色没有被
   解释为 hotspot，也没有启动 Protenix、MSA 或结构预测。
 - no-MSA 工程 smoke、真实输出解析和 Target Bundle 发布已通过。
-- remote-MSA/no-template 的两个外部服务 attempt 均超时失败，未通过前不能把纵向切片标成
-  `smoke-validated`。
+- APOE 143-aa 序列本身没有阻止 MSA：显式使用
+  `MMSEQS_SERVICE_HOST_URL=https://api.colabfold.com` 和
+  `--msa_server_mode colabfold` 后，Protenix 官方 CLI 得到 609 条 unpaired MSA，并完成
+  `use_msa=true`、`use_template=false` 的低预算 GPU 预测。
+- 先前所谓“ColabFold attempt”只记录了解析模式，没有保存 resolved endpoint 或 ticket，
+  因此不能证明它真的请求了 ColabFold；该结论已在历史中追加更正。
+- 当前完成的是 backend 真实 smoke，不是正式 EasyDesign 纵向切片：MSA provider/endpoint、
+  ticket/status 历史、artifact identity 和 Target Bundle provenance 仍需接入。
 - 旧仓在 Proteindigger1 没有保存 APOE MSA；文档提到的 SMART target feature cache
-  尚未取回，不能用单序列 FASTA/AF3 JSON 冒充旧 MSA 测试。
+  尚未取回，但不再阻塞新建 MSA；不能用单序列 FASTA/AF3 JSON 冒充旧 MSA 测试。
 - APOE fixture 是旧仓工程案例的 143-aa 片段，科学身份尚待 UniProt 路径独立复核。
 
 ## 功能矩阵
@@ -38,36 +44,38 @@
 | 通用结构预测契约 | `implemented` | request/invocation/product 契约和测试 |
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
-| remote-MSA/no-template | `implemented` | 两个显式服务 attempt 均因持续 `PENDING` 超时失败 |
+| ColabFold remote MSA backend | `smoke-validated` | 显式 endpoint 生成 609-depth APOE MSA；Protenix `use_msa=true` 预测成功 |
+| MSA-backed Target Bundle 发布 | `planned` | adapter 调用边界已有；endpoint/ticket provenance 和正式发布尚未完成 |
 | 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
 
 ## Now
 
 ### S01-002：APOE MSA-backed Protenix-v2 验证
 
-- 状态：`blocked`；等待公共服务恢复，或从 SMART 取回旧 target feature cache。
+- 状态：`planned`；backend 真实 smoke 已通过，正式 EasyDesign attempt/Bundle 尚未完成。
 - 目标：用与当前 143-aa APOE 查询严格匹配、来源可追溯的 MSA 运行 Protenix-v2，
   显式关闭 template，并发布带 MSA provenance 的 Target Bundle。
-- 旧仓本地 `data/apoe/msa/` 目录只有 FASTA 和单序列 AF3 JSON；数据盘现有 113 个
-  alignment 文件也都不匹配当前查询，因此目前没有可安全复用的旧 MSA。
+- 旧仓本地没有可复用的 APOE MSA；本轮已通过明确的 ColabFold endpoint 重新生成。
 - 远程 MSA 失败或超时不得静默降级为 no-MSA，也不得把单序列输入命名为 MSA。
 
 完成门槛：
 
-1. MSA query 与规范序列 SHA-256 `7cfb40e9...115a` 严格一致：**无 MSA，未通过**；
-2. MSA 来源、生成方式、文件 SHA-256 和实际深度写入 attempt：**未通过**；
-3. Protenix-v2 `use_msa=true`、`use_template=false` 真实预测：**未通过**；
+1. MSA query 与规范序列 SHA-256 `7cfb40e9...115a` 严格一致：**backend smoke 已通过**；
+2. MSA 来源、生成方式、文件 SHA-256 和实际深度写入正式 attempt：**未通过**；
+3. Protenix-v2 `use_msa=true`、`use_template=false` 真实预测：**低预算 smoke 已通过**；
 4. 同一 adapter 发布含 `msa_input_sha256` 的 Target Bundle：**未通过**；
 5. 失败、重试和禁止 fallback 的契约测试：**已通过**。
 
 ## Next
 
-- 优先从原 SMART workspace 取回已记录的 APOE
-  `target_feature_cache/<target_sha256>/target_data.json`；取回后先做来源和序列审计，
-  再提取为 Protenix 可消费的预计算 MSA attempt。
-- 如果旧缓存不可获得，公共 MSA 服务恢复后建立新 attempt；不能覆盖已有失败 attempt。
-- MSA 获得后，以模型默认 `10 recycle / 200 diffusion steps`、1 seed、1 sample
-  运行无模板 APOE 预测，并用同一 adapter 发布正式 Target Bundle。
+- 将 MSA provider 建成类型化配置：`colabfold` preset 必须同时解析为 mode 和明确 endpoint，
+  `protenix` preset 保留官方 endpoint；禁止只切 mode 却沿用未记录的 host。
+- 正式 attempt 保存 resolved endpoint、ticket、状态历史、timeout、MSA query/hash/depth
+  和 fallback 状态；验证 A3M 首条 query 与规范序列完全一致。
+- 用同一 adapter 建立 `use_msa=true`、`use_template=false` 的正式 attempt，先通过低预算
+  smoke，再以模型默认参数运行并发布含 MSA provenance 的 Target Bundle。
+- 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
+  当前主线的外部阻塞。
 - 实现本地 PDB/mmCIF、RCSB PDB ID、UniProt 和标准 Target Bundle 输入 adapter。
 - 扩展 PSE 到复合物、receptor/ligand、多聚体或人工 object/chain/state 选择前，先新增
   独立契约；当前严格单 Target adapter 不做隐式放宽。
@@ -75,12 +83,13 @@
 
 ## Blocked
 
-- Protenix 官方远程 MSA attempt 持续 `PENDING` 30 分钟后按工程超时终止。
-- 显式创建的 ColabFold remote-MSA attempt 持续 `PENDING` 20 分钟后按工程超时终止。
-- 两条 attempt 均为 `failed`、`retryable=true`；需要上游队列恢复后建立新 attempt。
-- 旧仓文档提到的 APOE MSA/template cache 位于 SMART 运行目录，但没有同步到
-  Proteindigger1；当前仓和旧仓本地文件都不包含该 asset。
-- 这只阻塞 remote-MSA 验证，不阻塞已完成的本地契约、no-MSA smoke 和后续无网络入口开发。
+- Protenix 官方 MSA endpoint 在本轮新提交的同一 APOE 查询上仍持续 `PENDING`，而实际
+  ColabFold endpoint 约 30 秒完成；官方 endpoint 当前不能作为可靠主线。
+- 旧失败 attempt 没有保存 resolved endpoint 和 ticket，无法审计“ColabFold attempt”
+  实际请求了哪台服务；不能事后把它当成 ColabFold 服务失败证据。
+- MSA-backed 正式 Target Bundle 当前是实现缺口，不再是 APOE 序列、GPU 或公共
+  ColabFold 服务不可用造成的外部阻塞。
+- 旧 SMART cache 未同步到 Proteindigger1；它只影响历史复现，不阻塞新 MSA 主线。
 
 ## 验证证据
 
@@ -141,9 +150,30 @@
 - 目录：`runs/_development/msa-services/apoe-remote-no-template-20260724`。
 - `attempt-0001`：Protenix MSA 服务，`2026-07-23T18:59:06Z` 开始，持续
   `PENDING` 超过 30 分钟，终态 `failed` / `remote-msa-timeout` / retryable。
-- `attempt-0002`：ColabFold MSA 服务，`2026-07-23T19:14:36Z` 开始，持续
-  `PENDING` 超过 20 分钟，终态 `failed` / `remote-msa-timeout` / retryable。
+- `attempt-0002`：配置了 `--msa_server_mode colabfold`，`2026-07-23T19:14:36Z`
+  开始，持续 `PENDING` 超过 20 分钟，终态 `failed` /
+  `remote-msa-timeout` / retryable；由于没有保存 resolved endpoint，不能证明它访问了
+  `api.colabfold.com`。
 - 两条均未生成 MSA artifact，因此没有启动假定存在 MSA 的正式预测，也没有降级为 no-MSA。
+
+### APOE MSA 根因诊断与 backend smoke
+
+- 对同一 143-aa 规范序列做串行 endpoint 对照：Protenix 官方
+  `https://protenix-server.com/api/msa` 的新 ticket 在 120 秒内始终 `PENDING`，
+  下载返回 HTTP 500；`https://api.colabfold.com` 在约 30 秒完成，下载 34,521-byte
+  archive。两端 DNS、TLS 和基础 HTTP 均可达。
+- Protenix 2.0.0 的 `--msa_server_mode colabfold` 只选择结果解析模式，不自动修改
+  `MMSEQS_SERVICE_HOST_URL`；默认 host 仍是 Protenix 官方服务。因此 mode 与 endpoint
+  必须成对显式配置和留痕。
+- 验证目录：
+  `runs/_validation/protenix-apoe-msa-backed-smoke-20260724-001`。
+- Protenix 官方 CLI 生成 `non_pairing.a3m`：124,933 bytes、609 条序列、SHA-256
+  `12d913001bd955c05544b084f396f6b17bc0086ae69cfca5cd376ab722f72716`；首条 query 与
+  143-aa 输入完全相同。单体没有 `pairedMsaPath` 属于预期行为。
+- 低预算 GPU smoke：seed 101、1 recycle、5 diffusion steps、1 sample、
+  `use_msa=true`、`use_template=false`；模型实际特征 `N_msa=550`，前向 5.03 秒，
+  生成 115,257-byte CIF，summary `pLDDT=84.35`、无 clash。该数值只证明工程链路，
+  不代表科学质量或优于 no-MSA。
 
 ### 旧仓 MSA 审计
 
@@ -166,7 +196,10 @@
   fingerprint 一致，并生成 `runs/run-index.json` 和不可变迁移清单。
 - 完成并归档 S01-004：独立 PyMOL 环境、严格单 Target PSE 导入、未解释颜色 annotation、
   Target Bundle 0.2 和 APOE 真实 smoke。
+- 完成 S01-005 根因诊断：确认 APOE 序列可生成 MSA；旧失败源于官方 endpoint 持续
+  `PENDING` 以及 adapter 未绑定/记录 endpoint。显式 ColabFold endpoint 已通过 MSA 和
+  `use_msa=true` backend smoke；S01-002 转为正式 adapter/Bundle 收尾。
 
 ## 历史索引
 
-- [2026-07：S01-001、S01-003 与 S01-004](history/2026-07.md)
+- [2026-07：S01-001、S01-003、S01-004 与 S01-005](history/2026-07.md)

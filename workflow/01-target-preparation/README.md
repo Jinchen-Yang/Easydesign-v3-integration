@@ -44,6 +44,11 @@ sequence/FASTA 路径通过通用 `StructurePredictionRequest` 访问预测 back
 snapshot，生成 `resolved-config.json`，再由 adapter 生成 attempt 内部
 `inputs/protenix-input.json`；用户不维护 Protenix JSON。
 
+远程 MSA 配置必须把 provider preset 同时解析成服务模式和明确 endpoint；只传
+`--msa_server_mode` 不代表已经切换远程服务。attempt 必须保存 resolved endpoint、
+ticket、状态历史、timeout、query identity、输出 A3M identity 和实际深度。endpoint
+失败时不得静默切换到另一个 provider 或 no-MSA。
+
 PSE 路径使用排他的 YAML 分支：
 
 ```yaml
@@ -93,6 +98,8 @@ PSE attempt 的稳定目录为：
 - 原始输入按 checksum 引用，attempt 和正式 artifact 不覆盖。
 - 同一次实验只有一个 `runs/<project_id>/<run_id>/`；Stage 01 输出不另建第二个 run 根。
 - 远程 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
+- 远程 MSA 的 provider、mode 和 endpoint 必须一致且可审计；禁止用解析模式名称推断
+  实际请求端点。
 - `easydesign-core` 不导入 Protenix；adapter 只转换请求/结果，独立环境执行重型工具。
 - 预测结构不得描述成实验结构，smoke 分数不得描述成科学验证。
 - PSE 必须恰好一个含蛋白的 molecule object、一条非空 protein chain 和一个 state；

@@ -31,6 +31,8 @@ easydesign-clean/
 
 ```text
 src/easydesign/
+├── cli.py                   # Developer Preview 参数解析与展示
+├── __main__.py              # python -m easydesign
 ├── core/
 │   ├── artifacts.py         # ArtifactRef、文件身份和路径约束
 │   ├── attempts.py          # Attempt、执行状态和终态规则
@@ -53,7 +55,11 @@ src/easydesign/
 │   ├── boltzgen/            # BoltzGen 能力、请求与结果转换
 │   ├── structure_prediction/# Protenix-v2、AFO、AF3 等通用预测接口
 │   └── executors/           # local、Slurm、SMART 执行
-├── orchestration/           # 规划、执行、恢复和跨阶段协调
+├── orchestration/
+│   ├── application.py       # CLI/UI 共用的 init/doctor/run/runs API
+│   ├── profile.py           # 本机 backend 路径和 profile identity
+│   ├── project.py           # 从真实 target 初始化用户项目
+│   └── ...                  # 阶段执行、Workspace、迁移和配置
 ├── filtering/               # Stage 05/07 共用的版本化筛选框架
 └── reporting/               # 运行、候选、证据和人工审核报告
 ```
@@ -66,7 +72,7 @@ src/easydesign/
 - `orchestration/` 串联阶段和管理恢复；不重新实现结构处理、hotspot 或 filter。
 - `filtering/` 提供通用规则执行与审计；具体阈值由版本化配置提供。
 - `reporting/` 只消费正式 manifest 和 artifact，不扫描 backend 私有目录。
-- `scripts/`、未来 CLI 和 UI 只调用 orchestration/API，不承载科学逻辑。
+- `cli.py`、`scripts/` 和未来 UI 只调用 orchestration/API，不承载科学逻辑。
 
 ## 3. 允许的依赖方向
 
@@ -123,11 +129,13 @@ easydesign-core (Python 3.11)
 └── executor adapter     → local/Slurm/SMART
 ```
 
-`environment.yml` 创建 `easydesign-core`；`pyproject.toml` 是 Python 依赖的唯一声明源。
+`environment.yml` 创建 `easydesign-core`；`pyproject.toml` 是 Python 依赖和
+`easydesign` console-script 的唯一声明源。源码 editable 安装、普通本地安装和 wheel
+安装都必须产生同一个命令入口。
 `environments/protenix-v2.yml` 固定 EasyDesign 1.0 当前结构预测后端的独立环境。
 `environments/pymol-pse.yml` 固定 PyMOL PSE 导入环境的 Python 3.11 和
-`pymol-open-source=3.1.0`。Core 不导入 PyMOL，也不扫描 Conda 或系统 Python；调用方
-必须用 `EASYDESIGN_PYMOL_PYTHON` 提供绝对 Python 路径。Adapter 先做精确版本探针，再用
+`pymol-open-source=3.1.0`。Core 不导入 PyMOL，也不扫描 Conda 或系统 Python；正式 CLI
+从用户级 runtime profile 读取绝对 Python 路径。Adapter 先做精确版本探针，再用
 无 shell 的 argv 执行只依赖标准库和 PyMOL 的 worker。请求和 response 使用 JSON，
 worker 导出的原始蛋白坐标使用 PDB，core 再规范化为 mmCIF。
 `environments/scannet-epitope.yml` 当前固定 ScanNet 的遗留 Python 3.6.12、
@@ -144,6 +152,12 @@ Playwright Chromium 测试和许可证审计。EasyDesign 运行时、报告生�
 
 站点专属环境路径只能出现在未提交的本地 profile 或调用参数中。仓库代码不得硬编码
 `/root/autodl-tmp`、SMART 路径、用户名或密钥。
+
+Runtime profile 默认位于操作系统标准用户配置目录。解析优先级为 `--profile`、
+`EASYDESIGN_PROFILE`、用户级默认文件；只选择一个完整 profile，不扫描环境、不合并多个
+文件。profile 保存 executable、模型和设备等部署信息，用户 `easydesign.yaml` 只保存
+科学配置。run 记录 profile ID 与文件 SHA-256，以及实际 backend/model/device identity，
+但不复制机器绝对路径。
 
 ## 6. 运行目录层级
 
@@ -304,7 +318,7 @@ Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝�
 - `ArtifactRef` 描述 artifact 的逻辑角色、相对路径、格式、大小、SHA-256 和生产者。
 - `Attempt` 记录一次执行的状态、时间、backend、executor、seed、日志和错误。
 - `StageManifest` 声明阶段接受的输入、产生的输出、attempt 历史和最终选择。
-- `RunManifest` 声明项目/run 身份、代码/config 版本及七阶段 manifest 引用。
+- `RunManifest` 声明项目/run 身份、代码/config/profile 版本及七阶段 manifest 引用。
 
 终态 Attempt 和已发布 StageManifest 不可修改。RunManifest 使用递增版本快照；`LATEST`
 只是可原子替换的小型指针，不是科学产物。恢复执行先验证上游 checksum 和配置兼容性，
@@ -318,6 +332,16 @@ Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝�
 - 下游 ArtifactRef 必须与上游声明在身份、路径、大小、SHA-256 和生产者上完全一致；
 - manifest JSON 使用“临时文件 + 原子硬链接”写入，目标存在时拒绝覆盖；
 - RunManifest revision 必须时间递增，并用前一版本规范 JSON 的 SHA-256 串成审计链。
+
+RunManifest `1.0` 的 `code_commit` 继续兼容读取。新 run 使用 `1.1` 的
+`code_identity`：
+
+- clean checkout 记录完整 Git commit；
+- dirty checkout 记录基础 commit、`dirty=true` 和 package tree SHA-256；
+- wheel/非 Git 安装记录 installed package tree SHA-256，不伪装为 commit。
+
+源码树哈希覆盖 `src/easydesign`、打包资源和影响构建的项目元数据，排除 bytecode、cache
+和 Git 元数据；revision 链保持同一代码身份。
 
 ### Reporting revision 与本地展示边界
 
@@ -353,8 +377,9 @@ SSH 端口转发访问。Mol* 5.11.0 官方预构建 bundle 初始化需要动�
 
 ## 8. 配置与 adapter 边界
 
-配置按可移植默认值、项目配置、环境 profile、显式调用参数的顺序解析，最终结果写入
-`config-snapshot/`。密钥只来自环境变量或秘密管理系统。
+科学配置只从项目 `easydesign.yaml` 读取；本机部署只从一个 runtime profile 读取。
+`--runs-root` 只能覆盖输出位置，不能覆盖科学阈值。最终安全投影写入
+`config-snapshot/`；绝对 backend 路径不会进入正式 artifact。密钥只来自秘密管理系统。
 
 后端专属字段留在 adapter 内。Core 只接收规范化能力、请求、结果和错误，使 RCSB/UniProt、
 BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶段契约。
@@ -394,5 +419,9 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
   StageManifest，失败不影响科学状态。服务只暴露一个已校验 report 并固定绑定
   `127.0.0.1`。完整取舍见
   [`ADR-0001`](decisions/ADR-0001-portable-stage01-target-viewer.md)。
+- 2026-07-25：先暂停 Stage 03，完成 Developer Preview CLI、用户级 runtime profile、
+  RunManifest 1.1 code identity 和本地 wheel 安装；CLI/UI 继续只调用同一 application
+  API。完整取舍见
+  [`ADR-0002`](decisions/ADR-0002-developer-preview-cli-and-code-identity.md)。
 
 重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。

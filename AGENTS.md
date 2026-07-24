@@ -17,6 +17,9 @@
 5. 实质性阶段任务必须在对应 Stage `STATUS.md` 的 `Now` 中有明确任务、完成门槛和
    当前状态；跨阶段任务才进入顶层 `TODO_NOW.md`。若用户指定的新任务尚未记录，Agent
    应自行补充后继续执行，不必为此单独询问。
+   每项实质性任务还必须归属一个稳定 ID：科学阶段使用 `S01–S07`，其他工作使用
+   `ENG`、`UX`、`REP`、`UI`、`VAL`、`DATA`、`REL`、`PAPER` 或 `BIZ` 前缀。新前缀
+   必须先登记到 `TODO.md` 的工作板块索引。
 6. 七个 Stage `STATUS.md` 的“顶层摘要”是顶层路线图的唯一状态来源；开始任务时若发现
    `TODO.md` 或 `TODO_NOW.md` 与它们不一致，先运行
    `python scripts/sync_status_rollup.py` 修复，不得沿用过期摘要。
@@ -25,6 +28,8 @@
 
 1. 阶段 README 中的输入、输出、不变量、失败和完成门槛就是阶段边界。
 2. 科学与领域逻辑只放在 `src/easydesign/`；脚本、未来 CLI 和 UI 只能调用 Python API。
+   新增或修改的 pipeline 能力必须通过统一 application/orchestration API 暴露；
+   `easydesign` CLI、兼容脚本和未来 UI 不得各自形成第二套运行逻辑。
 3. `core/` 不得依赖具体 stage 或重型 backend；backend 通过 adapter 隔离。
 4. 不得扫描目录猜测输出；只能读取 manifest 声明的 artifact。
 5. 不得静默切换结构来源、模型、backend、executor 或 filter profile。
@@ -44,6 +49,8 @@ Agent 必须自动完成以下收尾工作：
    不得使用服务器系统 Python 代替后误判代码失败。
    修改 Target Viewer、Mol* 资产、CSP、本地服务或浏览器行为时还必须运行
    `make test-web`；测试必须证明所有 HTTP 请求留在 `127.0.0.1`。
+   修改 CLI、安装入口或 package data 时，`make build` 必须在隔离环境安装最新 wheel，
+   验证 `easydesign --version` 和 `python -m easydesign --help`。
 3. 接口、目录或依赖方向变化时更新 `docs/ARCHITECTURE.md`。
 4. 阶段行为或契约变化时更新对应 workflow `README.md`。
 5. 更新每个受影响 Stage 的 `STATUS.md`：
@@ -57,6 +64,8 @@ Agent 必须自动完成以下收尾工作：
    `TODO.md` 和 `TODO_NOW.md` 的七阶段实时表；禁止手工编辑自动生成区块。
 7. 跨阶段 Now/Next/Blocked 发生变化时更新 `TODO_NOW.md` 的人工维护区块；阶段内部
    细节不得复制到顶层。只有宏观里程碑的全部完成门槛通过后，才改变其总体状态。
+   顶层每个活跃条目必须带工作板块 ID；完成的非 Stage 工作在移出 Now 前追加到共享
+   `docs/history/YYYY-MM/`，并记录问题、方案、验证、遗留边界和提交身份。
 8. Stage 历史采用“工作项关闭即归档、按月追加到同一文件”的制度：
    - 每条记录必须包含状态、完成内容、验证证据、遇到的问题、解决办法和遗留问题；
    - 未完成工作不得伪装成已结束记录：仍在执行的留在 `Now`，等待外部条件的进入

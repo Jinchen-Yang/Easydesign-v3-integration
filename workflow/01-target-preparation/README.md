@@ -26,6 +26,17 @@ identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。
 相对于 YAML 自身解析，`format: auto` 使用文件后缀和内容强证据识别输入。PDB/mmCIF
 等尚未实现的入口可以被识别，但会明确报错，不会回退为 sequence 或 PSE。
 
+Developer Preview 推荐先通过统一入口创建和运行，不需要 Agent 手工编排：
+
+```bash
+easydesign init PROJECT_DIR --target TARGET_FILE --stop-after 1
+easydesign config validate PROJECT_DIR/easydesign.yaml
+easydesign doctor --config PROJECT_DIR/easydesign.yaml
+easydesign run PROJECT_DIR/easydesign.yaml
+```
+
+CLI 只调用本阶段相同 Python API；其成功不会提高本阶段的科学证据等级。
+
 PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导入。PSE 坐标直接标记为
 `imported`，不运行 Protenix、MSA 或其他结构预测；逐残基 CA 颜色保存为
 `uninterpreted` source annotation，Stage 01 不把颜色解释成 hotspot。
@@ -105,8 +116,9 @@ workflow:
 ```
 
 PSE 必须省略 `structure_prediction`；提供该区块会明确失败。反之，sequence/FASTA 必须
-提供 `structure_prediction`。PyMOL 只存在于独立环境，调用方显式设置
-`EASYDESIGN_PYMOL_PYTHON`；core 禁止扫描 Conda 或系统 Python，也禁止版本 fallback。
+提供 `structure_prediction`。PyMOL 只存在于独立环境，正式 CLI 从用户级 runtime
+profile 读取显式绝对 Python 路径；core 禁止扫描 Conda 或系统 Python，也禁止版本
+fallback。
 
 ## 输出
 

@@ -7,10 +7,13 @@ from pydantic import ValidationError
 
 from easydesign.core import (
     ArtifactRef,
+    CodeIdentity,
+    CodeIdentitySource,
     EvidenceStatus,
     ExecutionStatus,
     ManifestStateError,
     RunManifest,
+    RuntimeProfileRef,
     StageId,
     StageManifest,
     UndeclaredArtifactError,
@@ -273,3 +276,57 @@ def test_run_manifest_is_frozen(now) -> None:
     )
     with pytest.raises(ValidationError, match="frozen"):
         run.revision = 2
+
+
+def test_run_manifest_11_preserves_structured_code_identity(now) -> None:
+    identity = CodeIdentity(
+        version="0.1.0.dev1",
+        source=CodeIdentitySource.WORKING_TREE,
+        git_commit="1" * 40,
+        dirty=True,
+        content_sha256="2" * 64,
+    )
+    profile = RuntimeProfileRef(profile_id="server-local", sha256="3" * 64)
+    run = RunManifest(
+        schema_version="1.1",
+        revision=1,
+        project_id="apoe",
+        run_id="run-001",
+        easydesign_version="0.1.0.dev1",
+        code_identity=identity,
+        runtime_profile=profile,
+        status=ExecutionStatus.RUNNING,
+        evidence_status=EvidenceStatus.IMPLEMENTED,
+        created_at=now,
+        updated_at=now,
+        config_snapshot=artifact("config-snapshot"),
+    )
+
+    revised = run.next_revision(updated_at=now + timedelta(seconds=1))
+
+    assert revised.code_identity == identity
+    assert revised.runtime_profile == profile
+    assert revised.code_commit is None
+
+
+def test_run_manifest_11_rejects_legacy_code_commit(now) -> None:
+    with pytest.raises(ValidationError, match="不得.*code_commit"):
+        RunManifest(
+            schema_version="1.1",
+            revision=1,
+            project_id="apoe",
+            run_id="run-001",
+            easydesign_version="0.1.0.dev1",
+            code_commit="dd652f4",
+            code_identity=CodeIdentity(
+                version="0.1.0.dev1",
+                source=CodeIdentitySource.GIT,
+                git_commit="1" * 40,
+                dirty=False,
+            ),
+            status=ExecutionStatus.PENDING,
+            evidence_status=EvidenceStatus.IMPLEMENTED,
+            created_at=now,
+            updated_at=now,
+            config_snapshot=artifact("config-snapshot"),
+        )

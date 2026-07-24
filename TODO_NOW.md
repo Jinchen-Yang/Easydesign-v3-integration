@@ -18,42 +18,33 @@
 
 ## Now
 
-- **当前跨阶段重心是人工审阅 Stage 02 两套 Top 3，并建立到 Stage 03 的批准交接。**
-- ScanNet CPU 已通过官方 no-MSA、APOE 138-aa backend smoke 和正式双方法 run；
-  GPU 不再阻塞当前主线。
-- 详细设备决策、SASA/ScanNet 结果、未实现 annotation 和验证证据：
+- `[S02]` 当前科学重心是人工审阅两套 Top 3，并建立显式批准区域集；Developer Preview
+  CLI 已完成，不再阻挡后续科学工作。
+- `[S02]` ScanNet CPU 已通过官方 no-MSA、APOE 138-aa backend smoke 和正式双方法 run；
+  详细设备决策、SASA/ScanNet 结果与未实现 annotation 见
   [`workflow/02-hotspot-discovery/STATUS.md`](workflow/02-hotspot-discovery/STATUS.md)。
-- Stage 01 的 APOE MSA-backed sequence 纵向切片已真实跑通：默认 ColabFold、有界不可变
-  attempts、A3M 校验、模型默认参数预测、统一 mmCIF Target Bundle 和 Stage 02 读取均通过，
-  证据见
-  [`workflow/01-target-preparation/STATUS.md`](workflow/01-target-preparation/STATUS.md)。
-- 顶层摘要同步机制已进入质量门：任何 Stage STATUS 变化都必须自动刷新本文件和
-  `TODO.md`。
 
 ## Next
 
-- REP-002/REP-003：在不改变 Stage 02 科学输出的前提下，为 SASA/ScanNet 独立区域增加
-  Viewer overlay 与显式人工批准；不得把 PSE 颜色或两种方法自动融合成默认赢家。
-- 人工检查 SASA Top 3、ScanNet CPU Top 3 及 PSE 原始颜色 annotation 的重合关系。
-- 定义人工批准区域集及 Stage 03 handoff，禁止自动发布默认赢家。
-- 建立 sequence-hash MSA cache；自建 ColabFold/MMseqs2 作为后续生产兜底，公共服务不得
-  被假定具有 SLA。
-- 后续按排期实现 Stage 01 本地 PDB/mmCIF、RCSB、UniProt 和标准 Target Bundle 输入；
-  不因 sequence/PSE 两条纵向切片成功而提前完成整个阶段。
-- 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变当前 CPU 主线。
+- `[REP-002]`/`[REP-003]`：在不改变 Stage 02 科学输出的前提下增加独立区域 overlay
+  与显式人工批准；不得融合 PSE、SASA 和 ScanNet。
+- `[S03]` 人工批准契约完成后再启动 BoltzGen YAML，不自动选择默认赢家。
+- `[ENG-003]` 建立 sequence-hash MSA cache、自建 ColabFold/MMseqs2 和 CI 平台矩阵。
+- `[S01]` 按排期实现本地 PDB/mmCIF、RCSB、UniProt 和标准 Target Bundle 输入。
+- `[S02]` 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变 CPU 主线。
 
 ## Blocked
 
-- Stage 01：默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
+- `[S01]` 默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
   SLA；正式 executor、真实 APOE run 和 Stage 02 交接已完成，离线 cache/自建服务尚未
   完成。Protenix 官方 endpoint 持续 `PENDING`，不进入
   默认 fallback；公共 endpoint 只批准内部研究序列，商业/敏感序列等待隐私、服务条款和
   自建 provider 审查。旧 SMART cache 缺失只影响历史复现。
-- Stage 02 CPU 主线当前没有 runtime 阻塞；人工批准区域集与 Stage 03 handoff 尚未实现。
-- Stage 02 GPU 优化：TensorFlow 1.14 GPU probe 通过，但官方 1BRS 与 APOE 在 RTX 4080
+- `[S02]` CPU 主线没有 runtime 阻塞；人工批准区域集与 Stage 03 handoff 尚未实现。
+- `[S02]` GPU 优化：TensorFlow 1.14 GPU probe 通过，但官方 1BRS 与 APOE 在 RTX 4080
   报 cuBLAS GEMM execution failure；这是后续性能待办，不阻塞 CPU 主线。
-- 公开许可证和公开 release 等待 IP/release 决策。
-- 第三方 VHH scaffold 迁移等待来源与权利审查。
+- `[REL-001]` 公开许可证、PyPI 和正式 release 等待 IP/release 决策。
+- `[DATA-001]` 第三方 VHH scaffold 迁移等待来源与权利审查。
 
 ## 历史索引
 

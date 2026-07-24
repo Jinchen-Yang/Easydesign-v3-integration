@@ -8,7 +8,15 @@ import pytest
 
 from easydesign.backends.structure_prediction import ProtenixV2Adapter
 from easydesign.backends.target_sources import PyMOLPseAdapter
-from easydesign.core import ManifestStateError, RunManifest, StageId, load_model
+from easydesign.core import (
+    CodeIdentity,
+    CodeIdentitySource,
+    ManifestStateError,
+    RunManifest,
+    RuntimeProfileRef,
+    StageId,
+    load_model,
+)
 from easydesign.orchestration import (
     ResolvedRunConfig,
     RunIndex,
@@ -85,6 +93,36 @@ def test_initialize_sequence_run_refuses_existing_run(tmp_path: Path) -> None:
 
     with pytest.raises(ManifestStateError, match="不能覆盖"):
         initialize_sequence_run(**kwargs)
+
+
+def test_initialize_workspace_uses_manifest_11_for_packaged_execution(
+    tmp_path: Path,
+) -> None:
+    identity = CodeIdentity(
+        version="0.1.0.dev1",
+        source=CodeIdentitySource.INSTALLED_PACKAGE,
+        dirty=False,
+        content_sha256="a" * 64,
+    )
+    profile = RuntimeProfileRef(profile_id="test-local", sha256="b" * 64)
+    prepared = initialize_sequence_run(
+        config_path=APOE_CONFIG,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter(),
+        easydesign_version="0.1.0.dev1",
+        code_identity=identity,
+        runtime_profile=profile,
+        run_id="run-packaged",
+        created_at=datetime(2026, 7, 25, 8, 0, tzinfo=UTC),
+    )
+
+    manifest = load_model(prepared.workspace.run_manifest, RunManifest)
+    resolved = load_model(prepared.workspace.resolved_config, ResolvedRunConfig)
+    assert manifest.schema_version == "1.1"
+    assert manifest.code_identity == identity
+    assert manifest.runtime_profile == profile
+    assert resolved.schema_version == "0.4"
+    assert resolved.runtime_profile == profile
 
 
 def test_initialize_pse_run_creates_request_without_prediction(tmp_path: Path) -> None:

@@ -19,10 +19,12 @@ from easydesign.backends.structure_prediction import StructurePredictionRequest
 from easydesign.backends.target_sources import NormalizedProteinSequence
 from easydesign.core import (
     ArtifactRef,
+    CodeIdentity,
     EvidenceStatus,
     ExecutionStatus,
     ManifestStateError,
     RunManifest,
+    RuntimeProfileRef,
     StageId,
     dump_model,
     load_model,
@@ -80,9 +82,14 @@ class ResolvedRunConfig(BaseModel):
     prediction_request: StructurePredictionRequest | None = None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...] = ()
     stop_after_stage: int = Field(ge=1, le=7)
+    runtime_profile: RuntimeProfileRef | None = None
 
     @model_validator(mode="after")
     def validate_input_branch(self) -> Self:
+        if self.schema_version == "0.3" and self.runtime_profile is not None:
+            raise ValueError("resolved config 0.3 不支持 runtime_profile")
+        if self.schema_version not in {"0.2", "0.3", "0.4"}:
+            raise ValueError(f"不支持的 resolved config schema: {self.schema_version}")
         is_sequence = self.detected_input_format in {
             TargetInputFormat.SEQUENCE,
             TargetInputFormat.FASTA,
@@ -257,14 +264,18 @@ def _initialize_workspace(
     *,
     loaded: LoadedRunConfig,
     runs_root: Path,
-    code_commit: str,
     easydesign_version: str,
+    code_commit: str | None,
+    code_identity: CodeIdentity | None,
+    runtime_profile: RuntimeProfileRef | None,
     selected_run_id: str,
     timestamp: datetime,
     prepare_attempt_input: Callable[[Path, Path], Path | None] | None,
     index_note: str,
 ) -> tuple[RunWorkspace, Path | None]:
     _validate_run_id(selected_run_id)
+    if (code_commit is None) == (code_identity is None):
+        raise ManifestStateError("code_commit 与 code_identity 必须且只能提供一个")
 
     root = runs_root.resolve()
     project_root = root / loaded.config.project_id
@@ -305,6 +316,7 @@ def _initialize_workspace(
             file_format=str(loaded.detected_format),
         )
         resolved = ResolvedRunConfig(
+            schema_version="0.4" if runtime_profile is not None else "0.3",
             project_id=loaded.config.project_id,
             run_id=selected_run_id,
             user_config=loaded.config,
@@ -322,16 +334,20 @@ def _initialize_workspace(
                 else ()
             ),
             stop_after_stage=loaded.config.workflow.stop_after_stage,
+            runtime_profile=runtime_profile,
         )
         resolved_path = staging / "config-snapshot" / "resolved-config.json"
         dump_model(resolved, resolved_path)
 
         manifest = RunManifest(
+            schema_version="1.1" if code_identity is not None else "1.0",
             revision=1,
             project_id=loaded.config.project_id,
             run_id=selected_run_id,
             easydesign_version=easydesign_version,
             code_commit=code_commit,
+            code_identity=code_identity,
+            runtime_profile=runtime_profile,
             status=ExecutionStatus.PENDING,
             evidence_status=EvidenceStatus.IMPLEMENTED,
             created_at=timestamp,
@@ -396,8 +412,10 @@ def initialize_run_workspace(
     *,
     config_path: Path,
     runs_root: Path,
-    code_commit: str,
     easydesign_version: str,
+    code_commit: str | None = None,
+    code_identity: CodeIdentity | None = None,
+    runtime_profile: RuntimeProfileRef | None = None,
     run_id: str | None = None,
     created_at: datetime | None = None,
 ) -> PreparedRun:
@@ -410,6 +428,8 @@ def initialize_run_workspace(
         loaded=loaded,
         runs_root=runs_root,
         code_commit=code_commit,
+        code_identity=code_identity,
+        runtime_profile=runtime_profile,
         easydesign_version=easydesign_version,
         selected_run_id=selected_run_id,
         timestamp=timestamp,
@@ -425,8 +445,10 @@ def initialize_sequence_run(
     config_path: Path,
     runs_root: Path,
     input_writer: PredictionInputWriter,
-    code_commit: str,
     easydesign_version: str,
+    code_commit: str | None = None,
+    code_identity: CodeIdentity | None = None,
+    runtime_profile: RuntimeProfileRef | None = None,
     run_id: str | None = None,
     created_at: datetime | None = None,
 ) -> PreparedSequenceRun:
@@ -461,6 +483,8 @@ def initialize_sequence_run(
         loaded=loaded,
         runs_root=runs_root,
         code_commit=code_commit,
+        code_identity=code_identity,
+        runtime_profile=runtime_profile,
         easydesign_version=easydesign_version,
         selected_run_id=selected_run_id,
         timestamp=timestamp,
@@ -480,8 +504,10 @@ def initialize_pse_run(
     config_path: Path,
     runs_root: Path,
     request_writer: PseRequestWriter,
-    code_commit: str,
     easydesign_version: str,
+    code_commit: str | None = None,
+    code_identity: CodeIdentity | None = None,
+    runtime_profile: RuntimeProfileRef | None = None,
     run_id: str | None = None,
     created_at: datetime | None = None,
 ) -> PreparedPseRun:
@@ -518,6 +544,8 @@ def initialize_pse_run(
         loaded=loaded,
         runs_root=runs_root,
         code_commit=code_commit,
+        code_identity=code_identity,
+        runtime_profile=runtime_profile,
         easydesign_version=easydesign_version,
         selected_run_id=selected_run_id,
         timestamp=timestamp,

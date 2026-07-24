@@ -60,6 +60,18 @@ stage02:
 `pse_annotations` 和 `manual` 已定义 provider 接口，但当前调用会明确返回
 `not implemented`，不会回退到 automatic。
 
+Developer Preview 使用同一个 YAML 继续当前 run：
+
+```bash
+easydesign init PROJECT_DIR --target TARGET_FILE --stop-after 2
+easydesign doctor --config PROJECT_DIR/easydesign.yaml
+easydesign run PROJECT_DIR/easydesign.yaml
+```
+
+Stage 02 科学参数全部来自生成后仍可审阅的 `stage02` YAML 区块；CLI 没有隐藏阈值或
+设备 fallback。ScanNet 的 CPU/GPU 选择属于本机 runtime profile，当前默认并验证的是
+CPU。
+
 ## 方法 A：SASA 表面多样性采样
 
 本节是当前 `sasa-surface-diversity` v0.1 的可复现算法说明。后续修改阈值、权重、归一化

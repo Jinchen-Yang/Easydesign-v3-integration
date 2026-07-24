@@ -212,6 +212,8 @@
 - PSE 与 sequence 路径都输出 mmCIF `target.cif`、sequence、mapping、quality、
   provenance、Target Bundle 和 manifest 链；只有来源特有 artifact 不同：
   PSE 额外保存未解释颜色 annotation，sequence 额外保存 MSA。
+- Developer Preview CLI 已通过同一 orchestration API 暴露 sequence/FASTA 与 PSE
+  Stage 01；这属于 UX/工程验证，不改变 Stage 01 总体 `planned` 状态。
 
 ### REP-001 便携式 Mol* Target Viewer
 

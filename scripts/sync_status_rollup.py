@@ -28,6 +28,18 @@ STATUS_VALUES = {
 START_MARKER = "<!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->"
 END_MARKER = "<!-- END AUTO-GENERATED STAGE ROLLUP -->"
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+WORKSTREAM_PREFIXES = {
+    "ENG",
+    "UX",
+    "REP",
+    "UI",
+    "VAL",
+    "DATA",
+    "REL",
+    "PAPER",
+    "BIZ",
+}
+ACTIVE_ID_PATTERN = re.compile(r"\[([A-Z]+-\d{3}|S0[1-7])\]")
 
 
 @dataclass(frozen=True)
@@ -108,6 +120,20 @@ def _replace_generated_block(text: str, generated: str, path: Path) -> str:
     return text[:start] + generated + text[end:]
 
 
+def _validate_workstream_index(todo: str, todo_now: str) -> None:
+    for prefix in sorted(WORKSTREAM_PREFIXES):
+        if f"| `{prefix}` |" not in todo:
+            raise ValueError(f"TODO.md 缺少工作板块索引: {prefix}")
+    for task_id in ACTIVE_ID_PATTERN.findall(todo_now):
+        if task_id.startswith("S0"):
+            continue
+        prefix = task_id.split("-", maxsplit=1)[0]
+        if prefix not in WORKSTREAM_PREFIXES:
+            raise ValueError(f"TODO_NOW 使用未登记的板块前缀: {task_id}")
+        if task_id not in todo:
+            raise ValueError(f"TODO_NOW 活跃任务未在 TODO 登记: {task_id}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -128,6 +154,17 @@ def main() -> int:
             if current != expected:
                 stale.append(path)
                 updates.append((path, expected))
+        todo = next(
+            expected for path, expected in updates if path.name == "TODO.md"
+        ) if any(path.name == "TODO.md" for path, _ in updates) else (
+            ROOT / "TODO.md"
+        ).read_text(encoding="utf-8")
+        todo_now = next(
+            expected for path, expected in updates if path.name == "TODO_NOW.md"
+        ) if any(path.name == "TODO_NOW.md" for path, _ in updates) else (
+            ROOT / "TODO_NOW.md"
+        ).read_text(encoding="utf-8")
+        _validate_workstream_index(todo, todo_now)
         if args.check:
             if stale:
                 names = ", ".join(path.name for path in stale)

@@ -23,6 +23,8 @@
 - SASA/geometry 与 ScanNet probability 在类型、文件和排名路径上完全分离。
 - adapter 要求显式选择 `cpu` 或 `gpu`，默认 `cpu`；禁止执行期间在设备之间静默 fallback。
 - 人工选择前不会向 Stage 03 发布默认赢家。
+- Developer Preview CLI 已通过同一 orchestration API 调用正式 Stage 02，并从 YAML
+  读取独立方法参数、从 runtime profile 读取 ScanNet CPU；这不改变本阶段科学状态。
 
 ## 功能矩阵
 

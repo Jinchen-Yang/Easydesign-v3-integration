@@ -1,7 +1,8 @@
 # EasyDesign 宏观路线图
 
 状态定义见 `PROJECT_CHARTER.md`。本文件按产品时间尺度维护宏观方向；它不保存正在编码的
-细节，也不承诺日期。阶段内部任务、验证和历史进入各自 `STATUS.md`，当前跨阶段重点见
+细节，也不承诺日期。七个科学 Stage 与工程、CLI、报告、UI、验证、数据、发布、论文和
+商业板块并列管理；阶段内部任务、验证和历史进入各自 `STATUS.md`，当前跨板块重点见
 `TODO_NOW.md`。
 
 ## 短期目标：EasyDesign 1.0
@@ -14,7 +15,27 @@
 | M0 仓库基础 | `implemented` | 私有 Git 仓库、中文治理、七阶段契约、包骨架和基础检查完成。 |
 | M1 统一运行契约 | `implemented` | 类型化 manifest、不可变 attempt、规范 JSON、SHA-256 和契约测试完成。 |
 | M2 交互式科学报告基础 | `smoke-validated` | Stage 01 sequence/PSE 均生成自包含 Mol* 5.11.0 报告；checksum、localhost 服务、Chromium 和真实 APOE smoke 通过。 |
+| M3 Developer Preview 可用性 | `smoke-validated` | 本地源码/wheel 可安装；`easydesign` 支持 init、profile、validate、doctor、Stage 01/02 run、runs 和 viewer；真实 PSE→Stage 02 CPU 与 required-MSA sequence Stage 01 CLI smoke 通过。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
+
+## 长期工作板块索引
+
+顶层每个板块只维护当前状态、一句话概述、当前宏观目标、下一里程碑和详细索引。Stage
+内部细节仍以各 Stage STATUS 为准；非 Stage 工作默认归档到共享项目 history，避免提前
+创建大量 Markdown。
+
+| 前缀 | 板块 | 状态 | 一句话概述 | 当前宏观目标 | 下一里程碑或索引 |
+| --- | --- | --- | --- | --- | --- |
+| `S01–S07` | Scientific Pipeline | `planned` | 七阶段科学主线按独立契约推进。 | 先完成 VHH 1.0 真实端到端。 | 下方七阶段实时摘要。 |
+| `ENG` | Core Engineering | `smoke-validated` | ENG-002 已建立 runtime profile、RunManifest 1.1 和 package/dirty-tree 身份。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-003：恢复执行、离线 MSA cache 和 CI 矩阵；[架构](docs/ARCHITECTURE.md)。 |
+| `UX` | CLI & Developer Experience | `smoke-validated` | UX-001 Developer Preview CLI 已可安装并调用 Stage 01/02。 | 让真实能力通过一个稳定入口使用。 | 正式 CLI 前补 resume、结构输入和发布兼容策略；[README](README.md)。 |
+| `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；REP-003：显式人工批准。 |
+| `UI` | Product UI | `planned` | 尚未开发桌面或 Web 产品 UI。 | 未来只调用相同 Python API，不复制科学逻辑。 | UI-001：在 CLI/API 稳定后定义任务、审阅和恢复流程。 |
+| `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-001：VHH–抗原区域与端到端基准。 |
+| `DATA` | Data & Assets | `planned` | 已有资产登记和 runtime-only 权重规则。 | 确保 scaffold、模型、fixture 的来源与权利可审计。 | DATA-001：VHH scaffold 授权和公开发布资产复审。 |
+| `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
+| `PAPER` | Publication | `planned` | 方法与证据持续积累，尚未冻结论文 claim。 | 形成可追溯方法、图表、benchmark 和补充材料。 | PAPER-001：Stage 01/02 方法和失败证据索引。 |
+| `BIZ` | Product & Commercialization | `planned` | 商业路线存在，但未进入产品化承诺。 | 完成 IP、许可证、部署、支持和质量体系。 | BIZ-001：在科学/软件验证后建立产品需求与合规清单。 |
 
 ### 七阶段实时摘要
 
@@ -40,7 +61,7 @@
 | 蛋白 binder 主线 | `planned` | 至少一条真实小规模端到端基准通过，并与 VHH 共用运行契约。 |
 | 肽 binder 主线 | `planned` | 至少一条真实小规模端到端基准通过，明确线性/环肽表示与筛选边界。 |
 | 方法 benchmark | `planned` | 按 binder 类型建立预注册数据集、基线、负结果和科学验证报告。 |
-| CLI 与公开 release | `planned` | 稳定 Python API、薄 CLI、英文文档、授权、安全、引用和第三方资产审查完成。 |
+| CLI 与公开 release | `planned` | Developer Preview CLI 已完成；正式发布仍需稳定 API、英文文档、授权、安全、引用和第三方资产审查。 |
 | 多执行环境 | `planned` | local、Slurm/SMART 和可移植容器使用相同请求/结果契约。 |
 
 ## 长期目标：一键式平台、科研与商业产品

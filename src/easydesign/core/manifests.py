@@ -34,6 +34,56 @@ class EvidenceStatus(StrEnum):
     PRODUCTION_READY = "production-ready"
 
 
+class CodeIdentitySource(StrEnum):
+    """运行代码身份的来源；Git commit 与内容哈希不能互相冒充。"""
+
+    GIT = "git"
+    WORKING_TREE = "working-tree"
+    INSTALLED_PACKAGE = "installed-package"
+
+
+class CodeIdentity(BaseModel):
+    """源码 checkout 或已安装 package 的可审计身份。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    distribution: str = Field(default="easydesign", pattern=ID_PATTERN)
+    version: str = Field(min_length=1, max_length=64)
+    source: CodeIdentitySource
+    git_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    dirty: bool
+    content_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        if self.source is CodeIdentitySource.GIT:
+            if self.git_commit is None or self.dirty:
+                raise ValueError("clean Git identity 必须包含 commit 且 dirty=false")
+        elif self.source is CodeIdentitySource.WORKING_TREE:
+            if self.git_commit is None or not self.dirty or self.content_sha256 is None:
+                raise ValueError(
+                    "working-tree identity 必须包含基础 commit、dirty=true 和内容 SHA-256"
+                )
+        elif (
+            self.git_commit is not None
+            or self.dirty
+            or self.content_sha256 is None
+        ):
+            raise ValueError(
+                "installed-package identity 只能使用 package 内容 SHA-256"
+            )
+        return self
+
+
+class RuntimeProfileRef(BaseModel):
+    """不泄露机器路径的 runtime profile 身份。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    profile_id: str = Field(pattern=ID_PATTERN)
+    sha256: str = Field(pattern=SHA256_PATTERN)
+
+
 def _validate_unique_artifacts(artifacts: tuple[ArtifactRef, ...], label: str) -> None:
     ids = [artifact.artifact_id for artifact in artifacts]
     if len(ids) != len(set(ids)):
@@ -199,7 +249,9 @@ class RunManifest(BaseModel):
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     easydesign_version: str = Field(min_length=1, max_length=64)
-    code_commit: str = Field(pattern=r"^[0-9a-f]{7,40}$")
+    code_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{7,40}$")
+    code_identity: CodeIdentity | None = None
+    runtime_profile: RuntimeProfileRef | None = None
     status: ExecutionStatus
     evidence_status: EvidenceStatus
     created_at: datetime
@@ -215,6 +267,18 @@ class RunManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest(self) -> Self:
+        if self.schema_version == "1.0":
+            if self.code_commit is None:
+                raise ValueError("RunManifest 1.0 必须包含 code_commit")
+            if self.code_identity is not None or self.runtime_profile is not None:
+                raise ValueError("RunManifest 1.0 不支持结构化代码或 profile 身份")
+        elif self.schema_version == "1.1":
+            if self.code_identity is None:
+                raise ValueError("RunManifest 1.1 必须包含 code_identity")
+            if self.code_commit is not None:
+                raise ValueError("RunManifest 1.1 不得把 code_identity 重复写成 code_commit")
+        else:
+            raise ValueError(f"不支持的 RunManifest schema_version: {self.schema_version}")
         if self.revision == 1 and self.previous_manifest_sha256 is not None:
             raise ValueError("revision 1 不能声明 previous manifest")
         if self.revision > 1 and self.previous_manifest_sha256 is None:

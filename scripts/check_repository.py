@@ -39,6 +39,7 @@ CORE_DEPENDENCIES = {
     "gemmi",
     "httpx",
     "numpy",
+    "platformdirs",
     "pydantic",
     "pyyaml",
 }
@@ -48,6 +49,7 @@ CORE_MODULES = {
     "attempts.py",
     "errors.py",
     "hashing.py",
+    "identity.py",
     "manifests.py",
     "serialization.py",
     "timestamps.py",
@@ -224,9 +226,13 @@ def main() -> int:
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev0", "项目版本异常", errors)
+    require(project["version"] == "0.1.0.dev1", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
-    require("scripts" not in project, "基础阶段不得提供公开 CLI", errors)
+    require(
+        project.get("scripts") == {"easydesign": "easydesign.cli:main"},
+        "Developer Preview 必须只提供统一 easydesign 命令",
+        errors,
+    )
     dependency_names = {
         dependency.split(";", 1)[0]
         .split("[", 1)[0]

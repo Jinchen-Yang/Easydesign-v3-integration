@@ -1,8 +1,11 @@
-"""验证最新 EasyDesign wheel 完整携带 Target Viewer 静态资源。"""
+"""验证最新 wheel 的资源、Developer Preview 入口和隔离安装。"""
 
 from __future__ import annotations
 
+import subprocess
 import sys
+import tempfile
+import venv
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
@@ -29,6 +32,9 @@ def main() -> int:
         print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
         return 1
     wheel = wheels[0]
+    if "0.1.0.dev1" not in wheel.name:
+        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev1: {wheel.name}", file=sys.stderr)
+        return 1
     source_root = ROOT / "src" / PACKAGE_PREFIX
     try:
         with ZipFile(wheel) as archive:
@@ -44,7 +50,50 @@ def main() -> int:
     except (BadZipFile, KeyError, OSError) as error:
         print(f"ERROR: wheel Target Viewer 资源验证失败: {error}", file=sys.stderr)
         return 1
-    print(f"wheel Target Viewer assets verified: {wheel.name} ({len(EXPECTED)}/6)")
+    try:
+        with tempfile.TemporaryDirectory(prefix="easydesign-wheel-smoke-") as temporary:
+            environment = Path(temporary) / "venv"
+            venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
+            python = (
+                environment / "Scripts" / "python.exe"
+                if sys.platform == "win32"
+                else environment / "bin" / "python"
+            )
+            command = (
+                environment / "Scripts" / "easydesign.exe"
+                if sys.platform == "win32"
+                else environment / "bin" / "easydesign"
+            )
+            subprocess.run(
+                [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            version = subprocess.run(
+                [str(command), "--version"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ).stdout.strip()
+            if version != "0.1.0.dev1":
+                raise RuntimeError(f"console-script 版本异常: {version}")
+            subprocess.run(
+                [str(python), "-m", "easydesign", "--help"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f"ERROR: wheel 安装或 console-script smoke 失败: {error}", file=sys.stderr)
+        return 1
+    print(
+        f"wheel assets and console script verified: {wheel.name} "
+        f"({len(EXPECTED)}/{len(EXPECTED)})"
+    )
     return 0
 
 

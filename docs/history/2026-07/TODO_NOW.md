@@ -2,6 +2,45 @@
 
 本文件从原顶层 `TODO_NOW.md` 归档跨阶段记录。阶段内部历史由各 Stage 单独维护。
 
+## 2026-07-25
+
+### UX-001 / ENG-002：Developer Preview CLI 与可复现安装身份
+
+- 状态：`smoke-validated`。
+- 问题：Stage 01/02 已有真实 API，但使用者必须手工构造 adapter、环境变量和开发脚本；
+  wheel 安装又无法用旧 `code_commit` 如实描述实际代码。
+- 方案：新增 `easydesign` console-script、真实 target 项目初始化、用户级 runtime
+  profile、配置验证、doctor、统一 Stage 01/02 run、run index 查询和 Viewer 包装；科学
+  参数继续只存在于 YAML，机器路径只存在于 profile。
+- 代码身份：RunManifest 1.1 区分 clean Git、dirty working tree 与 installed package，
+  后两者保存确定性 package tree SHA-256；旧 1.0 manifest 保持可读。
+- 治理：顶层 TODO 新增 ENG、UX、REP、UI、VAL、DATA、REL、PAPER、BIZ 板块；质量门
+  检查 TODO_NOW 活跃任务 ID 是否已登记。
+- 工程证据：128 个 pytest 通过，8 个需真实 PyMOL 环境的测试按设计跳过；ruff、strict
+  mypy、仓库结构、wheel 资源及隔离安装后的 `easydesign --version`、
+  `python -m easydesign --help` 均通过。
+- 真实 smoke：Proteindigger1 用户 profile
+  `proteindigger1-local` 通过 PyMOL 3.1.0 与 ScanNet TensorFlow 1.14 CPU doctor；
+  `--dry-run` 未创建 run。随后一条命令完成
+  `runs/apoe-cli/20260725-001-ux001-pse-stage02`，RunManifest 1.1 revision 3、
+  Stage 01/02 和 Target Viewer 均为 `succeeded`，Stage 03 handoff 为
+  `awaiting_region_selection`；comparison 含完整 9 组重叠，`fused_score` 与 `winner`
+  保持 `null`。
+- sequence smoke：同一 CLI 完成
+  `runs/apoe/20260725-002-ux001-sequence-stage01`；required ColabFold MSA depth 609、
+  Protenix-v2 predicted 143-aa `target.cif`、RunManifest 1.1 revision 2 和 Target Viewer
+  均成功，没有启动 no-MSA fallback。
+- Viewer 回归：Playwright 3 passed、2 个浏览器环境相关用例按设计 skipped；服务仍只
+  绑定 `127.0.0.1`。
+- 遇到的问题：`runs list` 首次真实使用时遇到旧迁移 run 缺少现代 `LATEST`，导致列表
+  整体中断。
+- 解决办法：列表只读取 index，对不可验证旧条目标记 `integrity_status=unavailable` 并
+  保留错误；`runs show` 继续严格验证 manifest/artifact，不把旧记录伪装成成功。
+- 遗留边界：Stage 03–07、resume、PDB/mmCIF/UniProt 输入、正式 UI、公开许可证、PyPI
+  和跨平台重型 backend 支持仍未实现；Developer Preview 不构成稳定公开 API。
+- 提交：本工作项的 `feat(cli): add developer preview command workflow`；推送后以远端
+  `main` 核对的完整 SHA 为准。
+
 ## 2026-07-24
 
 - 决定全部环境先使用 Conda；EasyDesign 主环境固定 Python 3.11，重型工具保持独立。

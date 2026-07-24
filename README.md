@@ -8,16 +8,82 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev`（包版本 `0.1.0.dev0`）
+- 当前版本：`0.1.0-dev1`（包版本 `0.1.0.dev1`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
 - EasyDesign 1.0：先聚焦 VHH，跑通第一条真实、完整、可审计的参考主线
 - 长期产品边界：多 binder 类型的一键式端到端设计平台
-- 当前不承诺设计准确率，也尚未提供正式 CLI 或 UI
+- 当前不承诺设计准确率；已提供 Developer Preview CLI，尚无正式 UI 或公开 release
 
 这里的“一键式”是指用户不需要手工拼接多个后端、搬运中间文件或猜测失败位置；关键科学
 选择、失败状态和人工批准仍然显式保存，不能被“一键”隐藏。
+
+## 五分钟开始
+
+EasyDesign core 可以使用 Conda，也可以安装到已有的 Python 3.11 环境。Protenix、PyMOL
+和 ScanNet 等重型工具仍保持独立环境，不会被 `pip install easydesign` 混装。
+
+```bash
+git clone git@github.com:Knitua/Easydesign.git
+cd Easydesign
+
+# 开发安装
+python -m pip install -e ".[dev]"
+
+# 或从本地 wheel 安装
+python -m build
+python -m pip install dist/easydesign-0.1.0.dev1-py3-none-any.whl
+```
+
+先创建用户级本机 profile：
+
+```bash
+easydesign profile init
+easydesign profile show
+```
+
+`profile init` 不扫描 Conda 或模型目录。使用者需要显式填写本机绝对路径，例如：
+
+```yaml
+schema_version: "0.1"
+profile_id: local
+runs_root: /absolute/path/to/runs
+backends:
+  protenix_v2:
+    executable: /absolute/path/to/protenix
+    model_root: /absolute/path/to/protenix-model-root
+    model_checkpoint: /absolute/path/to/protenix-v2.pt
+    cuda_visible_devices: "0"
+  pymol_pse:
+    python: /absolute/path/to/pymol-pse/bin/python
+  scannet_epitope:
+    python: /absolute/path/to/scannet/bin/python
+    repository_root: /absolute/path/to/ScanNet
+    execution_device: cpu
+```
+
+然后从真实 target 创建用户项目：
+
+```bash
+easydesign init apoe --target apoe.fasta --stop-after 2
+easydesign config validate apoe/easydesign.yaml
+easydesign doctor --config apoe/easydesign.yaml
+easydesign run apoe/easydesign.yaml
+```
+
+`init` 当前接受 FASTA、裸序列文件和单 Target PSE。sequence/FASTA 默认使用 required
+remote MSA、ColabFold public、无模板 Protenix-v2；PSE 直接导入坐标。Stage 02 默认运行
+彼此独立的 SASA 与 ScanNet CPU 选区。PDB/mmCIF、UniProt 和 Stage 03–07 尚未接入该
+命令时会明确失败，不会静默回退。
+
+查看已有 run：
+
+```bash
+easydesign runs list
+easydesign runs show PROJECT_ID/RUN_ID
+easydesign viewer serve /absolute/path/to/run --port 8000
+```
 
 ## 七个阶段
 
@@ -45,7 +111,7 @@ binder 的科学约束不会被强行混成一种算法。
 全部环境先使用 Conda 管理。EasyDesign 主环境是 Python 3.11 的 `easydesign-core`；
 BoltzGen、Boltz2、Protenix-v2、AF3/AFO 等重型工具保持各自独立环境，通过 adapter 调用。
 
-在普通 Conda 安装中：
+在仓库开发 Conda 环境中：
 
 ```bash
 conda env create -f environment.yml
@@ -62,9 +128,7 @@ Stage 01 成功 run 会自动生成自包含 Mol* Target Viewer，但不会自�
 最新报告：
 
 ```bash
-python scripts/serve_target_viewer.py \
-  runs/apoe/20260724-006-stage01-msa \
-  --port 8000
+easydesign viewer serve runs/apoe/20260724-006-stage01-msa --port 8000
 ```
 
 服务只绑定 `127.0.0.1`；远程服务器按照脚本提示使用 SSH 端口转发。页面直接展示 mmCIF、
@@ -76,4 +140,4 @@ Proteindigger1 使用 `/root/miniconda3/bin/conda`，环境实际存放在
 
 当前仓库保持私有，远程托管于
 [`Knitua/Easydesign`](https://github.com/Knitua/Easydesign)；没有公开许可证、正式
-CLI 或 UI。
+PyPI release 或 UI。Developer Preview CLI 不是稳定公开 API 承诺。

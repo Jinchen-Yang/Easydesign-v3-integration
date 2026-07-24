@@ -8,7 +8,8 @@
 1. 确认当前仓库、分支和工作树状态；不得覆盖他人未提交修改。
 2. 阅读 `PROJECT_CHARTER.md`、`docs/ARCHITECTURE.md`、`TODO.md` 和
    `TODO_NOW.md`。
-3. 阅读本次涉及的 workflow 阶段 `README.md` 和 `STATUS.md`。
+3. 阅读本次涉及的 workflow 阶段 `README.md`、`STATUS.md`；恢复旧任务时还要从
+   `STATUS.md` 的历史索引读取最近一条相关记录。
 4. 判断任务是否属于实质性任务。代码、依赖、配置、契约、架构或科学行为变化都属于
    实质性任务；纯解释、只读检查和错别字修正不属于。
 5. 实质性阶段任务必须在对应 Stage `STATUS.md` 的 `Now` 中有明确任务、完成门槛和
@@ -36,13 +37,20 @@ Agent 必须自动完成以下收尾工作：
 3. 接口、目录或依赖方向变化时更新 `docs/ARCHITECTURE.md`。
 4. 阶段行为或契约变化时更新对应 workflow `README.md`。
 5. 更新每个受影响 Stage 的 `STATUS.md`：
-   - 从 `Now` 移除已完成工作或切换到下一个明确任务；
+   - 已完成的 `Now` 在被移除或替换前，必须先追加到该 Stage 的
+     `history/YYYY-MM.md`；
+   - 从 `Now` 移除已归档工作或切换到下一个明确任务；
    - 更新功能矩阵、验证证据和 Blocked；
    - 在当日工作日志中只追加决策、测试证据、run/attempt 和 commit。
 6. 跨阶段重点发生变化时更新 `TODO_NOW.md`；阶段内部细节不得复制到顶层。
 7. 只有宏观里程碑的全部完成门槛通过后，才更新 `TODO.md` 的状态。
-8. 每月把已结束的阶段日志归档到该 Stage 的 `history/YYYY-MM.md`；跨阶段历史归档到
-   `docs/history/YYYY-MM/`。历史记录不得改写，有误时追加更正。
+8. Stage 历史采用“工作项关闭即归档、按月追加到同一文件”的制度：
+   - 每条记录必须包含状态、完成内容、验证证据、遇到的问题、解决办法和遗留问题；
+   - 未完成工作不得伪装成已结束记录：仍在执行的留在 `Now`，等待外部条件的进入
+     `Blocked`，并在已完成部分的历史记录中交代边界；
+   - `STATUS.md` 的历史索引必须链接对应月份文件；
+   - 顶层 `docs/history/YYYY-MM/` 只记录跨阶段里程碑，不复制阶段细节。
+   历史记录不得改写，有误时追加更正。
 9. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit。
 10. 默认不 push、不创建 remote、不触发外部下单或其他不可逆外部操作。
 

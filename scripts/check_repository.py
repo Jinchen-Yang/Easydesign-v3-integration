@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -59,6 +60,14 @@ CORE_TESTS = {
     "test_manifests.py",
     "test_serialization.py",
 }
+STAGE_HISTORY_SECTIONS = (
+    "- 状态：",
+    "### 完成内容",
+    "### 验证证据",
+    "### 遇到的问题",
+    "### 解决办法",
+    "### 遗留问题",
+)
 
 
 def require(condition: bool, message: str, errors: list[str]) -> None:
@@ -119,7 +128,38 @@ def main() -> int:
             status_text = status.read_text(encoding="utf-8")
             for heading in ("## 当前结论", "## Now", "## Next", "## Blocked", "## 验证证据"):
                 require(heading in status_text, f"{stage}/STATUS 缺少区块: {heading}", errors)
-        require((base / "history").is_dir(), f"缺少 {stage}/history", errors)
+        history_dir = base / "history"
+        require(history_dir.is_dir(), f"缺少 {stage}/history", errors)
+        if history_dir.is_dir():
+            for history in sorted(history_dir.glob("*.md")):
+                require(
+                    re.fullmatch(r"\d{4}-\d{2}\.md", history.name) is not None,
+                    f"Stage 历史文件名必须是 YYYY-MM.md: {history.relative_to(ROOT)}",
+                    errors,
+                )
+                history_text = history.read_text(encoding="utf-8")
+                records = re.split(r"(?m)^## ", history_text)[1:]
+                require(
+                    bool(records),
+                    f"Stage 历史没有工作项记录: {history.relative_to(ROOT)}",
+                    errors,
+                )
+                for record_number, record in enumerate(records, start=1):
+                    for section in STAGE_HISTORY_SECTIONS:
+                        require(
+                            section in record,
+                            (
+                                f"{history.relative_to(ROOT)} 第 {record_number} 条记录"
+                                f"缺少: {section}"
+                            ),
+                            errors,
+                        )
+                if status.is_file():
+                    require(
+                        f"history/{history.name}" in status_text,
+                        f"{stage}/STATUS 历史索引未链接 {history.name}",
+                        errors,
+                    )
         require((base / "examples/.gitkeep").is_file(), f"缺少 {stage}/examples 占位", errors)
         require(not (base / "CONTRACT.md").exists(), f"{stage} 不应再有独立 CONTRACT", errors)
 

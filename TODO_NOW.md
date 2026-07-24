@@ -2,10 +2,11 @@
 
 ## Now
 
-- **Stage 01 sequence/FASTA → Protenix-v2 → Target Bundle 纵向切片。**
-- 状态：`implemented`；no-MSA smoke 和完整 Target Bundle 已通过，两个远程 MSA
-  服务 attempt 均因上游持续 `PENDING` 达到工程超时。
-- 剩余宏观门槛：APOE 远程 MSA、无模板预测成功并由同一 adapter 发布 Target Bundle。
+- **Stage 01 APOE MSA-backed Protenix-v2 验证。**
+- 已完成部分：sequence/FASTA、no-MSA smoke 和完整 Target Bundle；详细记录已经归档，
+  不再占用当前工作项。
+- 当前门槛：取得与 143-aa APOE 输入严格匹配且来源可追溯的 MSA，运行
+  `MSA enabled + template disabled` 预测并由同一 adapter 发布 Target Bundle。
 - 详细任务、功能矩阵和验证证据：
   [`workflow/01-target-preparation/STATUS.md`](workflow/01-target-preparation/STATUS.md)。
 
@@ -16,6 +17,8 @@
 
 ## Blocked
 
+- Stage 01：两个公共 MSA 服务 attempt 超时；旧仓在本服务器没有保存 APOE MSA，
+  历史记录指向的 SMART target feature cache 尚未取回。
 - 公开许可证和公开 release 等待 IP/release 决策。
 - 第三方 VHH scaffold 迁移等待来源与权利审查。
 

@@ -9,6 +9,8 @@
 - no-MSA 工程 smoke、真实输出解析和 Target Bundle 发布已通过。
 - remote-MSA/no-template 的两个外部服务 attempt 均超时失败，未通过前不能把纵向切片标成
   `smoke-validated`。
+- 旧仓在 Proteindigger1 没有保存 APOE MSA；文档提到的 SMART target feature cache
+  尚未取回，不能用单序列 FASTA/AF3 JSON 冒充旧 MSA 测试。
 - APOE fixture 是旧仓工程案例的 143-aa 片段，科学身份尚待 UniProt 路径独立复核。
 
 ## 功能矩阵
@@ -26,29 +28,34 @@
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
 | remote-MSA/no-template | `implemented` | 两个显式服务 attempt 均因持续 `PENDING` 超时失败 |
+| 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
 
 ## Now
 
-### S01-001：APOE sequence/FASTA 纵向切片
+### S01-002：APOE MSA-backed Protenix-v2 验证
 
-- 状态：`implemented`，等待 remote-MSA/no-template 外部验证。
-- `protenix==2.0.0` / `protenix-v2` 的 Python 3.11 独立环境和参数已经固定。
-- sequence/FASTA、通用结构预测接口、Protenix-v2 adapter 和 Target Bundle 已实现。
-- Protenix 官方 MSA 服务与其支持的 ColabFold 服务分别使用独立 attempt，均已保留失败
-  manifest，禁止互相覆盖。
-- 远程 MSA 失败或超时不得静默降级为 no-MSA。
+- 状态：`blocked`；等待公共服务恢复，或从 SMART 取回旧 target feature cache。
+- 目标：用与当前 143-aa APOE 查询严格匹配、来源可追溯的 MSA 运行 Protenix-v2，
+  显式关闭 template，并发布带 MSA provenance 的 Target Bundle。
+- 旧仓本地 `data/apoe/msa/` 目录只有 FASTA 和单序列 AF3 JSON；数据盘现有 113 个
+  alignment 文件也都不匹配当前查询，因此目前没有可安全复用的旧 MSA。
+- 远程 MSA 失败或超时不得静默降级为 no-MSA，也不得把单序列输入命名为 MSA。
 
 完成门槛：
 
-1. 裸序列与 FASTA 产生相同规范序列和 SHA-256：**通过**；
-2. Protenix-v2 no-MSA smoke：**通过**；
-3. APOE `remote MSA + template disabled` 真实预测：**外部 MSA 服务超时，未通过**；
-4. `target.cif`、序列、残基映射、质量报告和 provenance：**no-MSA 路径通过**；
-5. unit、adapter contract 和实际产物集成验证：**通过**。
+1. MSA query 与规范序列 SHA-256 `7cfb40e9...115a` 严格一致：**无 MSA，未通过**；
+2. MSA 来源、生成方式、文件 SHA-256 和实际深度写入 attempt：**未通过**；
+3. Protenix-v2 `use_msa=true`、`use_template=false` 真实预测：**未通过**；
+4. 同一 adapter 发布含 `msa_input_sha256` 的 Target Bundle：**未通过**；
+5. 失败、重试和禁止 fallback 的契约测试：**已通过**。
 
 ## Next
 
-- remote MSA 返回后，以模型默认 `10 recycle / 200 diffusion steps`、1 seed、1 sample
+- 优先从原 SMART workspace 取回已记录的 APOE
+  `target_feature_cache/<target_sha256>/target_data.json`；取回后先做来源和序列审计，
+  再提取为 Protenix 可消费的预计算 MSA attempt。
+- 如果旧缓存不可获得，公共 MSA 服务恢复后建立新 attempt；不能覆盖已有失败 attempt。
+- MSA 获得后，以模型默认 `10 recycle / 200 diffusion steps`、1 seed、1 sample
   运行无模板 APOE 预测，并用同一 adapter 发布正式 Target Bundle。
 - 实现本地 PDB/mmCIF 与标准 Target Bundle 两条无网络入口。
 - 实现 RCSB PDB ID、UniProt 和 PSE adapter。
@@ -59,6 +66,8 @@
 - Protenix 官方远程 MSA attempt 持续 `PENDING` 30 分钟后按工程超时终止。
 - 显式创建的 ColabFold remote-MSA attempt 持续 `PENDING` 20 分钟后按工程超时终止。
 - 两条 attempt 均为 `failed`、`retryable=true`；需要上游队列恢复后建立新 attempt。
+- 旧仓文档提到的 APOE MSA/template cache 位于 SMART 运行目录，但没有同步到
+  Proteindigger1；当前仓和旧仓本地文件都不包含该 asset。
 - 这只阻塞 remote-MSA 验证，不阻塞已完成的本地契约、no-MSA smoke 和后续无网络入口开发。
 
 ## 验证证据
@@ -106,19 +115,23 @@
   `PENDING` 超过 20 分钟，终态 `failed` / `remote-msa-timeout` / retryable。
 - 两条均未生成 MSA artifact，因此没有启动假定存在 MSA 的正式预测，也没有降级为 no-MSA。
 
+### 旧仓 MSA 审计
+
+- `package/easydesign_competition/data/apoe/msa/apoe4_fragment.fasta` 是单序列 FASTA。
+- 同目录 `apoe4_fragment_af3.json` 只有 143-aa protein sequence，不包含 MSA/template
+  字段。
+- 旧仓和 Proteindigger1 上没有匹配 APOE 查询的 `.a3m/.sto/.aln/.msa`；旧文档引用的
+  SMART `target_data.json` 与原始 AF3 data JSON 均不在本服务器。
+- 结论：旧 MSA 复用路径仍为**未通过**，目前不能执行用户提出的预计算 MSA 测试。
+
 ## 工作日志
 
 ### 2026-07-24
 
-- 固定 APOE 旧仓 fixture、文件 hash 和“尚待 UniProt 独立核对”的身份状态。
-- 审计 GPU、CUDA、磁盘和已有环境；创建隔离的 Protenix-v2 Python 3.11 环境。
-- 固定 `protenix==2.0.0`、CUDA 编译依赖和 `protenix-v2` checkpoint。
-- no-MSA 首次 attempt 因官方 checkpoint URL 403 失败并保留；新 attempt 在校验参数后成功。
-- 实现 sequence/FASTA 规范化、通用预测契约、Protenix-v2 adapter、确定性输出收集、
-  CIF/序列逐残基校验和不可覆盖 Target Bundle 发布。
-- Protenix 与 ColabFold 两个 remote-MSA 服务 attempt 均已显式提交并因持续 `PENDING`
-  达到工程超时；终态和可重试错误已写入各自 attempt manifest。
+- 关闭并归档 S01-001；Stage 01 当前工作切换为 S01-002。
+- 审计旧仓、归档包和 Proteindigger1 alignment 文件，确认本机没有 APOE MSA asset。
+- 保留两个公共 MSA 服务失败 attempt；等待 SMART cache 或公共队列恢复。
 
 ## 历史索引
 
-已结束日志按月移动到 `history/YYYY-MM.md`；当前工作尚未结束，不归档。
+- [2026-07：S01-001 sequence/FASTA 与 no-MSA 纵向切片](history/2026-07.md)

@@ -310,9 +310,7 @@ def run_sasa_surface_diversity(
     ShrakeRupley(  # type: ignore[no-untyped-call]
         probe_radius=sasa_parameters.probe_radius_angstrom,
         n_points=sasa_parameters.sphere_points,
-    ).compute(  # type: ignore[no-untyped-call]
-        context.bio_structure[0], level="R"
-    )
+    ).compute(context.bio_structure[0], level="R")
     raw_sasa: dict[int, float] = {
         int(residue.id[1]): float(getattr(residue, "sasa", 0.0))
         for residue in context.bio_structure[0]["A"].get_residues()

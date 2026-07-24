@@ -3,8 +3,8 @@
 ## Now
 
 - **Stage 01 APOE MSA-backed Protenix-v2 验证。**
-- 已完成部分：sequence/FASTA、no-MSA smoke 和完整 Target Bundle；详细记录已经归档，
-  不再占用当前工作项。
+- 已完成部分：用户 YAML、自动输入识别、统一 Run Workspace、sequence/FASTA、
+  no-MSA smoke 和完整 Target Bundle；详细记录已经归档，不再占用当前工作项。
 - 当前门槛：取得与 143-aa APOE 输入严格匹配且来源可追溯的 MSA，运行
   `MSA enabled + template disabled` 预测并由同一 adapter 发布 Target Bundle。
 - 详细任务、功能矩阵和验证证据：

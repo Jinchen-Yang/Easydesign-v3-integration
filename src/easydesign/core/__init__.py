@@ -6,6 +6,7 @@ from .errors import (
     ArtifactIntegrityError,
     ArtifactNotFoundError,
     BackendContractError,
+    ConfigurationError,
     ContractError,
     EasyDesignError,
     ManifestStateError,
@@ -13,6 +14,7 @@ from .errors import (
     PredictionOutputError,
     SequenceInputError,
     SerializationError,
+    TargetInputError,
     UndeclaredArtifactError,
 )
 from .hashing import sha256_file, verify_sha256
@@ -30,6 +32,7 @@ __all__ = [
     "ArtifactRef",
     "Attempt",
     "BackendContractError",
+    "ConfigurationError",
     "ContractError",
     "EasyDesignError",
     "ErrorInfo",
@@ -43,6 +46,7 @@ __all__ = [
     "SerializationError",
     "StageId",
     "StageManifest",
+    "TargetInputError",
     "UndeclaredArtifactError",
     "canonical_json_bytes",
     "canonical_model_sha256",

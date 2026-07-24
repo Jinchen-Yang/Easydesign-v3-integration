@@ -204,7 +204,6 @@ def build_predicted_target_bundle(
     artifact_dir = (
         resolved_run_root
         / "01-target-preparation"
-        / "attempts"
         / attempt_id
         / "artifacts"
     )

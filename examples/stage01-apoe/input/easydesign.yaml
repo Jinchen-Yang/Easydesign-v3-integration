@@ -1,0 +1,21 @@
+schema_version: "0.1"
+project_id: apoe
+
+target:
+  id: apoe4-fragment-41-183
+  source: apoe4-fragment-41-183.fasta
+  format: auto
+
+structure_prediction:
+  backend: protenix-v2
+  msa_mode: disabled
+  template_mode: disabled
+  parameter_profile: custom
+  seeds:
+    - 101
+  sample_count: 1
+  cycle_count: 1
+  diffusion_step_count: 5
+
+workflow:
+  stop_after_stage: 1

@@ -21,6 +21,10 @@
 identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。多记录、空记录和含歧义
 残基的输入明确失败，不静默选择第一条记录。
 
+当前用户入口是一个 target 文件和一个 `easydesign.yaml`。YAML 中的 `target.source`
+相对于 YAML 自身解析，`format: auto` 使用文件后缀和内容强证据识别输入。PDB/mmCIF/PSE
+等尚未实现的入口可以被识别，但会明确报错，不会回退为 sequence。
+
 ## 输入
 
 - 恰好一种 source kind 及其专属参数。
@@ -30,6 +34,10 @@ identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。
 sequence/FASTA 路径通过通用 `StructurePredictionRequest` 访问预测 backend。EasyDesign 1.0
 当前实现为 `protenix==2.0.0` / `protenix-v2`；AFO、AF3 或其他模型只能作为实现同一契约的
 后续 adapter，不得改变 Stage 01 输出。
+
+用户 YAML 必须显式声明 `msa_mode` 和 `template_mode`。EasyDesign 保存原始输入和 YAML
+snapshot，生成 `resolved-config.json`，再由 adapter 生成 attempt 内部
+`inputs/protenix-input.json`；用户不维护 Protenix JSON。
 
 ## 输出
 
@@ -43,6 +51,7 @@ sequence/FASTA 路径通过通用 `StructurePredictionRequest` 访问预测 back
 - 残基身份和编号映射无歧义；预测 CIF 中的聚合物序列必须与规范输入逐位相同。
 - 搜索、排序、下载、转换、MSA、模板策略和 fallback 全部留痕。
 - 原始输入按 checksum 引用，attempt 和正式 artifact 不覆盖。
+- 同一次实验只有一个 `runs/<project_id>/<run_id>/`；Stage 01 输出不另建第二个 run 根。
 - 远程 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
 - `easydesign-core` 不导入 Protenix；adapter 只转换请求/结果，独立环境执行重型工具。
 - 预测结构不得描述成实验结构，smoke 分数不得描述成科学验证。

@@ -60,6 +60,17 @@ CORE_TESTS = {
     "test_manifests.py",
     "test_serialization.py",
 }
+ORCHESTRATION_MODULES = {
+    "__init__.py",
+    "config.py",
+    "migration.py",
+    "workspace.py",
+}
+ORCHESTRATION_TESTS = {
+    "test_config.py",
+    "test_migration.py",
+    "test_workspace.py",
+}
 STAGE_HISTORY_SECTIONS = (
     "- 状态：",
     "### 完成内容",
@@ -115,6 +126,22 @@ def main() -> int:
     require(actual_core_modules == CORE_MODULES, "core 基础契约模块集合不一致", errors)
     actual_core_tests = {path.name for path in (ROOT / "tests/unit/core").glob("*.py")}
     require(CORE_TESTS <= actual_core_tests, "core 基础契约测试不完整", errors)
+    actual_orchestration_modules = {
+        path.name for path in (ROOT / "src/easydesign/orchestration").glob("*.py")
+    }
+    require(
+        ORCHESTRATION_MODULES <= actual_orchestration_modules,
+        "orchestration 配置、Workspace 或迁移模块不完整",
+        errors,
+    )
+    actual_orchestration_tests = {
+        path.name for path in (ROOT / "tests/unit/orchestration").glob("*.py")
+    }
+    require(
+        ORCHESTRATION_TESTS <= actual_orchestration_tests,
+        "orchestration 契约测试不完整",
+        errors,
+    )
 
     for stage in WORKFLOW_STAGES:
         base = ROOT / "workflow" / stage
@@ -230,8 +257,30 @@ def main() -> int:
         require(heading in todo_now, f"TODO_NOW 缺少区块: {heading}", errors)
 
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
-    for concept in ("ArtifactRef", "Attempt", "StageManifest", "RunManifest", "允许的依赖方向"):
+    for concept in (
+        "ArtifactRef",
+        "Attempt",
+        "StageManifest",
+        "RunManifest",
+        "允许的依赖方向",
+        "input-snapshot",
+        "_development",
+        "attempt-0001",
+    ):
         require(concept in architecture, f"架构文档缺少概念: {concept}", errors)
+
+    apoe_input = ROOT / "examples/stage01-apoe/input"
+    for filename in (
+        "apoe4-fragment-41-183.fasta",
+        "easydesign.yaml",
+        "source.json",
+    ):
+        require((apoe_input / filename).is_file(), f"APOE 用户输入示例缺少: {filename}", errors)
+    require(
+        not (apoe_input / "protenix-input.json").exists(),
+        "Protenix JSON 是 adapter 产物，不能作为 APOE 用户输入提交",
+        errors,
+    )
 
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for pattern in ("runs/*", "models/*", "*.safetensors", ".env"):

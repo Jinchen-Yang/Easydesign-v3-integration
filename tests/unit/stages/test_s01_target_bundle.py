@@ -83,6 +83,11 @@ def test_build_predicted_target_bundle(tmp_path) -> None:
 
     assert built.bundle.sequence_length == 2
     assert built.bundle.origin == "predicted"
+    assert built.bundle_path == (
+        run_root
+        / "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
+    )
+    assert not (run_root / "01-target-preparation/attempts").exists()
     assert built.bundle_artifact.verify(run_root) == built.bundle_path
     mapping = load_model(
         built.bundle.residue_mapping.verify(run_root),

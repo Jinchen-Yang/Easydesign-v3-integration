@@ -33,7 +33,15 @@ class SerializationError(ContractError):
     """Manifest JSON 读取、写入或模型校验失败。"""
 
 
-class SequenceInputError(ContractError):
+class ConfigurationError(ContractError):
+    """EasyDesign 用户配置缺失、含歧义或不符合机器契约。"""
+
+
+class TargetInputError(ContractError):
+    """Target source 无法识别、尚未支持或不满足入口契约。"""
+
+
+class SequenceInputError(TargetInputError):
     """蛋白序列或 FASTA 输入不满足当前 Stage 01 契约。"""
 
 

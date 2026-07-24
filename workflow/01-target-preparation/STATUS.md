@@ -19,6 +19,8 @@
 | --- | --- | --- |
 | 裸氨基酸序列 | `implemented` | 严格规范化、标准氨基酸校验和 identity 测试 |
 | FASTA 文件 | `implemented` | 单记录解析；与同序列裸输入产生同一 SHA-256 |
+| EasyDesign YAML 与自动识别 | `implemented` | 用户 YAML 严格校验；FASTA/序列识别和无 fallback 测试 |
+| Run Workspace | `implemented` | 一次实验一个目录、七 Stage 同级、snapshot、索引和浅层 attempt |
 | 本地 PDB/mmCIF | `planned` | 无 |
 | RCSB PDB ID | `planned` | 无 |
 | UniProt accession/名称 | `planned` | 无 |
@@ -90,7 +92,7 @@
 
 ### no-MSA 工程 smoke
 
-- run：`runs/apoe-protenix-bootstrap/no-msa-smoke/attempt-0002`。
+- run：`runs/_development/protenix-v2/apoe-no-msa-smoke-20260724/attempt-0002`。
 - 配置：`protenix-v2`、seed `101`、1 recycle、5 diffusion steps、1 sample、
   `use_msa=false`、`use_template=false`。
 - 结果：前向 6.57 s；CIF SHA-256
@@ -102,13 +104,15 @@
 ### EasyDesign adapter 与 Target Bundle
 
 - adapter 实际读取上述 Protenix 2.0.0 目录协议，未扫描或猜测其他文件。
-- run：`runs/apoe-stage01-adapter/run-20260724-no-msa`，`attempt-0001`。
+- run：`runs/apoe/20260724-001-stage01-no-msa`，`attempt-0001`；这是只整体迁移的
+  `legacy-0` 布局，内部旧 `attempts/` 层保持不变。
 - 143 个结构残基与规范输入逐位一致；Target Bundle SHA-256
   `1417adfc60cd9ab6f6778e2712c2fdb90accdaaaa888a7c6820e2bb1b5ed7c08`。
 - `make check` 和 63 个 pytest 全部通过；严格 mypy 和 ruff 通过。
 
 ### remote-MSA attempts
 
+- 目录：`runs/_development/msa-services/apoe-remote-no-template-20260724`。
 - `attempt-0001`：Protenix MSA 服务，`2026-07-23T18:59:06Z` 开始，持续
   `PENDING` 超过 30 分钟，终态 `failed` / `remote-msa-timeout` / retryable。
 - `attempt-0002`：ColabFold MSA 服务，`2026-07-23T19:14:36Z` 开始，持续
@@ -131,6 +135,9 @@
 - 关闭并归档 S01-001；Stage 01 当前工作切换为 S01-002。
 - 审计旧仓、归档包和 Proteindigger1 alignment 文件，确认本机没有 APOE MSA asset。
 - 保留两个公共 MSA 服务失败 attempt；等待 SMART cache 或公共队列恢复。
+- 完成 S01-003：用户 YAML、自动 target 识别、Protenix JSON 生成和统一 Run Workspace。
+- 将历史 smoke、MSA 诊断和正式 APOE Target Bundle 整体迁移到分区目录；迁移前后
+  fingerprint 一致，并生成 `runs/run-index.json` 和不可变迁移清单。
 
 ## 历史索引
 

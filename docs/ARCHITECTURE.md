@@ -23,7 +23,7 @@ easydesign-clean/
 ├── resources/                # 已审查小型资产与来源登记
 ├── examples/                 # 最小可复现示例
 ├── scripts/                  # 仅调用 API 的开发脚本
-├── runs/                     # 运行产物，Git 忽略
+├── runs/                     # 项目 run、开发验证、历史归档和可再生索引，Git 忽略
 └── models/                   # 权重和模型缓存，Git 忽略
 ```
 
@@ -131,26 +131,72 @@ easydesign-core (Python 3.11)
 ## 6. 运行目录层级
 
 ```text
+runs/
+├── run-index.json                 # 可再生导航索引，不是科学 artifact
+├── _development/                  # backend smoke、外部服务诊断
+├── _archive/                      # 旧布局迁移清单，不放当前项目 run
+└── <project_id>/<run_id>/
+    ├── input-snapshot/
+    ├── config-snapshot/
+    │   ├── easydesign.yaml
+    │   └── resolved-config.json
+    ├── manifests/
+    │   └── run-manifest.v0001.json
+    ├── 01-target-preparation/
+    │   └── attempt-0001/
+    │       ├── inputs/
+    │       ├── logs/
+    │       └── artifacts/
+    ├── 02-hotspot-discovery/
+    ├── 03-boltzgen-configuration/
+    ├── 04-pilot-generation/
+    ├── 05-pilot-filtering/
+    ├── 06-scale-generation-and-refolding/
+    ├── 07-final-filtering-and-selection/
+    └── results/                    # 面向人的最终汇总，不取代正式 artifact
+```
+
+同一次实验从 Stage 01 到 Stage 07 始终使用同一个 run 根目录；七个 Stage 是同级目录，
+下游不得嵌套到上游目录。`attempt-0001/` 直接位于 Stage 目录，取消没有语义增量的
+`attempts/` 中间层。后端安装和服务可用性 smoke 不属于项目 run，必须进入
+`_development/`。
+
+早期运行可以整体迁移，但不得改写内部文件。迁移前后必须验证目录 fingerprint 和所有
+manifest artifact 引用，并在 `_archive/migrations/` 保存旧路径、新路径、文件数、字节数
+和 SHA-256。使用旧布局的已发布 run 只整体移动，内部 `attempts/` 层保留为历史证据。
+
+### 用户输入到后端输入
+
+sequence 路径的用户界面只有两个文件：
+
+```text
+target.fasta
+easydesign.yaml
+```
+
+`easydesign.yaml` 声明项目、target source 和关键科学控制；输入路径相对于 YAML 所在目录
+解析。EasyDesign 自动识别有强证据的 FASTA、裸序列、PDB、mmCIF、PSE 和 Target Bundle。
+识别成功但 adapter 尚未实现时明确失败，不能回退到另一入口。
+
+用户不提交 Protenix JSON。orchestration 规范化序列并创建通用
+`StructurePredictionRequest`，Protenix adapter 再把它写入：
+
+```text
+01-target-preparation/attempt-0001/inputs/protenix-input.json
+```
+
+原 YAML 和 target 文件进入 run 的 snapshot；解析后的格式、序列 SHA-256 和通用预测请求
+写入 `resolved-config.json`。
+
+旧版目录（只用于解释历史，不再生成）：
+
+```text
 runs/<project_id>/<run_id>/
 ├── manifests/
-│   ├── run-manifest.v0001.json
-│   ├── run-manifest.v0002.json
-│   └── LATEST
-├── config-snapshot/
 ├── 01-target-preparation/
 │   ├── attempts/
-│   │   ├── attempt-0001/
-│   │   │   ├── attempt-manifest.json
-│   │   │   ├── logs/
-│   │   │   └── artifacts/
-│   │   └── attempt-0002/
-│   └── stage-manifest.json
-├── 02-hotspot-discovery/
-├── 03-boltzgen-configuration/
-├── 04-pilot-generation/
-├── 05-pilot-filtering/
-├── 06-scale-generation-and-refolding/
-└── 07-final-filtering-and-selection/
+│   │   └── attempt-0001/
+│   └── ...
 ```
 
 ### 身份
@@ -212,5 +258,8 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：Stage 01 首个机器切片采用 sequence/FASTA → 通用结构预测接口 →
   Protenix-v2 2.0.0 → Target Bundle；重型环境只通过显式 executable、环境变量和文件
   协议访问，remote MSA 与 no-MSA 不得静默互换。
+- 2026-07-24：用户 sequence 路径固定为 target 文件 + `easydesign.yaml`；Protenix JSON
+  是 adapter 生成的 attempt input。正式 run、开发验证和历史迁移分区；新 run 取消
+  `attempts/` 中间层，已有运行只做带 fingerprint 的整体迁移。
 
 重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。

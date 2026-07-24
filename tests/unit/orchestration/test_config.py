@@ -27,9 +27,14 @@ def test_apoe_user_yaml_resolves_sequence_and_prediction_request() -> None:
     assert loaded.target.length == 143
     assert loaded.target.sequence_sha256 == APOE_SHA256
     assert loaded.prediction_request.job_name == "apoe4-fragment-41-183"
-    assert loaded.prediction_request.msa_mode == "disabled"
+    assert loaded.prediction_request.msa_mode == "remote"
     assert loaded.prediction_request.template_mode == "disabled"
-    assert loaded.prediction_request.cycle_count == 1
+    assert loaded.prediction_request.cycle_count is None
+    assert len(loaded.msa_execution_plan) == 1
+    assert loaded.msa_execution_plan[0].provider == "colabfold-public"
+    assert loaded.msa_execution_plan[0].endpoint == "https://api.colabfold.com"
+    assert loaded.msa_execution_plan[0].server_mode == "colabfold"
+    assert loaded.msa_execution_plan[0].max_attempts == 3
     assert loaded.config.workflow.stop_after_stage == 1
 
 
@@ -56,8 +61,13 @@ target:
   format: auto
 structure_prediction:
   backend: protenix-v2
-  msa_mode: disabled
+  msa:
+    mode: remote
+    providers:
+      - provider: colabfold-public
   template_mode: disabled
+workflow:
+  stop_after_stage: 1
 """.lstrip(),
         encoding="utf-8",
     )
@@ -136,7 +146,10 @@ target:
   source: target.pse
 structure_prediction:
   backend: protenix-v2
-  msa_mode: disabled
+  msa:
+    mode: remote
+    providers:
+      - provider: colabfold-public
   template_mode: disabled
 """.lstrip(),
         encoding="utf-8",
@@ -243,4 +256,102 @@ target:
     )
 
     with pytest.raises(ConfigurationError, match="必须显式提供 structure_prediction"):
+        load_run_config(config)
+
+
+def test_sequence_yaml_forbids_no_msa_fallback(tmp_path: Path) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.2"
+project_id: demo
+target:
+  id: demo-sequence
+  source: target.fasta
+structure_prediction:
+  backend: protenix-v2
+  msa:
+    mode: disabled
+    providers:
+      - provider: colabfold-public
+    no_msa_fallback: true
+  template_mode: disabled
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="mode=remote|no-MSA"):
+        load_run_config(config)
+
+
+def test_sequence_yaml_resolves_explicit_provider_fallback_order(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.2"
+project_id: demo
+target:
+  id: demo-sequence
+  source: target.fasta
+structure_prediction:
+  backend: protenix-v2
+  msa:
+    mode: remote
+    providers:
+      - provider: colabfold-public
+        timeout_seconds: 900
+        max_attempts: 2
+      - provider: custom-colabfold
+        endpoint: https://msa.example.org/api
+        timeout_seconds: 1200
+        max_attempts: 1
+    no_msa_fallback: false
+  template_mode: disabled
+workflow:
+  stop_after_stage: 1
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedSequenceRunConfig)
+    assert [item.provider for item in loaded.msa_execution_plan] == [
+        "colabfold-public",
+        "custom-colabfold",
+    ]
+    assert loaded.msa_execution_plan[1].endpoint == "https://msa.example.org/api"
+    assert loaded.msa_execution_plan[1].server_mode == "colabfold"
+
+
+def test_sequence_yaml_rejects_duplicate_msa_providers(tmp_path: Path) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.2"
+project_id: demo
+target:
+  id: demo-sequence
+  source: target.fasta
+structure_prediction:
+  backend: protenix-v2
+  msa:
+    mode: remote
+    providers:
+      - provider: colabfold-public
+      - provider: colabfold-public
+  template_mode: disabled
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="providers 不能重复"):
         load_run_config(config)

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | sequence/FASTA、单 Target PSE 与 APOE MSA-backed backend smoke 已跑通，其余四类入口待实现。 | 将显式 MSA provider、endpoint 和 ticket 溯源接入正式 adapter 与 Target Bundle。 | 正式 adapter 尚未记录 resolved endpoint/ticket；Protenix 官方 MSA 端点持续 `PENDING`。 | 2026-07-24 |
+| `planned` | sequence/FASTA 默认 MSA policy、APOE MSA-backed backend smoke 与单 Target PSE 已跑通，其余四类入口待实现。 | 实现正式 MSA executor、ticket/A3M provenance 与 MSA-backed Target Bundle。 | 公共 ColabFold 无 SLA；正式 executor/cache 未实现，Protenix 官方端点持续 `PENDING`。 | 2026-07-24 |
 
 ## 当前结论
 
@@ -20,6 +20,15 @@
   `MMSEQS_SERVICE_HOST_URL=https://api.colabfold.com` 和
   `--msa_server_mode colabfold` 后，Protenix 官方 CLI 得到 609 条 unpaired MSA，并完成
   `use_msa=true`、`use_template=false` 的低预算 GPU 预测。
+- sequence/FASTA schema `0.2` 已把 MSA 设为硬性正式路径：默认 provider 是
+  `colabfold-public`，preset 固定解析到 `https://api.colabfold.com` 和
+  `--msa_server_mode colabfold`；用户 YAML 禁止 no-MSA fallback。
+- YAML 可按顺序声明 provider、timeout、最大 attempt 数和 retry backoff；解析后的实际
+  endpoint/mode/预算进入 `resolved-config.json` schema `0.3`。adapter 已将 endpoint
+  放入 MSA invocation 环境并设置 wall-clock timeout。
+- 公共 ColabFold 不能被描述成永久稳定或具有 SLA。默认不把当前异常的
+  `protenix-official` 放入 fallback；真正稳健的后续兜底是 sequence-hash MSA cache 和
+  自建 `custom-colabfold` 服务。
 - 先前所谓“ColabFold attempt”只记录了解析模式，没有保存 resolved endpoint 或 ticket，
   因此不能证明它真的请求了 ColabFold；该结论已在历史中追加更正。
 - 当前完成的是 backend 真实 smoke，不是正式 EasyDesign 纵向切片：MSA provider/endpoint、
@@ -34,7 +43,7 @@
 | --- | --- | --- |
 | 裸氨基酸序列 | `implemented` | 严格规范化、标准氨基酸校验和 identity 测试 |
 | FASTA 文件 | `implemented` | 单记录解析；与同序列裸输入产生同一 SHA-256 |
-| EasyDesign YAML 与自动识别 | `implemented` | 用户 YAML 严格校验；FASTA/序列识别和无 fallback 测试 |
+| EasyDesign YAML 与自动识别 | `implemented` | schema 0.2 强制 MSA；provider 顺序、endpoint、timeout/retry 和禁止 no-MSA 测试 |
 | Run Workspace | `implemented` | 一次实验一个目录、七 Stage 同级、snapshot、索引和浅层 attempt |
 | 本地 PDB/mmCIF | `planned` | 无 |
 | RCSB PDB ID | `planned` | 无 |
@@ -45,6 +54,7 @@
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
 | ColabFold remote MSA backend | `smoke-validated` | 显式 endpoint 生成 609-depth APOE MSA；Protenix `use_msa=true` 预测成功 |
+| MSA provider/endpoint policy | `implemented` | 默认 ColabFold preset、resolved plan、wall timeout 与显式 fallback 接口 |
 | MSA-backed Target Bundle 发布 | `planned` | adapter 调用边界已有；endpoint/ticket provenance 和正式发布尚未完成 |
 | 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
 
@@ -65,13 +75,14 @@
 3. Protenix-v2 `use_msa=true`、`use_template=false` 真实预测：**低预算 smoke 已通过**；
 4. 同一 adapter 发布含 `msa_input_sha256` 的 Target Bundle：**未通过**；
 5. 失败、重试和禁止 fallback 的契约测试：**已通过**。
+6. YAML 默认 MSA、provider/endpoint 一致性和 no-MSA 禁止规则：**已通过**。
 
 ## Next
 
-- 将 MSA provider 建成类型化配置：`colabfold` preset 必须同时解析为 mode 和明确 endpoint，
-  `protenix` preset 保留官方 endpoint；禁止只切 mode 却沿用未记录的 host。
 - 正式 attempt 保存 resolved endpoint、ticket、状态历史、timeout、MSA query/hash/depth
   和 fallback 状态；验证 A3M 首条 query 与规范序列完全一致。
+- 实现按 resolved provider 顺序执行的 orchestration：同 provider 有界重试、provider
+  切换各建新 attempt，耗尽后终止；不能把接口存在写成 runtime fallback 已完成。
 - 用同一 adapter 建立 `use_msa=true`、`use_template=false` 的正式 attempt，先通过低预算
   smoke，再以模型默认参数运行并发布含 MSA provenance 的 Target Bundle。
 - 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
@@ -85,6 +96,10 @@
 
 - Protenix 官方 MSA endpoint 在本轮新提交的同一 APOE 查询上仍持续 `PENDING`，而实际
   ColabFold endpoint 约 30 秒完成；官方 endpoint 当前不能作为可靠主线。
+- `colabfold-public` 真实 smoke 已通过，但这是第三方公共服务且没有 EasyDesign 可承诺的
+  SLA；在 cache/自建服务完成前，网络或上游停机仍会使正式 run 明确失败。
+- 公共 provider 会向第三方提交 target 序列；当前仅批准内部研究 runtime。商业或敏感
+  序列在条款/隐私审查和自建 provider 完成前仍受阻。
 - 旧失败 attempt 没有保存 resolved endpoint 和 ticket，无法审计“ColabFold attempt”
   实际请求了哪台服务；不能事后把它当成 ColabFold 服务失败证据。
 - MSA-backed 正式 Target Bundle 当前是实现缺口，不再是 APOE 序列、GPU 或公共
@@ -199,7 +214,10 @@
 - 完成 S01-005 根因诊断：确认 APOE 序列可生成 MSA；旧失败源于官方 endpoint 持续
   `PENDING` 以及 adapter 未绑定/记录 endpoint。显式 ColabFold endpoint 已通过 MSA 和
   `use_msa=true` backend smoke；S01-002 转为正式 adapter/Bundle 收尾。
+- 完成并归档 S01-006：sequence/FASTA 正式 YAML 强制 MSA，默认 ColabFold preset 同时绑定
+  endpoint/mode，resolved config 保存 timeout/retry/provider 顺序，adapter 禁止环境变量
+  覆盖和 no-MSA fallback。
 
 ## 历史索引
 
-- [2026-07：S01-001、S01-003、S01-004 与 S01-005](history/2026-07.md)
+- [2026-07：S01-001、S01-003、S01-004、S01-005 与 S01-006](history/2026-07.md)

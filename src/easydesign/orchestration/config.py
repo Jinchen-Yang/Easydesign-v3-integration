@@ -14,8 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from easydesign.backends.structure_prediction import (
     MsaMode,
     PredictionParameterProfile,
+    ProtenixMsaProvider,
     StructurePredictionRequest,
     TemplateMode,
+    resolve_protenix_msa_provider,
 )
 from easydesign.backends.target_sources import (
     NormalizedProteinSequence,
@@ -52,11 +54,91 @@ class TargetSourceConfig(BaseModel):
     format: TargetInputFormat = TargetInputFormat.AUTO
 
 
+class ProtenixMsaProviderConfig(BaseModel):
+    """一个 remote-MSA provider 的有界重试配置。providers 的顺序就是显式兜底顺序。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    provider: ProtenixMsaProvider = ProtenixMsaProvider.COLABFOLD_PUBLIC
+    endpoint: str | None = None
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    max_attempts: int = Field(default=3, ge=1, le=5)
+    retry_backoff_seconds: int = Field(default=30, ge=0, le=600)
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> Self:
+        resolve_protenix_msa_provider(
+            self.provider,
+            custom_endpoint=self.endpoint,
+        )
+        return self
+
+
+class ResolvedProtenixMsaProviderConfig(BaseModel):
+    """写入 resolved-config.json 的实际 provider/endpoint 与重试预算。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: ProtenixMsaProvider
+    endpoint: str
+    server_mode: str = Field(pattern=r"^(colabfold|protenix)$")
+    timeout_seconds: int = Field(ge=60, le=7200)
+    max_attempts: int = Field(ge=1, le=5)
+    retry_backoff_seconds: int = Field(ge=0, le=600)
+
+
+class ProtenixMsaConfig(BaseModel):
+    """sequence/FASTA 用户路径的 MSA 硬性策略；当前不允许 no-MSA。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: MsaMode = MsaMode.REMOTE
+    providers: tuple[ProtenixMsaProviderConfig, ...] = (
+        ProtenixMsaProviderConfig(),
+    )
+    no_msa_fallback: bool = False
+
+    @model_validator(mode="after")
+    def validate_msa_policy(self) -> Self:
+        if self.mode is not MsaMode.REMOTE:
+            raise ValueError(
+                "EasyDesign sequence/FASTA 主线当前必须使用 mode=remote；"
+                "no-MSA 只允许内部工程 smoke"
+            )
+        if not self.providers:
+            raise ValueError("remote MSA 至少需要一个 provider")
+        provider_names = [provider.provider for provider in self.providers]
+        if len(provider_names) != len(set(provider_names)):
+            raise ValueError("MSA providers 不能重复")
+        if self.no_msa_fallback:
+            raise ValueError("禁止把 remote MSA 失败回退为 no-MSA")
+        return self
+
+    def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
+        resolved: list[ResolvedProtenixMsaProviderConfig] = []
+        for item in self.providers:
+            provider = resolve_protenix_msa_provider(
+                item.provider,
+                custom_endpoint=item.endpoint,
+            )
+            resolved.append(
+                ResolvedProtenixMsaProviderConfig(
+                    provider=provider.provider,
+                    endpoint=provider.endpoint,
+                    server_mode=provider.server_mode,
+                    timeout_seconds=item.timeout_seconds,
+                    max_attempts=item.max_attempts,
+                    retry_backoff_seconds=item.retry_backoff_seconds,
+                )
+            )
+        return tuple(resolved)
+
+
 class StructurePredictionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     backend: str = Field(pattern=ID_PATTERN)
-    msa_mode: MsaMode
+    msa: ProtenixMsaConfig
     template_mode: TemplateMode
     parameter_profile: PredictionParameterProfile = (
         PredictionParameterProfile.MODEL_DEFAULT
@@ -183,6 +265,7 @@ class LoadedSequenceRunConfig:
     detected_format: TargetInputFormat
     target: NormalizedProteinSequence
     prediction_request: StructurePredictionRequest
+    msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,7 +426,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             target=target,
             seeds=prediction.seeds,
             sample_count=prediction.sample_count,
-            msa_mode=prediction.msa_mode,
+            msa_mode=prediction.msa.mode,
             template_mode=prediction.template_mode,
             parameter_profile=prediction.parameter_profile,
             cycle_count=prediction.cycle_count,
@@ -358,4 +441,5 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         detected_format=detected,
         target=target,
         prediction_request=request,
+        msa_execution_plan=prediction.msa.resolved_providers(),
     )

@@ -5,6 +5,17 @@ python_baseline: "3.11"
 default_msa_mode: remote
 default_template_mode: disabled
 parameter_profile: model-default
+remote_msa:
+  default_provider: colabfold-public
+  supported_providers:
+    - colabfold-public
+    - protenix-official
+    - custom-colabfold
+  endpoint_resolution_source: easydesign.backends.structure_prediction.resolve_protenix_msa_provider
+  default_timeout_seconds: 1800
+  default_max_attempts: 3
+  default_retry_backoff_seconds: 30
+  no_msa_fallback: false
 runtime:
   environment_spec: environments/protenix-v2.yml
   executable_env_var: EASYDESIGN_PROTENIX_EXECUTABLE
@@ -18,5 +29,6 @@ provenance:
   package: protenix==2.0.0
   checkpoint_sha256: 8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599
 failure_policy:
-  remote_msa_fallback: forbidden
+  undeclared_provider_fallback: forbidden
+  no_msa_fallback: forbidden
   overwrite_attempt: forbidden

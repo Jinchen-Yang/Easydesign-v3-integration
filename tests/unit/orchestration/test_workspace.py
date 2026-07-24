@@ -60,6 +60,12 @@ def test_initialize_sequence_run_creates_one_shallow_workspace(tmp_path: Path) -
     assert manifest.project_id == "apoe"
     assert manifest.run_id == "20260724-001"
     assert manifest.config_snapshot.verify(workspace.run_root) == workspace.config_snapshot
+    resolved = load_model(workspace.resolved_config, ResolvedRunConfig)
+    assert resolved.schema_version == "0.3"
+    assert resolved.prediction_request is not None
+    assert resolved.prediction_request.msa_mode == "remote"
+    assert len(resolved.msa_execution_plan) == 1
+    assert resolved.msa_execution_plan[0].endpoint == "https://api.colabfold.com"
 
     index = load_model(tmp_path / "runs/run-index.json", RunIndex)
     assert index.entries[0].path == "apoe/20260724-001"

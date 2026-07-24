@@ -40,14 +40,54 @@ sequence/FASTA 路径通过通用 `StructurePredictionRequest` 访问预测 back
 当前实现为 `protenix==2.0.0` / `protenix-v2`；AFO、AF3 或其他模型只能作为实现同一契约的
 后续 adapter，不得改变 Stage 01 输出。
 
-用户 YAML 必须显式声明 `msa_mode` 和 `template_mode`。EasyDesign 保存原始输入和 YAML
-snapshot，生成 `resolved-config.json`，再由 adapter 生成 attempt 内部
-`inputs/protenix-input.json`；用户不维护 Protenix JSON。
+sequence/FASTA 的用户 YAML 必须声明 `msa` 和 `template_mode`。默认且当前唯一正式主线是
+MSA-backed Protenix-v2；用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
+内部工程 smoke。EasyDesign 保存原始输入和 YAML snapshot，生成
+`resolved-config.json`，再由 adapter 生成 attempt 内部 `inputs/protenix-input.json`；
+用户不维护 Protenix JSON。
+
+当前标准配置：
+
+```yaml
+schema_version: "0.2"
+project_id: apoe
+target:
+  id: apoe4-fragment-41-183
+  source: apoe4-fragment-41-183.fasta
+  format: auto
+structure_prediction:
+  backend: protenix-v2
+  msa:
+    mode: remote
+    providers:
+      - provider: colabfold-public
+        timeout_seconds: 1800
+        max_attempts: 3
+        retry_backoff_seconds: 30
+    no_msa_fallback: false
+  template_mode: disabled
+  parameter_profile: model-default
+workflow:
+  stop_after_stage: 1
+```
 
 远程 MSA 配置必须把 provider preset 同时解析成服务模式和明确 endpoint；只传
 `--msa_server_mode` 不代表已经切换远程服务。attempt 必须保存 resolved endpoint、
 ticket、状态历史、timeout、query identity、输出 A3M identity 和实际深度。endpoint
 失败时不得静默切换到另一个 provider 或 no-MSA。
+
+| Provider | Endpoint / mode | 当前定位 |
+| --- | --- | --- |
+| `colabfold-public` | `https://api.colabfold.com` / `colabfold` | 默认；APOE smoke 已通过，但公共服务无可承诺 SLA |
+| `protenix-official` | `https://protenix-server.com/api/msa` / `protenix` | 可显式选择；当前持续 `PENDING`，不进入默认兜底链 |
+| `custom-colabfold` | 用户显式 URL / `colabfold` | 自建服务接口；当前尚无 EasyDesign 管理的部署 |
+
+同一 provider 可在声明预算内有限重试；`providers` 的后续成员是显式兜底顺序。正式执行器
+必须让每次重试/切换产生新的 immutable attempt。目前已经完成 provider/endpoint 绑定、
+timeout 和 resolved plan；多 provider 执行、ticket/status 采集和本地/缓存 MSA 仍在 TODO。
+使用公共 provider 会把 target 序列提交给第三方服务；当前只批准内部研究运行。敏感或商业
+序列在完成服务条款、隐私和数据处理审查前，必须使用经过批准的自建
+`custom-colabfold`/本地 MSA，不得由 UI 静默发送到公共 endpoint。
 
 PSE 路径使用排他的 YAML 分支：
 
@@ -100,6 +140,8 @@ PSE attempt 的稳定目录为：
 - 远程 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
 - 远程 MSA 的 provider、mode 和 endpoint 必须一致且可审计；禁止用解析模式名称推断
   实际请求端点。
+- sequence/FASTA 正式 YAML 必须启用 MSA；公共服务失败时必须终止或进入 YAML 显式声明的
+  下一 provider，禁止继续无 MSA 预测。
 - `easydesign-core` 不导入 Protenix；adapter 只转换请求/结果，独立环境执行重型工具。
 - 预测结构不得描述成实验结构，smoke 分数不得描述成科学验证。
 - PSE 必须恰好一个含蛋白的 molecule object、一条非空 protein chain 和一个 state；
@@ -119,7 +161,8 @@ PSE 还包括 PyMOL Python 未显式配置、版本不是 `3.1.0`、worker 超�
 终态 attempt 必须保留；不能把失败会话回退为 sequence 预测。
 
 失败必须写成带类型错误信息的终态 attempt，不能转换为空成功。重试建立新 attempt，
-引用并保留失败 attempt；切换 MSA 服务、预测 backend 或模型必须显式创建新配置和溯源。
+引用并保留失败 attempt；切换 MSA 服务必须符合 YAML 中有序 provider 计划，切换预测
+backend 或模型必须显式创建新配置和溯源。公共服务不能假定永久稳定。
 
 ## 溯源
 
@@ -138,7 +181,8 @@ PSE provenance 还记录 PyMOL 版本、session inventory、被选中的唯一 o
 - 六类入口全部通过各自契约测试和至少一个真实 fixture。
 - 全部必需 Target Bundle artifact 校验通过并有 checksum。
 - Stage 02 可以只通过 Target Bundle 和残基映射解析每个残基，无需扫描 backend 目录。
-- sequence/FASTA 路径同时通过 no-MSA 工程 smoke 和 APOE remote-MSA/no-template 真实运行。
+- sequence/FASTA 路径通过内部 no-MSA 回归 smoke，并以
+  remote-MSA/no-template 作为默认正式路径完成 APOE 真实运行和 Target Bundle 发布。
 - PSE 路径通过合成成功/失败 session 契约测试和旧 APOE PSE 真实 smoke。
 
 ## 非目标

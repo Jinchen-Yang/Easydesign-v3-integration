@@ -69,6 +69,7 @@ class BackendInvocation(BaseModel):
     backend_version: str = Field(min_length=1, max_length=128)
     argv: tuple[str, ...]
     environment: tuple[tuple[str, str], ...] = ()
+    timeout_seconds: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_invocation(self) -> Self:

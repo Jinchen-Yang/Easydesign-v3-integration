@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +29,68 @@ from .contracts import (
 )
 
 
+class ProtenixMsaProvider(StrEnum):
+    """Protenix 2.0.0 remote-MSA 服务身份；名称不能代替实际 endpoint。"""
+
+    COLABFOLD_PUBLIC = "colabfold-public"
+    PROTENIX_OFFICIAL = "protenix-official"
+    CUSTOM_COLABFOLD = "custom-colabfold"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedProtenixMsaProvider:
+    provider: ProtenixMsaProvider
+    endpoint: str
+    server_mode: str
+
+
+_COLABFOLD_PUBLIC_ENDPOINT = "https://api.colabfold.com"
+_PROTENIX_OFFICIAL_ENDPOINT = "https://protenix-server.com/api/msa"
+
+
+def resolve_protenix_msa_provider(
+    provider: ProtenixMsaProvider,
+    *,
+    custom_endpoint: str | None = None,
+) -> ResolvedProtenixMsaProvider:
+    """把 provider preset 解析成不可含糊的 endpoint 与 Protenix parser mode。"""
+
+    if provider is ProtenixMsaProvider.COLABFOLD_PUBLIC:
+        if custom_endpoint is not None:
+            raise BackendContractError("colabfold-public 使用固定 endpoint，不能覆盖")
+        endpoint = _COLABFOLD_PUBLIC_ENDPOINT
+        server_mode = "colabfold"
+    elif provider is ProtenixMsaProvider.PROTENIX_OFFICIAL:
+        if custom_endpoint is not None:
+            raise BackendContractError("protenix-official 使用固定 endpoint，不能覆盖")
+        endpoint = _PROTENIX_OFFICIAL_ENDPOINT
+        server_mode = "protenix"
+    else:
+        if custom_endpoint is None:
+            raise BackendContractError("custom-colabfold 必须显式提供 endpoint")
+        parsed = urlsplit(custom_endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise BackendContractError(
+                "custom-colabfold endpoint 必须是完整 http/https URL"
+            )
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise BackendContractError(
+                "custom-colabfold endpoint 不能内嵌凭据、query 或 fragment"
+            )
+        endpoint = custom_endpoint.rstrip("/")
+        server_mode = "colabfold"
+    return ResolvedProtenixMsaProvider(
+        provider=provider,
+        endpoint=endpoint,
+        server_mode=server_mode,
+    )
+
+
 class _ProtenixConfidence(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -44,7 +109,6 @@ class ProtenixV2Adapter:
     backend_name = "protenix"
     backend_version = "2.0.0"
     model_name = "protenix-v2"
-    supported_remote_msa_server_modes = frozenset({"protenix", "colabfold"})
 
     def __init__(
         self,
@@ -52,27 +116,41 @@ class ProtenixV2Adapter:
         executable: Path,
         model_root: Path,
         cuda_visible_devices: str | None = None,
-        remote_msa_server_mode: str = "protenix",
+        remote_msa_provider: ProtenixMsaProvider = (
+            ProtenixMsaProvider.COLABFOLD_PUBLIC
+        ),
+        remote_msa_endpoint: str | None = None,
+        remote_msa_timeout_seconds: int = 1800,
         extra_environment: tuple[tuple[str, str], ...] = (),
     ) -> None:
         if not executable.is_absolute() or not model_root.is_absolute():
             raise BackendContractError("executable 和 model_root 必须由 profile 提供绝对路径")
-        if remote_msa_server_mode not in self.supported_remote_msa_server_modes:
-            raise BackendContractError(
-                f"不支持的 Protenix MSA 服务模式: {remote_msa_server_mode}"
-            )
-        reserved = {"PROTENIX_ROOT_DIR", "CUDA_VISIBLE_DEVICES"}
+        if remote_msa_timeout_seconds < 1:
+            raise BackendContractError("remote MSA timeout 必须大于 0")
+        resolved_msa = resolve_protenix_msa_provider(
+            remote_msa_provider,
+            custom_endpoint=remote_msa_endpoint,
+        )
+        reserved = {
+            "PROTENIX_ROOT_DIR",
+            "CUDA_VISIBLE_DEVICES",
+            "MMSEQS_SERVICE_HOST_URL",
+        }
         extra_keys = [key for key, _ in extra_environment]
         if len(extra_keys) != len(set(extra_keys)):
             raise BackendContractError("extra_environment 变量名不能重复")
         if reserved.intersection(extra_keys):
             raise BackendContractError(
-                "extra_environment 不能覆盖 PROTENIX_ROOT_DIR 或 CUDA_VISIBLE_DEVICES"
+                "extra_environment 不能覆盖 PROTENIX_ROOT_DIR、CUDA_VISIBLE_DEVICES "
+                "或 MMSEQS_SERVICE_HOST_URL"
             )
         self.executable = executable
         self.model_root = model_root
         self.cuda_visible_devices = cuda_visible_devices
-        self.remote_msa_server_mode = remote_msa_server_mode
+        self.remote_msa_provider = resolved_msa.provider
+        self.remote_msa_endpoint = resolved_msa.endpoint
+        self.remote_msa_server_mode = resolved_msa.server_mode
+        self.remote_msa_timeout_seconds = remote_msa_timeout_seconds
         self.extra_environment = extra_environment
 
     def render_input(self, request: StructurePredictionRequest) -> list[dict[str, Any]]:
@@ -115,6 +193,11 @@ class ProtenixV2Adapter:
         values.extend(self.extra_environment)
         return tuple(values)
 
+    def _msa_environment(self) -> tuple[tuple[str, str], ...]:
+        return self._environment() + (
+            ("MMSEQS_SERVICE_HOST_URL", self.remote_msa_endpoint),
+        )
+
     def validate_version_output(self, output: str) -> None:
         expected = f"protenix, version {self.backend_version}"
         if expected not in output.strip():
@@ -152,7 +235,8 @@ class ProtenixV2Adapter:
                 "--msa_server_mode",
                 self.remote_msa_server_mode,
             ),
-            environment=self._environment(),
+            environment=self._msa_environment(),
+            timeout_seconds=self.remote_msa_timeout_seconds,
         )
 
     @staticmethod

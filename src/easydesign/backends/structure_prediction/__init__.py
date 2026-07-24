@@ -8,14 +8,22 @@ from .contracts import (
     StructurePredictionRequest,
     TemplateMode,
 )
-from .protenix_v2 import ProtenixV2Adapter
+from .protenix_v2 import (
+    ProtenixMsaProvider,
+    ProtenixV2Adapter,
+    ResolvedProtenixMsaProvider,
+    resolve_protenix_msa_provider,
+)
 
 __all__ = [
     "BackendInvocation",
     "MsaMode",
     "PredictionParameterProfile",
+    "ProtenixMsaProvider",
     "ProtenixV2Adapter",
+    "ResolvedProtenixMsaProvider",
     "StructurePredictionProduct",
     "StructurePredictionRequest",
     "TemplateMode",
+    "resolve_protenix_msa_provider",
 ]

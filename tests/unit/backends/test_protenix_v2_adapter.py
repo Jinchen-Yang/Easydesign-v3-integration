@@ -9,6 +9,7 @@ import pytest
 from easydesign.backends.structure_prediction import (
     MsaMode,
     PredictionParameterProfile,
+    ProtenixMsaProvider,
     ProtenixV2Adapter,
     StructurePredictionRequest,
     TemplateMode,
@@ -126,7 +127,11 @@ def test_remote_msa_and_default_prediction_are_separate_invocations() -> None:
     )
 
     assert msa.argv[1] == "msa"
-    assert option_value(msa.argv, "--msa_server_mode") == "protenix"
+    assert option_value(msa.argv, "--msa_server_mode") == "colabfold"
+    assert dict(msa.environment)["MMSEQS_SERVICE_HOST_URL"] == (
+        "https://api.colabfold.com"
+    )
+    assert msa.timeout_seconds == 1800
     assert option_value(prediction.argv, "--use_msa") == "true"
     assert option_value(prediction.argv, "--use_template") == "false"
     assert option_value(prediction.argv, "--use_default_params") == "true"
@@ -150,7 +155,9 @@ def test_adapter_can_explicitly_select_colabfold_remote_msa() -> None:
     selected = ProtenixV2Adapter(
         executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),
         model_root=Path("/data/models/protenix"),
-        remote_msa_server_mode="colabfold",
+        remote_msa_provider=ProtenixMsaProvider.CUSTOM_COLABFOLD,
+        remote_msa_endpoint="https://msa.example.org/api/",
+        remote_msa_timeout_seconds=900,
     )
     invocation = selected.msa_invocation(
         request(msa_mode=MsaMode.REMOTE),
@@ -158,6 +165,53 @@ def test_adapter_can_explicitly_select_colabfold_remote_msa() -> None:
         output_dir=Path("/run/msa"),
     )
     assert option_value(invocation.argv, "--msa_server_mode") == "colabfold"
+    assert dict(invocation.environment)["MMSEQS_SERVICE_HOST_URL"] == (
+        "https://msa.example.org/api"
+    )
+    assert invocation.timeout_seconds == 900
+
+
+def test_adapter_can_explicitly_select_protenix_official_endpoint() -> None:
+    selected = ProtenixV2Adapter(
+        executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),
+        model_root=Path("/data/models/protenix"),
+        remote_msa_provider=ProtenixMsaProvider.PROTENIX_OFFICIAL,
+    )
+    invocation = selected.msa_invocation(
+        request(msa_mode=MsaMode.REMOTE),
+        input_json=Path("/run/input.json"),
+        output_dir=Path("/run/msa"),
+    )
+
+    assert option_value(invocation.argv, "--msa_server_mode") == "protenix"
+    assert dict(invocation.environment)["MMSEQS_SERVICE_HOST_URL"] == (
+        "https://protenix-server.com/api/msa"
+    )
+
+
+def test_adapter_rejects_ambiguous_or_overridden_msa_endpoint() -> None:
+    with pytest.raises(BackendContractError, match="固定 endpoint"):
+        ProtenixV2Adapter(
+            executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),
+            model_root=Path("/data/models/protenix"),
+            remote_msa_provider=ProtenixMsaProvider.COLABFOLD_PUBLIC,
+            remote_msa_endpoint="https://other.example.org",
+        )
+    with pytest.raises(BackendContractError, match="MMSEQS_SERVICE_HOST_URL"):
+        ProtenixV2Adapter(
+            executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),
+            model_root=Path("/data/models/protenix"),
+            extra_environment=(
+                ("MMSEQS_SERVICE_HOST_URL", "https://other.example.org"),
+            ),
+        )
+    with pytest.raises(BackendContractError, match="不能内嵌凭据"):
+        ProtenixV2Adapter(
+            executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),
+            model_root=Path("/data/models/protenix"),
+            remote_msa_provider=ProtenixMsaProvider.CUSTOM_COLABFOLD,
+            remote_msa_endpoint="https://token@msa.example.org/api?secret=value",
+        )
 
 
 def test_collect_products_uses_deterministic_protenix_layout(tmp_path) -> None:

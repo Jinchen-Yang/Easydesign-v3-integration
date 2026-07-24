@@ -35,6 +35,7 @@ from .config import (
     LoadedPseRunConfig,
     LoadedRunConfig,
     LoadedSequenceRunConfig,
+    ResolvedProtenixMsaProviderConfig,
     TargetInputFormat,
     load_run_config,
 )
@@ -69,7 +70,7 @@ class ResolvedRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     user_config: EasyDesignRunConfig
@@ -77,6 +78,7 @@ class ResolvedRunConfig(BaseModel):
     input_snapshot: ArtifactRef
     target: NormalizedProteinSequence | None = None
     prediction_request: StructurePredictionRequest | None = None
+    msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...] = ()
     stop_after_stage: int = Field(ge=1, le=7)
 
     @model_validator(mode="after")
@@ -87,8 +89,16 @@ class ResolvedRunConfig(BaseModel):
         }
         if is_sequence and (self.target is None or self.prediction_request is None):
             raise ValueError("sequence/FASTA resolved config 必须包含规范序列和预测请求")
+        if (
+            is_sequence
+            and self.schema_version != "0.2"
+            and not self.msa_execution_plan
+        ):
+            raise ValueError("sequence/FASTA resolved config 必须包含 MSA execution plan")
         if not is_sequence and (self.target is not None or self.prediction_request is not None):
             raise ValueError("非 sequence resolved config 不得伪造预测请求")
+        if not is_sequence and self.msa_execution_plan:
+            raise ValueError("非 sequence resolved config 不得声明 MSA execution plan")
         return self
 
 
@@ -305,6 +315,11 @@ def _initialize_workspace(
                 loaded.prediction_request
                 if isinstance(loaded, LoadedSequenceRunConfig)
                 else None
+            ),
+            msa_execution_plan=(
+                loaded.msa_execution_plan
+                if isinstance(loaded, LoadedSequenceRunConfig)
+                else ()
             ),
             stop_after_stage=loaded.config.workflow.stop_after_stage,
         )

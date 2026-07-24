@@ -204,6 +204,34 @@ easydesign.yaml
 原 YAML 和 target 文件进入 run 的 snapshot；解析后的格式、序列 SHA-256 和通用预测请求
 写入 `resolved-config.json`。
 
+sequence/FASTA 的用户配置从 schema `0.2` 起必须包含 MSA policy：
+
+```yaml
+structure_prediction:
+  backend: protenix-v2
+  msa:
+    mode: remote
+    providers:
+      - provider: colabfold-public
+        timeout_seconds: 1800
+        max_attempts: 3
+        retry_backoff_seconds: 30
+    no_msa_fallback: false
+  template_mode: disabled
+  parameter_profile: model-default
+```
+
+默认 provider `colabfold-public` 被解析为
+`https://api.colabfold.com` + `--msa_server_mode colabfold`；两者由同一 preset 绑定，
+不能分别覆盖。`providers` 是显式顺序计划：重试或切换 provider 必须创建新 attempt，
+终态证据不可覆盖。用户 YAML 不接受 `mode: disabled`，但 Python API 仍保留 no-MSA
+能力，只供明确标记的内部工程 smoke。`resolved-config.json` schema `0.3` 保存 endpoint、
+server mode、timeout、最大 attempt 数和 backoff；公共 MSA 服务没有可承诺的 SLA。
+
+当前 adapter 已为每个 MSA invocation 绑定 endpoint 和 wall-clock timeout。多 provider
+执行器、ticket/status 历史采集、A3M artifact 发布、sequence-hash cache 与自建
+ColabFold/MMseqs2 profile 仍属于 Stage 01 后续实现，不能仅因 YAML 接口存在就宣称完成。
+
 旧版目录（只用于解释历史，不再生成）：
 
 ```text

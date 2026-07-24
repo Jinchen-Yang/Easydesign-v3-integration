@@ -6,12 +6,13 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | sequence/FASTA MSA executor、backend smoke 与单 Target PSE 已实现，其余四类入口待实现。 | 用已提交 executor 发布 APOE 正式 MSA-backed Target Bundle，并验证 Stage 02 读取。 | 公共 ColabFold 无 SLA；正式 APOE run/cache 未完成，Protenix 官方端点持续 `PENDING`。 | 2026-07-24 |
+| `planned` | sequence/FASTA MSA 正式纵向切片与单 Target PSE 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；已完成的两条路径保持统一下游契约。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 |
 
 ## 当前结论
 
 - 阶段总体状态：`planned`；六类入口尚未全部实现。
-- sequence/FASTA → Protenix-v2 → Target Bundle 纵向切片状态：`implemented`。
+- sequence/FASTA → remote MSA → Protenix-v2 → Target Bundle 纵向切片状态：
+  `smoke-validated`。
 - 单 Target PyMOL PSE → imported Target Bundle 纵向切片状态：`smoke-validated`。
 - PSE 真实 smoke 保留 138-aa imported 坐标和 101/9/14/14 的 CA 颜色分组；颜色没有被
   解释为 hotspot，也没有启动 Protenix、MSA 或结构预测。
@@ -32,10 +33,16 @@
 - 正式 sequence executor 已实现：每次 MSA 重试/切换建立新 attempt，校验 A3M query、
   depth 和当前 attempt 路径，运行单 seed/单 sample Protenix，再发布与 PSE 对齐的
   `target.cif`/mapping/quality/provenance/Target Bundle/manifest 链。
+- 正式 APOE run `runs/apoe/20260724-006-stage01-msa` 已用 commit `4ca3d8f` 成功完成：
+  143-aa query、609-depth ColabFold MSA、`use_msa=true`、`use_template=false`、
+  模型默认 10 recycle/200 diffusion steps，输出 143 个可映射残基的 mmCIF。
+- Stage 02 的正式 `load_structure_context()` 已直接消费该 Target Bundle，校验结构
+  artifact SHA-256 后读出单链 143 个残基；下游不需要扫描 Protenix 私有目录。
+- “与 PSE 对齐”指交接契约一致，不指结构或残基编号强行相同：PSE run 是 138-aa
+  imported 结构，保留 author chain A / residue 23–162；sequence run 是 143-aa predicted
+  结构，编号为 1–143。二者均发布 `target.cif`（mmCIF）和显式 residue mapping。
 - 先前所谓“ColabFold attempt”只记录了解析模式，没有保存 resolved endpoint 或 ticket，
   因此不能证明它真的请求了 ColabFold；该结论已在历史中追加更正。
-- 当前完成的是 backend 真实 smoke，不是正式 EasyDesign 纵向切片：MSA provider/endpoint、
-  ticket/status 历史、artifact identity 和 Target Bundle provenance 仍需接入。
 - 旧仓在 Proteindigger1 没有保存 APOE MSA；文档提到的 SMART target feature cache
   尚未取回，但不再阻塞新建 MSA；不能用单序列 FASTA/AF3 JSON 冒充旧 MSA 测试。
 - APOE fixture 是旧仓工程案例的 143-aa 片段，科学身份尚待 UniProt 路径独立复核。
@@ -58,36 +65,18 @@
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
 | ColabFold remote MSA backend | `smoke-validated` | 显式 endpoint 生成 609-depth APOE MSA；Protenix `use_msa=true` 预测成功 |
 | MSA provider/endpoint policy | `implemented` | 默认 ColabFold preset、resolved plan、wall timeout 与显式 fallback 接口 |
-| MSA-backed Target Bundle 发布 | `implemented` | executor、A3M 校验、不可变重试和统一 mmCIF Bundle 已通过契约测试；APOE 正式 run 待执行 |
+| MSA-backed Target Bundle 发布 | `smoke-validated` | APOE 正式 run 发布 609-depth MSA、统一 mmCIF Bundle 和完整 manifest；Stage 02 真实读取器通过 |
 | 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
 
 ## Now
 
-### S01-002：APOE MSA-backed Protenix-v2 验证
-
-- 状态：`planned`；backend 真实 smoke 已通过，正式 EasyDesign attempt/Bundle 尚未完成。
-- 目标：用与当前 143-aa APOE 查询严格匹配、来源可追溯的 MSA 运行 Protenix-v2，
-  显式关闭 template，并发布带 MSA provenance 的 Target Bundle。
-- 旧仓本地没有可复用的 APOE MSA；本轮已通过明确的 ColabFold endpoint 重新生成。
-- 远程 MSA 失败或超时不得静默降级为 no-MSA，也不得把单序列输入命名为 MSA。
-
-完成门槛：
-
-1. MSA query 与规范序列 SHA-256 `7cfb40e9...115a` 严格一致：**backend smoke 已通过**；
-2. MSA 来源、生成方式、文件 SHA-256 和实际深度写入正式 attempt：**实现与测试已通过，真实 run 待执行**；
-3. Protenix-v2 `use_msa=true`、`use_template=false` 真实预测：**低预算 smoke 已通过**；
-4. 同一 adapter 发布含 `msa_input_sha256` 的 Target Bundle：**实现与测试已通过，真实 run 待执行**；
-5. 失败、重试和禁止 fallback 的契约测试：**已通过**。
-6. YAML 默认 MSA、provider/endpoint 一致性和 no-MSA 禁止规则：**已通过**。
+- 当前没有进行中的 Stage 01 工作项。S01-002 已关闭并归档；项目当前跨阶段重心是
+  Stage 02 人工批准到 Stage 03 的交接。
+- Stage 01 下一候选工作项是本地 PDB/mmCIF 输入 adapter，尚未开始，开始时必须另建任务
+  编号和完成门槛。
 
 ## Next
 
-- 使用包含 executor 的已提交代码创建正式 APOE run，验证 MSA query/hash/depth、
-  `use_msa=true`、模型默认参数、mmCIF/mapping、Target Bundle 和完整 manifest。
-- 将该 Bundle 作为 Stage 02 输入做只读 handoff 验证；不得复用 PSE 138-aa 编号假装两条
-  APOE 输入相同。
-- 用同一 adapter 建立 `use_msa=true`、`use_template=false` 的正式 attempt，先通过低预算
-  smoke，再以模型默认参数运行并发布含 MSA provenance 的 Target Bundle。
 - 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
   当前主线的外部阻塞。
 - 实现本地 PDB/mmCIF、RCSB PDB ID、UniProt 和标准 Target Bundle 输入 adapter。
@@ -105,8 +94,6 @@
   序列在条款/隐私审查和自建 provider 完成前仍受阻。
 - 旧失败 attempt 没有保存 resolved endpoint 和 ticket，无法审计“ColabFold attempt”
   实际请求了哪台服务；不能事后把它当成 ColabFold 服务失败证据。
-- MSA-backed 正式 Target Bundle executor 已实现；当前只差用已提交 commit 生成真实
-  APOE run，因此不再属于设计或代码阻塞。
 - 旧 SMART cache 未同步到 Proteindigger1；它只影响历史复现，不阻塞新 MSA 主线。
 
 ## 验证证据
@@ -193,6 +180,29 @@
   生成 115,257-byte CIF，summary `pLDDT=84.35`、无 clash。该数值只证明工程链路，
   不代表科学质量或优于 no-MSA。
 
+### APOE 正式 MSA-backed Stage 01 纵向切片
+
+- 代码：commit `4ca3d8f2743c206583453c03af352c906c586df8`；正式 run：
+  `runs/apoe/20260724-006-stage01-msa`，`attempt-0001`，RunManifest 与 StageManifest
+  均为 `succeeded`。
+- remote MSA：provider `colabfold-public`、endpoint `https://api.colabfold.com`、
+  609 条序列、124,933 bytes、SHA-256
+  `12d913001bd955c05544b084f396f6b17bc0086ae69cfca5cd376ab722f72716`；
+  首条 query 与 143-aa 规范输入完全一致。
+- Protenix-v2：`use_msa=true`、`use_template=false`、seed 101、单 sample、
+  `model-default` 解析为 10 recycle 和 200 diffusion steps；输出 `pLDDT=83.01`、
+  `pTM=0.818`、无 clash。这些数值只作为运行证据，不是科学成功声明。
+- 正式 `target.cif`：118,776 bytes、SHA-256
+  `71b58bc6975173f2238d8ae64009299054781d08db6ba26d9058924917246a44`；
+  residue mapping 含 A 链 143 个连续 label/auth 残基。
+- Target Bundle schema 0.2 SHA-256
+  `2365f03c9b00586abf1d7139a30bdca8a40ea2117e6b65e05987135a0b16809b`；
+  Stage 02 `load_structure_context()` 已只通过 Bundle 声明的结构和 mapping 成功读出
+  143 个残基，并复核结构 SHA-256。
+- PSE 与 sequence 路径都输出 mmCIF `target.cif`、sequence、mapping、quality、
+  provenance、Target Bundle 和 manifest 链；只有来源特有 artifact 不同：
+  PSE 额外保存未解释颜色 annotation，sequence 额外保存 MSA。
+
 ### 旧仓 MSA 审计
 
 - `package/easydesign_competition/data/apoe/msa/apoe4_fragment.fasta` 是单序列 FASTA。
@@ -221,9 +231,10 @@
   endpoint/mode，resolved config 保存 timeout/retry/provider 顺序，adapter 禁止环境变量
   覆盖和 no-MSA fallback。
 - 实现 S01-002 正式 executor：有界 MSA attempt、A3M identity/depth 校验、MSA-backed
-  Protenix 预测、统一 `target.cif` Target Bundle 与 Stage/Run manifest 发布；等待已提交
-  代码的 APOE 真实 run 后关闭归档。
+  Protenix 预测、统一 `target.cif` Target Bundle 与 Stage/Run manifest 发布。
+- 完成并归档 S01-002：模型默认参数 APOE 正式 run 成功，609-depth MSA、143-aa mmCIF、
+  Target Bundle 和完整 manifest 链发布；Stage 02 真实读取器直接消费通过。
 
 ## 历史索引
 
-- [2026-07：S01-001、S01-003、S01-004、S01-005 与 S01-006](history/2026-07.md)
+- [2026-07：S01-001 至 S01-006](history/2026-07.md)

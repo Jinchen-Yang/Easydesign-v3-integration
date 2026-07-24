@@ -18,6 +18,7 @@ from easydesign.orchestration import (
     initialize_sequence_run,
 )
 from easydesign.orchestration.config import ResolvedProtenixMsaProviderConfig
+from easydesign.stages.s02_hotspot_discovery import load_structure_context
 
 ROOT = Path(__file__).resolve().parents[3]
 APOE_CONFIG = ROOT / "examples/stage01-apoe/input/easydesign.yaml"
@@ -57,15 +58,23 @@ def write_prediction(output_dir: Path, job_name: str, sequence: str) -> None:
         "data_target",
         "loop_",
         "_atom_site.group_PDB",
+        "_atom_site.label_atom_id",
+        "_atom_site.type_symbol",
         "_atom_site.label_comp_id",
         "_atom_site.label_asym_id",
         "_atom_site.label_seq_id",
         "_atom_site.auth_asym_id",
         "_atom_site.auth_seq_id",
         "_atom_site.pdbx_PDB_ins_code",
+        "_atom_site.Cartn_x",
+        "_atom_site.Cartn_y",
+        "_atom_site.Cartn_z",
+        "_atom_site.occupancy",
+        "_atom_site.pdbx_PDB_model_num",
     ]
     lines.extend(
-        f"ATOM {ONE_TO_THREE[amino_acid]} A {index} A {index} ."
+        f"ATOM CA C {ONE_TO_THREE[amino_acid]} A {index} A {index} . "
+        f"{index * 3.8:.1f} 0.0 0.0 1.0 1"
         for index, amino_acid in enumerate(sequence, start=1)
     )
     lines.append("#")
@@ -197,6 +206,15 @@ def test_execute_sequence_prediction_publishes_stage01_handoff(
     assert stage.require_output("target-msa") == completed.msa_artifact
     run = load_model(completed.run_manifest, RunManifest)
     assert run.status is ExecutionStatus.SUCCEEDED
+
+    downstream_bundle, context = load_structure_context(
+        run_root=run_root,
+        target_bundle_path=completed.built_bundle.bundle_path,
+    )
+    assert downstream_bundle == bundle
+    assert context.target_structure_sha256 == bundle.target_structure.sha256
+    assert context.label_asym_id == "A"
+    assert len(context.residues) == bundle.sequence_length == 143
 
 
 def test_execute_sequence_prediction_retries_msa_as_new_attempt(

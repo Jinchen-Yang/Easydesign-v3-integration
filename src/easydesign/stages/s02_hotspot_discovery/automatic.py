@@ -17,7 +17,7 @@ from .geometry import (
     minimum_region_atom_distance,
     radius_gyration,
     region_centroid,
-    shell_overlap,
+    region_shell,
 )
 from .models import (
     AnnotationStatus,
@@ -185,20 +185,18 @@ def _candidate_pair_compatible(
     left: CandidateSurfaceRegion,
     right: CandidateSurfaceRegion,
     tier: DiversityTier,
+    left_shell: frozenset[int],
+    right_shell: frozenset[int],
 ) -> bool:
     left_labels = _labels(left)
     right_labels = _labels(right)
     if set(left_labels) & set(right_labels):
         return False
     return (
-        center_distance(context, left_labels, right_labels)
+        math.dist(left.centroid_angstrom, right.centroid_angstrom)
         >= tier.centroid_distance_angstrom
-        and shell_overlap(
-            context,
-            left_labels,
-            right_labels,
-            shell_radius=8.0,
-        )
+        and len(left_shell & right_shell)
+        / max(1, min(len(left_shell), len(right_shell)))
         <= tier.maximum_shell_overlap
         and minimum_region_atom_distance(context, left_labels, right_labels)
         >= tier.minimum_atom_distance_angstrom
@@ -213,6 +211,10 @@ def _select_diverse(
     tier: DiversityTier,
 ) -> tuple[CandidateSurfaceRegion, ...]:
     compatible: dict[tuple[int, int], bool] = {}
+    shells = tuple(
+        region_shell(context, _labels(candidate), shell_radius=8.0)
+        for candidate in candidates
+    )
     for left in range(len(candidates)):
         for right in range(left + 1, len(candidates)):
             compatible[(left, right)] = _candidate_pair_compatible(
@@ -220,6 +222,8 @@ def _select_diverse(
                 candidates[left],
                 candidates[right],
                 tier,
+                shells[left],
+                shells[right],
             )
     best: tuple[int, ...] | None = None
     best_score = -math.inf

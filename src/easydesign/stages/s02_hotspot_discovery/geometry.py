@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +69,11 @@ class StructureContext:
     label_asym_id: str
     residues: dict[int, ResidueGeometry]
     bio_structure: Structure
+    minimum_atom_distance_cache: dict[tuple[int, int], float] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
 
 
 def _column(raw: dict[str, Any], key: str, row_count: int, default: str) -> list[str]:
@@ -87,6 +92,26 @@ def _distance(left: tuple[float, float, float], right: tuple[float, float, float
 
 def _minimum_atom_distance(left: ResidueGeometry, right: ResidueGeometry) -> float:
     return min(_distance(a.xyz, b.xyz) for a in left.atoms for b in right.atoms)
+
+
+def _cached_minimum_atom_distance(
+    context: StructureContext,
+    left_label: int,
+    right_label: int,
+) -> float:
+    key = (
+        (left_label, right_label)
+        if left_label <= right_label
+        else (right_label, left_label)
+    )
+    cached = context.minimum_atom_distance_cache.get(key)
+    if cached is None:
+        cached = _minimum_atom_distance(
+            context.residues[left_label],
+            context.residues[right_label],
+        )
+        context.minimum_atom_distance_cache[key] = cached
+    return cached
 
 
 def _choose_atoms(rows: list[AtomCoordinate]) -> tuple[AtomCoordinate, ...]:
@@ -286,7 +311,10 @@ def build_residue_graph(
             right = context.residues[right_label]
             if _distance(left.center, right.center) > anchor_distance:
                 continue
-            if _minimum_atom_distance(left, right) > heavy_atom_distance:
+            if (
+                _cached_minimum_atom_distance(context, left_label, right_label)
+                > heavy_atom_distance
+            ):
                 continue
             graph[left_label].add(right_label)
             graph[right_label].add(left_label)
@@ -322,9 +350,25 @@ def minimum_region_atom_distance(
     right: tuple[int, ...],
 ) -> float:
     return min(
-        _minimum_atom_distance(context.residues[a], context.residues[b])
+        _cached_minimum_atom_distance(context, a, b)
         for a in left
         for b in right
+    )
+
+
+def region_shell(
+    context: StructureContext,
+    region: tuple[int, ...],
+    *,
+    shell_radius: float,
+) -> frozenset[int]:
+    return frozenset(
+        label
+        for label in context.residues
+        if any(
+            _cached_minimum_atom_distance(context, label, member) <= shell_radius
+            for member in region
+        )
     )
 
 
@@ -335,21 +379,8 @@ def shell_overlap(
     *,
     shell_radius: float,
 ) -> float:
-    all_labels = set(context.residues)
-
-    def shell(region: tuple[int, ...]) -> set[int]:
-        return {
-            label
-            for label in all_labels
-            if any(
-                _minimum_atom_distance(context.residues[label], context.residues[member])
-                <= shell_radius
-                for member in region
-            )
-        }
-
-    left_shell = shell(left)
-    right_shell = shell(right)
+    left_shell = region_shell(context, left, shell_radius=shell_radius)
+    right_shell = region_shell(context, right, shell_radius=shell_radius)
     return len(left_shell & right_shell) / max(1, min(len(left_shell), len(right_shell)))
 
 

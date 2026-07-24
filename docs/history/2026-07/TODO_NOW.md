@@ -17,6 +17,11 @@
   deploy key 推送 `main`；本地与远端 HEAD 验证一致。
 - 明确 EasyDesign 的长期产品边界是 VHH、蛋白、肽及后续经过验证类型的多 binder
   一键式平台；VHH 仅是 1.0 的首个 reference profile。TODO 改为短期/中期/长期路线。
+- 将七个 Stage STATUS 的一句话摘要设为顶层状态事实来源；TODO 与 TODO_NOW 的实时表
+  改为自动生成，`make check` 会拒绝未同步状态。
+- 决定 Stage 02 以显式 ScanNet CPU 为当前主线，GPU 兼容性转为后续性能待办；正式
+  `runs/apoe/20260724-005-stage02-cpu` 已发布两套 Top 3、9 组比较和成功 manifest，
+  下一步是人工批准区域集。
 
 ## 2026-07-23
 

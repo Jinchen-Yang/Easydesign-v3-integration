@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | SASA 与 ScanNet CPU 已分别在 APOE 生成 Top 3，正式 CPU 双方法 run 正在固化。 | 以 CPU 跑通可发布比较并建立人工批准到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 |
+| `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 |
 
 ## 当前结论
 
@@ -16,6 +16,8 @@
 - SASA/geometry 在 138-aa APOE 上状态为 `smoke-validated`。
 - ScanNet epitope no-MSA 的 CPU 路径已通过官方 1BRS 和 138-aa APOE 真实 smoke；
   CPU 是当前正式主线，不是 GPU 失败后的静默 fallback。
+- APOE CPU 双方法正式 run 状态为 `smoke-validated`；Stage/Attempt/Run manifest 均成功，
+  输出两套 Top 3、完整 `3 × 3` comparison，且没有融合分数或默认赢家。
 - GPU 是后续性能优化：小型 GPU probe 通过，但官方模型和 APOE 均在 RTX 4080 的
   cuBLAS GEMM 执行时失败，不再阻塞 1.0 的 Stage 02 主线。
 - SASA/geometry 与 ScanNet probability 在类型、文件和排名路径上完全分离。
@@ -31,7 +33,7 @@
 | ScanNet epitope no-MSA CPU adapter | `smoke-validated` | 官方 1BRS 与 APOE 138-aa 均真实运行，逐残基 CSV 完整回映射 |
 | ScanNet epitope no-MSA GPU 优化 | `planned` | probe 通过；RTX 4080 真实模型 GEMM 失败，不阻塞 CPU 主线 |
 | 两方法 `3 × 3` 重叠报告 | `implemented` | Jaccard、覆盖率、距离、最佳匹配；无融合字段 |
-| APOE 138-aa 真实双方法 run | `implemented` / 待正式重跑 | CPU 已分别产出结果；新 adapter 与不可变正式 run 正在固化 |
+| APOE 138-aa 真实双方法 run | `smoke-validated` | `20260724-005-stage02-cpu`；双方法、comparison 和 manifest 全部成功 |
 | PSE 染色区域导入 | `planned` | 只有明确失败的 provider 接口 |
 | 人工区域上传 | `planned` | 只有明确失败的 provider 接口 |
 | UniProt 功能位点/PTM/天然界面 | `planned` | `annotation_status=not_implemented` |
@@ -44,14 +46,13 @@
 
 ## Now
 
-### S02-002：CPU-first 双方法正式运行
+### S02-003：人工批准区域集与 Stage 03 handoff
 
-- 状态：`implemented`，等待使用新 adapter 发布不可变正式 run。
-- 把 ScanNet 设备从 GPU-only 改成显式 `cpu`/`gpu`，默认 CPU；设备选择和 probe
-  进入正式产物，不允许运行时 fallback。
-- 使用同一份 138-aa PSE APOE `target.cif` 发布 SASA、ScanNet CPU、`3 × 3`
-  comparison 和人工检查脚本。
-- 完成后 Stage 03 仍保持 `awaiting_region_selection`，不能自动选择赢家。
+- 状态：`planned`，等待人工查看正式 CPU run 的 SASA/ScanNet Top 3。
+- 输入只能是 `20260724-005-stage02-cpu` 已发布的候选区域和比较证据，不能重新计算或
+  静默生成融合赢家。
+- 完成门槛：保存被批准的方法/区域、批准人、理由和输入 artifact identity；Stage 03
+  只能消费该批准 manifest。
 
 ## Next
 
@@ -104,6 +105,12 @@
 - CPU APOE smoke：
   `runs/_validation/scannet-apoe-no-msa-cpu-20260724-001`；138 个残基全部输出并严格
   回映射，约 34 秒，已生成三个 10-residue 推荐区。
+- CPU 双方法正式 run：`runs/apoe/20260724-005-stage02-cpu`；runtime probe 明确为
+  `/device:CPU:0`，SASA 区域大小为 `12/12/12`，ScanNet 为 `10/10/10`，
+  `method-comparison.json` 含 9 组比较；Attempt、StageManifest 与 RunManifest revision 3
+  均为 `succeeded`，handoff 为 `awaiting_region_selection`。
+- 操作失败证据：`runs/apoe/20260724-004-stage02-cpu` 因传入错误 ScanNet repository
+  路径明确失败，错误码 `scannet-repository-missing`；没有覆盖，随后以新 run 重试。
 - APOE 证据 run：
   `runs/apoe/20260724-003-stage02-auto/02-hotspot-discovery/attempt-0001/`。
   Attempt 与 StageManifest 均为 `failed`，RunManifest 为 revision 3/running；
@@ -131,6 +138,8 @@
   放宽顺序完整落盘；识别出 MAX_ASA 来源登记与 binder-specific 校准仍是 planned。
 - 在不改变 ScanNet commit、权重、epitope/no-MSA 模式的前提下验证 CPU 执行；决定
   CPU 成为当前主线、GPU 转为后续性能优化，并保持显式设备与无 fallback 契约。
+- 完成并归档 S02-002：CPU runtime probe、正式 APOE 双方法 run、完整 comparison 与
+  顶层状态自动汇总；当前工作切换到 S02-003 人工批准交接。
 
 ## 历史索引
 

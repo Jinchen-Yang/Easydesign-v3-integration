@@ -79,6 +79,89 @@ class WorkflowConfig(BaseModel):
     stop_after_stage: int = Field(default=7, ge=1, le=7)
 
 
+class RegionProposalMode(StrEnum):
+    AUTOMATIC = "automatic"
+    PSE_ANNOTATIONS = "pse_annotations"
+    MANUAL = "manual"
+
+
+class Stage02SasaConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    rsasa_threshold: float = Field(default=0.25, gt=0, le=1)
+    relaxed_threshold: float = Field(default=0.20, gt=0, le=1)
+    probe_radius_angstrom: float = Field(default=1.4, gt=0)
+    sphere_points: int = Field(default=960, ge=100)
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> Self:
+        if self.relaxed_threshold > self.rsasa_threshold:
+            raise ValueError("Stage 02 relaxed_threshold 不能高于 rsasa_threshold")
+        return self
+
+
+class Stage02PatchConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_member_count: int = Field(default=12, ge=6)
+    minimum_member_count: int = Field(default=6, ge=3)
+    heavy_atom_neighbor_angstrom: float = Field(default=5.0, gt=0)
+    anchor_neighbor_angstrom: float = Field(default=12.0, gt=0)
+    compactness_radius_angstrom: float = Field(default=14.0, gt=0)
+
+    @model_validator(mode="after")
+    def validate_member_counts(self) -> Self:
+        if self.minimum_member_count > self.target_member_count:
+            raise ValueError("minimum_member_count 不能高于 target_member_count")
+        return self
+
+
+class Stage02EvidenceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scannet_mode: str = Field(default="epitope", pattern=r"^epitope$")
+    use_msa: bool = False
+
+    @model_validator(mode="after")
+    def forbid_msa(self) -> Self:
+        if self.use_msa:
+            raise ValueError("Stage 02 v0.1 只实现 ScanNet epitope no-MSA")
+        return self
+
+
+class Stage02AutomaticConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    region_count: int = Field(default=3, ge=1)
+    sasa: Stage02SasaConfig = Stage02SasaConfig()
+    patch: Stage02PatchConfig = Stage02PatchConfig()
+    evidence: Stage02EvidenceConfig = Stage02EvidenceConfig()
+    avoid_label_seq_ids: tuple[int, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_avoid(self) -> Self:
+        if any(value < 1 for value in self.avoid_label_seq_ids):
+            raise ValueError("avoid_label_seq_ids 必须为正整数")
+        if len(self.avoid_label_seq_ids) != len(set(self.avoid_label_seq_ids)):
+            raise ValueError("avoid_label_seq_ids 不能重复")
+        return self
+
+
+class Stage02Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: RegionProposalMode = RegionProposalMode.AUTOMATIC
+    automatic: Stage02AutomaticConfig | None = Stage02AutomaticConfig()
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> Self:
+        if self.mode is RegionProposalMode.AUTOMATIC and self.automatic is None:
+            raise ValueError("Stage 02 automatic 模式必须提供 automatic 配置")
+        if self.mode is not RegionProposalMode.AUTOMATIC and self.automatic is not None:
+            raise ValueError("未实现的 Stage 02 模式不得携带 automatic 配置")
+        return self
+
+
 class EasyDesignRunConfig(BaseModel):
     """用户维护的唯一 run 配置；不包含 Protenix 私有 JSON。"""
 
@@ -88,6 +171,7 @@ class EasyDesignRunConfig(BaseModel):
     project_id: str = Field(pattern=ID_PATTERN)
     target: TargetSourceConfig
     structure_prediction: StructurePredictionConfig | None = None
+    stage02: Stage02Config | None = None
     workflow: WorkflowConfig = WorkflowConfig()
 
 
@@ -219,6 +303,10 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             raise ConfigurationError(
                 "PSE 使用导入坐标，必须省略 structure_prediction；禁止启动结构预测"
             )
+        if config.workflow.stop_after_stage >= 2 and config.stage02 is None:
+            raise ConfigurationError(
+                "stop_after_stage >= 2 时必须显式提供 stage02 配置"
+            )
         return LoadedPseRunConfig(
             config_path=config_path,
             config=config,
@@ -232,6 +320,10 @@ def load_run_config(path: Path) -> LoadedRunConfig:
     if config.structure_prediction is None:
         raise ConfigurationError(
             "sequence/FASTA 输入必须显式提供 structure_prediction"
+        )
+    if config.workflow.stop_after_stage >= 2 and config.stage02 is None:
+        raise ConfigurationError(
+            "stop_after_stage >= 2 时必须显式提供 stage02 配置"
         )
 
     text = _read_text(source_path)

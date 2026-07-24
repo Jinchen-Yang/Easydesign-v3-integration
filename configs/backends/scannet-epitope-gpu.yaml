@@ -1,0 +1,14 @@
+schema_version: "0.1"
+backend: scannet-epitope-no-msa
+repository:
+  expected_commit: a61623cd98d243c2ff4cd03fc3619d2d22ec50e7
+execution:
+  python_environment_variable: EASYDESIGN_SCANNET_PYTHON
+  repository_environment_variable: EASYDESIGN_SCANNET_ROOT
+  gpu_device: 0
+  timeout_seconds: 1800
+  allow_cpu_fallback: false
+model:
+  mode: epitope
+  use_msa: false
+  name: ScanNet_epitope_noMSA

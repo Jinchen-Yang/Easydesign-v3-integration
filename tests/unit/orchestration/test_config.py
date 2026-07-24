@@ -8,6 +8,7 @@ from easydesign.core import ConfigurationError, TargetInputError
 from easydesign.orchestration import (
     LoadedPseRunConfig,
     LoadedSequenceRunConfig,
+    RegionProposalMode,
     TargetInputFormat,
     detect_target_input_format,
     load_run_config,
@@ -143,6 +144,87 @@ structure_prediction:
 
     with pytest.raises(ConfigurationError, match="必须省略 structure_prediction"):
         load_run_config(config)
+
+
+def test_stage02_automatic_config_is_explicit_and_no_msa(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-pse
+  source: target.pse
+workflow:
+  stop_after_stage: 2
+stage02:
+  mode: automatic
+  automatic:
+    region_count: 3
+    evidence:
+      scannet_mode: epitope
+      use_msa: false
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.config.stage02 is not None
+    assert loaded.config.stage02.mode is RegionProposalMode.AUTOMATIC
+    assert loaded.config.stage02.automatic is not None
+    assert loaded.config.stage02.automatic.patch.target_member_count == 12
+
+
+def test_stage02_requested_without_config_fails(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-pse
+  source: target.pse
+workflow:
+  stop_after_stage: 2
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="必须显式提供 stage02"):
+        load_run_config(config)
+
+
+def test_stage02_unimplemented_mode_requires_no_automatic_payload(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-pse
+  source: target.pse
+workflow:
+  stop_after_stage: 2
+stage02:
+  mode: manual
+  automatic: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.config.stage02 is not None
+    assert loaded.config.stage02.mode is RegionProposalMode.MANUAL
 
 
 def test_sequence_yaml_requires_structure_prediction(tmp_path: Path) -> None:

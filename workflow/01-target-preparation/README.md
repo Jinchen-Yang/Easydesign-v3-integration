@@ -1,8 +1,9 @@
 # 01 — Target 准备
 
-**阶段状态：** `planned`。sequence/FASTA 纵向切片已实现；其他入口仍未实现。
+**阶段状态：** `planned`。sequence/FASTA 纵向切片已实现；单 Target PSE 导入已完成
+真实 smoke；其他入口仍未实现。
 
-**契约版本：** sequence/FASTA 与预测 Target Bundle 机器契约 `0.1`。
+**契约版本：** Target Bundle `0.2`，兼容读取没有 source annotation 的 `0.1`。
 
 ## 目的
 
@@ -17,13 +18,17 @@
 - PyMOL PSE 会话。
 - 已经准备好的标准 Target Bundle。
 
-当前只实现单条、由 20 种标准氨基酸组成的 sequence/FASTA 路径。FASTA 标题不参与序列
+sequence/FASTA 当前只接受单条、由 20 种标准氨基酸组成的输入。FASTA 标题不参与序列
 identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。多记录、空记录和含歧义
 残基的输入明确失败，不静默选择第一条记录。
 
 当前用户入口是一个 target 文件和一个 `easydesign.yaml`。YAML 中的 `target.source`
-相对于 YAML 自身解析，`format: auto` 使用文件后缀和内容强证据识别输入。PDB/mmCIF/PSE
-等尚未实现的入口可以被识别，但会明确报错，不会回退为 sequence。
+相对于 YAML 自身解析，`format: auto` 使用文件后缀和内容强证据识别输入。PDB/mmCIF
+等尚未实现的入口可以被识别，但会明确报错，不会回退为 sequence 或 PSE。
+
+PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导入。PSE 坐标直接标记为
+`imported`，不运行 Protenix、MSA 或其他结构预测；逐残基 CA 颜色保存为
+`uninterpreted` source annotation，Stage 01 不把颜色解释成 hotspot。
 
 ## 输入
 
@@ -39,12 +44,47 @@ sequence/FASTA 路径通过通用 `StructurePredictionRequest` 访问预测 back
 snapshot，生成 `resolved-config.json`，再由 adapter 生成 attempt 内部
 `inputs/protenix-input.json`；用户不维护 Protenix JSON。
 
+PSE 路径使用排他的 YAML 分支：
+
+```yaml
+schema_version: "0.1"
+project_id: apoe
+target:
+  id: apoe-1b68-pse
+  source: apoe_abc.pse
+  format: auto
+workflow:
+  stop_after_stage: 1
+```
+
+PSE 必须省略 `structure_prediction`；提供该区块会明确失败。反之，sequence/FASTA 必须
+提供 `structure_prediction`。PyMOL 只存在于独立环境，调用方显式设置
+`EASYDESIGN_PYMOL_PYTHON`；core 禁止扫描 Conda 或系统 Python，也禁止版本 fallback。
+
 ## 输出
 
 - 规范 `target.cif`；后端明确需要时才派生 `target.pdb`。
 - `sequence.fasta`、逐残基编号映射、结构质量报告和来源记录。
 - `target-bundle.json` 及其中每个 artifact 的相对路径、大小、SHA-256 和生产 attempt。
 - 说明结构属于实验、导入还是预测来源的 manifest。
+- PSE 额外输出 `source-annotations.json`，记录 CA color index、RGB、hex 和颜色计数。
+
+PSE attempt 的稳定目录为：
+
+```text
+01-target-preparation/attempt-0001/
+├── inputs/pse-request.json
+├── work/                         # worker 私有 response 和 raw PDB
+├── logs/
+└── artifacts/
+    ├── target.cif
+    ├── sequence.fasta
+    ├── residue-mapping.json
+    ├── structure-quality.json
+    ├── provenance.json
+    ├── source-annotations.json
+    └── target-bundle.json
+```
 
 ## 不变量
 
@@ -55,11 +95,21 @@ snapshot，生成 `resolved-config.json`，再由 adapter 生成 attempt 内部
 - 远程 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
 - `easydesign-core` 不导入 Protenix；adapter 只转换请求/结果，独立环境执行重型工具。
 - 预测结构不得描述成实验结构，smoke 分数不得描述成科学验证。
+- PSE 必须恰好一个含蛋白的 molecule object、一条非空 protein chain 和一个 state；
+  至少 20 个标准氨基酸残基且每个残基恰好一个 CA。
+- selection、measurement 等可视化对象只进入 inventory；水可忽略并计数。
+- 额外蛋白 object/chain、配体或非溶剂重原子、多 state、非标准残基、残基编号歧义均失败；
+  禁止使用旧版“选择最大 object/chain”逻辑。
+- PSE source snapshot、worker raw PDB 和 response 的 SHA-256 必须逐层一致。
 
 ## 失败与重试
 
 典型失败包括来源无效或有歧义、找不到符合规则的结构、序列/结构不匹配、chain 未解析、
 MSA 服务失败、预测输出缺失、checksum 不一致和格式转换失败。
+
+PSE 还包括 PyMOL Python 未显式配置、版本不是 `3.1.0`、worker 超时或非零退出、PSE
+损坏、worker 输出缺失，以及违反上述单 Target 边界。失败 response、stdout/stderr 和
+终态 attempt 必须保留；不能把失败会话回退为 sequence 预测。
 
 失败必须写成带类型错误信息的终态 attempt，不能转换为空成功。重试建立新 attempt，
 引用并保留失败 attempt；切换 MSA 服务、预测 backend 或模型必须显式创建新配置和溯源。
@@ -73,12 +123,16 @@ Manifest 记录上游 manifest/artifact hash、解析后配置、代码版本、
 第三方 package、模型和运行缓存按 `resources/provenance/ASSET_REGISTER.tsv` 登记。模型、
 MSA、run 和缓存均位于 Git 忽略目录，不随仓库分发。
 
+PSE provenance 还记录 PyMOL 版本、session inventory、被选中的唯一 object/chain/state、
+原始 PSE SHA-256、水和非蛋白重原子计数、worker/adapter 时间及 `fallback_used=false`。
+
 ## 完成门槛
 
 - 六类入口全部通过各自契约测试和至少一个真实 fixture。
 - 全部必需 Target Bundle artifact 校验通过并有 checksum。
 - Stage 02 可以只通过 Target Bundle 和残基映射解析每个残基，无需扫描 backend 目录。
 - sequence/FASTA 路径同时通过 no-MSA 工程 smoke 和 APOE remote-MSA/no-template 真实运行。
+- PSE 路径通过合成成功/失败 session 契约测试和旧 APOE PSE 真实 smoke。
 
 ## 非目标
 
@@ -86,5 +140,8 @@ MSA、run 和缓存均位于 Git 忽略目录，不随仓库分发。
 - 生成 binder。
 - 自动决定有争议的 accession、isoform、物种或结构来源。
 - 把预测结构描述成实验结构。
+- 在 Stage 01 将 PyMOL 颜色称为成熟 hotspot 证据。
+- 首版处理复合物、receptor/ligand、多聚体、配体保留、公开上传，或让用户选择
+  object/chain/state。
 
 外部工具只通过 adapter 访问；orchestration、UI 行为和下游决策不属于本阶段。

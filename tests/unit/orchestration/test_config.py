@@ -6,6 +6,8 @@ import pytest
 
 from easydesign.core import ConfigurationError, TargetInputError
 from easydesign.orchestration import (
+    LoadedPseRunConfig,
+    LoadedSequenceRunConfig,
     TargetInputFormat,
     detect_target_input_format,
     load_run_config,
@@ -19,6 +21,7 @@ APOE_SHA256 = "7cfb40e9e78b05724e328df0af5ca673f4379ab7011b7655a2922f494668115a"
 def test_apoe_user_yaml_resolves_sequence_and_prediction_request() -> None:
     loaded = load_run_config(APOE_INPUT / "easydesign.yaml")
 
+    assert isinstance(loaded, LoadedSequenceRunConfig)
     assert loaded.detected_format is TargetInputFormat.FASTA
     assert loaded.target.length == 143
     assert loaded.target.sequence_sha256 == APOE_SHA256
@@ -90,4 +93,72 @@ structure_prediction:
     )
 
     with pytest.raises(ConfigurationError, match="msa_mode|extra"):
+        load_run_config(config)
+
+
+def test_pse_yaml_selects_import_branch_without_prediction(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-pse
+  source: target.pse
+  format: auto
+workflow:
+  stop_after_stage: 1
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.detected_format is TargetInputFormat.PSE
+    assert loaded.source_path == source
+    assert loaded.config.structure_prediction is None
+
+
+def test_pse_yaml_rejects_structure_prediction(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-pse
+  source: target.pse
+structure_prediction:
+  backend: protenix-v2
+  msa_mode: disabled
+  template_mode: disabled
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="必须省略 structure_prediction"):
+        load_run_config(config)
+
+
+def test_sequence_yaml_requires_structure_prediction(tmp_path: Path) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-sequence
+  source: target.fasta
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="必须显式提供 structure_prediction"):
         load_run_config(config)

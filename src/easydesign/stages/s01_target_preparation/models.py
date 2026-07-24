@@ -72,6 +72,113 @@ class StructureQualityReport(BaseModel):
     recycle_count: int = Field(ge=0)
 
 
+class ImportedStructureQualityReport(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.1"
+    origin: TargetStructureOrigin = TargetStructureOrigin.IMPORTED
+    coordinate_state_count: int = Field(ge=1)
+    protein_chain_count: int = Field(ge=1)
+    residue_count: int = Field(ge=1)
+    canonical_residue_count: int = Field(ge=1)
+    residues_with_ca: int = Field(ge=1)
+    missing_ca_count: int = Field(ge=0)
+    ligand_heavy_atom_count: int = Field(ge=0)
+    water_residue_count: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_imported_quality(self) -> Self:
+        if self.coordinate_state_count != 1 or self.protein_chain_count != 1:
+            raise ValueError("当前 imported PSE quality 必须是单 state、单 chain")
+        if not (
+            self.residue_count
+            == self.canonical_residue_count
+            == self.residues_with_ca
+        ):
+            raise ValueError("imported PSE residue/标准残基/CA 计数必须一致")
+        if self.missing_ca_count != 0 or self.ligand_heavy_atom_count != 0:
+            raise ValueError("当前 imported PSE 不允许缺失 CA 或配体重原子")
+        return self
+
+
+class SessionInventoryRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1)
+    object_type: str = Field(min_length=1)
+    state_count: int = Field(ge=0)
+    atom_count: int = Field(ge=0)
+    protein_atom_count: int = Field(ge=0)
+    ignored: bool
+
+
+class ImportedStructureProvenance(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.1"
+    source_format: str = Field(default="pse", pattern=r"^pse$")
+    source_sha256: str = Field(pattern=SHA256_PATTERN)
+    backend_name: str = Field(default="pymol-pse", pattern=ID_PATTERN)
+    backend_version: str = Field(min_length=1, max_length=128)
+    selected_object: str = Field(min_length=1)
+    author_chain_id: str = Field(min_length=1, max_length=16)
+    coordinate_state: int = Field(ge=1)
+    inventory: tuple[SessionInventoryRecord, ...]
+    worker_runtime_seconds: float = Field(ge=0)
+    adapter_runtime_seconds: float = Field(ge=0)
+    fallback_used: bool = False
+
+    @model_validator(mode="after")
+    def validate_imported_provenance(self) -> Self:
+        if self.coordinate_state != 1:
+            raise ValueError("当前 PSE provenance 只接受 coordinate_state=1")
+        if self.fallback_used:
+            raise ValueError("PSE 导入禁止 fallback")
+        return self
+
+
+class ResidueColorAnnotation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label_seq_id: int = Field(ge=1)
+    author_chain_id: str = Field(min_length=1, max_length=16)
+    author_residue_id: str = Field(min_length=1, max_length=32)
+    insertion_code: str | None = Field(default=None, max_length=8)
+    ca_color_index: int = Field(ge=0)
+    ca_color_rgb: tuple[float, float, float]
+    ca_color_hex: str = Field(pattern=r"^#[0-9A-F]{6}$")
+
+
+class ColorCount(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ca_color_index: int = Field(ge=0)
+    ca_color_rgb: tuple[float, float, float]
+    ca_color_hex: str = Field(pattern=r"^#[0-9A-F]{6}$")
+    residue_count: int = Field(ge=1)
+
+
+class PseSourceAnnotations(BaseModel):
+    """只保存来源颜色，不赋予 hotspot 或能量学语义。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.1"
+    annotation_type: str = Field(default="pymol-ca-color", pattern=r"^pymol-ca-color$")
+    interpretation: str = Field(default="uninterpreted", pattern=r"^uninterpreted$")
+    residues: tuple[ResidueColorAnnotation, ...]
+    color_counts: tuple[ColorCount, ...]
+
+    @model_validator(mode="after")
+    def validate_annotations(self) -> Self:
+        indices = [residue.label_seq_id for residue in self.residues]
+        if indices != list(range(1, len(self.residues) + 1)):
+            raise ValueError("PSE color annotation label_seq_id 必须连续")
+        if sum(group.residue_count for group in self.color_counts) != len(self.residues):
+            raise ValueError("PSE color count 与逐残基 annotation 数量不一致")
+        return self
+
+
 class PredictionProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -110,7 +217,7 @@ class TargetBundle(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     target_id: str = Field(pattern=ID_PATTERN)
     origin: TargetStructureOrigin
     sequence_length: int = Field(ge=1)
@@ -121,6 +228,7 @@ class TargetBundle(BaseModel):
     residue_mapping: ArtifactRef
     quality_report: ArtifactRef
     provenance: ArtifactRef
+    source_annotations: ArtifactRef | None = None
 
     @model_validator(mode="after")
     def validate_artifact_producers(self) -> Self:
@@ -131,11 +239,20 @@ class TargetBundle(BaseModel):
             self.quality_report,
             self.provenance,
         )
-        for artifact in artifacts:
+        all_artifacts = (
+            artifacts
+            if self.source_annotations is None
+            else artifacts + (self.source_annotations,)
+        )
+        for artifact in all_artifacts:
             if artifact.producer_stage != STAGE_ID:
                 raise ValueError(f"Target Bundle artifact 必须由 {STAGE_ID} 产生")
             if artifact.producer_attempt != self.producer_attempt:
                 raise ValueError("Target Bundle artifact 必须来自同一 attempt")
+        if self.schema_version == "0.1" and self.source_annotations is not None:
+            raise ValueError("Target Bundle 0.1 不支持 source_annotations")
+        if self.schema_version not in {"0.1", "0.2"}:
+            raise ValueError(f"不支持 Target Bundle schema: {self.schema_version}")
         return self
 
 

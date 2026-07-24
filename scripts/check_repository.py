@@ -248,6 +248,22 @@ def main() -> int:
                 errors,
             )
 
+    pymol_environment = ROOT / "environments/pymol-pse.yml"
+    require(pymol_environment.is_file(), "缺少 PyMOL PSE 独立环境声明", errors)
+    if pymol_environment.is_file():
+        pymol_environment_text = pymol_environment.read_text(encoding="utf-8")
+        for requirement in (
+            "name: pymol-pse",
+            "conda-forge",
+            "python=3.11",
+            "pymol-open-source=3.1.0",
+        ):
+            require(
+                requirement in pymol_environment_text,
+                f"PyMOL PSE 环境缺少固定项: {requirement}",
+                errors,
+            )
+
     agent_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for heading in ("开始任务前", "实施规则", "完成任务前", "阻塞与询问"):
         require(heading in agent_text, f"AGENTS 缺少工作协议: {heading}", errors)

@@ -7,8 +7,14 @@ from pathlib import Path
 import pytest
 
 from easydesign.backends.structure_prediction import ProtenixV2Adapter
+from easydesign.backends.target_sources import PyMOLPseAdapter
 from easydesign.core import ManifestStateError, RunManifest, StageId, load_model
-from easydesign.orchestration import RunIndex, initialize_sequence_run
+from easydesign.orchestration import (
+    ResolvedRunConfig,
+    RunIndex,
+    initialize_pse_run,
+    initialize_sequence_run,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 APOE_CONFIG = ROOT / "examples/stage01-apoe/input/easydesign.yaml"
@@ -73,3 +79,50 @@ def test_initialize_sequence_run_refuses_existing_run(tmp_path: Path) -> None:
 
     with pytest.raises(ManifestStateError, match="不能覆盖"):
         initialize_sequence_run(**kwargs)
+
+
+def test_initialize_pse_run_creates_request_without_prediction(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    pse = input_dir / "target.pse"
+    pse.write_bytes(b"synthetic-pse")
+    config = input_dir / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo-pse
+  source: target.pse
+  format: auto
+workflow:
+  stop_after_stage: 1
+""".lstrip(),
+        encoding="utf-8",
+    )
+    pymol = PyMOLPseAdapter(
+        python_executable=Path("/envs/pymol-pse/bin/python")
+    )
+
+    prepared = initialize_pse_run(
+        config_path=config,
+        runs_root=tmp_path / "runs",
+        request_writer=pymol,
+        code_commit="428e98f",
+        easydesign_version="0.1.0.dev0",
+        run_id="20260724-002-stage01-pse",
+        created_at=datetime(2026, 7, 24, 9, 0, tzinfo=UTC),
+    )
+
+    request = json.loads(prepared.pse_request.read_text(encoding="utf-8"))
+    assert request["source_relative_path"] == "input-snapshot/target.pse"
+    assert request["target_id"] == "demo-pse"
+    assert prepared.pse_request.name == "pse-request.json"
+    assert not list(prepared.workspace.run_root.rglob("protenix-input.json"))
+    resolved = load_model(prepared.workspace.resolved_config, ResolvedRunConfig)
+    assert resolved.detected_input_format == "pse"
+    assert resolved.target is None
+    assert resolved.prediction_request is None
+    assert prepared.workspace.latest_manifest_pointer.read_text() == (
+        "run-manifest.v0001.json\n"
+    )

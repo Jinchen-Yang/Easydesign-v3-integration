@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,7 +30,14 @@ from easydesign.core import (
 from easydesign.core.artifacts import ID_PATTERN
 from easydesign.core.timestamps import normalize_aware_datetime
 
-from .config import EasyDesignRunConfig, LoadedRunConfig, TargetInputFormat, load_run_config
+from .config import (
+    EasyDesignRunConfig,
+    LoadedPseRunConfig,
+    LoadedRunConfig,
+    LoadedSequenceRunConfig,
+    TargetInputFormat,
+    load_run_config,
+)
 
 
 class PredictionInputWriter(Protocol):
@@ -42,20 +50,46 @@ class PredictionInputWriter(Protocol):
     ) -> Path: ...
 
 
+class PseRequestWriter(Protocol):
+    backend_name: str
+
+    def build_request(
+        self,
+        *,
+        run_root: Path,
+        source_path: Path,
+        target_id: str,
+    ) -> BaseModel: ...
+
+    def write_request(self, request: BaseModel, path: Path) -> Path: ...
+
+
 class ResolvedRunConfig(BaseModel):
     """写入 run 的完全解析配置，不包含站点专属后端路径。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     user_config: EasyDesignRunConfig
     detected_input_format: TargetInputFormat
     input_snapshot: ArtifactRef
-    target: NormalizedProteinSequence
-    prediction_request: StructurePredictionRequest
+    target: NormalizedProteinSequence | None = None
+    prediction_request: StructurePredictionRequest | None = None
     stop_after_stage: int = Field(ge=1, le=7)
+
+    @model_validator(mode="after")
+    def validate_input_branch(self) -> Self:
+        is_sequence = self.detected_input_format in {
+            TargetInputFormat.SEQUENCE,
+            TargetInputFormat.FASTA,
+        }
+        if is_sequence and (self.target is None or self.prediction_request is None):
+            raise ValueError("sequence/FASTA resolved config 必须包含规范序列和预测请求")
+        if not is_sequence and (self.target is not None or self.prediction_request is not None):
+            raise ValueError("非 sequence resolved config 不得伪造预测请求")
+        return self
 
 
 class RunIndexEntry(BaseModel):
@@ -100,6 +134,7 @@ class RunWorkspace:
     input_snapshot: Path
     resolved_config: Path
     run_manifest: Path
+    latest_manifest_pointer: Path
 
     def stage_root(self, stage_id: StageId) -> Path:
         return self.run_root / str(stage_id)
@@ -109,10 +144,23 @@ class RunWorkspace:
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedSequenceRun:
+class PreparedRun:
     loaded_config: LoadedRunConfig
     workspace: RunWorkspace
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedSequenceRun:
+    loaded_config: LoadedSequenceRunConfig
+    workspace: RunWorkspace
     protenix_input: Path
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedPseRun:
+    loaded_config: LoadedPseRunConfig
+    workspace: RunWorkspace
+    pse_request: Path
 
 
 def _exclusive_copy(source: Path, destination: Path) -> None:
@@ -122,6 +170,15 @@ def _exclusive_copy(source: Path, destination: Path) -> None:
             shutil.copyfileobj(input_handle, output_handle)
     except FileExistsError as error:
         raise ManifestStateError(f"不可覆盖 run snapshot: {destination}") from error
+
+
+def _exclusive_text(text: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with destination.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    except FileExistsError as error:
+        raise ManifestStateError(f"不可覆盖 run 文件: {destination}") from error
 
 
 def _atomic_replace_json(model: BaseModel, path: Path) -> None:
@@ -186,27 +243,17 @@ def _validate_run_id(run_id: str) -> None:
         raise ManifestStateError(f"run_id 不符合稳定 slug 规则: {run_id}")
 
 
-def initialize_sequence_run(
+def _initialize_workspace(
     *,
-    config_path: Path,
+    loaded: LoadedRunConfig,
     runs_root: Path,
-    input_writer: PredictionInputWriter,
     code_commit: str,
     easydesign_version: str,
-    run_id: str | None = None,
-    created_at: datetime | None = None,
-) -> PreparedSequenceRun:
-    """从一个用户 YAML 创建完整 run 骨架和 Stage 01 后端输入。"""
-
-    loaded = load_run_config(config_path)
-    if input_writer.model_name != loaded.config.structure_prediction.backend:
-        raise ManifestStateError(
-            "配置 backend 与输入 writer 不一致: "
-            f"config={loaded.config.structure_prediction.backend}, "
-            f"writer={input_writer.model_name}"
-        )
-    timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
-    selected_run_id = _generated_run_id(timestamp) if run_id is None else run_id
+    selected_run_id: str,
+    timestamp: datetime,
+    prepare_attempt_input: Callable[[Path, Path], Path | None] | None,
+    index_note: str,
+) -> tuple[RunWorkspace, Path | None]:
     _validate_run_id(selected_run_id)
 
     root = runs_root.resolve()
@@ -253,8 +300,12 @@ def initialize_sequence_run(
             user_config=loaded.config,
             detected_input_format=loaded.detected_format,
             input_snapshot=input_ref,
-            target=loaded.target,
-            prediction_request=loaded.prediction_request,
+            target=loaded.target if isinstance(loaded, LoadedSequenceRunConfig) else None,
+            prediction_request=(
+                loaded.prediction_request
+                if isinstance(loaded, LoadedSequenceRunConfig)
+                else None
+            ),
             stop_after_stage=loaded.config.workflow.stop_after_stage,
         )
         resolved_path = staging / "config-snapshot" / "resolved-config.json"
@@ -274,15 +325,18 @@ def initialize_sequence_run(
         )
         manifest_path = staging / "manifests" / "run-manifest.v0001.json"
         dump_model(manifest, manifest_path)
-
-        protenix_input = (
-            staging
-            / str(StageId.TARGET_PREPARATION)
-            / "attempt-0001"
-            / "inputs"
-            / "protenix-input.json"
+        latest_pointer = staging / "manifests" / "LATEST"
+        _exclusive_text("run-manifest.v0001.json\n", latest_pointer)
+        prepared_input = (
+            None
+            if prepare_attempt_input is None
+            else prepare_attempt_input(staging, input_snapshot)
         )
-        input_writer.write_input(loaded.prediction_request, protenix_input)
+        prepared_relative = (
+            None
+            if prepared_input is None
+            else prepared_input.relative_to(staging)
+        )
         staging.rename(final_root)
     except Exception:
         if staging.exists():
@@ -298,11 +352,7 @@ def initialize_sequence_run(
         input_snapshot=final_root / "input-snapshot" / loaded.source_path.name,
         resolved_config=final_root / "config-snapshot" / "resolved-config.json",
         run_manifest=final_root / "manifests" / "run-manifest.v0001.json",
-    )
-    final_protenix_input = (
-        workspace.attempt_root(StageId.TARGET_PREPARATION, "attempt-0001")
-        / "inputs"
-        / "protenix-input.json"
+        latest_manifest_pointer=final_root / "manifests" / "LATEST",
     )
     upsert_run_index_entries(
         root,
@@ -314,13 +364,154 @@ def initialize_sequence_run(
                 status="pending",
                 project_id=workspace.project_id,
                 run_id=workspace.run_id,
-                notes=("Stage 01 input prepared; backend execution not started.",),
+                notes=(index_note,),
             ),
         ),
         generated_at=timestamp,
     )
+    final_prepared_input = (
+        None
+        if prepared_relative is None
+        else workspace.run_root / prepared_relative
+    )
+    return workspace, final_prepared_input
+
+
+def initialize_run_workspace(
+    *,
+    config_path: Path,
+    runs_root: Path,
+    code_commit: str,
+    easydesign_version: str,
+    run_id: str | None = None,
+    created_at: datetime | None = None,
+) -> PreparedRun:
+    """创建与 target 类型无关的 run 骨架；不生成任何 backend 私有输入。"""
+
+    loaded = load_run_config(config_path)
+    timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
+    selected_run_id = _generated_run_id(timestamp) if run_id is None else run_id
+    workspace, prepared_input = _initialize_workspace(
+        loaded=loaded,
+        runs_root=runs_root,
+        code_commit=code_commit,
+        easydesign_version=easydesign_version,
+        selected_run_id=selected_run_id,
+        timestamp=timestamp,
+        prepare_attempt_input=None,
+        index_note="Run workspace initialized; Stage 01 input not prepared.",
+    )
+    assert prepared_input is None
+    return PreparedRun(loaded_config=loaded, workspace=workspace)
+
+
+def initialize_sequence_run(
+    *,
+    config_path: Path,
+    runs_root: Path,
+    input_writer: PredictionInputWriter,
+    code_commit: str,
+    easydesign_version: str,
+    run_id: str | None = None,
+    created_at: datetime | None = None,
+) -> PreparedSequenceRun:
+    """从 sequence/FASTA 用户 YAML 创建 run 和 Protenix attempt input。"""
+
+    loaded = load_run_config(config_path)
+    if not isinstance(loaded, LoadedSequenceRunConfig):
+        raise ManifestStateError(
+            f"initialize_sequence_run 只接受 sequence/FASTA，实际为 {loaded.detected_format}"
+        )
+    prediction_config = loaded.config.structure_prediction
+    assert prediction_config is not None
+    if input_writer.model_name != prediction_config.backend:
+        raise ManifestStateError(
+            "配置 backend 与输入 writer 不一致: "
+            f"config={prediction_config.backend}, writer={input_writer.model_name}"
+        )
+    timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
+    selected_run_id = _generated_run_id(timestamp) if run_id is None else run_id
+
+    def prepare(staging: Path, _: Path) -> Path:
+        path = (
+            staging
+            / str(StageId.TARGET_PREPARATION)
+            / "attempt-0001"
+            / "inputs"
+            / "protenix-input.json"
+        )
+        return input_writer.write_input(loaded.prediction_request, path)
+
+    workspace, prepared_input = _initialize_workspace(
+        loaded=loaded,
+        runs_root=runs_root,
+        code_commit=code_commit,
+        easydesign_version=easydesign_version,
+        selected_run_id=selected_run_id,
+        timestamp=timestamp,
+        prepare_attempt_input=prepare,
+        index_note="Stage 01 sequence input prepared; backend execution not started.",
+    )
+    assert prepared_input is not None
     return PreparedSequenceRun(
         loaded_config=loaded,
         workspace=workspace,
-        protenix_input=final_protenix_input,
+        protenix_input=prepared_input,
+    )
+
+
+def initialize_pse_run(
+    *,
+    config_path: Path,
+    runs_root: Path,
+    request_writer: PseRequestWriter,
+    code_commit: str,
+    easydesign_version: str,
+    run_id: str | None = None,
+    created_at: datetime | None = None,
+) -> PreparedPseRun:
+    """从 PSE 用户 YAML 创建 run，并生成只引用 snapshot 的提取请求。"""
+
+    loaded = load_run_config(config_path)
+    if not isinstance(loaded, LoadedPseRunConfig):
+        raise ManifestStateError(
+            f"initialize_pse_run 只接受 PSE，实际为 {loaded.detected_format}"
+        )
+    if request_writer.backend_name != "pymol-pse":
+        raise ManifestStateError(
+            f"PSE request writer backend 不匹配: {request_writer.backend_name}"
+        )
+    timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
+    selected_run_id = _generated_run_id(timestamp) if run_id is None else run_id
+
+    def prepare(staging: Path, input_snapshot: Path) -> Path:
+        request = request_writer.build_request(
+            run_root=staging,
+            source_path=input_snapshot,
+            target_id=loaded.config.target.target_id,
+        )
+        path = (
+            staging
+            / str(StageId.TARGET_PREPARATION)
+            / "attempt-0001"
+            / "inputs"
+            / "pse-request.json"
+        )
+        return request_writer.write_request(request, path)
+
+    workspace, prepared_input = _initialize_workspace(
+        loaded=loaded,
+        runs_root=runs_root,
+        code_commit=code_commit,
+        easydesign_version=easydesign_version,
+        selected_run_id=selected_run_id,
+        timestamp=timestamp,
+        prepare_attempt_input=prepare,
+        index_note="Stage 01 PSE import request prepared; worker execution not started.",
+    )
+    assert prepared_input is not None
+    return PreparedPseRun(
+        loaded_config=loaded,
+        workspace=workspace,
+        pse_request=prepared_input,
     )

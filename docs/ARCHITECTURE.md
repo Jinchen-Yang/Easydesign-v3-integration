@@ -114,6 +114,7 @@ workflow/<NN-stage-name>/
 ```text
 easydesign-core (Python 3.11)
 ├── pipeline、manifest、配置、轻量生信、测试和报告
+├── subprocess/JSON+PDB → pymol-pse 环境
 ├── subprocess/文件协议 → boltzgen 环境
 ├── subprocess/文件协议 → boltz2 环境
 ├── subprocess/文件协议 → protenix-v2/AF3/AFO 环境
@@ -122,6 +123,11 @@ easydesign-core (Python 3.11)
 
 `environment.yml` 创建 `easydesign-core`；`pyproject.toml` 是 Python 依赖的唯一声明源。
 `environments/protenix-v2.yml` 固定 EasyDesign 1.0 当前结构预测后端的独立环境。
+`environments/pymol-pse.yml` 固定 PyMOL PSE 导入环境的 Python 3.11 和
+`pymol-open-source=3.1.0`。Core 不导入 PyMOL，也不扫描 Conda 或系统 Python；调用方
+必须用 `EASYDESIGN_PYMOL_PYTHON` 提供绝对 Python 路径。Adapter 先做精确版本探针，再用
+无 shell 的 argv 执行只依赖标准库和 PyMOL 的 worker。请求和 response 使用 JSON，
+worker 导出的原始蛋白坐标使用 PDB，core 再规范化为 mmCIF。
 重型 backend 按其上游要求使用独立 Conda 环境、容器或 module。Core 不激活环境，不向
 重型环境安装自身依赖；adapter 使用显式 executable、工作目录、请求文件和结果 manifest。
 
@@ -141,7 +147,9 @@ runs/
     │   ├── easydesign.yaml
     │   └── resolved-config.json
     ├── manifests/
-    │   └── run-manifest.v0001.json
+    │   ├── LATEST
+    │   ├── run-manifest.v0001.json
+    │   └── run-manifest.v0002.json
     ├── 01-target-preparation/
     │   └── attempt-0001/
     │       ├── inputs/
@@ -198,6 +206,17 @@ runs/<project_id>/<run_id>/
 │   │   └── attempt-0001/
 │   └── ...
 ```
+
+PSE 路径同样只接受 `target.pse + easydesign.yaml`，但与 sequence 路径排他：
+
+- PSE 配置必须省略 `structure_prediction`，因为其坐标直接标记为 `imported`；
+- adapter 生成 `attempt-0001/inputs/pse-request.json`，只引用 run 内 source snapshot
+  和 SHA-256；
+- worker 私有 response/PDB 留在 `attempt-0001/work/`，正式 artifact 由 core 写入
+  `attempt-0001/artifacts/`；
+- `source-annotations.json` 只保存逐残基 CA 颜色，不赋予 hotspot 语义；
+- PSE 成功后发布 Attempt、StageManifest 和新的 RunManifest revision，更新 `LATEST`
+  指针；不生成 Protenix JSON，也不触发 MSA 或预测。
 
 ### 身份
 
@@ -261,5 +280,8 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：用户 sequence 路径固定为 target 文件 + `easydesign.yaml`；Protenix JSON
   是 adapter 生成的 attempt input。正式 run、开发验证和历史迁移分区；新 run 取消
   `attempts/` 中间层，已有运行只做带 fingerprint 的整体迁移。
+- 2026-07-24：PyMOL PSE 采用独立 Python 3.11 / PyMOL 3.1.0 环境和显式文件协议；
+  Stage 01 首版只导入可信本地、单蛋白、单链、单 state 会话，颜色保持未解释 annotation，
+  复合物、配体和人工 object/chain/state 选择留待后续契约。
 
 重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。

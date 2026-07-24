@@ -16,6 +16,7 @@ from easydesign.backends.target_sources import normalize_raw_sequence
 from easydesign.core import ManifestStateError, load_model
 from easydesign.stages.s01_target_preparation import (
     ResidueMapping,
+    TargetBundle,
     build_predicted_target_bundle,
 )
 
@@ -118,3 +119,29 @@ def test_bundle_refuses_to_overwrite_attempt_artifacts(tmp_path) -> None:
     build_predicted_target_bundle(**kwargs)
     with pytest.raises(ManifestStateError, match="不可覆盖"):
         build_predicted_target_bundle(**kwargs)
+
+
+def test_target_bundle_02_loader_accepts_legacy_01_without_annotations(
+    tmp_path: Path,
+) -> None:
+    built = build_predicted_target_bundle(
+        run_root=tmp_path / "run",
+        attempt_id="attempt-0001",
+        target=normalize_raw_sequence("AC", target_id="target"),
+        product=prediction_product(tmp_path),
+        model_checkpoint_sha256="8" * 64,
+        msa_mode=MsaMode.DISABLED,
+        msa_input_sha256=None,
+        msa_server_mode=None,
+        template_mode=TemplateMode.DISABLED,
+        parameter_profile=PredictionParameterProfile.CUSTOM,
+        resolved_cycle_count=1,
+        resolved_diffusion_step_count=5,
+    )
+    payload = built.bundle.model_dump(mode="python")
+    payload["schema_version"] = "0.1"
+
+    legacy = TargetBundle.model_validate(payload)
+
+    assert legacy.schema_version == "0.1"
+    assert legacy.source_annotations is None

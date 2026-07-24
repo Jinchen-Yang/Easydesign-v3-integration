@@ -1,0 +1,7 @@
+name: pymol-pse
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - pymol-open-source=3.1.0

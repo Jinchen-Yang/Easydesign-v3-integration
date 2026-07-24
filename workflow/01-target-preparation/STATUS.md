@@ -6,6 +6,9 @@
 
 - 阶段总体状态：`planned`；六类入口尚未全部实现。
 - sequence/FASTA → Protenix-v2 → Target Bundle 纵向切片状态：`implemented`。
+- 单 Target PyMOL PSE → imported Target Bundle 纵向切片状态：`smoke-validated`。
+- PSE 真实 smoke 保留 138-aa imported 坐标和 101/9/14/14 的 CA 颜色分组；颜色没有被
+  解释为 hotspot，也没有启动 Protenix、MSA 或结构预测。
 - no-MSA 工程 smoke、真实输出解析和 Target Bundle 发布已通过。
 - remote-MSA/no-template 的两个外部服务 attempt 均超时失败，未通过前不能把纵向切片标成
   `smoke-validated`。
@@ -24,7 +27,7 @@
 | 本地 PDB/mmCIF | `planned` | 无 |
 | RCSB PDB ID | `planned` | 无 |
 | UniProt accession/名称 | `planned` | 无 |
-| PyMOL PSE | `planned` | 无 |
+| PyMOL PSE | `smoke-validated` | 独立 PyMOL 3.1.0 环境；合成边界测试和旧 APOE PSE 真实 run |
 | 标准 Target Bundle | `planned` | 目前能生成，尚不能作为输入导入 |
 | 通用结构预测契约 | `implemented` | request/invocation/product 契约和测试 |
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
@@ -59,8 +62,9 @@
 - 如果旧缓存不可获得，公共 MSA 服务恢复后建立新 attempt；不能覆盖已有失败 attempt。
 - MSA 获得后，以模型默认 `10 recycle / 200 diffusion steps`、1 seed、1 sample
   运行无模板 APOE 预测，并用同一 adapter 发布正式 Target Bundle。
-- 实现本地 PDB/mmCIF 与标准 Target Bundle 两条无网络入口。
-- 实现 RCSB PDB ID、UniProt 和 PSE adapter。
+- 实现本地 PDB/mmCIF、RCSB PDB ID、UniProt 和标准 Target Bundle 输入 adapter。
+- 扩展 PSE 到复合物、receptor/ligand、多聚体或人工 object/chain/state 选择前，先新增
+  独立契约；当前严格单 Target adapter 不做隐式放宽。
 - 增加本地 MSA 或预计算 MSA profile，支持不依赖公共队列的离线复现。
 
 ## Blocked
@@ -110,6 +114,22 @@
   `1417adfc60cd9ab6f6778e2712c2fdb90accdaaaa888a7c6820e2bb1b5ed7c08`。
 - `make check` 和 63 个 pytest 全部通过；严格 mypy 和 ruff 通过。
 
+### PyMOL PSE import
+
+- 环境：`/root/autodl-tmp/conda_envs/pymol-pse`，Python `3.11.15`，
+  `pymol-open-source 3.1.0`；core 环境没有安装或导入 PyMOL。
+- 合成 session 覆盖成功导入，以及零蛋白、多 object、多 chain、多 state、配体、
+  非标准残基和损坏 PSE 的明确失败；adapter 另有版本、timeout、非零退出和缺失输出测试。
+- runtime-only fixture：397,738 bytes，SHA-256
+  `7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651`。
+- 正式 run：`runs/apoe/20260724-002-stage01-pse`，object `1B68`、chain `A`、state 1、
+  138 个标准残基；sequence SHA-256
+  `f805c6ca91a7d925814212be97c34f0de339067c8a7ade2826dd5168da6bd2af`。
+- CA 颜色计数：index 26 / `#33FF33` 101，red 9，blue 14，yellow 14；
+  `source-annotations.json` 标记为 `uninterpreted`。run 内没有 Protenix input、MSA 或预测。
+- Target Bundle 0.2、Attempt、StageManifest、RunManifest revision 2 和 `LATEST` 审计链
+  全部发布；Target Bundle 0.1 兼容读取测试通过。
+
 ### remote-MSA attempts
 
 - 目录：`runs/_development/msa-services/apoe-remote-no-template-20260724`。
@@ -138,7 +158,9 @@
 - 完成 S01-003：用户 YAML、自动 target 识别、Protenix JSON 生成和统一 Run Workspace。
 - 将历史 smoke、MSA 诊断和正式 APOE Target Bundle 整体迁移到分区目录；迁移前后
   fingerprint 一致，并生成 `runs/run-index.json` 和不可变迁移清单。
+- 完成并归档 S01-004：独立 PyMOL 环境、严格单 Target PSE 导入、未解释颜色 annotation、
+  Target Bundle 0.2 和 APOE 真实 smoke。
 
 ## 历史索引
 
-- [2026-07：S01-001 sequence/FASTA 与 no-MSA 纵向切片](history/2026-07.md)
+- [2026-07：S01-001、S01-003 与 S01-004](history/2026-07.md)

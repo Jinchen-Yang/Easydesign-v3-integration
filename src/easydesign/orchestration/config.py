@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, TypeAlias
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -87,18 +87,29 @@ class EasyDesignRunConfig(BaseModel):
     schema_version: str = Field(default="0.1", pattern=r"^[0-9]+\.[0-9]+$")
     project_id: str = Field(pattern=ID_PATTERN)
     target: TargetSourceConfig
-    structure_prediction: StructurePredictionConfig
+    structure_prediction: StructurePredictionConfig | None = None
     workflow: WorkflowConfig = WorkflowConfig()
 
 
 @dataclass(frozen=True, slots=True)
-class LoadedRunConfig:
+class LoadedSequenceRunConfig:
     config_path: Path
     config: EasyDesignRunConfig
     source_path: Path
     detected_format: TargetInputFormat
     target: NormalizedProteinSequence
     prediction_request: StructurePredictionRequest
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedPseRunConfig:
+    config_path: Path
+    config: EasyDesignRunConfig
+    source_path: Path
+    detected_format: TargetInputFormat
+
+
+LoadedRunConfig: TypeAlias = LoadedSequenceRunConfig | LoadedPseRunConfig
 
 
 _SUFFIX_FORMATS = {
@@ -183,7 +194,7 @@ def _resolve_source_path(config_path: Path, source: Path) -> Path:
 
 
 def load_run_config(path: Path) -> LoadedRunConfig:
-    """读取用户 YAML，识别 target，并构造后端无关预测请求。"""
+    """读取用户 YAML，并返回与已识别 target 类型匹配的排他配置分支。"""
 
     try:
         config_path = path.resolve(strict=True)
@@ -203,9 +214,24 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         if config.target.format is TargetInputFormat.AUTO
         else config.target.format
     )
+    if detected is TargetInputFormat.PSE:
+        if config.structure_prediction is not None:
+            raise ConfigurationError(
+                "PSE 使用导入坐标，必须省略 structure_prediction；禁止启动结构预测"
+            )
+        return LoadedPseRunConfig(
+            config_path=config_path,
+            config=config,
+            source_path=source_path,
+            detected_format=detected,
+        )
     if detected not in {TargetInputFormat.SEQUENCE, TargetInputFormat.FASTA}:
         raise TargetInputError(
             f"已识别 target format={detected}，但该入口尚未实现；禁止回退到序列预测"
+        )
+    if config.structure_prediction is None:
+        raise ConfigurationError(
+            "sequence/FASTA 输入必须显式提供 structure_prediction"
         )
 
     text = _read_text(source_path)
@@ -233,7 +259,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         )
     except ValidationError as error:
         raise ConfigurationError(f"结构预测配置不符合通用请求契约: {error}") from error
-    return LoadedRunConfig(
+    return LoadedSequenceRunConfig(
         config_path=config_path,
         config=config,
         source_path=source_path,

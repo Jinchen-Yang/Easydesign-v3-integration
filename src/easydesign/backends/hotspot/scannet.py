@@ -125,6 +125,12 @@ print('EASYDESIGN_GPU_PROBE=' + json.dumps(payload, sort_keys=True))
 """
 
 
+def _timeout_text(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+
+
 def _write_scan_input(context: StructureContext, output_dir: Path) -> PreparedScanNetInput:
     output_dir.mkdir(parents=True, exist_ok=True)
     pdb_path = output_dir / "target.pdb"
@@ -226,8 +232,8 @@ class ScanNetEpitopeAdapter:
             raise ScanNetBackendError(
                 "ScanNet GPU probe 超时",
                 error_code="scannet-gpu-probe-timeout",
-                stdout=error.stdout or "",
-                stderr=error.stderr or "",
+                stdout=_timeout_text(error.stdout),
+                stderr=_timeout_text(error.stderr),
             ) from error
         marker = "EASYDESIGN_GPU_PROBE="
         payload_line = next(
@@ -291,8 +297,8 @@ class ScanNetEpitopeAdapter:
             raise ScanNetBackendError(
                 "ScanNet epitope no-MSA 执行超时",
                 error_code="scannet-timeout",
-                stdout=error.stdout or "",
-                stderr=error.stderr or "",
+                stdout=_timeout_text(error.stdout),
+                stderr=_timeout_text(error.stderr),
             ) from error
         runtime = time.monotonic() - started
         expected_csv = (

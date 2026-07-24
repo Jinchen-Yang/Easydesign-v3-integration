@@ -307,10 +307,12 @@ def run_sasa_surface_diversity(
     unknown_avoid = avoid_label_seq_ids - set(context.residues)
     if unknown_avoid:
         raise ValueError(f"avoid label_seq_id 不在 target 中: {sorted(unknown_avoid)}")
-    ShrakeRupley(
+    ShrakeRupley(  # type: ignore[no-untyped-call]
         probe_radius=sasa_parameters.probe_radius_angstrom,
         n_points=sasa_parameters.sphere_points,
-    ).compute(context.bio_structure[0], level="R")
+    ).compute(  # type: ignore[no-untyped-call]
+        context.bio_structure[0], level="R"
+    )
     raw_sasa: dict[int, float] = {
         int(residue.id[1]): float(getattr(residue, "sasa", 0.0))
         for residue in context.bio_structure[0]["A"].get_residues()

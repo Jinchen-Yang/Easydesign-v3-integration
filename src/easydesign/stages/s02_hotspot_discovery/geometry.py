@@ -202,9 +202,9 @@ def load_structure_context(
             )
         )
 
-    structure = Structure("stage02-target")
-    model = Model(0)
-    chain = Chain("A")
+    structure = Structure("stage02-target")  # type: ignore[no-untyped-call]
+    model = Model(0)  # type: ignore[no-untyped-call]
+    chain = Chain("A")  # type: ignore[no-untyped-call]
     model.add(chain)
     structure.add(model)
     residues: dict[int, ResidueGeometry] = {}
@@ -239,9 +239,11 @@ def load_structure_context(
             center=_center(atoms, residue_name),
         )
         residues[label] = geometry
-        bio_residue = Residue((" ", label, " "), residue_name, "")
+        bio_residue = Residue(  # type: ignore[no-untyped-call]
+            (" ", label, " "), residue_name, ""
+        )
         for serial, atom in enumerate(atoms, start=1):
-            bio_residue.add(
+            bio_residue.add(  # type: ignore[no-untyped-call]
                 Atom(
                     atom.name,
                     np.asarray(atom.xyz, dtype=float),
@@ -276,7 +278,7 @@ def build_residue_graph(
     heavy_atom_distance: float,
     anchor_distance: float,
 ) -> dict[int, set[int]]:
-    graph = {label: set() for label in labels}
+    graph: dict[int, set[int]] = {label: set() for label in labels}
     ordered = sorted(labels)
     for index, left_label in enumerate(ordered):
         left = context.residues[left_label]
@@ -295,9 +297,14 @@ def region_centroid(
     context: StructureContext,
     labels: tuple[int, ...],
 ) -> tuple[float, float, float]:
-    return tuple(
+    values = [
         sum(context.residues[label].center[axis] for label in labels) / len(labels)
         for axis in range(3)
+    ]
+    return (
+        values[0],
+        values[1],
+        values[2],
     )
 
 

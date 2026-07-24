@@ -29,6 +29,7 @@ from easydesign.stages.s01_target_preparation import TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
     AnnotationStatus,
     ProviderExecutionStatus,
+    RegionMethod,
     RegionParameters,
     RegionReviewStatus,
     SasaParameters,
@@ -494,12 +495,12 @@ def execute_stage02_comparison(
                 annotation_status=AnnotationStatus.NOT_IMPLEMENTED,
                 providers=(
                     ProviderExecutionStatus(
-                        method="sasa-surface-diversity",
+                        method=RegionMethod.SASA_SURFACE_DIVERSITY,
                         status="retained",
                         message="SASA files may be retained but are not published.",
                     ),
                     ProviderExecutionStatus(
-                        method="scannet-epitope-no-msa",
+                        method=RegionMethod.SCANNET_EPITOPE_NO_MSA,
                         status="failed",
                         message=str(failure)[:4096] or type(failure).__name__,
                     ),

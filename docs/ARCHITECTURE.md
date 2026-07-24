@@ -238,6 +238,17 @@ Stage 02 automatic 同时运行两个独立 provider：
 并完成编号映射时 Stage 02 才发布正式 output；人工选择前 Stage 03 保持
 `awaiting_region_selection`。
 
+### Binder 类型扩展边界
+
+七阶段 pipeline 面向多类 binder，VHH 只是 1.0 的首个 reference profile。Stage 01–02
+处理 target、候选表面区域和 target-side annotation，原则上不绑定 VHH；Stage 03–07
+通过 binder-specific profile、backend、scaffold/representation 和 filter 承载分子差异。
+
+新增蛋白或肽 binder 时不得复制 orchestration、manifest 或运行目录。新类型必须声明其
+表示、长度/组成约束、生成后端能力、结构预测需求、筛选规则和最终候选包格式，并继续使用
+相同的 artifact identity、attempt、恢复和报告机制。未来 CLI/UI 只选择 profile 并调用
+同一 API。
+
 ### 身份
 
 - `project_id`：稳定项目 slug。
@@ -306,5 +317,8 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：Stage 02 automatic 采用独立 SASA/geometry 与 ScanNet epitope no-MSA
   两条路线；禁止分数融合、CPU fallback 和 PSE颜色介入，先输出各自 Top 3 与重叠报告，
   人工批准后再交给 Stage 03。
+- 2026-07-24：EasyDesign 的长期产品边界是多 binder 类型平台；VHH 是 1.0 reference
+  profile，不是永久边界。蛋白、肽和后续类型必须通过 profile/adapter 复用同一七阶段
+  orchestration、manifest、恢复和报告机制。
 
 重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。

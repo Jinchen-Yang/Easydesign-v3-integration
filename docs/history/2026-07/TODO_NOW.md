@@ -15,6 +15,8 @@
   提交为 `feat(core): implement foundational run contracts`。
 - 创建私有 GitHub 仓库 `Knitua/Easydesign`，使用仅限本仓库的 Proteindigger1
   deploy key 推送 `main`；本地与远端 HEAD 验证一致。
+- 明确 EasyDesign 的长期产品边界是 VHH、蛋白、肽及后续经过验证类型的多 binder
+  一键式平台；VHH 仅是 1.0 的首个 reference profile。TODO 改为短期/中期/长期路线。
 
 ## 2026-07-23
 

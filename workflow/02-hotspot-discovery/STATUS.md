@@ -26,6 +26,7 @@
 | PSE 染色区域导入 | `planned` | 只有明确失败的 provider 接口 |
 | 人工区域上传 | `planned` | 只有明确失败的 provider 接口 |
 | UniProt 功能位点/PTM/天然界面 | `planned` | `annotation_status=not_implemented` |
+| SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
 | ScanNet 带 MSA 模型 | `planned` | 未安装、未测试 |
 | PeSTo | `planned` | 未安装、未测试；非商业许可证，产品接入前需授权审查 |
@@ -45,6 +46,8 @@
   `3 × 3` 重合关系。
 - 建立“人工批准区域集”契约，再允许 Stage 03 消费。
 - 实现 UniProt/PTM/糖基化/天然界面 annotation 拉取，但默认只标注 warning。
+- 登记 SASA MAX_ASA 常数来源，比较替代归一化表，并为阈值/权重建立 binder-specific
+  benchmark；验证前保持当前 v0.1 参数不变。
 - 设计 VHH–抗原 patch benchmark，比较 SASA、ScanNet PPBS、PeSTo 等方法。
 - 实现 PSE annotation 与 manual provider，不改变 automatic 方法结果。
 
@@ -102,6 +105,8 @@
 - 建立隔离环境并完成 GPU probe；确认 probe 通过不足以代表真实模型可运行。
 - 官方 1BRS 和 APOE真实模型均在 RTX 4080 上复现 cuBLAS GEMM 失败，按契约标记 blocked。
 - APOE失败 attempt 正确保留 SASA 并拒绝发布比较结果；将 SASA 几何选区加速至 2.5 秒。
+- 将 SASA v0.1 的结构预处理、MAX_ASA、图构建、Dijkstra patch、评分公式、分散选择和
+  放宽顺序完整落盘；识别出 MAX_ASA 来源登记与 binder-specific 校准仍是 planned。
 
 ## 历史索引
 

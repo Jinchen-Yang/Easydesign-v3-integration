@@ -1,21 +1,31 @@
 # EasyDesign
 
-EasyDesign 是一个契约优先、可追溯的七阶段 VHH binder 设计流程。本仓库先把
-阶段边界、产物、溯源和工程规则定义清楚，再逐步实现科学计算后端。
+EasyDesign 是一个面向多类 binder 的契约优先、可追溯七阶段设计平台。长期目标是让用户
+提供 target 和少量明确的设计约束，即可通过一次配置、一个入口完成从结构准备、候选区域
+发现、生成、复折叠、筛选到下单候选包的完整流程。
+
+EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder profile、生成后端和筛选
+规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
+binder 的科学约束不会被强行混成一种算法。
 
 - 当前版本：`0.1.0-dev`（包版本 `0.1.0.dev0`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
-- 七个科学阶段：`planned`
-- 当前范围：VHH 主线；不承诺设计准确率
+- EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
+- EasyDesign 1.0：先聚焦 VHH，跑通第一条真实、完整、可审计的参考主线
+- 长期产品边界：多 binder 类型的一键式端到端设计平台
+- 当前不承诺设计准确率，也尚未提供正式 CLI 或 UI
+
+这里的“一键式”是指用户不需要手工拼接多个后端、搬运中间文件或猜测失败位置；关键科学
+选择、失败状态和人工批准仍然显式保存，不能被“一键”隐藏。
 
 ## 七个阶段
 
 | 阶段 | 目标 |
 | --- | --- |
 | [`01-target-preparation`](workflow/01-target-preparation/README.md) | 将六类输入统一为标准 Target Bundle。 |
-| [`02-hotspot-discovery`](workflow/02-hotspot-discovery/README.md) | 生成带证据的 hotspot 候选和 avoid 区域。 |
-| [`03-boltzgen-configuration`](workflow/03-boltzgen-configuration/README.md) | 生成并校验 VHH BoltzGen YAML 策略矩阵。 |
+| [`02-hotspot-discovery`](workflow/02-hotspot-discovery/README.md) | 生成带证据的候选表面区域和 avoid 区域。 |
+| [`03-boltzgen-configuration`](workflow/03-boltzgen-configuration/README.md) | 生成并校验 binder 设计策略；1.0 首先实现 VHH BoltzGen YAML。 |
 | [`04-pilot-generation`](workflow/04-pilot-generation/README.md) | 运行可完整追溯的小批量 BoltzGen pilot。 |
 | [`05-pilot-filtering`](workflow/05-pilot-filtering/README.md) | 使用体系专属、版本化规则筛选 pilot。 |
 | [`06-scale-generation-and-refolding`](workflow/06-scale-generation-and-refolding/README.md) | 放大策略并调用可替换结构预测后端。 |

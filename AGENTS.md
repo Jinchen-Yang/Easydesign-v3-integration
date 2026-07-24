@@ -17,6 +17,9 @@
 5. 实质性阶段任务必须在对应 Stage `STATUS.md` 的 `Now` 中有明确任务、完成门槛和
    当前状态；跨阶段任务才进入顶层 `TODO_NOW.md`。若用户指定的新任务尚未记录，Agent
    应自行补充后继续执行，不必为此单独询问。
+6. 七个 Stage `STATUS.md` 的“顶层摘要”是顶层路线图的唯一状态来源；开始任务时若发现
+   `TODO.md` 或 `TODO_NOW.md` 与它们不一致，先运行
+   `python scripts/sync_status_rollup.py` 修复，不得沿用过期摘要。
 
 ## 2. 实施规则
 
@@ -42,13 +45,16 @@ Agent 必须自动完成以下收尾工作：
 3. 接口、目录或依赖方向变化时更新 `docs/ARCHITECTURE.md`。
 4. 阶段行为或契约变化时更新对应 workflow `README.md`。
 5. 更新每个受影响 Stage 的 `STATUS.md`：
+   - 同步更新“顶层摘要”的总体状态、一句话进展、当前重心、主要阻塞和日期；
    - 已完成的 `Now` 在被移除或替换前，必须先追加到该 Stage 的
      `history/YYYY-MM.md`；
    - 从 `Now` 移除已归档工作或切换到下一个明确任务；
    - 更新功能矩阵、验证证据和 Blocked；
    - 在当日工作日志中只追加决策、测试证据、run/attempt 和 commit。
-6. 跨阶段重点发生变化时更新 `TODO_NOW.md`；阶段内部细节不得复制到顶层。
-7. 只有宏观里程碑的全部完成门槛通过后，才更新 `TODO.md` 的状态。
+6. 每次 Stage 顶层摘要变化后运行 `python scripts/sync_status_rollup.py`，自动刷新
+   `TODO.md` 和 `TODO_NOW.md` 的七阶段实时表；禁止手工编辑自动生成区块。
+7. 跨阶段 Now/Next/Blocked 发生变化时更新 `TODO_NOW.md` 的人工维护区块；阶段内部
+   细节不得复制到顶层。只有宏观里程碑的全部完成门槛通过后，才改变其总体状态。
 8. Stage 历史采用“工作项关闭即归档、按月追加到同一文件”的制度：
    - 每条记录必须包含状态、完成内容、验证证据、遇到的问题、解决办法和遗留问题；
    - 未完成工作不得伪装成已结束记录：仍在执行的留在 `Now`，等待外部条件的进入
@@ -56,15 +62,17 @@ Agent 必须自动完成以下收尾工作：
    - `STATUS.md` 的历史索引必须链接对应月份文件；
    - 顶层 `docs/history/YYYY-MM/` 只记录跨阶段里程碑，不复制阶段细节。
    历史记录不得改写，有误时追加更正。
-9. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit；不得使用
+9. `make check` 必须验证顶层实时表与七个 Stage 摘要一致；不同步属于质量门失败，
+   不能以“只改了文档”为由跳过。
+10. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit；不得使用
    `git add .` 盲目加入 run、权重、密钥、大文件或无关修改。
-10. 对已经通过质量门的独立工作单元，必须 push 到已配置的 GitHub remote：
+11. 对已经通过质量门的独立工作单元，必须 push 到已配置的 GitHub remote：
     - `main` 只接收可验证提交；未完成工作只能推到短期分支；
     - push 后必须用远端引用再次核对 commit SHA；
     - 网络、权限或 remote 异常时，在 `TODO_NOW.md` 的 `Blocked` 记录未推送 commit
       SHA，并在交付中明确报告；
     - 禁止仅根据 `git push` 命令已执行就声称远端已更新。
-11. 未经授权不得新建或替换 remote，不得触发外部下单或其他不可逆外部操作。
+12. 未经授权不得新建或替换 remote，不得触发外部下单或其他不可逆外部操作。
 
 ## 4. 阻塞与询问
 

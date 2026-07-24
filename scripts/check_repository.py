@@ -153,7 +153,14 @@ def main() -> int:
         require(status.is_file(), f"缺少 {status.relative_to(ROOT)}", errors)
         if status.is_file():
             status_text = status.read_text(encoding="utf-8")
-            for heading in ("## 当前结论", "## Now", "## Next", "## Blocked", "## 验证证据"):
+            for heading in (
+                "## 顶层摘要",
+                "## 当前结论",
+                "## Now",
+                "## Next",
+                "## Blocked",
+                "## 验证证据",
+            ):
                 require(heading in status_text, f"{stage}/STATUS 缺少区块: {heading}", errors)
         history_dir = base / "history"
         require(history_dir.is_dir(), f"缺少 {stage}/history", errors)
@@ -264,12 +271,33 @@ def main() -> int:
                 errors,
             )
 
+    scannet_environment = ROOT / "environments/scannet-epitope.yml"
+    require(scannet_environment.is_file(), "缺少 ScanNet 独立环境声明", errors)
+    if scannet_environment.is_file():
+        scannet_environment_text = scannet_environment.read_text(encoding="utf-8")
+        for requirement in (
+            "name: scannet-epitope",
+            "python=3.6.12",
+            "tensorflow-gpu==1.14.0",
+        ):
+            require(
+                requirement in scannet_environment_text,
+                f"ScanNet 环境缺少固定项: {requirement}",
+                errors,
+            )
+
     agent_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for heading in ("开始任务前", "实施规则", "完成任务前", "阻塞与询问"):
         require(heading in agent_text, f"AGENTS 缺少工作协议: {heading}", errors)
 
     todo_now = (ROOT / "TODO_NOW.md").read_text(encoding="utf-8")
-    for heading in ("## Now", "## Next", "## Blocked", "## 历史索引"):
+    for heading in (
+        "## 七阶段实时摘要",
+        "## Now",
+        "## Next",
+        "## Blocked",
+        "## 历史索引",
+    ):
         require(heading in todo_now, f"TODO_NOW 缺少区块: {heading}", errors)
 
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")

@@ -1,4 +1,4 @@
-name: scannet-epitope-gpu
+name: scannet-epitope
 channels:
   - conda-forge
   - defaults

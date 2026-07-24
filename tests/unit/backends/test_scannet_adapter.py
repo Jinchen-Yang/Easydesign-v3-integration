@@ -66,7 +66,7 @@ def test_missing_python_fails_explicitly(tmp_path: Path) -> None:
         )
     )
     with pytest.raises(ScanNetBackendError, match="Python 不存在") as captured:
-        backend.probe_gpu()
+        backend.probe_runtime()
     assert captured.value.error_code == "scannet-python-missing"
 
 
@@ -88,7 +88,17 @@ def test_parse_predictions_maps_tool_indices_to_label_ids(tmp_path: Path) -> Non
     assert probabilities[18] == pytest.approx(0.18)
 
 
-def test_gpu_probe_rejects_cpu_only_result(monkeypatch, tmp_path: Path) -> None:
+def test_cpu_runtime_disables_gpu(tmp_path: Path) -> None:
+    backend = adapter(tmp_path)
+
+    environment = backend._environment()
+
+    assert environment["EASYDESIGN_SCANNET_DEVICE"] == "cpu"
+    assert environment["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert "TF_FORCE_GPU_ALLOW_GROWTH" not in environment
+
+
+def test_cpu_probe_accepts_cpu_result(monkeypatch, tmp_path: Path) -> None:
     backend = adapter(tmp_path)
     calls = 0
 
@@ -98,7 +108,8 @@ def test_gpu_probe_rejects_cpu_only_result(monkeypatch, tmp_path: Path) -> None:
         if calls == 1:
             return subprocess.CompletedProcess(args[0], 0, SCANNET_COMMIT + "\n", "")
         payload = (
-            'EASYDESIGN_GPU_PROBE={"gpu_available": false,'
+            'EASYDESIGN_RUNTIME_PROBE={"execution_device":"cpu",'
+            '"gpu_available":false,'
             '"gpu_device_name":"","keras_version":"2.2.5",'
             '"tensorflow_version":"1.14.0","test_operation_device":"/device:CPU:0"}\n'
         )
@@ -106,6 +117,37 @@ def test_gpu_probe_rejects_cpu_only_result(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(ScanNetBackendError, match="GPU 契约") as captured:
-        backend.probe_gpu()
-    assert captured.value.error_code == "scannet-gpu-unavailable"
+    probe = backend.probe_runtime()
+
+    assert probe.execution_device == "cpu"
+    assert probe.test_operation_device == "/device:CPU:0"
+
+
+def test_explicit_gpu_probe_rejects_cpu_only_result(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    original = adapter(tmp_path)
+    backend = ScanNetEpitopeAdapter(
+        original.config.model_copy(update={"execution_device": "gpu"})
+    )
+    calls = 0
+
+    def fake_run(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return subprocess.CompletedProcess(args[0], 0, SCANNET_COMMIT + "\n", "")
+        payload = (
+            'EASYDESIGN_RUNTIME_PROBE={"execution_device":"gpu",'
+            '"gpu_available":false,'
+            '"gpu_device_name":"","keras_version":"2.2.5",'
+            '"tensorflow_version":"1.14.0","test_operation_device":"/device:CPU:0"}\n'
+        )
+        return subprocess.CompletedProcess(args[0], 0, payload, "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(ScanNetBackendError, match="设备契约") as captured:
+        backend.probe_runtime()
+    assert captured.value.error_code == "scannet-device-unavailable"

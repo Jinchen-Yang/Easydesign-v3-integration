@@ -100,11 +100,14 @@ filter，是有效的科学负结果，不代表软件失败，也不能包装�
 
 - `README.md`：项目入口与当前状态。
 - `PROJECT_CHARTER.md`：战略、1.0 边界和开发规则。
-- `TODO.md`：短期、中期和长期宏观路线，以及七阶段状态索引。
-- `TODO_NOW.md`：跨阶段的 Now/Next/Blocked 和项目历史索引，不复制阶段任务。
+- `TODO.md`：短期、中期和长期宏观路线，以及自动生成的七阶段实时摘要。
+- `TODO_NOW.md`：跨阶段的 Now/Next/Blocked、自动生成的七阶段实时摘要和项目历史索引，
+  不复制阶段任务。
 - 每个 workflow 阶段维护一个稳定的中文 `README.md`，同时承担说明和契约。
 - 每个 workflow 阶段维护一个动态 `STATUS.md`，记录功能矩阵、Now/Next/Blocked、
-  验证证据和只追加工作日志。
+  验证证据、只追加工作日志，以及供顶层自动汇总的一句话状态。
+- 七阶段实时摘要只能由 `scripts/sync_status_rollup.py` 从各 Stage `STATUS.md` 生成；
+  `make check` 必须拒绝过期的顶层摘要。
 - 阶段历史每月归档到该阶段的 `history/YYYY-MM.md`；跨阶段历史归档到
   `docs/history/YYYY-MM/`。
 - Git commit 记录代码差异；历史文档只记录决策理由、验证证据、run/attempt 身份、

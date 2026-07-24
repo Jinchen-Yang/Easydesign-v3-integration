@@ -332,6 +332,10 @@ def execute_stage02_comparison(
         stdout = product.stdout
         stderr = product.stderr
         backend_version = product.commit
+        runtime_probe_path = dump_model(
+            product.probe,
+            scannet_dir / "runtime-probe.json",
+        )
         raw_csv = _exclusive_copy(
             product.raw_csv,
             scannet_dir / "raw-predictions.csv",
@@ -398,8 +402,9 @@ def execute_stage02_comparison(
                     method=scannet_recommended.method,
                     status="succeeded",
                     message=(
-                        "ScanNet epitope no-MSA ran on GPU; independent candidate "
-                        "pool generated."
+                        "ScanNet epitope no-MSA ran on explicitly requested "
+                        f"{product.probe.execution_device.upper()}; independent "
+                        "candidate pool generated."
                     ),
                 ),
             ),
@@ -420,6 +425,12 @@ def execute_stage02_comparison(
                 "json",
             ),
             (sasa_pml, "sasa-review-script", "visual-review-script", "pml"),
+            (
+                runtime_probe_path,
+                "scannet-runtime-probe",
+                "backend-runtime-probe",
+                "json",
+            ),
             (raw_csv, "scannet-raw-predictions", "backend-raw-output", "csv"),
             (
                 scannet_evidence_path,
@@ -485,7 +496,7 @@ def execute_stage02_comparison(
             ended_at=ended,
             backend_name="independent-sasa-scannet",
             backend_version=backend_version,
-            executor_name="local-gpu-subprocess",
+            executor_name=f"local-{adapter.config.execution_device}-subprocess",
             log_artifacts=log_refs,
         )
     else:
@@ -519,7 +530,7 @@ def execute_stage02_comparison(
             ended_at=ended,
             backend_name="independent-sasa-scannet",
             backend_version=backend_version,
-            executor_name="local-gpu-subprocess",
+            executor_name=f"local-{adapter.config.execution_device}-subprocess",
             log_artifacts=log_refs,
             error=ErrorInfo(
                 code=error_code,

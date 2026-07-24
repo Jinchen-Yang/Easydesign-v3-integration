@@ -103,9 +103,10 @@ workflow/<NN-stage-name>/
 └── examples/
 ```
 
-顶层 `TODO.md` 只汇总宏观状态并链接七个 `STATUS.md`；`TODO_NOW.md` 只保留跨阶段
-当前重点。实现、测试或契约触及某个 Stage 时必须更新对应 `STATUS.md`，但只有宏观里程碑
-完成门槛变化时才更新 `TODO.md`。
+各 Stage `STATUS.md` 的“顶层摘要”是状态事实来源。`scripts/sync_status_rollup.py`
+从七个摘要生成 `TODO.md` 和 `TODO_NOW.md` 的实时表，`make check` 拒绝任何不同步。
+顶层人工维护内容只保留宏观路线和跨阶段 Now/Next/Blocked；阶段证据仍留在对应 STATUS
+与 history，避免复制详情。
 
 ## 5. 环境拓扑
 
@@ -115,7 +116,7 @@ workflow/<NN-stage-name>/
 easydesign-core (Python 3.11)
 ├── pipeline、manifest、配置、轻量生信、测试和报告
 ├── subprocess/JSON+PDB → pymol-pse 环境
-├── subprocess/PDB+CSV  → scannet-epitope-gpu 环境
+├── subprocess/PDB+CSV  → scannet-epitope 隔离环境（CPU 默认，GPU 可选）
 ├── subprocess/文件协议 → boltzgen 环境
 ├── subprocess/文件协议 → boltz2 环境
 ├── subprocess/文件协议 → protenix-v2/AF3/AFO 环境
@@ -129,12 +130,12 @@ easydesign-core (Python 3.11)
 必须用 `EASYDESIGN_PYMOL_PYTHON` 提供绝对 Python 路径。Adapter 先做精确版本探针，再用
 无 shell 的 argv 执行只依赖标准库和 PyMOL 的 worker。请求和 response 使用 JSON，
 worker 导出的原始蛋白坐标使用 PDB，core 再规范化为 mmCIF。
-`environments/scannet-epitope-gpu.yml` 隔离 ScanNet 的 Python 3.6.12、
-TensorFlow GPU 1.14 和 CUDA 10 依赖。Core 把规范结构转换成单链、连续工具编号 PDB，
-ScanNet 输出 CSV 后再通过显式 mapping 回到 mmCIF label/auth 编号。Adapter 必须验证
-代码 commit 和 GPU op；GPU probe 只是前置检查，官方模型和目标体系真实推理也必须成功。
-任一真实推理失败时保留独立 SASA 诊断产物，但 Stage 02 不发布正式 output；禁止 CPU
-fallback。
+`environments/scannet-epitope.yml` 当前固定 ScanNet 的遗留 Python 3.6.12、
+TensorFlow GPU 1.14、CUDA 10 与 cuDNN 依赖；同一环境可通过隐藏 CUDA 设备执行 CPU。
+Core 把规范结构转换成单链、连续工具编号 PDB，ScanNet 输出 CSV 后再通过显式 mapping
+回到 mmCIF label/auth 编号。Adapter 必须显式选择 `cpu` 或 `gpu`，默认 CPU，并用 runtime
+probe 证明实际计算设备与请求一致；禁止设备间静默 fallback。当前 CPU 是 1.0 主线，GPU
+兼容性与性能优化是后续 benchmark，不阻塞 Stage 02。
 重型 backend 按其上游要求使用独立 Conda 环境、容器或 module。Core 不激活环境，不向
 重型环境安装自身依赖；adapter 使用显式 executable、工作目录、请求文件和结果 manifest。
 
@@ -317,6 +318,11 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：Stage 02 automatic 采用独立 SASA/geometry 与 ScanNet epitope no-MSA
   两条路线；禁止分数融合、CPU fallback 和 PSE颜色介入，先输出各自 Top 3 与重叠报告，
   人工批准后再交给 Stage 03。
+- 2026-07-24：后续验证证明同一固定 ScanNet commit/权重可在 CPU 完成官方 1BRS 与
+  APOE；Stage 02 改为显式 CPU 默认、GPU 可选且无设备 fallback。GPU 兼容性转为性能
+  待办，不再阻塞 1.0 主线；上一条保留为最初 GPU-only 决策的历史事实。
+- 2026-07-24：七个 Stage STATUS 的顶层摘要成为状态事实来源，由同步脚本生成顶层
+  TODO/TODO_NOW 实时表，并由 `make check` 阻止摘要漂移。
 - 2026-07-24：EasyDesign 的长期产品边界是多 binder 类型平台；VHH 是 1.0 reference
   profile，不是永久边界。蛋白、肽和后续类型必须通过 profile/adapter 复用同一七阶段
   orchestration、manifest、恢复和报告机制。

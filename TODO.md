@@ -13,14 +13,23 @@
 | --- | --- | --- |
 | M0 仓库基础 | `implemented` | 私有 Git 仓库、中文治理、七阶段契约、包骨架和基础检查完成。 |
 | M1 统一运行契约 | `implemented` | 类型化 manifest、不可变 attempt、规范 JSON、SHA-256 和契约测试完成。 |
-| Stage 01 Target 准备 | `planned` | [状态与任务](workflow/01-target-preparation/STATUS.md)：六类入口生成合格 Target Bundle。 |
-| Stage 02 候选区域发现 | `planned` | [状态与任务](workflow/02-hotspot-discovery/STATUS.md)：输出可比较、有来源的候选区域。 |
-| Stage 03 设计配置 | `planned` | [状态与任务](workflow/03-boltzgen-configuration/STATUS.md)：1.0 生成并校验 VHH BoltzGen 策略。 |
-| Stage 04 Pilot 生成 | `planned` | [状态与任务](workflow/04-pilot-generation/STATUS.md)：真实小批量 BoltzGen pilot 完成。 |
-| Stage 05 Pilot 筛选 | `planned` | [状态与任务](workflow/05-pilot-filtering/STATUS.md)：输出可审计的策略 shortlist。 |
-| Stage 06 放大与复折叠 | `planned` | [状态与任务](workflow/06-scale-generation-and-refolding/STATUS.md)：通用预测后端完成 smoke。 |
-| Stage 07 终筛与选择 | `planned` | [状态与任务](workflow/07-final-filtering-and-selection/STATUS.md)：生成供人工批准的 Top N 包。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
+
+### 七阶段实时摘要
+
+下表由各 Stage `STATUS.md` 的“顶层摘要”自动生成；不得手工维护。
+
+<!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
+| Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Stage 01 | `planned` | sequence/FASTA 与单 Target PSE 已跑通，其余四类入口待实现。 | 补齐结构、RCSB、UniProt、Bundle 输入并完成 MSA-backed 验证。 | APOE MSA 资产缺失，两个公共 MSA 服务超时。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | SASA 与 ScanNet CPU 已分别在 APOE 生成 Top 3，正式 CPU 双方法 run 正在固化。 | 以 CPU 跑通可发布比较并建立人工批准到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
+| Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 05 | `planned` | 尚未实现；filter profile、逐规则审计和 shortlist 均待开发。 | Stage 04 候选契约稳定后建立可版本化 filter engine。 | 依赖 Stage 04 规范候选与原始 artifact。 | 2026-07-24 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `planned` | 通用预测接口已在 Stage 01 实现，放大生成和复合物 refold 尚未开始。 | 复用 Protenix-v2 adapter，等待 Stage 05 shortlist 后定义 scale 契约。 | 依赖 Stage 05 入选策略和复合物预测验证。 | 2026-07-24 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `planned` | 尚未实现；最终规则、聚类、多样性和 Top N 审核包均待开发。 | Stage 06 输出稳定后定义 final decision 与人工批准包。 | 依赖 Stage 06 完整预测与覆盖报告。 | 2026-07-24 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+<!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## 中期目标：多 binder 与正式开发者产品
 

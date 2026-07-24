@@ -42,6 +42,12 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--runs-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument(
+        "--execution-device",
+        choices=("cpu", "gpu"),
+        default="cpu",
+        help="ScanNet execution device; CPU is the validated default.",
+    )
     parser.add_argument("--gpu-device", type=int, default=0)
     args = parser.parse_args()
 
@@ -53,6 +59,7 @@ def main() -> int:
         ScanNetBackendConfig(
             python_path=_required_path("EASYDESIGN_SCANNET_PYTHON"),
             repository_root=_required_path("EASYDESIGN_SCANNET_ROOT"),
+            execution_device=args.execution_device,
             gpu_device=args.gpu_device,
         )
     )

@@ -1,28 +1,45 @@
 # EasyDesign 当前工作
 
+## 七阶段实时摘要
+
+下表由各 Stage `STATUS.md` 的“顶层摘要”自动生成；详细证据和任务仍以对应 STATUS 为准。
+
+<!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
+| Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Stage 01 | `planned` | sequence/FASTA 与单 Target PSE 已跑通，其余四类入口待实现。 | 补齐结构、RCSB、UniProt、Bundle 输入并完成 MSA-backed 验证。 | APOE MSA 资产缺失，两个公共 MSA 服务超时。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | SASA 与 ScanNet CPU 已分别在 APOE 生成 Top 3，正式 CPU 双方法 run 正在固化。 | 以 CPU 跑通可发布比较并建立人工批准到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
+| Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 05 | `planned` | 尚未实现；filter profile、逐规则审计和 shortlist 均待开发。 | Stage 04 候选契约稳定后建立可版本化 filter engine。 | 依赖 Stage 04 规范候选与原始 artifact。 | 2026-07-24 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `planned` | 通用预测接口已在 Stage 01 实现，放大生成和复合物 refold 尚未开始。 | 复用 Protenix-v2 adapter，等待 Stage 05 shortlist 后定义 scale 契约。 | 依赖 Stage 05 入选策略和复合物预测验证。 | 2026-07-24 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `planned` | 尚未实现；最终规则、聚类、多样性和 Top N 审核包均待开发。 | Stage 06 输出稳定后定义 final decision 与人工批准包。 | 依赖 Stage 06 完整预测与覆盖报告。 | 2026-07-24 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+<!-- END AUTO-GENERATED STAGE ROLLUP -->
+
 ## Now
 
-- **当前没有可在既定 ScanNet 约束下继续的未提交实现。**
-- Stage 02 automatic 代码与 SASA APOE smoke 已完成；真实双方法 smoke 已进入 Blocked。
-- 详细任务、未实现模型、annotation和验证证据：
+- **当前跨阶段重心是完成 Stage 02 CPU-first 双方法正式 run 和人工区域交接。**
+- ScanNet CPU 已通过官方 no-MSA 与 APOE 138-aa smoke；GPU 不再阻塞当前主线。
+- 详细设备决策、SASA/ScanNet 结果、未实现 annotation 和验证证据：
   [`workflow/02-hotspot-discovery/STATUS.md`](workflow/02-hotspot-discovery/STATUS.md)。
 - Stage 01 APOE MSA-backed Protenix-v2 仍为独立 Blocked 工作，状态见
   [`workflow/01-target-preparation/STATUS.md`](workflow/01-target-preparation/STATUS.md)。
+- 顶层摘要同步机制正在固化：任何 Stage STATUS 变化都必须自动刷新本文件和 `TODO.md`。
 
 ## Next
 
-- 为 ScanNet runtime 解阻建立 ADR：选择兼容旧 CUDA 10 的硬件/容器，或评审后采用
-  可验证的现代化模型路径；之后重跑官方 no-MSA 和 APOE。
-- 双方法成功后再人工检查两套 Top 3 和重合关系，批准后定义 Stage 03 handoff。
+- 人工检查 SASA Top 3、ScanNet CPU Top 3 及 PSE 原始颜色 annotation 的重合关系。
+- 定义人工批准区域集及 Stage 03 handoff，禁止自动发布默认赢家。
 - 完成 Stage 01 其余入口和 MSA-backed 验证。
+- 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变当前 CPU 主线。
 
 ## Blocked
 
 - Stage 01：两个公共 MSA 服务 attempt 超时；旧仓在本服务器没有保存 APOE MSA，
   历史记录指向的 SMART target feature cache 尚未取回。
-- Stage 02：TensorFlow 1.14 GPU probe 通过，但官方 1BRS 与 APOE真实推理均在 RTX 4080
-  报 cuBLAS GEMM execution failure；commit/权重未改变，禁止 CPU fallback。证据 run 为
-  `runs/apoe/20260724-003-stage02-auto`。
+- Stage 02 CPU 主线当前没有 runtime 阻塞；人工批准区域集与 Stage 03 handoff 尚未实现。
+- Stage 02 GPU 优化：TensorFlow 1.14 GPU probe 通过，但官方 1BRS 与 APOE 在 RTX 4080
+  报 cuBLAS GEMM execution failure；这是后续性能待办，不阻塞 CPU 主线。
 - 公开许可证和公开 release 等待 IP/release 决策。
 - 第三方 VHH scaffold 迁移等待来源与权利审查。
 

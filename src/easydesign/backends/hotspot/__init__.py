@@ -7,9 +7,9 @@ from .scannet import (
     ScanNetBackendConfig,
     ScanNetBackendError,
     ScanNetEpitopeAdapter,
-    ScanNetGpuProbe,
     ScanNetPredictionProduct,
     ScanNetRawPrediction,
+    ScanNetRuntimeProbe,
 )
 
 __all__ = [
@@ -19,7 +19,7 @@ __all__ = [
     "ScanNetBackendConfig",
     "ScanNetBackendError",
     "ScanNetEpitopeAdapter",
-    "ScanNetGpuProbe",
     "ScanNetPredictionProduct",
     "ScanNetRawPrediction",
+    "ScanNetRuntimeProbe",
 ]

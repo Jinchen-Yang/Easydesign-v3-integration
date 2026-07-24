@@ -213,7 +213,12 @@ SASA 路径在任何情况下都不会调用或读取 ScanNet。
 - adapter 将结构写成单链、连续工具编号 PDB，并保存工具编号到 label/auth 编号映射。
 - 候选以逐残基原始 probability 为种子，在纯坐标邻接图中扩展。
 - 区域只按 ScanNet probability 排名；不计算或读取 SASA。
-- 必须在独立 GPU 环境运行；GPU 探针、模型执行或映射失败时明确失败，禁止 CPU fallback。
+- 必须在独立环境运行，执行设备只能显式选择 `cpu` 或 `gpu`，当前默认 `cpu`。
+- CPU 模式设置 `CUDA_VISIBLE_DEVICES=-1` 并通过 CPU runtime probe；GPU 模式要求真实 GPU
+  probe。探针返回的计算设备必须与请求一致。
+- 任一模式的探针、模型执行或映射失败都明确失败；禁止 CPU/GPU 之间静默 fallback。
+- 当前 1.0 工程主线使用已通过官方 1BRS 与 APOE smoke 的 CPU；GPU 只作为后续性能优化，
+  当前 RTX 4080 与遗留 TensorFlow/CUDA 模型栈的真实推理不兼容。
 
 ScanNet probability 在 EasyDesign 中只叫 `region_propensity`，不叫科学置信度。
 
@@ -231,6 +236,7 @@ ScanNet probability 在 EasyDesign 中只叫 `region_propensity`，不叫科学�
     │   ├── recommended-regions.json
     │   └── review-regions.pml
     ├── scannet-epitope/
+    │   ├── runtime-probe.json
     │   ├── raw-predictions.csv
     │   ├── residue-evidence.json
     │   ├── candidate-regions.json
@@ -268,21 +274,21 @@ UniProt 功能位点、PTM、糖基化和天然界面自动拉取尚未实现。
 
 - Target Bundle、结构或 residue mapping checksum/编号不一致；
 - 多链或多 coordinate model 超出 v0.1 边界；
-- ScanNet 环境、commit、GPU、超时或输出不满足契约；
+- ScanNet 环境、commit、显式执行设备、超时或输出不满足契约；
 - ScanNet residue 数量、序列或工具编号无法完整映射；
 - 无法得到请求数量的空间分散区域。
 
 ScanNet 失败时允许在 attempt 中保留已经计算的 SASA 文件作为诊断证据，但失败 Stage 不
 发布任何正式 output。重试必须新建 attempt，不得覆盖历史。
 
-GPU probe 只证明 TensorFlow 能识别并执行一个最小 GPU op，不等于官方模型 smoke。验收
-必须继续运行官方 epitope/no-MSA 实例和目标体系；任一真实模型运行失败都按 ScanNet
-失败处理。
+runtime probe 只证明 TensorFlow 能在请求设备执行一个最小 op，不等于官方模型 smoke。
+验收必须继续运行官方 epitope/no-MSA 实例和目标体系；任一真实模型运行失败都按 ScanNet
+失败处理。CPU 是一个显式、可审计的后端配置，不是 GPU 失败后的 fallback。
 
 ## 完成门槛
 
 - 两种方法分别生成完整候选池和 Top 3。
-- ScanNet 的 TensorFlow GPU 探针及 APOE真实执行通过。
+- ScanNet CPU runtime probe、官方 no-MSA smoke 及 APOE真实执行通过。
 - 138-aa PSE APOE结构全部残基能映射到 label/auth 编号。
 - 生成无融合分数的 `3 × 3` 对比报告和 PyMOL 人工检查脚本。
 - `make check`、`make test`、`make build` 通过。

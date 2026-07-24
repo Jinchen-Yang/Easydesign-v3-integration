@@ -1,4 +1,4 @@
-"""隔离 ScanNet epitope no-MSA GPU 后端的无 shell adapter。"""
+"""隔离 ScanNet epitope no-MSA 后端的无 shell、显式设备 adapter。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -20,7 +21,7 @@ SCANNET_MODEL = "ScanNet_epitope_noMSA"
 
 
 class ScanNetBackendError(ManifestStateError):
-    """ScanNet 环境、GPU、执行或输出不满足显式契约。"""
+    """ScanNet 环境、执行设备、运行或输出不满足显式契约。"""
 
     def __init__(
         self,
@@ -43,6 +44,7 @@ class ScanNetBackendConfig(BaseModel):
     python_path: Path
     repository_root: Path
     expected_commit: str = Field(default=SCANNET_COMMIT, pattern=r"^[0-9a-f]{40}$")
+    execution_device: Literal["cpu", "gpu"] = "cpu"
     gpu_device: int = Field(default=0, ge=0)
     timeout_seconds: float = Field(default=1800, gt=0)
 
@@ -53,9 +55,10 @@ class ScanNetBackendConfig(BaseModel):
         return self
 
 
-class ScanNetGpuProbe(BaseModel):
+class ScanNetRuntimeProbe(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    execution_device: Literal["cpu", "gpu"]
     tensorflow_version: str
     keras_version: str
     gpu_available: bool
@@ -63,12 +66,17 @@ class ScanNetGpuProbe(BaseModel):
     test_operation_device: str
 
     @model_validator(mode="after")
-    def require_gpu(self) -> ScanNetGpuProbe:
+    def require_requested_device(self) -> ScanNetRuntimeProbe:
+        observed = self.test_operation_device.upper()
+        if self.execution_device == "cpu":
+            if "CPU" not in observed:
+                raise ValueError("TensorFlow 测试计算没有放置到 CPU")
+            return self
         if not self.gpu_available:
             raise ValueError("TensorFlow 未识别 GPU")
         if "GPU" not in self.gpu_device_name.upper():
             raise ValueError("TensorFlow gpu_device_name 没有 GPU 设备")
-        if "GPU" not in self.test_operation_device.upper():
+        if "GPU" not in observed:
             raise ValueError("TensorFlow 测试计算没有放置到 GPU")
         return self
 
@@ -95,33 +103,40 @@ class ScanNetPredictionProduct:
     stdout: str
     stderr: str
     runtime_seconds: float
-    probe: ScanNetGpuProbe
+    probe: ScanNetRuntimeProbe
     commit: str
 
 
-GPU_PROBE = r"""
+RUNTIME_PROBE = r"""
 import json
 import keras
+import os
 import tensorflow as tf
+execution_device = os.environ['EASYDESIGN_SCANNET_DEVICE']
+requested_device = '/cpu:0' if execution_device == 'cpu' else '/gpu:0'
 graph = tf.Graph()
 with graph.as_default():
-    with tf.device('/gpu:0'):
+    with tf.device(requested_device):
         left = tf.constant([[1.0, 2.0]])
         right = tf.constant([[3.0], [4.0]])
         product = tf.matmul(left, right)
     config = tf.ConfigProto(log_device_placement=True)
-    config.gpu_options.allow_growth = True
+    if execution_device == 'cpu':
+        config.device_count['GPU'] = 0
+    else:
+        config.gpu_options.allow_growth = True
     with tf.Session(graph=graph, config=config) as session:
         session.run(product)
         device = product.device
 payload = {
+    'execution_device': execution_device,
     'tensorflow_version': tf.__version__,
     'keras_version': keras.__version__,
     'gpu_available': bool(tf.test.is_gpu_available(cuda_only=True)),
     'gpu_device_name': tf.test.gpu_device_name(),
     'test_operation_device': device,
 }
-print('EASYDESIGN_GPU_PROBE=' + json.dumps(payload, sort_keys=True))
+print('EASYDESIGN_RUNTIME_PROBE=' + json.dumps(payload, sort_keys=True))
 """
 
 
@@ -181,8 +196,13 @@ class ScanNetEpitopeAdapter:
 
     def _environment(self) -> dict[str, str]:
         environment = os.environ.copy()
-        environment["CUDA_VISIBLE_DEVICES"] = str(self.config.gpu_device)
-        environment["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
+        environment["EASYDESIGN_SCANNET_DEVICE"] = self.config.execution_device
+        if self.config.execution_device == "cpu":
+            environment["CUDA_VISIBLE_DEVICES"] = "-1"
+            environment.pop("TF_FORCE_GPU_ALLOW_GROWTH", None)
+        else:
+            environment["CUDA_VISIBLE_DEVICES"] = str(self.config.gpu_device)
+            environment["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
         environment["TF_CPP_MIN_LOG_LEVEL"] = "0"
         return environment
 
@@ -216,11 +236,11 @@ class ScanNetEpitopeAdapter:
             )
         return commit
 
-    def probe_gpu(self) -> ScanNetGpuProbe:
+    def probe_runtime(self) -> ScanNetRuntimeProbe:
         self._validate_installation()
         try:
             completed = subprocess.run(
-                [str(self.config.python_path), "-c", GPU_PROBE],
+                [str(self.config.python_path), "-c", RUNTIME_PROBE],
                 cwd=self.config.repository_root,
                 env=self._environment(),
                 check=False,
@@ -230,32 +250,42 @@ class ScanNetEpitopeAdapter:
             )
         except subprocess.TimeoutExpired as error:
             raise ScanNetBackendError(
-                "ScanNet GPU probe 超时",
-                error_code="scannet-gpu-probe-timeout",
+                "ScanNet runtime probe 超时",
+                error_code="scannet-runtime-probe-timeout",
                 stdout=_timeout_text(error.stdout),
                 stderr=_timeout_text(error.stderr),
             ) from error
-        marker = "EASYDESIGN_GPU_PROBE="
+        marker = "EASYDESIGN_RUNTIME_PROBE="
         payload_line = next(
             (line for line in completed.stdout.splitlines() if line.startswith(marker)),
             None,
         )
         if completed.returncode != 0 or payload_line is None:
             raise ScanNetBackendError(
-                "ScanNet GPU probe 失败或缺少结构化输出",
-                error_code="scannet-gpu-probe-failed",
+                "ScanNet runtime probe 失败或缺少结构化输出",
+                error_code="scannet-runtime-probe-failed",
                 stdout=completed.stdout,
                 stderr=completed.stderr,
-            )
+        )
         try:
-            return ScanNetGpuProbe.model_validate_json(payload_line[len(marker) :])
+            probe = ScanNetRuntimeProbe.model_validate_json(
+                payload_line[len(marker) :]
+            )
         except Exception as error:
             raise ScanNetBackendError(
-                f"ScanNet GPU probe 未满足 GPU 契约: {error}",
-                error_code="scannet-gpu-unavailable",
+                f"ScanNet runtime probe 未满足设备契约: {error}",
+                error_code="scannet-device-unavailable",
                 stdout=completed.stdout,
                 stderr=completed.stderr,
             ) from error
+        if probe.execution_device != self.config.execution_device:
+            raise ScanNetBackendError(
+                "ScanNet runtime probe 返回的设备与请求不一致",
+                error_code="scannet-device-mismatch",
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+            )
+        return probe
 
     def predict(
         self,
@@ -264,7 +294,7 @@ class ScanNetEpitopeAdapter:
         work_dir: Path,
     ) -> ScanNetPredictionProduct:
         commit = self._validate_installation()
-        probe = self.probe_gpu()
+        probe = self.probe_runtime()
         prepared = _write_scan_input(context, work_dir / "input")
         predictions_root = work_dir / "predictions"
         predictions_root.mkdir(parents=True, exist_ok=False)

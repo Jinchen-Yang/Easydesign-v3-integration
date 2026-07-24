@@ -6,6 +6,8 @@
 ## 1. 开始任务前
 
 1. 确认当前仓库、分支和工作树状态；不得覆盖他人未提交修改。
+   同时执行 `git fetch origin`，比较本地 `HEAD` 与 `origin/main`；网络或权限失败时必须
+   明确记录，不能把未核对状态写成“已同步”。
 2. 阅读 `PROJECT_CHARTER.md`、`docs/ARCHITECTURE.md`、`TODO.md` 和
    `TODO_NOW.md`。
 3. 阅读本次涉及的 workflow 阶段 `README.md`、`STATUS.md`；恢复旧任务时还要从
@@ -34,6 +36,9 @@ Agent 必须自动完成以下收尾工作：
 
 1. 添加与风险相称的 unit、integration 或 e2e 测试。
 2. 运行 `make check` 和 `make test`；打包或依赖变化还要运行 `make build`。
+   必须显式使用 `easydesign-core` 的 Python 3.11，例如
+   `make check PYTHON=/root/autodl-tmp/conda_envs/easydesign-core/bin/python3.11`；
+   不得使用服务器系统 Python 代替后误判代码失败。
 3. 接口、目录或依赖方向变化时更新 `docs/ARCHITECTURE.md`。
 4. 阶段行为或契约变化时更新对应 workflow `README.md`。
 5. 更新每个受影响 Stage 的 `STATUS.md`：
@@ -51,8 +56,15 @@ Agent 必须自动完成以下收尾工作：
    - `STATUS.md` 的历史索引必须链接对应月份文件；
    - 顶层 `docs/history/YYYY-MM/` 只记录跨阶段里程碑，不复制阶段细节。
    历史记录不得改写，有误时追加更正。
-9. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit。
-10. 默认不 push、不创建 remote、不触发外部下单或其他不可逆外部操作。
+9. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit；不得使用
+   `git add .` 盲目加入 run、权重、密钥、大文件或无关修改。
+10. 对已经通过质量门的独立工作单元，必须 push 到已配置的 GitHub remote：
+    - `main` 只接收可验证提交；未完成工作只能推到短期分支；
+    - push 后必须用远端引用再次核对 commit SHA；
+    - 网络、权限或 remote 异常时，在 `TODO_NOW.md` 的 `Blocked` 记录未推送 commit
+      SHA，并在交付中明确报告；
+    - 禁止仅根据 `git push` 命令已执行就声称远端已更新。
+11. 未经授权不得新建或替换 remote，不得触发外部下单或其他不可逆外部操作。
 
 ## 4. 阻塞与询问
 

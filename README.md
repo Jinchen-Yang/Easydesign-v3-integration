@@ -58,6 +58,19 @@ make build
 Protenix-v2 使用独立的 [`environments/protenix-v2.yml`](environments/protenix-v2.yml)，
 不安装进 `easydesign-core`。模型参数和公共缓存位于 `models/`，不进入 Git。
 
+Stage 01 成功 run 会自动生成自包含 Mol* Target Viewer，但不会自动启动常驻服务。查看
+最新报告：
+
+```bash
+python scripts/serve_target_viewer.py \
+  runs/apoe/20260724-006-stage01-msa \
+  --port 8000
+```
+
+服务只绑定 `127.0.0.1`；远程服务器按照脚本提示使用 SSH 端口转发。页面直接展示 mmCIF、
+label/auth residue mapping、整体质量和安全来源信息；PSE 原始颜色可以切换，但始终标记为
+未解释 annotation。Viewer 是只读报告，不保存 hotspot，也不替代科学验证。
+
 Proteindigger1 使用 `/root/miniconda3/bin/conda`，环境实际存放在
 `/root/autodl-tmp/conda_envs/`；该站点路径只用于部署，不进入核心代码。
 

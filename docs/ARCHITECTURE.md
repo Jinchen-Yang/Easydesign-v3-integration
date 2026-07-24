@@ -136,6 +136,9 @@ Core 把规范结构转换成单链、连续工具编号 PDB，ScanNet 输出 CS
 回到 mmCIF label/auth 编号。Adapter 必须显式选择 `cpu` 或 `gpu`，默认 CPU，并用 runtime
 probe 证明实际计算设备与请求一致；禁止设备间静默 fallback。当前 CPU 是 1.0 主线，GPU
 兼容性与性能优化是后续 benchmark，不阻塞 Stage 02。
+`environments/reporting-web.yml` 固定 Node.js 22，只用于更新 Mol* 静态资产、
+Playwright Chromium 测试和许可证审计。EasyDesign 运行时、报告生成与本地服务仍只依赖
+`easydesign-core` Python；Node、npm 和浏览器不会进入科学 pipeline。
 重型 backend 按其上游要求使用独立 Conda 环境、容器或 module。Core 不激活环境，不向
 重型环境安装自身依赖；adapter 使用显式 executable、工作目录、请求文件和结果 manifest。
 
@@ -316,6 +319,32 @@ Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝�
 - manifest JSON 使用“临时文件 + 原子硬链接”写入，目标存在时拒绝覆盖；
 - RunManifest revision 必须时间递增，并用前一版本规范 JSON 的 SHA-256 串成审计链。
 
+### Reporting revision 与本地展示边界
+
+`reporting/` 是正式科学 artifact 的只读消费者。Stage 01 成功后，
+`generate_stage01_target_viewer()` 只沿当前 RunManifest → StageManifest →
+Target Bundle 引用链读取 `target.cif`、sequence、mapping、quality、provenance 和可选
+PSE annotation，并重新验证每个 ArtifactRef。它不访问 backend 私有 work/log 目录。
+
+Target Viewer 输出位于同一 run 的
+`results/01-target-preparation/target-viewer/report-XXXX/`。报告 manifest 使用独立 schema
+和 revision，保存源 manifest/bundle/structure SHA-256、生成器与 Mol* 版本及所有报告
+文件 identity；reporting 的 `LATEST` 与科学 RunManifest 的 `LATEST` 完全分离。报告通过
+临时目录和原子 rename 发布，旧 revision 不覆盖。报告失败时最新 revision 保持 failed，
+不得回退旧报告，也不得改写 StageManifest、RunManifest 或 Stage 02 handoff。
+
+每个 report 自带 mmCIF、mapping、FASTA、Mol* 5.11.0 JS/CSS 和许可证，复制到 run 外后
+仍可查看。`viewer-data.json` 是面向展示的最小安全投影，只包含 target 身份、编号映射、
+整体质量、安全 provenance 和可选未解释颜色；禁止绝对路径、日志、用户配置、完整 MSA、
+密钥和未筛选 provenance。
+
+本地服务先验证 report manifest 和全部 checksum，再把 server root 固定为单个
+`report-XXXX/`，拒绝 path traversal 与 symlink 逃逸，只绑定 `127.0.0.1`。CSP 将脚本、
+样式、结构请求和 worker 限制在自身 origin、必要的 `data:`/`blob:`；远程服务器只通过
+SSH 端口转发访问。Mol* 5.11.0 官方预构建 bundle 初始化需要动态函数，因此
+`script-src` 对经过 checksum 验证的本地同源 bundle保留 `'unsafe-eval'`；`connect-src`
+仍只有自身，页面不接受用户 HTML。未来 CLI/UI 只能包装同一 reporting 与 serving API。
+
 运行状态与证据成熟度分开：
 
 - 执行状态：`pending`、`running`、`succeeded`、`failed`、`cancelled`。
@@ -361,5 +390,9 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：EasyDesign 的长期产品边界是多 binder 类型平台；VHH 是 1.0 reference
   profile，不是永久边界。蛋白、肽和后续类型必须通过 profile/adapter 复用同一七阶段
   orchestration、manifest、恢复和报告机制。
+- 2026-07-24：Stage 01 采用 Mol* 5.11.0 自包含只读报告；报告使用独立 revision，不进入
+  StageManifest，失败不影响科学状态。服务只暴露一个已校验 report 并固定绑定
+  `127.0.0.1`。完整取舍见
+  [`ADR-0001`](decisions/ADR-0001-portable-stage01-target-viewer.md)。
 
-重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。
+重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。

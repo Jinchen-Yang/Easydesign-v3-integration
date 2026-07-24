@@ -32,6 +32,10 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.reporting import (
+    TargetViewerOutcome,
+    generate_stage01_target_viewer_nonblocking,
+)
 from easydesign.stages.s01_target_preparation import (
     BuiltTargetBundle,
     build_predicted_target_bundle,
@@ -89,6 +93,7 @@ class CompletedSequenceRun:
     attempt_manifests: tuple[Path, ...]
     stage_manifest: Path
     run_manifest: Path
+    target_viewer: TargetViewerOutcome
 
 
 def _strictly_later(candidate: datetime, previous: datetime) -> datetime:
@@ -654,6 +659,9 @@ def execute_sequence_prediction(
         assert failure is not None
         raise failure
     assert selected_msa_ref is not None
+    target_viewer = generate_stage01_target_viewer_nonblocking(
+        prepared.workspace.run_root
+    )
     return CompletedSequenceRun(
         prepared=prepared,
         built_bundle=built,
@@ -661,4 +669,5 @@ def execute_sequence_prediction(
         attempt_manifests=tuple(attempt_paths),
         stage_manifest=stage_manifest,
         run_manifest=run_manifest,
+        target_viewer=target_viewer,
     )

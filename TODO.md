@@ -13,6 +13,7 @@
 | --- | --- | --- |
 | M0 仓库基础 | `implemented` | 私有 Git 仓库、中文治理、七阶段契约、包骨架和基础检查完成。 |
 | M1 统一运行契约 | `implemented` | 类型化 manifest、不可变 attempt、规范 JSON、SHA-256 和契约测试完成。 |
+| M2 交互式科学报告基础 | `smoke-validated` | Stage 01 sequence/PSE 均生成自包含 Mol* 5.11.0 报告；checksum、localhost 服务、Chromium 和真实 APOE smoke 通过。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ### 七阶段实时摘要
@@ -22,7 +23,7 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `planned` | sequence/FASTA MSA 正式纵向切片与单 Target PSE 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；已完成的两条路径保持统一下游契约。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 01 | `planned` | sequence/FASTA MSA、单 Target PSE 与便携 Mol* Viewer 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；Viewer 后续 overlay 留给 Stage 02。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    >
+    <title>EasyDesign Target Viewer</title>
+    <link rel="stylesheet" href="assets/molstar.css">
+    <link rel="stylesheet" href="assets/easydesign-viewer.css">
+  </head>
+  <body>
+    <main class="report-shell">
+      <header class="report-header">
+        <div>
+          <p class="eyebrow">EasyDesign · Stage 01</p>
+          <h1 id="target-title">Target Viewer</h1>
+          <p id="target-summary" class="subtitle">正在验证并加载本地报告……</p>
+        </div>
+        <div id="load-state" class="status-pill" role="status">加载中</div>
+      </header>
+
+      <section id="viewer-error" class="error-panel" role="alert" hidden>
+        <h2>结构报告无法打开</h2>
+        <p id="viewer-error-message"></p>
+      </section>
+
+      <section class="workspace" aria-label="结构查看器">
+        <aside class="side-panel">
+          <section>
+            <h2>显示</h2>
+            <div class="button-grid" role="group" aria-label="结构表示方式">
+              <button id="representation-cartoon" class="active" type="button">Cartoon</button>
+              <button id="representation-surface" type="button">Surface</button>
+              <button id="representation-stick" type="button">Stick</button>
+              <button id="center-structure" type="button">居中</button>
+            </div>
+          </section>
+
+          <section id="pse-controls" hidden>
+            <h2>PSE 来源颜色</h2>
+            <p class="warning">
+              这些颜色仅作为 <span lang="en">uninterpreted annotation</span>
+              保存，不代表 hotspot 或结合位点。
+            </p>
+            <div class="button-grid" role="group" aria-label="颜色主题">
+              <button id="theme-default" class="active" type="button">默认结构颜色</button>
+              <button id="theme-pse" type="button">PSE 来源颜色</button>
+            </div>
+            <div id="pse-color-counts" class="color-counts"></div>
+          </section>
+
+          <section>
+            <h2>所选残基</h2>
+            <div id="selected-residue" class="selected-residue" aria-live="polite">
+              点击三维结构或 Mol* 序列面板中的残基。
+            </div>
+          </section>
+
+          <section>
+            <h2>结构来源</h2>
+            <dl id="provenance-metrics" class="metric-list"></dl>
+          </section>
+
+          <section>
+            <h2>整体质量</h2>
+            <dl id="quality-metrics" class="metric-list"></dl>
+            <p class="fine-print">
+              此处只展示上游已有的整体指标，不推测逐残基 pLDDT。
+            </p>
+          </section>
+
+          <section>
+            <h2>下载报告副本</h2>
+            <div id="downloads" class="download-list"></div>
+          </section>
+        </aside>
+
+        <div class="viewer-column">
+          <div id="molstar-viewer" aria-label="Mol* 三维结构画布"></div>
+          <noscript>此离线报告需要启用 JavaScript 才能显示三维结构。</noscript>
+        </div>
+      </section>
+    </main>
+
+    <script src="assets/molstar.js"></script>
+    <script src="assets/easydesign-viewer.js"></script>
+  </body>
+</html>

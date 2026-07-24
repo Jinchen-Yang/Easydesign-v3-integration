@@ -1,0 +1,5 @@
+name: easydesign-reporting-web
+channels:
+  - conda-forge
+dependencies:
+  - nodejs=22

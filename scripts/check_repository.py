@@ -79,6 +79,15 @@ STAGE_HISTORY_SECTIONS = (
     "### 解决办法",
     "### 遗留问题",
 )
+IGNORED_REPOSITORY_DIRS = {
+    "build",
+    "dist",
+    "models",
+    "node_modules",
+    "playwright-report",
+    "runs",
+    "test-results",
+}
 
 
 def require(condition: bool, message: str, errors: list[str]) -> None:
@@ -90,7 +99,10 @@ def project_markdown() -> list[Path]:
     return [
         path
         for path in ROOT.rglob("*.md")
-        if not any(part.startswith(".") for part in path.relative_to(ROOT).parts)
+        if not any(
+            part.startswith(".") or part in IGNORED_REPOSITORY_DIRS
+            for part in path.relative_to(ROOT).parts
+        )
     ]
 
 
@@ -358,7 +370,12 @@ def main() -> int:
             continue
         require(all(row), f"资产登记第 {row_number} 行存在空字段", errors)
         require(
-            row[5] in {"approved-vendored", "approved-runtime-only"},
+            row[5]
+            in {
+                "approved-redistribution",
+                "approved-runtime-only",
+                "approved-vendored",
+            },
             f"资产登记第 {row_number} 行尚未完成审查",
             errors,
         )

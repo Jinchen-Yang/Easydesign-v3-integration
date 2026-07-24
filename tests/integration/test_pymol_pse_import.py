@@ -13,7 +13,7 @@ from easydesign.backends.target_sources import (
     PseBackendExecutionError,
     PyMOLPseAdapter,
 )
-from easydesign.core import RunManifest, StageManifest, load_model
+from easydesign.core import ExecutionStatus, RunManifest, StageManifest, load_model
 from easydesign.orchestration import execute_pse_import, initialize_pse_run
 from easydesign.stages.s01_target_preparation import (
     PseSourceAnnotations,
@@ -177,6 +177,18 @@ def test_synthetic_single_target_pse_publishes_complete_bundle_and_manifests(
     assert prepared.workspace.latest_manifest_pointer.read_text() == (
         "run-manifest.v0002.json\n"
     )
+    assert completed.target_viewer.status is ExecutionStatus.SUCCEEDED
+    viewer_data = json.loads(
+        (completed.target_viewer.report_root / "viewer-data.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert viewer_data["annotation"]["status"] == "available"
+    assert viewer_data["annotation"]["interpretation"] == "uninterpreted"
+    assert sorted(
+        entry["residue_count"]
+        for entry in viewer_data["annotation"]["color_counts"]
+    ) == [3, 3, 3, 11]
     assert json.loads(
         bundle.provenance.verify(prepared.workspace.run_root).read_text(encoding="utf-8")
     )["backend_version"] == "3.1.0"

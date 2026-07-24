@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | sequence/FASTA MSA 正式纵向切片与单 Target PSE 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；已完成的两条路径保持统一下游契约。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 |
+| `planned` | sequence/FASTA MSA、单 Target PSE 与便携 Mol* Viewer 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；Viewer 后续 overlay 留给 Stage 02。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 |
 
 ## 当前结论
 
@@ -14,6 +14,13 @@
 - sequence/FASTA → remote MSA → Protenix-v2 → Target Bundle 纵向切片状态：
   `smoke-validated`。
 - 单 Target PyMOL PSE → imported Target Bundle 纵向切片状态：`smoke-validated`。
+- Stage 01 Target Bundle → 自包含 Mol* 5.11.0 Viewer 状态：`smoke-validated`。
+- sequence 和 PSE 成功路径都在正式 Stage/Run manifest 发布后自动生成 Viewer report；
+  reporting failure 与科学状态分离，不阻塞 Stage 02 handoff。
+- 报告只沿 manifest 声明读取并验证 artifact，复制 mmCIF、FASTA 和 mapping，页面不访问
+  CDN；服务固定绑定 `127.0.0.1`，不暴露整个 run。
+- PSE Viewer 用 label 编号映射恢复 101/9/14/14 来源颜色，页面明确标为
+  `uninterpreted annotation`；Protenix Viewer 写 `not_applicable`，不显示颜色开关。
 - PSE 真实 smoke 保留 138-aa imported 坐标和 101/9/14/14 的 CA 颜色分组；颜色没有被
   解释为 hotspot，也没有启动 Protenix、MSA 或结构预测。
 - no-MSA 工程 smoke、真实输出解析和 Target Bundle 发布已通过。
@@ -67,10 +74,11 @@
 | MSA provider/endpoint policy | `implemented` | 默认 ColabFold preset、resolved plan、wall timeout 与显式 fallback 接口 |
 | MSA-backed Target Bundle 发布 | `smoke-validated` | APOE 正式 run 发布 609-depth MSA、统一 mmCIF Bundle 和完整 manifest；Stage 02 真实读取器通过 |
 | 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
+| 便携式 Mol* Target Viewer | `smoke-validated` | Mol* 5.11.0 本地资产、不可变报告 revision、localhost 服务、Chromium 与两条 APOE 报告 |
 
 ## Now
 
-- 当前没有进行中的 Stage 01 工作项。S01-002 已关闭并归档；项目当前跨阶段重心是
+- 当前没有进行中的 Stage 01 工作项。REP-001 已关闭并归档；项目当前跨阶段重心是
   Stage 02 人工批准到 Stage 03 的交接。
 - Stage 01 下一候选工作项是本地 PDB/mmCIF 输入 adapter，尚未开始，开始时必须另建任务
   编号和完成门槛。
@@ -83,6 +91,8 @@
 - 扩展 PSE 到复合物、receptor/ligand、多聚体或人工 object/chain/state 选择前，先新增
   独立契约；当前严格单 Target adapter 不做隐式放宽。
 - 增加本地 MSA 或预计算 MSA profile，支持不依赖公共队列的离线复现。
+- REP-002/REP-003 在 Stage 02 单独实现 SASA/ScanNet overlay 与人工批准；Stage 01 Viewer
+  继续保持只读，不保存 hotspot。
 
 ## Blocked
 
@@ -203,6 +213,26 @@
   provenance、Target Bundle 和 manifest 链；只有来源特有 artifact 不同：
   PSE 额外保存未解释颜色 annotation，sequence 额外保存 MSA。
 
+### REP-001 便携式 Mol* Target Viewer
+
+- 固定 Mol* `5.11.0` 官方 npm tarball，npm integrity
+  `sha512-Jv2oHkKoCpzrhqLmGlknepm0pfRsoTDebsGRkvXpbUFb6p+JIAkhLyM3uqV2twC6VR83ZbXtdswOtouPhozpuQ==`；
+  vendored JS SHA-256
+  `7fad5561c74bc900930fb57d6ab028d1aafdda82223a901bf932b1098e84f1f3`。
+- Python 契约覆盖 running/succeeded run、失败 Stage、缺失/篡改 source、不可覆盖
+  report revision、报告 checksum、失败不改科学 manifest、路径穿越和 symlink 边界。
+- Playwright Chromium 通过真实 `127.0.0.1` 服务验证 Mol* canvas、无外部 HTTP 请求、
+  representation/居中/下载、PSE 颜色开关、编号 mapping 和 WebGL 明确失败。
+- 正式 APOE sequence report：
+  `runs/apoe/20260724-006-stage01-msa/results/01-target-preparation/target-viewer/report-0002`；
+  143 aa、predicted/Protenix-v2、MSA depth 609、annotation `not_applicable`。
+- 正式 APOE PSE report：
+  `runs/apoe/20260724-002-stage01-pse/results/01-target-preparation/target-viewer/report-0002`；
+  138 aa、label chain `Axp`、author chain `A` / residue 23–162、颜色 101/9/14/14。
+- 两份 report 复制到 run 外后仍可经同一受限服务打开；原 Stage 01 artifact、
+  StageManifest、RunManifest 和 SHA-256 均未改变。该结论只证明工程展示链路，不构成
+  结构科学验证。
+
 ### 旧仓 MSA 审计
 
 - `package/easydesign_competition/data/apoe/msa/apoe4_fragment.fasta` 是单序列 FASTA。
@@ -234,6 +264,8 @@
   Protenix 预测、统一 `target.cif` Target Bundle 与 Stage/Run manifest 发布。
 - 完成并归档 S01-002：模型默认参数 APOE 正式 run 成功，609-depth MSA、143-aa mmCIF、
   Target Bundle 和完整 manifest 链发布；Stage 02 真实读取器直接消费通过。
+- 完成并归档 REP-001：Stage 01 两条成功路径自动生成自包含 Mol* 5.11.0 报告，报告失败
+  不影响科学状态；localhost Chromium 和两条真实 APOE report smoke 通过。
 
 ## 历史索引
 

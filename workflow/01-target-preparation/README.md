@@ -159,6 +159,57 @@ PSE 与 sequence 的正式交接均以 Target Bundle 声明的 `target.cif`（`f
 为准。两者可以有不同序列长度和坐标来源，但文件协议、编号映射和 manifest 链必须一致；
 backend 工作目录中的 PDB/CIF 不属于正式交接。
 
+### 便携式 Target Viewer
+
+sequence/FASTA 和 PSE 两条正式路径在成功发布 StageManifest 与 RunManifest 后，会调用同一
+reporting API 生成只读 Mol* 报告：
+
+```text
+results/01-target-preparation/target-viewer/
+├── LATEST
+└── report-0001/
+    ├── index.html
+    ├── viewer-data.json
+    ├── report-manifest.json
+    ├── data/
+    │   ├── target.cif
+    │   ├── sequence.fasta
+    │   └── residue-mapping.json
+    └── assets/
+        ├── molstar.js
+        ├── molstar.css
+        ├── easydesign-viewer.js
+        ├── easydesign-viewer.css
+        └── MOLSTAR_LICENSE.txt
+```
+
+报告只从当前 RunManifest 声明的 succeeded Stage 01 manifest 进入 Target Bundle，并逐一
+验证 ArtifactRef 的路径、大小和 SHA-256。它不扫描 Protenix、PyMOL 或其他 backend
+目录，也不写回 Stage 01 artifact。每次调用生成新的 `report-XXXX`，原子更新 reporting
+自己的 `LATEST`；报告不可覆盖，最新 revision 失败时不得回退到旧成功报告。
+
+报告包含 `target.cif`、FASTA 和 mapping 的自包含副本，以及固定 Mol* 5.11.0 本地资产；
+不会访问 CDN、上传结构、复制日志、原始 YAML、完整 MSA、密钥或绝对路径。页面可旋转、
+缩放、平移、居中，切换 cartoon/surface/stick，通过 Mol* 序列面板和三维点击显示
+label/auth 编号，并下载报告目录中的三个副本。Protenix 只展示已有整体质量，不推测逐残基
+pLDDT。
+
+PSE 报告提供“默认结构颜色 / PSE 来源颜色”开关；颜色始终标记为
+`uninterpreted annotation`，不代表 hotspot 或 binding residue。没有 annotation 的
+sequence 报告明确写 `not_applicable`，不能用空数组冒充已查询。
+
+Viewer 失败只形成 reporting failure，不改变已经发布的 StageManifest、RunManifest 或
+Stage 02 handoff。Stage 01 不自动启动常驻服务；需要查看时执行：
+
+```bash
+python scripts/serve_target_viewer.py \
+  runs/apoe/20260724-006-stage01-msa \
+  --port 8000
+```
+
+服务启动前验证报告状态和全部 checksum，只绑定 `127.0.0.1`，根目录严格限制为单个
+report revision。远程服务器使用 SSH 端口转发，不开放 `0.0.0.0` 或公网访问。
+
 ## 不变量
 
 - 残基身份和编号映射无歧义；预测 CIF 中的聚合物序列必须与规范输入逐位相同。
@@ -178,6 +229,10 @@ backend 工作目录中的 PDB/CIF 不属于正式交接。
 - 额外蛋白 object/chain、配体或非溶剂重原子、多 state、非标准残基、残基编号歧义均失败；
   禁止使用旧版“选择最大 object/chain”逻辑。
 - PSE source snapshot、worker raw PDB 和 response 的 SHA-256 必须逐层一致。
+- Target Viewer 是正式 artifact 的只读派生报告，不进入 StageManifest，也不能改变
+  Stage 01 科学执行状态。
+- Viewer 只能读取 manifest 声明的 Target Bundle；报告 revision 和报告副本不可覆盖。
+- 浏览器只访问报告自己的 localhost origin；禁止 CDN、外部 API 和整个 run 目录暴露。
 
 ## 失败与重试
 
@@ -212,6 +267,8 @@ PSE provenance 还记录 PyMOL 版本、session inventory、被选中的唯一 o
 - sequence/FASTA 路径通过内部 no-MSA 回归 smoke，并以
   remote-MSA/no-template 作为默认正式路径完成 APOE 真实运行和 Target Bundle 发布。
 - PSE 路径通过合成成功/失败 session 契约测试和旧 APOE PSE 真实 smoke。
+- sequence 与 PSE 的 Target Viewer 都通过 Python checksum/revision 契约、Chromium
+  localhost 浏览器测试和真实 APOE 可移植性 smoke。
 
 ## 非目标
 
@@ -220,6 +277,7 @@ PSE provenance 还记录 PyMOL 版本、session inventory、被选中的唯一 o
 - 自动决定有争议的 accession、isoform、物种或结构来源。
 - 把预测结构描述成实验结构。
 - 在 Stage 01 将 PyMOL 颜色称为成熟 hotspot 证据。
+- 在 Viewer 中保存 hotspot、批准区域或自动推进 Stage 02。
 - 首版处理复合物、receptor/ligand、多聚体、配体保留、公开上传，或让用户选择
   object/chain/state。
 

@@ -11,6 +11,12 @@ build/
 dist/
 *.egg-info/
 
+# Node/browser development
+node_modules/
+test-results/
+playwright-report/
+.tmp-fixtures/
+
 # Environments and local configuration
 .venv/
 venv/

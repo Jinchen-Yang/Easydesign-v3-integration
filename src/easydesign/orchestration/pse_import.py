@@ -23,6 +23,10 @@ from easydesign.core import (
     dump_model,
     load_model,
 )
+from easydesign.reporting import (
+    TargetViewerOutcome,
+    generate_stage01_target_viewer_nonblocking,
+)
 from easydesign.stages.s01_target_preparation import (
     BuiltTargetBundle,
     build_imported_pse_target_bundle,
@@ -45,6 +49,7 @@ class CompletedPseRun:
     attempt_manifest: Path
     stage_manifest: Path
     run_manifest: Path
+    target_viewer: TargetViewerOutcome
 
 
 def _exclusive_text(text: str, path: Path) -> Path:
@@ -302,10 +307,14 @@ def execute_pse_import(
     if failure is not None:
         raise failure
     assert built is not None
+    target_viewer = generate_stage01_target_viewer_nonblocking(
+        prepared.workspace.run_root
+    )
     return CompletedPseRun(
         prepared=prepared,
         built_bundle=built,
         attempt_manifest=attempt_manifest,
         stage_manifest=stage_manifest,
         run_manifest=run_manifest,
+        target_viewer=target_viewer,
     )

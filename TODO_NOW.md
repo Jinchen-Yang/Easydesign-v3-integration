@@ -7,7 +7,7 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `planned` | sequence/FASTA MSA 正式纵向切片与单 Target PSE 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；已完成的两条路径保持统一下游契约。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 01 | `planned` | sequence/FASTA MSA、单 Target PSE 与便携 Mol* Viewer 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；Viewer 后续 overlay 留给 Stage 02。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
@@ -32,6 +32,8 @@
 
 ## Next
 
+- REP-002/REP-003：在不改变 Stage 02 科学输出的前提下，为 SASA/ScanNet 独立区域增加
+  Viewer overlay 与显式人工批准；不得把 PSE 颜色或两种方法自动融合成默认赢家。
 - 人工检查 SASA Top 3、ScanNet CPU Top 3 及 PSE 原始颜色 annotation 的重合关系。
 - 定义人工批准区域集及 Stage 03 handoff，禁止自动发布默认赢家。
 - 建立 sequence-hash MSA cache；自建 ColabFold/MMseqs2 作为后续生产兜底，公共服务不得

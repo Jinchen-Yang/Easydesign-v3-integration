@@ -37,7 +37,15 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-easydesign = ["py.typed"]
+easydesign = [
+  "py.typed",
+  "reporting/static/target_viewer/*.html",
+  "reporting/static/target_viewer/*.js",
+  "reporting/static/target_viewer/*.css",
+  "reporting/static/target_viewer/vendor/molstar/LICENSE",
+  "reporting/static/target_viewer/vendor/molstar/*.js",
+  "reporting/static/target_viewer/vendor/molstar/*.css",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

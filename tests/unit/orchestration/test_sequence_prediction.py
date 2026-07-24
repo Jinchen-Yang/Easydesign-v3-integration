@@ -206,6 +206,14 @@ def test_execute_sequence_prediction_publishes_stage01_handoff(
     assert stage.require_output("target-msa") == completed.msa_artifact
     run = load_model(completed.run_manifest, RunManifest)
     assert run.status is ExecutionStatus.SUCCEEDED
+    assert completed.target_viewer.status is ExecutionStatus.SUCCEEDED
+    viewer_data = json.loads(
+        (completed.target_viewer.report_root / "viewer-data.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert viewer_data["annotation"]["status"] == "not_applicable"
+    assert viewer_data["sequence_length"] == 143
 
     downstream_bundle, context = load_structure_context(
         run_root=run_root,

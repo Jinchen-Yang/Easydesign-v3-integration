@@ -42,6 +42,8 @@ Agent 必须自动完成以下收尾工作：
    必须显式使用 `easydesign-core` 的 Python 3.11，例如
    `make check PYTHON=/root/autodl-tmp/conda_envs/easydesign-core/bin/python3.11`；
    不得使用服务器系统 Python 代替后误判代码失败。
+   修改 Target Viewer、Mol* 资产、CSP、本地服务或浏览器行为时还必须运行
+   `make test-web`；测试必须证明所有 HTTP 请求留在 `127.0.0.1`。
 3. 接口、目录或依赖方向变化时更新 `docs/ARCHITECTURE.md`。
 4. 阶段行为或契约变化时更新对应 workflow `README.md`。
 5. 更新每个受影响 Stage 的 `STATUS.md`：
@@ -73,6 +75,12 @@ Agent 必须自动完成以下收尾工作：
       SHA，并在交付中明确报告；
     - 禁止仅根据 `git push` 命令已执行就声称远端已更新。
 12. 未经授权不得新建或替换 remote，不得触发外部下单或其他不可逆外部操作。
+13. 更新 Mol* 时必须在同一提交中同步：
+    - `package.json` 与完整 `package-lock.json`；
+    - 官方 npm tarball identity/integrity、vendored JS/CSS 和固定 SHA-256 检查；
+    - Mol* license、bundle 内第三方 license notices 和资产登记；
+    - Python wheel package-data 验证、Playwright 浏览器测试和 ADR/架构文档。
+    许可证审计未通过时停止 vendoring，任务保持 Blocked，不能只替换 JS 文件。
 
 ## 4. 阻塞与询问
 

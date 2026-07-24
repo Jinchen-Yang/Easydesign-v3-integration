@@ -1,0 +1,19 @@
+{
+  "name": "easydesign-target-viewer-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pinned asset and browser-test toolchain for the offline Stage 01 Target Viewer",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "molstar": "5.11.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

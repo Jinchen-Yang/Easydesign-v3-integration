@@ -10,3 +10,6 @@
 
 `backends/protenix-v2.yaml` 只声明可移植能力、版本和环境变量名；服务器上的可执行文件、
 模型目录和 GPU 选择由本地 profile 或显式调用参数提供。
+
+`backends/scannet-epitope-gpu.yaml` 固定 ScanNet commit、epitope/no-MSA 模型、显式
+Python/repository 环境变量和 GPU-only 规则；站点上的 Conda prefix 不写入仓库。

@@ -115,6 +115,7 @@ workflow/<NN-stage-name>/
 easydesign-core (Python 3.11)
 ├── pipeline、manifest、配置、轻量生信、测试和报告
 ├── subprocess/JSON+PDB → pymol-pse 环境
+├── subprocess/PDB+CSV  → scannet-epitope-gpu 环境
 ├── subprocess/文件协议 → boltzgen 环境
 ├── subprocess/文件协议 → boltz2 环境
 ├── subprocess/文件协议 → protenix-v2/AF3/AFO 环境
@@ -128,6 +129,12 @@ easydesign-core (Python 3.11)
 必须用 `EASYDESIGN_PYMOL_PYTHON` 提供绝对 Python 路径。Adapter 先做精确版本探针，再用
 无 shell 的 argv 执行只依赖标准库和 PyMOL 的 worker。请求和 response 使用 JSON，
 worker 导出的原始蛋白坐标使用 PDB，core 再规范化为 mmCIF。
+`environments/scannet-epitope-gpu.yml` 隔离 ScanNet 的 Python 3.6.12、
+TensorFlow GPU 1.14 和 CUDA 10 依赖。Core 把规范结构转换成单链、连续工具编号 PDB，
+ScanNet 输出 CSV 后再通过显式 mapping 回到 mmCIF label/auth 编号。Adapter 必须验证
+代码 commit 和 GPU op；GPU probe 只是前置检查，官方模型和目标体系真实推理也必须成功。
+任一真实推理失败时保留独立 SASA 诊断产物，但 Stage 02 不发布正式 output；禁止 CPU
+fallback。
 重型 backend 按其上游要求使用独立 Conda 环境、容器或 module。Core 不激活环境，不向
 重型环境安装自身依赖；adapter 使用显式 executable、工作目录、请求文件和结果 manifest。
 
@@ -218,6 +225,19 @@ PSE 路径同样只接受 `target.pse + easydesign.yaml`，但与 sequence 路�
 - PSE 成功后发布 Attempt、StageManifest 和新的 RunManifest revision，更新 `LATEST`
   指针；不生成 Protenix JSON，也不触发 MSA 或预测。
 
+### Stage 02 独立方法边界
+
+Stage 02 automatic 同时运行两个独立 provider：
+
+- SASA provider 只读取坐标、编号和用户显式 avoid，输出 rSASA/几何排序；
+- ScanNet provider 只读取坐标和逐残基模型 probability，输出独立概率排序；
+- 比较层只计算区域重合与空间距离，不产生融合分数或默认赢家；
+- PSE颜色、UniProt/PTM annotation 和人工区域不进入 automatic v0.1。
+
+两套产物分别位于 `artifacts/sasa/` 与 `artifacts/scannet-epitope/`。只有两种方法都成功
+并完成编号映射时 Stage 02 才发布正式 output；人工选择前 Stage 03 保持
+`awaiting_region_selection`。
+
 ### 身份
 
 - `project_id`：稳定项目 slug。
@@ -283,5 +303,8 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：PyMOL PSE 采用独立 Python 3.11 / PyMOL 3.1.0 环境和显式文件协议；
   Stage 01 首版只导入可信本地、单蛋白、单链、单 state 会话，颜色保持未解释 annotation，
   复合物、配体和人工 object/chain/state 选择留待后续契约。
+- 2026-07-24：Stage 02 automatic 采用独立 SASA/geometry 与 ScanNet epitope no-MSA
+  两条路线；禁止分数融合、CPU fallback 和 PSE颜色介入，先输出各自 Top 3 与重叠报告，
+  人工批准后再交给 Stage 03。
 
 重大决策先追加到本节。决策数量或协作规模增长后，再拆分为独立 ADR 文件。

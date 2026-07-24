@@ -603,8 +603,8 @@ def execute_stage02_comparison(
                     else (
                         "Stage 02 comparison failed; retained evidence is not "
                         "published for Stage 03."
-                    )
-                ,),
+                    ),
+                ),
             ),
         ),
         generated_at=ended,

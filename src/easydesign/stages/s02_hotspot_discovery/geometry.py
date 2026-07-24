@@ -212,7 +212,9 @@ def load_structure_context(
         label = entry.label_seq_id
         rows = rows_by_label.get(label)
         if not rows:
-            raise ManifestStateError(f"residue mapping 在 target.cif 中没有坐标: label_seq_id={label}")
+            raise ManifestStateError(
+                f"residue mapping 在 target.cif 中没有坐标: label_seq_id={label}"
+            )
         residue_name = residue_names[label]
         expected_name = ONE_TO_THREE[entry.amino_acid]
         if residue_name != expected_name:

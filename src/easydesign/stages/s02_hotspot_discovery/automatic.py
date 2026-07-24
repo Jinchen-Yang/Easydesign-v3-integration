@@ -89,6 +89,8 @@ DIVERSITY_TIERS = (
     DiversityTier("tier1", 15.0, 0.20),
     DiversityTier("tier2", 12.0, 0.30),
 )
+DEFAULT_REGION_PARAMETERS = RegionParameters()
+DEFAULT_SASA_PARAMETERS = SasaParameters()
 
 
 def _q25(values: list[float]) -> float:
@@ -290,8 +292,8 @@ def _separations(
 def run_sasa_surface_diversity(
     *,
     context: StructureContext,
-    region_parameters: RegionParameters = RegionParameters(),
-    sasa_parameters: SasaParameters = SasaParameters(),
+    region_parameters: RegionParameters = DEFAULT_REGION_PARAMETERS,
+    sasa_parameters: SasaParameters = DEFAULT_SASA_PARAMETERS,
     avoid_label_seq_ids: frozenset[int] = frozenset(),
 ) -> tuple[ResidueEvidenceReport, CandidateRegionPool, RecommendedRegionSet]:
     """仅使用 SASA/几何生成候选区域。"""
@@ -487,7 +489,7 @@ def run_scannet_region_proposals(
     context: StructureContext,
     probabilities: dict[int, float],
     method_version: str,
-    region_parameters: RegionParameters = RegionParameters(),
+    region_parameters: RegionParameters = DEFAULT_REGION_PARAMETERS,
 ) -> tuple[ResidueEvidenceReport, CandidateRegionPool, RecommendedRegionSet]:
     """只使用 ScanNet probability 排名；不读取或计算 SASA。"""
 

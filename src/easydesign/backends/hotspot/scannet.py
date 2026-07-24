@@ -47,7 +47,7 @@ class ScanNetBackendConfig(BaseModel):
     timeout_seconds: float = Field(default=1800, gt=0)
 
     @model_validator(mode="after")
-    def validate_paths(self) -> "ScanNetBackendConfig":
+    def validate_paths(self) -> ScanNetBackendConfig:
         if not self.python_path.is_absolute() or not self.repository_root.is_absolute():
             raise ValueError("ScanNet Python 和 repository_root 必须是绝对路径")
         return self
@@ -63,7 +63,7 @@ class ScanNetGpuProbe(BaseModel):
     test_operation_device: str
 
     @model_validator(mode="after")
-    def require_gpu(self) -> "ScanNetGpuProbe":
+    def require_gpu(self) -> ScanNetGpuProbe:
         if not self.gpu_available:
             raise ValueError("TensorFlow 未识别 GPU")
         if "GPU" not in self.gpu_device_name.upper():

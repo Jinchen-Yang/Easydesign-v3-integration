@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import threading
@@ -12,10 +11,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from easydesign.backends.boltzgen import (
-    BoltzGenGenerationAdapter,
-    BoltzGenGenerationRequest,
-)
+from easydesign.backends.boltzgen import BoltzGenGenerationAdapter
 from easydesign.backends.executors import GpuResourceSnapshot, NvidiaSmiProbe, execute_on_devices
 from easydesign.core import (
     ArtifactRef,
@@ -27,7 +23,6 @@ from easydesign.core import (
     RunManifest,
     StageId,
     StageManifest,
-    TaskAttemptRecord,
     TaskEvent,
     TaskRecord,
     TaskStatus,
@@ -48,6 +43,7 @@ from easydesign.stages.s04_pilot_generation import (
     collect_boltzgen_candidates,
 )
 
+from .boltzgen_tasks import TaskTransition, execute_boltzgen_candidate_task
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
 from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
 
@@ -172,10 +168,6 @@ def _build_plan(
         devices=config.executor.devices,
         strategies=tuple(strategies),
     )
-
-
-def _command_sha256(command: tuple[str, ...]) -> str:
-    return hashlib.sha256(json.dumps(command, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def _snapshot(
@@ -550,204 +542,44 @@ def execute_stage04(
     def execute_task(plan_item: PilotStrategyPlan, device: int) -> TaskRecord:
         with lock:
             task = tasks[plan_item.task_id]
-        attempts_this_invocation = 0
-        while (
-            task.collected_candidates < task.requested_candidates
-            and attempts_this_invocation < config.executor.max_task_attempts
-        ):
-            attempts_this_invocation += 1
-            attempt_number = len(task.attempts) + 1
-            remaining = task.requested_candidates - task.collected_candidates
-            task_attempt_root = (
-                attempt_root / "tasks" / task.task_id / f"attempt-{attempt_number:04d}"
-            )
-            output = task_attempt_root / "backend-output"
-            stdout = task_attempt_root / "stdout.log"
-            stderr = task_attempt_root / "stderr.log"
-            request = BoltzGenGenerationRequest(
-                design_specification=plan_item.design_specification.verify(root),
-                output_directory=output,
-                requested_candidates=remaining,
-                physical_device=device,
-                stdout_path=stdout,
-                stderr_path=stderr,
-            )
-            command = adapter.build_command(request)
-            started = datetime.now(UTC)
-            running_attempt = TaskAttemptRecord(
-                attempt_number=attempt_number,
-                status=TaskStatus.RUNNING,
-                requested_candidates=remaining,
-                device=device,
-                command_sha256=_command_sha256(command),
-                output_relative_path=output.relative_to(root).as_posix(),
-                started_at=started,
-            )
+
+        def on_transition(transition: TaskTransition) -> None:
             with lock:
-                task = task.model_copy(
-                    update={
-                        "status": TaskStatus.RUNNING,
-                        "attempts": (*task.attempts, running_attempt),
-                        "current_device": device,
-                    }
-                )
-                tasks[task.task_id] = task
-                append_event(
-                    event_type="task-started",
-                    message=f"Requested {remaining} complete candidates.",
-                    task=task,
-                    attempt_number=attempt_number,
-                    device=device,
-                    from_status=TaskStatus.PENDING,
-                    to_status=TaskStatus.RUNNING,
-                )
-                persist("running")
-            operational_error: ErrorInfo | None = None
-            return_code = 1
-            ended = datetime.now(UTC)
-            new_candidates: tuple[CandidateRecord, ...] = ()
-            try:
-                result = adapter.execute(request)
-                return_code = result.return_code
-                ended = result.ended_at
-                new_candidates = collect_boltzgen_candidates(
-                    run_root=root,
-                    backend_output=result.output_directory,
-                    strategy_id=task.strategy_id,
-                    task_id=task.task_id,
-                    task_attempt_number=attempt_number,
-                    stage_attempt_id=attempt_id,
-                    ordinal_start=task.collected_candidates + 1,
-                    maximum_candidates=remaining,
-                )
-                if return_code != 0:
-                    operational_error = ErrorInfo(
-                        code="boltzgen-task-failed",
-                        message=(
-                            f"BoltzGen exited with code {return_code}; "
-                            f"collected {len(new_candidates)}/{remaining} complete candidates."
-                        ),
-                        retryable=True,
-                    )
-                elif len(new_candidates) != remaining:
-                    operational_error = ErrorInfo(
-                        code="incomplete-candidate-output",
-                        message=(
-                            f"BoltzGen returned zero but only produced "
-                            f"{len(new_candidates)}/{remaining} complete candidates."
-                        ),
-                        retryable=True,
-                    )
-            except Exception as error:  # persisted as structured operational evidence
-                ended = datetime.now(UTC)
-                operational_error = ErrorInfo(
-                    code="boltzgen-execution-error",
-                    message=str(error)[:4096] or error.__class__.__name__,
-                    retryable=True,
-                )
-            with lock:
-                candidates.extend(new_candidates)
-                candidate_ids = (
-                    *task.candidate_ids,
-                    *(item.candidate_id for item in new_candidates),
-                )
-                total = len(candidate_ids)
-                succeeded = (
-                    operational_error is None
-                    and return_code == 0
-                    and total == task.requested_candidates
-                )
-                final_attempt = running_attempt.model_copy(
-                    update={
-                        "status": (TaskStatus.SUCCEEDED if succeeded else TaskStatus.FAILED),
-                        "collected_candidates": len(new_candidates),
-                        "ended_at": ended,
-                        "return_code": return_code,
-                        "error": None if succeeded else operational_error,
-                    }
-                )
-                next_status = (
-                    TaskStatus.SUCCEEDED
-                    if succeeded
-                    else (
-                        TaskStatus.PENDING
-                        if total < task.requested_candidates
-                        else TaskStatus.FAILED
-                    )
-                )
-                task = task.model_copy(
-                    update={
-                        "status": next_status,
-                        "collected_candidates": total,
-                        "candidate_ids": candidate_ids,
-                        "attempts": (*task.attempts[:-1], final_attempt),
-                        "current_device": None,
-                    }
-                )
-                tasks[task.task_id] = task
-                if operational_error is not None:
+                tasks[transition.task.task_id] = transition.task
+                candidates.extend(transition.new_candidates)
+                if transition.error is not None:
                     recent_errors.append(
-                        f"{task.task_id}: {operational_error.code}: {operational_error.message}"
+                        f"{transition.task.task_id}: {transition.error.code}: "
+                        f"{transition.error.message}"
                     )
                 append_event(
-                    event_type=("task-succeeded" if succeeded else "task-attempt-failed"),
-                    message=(
-                        f"Collected {len(new_candidates)} in attempt; "
-                        f"strategy total {total}/{task.requested_candidates}."
-                    ),
-                    task=task,
-                    attempt_number=attempt_number,
-                    device=device,
-                    from_status=TaskStatus.RUNNING,
-                    to_status=next_status,
-                    error=operational_error,
+                    event_type=transition.event_type,
+                    message=transition.message,
+                    task=transition.task,
+                    attempt_number=transition.attempt_number,
+                    device=transition.device,
+                    from_status=transition.from_status,
+                    to_status=transition.to_status,
+                    error=transition.error,
                 )
-                _json_payload(
-                    task_attempt_root / "collection-report.json",
-                    {
-                        "schema_version": "0.1",
-                        "task_id": task.task_id,
-                        "strategy_id": task.strategy_id,
-                        "task_attempt_number": attempt_number,
-                        "requested_candidates": remaining,
-                        "complete_candidates": len(new_candidates),
-                        "candidate_ids": [item.candidate_id for item in new_candidates],
-                        "return_code": return_code,
-                        "status": str(final_attempt.status),
-                        "error": (
-                            None
-                            if operational_error is None
-                            else operational_error.model_dump(mode="json")
-                        ),
-                    },
+                persist(
+                    "incomplete"
+                    if transition.event_type == "task-incomplete"
+                    else "running"
                 )
-                persist("running")
-            if task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED}:
-                break
-        if task.status is TaskStatus.PENDING:
-            exhausted_error = ErrorInfo(
-                code="task-attempt-budget-exhausted",
-                message=(
-                    f"Task invocation exhausted {config.executor.max_task_attempts} "
-                    f"attempts with {task.collected_candidates}/"
-                    f"{task.requested_candidates} complete candidates."
-                ),
-                retryable=True,
-            )
-            with lock:
-                recent_errors.append(f"{task.task_id}: {exhausted_error.message}")
-                task = task.model_copy(update={"status": TaskStatus.FAILED})
-                tasks[task.task_id] = task
-                append_event(
-                    event_type="task-incomplete",
-                    message=exhausted_error.message,
-                    task=task,
-                    from_status=TaskStatus.PENDING,
-                    to_status=TaskStatus.FAILED,
-                    error=exhausted_error,
-                )
-                persist("incomplete")
-        return task
+
+        return execute_boltzgen_candidate_task(
+            root=root,
+            task=task,
+            design_specification=plan_item.design_specification.verify(root),
+            task_root=attempt_root / "tasks" / task.task_id,
+            stage_attempt_id=attempt_id,
+            producer_stage=str(StageId.PILOT_GENERATION),
+            adapter=adapter,
+            device=device,
+            maximum_attempts_this_invocation=config.executor.max_task_attempts,
+            on_transition=on_transition,
+        )
 
     pending_plans = tuple(
         item for item in plan.strategies if tasks[item.task_id].status is not TaskStatus.SUCCEEDED

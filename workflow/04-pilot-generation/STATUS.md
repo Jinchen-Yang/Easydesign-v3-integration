@@ -74,6 +74,8 @@
   已完成候选不会重新生成。
 - 2026-07-26：修正 resume 后吞吐率/ETA 将历史候选除以本次短时长的问题；进度快照现
   使用 attempt 创建时间起算的累计 wall-clock elapsed time。
+- 2026-07-26：将单个 BoltzGen task 的 deficit、attempt、严格收集和错误状态抽成共享
+  执行组件；Stage 04 回归和恢复测试通过，Stage 05 扩展将调用同一实现。
 
 ## 历史索引
 

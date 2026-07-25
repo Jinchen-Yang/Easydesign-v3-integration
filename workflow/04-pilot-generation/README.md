@@ -39,6 +39,10 @@ EasyDesign 1.0 的主线是：
 - 伪造 BoltzGen 0.3.2 不支持的随机种子。
 - 从目录中挑看起来“最好”的文件作为成功。
 
+Stage 04 与 Stage 05 的扩展生成共用
+`orchestration.boltzgen_tasks.execute_boltzgen_candidate_task`。它统一负责 deficit、不可变
+task attempt、严格收集、错误分类和 collection report；后续阶段不得复制一套近似执行器。
+
 ## 2. 输入
 
 Stage 04 只读取当前 RunManifest 声明、通过 SHA-256 验证的 Stage 03 manifest，并从其

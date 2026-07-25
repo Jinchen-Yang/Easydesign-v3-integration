@@ -6,6 +6,7 @@ import csv
 import re
 import sys
 import tomllib
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,11 +76,15 @@ ORCHESTRATION_TESTS = {
 }
 STAGE_HISTORY_SECTIONS = (
     "- 状态：",
+    "- 完成时间：",
     "### 完成内容",
     "### 验证证据",
     "### 遇到的问题",
     "### 解决办法",
     "### 遗留问题",
+)
+HISTORY_TIMESTAMP_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$"
 )
 IGNORED_REPOSITORY_DIRS = {
     "build",
@@ -95,6 +100,38 @@ IGNORED_REPOSITORY_DIRS = {
 def require(condition: bool, message: str, errors: list[str]) -> None:
     if not condition:
         errors.append(message)
+
+
+def require_completion_timestamp(
+    record: str,
+    record_label: str,
+    errors: list[str],
+) -> None:
+    timestamps = [
+        line.removeprefix("- 完成时间：").strip()
+        for line in record.splitlines()
+        if line.startswith("- 完成时间：")
+    ]
+    require(
+        len(timestamps) == 1,
+        f"{record_label} 必须且只能包含一个完成时间",
+        errors,
+    )
+    if len(timestamps) == 1:
+        valid_timestamp = HISTORY_TIMESTAMP_PATTERN.fullmatch(timestamps[0]) is not None
+        if valid_timestamp:
+            try:
+                datetime.fromisoformat(timestamps[0])
+            except ValueError:
+                valid_timestamp = False
+        require(
+            valid_timestamp,
+            (
+                f"{record_label} 完成时间必须是带 UTC offset 的 RFC 3339 秒级时间: "
+                f"{timestamps[0]}"
+            ),
+            errors,
+        )
 
 
 def project_markdown() -> list[Path]:
@@ -202,6 +239,14 @@ def main() -> int:
                             ),
                             errors,
                         )
+                    require_completion_timestamp(
+                        record,
+                        (
+                            f"{history.relative_to(ROOT)} "
+                            f"第 {record_number} 条记录"
+                        ),
+                        errors,
+                    )
                 if status.is_file():
                     require(
                         f"history/{history.name}" in status_text,
@@ -317,6 +362,27 @@ def main() -> int:
         "## 历史索引",
     ):
         require(heading in todo_now, f"TODO_NOW 缺少区块: {heading}", errors)
+
+    shared_history_root = ROOT / "docs/history"
+    for history in sorted(shared_history_root.glob("????-??/TODO_NOW.md")):
+        records = re.split(
+            r"(?m)^## ",
+            history.read_text(encoding="utf-8"),
+        )[1:]
+        require(
+            bool(records),
+            f"顶层 TODO_NOW 历史没有完成记录: {history.relative_to(ROOT)}",
+            errors,
+        )
+        for record_number, record in enumerate(records, start=1):
+            require_completion_timestamp(
+                record,
+                (
+                    f"{history.relative_to(ROOT)} "
+                    f"第 {record_number} 条记录"
+                ),
+                errors,
+            )
 
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
     for concept in (

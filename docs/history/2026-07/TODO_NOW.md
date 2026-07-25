@@ -1,12 +1,30 @@
 # 2026-07 项目历史
 
 本文件从原顶层 `TODO_NOW.md` 归档跨阶段记录。阶段内部历史由各 Stage 单独维护。
+`完成时间` 使用带 UTC offset 的 RFC 3339 秒级格式；新记录对应完成门槛实际满足时间。
+2026-07-23/24 的批次记录来自旧制度，补录时间取该批最后一个可验证完成提交，不据此
+推断批次内每项工作的精确时刻。
 
-## 2026-07-25
+## 2026-07-25 — ENG-004：完成历史时间戳治理
 
-### UX-001 / ENG-002：Developer Preview CLI 与可复现安装身份
+- 状态：`implemented`。
+- 完成时间：2026-07-25T09:20:00+08:00
+- 问题：Stage history 和从顶层 `TODO_NOW` 移出的事项只记录日期，无法可靠判断同一天
+  多项工作的完成顺序；原仓库检查也只验证历史区块存在，不验证时间精度。
+- 方案：统一使用带 UTC offset 的 RFC 3339 秒级 `完成时间`；Stage 与共享 history
+  使用同一字段，并将缺失、重复、仅日期和无时区时间设为 `make check` 失败。
+- 历史迁移：Stage 01/02 已结束工作使用首次包含该记录的 Git 提交时间补录；旧顶层
+  日期批次明确标注为旧制度，只记录可验证的批次完成时间，不猜测内部事项精确时刻。
+- 验证：Proteindigger1 的 Python 3.11 环境完成 `make check`；新增负向测试覆盖缺失、
+  格式错误和重复时间戳，完整测试结果为 132 passed、8 skipped。
+- 遗留边界：Stage 03–07 尚未产生完成记录，因此保留空 history 目录而不制造假历史；
+  今后只有工作项真正关闭时才创建带时间戳的月度记录。
+- 提交：`docs: enforce timestamped work history`；远端完整 SHA 以推送后核对结果为准。
+
+## 2026-07-25 — UX-001 / ENG-002：Developer Preview CLI 与可复现安装身份
 
 - 状态：`smoke-validated`。
+- 完成时间：2026-07-25T02:17:20+08:00
 - 问题：Stage 01/02 已有真实 API，但使用者必须手工构造 adapter、环境变量和开发脚本；
   wheel 安装又无法用旧 `code_commit` 如实描述实际代码。
 - 方案：新增 `easydesign` console-script、真实 target 项目初始化、用户级 runtime
@@ -41,8 +59,9 @@
 - 提交：本工作项的 `feat(cli): add developer preview command workflow`；推送后以远端
   `main` 核对的完整 SHA 为准。
 
-## 2026-07-24
+## 2026-07-24 — 旧制度跨阶段完成批次
 
+- 完成时间：2026-07-24T17:58:46+08:00
 - 决定全部环境先使用 Conda；EasyDesign 主环境固定 Python 3.11，重型工具保持独立。
 - 创建 `/root/autodl-tmp/conda_envs/easydesign-core`，完成 editable 安装及
   check/test/build 验证。
@@ -62,8 +81,9 @@
   `runs/apoe/20260724-005-stage02-cpu` 已发布两套 Top 3、9 组比较和成功 manifest，
   下一步是人工批准区域集。
 
-## 2026-07-23
+## 2026-07-23 — clean-room 仓库基础
 
+- 完成时间：2026-07-23T23:51:58+08:00
 - 建立版本 `0.1.0.dev0` 的 clean-room 仓库架构。
 - 定义七阶段职责、运行边界、项目治理和旧仓审计基线。
 

@@ -114,6 +114,17 @@ workflow/<NN-stage-name>/
 顶层人工维护内容只保留宏观路线和跨阶段 Now/Next/Blocked；阶段证据仍留在对应 STATUS
 与 history，避免复制详情。
 
+Stage 工作项与顶层跨阶段工作项在完成后统一使用以下时间字段：
+
+```text
+- 完成时间：2026-07-25T14:30:00+08:00
+```
+
+它表示完成门槛实际满足、工作即将从 `Now` 移出的时间，而不是月度文件创建时间或
+Agent 开始工作的时间。秒级时间和显式 UTC offset 都是必需项；仓库检查会遍历所有
+`workflow/*/history/YYYY-MM.md` 和 `docs/history/YYYY-MM/TODO_NOW.md`，拒绝缺失、
+重复、无时区或仅含日期的完成记录。
+
 ## 5. 环境拓扑
 
 当前统一使用 Conda 管理环境，但每个重型工具仍保持隔离：

@@ -51,3 +51,5 @@
 - [2026-07 项目历史](docs/history/2026-07/TODO_NOW.md)
 
 阶段内部历史从对应 `workflow/<stage>/STATUS.md` 进入。历史不得改写；原记录有误时追加更正。
+任何事项从 `Now` 移出前，必须在对应 history 写入带 UTC offset 的 RFC 3339 秒级
+`完成时间`；该规则由 `make check` 自动校验。

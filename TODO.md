@@ -16,6 +16,7 @@
 | M1 统一运行契约 | `implemented` | 类型化 manifest、不可变 attempt、规范 JSON、SHA-256 和契约测试完成。 |
 | M2 交互式科学报告基础 | `smoke-validated` | Stage 01 sequence/PSE 均生成自包含 Mol* 5.11.0 报告；checksum、localhost 服务、Chromium 和真实 APOE smoke 通过。 |
 | M3 Developer Preview 可用性 | `smoke-validated` | 本地源码/wheel 可安装；`easydesign` 支持 init、profile、validate、doctor、Stage 01/02 run、runs 和 viewer；真实 PSE→Stage 02 CPU 与 required-MSA sequence Stage 01 CLI smoke 通过。 |
+| M4 可审计开发历史 | `implemented` | ENG-004 统一 Stage 与顶层完成记录的 RFC 3339 时间戳，并由 `make check` 阻止缺失、重复或无时区记录。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -27,7 +28,7 @@
 | 前缀 | 板块 | 状态 | 一句话概述 | 当前宏观目标 | 下一里程碑或索引 |
 | --- | --- | --- | --- | --- | --- |
 | `S01–S07` | Scientific Pipeline | `planned` | 七阶段科学主线按独立契约推进。 | 先完成 VHH 1.0 真实端到端。 | 下方七阶段实时摘要。 |
-| `ENG` | Core Engineering | `smoke-validated` | ENG-002 已建立 runtime profile、RunManifest 1.1 和 package/dirty-tree 身份。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-003：恢复执行、离线 MSA cache 和 CI 矩阵；[架构](docs/ARCHITECTURE.md)。 |
+| `ENG` | Core Engineering | `smoke-validated` | ENG-002 已建立可复现运行身份，ENG-004 已建立完成历史时间戳质量门。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-003：恢复执行、离线 MSA cache 和 CI 矩阵；[架构](docs/ARCHITECTURE.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001 Developer Preview CLI 已可安装并调用 Stage 01/02。 | 让真实能力通过一个稳定入口使用。 | 正式 CLI 前补 resume、结构输入和发布兼容策略；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；REP-003：显式人工批准。 |
 | `UI` | Product UI | `planned` | 尚未开发桌面或 Web 产品 UI。 | 未来只调用相同 Python API，不复制科学逻辑。 | UI-001：在 CLI/API 稳定后定义任务、审阅和恢复流程。 |

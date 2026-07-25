@@ -1,0 +1,9 @@
+name: boltzgen
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.15
+  - pip=26.1.2
+  - pip:
+      - git+https://github.com/HannesStark/boltzgen.git@a3149cf18eeb58648d1abbb27539bd73f746cdda

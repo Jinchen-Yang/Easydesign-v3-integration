@@ -627,7 +627,13 @@ class HotspotEvidence(BaseModel):
 class ApprovedHotspotSet(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    id: str = Field(pattern=r"^[ABC]$")
+    # The built-in Stage 02 review UI currently assigns A/B/C, but the stable
+    # Stage 02 -> Stage 03 handoff must not make that UI convention a
+    # scientific contract. Imported/third-party approved handoffs may use any
+    # valid stable ID.
+    id: str = Field(
+        pattern=r"^(?:[ABC]|[a-z0-9][a-z0-9._-]{0,127})$"
+    )
     slug: str = Field(pattern=ID_PATTERN)
     source_region_id: str = Field(pattern=ID_PATTERN)
     design_goal: DesignGoal
@@ -699,9 +705,8 @@ class HotspotsFile(BaseModel):
         if self.needs_human_review or not self.ready_for_stage03:
             raise ValueError("hotspots.yaml 只能表示已经人工批准的 Stage 03 输入")
         ids = [hotspot.id for hotspot in self.hotspot_sets]
-        order = {"A": 0, "B": 1, "C": 2}
-        if ids != sorted(ids, key=order.__getitem__) or len(ids) != len(set(ids)):
-            raise ValueError("hotspot set id 必须是按 A/B/C 排序的唯一非空子集")
+        if len(ids) != len(set(ids)):
+            raise ValueError("hotspot set id 必须唯一")
         if isinstance(self.region_source, AutomaticRegionSource):
             if self.method is None or self.method is not self.region_source.method:
                 raise ValueError("automatic hotspots 的 method/region_source 必须一致")

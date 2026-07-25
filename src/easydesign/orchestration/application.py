@@ -13,6 +13,7 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict
 
 import easydesign
+from easydesign.backends.boltzgen import BoltzGenCheckAdapter
 from easydesign.backends.hotspot import ScanNetBackendConfig, ScanNetEpitopeAdapter
 from easydesign.backends.structure_prediction import ProtenixV2Adapter
 from easydesign.backends.target_sources import PyMOLPseAdapter
@@ -50,6 +51,7 @@ from .hotspots import (
 )
 from .profile import (
     PROFILE_ENVIRONMENT_VARIABLE,
+    BoltzGenRuntime,
     LoadedRuntimeProfile,
     ProtenixV2Runtime,
     PyMOLPseRuntime,
@@ -62,6 +64,7 @@ from .sequence_prediction import execute_sequence_prediction
 from .stage01_handlers import execute_pse_source
 from .stage01_sources import execute_stage01_source
 from .stage02 import execute_stage02
+from .stage03 import execute_stage03, initialize_continuation_run
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -76,6 +79,7 @@ from .workspace import (
 PROTENIX_V2_CHECKPOINT_SHA256 = (
     "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
 )
+IMPLEMENTED_STAGE_MAX = 3
 
 
 class DiagnosticStatus(StrEnum):
@@ -179,6 +183,10 @@ def _required_backends(loaded: LoadedRunConfig) -> tuple[str, ...]:
         assert stage02 is not None
         if Stage02Method.SCANNET in stage02.methods:
             backends.append("scannet-epitope")
+    if loaded.config.workflow.stop_after_stage >= 3:
+        backends.append("boltzgen")
+    if loaded.config.workflow.stop_after_stage >= 5 and "protenix-v2" not in backends:
+        backends.append("protenix-v2")
     return tuple(backends)
 
 
@@ -192,9 +200,10 @@ def validate_run_configuration(
 
     loaded = load_run_config(config_path)
     stop_after = loaded.config.workflow.stop_after_stage
-    if stop_after > 2:
+    if stop_after > IMPLEMENTED_STAGE_MAX:
         raise ConfigurationError(
-            f"Developer Preview 尚未实现 Stage 03–07: stop_after_stage={stop_after}"
+            "Developer Preview 当前最高实现到 "
+            f"Stage {IMPLEMENTED_STAGE_MAX:02d}: stop_after_stage={stop_after}"
         )
     selected_profile_path = resolve_runtime_profile_path(profile_path)
     profile = (
@@ -233,9 +242,10 @@ def _context(
 ) -> _RuntimeContext:
     loaded = load_run_config(config_path)
     stop_after = loaded.config.workflow.stop_after_stage
-    if stop_after > 2:
+    if stop_after > IMPLEMENTED_STAGE_MAX:
         raise ConfigurationError(
-            f"Developer Preview 尚未实现 Stage 03–07: stop_after_stage={stop_after}"
+            "Developer Preview 当前最高实现到 "
+            f"Stage {IMPLEMENTED_STAGE_MAX:02d}: stop_after_stage={stop_after}"
         )
     profile = load_runtime_profile(profile_path)
     plan = RunPlan(
@@ -357,6 +367,17 @@ def _scannet_adapter(runtime: ScanNetEpitopeRuntime) -> ScanNetEpitopeAdapter:
     )
 
 
+def _boltzgen_adapter(runtime: BoltzGenRuntime) -> BoltzGenCheckAdapter:
+    return BoltzGenCheckAdapter(
+        executable=runtime.executable,
+        repository_root=runtime.repository_root,
+        cache_root=runtime.cache_root,
+        timeout_seconds=runtime.timeout_seconds,
+        validation_workers=runtime.validation_workers,
+        offline_mode=runtime.offline_mode,
+    )
+
+
 def diagnose_runtime(
     *,
     profile_path: Path | None = None,
@@ -367,8 +388,13 @@ def diagnose_runtime(
 
     loaded_profile = load_runtime_profile(profile_path)
     loaded = load_run_config(config_path) if config_path is not None else None
-    if loaded is not None and loaded.config.workflow.stop_after_stage > 2:
-        raise ConfigurationError("Developer Preview 尚未实现 Stage 03–07")
+    if (
+        loaded is not None
+        and loaded.config.workflow.stop_after_stage > IMPLEMENTED_STAGE_MAX
+    ):
+        raise ConfigurationError(
+            f"Developer Preview 当前最高实现到 Stage {IMPLEMENTED_STAGE_MAX:02d}"
+        )
     required = set(_required_backends(loaded)) if loaded is not None else set()
     checks: list[DiagnosticCheck] = []
     python_ok = (3, 11) <= sys.version_info[:2] < (3, 13)
@@ -410,6 +436,7 @@ def diagnose_runtime(
         ("protenix-v2", backends.protenix_v2),
         ("pymol-pse", backends.pymol_pse),
         ("scannet-epitope", backends.scannet_epitope),
+        ("boltzgen", backends.boltzgen),
     ):
         if runtime is None:
             checks.append(
@@ -456,12 +483,19 @@ def diagnose_runtime(
             elif name == "pymol-pse":
                 assert isinstance(runtime, PyMOLPseRuntime)
                 message = f"PyMOL {_pymol_adapter(runtime).probe_version()}"
-            else:
+            elif name == "scannet-epitope":
                 assert isinstance(runtime, ScanNetEpitopeRuntime)
                 probe = _scannet_adapter(runtime).probe_runtime()
                 message = (
                     f"TensorFlow {probe.tensorflow_version}；"
                     f"device={probe.test_operation_device}"
+                )
+            else:
+                assert isinstance(runtime, BoltzGenRuntime)
+                boltz_probe = _boltzgen_adapter(runtime).probe()
+                message = (
+                    f"BoltzGen {boltz_probe['version']}；"
+                    f"commit={boltz_probe['commit']}"
                 )
             checks.append(
                 DiagnosticCheck(
@@ -493,8 +527,9 @@ def execute_pipeline(
     runs_root: Path | None = None,
     run_id: str | None = None,
     dry_run: bool = False,
+    continue_from_run: Path | None = None,
 ) -> PipelineExecution:
-    """验证后执行当前已实现的 Stage 01/02；不实现或猜测 Stage 03。"""
+    """验证后执行当前已实现阶段，或从已验证上游 run 继续。"""
 
     context = _context(
         config_path,
@@ -532,7 +567,23 @@ def execute_pipeline(
     backends = context.loaded_profile.profile.backends
     loaded = context.loaded_config
     viewer_status: str | None
-    if isinstance(loaded, LoadedPseRunConfig):
+    if continue_from_run is not None:
+        if context.plan.stop_after_stage < 3:
+            raise ConfigurationError("--from-run 只用于继续 Stage 03 及后续阶段")
+        if run_id is None:
+            raise ConfigurationError("--from-run 必须显式提供 --run-id")
+        prepared_continuation = initialize_continuation_run(
+            source_run_root=continue_from_run,
+            config_path=loaded.config_path,
+            runs_root=context.plan.runs_root,
+            run_id=run_id,
+            code_identity=code_identity,
+            runtime_profile=context.loaded_profile.identity,
+        )
+        run_root = prepared_continuation.workspace.run_root
+        run_manifest = prepared_continuation.workspace.run_manifest
+        viewer_status = None
+    elif isinstance(loaded, LoadedPseRunConfig):
         pymol_runtime = backends.pymol_pse
         assert pymol_runtime is not None
         adapter = _pymol_adapter(pymol_runtime)
@@ -656,7 +707,7 @@ def execute_pipeline(
             run_manifest = source_outcome.run_manifest
             viewer_status = source_outcome.viewer_status
 
-    if context.plan.stop_after_stage == 2:
+    if continue_from_run is None and context.plan.stop_after_stage >= 2:
         stage02_config = loaded.config.stage02
         assert stage02_config is not None
         stage02_adapter: ScanNetEpitopeAdapter | None = None
@@ -707,8 +758,24 @@ def execute_pipeline(
             run_manifest = run_root / "manifests" / latest_name
             status = "succeeded"
         else:
-            status = "awaiting-human-approval"
-    else:
+            return PipelineExecution(
+                status="awaiting-human-approval",
+                plan=context.plan,
+                run_root=run_root,
+                run_manifest=run_manifest,
+                viewer_status=viewer_status,
+            )
+    elif context.plan.stop_after_stage < 2:
+        status = "succeeded"
+
+    if context.plan.stop_after_stage >= 3:
+        boltzgen_runtime = backends.boltzgen
+        assert boltzgen_runtime is not None
+        completed_stage03 = execute_stage03(
+            run_root=run_root,
+            adapter=_boltzgen_adapter(boltzgen_runtime),
+        )
+        run_manifest = completed_stage03.run_manifest
         status = "succeeded"
     return PipelineExecution(
         status=status,

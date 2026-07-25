@@ -609,7 +609,7 @@ stage07: null
     loaded = load_run_config(config)
 
     assert isinstance(loaded, LoadedPseRunConfig)
-    assert loaded.config.schema_version == "0.6"
+    assert loaded.config.schema_version == "0.7"
     assert loaded.config.stage01.target.identity.uniprot_accession is None
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.methods == ("sasa",)
@@ -672,8 +672,8 @@ workflow:
     migrate_run_config(old, migrated)
     loaded = load_run_config(migrated)
 
-    assert loaded.config.schema_version == "0.6"
-    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.6'")
+    assert loaded.config.schema_version == "0.7"
+    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.7'")
     assert loaded.config.stage01.target.target_id == "demo"
     text = migrated.read_text(encoding="utf-8")
     assert "stage01:" in text

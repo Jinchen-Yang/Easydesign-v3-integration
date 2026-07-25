@@ -31,6 +31,11 @@ from .config import (
     Stage02EvidenceConfig,
     Stage02PatchConfig,
     Stage02SasaConfig,
+    Stage03Config,
+    Stage04Config,
+    Stage05Config,
+    Stage06Config,
+    Stage07Config,
     StructurePredictionConfig,
     TargetInputFormat,
     TargetSourceConfig,
@@ -46,6 +51,7 @@ from .migration import (
     migrate_run_directories,
 )
 from .profile import (
+    BoltzGenRuntime,
     LoadedRuntimeProfile,
     ProtenixV2Runtime,
     PyMOLPseRuntime,
@@ -65,6 +71,11 @@ from .sequence_prediction import (
     execute_sequence_prediction,
 )
 from .stage02 import CompletedStage02Run, execute_stage02, execute_stage02_comparison
+from .stage03 import (
+    Stage03Execution,
+    execute_stage03,
+    initialize_continuation_run,
+)
 from .workspace import (
     PreparedPseRun,
     PreparedRun,
@@ -81,6 +92,7 @@ from .workspace import (
 
 __all__ = [
     "EasyDesignRunConfig",
+    "BoltzGenRuntime",
     "DiagnosticCheck",
     "DiagnosticReport",
     "DiagnosticStatus",
@@ -122,6 +134,12 @@ __all__ = [
     "Stage02EvidenceConfig",
     "Stage02PatchConfig",
     "Stage02SasaConfig",
+    "Stage03Config",
+    "Stage04Config",
+    "Stage05Config",
+    "Stage06Config",
+    "Stage07Config",
+    "Stage03Execution",
     "TargetInputFormat",
     "TargetSourceConfig",
     "WorkflowConfig",
@@ -135,9 +153,11 @@ __all__ = [
     "execute_sequence_prediction",
     "execute_stage02_comparison",
     "execute_stage02",
+    "execute_stage03",
     "export_hotspot_review",
     "approve_hotspots",
     "initialize_pse_run",
+    "initialize_continuation_run",
     "initialize_project",
     "initialize_runtime_profile",
     "initialize_run_workspace",

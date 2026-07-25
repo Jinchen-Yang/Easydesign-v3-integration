@@ -125,7 +125,7 @@ def _parser() -> argparse.ArgumentParser:
         default="online",
         help="远程 MSA 缓存策略；默认 online 每次刷新",
     )
-    init_parser.add_argument("--stop-after", type=int, choices=(1, 2), default=1)
+    init_parser.add_argument("--stop-after", type=int, choices=(1, 2, 3), default=1)
     init_parser.add_argument(
         "--stage02-method",
         choices=("sasa", "scannet", "both"),
@@ -156,7 +156,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_json(config_validate)
     config_migrate = config_commands.add_parser(
         "migrate",
-        help="将旧 YAML 显式迁移为 canonical 0.6",
+        help="将旧 YAML 显式迁移为 canonical 0.7",
     )
     config_migrate.add_argument("config", type=Path)
     config_migrate.add_argument("--output", type=Path, required=True)
@@ -172,6 +172,11 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(run_parser)
     run_parser.add_argument("--runs-root", type=Path)
     run_parser.add_argument("--run-id")
+    run_parser.add_argument(
+        "--from-run",
+        type=Path,
+        help="从 checksum 验证通过的终态上游 run 建立 continuation",
+    )
     run_parser.add_argument("--dry-run", action="store_true")
     _add_json(run_parser)
 
@@ -434,6 +439,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             runs_root=arguments.runs_root,
             run_id=arguments.run_id,
             dry_run=arguments.dry_run,
+            continue_from_run=arguments.from_run,
         )
         if arguments.json:
             print(_json_text(execution))

@@ -218,11 +218,11 @@ target.fasta | target.pdb | target.cif | target.pse | target-bundle.json
 easydesign.yaml
 ```
 
-`easydesign.yaml` schema `0.6` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
+`easydesign.yaml` schema `0.7` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
 binder profile/intent，未实现阶段写 `null`。`stage01.target.source` 是
 `local-file | pdb-id | uniprot | uniprot-search | target-bundle` 的 discriminated union；
 本地路径相对于 YAML 解析。旧 schema 0.3 只在加载边界规范化，run 内
-`resolved-config.json` 永远保存 0.6。
+`resolved-config.json` 永远保存 0.7。
 
 统一 Stage 01 source pipeline 是：
 
@@ -359,6 +359,41 @@ annotation 中存在固定红/蓝/黄时走用户区域，否则进入显式 aut
 automatic unattended 仍是 deterministic-policy。用户区域 unattended 必须由初始配置
 提供真实审批人、逐区理由和 acknowledgement，输出明确记录
 `approval_authority=human` 与 `approval_source=initial-run-config`，不能伪装成算法批准。
+
+### Stage 03 策略编译与 continuation
+
+Stage 03 把已批准 `hotspots.yaml` 编译为 BoltzGen 配置；它不执行生成，也不重新判断
+区域。依赖方向固定为：
+
+```text
+RunManifest
+├── Stage 01 → target-bundle + target-structure
+└── Stage 02 → approved hotspots.yaml
+                     ↓ checksum/identity
+      boltzgen-vhh-basic-v1 compiler
+                     ↓ region × official-vhh7-v1
+      design.yaml + StrategyBundle + validation report
+                     ↓
+              Stage 04 manifest-only handoff
+```
+
+编译器位于 `stages/s03_boltzgen_configuration/`，只实现区域到版本化策略的领域转换；
+BoltzGen version/commit probe 和官方 `check` 位于 `backends/boltzgen/`；
+`orchestration/stage03.py` 负责上游 manifest、attempt、StageManifest 和 RunManifest。
+CLI 不拼接 YAML。
+
+基础模板把每个区域全部 label residue 写成 positive `binding`，其余 residue 不写任何
+标记。registry、模板 profile、candidate budget 和区域数来自类型化配置/输入；APOE
+三分区不是代码常数。
+
+`official-vhh7-v1` 的十四个 YAML/mmCIF 与上游 MIT license 作为 package data 分发。
+每个文件在源代码中固定 SHA-256，运行时验证后复制到 attempt；StrategyBundle 同时记录
+BoltzGen `0.3.2`、固定 commit 和上游 artifact hash。
+
+已成功结束的 Stage 02 run 不能追加 RunManifest revision。下游工作使用显式
+`--from-run` continuation：新 run 按字节复制 Stage 01/02 目录和输入 snapshot，复验原
+ArtifactRef，并在 `continuation-source.json` 记录源 RunManifest hash。源 run 和其
+artifact 保持不变；这不是扫描或重新导入科学结果。
 
 ### 远程 adapter、cache 与 Decision Gate
 

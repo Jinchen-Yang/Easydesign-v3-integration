@@ -150,10 +150,12 @@ def initialize_project(
     precomputed_msa: Path | None = None,
     msa_cache_mode: str = "online",
 ) -> InitializedProject:
-    """生成 schema 0.6；六类 Stage 01 入口全部有显式 init。"""
+    """生成 schema 0.7；六类 Stage 01 入口全部有显式 init。"""
 
-    if stop_after_stage not in {1, 2}:
-        raise ConfigurationError("Developer Preview init 只支持 --stop-after 1 或 2")
+    if stop_after_stage not in {1, 2, 3}:
+        raise ConfigurationError(
+            "Developer Preview init 只支持 --stop-after 1、2 或 3"
+        )
     if execution_mode not in {"review-gated", "unattended"}:
         raise ConfigurationError("--execution-mode 必须是 review-gated 或 unattended")
     if chain_namespace not in {"auth", "label"}:
@@ -341,7 +343,7 @@ def initialize_project(
         )
     if (
         detected is TargetInputFormat.PSE
-        and stop_after_stage == 2
+        and stop_after_stage >= 2
         and execution_mode == "unattended"
     ):
         raise ConfigurationError(
@@ -349,7 +351,7 @@ def initialize_project(
             "逐区域理由和证据局限确认；请先用 review-gated 初始化后显式编辑配置"
         )
     payload: dict[str, object] = {
-        "schema_version": "0.6",
+        "schema_version": "0.7",
         "project_id": selected_project_id,
         "design": {
             "binder_profile": "vhh",
@@ -360,6 +362,7 @@ def initialize_project(
             "execution_mode": execution_mode,
             "stop_after_stage": stop_after_stage,
             "cache_mode": "online",
+            "max_strategy_rounds": 1,
         },
         "stage01": {
             "target": {
@@ -394,11 +397,20 @@ def initialize_project(
                 unattended=execution_mode == "unattended",
                 detect_pse_colors=detected is TargetInputFormat.PSE,
             )
-            if stop_after_stage == 2
+            if stop_after_stage >= 2
+            else None
+        ),
+        "stage03": (
+            {
+                "profile": "boltzgen-vhh-basic-v1",
+                "scaffold_registry": "official-vhh7-v1",
+                "candidates_per_strategy": 40,
+            }
+            if stop_after_stage >= 3
             else None
         ),
     }
-    for stage_number in range(3, 8):
+    for stage_number in range(4, 8):
         payload[f"stage{stage_number:02d}"] = None
 
     created_root = not destination.exists()

@@ -65,12 +65,31 @@ class ScanNetEpitopeRuntime(BaseModel):
         return value
 
 
+class BoltzGenRuntime(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    executable: Path
+    repository_root: Path
+    cache_root: Path
+    timeout_seconds: float = Field(default=300.0, gt=0)
+    validation_workers: int = Field(default=4, ge=1, le=8)
+    offline_mode: bool = True
+
+    @field_validator("executable", "repository_root", "cache_root")
+    @classmethod
+    def require_absolute_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("BoltzGen runtime 路径必须是绝对路径")
+        return value
+
+
 class RuntimeBackends(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     protenix_v2: ProtenixV2Runtime | None = None
     pymol_pse: PyMOLPseRuntime | None = None
     scannet_epitope: ScanNetEpitopeRuntime | None = None
+    boltzgen: BoltzGenRuntime | None = None
 
 
 class RuntimeProfile(BaseModel):

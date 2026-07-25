@@ -90,13 +90,15 @@ Sequence Search/Data API 寻找满足严格 scope 门槛的实验结构；没有
 `review-gated` 停在选择门，`unattended` 按 YAML 明确转 required-MSA Protenix-v2。
 PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 required-MSA 路径均已达到
 工程 `smoke-validated`；这不代表结构选择或预测准确率经过科学验证。Stage 02 可运行
-独立 SASA/ScanNet；Stage 03–07 仍未实现。
+独立 SASA/ScanNet 和用户区域。Stage 03 已实现基础 VHH 策略编译：每个批准区域与七个
+官方 scaffold 组合、只写 positive binding，并由 BoltzGen 0.3.2 官方校验；Stage 04–07
+仍在开发。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
 
 ```bash
-easydesign config migrate old.yaml --output easydesign-0.6.yaml
+easydesign config migrate old.yaml --output easydesign-0.7.yaml
 ```
 
 默认 `review-gated` 会在 UniProt identity、chain/construct、实验结构和 hotspot 等科学
@@ -127,6 +129,18 @@ easydesign hotspots export RUN_DIR \
 # 编辑 approved_by、design_goal、两类 rationale；structural-only 还需确认限制
 easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
 ```
+
+已结束的 Stage 02 run 可显式继续到 Stage 03，原 run 不会被改写：
+
+```bash
+easydesign doctor --config downstream/easydesign.yaml
+easydesign run downstream/easydesign.yaml \
+  --from-run /absolute/path/to/succeeded-stage02-run \
+  --run-id downstream-stage03
+```
+
+Stage 03 输出 `StrategyBundle`、design matrix 和每个 region×scaffold 的
+`design.yaml`。当前基础模板不做 crop/CDR 优化，非 hotspot residue 保持中性。
 
 PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
 红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的

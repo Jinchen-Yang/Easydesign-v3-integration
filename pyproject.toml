@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easydesign"
-version = "0.1.0.dev4"
+version = "0.1.0.dev5"
 description = "A contract-first, traceable platform for accessible binder design"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -49,6 +49,9 @@ easydesign = [
   "reporting/static/target_viewer/vendor/molstar/LICENSE",
   "reporting/static/target_viewer/vendor/molstar/*.js",
   "reporting/static/target_viewer/vendor/molstar/*.css",
+  "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.yaml",
+  "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.cif",
+  "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.txt",
 ]
 
 [tool.pytest.ini_options]

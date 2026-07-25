@@ -340,6 +340,16 @@ class WorkflowConfig(BaseModel):
     execution_mode: ExecutionMode = ExecutionMode.REVIEW_GATED
     stop_after_stage: int = Field(default=1, ge=1, le=7)
     cache_mode: CacheMode = CacheMode.ONLINE
+    max_strategy_rounds: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def validate_strategy_rounds(self) -> Self:
+        if self.max_strategy_rounds != 1:
+            raise ValueError(
+                "EasyDesign 1.0 只实现 max_strategy_rounds=1；"
+                "多轮自适应策略属于后续版本"
+            )
+        return self
 
 
 class BinderProfile(StrEnum):
@@ -702,21 +712,107 @@ class Stage02Config(BaseModel):
         return self
 
 
+class Stage03Config(BaseModel):
+    """Stage 02 已批准区域到 BoltzGen design specification 的基础模板。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile: Literal["boltzgen-vhh-basic-v1"] = "boltzgen-vhh-basic-v1"
+    scaffold_registry: Literal["official-vhh7-v1"] = "official-vhh7-v1"
+    candidates_per_strategy: int = Field(default=40, ge=1)
+
+
+class LocalMultiGpuExecutorConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["local-multi-gpu"] = "local-multi-gpu"
+    devices: tuple[int, ...] = Field(default=(0, 1), min_length=1)
+    workers_per_device: Literal[1] = 1
+
+    @model_validator(mode="after")
+    def validate_devices(self) -> Self:
+        if any(device < 0 for device in self.devices):
+            raise ValueError("GPU device 必须是非负整数")
+        if len(self.devices) != len(set(self.devices)):
+            raise ValueError("GPU device 不能重复")
+        return self
+
+
+class Stage04Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    backend: Literal["boltzgen-0.3.2"] = "boltzgen-0.3.2"
+    executor: LocalMultiGpuExecutorConfig = LocalMultiGpuExecutorConfig()
+    required_complete_candidates_per_strategy: int = Field(default=40, ge=1)
+
+
+class Stage05StrategySelectionConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    full_target_refold_top_n: int = Field(default=10, ge=1)
+    require_unique_winner: Literal[True] = True
+
+
+class Stage05Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    filter_profile: Literal["nanobody-filter-standard-v1.5"] = (
+        "nanobody-filter-standard-v1.5"
+    )
+    expanded_total_per_strategy: int = Field(default=100, ge=1)
+    maximum_tier_a_strategies: int = Field(default=3, ge=1)
+    strategy_selection: Stage05StrategySelectionConfig = (
+        Stage05StrategySelectionConfig()
+    )
+
+
+class Stage06Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scale_profile: Literal["smoke-1000", "production-50000"] = "smoke-1000"
+    preauthorized_candidate_limit: int = Field(default=1000, ge=1)
+
+    @model_validator(mode="after")
+    def validate_authorized_limit(self) -> Self:
+        requested = 1000 if self.scale_profile == "smoke-1000" else 50_000
+        if requested > self.preauthorized_candidate_limit:
+            raise ValueError(
+                "scale profile 超过 preauthorized_candidate_limit；"
+                "高成本运行必须在初始配置中获得显式授权"
+            )
+        return self
+
+
+class Stage07Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    final_filter_profile: Literal["nanobody-final-v1.5"] = "nanobody-final-v1.5"
+    primary_count: int = Field(default=20, ge=0)
+    backup_count: int = Field(default=20, ge=0)
+    tnp_required: Literal[True] = True
+
+    @model_validator(mode="after")
+    def validate_package_size(self) -> Self:
+        if self.primary_count + self.backup_count < 1:
+            raise ValueError("最终候选包至少请求一个候选")
+        return self
+
+
 class EasyDesignRunConfig(BaseModel):
     """用户维护的唯一 run 配置；不包含 Protenix 私有 JSON。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.6", pattern=r"^0\.6$")
+    schema_version: str = Field(default="0.7", pattern=r"^0\.7$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
     stage01: Stage01Config
     stage02: Stage02Config | None = None
-    stage03: None = None
-    stage04: None = None
-    stage05: None = None
-    stage06: None = None
-    stage07: None = None
+    stage03: Stage03Config | None = None
+    stage04: Stage04Config | None = None
+    stage05: Stage05Config | None = None
+    stage06: Stage06Config | None = None
+    stage07: Stage07Config | None = None
     workflow: WorkflowConfig = WorkflowConfig()
 
     @model_validator(mode="before")
@@ -757,17 +853,45 @@ class EasyDesignRunConfig(BaseModel):
                         "scope": {"type": "full-sequence"},
                     }
             migrated["stage01"] = stage01
-        migrated["schema_version"] = "0.6"
+        migrated["schema_version"] = "0.7"
         return migrated
 
     @model_validator(mode="after")
     def validate_stage_sequence(self) -> Self:
         if self.workflow.stop_after_stage >= 2 and self.stage02 is None:
             raise ValueError("stop_after_stage >= 2 时必须显式提供 stage02")
-        if self.workflow.stop_after_stage >= 3:
+        stages = (
+            self.stage01,
+            self.stage02,
+            self.stage03,
+            self.stage04,
+            self.stage05,
+            self.stage06,
+            self.stage07,
+        )
+        for stage_number in range(2, self.workflow.stop_after_stage + 1):
+            if stages[stage_number - 1] is None:
+                raise ValueError(
+                    f"stop_after_stage={self.workflow.stop_after_stage} 时 "
+                    f"stage{stage_number:02d} 不能为 null"
+                )
+        for stage_number in range(self.workflow.stop_after_stage + 1, 8):
+            if stages[stage_number - 1] is not None:
+                raise ValueError(
+                    f"stage{stage_number:02d} 已配置，但 stop_after_stage="
+                    f"{self.workflow.stop_after_stage}"
+                )
+        if self.stage03 is not None and self.design.binder_profile is not BinderProfile.VHH:
+            raise ValueError("Stage 03 1.0 只实现 binder_profile=vhh")
+        if (
+            self.stage03 is not None
+            and self.stage04 is not None
+            and self.stage03.candidates_per_strategy
+            != self.stage04.required_complete_candidates_per_strategy
+        ):
             raise ValueError(
-                "Stage 03–07 尚未实现；对应配置必须为 null，"
-                "stop_after_stage 当前不能高于 2"
+                "Stage 03 candidates_per_strategy 必须与 Stage 04 "
+                "required_complete_candidates_per_strategy 一致"
             )
         source = self.stage01.target.source
         is_predictable = (
@@ -1135,7 +1259,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
 
 
 def migrate_run_config(source: Path, destination: Path) -> Path:
-    """将旧配置显式写成 canonical 0.6；禁止覆盖原文件或目标文件。"""
+    """将旧配置显式写成 canonical 0.7；禁止覆盖原文件或目标文件。"""
 
     source_path = source.resolve(strict=True)
     target_path = destination.expanduser().resolve()

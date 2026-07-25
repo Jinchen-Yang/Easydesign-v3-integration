@@ -113,7 +113,9 @@ def test_cli_init_and_config_validate(tmp_path: Path, capsys: pytest.CaptureFixt
     assert "配置校验通过" in output
 
 
-def test_unimplemented_stage_fails_before_profile_or_workspace(tmp_path: Path) -> None:
+def test_stage03_requires_explicit_config_before_profile_or_workspace(
+    tmp_path: Path,
+) -> None:
     pse = tmp_path / "target.pse"
     pse.write_bytes(b"synthetic")
     initialized = initialize_project(
@@ -127,7 +129,7 @@ def test_unimplemented_stage_fails_before_profile_or_workspace(tmp_path: Path) -
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="Stage 03"):
+    with pytest.raises(ConfigurationError, match="stage03"):
         validate_run_configuration(initialized.config_path)
 
 

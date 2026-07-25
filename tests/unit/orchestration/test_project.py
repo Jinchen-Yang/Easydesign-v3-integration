@@ -32,7 +32,7 @@ def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Pa
     assert loaded.config.stage02.automatic is not None
     assert loaded.config.stage02.automatic.patch.target_member_count == 12
     config_text = initialized.config_path.read_text(encoding="utf-8")
-    assert config_text.startswith("schema_version: '0.6'")
+    assert config_text.startswith("schema_version: '0.7'")
     assert "execution_mode: review-gated" in config_text
     assert "type: local-file" in config_text
     assert all(f"stage0{number}:" in config_text for number in range(1, 8))

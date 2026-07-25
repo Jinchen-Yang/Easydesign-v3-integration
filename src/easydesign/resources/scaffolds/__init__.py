@@ -1,0 +1,1 @@
+"""Binder scaffold assets."""

@@ -4,10 +4,12 @@ import csv
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import gemmi
 import numpy as np
 import yaml
+from pytest import MonkeyPatch, raises
 
 from easydesign.backends.boltzgen import (
     BoltzGenGenerationRequest,
@@ -26,6 +28,7 @@ from easydesign.core import (
     CodeIdentity,
     CodeIdentitySource,
     ExecutionStatus,
+    ManifestStateError,
     ProgressSnapshot,
     RunManifest,
     RuntimeProfileRef,
@@ -38,6 +41,7 @@ from easydesign.core import (
 from easydesign.orchestration import read_pipeline_progress
 from easydesign.orchestration.stage04 import execute_stage04
 from easydesign.orchestration.stage05 import execute_stage05
+from easydesign.orchestration.stage06 import execute_stage06
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.stages.s03_boltzgen_configuration import (
@@ -52,6 +56,7 @@ from easydesign.stages.s04_pilot_generation import (
 )
 from easydesign.stages.s04_pilot_generation.models import TaskTable
 from easydesign.stages.s05_pilot_filtering import Stage05Bundle
+from easydesign.stages.s06_scale_generation_and_refolding import ScaleBundle, ScalePlan
 
 NOW = datetime(2026, 7, 26, 3, 0, tzinfo=UTC)
 
@@ -249,17 +254,7 @@ class _FakeProtenixAdapter:
         )
         (output_dir / "updated-input.json").write_text(
             json.dumps(
-                [
-                    {
-                        "sequences": [
-                            {
-                                "proteinChain": {
-                                    "unpairedMsaPath": str(a3m.resolve())
-                                }
-                            }
-                        ]
-                    }
-                ]
+                [{"sequences": [{"proteinChain": {"unpairedMsaPath": str(a3m.resolve())}}]}]
             ),
             encoding="utf-8",
         )
@@ -336,10 +331,7 @@ class _FakeProtenixAdapter:
         asym = [0] * target_length + [1] * binder_length
         size = len(asym)
         pae = [
-            [
-                0.0 if asym[first] == asym[second] else 5.0
-                for second in range(size)
-            ]
+            [0.0 if asym[first] == asym[second] else 5.0 for second in range(size)]
             for first in range(size)
         ]
         full_path = output_dir / "full.json"
@@ -381,6 +373,7 @@ def _prepared_stage03_run(
     tmp_path: Path,
     *,
     through_stage05: bool = False,
+    through_stage06: bool = False,
 ) -> Path:
     pse = tmp_path / "target.pse"
     pse.write_bytes(b"synthetic")
@@ -399,7 +392,7 @@ def _prepared_stage03_run(
                 },
                 "workflow": {
                     "execution_mode": "unattended",
-                    "stop_after_stage": 5 if through_stage05 else 4,
+                    "stop_after_stage": (6 if through_stage06 else 5 if through_stage05 else 4),
                     "max_strategy_rounds": 1,
                 },
                 "stage01": {
@@ -462,10 +455,17 @@ def _prepared_stage03_run(
                             "require_unique_winner": True,
                         },
                     }
-                    if through_stage05
+                    if through_stage05 or through_stage06
                     else None
                 ),
-                "stage06": None,
+                "stage06": (
+                    {
+                        "scale_profile": "smoke-1000",
+                        "preauthorized_candidate_limit": 1000,
+                    }
+                    if through_stage06
+                    else None
+                ),
                 "stage07": None,
             },
             sort_keys=False,
@@ -695,9 +695,7 @@ def test_stage04_executes_generic_strategy_and_publishes_manifest_only_handoff(
     }
     run = load_model(outcome.run_manifest, RunManifest)
     assert run.status is ExecutionStatus.SUCCEEDED
-    assert tuple(
-        reference.producer_stage for reference in run.stage_manifest_refs
-    ) == (
+    assert tuple(reference.producer_stage for reference in run.stage_manifest_refs) == (
         str(StageId.TARGET_PREPARATION),
         str(StageId.BOLTZGEN_CONFIGURATION),
         str(StageId.PILOT_GENERATION),
@@ -774,11 +772,120 @@ def test_stage05_expands_and_selects_one_full_target_winner(
         CandidateIndex,
     )
     assert len(expanded.candidates) == 4
-    assert tuple(
-        item.ordinal_within_strategy for item in expanded.candidates
-    ) == (1, 2, 3, 4)
+    assert tuple(item.ordinal_within_strategy for item in expanded.candidates) == (1, 2, 3, 4)
     assert bundle.expansion_validation_report is not None
     assert bundle.scientific_stop is None
+
+
+def test_stage06_generates_exactly_one_thousand_new_candidates_in_two_shards(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage06.shutil.disk_usage",
+        lambda _path: SimpleNamespace(
+            total=400_000_000_000,
+            used=100_000_000_000,
+            free=300_000_000_000,
+        ),
+    )
+    root = _prepared_stage03_run(tmp_path, through_stage06=True)
+    generation = _FakeGenerationAdapter(all_pass=True)
+    execute_stage04(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    stage05 = execute_stage05(
+        run_root=root,
+        boltzgen_adapter=generation,  # type: ignore[arg-type]
+        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    assert stage05.status == "winner-selected"
+
+    stage06 = execute_stage06(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+
+    assert stage06.status == "succeeded"
+    assert stage06.complete_candidate_count == 1000
+    assert stage06.scale_bundle is not None
+    bundle = load_model(stage06.scale_bundle, ScaleBundle)
+    plan = load_model(bundle.scale_plan.verify(root), ScalePlan)
+    assert len(plan.shards) == 2
+    assert tuple(item.requested_candidates for item in plan.shards) == (500, 500)
+    index = load_model(bundle.candidate_index.verify(root), CandidateIndex)
+    assert len(index.candidates) == 1000
+    assert index.candidates[0].ordinal_within_strategy == 1
+    assert index.candidates[-1].ordinal_within_strategy == 1000
+    bundle.coverage_report.verify(root)
+    bundle.backend_environment.verify(root)
+    stage_manifest = load_model(stage06.stage_manifest, StageManifest)
+    assert any(item.artifact_id == "candidate-index" for item in stage_manifest.input_artifacts)
+
+    scale_bundle_sha256 = sha256_file(stage06.scale_bundle)
+    terminal_run = load_model(stage06.run_manifest, RunManifest)
+    previous_manifest = root / "manifests" / f"run-manifest.v{terminal_run.revision - 1:04d}.json"
+    (root / "manifests" / "LATEST").write_text(
+        previous_manifest.name + "\n",
+        encoding="utf-8",
+    )
+    recovered_publish = execute_stage06(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    assert recovered_publish.status == "succeeded"
+    assert recovered_publish.scale_bundle is not None
+    assert sha256_file(recovered_publish.scale_bundle) == scale_bundle_sha256
+
+
+def test_stage06_disk_preflight_fails_before_creating_scale_tasks(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    root = _prepared_stage03_run(tmp_path, through_stage06=True)
+    generation = _FakeGenerationAdapter(all_pass=True)
+    execute_stage04(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    execute_stage05(
+        run_root=root,
+        boltzgen_adapter=generation,  # type: ignore[arg-type]
+        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage06.shutil.disk_usage",
+        lambda _path: SimpleNamespace(
+            total=400_000_000_000,
+            used=350_000_000_000,
+            free=50_000_000_000,
+        ),
+    )
+
+    with raises(ManifestStateError, match="disk preflight"):
+        execute_stage06(
+            run_root=root,
+            adapter=generation,  # type: ignore[arg-type]
+            gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+            executed_at=NOW,
+        )
+
+    attempt = root / str(StageId.SCALE_GENERATION_AND_REFOLDING) / "attempt-0001"
+    assert not (attempt / "tasks").exists()
+    assert (attempt / "runtime" / "resource-preflight.json").is_file()
 
 
 def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
@@ -805,10 +912,7 @@ def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
         ).glob("*.cif")
     )
     first_hash = sha256_file(first_candidate)
-    state_path = (
-        root
-        / "04-pilot-generation/attempt-0001/runtime/task-state.json"
-    )
+    state_path = root / "04-pilot-generation/attempt-0001/runtime/task-state.json"
     state = load_model(state_path, PilotExecutionState)
     elapsed_before_resume = state.progress.elapsed_seconds
     atomic_dump_runtime_model(
@@ -841,16 +945,11 @@ def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
     assert completed.pilot_bundle is not None
     bundle = load_model(completed.pilot_bundle, PilotBundle)
     final_progress = bundle.progress_final.verify(root)
-    assert (
-        load_model(final_progress, ProgressSnapshot).elapsed_seconds
-        >= elapsed_before_resume
-    )
+    assert load_model(final_progress, ProgressSnapshot).elapsed_seconds >= elapsed_before_resume
     index = load_model(bundle.candidate_index.verify(root), CandidateIndex)
     assert all(candidate.design_mask_source is not None for candidate in index.candidates)
     assert all(candidate.designed_binder_residue_ids for candidate in index.candidates)
     tasks = load_model(bundle.task_table.verify(root), TaskTable)
     assert len(tasks.tasks[0].attempts) == 3
-    assert tuple(
-        attempt.requested_candidates for attempt in tasks.tasks[0].attempts
-    ) == (2, 1, 1)
+    assert tuple(attempt.requested_candidates for attempt in tasks.tasks[0].attempts) == (2, 1, 1)
     assert tasks.tasks[0].status.value == "succeeded"

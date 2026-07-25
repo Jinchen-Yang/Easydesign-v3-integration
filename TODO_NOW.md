@@ -12,7 +12,7 @@
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `implemented` | S04-001/ENG-008 通用执行器、严格收集、进度、事件和恢复已实现并通过最小真实 BoltzGen smoke。 | 固定代码版本后启动 APOE 21×40，并以 840 个完整候选作为 smoke 门槛。 | 无代码前置阻塞；真实运行必须持续满足 GPU/磁盘门槛。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `implemented` | Nanobody Filter Standard v1.5 的 pilot 审计、Tier、100-candidate 扩展、Protenix full-target 与唯一策略选择已形成统一可恢复实现。 | 等待 Stage 04 APOE 840-candidate 正式输入后运行真实 Stage 05。 | 真实 APOE 验收依赖 Stage 04 完成；代码实现无前置阻塞。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `planned` | 通用预测接口已在 Stage 01 实现，放大生成和复合物 refold 尚未开始。 | 复用 Protenix-v2 adapter，等待 Stage 05 shortlist 后定义 scale 契约。 | 依赖 Stage 05 入选策略和复合物预测验证。 | 2026-07-24 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 完成自动测试与最小 backend smoke；APOE 仅在 Stage 05 选出唯一策略后运行真实 1000。 | APOE 真实验收依赖 Stage 04/05 上游门；50k 没有本轮执行授权。 | 2026-07-26 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `planned` | 尚未实现；最终规则、聚类、多样性和 Top N 审核包均待开发。 | Stage 06 输出稳定后定义 final decision 与人工批准包。 | 依赖 Stage 06 完整预测与覆盖报告。 | 2026-07-24 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
@@ -26,8 +26,9 @@
 
 - `[S05-001]` 通用实现和测试已完成；Stage 04 发布后运行 APOE 逐规则 pilot 筛选、
   最多三组 Tier A 扩展和唯一策略选择，再决定是否进入 Stage 06。
-- `[S06-001]` `[S07-001]` 实现 1000 smoke / 50000 production plan、深度筛选、Protenix
-  多 seed、TNP 和多样性候选包；本任务只授权真实执行 1000。
+- `[S06-001]` 通用 1000 smoke / 50000 production plan、25% 磁盘门、共享恢复和精确
+  merge 已实现；仅在 Stage 05 唯一 winner 存在时真实执行已授权的 1000。
+- `[S07-001]` 实现深度筛选、Protenix 多 seed、TNP 和多样性候选包。
 - `[S05/S06/S07]` 分别接入 pilot go/no-go、高成本预算和 Top N 候选包 gate；
   `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；

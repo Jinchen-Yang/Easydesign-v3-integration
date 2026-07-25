@@ -77,6 +77,7 @@ from .stage03 import (
     execute_stage03,
     initialize_continuation_run,
 )
+from .stage06 import Stage06Execution, build_scale_plan, execute_stage06
 from .workspace import (
     PreparedPseRun,
     PreparedRun,
@@ -141,6 +142,7 @@ __all__ = [
     "Stage06Config",
     "Stage07Config",
     "Stage03Execution",
+    "Stage06Execution",
     "TargetInputFormat",
     "TargetSourceConfig",
     "WorkflowConfig",
@@ -155,6 +157,8 @@ __all__ = [
     "execute_stage02_comparison",
     "execute_stage02",
     "execute_stage03",
+    "execute_stage06",
+    "build_scale_plan",
     "export_hotspot_review",
     "approve_hotspots",
     "initialize_pse_run",

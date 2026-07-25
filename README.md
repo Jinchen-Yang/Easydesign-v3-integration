@@ -99,7 +99,9 @@ PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 require
 Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与恢复；APOE 21×40 真实
 验收完成前仍不标记为 `smoke-validated`。Stage 05 已实现 v1.5 pilot 硬门、逐规则审计、
 Tier A 扩展到总计 100、full-target Protenix 和唯一 scale strategy；等待 Stage 04
-APOE 输入完成后做真实验收。Stage 06–07 仍在开发。
+APOE 输入完成后做真实验收。Stage 06 已实现 2×500 smoke、20×2500 production plan、
+25% 磁盘门、分片恢复和精确 merge；APOE 真实 1000 必须等待 Stage 05 唯一 winner，
+本轮不会启动 50k。Stage 07 仍在开发。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：

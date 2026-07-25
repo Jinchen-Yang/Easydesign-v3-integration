@@ -72,6 +72,7 @@ from .stage02 import execute_stage02
 from .stage03 import execute_stage03, initialize_continuation_run
 from .stage04 import Stage04Execution, execute_stage04
 from .stage05 import ComplexAdapterBuilder, Stage05Execution, execute_stage05
+from .stage06 import Stage06Execution, execute_stage06
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -84,7 +85,7 @@ from .workspace import (
 )
 
 PROTENIX_V2_CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
-IMPLEMENTED_STAGE_MAX = 5
+IMPLEMENTED_STAGE_MAX = 6
 
 
 class DiagnosticStatus(StrEnum):
@@ -856,6 +857,24 @@ def execute_pipeline(
         )
         run_manifest = completed_stage05.run_manifest
         status = completed_stage05.status
+    current_run, _ = _load_latest_run_manifest(run_root)
+    completed_stage_ids = {
+        reference.producer_stage for reference in current_run.stage_manifest_refs
+    }
+    if (
+        current_run.status is ExecutionStatus.RUNNING
+        and context.plan.stop_after_stage >= 6
+        and str(StageId.SCALE_GENERATION_AND_REFOLDING)
+        not in completed_stage_ids
+    ):
+        boltzgen_runtime = backends.boltzgen
+        assert boltzgen_runtime is not None
+        completed_stage06 = execute_stage06(
+            run_root=run_root,
+            adapter=_boltzgen_generation_adapter(boltzgen_runtime),
+        )
+        run_manifest = completed_stage06.run_manifest
+        status = completed_stage06.status
     return PipelineExecution(
         status=status,
         plan=context.plan,
@@ -869,7 +888,7 @@ def resume_pipeline(
     run_root: Path,
     *,
     profile_path: Path | None = None,
-) -> Stage04Execution | Stage05Execution:
+) -> Stage04Execution | Stage05Execution | Stage06Execution:
     """Resume the current manifest-declared running stage without changing config."""
 
     root = run_root.expanduser().resolve()
@@ -919,6 +938,19 @@ def resume_pipeline(
                 ),
             ),
         )
+    if (
+        resolved.stop_after_stage >= 6
+        and str(StageId.PILOT_FILTERING) in completed
+        and str(StageId.SCALE_GENERATION_AND_REFOLDING) not in completed
+    ):
+        profile = load_runtime_profile(profile_path)
+        runtime = profile.profile.backends.boltzgen
+        if runtime is None:
+            raise ConfigurationError("runtime profile 缺少 Stage 06 BoltzGen backend")
+        return execute_stage06(
+            run_root=root,
+            adapter=_boltzgen_generation_adapter(runtime),
+        )
     raise ConfigurationError("当前 run 没有可恢复的已实现 Stage")
 
 
@@ -934,13 +966,37 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
     refs = {item.producer_stage: item for item in current.stage_manifest_refs}
     stage05_id = str(StageId.PILOT_FILTERING)
     stage04_id = str(StageId.PILOT_GENERATION)
+    stage06_id = str(StageId.SCALE_GENERATION_AND_REFOLDING)
+    if stage06_id in refs:
+        manifest = load_model(refs[stage06_id].verify(root), StageManifest)
+        return load_model(
+            manifest.require_output("scale-progress-final").verify(root),
+            ProgressSnapshot,
+        )
+    if (
+        current.status is ExecutionStatus.RUNNING
+        and resolved.stop_after_stage >= 6
+        and stage05_id in refs
+    ):
+        return load_model(
+            root
+            / stage06_id
+            / "attempt-0001"
+            / "runtime"
+            / "progress.json",
+            ProgressSnapshot,
+        )
     if stage05_id in refs:
         manifest = load_model(refs[stage05_id].verify(root), StageManifest)
         return load_model(
             manifest.require_output("stage05-progress-final").verify(root),
             ProgressSnapshot,
         )
-    if resolved.stop_after_stage >= 5 and stage04_id in refs:
+    if (
+        current.status is ExecutionStatus.RUNNING
+        and resolved.stop_after_stage >= 5
+        and stage04_id in refs
+    ):
         return load_model(
             root
             / stage05_id
@@ -955,7 +1011,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
             manifest.require_output("pilot-progress-final").verify(root),
             ProgressSnapshot,
         )
-    if resolved.stop_after_stage >= 4:
+    if current.status is ExecutionStatus.RUNNING and resolved.stop_after_stage >= 4:
         return load_model(
             root
             / stage04_id

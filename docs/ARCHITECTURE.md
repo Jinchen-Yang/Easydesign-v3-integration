@@ -467,6 +467,34 @@ query-only、template disabled，full confidence 为必需输出。Stage 01 和 
 请求。`stopped-no-tier-a` 和 `stopped-no-scale-winner` 是成功执行得到的科学负结果，
 会终止 Run 但不会伪装成 operational failure。
 
+### Stage 06 分片规模生成
+
+Stage 06 只在 Stage 05 发布唯一 winner 后运行。它同时把 Stage 03 strategy YAML、
+Stage 05 winner bundle 和 Stage 04 candidate index 声明为输入；后者仅用于从正式
+ArtifactRef 测量候选磁盘基线，不能成为 manifest 外的隐式读取。
+
+```text
+ScaleResourceReport
+  → ScalePlan
+      ├── shard-0001 / stable ordinal range
+      └── shard-0002 / stable ordinal range
+  → shared BoltzGen task executor
+  → exact merge / ScaleCoverageReport
+  → ScaleBundle
+```
+
+`smoke-1000` 固定为两个 500-candidate shard；`production-50000` 固定为二十个
+2500-candidate shard。profile 只定义能力，实际执行还必须满足初始配置中的
+`preauthorized_candidate_limit`。当前资源门使用 Stage 04 声明 artifact 的每候选字节数
+乘 20 的保守容量代理，且要求执行后仍保留文件系统总容量的 25%；预检失败发生在创建
+task 前。
+
+Stage 04–06 共同调用 `orchestration/boltzgen_tasks.py` 和 local multi-GPU executor。
+Stage 06 不复制生成/收集逻辑，也不把 Stage 04/05 候选计入 scale 数量。运行状态仍使用
+原子 progress/state 与 append-only events；发布中断后，终态 artifact 只有在模型 identity
+或原始 bytes 完全一致时才可复用。Stage 07 只读取 StageManifest 声明、checksum 正确且
+覆盖无缺口的 ScaleBundle/CandidateIndex。
+
 ### 远程 adapter、cache 与 Decision Gate
 
 UniProt/RCSB 共用 core 环境中的轻量 `httpx` adapter，不引入新 Conda 环境。adapter

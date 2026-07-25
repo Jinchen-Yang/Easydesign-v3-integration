@@ -50,7 +50,7 @@
 | `S03-001` | Scientific Pipeline | `smoke-validated` | 基础 BoltzGen VHH strategy compiler 与 APOE 21/21 YAML 验收完成。 |
 | `S04-001` | Scientific Pipeline | `implemented` | 可恢复多 GPU pilot generation 已实现；APOE 21×40 正在真实运行。 |
 | `S05-001` | Scientific Pipeline | `implemented` | v1.5 pilot 筛选、Tier A 扩展、full-target Protenix 与唯一策略选择完成通用测试。 |
-| `S06-001` | Scientific Pipeline | `planned` | smoke-1000 与 production-50000 分片计划、资源门和恢复 merge 完成。 |
+| `S06-001` | Scientific Pipeline | `implemented` | smoke-1000 与 production-50000 分片计划、25% 资源门、共享恢复和精确 merge 已通过通用测试；等待上游门后运行 APOE 1000。 |
 | `S07-001` | Scientific Pipeline | `planned` | 深度筛选、多 seed Protenix、TNP 与多样性候选包完成。 |
 | `ENG-008` | Core Engineering | `implemented` | 通用任务、原子进度、append-only 事件、多 GPU 调度和恢复执行器完成；等待 APOE 全量证据后提升状态。 |
 | `REP-002` | Reporting & Visualization | `planned` | SASA/ScanNet 独立 overlay 不改变科学输出。 |
@@ -85,7 +85,7 @@
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `implemented` | S04-001/ENG-008 通用执行器、严格收集、进度、事件和恢复已实现并通过最小真实 BoltzGen smoke。 | 固定代码版本后启动 APOE 21×40，并以 840 个完整候选作为 smoke 门槛。 | 无代码前置阻塞；真实运行必须持续满足 GPU/磁盘门槛。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `implemented` | Nanobody Filter Standard v1.5 的 pilot 审计、Tier、100-candidate 扩展、Protenix full-target 与唯一策略选择已形成统一可恢复实现。 | 等待 Stage 04 APOE 840-candidate 正式输入后运行真实 Stage 05。 | 真实 APOE 验收依赖 Stage 04 完成；代码实现无前置阻塞。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `planned` | 通用预测接口已在 Stage 01 实现，放大生成和复合物 refold 尚未开始。 | 复用 Protenix-v2 adapter，等待 Stage 05 shortlist 后定义 scale 契约。 | 依赖 Stage 05 入选策略和复合物预测验证。 | 2026-07-24 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 完成自动测试与最小 backend smoke；APOE 仅在 Stage 05 选出唯一策略后运行真实 1000。 | APOE 真实验收依赖 Stage 04/05 上游门；50k 没有本轮执行授权。 | 2026-07-26 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `planned` | 尚未实现；最终规则、聚类、多样性和 Top N 审核包均待开发。 | Stage 06 输出稳定后定义 final decision 与人工批准包。 | 依赖 Stage 06 完整预测与覆盖报告。 | 2026-07-24 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 

@@ -6,23 +6,33 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 |
+| `planned` | schema 0.3 APOE 双方法已重跑；多模型 SASA、可选 UniProt 和审批交接均已实现。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 |
 
 ## 当前结论
 
 - 阶段总体状态：`planned`；manual、PSE annotation、外部 annotation 和科学 benchmark
   尚未完成。
-- automatic 双方法独立选区代码状态：`implemented`。
+- automatic 方法可按 YAML 选择 SASA、ScanNet 或二者；代码状态：`implemented`。
+- SASA 已支持 Target Bundle coordinate ensemble：逐模型 SASA/图、70% presence/exposure/
+  edge/region 完整度、中位数指标和最坏情况区域分离均通过工程测试；单模型回归保持一致。
+- ScanNet 多模型仍未定义科学策略，配置选择时明确返回 `unsupported_ensemble`。
+- 可选 UniProt accession 已支持 `off/if_available/required`、确定性序列映射、功能/PTM/
+  topology feature 和 N-X-S/T warning；annotation 不改变两种方法排名。
+- 自动阶段成功后 RunManifest 进入 `awaiting-human-approval`；`hotspots export/approve`
+  只允许同一种方法的 2–3 个完整区域，并以 `attempt-0002` 发布唯一 `hotspots.yaml`。
 - SASA/geometry 在 138-aa APOE 上状态为 `smoke-validated`。
 - ScanNet epitope no-MSA 的 CPU 路径已通过官方 1BRS 和 138-aa APOE 真实 smoke；
   CPU 是当前正式主线，不是 GPU 失败后的静默 fallback。
 - APOE CPU 双方法正式 run 状态为 `smoke-validated`；Stage/Attempt/Run manifest 均成功，
   输出两套 Top 3、完整 `3 × 3` comparison，且没有融合分数或默认赢家。
+- schema `0.3` 新流程已在真实 APOE PSE 上重新验证：RunManifest `1.2` 正确停在
+  `running / awaiting-human-approval`，Target Bundle `0.3` 声明单模型 `1`，无 accession
+  时 annotation 为 `not_requested / structural_only`，Viewer 与审批模板均成功生成。
 - GPU 是后续性能优化：小型 GPU probe 通过，但官方模型和 APOE 均在 RTX 4080 的
   cuBLAS GEMM 执行时失败，不再阻塞 1.0 的 Stage 02 主线。
 - SASA/geometry 与 ScanNet probability 在类型、文件和排名路径上完全分离。
 - adapter 要求显式选择 `cpu` 或 `gpu`，默认 `cpu`；禁止执行期间在设备之间静默 fallback。
-- 人工选择前不会向 Stage 03 发布默认赢家。
+- 人工选择前不会向 Stage 03 发布默认赢家；structural-only 审批必须确认科学证据限制。
 - Developer Preview CLI 已通过同一 orchestration API 调用正式 Stage 02，并从 YAML
   读取独立方法参数、从 runtime profile 读取 ScanNet CPU；这不改变本阶段科学状态。
 
@@ -30,15 +40,19 @@
 
 | 能力 | 状态 | 当前证据 |
 | --- | --- | --- |
-| Stage 01 Target Bundle/编号读取 | `smoke-validated` | APOE run 中 checksum、单链/单 model 和双编号强校验通过 |
+| Stage 01 Target Bundle/编号读取 | `smoke-validated` | APOE 单模型 checksum/双编号真实读取；多模型 ID、缺失和类型冲突通过工程测试 |
 | SASA/表面几何候选池 | `smoke-validated` | APOE 独立 evidence、51 个候选、Top 3 和 PyMOL 脚本 |
+| SASA 多模型共识 | `implemented` | 7/10 与 6/10 阈值、边共识、中位数、缺失坐标和最坏情况分离测试 |
 | ScanNet epitope no-MSA CPU adapter | `smoke-validated` | 官方 1BRS 与 APOE 138-aa 均真实运行，逐残基 CSV 完整回映射 |
+| ScanNet 多模型 | `planned` | 当前明确 `unsupported_ensemble`；不选代表模型、不回退 |
 | ScanNet epitope no-MSA GPU 优化 | `planned` | probe 通过；RTX 4080 真实模型 GEMM 失败，不阻塞 CPU 主线 |
 | 两方法 `3 × 3` 重叠报告 | `implemented` | Jaccard、覆盖率、距离、最佳匹配；无融合字段 |
-| APOE 138-aa 真实双方法 run | `smoke-validated` | `20260724-005-stage02-cpu`；双方法、comparison 和 manifest 全部成功 |
+| APOE 138-aa 真实双方法 run | `smoke-validated` | schema 0.3 validation run；双方法、comparison、Viewer 和等待审批状态全部成功 |
 | PSE 染色区域导入 | `planned` | 只有明确失败的 provider 接口 |
 | 人工区域上传 | `planned` | 只有明确失败的 provider 接口 |
-| UniProt 功能位点/PTM/天然界面 | `planned` | `annotation_status=not_implemented` |
+| 显式 UniProt 功能位点/PTM/topology | `implemented` | 三种策略、确定性映射、零 accession 零网络请求和失败语义测试 |
+| 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
+| 人工批准与 `hotspots.yaml` | `implemented` | revision/hash/完整区域/理由/structural-only acknowledgement 契约测试 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
 | ScanNet 带 MSA 模型 | `planned` | 未安装、未测试 |
@@ -48,21 +62,20 @@
 
 ## Now
 
-### S02-003：人工批准区域集与 Stage 03 handoff
+### S02-005：APOE 真实人工批准
 
-- 状态：`planned`，等待人工查看正式 CPU run 的 SASA/ScanNet Top 3。
-- 输入只能是 `20260724-005-stage02-cpu` 已发布的候选区域和比较证据，不能重新计算或
-  静默生成融合赢家。
-- 完成门槛：保存被批准的方法/区域、批准人、理由和输入 artifact identity；Stage 03
-  只能消费该批准 manifest。
+- 状态：`planned`；schema 0.3 自动流程已经真实重跑，不替用户编造生物学判断。
+- 当前待用户比较已经生成的 SASA 与 ScanNet Top 3，并选择一种方法。
+- 人工比较后从一种方法批准 2–3 个完整区域，形成真实 `attempt-0002/hotspots.yaml`。
+- 完成门槛：RunManifest 从 `awaiting-human-approval` 转为终态，Stage 03 handoff 的
+  target/method/mapping/evidence/hash 全部可验证。
 
 ## Next
 
-- 人工检查 CPU 主线产生的两套 Top 3 与 PSE 原始颜色 annotation，明确批准区域集。
-- 建立“人工批准区域集”契约，再允许 Stage 03 消费。
+- 按 S02-005 完成真实 APOE 人工选择；不得把合成审批测试或自动 Top 3 当真实科学批准。
 - 将 GPU 兼容优化作为独立 benchmark：评估兼容旧 CUDA 的硬件/容器，或经科学和
   许可证评审的现代化模型路径；不得修改当前 CPU 主线的模型 commit 或权重。
-- 实现 UniProt/PTM/糖基化/天然界面 annotation 拉取，但默认只标注 warning。
+- 扩展天然复合物界面、文献、疾病突变和自动身份发现；均先作为证据/warning。
 - 登记 SASA MAX_ASA 常数来源，比较替代归一化表，并为阈值/权重建立 binder-specific
   benchmark；验证前保持当前 v0.1 参数不变。
 - 设计 VHH–抗原 patch benchmark，比较 SASA、ScanNet PPBS、PeSTo 等方法。
@@ -71,7 +84,7 @@
 ## Blocked
 
 - Stage 02 CPU 自动选区主线当前没有外部 runtime 阻塞。
-- 人工批准区域集及 Stage 03 handoff 契约尚未实现。
+- schema 0.3 真实 APOE 自动 run 已完成；只有用户的科学区域选择尚未执行。
 - GPU 优化在当前服务器阻塞，但它是后续性能待办，不再阻塞 CPU 主线：
 - 环境已精确建立：Python 3.6.12、TensorFlow GPU 1.14.0、CUDA Toolkit 10.0、
   cuDNN 7.6.5、ScanNet commit
@@ -87,13 +100,19 @@
 ## 验证证据
 
 - `make check` 通过：ruff、strict mypy、compile 和仓库结构检查全部成功。
-- 101 个 pytest 中 93 passed；8 个需要显式 PyMOL 环境的集成测试按设计跳过。
+- 159 个 pytest 中 151 passed；8 个需要显式 PyMOL 环境变量的集成测试按设计跳过；
+  显式设置真实 PyMOL interpreter 后这 8 项集成测试全部通过，真实 CLI run 也实际调用
+  了独立 PyMOL 环境。
 - 单元测试验证：
   - SASA evidence 不包含 ScanNet probability；
   - ScanNet evidence 不包含 raw SASA/rSASA；
   - comparison 的 `fused_score`/`winner` 固定为 `null`；
   - ScanNet residue 缺失和 CPU-only probe 明确失败；
   - PSE/manual provider 不会回退 automatic。
+  - 10 模型中 7/10 支持通过、6/10 失败，边共识使用 `ceil(N×0.70)`；
+  - 多模型最坏情况中心距离/shell/重原子距离与 ScanNet 明确拒绝；
+  - UniProt 缺 accession 不调用网络，显式 accession feature 映射和低 identity review；
+  - structural-only 审批必须 acknowledge，跨方法/旧 revision/改成员明确失败。
 - 服务器：2 × RTX 4080，compute capability 8.9，driver `580.105.08`，CUDA driver 13.0。
 - 隔离环境：`/root/autodl-tmp/conda_envs/scannet-epitope-gpu`；官方源码/权重为 runtime
   only，commit 如上。
@@ -111,6 +130,13 @@
   `/device:CPU:0`，SASA 区域大小为 `12/12/12`，ScanNet 为 `10/10/10`，
   `method-comparison.json` 含 9 组比较；Attempt、StageManifest 与 RunManifest revision 3
   均为 `succeeded`，handoff 为 `awaiting_region_selection`。
+- schema 0.3 真实回归位于 runtime-only validation
+  `/root/autodl-tmp/Protein_design/easydesign-clean-validation.lDkLYp/`：
+  `20260725-001-v03-pse` 从原始 397,738-byte APOE PSE 一条命令完成 Stage 01、Viewer、
+  SASA 和 ScanNet CPU。RunManifest `1.2` revision 3 为
+  `running / awaiting-human-approval`，代码版本为 `0.1.0.dev2`；annotation 明确记录
+  `not_requested / structural_only`，`hotspots export --method sasa` 成功输出带源
+  StageManifest/region artifact SHA-256 的审批模板。
 - 操作失败证据：`runs/apoe/20260724-004-stage02-cpu` 因传入错误 ScanNet repository
   路径明确失败，错误码 `scannet-repository-missing`；没有覆盖，随后以新 run 重试。
 - APOE 证据 run：
@@ -143,7 +169,14 @@
 - 完成并归档 S02-002：CPU runtime probe、正式 APOE 双方法 run、完整 comparison 与
   顶层状态自动汇总；当前工作切换到 S02-003 人工批准交接。
 
+### 2026-07-25
+
+- 完成并归档 S02-003/S02-004：多模型 SASA 共识、可选 UniProt annotation、
+  `awaiting-human-approval` 状态和不可变 `hotspots.yaml` 审批契约。
+- 使用 canonical schema 0.3 对真实 APOE PSE 重跑 Stage 01/02；两种方法均成功，
+  structural-only 审批模板已导出，真实区域决定保留给用户。
+
 ## 历史索引
 
-已完成部分见 [`history/2026-07.md`](history/2026-07.md)；S02-001 的真实双方法 smoke
-仍在 Blocked。
+已完成部分见 [`history/2026-07.md`](history/2026-07.md)；当前未关闭项是 S02-005
+真实人工区域批准。

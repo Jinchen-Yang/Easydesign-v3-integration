@@ -39,8 +39,16 @@
   }
 
   function validateData(data) {
-    if (!data || data.schema_version !== "0.1") {
+    if (!data || !["0.1", "0.2"].includes(data.schema_version)) {
       throw new Error("viewer-data.json schema_version 不受支持。");
+    }
+    if (
+      data.schema_version === "0.2" &&
+      (!Array.isArray(data.coordinate_model_ids) ||
+        data.coordinate_model_ids.length !== data.coordinate_model_count ||
+        !data.coordinate_model_ids.includes(data.representative_model_id))
+    ) {
+      throw new Error("Viewer coordinate ensemble 信息非法。");
     }
     if (!Array.isArray(data.residues) || data.residues.length !== data.sequence_length) {
       throw new Error("Viewer residue mapping 数量与序列长度不一致。");
@@ -108,7 +116,9 @@
     setText("target-title", data.target_id);
     setText(
       "target-summary",
-      `${data.sequence_length} aa · ${data.origin} · mmCIF · Mol* 5.11.0`
+      `${data.sequence_length} aa · ${data.origin} · mmCIF · ` +
+        `${data.coordinate_model_count || 1} model(s) · ` +
+        `representative ${data.representative_model_id || "1"} · Mol* 5.11.0`
     );
     renderMetrics("quality-metrics", data.quality_metrics);
     renderMetrics("provenance-metrics", data.provenance_metrics);

@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev1`（包版本 `0.1.0.dev1`）
+- 当前版本：`0.1.0-dev2`（包版本 `0.1.0.dev2`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -33,7 +33,7 @@ python -m pip install -e ".[dev]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev1-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev2-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -66,7 +66,8 @@ backends:
 然后从真实 target 创建用户项目：
 
 ```bash
-easydesign init apoe --target apoe.fasta --stop-after 2
+easydesign init apoe --target apoe.fasta --stop-after 2 \
+  --stage02-method both
 easydesign config validate apoe/easydesign.yaml
 easydesign doctor --config apoe/easydesign.yaml
 easydesign run apoe/easydesign.yaml
@@ -74,8 +75,33 @@ easydesign run apoe/easydesign.yaml
 
 `init` 当前接受 FASTA、裸序列文件和单 Target PSE。sequence/FASTA 默认使用 required
 remote MSA、ColabFold public、无模板 Protenix-v2；PSE 直接导入坐标。Stage 02 默认运行
-彼此独立的 SASA 与 ScanNet CPU 选区。PDB/mmCIF、UniProt 和 Stage 03–07 尚未接入该
-命令时会明确失败，不会静默回退。
+彼此独立的 SASA 与 ScanNet CPU 选区，也可在初始 YAML 中选择只运行其中一种。
+PDB/mmCIF、Stage 01 UniProt source 和 Stage 03–07 尚未接入该命令时会明确失败，不会
+静默回退。
+
+新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
+profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
+
+```bash
+easydesign config migrate old.yaml --output easydesign-0.3.yaml
+```
+
+Stage 02 自动计算结束后会停在 `awaiting-human-approval`，不会伪装成整个 run 已完成。
+从同一种方法选择 2–3 个完整区域并补充理由后，才发布 Stage 03 可用的
+`hotspots.yaml`：
+
+```bash
+easydesign hotspots export RUN_DIR \
+  --method sasa \
+  --output hotspots-review.yaml
+# 编辑 approved_by、design_goal、两类 rationale；structural-only 还需确认限制
+easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
+```
+
+`stage01.target.identity.uniprot_accession` 可以为空。Stage 02 的 UniProt annotation 支持
+`off/if_available/required`；没有 accession 时 `if_available` 不发网络请求，结构方法仍
+可运行，但审批必须确认 `structural_only` 的证据边界。Annotation 不改变 SASA/ScanNet
+原始排名。
 
 查看已有 run：
 

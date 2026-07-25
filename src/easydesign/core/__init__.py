@@ -27,6 +27,8 @@ from .manifests import (
     RuntimeProfileRef,
     StageId,
     StageManifest,
+    WorkflowState,
+    WorkflowStateType,
 )
 from .serialization import (
     canonical_json_bytes,
@@ -58,6 +60,8 @@ __all__ = [
     "SerializationError",
     "StageId",
     "StageManifest",
+    "WorkflowState",
+    "WorkflowStateType",
     "TargetInputError",
     "UndeclaredArtifactError",
     "canonical_json_bytes",

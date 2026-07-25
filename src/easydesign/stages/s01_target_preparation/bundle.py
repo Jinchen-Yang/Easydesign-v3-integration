@@ -32,6 +32,7 @@ from easydesign.core import (
 from .models import (
     BuiltTargetBundle,
     ColorCount,
+    CoordinateEnsemble,
     ImportedStructureProvenance,
     ImportedStructureQualityReport,
     PredictionProvenance,
@@ -127,6 +128,25 @@ def _build_residue_mapping(
     )
     if len({len(column) for column in columns}) != 1:
         raise PredictionOutputError("预测 CIF atom_site 列长度不一致")
+    model_values = raw.get("_atom_site.pdbx_PDB_model_num")
+    if model_values is not None:
+        model_ids = (
+            [str(model_values)]
+            if isinstance(model_values, str)
+            else [str(value) for value in model_values]
+        )
+        if len(model_ids) != len(groups):
+            raise PredictionOutputError("预测 CIF model 列长度不一致")
+        coordinate_models = {
+            model_id
+            for group, model_id in zip(groups, model_ids, strict=True)
+            if group == "ATOM"
+        }
+        if coordinate_models != {"1"}:
+            raise PredictionOutputError(
+                "Protenix Stage 01 adapter 当前只接受单 coordinate model 1，"
+                f"实际为 {sorted(coordinate_models)}"
+            )
 
     residues: dict[tuple[str, int], ResidueMappingEntry] = {}
     for group, comp, chain, seq_id, author_chain, author_id, insertion in zip(
@@ -283,6 +303,7 @@ def build_predicted_target_bundle(
     dump_model(provenance, provenance_json)
 
     bundle = TargetBundle(
+        schema_version="0.3",
         target_id=target.target_id,
         origin=TargetStructureOrigin.PREDICTED,
         sequence_length=target.length,
@@ -327,6 +348,11 @@ def build_predicted_target_bundle(
             role="provenance",
             file_format="json",
             attempt_id=attempt_id,
+        ),
+        coordinate_ensemble=CoordinateEnsemble(
+            model_count=1,
+            model_ids=("1",),
+            representative_model_id="1",
         ),
     )
     dump_model(bundle, bundle_json)
@@ -408,7 +434,7 @@ def build_imported_pse_target_bundle(
     source_label: str,
     product: PseExtractionProduct,
 ) -> BuiltTargetBundle:
-    """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.2。"""
+    """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.3。"""
 
     resolved_run_root = run_root.resolve()
     artifact_dir = (
@@ -547,7 +573,7 @@ def build_imported_pse_target_bundle(
         attempt_id=attempt_id,
     )
     bundle = TargetBundle(
-        schema_version="0.2",
+        schema_version="0.3",
         target_id=target.target_id,
         origin=TargetStructureOrigin.IMPORTED,
         sequence_length=target.length,
@@ -559,6 +585,11 @@ def build_imported_pse_target_bundle(
         quality_report=quality_ref,
         provenance=provenance_ref,
         source_annotations=annotations_ref,
+        coordinate_ensemble=CoordinateEnsemble(
+            model_count=1,
+            model_ids=("1",),
+            representative_model_id="1",
+        ),
     )
     dump_model(bundle, bundle_json)
     bundle_artifact = _artifact(

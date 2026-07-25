@@ -37,6 +37,14 @@
 7. 未经明确迁移任务和来源审查，不得复制旧仓代码、权重、结果或资产。
 8. 未经授权不得添加许可证、Git remote、密钥、模型权重或第三方资产。
 9. 工程验证与科学验证必须分别报告，不能把 smoke 运行描述为科学成功。
+10. 用户 run 配置的规范事实源是 schema `0.3` 的 `stage01`–`stage07`；兼容旧布局只能在
+    加载/迁移边界处理，run 内 resolved config 和新增示例不得继续写旧布局。
+11. 多模型结构必须沿 Target Bundle 的 coordinate ensemble 身份传播；不得静默选择
+    model 1、平均不支持 ensemble 的模型输出，或把 adapter 单模型限制写成全局限制。
+12. 自动 Stage 02 结果不是批准结果。Stage 03 只能消费人工审批 attempt 正式发布的
+    `hotspots.yaml`，不得读取候选池、PSE 颜色或编辑中的 review YAML 代替。
+13. EasyDesign 1.0 的科学流程不得依赖 LLM/Agent 判断；未来 Agent 建议必须转为类型化
+    配置、确定性校验和人工批准，并保持无 Agent 可运行。
 
 ## 3. 完成任务前
 

@@ -30,20 +30,35 @@ def _slug(value: str, *, label: str) -> str:
     return normalized
 
 
-def _stage02_payload() -> dict[str, object]:
+def _stage02_payload(method: str) -> dict[str, object]:
+    methods = {
+        "both": ["sasa", "scannet"],
+        "sasa": ["sasa"],
+        "scannet": ["scannet"],
+    }
+    try:
+        selected_methods = methods[method]
+    except KeyError as error:
+        raise ConfigurationError(
+            "--stage02-method 必须是 sasa、scannet 或 both"
+        ) from error
     return {
         "mode": "automatic",
+        "methods": selected_methods,
+        "annotations": {"uniprot": "if_available"},
         "automatic": {
-            "region_count": 3,
+            "requested_region_count": 3,
+            "minimum_region_count": 2,
             "sasa": {
                 "rsasa_threshold": 0.25,
                 "relaxed_threshold": 0.20,
                 "probe_radius_angstrom": 1.4,
                 "sphere_points": 960,
+                "ensemble_consensus_fraction": 0.70,
             },
             "patch": {
                 "target_member_count": 12,
-                "minimum_member_count": 6,
+                "minimum_member_count": 5,
                 "heavy_atom_neighbor_angstrom": 5.0,
                 "anchor_neighbor_angstrom": 12.0,
                 "compactness_radius_angstrom": 14.0,
@@ -61,6 +76,7 @@ def initialize_project(
     project_id: str | None = None,
     target_id: str | None = None,
     stop_after_stage: int = 1,
+    stage02_method: str = "both",
 ) -> InitializedProject:
     """复制 target 并生成显式 YAML；目标目录必须不存在或为空。"""
 
@@ -88,16 +104,25 @@ def initialize_project(
     selected_project_id = project_id or _slug(destination.name, label="项目目录名")
     selected_target_id = target_id or _slug(source.stem, label="target 文件名")
     payload: dict[str, object] = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "project_id": selected_project_id,
+        "design": {
+            "binder_profile": "vhh",
+            "intent": "exploratory",
+        },
+        "workflow": {"stop_after_stage": stop_after_stage},
+    }
+    stage01: dict[str, object] = {
         "target": {
             "id": selected_target_id,
             "source": f"inputs/{source.name}",
             "format": "auto",
+            "identity": {"uniprot_accession": None},
         },
+        "structure_prediction": None,
     }
     if detected in {TargetInputFormat.SEQUENCE, TargetInputFormat.FASTA}:
-        payload["structure_prediction"] = {
+        stage01["structure_prediction"] = {
             "backend": "protenix-v2",
             "msa": {
                 "mode": "remote",
@@ -117,9 +142,12 @@ def initialize_project(
             "seeds": [101],
             "sample_count": 1,
         }
-    if stop_after_stage == 2:
-        payload["stage02"] = _stage02_payload()
-    payload["workflow"] = {"stop_after_stage": stop_after_stage}
+    payload["stage01"] = stage01
+    payload["stage02"] = (
+        _stage02_payload(stage02_method) if stop_after_stage == 2 else None
+    )
+    for stage_number in range(3, 8):
+        payload[f"stage{stage_number:02d}"] = None
 
     created_root = not destination.exists()
     destination.mkdir(parents=True, exist_ok=True)

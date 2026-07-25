@@ -13,6 +13,7 @@ from easydesign.orchestration import (
     detect_target_input_format,
     load_run_config,
 )
+from easydesign.orchestration.config import migrate_run_config
 
 ROOT = Path(__file__).resolve().parents[3]
 APOE_INPUT = ROOT / "examples/stage01-apoe/input"
@@ -357,3 +358,124 @@ structure_prediction:
 
     with pytest.raises(ConfigurationError, match="providers 不能重复"):
         load_run_config(config)
+
+
+def test_canonical_03_exposes_all_seven_stage_keys_and_optional_identity(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.3"
+project_id: demo
+design:
+  binder_profile: vhh
+  intent: blocking
+workflow:
+  stop_after_stage: 2
+stage01:
+  target:
+    id: demo-pse
+    source: target.pse
+    format: auto
+    identity:
+      uniprot_accession: null
+  structure_prediction: null
+stage02:
+  mode: automatic
+  methods: [sasa]
+  annotations:
+    uniprot: if_available
+  automatic:
+    requested_region_count: 3
+    minimum_region_count: 2
+    sasa:
+      ensemble_consensus_fraction: 0.70
+    patch:
+      target_member_count: 12
+      minimum_member_count: 5
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.config.schema_version == "0.3"
+    assert loaded.config.stage01.target.identity.uniprot_accession is None
+    assert loaded.config.stage02 is not None
+    assert loaded.config.stage02.methods == ("sasa",)
+    assert loaded.config.stage03 is None
+    assert loaded.config.stage07 is None
+
+
+def test_non_null_future_stage_is_rejected_as_not_implemented(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.3"
+project_id: demo
+workflow:
+  stop_after_stage: 1
+stage01:
+  target:
+    id: demo
+    source: target.pse
+  structure_prediction: null
+stage02: null
+stage03:
+  arbitrary: value
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="stage03|none_required"):
+        load_run_config(config)
+
+
+def test_config_migrate_writes_canonical_03_without_overwriting(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    old = tmp_path / "old.yaml"
+    old.write_text(
+        """
+schema_version: "0.1"
+project_id: demo
+target:
+  id: demo
+  source: target.pse
+workflow:
+  stop_after_stage: 1
+""".lstrip(),
+        encoding="utf-8",
+    )
+    migrated = tmp_path / "nested/new.yaml"
+
+    migrate_run_config(old, migrated)
+    loaded = load_run_config(migrated)
+
+    assert loaded.config.schema_version == "0.3"
+    assert loaded.config.stage01.target.target_id == "demo"
+    text = migrated.read_text(encoding="utf-8")
+    assert "stage01:" in text
+    assert "stage07: null" in text
+    assert old.read_text(encoding="utf-8").startswith('schema_version: "0.1"')
+    with pytest.raises(ConfigurationError, match="禁止覆盖"):
+        migrate_run_config(old, migrated)

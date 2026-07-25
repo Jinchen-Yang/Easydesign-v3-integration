@@ -95,7 +95,7 @@ def test_initialize_sequence_run_refuses_existing_run(tmp_path: Path) -> None:
         initialize_sequence_run(**kwargs)
 
 
-def test_initialize_workspace_uses_manifest_11_for_packaged_execution(
+def test_initialize_workspace_uses_manifest_12_for_packaged_execution(
     tmp_path: Path,
 ) -> None:
     identity = CodeIdentity(
@@ -118,7 +118,7 @@ def test_initialize_workspace_uses_manifest_11_for_packaged_execution(
 
     manifest = load_model(prepared.workspace.run_manifest, RunManifest)
     resolved = load_model(prepared.workspace.resolved_config, ResolvedRunConfig)
-    assert manifest.schema_version == "1.1"
+    assert manifest.schema_version == "1.2"
     assert manifest.code_identity == identity
     assert manifest.runtime_profile == profile
     assert resolved.schema_version == "0.4"

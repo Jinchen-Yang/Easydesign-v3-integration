@@ -1,5 +1,10 @@
 """Stage 02 独立候选表面区域发现契约。"""
 
+from .annotations import (
+    align_target_to_uniprot,
+    build_annotation_report,
+    sequence_motif_warnings,
+)
 from .automatic import (
     RegionParameters,
     SasaParameters,
@@ -9,9 +14,20 @@ from .automatic import (
 )
 from .geometry import StructureContext, load_structure_context
 from .models import (
+    AnnotationReport,
     AnnotationStatus,
+    ApprovalRecord,
+    ApprovedHotspotSet,
     CandidateRegionPool,
     CandidateSurfaceRegion,
+    DesignGoal,
+    EvidenceLevel,
+    HotspotEvidence,
+    HotspotReviewRequest,
+    HotspotReviewSelection,
+    HotspotsFile,
+    IdentityResolutionStatus,
+    MappedAnnotationFeature,
     MethodComparison,
     PairwiseSeparation,
     ProviderExecutionStatus,
@@ -23,6 +39,8 @@ from .models import (
     ResidueEvidence,
     ResidueEvidenceReport,
     ResidueIdentity,
+    ResidueModelEvidence,
+    SequenceMotifWarning,
     Stage02Report,
 )
 from .providers import (
@@ -33,8 +51,19 @@ from .providers import (
 
 __all__ = [
     "AnnotationStatus",
+    "AnnotationReport",
+    "ApprovalRecord",
+    "ApprovedHotspotSet",
     "CandidateRegionPool",
     "CandidateSurfaceRegion",
+    "DesignGoal",
+    "EvidenceLevel",
+    "HotspotEvidence",
+    "HotspotReviewRequest",
+    "HotspotReviewSelection",
+    "HotspotsFile",
+    "IdentityResolutionStatus",
+    "MappedAnnotationFeature",
     "MethodComparison",
     "ManualRegionProvider",
     "PairwiseSeparation",
@@ -49,6 +78,8 @@ __all__ = [
     "ResidueEvidence",
     "ResidueEvidenceReport",
     "ResidueIdentity",
+    "ResidueModelEvidence",
+    "SequenceMotifWarning",
     "Stage02Report",
     "RegionParameters",
     "SasaParameters",
@@ -57,4 +88,7 @@ __all__ = [
     "load_structure_context",
     "run_sasa_surface_diversity",
     "run_scannet_region_proposals",
+    "align_target_to_uniprot",
+    "build_annotation_report",
+    "sequence_motif_warnings",
 ]

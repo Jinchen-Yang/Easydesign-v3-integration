@@ -31,7 +31,9 @@ from .config import (
     LoadedRunConfig,
     LoadedSequenceRunConfig,
     ResolvedProtenixMsaProviderConfig,
+    Stage02Method,
     load_run_config,
+    migrate_run_config,
 )
 from .profile import (
     PROFILE_ENVIRONMENT_VARIABLE,
@@ -124,6 +126,12 @@ class _RuntimeContext:
     plan: RunPlan
 
 
+def migrate_run_configuration(source: Path, destination: Path) -> Path:
+    """CLI/UI 共用的显式配置迁移入口。"""
+
+    return migrate_run_config(source, destination)
+
+
 def _selected_runs_root(
     *,
     config_path: Path,
@@ -144,7 +152,10 @@ def _required_backends(loaded: LoadedRunConfig) -> tuple[str, ...]:
         else "pymol-pse"
     ]
     if loaded.config.workflow.stop_after_stage >= 2:
-        backends.append("scannet-epitope")
+        stage02 = loaded.config.stage02
+        assert stage02 is not None
+        if Stage02Method.SCANNET in stage02.methods:
+            backends.append("scannet-epitope")
     return tuple(backends)
 
 
@@ -531,15 +542,23 @@ def execute_pipeline(
         viewer_status = str(completed_pse.target_viewer.status)
 
     if context.plan.stop_after_stage == 2:
-        scannet_runtime = backends.scannet_epitope
-        assert scannet_runtime is not None
+        stage02_config = loaded.config.stage02
+        assert stage02_config is not None
+        stage02_adapter: ScanNetEpitopeAdapter | None = None
+        if Stage02Method.SCANNET in stage02_config.methods:
+            scannet_runtime = backends.scannet_epitope
+            assert scannet_runtime is not None
+            stage02_adapter = _scannet_adapter(scannet_runtime)
         completed_stage02 = execute_stage02_comparison(
             run_root=run_root,
-            adapter=_scannet_adapter(scannet_runtime),
+            adapter=stage02_adapter,
         )
         run_manifest = completed_stage02.run_manifest
+        status = "awaiting-human-approval"
+    else:
+        status = "succeeded"
     return PipelineExecution(
-        status="succeeded",
+        status=status,
         plan=context.plan,
         run_root=run_root,
         run_manifest=run_manifest,

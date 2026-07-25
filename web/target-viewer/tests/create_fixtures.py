@@ -192,6 +192,9 @@ def _create_report(root: Path, *, pse: bool) -> None:
             sequence_length=len(SEQUENCE),
             sequence_sha256=hashlib.sha256(SEQUENCE.encode()).hexdigest(),
             structure_sha256=sha256_file(structure),
+            coordinate_model_count=1,
+            coordinate_model_ids=("1",),
+            representative_model_id="1",
             quality_metrics=(
                 ViewerMetric(key="plddt", label="整体 pLDDT", value=84.0),
             ),

@@ -84,6 +84,21 @@ class RuntimeProfileRef(BaseModel):
     sha256: str = Field(pattern=SHA256_PATTERN)
 
 
+class WorkflowStateType(StrEnum):
+    AWAITING_HUMAN_APPROVAL = "awaiting-human-approval"
+
+
+class WorkflowState(BaseModel):
+    """进程已退出但 run 仍等待显式输入的可恢复工作流状态。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    state: WorkflowStateType
+    stage_id: StageId
+    action: str = Field(pattern=ID_PATTERN)
+    message: str = Field(min_length=1, max_length=4096)
+
+
 def _validate_unique_artifacts(artifacts: tuple[ArtifactRef, ...], label: str) -> None:
     ids = [artifact.artifact_id for artifact in artifacts]
     if len(ids) != len(set(ids)):
@@ -252,6 +267,7 @@ class RunManifest(BaseModel):
     code_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{7,40}$")
     code_identity: CodeIdentity | None = None
     runtime_profile: RuntimeProfileRef | None = None
+    workflow_state: WorkflowState | None = None
     status: ExecutionStatus
     evidence_status: EvidenceStatus
     created_at: datetime
@@ -270,13 +286,26 @@ class RunManifest(BaseModel):
         if self.schema_version == "1.0":
             if self.code_commit is None:
                 raise ValueError("RunManifest 1.0 必须包含 code_commit")
-            if self.code_identity is not None or self.runtime_profile is not None:
-                raise ValueError("RunManifest 1.0 不支持结构化代码或 profile 身份")
-        elif self.schema_version == "1.1":
+            if (
+                self.code_identity is not None
+                or self.runtime_profile is not None
+                or self.workflow_state is not None
+            ):
+                raise ValueError(
+                    "RunManifest 1.0 不支持结构化代码、profile 或 workflow 身份"
+                )
+        elif self.schema_version in {"1.1", "1.2"}:
             if self.code_identity is None:
-                raise ValueError("RunManifest 1.1 必须包含 code_identity")
+                raise ValueError(
+                    f"RunManifest {self.schema_version} 必须包含 code_identity"
+                )
             if self.code_commit is not None:
-                raise ValueError("RunManifest 1.1 不得把 code_identity 重复写成 code_commit")
+                raise ValueError(
+                    f"RunManifest {self.schema_version} "
+                    "不得把 code_identity 重复写成 code_commit"
+                )
+            if self.schema_version == "1.1" and self.workflow_state is not None:
+                raise ValueError("RunManifest 1.1 不支持 workflow_state")
         else:
             raise ValueError(f"不支持的 RunManifest schema_version: {self.schema_version}")
         if self.revision == 1 and self.previous_manifest_sha256 is not None:
@@ -293,6 +322,11 @@ class RunManifest(BaseModel):
                 raise ValueError("run 完成时间不能早于创建时间")
         elif self.completed_at is not None:
             raise ValueError("非终态 run 不能有 completed_at")
+        if (
+            self.workflow_state is not None
+            and self.status is not ExecutionStatus.RUNNING
+        ):
+            raise ValueError("workflow_state 只能出现在 running RunManifest")
 
         stages = [reference.producer_stage for reference in self.stage_manifest_refs]
         if any(stage is None for stage in stages):
@@ -308,6 +342,8 @@ class RunManifest(BaseModel):
         status: ExecutionStatus | None = None,
         completed_at: datetime | None = None,
         stage_manifest_refs: tuple[ArtifactRef, ...] | None = None,
+        workflow_state: WorkflowState | None = None,
+        clear_workflow_state: bool = False,
     ) -> Self:
         """以当前 manifest hash 为前驱创建经过完整校验的新快照。"""
 
@@ -320,6 +356,19 @@ class RunManifest(BaseModel):
         next_status = self.status if status is None else status
         if self.status is ExecutionStatus.RUNNING and next_status is ExecutionStatus.PENDING:
             raise ManifestStateError("RunManifest 状态不能从 running 回退到 pending")
+        if workflow_state is not None and clear_workflow_state:
+            raise ManifestStateError(
+                "workflow_state 与 clear_workflow_state 不能同时设置"
+            )
+        next_workflow_state = (
+            None
+            if clear_workflow_state
+            else (
+                self.workflow_state
+                if workflow_state is None
+                else workflow_state
+            )
+        )
 
         payload = self.model_dump(mode="python")
         payload.update(
@@ -334,6 +383,7 @@ class RunManifest(BaseModel):
                     if stage_manifest_refs is None
                     else stage_manifest_refs
                 ),
+                "workflow_state": next_workflow_state,
             }
         )
         return self.__class__.model_validate(payload)

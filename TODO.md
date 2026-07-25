@@ -17,6 +17,7 @@
 | M2 交互式科学报告基础 | `smoke-validated` | Stage 01 sequence/PSE 均生成自包含 Mol* 5.11.0 报告；checksum、localhost 服务、Chromium 和真实 APOE smoke 通过。 |
 | M3 Developer Preview 可用性 | `smoke-validated` | 本地源码/wheel 可安装；`easydesign` 支持 init、profile、validate、doctor、Stage 01/02 run、runs 和 viewer；真实 PSE→Stage 02 CPU 与 required-MSA sequence Stage 01 CLI smoke 通过。 |
 | M4 可审计开发历史 | `implemented` | ENG-004 统一 Stage 与顶层完成记录的 RFC 3339 时间戳，并由 `make check` 阻止缺失、重复或无时区记录。 |
+| M5 canonical 配置与科学审批边界 | `smoke-validated` | schema 0.3 展示七阶段；Target Bundle 0.3 支持 ensemble；Stage 02 自动结果停在显式人工批准并只通过 `hotspots.yaml` 交接。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -28,9 +29,9 @@
 | 前缀 | 板块 | 状态 | 一句话概述 | 当前宏观目标 | 下一里程碑或索引 |
 | --- | --- | --- | --- | --- | --- |
 | `S01–S07` | Scientific Pipeline | `planned` | 七阶段科学主线按独立契约推进。 | 先完成 VHH 1.0 真实端到端。 | 下方七阶段实时摘要。 |
-| `ENG` | Core Engineering | `smoke-validated` | ENG-002 已建立可复现运行身份，ENG-004 已建立完成历史时间戳质量门。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-003：恢复执行、离线 MSA cache 和 CI 矩阵；[架构](docs/ARCHITECTURE.md)。 |
-| `UX` | CLI & Developer Experience | `smoke-validated` | UX-001 Developer Preview CLI 已可安装并调用 Stage 01/02。 | 让真实能力通过一个稳定入口使用。 | 正式 CLI 前补 resume、结构输入和发布兼容策略；[README](README.md)。 |
-| `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；REP-003：显式人工批准。 |
+| `ENG` | Core Engineering | `smoke-validated` | ENG-002/004/005 已建立代码身份、时间戳、ensemble 与等待审批契约。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-003：恢复执行、离线 MSA cache 和 CI 矩阵；[架构](docs/ARCHITECTURE.md)。 |
+| `UX` | CLI & Developer Experience | `smoke-validated` | UX-001/002 已提供可安装 CLI、canonical 七阶段配置和显式迁移。 | 让真实能力通过一个稳定入口使用。 | 正式 CLI 前补 resume、结构输入和发布兼容策略；[README](README.md)。 |
+| `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
 | `UI` | Product UI | `planned` | 尚未开发桌面或 Web 产品 UI。 | 未来只调用相同 Python API，不复制科学逻辑。 | UI-001：在 CLI/API 稳定后定义任务、审阅和恢复流程。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-001：VHH–抗原区域与端到端基准。 |
 | `DATA` | Data & Assets | `planned` | 已有资产登记和 runtime-only 权重规则。 | 确保 scaffold、模型、fixture 的来源与权利可审计。 | DATA-001：VHH scaffold 授权和公开发布资产复审。 |
@@ -45,8 +46,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `planned` | sequence/FASTA MSA、单 Target PSE 与便携 Mol* Viewer 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；Viewer 后续 overlay 留给 Stage 02。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `planned` | 两条单模型入口已真实跑通；Target Bundle 0.3 与 Viewer 已具备多模型身份契约。 | 用本地 PDB/mmCIF adapter 首次发布真实多模型 Target Bundle。 | 公共 ColabFold 无 SLA；真实多模型入口和其余输入 adapter 未完成。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | schema 0.3 APOE 双方法已重跑；多模型 SASA、可选 UniProt 和审批交接均已实现。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `planned` | 尚未实现；filter profile、逐规则审计和 shortlist 均待开发。 | Stage 04 候选契约稳定后建立可版本化 filter engine。 | 依赖 Stage 04 规范候选与原始 artifact。 | 2026-07-24 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -64,6 +65,7 @@
 | 方法 benchmark | `planned` | 按 binder 类型建立预注册数据集、基线、负结果和科学验证报告。 |
 | CLI 与公开 release | `planned` | Developer Preview CLI 已完成；正式发布仍需稳定 API、英文文档、授权、安全、引用和第三方资产审查。 |
 | 多执行环境 | `planned` | local、Slurm/SMART 和可移植容器使用相同请求/结果契约。 |
+| 可选 Agent 建议层 | `planned` | 只在确定性 1.0 主线完整后加入；建议必须转成类型化配置、通过规则校验并接受人工批准，没有 Agent 时七阶段仍完整运行。 |
 
 ## 长期目标：一键式平台、科研与商业产品
 

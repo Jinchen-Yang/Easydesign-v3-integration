@@ -34,6 +34,7 @@ from .config import (
     detect_target_input_format,
     load_run_config,
 )
+from .hotspots import approve_hotspots, export_hotspot_review
 from .migration import (
     RunMigrationManifest,
     RunMovePlan,
@@ -125,6 +126,8 @@ __all__ = [
     "execute_pipeline",
     "execute_sequence_prediction",
     "execute_stage02_comparison",
+    "export_hotspot_review",
+    "approve_hotspots",
     "initialize_pse_run",
     "initialize_project",
     "initialize_runtime_profile",

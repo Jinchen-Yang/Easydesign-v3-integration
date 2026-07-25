@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -61,15 +62,25 @@ class ResidueGeometry:
 
 
 @dataclass(frozen=True, slots=True)
+class CoordinateModelGeometry:
+    model_id: str
+    residues: dict[int, ResidueGeometry]
+    bio_model: Model
+
+
+@dataclass(frozen=True, slots=True)
 class StructureContext:
     target_id: str
     target_structure: Path
     target_structure_sha256: str
     mapping_path: Path
     label_asym_id: str
+    model_ids: tuple[str, ...]
+    representative_model_id: str
+    models: dict[str, CoordinateModelGeometry]
     residues: dict[int, ResidueGeometry]
     bio_structure: Structure
-    minimum_atom_distance_cache: dict[tuple[int, int], float] = field(
+    minimum_atom_distance_cache: dict[tuple[str, int, int], float] = field(
         default_factory=dict,
         repr=False,
         compare=False,
@@ -96,22 +107,31 @@ def _minimum_atom_distance(left: ResidueGeometry, right: ResidueGeometry) -> flo
 
 def _cached_minimum_atom_distance(
     context: StructureContext,
+    model_id: str,
     left_label: int,
     right_label: int,
 ) -> float:
     key = (
-        (left_label, right_label)
+        (model_id, left_label, right_label)
         if left_label <= right_label
-        else (right_label, left_label)
+        else (model_id, right_label, left_label)
     )
     cached = context.minimum_atom_distance_cache.get(key)
     if cached is None:
+        model = context.models[model_id]
         cached = _minimum_atom_distance(
-            context.residues[left_label],
-            context.residues[right_label],
+            model.residues[left_label],
+            model.residues[right_label],
         )
         context.minimum_atom_distance_cache[key] = cached
     return cached
+
+
+def _model_sort_key(model_id: str) -> tuple[int, int | str]:
+    try:
+        return (0, int(model_id))
+    except ValueError:
+        return (1, model_id)
 
 
 def _choose_atoms(rows: list[AtomCoordinate]) -> tuple[AtomCoordinate, ...]:
@@ -182,18 +202,37 @@ def load_structure_context(
         "occupancy": _column(raw, "_atom_site.occupancy", row_count, "1"),
         "model": _column(raw, "_atom_site.pdbx_PDB_model_num", row_count, "1"),
     }
-    model_ids = {
+    actual_model_ids = {
         columns["model"][index]
         for index in range(row_count)
         if columns["group"][index] == "ATOM"
         and columns["label_chain"][index] == label_chain
     }
-    if model_ids != {"1"}:
-        raise ManifestStateError(
-            f"Stage 02 v0.1 只接受一个 coordinate model=1，实际为 {sorted(model_ids)}"
-        )
+    if not actual_model_ids:
+        raise ManifestStateError("target.cif 没有可用 coordinate model")
+    model_ids: tuple[str, ...]
+    representative_model_id: str
+    if bundle.coordinate_ensemble is None:
+        if actual_model_ids != {"1"}:
+            raise ManifestStateError(
+                "旧版 Target Bundle 只能表示单模型 target.cif；"
+                f"实际模型为 {sorted(actual_model_ids, key=_model_sort_key)}"
+            )
+        model_ids = ("1",)
+        representative_model_id = "1"
+    else:
+        model_ids = bundle.coordinate_ensemble.model_ids
+        representative_model_id = bundle.coordinate_ensemble.representative_model_id
+        if set(model_ids) != actual_model_ids:
+            raise ManifestStateError(
+                "Target Bundle coordinate_ensemble 与 target.cif 模型不一致: "
+                f"declared={list(model_ids)}, "
+                f"actual={sorted(actual_model_ids, key=_model_sort_key)}"
+            )
 
-    rows_by_label: dict[int, list[AtomCoordinate]] = {}
+    rows_by_model: dict[str, dict[int, list[AtomCoordinate]]] = {
+        model_id: {} for model_id in model_ids
+    }
     residue_names: dict[int, str] = {}
     for index in range(row_count):
         if (
@@ -201,6 +240,9 @@ def load_structure_context(
             or columns["label_chain"][index] != label_chain
             or columns["label_seq"][index] in {".", "?"}
         ):
+            continue
+        model_id = columns["model"][index]
+        if model_id not in rows_by_model:
             continue
         label = int(columns["label_seq"][index])
         element = columns["element"][index].strip().upper()
@@ -214,7 +256,7 @@ def load_structure_context(
             raise ManifestStateError(f"label_seq_id={label} 对应多个 residue name")
         occupancy_text = columns["occupancy"][index]
         occupancy = 1.0 if occupancy_text in {".", "?"} else float(occupancy_text)
-        rows_by_label.setdefault(label, []).append(
+        rows_by_model[model_id].setdefault(label, []).append(
             AtomCoordinate(
                 name=columns["atom"][index],
                 element=element,
@@ -228,70 +270,100 @@ def load_structure_context(
         )
 
     structure = Structure("stage02-target")  # type: ignore[no-untyped-call]
-    model = Model(0)  # type: ignore[no-untyped-call]
-    chain = Chain("A")  # type: ignore[no-untyped-call]
-    model.add(chain)
-    structure.add(model)
-    residues: dict[int, ResidueGeometry] = {}
-    for entry in mapping.entries:
-        label = entry.label_seq_id
-        rows = rows_by_label.get(label)
-        if not rows:
-            raise ManifestStateError(
-                f"residue mapping 在 target.cif 中没有坐标: label_seq_id={label}"
-            )
-        residue_name = residue_names[label]
-        expected_name = ONE_TO_THREE[entry.amino_acid]
-        if residue_name != expected_name:
-            raise ManifestStateError(
-                f"结构/映射氨基酸不一致: label_seq_id={label}, "
-                f"structure={residue_name}, mapping={expected_name}"
-            )
-        atoms = _choose_atoms(rows)
-        identity = ResidueIdentity(
+    identities = {
+        entry.label_seq_id: ResidueIdentity(
             sequence_index=entry.sequence_index,
             amino_acid=entry.amino_acid,
             label_asym_id=entry.label_chain_id,
-            label_seq_id=label,
+            label_seq_id=entry.label_seq_id,
             auth_asym_id=entry.author_chain_id,
             auth_seq_id=entry.author_residue_id,
             insertion_code=entry.insertion_code,
         )
-        geometry = ResidueGeometry(
-            identity=identity,
-            residue_name=residue_name,
-            atoms=atoms,
-            center=_center(atoms, residue_name),
-        )
-        residues[label] = geometry
-        bio_residue = Residue(  # type: ignore[no-untyped-call]
-            (" ", label, " "), residue_name, ""
-        )
-        for serial, atom in enumerate(atoms, start=1):
-            bio_residue.add(  # type: ignore[no-untyped-call]
-                Atom(
-                    atom.name,
-                    np.asarray(atom.xyz, dtype=float),
-                    0.0,
-                    atom.occupancy,
-                    " ",
-                    f"{atom.name:>4}"[-4:],
-                    serial,
-                    element=atom.element,
+        for entry in mapping.entries
+    }
+    models: dict[str, CoordinateModelGeometry] = {}
+    for model_index, model_id in enumerate(model_ids):
+        model = Model(model_index)  # type: ignore[no-untyped-call]
+        chain = Chain("A")  # type: ignore[no-untyped-call]
+        model.add(chain)
+        structure.add(model)
+        residues: dict[int, ResidueGeometry] = {}
+        for entry in mapping.entries:
+            label = entry.label_seq_id
+            rows = rows_by_model[model_id].get(label)
+            if not rows:
+                continue
+            residue_name = residue_names[label]
+            expected_name = ONE_TO_THREE[entry.amino_acid]
+            if residue_name != expected_name:
+                raise ManifestStateError(
+                    f"结构/映射氨基酸不一致: model={model_id}, "
+                    f"label_seq_id={label}, structure={residue_name}, "
+                    f"mapping={expected_name}"
                 )
+            atoms = _choose_atoms(rows)
+            geometry = ResidueGeometry(
+                identity=identities[label],
+                residue_name=residue_name,
+                atoms=atoms,
+                center=_center(atoms, residue_name),
             )
-        chain.add(bio_residue)
+            residues[label] = geometry
+            bio_residue = Residue(  # type: ignore[no-untyped-call]
+                (" ", label, " "), residue_name, ""
+            )
+            for serial, atom in enumerate(atoms, start=1):
+                bio_residue.add(  # type: ignore[no-untyped-call]
+                    Atom(
+                        atom.name,
+                        np.asarray(atom.xyz, dtype=float),
+                        0.0,
+                        atom.occupancy,
+                        " ",
+                        f"{atom.name:>4}"[-4:],
+                        serial,
+                        element=atom.element,
+                    )
+                )
+            chain.add(bio_residue)
+        models[model_id] = CoordinateModelGeometry(
+            model_id=model_id,
+            residues=residues,
+            bio_model=model,
+        )
 
     expected_labels = [entry.label_seq_id for entry in mapping.entries]
-    if sorted(residues) != sorted(expected_labels):
-        raise ManifestStateError("Stage 02 结构残基集合与 Stage 01 mapping 不一致")
+    observed_labels = {
+        label for model in models.values() for label in model.residues
+    }
+    if observed_labels != set(expected_labels):
+        raise ManifestStateError(
+            "Stage 02 所有模型的残基并集与 Stage 01 mapping 不一致"
+        )
+    representative = models[representative_model_id]
+    reference_residues = {
+        label: (
+            representative.residues[label]
+            if label in representative.residues
+            else next(
+                model.residues[label]
+                for model in models.values()
+                if label in model.residues
+            )
+        )
+        for label in expected_labels
+    }
     return bundle, StructureContext(
         target_id=bundle.target_id,
         target_structure=structure_path,
         target_structure_sha256=bundle.target_structure.sha256,
         mapping_path=mapping_path,
         label_asym_id=label_chain,
-        residues=residues,
+        model_ids=model_ids,
+        representative_model_id=representative_model_id,
+        models=models,
+        residues=reference_residues,
         bio_structure=structure,
     )
 
@@ -302,46 +374,128 @@ def build_residue_graph(
     *,
     heavy_atom_distance: float,
     anchor_distance: float,
+    consensus_fraction: float = 1.0,
 ) -> dict[int, set[int]]:
+    if not 0 < consensus_fraction <= 1:
+        raise ValueError("consensus_fraction 必须位于 (0, 1]")
     graph: dict[int, set[int]] = {label: set() for label in labels}
+    minimum_support = math.ceil(len(context.model_ids) * consensus_fraction)
     ordered = sorted(labels)
     for index, left_label in enumerate(ordered):
-        left = context.residues[left_label]
         for right_label in ordered[index + 1 :]:
-            right = context.residues[right_label]
-            if _distance(left.center, right.center) > anchor_distance:
-                continue
-            if (
-                _cached_minimum_atom_distance(context, left_label, right_label)
-                > heavy_atom_distance
-            ):
-                continue
-            graph[left_label].add(right_label)
-            graph[right_label].add(left_label)
+            support = 0
+            for model_id in context.model_ids:
+                model = context.models[model_id]
+                if (
+                    left_label not in model.residues
+                    or right_label not in model.residues
+                ):
+                    continue
+                left = model.residues[left_label]
+                right = model.residues[right_label]
+                if _distance(left.center, right.center) > anchor_distance:
+                    continue
+                if (
+                    _cached_minimum_atom_distance(
+                        context,
+                        model_id,
+                        left_label,
+                        right_label,
+                    )
+                    > heavy_atom_distance
+                ):
+                    continue
+                support += 1
+            if support >= minimum_support:
+                graph[left_label].add(right_label)
+                graph[right_label].add(left_label)
     return graph
+
+
+def consensus_edge_length(
+    context: StructureContext,
+    left_label: int,
+    right_label: int,
+) -> float:
+    values = [
+        _distance(
+            context.models[model_id].residues[left_label].center,
+            context.models[model_id].residues[right_label].center,
+        )
+        for model_id in context.model_ids
+        if left_label in context.models[model_id].residues
+        and right_label in context.models[model_id].residues
+    ]
+    if not values:
+        return math.inf
+    return float(statistics.median(values))
+
+
+def model_completeness_fraction(
+    context: StructureContext,
+    labels: tuple[int, ...],
+) -> float:
+    return sum(
+        all(label in context.models[model_id].residues for label in labels)
+        for model_id in context.model_ids
+    ) / len(context.model_ids)
+
+
+def _residue_centroid(
+    residues: dict[int, ResidueGeometry],
+    labels: tuple[int, ...],
+) -> tuple[float, float, float]:
+    values = tuple(
+        sum((residues[label].center[axis] for label in labels), 0.0)
+        / len(labels)
+        for axis in range(3)
+    )
+    return values[0], values[1], values[2]
 
 
 def region_centroid(
     context: StructureContext,
     labels: tuple[int, ...],
 ) -> tuple[float, float, float]:
-    values = [
-        sum(context.residues[label].center[axis] for label in labels) / len(labels)
-        for axis in range(3)
+    representative = context.models[context.representative_model_id]
+    if all(label in representative.residues for label in labels):
+        return _residue_centroid(representative.residues, labels)
+    model_centroids = [
+        _residue_centroid(model.residues, labels)
+        for model in context.models.values()
+        if all(label in model.residues for label in labels)
     ]
-    return (
-        values[0],
-        values[1],
-        values[2],
+    if not model_centroids:
+        raise ManifestStateError("没有模型包含区域完整坐标，无法输出 centroid")
+    values = tuple(
+        float(statistics.median(value[axis] for value in model_centroids))
+        for axis in range(3)
     )
+    return values[0], values[1], values[2]
 
 
 def radius_gyration(context: StructureContext, labels: tuple[int, ...]) -> float:
-    centroid = region_centroid(context, labels)
-    return math.sqrt(
-        sum(_distance(context.residues[label].center, centroid) ** 2 for label in labels)
-        / len(labels)
-    )
+    values = []
+    for model_id in context.model_ids:
+        model = context.models[model_id]
+        if not all(label in model.residues for label in labels):
+            continue
+        centroid = _residue_centroid(model.residues, labels)
+        values.append(
+            math.sqrt(
+                sum(
+                    (
+                        _distance(model.residues[label].center, centroid) ** 2
+                        for label in labels
+                    ),
+                    0.0,
+                )
+                / len(labels)
+            )
+        )
+    if not values:
+        raise ManifestStateError("没有模型包含区域的完整几何")
+    return float(statistics.median(values))
 
 
 def minimum_region_atom_distance(
@@ -349,11 +503,21 @@ def minimum_region_atom_distance(
     left: tuple[int, ...],
     right: tuple[int, ...],
 ) -> float:
-    return min(
-        _cached_minimum_atom_distance(context, a, b)
-        for a in left
-        for b in right
-    )
+    values = [
+        min(
+            _cached_minimum_atom_distance(context, model_id, a, b)
+            for a in left
+            for b in right
+        )
+        for model_id in context.model_ids
+        if all(
+            label in context.models[model_id].residues
+            for label in left + right
+        )
+    ]
+    if not values:
+        raise ManifestStateError("没有模型同时包含两个区域的完整几何")
+    return min(values)
 
 
 def region_shell(
@@ -361,12 +525,27 @@ def region_shell(
     region: tuple[int, ...],
     *,
     shell_radius: float,
+    model_id: str | None = None,
 ) -> frozenset[int]:
+    selected_model_id = (
+        context.representative_model_id if model_id is None else model_id
+    )
+    model = context.models[selected_model_id]
+    if not all(label in model.residues for label in region):
+        raise ManifestStateError(
+            f"model={selected_model_id} 不包含完整区域，无法计算 shell"
+        )
     return frozenset(
         label
-        for label in context.residues
+        for label in model.residues
         if any(
-            _cached_minimum_atom_distance(context, label, member) <= shell_radius
+            _cached_minimum_atom_distance(
+                context,
+                selected_model_id,
+                label,
+                member,
+            )
+            <= shell_radius
             for member in region
         )
     )
@@ -379,9 +558,30 @@ def shell_overlap(
     *,
     shell_radius: float,
 ) -> float:
-    left_shell = region_shell(context, left, shell_radius=shell_radius)
-    right_shell = region_shell(context, right, shell_radius=shell_radius)
-    return len(left_shell & right_shell) / max(1, min(len(left_shell), len(right_shell)))
+    values = []
+    for model_id in context.model_ids:
+        model = context.models[model_id]
+        if not all(label in model.residues for label in left + right):
+            continue
+        left_shell = region_shell(
+            context,
+            left,
+            shell_radius=shell_radius,
+            model_id=model_id,
+        )
+        right_shell = region_shell(
+            context,
+            right,
+            shell_radius=shell_radius,
+            model_id=model_id,
+        )
+        values.append(
+            len(left_shell & right_shell)
+            / max(1, min(len(left_shell), len(right_shell)))
+        )
+    if not values:
+        raise ManifestStateError("没有模型同时包含两个区域，无法计算 shell overlap")
+    return max(values)
 
 
 def center_distance(
@@ -389,4 +589,14 @@ def center_distance(
     left: tuple[int, ...],
     right: tuple[int, ...],
 ) -> float:
-    return _distance(region_centroid(context, left), region_centroid(context, right))
+    values = []
+    for model_id in context.model_ids:
+        model = context.models[model_id]
+        if not all(label in model.residues for label in left + right):
+            continue
+        left_centroid = _residue_centroid(model.residues, left)
+        right_centroid = _residue_centroid(model.residues, right)
+        values.append(_distance(left_centroid, right_centroid))
+    if not values:
+        raise ManifestStateError("没有模型同时包含两个区域，无法计算中心距离")
+    return min(values)

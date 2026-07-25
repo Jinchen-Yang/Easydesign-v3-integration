@@ -1,0 +1,520 @@
+"""Stage 02 人工区域审批和不可变 ``hotspots.yaml`` 发布。"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import tempfile
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import yaml  # type: ignore[import-untyped]
+
+from easydesign.core import (
+    ArtifactRef,
+    Attempt,
+    ExecutionStatus,
+    ManifestStateError,
+    RunManifest,
+    StageId,
+    StageManifest,
+    dump_model,
+    load_model,
+    sha256_file,
+)
+from easydesign.stages.s01_target_preparation import TargetBundle
+from easydesign.stages.s02_hotspot_discovery import (
+    AnnotationReport,
+    ApprovalRecord,
+    ApprovedHotspotSet,
+    EvidenceLevel,
+    HotspotEvidence,
+    HotspotReviewRequest,
+    HotspotReviewSelection,
+    HotspotsFile,
+    RecommendedRegionSet,
+    RegionMethod,
+)
+
+from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
+
+APPROVAL_ATTEMPT_ID = "attempt-0002"
+
+
+def _strictly_later(candidate: datetime, previous: datetime) -> datetime:
+    return candidate if candidate > previous else previous + timedelta(microseconds=1)
+
+
+def _atomic_pointer(text: str, path: Path) -> None:
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _exclusive_copy(source: Path, destination: Path) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with source.open("rb") as source_handle, destination.open("xb") as target:
+            shutil.copyfileobj(source_handle, target)
+    except FileExistsError as error:
+        raise ManifestStateError(f"审批输入不可覆盖: {destination}") from error
+    return destination
+
+
+def _dump_yaml(model: HotspotReviewRequest | HotspotsFile, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8", newline="\n") as handle:
+            yaml.safe_dump(
+                model.model_dump(mode="json", exclude_none=False),
+                handle,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+    except FileExistsError as error:
+        raise ManifestStateError(f"YAML 不可覆盖: {path}") from error
+    return path
+
+
+def _load_review(path: Path) -> HotspotReviewRequest:
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise ManifestStateError(f"审批 YAML 读取失败: {path}: {error}") from error
+    return HotspotReviewRequest.model_validate(raw)
+
+
+def _load_current(
+    run_root: Path,
+) -> tuple[RunManifest, Path, StageManifest, Path, StageManifest, TargetBundle]:
+    latest = run_root / "manifests" / "LATEST"
+    try:
+        manifest_name = latest.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ManifestStateError(f"无法读取 run manifest LATEST: {latest}") from error
+    run_path = run_root / "manifests" / manifest_name
+    run = load_model(run_path, RunManifest)
+    if run.status is not ExecutionStatus.RUNNING:
+        raise ManifestStateError("只有等待审批的 running run 可以执行 hotspot 审批")
+    if run.workflow_state is None or run.workflow_state.action != "approve-hotspots":
+        raise ManifestStateError("当前 run 不处于 Stage 02 hotspot 审批状态")
+
+    stages: dict[StageId, tuple[StageManifest, Path]] = {}
+    for reference in run.stage_manifest_refs:
+        path = reference.verify(run_root)
+        stage = load_model(path, StageManifest)
+        stages[stage.stage_id] = (stage, path)
+    try:
+        stage01, _stage01_path = stages[StageId.TARGET_PREPARATION]
+        stage02, stage02_path = stages[StageId.HOTSPOT_DISCOVERY]
+    except KeyError as error:
+        raise ManifestStateError("当前 run 缺少 Stage 01 或 Stage 02 manifest") from error
+    if (
+        stage01.status is not ExecutionStatus.SUCCEEDED
+        or stage02.status is not ExecutionStatus.SUCCEEDED
+    ):
+        raise ManifestStateError("Stage 01/02 必须成功后才能审批")
+    bundle = load_model(stage01.require_output("target-bundle").verify(run_root), TargetBundle)
+    return run, run_path, stage01, stage02_path, stage02, bundle
+
+
+def _region_artifact_id(method: RegionMethod) -> str:
+    if method is RegionMethod.SASA_SURFACE_DIVERSITY:
+        return "sasa-recommended-regions"
+    return "scannet-recommended-regions"
+
+
+def export_hotspot_review(
+    run_root: Path,
+    *,
+    method: RegionMethod,
+    output: Path,
+) -> Path:
+    """导出可编辑审批模板；不改变 run。"""
+
+    root = run_root.resolve()
+    run, _run_path, _stage01, stage02_path, stage02, bundle = _load_current(root)
+    artifact_id = _region_artifact_id(method)
+    region_ref = stage02.require_output(artifact_id)
+    recommended = load_model(region_ref.verify(root), RecommendedRegionSet)
+    if recommended.method is not method:
+        raise ManifestStateError("推荐区域 artifact 的方法身份不一致")
+    if len(recommended.regions) < recommended.minimum_region_count:
+        raise ManifestStateError(
+            "自动候选不足最低数量，不能导出可批准模板；需要人工复核算法或输入"
+        )
+    annotation_ref = stage02.require_output("stage02-annotation-report")
+    annotation = load_model(annotation_ref.verify(root), AnnotationReport)
+    selections = tuple(
+        HotspotReviewSelection(
+            id=area_id,
+            source_region_id=region.region_id,
+        )
+        for area_id, region in zip(
+            ("A", "B", "C"),
+            recommended.regions,
+            strict=False,
+        )
+    )
+    request = HotspotReviewRequest(
+        project_id=run.project_id,
+        run_id=run.run_id,
+        target_id=bundle.target_id,
+        method=method,
+        source_stage_manifest_sha256=sha256_file(stage02_path),
+        source_regions_artifact_id=artifact_id,
+        source_regions_sha256=region_ref.sha256,
+        selection_basis=annotation.evidence_level,
+        annotation_status=annotation.status,
+        selections=selections,
+    )
+    return _dump_yaml(request, output.expanduser().resolve())
+
+
+def _label_ranges(values: tuple[int, ...]) -> str:
+    ranges: list[str] = []
+    start = previous = values[0]
+    for value in values[1:]:
+        if value == previous + 1:
+            previous = value
+            continue
+        ranges.append(str(start) if start == previous else f"{start}..{previous}")
+        start = previous = value
+    ranges.append(str(start) if start == previous else f"{start}..{previous}")
+    return ",".join(ranges)
+
+
+def _approved_set(
+    *,
+    selection: HotspotReviewSelection,
+    regions: RecommendedRegionSet,
+    annotation: AnnotationReport,
+) -> ApprovedHotspotSet:
+    region_by_id = {region.region_id: region for region in regions.regions}
+    region = region_by_id[selection.source_region_id]
+    label_ids = tuple(member.label_seq_id for member in region.members)
+    label_set = set(label_ids)
+    evidence = [
+        HotspotEvidence(
+            type="structural-region",
+            source=str(regions.method),
+            description=(
+                f"完整自动候选 {region.region_id}; ranking_score="
+                f"{region.ranking_score:.6f}."
+            ),
+        )
+    ]
+    risk_flags: list[str] = []
+    for feature in annotation.mapped_features:
+        if label_set.intersection(feature.label_seq_ids):
+            description = feature.description or "no-description"
+            evidence.append(
+                HotspotEvidence(
+                    type="uniprot-feature",
+                    source=annotation.accession or "uniprot",
+                    description=f"{feature.feature_type}: {description}",
+                )
+            )
+            risk_flags.append(
+                f"uniprot:{feature.feature_type}:{description}"[:1024]
+            )
+    for motif in annotation.motif_warnings:
+        if label_set.intersection(motif.label_seq_ids):
+            motif_text = "-".join(str(value) for value in motif.label_seq_ids)
+            evidence.append(
+                HotspotEvidence(
+                    type="sequence-motif",
+                    source="target-sequence",
+                    description=(
+                        f"Potential N-X-S/T motif at label positions {motif_text}; "
+                        "sequence warning only."
+                    ),
+                )
+            )
+            risk_flags.append(f"potential-glycosylation-motif:{motif_text}")
+    auth_residues = tuple(
+        f"{member.auth_asym_id}:{member.auth_seq_id}"
+        f"{member.insertion_code or ''}"
+        for member in region.members
+    )
+    return ApprovedHotspotSet(
+        id=selection.id,
+        slug=f"area-{selection.id.lower()}-{selection.design_goal}",
+        source_region_id=region.region_id,
+        design_goal=selection.design_goal,
+        biological_rationale=selection.biological_rationale,
+        structural_rationale=selection.structural_rationale,
+        auth_residues=auth_residues,
+        label_seq_ids=label_ids,
+        label_ranges=_label_ranges(label_ids),
+        evidence=tuple(evidence),
+        risk_flags=tuple(risk_flags),
+    )
+
+
+def _artifact(
+    *,
+    run_root: Path,
+    path: Path,
+    artifact_id: str,
+    role: str,
+    file_format: str,
+    produced: bool,
+) -> ArtifactRef:
+    return ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=path.relative_to(run_root).as_posix(),
+        artifact_id=artifact_id,
+        role=role,
+        file_format=file_format,
+        producer_stage=(
+            str(StageId.HOTSPOT_DISCOVERY) if produced else None
+        ),
+        producer_attempt=APPROVAL_ATTEMPT_ID if produced else None,
+    )
+
+
+def approve_hotspots(
+    run_root: Path,
+    *,
+    input_path: Path,
+    approved_at: datetime | None = None,
+) -> Path:
+    """验证人工选择并以新 attempt 发布唯一 ``hotspots.yaml``。"""
+
+    root = run_root.resolve()
+    run, run_path, stage01, stage02_path, stage02, bundle = _load_current(root)
+    source_input = input_path.expanduser().resolve()
+    request = _load_review(source_input)
+    if (
+        request.project_id != run.project_id
+        or request.run_id != run.run_id
+        or request.target_id != bundle.target_id
+    ):
+        raise ManifestStateError("审批文件不属于当前 project/run/target")
+    if request.source_stage_manifest_sha256 != sha256_file(stage02_path):
+        raise ManifestStateError("Stage 02 manifest 已变化；请重新导出审批模板")
+    region_ref = stage02.require_output(request.source_regions_artifact_id)
+    if (
+        region_ref.artifact_id != _region_artifact_id(request.method)
+        or region_ref.sha256 != request.source_regions_sha256
+    ):
+        raise ManifestStateError("审批文件引用的推荐区域 artifact 已变化")
+    recommended = load_model(region_ref.verify(root), RecommendedRegionSet)
+    if recommended.method is not request.method:
+        raise ManifestStateError("审批 method 与推荐区域 method 不一致")
+    available = {region.region_id for region in recommended.regions}
+    selected = {selection.source_region_id for selection in request.selections}
+    if not selected.issubset(available):
+        raise ManifestStateError("审批只能选择同一方法输出的完整推荐区域")
+    if not request.approved_by:
+        raise ManifestStateError("approved_by 不能为空")
+    for selection in request.selections:
+        if not selection.biological_rationale or not selection.structural_rationale:
+            raise ManifestStateError(
+                f"区域 {selection.id} 必须填写 biological_rationale 和 "
+                "structural_rationale"
+            )
+    annotation_ref = stage02.require_output("stage02-annotation-report")
+    annotation = load_model(annotation_ref.verify(root), AnnotationReport)
+    if (
+        request.selection_basis != annotation.evidence_level
+        or request.annotation_status != annotation.status
+    ):
+        raise ManifestStateError("审批文件的 annotation/evidence 身份不一致")
+    if (
+        annotation.evidence_level is EvidenceLevel.STRUCTURAL_ONLY
+        and not request.acknowledge_evidence_limitations
+    ):
+        raise ManifestStateError(
+            "structural-only 审批必须设置 acknowledge_evidence_limitations: true"
+        )
+
+    attempt_root = root / str(StageId.HOTSPOT_DISCOVERY) / APPROVAL_ATTEMPT_ID
+    if attempt_root.exists():
+        raise ManifestStateError(f"审批 attempt 已存在，禁止覆盖: {attempt_root}")
+    inputs = attempt_root / "inputs"
+    artifacts = attempt_root / "artifacts"
+    copied_input = _exclusive_copy(source_input, inputs / "hotspots-review.yaml")
+    normalized_request = _dump_yaml(
+        request,
+        artifacts / "approval-request.yaml",
+    )
+    timestamp = datetime.now(UTC) if approved_at is None else approved_at
+    timestamp = _strictly_later(timestamp, run.updated_at)
+    approval_sets = tuple(
+        _approved_set(
+            selection=selection,
+            regions=recommended,
+            annotation=annotation,
+        )
+        for selection in request.selections
+    )
+    hotspots = HotspotsFile(
+        project_id=run.project_id,
+        run_id=run.run_id,
+        target_id=bundle.target_id,
+        target_structure_sha256=bundle.target_structure.sha256,
+        coordinate_model_ids=(
+            bundle.coordinate_ensemble.model_ids
+            if bundle.coordinate_ensemble is not None
+            else ("1",)
+        ),
+        method=request.method,
+        selection_basis=annotation.evidence_level,
+        annotation_status=annotation.status,
+        approval_request_sha256=sha256_file(normalized_request),
+        approved_by=request.approved_by,
+        hotspot_sets=approval_sets,
+    )
+    hotspots_path = _dump_yaml(hotspots, artifacts / "hotspots.yaml")
+    record = ApprovalRecord(
+        approved_at=timestamp,
+        approved_by=request.approved_by,
+        method=request.method,
+        source_stage_manifest_sha256=request.source_stage_manifest_sha256,
+        approval_input_sha256=sha256_file(copied_input),
+        selected_region_ids=tuple(
+            selection.source_region_id for selection in request.selections
+        ),
+    )
+    record_path = dump_model(record, artifacts / "approval-record.json")
+    approval_input_ref = _artifact(
+        run_root=root,
+        path=copied_input,
+        artifact_id="hotspot-approval-input",
+        role="human-approval-input",
+        file_format="yaml",
+        produced=False,
+    )
+    output_refs = (
+        _artifact(
+            run_root=root,
+            path=normalized_request,
+            artifact_id="approval-request",
+            role="normalized-human-approval",
+            file_format="yaml",
+            produced=True,
+        ),
+        _artifact(
+            run_root=root,
+            path=record_path,
+            artifact_id="approval-record",
+            role="human-approval-record",
+            file_format="json",
+            produced=True,
+        ),
+        _artifact(
+            run_root=root,
+            path=hotspots_path,
+            artifact_id="hotspots",
+            role="stage03-hotspot-input",
+            file_format="yaml",
+            produced=True,
+        ),
+    )
+    attempt = Attempt(
+        attempt_id=APPROVAL_ATTEMPT_ID,
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=timestamp,
+        started_at=timestamp,
+        ended_at=timestamp,
+        backend_name="human-hotspot-approval",
+        backend_version="0.1",
+        executor_name="easydesign-core",
+    )
+    dump_model(attempt, attempt_root / "attempt-manifest.json")
+    approved_stage = StageManifest(
+        stage_id=StageId.HOTSPOT_DISCOVERY,
+        contract_version="0.2",
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=stage02.created_at,
+        completed_at=timestamp,
+        input_artifacts=stage02.input_artifacts + (approval_input_ref,),
+        output_artifacts=output_refs,
+        attempts=stage02.attempts + (attempt,),
+        selected_attempt_id=APPROVAL_ATTEMPT_ID,
+        warnings=(
+            "Approved regions are complete outputs from one automatic method.",
+            "No SASA/ScanNet score fusion or member editing was performed.",
+            (
+                "Scientific evidence limitations were explicitly acknowledged."
+                if annotation.evidence_level is EvidenceLevel.STRUCTURAL_ONLY
+                else "UniProt annotations were retained as evidence/warnings only."
+            ),
+        ),
+    )
+    approved_stage.validate_inputs_declared_by((stage01,))
+    approved_stage_path = dump_model(
+        approved_stage,
+        artifacts / "stage-manifest.json",
+    )
+    stage_ref = _artifact(
+        run_root=root,
+        path=approved_stage_path,
+        artifact_id="stage-02-manifest",
+        role="stage-manifest",
+        file_format="json",
+        produced=True,
+    )
+    retained = tuple(
+        reference
+        for reference in run.stage_manifest_refs
+        if reference.producer_stage != str(StageId.HOTSPOT_DISCOVERY)
+    )
+    resolved = load_model(
+        root / "config-snapshot" / "resolved-config.json",
+        ResolvedRunConfig,
+    )
+    completed = resolved.stop_after_stage == 2
+    next_run = run.next_revision(
+        updated_at=timestamp,
+        status=(
+            ExecutionStatus.SUCCEEDED if completed else ExecutionStatus.RUNNING
+        ),
+        completed_at=timestamp if completed else None,
+        stage_manifest_refs=retained + (stage_ref,),
+        clear_workflow_state=True,
+    )
+    next_path = (
+        root
+        / "manifests"
+        / f"run-manifest.v{next_run.revision:04d}.json"
+    )
+    dump_model(next_run, next_path)
+    _atomic_pointer(f"{next_path.name}\n", root / "manifests" / "LATEST")
+    del run_path
+    runs_root = root.parent.parent
+    upsert_run_index_entries(
+        runs_root,
+        (
+            RunIndexEntry(
+                category="project-run",
+                path=root.relative_to(runs_root).as_posix(),
+                layout_version="1",
+                status="succeeded" if completed else "stage02-approved",
+                project_id=run.project_id,
+                run_id=run.run_id,
+                notes=(
+                    "Stage 02 regions approved; hotspots.yaml published.",
+                ),
+            ),
+        ),
+        generated_at=timestamp,
+    )
+    return hotspots_path

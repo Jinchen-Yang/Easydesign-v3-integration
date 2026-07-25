@@ -334,6 +334,7 @@ def _viewer_data(sources: _ViewerSources) -> TargetViewerData:
         for entry in sources.mapping.entries
     )
     bundle = sources.bundle
+    coordinate_ensemble = bundle.coordinate_ensemble
     return TargetViewerData(
         target_id=bundle.target_id,
         origin=cast(
@@ -343,6 +344,21 @@ def _viewer_data(sources: _ViewerSources) -> TargetViewerData:
         sequence_length=bundle.sequence_length,
         sequence_sha256=bundle.sequence_sha256,
         structure_sha256=bundle.target_structure.sha256,
+        coordinate_model_count=(
+            coordinate_ensemble.model_count
+            if coordinate_ensemble is not None
+            else 1
+        ),
+        coordinate_model_ids=(
+            coordinate_ensemble.model_ids
+            if coordinate_ensemble is not None
+            else ("1",)
+        ),
+        representative_model_id=(
+            coordinate_ensemble.representative_model_id
+            if coordinate_ensemble is not None
+            else "1"
+        ),
         quality_metrics=_quality_metrics(sources.quality),
         provenance_metrics=_provenance_metrics(sources.provenance),
         annotation=annotation_summary,

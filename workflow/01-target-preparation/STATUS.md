@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | sequence/FASTA MSA、单 Target PSE 与便携 Mol* Viewer 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；Viewer 后续 overlay 留给 Stage 02。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 |
+| `planned` | 两条单模型入口已真实跑通；Target Bundle 0.3 与 Viewer 已具备多模型身份契约。 | 用本地 PDB/mmCIF adapter 首次发布真实多模型 Target Bundle。 | 公共 ColabFold 无 SLA；真实多模型入口和其余输入 adapter 未完成。 | 2026-07-25 |
 
 ## 当前结论
 
@@ -15,6 +15,11 @@
   `smoke-validated`。
 - 单 Target PyMOL PSE → imported Target Bundle 纵向切片状态：`smoke-validated`。
 - Stage 01 Target Bundle → 自包含 Mol* 5.11.0 Viewer 状态：`smoke-validated`。
+- 通用 Target Bundle schema `0.3` 已声明 coordinate model count/IDs、代表 model 和共享
+  label identity；兼容读取 0.1/0.2。PSE 与 Protenix 当前仍各发布单模型，这是 adapter
+  限制而非全局结构限制。
+- Viewer data `0.2` 显示 model 数量和代表 model；现有单模型 APOE 页面行为保持不变。
+- 用户 YAML schema `0.3` 固定展示 `stage01`–`stage07`，旧布局可显式迁移且不覆盖原文件。
 - sequence 和 PSE 成功路径都在正式 Stage/Run manifest 发布后自动生成 Viewer report；
   reporting failure 与科学状态分离，不阻塞 Stage 02 handoff。
 - 报告只沿 manifest 声明读取并验证 artifact，复制 mmCIF、FASTA 和 mapping，页面不访问
@@ -60,13 +65,14 @@
 | --- | --- | --- |
 | 裸氨基酸序列 | `implemented` | 严格规范化、标准氨基酸校验和 identity 测试 |
 | FASTA 文件 | `implemented` | 单记录解析；与同序列裸输入产生同一 SHA-256 |
-| EasyDesign YAML 与自动识别 | `implemented` | schema 0.2 强制 MSA；provider 顺序、endpoint、timeout/retry 和禁止 no-MSA 测试 |
+| EasyDesign YAML 与自动识别 | `implemented` | canonical 0.3 七阶段配置；旧布局兼容/迁移；MSA 与排他输入测试 |
 | Run Workspace | `implemented` | 一次实验一个目录、七 Stage 同级、snapshot、索引和浅层 attempt |
 | 本地 PDB/mmCIF | `planned` | 无 |
 | RCSB PDB ID | `planned` | 无 |
 | UniProt accession/名称 | `planned` | 无 |
 | PyMOL PSE | `smoke-validated` | 独立 PyMOL 3.1.0 环境；合成边界测试和旧 APOE PSE 真实 run |
 | 标准 Target Bundle | `planned` | 目前能生成，尚不能作为输入导入 |
+| Target Bundle coordinate ensemble | `implemented` | schema 0.3、模型 ID/代表 model/共享 label 身份和 0.1/0.2 兼容测试 |
 | 通用结构预测契约 | `implemented` | request/invocation/product 契约和测试 |
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
@@ -78,16 +84,18 @@
 
 ## Now
 
-- 当前没有进行中的 Stage 01 工作项。REP-001 已关闭并归档；项目当前跨阶段重心是
-  Stage 02 人工批准到 Stage 03 的交接。
-- Stage 01 下一候选工作项是本地 PDB/mmCIF 输入 adapter，尚未开始，开始时必须另建任务
-  编号和完成门槛。
+- 当前没有进行中的 Stage 01 工作项。S01-007 已完成通用 ensemble 契约，但没有伪装成
+  真实多模型入口 smoke。
+- 下一候选工作项是本地 PDB/mmCIF 输入 adapter；它应成为第一个发布多模型 Bundle 的
+  真实入口，并补结构质量缺失坐标报告。
 
 ## Next
 
 - 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
   当前主线的外部阻塞。
 - 实现本地 PDB/mmCIF、RCSB PDB ID、UniProt 和标准 Target Bundle 输入 adapter。
+- 为多 state PSE 和 Protenix 多 seed/sample 分别设计显式 ensemble 策略；不得自动
+  选择或平均输出。
 - 扩展 PSE 到复合物、receptor/ligand、多聚体或人工 object/chain/state 选择前，先新增
   独立契约；当前严格单 Target adapter 不做隐式放宽。
 - 增加本地 MSA 或预计算 MSA profile，支持不依赖公共队列的离线复现。
@@ -215,6 +223,18 @@
 - Developer Preview CLI 已通过同一 orchestration API 暴露 sequence/FASTA 与 PSE
   Stage 01；这属于 UX/工程验证，不改变 Stage 01 总体 `planned` 状态。
 
+### Target Bundle 0.3 与 canonical 配置回归
+
+- runtime-only validation
+  `/root/autodl-tmp/Protein_design/easydesign-clean-validation.lDkLYp/` 使用 schema `0.3`
+  七阶段配置和原始 APOE PSE 完成真实 Stage 01。
+- 发布的 Target Bundle schema `0.3` 声明 `model_count=1`、`model_ids=["1"]`、
+  `representative_model_id="1"` 和 `shared-label-seq-id`；Stage 02 随后直接消费。
+- Viewer data `0.2` 成功显示模型身份；Playwright 为 3 passed、2 skipped。完整 Python
+  门禁为 151 passed、8 skipped；设置真实 PyMOL interpreter 后，8 项独立环境集成测试
+  全部通过。wheel `0.1.0.dev2` 的 console script 与资产均通过。
+- 当前证据只验证单模型 adapter 对新通用契约的兼容，不冒充真实多模型入口 smoke。
+
 ### REP-001 便携式 Mol* Target Viewer
 
 - 固定 Mol* `5.11.0` 官方 npm tarball，npm integrity
@@ -269,6 +289,13 @@
 - 完成并归档 REP-001：Stage 01 两条成功路径自动生成自包含 Mol* 5.11.0 报告，报告失败
   不影响科学状态；localhost Chromium 和两条真实 APOE report smoke 通过。
 
+### 2026-07-25
+
+- 完成并归档 S01-007：Target Bundle `0.3` 正式声明 coordinate ensemble，保留
+  0.1/0.2 读取兼容；PSE 与 Protenix 的单模型限制下沉到各自 adapter。
+- canonical schema 0.3 的 APOE PSE 真实回归成功发布单模型 descriptor、Viewer 和
+  Stage 02 handoff；真实多模型入口仍是下一项工作。
+
 ## 历史索引
 
-- [2026-07：S01-001 至 S01-006](history/2026-07.md)
+- [2026-07：S01-001 至 S01-007](history/2026-07.md)

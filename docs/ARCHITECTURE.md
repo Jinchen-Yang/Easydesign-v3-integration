@@ -218,8 +218,9 @@ target.fasta
 easydesign.yaml
 ```
 
-`easydesign.yaml` 声明项目、target source 和关键科学控制；输入路径相对于 YAML 所在目录
-解析。EasyDesign 自动识别有强证据的 FASTA、裸序列、PDB、mmCIF、PSE 和 Target Bundle。
+`easydesign.yaml` schema `0.3` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
+binder profile/intent，未实现阶段写 `null`。输入路径相对于 YAML 所在目录解析。
+EasyDesign 自动识别有强证据的 FASTA、裸序列、PDB、mmCIF、PSE 和 Target Bundle。
 识别成功但 adapter 尚未实现时明确失败，不能回退到另一入口。
 
 用户不提交 Protenix JSON。orchestration 规范化序列并创建通用
@@ -232,21 +233,22 @@ easydesign.yaml
 原 YAML 和 target 文件进入 run 的 snapshot；解析后的格式、序列 SHA-256 和通用预测请求
 写入 `resolved-config.json`。
 
-sequence/FASTA 的用户配置从 schema `0.2` 起必须包含 MSA policy：
+sequence/FASTA 的 `stage01.structure_prediction` 必须包含 MSA policy：
 
 ```yaml
-structure_prediction:
-  backend: protenix-v2
-  msa:
-    mode: remote
-    providers:
-      - provider: colabfold-public
-        timeout_seconds: 1800
-        max_attempts: 3
-        retry_backoff_seconds: 30
-    no_msa_fallback: false
-  template_mode: disabled
-  parameter_profile: model-default
+stage01:
+  structure_prediction:
+    backend: protenix-v2
+    msa:
+      mode: remote
+      providers:
+        - provider: colabfold-public
+          timeout_seconds: 1800
+          max_attempts: 3
+          retry_backoff_seconds: 30
+      no_msa_fallback: false
+    template_mode: disabled
+    parameter_profile: model-default
 ```
 
 默认 provider `colabfold-public` 被解析为
@@ -289,18 +291,28 @@ PSE 路径同样只接受 `target.pse + easydesign.yaml`，但与 sequence 路�
 - PSE 成功后发布 Attempt、StageManifest 和新的 RunManifest revision，更新 `LATEST`
   指针；不生成 Protenix JSON，也不触发 MSA 或预测。
 
-### Stage 02 独立方法边界
+### Target Bundle ensemble 与 Stage 02 独立方法边界
 
-Stage 02 automatic 同时运行两个独立 provider：
+Target Bundle `0.3` 声明 `coordinate_ensemble`；mmCIF 可以包含一个或多个 model，残基
+身份跨模型共享，缺失坐标保留为证据。PSE 与 Protenix 当前 adapter 都仍只生成单模型，
+但该限制不再进入通用 Bundle 契约。Viewer 显示 model 数量和代表 model。
+
+Stage 02 automatic 按 YAML 选择一个或两个独立 provider：
 
 - SASA provider 只读取坐标、编号和用户显式 avoid，输出 rSASA/几何排序；
 - ScanNet provider 只读取坐标和逐残基模型 probability，输出独立概率排序；
 - 比较层只计算区域重合与空间距离，不产生融合分数或默认赢家；
-- PSE颜色、UniProt/PTM annotation 和人工区域不进入 automatic v0.1。
+- PSE颜色和人工区域不进入 automatic；可选 UniProt/PTM annotation 只形成证据/warning，
+  不修改两种方法的排名。
 
-两套产物分别位于 `artifacts/sasa/` 与 `artifacts/scannet-epitope/`。只有两种方法都成功
-并完成编号映射时 Stage 02 才发布正式 output；人工选择前 Stage 03 保持
-`awaiting_region_selection`。
+SASA 对每个 coordinate model 独立计算 rSASA/图，再按显式 70% 阈值形成保守共识；
+ScanNet v0.1 遇到多模型明确返回 `unsupported_ensemble`。只运行一种方法时不创建另一
+方法或 comparison 的空产物。
+
+自动 attempt 成功后 RunManifest `1.2` 保持 `running`，写
+`workflow_state=awaiting-human-approval`。人工审批通过单独的 `attempt-0002` 选择同一
+方法的 2–3 个完整区域并发布 `hotspots.yaml`；该文件是 Stage 03 唯一入口。structural-only
+审批必须显式确认科学证据限制。
 
 ### Binder 类型扩展边界
 
@@ -344,12 +356,14 @@ Artifact 路径必须是相对于 run 根目录的 POSIX 路径，不能是绝�
 - manifest JSON 使用“临时文件 + 原子硬链接”写入，目标存在时拒绝覆盖；
 - RunManifest revision 必须时间递增，并用前一版本规范 JSON 的 SHA-256 串成审计链。
 
-RunManifest `1.0` 的 `code_commit` 继续兼容读取。新 run 使用 `1.1` 的
-`code_identity`：
+RunManifest `1.0` 的 `code_commit` 和 `1.1` 的结构化代码身份继续兼容读取。新 run 使用
+`1.2` 的 `code_identity` 与可选 `workflow_state`：
 
 - clean checkout 记录完整 Git commit；
 - dirty checkout 记录基础 commit、`dirty=true` 和 package tree SHA-256；
 - wheel/非 Git 安装记录 installed package tree SHA-256，不伪装为 commit。
+- 外部人工输入暂停点保持执行状态 `running`，并记录 stage、action 和消息；批准后建立
+  新 revision 清除 workflow state，不能把等待状态伪装成 run 成功。
 
 源码树哈希覆盖 `src/easydesign`、打包资源和影响构建的项目元数据，排除 bytecode、cache
 和 Git 元数据；revision 链保持同一代码身份。
@@ -370,8 +384,8 @@ Target Viewer 输出位于同一 run 的
 
 每个 report 自带 mmCIF、mapping、FASTA、Mol* 5.11.0 JS/CSS 和许可证，复制到 run 外后
 仍可查看。`viewer-data.json` 是面向展示的最小安全投影，只包含 target 身份、编号映射、
-整体质量、安全 provenance 和可选未解释颜色；禁止绝对路径、日志、用户配置、完整 MSA、
-密钥和未筛选 provenance。
+整体质量、安全 provenance、coordinate model identity 和可选未解释颜色；禁止绝对路径、
+日志、用户配置、完整 MSA、密钥和未筛选 provenance。
 
 本地服务先验证 report manifest 和全部 checksum，再把 server root 固定为单个
 `report-XXXX/`，拒绝 path traversal 与 symlink 逃逸，只绑定 `127.0.0.1`。CSP 将脚本、
@@ -434,5 +448,10 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
   RunManifest 1.1 code identity 和本地 wheel 安装；CLI/UI 继续只调用同一 application
   API。完整取舍见
   [`ADR-0002`](decisions/ADR-0002-developer-preview-cli-and-code-identity.md)。
+- 2026-07-25：用户配置统一为 schema 0.3 的 `stage01`–`stage07`；Target Bundle 0.3
+  支持 coordinate ensemble，SASA 将单模型推广为多模型共识；ScanNet 多模型明确拒绝。
+- 2026-07-25：UniProt 身份只接受用户显式 accession，annotation 只作证据/warning；
+  RunManifest 1.2 用 workflow state 表示等待人工批准，Stage 03 只能读取批准 attempt
+  发布的 `hotspots.yaml`。
 
 重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。

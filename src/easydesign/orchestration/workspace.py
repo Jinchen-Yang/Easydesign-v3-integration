@@ -340,7 +340,7 @@ def _initialize_workspace(
         dump_model(resolved, resolved_path)
 
         manifest = RunManifest(
-            schema_version="1.1" if code_identity is not None else "1.0",
+            schema_version="1.2" if code_identity is not None else "1.0",
             revision=1,
             project_id=loaded.config.project_id,
             run_id=selected_run_id,

@@ -27,9 +27,11 @@ from easydesign.orchestration.application import (
     diagnose_runtime,
     execute_pipeline,
     list_runs,
+    migrate_run_configuration,
     show_run,
     validate_run_configuration,
 )
+from easydesign.orchestration.hotspots import approve_hotspots, export_hotspot_review
 from easydesign.orchestration.profile import (
     default_runtime_profile_path,
     initialize_runtime_profile,
@@ -41,6 +43,7 @@ from easydesign.reporting import (
     create_target_viewer_server,
     resolve_target_viewer_argument,
 )
+from easydesign.stages.s02_hotspot_discovery import RegionMethod
 
 
 def _json_text(value: BaseModel | tuple[BaseModel, ...] | dict[str, Any]) -> str:
@@ -76,6 +79,12 @@ def _parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--project-id")
     init_parser.add_argument("--target-id")
     init_parser.add_argument("--stop-after", type=int, choices=(1, 2), default=1)
+    init_parser.add_argument(
+        "--stage02-method",
+        choices=("sasa", "scannet", "both"),
+        default="both",
+        help="Stage 02 自动方法（默认 both）",
+    )
     _add_json(init_parser)
 
     profile_parser = commands.add_parser("profile", help="管理本机 runtime profile")
@@ -98,6 +107,12 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(config_validate)
     config_validate.add_argument("--runs-root", type=Path)
     _add_json(config_validate)
+    config_migrate = config_commands.add_parser(
+        "migrate",
+        help="将旧 YAML 显式迁移为 canonical 0.3",
+    )
+    config_migrate.add_argument("config", type=Path)
+    config_migrate.add_argument("--output", type=Path, required=True)
 
     doctor_parser = commands.add_parser("doctor", help="检查本次运行所需环境")
     doctor_parser.add_argument("--config", type=Path)
@@ -112,6 +127,32 @@ def _parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--run-id")
     run_parser.add_argument("--dry-run", action="store_true")
     _add_json(run_parser)
+
+    hotspots_parser = commands.add_parser(
+        "hotspots",
+        help="导出或批准 Stage 02 完整候选区域",
+    )
+    hotspots_commands = hotspots_parser.add_subparsers(
+        dest="hotspots_command",
+        required=True,
+    )
+    hotspots_export = hotspots_commands.add_parser(
+        "export",
+        help="导出人工审批模板，不修改 run",
+    )
+    hotspots_export.add_argument("run", type=Path)
+    hotspots_export.add_argument(
+        "--method",
+        choices=("sasa", "scannet"),
+        required=True,
+    )
+    hotspots_export.add_argument("--output", type=Path, required=True)
+    hotspots_approve = hotspots_commands.add_parser(
+        "approve",
+        help="验证审批文件并发布 hotspots.yaml",
+    )
+    hotspots_approve.add_argument("run", type=Path)
+    hotspots_approve.add_argument("--input", type=Path, required=True)
 
     runs_parser = commands.add_parser("runs", help="从 run-index 查看运行")
     runs_commands = runs_parser.add_subparsers(dest="runs_command", required=True)
@@ -183,6 +224,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             project_id=arguments.project_id,
             target_id=arguments.target_id,
             stop_after_stage=arguments.stop_after,
+            stage02_method=arguments.stage02_method,
         )
         payload = {
             "project_root": str(initialized.project_root),
@@ -225,6 +267,13 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return 0
 
     if arguments.command == "config":
+        if arguments.config_command == "migrate":
+            migrated = migrate_run_configuration(
+                arguments.config,
+                arguments.output,
+            )
+            print(f"配置已迁移：{migrated}")
+            return 0
         plan = validate_run_configuration(
             arguments.config,
             profile_path=arguments.profile,
@@ -261,6 +310,31 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             print(_json_text(execution))
         else:
             _print_execution(execution)
+        return 0
+
+    if arguments.command == "hotspots":
+        if arguments.hotspots_command == "export":
+            method = (
+                RegionMethod.SASA_SURFACE_DIVERSITY
+                if arguments.method == "sasa"
+                else RegionMethod.SCANNET_EPITOPE_NO_MSA
+            )
+            output = export_hotspot_review(
+                arguments.run,
+                method=method,
+                output=arguments.output,
+            )
+            print(f"Hotspot 审批模板已导出：{output}")
+            print(
+                "请填写 approved_by、每个区域的两类理由；structural-only "
+                "还需确认 evidence limitations。"
+            )
+            return 0
+        hotspots = approve_hotspots(
+            arguments.run,
+            input_path=arguments.input,
+        )
+        print(f"Stage 02 已批准：{hotspots}")
         return 0
 
     if arguments.command == "runs":

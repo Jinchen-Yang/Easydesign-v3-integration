@@ -80,7 +80,7 @@ class ViewerDownload(BaseModel):
 class TargetViewerData(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     target_id: str = Field(pattern=ID_PATTERN)
     origin: Literal["experimental", "imported", "predicted"]
     sequence_length: int = Field(ge=1)
@@ -91,6 +91,9 @@ class TargetViewerData(BaseModel):
     )
     structure_format: Literal["mmcif"] = "mmcif"
     structure_sha256: str = Field(pattern=SHA256_PATTERN)
+    coordinate_model_count: int = Field(ge=1)
+    coordinate_model_ids: tuple[str, ...] = Field(min_length=1)
+    representative_model_id: str = Field(min_length=1, max_length=32)
     quality_metrics: tuple[ViewerMetric, ...]
     provenance_metrics: tuple[ViewerMetric, ...]
     annotation: ViewerAnnotationSummary
@@ -99,6 +102,10 @@ class TargetViewerData(BaseModel):
 
     @model_validator(mode="after")
     def validate_residues(self) -> Self:
+        if self.coordinate_model_count != len(self.coordinate_model_ids):
+            raise ValueError("Viewer coordinate model count 与 model IDs 不一致")
+        if self.representative_model_id not in self.coordinate_model_ids:
+            raise ValueError("Viewer representative model 必须属于 model IDs")
         if len(self.residues) != self.sequence_length:
             raise ValueError("Viewer residue 数量必须等于 sequence_length")
         indices = [residue.sequence_index for residue in self.residues]

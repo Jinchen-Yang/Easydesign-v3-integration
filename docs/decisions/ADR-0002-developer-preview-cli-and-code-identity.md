@@ -34,3 +34,23 @@ Stage 01/02 已经有真实 Python API 和 APOE smoke，但使用者仍需手工
   doctor 如实报告。
 - dirty checkout 可以用于开发 smoke，但 manifest 会明确记录 dirty 状态和内容哈希。
 - resume、结构输入、Stage 03、完整 UI、公开发布和兼容性承诺仍属于后续工作。
+
+## 2026-07-25 修订：规范七阶段、Ensemble 与人工暂停点
+
+Developer Preview 的配置和运行状态进一步收敛：
+
+1. 用户配置 schema `0.3` 固定展示 `stage01`–`stage07`；未实现阶段必须为 `null`，
+   旧布局只在加载/显式迁移边界兼容。
+2. Target Bundle `0.3` 用 `coordinate_ensemble` 声明 model IDs、代表 model 和共享
+   `label_seq_id` 身份。PSE 单 state 和 Protenix 单 sample 是 adapter 限制，不再是通用
+   Bundle 限制。
+3. SASA 对每个 model 独立计算，以显式 70% 阈值形成共识并采用最坏情况区域分离；
+   ScanNet v0.1 遇到多模型明确拒绝，不隐式选择代表模型。
+4. UniProt 只按用户显式 accession 查询，annotation 只提供证据/warning，不改变方法排名。
+5. RunManifest `1.2` 增加可恢复 `workflow_state`。自动 Stage 02 完成后保持 running，
+   人工批准新 attempt 才发布 Stage 03 唯一入口 `hotspots.yaml`。
+6. EasyDesign 1.0 不依赖 LLM/Agent 进行流程判断；未来 Agent 建议必须落入类型化配置、
+   确定性校验和人工批准。
+
+这次修订保持原 ADR 的核心边界：CLI/UI 仍只是共享 Python API 的薄入口，旧 manifest
+保持可读，等待人工输入不能被包装成执行成功。

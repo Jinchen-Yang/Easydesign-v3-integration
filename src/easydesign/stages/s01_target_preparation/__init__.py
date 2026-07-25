@@ -4,6 +4,7 @@ from .bundle import build_imported_pse_target_bundle, build_predicted_target_bun
 from .models import (
     BuiltTargetBundle,
     ColorCount,
+    CoordinateEnsemble,
     ImportedStructureProvenance,
     ImportedStructureQualityReport,
     PredictionProvenance,
@@ -20,6 +21,7 @@ from .models import (
 __all__ = [
     "BuiltTargetBundle",
     "ColorCount",
+    "CoordinateEnsemble",
     "ImportedStructureProvenance",
     "ImportedStructureQualityReport",
     "PseSourceAnnotations",

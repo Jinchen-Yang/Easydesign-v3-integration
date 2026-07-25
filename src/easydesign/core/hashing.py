@@ -10,6 +10,12 @@ from .errors import ArtifactIntegrityError, ArtifactNotFoundError
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 
 
+def sha256_bytes(value: bytes) -> str:
+    """计算内存中协议响应或规范内容的 SHA-256。"""
+
+    return hashlib.sha256(value).hexdigest()
+
+
 def sha256_file(path: Path, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> str:
     """流式计算文件 SHA-256，不把大文件一次性读入内存。"""
 

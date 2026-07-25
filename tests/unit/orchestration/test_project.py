@@ -30,6 +30,10 @@ def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Pa
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.automatic is not None
     assert loaded.config.stage02.automatic.patch.target_member_count == 12
+    config_text = initialized.config_path.read_text(encoding="utf-8")
+    assert config_text.startswith("schema_version: '0.3'")
+    assert all(f"stage0{number}:" in config_text for number in range(1, 8))
+    assert "stage03: null" in config_text
     assert initialized.target_path.read_bytes() == fasta.read_bytes()
     assert (initialized.project_root / ".gitignore").read_text() == "runs/\n"
 

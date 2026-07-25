@@ -88,3 +88,24 @@
 - 定义七阶段职责、运行边界、项目治理和旧仓审计基线。
 
 不得改写历史；原记录有误时追加更正。
+
+## 2026-07-25 — UX-002 / ENG-005：canonical 七阶段配置与确定性审批边界
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-25T11:37:26+08:00
+- 问题：旧用户 YAML 把 Stage 01 字段放在顶层，只局部出现 Stage 02；Target Bundle 与
+  RunManifest 也无法表达 coordinate ensemble 和“科学计算完成、等待人工批准”的中间态。
+- 方案：schema 0.3 固定展示 `stage01`–`stage07`，跨阶段 binder/intent 放在 `design`；
+  旧配置兼容读取并可显式迁移。Target Bundle 0.3、RunManifest 1.2 和 approval attempt
+  分别表达模型集合、等待动作与唯一 Stage 03 handoff。
+- 灵活性：UniProt accession 与 annotation policy 均可选；没有身份时仍可结构选区，
+  但必须以 `structural_only` 留痕并由用户确认局限。
+- 智能边界：EasyDesign 1.0 的判断只来自版本化模型、算法、规则和模板，不依赖
+  LLM/Agent；1.0 后的 Agent 只能作为可选建议层，输出必须转换成类型化配置、确定性校验
+  并经过人工批准。
+- 验证：真实 APOE PSE 一条命令完成 canonical Stage 01/02，SASA 和 ScanNet CPU 均成功，
+  Run 正确等待审批；151 passed、8 skipped，Playwright 3 passed、2 skipped，wheel
+  `0.1.0.dev2` 验证通过。
+- 遗留边界：真实多模型输入、自动身份发现、真实 APOE 区域批准、Stage 03–07 和 Agent
+  建议层均未完成；本次没有替用户制造批准结果。
+- 提交：本轮功能提交和远端完整 SHA 以最终推送后核对结果为准。

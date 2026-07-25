@@ -79,6 +79,21 @@ def test_dry_run_preflight_does_not_create_run(
     assert not (tmp_path / "runs").exists()
 
 
+def test_sasa_only_stage02_does_not_require_scannet_backend(tmp_path: Path) -> None:
+    pse = tmp_path / "target.pse"
+    pse.write_bytes(b"synthetic")
+    initialized = initialize_project(
+        project_root=tmp_path / "demo",
+        target=pse,
+        stop_after_stage=2,
+        stage02_method="sasa",
+    )
+
+    plan = validate_run_configuration(initialized.config_path)
+
+    assert plan.required_backends == ("pymol-pse",)
+
+
 def test_cli_init_and_config_validate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fasta = tmp_path / "target.fasta"
     fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
@@ -203,7 +218,7 @@ backends:
         run_id="run-001",
     )
 
-    assert outcome.status == "succeeded"
+    assert outcome.status == "awaiting-human-approval"
     assert outcome.run_manifest == run_root / "manifests/run-manifest.v0003.json"
     assert captured == {
         "request_writer": fake_pymol,

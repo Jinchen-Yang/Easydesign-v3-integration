@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -41,6 +42,17 @@ class TargetInputFormat(StrEnum):
     TARGET_BUNDLE = "target-bundle"
 
 
+class TargetIdentityConfig(BaseModel):
+    """用户明确提供的生物学身份；首版禁止按名称静默猜测。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    uniprot_accession: str | None = Field(
+        default=None,
+        pattern=r"^[A-Z0-9]{6,10}(?:-[0-9]+)?$",
+    )
+
+
 class TargetSourceConfig(BaseModel):
     model_config = ConfigDict(
         frozen=True,
@@ -52,6 +64,7 @@ class TargetSourceConfig(BaseModel):
     target_id: str = Field(alias="id", pattern=ID_PATTERN)
     source: Path
     format: TargetInputFormat = TargetInputFormat.AUTO
+    identity: TargetIdentityConfig = TargetIdentityConfig()
 
 
 class ProtenixMsaProviderConfig(BaseModel):
@@ -163,13 +176,56 @@ class StructurePredictionConfig(BaseModel):
 class WorkflowConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    stop_after_stage: int = Field(default=7, ge=1, le=7)
+    stop_after_stage: int = Field(default=1, ge=1, le=7)
+
+
+class BinderProfile(StrEnum):
+    VHH = "vhh"
+
+
+class DesignIntent(StrEnum):
+    BLOCKING = "blocking"
+    NONBLOCKING = "nonblocking"
+    DETECTION = "detection"
+    IMAGING = "imaging"
+    EXPLORATORY = "exploratory"
+
+
+class DesignConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    binder_profile: BinderProfile = BinderProfile.VHH
+    intent: DesignIntent = DesignIntent.EXPLORATORY
+
+
+class Stage01Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target: TargetSourceConfig
+    structure_prediction: StructurePredictionConfig | None = None
 
 
 class RegionProposalMode(StrEnum):
     AUTOMATIC = "automatic"
     PSE_ANNOTATIONS = "pse_annotations"
     MANUAL = "manual"
+
+
+class Stage02Method(StrEnum):
+    SASA = "sasa"
+    SCANNET = "scannet"
+
+
+class UniProtAnnotationMode(StrEnum):
+    OFF = "off"
+    IF_AVAILABLE = "if_available"
+    REQUIRED = "required"
+
+
+class Stage02AnnotationConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    uniprot: UniProtAnnotationMode = UniProtAnnotationMode.IF_AVAILABLE
 
 
 class Stage02SasaConfig(BaseModel):
@@ -179,6 +235,7 @@ class Stage02SasaConfig(BaseModel):
     relaxed_threshold: float = Field(default=0.20, gt=0, le=1)
     probe_radius_angstrom: float = Field(default=1.4, gt=0)
     sphere_points: int = Field(default=960, ge=100)
+    ensemble_consensus_fraction: float = Field(default=0.70, gt=0, le=1)
 
     @model_validator(mode="after")
     def validate_thresholds(self) -> Self:
@@ -190,8 +247,8 @@ class Stage02SasaConfig(BaseModel):
 class Stage02PatchConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    target_member_count: int = Field(default=12, ge=6)
-    minimum_member_count: int = Field(default=6, ge=3)
+    target_member_count: int = Field(default=12, ge=5)
+    minimum_member_count: int = Field(default=5, ge=5)
     heavy_atom_neighbor_angstrom: float = Field(default=5.0, gt=0)
     anchor_neighbor_angstrom: float = Field(default=12.0, gt=0)
     compactness_radius_angstrom: float = Field(default=14.0, gt=0)
@@ -219,33 +276,80 @@ class Stage02EvidenceConfig(BaseModel):
 class Stage02AutomaticConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    region_count: int = Field(default=3, ge=1)
+    requested_region_count: int = Field(default=3, ge=1, le=3)
+    minimum_region_count: int = Field(default=2, ge=1, le=3)
     sasa: Stage02SasaConfig = Stage02SasaConfig()
     patch: Stage02PatchConfig = Stage02PatchConfig()
     evidence: Stage02EvidenceConfig = Stage02EvidenceConfig()
     avoid_label_seq_ids: tuple[int, ...] = ()
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_region_count(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "region_count" in value:
+            migrated = dict(value)
+            if "requested_region_count" in migrated:
+                raise ValueError(
+                    "region_count 与 requested_region_count 不能同时出现"
+                )
+            migrated["requested_region_count"] = migrated.pop("region_count")
+            return migrated
+        return value
+
     @model_validator(mode="after")
     def validate_avoid(self) -> Self:
+        if self.minimum_region_count > self.requested_region_count:
+            raise ValueError(
+                "minimum_region_count 不能高于 requested_region_count"
+            )
         if any(value < 1 for value in self.avoid_label_seq_ids):
             raise ValueError("avoid_label_seq_ids 必须为正整数")
         if len(self.avoid_label_seq_ids) != len(set(self.avoid_label_seq_ids)):
             raise ValueError("avoid_label_seq_ids 不能重复")
         return self
 
+    @property
+    def region_count(self) -> int:
+        """兼容内部 v0.1 调用；序列化只使用 requested_region_count。"""
+
+        return self.requested_region_count
+
 
 class Stage02Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     mode: RegionProposalMode = RegionProposalMode.AUTOMATIC
+    methods: tuple[Stage02Method, ...] = ()
+    annotations: Stage02AnnotationConfig = Stage02AnnotationConfig()
     automatic: Stage02AutomaticConfig | None = Stage02AutomaticConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_methods_for_mode(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "methods" in value:
+            return value
+        migrated = dict(value)
+        mode = migrated.get("mode", RegionProposalMode.AUTOMATIC)
+        migrated["methods"] = (
+            [Stage02Method.SASA, Stage02Method.SCANNET]
+            if mode == RegionProposalMode.AUTOMATIC
+            or mode == str(RegionProposalMode.AUTOMATIC)
+            else []
+        )
+        return migrated
 
     @model_validator(mode="after")
     def validate_mode(self) -> Self:
         if self.mode is RegionProposalMode.AUTOMATIC and self.automatic is None:
             raise ValueError("Stage 02 automatic 模式必须提供 automatic 配置")
+        if self.mode is RegionProposalMode.AUTOMATIC and not self.methods:
+            raise ValueError("Stage 02 automatic 模式至少选择一种 methods")
+        if len(self.methods) != len(set(self.methods)):
+            raise ValueError("Stage 02 methods 不能重复")
         if self.mode is not RegionProposalMode.AUTOMATIC and self.automatic is not None:
             raise ValueError("未实现的 Stage 02 模式不得携带 automatic 配置")
+        if self.mode is not RegionProposalMode.AUTOMATIC and self.methods:
+            raise ValueError("未实现的 Stage 02 模式不得选择 automatic methods")
         return self
 
 
@@ -254,13 +358,60 @@ class EasyDesignRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.1", pattern=r"^[0-9]+\.[0-9]+$")
+    schema_version: str = Field(default="0.3", pattern=r"^0\.3$")
     project_id: str = Field(pattern=ID_PATTERN)
-    target: TargetSourceConfig
-    structure_prediction: StructurePredictionConfig | None = None
+    design: DesignConfig = DesignConfig()
+    stage01: Stage01Config
     stage02: Stage02Config | None = None
+    stage03: None = None
+    stage04: None = None
+    stage05: None = None
+    stage06: None = None
+    stage07: None = None
     workflow: WorkflowConfig = WorkflowConfig()
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_layout(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        legacy_keys = {"target", "structure_prediction"} & migrated.keys()
+        if "stage01" in migrated and legacy_keys:
+            raise ValueError("stage01 不能与旧 target/structure_prediction 同时出现")
+        if "stage01" not in migrated and "target" in migrated:
+            migrated["stage01"] = {
+                "target": migrated.pop("target"),
+                "structure_prediction": migrated.pop(
+                    "structure_prediction",
+                    None,
+                ),
+            }
+            migrated["schema_version"] = "0.3"
+        return migrated
+
+    @model_validator(mode="after")
+    def validate_stage_sequence(self) -> Self:
+        if self.workflow.stop_after_stage >= 2 and self.stage02 is None:
+            raise ValueError("stop_after_stage >= 2 时必须显式提供 stage02")
+        if self.workflow.stop_after_stage >= 3:
+            raise ValueError(
+                "Stage 03–07 尚未实现；对应配置必须为 null，"
+                "stop_after_stage 当前不能高于 2"
+            )
+        return self
+
+    @property
+    def target(self) -> TargetSourceConfig:
+        """兼容现有内部调用；规范 YAML 只使用 stage01.target。"""
+
+        return self.stage01.target
+
+    @property
+    def structure_prediction(self) -> StructurePredictionConfig | None:
+        """兼容现有内部调用；规范 YAML 只使用 stage01.structure_prediction。"""
+
+        return self.stage01.structure_prediction
 
 @dataclass(frozen=True, slots=True)
 class LoadedSequenceRunConfig:
@@ -448,3 +599,35 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         prediction_request=request,
         msa_execution_plan=prediction.msa.resolved_providers(),
     )
+
+
+def migrate_run_config(source: Path, destination: Path) -> Path:
+    """将旧配置显式写成 canonical 0.3；禁止覆盖原文件或目标文件。"""
+
+    source_path = source.resolve(strict=True)
+    target_path = destination.expanduser().resolve()
+    if source_path == target_path:
+        raise ConfigurationError("config migrate 禁止覆盖原配置")
+    if target_path.exists():
+        raise ConfigurationError(f"config migrate 目标已存在，禁止覆盖: {target_path}")
+    loaded = load_run_config(source_path)
+    payload = loaded.config.model_dump(mode="json", by_alias=True, exclude_none=False)
+    stage01 = payload["stage01"]
+    assert isinstance(stage01, dict)
+    target = stage01["target"]
+    assert isinstance(target, dict)
+    target["source"] = os.path.relpath(loaded.source_path, target_path.parent)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target_path.open("x", encoding="utf-8", newline="\n") as handle:
+            yaml.safe_dump(
+                payload,
+                handle,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+    except OSError as error:
+        raise ConfigurationError(
+            f"无法写入迁移配置: path={target_path}, error={error}"
+        ) from error
+    return target_path

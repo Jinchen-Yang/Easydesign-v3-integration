@@ -23,6 +23,7 @@ from easydesign.stages.s02_hotspot_discovery import (
 )
 from easydesign.stages.s02_hotspot_discovery.geometry import (
     AtomCoordinate,
+    CoordinateModelGeometry,
     ResidueGeometry,
 )
 from easydesign.stages.s02_hotspot_discovery.models import ResidueIdentity
@@ -87,6 +88,15 @@ def synthetic_context() -> StructureContext:
         target_structure_sha256="0" * 64,
         mapping_path=Path("/tmp/residue-mapping.json"),
         label_asym_id="Axp",
+        model_ids=("1",),
+        representative_model_id="1",
+        models={
+            "1": CoordinateModelGeometry(
+                model_id="1",
+                residues=geometries,
+                bio_model=model,
+            )
+        },
         residues=geometries,
         bio_structure=structure,
     )

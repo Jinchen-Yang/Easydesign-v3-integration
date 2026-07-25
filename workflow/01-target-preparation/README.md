@@ -3,7 +3,7 @@
 **阶段状态：** `planned`。sequence/FASTA 纵向切片已实现；单 Target PSE 导入已完成
 真实 smoke；其他入口仍未实现。
 
-**契约版本：** Target Bundle `0.2`，兼容读取没有 source annotation 的 `0.1`。
+**契约版本：** Target Bundle `0.3`，兼容读取 `0.1/0.2`。
 
 ## 目的
 
@@ -22,7 +22,8 @@ sequence/FASTA 当前只接受单条、由 20 种标准氨基酸组成的输入�
 identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。多记录、空记录和含歧义
 残基的输入明确失败，不静默选择第一条记录。
 
-当前用户入口是一个 target 文件和一个 `easydesign.yaml`。YAML 中的 `target.source`
+当前用户入口是一个 target 文件和一个 `easydesign.yaml`。YAML 中的
+`stage01.target.source`
 相对于 YAML 自身解析，`format: auto` 使用文件后缀和内容强证据识别输入。PDB/mmCIF
 等尚未实现的入口可以被识别，但会明确报错，不会回退为 sequence 或 PSE。
 
@@ -60,26 +61,35 @@ MSA-backed Protenix-v2；用户 YAML 禁止 `mode: disabled`，no-MSA 只保留�
 当前标准配置：
 
 ```yaml
-schema_version: "0.2"
+schema_version: "0.3"
 project_id: apoe
-target:
-  id: apoe4-fragment-41-183
-  source: apoe4-fragment-41-183.fasta
-  format: auto
-structure_prediction:
-  backend: protenix-v2
-  msa:
-    mode: remote
-    providers:
-      - provider: colabfold-public
-        timeout_seconds: 1800
-        max_attempts: 3
-        retry_backoff_seconds: 30
-    no_msa_fallback: false
-  template_mode: disabled
-  parameter_profile: model-default
 workflow:
   stop_after_stage: 1
+stage01:
+  target:
+    id: apoe4-fragment-41-183
+    source: apoe4-fragment-41-183.fasta
+    format: auto
+    identity:
+      uniprot_accession: null
+  structure_prediction:
+    backend: protenix-v2
+    msa:
+      mode: remote
+      providers:
+        - provider: colabfold-public
+          timeout_seconds: 1800
+          max_attempts: 3
+          retry_backoff_seconds: 30
+      no_msa_fallback: false
+    template_mode: disabled
+    parameter_profile: model-default
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
 ```
 
 远程 MSA 配置必须把 provider preset 同时解析成服务模式和明确 endpoint；只传
@@ -105,14 +115,24 @@ no-MSA。A3M 必须来自当前 attempt、首条 query 与规范 target 完全�
 PSE 路径使用排他的 YAML 分支：
 
 ```yaml
-schema_version: "0.1"
+schema_version: "0.3"
 project_id: apoe
-target:
-  id: apoe-1b68-pse
-  source: apoe_abc.pse
-  format: auto
 workflow:
   stop_after_stage: 1
+stage01:
+  target:
+    id: apoe-1b68-pse
+    source: apoe_abc.pse
+    format: auto
+    identity:
+      uniprot_accession: null
+  structure_prediction: null
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
 ```
 
 PSE 必须省略 `structure_prediction`；提供该区块会明确失败。反之，sequence/FASTA 必须
@@ -125,6 +145,7 @@ fallback。
 - 规范 `target.cif`；后端明确需要时才派生 `target.pdb`。
 - `sequence.fasta`、逐残基编号映射、结构质量报告和来源记录。
 - `target-bundle.json` 及其中每个 artifact 的相对路径、大小、SHA-256 和生产 attempt。
+- `coordinate_ensemble`：model 数量、稳定 model IDs、代表 model 和共享残基身份策略。
 - 说明结构属于实验、导入还是预测来源的 manifest。
 - PSE 额外输出 `source-annotations.json`，记录 CA color index、RGB、hex 和颜色计数。
 
@@ -171,6 +192,16 @@ PSE 与 sequence 的正式交接均以 Target Bundle 声明的 `target.cif`（`f
 为准。两者可以有不同序列长度和坐标来源，但文件协议、编号映射和 manifest 链必须一致；
 backend 工作目录中的 PDB/CIF 不属于正式交接。
 
+Target Bundle `0.3` 允许 `target.cif` 包含一个或多个
+`_atom_site.pdbx_PDB_model_num`。`sequence.fasta` 与 mapping 描述所有模型共享的残基
+身份；模型可以缺部分残基或原子，但同一 `label_seq_id` 在不同模型中的氨基酸类型必须
+一致。下游不得把 ensemble 静默压成 model 1。代表模型只服务于展示和输出质心，不替代
+多模型科学共识。
+
+当前 PSE adapter 仍严格单 state，Protenix adapter 仍严格单 seed/单 sample，因此这两条
+已实现入口均发布 `model_count: 1`。这是 adapter 范围，不再是 Target Bundle 的全局
+限制；本地 PDB/mmCIF、预测 ensemble、多 state PSE 和多 seed/sample 策略仍待实现。
+
 ### 便携式 Target Viewer
 
 sequence/FASTA 和 PSE 两条正式路径在成功发布 StageManifest 与 RunManifest 后，会调用同一
@@ -202,7 +233,8 @@ results/01-target-preparation/target-viewer/
 
 报告包含 `target.cif`、FASTA 和 mapping 的自包含副本，以及固定 Mol* 5.11.0 本地资产；
 不会访问 CDN、上传结构、复制日志、原始 YAML、完整 MSA、密钥或绝对路径。页面可旋转、
-缩放、平移、居中，切换 cartoon/surface/stick，通过 Mol* 序列面板和三维点击显示
+缩放、平移、居中，显示 model 数量和代表 model，切换 cartoon/surface/stick，通过
+Mol* 序列面板和三维点击显示
 label/auth 编号，并下载报告目录中的三个副本。Protenix 只展示已有整体质量，不推测逐残基
 pLDDT。
 
@@ -225,6 +257,8 @@ report revision。远程服务器使用 SSH 端口转发，不开放 `0.0.0.0` �
 ## 不变量
 
 - 残基身份和编号映射无歧义；预测 CIF 中的聚合物序列必须与规范输入逐位相同。
+- Target Bundle 声明的 model IDs 必须与 mmCIF 完全一致；跨模型同一 label residue
+  类型不得冲突，模型缺失坐标必须显式保留为缺失证据。
 - 搜索、排序、下载、转换、MSA、模板策略和 fallback 全部留痕。
 - 原始输入按 checksum 引用，attempt 和正式 artifact 不覆盖。
 - 同一次实验只有一个 `runs/<project_id>/<run_id>/`；Stage 01 输出不另建第二个 run 根。

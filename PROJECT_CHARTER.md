@@ -31,6 +31,11 @@ EasyDesign 要把多类 binder 的设计研究流程变成容易使用、可追�
 VHH 是 1.0 的首个参考实现，不是 EasyDesign 的永久产品边界。其他 binder 类型在 1.0
 只保留 adapter/profile 扩展边界，不列入实现承诺。
 
+1.0 的流程判断必须来自版本化算法、规则和模板，不依赖本地或远程 LLM/Agent 才能运行。
+Protenix、ScanNet、BoltzGen 等确定用途的科学模型不属于这一限制。1.0 以后可以增加可选
+Agent 建议层，但其建议必须转成类型化配置，经过确定性校验和明确人工批准；关闭 Agent
+时七阶段仍须完整运行，Agent 不得成为隐藏 fallback 或事实来源。
+
 ## 3. 长期 binder 范围与“一键式”边界
 
 长期计划支持但不限于：
@@ -70,6 +75,8 @@ Stage 03–07 通过 binder-specific profile、backend 和 filter 扩展。
 10. 第三方代码、模型、数据和 scaffold 引入前必须完成来源与权利审查。
 11. 代码、测试、阶段说明和 TODO 状态必须在同一变更中保持一致。
 12. 阶段契约、架构、证据标准和兼容性发生重大变化时记录 ADR。
+13. 生物学身份只能来自显式输入或可审计解析；禁止根据 target 名称静默猜 accession。
+14. 自动候选与人工批准分离；人工输入必须形成不可变 attempt 和类型化下游 artifact。
 
 ## 5. 状态与证据
 

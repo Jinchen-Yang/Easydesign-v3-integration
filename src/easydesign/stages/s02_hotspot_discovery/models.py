@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Self
 
@@ -19,12 +20,37 @@ class RegionMethod(StrEnum):
 
 class AnnotationStatus(StrEnum):
     NOT_IMPLEMENTED = "not_implemented"
+    NOT_REQUESTED = "not_requested"
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
+    MAPPING_REQUIRES_REVIEW = "mapping_requires_review"
+    FAILED = "failed"
+
+
+class EvidenceLevel(StrEnum):
+    STRUCTURAL_ONLY = "structural_only"
+    STRUCTURAL_WITH_ANNOTATION = "structural_with_annotation"
+
+
+class IdentityResolutionStatus(StrEnum):
+    NOT_ATTEMPTED = "not_attempted"
+    EXPLICIT_ACCESSION = "explicit_accession"
+    MAPPING_REQUIRES_REVIEW = "mapping_requires_review"
 
 
 class RegionReviewStatus(StrEnum):
     NEEDS_HUMAN_VISUAL_CONFIRMATION = "needs_human_visual_confirmation"
     INSUFFICIENT_SURFACE = "insufficient_surface_for_requested_regions"
     AWAITING_REGION_SELECTION = "awaiting_region_selection"
+
+
+class DesignGoal(StrEnum):
+    BLOCKING = "blocking"
+    AFFINITY_SUPPORT = "affinity_support"
+    NONBLOCKING = "nonblocking"
+    DETECTION = "detection"
+    IMAGING = "imaging"
+    EXPLORATORY = "exploratory"
 
 
 class ResidueIdentity(BaseModel):
@@ -41,6 +67,106 @@ class ResidueIdentity(BaseModel):
     insertion_code: str | None = Field(default=None, max_length=8)
 
 
+class ResidueModelEvidence(BaseModel):
+    """单个 coordinate model 对一个残基的 SASA/存在证据。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model_id: str = Field(min_length=1, max_length=32)
+    present: bool
+    raw_sasa: float | None = Field(default=None, ge=0)
+    rsasa: float | None = Field(default=None, ge=0)
+    exposed_default: bool = False
+    exposed_relaxed: bool = False
+
+    @model_validator(mode="after")
+    def validate_presence(self) -> Self:
+        if self.present and (self.raw_sasa is None or self.rsasa is None):
+            raise ValueError("present model evidence 必须包含 SASA/rSASA")
+        if not self.present and (
+            self.raw_sasa is not None
+            or self.rsasa is not None
+            or self.exposed_default
+            or self.exposed_relaxed
+        ):
+            raise ValueError("缺失模型残基不得伪造 SASA 或暴露状态")
+        return self
+
+
+class MappedAnnotationFeature(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    feature_type: str = Field(min_length=1, max_length=64)
+    description: str | None = Field(default=None, max_length=1024)
+    uniprot_start: int = Field(ge=1)
+    uniprot_end: int = Field(ge=1)
+    label_seq_ids: tuple[int, ...]
+    evidence_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.uniprot_end < self.uniprot_start:
+            raise ValueError("UniProt feature end 不能小于 start")
+        if tuple(sorted(set(self.label_seq_ids))) != self.label_seq_ids:
+            raise ValueError("annotation label_seq_ids 必须升序且唯一")
+        return self
+
+
+class SequenceMotifWarning(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    motif_type: str = Field(default="n-x-s-t", pattern=r"^n-x-s-t$")
+    label_seq_ids: tuple[int, int, int]
+    interpretation: str = Field(
+        default="sequence-motif-only",
+        pattern=r"^sequence-motif-only$",
+    )
+
+
+class AnnotationReport(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.1"
+    status: AnnotationStatus
+    evidence_level: EvidenceLevel
+    identity_resolution: IdentityResolutionStatus
+    accession: str | None = None
+    source_url: str | None = None
+    source_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    uniprot_release: str | None = None
+    canonical_sequence_length: int | None = Field(default=None, ge=1)
+    target_coverage: float | None = Field(default=None, ge=0, le=1)
+    sequence_identity: float | None = Field(default=None, ge=0, le=1)
+    sequence_mismatches: tuple[str, ...] = ()
+    mapped_features: tuple[MappedAnnotationFeature, ...] = ()
+    motif_warnings: tuple[SequenceMotifWarning, ...] = ()
+    error: str | None = Field(default=None, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_status(self) -> Self:
+        if self.status is AnnotationStatus.NOT_REQUESTED:
+            if self.evidence_level is not EvidenceLevel.STRUCTURAL_ONLY:
+                raise ValueError("未请求 annotation 时只能是 structural_only")
+            if self.source_sha256 is not None:
+                raise ValueError("未请求 annotation 时不得伪造来源")
+        if self.status is AnnotationStatus.SUCCEEDED:
+            required = (
+                self.accession,
+                self.source_url,
+                self.source_sha256,
+                self.canonical_sequence_length,
+                self.target_coverage,
+                self.sequence_identity,
+            )
+            if any(value is None for value in required):
+                raise ValueError("成功 annotation 缺少来源或映射指标")
+            if self.evidence_level is not EvidenceLevel.STRUCTURAL_WITH_ANNOTATION:
+                raise ValueError("成功 annotation 必须提升 evidence_level")
+        if self.status is AnnotationStatus.FAILED and not self.error:
+            raise ValueError("失败 annotation 必须记录 error")
+        return self
+
+
 class ResidueEvidence(BaseModel):
     """一个方法对一个结构残基的原始证据；两种方法不共享分数。"""
 
@@ -50,6 +176,10 @@ class ResidueEvidence(BaseModel):
     residue: ResidueIdentity
     raw_sasa: float | None = Field(default=None, ge=0)
     rsasa: float | None = Field(default=None, ge=0)
+    model_presence_fraction: float | None = Field(default=None, ge=0, le=1)
+    exposure_frequency_default: float | None = Field(default=None, ge=0, le=1)
+    exposure_frequency_relaxed: float | None = Field(default=None, ge=0, le=1)
+    model_evidence: tuple[ResidueModelEvidence, ...] = ()
     scannet_probability: float | None = Field(default=None, ge=0, le=1)
     eligible: bool
     excluded_reasons: tuple[str, ...] = ()
@@ -59,6 +189,13 @@ class ResidueEvidence(BaseModel):
         if self.method is RegionMethod.SASA_SURFACE_DIVERSITY:
             if self.raw_sasa is None or self.rsasa is None:
                 raise ValueError("SASA residue evidence 必须包含 raw_sasa 和 rsasa")
+            if (
+                self.model_presence_fraction is None
+                or self.exposure_frequency_default is None
+                or self.exposure_frequency_relaxed is None
+                or not self.model_evidence
+            ):
+                raise ValueError("SASA residue evidence 必须包含逐模型共识证据")
             if self.scannet_probability is not None:
                 raise ValueError("SASA residue evidence 禁止包含 ScanNet 概率")
         else:
@@ -66,17 +203,21 @@ class ResidueEvidence(BaseModel):
                 raise ValueError("ScanNet residue evidence 必须包含原始概率")
             if self.raw_sasa is not None or self.rsasa is not None:
                 raise ValueError("ScanNet residue evidence 禁止包含 SASA 分数")
+            if self.model_evidence:
+                raise ValueError("ScanNet v0.1 禁止伪造多模型证据")
         return self
 
 
 class ResidueEvidenceReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     method: RegionMethod
     method_version: str = Field(min_length=1, max_length=128)
     target_structure_sha256: str = Field(pattern=SHA256_PATTERN)
     annotation_status: AnnotationStatus = AnnotationStatus.NOT_IMPLEMENTED
+    coordinate_model_count: int = Field(default=1, ge=1)
+    ensemble_consensus_fraction: float | None = Field(default=None, gt=0, le=1)
     residues: tuple[ResidueEvidence, ...]
 
     @model_validator(mode="after")
@@ -88,6 +229,16 @@ class ResidueEvidenceReport(BaseModel):
             raise ValueError("Residue evidence label_seq_id 不能重复")
         if any(item.method is not self.method for item in self.residues):
             raise ValueError("Residue evidence method 必须与报告一致")
+        if (
+            self.method is RegionMethod.SASA_SURFACE_DIVERSITY
+            and self.ensemble_consensus_fraction is None
+        ):
+            raise ValueError("SASA evidence report 必须声明 ensemble consensus")
+        if (
+            self.method is RegionMethod.SCANNET_EPITOPE_NO_MSA
+            and self.coordinate_model_count != 1
+        ):
+            raise ValueError("ScanNet v0.1 residue evidence 只接受单模型")
         return self
 
 
@@ -186,6 +337,7 @@ class RecommendedRegionSet(BaseModel):
     method: RegionMethod
     status: RegionReviewStatus
     requested_region_count: int = Field(ge=1)
+    minimum_region_count: int = Field(default=2, ge=1)
     relaxation_tier: str | None = Field(default=None, pattern=ID_PATTERN)
     regions: tuple[CandidateSurfaceRegion, ...]
     pairwise_separation: tuple[PairwiseSeparation, ...] = ()
@@ -195,11 +347,17 @@ class RecommendedRegionSet(BaseModel):
     def validate_recommendations(self) -> Self:
         if any(item.method is not self.method for item in self.regions):
             raise ValueError("Recommended region method 必须一致")
+        if self.minimum_region_count > self.requested_region_count:
+            raise ValueError("minimum_region_count 不能高于 requested_region_count")
         if self.status is RegionReviewStatus.NEEDS_HUMAN_VISUAL_CONFIRMATION:
-            if len(self.regions) != self.requested_region_count:
-                raise ValueError("成功推荐必须达到 requested_region_count")
-        elif len(self.regions) >= self.requested_region_count:
-            raise ValueError("不足状态不能包含足量区域")
+            if not (
+                self.minimum_region_count
+                <= len(self.regions)
+                <= self.requested_region_count
+            ):
+                raise ValueError("可审阅推荐必须达到最少区域数且不超过请求数")
+        elif len(self.regions) >= self.minimum_region_count:
+            raise ValueError("不足状态不能包含达到最低门槛的区域")
         if not self.requires_human_confirmation:
             raise ValueError("Stage 02 v0.1 禁止自动批准区域")
         return self
@@ -244,9 +402,17 @@ class ProviderExecutionStatus(BaseModel):
 class Stage02Report(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     target_id: str = Field(pattern=ID_PATTERN)
     annotation_status: AnnotationStatus = AnnotationStatus.NOT_IMPLEMENTED
+    evidence_level: EvidenceLevel = EvidenceLevel.STRUCTURAL_ONLY
+    identity_resolution: IdentityResolutionStatus = (
+        IdentityResolutionStatus.NOT_ATTEMPTED
+    )
+    comparison_status: str = Field(
+        default="not-applicable",
+        pattern=r"^(generated|not-applicable)$",
+    )
     pse_source_annotations_consumed: bool = False
     fused_ranking_generated: bool = False
     stage03_handoff: RegionReviewStatus = RegionReviewStatus.AWAITING_REGION_SELECTION
@@ -262,3 +428,110 @@ class Stage02Report(BaseModel):
         if self.stage03_handoff is not RegionReviewStatus.AWAITING_REGION_SELECTION:
             raise ValueError("人工批准前 Stage 03 必须等待区域选择")
         return self
+
+
+class HotspotReviewSelection(BaseModel):
+    """人工只选择完整自动区域并补充用途与理由，不允许手抄残基。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    id: str = Field(pattern=r"^[ABC]$")
+    source_region_id: str = Field(pattern=ID_PATTERN)
+    design_goal: DesignGoal = DesignGoal.EXPLORATORY
+    biological_rationale: str = Field(default="", max_length=4096)
+    structural_rationale: str = Field(default="", max_length=4096)
+
+
+class HotspotReviewRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    project_id: str = Field(pattern=ID_PATTERN)
+    run_id: str = Field(pattern=ID_PATTERN)
+    target_id: str = Field(pattern=ID_PATTERN)
+    method: RegionMethod
+    source_stage_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_regions_artifact_id: str = Field(pattern=ID_PATTERN)
+    source_regions_sha256: str = Field(pattern=SHA256_PATTERN)
+    selection_basis: EvidenceLevel
+    annotation_status: AnnotationStatus
+    approved_by: str = Field(default="", max_length=256)
+    acknowledge_evidence_limitations: bool = False
+    selections: tuple[HotspotReviewSelection, ...] = Field(min_length=2, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_selections(self) -> Self:
+        ids = [selection.id for selection in self.selections]
+        if ids != list("ABC")[: len(ids)]:
+            raise ValueError("审批区域 id 必须按 A、B、C 连续排列")
+        region_ids = [selection.source_region_id for selection in self.selections]
+        if len(region_ids) != len(set(region_ids)):
+            raise ValueError("同一自动区域不能重复选择")
+        return self
+
+
+class HotspotEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: str = Field(pattern=ID_PATTERN)
+    source: str = Field(min_length=1, max_length=512)
+    description: str = Field(min_length=1, max_length=2048)
+
+
+class ApprovedHotspotSet(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    id: str = Field(pattern=r"^[ABC]$")
+    slug: str = Field(pattern=ID_PATTERN)
+    source_region_id: str = Field(pattern=ID_PATTERN)
+    design_goal: DesignGoal
+    biological_rationale: str = Field(min_length=1, max_length=4096)
+    structural_rationale: str = Field(min_length=1, max_length=4096)
+    auth_residues: tuple[str, ...] = Field(min_length=1)
+    label_seq_ids: tuple[int, ...] = Field(min_length=1)
+    label_ranges: str = Field(min_length=1)
+    evidence: tuple[HotspotEvidence, ...] = Field(min_length=1)
+    risk_flags: tuple[str, ...] = ()
+
+
+class HotspotsFile(BaseModel):
+    """人工批准后供 Stage 03 消费的唯一类型化交接物。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    project_id: str = Field(pattern=ID_PATTERN)
+    run_id: str = Field(pattern=ID_PATTERN)
+    target_id: str = Field(pattern=ID_PATTERN)
+    target_structure_sha256: str = Field(pattern=SHA256_PATTERN)
+    coordinate_model_ids: tuple[str, ...] = Field(min_length=1)
+    method: RegionMethod
+    selection_basis: EvidenceLevel
+    annotation_status: AnnotationStatus
+    approval_request_sha256: str = Field(pattern=SHA256_PATTERN)
+    approved_by: str = Field(min_length=1, max_length=256)
+    needs_human_review: bool = False
+    ready_for_stage03: bool = True
+    hotspot_sets: tuple[ApprovedHotspotSet, ...] = Field(min_length=2, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_ready(self) -> Self:
+        if self.needs_human_review or not self.ready_for_stage03:
+            raise ValueError("hotspots.yaml 只能表示已经人工批准的 Stage 03 输入")
+        ids = [hotspot.id for hotspot in self.hotspot_sets]
+        if ids != list("ABC")[: len(ids)]:
+            raise ValueError("hotspot set id 必须按 A、B、C 连续排列")
+        return self
+
+
+class ApprovalRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    status: str = Field(default="approved", pattern=r"^approved$")
+    approved_at: datetime
+    approved_by: str = Field(min_length=1, max_length=256)
+    method: RegionMethod
+    source_stage_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+    approval_input_sha256: str = Field(pattern=SHA256_PATTERN)
+    selected_region_ids: tuple[str, ...] = Field(min_length=2, max_length=3)

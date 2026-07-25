@@ -5,6 +5,7 @@ from __future__ import annotations
 import heapq
 import itertools
 import math
+import statistics
 from dataclasses import dataclass
 
 import Bio
@@ -14,10 +15,12 @@ from .geometry import (
     StructureContext,
     build_residue_graph,
     center_distance,
+    consensus_edge_length,
     minimum_region_atom_distance,
+    model_completeness_fraction,
     radius_gyration,
     region_centroid,
-    region_shell,
+    shell_overlap,
 )
 from .models import (
     AnnotationStatus,
@@ -32,6 +35,7 @@ from .models import (
     RegionReviewStatus,
     ResidueEvidence,
     ResidueEvidenceReport,
+    ResidueModelEvidence,
 )
 
 MAX_ASA = {
@@ -61,8 +65,9 @@ MAX_ASA = {
 @dataclass(frozen=True, slots=True)
 class RegionParameters:
     requested_region_count: int = 3
+    minimum_region_count: int = 2
     target_member_count: int = 12
-    minimum_member_count: int = 6
+    minimum_member_count: int = 5
     heavy_atom_neighbor_angstrom: float = 5.0
     anchor_neighbor_angstrom: float = 12.0
     compactness_radius_angstrom: float = 14.0
@@ -74,6 +79,7 @@ class SasaParameters:
     relaxed_threshold: float = 0.20
     probe_radius_angstrom: float = 1.4
     sphere_points: int = 960
+    ensemble_consensus_fraction: float = 0.70
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +130,8 @@ def _grow_nearest_patch(
                 context.residues[current].center,
                 context.residues[neighbor].center,
             )
+            if len(context.model_ids) > 1:
+                edge = consensus_edge_length(context, current, neighbor)
             candidate = current_distance + edge
             if candidate < distances.get(neighbor, math.inf):
                 distances[neighbor] = candidate
@@ -185,18 +193,23 @@ def _candidate_pair_compatible(
     left: CandidateSurfaceRegion,
     right: CandidateSurfaceRegion,
     tier: DiversityTier,
-    left_shell: frozenset[int],
-    right_shell: frozenset[int],
+    consensus_fraction: float,
 ) -> bool:
     left_labels = _labels(left)
     right_labels = _labels(right)
     if set(left_labels) & set(right_labels):
         return False
     return (
-        math.dist(left.centroid_angstrom, right.centroid_angstrom)
+        model_completeness_fraction(context, left_labels + right_labels)
+        >= consensus_fraction
+        and center_distance(context, left_labels, right_labels)
         >= tier.centroid_distance_angstrom
-        and len(left_shell & right_shell)
-        / max(1, min(len(left_shell), len(right_shell)))
+        and shell_overlap(
+            context,
+            left_labels,
+            right_labels,
+            shell_radius=8.0,
+        )
         <= tier.maximum_shell_overlap
         and minimum_region_atom_distance(context, left_labels, right_labels)
         >= tier.minimum_atom_distance_angstrom
@@ -209,12 +222,9 @@ def _select_diverse(
     candidates: tuple[CandidateSurfaceRegion, ...],
     count: int,
     tier: DiversityTier,
+    consensus_fraction: float = 1.0,
 ) -> tuple[CandidateSurfaceRegion, ...]:
     compatible: dict[tuple[int, int], bool] = {}
-    shells = tuple(
-        region_shell(context, _labels(candidate), shell_radius=8.0)
-        for candidate in candidates
-    )
     for left in range(len(candidates)):
         for right in range(left + 1, len(candidates)):
             compatible[(left, right)] = _candidate_pair_compatible(
@@ -222,8 +232,7 @@ def _select_diverse(
                 candidates[left],
                 candidates[right],
                 tier,
-                shells[left],
-                shells[right],
+                consensus_fraction,
             )
     best: tuple[int, ...] | None = None
     best_score = -math.inf
@@ -257,6 +266,7 @@ def _partial_diverse(
     context: StructureContext,
     candidates: tuple[CandidateSurfaceRegion, ...],
     count: int,
+    consensus_fraction: float = 1.0,
 ) -> tuple[CandidateSurfaceRegion, ...]:
     for requested in range(count - 1, 0, -1):
         selected = _select_diverse(
@@ -264,6 +274,7 @@ def _partial_diverse(
             candidates=candidates,
             count=requested,
             tier=DIVERSITY_TIERS[-1],
+            consensus_fraction=consensus_fraction,
         )
         if selected:
             return selected
@@ -308,43 +319,131 @@ def run_sasa_surface_diversity(
         <= 1
     ):
         raise ValueError("SASA 阈值必须满足 0 < relaxed <= default <= 1")
+    if not 0 < sasa_parameters.ensemble_consensus_fraction <= 1:
+        raise ValueError("ensemble_consensus_fraction 必须位于 (0, 1]")
     unknown_avoid = avoid_label_seq_ids - set(context.residues)
     if unknown_avoid:
         raise ValueError(f"avoid label_seq_id 不在 target 中: {sorted(unknown_avoid)}")
-    ShrakeRupley(  # type: ignore[no-untyped-call]
-        probe_radius=sasa_parameters.probe_radius_angstrom,
-        n_points=sasa_parameters.sphere_points,
-    ).compute(context.bio_structure[0], level="R")
-    raw_sasa: dict[int, float] = {
-        int(residue.id[1]): float(getattr(residue, "sasa", 0.0))
-        for residue in context.bio_structure[0]["A"].get_residues()
+    per_model_raw: dict[str, dict[int, float]] = {}
+    per_model_rsasa: dict[str, dict[int, float]] = {}
+    for model_id in context.model_ids:
+        model = context.models[model_id]
+        ShrakeRupley(  # type: ignore[no-untyped-call]
+            probe_radius=sasa_parameters.probe_radius_angstrom,
+            n_points=sasa_parameters.sphere_points,
+        ).compute(model.bio_model, level="R")
+        model_raw = {
+            int(residue.id[1]): float(getattr(residue, "sasa", 0.0))
+            for residue in model.bio_model["A"].get_residues()
+        }
+        per_model_raw[model_id] = model_raw
+        per_model_rsasa[model_id] = {
+            label: value / MAX_ASA[model.residues[label].residue_name]
+            for label, value in model_raw.items()
+        }
+    model_count = len(context.model_ids)
+    raw_sasa = {
+        label: float(
+            statistics.median(
+                per_model_raw[model_id][label]
+                for model_id in context.model_ids
+                if label in per_model_raw[model_id]
+            )
+        )
+        for label in context.residues
     }
     rsasa = {
-        label: raw_sasa[label] / MAX_ASA[geometry.residue_name]
-        for label, geometry in context.residues.items()
+        label: float(
+            statistics.median(
+                per_model_rsasa[model_id][label]
+                for model_id in context.model_ids
+                if label in per_model_rsasa[model_id]
+            )
+        )
+        for label in context.residues
     }
+    presence_fraction = {
+        label: sum(
+            label in per_model_rsasa[model_id] for model_id in context.model_ids
+        )
+        / model_count
+        for label in context.residues
+    }
+    exposure_default = {
+        label: sum(
+            per_model_rsasa[model_id].get(label, -math.inf)
+            >= sasa_parameters.rsasa_threshold
+            for model_id in context.model_ids
+        )
+        / model_count
+        for label in context.residues
+    }
+    exposure_relaxed = {
+        label: sum(
+            per_model_rsasa[model_id].get(label, -math.inf)
+            >= sasa_parameters.relaxed_threshold
+            for model_id in context.model_ids
+        )
+        / model_count
+        for label in context.residues
+    }
+    consensus = sasa_parameters.ensemble_consensus_fraction
     evidence = ResidueEvidenceReport(
         method=RegionMethod.SASA_SURFACE_DIVERSITY,
         method_version=f"biopython-{Bio.__version__}",
         target_structure_sha256=context.target_structure_sha256,
         annotation_status=AnnotationStatus.NOT_IMPLEMENTED,
+        coordinate_model_count=model_count,
+        ensemble_consensus_fraction=consensus,
         residues=tuple(
             ResidueEvidence(
                 method=RegionMethod.SASA_SURFACE_DIVERSITY,
                 residue=context.residues[label].identity,
                 raw_sasa=raw_sasa[label],
                 rsasa=rsasa[label],
+                model_presence_fraction=presence_fraction[label],
+                exposure_frequency_default=exposure_default[label],
+                exposure_frequency_relaxed=exposure_relaxed[label],
+                model_evidence=tuple(
+                    ResidueModelEvidence(
+                        model_id=model_id,
+                        present=label in per_model_rsasa[model_id],
+                        raw_sasa=per_model_raw[model_id].get(label),
+                        rsasa=per_model_rsasa[model_id].get(label),
+                        exposed_default=(
+                            per_model_rsasa[model_id].get(label, -math.inf)
+                            >= sasa_parameters.rsasa_threshold
+                        ),
+                        exposed_relaxed=(
+                            per_model_rsasa[model_id].get(label, -math.inf)
+                            >= sasa_parameters.relaxed_threshold
+                        ),
+                    )
+                    for model_id in context.model_ids
+                ),
                 eligible=(
-                    rsasa[label] >= sasa_parameters.relaxed_threshold
+                    presence_fraction[label] >= consensus
+                    and exposure_relaxed[label] >= consensus
                     and label not in avoid_label_seq_ids
                 ),
                 excluded_reasons=(
                     ("explicit-user-avoid",)
                     if label in avoid_label_seq_ids
                     else (
-                        ("below-relaxed-rsasa-threshold",)
-                        if rsasa[label] < sasa_parameters.relaxed_threshold
-                        else ()
+                        tuple(
+                            reason
+                            for condition, reason in (
+                                (
+                                    presence_fraction[label] < consensus,
+                                    "insufficient-model-presence",
+                                ),
+                                (
+                                    exposure_relaxed[label] < consensus,
+                                    "below-relaxed-exposure-consensus",
+                                ),
+                            )
+                            if condition
+                        )
                     )
                 ),
             )
@@ -361,16 +460,24 @@ def run_sasa_surface_diversity(
         ("relaxed-surface", sasa_parameters.relaxed_threshold, DIVERSITY_TIERS[2:]),
     )
     for threshold_name, threshold, diversity_tiers in threshold_tiers:
+        frequency = (
+            exposure_default
+            if threshold == sasa_parameters.rsasa_threshold
+            else exposure_relaxed
+        )
         eligible = {
             label
-            for label, value in rsasa.items()
-            if value >= threshold and label not in avoid_label_seq_ids
+            for label in rsasa
+            if presence_fraction[label] >= consensus
+            and frequency[label] >= consensus
+            and label not in avoid_label_seq_ids
         }
         graph = build_residue_graph(
             context,
             eligible,
             heavy_atom_distance=region_parameters.heavy_atom_neighbor_angstrom,
             anchor_distance=region_parameters.anchor_neighbor_angstrom,
+            consensus_fraction=consensus,
         )
         maximum_size = min(
             region_parameters.target_member_count,
@@ -386,6 +493,8 @@ def run_sasa_surface_diversity(
                     context=context,
                 )
                 if labels is None:
+                    continue
+                if model_completeness_fraction(context, labels) < consensus:
                     continue
                 values = [rsasa[label] for label in labels]
                 possible_edges = size * (size - 1) / 2
@@ -443,6 +552,7 @@ def run_sasa_surface_diversity(
                     candidates=candidates,
                     count=region_parameters.requested_region_count,
                     tier=diversity_tier,
+                    consensus_fraction=consensus,
                 )
                 if selected:
                     final_selected = selected
@@ -462,10 +572,11 @@ def run_sasa_surface_diversity(
             context=context,
             candidates=final_candidates,
             count=region_parameters.requested_region_count,
+            consensus_fraction=consensus,
         )
     status = (
         RegionReviewStatus.NEEDS_HUMAN_VISUAL_CONFIRMATION
-        if len(final_selected) == region_parameters.requested_region_count
+        if len(final_selected) >= region_parameters.minimum_region_count
         else RegionReviewStatus.INSUFFICIENT_SURFACE
     )
     pool = CandidateRegionPool(
@@ -481,6 +592,7 @@ def run_sasa_surface_diversity(
         method=RegionMethod.SASA_SURFACE_DIVERSITY,
         status=status,
         requested_region_count=region_parameters.requested_region_count,
+        minimum_region_count=region_parameters.minimum_region_count,
         relaxation_tier=None if final_tier is None else final_tier.name,
         regions=final_selected,
         pairwise_separation=_separations(context, final_selected),
@@ -497,6 +609,11 @@ def run_scannet_region_proposals(
 ) -> tuple[ResidueEvidenceReport, CandidateRegionPool, RecommendedRegionSet]:
     """只使用 ScanNet probability 排名；不读取或计算 SASA。"""
 
+    if len(context.model_ids) != 1:
+        raise ValueError(
+            "unsupported_ensemble: ScanNet epitope v0.1 只接受单模型；"
+            "多模型 target 请在 stage02.methods 中只选择 sasa"
+        )
     if set(probabilities) != set(context.residues):
         missing = sorted(set(context.residues) - set(probabilities))
         extra = sorted(set(probabilities) - set(context.residues))
@@ -595,7 +712,7 @@ def run_scannet_region_proposals(
         )
     status = (
         RegionReviewStatus.NEEDS_HUMAN_VISUAL_CONFIRMATION
-        if len(final_selected) == region_parameters.requested_region_count
+        if len(final_selected) >= region_parameters.minimum_region_count
         else RegionReviewStatus.INSUFFICIENT_SURFACE
     )
     pool = CandidateRegionPool(
@@ -611,6 +728,7 @@ def run_scannet_region_proposals(
         method=RegionMethod.SCANNET_EPITOPE_NO_MSA,
         status=status,
         requested_region_count=region_parameters.requested_region_count,
+        minimum_region_count=region_parameters.minimum_region_count,
         relaxation_tier=None if final_tier is None else final_tier.name,
         regions=final_selected,
         pairwise_separation=_separations(context, final_selected),

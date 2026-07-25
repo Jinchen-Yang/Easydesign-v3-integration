@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+from easydesign import __version__
 
 from .errors import ConfigurationError
 from .hashing import sha256_file
@@ -16,10 +17,7 @@ _IGNORED_SUFFIXES = {".pyc", ".pyo"}
 
 
 def _distribution_version() -> str:
-    try:
-        return version("easydesign")
-    except PackageNotFoundError:
-        return "0+unknown"
+    return __version__
 
 
 def _identity_files(root: Path) -> tuple[Path, ...]:

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from easydesign.backends.annotations import UniProtAnnotationAdapter
 from easydesign.backends.hotspot import (
     ScanNetBackendError,
     ScanNetEpitopeAdapter,
@@ -22,25 +23,33 @@ from easydesign.core import (
     RunManifest,
     StageId,
     StageManifest,
+    WorkflowState,
+    WorkflowStateType,
     dump_model,
     load_model,
 )
-from easydesign.stages.s01_target_preparation import TargetBundle
+from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
     AnnotationStatus,
     ProviderExecutionStatus,
+    RecommendedRegionSet,
     RegionMethod,
     RegionParameters,
     RegionReviewStatus,
     SasaParameters,
     Stage02Report,
+    build_annotation_report,
     compare_independent_methods,
     load_structure_context,
     run_sasa_surface_diversity,
     run_scannet_region_proposals,
 )
 
-from .config import RegionProposalMode
+from .config import (
+    RegionProposalMode,
+    Stage02Method,
+    UniProtAnnotationMode,
+)
 from .workspace import (
     ResolvedRunConfig,
     RunIndexEntry,
@@ -56,7 +65,7 @@ class CompletedStage02Run:
     attempt_manifest: Path
     stage_manifest: Path
     run_manifest: Path
-    comparison: Path
+    comparison: Path | None
     report: Path
 
 
@@ -208,7 +217,6 @@ def _publish_run_revision(
     stage_manifest_path: Path,
     ended_at: datetime,
     succeeded: bool,
-    stop_after_stage: int,
 ) -> Path:
     revision = current.revision + 1
     stage_ref = _artifact(
@@ -224,17 +232,25 @@ def _publish_run_revision(
         if reference.producer_stage != str(StageId.HOTSPOT_DISCOVERY)
     )
     updated = _strictly_later(ended_at, current.updated_at)
-    if succeeded and stop_after_stage == 2:
-        status = ExecutionStatus.SUCCEEDED
-        completed_at: datetime | None = updated
-    else:
-        status = ExecutionStatus.RUNNING
-        completed_at = None
+    workflow_state = (
+        WorkflowState(
+            state=WorkflowStateType.AWAITING_HUMAN_APPROVAL,
+            stage_id=StageId.HOTSPOT_DISCOVERY,
+            action="approve-hotspots",
+            message=(
+                "Stage 02 自动选区已完成；必须导出并人工批准完整区域后，"
+                "才能发布 hotspots.yaml。"
+            ),
+        )
+        if succeeded
+        else None
+    )
     next_manifest = current.next_revision(
         updated_at=updated,
-        status=status,
-        completed_at=completed_at,
+        status=ExecutionStatus.RUNNING,
+        completed_at=None,
         stage_manifest_refs=retained + (stage_ref,),
+        workflow_state=workflow_state,
     )
     path = run_root / "manifests" / f"run-manifest.v{revision:04d}.json"
     dump_model(next_manifest, path)
@@ -246,10 +262,11 @@ def _publish_run_revision(
 def execute_stage02_comparison(
     *,
     run_root: Path,
-    adapter: ScanNetEpitopeAdapter,
+    adapter: ScanNetEpitopeAdapter | None = None,
+    annotation_adapter: UniProtAnnotationAdapter | None = None,
     started_at: datetime | None = None,
 ) -> CompletedStage02Run:
-    """运行两条独立方法；任一失败时不发布 Stage 02 output artifact。"""
+    """运行 YAML 选择的独立方法；任一已选择方法失败时不发布结果。"""
 
     root = run_root.resolve()
     current, current_path = _load_current_manifest(root)
@@ -272,7 +289,13 @@ def execute_stage02_comparison(
     logs = attempt_root / "logs"
     sasa_dir = artifacts / "sasa"
     scannet_dir = artifacts / "scannet-epitope"
-    for directory in (sasa_dir, scannet_dir, work, logs):
+    annotation_dir = artifacts / "annotations"
+    selected_directories = [work, logs, annotation_dir]
+    if Stage02Method.SASA in stage02_config.methods:
+        selected_directories.append(sasa_dir)
+    if Stage02Method.SCANNET in stage02_config.methods:
+        selected_directories.append(scannet_dir)
+    for directory in selected_directories:
         directory.mkdir(parents=True, exist_ok=False)
 
     start = datetime.now(UTC) if started_at is None else started_at
@@ -282,15 +305,68 @@ def execute_stage02_comparison(
     failure: Exception | None = None
     error_code = "stage02-comparison-failed"
     output_paths: list[tuple[Path, str, str, str]] = []
-    comparison_path = artifacts / "method-comparison.json"
+    comparison_path: Path | None = None
     report_path = artifacts / "stage02-report.json"
     try:
         bundle, context = load_structure_context(
             run_root=root,
             target_bundle_path=bundle_path,
         )
+        mapping = load_model(bundle.residue_mapping.verify(root), ResidueMapping)
+        sequence_text = bundle.sequence.verify(root).read_text(encoding="utf-8")
+        target_sequence = "".join(
+            line.strip()
+            for line in sequence_text.splitlines()
+            if line.strip() and not line.startswith(">")
+        )
+        if len(target_sequence) != bundle.sequence_length:
+            raise ManifestStateError(
+                "Target Bundle sequence artifact 长度与 bundle 不一致"
+            )
+        annotation_mode = stage02_config.annotations.uniprot
+        accession = resolved.user_config.stage01.target.identity.uniprot_accession
+        if annotation_mode is UniProtAnnotationMode.REQUIRED and accession is None:
+            raise ManifestStateError(
+                "stage02.annotations.uniprot=required 时必须在 "
+                "stage01.target.identity 提供 uniprot_accession"
+            )
+        requested_accession = (
+            accession
+            if annotation_mode is not UniProtAnnotationMode.OFF
+            else None
+        )
+        selected_annotation_adapter = annotation_adapter
+        if requested_accession is not None and selected_annotation_adapter is None:
+            selected_annotation_adapter = UniProtAnnotationAdapter()
+        annotation_report = build_annotation_report(
+            target_sequence=target_sequence,
+            residue_mapping=mapping,
+            accession=requested_accession,
+            fetcher=selected_annotation_adapter,
+        )
+        if (
+            annotation_mode is UniProtAnnotationMode.REQUIRED
+            and annotation_report.status is not AnnotationStatus.SUCCEEDED
+        ):
+            raise ManifestStateError(
+                "required UniProt annotation 未成功: "
+                f"status={annotation_report.status}, error={annotation_report.error}"
+            )
+        annotation_path = dump_model(
+            annotation_report,
+            annotation_dir / "annotation-report.json",
+        )
+        output_paths.append(
+            (
+                annotation_path,
+                "stage02-annotation-report",
+                "scientific-annotation",
+                "json",
+            )
+        )
         region_parameters = RegionParameters(
-            requested_region_count=automatic.region_count,
+            requested_region_count=automatic.requested_region_count,
+            minimum_region_count=automatic.minimum_region_count,
             target_member_count=automatic.patch.target_member_count,
             minimum_member_count=automatic.patch.minimum_member_count,
             heavy_atom_neighbor_angstrom=automatic.patch.heavy_atom_neighbor_angstrom,
@@ -302,102 +378,190 @@ def execute_stage02_comparison(
             relaxed_threshold=automatic.sasa.relaxed_threshold,
             probe_radius_angstrom=automatic.sasa.probe_radius_angstrom,
             sphere_points=automatic.sasa.sphere_points,
-        )
-        sasa_evidence, sasa_pool, sasa_recommended = run_sasa_surface_diversity(
-            context=context,
-            region_parameters=region_parameters,
-            sasa_parameters=sasa_parameters,
-            avoid_label_seq_ids=frozenset(automatic.avoid_label_seq_ids),
-        )
-        sasa_evidence_path = dump_model(
-            sasa_evidence, sasa_dir / "residue-evidence.json"
-        )
-        sasa_pool_path = dump_model(sasa_pool, sasa_dir / "candidate-regions.json")
-        sasa_recommended_path = dump_model(
-            sasa_recommended, sasa_dir / "recommended-regions.json"
-        )
-        sasa_pml = _exclusive_text(
-            _review_script(
-                target_relative_path=(
-                    "../../../../" + bundle.target_structure.relative_path
-                ),
-                regions=tuple(sasa_recommended.regions),
-                colors=("red", "orange", "yellow")[: len(sasa_recommended.regions)],
-                object_name="target_sasa",
+            ensemble_consensus_fraction=(
+                automatic.sasa.ensemble_consensus_fraction
             ),
-            sasa_dir / "review-regions.pml",
         )
-
-        product = adapter.predict(context=context, work_dir=work / "scannet")
-        stdout = product.stdout
-        stderr = product.stderr
-        backend_version = product.commit
-        runtime_probe_path = dump_model(
-            product.probe,
-            scannet_dir / "runtime-probe.json",
-        )
-        raw_csv = _exclusive_copy(
-            product.raw_csv,
-            scannet_dir / "raw-predictions.csv",
-        )
-        scannet_evidence, scannet_pool, scannet_recommended = (
-            run_scannet_region_proposals(
-                context=context,
-                probabilities=product.probabilities,
-                method_version=f"{product.commit}:{adapter.model_name}",
-                region_parameters=region_parameters,
+        providers: list[ProviderExecutionStatus] = []
+        sasa_recommended: RecommendedRegionSet | None = None
+        scannet_recommended: RecommendedRegionSet | None = None
+        if Stage02Method.SASA in stage02_config.methods:
+            sasa_evidence, sasa_pool, sasa_recommended = (
+                run_sasa_surface_diversity(
+                    context=context,
+                    region_parameters=region_parameters,
+                    sasa_parameters=sasa_parameters,
+                    avoid_label_seq_ids=frozenset(
+                        automatic.avoid_label_seq_ids
+                    ),
+                )
             )
-        )
-        scannet_evidence_path = dump_model(
-            scannet_evidence, scannet_dir / "residue-evidence.json"
-        )
-        scannet_pool_path = dump_model(
-            scannet_pool, scannet_dir / "candidate-regions.json"
-        )
-        scannet_recommended_path = dump_model(
-            scannet_recommended, scannet_dir / "recommended-regions.json"
-        )
-        scannet_pml = _exclusive_text(
-            _review_script(
-                target_relative_path=(
-                    "../../../../" + bundle.target_structure.relative_path
+            sasa_evidence = sasa_evidence.model_copy(
+                update={"annotation_status": annotation_report.status}
+            )
+            sasa_evidence_path = dump_model(
+                sasa_evidence,
+                sasa_dir / "residue-evidence.json",
+            )
+            sasa_pool_path = dump_model(
+                sasa_pool,
+                sasa_dir / "candidate-regions.json",
+            )
+            sasa_recommended_path = dump_model(
+                sasa_recommended,
+                sasa_dir / "recommended-regions.json",
+            )
+            sasa_pml = _exclusive_text(
+                _review_script(
+                    target_relative_path=(
+                        "../../../../" + bundle.target_structure.relative_path
+                    ),
+                    regions=tuple(sasa_recommended.regions),
+                    colors=("red", "orange", "yellow")[
+                        : len(sasa_recommended.regions)
+                    ],
+                    object_name="target_sasa",
                 ),
-                regions=tuple(scannet_recommended.regions),
-                colors=("cyan", "blue", "magenta")[: len(scannet_recommended.regions)],
-                object_name="target_scannet",
-            ),
-            scannet_dir / "review-regions.pml",
-        )
-        comparison = compare_independent_methods(
-            context=context,
-            sasa=sasa_recommended,
-            scannet=scannet_recommended,
-        )
-        dump_model(comparison, comparison_path)
-        comparison_pml = _exclusive_text(
-            _review_script(
-                target_relative_path=(
-                    "../../../" + bundle.target_structure.relative_path
-                ),
-                regions=tuple(sasa_recommended.regions)
-                + tuple(scannet_recommended.regions),
-                colors=("red", "orange", "yellow", "cyan", "blue", "magenta"),
-                object_name="target_comparison",
-            ),
-            artifacts / "review-comparison.pml",
-        )
-        report = Stage02Report(
-            target_id=bundle.target_id,
-            annotation_status=AnnotationStatus.NOT_IMPLEMENTED,
-            pse_source_annotations_consumed=False,
-            fused_ranking_generated=False,
-            stage03_handoff=RegionReviewStatus.AWAITING_REGION_SELECTION,
-            providers=(
+                sasa_dir / "review-regions.pml",
+            )
+            output_paths.extend(
+                (
+                    (
+                        sasa_evidence_path,
+                        "sasa-residue-evidence",
+                        "residue-evidence",
+                        "json",
+                    ),
+                    (
+                        sasa_pool_path,
+                        "sasa-candidate-regions",
+                        "candidate-region-pool",
+                        "json",
+                    ),
+                    (
+                        sasa_recommended_path,
+                        "sasa-recommended-regions",
+                        "recommended-region-set",
+                        "json",
+                    ),
+                    (
+                        sasa_pml,
+                        "sasa-review-script",
+                        "visual-review-script",
+                        "pml",
+                    ),
+                )
+            )
+            providers.append(
                 ProviderExecutionStatus(
                     method=sasa_recommended.method,
                     status="succeeded",
-                    message="SASA/geometry independent candidate pool generated.",
+                    message=(
+                        "SASA/geometry independent candidate pool generated "
+                        f"from {len(context.model_ids)} coordinate model(s)."
+                    ),
+                )
+            )
+
+        if Stage02Method.SCANNET in stage02_config.methods:
+            if len(context.model_ids) != 1:
+                raise ManifestStateError(
+                    "unsupported_ensemble: ScanNet v0.1 只接受单模型；"
+                    "请将 stage02.methods 改为 [sasa]"
+                )
+            if adapter is None:
+                raise ManifestStateError(
+                    "配置选择了 ScanNet，但没有提供 ScanNet adapter"
+                )
+            product = adapter.predict(context=context, work_dir=work / "scannet")
+            stdout = product.stdout
+            stderr = product.stderr
+            backend_version = product.commit
+            runtime_probe_path = dump_model(
+                product.probe,
+                scannet_dir / "runtime-probe.json",
+            )
+            raw_csv = _exclusive_copy(
+                product.raw_csv,
+                scannet_dir / "raw-predictions.csv",
+            )
+            scannet_evidence, scannet_pool, scannet_recommended = (
+                run_scannet_region_proposals(
+                    context=context,
+                    probabilities=product.probabilities,
+                    method_version=f"{product.commit}:{adapter.model_name}",
+                    region_parameters=region_parameters,
+                )
+            )
+            scannet_evidence = scannet_evidence.model_copy(
+                update={"annotation_status": annotation_report.status}
+            )
+            scannet_evidence_path = dump_model(
+                scannet_evidence,
+                scannet_dir / "residue-evidence.json",
+            )
+            scannet_pool_path = dump_model(
+                scannet_pool,
+                scannet_dir / "candidate-regions.json",
+            )
+            scannet_recommended_path = dump_model(
+                scannet_recommended,
+                scannet_dir / "recommended-regions.json",
+            )
+            scannet_pml = _exclusive_text(
+                _review_script(
+                    target_relative_path=(
+                        "../../../../" + bundle.target_structure.relative_path
+                    ),
+                    regions=tuple(scannet_recommended.regions),
+                    colors=("cyan", "blue", "magenta")[
+                        : len(scannet_recommended.regions)
+                    ],
+                    object_name="target_scannet",
                 ),
+                scannet_dir / "review-regions.pml",
+            )
+            output_paths.extend(
+                (
+                    (
+                        runtime_probe_path,
+                        "scannet-runtime-probe",
+                        "backend-runtime-probe",
+                        "json",
+                    ),
+                    (
+                        raw_csv,
+                        "scannet-raw-predictions",
+                        "backend-raw-output",
+                        "csv",
+                    ),
+                    (
+                        scannet_evidence_path,
+                        "scannet-residue-evidence",
+                        "residue-evidence",
+                        "json",
+                    ),
+                    (
+                        scannet_pool_path,
+                        "scannet-candidate-regions",
+                        "candidate-region-pool",
+                        "json",
+                    ),
+                    (
+                        scannet_recommended_path,
+                        "scannet-recommended-regions",
+                        "recommended-region-set",
+                        "json",
+                    ),
+                    (
+                        scannet_pml,
+                        "scannet-review-script",
+                        "visual-review-script",
+                        "pml",
+                    ),
+                )
+            )
+            providers.append(
                 ProviderExecutionStatus(
                     method=scannet_recommended.method,
                     status="succeeded",
@@ -406,60 +570,88 @@ def execute_stage02_comparison(
                         f"{product.probe.execution_device.upper()}; independent "
                         "candidate pool generated."
                     ),
+                )
+            )
+
+        comparison_status = "not-applicable"
+        if sasa_recommended is not None and scannet_recommended is not None:
+            comparison = compare_independent_methods(
+                context=context,
+                sasa=sasa_recommended,
+                scannet=scannet_recommended,
+            )
+            comparison_path = dump_model(
+                comparison,
+                artifacts / "method-comparison.json",
+            )
+            comparison_pml = _exclusive_text(
+                _review_script(
+                    target_relative_path=(
+                        "../../../" + bundle.target_structure.relative_path
+                    ),
+                    regions=tuple(sasa_recommended.regions)
+                    + tuple(scannet_recommended.regions),
+                    colors=(
+                        "red",
+                        "orange",
+                        "yellow",
+                        "cyan",
+                        "blue",
+                        "magenta",
+                    )[
+                        : len(sasa_recommended.regions)
+                        + len(scannet_recommended.regions)
+                    ],
+                    object_name="target_comparison",
                 ),
-            ),
+                artifacts / "review-comparison.pml",
+            )
+            output_paths.extend(
+                (
+                    (
+                        comparison_path,
+                        "method-comparison",
+                        "method-comparison",
+                        "json",
+                    ),
+                    (
+                        comparison_pml,
+                        "comparison-review-script",
+                        "visual-review-script",
+                        "pml",
+                    ),
+                )
+            )
+            comparison_status = "generated"
+
+        annotation_warning = (
+            "Scientific annotation was not requested; selection basis is structural-only."
+            if annotation_report.status is AnnotationStatus.NOT_REQUESTED
+            else (
+                f"Scientific annotation status={annotation_report.status}; "
+                "raw SASA/ScanNet rankings were not changed."
+            )
+        )
+        report = Stage02Report(
+            target_id=bundle.target_id,
+            annotation_status=annotation_report.status,
+            evidence_level=annotation_report.evidence_level,
+            identity_resolution=annotation_report.identity_resolution,
+            comparison_status=comparison_status,
+            pse_source_annotations_consumed=False,
+            fused_ranking_generated=False,
+            stage03_handoff=RegionReviewStatus.AWAITING_REGION_SELECTION,
+            providers=tuple(providers),
             warnings=(
-                "UniProt/PTM/glycosylation/natural-interface annotations are not implemented.",
+                annotation_warning,
                 "No fused score or default winning method was generated.",
                 "Human region selection is required before Stage 03.",
             ),
         )
         dump_model(report, report_path)
-        output_paths = [
-            (sasa_evidence_path, "sasa-residue-evidence", "residue-evidence", "json"),
-            (sasa_pool_path, "sasa-candidate-regions", "candidate-region-pool", "json"),
-            (
-                sasa_recommended_path,
-                "sasa-recommended-regions",
-                "recommended-region-set",
-                "json",
-            ),
-            (sasa_pml, "sasa-review-script", "visual-review-script", "pml"),
-            (
-                runtime_probe_path,
-                "scannet-runtime-probe",
-                "backend-runtime-probe",
-                "json",
-            ),
-            (raw_csv, "scannet-raw-predictions", "backend-raw-output", "csv"),
-            (
-                scannet_evidence_path,
-                "scannet-residue-evidence",
-                "residue-evidence",
-                "json",
-            ),
-            (
-                scannet_pool_path,
-                "scannet-candidate-regions",
-                "candidate-region-pool",
-                "json",
-            ),
-            (
-                scannet_recommended_path,
-                "scannet-recommended-regions",
-                "recommended-region-set",
-                "json",
-            ),
-            (scannet_pml, "scannet-review-script", "visual-review-script", "pml"),
-            (comparison_path, "method-comparison", "method-comparison", "json"),
-            (
-                comparison_pml,
-                "comparison-review-script",
-                "visual-review-script",
-                "pml",
-            ),
-            (report_path, "stage02-report", "stage-report", "json"),
-        ]
+        output_paths.append(
+            (report_path, "stage02-report", "stage-report", "json")
+        )
     except ScanNetBackendError as error:
         failure = error
         error_code = error.error_code
@@ -488,49 +680,77 @@ def execute_stage02_comparison(
         ),
     )
     if failure is None:
+        methods = set(stage02_config.methods)
+        if methods == {Stage02Method.SASA, Stage02Method.SCANNET}:
+            backend_name = "independent-sasa-scannet"
+        elif methods == {Stage02Method.SASA}:
+            backend_name = "sasa-surface-diversity"
+        else:
+            backend_name = "scannet-epitope-no-msa"
+        executor_name = (
+            f"local-{adapter.config.execution_device}-subprocess"
+            if adapter is not None
+            else "local-python"
+        )
         attempt = Attempt(
             attempt_id=ATTEMPT_ID,
             status=ExecutionStatus.SUCCEEDED,
             created_at=start,
             started_at=start,
             ended_at=ended,
-            backend_name="independent-sasa-scannet",
+            backend_name=backend_name,
             backend_version=backend_version,
-            executor_name=f"local-{adapter.config.execution_device}-subprocess",
+            executor_name=executor_name,
             log_artifacts=log_refs,
         )
     else:
         if not report_path.exists():
+            provider_failures = tuple(
+                ProviderExecutionStatus(
+                    method=(
+                        RegionMethod.SASA_SURFACE_DIVERSITY
+                        if method is Stage02Method.SASA
+                        else RegionMethod.SCANNET_EPITOPE_NO_MSA
+                    ),
+                    status="failed",
+                    message=str(failure)[:4096] or type(failure).__name__,
+                )
+                for method in stage02_config.methods
+            )
             report = Stage02Report(
-                target_id=resolved.user_config.target.target_id,
-                annotation_status=AnnotationStatus.NOT_IMPLEMENTED,
-                providers=(
-                    ProviderExecutionStatus(
-                        method=RegionMethod.SASA_SURFACE_DIVERSITY,
-                        status="retained",
-                        message="SASA files may be retained but are not published.",
-                    ),
-                    ProviderExecutionStatus(
-                        method=RegionMethod.SCANNET_EPITOPE_NO_MSA,
-                        status="failed",
-                        message=str(failure)[:4096] or type(failure).__name__,
-                    ),
-                ),
+                target_id=resolved.user_config.stage01.target.target_id,
+                annotation_status=AnnotationStatus.FAILED,
+                providers=provider_failures,
                 warnings=(
-                    "Independent two-method comparison did not complete.",
+                    "At least one requested Stage 02 method did not complete.",
                     "Stage 03 remains blocked.",
                 ),
             )
             dump_model(report, report_path)
+        methods = set(stage02_config.methods)
+        backend_name = (
+            "independent-sasa-scannet"
+            if methods == {Stage02Method.SASA, Stage02Method.SCANNET}
+            else (
+                "sasa-surface-diversity"
+                if methods == {Stage02Method.SASA}
+                else "scannet-epitope-no-msa"
+            )
+        )
+        executor_name = (
+            f"local-{adapter.config.execution_device}-subprocess"
+            if adapter is not None
+            else "local-python"
+        )
         attempt = Attempt(
             attempt_id=ATTEMPT_ID,
             status=ExecutionStatus.FAILED,
             created_at=start,
             started_at=start,
             ended_at=ended,
-            backend_name="independent-sasa-scannet",
+            backend_name=backend_name,
             backend_version=backend_version,
-            executor_name=f"local-{adapter.config.execution_device}-subprocess",
+            executor_name=executor_name,
             log_artifacts=log_refs,
             error=ErrorInfo(
                 code=error_code,
@@ -562,7 +782,7 @@ def execute_stage02_comparison(
     )
     stage = StageManifest(
         stage_id=StageId.HOTSPOT_DISCOVERY,
-        contract_version="0.1",
+        contract_version="0.2",
         status=(
             ExecutionStatus.SUCCEEDED
             if failure is None
@@ -576,8 +796,12 @@ def execute_stage02_comparison(
         selected_attempt_id=ATTEMPT_ID if failure is None else None,
         warnings=(
             "PSE source colors were not consumed.",
-            "Annotation retrieval is not implemented.",
+            (
+                "Scientific annotations are evidence-only and never alter raw "
+                "SASA or ScanNet rankings."
+            ),
             "No fused method ranking was generated.",
+            "Human approval is required before hotspots.yaml is published.",
         ),
     )
     stage.validate_inputs_declared_by((stage01,))
@@ -589,7 +813,6 @@ def execute_stage02_comparison(
         stage_manifest_path=stage_manifest_path,
         ended_at=ended,
         succeeded=failure is None,
-        stop_after_stage=resolved.stop_after_stage,
     )
     runs_root = root.parent.parent
     upsert_run_index_entries(

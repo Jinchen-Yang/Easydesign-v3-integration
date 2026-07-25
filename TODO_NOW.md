@@ -7,8 +7,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `planned` | sequence/FASTA MSA、单 Target PSE 与便携 Mol* Viewer 已真实跑通，其余四类入口待实现。 | 排期本地 PDB/mmCIF 与标准 Target Bundle 输入；Viewer 后续 overlay 留给 Stage 02。 | 公共 ColabFold 无 SLA；离线 MSA cache、自建服务与其余输入 adapter 未完成。 | 2026-07-24 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | SASA 与 ScanNet CPU 双方法已在 APOE 正式 run 发布 Top 3 和比较报告。 | 人工审阅两套区域并建立批准区域到 Stage 03 的交接。 | 人工批准契约尚未实现；GPU 在 RTX 4080 上不兼容旧运行栈。 | 2026-07-24 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `planned` | 两条单模型入口已真实跑通；Target Bundle 0.3 与 Viewer 已具备多模型身份契约。 | 用本地 PDB/mmCIF adapter 首次发布真实多模型 Target Bundle。 | 公共 ColabFold 无 SLA；真实多模型入口和其余输入 adapter 未完成。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | schema 0.3 APOE 双方法已重跑；多模型 SASA、可选 UniProt 和审批交接均已实现。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `planned` | 尚未实现；filter profile、逐规则审计和 shortlist 均待开发。 | Stage 04 候选契约稳定后建立可版本化 filter engine。 | 依赖 Stage 04 规范候选与原始 artifact。 | 2026-07-24 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -18,17 +18,18 @@
 
 ## Now
 
-- `[S02]` 当前科学重心是人工审阅两套 Top 3，并建立显式批准区域集；Developer Preview
-  CLI 已完成，不再阻挡后续科学工作。
-- `[S02]` ScanNet CPU 已通过官方 no-MSA、APOE 138-aa backend smoke 和正式双方法 run；
-  详细设备决策、SASA/ScanNet 结果与未实现 annotation 见
+- `[S02-005]` canonical schema 0.3 的 APOE PSE→Stage 02 双方法真实回归已完成；当前只
+  等用户从 SASA 或 ScanNet 中选择并批准 2–3 个完整区域。
+- `[S02]` 多模型 SASA、显式 UniProt annotation policy 和审批契约已完成；详细方法、
+  真实结果与仍未实现的证据源见
   [`workflow/02-hotspot-discovery/STATUS.md`](workflow/02-hotspot-discovery/STATUS.md)。
 
 ## Next
 
-- `[REP-002]`/`[REP-003]`：在不改变 Stage 02 科学输出的前提下增加独立区域 overlay
-  与显式人工批准；不得融合 PSE、SASA 和 ScanNet。
-- `[S03]` 人工批准契约完成后再启动 BoltzGen YAML，不自动选择默认赢家。
+- `[S03]` 用户批准真实 APOE 区域并发布 `hotspots.yaml` 后，启动 BoltzGen YAML；
+  Stage 03 不读取未批准的 automatic Top 3。
+- `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；
+  可视化层不得融合 PSE、SASA 和 ScanNet。
 - `[ENG-003]` 建立 sequence-hash MSA cache、自建 ColabFold/MMseqs2 和 CI 平台矩阵。
 - `[S01]` 按排期实现本地 PDB/mmCIF、RCSB、UniProt 和标准 Target Bundle 输入。
 - `[S02]` 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变 CPU 主线。
@@ -40,7 +41,8 @@
   完成。Protenix 官方 endpoint 持续 `PENDING`，不进入
   默认 fallback；公共 endpoint 只批准内部研究序列，商业/敏感序列等待隐私、服务条款和
   自建 provider 审查。旧 SMART cache 缺失只影响历史复现。
-- `[S02]` CPU 主线没有 runtime 阻塞；人工批准区域集与 Stage 03 handoff 尚未实现。
+- `[S03]` 工程契约无 runtime 阻塞，但 APOE Stage 03 handoff 等待用户完成真实区域批准；
+  系统不会替用户编造 biological/structural rationale。
 - `[S02]` GPU 优化：TensorFlow 1.14 GPU probe 通过，但官方 1BRS 与 APOE 在 RTX 4080
   报 cuBLAS GEMM execution failure；这是后续性能待办，不阻塞 CPU 主线。
 - `[REL-001]` 公开许可证、PyPI 和正式 release 等待 IP/release 决策。

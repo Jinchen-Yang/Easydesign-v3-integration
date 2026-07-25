@@ -17,6 +17,8 @@ from easydesign.core import (
     StageId,
     StageManifest,
     UndeclaredArtifactError,
+    WorkflowState,
+    WorkflowStateType,
     canonical_model_sha256,
 )
 
@@ -329,4 +331,56 @@ def test_run_manifest_11_rejects_legacy_code_commit(now) -> None:
             created_at=now,
             updated_at=now,
             config_snapshot=artifact("config-snapshot"),
+        )
+
+
+def test_run_manifest_12_records_recoverable_human_approval_state(now) -> None:
+    run = RunManifest(
+        schema_version="1.2",
+        revision=1,
+        project_id="apoe",
+        run_id="run-001",
+        easydesign_version="0.1.0.dev2",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev2",
+            source=CodeIdentitySource.GIT,
+            git_commit="1" * 40,
+            dirty=False,
+        ),
+        status=ExecutionStatus.RUNNING,
+        evidence_status=EvidenceStatus.IMPLEMENTED,
+        created_at=now,
+        updated_at=now,
+        config_snapshot=artifact("config-snapshot"),
+    )
+    waiting = WorkflowState(
+        state=WorkflowStateType.AWAITING_HUMAN_APPROVAL,
+        stage_id=StageId.HOTSPOT_DISCOVERY,
+        action="approve-hotspots",
+        message="Select complete regions.",
+    )
+
+    revised = run.next_revision(
+        updated_at=now + timedelta(seconds=1),
+        workflow_state=waiting,
+    )
+
+    assert revised.status is ExecutionStatus.RUNNING
+    assert revised.workflow_state == waiting
+    preserved = revised.next_revision(
+        updated_at=now + timedelta(seconds=2),
+    )
+    assert preserved.workflow_state == waiting
+    cleared = revised.next_revision(
+        updated_at=now + timedelta(seconds=2),
+        clear_workflow_state=True,
+    )
+    assert cleared.workflow_state is None
+    with pytest.raises(ValidationError, match="running"):
+        RunManifest.model_validate(
+            {
+                **revised.model_dump(mode="python"),
+                "status": ExecutionStatus.SUCCEEDED,
+                "completed_at": now + timedelta(seconds=1),
+            }
         )

@@ -155,7 +155,11 @@ def test_synthetic_single_target_pse_publishes_complete_bundle_and_manifests(
     completed = execute_pse_import(prepared=prepared, adapter=adapter)
 
     bundle = completed.built_bundle.bundle
-    assert bundle.schema_version == "0.2"
+    assert bundle.schema_version == "0.3"
+    assert bundle.coordinate_ensemble is not None
+    assert bundle.coordinate_ensemble.model_count == 1
+    assert bundle.coordinate_ensemble.model_ids == ("1",)
+    assert bundle.coordinate_ensemble.representative_model_id == "1"
     assert bundle.origin == "imported"
     assert bundle.sequence_length == 20
     assert bundle.source_annotations is not None

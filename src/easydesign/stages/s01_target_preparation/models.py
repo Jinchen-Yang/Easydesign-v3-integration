@@ -26,6 +26,30 @@ class TargetStructureOrigin(StrEnum):
     PREDICTED = "predicted"
 
 
+class CoordinateEnsemble(BaseModel):
+    """规范 target.cif 中的 coordinate model 集合。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model_count: int = Field(ge=1)
+    model_ids: tuple[str, ...] = Field(min_length=1)
+    representative_model_id: str = Field(min_length=1, max_length=32)
+    residue_identity_policy: str = Field(
+        default="shared-label-seq-id",
+        pattern=r"^shared-label-seq-id$",
+    )
+
+    @model_validator(mode="after")
+    def validate_models(self) -> Self:
+        if self.model_count != len(self.model_ids):
+            raise ValueError("coordinate ensemble model_count 与 model_ids 数量不一致")
+        if len(self.model_ids) != len(set(self.model_ids)):
+            raise ValueError("coordinate ensemble model_ids 不能重复")
+        if self.representative_model_id not in self.model_ids:
+            raise ValueError("representative_model_id 必须属于 model_ids")
+        return self
+
+
 class ResidueMappingEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -248,7 +272,7 @@ class TargetBundle(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
     target_id: str = Field(pattern=ID_PATTERN)
     origin: TargetStructureOrigin
     sequence_length: int = Field(ge=1)
@@ -260,6 +284,7 @@ class TargetBundle(BaseModel):
     quality_report: ArtifactRef
     provenance: ArtifactRef
     source_annotations: ArtifactRef | None = None
+    coordinate_ensemble: CoordinateEnsemble | None = None
 
     @model_validator(mode="after")
     def validate_artifact_producers(self) -> Self:
@@ -282,7 +307,15 @@ class TargetBundle(BaseModel):
                 raise ValueError("Target Bundle artifact 必须来自同一 attempt")
         if self.schema_version == "0.1" and self.source_annotations is not None:
             raise ValueError("Target Bundle 0.1 不支持 source_annotations")
-        if self.schema_version not in {"0.1", "0.2"}:
+        if self.schema_version in {"0.1", "0.2"}:
+            if self.coordinate_ensemble is not None:
+                raise ValueError(
+                    f"Target Bundle {self.schema_version} 不支持 coordinate_ensemble"
+                )
+        elif self.schema_version == "0.3":
+            if self.coordinate_ensemble is None:
+                raise ValueError("Target Bundle 0.3 必须声明 coordinate_ensemble")
+        else:
             raise ValueError(f"不支持 Target Bundle schema: {self.schema_version}")
         return self
 

@@ -241,6 +241,64 @@ def _json_payload(path: Path, payload: object) -> None:
     )
 
 
+def _rehydrate_design_mask_evidence(
+    *,
+    root: Path,
+    attempt_id: str,
+    tasks: dict[str, TaskRecord],
+    candidates: list[CandidateRecord],
+) -> int:
+    """Upgrade resumable runtime records using declared task-attempt outputs."""
+
+    missing = [
+        candidate
+        for candidate in candidates
+        if candidate.design_mask_source is None
+        or not candidate.designed_binder_residue_ids
+    ]
+    if not missing:
+        return 0
+    rebuilt: list[CandidateRecord] = []
+    for task in tasks.values():
+        ordinal = 1
+        task_candidates: list[CandidateRecord] = []
+        for task_attempt in task.attempts:
+            if (
+                task_attempt.status is TaskStatus.RUNNING
+                or task_attempt.collected_candidates == 0
+            ):
+                continue
+            output = root / task_attempt.output_relative_path
+            collected = collect_boltzgen_candidates(
+                run_root=root,
+                backend_output=output,
+                strategy_id=task.strategy_id,
+                task_id=task.task_id,
+                task_attempt_number=task_attempt.attempt_number,
+                stage_attempt_id=attempt_id,
+                ordinal_start=ordinal,
+                maximum_candidates=task_attempt.collected_candidates,
+            )
+            if len(collected) != task_attempt.collected_candidates:
+                raise ManifestStateError(
+                    f"task={task.task_id} attempt={task_attempt.attempt_number} "
+                    "无法从已声明 backend output 恢复全部 design-mask evidence"
+                )
+            task_candidates.extend(collected)
+            ordinal += len(collected)
+        expected_ids = task.candidate_ids
+        observed_ids = tuple(item.candidate_id for item in task_candidates)
+        if observed_ids != expected_ids:
+            raise ManifestStateError(
+                f"task={task.task_id} design-mask evidence 重建改变了 candidate identity"
+            )
+        rebuilt.extend(task_candidates)
+    if len(rebuilt) != len(candidates):
+        raise ManifestStateError("design-mask evidence 重建候选总数不一致")
+    candidates[:] = rebuilt
+    return len(rebuilt)
+
+
 def execute_stage04(
     *,
     run_root: Path,
@@ -312,6 +370,12 @@ def execute_stage04(
         }
         candidates = []
 
+    rehydrated_candidate_count = _rehydrate_design_mask_evidence(
+        root=root,
+        attempt_id=attempt_id,
+        tasks=tasks,
+        candidates=candidates,
+    )
     lock = threading.RLock()
     recent_errors: list[str] = []
 
@@ -365,6 +429,15 @@ def execute_stage04(
                 message=message,
                 error=error,
             )
+        )
+
+    if rehydrated_candidate_count:
+        append_event(
+            event_type="candidate-evidence-upgraded",
+            message=(
+                f"Revalidated {rehydrated_candidate_count} existing candidates "
+                "against BoltzGen official design_mask artifacts."
+            ),
         )
 
     # A crashed process may leave a task marked running. Salvage any complete

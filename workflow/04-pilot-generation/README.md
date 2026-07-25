@@ -229,6 +229,8 @@ easydesign runs resume RUN_DIR
 
 - 只接受 RunManifest 与 Stage 03 handoff 完整的运行；
 - 验证已完成候选全部 checksum；
+- 旧 runtime state 缺少 design-mask 证据时，只从 TaskRecord 已声明的 backend output
+  重新收集并核对原 candidate identity，不重跑已完成候选；
 - 已达标 strategy 不启动新任务；
 - 未达标 strategy 请求 deficit，并建立新 task attempt；
 - 不覆盖旧日志、配置或 backend output；

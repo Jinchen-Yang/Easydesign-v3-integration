@@ -4,6 +4,8 @@ import csv
 from datetime import UTC, datetime
 from pathlib import Path
 
+import gemmi
+import numpy as np
 import yaml
 
 from easydesign.backends.boltzgen import (
@@ -26,13 +28,18 @@ from easydesign.core import (
     sha256_file,
 )
 from easydesign.orchestration.stage04 import execute_stage04
+from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.stages.s03_boltzgen_configuration import (
     ScaffoldAsset,
     StrategyBundle,
     StrategyRecord,
 )
-from easydesign.stages.s04_pilot_generation import CandidateIndex, PilotBundle
+from easydesign.stages.s04_pilot_generation import (
+    CandidateIndex,
+    PilotBundle,
+    PilotExecutionState,
+)
 from easydesign.stages.s04_pilot_generation.models import TaskTable
 
 NOW = datetime(2026, 7, 26, 3, 0, tzinfo=UTC)
@@ -92,13 +99,34 @@ class _FakeGenerationAdapter:
         for index in range(output_count):
             candidate_id = f"generic_{index}"
             file_name = f"{candidate_id}.cif"
-            (originals / file_name).write_text(
-                f"data_{candidate_id}\n#\n",
-                encoding="utf-8",
-            )
-            (refolds / file_name).write_text(
-                f"data_{candidate_id}_refold\n#\n",
-                encoding="utf-8",
+            structure = gemmi.Structure()
+            model = gemmi.Model("1")
+            for chain_id, residue_names in (
+                ("A", ("GLY", "ALA")),
+                ("B", ("ALA", "CYS", "ASP", "GLU", "PHE", "GLY")),
+            ):
+                chain = gemmi.Chain(chain_id)
+                for number, residue_name in enumerate(residue_names, start=1):
+                    residue = gemmi.Residue()
+                    residue.name = residue_name
+                    residue.seqid = gemmi.SeqId(number, " ")
+                    atom = gemmi.Atom()
+                    atom.name = "CA"
+                    atom.element = gemmi.Element("C")
+                    atom.pos = gemmi.Position(float(number), 0, 0)
+                    residue.add_atom(atom)
+                    chain.add_residue(residue)
+                model.add_chain(chain)
+            structure.add_model(model)
+            document = structure.make_mmcif_document()
+            document.write_file(str(originals / file_name))
+            document.write_file(str(refolds / file_name))
+            np.savez_compressed(
+                originals / f"{candidate_id}.npz",
+                design_mask=np.asarray(
+                    (0, 0, 0, 1, 1, 0, 1, 0),
+                    dtype=np.float32,
+                ),
             )
             rows.append(
                 {
@@ -106,6 +134,9 @@ class _FakeGenerationAdapter:
                     "file_name": file_name,
                     "pass_filters": index == 0,
                     "design_to_target_iptm": 0.5 + index / 10,
+                    "designed_chain_sequence": "ACDEFG",
+                    "designed_sequence": "CDF",
+                    "num_design": 3,
                 }
             )
         with metrics.open("w", encoding="utf-8", newline="") as handle:
@@ -116,6 +147,9 @@ class _FakeGenerationAdapter:
                     "file_name",
                     "pass_filters",
                     "design_to_target_iptm",
+                    "designed_chain_sequence",
+                    "designed_sequence",
+                    "num_design",
                 ),
             )
             writer.writeheader()
@@ -397,6 +431,27 @@ def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
         ).glob("*.cif")
     )
     first_hash = sha256_file(first_candidate)
+    state_path = (
+        root
+        / "04-pilot-generation/attempt-0001/runtime/task-state.json"
+    )
+    state = load_model(state_path, PilotExecutionState)
+    atomic_dump_runtime_model(
+        state.model_copy(
+            update={
+                "candidates": tuple(
+                    candidate.model_copy(
+                        update={
+                            "design_mask_source": None,
+                            "designed_binder_residue_ids": (),
+                        }
+                    )
+                    for candidate in state.candidates
+                )
+            }
+        ),
+        state_path,
+    )
     adapter.complete = True
 
     completed = execute_stage04(
@@ -410,6 +465,9 @@ def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
     assert sha256_file(first_candidate) == first_hash
     assert completed.pilot_bundle is not None
     bundle = load_model(completed.pilot_bundle, PilotBundle)
+    index = load_model(bundle.candidate_index.verify(root), CandidateIndex)
+    assert all(candidate.design_mask_source is not None for candidate in index.candidates)
+    assert all(candidate.designed_binder_residue_ids for candidate in index.candidates)
     tasks = load_model(bundle.task_table.verify(root), TaskTable)
     assert len(tasks.tasks[0].attempts) == 3
     assert tuple(

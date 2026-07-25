@@ -69,6 +69,9 @@
   BoltzGen 官方 NPZ `design_mask`，同时校验 mask、完整 binder 序列、designed sequence、
   `num_design` 和结构 residue 数，并将 mask 文件纳入 ArtifactRef。APOE 7eow 40 个真实
   candidate 已通过新收集器验证。
+- 2026-07-26：resume 增加旧 runtime state 的 design-mask 证据升级；仅重读每个
+  TaskRecord 明确声明的 task-attempt output，candidate identity 或数量变化即失败，
+  已完成候选不会重新生成。
 
 ## 历史索引
 

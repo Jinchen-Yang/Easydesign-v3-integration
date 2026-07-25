@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -44,6 +44,7 @@ class StructurePredictionRequest(BaseModel):
     )
     cycle_count: int | None = Field(default=None, ge=1)
     diffusion_step_count: int | None = Field(default=None, ge=1)
+    require_full_confidence: bool = False
 
     @model_validator(mode="after")
     def validate_request(self) -> Self:
@@ -58,6 +59,74 @@ class StructurePredictionRequest(BaseModel):
         elif any(value is not None for value in custom_values):
             raise ValueError("model-default profile 不能覆盖 cycle/step")
         return self
+
+
+class ProteinPredictionChain(BaseModel):
+    """A typed protein chain for a complex-prediction file protocol."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    chain_id: str = Field(pattern=r"^[A-Za-z0-9]{1,4}$")
+    role: Literal["target", "binder"]
+    sequence: str = Field(pattern=r"^[ACDEFGHIKLMNPQRSTVWY]+$")
+    paired_msa_path: Path | None = None
+    unpaired_msa_path: Path | None = None
+
+    @model_validator(mode="after")
+    def validate_msa_paths(self) -> Self:
+        for path in (self.paired_msa_path, self.unpaired_msa_path):
+            if path is not None and not path.is_absolute():
+                raise ValueError("complex prediction MSA path 必须是绝对路径")
+        return self
+
+
+class ComplexStructurePredictionRequest(BaseModel):
+    """Target+binder prediction request shared by Stage 05 and Stage 07."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    job_name: str = Field(pattern=ID_PATTERN)
+    chains: tuple[ProteinPredictionChain, ...] = Field(min_length=2)
+    seeds: tuple[int, ...] = (101,)
+    sample_count: int = Field(default=1, ge=1)
+    msa_mode: MsaMode
+    template_mode: TemplateMode = TemplateMode.DISABLED
+    parameter_profile: PredictionParameterProfile = (
+        PredictionParameterProfile.MODEL_DEFAULT
+    )
+    cycle_count: int | None = Field(default=None, ge=1)
+    diffusion_step_count: int | None = Field(default=None, ge=1)
+    require_full_confidence: Literal[True] = True
+
+    @model_validator(mode="after")
+    def validate_request(self) -> Self:
+        chain_ids = [chain.chain_id for chain in self.chains]
+        if len(chain_ids) != len(set(chain_ids)):
+            raise ValueError("complex prediction chain_id 不能重复")
+        roles = [chain.role for chain in self.chains]
+        if roles.count("target") != 1 or roles.count("binder") != 1:
+            raise ValueError("首版 complex prediction 必须恰好一个 target 和一个 binder")
+        if len(self.chains) != 2:
+            raise ValueError("首版 complex prediction 只接受 target+binder 两条链")
+        if not self.seeds or len(self.seeds) != len(set(self.seeds)):
+            raise ValueError("seeds 必须非空且不能重复")
+        if any(seed < 0 for seed in self.seeds):
+            raise ValueError("seed 不能为负数")
+        custom_values = (self.cycle_count, self.diffusion_step_count)
+        if self.parameter_profile is PredictionParameterProfile.CUSTOM:
+            if any(value is None for value in custom_values):
+                raise ValueError("custom profile 必须同时声明 cycle_count 和 diffusion_step_count")
+        elif any(value is not None for value in custom_values):
+            raise ValueError("model-default profile 不能覆盖 cycle/step")
+        if self.msa_mode is MsaMode.DISABLED:
+            raise ValueError("Stage 05/07 complex prediction 禁止 no-MSA")
+        return self
+
+    def require_role(self, role: Literal["target", "binder"]) -> ProteinPredictionChain:
+        return next(chain for chain in self.chains if chain.role == role)
+
+
+PredictionRequest = StructurePredictionRequest | ComplexStructurePredictionRequest
 
 
 class BackendInvocation(BaseModel):
@@ -97,6 +166,8 @@ class StructurePredictionProduct(BaseModel):
     structure_sha256: str = Field(pattern=SHA256_PATTERN)
     confidence_path: Path
     confidence_sha256: str = Field(pattern=SHA256_PATTERN)
+    full_confidence_path: Path | None = None
+    full_confidence_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     plddt: float
     gpde: float
     ptm: float
@@ -104,3 +175,11 @@ class StructurePredictionProduct(BaseModel):
     ranking_score: float
     has_clash: bool
     recycle_count: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_full_confidence(self) -> Self:
+        if (self.full_confidence_path is None) != (
+            self.full_confidence_sha256 is None
+        ):
+            raise ValueError("full confidence path/hash 必须同时存在或同时缺失")
+        return self

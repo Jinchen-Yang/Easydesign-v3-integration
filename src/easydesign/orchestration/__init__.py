@@ -11,6 +11,7 @@ from .application import (
     diagnose_runtime,
     execute_pipeline,
     list_runs,
+    read_pipeline_progress,
     show_run,
     validate_run_configuration,
 )
@@ -165,6 +166,7 @@ __all__ = [
     "load_run_config",
     "load_runtime_profile",
     "list_runs",
+    "read_pipeline_progress",
     "migrate_run_directories",
     "resolve_runtime_profile_path",
     "show_run",

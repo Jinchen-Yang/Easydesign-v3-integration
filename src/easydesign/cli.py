@@ -48,7 +48,7 @@ from easydesign.orchestration.profile import (
     load_runtime_profile,
 )
 from easydesign.orchestration.project import initialize_project
-from easydesign.orchestration.stage04 import read_stage04_progress
+from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.reporting import (
     HOST,
     create_target_viewer_server,
@@ -507,13 +507,17 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             if arguments.interval <= 0 or arguments.interval > 60:
                 raise ConfigurationError("--interval 必须在 0 到 60 秒之间")
             while True:
-                progress = read_stage04_progress(arguments.run)
+                from easydesign.orchestration import read_pipeline_progress
+
+                progress = read_pipeline_progress(arguments.run)
                 if arguments.json:
                     print(_json_text(progress), flush=True)
                 else:
                     print(
                         f"[{progress.updated_at.isoformat()}] "
-                        f"Stage 04 {progress.status}: "
+                        f"{progress.stage_id}"
+                        f"{f'/{progress.phase}' if progress.phase else ''} "
+                        f"{progress.status}: "
                         f"tasks {progress.succeeded_tasks}/{progress.total_tasks}, "
                         f"running={progress.running_tasks}, failed={progress.failed_tasks}; "
                         f"candidates {progress.collected_candidates}/"
@@ -535,6 +539,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                         print(f"  ERROR {message}", flush=True)
                 if arguments.once or progress.status in {
                     "succeeded",
+                    "scientific-stop",
                     "failed",
                     "incomplete",
                 }:
@@ -548,10 +553,16 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             if arguments.json:
                 print(_json_text(outcome))
             else:
-                print(f"Stage 04 恢复状态：{outcome.status}")
-                print(f"完整候选：{outcome.complete_candidate_count}")
+                print(f"恢复状态：{outcome.status}")
+                if isinstance(outcome, Stage04Execution):
+                    print(f"完整候选：{outcome.complete_candidate_count}")
+                else:
+                    print(
+                        "胜出策略："
+                        f"{outcome.selected_strategy_id or '无（科学停止）'}"
+                    )
                 print(f"Run：{outcome.run_root}")
-            return 0 if outcome.status == "succeeded" else 4
+            return 4 if outcome.status == "incomplete" else 0
         root = _runs_root(arguments.runs_root, arguments.profile)
         if arguments.runs_command == "list":
             runs = list_runs(root)

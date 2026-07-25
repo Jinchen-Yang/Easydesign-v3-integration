@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,6 +14,12 @@ from easydesign.backends.boltzgen import (
     BoltzGenGenerationResult,
 )
 from easydesign.backends.executors import GpuResourceSnapshot
+from easydesign.backends.structure_prediction import (
+    BackendInvocation,
+    ComplexStructurePredictionRequest,
+    PredictionRequest,
+    StructurePredictionProduct,
+)
 from easydesign.core import (
     ArtifactRef,
     Attempt,
@@ -28,7 +35,9 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.orchestration import read_pipeline_progress
 from easydesign.orchestration.stage04 import execute_stage04
+from easydesign.orchestration.stage05 import execute_stage05
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.stages.s03_boltzgen_configuration import (
@@ -42,6 +51,7 @@ from easydesign.stages.s04_pilot_generation import (
     PilotExecutionState,
 )
 from easydesign.stages.s04_pilot_generation.models import TaskTable
+from easydesign.stages.s05_pilot_filtering import Stage05Bundle
 
 NOW = datetime(2026, 7, 26, 3, 0, tzinfo=UTC)
 
@@ -65,9 +75,52 @@ class _FakeGpuProbe:
         )
 
 
+def _write_complex(
+    path: Path,
+    *,
+    target_names: tuple[str, ...] = ("GLY", "ALA", "SER"),
+    binder_names: tuple[str, ...] = ("ALA", "CYS", "ASP", "GLU", "PHE", "GLY"),
+) -> None:
+    structure = gemmi.Structure()
+    model = gemmi.Model("1")
+    for chain_id, residue_names, y_position in (
+        ("A", target_names, 0.0),
+        ("B", binder_names, 4.0),
+    ):
+        chain = gemmi.Chain(chain_id)
+        for number, residue_name in enumerate(residue_names, start=1):
+            residue = gemmi.Residue()
+            residue.name = residue_name
+            residue.seqid = gemmi.SeqId(number, " ")
+            residue.label_seq = number
+            for atom_name, offset in (
+                ("N", 0.0),
+                ("CA", 0.5),
+                ("C", 1.0),
+                ("O", 1.5),
+            ):
+                atom = gemmi.Atom()
+                atom.name = atom_name
+                atom.element = gemmi.Element(
+                    "N" if atom_name == "N" else "O" if atom_name == "O" else "C"
+                )
+                atom.pos = gemmi.Position(
+                    float(number * 3) + offset,
+                    y_position,
+                    0,
+                )
+                residue.add_atom(atom)
+            chain.add_residue(residue)
+        model.add_chain(chain)
+    structure.add_model(model)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    structure.make_mmcif_document().write_file(str(path))
+
+
 class _FakeGenerationAdapter:
-    def __init__(self, *, complete: bool = True) -> None:
+    def __init__(self, *, complete: bool = True, all_pass: bool = False) -> None:
         self.complete = complete
+        self.all_pass = all_pass
 
     def probe(self) -> dict[str, str]:
         return {
@@ -100,32 +153,18 @@ class _FakeGenerationAdapter:
         for index in range(output_count):
             candidate_id = f"generic_{index}"
             file_name = f"{candidate_id}.cif"
-            structure = gemmi.Structure()
-            model = gemmi.Model("1")
-            for chain_id, residue_names in (
-                ("A", ("GLY", "ALA")),
-                ("B", ("ALA", "CYS", "ASP", "GLU", "PHE", "GLY")),
-            ):
-                chain = gemmi.Chain(chain_id)
-                for number, residue_name in enumerate(residue_names, start=1):
-                    residue = gemmi.Residue()
-                    residue.name = residue_name
-                    residue.seqid = gemmi.SeqId(number, " ")
-                    atom = gemmi.Atom()
-                    atom.name = "CA"
-                    atom.element = gemmi.Element("C")
-                    atom.pos = gemmi.Position(float(number), 0, 0)
-                    residue.add_atom(atom)
-                    chain.add_residue(residue)
-                model.add_chain(chain)
-            structure.add_model(model)
-            document = structure.make_mmcif_document()
-            document.write_file(str(originals / file_name))
-            document.write_file(str(refolds / file_name))
+            sequence = "ACDEFG" if index % 2 == 0 else "HIKLMN"
+            binder_names = (
+                ("ALA", "CYS", "ASP", "GLU", "PHE", "GLY")
+                if index % 2 == 0
+                else ("HIS", "ILE", "LYS", "LEU", "MET", "ASN")
+            )
+            _write_complex(originals / file_name, binder_names=binder_names)
+            _write_complex(refolds / file_name, binder_names=binder_names)
             np.savez_compressed(
                 originals / f"{candidate_id}.npz",
                 design_mask=np.asarray(
-                    (0, 0, 0, 1, 1, 0, 1, 0),
+                    (0, 0, 0, 0, 1, 1, 0, 1, 0),
                     dtype=np.float32,
                 ),
             )
@@ -133,10 +172,15 @@ class _FakeGenerationAdapter:
                 {
                     "id": candidate_id,
                     "file_name": file_name,
-                    "pass_filters": index == 0,
+                    "pass_filters": self.all_pass or index == 0,
                     "design_to_target_iptm": 0.5 + index / 10,
-                    "designed_chain_sequence": "ACDEFG",
-                    "designed_sequence": "CDF",
+                    "min_design_to_target_pae": 8.0,
+                    "filter_rmsd": 1.0,
+                    "filter_rmsd_design": 1.0,
+                    "design_ptm": 0.8,
+                    "delta_sasa_refolded": 500.0,
+                    "designed_chain_sequence": sequence,
+                    "designed_sequence": "CDF" if index % 2 == 0 else "IKM",
                     "num_design": 3,
                 }
             )
@@ -148,6 +192,11 @@ class _FakeGenerationAdapter:
                     "file_name",
                     "pass_filters",
                     "design_to_target_iptm",
+                    "min_design_to_target_pae",
+                    "filter_rmsd",
+                    "filter_rmsd_design",
+                    "design_ptm",
+                    "delta_sasa_refolded",
                     "designed_chain_sequence",
                     "designed_sequence",
                     "num_design",
@@ -170,7 +219,169 @@ class _FakeGenerationAdapter:
         )
 
 
-def _prepared_stage03_run(tmp_path: Path) -> Path:
+class _FakeProtenixAdapter:
+    def write_input(self, request: PredictionRequest, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps([{"name": request.job_name, "sequences": []}]),
+            encoding="utf-8",
+        )
+        return path
+
+    def msa_invocation(
+        self,
+        request: PredictionRequest,
+        *,
+        input_json: Path,
+        output_dir: Path,
+    ) -> BackendInvocation:
+        del input_json
+        output_dir.mkdir(parents=True, exist_ok=True)
+        target_sequence = (
+            request.target.sequence
+            if hasattr(request, "target")
+            else request.require_role("target").sequence
+        )
+        a3m = output_dir / "target.a3m"
+        a3m.write_text(
+            f">query\n{target_sequence}\n>homolog\n{target_sequence}\n",
+            encoding="ascii",
+        )
+        (output_dir / "updated-input.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "sequences": [
+                            {
+                                "proteinChain": {
+                                    "unpairedMsaPath": str(a3m.resolve())
+                                }
+                            }
+                        ]
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return BackendInvocation(
+            backend_name="fake-protenix",
+            backend_version="2.0.0",
+            argv=("/usr/bin/true",),
+            timeout_seconds=30,
+        )
+
+    def updated_msa_input_path(
+        self,
+        input_json: Path,
+        output_dir: Path,
+    ) -> Path:
+        del input_json
+        return output_dir / "updated-input.json"
+
+    def prediction_invocation(
+        self,
+        request: PredictionRequest,
+        *,
+        input_json: Path,
+        output_dir: Path,
+    ) -> BackendInvocation:
+        del request, input_json
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return BackendInvocation(
+            backend_name="fake-protenix",
+            backend_version="2.0.0",
+            argv=("/usr/bin/true",),
+            timeout_seconds=30,
+        )
+
+    def collect_products(
+        self,
+        request: PredictionRequest,
+        *,
+        output_dir: Path,
+    ) -> tuple[StructurePredictionProduct, ...]:
+        assert isinstance(request, ComplexStructurePredictionRequest)
+        residue_names = {
+            "A": "ALA",
+            "C": "CYS",
+            "D": "ASP",
+            "E": "GLU",
+            "F": "PHE",
+            "G": "GLY",
+            "H": "HIS",
+            "I": "ILE",
+            "K": "LYS",
+            "L": "LEU",
+            "M": "MET",
+            "N": "ASN",
+        }
+        binder = request.require_role("binder").sequence
+        structure_path = output_dir / "prediction.cif"
+        _write_complex(
+            structure_path,
+            binder_names=tuple(residue_names[item] for item in binder),
+        )
+        summary_path = output_dir / "summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "chain_pair_iptm": [[0.0, 0.75], [0.75, 0.0]],
+                    "chain_ptm": [0.85, 0.80],
+                }
+            ),
+            encoding="utf-8",
+        )
+        target_length = len(request.require_role("target").sequence)
+        binder_length = len(binder)
+        asym = [0] * target_length + [1] * binder_length
+        size = len(asym)
+        pae = [
+            [
+                0.0 if asym[first] == asym[second] else 5.0
+                for second in range(size)
+            ]
+            for first in range(size)
+        ]
+        full_path = output_dir / "full.json"
+        full_path.write_text(
+            json.dumps(
+                {
+                    "token_asym_id": asym,
+                    "token_has_frame": [1] * size,
+                    "token_pair_pae": pae,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return (
+            StructurePredictionProduct(
+                backend_name="protenix-v2",
+                backend_version="2.0.0",
+                model_name="protenix-v2",
+                seed=101,
+                sample_index=0,
+                structure_path=structure_path,
+                structure_sha256=sha256_file(structure_path),
+                confidence_path=summary_path,
+                confidence_sha256=sha256_file(summary_path),
+                full_confidence_path=full_path,
+                full_confidence_sha256=sha256_file(full_path),
+                plddt=0.9,
+                gpde=0.1,
+                ptm=0.85,
+                iptm=0.75,
+                ranking_score=0.8,
+                has_clash=False,
+                recycle_count=10,
+            ),
+        )
+
+
+def _prepared_stage03_run(
+    tmp_path: Path,
+    *,
+    through_stage05: bool = False,
+) -> Path:
     pse = tmp_path / "target.pse"
     pse.write_bytes(b"synthetic")
     project = tmp_path / "project"
@@ -188,7 +399,7 @@ def _prepared_stage03_run(tmp_path: Path) -> Path:
                 },
                 "workflow": {
                     "execution_mode": "unattended",
-                    "stop_after_stage": 4,
+                    "stop_after_stage": 5 if through_stage05 else 4,
                     "max_strategy_rounds": 1,
                 },
                 "stage01": {
@@ -241,7 +452,19 @@ def _prepared_stage03_run(tmp_path: Path) -> Path:
                     },
                     "required_complete_candidates_per_strategy": 2,
                 },
-                "stage05": None,
+                "stage05": (
+                    {
+                        "filter_profile": "nanobody-filter-standard-v1.5",
+                        "expanded_total_per_strategy": 4,
+                        "maximum_tier_a_strategies": 1,
+                        "strategy_selection": {
+                            "full_target_refold_top_n": 1,
+                            "require_unique_winner": True,
+                        },
+                    }
+                    if through_stage05
+                    else None
+                ),
                 "stage06": None,
                 "stage07": None,
             },
@@ -267,6 +490,78 @@ def _prepared_stage03_run(tmp_path: Path) -> Path:
         created_at=NOW,
     )
     root = prepared.workspace.run_root
+    target_stage_root = root / str(StageId.TARGET_PREPARATION) / "attempt-0001"
+    target_artifacts = target_stage_root / "artifacts"
+    target_artifacts.mkdir(parents=True)
+    target = gemmi.Structure()
+    target_model = gemmi.Model("1")
+    target_chain = gemmi.Chain("A")
+    for number, residue_name in enumerate(("GLY", "ALA", "SER"), start=1):
+        residue = gemmi.Residue()
+        residue.name = residue_name
+        residue.seqid = gemmi.SeqId(number, " ")
+        residue.label_seq = number
+        atom = gemmi.Atom()
+        atom.name = "CA"
+        atom.element = gemmi.Element("C")
+        atom.pos = gemmi.Position(float(number), 0, 0)
+        residue.add_atom(atom)
+        target_chain.add_residue(residue)
+    target_model.add_chain(target_chain)
+    target.add_model(target_model)
+    target_path = target_artifacts / "target.cif"
+    target.make_mmcif_document().write_file(str(target_path))
+    sequence_path = target_artifacts / "sequence.fasta"
+    sequence_path.write_text(">generic-target\nGAS\n", encoding="ascii")
+    target_ref = ArtifactRef.from_file(
+        run_root=root,
+        relative_path=target_path.relative_to(root).as_posix(),
+        artifact_id="target-structure",
+        role="normalized-target-structure",
+        file_format="mmcif",
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt="attempt-0001",
+    )
+    sequence_ref = ArtifactRef.from_file(
+        run_root=root,
+        relative_path=sequence_path.relative_to(root).as_posix(),
+        artifact_id="target-sequence",
+        role="normalized-target-sequence",
+        file_format="fasta",
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt="attempt-0001",
+    )
+    target_attempt = Attempt(
+        attempt_id="attempt-0001",
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=NOW,
+        started_at=NOW,
+        ended_at=NOW,
+        backend_name="fixture",
+        executor_name="fixture",
+    )
+    dump_model(target_attempt, target_stage_root / "attempt-manifest.json")
+    target_manifest = StageManifest(
+        stage_id=StageId.TARGET_PREPARATION,
+        contract_version="0.4",
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=NOW,
+        completed_at=NOW,
+        output_artifacts=(target_ref, sequence_ref),
+        attempts=(target_attempt,),
+        selected_attempt_id="attempt-0001",
+    )
+    target_manifest_path = target_artifacts / "stage-manifest.json"
+    dump_model(target_manifest, target_manifest_path)
+    target_manifest_ref = ArtifactRef.from_file(
+        run_root=root,
+        relative_path=target_manifest_path.relative_to(root).as_posix(),
+        artifact_id="stage-01-manifest",
+        role="stage-manifest",
+        file_format="json",
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt="attempt-0001",
+    )
     stage_root = root / str(StageId.BOLTZGEN_CONFIGURATION) / "attempt-0001"
     artifacts = stage_root / "artifacts"
     spec = artifacts / "strategies/generic-strategy/design.yaml"
@@ -364,7 +659,7 @@ def _prepared_stage03_run(tmp_path: Path) -> Path:
     running = initial.next_revision(
         updated_at=datetime(2026, 7, 26, 3, 0, 1, tzinfo=UTC),
         status=ExecutionStatus.RUNNING,
-        stage_manifest_refs=(stage_ref,),
+        stage_manifest_refs=(target_manifest_ref, stage_ref),
     )
     running_path = root / "manifests/run-manifest.v0002.json"
     dump_model(running, running_path)
@@ -403,9 +698,87 @@ def test_stage04_executes_generic_strategy_and_publishes_manifest_only_handoff(
     assert tuple(
         reference.producer_stage for reference in run.stage_manifest_refs
     ) == (
+        str(StageId.TARGET_PREPARATION),
         str(StageId.BOLTZGEN_CONFIGURATION),
         str(StageId.PILOT_GENERATION),
     )
+
+
+def test_stage05_publishes_audited_scientific_stop_without_starting_backends(
+    tmp_path: Path,
+) -> None:
+    root = _prepared_stage03_run(tmp_path, through_stage05=True)
+    stage04 = execute_stage04(
+        run_root=root,
+        adapter=_FakeGenerationAdapter(),  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    assert stage04.status == "succeeded"
+
+    def forbidden_protenix(*_: object) -> object:
+        raise AssertionError("scientific stop 不应启动 Protenix")
+
+    stage05 = execute_stage05(
+        run_root=root,
+        boltzgen_adapter=_FakeGenerationAdapter(),  # type: ignore[arg-type]
+        protenix_adapter_builder=forbidden_protenix,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+
+    assert stage05.status == "stopped-no-tier-a"
+    assert stage05.selected_strategy_id is None
+    bundle = load_model(stage05.stage05_bundle, Stage05Bundle)
+    assert bundle.status == "stopped-no-tier-a"
+    assert bundle.expansion_candidate_index is None
+    assert bundle.expansion_validation_report is None
+    assert bundle.scientific_stop is not None
+    bundle.progress_final.verify(root)
+    bundle.task_events.verify(root)
+    progress = read_pipeline_progress(root)
+    assert progress.stage_id == str(StageId.PILOT_FILTERING)
+    assert progress.phase == "stage05-complete"
+    assert progress.status == "scientific-stop"
+    run = load_model(stage05.run_manifest, RunManifest)
+    assert run.status is ExecutionStatus.SUCCEEDED
+
+
+def test_stage05_expands_and_selects_one_full_target_winner(
+    tmp_path: Path,
+) -> None:
+    root = _prepared_stage03_run(tmp_path, through_stage05=True)
+    generation = _FakeGenerationAdapter(all_pass=True)
+    stage04 = execute_stage04(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    assert stage04.complete_candidate_count == 2
+
+    stage05 = execute_stage05(
+        run_root=root,
+        boltzgen_adapter=generation,  # type: ignore[arg-type]
+        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+
+    assert stage05.status == "winner-selected"
+    assert stage05.selected_strategy_id == "generic-strategy"
+    bundle = load_model(stage05.stage05_bundle, Stage05Bundle)
+    assert bundle.expansion_candidate_index is not None
+    expanded = load_model(
+        bundle.expansion_candidate_index.verify(root),
+        CandidateIndex,
+    )
+    assert len(expanded.candidates) == 4
+    assert tuple(
+        item.ordinal_within_strategy for item in expanded.candidates
+    ) == (1, 2, 3, 4)
+    assert bundle.expansion_validation_report is not None
+    assert bundle.scientific_stop is None
 
 
 def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(

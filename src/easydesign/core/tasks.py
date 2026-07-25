@@ -142,6 +142,7 @@ class ProgressSnapshot(BaseModel):
 
     schema_version: str = "0.1"
     stage_id: str = Field(pattern=ID_PATTERN)
+    phase: str | None = Field(default=None, pattern=ID_PATTERN)
     updated_at: datetime
     status: str = Field(pattern=ID_PATTERN)
     total_tasks: int = Field(ge=0)

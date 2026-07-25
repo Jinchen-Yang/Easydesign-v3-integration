@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from easydesign.backends.structure_prediction import (
+    ComplexStructurePredictionRequest,
     MsaMode,
     PredictionParameterProfile,
+    ProteinPredictionChain,
     ProtenixMsaProvider,
     ProtenixV2Adapter,
     StructurePredictionRequest,
@@ -55,6 +57,50 @@ def adapter() -> ProtenixV2Adapter:
         model_root=Path("/data/models/protenix"),
         cuda_visible_devices="0",
     )
+
+
+def test_complex_request_preserves_target_msa_and_query_only_binder(
+    tmp_path: Path,
+) -> None:
+    query = tmp_path / "binder-query.a3m"
+    query.write_text(">query\nACDEFG\n", encoding="utf-8")
+    request = ComplexStructurePredictionRequest(
+        job_name="complex-one",
+        chains=(
+            ProteinPredictionChain(
+                chain_id="A",
+                role="target",
+                sequence="ACDEFGHIK",
+            ),
+            ProteinPredictionChain(
+                chain_id="B",
+                role="binder",
+                sequence="ACDEFG",
+                paired_msa_path=query,
+                unpaired_msa_path=query,
+            ),
+        ),
+        seeds=(101,),
+        sample_count=1,
+        msa_mode=MsaMode.REMOTE,
+    )
+
+    payload = adapter().render_input(request)
+    invocation = adapter().prediction_invocation(
+        request,
+        input_json=tmp_path / "input.json",
+        output_dir=tmp_path / "output",
+    )
+
+    target = payload[0]["sequences"][0]["proteinChain"]
+    binder = payload[0]["sequences"][1]["proteinChain"]
+    assert "unpairedMsaPath" not in target
+    assert binder["pairedMsaPath"] == str(query)
+    assert binder["unpairedMsaPath"] == str(query)
+    assert invocation.argv[-2:] == ("--use_default_params", "true")
+    assert invocation.argv[
+        invocation.argv.index("--need_atom_confidence") + 1
+    ] == "true"
 
 
 def option_value(argv: tuple[str, ...], option: str) -> str:

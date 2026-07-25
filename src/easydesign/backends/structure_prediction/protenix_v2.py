@@ -21,10 +21,11 @@ from easydesign.core import (
 
 from .contracts import (
     BackendInvocation,
+    ComplexStructurePredictionRequest,
     MsaMode,
     PredictionParameterProfile,
+    PredictionRequest,
     StructurePredictionProduct,
-    StructurePredictionRequest,
     TemplateMode,
 )
 
@@ -157,7 +158,22 @@ class ProtenixV2Adapter:
         self.prediction_timeout_seconds = prediction_timeout_seconds
         self.extra_environment = extra_environment
 
-    def render_input(self, request: StructurePredictionRequest) -> list[dict[str, Any]]:
+    def render_input(self, request: PredictionRequest) -> list[dict[str, Any]]:
+        if isinstance(request, ComplexStructurePredictionRequest):
+            sequences: list[dict[str, Any]] = []
+            for chain in request.chains:
+                protein_chain: dict[str, Any] = {
+                    "sequence": chain.sequence,
+                    "count": 1,
+                }
+                if chain.paired_msa_path is not None:
+                    protein_chain["pairedMsaPath"] = str(chain.paired_msa_path)
+                if chain.unpaired_msa_path is not None:
+                    protein_chain["unpairedMsaPath"] = str(
+                        chain.unpaired_msa_path
+                    )
+                sequences.append({"proteinChain": protein_chain})
+            return [{"name": request.job_name, "sequences": sequences}]
         return [
             {
                 "name": request.job_name,
@@ -172,7 +188,7 @@ class ProtenixV2Adapter:
             }
         ]
 
-    def write_input(self, request: StructurePredictionRequest, path: Path) -> Path:
+    def write_input(self, request: PredictionRequest, path: Path) -> Path:
         """排他写入 Protenix JSON；已有请求不可覆盖。"""
 
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -220,7 +236,7 @@ class ProtenixV2Adapter:
 
     def msa_invocation(
         self,
-        request: StructurePredictionRequest,
+        request: PredictionRequest,
         *,
         input_json: Path,
         output_dir: Path,
@@ -251,7 +267,7 @@ class ProtenixV2Adapter:
 
     def prediction_invocation(
         self,
-        request: StructurePredictionRequest,
+        request: PredictionRequest,
         *,
         input_json: Path,
         output_dir: Path,
@@ -291,6 +307,8 @@ class ProtenixV2Adapter:
             "true",
             "--enable_tf32",
             "true",
+            "--need_atom_confidence",
+            str(request.require_full_confidence).lower(),
         ]
         if request.parameter_profile is PredictionParameterProfile.MODEL_DEFAULT:
             argv.extend(("--use_default_params", "true"))
@@ -315,7 +333,7 @@ class ProtenixV2Adapter:
 
     def collect_products(
         self,
-        request: StructurePredictionRequest,
+        request: PredictionRequest,
         *,
         output_dir: Path,
     ) -> tuple[StructurePredictionProduct, ...]:
@@ -337,10 +355,19 @@ class ProtenixV2Adapter:
                     prediction_dir
                     / f"{request.job_name}_summary_confidence_sample_{sample_index}.json"
                 )
+                full_confidence_path = (
+                    prediction_dir
+                    / f"{request.job_name}_full_data_sample_{sample_index}.json"
+                )
                 if not structure_path.is_file() or not confidence_path.is_file():
                     raise PredictionOutputError(
                         "Protenix 正式输出缺失: "
                         f"structure={structure_path}, confidence={confidence_path}"
+                    )
+                if request.require_full_confidence and not full_confidence_path.is_file():
+                    raise PredictionOutputError(
+                        "Protenix full confidence 正式输出缺失: "
+                        f"{full_confidence_path}"
                     )
                 try:
                     confidence = _ProtenixConfidence.model_validate_json(
@@ -361,6 +388,16 @@ class ProtenixV2Adapter:
                         structure_sha256=sha256_file(structure_path),
                         confidence_path=confidence_path,
                         confidence_sha256=sha256_file(confidence_path),
+                        full_confidence_path=(
+                            full_confidence_path
+                            if request.require_full_confidence
+                            else None
+                        ),
+                        full_confidence_sha256=(
+                            sha256_file(full_confidence_path)
+                            if request.require_full_confidence
+                            else None
+                        ),
                         plddt=confidence.plddt,
                         gpde=confidence.gpde,
                         ptm=confidence.ptm,

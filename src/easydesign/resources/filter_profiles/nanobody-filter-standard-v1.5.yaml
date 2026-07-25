@@ -1,0 +1,52 @@
+profile_id: nanobody-filter-standard-v1.5
+source_document:
+  name: NANOBODY_FILTER_STANDARD_V1.md
+  version: "1.5"
+  sha256: c28c82d30420c49d5f55dc2c055c6ee2520e3a7f9ed021c3efcba7681a5be905
+metric_definition_version: interface-geometry-v1
+interface:
+  heavy_atom_contact_angstrom: 5.0
+  severe_clash_below_angstrom: 1.5
+  moderate_clash_from_angstrom: 1.5
+  moderate_clash_below_angstrom: 1.8
+  hydrogen_bond_heavy_atom_angstrom: 3.5
+  salt_bridge_angstrom: 4.0
+  sasa_probe_radius_angstrom: 1.4
+  sasa_sphere_points: 960
+pilot_hard_gates:
+  pass_filters: true
+  hotspot_coverage_minimum: 0.40
+  design_to_target_iptm_minimum: 0.50
+  min_design_to_target_pae_maximum_angstrom: 10.0
+  target_ca_rmsd_maximum_angstrom: 3.0
+  severe_clash_maximum: 0
+  moderate_clash_maximum: 3
+fixed_normalization:
+  design_to_target_iptm: {direction: up, gate: 0.50, ideal: 0.85}
+  min_design_to_target_pae: {direction: down, gate: 10.0, ideal: 3.0}
+  filter_rmsd: {direction: down, gate: 2.5, ideal: 0.5}
+  filter_rmsd_design: {direction: down, gate: 2.5, ideal: 0.5}
+  target_ca_rmsd: {direction: down, gate: 3.0, ideal: 0.5}
+  binder_ptm: {direction: up, gate: 0.75, ideal: 0.90}
+  hotspot_coverage: {direction: up, gate: 0.40, ideal: 1.00}
+screen_weights:
+  interface_bsa: 0.25
+  residue_pair_contact_density: 0.10
+  atom_contact_density: 0.05
+  hotspot_coverage: 0.10
+  binder_contact_coverage: 0.05
+  cdr_dominance: 0.07
+  cdr_utilization: 0.06
+  hydrogen_bond_density: 0.05
+  salt_bridge_density: 0.04
+  polar_contact_fraction: 0.03
+  design_to_target_iptm: 0.06
+  min_design_to_target_pae: 0.04
+  filter_rmsd: 0.04
+  filter_rmsd_design: 0.02
+  target_ca_rmsd: 0.02
+  binder_ptm: 0.02
+strategy_score_weights:
+  final_gate_pass_rate: 0.40
+  qualified_top_quartile_mean: 0.35
+  all_candidates_median: 0.25

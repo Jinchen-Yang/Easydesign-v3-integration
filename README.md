@@ -97,7 +97,9 @@ PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 require
 独立 SASA/ScanNet 和用户区域。Stage 03 已实现基础 VHH 策略编译：每个批准区域与七个
 官方 scaffold 组合、只写 positive binding，并由 BoltzGen 0.3.2 官方校验。Stage 04
 Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与恢复；APOE 21×40 真实
-验收完成前仍不标记为 `smoke-validated`。Stage 05–07 仍在开发。
+验收完成前仍不标记为 `smoke-validated`。Stage 05 已实现 v1.5 pilot 硬门、逐规则审计、
+Tier A 扩展到总计 100、full-target Protenix 和唯一 scale strategy；等待 Stage 04
+APOE 输入完成后做真实验收。Stage 06–07 仍在开发。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
@@ -164,6 +166,21 @@ easydesign runs resume /absolute/path/to/downstream-stage04
 
 Stage 04 的 40 指每个策略 40 个“metric row + 原始 complex CIF + refold CIF”完整候选，
 不是 40 次启动，也不是 BoltzGen 最终 `budget=30` 目录中的数量。
+
+当配置执行到 Stage 05 时，同一命令会继续做 v1.5 pilot 筛选。只扩展 Tier A，最多三组；
+没有 Tier A 或没有唯一 scale winner 会形成可审计科学停止：
+
+```bash
+easydesign run downstream/easydesign.yaml \
+  --from-run /absolute/path/to/succeeded-stage04-run \
+  --run-id downstream-stage05
+
+easydesign runs watch /absolute/path/to/downstream-stage05
+easydesign runs resume /absolute/path/to/downstream-stage05
+```
+
+Stage 05 的 target 使用 required MSA，binder 使用 query-only；不得无 MSA 静默降级。
+筛选分数只用于结构工程排序，不表示实验亲和力或成功概率。
 
 PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
 红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的

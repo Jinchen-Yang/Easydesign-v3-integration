@@ -126,6 +126,7 @@ class CandidateIndex(BaseModel):
         backend_identity = [
             (
                 candidate.strategy_id,
+                candidate.task_id,
                 candidate.task_attempt_number,
                 candidate.backend_candidate_id,
             )

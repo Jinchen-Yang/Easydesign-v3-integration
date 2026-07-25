@@ -2,8 +2,11 @@
 
 from .contracts import (
     BackendInvocation,
+    ComplexStructurePredictionRequest,
     MsaMode,
     PredictionParameterProfile,
+    PredictionRequest,
+    ProteinPredictionChain,
     StructurePredictionProduct,
     StructurePredictionRequest,
     TemplateMode,
@@ -17,8 +20,11 @@ from .protenix_v2 import (
 
 __all__ = [
     "BackendInvocation",
+    "ComplexStructurePredictionRequest",
     "MsaMode",
+    "PredictionRequest",
     "PredictionParameterProfile",
+    "ProteinPredictionChain",
     "ProtenixMsaProvider",
     "ProtenixV2Adapter",
     "ResolvedProtenixMsaProvider",

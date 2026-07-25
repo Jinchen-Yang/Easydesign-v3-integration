@@ -26,6 +26,7 @@ from easydesign.core import (
     EasyDesignError,
     ExecutionStatus,
     ManifestStateError,
+    ProgressSnapshot,
     RunManifest,
     StageId,
     StageManifest,
@@ -70,6 +71,7 @@ from .stage01_sources import execute_stage01_source
 from .stage02 import execute_stage02
 from .stage03 import execute_stage03, initialize_continuation_run
 from .stage04 import Stage04Execution, execute_stage04
+from .stage05 import ComplexAdapterBuilder, Stage05Execution, execute_stage05
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -82,7 +84,7 @@ from .workspace import (
 )
 
 PROTENIX_V2_CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
-IMPLEMENTED_STAGE_MAX = 4
+IMPLEMENTED_STAGE_MAX = 5
 
 
 class DiagnosticStatus(StrEnum):
@@ -388,6 +390,32 @@ def _boltzgen_generation_adapter(
     )
 
 
+def _complex_protenix_adapter_builder(
+    runtime: ProtenixV2Runtime,
+    *,
+    prediction_timeout_seconds: int,
+) -> ComplexAdapterBuilder:
+    def build(
+        provider: ResolvedProtenixMsaProviderConfig,
+        device: int,
+    ) -> ProtenixV2Adapter:
+        return ProtenixV2Adapter(
+            executable=runtime.executable,
+            model_root=runtime.model_root,
+            cuda_visible_devices=str(device),
+            remote_msa_provider=provider.provider,
+            remote_msa_endpoint=(
+                provider.endpoint
+                if str(provider.provider) == "custom-colabfold"
+                else None
+            ),
+            remote_msa_timeout_seconds=provider.timeout_seconds,
+            prediction_timeout_seconds=prediction_timeout_seconds,
+        )
+
+    return build
+
+
 def diagnose_runtime(
     *,
     profile_path: Path | None = None,
@@ -463,9 +491,13 @@ def diagnose_runtime(
             continue
         try:
             if name == "protenix-v2":
-                if loaded is not None and not isinstance(
+                if (
+                    loaded is not None
+                    and loaded.config.workflow.stop_after_stage < 5
+                    and not isinstance(
                     loaded,
                     (LoadedSequenceRunConfig, LoadedRemoteRunConfig),
+                    )
                 ):
                     checks.append(
                         DiagnosticCheck(
@@ -655,9 +687,14 @@ def execute_pipeline(
                 prediction_fallback_reason=fallback.reason,
             )
             protenix_runtime = backends.protenix_v2
-            assert protenix_runtime is not None
+            assert isinstance(protenix_runtime, ProtenixV2Runtime)
+            stage01_protenix_runtime = protenix_runtime
             first_provider = derived.msa_execution_plan[0] if derived.msa_execution_plan else None
-            writer = _protenix_adapter(protenix_runtime, derived, first_provider)
+            writer = _protenix_adapter(
+                stage01_protenix_runtime,
+                derived,
+                first_provider,
+            )
             protenix_input = writer.write_input(
                 prediction_request,
                 prepared_source.workspace.attempt_root(
@@ -681,12 +718,18 @@ def execute_pipeline(
             def remote_adapter_builder(
                 provider: ResolvedProtenixMsaProviderConfig | None,
             ) -> ProtenixV2Adapter:
-                return _protenix_adapter(protenix_runtime, derived, provider)
+                return _protenix_adapter(
+                    stage01_protenix_runtime,
+                    derived,
+                    provider,
+                )
 
             completed_prediction = execute_sequence_prediction(
                 prepared=prepared_prediction,
                 adapter_builder=remote_adapter_builder,
-                model_checkpoint_sha256=sha256_file(protenix_runtime.model_checkpoint),
+                model_checkpoint_sha256=sha256_file(
+                    stage01_protenix_runtime.model_checkpoint
+                ),
             )
             run_root = completed_prediction.prepared.workspace.run_root
             run_manifest = completed_prediction.run_manifest
@@ -787,6 +830,32 @@ def execute_pipeline(
         )
         run_manifest = completed_stage04.run_manifest
         status = completed_stage04.status
+    current_run, _ = _load_latest_run_manifest(run_root)
+    completed_stage_ids = {
+        reference.producer_stage for reference in current_run.stage_manifest_refs
+    }
+    if (
+        context.plan.stop_after_stage >= 5
+        and str(StageId.PILOT_FILTERING) not in completed_stage_ids
+    ):
+        boltzgen_runtime = backends.boltzgen
+        protenix_runtime = backends.protenix_v2
+        stage05_config = loaded.config.stage05
+        assert boltzgen_runtime is not None
+        assert protenix_runtime is not None
+        assert stage05_config is not None
+        completed_stage05 = execute_stage05(
+            run_root=run_root,
+            boltzgen_adapter=_boltzgen_generation_adapter(boltzgen_runtime),
+            protenix_adapter_builder=_complex_protenix_adapter_builder(
+                protenix_runtime,
+                prediction_timeout_seconds=(
+                    stage05_config.full_target_prediction.prediction_timeout_seconds
+                ),
+            ),
+        )
+        run_manifest = completed_stage05.run_manifest
+        status = completed_stage05.status
     return PipelineExecution(
         status=status,
         plan=context.plan,
@@ -800,7 +869,7 @@ def resume_pipeline(
     run_root: Path,
     *,
     profile_path: Path | None = None,
-) -> Stage04Execution:
+) -> Stage04Execution | Stage05Execution:
     """Resume the current manifest-declared running stage without changing config."""
 
     root = run_root.expanduser().resolve()
@@ -825,7 +894,77 @@ def resume_pipeline(
             run_root=root,
             adapter=_boltzgen_generation_adapter(runtime),
         )
+    if (
+        resolved.stop_after_stage >= 5
+        and str(StageId.PILOT_GENERATION) in completed
+        and str(StageId.PILOT_FILTERING) not in completed
+    ):
+        profile = load_runtime_profile(profile_path)
+        boltzgen_runtime = profile.profile.backends.boltzgen
+        protenix_runtime = profile.profile.backends.protenix_v2
+        config = resolved.user_config.stage05
+        if boltzgen_runtime is None or protenix_runtime is None:
+            raise ConfigurationError(
+                "runtime profile 缺少 Stage 05 所需 BoltzGen/Protenix backend"
+            )
+        if config is None:
+            raise ConfigurationError("resolved config 缺少 Stage 05")
+        return execute_stage05(
+            run_root=root,
+            boltzgen_adapter=_boltzgen_generation_adapter(boltzgen_runtime),
+            protenix_adapter_builder=_complex_protenix_adapter_builder(
+                protenix_runtime,
+                prediction_timeout_seconds=(
+                    config.full_target_prediction.prediction_timeout_seconds
+                ),
+            ),
+        )
     raise ConfigurationError("当前 run 没有可恢复的已实现 Stage")
+
+
+def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
+    """Read the manifest-declared terminal progress or the expected active stage."""
+
+    root = run_root.expanduser().resolve()
+    current, _ = _load_latest_run_manifest(root)
+    resolved = load_model(
+        root / "config-snapshot" / "resolved-config.json",
+        ResolvedRunConfig,
+    )
+    refs = {item.producer_stage: item for item in current.stage_manifest_refs}
+    stage05_id = str(StageId.PILOT_FILTERING)
+    stage04_id = str(StageId.PILOT_GENERATION)
+    if stage05_id in refs:
+        manifest = load_model(refs[stage05_id].verify(root), StageManifest)
+        return load_model(
+            manifest.require_output("stage05-progress-final").verify(root),
+            ProgressSnapshot,
+        )
+    if resolved.stop_after_stage >= 5 and stage04_id in refs:
+        return load_model(
+            root
+            / stage05_id
+            / "attempt-0001"
+            / "runtime"
+            / "progress.json",
+            ProgressSnapshot,
+        )
+    if stage04_id in refs:
+        manifest = load_model(refs[stage04_id].verify(root), StageManifest)
+        return load_model(
+            manifest.require_output("pilot-progress-final").verify(root),
+            ProgressSnapshot,
+        )
+    if resolved.stop_after_stage >= 4:
+        return load_model(
+            root
+            / stage04_id
+            / "attempt-0001"
+            / "runtime"
+            / "progress.json",
+            ProgressSnapshot,
+        )
+    raise ManifestStateError("当前 run 没有 Stage 04/05 progress")
 
 
 def _prepared_existing_run(run_root: Path) -> PreparedRun:

@@ -433,6 +433,40 @@ BoltzGen 的 `num_designs` 是本次生成请求，`budget=30` 是官方最终�
 完整候选，且每个候选同时具有唯一 metric row、原始 complex CIF、refold CIF 和 checksum。
 只有终态成功时才发布 `CandidateIndex` 和 `PilotBundle` 给 Stage 05。
 
+### Stage 05 筛选、扩展与 full-target 验证
+
+Stage 05 把筛选规则与执行恢复分成三层：
+
+```text
+filtering/
+  ├── interface-geometry-v1          结构与界面指标
+  ├── nanobody-filter-standard-v1.5 硬门、归一化、Tier 与排序
+  └── protenix confidence parser     真实跨链 PAE/iPTM
+
+orchestration/stage05.py
+  ├── manifest-only 上游验证
+  ├── 逐 candidate 指标 cache
+  ├── 复用 BoltzGen task executor 扩展
+  ├── Protenix full-target task executor
+  └── Stage05Bundle / ScientificStop 发布
+```
+
+Stage 04/05 的 BoltzGen 调度共同调用 `orchestration/boltzgen_tasks.py`；Stage 05 不复制
+命令、收集或恢复逻辑。结构指标 cache identity 同时钉住 candidate structure、target、
+official design mask、hotspot set 和指标版本，避免 resume 时把旧值误用到新输入。
+
+Stage 05 的 runtime `progress.json` 在
+`pilot-structure-metrics`、`expansion-generation`、`expansion-structure-metrics` 和
+`full-target-prediction` 间显式切换 phase；`runs watch` 根据 RunManifest 和 resolved
+config 选择当前 Stage，不扫描目录猜测。结束前将 mutable progress 与 append-only event
+journal 冻结为 StageManifest artifact。
+
+Protenix complex request 是通用 `target+binder` 类型：target required MSA、binder
+query-only、template disabled，full confidence 为必需输出。Stage 01 和 Stage 05/07
+继续使用同一个 Protenix adapter；前者默认不需要 full-confidence matrix，后两者显式
+请求。`stopped-no-tier-a` 和 `stopped-no-scale-winner` 是成功执行得到的科学负结果，
+会终止 Run 但不会伪装成 operational failure。
+
 ### 远程 adapter、cache 与 Decision Gate
 
 UniProt/RCSB 共用 core 环境中的轻量 `httpx` adapter，不引入新 Conda 环境。adapter

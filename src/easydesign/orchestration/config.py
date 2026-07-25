@@ -741,6 +741,21 @@ class Stage05StrategySelectionConfig(BaseModel):
     require_unique_winner: Literal[True] = True
 
 
+class ComplexPredictionConfig(BaseModel):
+    """Stage 05/07 full-target Protenix policy; binder MSA stays query-only."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    backend: Literal["protenix-v2"] = "protenix-v2"
+    target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
+    binder_msa: Literal["query-only"] = "query-only"
+    template_mode: Literal[TemplateMode.DISABLED] = TemplateMode.DISABLED
+    parameter_profile: PredictionParameterProfile = (
+        PredictionParameterProfile.MODEL_DEFAULT
+    )
+    prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
+
+
 class Stage05Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -748,6 +763,7 @@ class Stage05Config(BaseModel):
     expanded_total_per_strategy: int = Field(default=100, ge=1)
     maximum_tier_a_strategies: int = Field(default=3, ge=1)
     strategy_selection: Stage05StrategySelectionConfig = Stage05StrategySelectionConfig()
+    full_target_prediction: ComplexPredictionConfig = ComplexPredictionConfig()
 
 
 class Stage06Config(BaseModel):
@@ -774,6 +790,7 @@ class Stage07Config(BaseModel):
     primary_count: int = Field(default=20, ge=0)
     backup_count: int = Field(default=20, ge=0)
     tnp_required: Literal[True] = True
+    full_target_prediction: ComplexPredictionConfig = ComplexPredictionConfig()
 
     @model_validator(mode="after")
     def validate_package_size(self) -> Self:
@@ -877,6 +894,21 @@ class EasyDesignRunConfig(BaseModel):
                 "Stage 03 candidates_per_strategy 必须与 Stage 04 "
                 "required_complete_candidates_per_strategy 一致"
             )
+        if self.stage04 is not None and self.stage05 is not None:
+            if (
+                self.stage05.expanded_total_per_strategy
+                <= self.stage04.required_complete_candidates_per_strategy
+            ):
+                raise ValueError(
+                    "Stage 05 expanded_total_per_strategy 必须大于 Stage 04 pilot 数"
+                )
+            if (
+                self.stage05.strategy_selection.full_target_refold_top_n
+                > self.stage05.expanded_total_per_strategy
+            ):
+                raise ValueError(
+                    "Stage 05 full_target_refold_top_n 不能超过 expansion 总数"
+                )
         source = self.stage01.target.source
         is_predictable = (
             isinstance(source, LocalFileSourceConfig)

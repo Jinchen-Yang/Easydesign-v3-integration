@@ -72,6 +72,5 @@
 
 ## 历史索引
 
-完成工程 smoke 后追加
-[`history/2026-07.md`](history/2026-07.md)，记录秒级时间、验证、问题、解决方法、遗留
-范围和完整 commit SHA。
+- [2026-07 工程实现归档](history/2026-07.md)。APOE 1000 只在上游唯一 winner 后追加
+  真实验收记录；production 50k 未授权。

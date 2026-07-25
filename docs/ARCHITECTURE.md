@@ -55,6 +55,7 @@ src/easydesign/
 │   ├── hotspot/             # 人工、SASA、界面迁移和注释来源
 │   ├── boltzgen/            # BoltzGen 能力、请求与结果转换
 │   ├── structure_prediction/# Protenix-v2、AFO、AF3 等通用预测接口
+│   ├── tnp.py               # 固定 TNP Python 3.10 文件协议 adapter
 │   └── executors/           # local、Slurm、SMART 执行
 ├── orchestration/
 │   ├── application.py       # CLI/UI 共用的 init/doctor/run/runs API
@@ -494,6 +495,62 @@ Stage 06 不复制生成/收集逻辑，也不把 Stage 04/05 候选计入 scale
 原子 progress/state 与 append-only events；发布中断后，终态 artifact 只有在模型 identity
 或原始 bytes 完全一致时才可复用。Stage 07 只读取 StageManifest 声明、checksum 正确且
 覆盖无缺口的 ScaleBundle/CandidateIndex。
+
+### Stage 07 深度筛选、三 seed 与审核包
+
+Stage 07 把确定性科学规则、重型后端和人工审核包分为三层：
+
+```text
+filtering/nanobody_final_v1_5.py
+  ├── sequence/refold prefilter
+  ├── S_deep / S_full / S_final
+  ├── seed-pair consensus
+  └── lazy-greedy diversity
+
+backends/
+  ├── structure_prediction/Protenix-v2
+  └── tnp.py / Python 3.10 file protocol
+
+orchestration/stage07.py
+  ├── manifest-only upstream validation
+  ├── local metric cache
+  ├── resumable (candidate, seed) tasks
+  ├── TNP batch attempt
+  └── FinalCandidatePackage publication
+```
+
+Stage 05/07 共同调用 `complex_prediction_support.py` 构建 target-required-MSA、
+binder-query-only、template-disabled 的 Protenix 请求；结构/界面原子选择和距离规则仍
+只有 `interface-geometry-v1` 一个实现。Stage 07 不从 Protenix 或 TNP 私有目录扫描猜测
+候选，只有严格 adapter 收集后形成的 ArtifactRef 才进入 manifest。
+
+`S_full` 中依赖本批次分布的分量只从 seed 101 建立一次
+`Seed101Normalization`。candidate identity 和 reference values 冻结为 artifact，
+seed 202/303 必须复用同一参考，恢复执行也不能重算成不同 population。每个
+`(candidate, seed)` 使用独立 TaskRecord；mutable prediction state/progress 原子更新，
+events 和 operational failure 只追加。
+
+TNP commit、license、Python 版本、源 executable SHA-256 和依赖由 adapter/asset register
+共同固定。EasyDesign core 不导入 Torch、ANARCI、ImmuneBuilder 或 DSSP。TNP 原始 JSON
+与每候选 CDR/Vernier liability CSV 均作为正式证据；TNP 失败时不得发布非空
+FinalCandidatePackage。adapter 把 PATH、LD_LIBRARY_PATH 和 CONDA_PREFIX 限定到显式
+Python 3.10 prefix，关闭 user-site 和 `CUDA_VISIBLE_DEVICES`；TNP 是 CPU evidence
+backend，不与 BoltzGen/Protenix 抢占 GPU。Conda package identity、Python distribution
+identity、DSSP executable、clean source commit 和未声明的间接依赖均由 doctor probe
+逐项验证。
+
+最终选择固定使用 90% `S_final` 与 10% design-sequence diversity 的确定性
+lazy-greedy。包中主/备候选是建议，不是批准或订单：
+
+```text
+computed candidate
+→ selected primary/backup
+→ awaiting-human-review
+→ not-ordered
+```
+
+无候选通过时发布 `ScientificStop(stopped-no-final-candidate)`；缺工具、缺证据、任务未
+完成或 checksum 损坏写 `OperationalFailure`，二者不能互相替代。
 
 ### 远程 adapter、cache 与 Decision Gate
 

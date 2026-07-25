@@ -65,6 +65,10 @@ backends:
     executable: /absolute/path/to/boltzgen
     repository_root: /absolute/path/to/boltzgen-source
     cache_root: /absolute/path/to/huggingface-cache
+  tnp:
+    python: /absolute/path/to/tnp/bin/python
+    executable: /absolute/path/to/TNP/bin/TNP
+    repository_root: /absolute/path/to/TNP
 ```
 
 然后从真实 target 创建用户项目：
@@ -101,7 +105,9 @@ Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与
 Tier A 扩展到总计 100、full-target Protenix 和唯一 scale strategy；等待 Stage 04
 APOE 输入完成后做真实验收。Stage 06 已实现 2×500 smoke、20×2500 production plan、
 25% 磁盘门、分片恢复和精确 merge；APOE 真实 1000 必须等待 Stage 05 唯一 winner，
-本轮不会启动 50k。Stage 07 仍在开发。
+本轮不会启动 50k。Stage 07 已实现 v1.5 深筛、Protenix seed 101/202/303、一致性门、
+TNP required evidence 和确定性 20+20 审核包；固定 TNP backend smoke 与 APOE
+Stage 04–06 上游门完成前保持 `implemented`，不提前声称真实 Stage 07 smoke。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
@@ -183,6 +189,20 @@ easydesign runs resume /absolute/path/to/downstream-stage05
 
 Stage 05 的 target 使用 required MSA，binder 使用 query-only；不得无 MSA 静默降级。
 筛选分数只用于结构工程排序，不表示实验亲和力或成功概率。
+
+Stage 06 有唯一 scale winner 并完成新 1000 后，Stage 07 使用同一个统一入口继续：
+
+```bash
+easydesign run downstream/easydesign.yaml \
+  --from-run /absolute/path/to/succeeded-stage06-run \
+  --run-id downstream-stage07
+
+easydesign runs watch /absolute/path/to/downstream-stage07
+easydesign runs resume /absolute/path/to/downstream-stage07
+```
+
+Stage 07 的非空结果最多包含 20 个 primary 和 20 个 backup；不足时不补齐。候选包始终
+等待人工审阅且未下单，1000-candidate 路径只能称为 `smoke-review-package`。
 
 PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
 红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的

@@ -80,14 +80,10 @@ def _required_number(
 def _required_sequence(candidate: CandidateRecord) -> str:
     value = candidate.metrics.get("designed_chain_sequence")
     if not isinstance(value, str) or not value:
-        raise ManifestStateError(
-            f"candidate={candidate.candidate_id} 缺少 designed_chain_sequence"
-        )
+        raise ManifestStateError(f"candidate={candidate.candidate_id} 缺少 designed_chain_sequence")
     sequence = value.strip().upper()
     if any(character not in "ACDEFGHIKLMNPQRSTVWY" for character in sequence):
-        raise ManifestStateError(
-            f"candidate={candidate.candidate_id} binder sequence 含未知残基"
-        )
+        raise ManifestStateError(f"candidate={candidate.candidate_id} binder sequence 含未知残基")
     return sequence
 
 
@@ -119,6 +115,46 @@ def _midrank_percentiles(values: tuple[float, ...]) -> tuple[float, ...]:
     return tuple(result)
 
 
+def normalize_up(value: float, gate: float, ideal: float) -> float:
+    """Public fixed-range normalization shared by Stage 05 and Stage 07."""
+
+    return _up(value, gate, ideal)
+
+
+def normalize_down(value: float, gate: float, ideal: float) -> float:
+    """Public inverse fixed-range normalization shared by Stage 05 and Stage 07."""
+
+    return _down(value, gate, ideal)
+
+
+def empirical_midranks(values: tuple[float, ...]) -> tuple[float, ...]:
+    """Public 1%–99% winsorized empirical midranks for one frozen pool."""
+
+    return _midrank_percentiles(values)
+
+
+def empirical_percentile_against_reference(
+    value: float,
+    reference_values: tuple[float, ...],
+) -> float:
+    """Score one later prediction against a frozen seed-101 reference pool."""
+
+    if not reference_values:
+        raise ManifestStateError("empirical normalization reference 不能为空")
+    array = np.asarray(reference_values, dtype=np.float64)
+    if any(not math.isfinite(float(item)) for item in array):
+        raise ManifestStateError("empirical normalization reference 包含非有限值")
+    lower, upper = np.percentile(array, (1.0, 99.0))
+    clipped = np.clip(array, lower, upper)
+    query = float(np.clip(value, lower, upper))
+    if np.allclose(clipped, clipped[0]):
+        return 0.5
+    below = int(np.sum(clipped < query))
+    equal = int(np.sum(clipped == query))
+    average_rank = below + max(equal - 1, 0) / 2.0
+    return float(average_rank / max(len(clipped) - 1, 1))
+
+
 def _metric(
     metric_id: str,
     value: float | int | bool | str,
@@ -132,9 +168,7 @@ def _metric(
         unit=unit,
         source=source,  # type: ignore[arg-type]
         definition_version=(
-            "boltzgen-0.3.2"
-            if source == "boltzgen"
-            else METRIC_DEFINITION_VERSION
+            "boltzgen-0.3.2" if source == "boltzgen" else METRIC_DEFINITION_VERSION
         ),
     )
 
@@ -169,9 +203,7 @@ def _prepare_candidate(
 ) -> _ScoredInput:
     pass_filters = candidate.pass_filters
     if pass_filters is None:
-        raise ManifestStateError(
-            f"candidate={candidate.candidate_id} 缺少 bool pass_filters"
-        )
+        raise ManifestStateError(f"candidate={candidate.candidate_id} 缺少 bool pass_filters")
     boltzgen = _BoltzgenValues(
         pass_filters=pass_filters,
         design_to_target_iptm=_required_number(
@@ -208,9 +240,7 @@ def _prepare_candidate(
         density_scale = 1000.0 / interface_bsa
     empirical = {
         "interface_bsa": interface_bsa,
-        "residue_pair_contact_density": (
-            structure.residue_pair_contact_count * density_scale
-        ),
+        "residue_pair_contact_density": (structure.residue_pair_contact_count * density_scale),
         "atom_contact_density": structure.atom_contact_count * density_scale,
         "hydrogen_bond_density": structure.hydrogen_bond_count * density_scale,
         "salt_bridge_density": structure.salt_bridge_count * density_scale,
@@ -319,9 +349,7 @@ def evaluate_pilot_candidates(
         structure = item.structure
         boltzgen = item.boltzgen
         bsa_source = (
-            "easydesign-structure"
-            if structure.interface_bsa_angstrom2 is not None
-            else "boltzgen"
+            "easydesign-structure" if structure.interface_bsa_angstrom2 is not None else "boltzgen"
         )
         metrics: tuple[FilterMetric, ...] = (
             _metric(
@@ -532,9 +560,7 @@ def evaluate_pilot_candidates(
             metric_id="binder-sequence",
             operator="unique",
             threshold="unique-within-strategy",
-            observed=(
-                "unique" if duplicate_of is None else f"duplicate-of:{duplicate_of}"
-            ),
+            observed=("unique" if duplicate_of is None else f"duplicate-of:{duplicate_of}"),
             passed=duplicate_of is None,
         )
         hard_pass = all(decision.passed for decision in gate_decisions)
@@ -557,21 +583,13 @@ def evaluate_pilot_candidates(
     summaries: list[StrategyFilterSummary] = []
     strategy_ids = tuple(dict.fromkeys(candidate.strategy_id for candidate in candidates))
     for strategy_id in strategy_ids:
-        strategy_records = tuple(
-            record for record in records if record.strategy_id == strategy_id
-        )
-        unique_records = tuple(
-            record for record in strategy_records if record.duplicate_of is None
-        )
-        qualified = tuple(
-            record for record in unique_records if record.eligible_unique_pass
-        )
+        strategy_records = tuple(record for record in records if record.strategy_id == strategy_id)
+        unique_records = tuple(record for record in strategy_records if record.duplicate_of is None)
+        qualified = tuple(record for record in unique_records if record.eligible_unique_pass)
         boltzgen_pass = sum(
             1
             for record in unique_records
-            if next(
-                metric for metric in record.metrics if metric.metric_id == "pass-filters"
-            ).value
+            if next(metric for metric in record.metrics if metric.metric_id == "pass-filters").value
             is True
         )
         final_pass = len(qualified)
@@ -581,7 +599,9 @@ def evaluate_pilot_candidates(
             else (
                 StrategyTier.B
                 if final_pass == 1
-                else StrategyTier.C if boltzgen_pass >= 2 else StrategyTier.D
+                else StrategyTier.C
+                if boltzgen_pass >= 2
+                else StrategyTier.D
             )
         )
         qualified_scores = sorted(
@@ -589,11 +609,7 @@ def evaluate_pilot_candidates(
             reverse=True,
         )
         top_count = max(math.ceil(len(qualified_scores) * 0.25), 1)
-        top_mean = (
-            sum(qualified_scores[:top_count]) / top_count
-            if qualified_scores
-            else 0.0
-        )
+        top_mean = sum(qualified_scores[:top_count]) / top_count if qualified_scores else 0.0
         all_median = float(median(record.score_screen for record in unique_records))
         pass_rate = final_pass / len(unique_records)
         score_yaml = 0.40 * pass_rate + 0.35 * top_mean + 0.25 * all_median
@@ -624,14 +640,10 @@ def evaluate_pilot_candidates(
         )
     )
     selected_ids = tuple(
-        summary.strategy_id
-        for summary in summaries
-        if summary.tier is StrategyTier.A
+        summary.strategy_id for summary in summaries if summary.tier is StrategyTier.A
     )[:maximum_tier_a_strategies]
     finalized_summaries = tuple(
-        summary.model_copy(
-            update={"selected_for_expansion": summary.strategy_id in selected_ids}
-        )
+        summary.model_copy(update={"selected_for_expansion": summary.strategy_id in selected_ids})
         for summary in summaries
     )
     return PilotFilterReport(
@@ -734,10 +746,7 @@ def evaluate_expansion_candidates(
             ),
             "binder_ptm": _up(boltzgen.binder_ptm, 0.75, 0.90),
         }
-        score = sum(
-            _EXPANSION_WEIGHTS[name] * normalized[name]
-            for name in _EXPANSION_WEIGHTS
-        )
+        score = sum(_EXPANSION_WEIGHTS[name] * normalized[name] for name in _EXPANSION_WEIGHTS)
         provisional[candidate.candidate_id] = ExpansionCandidateRecord(
             candidate_id=candidate.candidate_id,
             strategy_id=candidate.strategy_id,
@@ -785,20 +794,14 @@ def select_scale_strategy(
     candidate_by_id = {item.candidate_id: item for item in candidates}
     if len(candidate_by_id) != len(candidates):
         raise ManifestStateError("expansion candidate_id 不能重复")
-    selected = {
-        item.candidate_id for item in candidates if item.selected_for_full_target
-    }
+    selected = {item.candidate_id for item in candidates if item.selected_for_full_target}
     predicted = {item.candidate_id for item in predictions}
     if predicted != selected:
-        raise ManifestStateError(
-            "full-target prediction 必须覆盖全部且仅覆盖 selected candidate"
-        )
+        raise ManifestStateError("full-target prediction 必须覆盖全部且仅覆盖 selected candidate")
     by_strategy: dict[str, list[ExpansionCandidateRecord]] = {}
     predictions_by_strategy: dict[str, list[FullTargetPredictionRecord]] = {}
     for candidate_record in candidates:
-        by_strategy.setdefault(candidate_record.strategy_id, []).append(
-            candidate_record
-        )
+        by_strategy.setdefault(candidate_record.strategy_id, []).append(candidate_record)
     for prediction_record in predictions:
         predictions_by_strategy.setdefault(
             prediction_record.strategy_id,
@@ -811,21 +814,14 @@ def select_scale_strategy(
             raise ManifestStateError(
                 f"strategy={strategy_id} expansion 未达到 {expanded_total_per_strategy}"
             )
-        selected_group = [
-            item for item in group if item.selected_for_full_target
-        ]
+        selected_group = [item for item in group if item.selected_for_full_target]
         predicted_group = predictions_by_strategy.get(strategy_id, [])
         passing = [item for item in predicted_group if item.structure_gate_pass]
         median_passing = (
-            float(median(item.binder_pose_rmsd_angstrom for item in passing))
-            if passing
-            else None
+            float(median(item.binder_pose_rmsd_angstrom for item in passing)) if passing else None
         )
         mean_score = (
-            float(
-                sum(item.score_expand_structure for item in selected_group)
-                / len(selected_group)
-            )
+            float(sum(item.score_expand_structure for item in selected_group) / len(selected_group))
             if selected_group
             else 0.0
         )
@@ -837,9 +833,7 @@ def select_scale_strategy(
                 selected_for_full_target_count=len(selected_group),
                 full_target_pass_count=len(passing),
                 full_target_pass_rate=(
-                    len(passing) / len(predicted_group)
-                    if predicted_group
-                    else 0.0
+                    len(passing) / len(predicted_group) if predicted_group else 0.0
                 ),
                 median_passing_binder_pose_rmsd_angstrom=median_passing,
                 mean_selected_score_expand_structure=mean_score,
@@ -849,6 +843,7 @@ def select_scale_strategy(
     eligible = [item for item in summaries if item.eligible_for_scale]
     winner_id: str | None = None
     if eligible:
+
         def scientific_rank(item: StrategyExpansionSummary) -> tuple[float, ...]:
             return (
                 -item.full_target_pass_count,
@@ -865,9 +860,7 @@ def select_scale_strategy(
             eligible,
             key=lambda item: (*scientific_rank(item), item.strategy_id),
         )
-        if len(ranked) == 1 or scientific_rank(ranked[0]) != scientific_rank(
-            ranked[1]
-        ):
+        if len(ranked) == 1 or scientific_rank(ranked[0]) != scientific_rank(ranked[1]):
             winner_id = ranked[0].strategy_id
             summaries = [
                 item.model_copy(update={"winner": item.strategy_id == winner_id})
@@ -881,9 +874,5 @@ def select_scale_strategy(
         predictions=predictions,
         strategies=tuple(summaries),
         winner_strategy_id=winner_id,
-        status=(
-            "winner-selected"
-            if winner_id is not None
-            else "stopped-no-scale-winner"
-        ),
+        status=("winner-selected" if winner_id is not None else "stopped-no-scale-winner"),
     )

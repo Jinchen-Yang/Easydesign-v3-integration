@@ -59,6 +59,7 @@ from .profile import (
     RuntimeBackends,
     RuntimeProfile,
     ScanNetEpitopeRuntime,
+    TnpRuntime,
     default_runtime_profile_path,
     initialize_runtime_profile,
     load_runtime_profile,
@@ -78,6 +79,7 @@ from .stage03 import (
     initialize_continuation_run,
 )
 from .stage06 import Stage06Execution, build_scale_plan, execute_stage06
+from .stage07 import Stage07Execution, execute_stage07
 from .workspace import (
     PreparedPseRun,
     PreparedRun,
@@ -129,6 +131,7 @@ __all__ = [
     "RuntimeBackends",
     "RuntimeProfile",
     "ScanNetEpitopeRuntime",
+    "TnpRuntime",
     "SequencePredictionExecutionError",
     "StructurePredictionConfig",
     "Stage02AutomaticConfig",
@@ -143,6 +146,7 @@ __all__ = [
     "Stage07Config",
     "Stage03Execution",
     "Stage06Execution",
+    "Stage07Execution",
     "TargetInputFormat",
     "TargetSourceConfig",
     "WorkflowConfig",
@@ -158,6 +162,7 @@ __all__ = [
     "execute_stage02",
     "execute_stage03",
     "execute_stage06",
+    "execute_stage07",
     "build_scale_plan",
     "export_hotspot_review",
     "approve_hotspots",

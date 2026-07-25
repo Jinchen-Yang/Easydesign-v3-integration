@@ -31,3 +31,21 @@ Stage 01 Target Viewer 是当前唯一随 Python wheel 分发的第三方前端�
 
 任何 Mol* 升级必须重新检查 npm integrity、bundle license notices、静态字节、wheel
 内容和浏览器测试，不得把“npm package 标记为 MIT”当成跳过 bundle 依赖审查的理由。
+
+Stage 07 的 TNP 仅作为独立 runtime 使用，不随 wheel 分发源码、模型或依赖：
+
+- 固定 TNP commit `29dcac72f1380e8538e8870f45a699d3c6156162`；
+- 固定上游 BSD-3-Clause `LICENCE` 与 `bin/TNP` 源文件 SHA-256；
+- `environments/tnp.yml` 固定 Python 3.10、ANARCI、Biopython、DSSP、
+  ImmuneBuilder/NanoBodyBuilder2、Torch 和直接数值依赖；
+- EasyDesign doctor 要求 source checkout 为 clean fixed commit，并执行 import/help probe；
+- TNP 运行产生的模型、权重、JSON、liability CSV 和结构只进入 Git 忽略的 run；
+- 公开 release 前仍需重新审查 TNP 及其完整依赖图、模型下载来源和再分发边界。
+
+TNP 官方说明固定 Biopython `1.77`。ANARCI 的官方 Bioconda 版本字符串是
+`2024.05.21`，其 Python distribution metadata 为 `1.3`。TNP 官方链接的 salilab DSSP
+`3.0.0` 在当前求解结果中会错误寻找 Boost `1.73` ABI，因此真实验证环境固定采用
+conda-forge DSSP `4.6.1` 与 Boost `1.90`。ImmuneBuilder/PDBFixer 所需的
+`pkg_resources` 由 setuptools `80.9.0` 保留；TNP `setup.py` 未声明但 CDR3
+compactness 会直接导入的 scikit-learn 固定为 `1.7.2`。任何环境升级必须重新运行真实
+batch smoke，不能只通过 import 就宣称兼容。

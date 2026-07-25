@@ -51,6 +51,7 @@ from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.orchestration.stage05 import Stage05Execution
 from easydesign.orchestration.stage06 import Stage06Execution
+from easydesign.orchestration.stage07 import Stage07Execution
 from easydesign.reporting import (
     HOST,
     create_target_viewer_server,
@@ -133,7 +134,7 @@ def _parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--stop-after",
         type=int,
-        choices=(1, 2, 3, 4, 5, 6),
+        choices=(1, 2, 3, 4, 5, 6, 7),
         default=1,
     )
     init_parser.add_argument(
@@ -570,6 +571,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     )
                 elif isinstance(outcome, Stage06Execution):
                     print(f"规模候选：{outcome.complete_candidate_count}")
+                elif isinstance(outcome, Stage07Execution):
+                    print(
+                        f"最终候选：primary={outcome.primary_count}，"
+                        f"backup={outcome.backup_count}"
+                    )
                 print(f"Run：{outcome.run_root}")
             return 4 if outcome.status == "incomplete" else 0
         root = _runs_root(arguments.runs_root, arguments.profile)

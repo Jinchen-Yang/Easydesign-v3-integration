@@ -196,3 +196,29 @@ def test_initialize_stage04_project_materializes_pilot_executor(
     assert loaded.config.stage04.executor.devices == (0, 1)
     assert loaded.config.stage04.executor.workers_per_device == 1
     assert loaded.config.stage04.required_complete_candidates_per_strategy == 40
+
+
+def test_initialize_stage07_project_materializes_all_late_stage_profiles(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+
+    initialized = initialize_project(
+        project_root=tmp_path / "final-project",
+        target=fasta,
+        stop_after_stage=7,
+        execution_mode="unattended",
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert loaded.config.stage03 is not None
+    assert loaded.config.stage04 is not None
+    assert loaded.config.stage05 is not None
+    assert loaded.config.stage06 is not None
+    assert loaded.config.stage07 is not None
+    assert loaded.config.stage06.scale_profile == "smoke-1000"
+    assert loaded.config.stage06.preauthorized_candidate_limit == 1000
+    assert loaded.config.stage07.primary_count == 20
+    assert loaded.config.stage07.backup_count == 20
+    assert loaded.config.stage07.tnp_required is True

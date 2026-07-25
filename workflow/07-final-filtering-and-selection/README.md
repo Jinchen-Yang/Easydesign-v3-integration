@@ -1,58 +1,330 @@
-# 07 — 最终筛选与候选选择
+# 07 — 最终筛选、多 seed 复核与候选审核包
 
-        **状态：** `planned`
+**状态：** `implemented`
 
-        **契约版本：** 概念版 `0.1`；首次实现验证后再冻结机器 schema。
+**契约版本：** `0.1`
 
-        ## 目的
+**实现任务：** `S07-001`、`DATA-003`
 
-        应用最终规则、保留多样性，并为人工批准打包可审计 Top N。
+## 目的
 
-        ## 支持范围
+Stage 07 消费 Stage 06 新生成的完整候选，按固定的
+`nanobody-final-v1.5` 规则完成序列预筛、深度结构筛选、Protenix 多 seed 复合物复核、
+TNP 可开发性证据和质量/多样性联合选择，最后发布供人审阅的候选包。
 
-        - 最终结构、界面、置信度、clash 和体系专属门槛。
-- 排序、聚类与多样性控制。
-- 序列、结构、指标、警告和溯源审核包。
+本阶段最多建议 20 个 primary 和 20 个 backup；通过者不足时输出实际数量，不能用失败
+候选凑满。真实零通过是合法、可审计的 `stopped-no-final-candidate` 科学负结果。
 
-        ## 输入
+候选包不是订单。Stage 07 不调用供应商接口，不把软件 smoke 描述成生产下单包，也不把
+计算结果描述成实验验证。
 
-        - Stage 06 规范化结果和候选溯源。
-- 最终 filter/ranking profile、Top N 上限、聚类和人工审核规则。
+## 输入与读取边界
 
-        ## 输出
+Stage 07 只读取当前 `RunManifest` 声明并逐一通过大小和 SHA-256 校验的：
 
-        - 逐 candidate/规则最终决策表。
-- 兼顾排序与多样性的 Top N 建议。
-- 审核包和显式人工批准状态，不产生外部下单副作用。
+- Stage 01 `target.cif`、target sequence；
+- Stage 03 `StrategyBundle`，用于确认唯一胜出策略的 hotspot 成员；
+- Stage 05 `Stage05Bundle` 与 required target MSA；
+- Stage 06 `ScaleBundle` 和 `ScaleCandidateIndex`；
+- schema 0.7 的 Stage 04 executor / Stage 07 scientific profile；
+- runtime profile 显式声明的 Protenix-v2 与 TNP backend。
 
-        ## 不变量
+Stage 05 必须是 `winner-selected`，Stage 06 必须完整发布，且 Stage 06 每个 candidate 都
+必须属于同一 winner、携带 design-mask identity，并拥有 checksum 正确的 original/refold
+结构。代码不能扫描目录补齐候选，也不能从文件名猜测 lineage。
 
-        - Top N 是上限，不用失败候选凑数。
-- 所有排序值和排除原因得到保留。
-- 推荐、批准、下单和实验验证是不同状态。
+## 配置
 
-        ## 失败与重试
+```yaml
+stage07:
+  final_filter_profile: nanobody-final-v1.5
+  primary_count: 20
+  backup_count: 20
+  tnp_required: true
+  full_target_prediction:
+    target_msa:
+      mode: remote
+      providers:
+        - provider: colabfold-public
+    template_mode: disabled
+    no_msa_fallback: false
+```
 
-        - Profile 无效或必需证据缺失。
-- 无人通过时输出空推荐；审核包无法重建身份时失败。
+约束：
 
-        失败必须写成带类型错误信息的终态 attempt，不能转换为空成功。重试建立新 attempt，
-        引用并保留失败 attempt。
+- `primary_count + backup_count` 至少为 1；
+- TNP 在非空候选包中固定为必需证据，不能关掉；
+- target 必须复用 Stage 05 冻结的 required MSA；
+- de novo binder 固定使用 query-only A3M；
+- template 禁用，禁止 no-MSA fallback；
+- Protenix 初轮 seed 101，复核 seed 202/303，均为单 sample；
+- GPU 来自 Stage 04 明确配置，一张 GPU 同时只运行一个预测任务。
 
-        ## 溯源
+## 执行流程
 
-        Manifest 记录上游 manifest/artifact hash、解析后配置、代码版本、adapter/backend
-        身份与版本、适用时的模型身份、随机种子、executor profile、时间、警告和全部 attempt。
+```text
+验证 Stage 01/03/05/06 manifest 与 artifact
+→ 对全部 Stage 06 候选计算序列/结构预证据
+→ 序列合法性、liability、新生未配对 Cys、BoltzGen pass_filters、全序列去重
+→ 按 S_refold 取最多 20,000
+→ absolute gate 与 S_deep
+→ Top 400 做 Protenix seed 101
+→ seed-101 门并冻结经验归一化参考池
+→ Top 60 做 Protenix seed 202/303
+→ 单 seed 严格门和 seed-pair 一致性门
+→ S_final
+→ TNP required evidence
+→ 90% quality + 10% diversity 的 lazy-greedy
+→ 最多 20 primary + 20 backup
+```
 
-        ## 完成门槛
+### 1. 序列与 refold 预筛
 
-        - 每个候选有最终可审计处置。
-- 人工无需访问隐藏后端状态即可批准或拒绝。
+每个 Stage 06 candidate 都生成 `SequencePrefilterRecord`，无论通过与否均保留：
 
-        ## 非目标
+1. 完整 binder sequence 只能含 20 种标准氨基酸；
+2. 由 BoltzGen design mask 标识的新生 Cys 必须在 refold 结构中存在
+   `1.8–2.3 Å` 的 SG–SG 配对；缺 SG 也按未配对处理；
+3. 官方 BoltzGen `pass_filters` 必须为真；
+4. 按完整 binder sequence 去重，等分时由 `S_refold` 和 candidate ID 确定唯一代表；
+5. N-linked motif、Met/Trp oxidation、Asn deamidation、Asp isomerisation、
+   Lys glycation 和 Asp-Pro fragmentation 作为 warning 保存，不在本步单独硬拒绝。
 
-        - 在 1.0 自动下单。
-- 隐藏负面证据来凑满 Top N。
-- 宣称实验验证。
+`S_refold` 使用固定的 iPTM、minimum PAE、整体 RMSD、design RMSD 和 design pTM 归一化
+权重。最多 20,000 个 hard-pass 唯一序列进入深筛。
 
-        外部工具只通过 adapter 访问；orchestration、UI 行为和下游决策不属于本阶段。
+### 2. Absolute gate 与 S_deep
+
+Stage 05/07 共用同一套 `interface-geometry-v1` 与 Nanobody Filter Standard v1.5
+指标定义，禁止复制另一套距离阈值。至少审计：
+
+- hotspot coverage；
+- iPTM 与 minimum PAE；
+- target CA RMSD；
+- severe/moderate clash；
+- interface BSA；
+- binder contact、CDR dominance/utilization；
+- residue/atom contact、hydrogen bond、salt bridge 和 polar fraction。
+
+本步复用固定 absolute gate，然后按 `S_deep` 取最多 400 个候选进入 seed 101。缺少标准
+interface BSA、design mask 或必需指标是 operational failure，不能把指标填成零继续。
+
+### 3. Protenix seed 101 与冻结参考池
+
+每个候选执行完整 target + binder 的 Protenix-v2 复合物预测：
+
+- target chain A：Stage 05 required MSA；
+- binder chain B：query-only A3M；
+- 无模板、单 seed、单 sample；
+- 输出结构、summary confidence 和 full confidence 都必须存在且校验。
+
+seed-101 初轮硬门：
+
+| 指标 | 门槛 |
+| --- | ---: |
+| pairwise iPTM | `≥ 0.60` |
+| minimum interface PAE | `≤ 10 Å` |
+| binder pose RMSD | `≤ 3 Å` |
+| target CA RMSD | `≤ 3 Å` |
+| binder pTM | `≥ 0.60` |
+| hotspot coverage | `≥ 0.40` |
+| severe clash | `= 0` |
+| moderate clash | `≤ 3` |
+
+`S_full` 同时使用固定区间归一化和本批次 seed-101 经验分位数。经验池的 candidate identity
+及全部 reference values 单独冻结为 `seed101-normalization.json`；seed 202/303 只能使用
+这一份参考，不能用后续结果重新归一化或改变排名。
+
+### 4. 多 seed 一致性
+
+seed-101 通过者按 `S_full` 取最多 60 个，再分别预测 seed 202、303。每个 additional
+seed 必须通过更严格的单 seed 门：
+
+- minimum interface PAE `≤ 7 Å`；
+- binder pose RMSD `≤ 2.5 Å`；
+- 其余 iPTM、target RMSD、pTM、hotspot coverage 和 clash 门保持不变。
+
+任意 seed pair 还必须同时满足：
+
+- binder CA RMSD `≤ 3 Å`；
+- hotspot contact Jaccard `≥ 0.50`。
+
+至少两个独立 seed 本身通过且构成一个通过的一致 pair，候选才得到 consensus。最终分数：
+
+```text
+S_final = 0.70 × consensus seeds 的 median S_full
+        + 0.30 × S_deep
+```
+
+seed 101 未通过或不足三个预测的候选仍保存明确 consensus-fail 记录，不从审计表消失。
+
+### 5. TNP required evidence
+
+非空 consensus pool 必须调用固定 Therapeutic Nanobody Profiler：
+
+- TNP commit `29dcac72f1380e8538e8870f45a699d3c6156162`；
+- BSD-3-Clause；
+- 独立 Python 3.10 环境；
+- ANARCI Bioconda `2024.05.21`、Biopython `1.77`、ImmuneBuilder/NanoBodyBuilder2
+  `1.2`、DSSP `4.6.1`、OpenMM `8.5.2`、PDBFixer `1.9`、scikit-learn `1.7.2`
+  与 setuptools `80.9.0` 均由环境契约固定；
+- core 不导入 TNP、Torch、ANARCI 或 ImmuneBuilder。
+
+adapter 使用无 shell subprocess、batch FASTA 和文件协议，严格验证官方 JSON、
+每候选 CDR/Vernier liability CSV、candidate identity 和有限数值。adapter 显式绑定
+该 Conda prefix 的 PATH/native library，禁用 user-site 和 GPU 可见性，防止 TNP 与
+BoltzGen/Protenix 抢卡。TNP 保存 total CDR length、CDR3 length/compactness、
+PSH/PPC/PNC、六类 flag、CDR/Vernier liabilities 和含 insertion code 的原始 IMGT
+numbering。
+
+TNP 在 v1.5 中不作为单候选硬门，而是 final package 的必需风险证据：
+
+- red flag 或至少两个 CDR/Vernier liability：high；
+- 至少两个 amber 或一个 liability：medium；
+- 其余：low。
+
+TNP 缺失、身份漂移、输出损坏或运行失败属于 operational failure；此时不能发布完整非空
+候选包。
+
+### 6. 多样性选择
+
+对全部 consensus pass 且 TNP 完整的候选执行确定性 lazy-greedy：
+
+```text
+gain = 0.90 × S_final
+     + 0.10 × (1 - 与已选候选的最大设计序列 identity)
+```
+
+tie-break 依次为：
+
+1. 较低 TNP risk；
+2. 较高 `S_final`；
+3. 较高 median pairwise iPTM；
+4. 字典序较小的 candidate ID。
+
+先选择 primary，再从剩余候选中选择 backup。序列 identity 使用固定
+Biopython `PairwiseAligner` 定义；算法不会聚类后偷偷补回失败候选。
+
+## 公共类型
+
+Stage 07 版本化并导出：
+
+- `SequencePrefilterRecord`：序列、warning、新生 Cys、去重与 `S_refold`；
+- `DeepFilterRecord`：absolute gate、结构指标和 `S_deep`；
+- `RawFinalPrediction` / `FinalPredictionRecord`：完整 Protenix 原始与评分证据；
+- `Seed101Normalization`：冻结的 seed-101 经验参考池；
+- `SeedPairConsistency` / `MultiSeedConsensusRecord`：多 seed 单体与配对结论；
+- `TnpCandidateRecord` / `TnpReport`：TNP 指标、liability 和风险；
+- `FinalSelectionRecord` / `FinalCandidatePackage`：主备候选及人工审核状态；
+- `OperationalFailure`：必需工具、任务数、错误和可重试性；
+- `Stage07Bundle`：Stage 07 唯一下游/报告交接。
+
+通用 `TaskRecord`、`CandidateRecord`、`FilterMetric`、`FilterDecision`、
+`ProgressSnapshot` 和 `ScientificStop` 与上游复用。
+
+## 输出
+
+```text
+07-final-filtering-and-selection/attempt-0001/
+├── artifacts/
+│   ├── filter-profile.yaml
+│   ├── seed101-normalization.json        # 有 seed-101 预测时
+│   ├── final-filter-report.json
+│   ├── tnp-report.json                   # 有 consensus pass 时
+│   ├── final-candidate-package.json
+│   ├── scientific-stop.json              # 零最终候选时
+│   ├── operational-failures.jsonl        # 恢复过 operational failure 时
+│   ├── progress-final.json
+│   ├── task-events.jsonl
+│   ├── stage07-bundle.json
+│   └── stage-manifest.json
+├── runtime/
+│   ├── local-metric-state.json
+│   ├── prediction-state.json
+│   ├── progress.json
+│   ├── task-events.jsonl
+│   └── operational-failures.jsonl
+└── work/
+    ├── local-metrics/
+    ├── protenix/<candidate>/seed-<seed>/attempt-XXXX/
+    └── tnp/attempt-XXXX/
+```
+
+Protenix 与 TNP 上游原始文件可以位于 `work/`，但只有 StageManifest 明确声明且 checksum
+正确的 ArtifactRef 才构成正式证据。候选包中保留序列、结构引用、逐级分数、consensus、
+TNP 风险、选择理由和完整 lineage。
+
+## 恢复、进度与不可变性
+
+- Protenix 每个 `(candidate, seed)` 是独立 TaskRecord；
+- `progress.json` 与 `prediction-state.json` 原子替换；
+- `task-events.jsonl` 和 operational failure 日志只追加；
+- 中断的 running attempt 在 resume 时先关闭为失败，再创建新 attempt；
+- checksum 正确的预测不重跑；
+- seed-101 参考池、final report、package 和终态 bundle 不覆盖；
+- TNP 失败保留 evidence，resume 创建新 TNP attempt；
+- 发布途中恢复只能复用 identity/bytes 一致的终态 artifact。
+
+`easydesign runs watch RUN_DIR` 只读取结构化 progress 和事件，不解析终端文本。它显示阶段、
+phase、总任务、成功/失败/待重试、GPU 分配、吞吐与 ETA。
+
+## CLI
+
+```bash
+easydesign doctor --config easydesign.yaml
+easydesign run easydesign.yaml
+easydesign runs watch RUN_DIR
+easydesign runs resume RUN_DIR
+easydesign runs show RUN_DIR
+```
+
+CLI 只调用统一 orchestration API。`doctor` 只探测配置实际需要的 Protenix/TNP；不会安装
+依赖、扫描 Conda 环境或做 fallback。
+
+## 科学停止、软件失败与审核状态
+
+`stopped-no-final-candidate` 表示规则真实运行完成但无人通过，是成功记录的科学负结果。
+
+以下属于 operational failure：
+
+- 上游 manifest、winner、candidate 数或 checksum 不一致；
+- 缺 MSA/design mask/标准结构指标；
+- Protenix 某个必需 task 未完整成功；
+- TNP 环境、commit、license、依赖或输出不符合固定契约；
+- seed identity、candidate identity、normalization 或发布 artifact 不一致。
+
+operational failure 不能转换为空科学成功。失败调用写入结构化日志，修复条件后由
+`runs resume` 继续。
+
+候选包始终为 `awaiting-human-review` 和 `not-ordered`。`required_reviews` 含 biosafety
+时只能生成 `draft-order-package`。当前 1000 候选路径标记为
+`smoke-review-package`；即使 50k 未来执行完成，也不能自动下单。
+
+## 完成门槛
+
+工程 `smoke-validated` 必须同时满足：
+
+- 预筛、阈值、S_full/S_final、归一化、consensus、TNP risk 和多样性单元测试通过；
+- manifest-only、checksum、failure evidence、resume 和不可变发布测试通过；
+- 非 APOE 1000-candidate fixture 完成三 seed、TNP 与非空审核包；
+- 固定 TNP 环境通过 import/help/source/license probe 和最小真实 batch smoke；
+- 若 APOE 到达 Stage 07，真实产生完整或可审计空的 smoke review package；
+- wheel 安装后的 `easydesign` 命令运行同一 API。
+
+在真实 TNP backend smoke 与 APOE 上游门完成前，本阶段只能是 `implemented`，不能写成
+`smoke-validated` 或科学验证。
+
+## 非目标与后续提高款
+
+本轮不做：
+
+- 自动供应商下单；
+- 用 TNP risk 隐式删除候选；
+- 修改 v1.5 阈值迎合 APOE 历史结果；
+- 用失败候选凑足 40；
+- 无 MSA fallback、模板或 Agent/LLM 选择；
+- 自动湿实验、免疫原性/毒理结论或 production-ready 宣称；
+- 真实 50k 后的生产发布。
+
+后续需要第二个独立真实 target、湿实验反馈、阈值校准、可制造性扩展、正式 review gate、
+产品 UI 和经授权的 production 运行。

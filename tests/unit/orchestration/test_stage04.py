@@ -38,10 +38,12 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.filtering.structure_metrics import InterfaceMetricValues
 from easydesign.orchestration import read_pipeline_progress
 from easydesign.orchestration.stage04 import execute_stage04
 from easydesign.orchestration.stage05 import execute_stage05
 from easydesign.orchestration.stage06 import execute_stage06
+from easydesign.orchestration.stage07 import execute_stage07
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.stages.s03_boltzgen_configuration import (
@@ -57,6 +59,13 @@ from easydesign.stages.s04_pilot_generation import (
 from easydesign.stages.s04_pilot_generation.models import TaskTable
 from easydesign.stages.s05_pilot_filtering import Stage05Bundle
 from easydesign.stages.s06_scale_generation_and_refolding import ScaleBundle, ScalePlan
+from easydesign.stages.s07_final_filtering_and_selection import (
+    DevelopabilityRisk,
+    FinalCandidatePackage,
+    OperationalFailure,
+    Stage07Bundle,
+    TnpCandidateRecord,
+)
 
 NOW = datetime(2026, 7, 26, 3, 0, tzinfo=UTC)
 
@@ -369,11 +378,101 @@ class _FakeProtenixAdapter:
         )
 
 
+class _FakeTnpAdapter:
+    def probe(self) -> dict[str, str]:
+        return {
+            "backend": "tnp",
+            "commit": "29dcac72f1380e8538e8870f45a699d3c6156162",
+            "python_version": "3.10.14",
+        }
+
+    def execute(self, request: object) -> object:
+        output_directory = request.output_directory  # type: ignore[attr-defined]
+        output_directory.mkdir(parents=True)
+        request.input_fasta.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[attr-defined]
+        request.input_fasta.write_text(  # type: ignore[attr-defined]
+            "".join(
+                f">{candidate_id}\n{sequence}\n"
+                for candidate_id, sequence in request.sequences  # type: ignore[attr-defined]
+            ),
+            encoding="utf-8",
+        )
+        request.stdout_path.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[attr-defined]
+        request.stdout_path.write_text("fake TNP stdout\n", encoding="utf-8")  # type: ignore[attr-defined]
+        request.stderr_path.write_text("", encoding="utf-8")  # type: ignore[attr-defined]
+        result_path = output_directory / "TNP_Results_Multientry.json"
+        result_path.write_text("{}\n", encoding="utf-8")
+        liability_root = output_directory / "Final_Models"
+        liability_root.mkdir()
+        for candidate_id, _sequence in request.sequences:  # type: ignore[attr-defined]
+            (
+                liability_root / f"{candidate_id}_NanoBodyBuilder2_Sequence_Liabilities.json"
+            ).write_text(
+                "chain,position,aa,liability\n",
+                encoding="utf-8",
+            )
+        return SimpleNamespace(
+            started_at=NOW,
+            ended_at=NOW,
+            return_code=0,
+            result_path=result_path,
+            stdout_path=request.stdout_path,  # type: ignore[attr-defined]
+            stderr_path=request.stderr_path,  # type: ignore[attr-defined]
+        )
+
+    def collect(self, request: object, _result: object) -> tuple[TnpCandidateRecord, ...]:
+        return tuple(
+            TnpCandidateRecord(
+                candidate_id=candidate_id,
+                total_cdr_length=30,
+                cdr3_length=12,
+                cdr3_compactness=0.75,
+                psh=0.2,
+                ppc=0.1,
+                pnc=0.1,
+                flags={
+                    "L": "green",
+                    "L3": "green",
+                    "C": "green",
+                    "PSH": "green",
+                    "PPC": "green",
+                    "PNC": "green",
+                },
+                red_flag_count=0,
+                amber_flag_count=0,
+                risk=DevelopabilityRisk.LOW,
+            )
+            for candidate_id, _sequence in request.sequences  # type: ignore[attr-defined]
+        )
+
+
+def _passing_stage07_structure_metrics() -> InterfaceMetricValues:
+    return InterfaceMetricValues(
+        target_ca_rmsd_angstrom=1.0,
+        hotspot_coverage=0.8,
+        contacted_hotspot_count=2,
+        hotspot_count=2,
+        binder_contact_coverage=0.8,
+        cdr_dominance=0.8,
+        cdr_utilization=0.8,
+        residue_pair_contact_count=30,
+        atom_contact_count=100,
+        severe_clash_count=0,
+        moderate_clash_count=0,
+        hydrogen_bond_count=5,
+        salt_bridge_count=2,
+        polar_contact_fraction=0.5,
+        interface_bsa_angstrom2=900.0,
+        interface_bsa_missing_reason=None,
+    )
+
+
 def _prepared_stage03_run(
     tmp_path: Path,
     *,
     through_stage05: bool = False,
     through_stage06: bool = False,
+    through_stage07: bool = False,
 ) -> Path:
     pse = tmp_path / "target.pse"
     pse.write_bytes(b"synthetic")
@@ -392,7 +491,15 @@ def _prepared_stage03_run(
                 },
                 "workflow": {
                     "execution_mode": "unattended",
-                    "stop_after_stage": (6 if through_stage06 else 5 if through_stage05 else 4),
+                    "stop_after_stage": (
+                        7
+                        if through_stage07
+                        else 6
+                        if through_stage06
+                        else 5
+                        if through_stage05
+                        else 4
+                    ),
                     "max_strategy_rounds": 1,
                 },
                 "stage01": {
@@ -455,7 +562,7 @@ def _prepared_stage03_run(
                             "require_unique_winner": True,
                         },
                     }
-                    if through_stage05 or through_stage06
+                    if through_stage05 or through_stage06 or through_stage07
                     else None
                 ),
                 "stage06": (
@@ -463,10 +570,19 @@ def _prepared_stage03_run(
                         "scale_profile": "smoke-1000",
                         "preauthorized_candidate_limit": 1000,
                     }
-                    if through_stage06
+                    if through_stage06 or through_stage07
                     else None
                 ),
-                "stage07": None,
+                "stage07": (
+                    {
+                        "final_filter_profile": "nanobody-final-v1.5",
+                        "primary_count": 20,
+                        "backup_count": 20,
+                        "tnp_required": True,
+                    }
+                    if through_stage07
+                    else None
+                ),
             },
             sort_keys=False,
         ),
@@ -886,6 +1002,111 @@ def test_stage06_disk_preflight_fails_before_creating_scale_tasks(
     attempt = root / str(StageId.SCALE_GENERATION_AND_REFOLDING) / "attempt-0001"
     assert not (attempt / "tasks").exists()
     assert (attempt / "runtime" / "resource-preflight.json").is_file()
+
+
+def test_stage07_publishes_a_complete_non_apoe_review_package(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage06.shutil.disk_usage",
+        lambda _path: SimpleNamespace(
+            total=400_000_000_000,
+            used=100_000_000_000,
+            free=300_000_000_000,
+        ),
+    )
+    root = _prepared_stage03_run(tmp_path, through_stage07=True)
+    generation = _FakeGenerationAdapter(all_pass=True)
+    execute_stage04(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    execute_stage05(
+        run_root=root,
+        boltzgen_adapter=generation,  # type: ignore[arg-type]
+        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+    execute_stage06(
+        run_root=root,
+        adapter=generation,  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+
+    def local_metrics(
+        **kwargs: object,
+    ) -> tuple[
+        dict[str, tuple[int, ...]],
+        dict[str, object],
+    ]:
+        upstream = kwargs["upstream"]
+        candidates = upstream.scale_candidate_index.candidates  # type: ignore[attr-defined]
+        return (
+            {item.candidate_id: () for item in candidates},
+            {item.candidate_id: _passing_stage07_structure_metrics() for item in candidates},
+        )
+
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage07._batch_local_metrics",
+        local_metrics,
+    )
+    outcome = execute_stage07(
+        run_root=root,
+        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        tnp_adapter=_FakeTnpAdapter(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+
+    assert outcome.status == "candidates-selected"
+    assert outcome.primary_count == 2
+    assert outcome.backup_count == 0
+    bundle = load_model(outcome.stage07_bundle, Stage07Bundle)
+    assert bundle.seed101_normalization is not None
+    bundle.seed101_normalization.verify(root)
+    assert bundle.tnp_report is not None
+    package = load_model(
+        bundle.final_candidate_package.verify(root),
+        FinalCandidatePackage,
+    )
+    assert package.package_type == "smoke-review-package"
+    assert len(package.primary) == 2
+    assert package.ordering_status == "not-ordered"
+    assert {item.strategy_id for item in package.primary} == {"generic-strategy"}
+
+
+def test_stage07_records_operational_failure_without_publishing_a_stage(
+    tmp_path: Path,
+) -> None:
+    root = _prepared_stage03_run(tmp_path)
+
+    with raises(ManifestStateError, match="缺少上游"):
+        execute_stage07(
+            run_root=root,
+            protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+            tnp_adapter=_FakeTnpAdapter(),  # type: ignore[arg-type]
+            executed_at=NOW,
+        )
+
+    failure_path = (
+        root
+        / str(StageId.FINAL_FILTERING_AND_SELECTION)
+        / "attempt-0001/runtime/operational-failures.jsonl"
+    )
+    failures = tuple(
+        OperationalFailure.model_validate_json(line)
+        for line in failure_path.read_text(encoding="utf-8").splitlines()
+    )
+    assert len(failures) == 1
+    assert failures[0].code == "stage07-execution-failed"
+    run = load_model(root / "manifests/run-manifest.v0002.json", RunManifest)
+    assert str(StageId.FINAL_FILTERING_AND_SELECTION) not in {
+        item.producer_stage for item in run.stage_manifest_refs
+    }
 
 
 def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(

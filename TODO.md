@@ -21,6 +21,7 @@
 | M6 Stage 01 六入口与双运行模式 | `smoke-validated` | schema 0.5、六 source handler、Decision resume、remote/cache/precomputed MSA 与十条 live fixture 均通过；Stage 01 1.0 工程边界已冻结。 |
 | M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | M8 Stage 03 基础策略编译 | `smoke-validated` | schema 0.7、通用 region×official VHH7 策略、固定 scaffold 资产和 BoltzGen 0.3.2 官方校验已完成；APOE 21/21 通过。 |
+| M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 仍按上游 gate 顺序运行。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -37,7 +38,7 @@
 | `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
 | `UI` | Product UI | `planned` | 尚未开发桌面或 Web 产品 UI。 | 未来只调用相同 Python API，不复制科学逻辑。 | UI-001：在 CLI/API 稳定后定义任务、审阅和恢复流程。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-001：VHH–抗原区域与端到端基准。 |
-| `DATA` | Data & Assets | `smoke-validated` | DATA-002 已引入并通过 wheel/runtime 固定校验 BoltzGen 官方 VHH7 scaffold；模型权重继续 runtime-only。 | 确保 scaffold、模型、fixture 的来源与权利可审计。 | DATA-003：TNP 环境、来源、许可证与依赖审计。 |
+| `DATA` | Data & Assets | `smoke-validated` | DATA-002 已固定 VHH7；DATA-003 的 TNP fixed-source/isolated-runtime 与真实 batch smoke 已通过，模型和重型依赖继续 runtime-only。 | 确保 scaffold、模型、fixture 的来源与权利可审计。 | 在公开发布前复审 TNP 完整依赖、NanoBodyBuilder2 模型下载来源和再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
 | `PAPER` | Publication | `planned` | 方法与证据持续积累，尚未冻结论文 claim。 | 形成可追溯方法、图表、benchmark 和补充材料。 | PAPER-001：Stage 01/02 方法和失败证据索引。 |
 | `BIZ` | Product & Commercialization | `planned` | 商业路线存在，但未进入产品化承诺。 | 完成 IP、许可证、部署、支持和质量体系。 | BIZ-001：在科学/软件验证后建立产品需求与合规清单。 |
@@ -51,12 +52,12 @@
 | `S04-001` | Scientific Pipeline | `implemented` | 可恢复多 GPU pilot generation 已实现；APOE 21×40 正在真实运行。 |
 | `S05-001` | Scientific Pipeline | `implemented` | v1.5 pilot 筛选、Tier A 扩展、full-target Protenix 与唯一策略选择完成通用测试。 |
 | `S06-001` | Scientific Pipeline | `implemented` | smoke-1000 与 production-50000 分片计划、25% 资源门、共享恢复和精确 merge 已通过通用测试；等待上游门后运行 APOE 1000。 |
-| `S07-001` | Scientific Pipeline | `planned` | 深度筛选、多 seed Protenix、TNP 与多样性候选包完成。 |
+| `S07-001` | Scientific Pipeline | `implemented` | 深度筛选、多 seed Protenix、TNP 与多样性候选包完成；真实 APOE 证据等待上游门。 |
 | `ENG-008` | Core Engineering | `implemented` | 通用任务、原子进度、append-only 事件、多 GPU 调度和恢复执行器完成；等待 APOE 全量证据后提升状态。 |
 | `REP-002` | Reporting & Visualization | `planned` | SASA/ScanNet 独立 overlay 不改变科学输出。 |
 | `DATA-001` | Data & Assets | `planned` | 面向公开 release 的第三方 VHH 资产复审完成。 |
 | `DATA-002` | Data & Assets | `smoke-validated` | 七个官方 VHH scaffold 的来源、MIT 许可证、逐文件 checksum 和 wheel 分发完成。 |
-| `DATA-003` | Data & Assets | `planned` | TNP 环境、来源、许可证和依赖审计完成。 |
+| `DATA-003` | Data & Assets | `smoke-validated` | TNP fixed commit、Python 3.10 独立环境、完整显式依赖、许可证、严格 adapter 与官方 VHH 单候选真实 batch 已验证；模型仍保持 runtime-only。 |
 | `VAL-002` | Scientific Validation | `planned` | APOE PSE Stage 03–07 真实验收如实记录成功或科学停止。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
@@ -86,7 +87,7 @@
 | Stage 04 | `implemented` | S04-001/ENG-008 通用执行器、严格收集、进度、事件和恢复已实现并通过最小真实 BoltzGen smoke。 | 固定代码版本后启动 APOE 21×40，并以 840 个完整候选作为 smoke 门槛。 | 无代码前置阻塞；真实运行必须持续满足 GPU/磁盘门槛。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `implemented` | Nanobody Filter Standard v1.5 的 pilot 审计、Tier、100-candidate 扩展、Protenix full-target 与唯一策略选择已形成统一可恢复实现。 | 等待 Stage 04 APOE 840-candidate 正式输入后运行真实 Stage 05。 | 真实 APOE 验收依赖 Stage 04 完成；代码实现无前置阻塞。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
 | Stage 06 | `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 完成自动测试与最小 backend smoke；APOE 仅在 Stage 05 选出唯一策略后运行真实 1000。 | APOE 真实验收依赖 Stage 04/05 上游门；50k 没有本轮执行授权。 | 2026-07-26 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
-| Stage 07 | `planned` | 尚未实现；最终规则、聚类、多样性和 Top N 审核包均待开发。 | Stage 06 输出稳定后定义 final decision 与人工批准包。 | 依赖 Stage 06 完整预测与覆盖报告。 | 2026-07-24 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+| Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 完成全仓质量门和实现提交；APOE 只在 Stage 04–06 上游门通过后运行。 | APOE 验收依赖 Stage 04/05/06；当前实现不能提前宣称真实 Stage 07 smoke。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## 中期目标：多 binder 与正式开发者产品

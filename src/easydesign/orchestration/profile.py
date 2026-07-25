@@ -85,6 +85,23 @@ class BoltzGenRuntime(BaseModel):
         return value
 
 
+class TnpRuntime(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    python: Path
+    executable: Path
+    repository_root: Path
+    timeout_seconds: float = Field(default=86_400.0, gt=0)
+    ncores: int = Field(default=4, ge=1)
+
+    @field_validator("python", "executable", "repository_root")
+    @classmethod
+    def require_absolute_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("TNP runtime 路径必须是绝对路径")
+        return value
+
+
 class RuntimeBackends(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -92,6 +109,7 @@ class RuntimeBackends(BaseModel):
     pymol_pse: PyMOLPseRuntime | None = None
     scannet_epitope: ScanNetEpitopeRuntime | None = None
     boltzgen: BoltzGenRuntime | None = None
+    tnp: TnpRuntime | None = None
 
 
 class RuntimeProfile(BaseModel):

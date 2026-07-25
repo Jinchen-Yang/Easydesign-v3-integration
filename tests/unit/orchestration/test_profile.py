@@ -44,3 +44,27 @@ backends:
 
     with pytest.raises(ConfigurationError, match="绝对路径"):
         load_runtime_profile(profile)
+
+
+def test_runtime_profile_accepts_only_explicit_absolute_tnp_paths(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.yaml"
+    profile.write_text(
+        f"""
+schema_version: "0.1"
+profile_id: tnp-test
+backends:
+  tnp:
+    python: {(tmp_path / "tnp/bin/python").resolve()}
+    executable: {(tmp_path / "TNP/bin/TNP").resolve()}
+    repository_root: {(tmp_path / "TNP").resolve()}
+    timeout_seconds: 7200
+    ncores: 8
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_runtime_profile(profile)
+
+    assert loaded.profile.backends.tnp is not None
+    assert loaded.profile.backends.tnp.ncores == 8
+    assert loaded.profile.backends.tnp.python.is_absolute()

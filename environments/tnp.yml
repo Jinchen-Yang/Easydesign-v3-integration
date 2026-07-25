@@ -1,0 +1,32 @@
+name: tnp
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - numpy=1.23.5
+  - pandas=2.2.3
+  - pip=25.1
+  - bioconda::anarci=2024.05.21
+  # salilab DSSP 3.0.0 resolves a newer Boost package but its executable still
+  # requests the removed libboost_thread.so.1.73.0 ABI.  The fixed modern pair
+  # below is exercised by the real TNP batch smoke.
+  - conda-forge::dssp=4.6.1
+  # ImmuneBuilder 1.2 imports pdbfixer but omits it from Requires-Dist.
+  - conda-forge::pdbfixer=1.9
+  - conda-forge::openmm=8.5.2
+  - pip:
+      # ImmuneBuilder/PDBFixer still imports pkg_resources; Torch 2.13 requires
+      # setuptools>=77.0.3.  80.9.0 satisfies both constraints.
+      - setuptools==80.9.0
+      # TNP's fixed upstream commit explicitly requires Biopython 1.77.
+      # pip installs it after the ANARCI Conda dependency has been solved.
+      - biopython==1.77
+      - torch==2.13.0
+      - scipy==1.15.3
+      # Imported by TNP's CDR3 compactness module but absent from setup.py.
+      - scikit-learn==1.7.2
+      - einops==0.8.2
+      - requests==2.34.2
+      - ImmuneBuilder==1.2
+      - theraprofnano @ git+https://github.com/oxpig/Therapeutic_Nanobody_Profiler.git@29dcac72f1380e8538e8870f45a699d3c6156162

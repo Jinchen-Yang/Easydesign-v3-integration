@@ -86,6 +86,11 @@ from .boltzgen_tasks import (
     execute_boltzgen_candidate_task,
     recover_interrupted_boltzgen_task,
 )
+from .complex_prediction_support import (
+    prepare_query_only_a3m,
+    read_fasta_sequence,
+    run_checked_backend_invocation,
+)
 from .config import ResolvedProtenixMsaProviderConfig
 from .stage04 import _atomic_text
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
@@ -166,11 +171,7 @@ def _stage_from_run(
     stage_id: StageId,
 ) -> tuple[StageManifest, ArtifactRef]:
     reference = next(
-        (
-            item
-            for item in run.stage_manifest_refs
-            if item.producer_stage == str(stage_id)
-        ),
+        (item for item in run.stage_manifest_refs if item.producer_stage == str(stage_id)),
         None,
     )
     if reference is None:
@@ -265,10 +266,7 @@ def _publish_final_execution_evidence(
     progress_path = artifacts / "progress-final.json"
     if progress_path.exists():
         final_progress = load_model(progress_path, ProgressSnapshot)
-        if (
-            final_progress.phase != "stage05-complete"
-            or final_progress.status != status
-        ):
+        if final_progress.phase != "stage05-complete" or final_progress.status != status:
             raise ManifestStateError("Stage 05 已冻结 progress 与当前终态不一致")
     else:
         dump_model(final_progress, progress_path)
@@ -326,10 +324,7 @@ def _candidate_structure_metrics(
     strategy_hotspots: tuple[int, ...],
     reference_target: ParsedChain,
 ) -> tuple[str, object]:
-    if (
-        candidate.design_mask_source is None
-        or not candidate.designed_binder_residue_ids
-    ):
+    if candidate.design_mask_source is None or not candidate.designed_binder_residue_ids:
         raise ManifestStateError(
             f"candidate={candidate.candidate_id} 缺少 Stage 04 design-mask evidence；"
             "请用当前版本重新收集 Stage 04 candidate index"
@@ -354,8 +349,7 @@ def _batch_structure_metrics(
     created_at: datetime,
 ) -> dict[str, InterfaceMetricValues]:
     strategy_by_id = {
-        strategy.strategy_id: strategy
-        for strategy in upstream.strategy_bundle.strategies
+        strategy.strategy_id: strategy for strategy in upstream.strategy_bundle.strategies
     }
     reference = parse_protein_chain(
         upstream.target_structure_ref.verify(root),
@@ -411,9 +405,7 @@ def _batch_structure_metrics(
             raise ManifestStateError(
                 f"candidate={candidate.candidate_id} structure metric cache identity 不一致"
             )
-        results[candidate.candidate_id] = InterfaceMetricValues.model_validate(
-            cached.metrics
-        )
+        results[candidate.candidate_id] = InterfaceMetricValues.model_validate(cached.metrics)
 
     recent_errors: list[str] = []
 
@@ -464,9 +456,7 @@ def _batch_structure_metrics(
                 _candidate_structure_metrics,
                 root=root,
                 candidate=candidate,
-                strategy_hotspots=(
-                    strategy_by_id[candidate.strategy_id].binding_label_seq_ids
-                ),
+                strategy_hotspots=(strategy_by_id[candidate.strategy_id].binding_label_seq_ids),
                 reference_target=reference,
             ): candidate
             for candidate in missing
@@ -495,39 +485,13 @@ def _batch_structure_metrics(
 
 
 def _read_fasta(path: Path) -> str:
-    lines = [
-        line.strip()
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith(">")
-    ]
-    sequence = "".join(lines).upper()
-    if not sequence:
-        raise ManifestStateError("target sequence artifact 为空")
-    return sequence
+    return read_fasta_sequence(path)
 
 
-def _run_invocation(invocation: BackendInvocation) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment.update(dict(invocation.environment))
-    try:
-        completed = subprocess.run(
-            list(invocation.argv),
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=invocation.timeout_seconds,
-            env=environment,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise ManifestStateError(
-            f"backend invocation timeout: {invocation.backend_name}"
-        ) from error
-    if completed.returncode != 0:
-        raise ManifestStateError(
-            f"backend invocation failed: {invocation.backend_name}, "
-            f"returncode={completed.returncode}, stderr={completed.stderr[-2048:]}"
-        )
-    return completed
+def _run_invocation(
+    invocation: BackendInvocation,
+) -> subprocess.CompletedProcess[str]:
+    return run_checked_backend_invocation(invocation)
 
 
 def _a3m_depth_and_query(path: Path) -> tuple[int, str]:
@@ -570,12 +534,8 @@ def _prepare_target_msa(
             if sha256_file(destination) != expected_sha256:
                 raise ManifestStateError("Stage 05 已存在 target MSA checksum 不一致")
             return
-        temporary = destination.with_name(
-            f".{destination.name}.tmp-{os.getpid()}"
-        )
-        with source.open("rb") as source_handle, temporary.open(
-            "xb"
-        ) as destination_handle:
+        temporary = destination.with_name(f".{destination.name}.tmp-{os.getpid()}")
+        with source.open("rb") as source_handle, temporary.open("xb") as destination_handle:
             shutil.copyfileobj(source_handle, destination_handle)
             destination_handle.flush()
             os.fsync(destination_handle.fileno())
@@ -628,13 +588,9 @@ def _prepare_target_msa(
                 )
                 updated = adapter.updated_msa_input_path(input_json, output_dir)
                 payload = json.loads(updated.read_text(encoding="utf-8"))
-                msa_value = payload[0]["sequences"][0]["proteinChain"][
-                    "unpairedMsaPath"
-                ]
+                msa_value = payload[0]["sequences"][0]["proteinChain"]["unpairedMsaPath"]
                 source = Path(msa_value).resolve()
-                if not source.is_file() or not source.is_relative_to(
-                    output_dir.resolve()
-                ):
+                if not source.is_file() or not source.is_relative_to(output_dir.resolve()):
                     raise ManifestStateError("Protenix MSA path 逃逸当前 work 目录")
                 depth, query = _a3m_depth_and_query(source)
                 if query != target_sequence:
@@ -653,23 +609,14 @@ def _prepare_target_msa(
                 publish_copy(source, source_sha256)
                 return destination, depth, provider
             except Exception as error:
-                errors.append(
-                    f"provider={provider.provider},attempt={attempt}: {error}"
-                )
+                errors.append(f"provider={provider.provider},attempt={attempt}: {error}")
                 if attempt < provider.max_attempts:
                     time.sleep(provider.retry_backoff_seconds)
     raise ManifestStateError("Stage 05 target required-MSA 全部失败: " + "; ".join(errors))
 
 
 def _query_only_a3m(sequence: str, path: Path) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    expected = f">query\n{sequence}\n"
-    if path.exists():
-        if path.read_text(encoding="ascii") != expected:
-            raise ManifestStateError(f"query-only MSA 已存在但 sequence 不一致: {path}")
-    else:
-        path.write_text(expected, encoding="ascii")
-    return path.resolve()
+    return prepare_query_only_a3m(sequence, path)
 
 
 def _filter_decision(
@@ -738,9 +685,7 @@ def _predict_selected_candidates(
         upstream.target_structure_ref.verify(root),
         "A",
     )
-    selected_candidate_ids = tuple(
-        candidate.candidate_id for candidate in selected_candidates
-    )
+    selected_candidate_ids = tuple(candidate.candidate_id for candidate in selected_candidates)
     state_path = runtime / "full-target-state.json"
     progress_path = runtime / "progress.json"
     journal = TaskEventJournal(runtime / "task-events.jsonl")
@@ -754,9 +699,7 @@ def _predict_selected_candidates(
                 "Stage 05 full-target state selected candidate identity 不一致"
             )
         tasks = {item.strategy_id: item for item in state.tasks}
-        prediction_by_id = {
-            item.candidate_id: item for item in state.predictions
-        }
+        prediction_by_id = {item.candidate_id: item for item in state.predictions}
         for prediction in state.predictions:
             prediction.predicted_structure.verify(root)
             prediction.summary_confidence.verify(root)
@@ -907,9 +850,7 @@ def _predict_selected_candidates(
         current = tasks[candidate.candidate_id]
         sequence = candidate.metrics.get("designed_chain_sequence")
         if not isinstance(sequence, str):
-            raise ManifestStateError(
-                f"candidate={candidate.candidate_id} 缺少 binder sequence"
-            )
+            raise ManifestStateError(f"candidate={candidate.candidate_id} 缺少 binder sequence")
         attempts_this_invocation = 0
         while (
             current.status is not TaskStatus.SUCCEEDED
@@ -918,10 +859,7 @@ def _predict_selected_candidates(
             attempts_this_invocation += 1
             attempt_number = len(current.attempts) + 1
             candidate_root = (
-                work
-                / "full-target"
-                / candidate.candidate_id
-                / f"attempt-{attempt_number:04d}"
+                work / "full-target" / candidate.candidate_id / f"attempt-{attempt_number:04d}"
             )
             binder_query = _query_only_a3m(
                 sequence,
@@ -1003,10 +941,7 @@ def _predict_selected_candidates(
                 completed = _run_invocation(invocation)
                 return_code = completed.returncode
                 product = adapter.collect_products(request, output_dir=output)[0]
-                if (
-                    product.full_confidence_path is None
-                    or product.full_confidence_sha256 is None
-                ):
+                if product.full_confidence_path is None or product.full_confidence_sha256 is None:
                     raise ManifestStateError("Stage 05 Protenix 没有 full confidence")
                 structure_ref = _artifact(
                     root,
@@ -1080,9 +1015,7 @@ def _predict_selected_candidates(
                     summary_confidence=summary_ref,
                     full_confidence=full_ref,
                     pairwise_iptm=confidence.pairwise_iptm,
-                    minimum_interface_pae_angstrom=(
-                        confidence.minimum_interface_pae_angstrom
-                    ),
+                    minimum_interface_pae_angstrom=(confidence.minimum_interface_pae_angstrom),
                     binder_ptm=confidence.binder_ptm,
                     binder_pose_rmsd_angstrom=structure.binder_pose_rmsd_angstrom,
                     target_ca_rmsd_angstrom=structure.target_ca_rmsd_angstrom,
@@ -1092,9 +1025,7 @@ def _predict_selected_candidates(
                     structure_gate_pass=all(item.passed for item in decisions),
                     confidence_reference_pass=reference_pass,
                     confidence_label=(
-                        "reference-supported"
-                        if reference_pass
-                        else "low-confidence"
+                        "reference-supported" if reference_pass else "low-confidence"
                     ),
                 )
             except Exception as exception:
@@ -1107,26 +1038,20 @@ def _predict_selected_candidates(
             succeeded = record is not None and return_code == 0
             final_attempt = running_attempt.model_copy(
                 update={
-                    "status": (
-                        TaskStatus.SUCCEEDED if succeeded else TaskStatus.FAILED
-                    ),
+                    "status": (TaskStatus.SUCCEEDED if succeeded else TaskStatus.FAILED),
                     "collected_candidates": 1 if succeeded else 0,
                     "ended_at": ended_at,
                     "return_code": return_code,
                     "error": None if succeeded else error,
                 }
             )
-            next_status = (
-                TaskStatus.SUCCEEDED if succeeded else TaskStatus.PENDING
-            )
+            next_status = TaskStatus.SUCCEEDED if succeeded else TaskStatus.PENDING
             with lock:
                 current = current.model_copy(
                     update={
                         "status": next_status,
                         "collected_candidates": 1 if succeeded else 0,
-                        "candidate_ids": (
-                            (candidate.candidate_id,) if succeeded else ()
-                        ),
+                        "candidate_ids": ((candidate.candidate_id,) if succeeded else ()),
                         "attempts": (*current.attempts[:-1], final_attempt),
                         "current_device": None,
                     }
@@ -1135,13 +1060,9 @@ def _predict_selected_candidates(
                 if record is not None:
                     prediction_by_id[candidate.candidate_id] = record
                 if error is not None:
-                    recent_errors.append(
-                        f"{current.task_id}: {error.code}: {error.message}"
-                    )
+                    recent_errors.append(f"{current.task_id}: {error.code}: {error.message}")
                 append_event(
-                    event_type=(
-                        "task-succeeded" if succeeded else "task-attempt-failed"
-                    ),
+                    event_type=("task-succeeded" if succeeded else "task-attempt-failed"),
                     task=current,
                     message=(
                         "Collected full-target prediction."
@@ -1169,9 +1090,7 @@ def _predict_selected_candidates(
             with lock:
                 current = current.model_copy(update={"status": TaskStatus.FAILED})
                 tasks[candidate.candidate_id] = current
-                recent_errors.append(
-                    f"{current.task_id}: {exhausted.code}: {exhausted.message}"
-                )
+                recent_errors.append(f"{current.task_id}: {exhausted.code}: {exhausted.message}")
                 append_event(
                     event_type="task-incomplete",
                     task=current,
@@ -1199,9 +1118,7 @@ def _predict_selected_candidates(
             "Stage 05 Protenix full-target tasks 未全部完成，可使用 runs resume"
         )
     persist("phase-succeeded")
-    records = tuple(
-        prediction_by_id[candidate_id] for candidate_id in selected_candidate_ids
-    )
+    records = tuple(prediction_by_id[candidate_id] for candidate_id in selected_candidate_ids)
     artifacts_out = tuple(
         artifact
         for record in records
@@ -1217,16 +1134,12 @@ def _predict_selected_candidates(
         "provider": str(provider.provider),
         "endpoint": provider.endpoint,
         "depth": msa_depth,
-        "target_sequence_sha256": hashlib.sha256(
-            target_sequence.encode("ascii")
-        ).hexdigest(),
+        "target_sequence_sha256": hashlib.sha256(target_sequence.encode("ascii")).hexdigest(),
         "a3m_sha256": sha256_file(target_msa),
         "binder_msa": "query-only",
         "no_msa_fallback": False,
     }
-    serialized_msa_evidence = (
-        json.dumps(msa_evidence, indent=2, sort_keys=True) + "\n"
-    )
+    serialized_msa_evidence = json.dumps(msa_evidence, indent=2, sort_keys=True) + "\n"
     if msa_evidence_path.exists():
         if msa_evidence_path.read_text(encoding="utf-8") != serialized_msa_evidence:
             raise ManifestStateError("Stage 05 MSA evidence 与恢复状态不一致")
@@ -1265,9 +1178,7 @@ def _expand_candidates(
     for strategy_id in selected_strategy_ids:
         existing_count = len(by_strategy.get(strategy_id, ()))
         if existing_count >= total_per_strategy:
-            raise ManifestStateError(
-                f"strategy={strategy_id} expansion total 必须大于 pilot count"
-            )
+            raise ManifestStateError(f"strategy={strategy_id} expansion total 必须大于 pilot count")
 
     state_path = runtime_root / "expansion-state.json"
     progress_path = runtime_root / "progress.json"
@@ -1291,9 +1202,7 @@ def _expand_candidates(
             strategy_id: TaskRecord(
                 task_id=f"expand-{strategy_id}",
                 strategy_id=strategy_id,
-                requested_candidates=(
-                    total_per_strategy - len(by_strategy[strategy_id])
-                ),
+                requested_candidates=(total_per_strategy - len(by_strategy[strategy_id])),
             )
             for strategy_id in selected_strategy_ids
         }
@@ -1381,11 +1290,7 @@ def _expand_candidates(
                     error=transition.error,
                 )
             )
-            persist(
-                "incomplete"
-                if transition.event_type == "task-incomplete"
-                else "running"
-            )
+            persist("incomplete" if transition.event_type == "task-incomplete" else "running")
 
     for strategy_id, task in tuple(tasks.items()):
         transition = recover_interrupted_boltzgen_task(
@@ -1407,9 +1312,7 @@ def _expand_candidates(
 
     def expand(strategy_id: str, device: int) -> TaskRecord:
         task = tasks[strategy_id]
-        specification = upstream.stage03.require_output(
-            f"strategy-{strategy_id}"
-        ).verify(root)
+        specification = upstream.stage03.require_output(f"strategy-{strategy_id}").verify(root)
         return execute_boltzgen_candidate_task(
             root=root,
             task=task,
@@ -1449,11 +1352,7 @@ def _expand_candidates(
                 key=lambda item: item.ordinal_within_strategy,
             ),
             *sorted(
-                (
-                    item
-                    for item in new_candidates
-                    if item.strategy_id == strategy_id
-                ),
+                (item for item in new_candidates if item.strategy_id == strategy_id),
                 key=lambda item: item.ordinal_within_strategy,
             ),
         )
@@ -1530,9 +1429,7 @@ def _publish_stage05(
         stage_manifest_refs=(*upstream.run.stage_manifest_refs, stage_ref),
         clear_workflow_state=True,
     )
-    run_manifest_path = (
-        root / "manifests" / f"run-manifest.v{next_run.revision:04d}.json"
-    )
+    run_manifest_path = root / "manifests" / f"run-manifest.v{next_run.revision:04d}.json"
     dump_model(next_run, run_manifest_path)
     _atomic_text(run_manifest_path.name + "\n", root / "manifests" / "LATEST")
     bundle = load_model(bundle_path, Stage05Bundle)
@@ -1648,8 +1545,7 @@ def execute_stage05(
             observed_stop = load_model(stop_path, ScientificStop)
             if (
                 observed_stop.code is not ScientificStopCode.NO_TIER_A
-                or observed_stop.evidence_artifact_sha256
-                != (pilot_report_ref.sha256,)
+                or observed_stop.evidence_artifact_sha256 != (pilot_report_ref.sha256,)
             ):
                 raise ManifestStateError("Stage 05 scientific stop 与当前 evidence 不一致")
             stop = observed_stop
@@ -1759,15 +1655,11 @@ def execute_stage05(
     if expanded_index_path.exists():
         observed_index = load_model(expanded_index_path, CandidateIndex)
         if (
-            observed_index.strategy_bundle_sha256
-            != expanded_index.strategy_bundle_sha256
-            or observed_index.required_per_strategy
-            != expanded_index.required_per_strategy
+            observed_index.strategy_bundle_sha256 != expanded_index.strategy_bundle_sha256
+            or observed_index.required_per_strategy != expanded_index.required_per_strategy
             or observed_index.candidates != expanded_index.candidates
         ):
-            raise ManifestStateError(
-                "Stage 05 已发布 expansion candidate index 与恢复结果不一致"
-            )
+            raise ManifestStateError("Stage 05 已发布 expansion candidate index 与恢复结果不一致")
         expanded_index = observed_index
     else:
         dump_model(expanded_index, expanded_index_path)
@@ -1791,9 +1683,7 @@ def execute_stage05(
         structural_metrics=expansion_metrics,
         full_target_top_n=config.strategy_selection.full_target_refold_top_n,
     )
-    selected_ids = {
-        item.candidate_id for item in scored if item.selected_for_full_target
-    }
+    selected_ids = {item.candidate_id for item in scored if item.selected_for_full_target}
     prediction_records: tuple[FullTargetPredictionRecord, ...]
     prediction_refs: tuple[ArtifactRef, ...]
     msa_refs: tuple[ArtifactRef, ...]
@@ -1857,8 +1747,7 @@ def execute_stage05(
             scale_stop = load_model(stop_path, ScientificStop)
             if (
                 scale_stop.code is not ScientificStopCode.NO_SCALE_WINNER
-                or scale_stop.evidence_artifact_sha256
-                != (expansion_report_ref.sha256,)
+                or scale_stop.evidence_artifact_sha256 != (expansion_report_ref.sha256,)
             ):
                 raise ManifestStateError("Stage 05 scale stop evidence 不一致")
         else:
@@ -1874,11 +1763,7 @@ def execute_stage05(
         root=root,
         artifacts=artifacts,
         runtime=runtime,
-        status=(
-            "scientific-stop"
-            if scale_stop_ref is not None
-            else "succeeded"
-        ),
+        status=("scientific-stop" if scale_stop_ref is not None else "succeeded"),
         completed_at=datetime.now(UTC),
     )
     bundle_path = artifacts / "stage05-bundle.json"

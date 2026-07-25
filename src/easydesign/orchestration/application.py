@@ -20,6 +20,7 @@ from easydesign.backends.boltzgen import (
 from easydesign.backends.hotspot import ScanNetBackendConfig, ScanNetEpitopeAdapter
 from easydesign.backends.structure_prediction import ProtenixV2Adapter
 from easydesign.backends.target_sources import PyMOLPseAdapter
+from easydesign.backends.tnp import TnpAdapter
 from easydesign.core import (
     BackendContractError,
     ConfigurationError,
@@ -62,6 +63,7 @@ from .profile import (
     PyMOLPseRuntime,
     RuntimeProfile,
     ScanNetEpitopeRuntime,
+    TnpRuntime,
     load_runtime_profile,
     resolve_runtime_profile_path,
 )
@@ -73,6 +75,7 @@ from .stage03 import execute_stage03, initialize_continuation_run
 from .stage04 import Stage04Execution, execute_stage04
 from .stage05 import ComplexAdapterBuilder, Stage05Execution, execute_stage05
 from .stage06 import Stage06Execution, execute_stage06
+from .stage07 import Stage07Execution, execute_stage07
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -85,7 +88,7 @@ from .workspace import (
 )
 
 PROTENIX_V2_CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
-IMPLEMENTED_STAGE_MAX = 6
+IMPLEMENTED_STAGE_MAX = 7
 
 
 class DiagnosticStatus(StrEnum):
@@ -202,6 +205,8 @@ def _required_backends(loaded: LoadedRunConfig) -> tuple[str, ...]:
         backends.append("boltzgen")
     if loaded.config.workflow.stop_after_stage >= 5 and "protenix-v2" not in backends:
         backends.append("protenix-v2")
+    if loaded.config.workflow.stop_after_stage >= 7:
+        backends.append("tnp")
     return tuple(backends)
 
 
@@ -406,15 +411,23 @@ def _complex_protenix_adapter_builder(
             cuda_visible_devices=str(device),
             remote_msa_provider=provider.provider,
             remote_msa_endpoint=(
-                provider.endpoint
-                if str(provider.provider) == "custom-colabfold"
-                else None
+                provider.endpoint if str(provider.provider) == "custom-colabfold" else None
             ),
             remote_msa_timeout_seconds=provider.timeout_seconds,
             prediction_timeout_seconds=prediction_timeout_seconds,
         )
 
     return build
+
+
+def _tnp_adapter(runtime: TnpRuntime) -> TnpAdapter:
+    return TnpAdapter(
+        python=runtime.python,
+        executable=runtime.executable,
+        repository_root=runtime.repository_root,
+        timeout_seconds=runtime.timeout_seconds,
+        ncores=runtime.ncores,
+    )
 
 
 def diagnose_runtime(
@@ -467,6 +480,7 @@ def diagnose_runtime(
         ("pymol-pse", backends.pymol_pse),
         ("scannet-epitope", backends.scannet_epitope),
         ("boltzgen", backends.boltzgen),
+        ("tnp", backends.tnp),
     ):
         if runtime is None:
             checks.append(
@@ -496,8 +510,8 @@ def diagnose_runtime(
                     loaded is not None
                     and loaded.config.workflow.stop_after_stage < 5
                     and not isinstance(
-                    loaded,
-                    (LoadedSequenceRunConfig, LoadedRemoteRunConfig),
+                        loaded,
+                        (LoadedSequenceRunConfig, LoadedRemoteRunConfig),
                     )
                 ):
                     checks.append(
@@ -523,10 +537,14 @@ def diagnose_runtime(
                 message = (
                     f"TensorFlow {probe.tensorflow_version}；device={probe.test_operation_device}"
                 )
-            else:
+            elif name == "boltzgen":
                 assert isinstance(runtime, BoltzGenRuntime)
                 boltz_probe = _boltzgen_adapter(runtime).probe()
                 message = f"BoltzGen {boltz_probe['version']}；commit={boltz_probe['commit']}"
+            else:
+                assert isinstance(runtime, TnpRuntime)
+                tnp_probe = _tnp_adapter(runtime).probe()
+                message = f"TNP commit={tnp_probe['commit']}；Python {tnp_probe['python_version']}"
             checks.append(
                 DiagnosticCheck(
                     name=name,
@@ -728,9 +746,7 @@ def execute_pipeline(
             completed_prediction = execute_sequence_prediction(
                 prepared=prepared_prediction,
                 adapter_builder=remote_adapter_builder,
-                model_checkpoint_sha256=sha256_file(
-                    stage01_protenix_runtime.model_checkpoint
-                ),
+                model_checkpoint_sha256=sha256_file(stage01_protenix_runtime.model_checkpoint),
             )
             run_root = completed_prediction.prepared.workspace.run_root
             run_manifest = completed_prediction.run_manifest
@@ -864,8 +880,7 @@ def execute_pipeline(
     if (
         current_run.status is ExecutionStatus.RUNNING
         and context.plan.stop_after_stage >= 6
-        and str(StageId.SCALE_GENERATION_AND_REFOLDING)
-        not in completed_stage_ids
+        and str(StageId.SCALE_GENERATION_AND_REFOLDING) not in completed_stage_ids
     ):
         boltzgen_runtime = backends.boltzgen
         assert boltzgen_runtime is not None
@@ -875,6 +890,33 @@ def execute_pipeline(
         )
         run_manifest = completed_stage06.run_manifest
         status = completed_stage06.status
+    current_run, _ = _load_latest_run_manifest(run_root)
+    completed_stage_ids = {
+        reference.producer_stage for reference in current_run.stage_manifest_refs
+    }
+    if (
+        current_run.status is ExecutionStatus.RUNNING
+        and context.plan.stop_after_stage >= 7
+        and str(StageId.FINAL_FILTERING_AND_SELECTION) not in completed_stage_ids
+    ):
+        protenix_runtime = backends.protenix_v2
+        tnp_runtime = backends.tnp
+        stage07_config = loaded.config.stage07
+        assert protenix_runtime is not None
+        assert tnp_runtime is not None
+        assert stage07_config is not None
+        completed_stage07 = execute_stage07(
+            run_root=run_root,
+            protenix_adapter_builder=_complex_protenix_adapter_builder(
+                protenix_runtime,
+                prediction_timeout_seconds=(
+                    stage07_config.full_target_prediction.prediction_timeout_seconds
+                ),
+            ),
+            tnp_adapter=_tnp_adapter(tnp_runtime),
+        )
+        run_manifest = completed_stage07.run_manifest
+        status = completed_stage07.status
     return PipelineExecution(
         status=status,
         plan=context.plan,
@@ -888,7 +930,7 @@ def resume_pipeline(
     run_root: Path,
     *,
     profile_path: Path | None = None,
-) -> Stage04Execution | Stage05Execution | Stage06Execution:
+) -> Stage04Execution | Stage05Execution | Stage06Execution | Stage07Execution:
     """Resume the current manifest-declared running stage without changing config."""
 
     root = run_root.expanduser().resolve()
@@ -923,9 +965,7 @@ def resume_pipeline(
         protenix_runtime = profile.profile.backends.protenix_v2
         config = resolved.user_config.stage05
         if boltzgen_runtime is None or protenix_runtime is None:
-            raise ConfigurationError(
-                "runtime profile 缺少 Stage 05 所需 BoltzGen/Protenix backend"
-            )
+            raise ConfigurationError("runtime profile 缺少 Stage 05 所需 BoltzGen/Protenix backend")
         if config is None:
             raise ConfigurationError("resolved config 缺少 Stage 05")
         return execute_stage05(
@@ -951,6 +991,29 @@ def resume_pipeline(
             run_root=root,
             adapter=_boltzgen_generation_adapter(runtime),
         )
+    if (
+        resolved.stop_after_stage >= 7
+        and str(StageId.SCALE_GENERATION_AND_REFOLDING) in completed
+        and str(StageId.FINAL_FILTERING_AND_SELECTION) not in completed
+    ):
+        profile = load_runtime_profile(profile_path)
+        protenix_runtime = profile.profile.backends.protenix_v2
+        tnp_runtime = profile.profile.backends.tnp
+        stage07_config_resolved = resolved.user_config.stage07
+        if protenix_runtime is None or tnp_runtime is None:
+            raise ConfigurationError("runtime profile 缺少 Stage 07 所需 Protenix/TNP backend")
+        if stage07_config_resolved is None:
+            raise ConfigurationError("resolved config 缺少 Stage 07")
+        return execute_stage07(
+            run_root=root,
+            protenix_adapter_builder=_complex_protenix_adapter_builder(
+                protenix_runtime,
+                prediction_timeout_seconds=(
+                    stage07_config_resolved.full_target_prediction.prediction_timeout_seconds
+                ),
+            ),
+            tnp_adapter=_tnp_adapter(tnp_runtime),
+        )
     raise ConfigurationError("当前 run 没有可恢复的已实现 Stage")
 
 
@@ -967,6 +1030,22 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
     stage05_id = str(StageId.PILOT_FILTERING)
     stage04_id = str(StageId.PILOT_GENERATION)
     stage06_id = str(StageId.SCALE_GENERATION_AND_REFOLDING)
+    stage07_id = str(StageId.FINAL_FILTERING_AND_SELECTION)
+    if stage07_id in refs:
+        manifest = load_model(refs[stage07_id].verify(root), StageManifest)
+        return load_model(
+            manifest.require_output("stage07-progress-final").verify(root),
+            ProgressSnapshot,
+        )
+    if (
+        current.status is ExecutionStatus.RUNNING
+        and resolved.stop_after_stage >= 7
+        and stage06_id in refs
+    ):
+        return load_model(
+            root / stage07_id / "attempt-0001" / "runtime" / "progress.json",
+            ProgressSnapshot,
+        )
     if stage06_id in refs:
         manifest = load_model(refs[stage06_id].verify(root), StageManifest)
         return load_model(
@@ -979,11 +1058,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
         and stage05_id in refs
     ):
         return load_model(
-            root
-            / stage06_id
-            / "attempt-0001"
-            / "runtime"
-            / "progress.json",
+            root / stage06_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
     if stage05_id in refs:
@@ -998,11 +1073,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
         and stage04_id in refs
     ):
         return load_model(
-            root
-            / stage05_id
-            / "attempt-0001"
-            / "runtime"
-            / "progress.json",
+            root / stage05_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
     if stage04_id in refs:
@@ -1013,14 +1084,10 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
         )
     if current.status is ExecutionStatus.RUNNING and resolved.stop_after_stage >= 4:
         return load_model(
-            root
-            / stage04_id
-            / "attempt-0001"
-            / "runtime"
-            / "progress.json",
+            root / stage04_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
-    raise ManifestStateError("当前 run 没有 Stage 04/05 progress")
+    raise ManifestStateError("当前 run 没有 Stage 04–07 progress")
 
 
 def _prepared_existing_run(run_root: Path) -> PreparedRun:

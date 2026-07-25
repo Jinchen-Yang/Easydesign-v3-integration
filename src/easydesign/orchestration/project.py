@@ -150,8 +150,8 @@ def initialize_project(
 ) -> InitializedProject:
     """生成 schema 0.7；六类 Stage 01 入口全部有显式 init。"""
 
-    if stop_after_stage not in {1, 2, 3, 4}:
-        raise ConfigurationError("Developer Preview init 只支持 --stop-after 1、2、3 或 4")
+    if stop_after_stage not in {1, 2, 3, 4, 5, 6, 7}:
+        raise ConfigurationError("Developer Preview init 只支持 --stop-after 1 到 7")
     if execution_mode not in {"review-gated", "unattended"}:
         raise ConfigurationError("--execution-mode 必须是 review-gated 或 unattended")
     if chain_namespace not in {"auth", "label"}:
@@ -392,9 +392,38 @@ def initialize_project(
             if stop_after_stage >= 4
             else None
         ),
+        "stage05": (
+            {
+                "filter_profile": "nanobody-filter-standard-v1.5",
+                "expanded_total_per_strategy": 100,
+                "maximum_tier_a_strategies": 3,
+                "strategy_selection": {
+                    "full_target_refold_top_n": 10,
+                    "require_unique_winner": True,
+                },
+            }
+            if stop_after_stage >= 5
+            else None
+        ),
+        "stage06": (
+            {
+                "scale_profile": "smoke-1000",
+                "preauthorized_candidate_limit": 1000,
+            }
+            if stop_after_stage >= 6
+            else None
+        ),
+        "stage07": (
+            {
+                "final_filter_profile": "nanobody-final-v1.5",
+                "primary_count": 20,
+                "backup_count": 20,
+                "tnp_required": True,
+            }
+            if stop_after_stage >= 7
+            else None
+        ),
     }
-    for stage_number in range(5, 8):
-        payload[f"stage{stage_number:02d}"] = None
 
     created_root = not destination.exists()
     destination.mkdir(parents=True, exist_ok=True)

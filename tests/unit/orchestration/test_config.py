@@ -10,6 +10,7 @@ from easydesign.orchestration import (
     LoadedRemoteRunConfig,
     LoadedSequenceRunConfig,
     LoadedStructureRunConfig,
+    LoadedTargetBundleRunConfig,
     RegionProposalMode,
     TargetInputFormat,
     detect_target_input_format,
@@ -387,7 +388,7 @@ structure_prediction:
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="mode=remote|no-MSA"):
+    with pytest.raises(ConfigurationError, match="disabled|remote|precomputed|no-MSA"):
         load_run_config(config)
 
 
@@ -433,6 +434,107 @@ workflow:
     ]
     assert loaded.msa_execution_plan[1].endpoint == "https://msa.example.org/api"
     assert loaded.msa_execution_plan[1].server_mode == "colabfold"
+
+
+def test_schema_05_resolves_precomputed_msa_without_remote_plan(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    a3m = tmp_path / "target.a3m"
+    a3m.write_text(
+        ">query\nACDEFGHIKLMNPQRSTVWY\n>homolog\nACDEFGHIKLMNPQRSTVWY\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.5"
+project_id: demo
+workflow:
+  stop_after_stage: 1
+stage01:
+  target:
+    id: demo-sequence
+    source:
+      type: local-file
+      path: target.fasta
+      format: fasta
+    scope:
+      type: full-sequence
+  structure_prediction:
+    backend: protenix-v2
+    msa:
+      mode: precomputed
+      path: target.a3m
+    template_mode: disabled
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedSequenceRunConfig)
+    assert loaded.prediction_request.msa_mode == "precomputed"
+    assert loaded.msa_execution_plan == ()
+    assert loaded.precomputed_msa_path == a3m.resolve()
+
+
+def test_schema_05_target_bundle_requires_explicit_source_run_root(
+    tmp_path: Path,
+) -> None:
+    source_run = tmp_path / "source-run"
+    source_run.mkdir()
+    bundle = tmp_path / "target-bundle.json"
+    bundle.write_text(
+        """{
+  "schema_version": "0.4",
+  "target_id": "demo",
+  "producer_attempt": "attempt-0001",
+  "sequence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_structure": {}
+}
+""",
+        encoding="utf-8",
+    )
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.5"
+project_id: demo
+workflow:
+  stop_after_stage: 1
+stage01:
+  target:
+    id: demo
+    source:
+      type: target-bundle
+      path: target-bundle.json
+      source_run_root: {source_run.as_posix()}
+    scope:
+      type: full-sequence
+  structure_prediction: null
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedTargetBundleRunConfig)
+    assert loaded.source_path == bundle.resolve()
+    assert loaded.source_run_root == source_run.resolve()
 
 
 def test_sequence_yaml_rejects_duplicate_msa_providers(tmp_path: Path) -> None:
@@ -510,7 +612,7 @@ stage07: null
     loaded = load_run_config(config)
 
     assert isinstance(loaded, LoadedPseRunConfig)
-    assert loaded.config.schema_version == "0.4"
+    assert loaded.config.schema_version == "0.5"
     assert loaded.config.stage01.target.identity.uniprot_accession is None
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.methods == ("sasa",)
@@ -573,8 +675,8 @@ workflow:
     migrate_run_config(old, migrated)
     loaded = load_run_config(migrated)
 
-    assert loaded.config.schema_version == "0.4"
-    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.4'")
+    assert loaded.config.schema_version == "0.5"
+    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.5'")
     assert loaded.config.stage01.target.target_id == "demo"
     text = migrated.read_text(encoding="utf-8")
     assert "stage01:" in text

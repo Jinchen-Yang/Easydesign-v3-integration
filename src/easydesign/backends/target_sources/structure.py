@@ -331,6 +331,10 @@ def _clone_scoped_structure(
                 )
             cloned = residue.clone()
             _select_residue_altlocs(cloned)
+            # gemmi may synthesize a label subchain such as ``Axp`` for PDB
+            # input when entities are rebuilt. The Stage 01 contract requires
+            # both coordinate label/auth chain identity to be canonical ``A``.
+            cloned.subchain = "A"
             cloned.label_seq = label_seq_id
             output_chain.add_residue(cloned)
         output_model.add_chain(output_chain)
@@ -564,7 +568,24 @@ def build_experimental_target_bundle(
     )
     identity_path = _json(identity_report, artifact_dir / "identity-report.json")
     scope_path = _json(scope_report, artifact_dir / "scope-report.json")
-    candidates_json = _json(candidates, artifact_dir / "structure-candidates.json")
+    candidate_search_status = (
+        "not_requested"
+        if provenance.get("source") == "local-file"
+        else "completed"
+    )
+    candidates_json = _json(
+        {
+            "schema_version": "0.2",
+            "search_status": candidate_search_status,
+            "reason": (
+                "explicit-local-structure"
+                if candidate_search_status == "not_requested"
+                else None
+            ),
+            "candidates": candidates,
+        },
+        artifact_dir / "structure-candidates.json",
+    )
     candidates_tsv = _exclusive_text(
         "pdb_id\tchain\teligible\treasons\n"
         + "".join(
@@ -643,7 +664,13 @@ def build_experimental_target_bundle(
                 retrieval_response_paths.append(destination)
         published_retrieval.append(published)
     retrieval_path = _json(
-        {"schema_version": "0.1", "requests": published_retrieval},
+        {
+            "schema_version": "0.1",
+            "status": (
+                "completed" if published_retrieval else "not_requested"
+            ),
+            "requests": published_retrieval,
+        },
         artifact_dir / "retrieval-manifest.json",
     )
     source_context_path: Path | None = None

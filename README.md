@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev2`（包版本 `0.1.0.dev2`）
+- 当前版本：`0.1.0-dev3`（包版本 `0.1.0.dev3`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -33,7 +33,7 @@ python -m pip install -e ".[dev]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev2-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev3-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -72,6 +72,13 @@ easydesign init apoe --target apoe.fasta --stop-after 2 \
 easydesign init ubiquitin --pdb-id 1UBQ --chain A
 easydesign init egfr --uniprot P00533 --scope-range 25:646
 easydesign init egfr-search --uniprot-query EGFR --taxon-id 9606
+# 复用已验证 A3M，或显式只读 sequence-hash cache
+easydesign init apoe-offline --target apoe.fasta --precomputed-msa apoe.a3m
+easydesign init apoe-cache --target apoe.fasta --msa-cache-mode offline
+# 再导入已有 Bundle 时必须同时给来源 run，以便验证 ArtifactRef
+easydesign init copied-target \
+  --target-bundle /path/to/target-bundle.json \
+  --source-run-root /path/to/source-run
 easydesign config validate apoe/easydesign.yaml
 easydesign doctor --config apoe/easydesign.yaml
 easydesign run apoe/easydesign.yaml
@@ -81,13 +88,15 @@ Stage 01 已实现本地 PDB/mmCIF、PDB ID、FASTA/裸序列、UniProt accessio
 单 Target PSE 和已有 Target Bundle 六类 source。FASTA/UniProt 会先用 RCSB 官方
 Sequence Search/Data API 寻找满足严格 scope 门槛的实验结构；没有唯一合格结构时，
 `review-gated` 停在选择门，`unattended` 按 YAML 明确转 required-MSA Protenix-v2。
-PSE 直接导入坐标。Stage 02 可运行独立 SASA/ScanNet；Stage 03–07 仍未实现。
+PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 required-MSA 路径均已达到
+工程 `smoke-validated`；这不代表结构选择或预测准确率经过科学验证。Stage 02 可运行
+独立 SASA/ScanNet；Stage 03–07 仍未实现。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
 
 ```bash
-easydesign config migrate old.yaml --output easydesign-0.4.yaml
+easydesign config migrate old.yaml --output easydesign-0.5.yaml
 ```
 
 默认 `review-gated` 会在 UniProt identity、chain/construct、实验结构和 hotspot 等科学

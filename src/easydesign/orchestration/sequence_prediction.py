@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -14,8 +15,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from platformdirs import user_cache_path
+
 from easydesign.backends.structure_prediction import (
     BackendInvocation,
+    MsaMode,
     PredictionParameterProfile,
     ProtenixV2Adapter,
 )
@@ -41,7 +45,11 @@ from easydesign.stages.s01_target_preparation import (
     build_predicted_target_bundle,
 )
 
-from .config import ResolvedProtenixMsaProviderConfig
+from .config import (
+    CacheMode,
+    RemoteProtenixMsaConfig,
+    ResolvedProtenixMsaProviderConfig,
+)
 from .workspace import (
     PreparedSequenceRun,
     ResolvedRunConfig,
@@ -50,7 +58,7 @@ from .workspace import (
 )
 
 AdapterBuilder = Callable[
-    [ResolvedProtenixMsaProviderConfig],
+    [ResolvedProtenixMsaProviderConfig | None],
     ProtenixV2Adapter,
 ]
 
@@ -83,6 +91,222 @@ class _MsaEvidence:
     published_a3m: Path
     sha256: str
     depth: int
+    cache_status: str
+
+
+def _a3m_query_and_depth(path: Path) -> tuple[str, int]:
+    """解析可换行 A3M；首条 query 必须由调用方逐位验证。"""
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise _InvocationFailure(
+            f"MSA A3M 无法读取: {path}",
+            error_code="msa-output-invalid",
+            retryable=False,
+        ) from error
+    records: list[str] = []
+    current: list[str] | None = None
+    for line_number, raw in enumerate(lines, start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            current = []
+            records.append("")
+            continue
+        if current is None:
+            raise _InvocationFailure(
+                f"MSA A3M 在首个 header 前出现序列: line={line_number}",
+                error_code="msa-output-invalid",
+                retryable=False,
+            )
+        if any(not (character.isalpha() or character in "-.*") for character in line):
+            raise _InvocationFailure(
+                f"MSA A3M 含非法字符: line={line_number}",
+                error_code="msa-output-invalid",
+                retryable=False,
+            )
+        current.append(line)
+        records[-1] = "".join(current)
+    if not records or not records[0]:
+        raise _InvocationFailure(
+            "MSA A3M 缺少 query record",
+            error_code="msa-output-invalid",
+            retryable=False,
+        )
+    if any(not record for record in records):
+        raise _InvocationFailure(
+            "MSA A3M 包含空 sequence record",
+            error_code="msa-output-invalid",
+            retryable=False,
+        )
+    if len(records) < 2:
+        raise _InvocationFailure(
+            f"MSA 只有 query，没有同源序列: depth={len(records)}",
+            error_code="msa-insufficient-depth",
+            retryable=False,
+        )
+    return records[0], len(records)
+
+
+def _validated_a3m(
+    *,
+    source: Path,
+    expected_query: str,
+) -> tuple[str, int]:
+    query, depth = _a3m_query_and_depth(source)
+    if query != expected_query:
+        raise _InvocationFailure(
+            "MSA A3M query 与规范 target 序列不一致",
+            error_code="msa-query-mismatch",
+            retryable=False,
+        )
+    return sha256_file(source), depth
+
+
+def _write_updated_msa_input(
+    *,
+    input_json: Path,
+    msa_path: Path,
+) -> Path:
+    chain = _load_single_protein_chain(input_json)
+    chain["unpairedMsaPath"] = str(msa_path.resolve())
+    try:
+        payload = json.loads(input_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise _InvocationFailure(
+            f"Protenix 输入无法读取: {input_json}",
+            error_code="msa-input-invalid",
+            retryable=False,
+        ) from error
+    payload[0]["sequences"][0]["proteinChain"] = chain
+    updated = input_json.with_name(f"{input_json.stem}-update-msa.json")
+    _exclusive_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        updated,
+    )
+    return updated
+
+
+def _publish_explicit_msa(
+    *,
+    prepared: PreparedSequenceRun,
+    input_json: Path,
+    attempt_root: Path,
+    source: Path,
+    cache_status: str,
+) -> _MsaEvidence:
+    sha256, depth = _validated_a3m(
+        source=source,
+        expected_query=prepared.loaded_config.target.sequence,
+    )
+    published = _exclusive_copy(
+        source,
+        attempt_root / "artifacts" / "target-msa.a3m",
+    )
+    updated = _write_updated_msa_input(
+        input_json=input_json,
+        msa_path=published,
+    )
+    return _MsaEvidence(
+        updated_input=updated,
+        source_a3m=source,
+        published_a3m=published,
+        sha256=sha256,
+        depth=depth,
+        cache_status=cache_status,
+    )
+
+
+def _msa_cache_paths(
+    *,
+    sequence_sha256: str,
+    provider: ResolvedProtenixMsaProviderConfig,
+) -> tuple[Path, Path]:
+    identity = json.dumps(
+        {
+            "schema_version": "0.1",
+            "sequence_sha256": sequence_sha256,
+            "provider": str(provider.provider),
+            "server_mode": provider.server_mode,
+            "endpoint_sha256": hashlib.sha256(provider.endpoint.encode()).hexdigest(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    key = hashlib.sha256(identity).hexdigest()
+    root = user_cache_path("easydesign") / "msa-v1" / sequence_sha256 / key
+    return root / "target.a3m", root / "manifest.json"
+
+
+def _load_msa_cache(
+    *,
+    prepared: PreparedSequenceRun,
+    provider: ResolvedProtenixMsaProviderConfig,
+) -> Path | None:
+    a3m, manifest_path = _msa_cache_paths(
+        sequence_sha256=prepared.loaded_config.target.sequence_sha256,
+        provider=provider,
+    )
+    if not a3m.is_file() or not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    expected = {
+        "query_sequence_sha256": prepared.loaded_config.target.sequence_sha256,
+        "a3m_sha256": sha256_file(a3m),
+        "provider": str(provider.provider),
+        "server_mode": provider.server_mode,
+    }
+    if any(manifest.get(key) != value for key, value in expected.items()):
+        return None
+    _validated_a3m(
+        source=a3m,
+        expected_query=prepared.loaded_config.target.sequence,
+    )
+    return a3m
+
+
+def _store_msa_cache(
+    *,
+    prepared: PreparedSequenceRun,
+    provider: ResolvedProtenixMsaProviderConfig,
+    evidence: _MsaEvidence,
+) -> None:
+    a3m, manifest_path = _msa_cache_paths(
+        sequence_sha256=prepared.loaded_config.target.sequence_sha256,
+        provider=provider,
+    )
+    a3m.parent.mkdir(parents=True, exist_ok=True)
+    temporary_a3m = a3m.with_suffix(".a3m.tmp")
+    temporary_manifest = manifest_path.with_suffix(".json.tmp")
+    shutil.copyfile(evidence.published_a3m, temporary_a3m)
+    temporary_manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "query_sequence_sha256": prepared.loaded_config.target.sequence_sha256,
+                "a3m_sha256": evidence.sha256,
+                "depth": evidence.depth,
+                "provider": str(provider.provider),
+                "server_mode": provider.server_mode,
+                "endpoint_sha256": hashlib.sha256(
+                    provider.endpoint.encode()
+                ).hexdigest(),
+                "generated_at": datetime.now(UTC).isoformat(),
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary_a3m, a3m)
+    os.replace(temporary_manifest, manifest_path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,34 +483,16 @@ def _validate_and_publish_msa(
             retryable=True,
         )
     try:
-        lines = source.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as error:
+        _, depth = _validated_a3m(
+            source=source,
+            expected_query=prepared.loaded_config.target.sequence,
+        )
+    except _InvocationFailure as error:
         raise _InvocationFailure(
-            f"MSA A3M 无法读取: {source}",
-            error_code="remote-msa-output-invalid",
-            retryable=True,
+            str(error),
+            error_code=f"remote-{error.error_code}",
+            retryable=error.error_code != "msa-query-mismatch",
         ) from error
-    headers = [index for index, line in enumerate(lines) if line.startswith(">")]
-    if not headers or headers[0] + 1 >= len(lines):
-        raise _InvocationFailure(
-            "MSA A3M 缺少 query record",
-            error_code="remote-msa-output-invalid",
-            retryable=True,
-        )
-    query = lines[headers[0] + 1].strip()
-    if query != prepared.loaded_config.target.sequence:
-        raise _InvocationFailure(
-            "MSA A3M query 与规范 target 序列不一致",
-            error_code="remote-msa-query-mismatch",
-            retryable=False,
-        )
-    depth = len(headers)
-    if depth < 2:
-        raise _InvocationFailure(
-            f"MSA 只有 query，没有同源序列: depth={depth}",
-            error_code="remote-msa-insufficient-depth",
-            retryable=True,
-        )
     published = _exclusive_copy(
         source,
         attempt_root / "artifacts" / "target-msa.a3m",
@@ -297,6 +503,7 @@ def _validate_and_publish_msa(
         published_a3m=published,
         sha256=sha256_file(published),
         depth=depth,
+        cache_status="remote-refresh",
     )
 
 
@@ -403,6 +610,11 @@ def execute_sequence_prediction(
     request = prepared.loaded_config.prediction_request
     prediction_config = prepared.loaded_config.config.structure_prediction
     assert prediction_config is not None
+    remote_msa_config = (
+        prediction_config.msa
+        if isinstance(prediction_config.msa, RemoteProtenixMsaConfig)
+        else None
+    )
     start = datetime.now(UTC) if started_at is None else started_at
     attempts: list[Attempt] = []
     attempt_paths: list[Path] = []
@@ -415,9 +627,17 @@ def execute_sequence_prediction(
         raise SequencePredictionExecutionError("attempt_start 必须至少为 1")
     attempt_number = attempt_start - 1
     execution_count = 0
+    execution_plan: tuple[ResolvedProtenixMsaProviderConfig | None, ...] = (
+        tuple(prepared.loaded_config.msa_execution_plan)
+        if request.msa_mode is MsaMode.REMOTE
+        else (None,)
+    )
+    if not execution_plan:
+        raise SequencePredictionExecutionError("remote MSA execution plan 不能为空")
 
-    for provider_index, provider in enumerate(prepared.loaded_config.msa_execution_plan):
-        for provider_attempt in range(provider.max_attempts):
+    for provider_index, provider in enumerate(execution_plan):
+        provider_max_attempts = provider.max_attempts if provider is not None else 1
+        for provider_attempt in range(provider_max_attempts):
             execution_count += 1
             attempt_number += 1
             attempt_id = f"attempt-{attempt_number:04d}"
@@ -427,15 +647,15 @@ def execute_sequence_prediction(
             )
             input_json = attempt_root / "inputs" / "protenix-input.json"
             adapter = adapter_builder(provider)
-            if (
+            if adapter.prediction_timeout_seconds != prediction_config.prediction_timeout_seconds:
+                raise SequencePredictionExecutionError(
+                    "adapter_builder 返回的 prediction timeout 与 resolved config 不一致"
+                )
+            if provider is not None and (
                 adapter.remote_msa_provider != provider.provider
                 or adapter.remote_msa_endpoint != provider.endpoint
                 or adapter.remote_msa_server_mode != provider.server_mode
                 or adapter.remote_msa_timeout_seconds != provider.timeout_seconds
-                or (
-                    adapter.prediction_timeout_seconds
-                    != prediction_config.prediction_timeout_seconds
-                )
             ):
                 raise SequencePredictionExecutionError(
                     "adapter_builder 返回的 provider/endpoint/mode/timeout 与 resolved plan 不一致"
@@ -461,24 +681,68 @@ def execute_sequence_prediction(
                 logs["version-stderr"] = version.stderr
                 adapter.validate_version_output(version.stdout)
 
-                msa_output = attempt_root / "work" / "msa"
-                msa = _run_invocation(
-                    adapter.msa_invocation(
-                        request,
+                if provider is None:
+                    if prepared.precomputed_msa is None:
+                        raise _InvocationFailure(
+                            "precomputed MSA snapshot 缺失",
+                            error_code="precomputed-msa-missing",
+                            retryable=False,
+                        )
+                    msa_evidence = _publish_explicit_msa(
+                        prepared=prepared,
                         input_json=input_json,
-                        output_dir=msa_output,
-                    ),
-                    error_code="remote-msa-failed",
-                    retryable=True,
-                )
-                logs["msa-stdout"] = msa.stdout
-                logs["msa-stderr"] = msa.stderr
-                msa_evidence = _validate_and_publish_msa(
-                    prepared=prepared,
-                    adapter=adapter,
-                    attempt_root=attempt_root,
-                    msa_output_dir=msa_output,
-                )
+                        attempt_root=attempt_root,
+                        source=prepared.precomputed_msa,
+                        cache_status="precomputed",
+                    )
+                    logs["msa-source"] = "precomputed A3M validated\n"
+                else:
+                    assert remote_msa_config is not None
+                    cached = (
+                        _load_msa_cache(prepared=prepared, provider=provider)
+                        if remote_msa_config.cache_mode
+                        in {CacheMode.PREFER_CACHE, CacheMode.OFFLINE}
+                        else None
+                    )
+                    if cached is not None:
+                        msa_evidence = _publish_explicit_msa(
+                            prepared=prepared,
+                            input_json=input_json,
+                            attempt_root=attempt_root,
+                            source=cached,
+                            cache_status="cache-hit",
+                        )
+                        logs["msa-source"] = "validated sequence-hash cache hit\n"
+                    elif remote_msa_config.cache_mode is CacheMode.OFFLINE:
+                        raise _InvocationFailure(
+                            "offline MSA cache miss",
+                            error_code="msa-cache-miss",
+                            retryable=False,
+                        )
+                    else:
+                        msa_output = attempt_root / "work" / "msa"
+                        msa = _run_invocation(
+                            adapter.msa_invocation(
+                                request,
+                                input_json=input_json,
+                                output_dir=msa_output,
+                            ),
+                            error_code="remote-msa-failed",
+                            retryable=True,
+                        )
+                        logs["msa-stdout"] = msa.stdout
+                        logs["msa-stderr"] = msa.stderr
+                        msa_evidence = _validate_and_publish_msa(
+                            prepared=prepared,
+                            adapter=adapter,
+                            attempt_root=attempt_root,
+                            msa_output_dir=msa_output,
+                        )
+                        _store_msa_cache(
+                            prepared=prepared,
+                            provider=provider,
+                            evidence=msa_evidence,
+                        )
 
                 prediction_output = attempt_root / "work" / "prediction"
                 prediction = _run_invocation(
@@ -518,17 +782,29 @@ def execute_sequence_prediction(
                     model_checkpoint_sha256=model_checkpoint_sha256,
                     msa_mode=request.msa_mode,
                     msa_input_sha256=msa_evidence.sha256,
-                    msa_server_mode=provider.server_mode,
+                    msa_server_mode=(
+                        provider.server_mode if provider is not None else None
+                    ),
                     template_mode=request.template_mode,
                     parameter_profile=request.parameter_profile,
                     resolved_cycle_count=cycle_count,
                     resolved_diffusion_step_count=diffusion_steps,
-                    msa_provider=str(provider.provider),
-                    msa_endpoint=provider.endpoint,
+                    msa_provider=(
+                        str(provider.provider)
+                        if provider is not None
+                        else "precomputed"
+                    ),
+                    msa_endpoint=(
+                        provider.endpoint if provider is not None else None
+                    ),
                     msa_depth=msa_evidence.depth,
                     msa_query_sha256=prepared.loaded_config.target.sequence_sha256,
                     msa_ticket=None,
-                    msa_ticket_status="not-exposed-by-protenix-cli-2.0.0",
+                    msa_ticket_status=(
+                        "not-exposed-by-protenix-cli-2.0.0"
+                        if msa_evidence.cache_status == "remote-refresh"
+                        else msa_evidence.cache_status
+                    ),
                     identity_report=prepared.loaded_config.identity_report,
                     scope_report=prepared.loaded_config.scope_report,
                     structure_candidates=prepared.loaded_config.structure_candidates,
@@ -610,12 +886,10 @@ def execute_sequence_prediction(
                 break
             if not current_failure.retryable:
                 break
-            is_last_provider_attempt = provider_attempt + 1 == provider.max_attempts
-            is_last_provider = provider_index + 1 == len(
-                prepared.loaded_config.msa_execution_plan
-            )
+            is_last_provider_attempt = provider_attempt + 1 == provider_max_attempts
+            is_last_provider = provider_index + 1 == len(execution_plan)
             if not (is_last_provider_attempt and is_last_provider):
-                sleep(provider.retry_backoff_seconds)
+                sleep(provider.retry_backoff_seconds if provider is not None else 0)
         if built is not None or (failure is not None and not failure.retryable):
             break
 
@@ -666,14 +940,18 @@ def execute_sequence_prediction(
         attempts=tuple(attempts),
         selected_attempt_id=selected_attempt_id,
         warnings=(
-            (
-                "Remote public MSA provider receives the target sequence.",
-                "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
-            )
-            if selected_provider is not None
-            and str(selected_provider.provider) == "colabfold-public"
+            ("Precomputed MSA was supplied and validated by exact query identity.",)
+            if request.msa_mode is MsaMode.PRECOMPUTED
             else (
-                "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+                (
+                    "Remote public MSA provider receives the target sequence.",
+                    "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+                )
+                if selected_provider is not None
+                and str(selected_provider.provider) == "colabfold-public"
+                else (
+                    "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+                )
             )
         ),
     )

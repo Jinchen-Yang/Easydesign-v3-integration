@@ -21,6 +21,7 @@ from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.stage01_sources import execute_stage01_source
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.stages.s01_target_preparation import TargetBundle
+from easydesign.stages.s02_hotspot_discovery import load_structure_context
 
 SEQUENCE = "ACDEFGHIKLMNPQRSTVWY"
 RESIDUE_NAMES = (
@@ -221,6 +222,12 @@ def test_fasta_uses_rcsb_experimental_first_before_prediction(
     assert outcome.built_bundle is not None
     assert outcome.built_bundle.bundle.origin == "experimental"
     assert outcome.built_bundle.bundle.sequence_length == len(SEQUENCE)
+    _, context = load_structure_context(
+        run_root=outcome.run_root,
+        target_bundle_path=outcome.built_bundle.bundle_path,
+    )
+    assert context.label_asym_id == "A"
+    assert len(context.residues) == len(SEQUENCE)
 
 
 def test_structural_only_local_range_is_rejected_as_ambiguous(

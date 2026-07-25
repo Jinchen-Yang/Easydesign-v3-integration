@@ -37,7 +37,7 @@
 7. 未经明确迁移任务和来源审查，不得复制旧仓代码、权重、结果或资产。
 8. 未经授权不得添加许可证、Git remote、密钥、模型权重或第三方资产。
 9. 工程验证与科学验证必须分别报告，不能把 smoke 运行描述为科学成功。
-10. 用户 run 配置的规范事实源是 schema `0.4` 的 `stage01`–`stage07`；兼容旧布局只能在
+10. 用户 run 配置的规范事实源是 schema `0.5` 的 `stage01`–`stage07`；兼容旧布局只能在
     加载/迁移边界处理，run 内 resolved config 和新增示例不得继续写旧布局。
 11. 多模型结构必须沿 Target Bundle 的 coordinate ensemble 身份传播；不得静默选择
     model 1、平均不支持 ensemble 的模型输出，或把 adapter 单模型限制写成全局限制。

@@ -8,6 +8,7 @@ from easydesign.core import ConfigurationError
 from easydesign.orchestration import (
     LoadedPseRunConfig,
     LoadedSequenceRunConfig,
+    LoadedTargetBundleRunConfig,
     initialize_project,
     load_run_config,
 )
@@ -31,7 +32,7 @@ def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Pa
     assert loaded.config.stage02.automatic is not None
     assert loaded.config.stage02.automatic.patch.target_member_count == 12
     config_text = initialized.config_path.read_text(encoding="utf-8")
-    assert config_text.startswith("schema_version: '0.4'")
+    assert config_text.startswith("schema_version: '0.5'")
     assert "execution_mode: review-gated" in config_text
     assert "type: local-file" in config_text
     assert all(f"stage0{number}:" in config_text for number in range(1, 8))
@@ -85,3 +86,93 @@ def test_initialize_project_refuses_nonempty_destination(tmp_path: Path) -> None
         initialize_project(project_root=destination, target=fasta)
 
     assert (destination / "keep.txt").read_text() == "keep"
+
+
+def test_initialize_target_bundle_project_inherits_identity_and_source_root(
+    tmp_path: Path,
+) -> None:
+    source_run = tmp_path / "source-run"
+    source_run.mkdir()
+    bundle = tmp_path / "target-bundle.json"
+    bundle.write_text(
+        """{
+  "schema_version": "0.4",
+  "target_id": "ubiquitin",
+  "producer_attempt": "attempt-0001",
+  "sequence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_structure": {}
+}
+""",
+        encoding="utf-8",
+    )
+
+    initialized = initialize_project(
+        project_root=tmp_path / "bundle-project",
+        target_bundle=bundle,
+        source_run_root=source_run,
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert isinstance(loaded, LoadedTargetBundleRunConfig)
+    assert loaded.config.target.target_id == "ubiquitin"
+    assert loaded.source_run_root == source_run.resolve()
+    assert initialized.target_path is not None
+    assert initialized.target_path.read_bytes() == bundle.read_bytes()
+
+
+def test_initialize_local_structure_materializes_identity_chain_namespace_and_feature(
+    tmp_path: Path,
+) -> None:
+    structure = tmp_path / "target.cif"
+    structure.write_text(
+        "data_target\nloop_\n_atom_site.group_PDB\nATOM\n#\n",
+        encoding="utf-8",
+    )
+
+    initialized = initialize_project(
+        project_root=tmp_path / "structure-project",
+        target=structure,
+        chain="A",
+        chain_namespace="label",
+        identity_uniprot="P0CG48",
+        scope_feature_type="Domain",
+        scope_feature_name="Ubiquitin",
+    )
+    loaded = load_run_config(initialized.config_path)
+    source = loaded.config.target.source.model_dump(mode="json")
+    scope = loaded.config.target.scope.model_dump(mode="json")
+
+    assert source["chain"] == "A"
+    assert source["chain_namespace"] == "label"
+    assert source["identity"]["uniprot_accession"] == "P0CG48"
+    assert scope == {
+        "type": "uniprot-feature",
+        "feature_type": "Domain",
+        "feature_name": "Ubiquitin",
+    }
+
+
+def test_initialize_sequence_project_can_materialize_precomputed_msa(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    sequence = "ACDEFGHIKLMNPQRSTVWY"
+    fasta.write_text(f">target\n{sequence}\n", encoding="utf-8")
+    a3m = tmp_path / "target.a3m"
+    a3m.write_text(
+        f">query\n{sequence}\n>homolog\n{sequence}\n",
+        encoding="utf-8",
+    )
+
+    initialized = initialize_project(
+        project_root=tmp_path / "precomputed-project",
+        target=fasta,
+        precomputed_msa=a3m,
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert isinstance(loaded, LoadedSequenceRunConfig)
+    assert initialized.msa_path is not None
+    assert initialized.msa_path.read_bytes() == a3m.read_bytes()
+    assert loaded.precomputed_msa_path == initialized.msa_path
+    assert loaded.prediction_request.msa_mode == "precomputed"

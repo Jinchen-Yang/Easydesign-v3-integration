@@ -6,12 +6,13 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | 六类入口、严格实验结构优先、Target Bundle 0.4 与双运行模式已实现；1UBQ/P0CG48 真实 smoke 通过。 | 补齐六入口 live fixture 矩阵，并把批准的 Stage 02 区域送入 Stage 03。 | 公共 ColabFold 无 SLA；非 canonical isoform、预计算 MSA 和完整 live fixture 矩阵未完成。 | 2026-07-25 |
+| `smoke-validated` | schema 0.5 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 02 审批与 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 |
 
 ## 当前结论
 
-- 阶段总体状态：`implemented`；六类 source 已进入统一执行和发布链，但阶段级
-  `smoke-validated` 仍等待每类至少一个真实 fixture。
+- 阶段总体状态：`smoke-validated`；六类 source、三种 required-MSA 来源、Viewer 和
+  Stage 02 只读交接已在 Proteindigger1 完成真实矩阵。该状态不代表结构选择、预测或
+  binder 设计达到科学验证。
 - sequence/FASTA → remote MSA → Protenix-v2 → Target Bundle 纵向切片状态：
   `smoke-validated`。
 - 单 Target PyMOL PSE → imported Target Bundle 纵向切片状态：`smoke-validated`。
@@ -21,7 +22,8 @@
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
   限制而非全局结构限制。
 - Viewer data `0.2` 显示 model 数量和代表 model；现有单模型 APOE 页面行为保持不变。
-- 用户 YAML schema `0.4` 固定展示 `stage01`–`stage07`，旧布局可显式迁移且不覆盖原文件。
+- 用户 YAML schema `0.5` 固定展示 `stage01`–`stage07`，旧 0.3/0.4 可兼容读取并显式
+  迁移，run 内 `resolved-config.json` 统一保存 0.5。
 - FASTA/UniProt 使用官方 RCSB sequence/data API 先查严格合格实验结构；本地结构、
   PDB ID、PSE 和 Target Bundle 均走同一 chain A、mapping、QC、manifest 与 Viewer 交接。
 - `review-gated` 在 identity/chain/structure gate 暂停，审批后同一 run 新建 attempt；
@@ -34,20 +36,21 @@
   `uninterpreted annotation`；Protenix Viewer 写 `not_applicable`，不显示颜色开关。
 - PSE 真实 smoke 保留 138-aa imported 坐标和 101/9/14/14 的 CA 颜色分组；颜色没有被
   解释为 hotspot，也没有启动 Protenix、MSA 或结构预测。
-- no-MSA 工程 smoke、真实输出解析和 Target Bundle 发布已通过。
+- no-MSA 仅保留内部 adapter 回归；正式用户路径严格要求 remote、显式 cache 或
+  precomputed A3M，任何失败都不得降级为 no-MSA。
 - APOE 143-aa 序列本身没有阻止 MSA：显式使用
   `MMSEQS_SERVICE_HOST_URL=https://api.colabfold.com` 和
   `--msa_server_mode colabfold` 后，Protenix 官方 CLI 得到 609 条 unpaired MSA，并完成
   `use_msa=true`、`use_template=false` 的低预算 GPU 预测。
-- sequence/FASTA schema `0.2` 已把 MSA 设为硬性正式路径：默认 provider 是
+- sequence/FASTA schema `0.5` 已把 MSA 设为硬性正式路径：默认 provider 是
   `colabfold-public`，preset 固定解析到 `https://api.colabfold.com` 和
   `--msa_server_mode colabfold`；用户 YAML 禁止 no-MSA fallback。
 - YAML 可按顺序声明 provider、timeout、最大 attempt 数和 retry backoff；解析后的实际
-  endpoint/mode/预算进入 `resolved-config.json` schema `0.3`。adapter 已将 endpoint
+  endpoint/mode/预算进入 `resolved-config.json` schema `0.5`。adapter 已将 endpoint
   放入 MSA invocation 环境并设置 wall-clock timeout。
 - 公共 ColabFold 不能被描述成永久稳定或具有 SLA。默认不把当前异常的
-  `protenix-official` 放入 fallback；真正稳健的后续兜底是 sequence-hash MSA cache 和
-  自建 `custom-colabfold` 服务。
+  `protenix-official` 放入 fallback；sequence-hash cache 和 precomputed A3M 已提供显式
+  离线路径，自建 `custom-colabfold` 仍是商业部署待办。
 - 正式 sequence executor 已实现：每次 MSA 重试/切换建立新 attempt，校验 A3M query、
   depth 和当前 attempt 路径，运行单 seed/单 sample Protenix，再发布与 PSE 对齐的
   `target.cif`/mapping/quality/provenance/Target Bundle/manifest 链。
@@ -70,41 +73,37 @@
 | 输入或能力 | 状态 | 当前证据 |
 | --- | --- | --- |
 | 裸氨基酸序列 | `implemented` | 严格规范化、标准氨基酸校验和 identity 测试 |
-| FASTA 文件 | `implemented` | 单记录解析；与同序列裸输入产生同一 SHA-256 |
-| EasyDesign YAML 与自动识别 | `implemented` | canonical 0.4、六种 source union、双执行模式与 0.3 兼容迁移 |
+| FASTA 文件 | `smoke-validated` | APOE 143-aa 通过 remote、offline cache、precomputed 三条 required-MSA 真实预测 |
+| EasyDesign YAML 与自动识别 | `smoke-validated` | canonical 0.5、六种 source union、双执行模式与 0.3/0.4 兼容迁移 |
 | Run Workspace | `implemented` | 一次实验一个目录、七 Stage 同级、snapshot、索引和浅层 attempt |
-| 本地 PDB/mmCIF | `implemented` | 单/多链、auth/label chain、多模型、逐模型缺失、altloc occupancy、ligand/context 测试 |
+| 本地 PDB/mmCIF | `smoke-validated` | 1UBQ PDB 与 1D3Z 10-model mmCIF 均规范为 chain A，Bundle/Viewer/Stage 02 读取通过 |
 | RCSB PDB ID | `smoke-validated` | 1UBQ chain A live run，76 aa、1.8 Å X-ray、Target Bundle 0.4/Viewer 成功 |
-| UniProt accession/名称 | `implemented` | P0CG48→RCSB live 候选含 1UBQ，人工批准后 attempt-0002 成功；名称歧义契约测试 |
+| UniProt accession/名称 | `smoke-validated` | P0CG48 与 UBC/taxon 9606 均解析 canonical identity，批准 1UBQ 后 attempt-0002 成功 |
 | PyMOL PSE | `smoke-validated` | 独立 PyMOL 3.1.0 环境；合成边界测试和旧 APOE PSE 真实 run |
-| 标准 Target Bundle | `implemented` | 0.1–0.4 校验重导入，保留 evidence/context/retrieval 并重建相对路径 |
-| Target Bundle coordinate ensemble | `implemented` | schema 0.4、模型 ID/代表 model/共享 label 身份和 0.1–0.3 兼容测试 |
+| 标准 Target Bundle | `smoke-validated` | 1UBQ Bundle 真实重导入，全部 evidence/context/retrieval checksum 与 Stage 02 交接通过 |
+| Target Bundle coordinate ensemble | `smoke-validated` | 1D3Z 10-model ensemble 保留 model/mapping 并被 Viewer 与多模型 Stage 02 读取 |
 | 通用结构预测契约 | `implemented` | request/invocation/product 契约和测试 |
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
 | ColabFold remote MSA backend | `smoke-validated` | 显式 endpoint 生成 609-depth APOE MSA；Protenix `use_msa=true` 预测成功 |
-| MSA provider/endpoint policy | `implemented` | 默认 ColabFold preset、resolved plan、wall timeout 与显式 fallback 接口 |
+| MSA provider/endpoint/cache policy | `smoke-validated` | 默认 ColabFold、online refresh、offline cache hit、precomputed A3M 与显式失败契约 |
 | MSA-backed Target Bundle 发布 | `smoke-validated` | APOE 正式 run 发布 609-depth MSA、统一 mmCIF Bundle 和完整 manifest；Stage 02 真实读取器通过 |
-| 预计算 MSA 复用 | `planned` | 枚举与 provenance 契约已预留；没有可用 APOE MSA artifact |
+| 预计算 MSA 复用 | `smoke-validated` | 609-depth APOE A3M 经 query/hash/depth 校验后真实 `use_msa=true` 预测 |
 | 便携式 Mol* Target Viewer | `smoke-validated` | Mol* 5.11.0 本地资产、不可变报告 revision、localhost 服务、Chromium 与两条 APOE 报告 |
 
 ## Now
 
-- S01-008 已于 2026-07-25T14:11:37+08:00 完成并归档；当前没有未归档的 Stage 01
-  implementation 工作项，下一项是补齐六入口独立 live fixture 矩阵。
+- 暂无 Stage 01 实施任务；S01-009 已归档。1.0 边界冻结为 canonical UniProt、
+  单 Target/单 state PSE、单 seed/单 sample Protenix 和显式 required-MSA。
 
 ## Next
 
-- 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
-  当前主线的外部阻塞。
-- 为本地 PDB/mmCIF、UniProt 名称、PSE、sequence 和标准 Target Bundle 补齐独立 live
-  fixture，满足阶段级 `smoke-validated` 门槛。
-- 实现 canonical 非 canonical isoform 选择、预计算 MSA 和服务端 ticket/status 采集。
+- 实现非 canonical isoform 选择和服务端 ticket/status 采集。
 - 为多 state PSE 和 Protenix 多 seed/sample 分别设计显式 ensemble 策略；不得自动
   选择或平均输出。
 - 扩展 PSE 到复合物、receptor/ligand、多聚体或人工 object/chain/state 选择前，先新增
   独立契约；当前严格单 Target adapter 不做隐式放宽。
-- 增加本地 MSA 或预计算 MSA profile，支持不依赖公共队列的离线复现。
+- 部署并验证自建 ColabFold/MMseqs2 服务，用于商业或敏感序列。
 - REP-002/REP-003 在 Stage 02 单独实现 SASA/ScanNet overlay 与人工批准；Stage 01 Viewer
   继续保持只读，不保存 hotspot。
 
@@ -113,12 +112,12 @@
 - Protenix 官方 MSA endpoint 在本轮新提交的同一 APOE 查询上仍持续 `PENDING`，而实际
   ColabFold endpoint 约 30 秒完成；官方 endpoint 当前不能作为可靠主线。
 - `colabfold-public` 真实 smoke 已通过，但这是第三方公共服务且没有 EasyDesign 可承诺的
-  SLA；在 cache/自建服务完成前，网络或上游停机仍会使正式 run 明确失败。
+  SLA；未显式准备 cache/precomputed A3M 的在线 run 在上游停机时会按契约失败。
 - 公共 provider 会向第三方提交 target 序列；当前仅批准内部研究 runtime。商业或敏感
   序列在条款/隐私审查和自建 provider 完成前仍受阻。
 - 旧失败 attempt 没有保存 resolved endpoint 和 ticket，无法审计“ColabFold attempt”
   实际请求了哪台服务；不能事后把它当成 ColabFold 服务失败证据。
-- 旧 SMART cache 未同步到 Proteindigger1；它只影响历史复现，不阻塞新 MSA 主线。
+- 旧 SMART cache 未同步到 Proteindigger1；它只影响历史复现，不阻塞 1.0 主线。
 
 ## 验证证据
 
@@ -250,6 +249,35 @@
   revision 3 与 Viewer 成功。
 - FASTA 已改为 RCSB experimental-first；无唯一候选才进入 review gate 或 unattended
   Protenix。API failure 与零候选使用不同错误，不允许静默 cache/fallback。
+
+### S01-009 六入口 1.0 真实 smoke 矩阵
+
+- Proteindigger1 固定 core Python 3.11、PyMOL 3.1.0、Protenix 2.0.0 与同一 runtime
+  profile，使用 schema 0.5 完成：
+  - 本地 `1UBQ.pdb`：76 aa、单模型、chain A；
+  - 本地 `1D3Z.cif`：76 aa、10-model NMR ensemble；
+  - PDB ID `1UBQ` chain A；
+  - APOE 143-aa FASTA：ColabFold remote online refresh；
+  - 同一 APOE FASTA：609-depth 预计算 A3M；
+  - 同一 APOE FASTA：显式 offline sequence-hash cache hit；
+  - UniProt accession `P0CG48` scope 1–76，批准 `1UBQ`；
+  - UniProt name `UBC` / taxonomy 9606，唯一 canonical identity 后批准 `1UBQ`；
+  - 旧 APOE 单 Target PSE：138 aa、来源颜色保留；
+  - 1UBQ Target Bundle 真实再导入。
+- 十条成功路径均发布统一的 target CIF、sequence、JSON/TSV mapping、quality、
+  identity、scope、candidate、retrieval、provenance 和 Target Bundle；全部 ArtifactRef
+  checksum、Viewer report 和 Stage 02 `load_structure_context()` 通过。
+- 1D3Z 保留 10 个 model，Stage 02 读出 76 个共享残基；其他结构路径为单模型。
+- remote/cache/precomputed 三条路径实际消费的 APOE A3M 都是 124,933 bytes、
+  depth 609、SHA-256
+  `12d913001bd955c05544b084f396f6b17bc0086ae69cfca5cd376ab722f72716`。
+  provenance 分别记录
+  `not-exposed-by-protenix-cli-2.0.0`、`cache-hit` 和 `precomputed`。
+- schema 0.5 PDB ID `1UBQ` 继续运行 Stage 02 SASA 后达到
+  `awaiting-human-approval`，证明正式 handoff 不依赖开发期扫描。
+- live 验证发现本地 PDB 经 gemmi 重建 entity 时可能生成 label subchain `Axp`，与
+  mapping 中的 chain A 不一致。修复为在序列化前显式设置 residue subchain A，并增加
+  本地 PDB → Stage 02 回归；重跑后的本地 PDB 与 Bundle import 均通过。
 
 ### Target Bundle 0.3 与 canonical 配置回归
 

@@ -16,6 +16,7 @@ from typing import Protocol, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from easydesign.backends.structure_prediction import StructurePredictionRequest
+from easydesign.backends.structure_prediction.contracts import MsaMode
 from easydesign.backends.target_sources import NormalizedProteinSequence
 from easydesign.core import (
     ArtifactRef,
@@ -72,7 +73,7 @@ class ResolvedRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.3"
+    schema_version: str = "0.5"
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     user_config: EasyDesignRunConfig
@@ -81,6 +82,7 @@ class ResolvedRunConfig(BaseModel):
     target: NormalizedProteinSequence | None = None
     prediction_request: StructurePredictionRequest | None = None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...] = ()
+    precomputed_msa_snapshot: ArtifactRef | None = None
     stop_after_stage: int = Field(ge=1, le=7)
     runtime_profile: RuntimeProfileRef | None = None
 
@@ -88,7 +90,7 @@ class ResolvedRunConfig(BaseModel):
     def validate_input_branch(self) -> Self:
         if self.schema_version == "0.3" and self.runtime_profile is not None:
             raise ValueError("resolved config 0.3 不支持 runtime_profile")
-        if self.schema_version not in {"0.2", "0.3", "0.4"}:
+        if self.schema_version not in {"0.2", "0.3", "0.4", "0.5"}:
             raise ValueError(f"不支持的 resolved config schema: {self.schema_version}")
         is_sequence = self.detected_input_format in {
             TargetInputFormat.SEQUENCE,
@@ -96,16 +98,25 @@ class ResolvedRunConfig(BaseModel):
         }
         if is_sequence and (self.target is None or self.prediction_request is None):
             raise ValueError("sequence/FASTA resolved config 必须包含规范序列和预测请求")
-        if (
-            is_sequence
-            and self.schema_version != "0.2"
-            and not self.msa_execution_plan
-        ):
-            raise ValueError("sequence/FASTA resolved config 必须包含 MSA execution plan")
+        if is_sequence and self.schema_version != "0.2":
+            assert self.prediction_request is not None
+            if self.prediction_request.msa_mode is MsaMode.REMOTE:
+                if not self.msa_execution_plan or self.precomputed_msa_snapshot is not None:
+                    raise ValueError("remote MSA 必须且只能包含 execution plan")
+            elif self.prediction_request.msa_mode is MsaMode.PRECOMPUTED:
+                if self.msa_execution_plan or self.precomputed_msa_snapshot is None:
+                    raise ValueError("precomputed MSA 必须且只能包含输入 snapshot")
         if not is_sequence and (self.target is not None or self.prediction_request is not None):
             raise ValueError("非 sequence resolved config 不得伪造预测请求")
         if not is_sequence and self.msa_execution_plan:
             raise ValueError("非 sequence resolved config 不得声明 MSA execution plan")
+        if (
+            not is_sequence
+            and self.precomputed_msa_snapshot is not None
+            and self.detected_input_format
+            not in {TargetInputFormat.UNIPROT, TargetInputFormat.UNIPROT_SEARCH}
+        ):
+            raise ValueError("该非 sequence source 不得声明 precomputed MSA")
         return self
 
 
@@ -171,6 +182,7 @@ class PreparedSequenceRun:
     loaded_config: LoadedSequenceRunConfig
     workspace: RunWorkspace
     protenix_input: Path
+    precomputed_msa: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,8 +343,20 @@ def _initialize_workspace(
             role="target-source-snapshot",
             file_format=str(loaded.detected_format),
         )
+        precomputed_msa_ref: ArtifactRef | None = None
+        loaded_precomputed_msa = getattr(loaded, "precomputed_msa_path", None)
+        if loaded_precomputed_msa is not None:
+            precomputed_snapshot = staging / "input-snapshot" / "target-msa.a3m"
+            _exclusive_copy(loaded_precomputed_msa, precomputed_snapshot)
+            precomputed_msa_ref = ArtifactRef.from_file(
+                run_root=staging,
+                relative_path=precomputed_snapshot.relative_to(staging).as_posix(),
+                artifact_id="precomputed-msa-source",
+                role="msa-input-snapshot",
+                file_format="a3m",
+            )
         resolved = ResolvedRunConfig(
-            schema_version="0.4" if runtime_profile is not None else "0.3",
+            schema_version="0.5",
             project_id=loaded.config.project_id,
             run_id=selected_run_id,
             user_config=loaded.config,
@@ -349,6 +373,7 @@ def _initialize_workspace(
                 if isinstance(loaded, LoadedSequenceRunConfig)
                 else ()
             ),
+            precomputed_msa_snapshot=precomputed_msa_ref,
             stop_after_stage=loaded.config.workflow.stop_after_stage,
             runtime_profile=runtime_profile,
         )
@@ -516,6 +541,11 @@ def initialize_sequence_run(
         loaded_config=loaded,
         workspace=workspace,
         protenix_input=prepared_input,
+        precomputed_msa=(
+            workspace.run_root / "input-snapshot" / "target-msa.a3m"
+            if loaded.precomputed_msa_path is not None
+            else None
+        ),
     )
 
 

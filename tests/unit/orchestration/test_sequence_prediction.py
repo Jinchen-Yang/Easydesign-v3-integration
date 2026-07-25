@@ -134,20 +134,27 @@ def successful_fake_run(
 
 
 def adapter_builder(
-    provider: ResolvedProtenixMsaProviderConfig,
+    provider: ResolvedProtenixMsaProviderConfig | None,
 ) -> ProtenixV2Adapter:
     custom_endpoint = (
         provider.endpoint
-        if provider.provider is ProtenixMsaProvider.CUSTOM_COLABFOLD
+        if provider is not None
+        and provider.provider is ProtenixMsaProvider.CUSTOM_COLABFOLD
         else None
     )
     return ProtenixV2Adapter(
         executable=Path("/envs/protenix-v2/bin/protenix"),
         model_root=Path("/models/protenix"),
         cuda_visible_devices="0",
-        remote_msa_provider=provider.provider,
+        remote_msa_provider=(
+            provider.provider
+            if provider is not None
+            else ProtenixMsaProvider.COLABFOLD_PUBLIC
+        ),
         remote_msa_endpoint=custom_endpoint,
-        remote_msa_timeout_seconds=provider.timeout_seconds,
+        remote_msa_timeout_seconds=(
+            provider.timeout_seconds if provider is not None else 1800
+        ),
         prediction_timeout_seconds=7200,
     )
 
@@ -177,6 +184,7 @@ def test_execute_sequence_prediction_publishes_stage01_handoff(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(subprocess, "run", successful_fake_run)
     prepared = prepared_run(tmp_path)
 
@@ -229,6 +237,7 @@ def test_execute_sequence_prediction_retries_msa_as_new_attempt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     msa_calls = 0
 
     def fail_once(args: list[str], **kwargs):
@@ -264,6 +273,8 @@ def test_execute_sequence_prediction_publishes_terminal_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
     def always_fail(args: list[str], **kwargs):
         if args[1] == "msa":
             return subprocess.CompletedProcess(args, 1, "", "queue unavailable")
@@ -297,3 +308,227 @@ def test_execute_sequence_prediction_publishes_terminal_failure(
         RunManifest,
     )
     assert run.status is ExecutionStatus.FAILED
+
+
+def _write_sequence_config(
+    root: Path,
+    *,
+    msa_yaml: str,
+) -> Path:
+    root.mkdir(parents=True)
+    sequence = "ACDEFGHIKLMNPQRSTVWY"
+    (root / "target.fasta").write_text(
+        f">target\n{sequence}\n",
+        encoding="utf-8",
+    )
+    config = root / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.5"
+project_id: msa-contract
+workflow:
+  execution_mode: review-gated
+  stop_after_stage: 1
+stage01:
+  target:
+    id: target
+    source:
+      type: local-file
+      path: target.fasta
+      format: fasta
+    scope:
+      type: full-sequence
+  structure_prediction:
+    backend: protenix-v2
+    msa:
+{msa_yaml}
+    template_mode: disabled
+    parameter_profile: model-default
+    seeds: [101]
+    sample_count: 1
+    prediction_timeout_seconds: 7200
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_execute_sequence_prediction_consumes_validated_precomputed_a3m(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "precomputed-project"
+    config = _write_sequence_config(
+        project,
+        msa_yaml="""      mode: precomputed
+      path: target.a3m""",
+    )
+    sequence = "ACDEFGHIKLMNPQRSTVWY"
+    (project / "target.a3m").write_text(
+        f">query\n{sequence}\n>homolog\n{sequence}\n",
+        encoding="utf-8",
+    )
+    operations: list[str] = []
+
+    def record_run(args: list[str], **kwargs):
+        operations.append(args[1])
+        return successful_fake_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record_run)
+    prepared = initialize_sequence_run(
+        config_path=config,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter_builder(None),
+        code_commit="a1b2c3d",
+        easydesign_version="0.1.0.dev3",
+        run_id="precomputed-msa",
+    )
+
+    completed = execute_sequence_prediction(
+        prepared=prepared,
+        adapter_builder=adapter_builder,
+        model_checkpoint_sha256="8" * 64,
+    )
+
+    assert operations == ["--version", "pred"]
+    assert completed.msa_artifact.verify(prepared.workspace.run_root).read_text(
+        encoding="utf-8"
+    ).startswith(">query\n")
+    provenance = json.loads(
+        completed.built_bundle.bundle.provenance.verify(
+            prepared.workspace.run_root
+        ).read_text(encoding="utf-8")
+    )
+    assert provenance["msa_mode"] == "precomputed"
+    assert provenance["msa_provider"] == "precomputed"
+    assert provenance["msa_ticket_status"] == "precomputed"
+
+
+def test_remote_msa_cache_requires_explicit_offline_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    online = _write_sequence_config(
+        tmp_path / "online-project",
+        msa_yaml="""      mode: remote
+      cache_mode: online
+      providers:
+        - provider: colabfold-public
+          timeout_seconds: 1800
+          max_attempts: 1
+          retry_backoff_seconds: 0
+      no_msa_fallback: false""",
+    )
+    msa_calls = 0
+
+    def record_msa(args: list[str], **kwargs):
+        nonlocal msa_calls
+        if args[1] == "msa":
+            msa_calls += 1
+        return successful_fake_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record_msa)
+    first = initialize_sequence_run(
+        config_path=online,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter_builder(
+            ResolvedProtenixMsaProviderConfig(
+                provider="colabfold-public",
+                endpoint="https://api.colabfold.com",
+                server_mode="colabfold",
+                timeout_seconds=1800,
+                max_attempts=1,
+                retry_backoff_seconds=0,
+            )
+        ),
+        code_commit="b1c2d3e",
+        easydesign_version="0.1.0.dev3",
+        run_id="cache-online",
+    )
+    execute_sequence_prediction(
+        prepared=first,
+        adapter_builder=adapter_builder,
+        model_checkpoint_sha256="8" * 64,
+    )
+    assert msa_calls == 1
+
+    offline = _write_sequence_config(
+        tmp_path / "offline-project",
+        msa_yaml="""      mode: remote
+      cache_mode: offline
+      providers:
+        - provider: colabfold-public
+          timeout_seconds: 1800
+          max_attempts: 1
+          retry_backoff_seconds: 0
+      no_msa_fallback: false""",
+    )
+    second = initialize_sequence_run(
+        config_path=offline,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter_builder(
+            ResolvedProtenixMsaProviderConfig(
+                provider="colabfold-public",
+                endpoint="https://api.colabfold.com",
+                server_mode="colabfold",
+                timeout_seconds=1800,
+                max_attempts=1,
+                retry_backoff_seconds=0,
+            )
+        ),
+        code_commit="c1d2e3f",
+        easydesign_version="0.1.0.dev3",
+        run_id="cache-offline",
+    )
+    completed = execute_sequence_prediction(
+        prepared=second,
+        adapter_builder=adapter_builder,
+        model_checkpoint_sha256="8" * 64,
+    )
+
+    assert msa_calls == 1
+    provenance = json.loads(
+        completed.built_bundle.bundle.provenance.verify(
+            second.workspace.run_root
+        ).read_text(encoding="utf-8")
+    )
+    assert provenance["msa_ticket_status"] == "cache-hit"
+
+
+def test_precomputed_msa_rejects_query_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "mismatch-project"
+    config = _write_sequence_config(
+        project,
+        msa_yaml="""      mode: precomputed
+      path: target.a3m""",
+    )
+    (project / "target.a3m").write_text(
+        ">query\nAAAAAAAAAAAAAAAAAAAA\n>homolog\nAAAAAAAAAAAAAAAAAAAA\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(subprocess, "run", successful_fake_run)
+    prepared = initialize_sequence_run(
+        config_path=config,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter_builder(None),
+        code_commit="d1e2f3a",
+        easydesign_version="0.1.0.dev3",
+        run_id="mismatch",
+    )
+
+    with pytest.raises(SequencePredictionExecutionError, match="query"):
+        execute_sequence_prediction(
+            prepared=prepared,
+            adapter_builder=adapter_builder,
+            model_checkpoint_sha256="8" * 64,
+        )

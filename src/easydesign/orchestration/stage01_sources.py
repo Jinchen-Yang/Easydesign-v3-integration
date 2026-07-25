@@ -37,7 +37,6 @@ from easydesign.core import (
     DecisionRequest,
     ErrorInfo,
     ExecutionStatus,
-    ManifestStateError,
     RunManifest,
     StageId,
     StageManifest,
@@ -340,6 +339,97 @@ def _scope(
         "coverage_requirement": 1.0,
         "identity_requirement": 1.0,
     }
+
+
+def _scope_with_decision(
+    prepared: PreparedRun,
+    *,
+    reference_sequence: str,
+    features: list[dict[str, Any]] | None,
+    approved_option: DecisionOption | None,
+    attempt_id: str,
+) -> tuple[str, int, int, dict[str, Any]] | Stage01SourceOutcome:
+    """为多匹配 UniProt feature 建立可恢复选择门。"""
+
+    scope = prepared.loaded_config.config.target.scope
+    if not isinstance(scope, UniProtFeatureScope):
+        return _scope(
+            prepared.loaded_config.config,
+            reference_sequence=reference_sequence,
+            features=features,
+        )
+    if features is None:
+        raise TargetInputError("uniprot-feature scope 需要已冻结的 UniProt features")
+    matches: list[tuple[int, dict[str, Any], int, int]] = []
+    for index, feature in enumerate(features):
+        if feature.get("type") != scope.feature_type:
+            continue
+        description = feature.get("description")
+        if scope.feature_name is not None and description != scope.feature_name:
+            continue
+        try:
+            start = int(feature["location"]["start"]["value"])
+            end = int(feature["location"]["end"]["value"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise TargetInputError("UniProt feature 缺少确定性 start/end") from error
+        matches.append((index, feature, start, end))
+    approved_index = (
+        int(approved_option.payload["feature_index"])
+        if approved_option is not None
+        and approved_option.payload.get("action") == "select-uniprot-feature"
+        and approved_option.payload.get("feature_index") is not None
+        else None
+    )
+    if approved_index is not None:
+        matches = [item for item in matches if item[0] == approved_index]
+        if len(matches) != 1:
+            raise TargetInputError("已批准的 UniProt feature 不再匹配当前冻结记录")
+    if len(matches) == 1:
+        _, feature, start, end = matches[0]
+        scoped = reference_sequence[start - 1 : end]
+        return scoped, start, end, {
+            "schema_version": "0.1",
+            "type": scope.type,
+            "feature_type": scope.feature_type,
+            "feature_name": feature.get("description"),
+            "start": start,
+            "end": end,
+            "length": len(scoped),
+            "coverage_requirement": 1.0,
+            "identity_requirement": 1.0,
+        }
+    if not matches:
+        raise TargetInputError(
+            "uniprot-feature scope 没有匹配项；"
+            f"type={scope.feature_type}, name={scope.feature_name}"
+        )
+    if (
+        prepared.loaded_config.config.workflow.execution_mode
+        is ExecutionMode.UNATTENDED
+    ):
+        raise TargetInputError(
+            "uniprot-feature-ambiguous: unattended 要求 feature 唯一匹配"
+        )
+    return _pause_for_decision(
+        prepared,
+        gate="scope-selection",
+        message="UniProt feature scope 存在多个匹配项，请确认 design scope。",
+        options=tuple(
+            DecisionOption(
+                option_id=f"feature-{index:04d}-{start}-{end}",
+                label=f"{scope.feature_type} {start}–{end}",
+                description=str(feature.get("description") or "无名称"),
+                payload={
+                    "action": "select-uniprot-feature",
+                    "feature_index": index,
+                    "start": start,
+                    "end": end,
+                },
+            )
+            for index, feature, start, end in matches
+        ),
+        attempt_id=attempt_id,
+    )
 
 
 def _uniprot_identity(payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
@@ -843,11 +933,16 @@ def _remote_selection(
             accession, reference, identity = _uniprot_identity(payload)
             identity["identity_resolution"] = "unique-reviewed-exact-search"
             features = payload.get("features")
-        expected, start, end, scope_report = _scope(
-            config,
+        resolved_scope = _scope_with_decision(
+            prepared,
             reference_sequence=reference,
             features=features if isinstance(features, list) else None,
+            approved_option=approved_option,
+            attempt_id=attempt_id,
         )
+        if isinstance(resolved_scope, Stage01SourceOutcome):
+            return resolved_scope
+        expected, start, end, scope_report = resolved_scope
         search_payload = rcsb_sequence_search(client, expected).json()
         if not isinstance(search_payload, dict):
             raise TargetInputError("RCSB sequence search 响应必须是 mapping")
@@ -1072,12 +1167,14 @@ def _sequence_selection(
     approved_payload = (
         approved_option.payload if approved_option is not None else {}
     )
+    source = config.target.source
+    assert isinstance(source, LocalFileSourceConfig)
     reference = loaded.target.sequence
-    expected, start, end, scope_report = _scope(
-        config,
-        reference_sequence=reference,
-    )
-    identity = {
+    expected = reference
+    start = 1
+    end = len(reference)
+    scope_report: dict[str, Any]
+    identity: dict[str, Any] = {
         "schema_version": "0.1",
         "status": "explicit-sequence",
         "identity_resolution": "user-input",
@@ -1093,6 +1190,69 @@ def _sequence_selection(
         evidence_dir=work,
         cache_mode=str(config.workflow.cache_mode),
     ) as client:
+        if source.identity.uniprot_accession is None:
+            expected, start, end, scope_report = _scope(
+                config,
+                reference_sequence=reference,
+            )
+            scope_report["coordinate_frame"] = "input-sequence"
+        else:
+            payload = uniprot_accession(
+                client,
+                source.identity.uniprot_accession,
+            ).json()
+            if not isinstance(payload, dict):
+                raise TargetInputError("UniProt accession 响应必须是 mapping")
+            accession, canonical, identity = _uniprot_identity(payload)
+            offsets = [
+                index + 1
+                for index in range(len(canonical))
+                if canonical.startswith(loaded.target.sequence, index)
+            ]
+            if len(offsets) != 1:
+                raise TargetInputError(
+                    "本地 sequence/FASTA 必须与 UniProt canonical sequence "
+                    f"形成唯一精确全长或子序列映射: accession={accession}, "
+                    f"matches={len(offsets)}"
+                )
+            input_reference_start = offsets[0]
+            reference = canonical
+            if isinstance(config.target.scope, UniProtFeatureScope):
+                resolved_scope = _scope_with_decision(
+                    prepared,
+                    reference_sequence=canonical,
+                    features=(
+                        payload.get("features")
+                        if isinstance(payload.get("features"), list)
+                        else None
+                    ),
+                    approved_option=approved_option,
+                    attempt_id=attempt_id,
+                )
+                if isinstance(resolved_scope, Stage01SourceOutcome):
+                    return resolved_scope
+                expected, start, end, scope_report = resolved_scope
+                input_reference_end = (
+                    input_reference_start + len(loaded.target.sequence) - 1
+                )
+                if start < input_reference_start or end > input_reference_end:
+                    raise TargetInputError(
+                        "UniProt feature scope 不完全包含在本地输入 sequence 中"
+                    )
+            else:
+                expected, local_start, local_end, scope_report = _scope(
+                    config,
+                    reference_sequence=loaded.target.sequence,
+                )
+                start = input_reference_start + local_start - 1
+                end = input_reference_start + local_end - 1
+                scope_report["start"] = start
+                scope_report["end"] = end
+            scope_report["coordinate_frame"] = "uniprot-canonical"
+            identity["input_sequence_reference_start"] = input_reference_start
+            identity["input_sequence_reference_end"] = (
+                input_reference_start + len(loaded.target.sequence) - 1
+            )
         search_payload = rcsb_sequence_search(client, expected).json()
         if not isinstance(search_payload, dict):
             raise TargetInputError("RCSB sequence search 响应必须是 mapping")
@@ -1347,10 +1507,6 @@ def _local_selection(
                 "structural-only 本地结构只能使用 full-sequence scope；"
                 "residue-range/uniprot-feature 需要可验证的 UniProt 身份"
             )
-        if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
-            raise TargetInputError(
-                "reference-completeness-unknown: unattended 本地结构必须提供可验证身份"
-            )
         approved_chain = source.chain or (
             str(approved_option.payload.get("chain"))
             if approved_option is not None
@@ -1374,6 +1530,10 @@ def _local_selection(
                 chain_namespace=approved_namespace,
             )
         elif len(inventory.protein_chain_ids) != 1:
+            if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+                raise TargetInputError(
+                    "ambiguous-local-protein-chain: unattended 必须显式提供 chain"
+                )
             return _pause_for_decision(
                 prepared,
                 gate="chain-selection",
@@ -1396,36 +1556,6 @@ def _local_selection(
             for chain in inventory.chains
             if chain.author_chain_id == selected
         )
-        accepted_structural_only = (
-            approved_option is not None
-            and approved_option.payload.get("action")
-            == "accept-structural-only"
-        )
-        if not accepted_structural_only:
-            return _pause_for_decision(
-                prepared,
-                gate="reference-completeness",
-                message=(
-                    "本地结构缺少可验证的 UniProt/SEQRES 完整参考；"
-                    "只能按 structural-only 导入，请确认该证据限制。"
-                ),
-                options=(
-                    DecisionOption(
-                        option_id="accept-structural-only",
-                        label="按 structural-only 导入",
-                        description=(
-                            "保留 reference_completeness=unknown；"
-                            "不能宣称 design scope 已对完整参考序列验证。"
-                        ),
-                        payload={
-                            "action": "accept-structural-only",
-                            "chain": selected,
-                            "chain_namespace": "auth",
-                        },
-                    ),
-                ),
-                attempt_id=attempt_id,
-            )
         expected = observed
         scope_report = {
             "schema_version": "0.1",
@@ -1434,12 +1564,13 @@ def _local_selection(
             "end": len(observed),
             "length": len(observed),
             "reference_completeness": "unknown",
-            "evidence_limitations_acknowledged_by": "human-decision",
+            "evidence_limitations": ["reference-completeness-unknown"],
         }
         identity_report = {
             "schema_version": "0.1",
             "status": "structural-only",
-            "identity_resolution": "not-attempted",
+            "identity_resolution": "not-requested",
+            "identity_status": "not_requested",
             "reference_completeness": "unknown",
         }
     else:
@@ -1460,21 +1591,63 @@ def _local_selection(
             if not isinstance(payload, dict):
                 raise TargetInputError("UniProt accession 响应必须是 mapping")
             _, reference, identity_report = _uniprot_identity(payload)
-            expected, reference_start, _, scope_report = _scope(
-                loaded.config,
+            resolved_scope = _scope_with_decision(
+                prepared,
                 reference_sequence=reference,
                 features=(
                     payload.get("features")
                     if isinstance(payload.get("features"), list)
                     else None
                 ),
+                approved_option=approved_option,
+                attempt_id=attempt_id,
             )
+            if isinstance(resolved_scope, Stage01SourceOutcome):
+                return resolved_scope
+            expected, reference_start, _, scope_report = resolved_scope
             retrieval = [record.model_dump(mode="json") for record in client.records]
+        approved_chain = (
+            str(approved_option.payload.get("chain"))
+            if approved_option is not None
+            and approved_option.payload.get("chain") is not None
+            else None
+        )
+        matching_chains = tuple(
+            chain.author_chain_id
+            for chain in inventory.chains
+            if expected in chain.sequence
+        )
+        if approved_chain is not None and approved_chain not in matching_chains:
+            raise TargetInputError(
+                "已批准 chain 不再与当前 UniProt design scope 精确匹配"
+            )
+        if source.chain is None and approved_chain is None and len(matching_chains) > 1:
+            if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+                raise TargetInputError(
+                    "ambiguous-local-identity-chain: unattended 必须显式提供 chain"
+                )
+            return _pause_for_decision(
+                prepared,
+                gate="chain-selection",
+                message="多条本地 protein chain 均与 design scope 精确匹配，请确认目标 chain。",
+                options=tuple(
+                    DecisionOption(
+                        option_id=f"chain-{chain.lower()}",
+                        label=f"chain {chain}",
+                        description="与 UniProt design scope 100% identity/coverage",
+                        payload={"chain": chain, "chain_namespace": "auth"},
+                    )
+                    for chain in matching_chains
+                ),
+                attempt_id=attempt_id,
+            )
         selected = choose_chain(
             inventory,
-            explicit_chain=source.chain,
+            explicit_chain=source.chain or approved_chain,
             expected_sequence=expected,
-            chain_namespace=source.chain_namespace,
+            chain_namespace=(
+                source.chain_namespace if source.chain is not None else "auth"
+            ),
         )
         return _ExperimentalSelection(
             source_path=loaded.source_path,
@@ -1513,7 +1686,7 @@ def _local_selection(
         quality_report={
             "schema_version": "0.2",
             "origin": "experimental",
-            "eligibility": "review-acknowledged",
+            "eligibility": "structural-only-warning",
             "quality_profile": "local-structural-only",
             "reference_completeness": "unknown",
         },
@@ -2048,62 +2221,14 @@ def _execute_stage01_source(
     attempt_id: str = ATTEMPT_ID,
     approved_option: DecisionOption | None = None,
 ) -> Stage01SourceOutcome:
-    """执行非 sequence/PSE 入口，或返回显式 Protenix prediction fallback。"""
+    """兼容门面：实际分派由六入口 handler package 完成。"""
 
-    loaded = prepared.loaded_config
-    if isinstance(loaded, LoadedSequenceRunConfig):
-        sequence_selection = _sequence_selection(
-            prepared,
-            attempt_id=attempt_id,
-            approved_option=approved_option,
-        )
-        if isinstance(sequence_selection, Stage01SourceOutcome):
-            return sequence_selection
-        if isinstance(sequence_selection, PredictionFallback):
-            return Stage01SourceOutcome(
-                status="prediction-required",
-                run_root=prepared.workspace.run_root,
-                run_manifest=prepared.workspace.run_manifest,
-                prediction_fallback=sequence_selection,
-            )
-        return _execute_experimental(
-            prepared,
-            sequence_selection,
-            attempt_id=attempt_id,
-        )
-    if isinstance(loaded, LoadedStructureRunConfig):
-        selection = _local_selection(
-            prepared,
-            attempt_id=attempt_id,
-            approved_option=approved_option,
-        )
-        if isinstance(selection, Stage01SourceOutcome):
-            return selection
-        return _execute_experimental(prepared, selection, attempt_id=attempt_id)
-    if isinstance(loaded, LoadedTargetBundleRunConfig):
-        return _import_bundle(prepared, attempt_id=attempt_id)
-    if isinstance(loaded, LoadedRemoteRunConfig):
-        remote_selection = _remote_selection(
-            prepared,
-            attempt_id=attempt_id,
-            approved_option=approved_option,
-        )
-        if isinstance(remote_selection, Stage01SourceOutcome):
-            return remote_selection
-        if isinstance(remote_selection, PredictionFallback):
-            return Stage01SourceOutcome(
-                status="prediction-required",
-                run_root=prepared.workspace.run_root,
-                run_manifest=prepared.workspace.run_manifest,
-                prediction_fallback=remote_selection,
-            )
-        return _execute_experimental(
-            prepared,
-            remote_selection,
-            attempt_id=attempt_id,
-        )
-    raise ManifestStateError(
-        f"execute_stage01_source 不接受 loaded config: {type(loaded).__name__}"
+    from .stage01_handlers import dispatch_stage01_source
+
+    return dispatch_stage01_source(
+        prepared,
+        attempt_id=attempt_id,
+        approved_option=approved_option,
     )
 
 

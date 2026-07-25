@@ -83,10 +83,18 @@ def _parser() -> argparse.ArgumentParser:
     init_parser.add_argument("project_dir", type=Path)
     init_source = init_parser.add_mutually_exclusive_group(required=True)
     init_source.add_argument("--target", type=Path)
+    init_source.add_argument("--target-bundle", type=Path)
     init_source.add_argument("--pdb-id")
     init_source.add_argument("--uniprot")
     init_source.add_argument("--uniprot-query")
+    init_parser.add_argument("--source-run-root", type=Path)
     init_parser.add_argument("--chain")
+    init_parser.add_argument(
+        "--chain-namespace",
+        choices=("auth", "label"),
+        default="auth",
+    )
+    init_parser.add_argument("--identity-uniprot")
     init_parser.add_argument("--taxon-id", type=int)
     init_parser.add_argument("--project-id")
     init_parser.add_argument("--target-id")
@@ -98,6 +106,22 @@ def _parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--scope-range",
         help="UniProt/reference residue range，例如 25:646",
+    )
+    init_parser.add_argument(
+        "--scope-feature-type",
+        choices=("Domain", "Chain", "Topological domain"),
+    )
+    init_parser.add_argument("--scope-feature-name")
+    init_parser.add_argument(
+        "--precomputed-msa",
+        type=Path,
+        help="显式提供与 target query 完全一致的 A3M；不会调用远程 MSA",
+    )
+    init_parser.add_argument(
+        "--msa-cache-mode",
+        choices=("online", "prefer-cache", "offline"),
+        default="online",
+        help="远程 MSA 缓存策略；默认 online 每次刷新",
     )
     init_parser.add_argument("--stop-after", type=int, choices=(1, 2), default=1)
     init_parser.add_argument(
@@ -130,7 +154,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_json(config_validate)
     config_migrate = config_commands.add_parser(
         "migrate",
-        help="将旧 YAML 显式迁移为 canonical 0.4",
+        help="将旧 YAML 显式迁移为 canonical 0.5",
     )
     config_migrate.add_argument("config", type=Path)
     config_migrate.add_argument("--output", type=Path, required=True)
@@ -239,6 +263,20 @@ def _print_execution(execution: PipelineExecution) -> None:
     print(f"运行状态：{execution.status}")
     print(f"Run：{execution.run_root}")
     print(f"Run manifest：{execution.run_manifest}")
+    if (
+        execution.status == "awaiting-human-approval"
+        and execution.run_root is not None
+    ):
+        print("需要人工选择；下一步：")
+        print(f"  easydesign decisions show {execution.run_root}")
+        print(
+            "  easydesign decisions export "
+            f"{execution.run_root} --output decision.yaml"
+        )
+        print(
+            "  easydesign decisions approve "
+            f"{execution.run_root} --input decision.yaml"
+        )
     if execution.viewer_status is not None:
         print(f"Stage 01 Viewer：{execution.viewer_status}")
 
@@ -269,8 +307,12 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         initialized = initialize_project(
             project_root=arguments.project_dir,
             target=arguments.target,
+            target_bundle=arguments.target_bundle,
+            source_run_root=arguments.source_run_root,
             pdb_id=arguments.pdb_id,
             chain=arguments.chain,
+            chain_namespace=arguments.chain_namespace,
+            identity_uniprot=arguments.identity_uniprot,
             uniprot=arguments.uniprot,
             uniprot_query=arguments.uniprot_query,
             taxon_id=arguments.taxon_id,
@@ -280,6 +322,10 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             stage02_method=arguments.stage02_method,
             execution_mode=arguments.execution_mode,
             scope_range=scope_range,
+            scope_feature_type=arguments.scope_feature_type,
+            scope_feature_name=arguments.scope_feature_name,
+            precomputed_msa=arguments.precomputed_msa,
+            msa_cache_mode=arguments.msa_cache_mode,
         )
         payload = {
             "project_root": str(initialized.project_root),
@@ -290,6 +336,9 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 else str(initialized.target_path)
             ),
             "format": str(initialized.detected_format),
+            "msa": (
+                None if initialized.msa_path is None else str(initialized.msa_path)
+            ),
         }
         if arguments.json:
             print(_json_text(payload))

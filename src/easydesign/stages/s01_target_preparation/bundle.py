@@ -387,7 +387,17 @@ def build_predicted_target_bundle(
     )
     candidate_values = [dict(item) for item in structure_candidates]
     _exclusive_text(
-        json.dumps(candidate_values, ensure_ascii=False, indent=2, sort_keys=True)
+        json.dumps(
+            {
+                "schema_version": "0.2",
+                "search_status": "completed",
+                "reason": prediction_fallback_reason,
+                "candidates": candidate_values,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
         + "\n",
         candidates_json,
     )
@@ -426,6 +436,9 @@ def build_predicted_target_bundle(
         json.dumps(
             {
                 "schema_version": "0.1",
+                "status": (
+                    "completed" if published_retrieval else "not_requested"
+                ),
                 "prediction_fallback_reason": prediction_fallback_reason,
                 "requests": published_retrieval,
             },
@@ -649,6 +662,10 @@ def build_imported_pse_target_bundle(
     target_id: str,
     source_label: str,
     product: PseExtractionProduct,
+    reference_sequence: str | None = None,
+    reference_start: int | None = None,
+    identity_report: dict[str, Any] | None = None,
+    retrieval_records: tuple[dict[str, Any], ...] = (),
 ) -> BuiltTargetBundle:
     """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.4。"""
 
@@ -682,7 +699,12 @@ def build_imported_pse_target_bundle(
     )
     _pdb_to_normalized_cif(product.raw_pdb_path, target_cif)
     _exclusive_text(target.to_fasta(), sequence_fasta)
-    _exclusive_text(target.to_fasta(), reference_fasta)
+    reference = normalize_raw_sequence(
+        reference_sequence or target.sequence,
+        target_id=f"{target_id}-reference",
+        source_label="reference",
+    )
+    _exclusive_text(reference.to_fasta(), reference_fasta)
     try:
         gemmi.read_structure(str(target_cif)).write_pdb(str(target_pdb))
     except Exception as error:
@@ -697,7 +719,11 @@ def build_imported_pse_target_bundle(
                     "source_label_chain_id": annotated.author_chain_id,
                     "source_author_chain_id": annotated.author_chain_id,
                     "source_author_residue_id": annotated.author_residue_id,
-                    "reference_position": None,
+                    "reference_position": (
+                        None
+                        if reference_start is None
+                        else reference_start + entry.sequence_index - 1
+                    ),
                 }
             )
             for entry, annotated in zip(
@@ -804,9 +830,17 @@ def build_imported_pse_target_bundle(
         json.dumps(
             {
                 "schema_version": "0.1",
-                "status": "structural-only",
-                "identity_resolution": "not-attempted",
-                "reference_completeness": "observed-pse-only",
+                **(
+                    identity_report
+                    if identity_report is not None
+                    else {
+                        "schema_version": "0.1",
+                        "status": "structural-only",
+                        "identity_status": "not_requested",
+                        "identity_resolution": "not-requested",
+                        "reference_completeness": "observed-pse-only",
+                    }
+                ),
             },
             ensure_ascii=False,
             indent=2,
@@ -831,11 +865,53 @@ def build_imported_pse_target_bundle(
         + "\n",
         scope_json,
     )
-    _exclusive_text("[]\n", candidates_json)
-    _exclusive_text("pdb_id\tchain\teligible\treasons\n", candidates_tsv)
     _exclusive_text(
         json.dumps(
-            {"schema_version": "0.1", "requests": []},
+            {
+                "schema_version": "0.2",
+                "search_status": "not_requested",
+                "reason": "explicit-pse-input",
+                "candidates": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        candidates_json,
+    )
+    _exclusive_text("pdb_id\tchain\teligible\treasons\n", candidates_tsv)
+    published_retrieval = []
+    for index, record in enumerate(retrieval_records, start=1):
+        published = dict(record)
+        artifact_name = record.get("artifact_name")
+        if isinstance(artifact_name, str):
+            source_response = (
+                resolved_run_root
+                / "01-target-preparation"
+                / attempt_id
+                / "work"
+                / "retrieval"
+                / artifact_name
+            )
+            if source_response.is_file():
+                destination = artifact_dir / "retrieval" / artifact_name
+                _exclusive_copy(source_response, destination)
+                published["run_artifact_path"] = destination.relative_to(
+                    resolved_run_root
+                ).as_posix()
+                published["artifact_id"] = f"retrieval-response-{index:04d}"
+        published_retrieval.append(published)
+    _exclusive_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "status": (
+                    "completed" if published_retrieval else "not_requested"
+                ),
+                "requests": published_retrieval,
+            },
+            ensure_ascii=False,
             indent=2,
             sort_keys=True,
         )

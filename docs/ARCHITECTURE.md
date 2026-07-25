@@ -218,11 +218,11 @@ target.fasta | target.pdb | target.cif | target.pse | target-bundle.json
 easydesign.yaml
 ```
 
-`easydesign.yaml` schema `0.4` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
+`easydesign.yaml` schema `0.5` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
 binder profile/intent，未实现阶段写 `null`。`stage01.target.source` 是
 `local-file | pdb-id | uniprot | uniprot-search | target-bundle` 的 discriminated union；
 本地路径相对于 YAML 解析。旧 schema 0.3 只在加载边界规范化，run 内
-`resolved-config.json` 永远保存 0.4。
+`resolved-config.json` 永远保存 0.5。
 
 统一 Stage 01 source pipeline 是：
 
@@ -235,6 +235,12 @@ snapshot/identity/scope
 → mapping/QC/provenance/Target Bundle
 → Viewer
 ```
+
+`orchestration/stage01_handlers/` 是唯一 source dispatcher 层，六个入口分别由
+`local_structure.py`、`pdb_id.py`、`sequence.py`、`uniprot.py`、`pse.py` 和
+`target_bundle.py` 接收。它们共享 identity/scope/structure selection、Decision Gate、
+Protenix request、Bundle 发布与失败证据，不复制科学规则。旧
+`stage01_sources.execute_stage01_source()` 只保留兼容门面。
 
 FASTA 与 UniProt 不直接跳到预测：先用 RCSB Sequence Search v2/Data API 查实验结构。
 `experimental-strict-v1` 要求 scope 100% 坐标覆盖、100% 序列一致、每个 residue 有 CA，
@@ -285,7 +291,8 @@ quality、provenance、Target Bundle 和 Stage/Run manifests，并额外发布 `
 
 Protenix 2.0.0 CLI 不暴露远程 ticket，因此 provenance 会明确记录
 `not-exposed-by-protenix-cli-2.0.0`，不能伪造 ticket。可直接采集 ticket/status 的服务
-worker、sequence-hash cache 与自建 ColabFold/MMseqs2 profile 仍属于后续实现。
+sequence-hash cache 和预计算 A3M 已实现并由 schema 0.5 显式选择；自建
+ColabFold/MMseqs2 profile 仍属于后续实现。
 
 旧版目录（只用于解释历史，不再生成）：
 

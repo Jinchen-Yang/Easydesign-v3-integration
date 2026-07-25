@@ -136,3 +136,27 @@
   继续保留在 TODO。
 - 提交：`feat(stage01): complete six target source workflows`；最终远端 SHA 由推送后
   HEAD 核对记录确定。
+
+## 2026-07-25 — ENG-007 / UX-004：六入口 dispatcher 与完整读者工作流
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-25T16:49:02+08:00
+- 问题：Stage 01 的 source 编排集中在单个大模块，PSE 仍由 application 特判；用户虽能
+  编辑 YAML，却不能在 init 时直接声明 Bundle source run、chain namespace、
+  feature scope、precomputed A3M 或 MSA cache 策略。
+- 方案：新增六个具名 source handler 和共享 dispatcher，保留旧入口为兼容门面；
+  CLI/API 增加六入口、scope/identity、MSA 来源和 cache 参数，暂停时直接提示
+  `decisions show/export/approve`，所有科学逻辑继续位于 Python API。
+- 可复现性：版本升级到 `0.1.0.dev3`，canonical/resolved config 使用 schema 0.5；
+  online cache refresh、显式 prefer-cache/offline 和 precomputed A3M 都保存实际输入
+  hash/depth/provenance，禁止隐式 no-MSA。
+- 工程证据：`make check`、187 项 Python 测试、dev3 wheel 资产/console-script/
+  隔离安装和 Playwright 3 passed/2 skipped 均通过；Proteindigger1 十条真实路径均生成
+  Bundle、Viewer 并被 Stage 02 读取。
+- 遇到的问题：真实本地 PDB 发现 label subchain `Axp` 与规范 mapping chain A 不一致；
+  precomputed doctor 又错误假定 remote provider 一定存在。两项均在真实矩阵中修复并
+  增加回归。
+- 遗留边界：自建 ColabFold/MMseqs2、跨平台重型 backend、非 canonical isoform、
+  复合物 PSE、Stage 03 UX 和公开 release 仍属后续任务。
+- 提交：`feat(stage01): complete six-entry version-one workflow`；最终远端 SHA 由推送后
+  核对记录确定。

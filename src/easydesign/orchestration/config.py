@@ -247,12 +247,13 @@ class ResolvedProtenixMsaProviderConfig(BaseModel):
     retry_backoff_seconds: int = Field(ge=0, le=600)
 
 
-class ProtenixMsaConfig(BaseModel):
-    """sequence/FASTA 用户路径的 MSA 硬性策略；当前不允许 no-MSA。"""
+class RemoteProtenixMsaConfig(BaseModel):
+    """远程 MSA 与显式 sequence-hash cache 策略。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    mode: MsaMode = MsaMode.REMOTE
+    mode: Literal[MsaMode.REMOTE] = MsaMode.REMOTE
+    cache_mode: CacheMode = CacheMode.ONLINE
     providers: tuple[ProtenixMsaProviderConfig, ...] = (
         ProtenixMsaProviderConfig(),
     )
@@ -260,11 +261,6 @@ class ProtenixMsaConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_msa_policy(self) -> Self:
-        if self.mode is not MsaMode.REMOTE:
-            raise ValueError(
-                "EasyDesign sequence/FASTA 主线当前必须使用 mode=remote；"
-                "no-MSA 只允许内部工程 smoke"
-            )
         if not self.providers:
             raise ValueError("remote MSA 至少需要一个 provider")
         provider_names = [provider.provider for provider in self.providers]
@@ -292,6 +288,24 @@ class ProtenixMsaConfig(BaseModel):
                 )
             )
         return tuple(resolved)
+
+
+class PrecomputedProtenixMsaConfig(BaseModel):
+    """用户显式提供并按规范 query 校验的 A3M。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Literal[MsaMode.PRECOMPUTED]
+    path: Path
+
+    def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
+        return ()
+
+
+ProtenixMsaConfig: TypeAlias = Annotated[
+    RemoteProtenixMsaConfig | PrecomputedProtenixMsaConfig,
+    Field(discriminator="mode"),
+]
 
 
 class StructurePredictionConfig(BaseModel):
@@ -543,7 +557,7 @@ class EasyDesignRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.4", pattern=r"^0\.4$")
+    schema_version: str = Field(default="0.5", pattern=r"^0\.5$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
     stage01: Stage01Config
@@ -593,7 +607,7 @@ class EasyDesignRunConfig(BaseModel):
                         "scope": {"type": "full-sequence"},
                     }
             migrated["stage01"] = stage01
-        migrated["schema_version"] = "0.4"
+        migrated["schema_version"] = "0.5"
         return migrated
 
     @model_validator(mode="after")
@@ -659,6 +673,7 @@ class LoadedSequenceRunConfig:
     target: NormalizedProteinSequence
     prediction_request: StructurePredictionRequest
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...]
+    precomputed_msa_path: Path | None = None
     identity_report: dict[str, Any] | None = None
     scope_report: dict[str, Any] | None = None
     structure_candidates: tuple[dict[str, Any], ...] = ()
@@ -698,6 +713,7 @@ class LoadedRemoteRunConfig:
     config: EasyDesignRunConfig
     source_path: None
     detected_format: TargetInputFormat
+    precomputed_msa_path: Path | None = None
 
 
 LoadedRunConfig: TypeAlias = (
@@ -790,6 +806,19 @@ def _resolve_source_path(config_path: Path, source: Path) -> Path:
     return resolved
 
 
+def _resolve_precomputed_msa_path(
+    config_path: Path,
+    config: EasyDesignRunConfig,
+) -> Path | None:
+    prediction = config.structure_prediction
+    if (
+        prediction is None
+        or not isinstance(prediction.msa, PrecomputedProtenixMsaConfig)
+    ):
+        return None
+    return _resolve_source_path(config_path, prediction.msa.path)
+
+
 def load_run_config(path: Path) -> LoadedRunConfig:
     """读取用户 YAML，并返回与已识别 target 类型匹配的排他配置分支。"""
 
@@ -819,6 +848,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             config=config,
             source_path=None,
             detected_format=TargetInputFormat.UNIPROT,
+            precomputed_msa_path=_resolve_precomputed_msa_path(config_path, config),
         )
     if isinstance(source, UniProtSearchSourceConfig):
         return LoadedRemoteRunConfig(
@@ -826,6 +856,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             config=config,
             source_path=None,
             detected_format=TargetInputFormat.UNIPROT_SEARCH,
+            precomputed_msa_path=_resolve_precomputed_msa_path(config_path, config),
         )
     if isinstance(source, TargetBundleSourceConfig):
         source_path = _resolve_source_path(config_path, source.path)
@@ -861,6 +892,10 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         if config.workflow.stop_after_stage >= 2 and config.stage02 is None:
             raise ConfigurationError(
                 "stop_after_stage >= 2 时必须显式提供 stage02 配置"
+            )
+        if not isinstance(config.target.scope, FullSequenceScope):
+            raise ConfigurationError(
+                "Stage 01 1.0 的 PSE 输入只支持 full-sequence scope"
             )
         return LoadedPseRunConfig(
             config_path=config_path,
@@ -919,6 +954,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         )
     except ValidationError as error:
         raise ConfigurationError(f"结构预测配置不符合通用请求契约: {error}") from error
+    precomputed_msa_path = _resolve_precomputed_msa_path(config_path, config)
     return LoadedSequenceRunConfig(
         config_path=config_path,
         config=config,
@@ -927,11 +963,12 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         target=target,
         prediction_request=request,
         msa_execution_plan=prediction.msa.resolved_providers(),
+        precomputed_msa_path=precomputed_msa_path,
     )
 
 
 def migrate_run_config(source: Path, destination: Path) -> Path:
-    """将旧配置显式写成 canonical 0.4；禁止覆盖原文件或目标文件。"""
+    """将旧配置显式写成 canonical 0.5；禁止覆盖原文件或目标文件。"""
 
     source_path = source.resolve(strict=True)
     target_path = destination.expanduser().resolve()
@@ -966,6 +1003,16 @@ def migrate_run_config(source: Path, destination: Path) -> Path:
         )
         target_source["source_run_root"] = os.path.relpath(
             loaded.source_run_root,
+            target_path.parent,
+        )
+    loaded_precomputed_msa = getattr(loaded, "precomputed_msa_path", None)
+    if loaded_precomputed_msa is not None:
+        prediction = payload["stage01"]["structure_prediction"]
+        assert isinstance(prediction, dict)
+        msa = prediction["msa"]
+        assert isinstance(msa, dict)
+        msa["path"] = os.path.relpath(
+            loaded_precomputed_msa,
             target_path.parent,
         )
     target_path.parent.mkdir(parents=True, exist_ok=True)

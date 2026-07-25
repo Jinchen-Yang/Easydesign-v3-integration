@@ -54,8 +54,8 @@ from .profile import (
     load_runtime_profile,
     resolve_runtime_profile_path,
 )
-from .pse_import import execute_pse_import
 from .sequence_prediction import execute_sequence_prediction
+from .stage01_handlers import execute_pse_source
 from .stage01_sources import execute_stage01_source
 from .stage02 import execute_stage02_comparison
 from .workspace import (
@@ -260,10 +260,17 @@ def _nearest_existing_parent(path: Path) -> Path:
 def _protenix_adapter(
     runtime: ProtenixV2Runtime,
     loaded: LoadedSequenceRunConfig,
-    provider: ResolvedProtenixMsaProviderConfig,
+    provider: ResolvedProtenixMsaProviderConfig | None,
 ) -> ProtenixV2Adapter:
     prediction = loaded.config.structure_prediction
     assert prediction is not None
+    if provider is None:
+        return ProtenixV2Adapter(
+            executable=runtime.executable,
+            model_root=runtime.model_root,
+            cuda_visible_devices=runtime.cuda_visible_devices,
+            prediction_timeout_seconds=prediction.prediction_timeout_seconds,
+        )
     return ProtenixV2Adapter(
         executable=runtime.executable,
         model_root=runtime.model_root,
@@ -302,7 +309,11 @@ def _probe_protenix(
             cuda_visible_devices=runtime.cuda_visible_devices,
         )
     else:
-        provider = loaded.msa_execution_plan[0]
+        provider = (
+            loaded.msa_execution_plan[0]
+            if loaded.msa_execution_plan
+            else None
+        )
         adapter = _protenix_adapter(runtime, loaded, provider)
     invocation = adapter.version_invocation()
     environment = os.environ.copy()
@@ -530,7 +541,7 @@ def execute_pipeline(
             runtime_profile=context.loaded_profile.identity,
             run_id=run_id,
         )
-        completed_pse = execute_pse_import(prepared=prepared_pse, adapter=adapter)
+        completed_pse = execute_pse_source(prepared_pse, adapter=adapter)
         run_root = completed_pse.prepared.workspace.run_root
         run_manifest = completed_pse.run_manifest
         viewer_status = str(completed_pse.target_viewer.status)
@@ -579,6 +590,11 @@ def execute_pipeline(
                 target=fallback.target,
                 prediction_request=prediction_request,
                 msa_execution_plan=prediction_config.msa.resolved_providers(),
+                precomputed_msa_path=getattr(
+                    loaded,
+                    "precomputed_msa_path",
+                    None,
+                ),
                 identity_report=fallback.identity_report,
                 scope_report=fallback.scope_report,
                 structure_candidates=tuple(fallback.candidates),
@@ -588,7 +604,11 @@ def execute_pipeline(
             )
             protenix_runtime = backends.protenix_v2
             assert protenix_runtime is not None
-            first_provider = derived.msa_execution_plan[0]
+            first_provider = (
+                derived.msa_execution_plan[0]
+                if derived.msa_execution_plan
+                else None
+            )
             writer = _protenix_adapter(protenix_runtime, derived, first_provider)
             protenix_input = writer.write_input(
                 prediction_request,
@@ -603,10 +623,17 @@ def execute_pipeline(
                 loaded_config=derived,
                 workspace=prepared_source.workspace,
                 protenix_input=protenix_input,
+                precomputed_msa=(
+                    prepared_source.workspace.run_root
+                    / "input-snapshot"
+                    / "target-msa.a3m"
+                    if derived.precomputed_msa_path is not None
+                    else None
+                ),
             )
 
             def remote_adapter_builder(
-                provider: ResolvedProtenixMsaProviderConfig,
+                provider: ResolvedProtenixMsaProviderConfig | None,
             ) -> ProtenixV2Adapter:
                 return _protenix_adapter(protenix_runtime, derived, provider)
 
@@ -820,6 +847,11 @@ def continue_pipeline_after_decision(
             target=fallback.target,
             prediction_request=prediction_request,
             msa_execution_plan=prediction_config.msa.resolved_providers(),
+            precomputed_msa_path=getattr(
+                prepared.loaded_config,
+                "precomputed_msa_path",
+                None,
+            ),
             identity_report=fallback.identity_report,
             scope_report=fallback.scope_report,
             structure_candidates=tuple(fallback.candidates),
@@ -832,7 +864,11 @@ def continue_pipeline_after_decision(
             raise ConfigurationError(
                 "已批准 Protenix fallback，但 runtime profile 未配置 protenix-v2"
             )
-        first_provider = derived.msa_execution_plan[0]
+        first_provider = (
+            derived.msa_execution_plan[0]
+            if derived.msa_execution_plan
+            else None
+        )
         writer = _protenix_adapter(protenix_runtime, derived, first_provider)
         protenix_input = writer.write_input(
             prediction_request,
@@ -847,10 +883,15 @@ def continue_pipeline_after_decision(
             loaded_config=derived,
             workspace=prepared.workspace,
             protenix_input=protenix_input,
+            precomputed_msa=(
+                prepared.workspace.run_root / "input-snapshot" / "target-msa.a3m"
+                if derived.precomputed_msa_path is not None
+                else None
+            ),
         )
 
         def adapter_builder(
-            provider: ResolvedProtenixMsaProviderConfig,
+            provider: ResolvedProtenixMsaProviderConfig | None,
         ) -> ProtenixV2Adapter:
             return _protenix_adapter(protenix_runtime, derived, provider)
 

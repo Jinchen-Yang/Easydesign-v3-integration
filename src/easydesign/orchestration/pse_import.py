@@ -7,10 +7,15 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from easydesign.backends.target_sources import (
     PseBackendExecutionError,
     PyMOLPseAdapter,
+)
+from easydesign.backends.target_sources.remote import (
+    ScientificHttpClient,
+    uniprot_accession,
 )
 from easydesign.core import (
     ArtifactRef,
@@ -190,12 +195,67 @@ def execute_pse_import(
         stdout = product.stdout
         stderr = product.stderr
         backend_version = product.response.pymol_version
+        reference_sequence: str | None = None
+        reference_start: int | None = None
+        identity_report: dict[str, Any] | None = None
+        retrieval_records: tuple[dict[str, Any], ...] = ()
+        accession = prepared.loaded_config.config.target.identity.uniprot_accession
+        if accession is not None:
+            retrieval_dir = work_dir / "retrieval"
+            retrieval_dir.mkdir(parents=True, exist_ok=False)
+            with ScientificHttpClient(
+                evidence_dir=retrieval_dir,
+                cache_mode=str(
+                    prepared.loaded_config.config.workflow.cache_mode
+                ),
+            ) as client:
+                payload = uniprot_accession(client, accession).json()
+                if not isinstance(payload, dict):
+                    raise ValueError("UniProt accession 响应必须是 mapping")
+                try:
+                    canonical = str(payload["sequence"]["value"]).upper()
+                    resolved_accession = str(payload["primaryAccession"])
+                    taxonomy_id = int(payload["organism"]["taxonId"])
+                except (KeyError, TypeError, ValueError) as error:
+                    raise ValueError("UniProt 响应缺少身份或 canonical sequence") from error
+                observed = product.response.sequence
+                positions = [
+                    index + 1
+                    for index in range(len(canonical))
+                    if canonical.startswith(observed, index)
+                ]
+                if len(positions) != 1:
+                    raise ValueError(
+                        "PSE observed sequence 必须与 UniProt canonical sequence "
+                        f"形成唯一精确子序列映射: matches={len(positions)}"
+                    )
+                reference_sequence = canonical
+                reference_start = positions[0]
+                identity_report = {
+                    "schema_version": "0.1",
+                    "status": "resolved",
+                    "identity_status": "resolved",
+                    "identity_resolution": "explicit-accession-exact-subsequence",
+                    "accession": resolved_accession,
+                    "taxonomy_id": taxonomy_id,
+                    "input_sequence_reference_start": reference_start,
+                    "input_sequence_reference_end": (
+                        reference_start + len(observed) - 1
+                    ),
+                }
+                retrieval_records = tuple(
+                    record.model_dump(mode="json") for record in client.records
+                )
         built = build_imported_pse_target_bundle(
             run_root=workspace.run_root,
             attempt_id=ATTEMPT_ID,
             target_id=prepared.loaded_config.config.target.target_id,
             source_label=workspace.input_snapshot.name,
             product=product,
+            reference_sequence=reference_sequence,
+            reference_start=reference_start,
+            identity_report=identity_report,
+            retrieval_records=retrieval_records,
         )
     except PseBackendExecutionError as error:
         failure = error

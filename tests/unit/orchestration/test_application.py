@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 from easydesign.cli import main
 from easydesign.core import CodeIdentity, CodeIdentitySource, ConfigurationError
@@ -13,17 +13,18 @@ from easydesign.orchestration import (
     DiagnosticCheck,
     DiagnosticReport,
     DiagnosticStatus,
-    continue_pipeline_after_decision,
     execute_pipeline,
     initialize_project,
     initialize_runtime_profile,
     list_runs,
     validate_run_configuration,
 )
-from easydesign.orchestration.decisions import (
-    approve_decision,
-    export_decision,
+from easydesign.orchestration.application import (
+    PROTENIX_V2_CHECKPOINT_SHA256,
+    _probe_protenix,
 )
+from easydesign.orchestration.config import LoadedSequenceRunConfig, load_run_config
+from easydesign.orchestration.profile import ProtenixV2Runtime
 from easydesign.orchestration.workspace import RunIndexEntry, upsert_run_index_entries
 
 
@@ -199,8 +200,8 @@ backends:
         fake_initialize,
     )
     monkeypatch.setattr(
-        "easydesign.orchestration.application.execute_pse_import",
-        lambda **_: SimpleNamespace(
+        "easydesign.orchestration.application.execute_pse_source",
+        lambda *_args, **_kwargs: SimpleNamespace(
             prepared=prepared,
             run_manifest=run_root / "manifests/run-manifest.v0002.json",
             target_viewer=SimpleNamespace(status="succeeded"),
@@ -259,7 +260,7 @@ def test_runs_list_marks_legacy_entry_unavailable_without_scanning(tmp_path: Pat
     assert summaries[0].integrity_message is not None
 
 
-def test_local_structural_only_decision_resumes_in_new_attempt(
+def test_local_structural_only_input_succeeds_with_warning(
     tmp_path: Path,
 ) -> None:
     pdb = tmp_path / "target.pdb"
@@ -281,38 +282,65 @@ END
         runs_root=(tmp_path / "runs").resolve(),
     )
 
-    paused = execute_pipeline(
+    completed = execute_pipeline(
         initialized.config_path,
         profile_path=profile,
         run_id="local-structure-decision",
     )
 
-    assert paused.status == "awaiting-human-approval"
-    assert paused.run_root is not None
-    review = export_decision(
-        paused.run_root,
-        output=tmp_path / "decision.yaml",
-    )
-    payload = yaml.safe_load(review.read_text(encoding="utf-8"))
-    payload["selected_option_ids"] = ["accept-structural-only"]
-    payload["approved_by"] = "unit-test"
-    payload["acknowledgement"] = "Reference completeness is unknown."
-    review.write_text(
-        yaml.safe_dump(payload, sort_keys=False),
-        encoding="utf-8",
-    )
-    record = approve_decision(paused.run_root, input_path=review)
-
-    completed = continue_pipeline_after_decision(
-        paused.run_root,
-        decision_record=record,
-        profile_path=profile,
-    )
-
     assert completed.status == "succeeded"
+    assert completed.run_root is not None
     assert (
-        paused.run_root
-        / "01-target-preparation/attempt-0002/artifacts/target-bundle.json"
+        completed.run_root
+        / "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
     ).is_file()
     assert completed.run_manifest is not None
-    assert completed.run_manifest.name == "run-manifest.v0003.json"
+    assert completed.run_manifest.name == "run-manifest.v0002.json"
+
+
+def test_protenix_doctor_accepts_precomputed_msa_without_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    sequence = "ACDEFGHIKLMNPQRSTVWY"
+    fasta.write_text(f">target\n{sequence}\n", encoding="utf-8")
+    a3m = tmp_path / "target.a3m"
+    a3m.write_text(
+        f">query\n{sequence}\n>homolog\n{sequence}\n",
+        encoding="utf-8",
+    )
+    initialized = initialize_project(
+        project_root=tmp_path / "precomputed",
+        target=fasta,
+        precomputed_msa=a3m,
+    )
+    loaded = load_run_config(initialized.config_path)
+    assert isinstance(loaded, LoadedSequenceRunConfig)
+    executable = tmp_path / "protenix"
+    executable.write_text("", encoding="utf-8")
+    model_root = tmp_path / "models"
+    checkpoint = model_root / "checkpoint/protenix-v2.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"checkpoint")
+    runtime = ProtenixV2Runtime(
+        executable=executable,
+        model_root=model_root,
+        model_checkpoint=checkpoint,
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.application.sha256_file",
+        lambda _: PROTENIX_V2_CHECKPOINT_SHA256,
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["protenix", "--version"],
+            0,
+            "protenix, version 2.0.0\n",
+            "",
+        ),
+    )
+
+    assert _probe_protenix(runtime, loaded) == PROTENIX_V2_CHECKPOINT_SHA256

@@ -654,7 +654,7 @@ def execute_stage04(
             if task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED}:
                 break
         if task.status is TaskStatus.PENDING:
-            error = ErrorInfo(
+            exhausted_error = ErrorInfo(
                 code="task-attempt-budget-exhausted",
                 message=(
                     f"Task invocation exhausted {config.executor.max_task_attempts} "
@@ -664,16 +664,16 @@ def execute_stage04(
                 retryable=True,
             )
             with lock:
-                recent_errors.append(f"{task.task_id}: {error.message}")
+                recent_errors.append(f"{task.task_id}: {exhausted_error.message}")
                 task = task.model_copy(update={"status": TaskStatus.FAILED})
                 tasks[task.task_id] = task
                 append_event(
                     event_type="task-incomplete",
-                    message=error.message,
+                    message=exhausted_error.message,
                     task=task,
                     from_status=TaskStatus.PENDING,
                     to_status=TaskStatus.FAILED,
-                    error=error,
+                    error=exhausted_error,
                 )
                 persist("incomplete")
         return task

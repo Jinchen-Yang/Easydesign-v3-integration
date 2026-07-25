@@ -20,9 +20,15 @@ class PilotBackendParameters(BaseModel):
     inverse_fold_num_sequences: Literal[1] = 1
     checkpoint_policy: Literal["boltzgen-0.3.2-default-pair"] = "boltzgen-0.3.2-default-pair"
     budget: Literal[30] = 30
-    alpha: Literal[0.001] = 0.001
+    alpha: float = Field(default=0.001, ge=0, le=1)
     filter_biased: Literal[True] = True
     random_seed_status: Literal["unsupported-by-boltzgen-0.3.2"] = "unsupported-by-boltzgen-0.3.2"
+
+    @model_validator(mode="after")
+    def validate_alpha(self) -> Self:
+        if self.alpha != 0.001:
+            raise ValueError("Stage 04 v0.1 alpha 固定为 0.001")
+        return self
 
 
 class PilotStrategyPlan(BaseModel):

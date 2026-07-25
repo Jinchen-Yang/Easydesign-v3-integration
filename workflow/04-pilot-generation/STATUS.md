@@ -20,7 +20,7 @@
 
 | 能力 | 状态 | 当前证据 |
 | --- | --- | --- |
-| BoltzGen backend | `implemented` | 固定 0.3.2 完整 pipeline 的单候选真实 smoke 成功；严格收集到原始/refold CIF 和 200 个指标 |
+| BoltzGen backend | `implemented` | 固定 0.3.2 完整 pipeline 的单候选真实 smoke 成功；严格收集原始/refold CIF、官方 design mask 和指标 |
 | local executor | `implemented` | 双 GPU、每 GPU 一个串行 strategy；资源门槛、结构化失败和精确 deficit resume 已测试 |
 | Slurm/SMART executor | `planned` | 无 |
 | 任务终态和候选索引 | `implemented` | TaskRecord、ProgressSnapshot、CandidateRecord、PilotBundle 与 manifest-only handoff 已测试 |
@@ -65,6 +65,10 @@
   区分 `num_designs`、`budget`、`pass_filters` 与 EasyDesign 完整候选。
 - 2026-07-26：完成通用实现、故障注入、恢复测试和单候选真实 backend smoke；
   Stage 状态升级为 `implemented`，等待 21×40 APOE 真实门槛。
+- 2026-07-26：真实候选审计发现 CSV 拼接序列在重复片段下不能唯一恢复 CDR；改为读取
+  BoltzGen 官方 NPZ `design_mask`，同时校验 mask、完整 binder 序列、designed sequence、
+  `num_design` 和结构 residue 数，并将 mask 文件纳入 ArtifactRef。APOE 7eow 40 个真实
+  candidate 已通过新收集器验证。
 
 ## 历史索引
 

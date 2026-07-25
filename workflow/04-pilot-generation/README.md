@@ -147,10 +147,14 @@ random_seed_status: unsupported-by-boltzgen-0.3.2
 2. 行内 `id` 和 `file_name` 非空且没有歧义；
 3. `intermediate_designs_inverse_folded/<file_name>` 是可读非空 mmCIF；
 4. `intermediate_designs_inverse_folded/refold_cif/<file_name>` 是可读非空 mmCIF；
-5. 两个文件均保存大小和 SHA-256；
-6. candidate identity 在整个 Stage 04 内唯一，并可回溯到 strategy/task/task-attempt。
+5. 同 stem 的官方 NPZ 存在逐 token `design_mask`，且能唯一映射到 binder residue；
+6. mask 复原序列必须与 CSV 的 `designed_sequence` 完全一致；
+7. 三个文件均保存大小和 SHA-256；
+8. candidate identity 在整个 Stage 04 内唯一，并可回溯到 strategy/task/task-attempt。
 
-缺行、重复 ID、缺失原始或 refold 结构、零字节文件、CSV 损坏和数量不足都必须明确记录。
+缺行、重复 ID、缺失原始/refold/mask 证据、零字节文件、CSV 损坏和数量不足都必须明确
+记录。不得仅从拼接后的 `designed_sequence` 反推 CDR 位置，因为重复序列会产生多个合法
+字符串分割；Stage 05 只消费 Stage 04 已验证并声明 checksum 的官方 `design_mask` 结果。
 不能用启动次数、任意目录数、官方 final budget 或仅成功的日志代替完整候选数。
 
 官方 `pass_filters` 被原样保存为指标证据，但不影响 Stage 04 的完整性判断和任务成功。
@@ -182,7 +186,8 @@ random_seed_status: unsupported-by-boltzgen-0.3.2
 ```
 
 `CandidateIndex` 是 Stage 05 的唯一候选入口。它包含每个候选的 strategy lineage、原始和
-refold 结构相对 ArtifactRef、对应 metric row、完整性和来源 task attempt。
+refold 结构相对 ArtifactRef、官方 design-mask ArtifactRef、binder designed residue
+identity、对应 metric row、完整性和来源 task attempt。
 
 原始 backend output 不提交 Git，不被收集器改写。Stage 04 artifact 记录实际使用的
 backend、commit、模型/checkpoint、molecule dataset、GPU 和执行参数身份。

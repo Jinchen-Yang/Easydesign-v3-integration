@@ -79,6 +79,8 @@ class CandidateRecord(BaseModel):
     ordinal_within_strategy: int = Field(ge=1)
     original_structure: ArtifactRef
     refolded_structure: ArtifactRef
+    design_mask_source: ArtifactRef | None = None
+    designed_binder_residue_ids: tuple[int, ...] = ()
     metrics: dict[str, MetricValue]
     pass_filters: bool | None = None
 
@@ -92,6 +94,19 @@ class CandidateRecord(BaseModel):
             ):
                 raise ValueError("CandidateRecord metrics 只接受 JSON scalar")
         return value
+
+    @model_validator(mode="after")
+    def validate_design_mask_evidence(self) -> Self:
+        has_source = self.design_mask_source is not None
+        has_residues = bool(self.designed_binder_residue_ids)
+        if has_source != has_residues:
+            raise ValueError("design mask source 与 designed residue identity 必须同时存在")
+        if self.designed_binder_residue_ids and (
+            tuple(sorted(set(self.designed_binder_residue_ids)))
+            != self.designed_binder_residue_ids
+        ):
+            raise ValueError("designed_binder_residue_ids 必须升序且唯一")
+        return self
 
 
 class CandidateIndex(BaseModel):

@@ -81,6 +81,72 @@ def _write_collection_report(
         handle.write("\n")
 
 
+def recover_interrupted_boltzgen_task(
+    *,
+    root: Path,
+    task: TaskRecord,
+    stage_attempt_id: str,
+    producer_stage: str,
+    ordinal_offset: int = 0,
+) -> TaskTransition | None:
+    """Salvage complete artifacts from a task left running by process interruption."""
+
+    if task.status is not TaskStatus.RUNNING:
+        return None
+    running_attempt = task.attempts[-1]
+    remaining = task.requested_candidates - task.collected_candidates
+    salvaged = (
+        collect_boltzgen_candidates(
+            run_root=root,
+            backend_output=root / running_attempt.output_relative_path,
+            strategy_id=task.strategy_id,
+            task_id=task.task_id,
+            task_attempt_number=running_attempt.attempt_number,
+            stage_attempt_id=stage_attempt_id,
+            ordinal_start=ordinal_offset + task.collected_candidates + 1,
+            maximum_candidates=max(remaining, 0),
+            producer_stage=producer_stage,
+        )
+        if remaining > 0
+        else ()
+    )
+    error = ErrorInfo(
+        code="interrupted-before-resume",
+        message="Previous EasyDesign process ended before task terminal state.",
+        retryable=True,
+    )
+    closed_attempt = running_attempt.model_copy(
+        update={
+            "status": TaskStatus.FAILED,
+            "collected_candidates": len(salvaged),
+            "ended_at": datetime.now(UTC),
+            "return_code": 130,
+            "error": error,
+        }
+    )
+    candidate_ids = (*task.candidate_ids, *(item.candidate_id for item in salvaged))
+    recovered = task.model_copy(
+        update={
+            "status": TaskStatus.PENDING,
+            "collected_candidates": len(candidate_ids),
+            "candidate_ids": candidate_ids,
+            "attempts": (*task.attempts[:-1], closed_attempt),
+            "current_device": None,
+        }
+    )
+    return TaskTransition(
+        event_type="task-interrupted",
+        message="Recovered an interrupted task for resume.",
+        task=recovered,
+        new_candidates=salvaged,
+        attempt_number=running_attempt.attempt_number,
+        device=running_attempt.device,
+        from_status=TaskStatus.RUNNING,
+        to_status=TaskStatus.PENDING,
+        error=error,
+    )
+
+
 def execute_boltzgen_candidate_task(
     *,
     root: Path,
@@ -93,6 +159,7 @@ def execute_boltzgen_candidate_task(
     device: int,
     maximum_attempts_this_invocation: int,
     on_transition: TaskTransitionCallback,
+    ordinal_offset: int = 0,
 ) -> TaskRecord:
     """Run exact deficits with immutable attempts and strict candidate collection."""
 
@@ -160,7 +227,7 @@ def execute_boltzgen_candidate_task(
                 task_id=current.task_id,
                 task_attempt_number=attempt_number,
                 stage_attempt_id=stage_attempt_id,
-                ordinal_start=current.collected_candidates + 1,
+                ordinal_start=ordinal_offset + current.collected_candidates + 1,
                 maximum_candidates=remaining,
                 producer_stage=producer_stage,
             )

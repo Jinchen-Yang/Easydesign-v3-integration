@@ -43,7 +43,11 @@ from easydesign.stages.s04_pilot_generation import (
     collect_boltzgen_candidates,
 )
 
-from .boltzgen_tasks import TaskTransition, execute_boltzgen_candidate_task
+from .boltzgen_tasks import (
+    TaskTransition,
+    execute_boltzgen_candidate_task,
+    recover_interrupted_boltzgen_task,
+)
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
 from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
 
@@ -433,59 +437,25 @@ def execute_stage04(
     # A crashed process may leave a task marked running. Salvage any complete
     # candidate artifacts, then close that task attempt as interrupted.
     for task_id, task in tuple(tasks.items()):
-        if task.status is not TaskStatus.RUNNING:
+        transition = recover_interrupted_boltzgen_task(
+            root=root,
+            task=task,
+            stage_attempt_id=attempt_id,
+            producer_stage=str(StageId.PILOT_GENERATION),
+        )
+        if transition is None:
             continue
-        running_attempt = task.attempts[-1]
-        output = root / running_attempt.output_relative_path
-        remaining = task.requested_candidates - task.collected_candidates
-        salvaged = (
-            collect_boltzgen_candidates(
-                run_root=root,
-                backend_output=output,
-                strategy_id=task.strategy_id,
-                task_id=task.task_id,
-                task_attempt_number=running_attempt.attempt_number,
-                stage_attempt_id=attempt_id,
-                ordinal_start=task.collected_candidates + 1,
-                maximum_candidates=max(remaining, 0),
-            )
-            if remaining > 0
-            else ()
-        )
-        candidates.extend(salvaged)
-        error = ErrorInfo(
-            code="interrupted-before-resume",
-            message="Previous EasyDesign process ended before task terminal state.",
-            retryable=True,
-        )
-        closed_attempt = running_attempt.model_copy(
-            update={
-                "status": TaskStatus.FAILED,
-                "collected_candidates": len(salvaged),
-                "ended_at": datetime.now(UTC),
-                "return_code": 130,
-                "error": error,
-            }
-        )
-        candidate_ids = (*task.candidate_ids, *(item.candidate_id for item in salvaged))
-        tasks[task_id] = task.model_copy(
-            update={
-                "status": TaskStatus.PENDING,
-                "collected_candidates": len(candidate_ids),
-                "candidate_ids": candidate_ids,
-                "attempts": (*task.attempts[:-1], closed_attempt),
-                "current_device": None,
-            }
-        )
+        tasks[task_id] = transition.task
+        candidates.extend(transition.new_candidates)
         append_event(
-            event_type="task-interrupted",
-            message="Recovered an interrupted task for resume.",
-            task=tasks[task_id],
-            attempt_number=running_attempt.attempt_number,
-            device=running_attempt.device,
-            from_status=TaskStatus.RUNNING,
-            to_status=TaskStatus.PENDING,
-            error=error,
+            event_type=transition.event_type,
+            message=transition.message,
+            task=transition.task,
+            attempt_number=transition.attempt_number,
+            device=transition.device,
+            from_status=transition.from_status,
+            to_status=transition.to_status,
+            error=transition.error,
         )
     with lock:
         for task_id, task in tuple(tasks.items()):

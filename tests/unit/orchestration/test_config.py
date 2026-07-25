@@ -7,7 +7,9 @@ import pytest
 from easydesign.core import ConfigurationError, TargetInputError
 from easydesign.orchestration import (
     LoadedPseRunConfig,
+    LoadedRemoteRunConfig,
     LoadedSequenceRunConfig,
+    LoadedStructureRunConfig,
     RegionProposalMode,
     TargetInputFormat,
     detect_target_input_format,
@@ -48,6 +50,106 @@ def test_auto_detection_supports_content_based_raw_sequence(tmp_path: Path) -> N
     assert detect_target_input_format(source) is TargetInputFormat.SEQUENCE
 
 
+def test_schema_04_loads_pdb_id_without_local_file(tmp_path: Path) -> None:
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.4"
+project_id: ubiquitin
+workflow:
+  execution_mode: review-gated
+  stop_after_stage: 1
+stage01:
+  target:
+    id: ubiquitin
+    source:
+      type: pdb-id
+      pdb_id: 1UBQ
+      chain: A
+    scope:
+      type: full-sequence
+  structure_prediction: null
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedRemoteRunConfig)
+    assert loaded.detected_format is TargetInputFormat.PDB_ID
+    assert loaded.source_path is None
+
+
+def test_schema_04_loads_local_structure_branch(tmp_path: Path) -> None:
+    pdb = tmp_path / "target.pdb"
+    pdb.write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.4"
+project_id: demo
+stage01:
+  target:
+    id: demo
+    source:
+      type: local-file
+      path: target.pdb
+      format: pdb
+    scope:
+      type: full-sequence
+  structure_prediction: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedStructureRunConfig)
+    assert loaded.detected_format is TargetInputFormat.PDB
+
+
+def test_unattended_stage02_requires_exactly_one_method(tmp_path: Path) -> None:
+    pse = tmp_path / "target.pse"
+    pse.write_bytes(b"pse")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.4"
+project_id: demo
+workflow:
+  execution_mode: unattended
+  stop_after_stage: 2
+stage01:
+  target:
+    id: demo
+    source:
+      type: local-file
+      path: target.pse
+      format: pse
+  structure_prediction: null
+stage02:
+  mode: automatic
+  methods: [sasa, scannet]
+  unattended_approval:
+    region_count: 3
+    allow_structural_only: true
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="恰好配置一种"):
+        load_run_config(config)
+
+
 def test_auto_detection_recognizes_future_structure_without_fallback(
     tmp_path: Path,
 ) -> None:
@@ -75,7 +177,7 @@ workflow:
         encoding="utf-8",
     )
 
-    with pytest.raises(TargetInputError, match="format=mmcif.*尚未实现"):
+    with pytest.raises(ConfigurationError, match="PDB/mmCIF.*structure_prediction"):
         load_run_config(config)
 
 
@@ -360,7 +462,7 @@ structure_prediction:
         load_run_config(config)
 
 
-def test_canonical_03_exposes_all_seven_stage_keys_and_optional_identity(
+def test_legacy_03_normalizes_to_canonical_04(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "target.pse"
@@ -408,7 +510,7 @@ stage07: null
     loaded = load_run_config(config)
 
     assert isinstance(loaded, LoadedPseRunConfig)
-    assert loaded.config.schema_version == "0.3"
+    assert loaded.config.schema_version == "0.4"
     assert loaded.config.stage01.target.identity.uniprot_accession is None
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.methods == ("sasa",)
@@ -448,7 +550,7 @@ stage07: null
         load_run_config(config)
 
 
-def test_config_migrate_writes_canonical_03_without_overwriting(
+def test_config_migrate_writes_canonical_04_without_overwriting(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "target.pse"
@@ -471,7 +573,8 @@ workflow:
     migrate_run_config(old, migrated)
     loaded = load_run_config(migrated)
 
-    assert loaded.config.schema_version == "0.3"
+    assert loaded.config.schema_version == "0.4"
+    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.4'")
     assert loaded.config.stage01.target.target_id == "demo"
     text = migrated.read_text(encoding="utf-8")
     assert "stage01:" in text

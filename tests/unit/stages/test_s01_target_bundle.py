@@ -84,7 +84,9 @@ def test_build_predicted_target_bundle(tmp_path) -> None:
 
     assert built.bundle.sequence_length == 2
     assert built.bundle.origin == "predicted"
-    assert built.bundle.schema_version == "0.3"
+    assert built.bundle.schema_version == "0.4"
+    assert built.bundle.identity_report is not None
+    assert built.bundle.residue_mapping_tsv is not None
     assert built.bundle.coordinate_ensemble is not None
     assert built.bundle.coordinate_ensemble.model_ids == ("1",)
     assert built.bundle_path == (
@@ -186,6 +188,20 @@ def test_target_bundle_02_loader_accepts_legacy_01_without_annotations(
     payload = built.bundle.model_dump(mode="python")
     payload["schema_version"] = "0.1"
     payload.pop("coordinate_ensemble")
+    for key in (
+        "reference_sequence",
+        "residue_mapping_tsv",
+        "identity_report",
+        "scope_report",
+        "structure_candidates",
+        "structure_candidates_tsv",
+        "retrieval_manifest",
+        "source_context",
+        "design_context",
+        "prediction_confidence",
+        "target_pdb",
+    ):
+        payload.pop(key)
 
     legacy = TargetBundle.model_validate(payload)
 

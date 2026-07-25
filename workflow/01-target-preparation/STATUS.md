@@ -6,20 +6,26 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | 两条单模型入口已真实跑通；Target Bundle 0.3 与 Viewer 已具备多模型身份契约。 | 用本地 PDB/mmCIF adapter 首次发布真实多模型 Target Bundle。 | 公共 ColabFold 无 SLA；真实多模型入口和其余输入 adapter 未完成。 | 2026-07-25 |
+| `implemented` | 六类入口、严格实验结构优先、Target Bundle 0.4 与双运行模式已实现；1UBQ/P0CG48 真实 smoke 通过。 | 补齐六入口 live fixture 矩阵，并把批准的 Stage 02 区域送入 Stage 03。 | 公共 ColabFold 无 SLA；非 canonical isoform、预计算 MSA 和完整 live fixture 矩阵未完成。 | 2026-07-25 |
 
 ## 当前结论
 
-- 阶段总体状态：`planned`；六类入口尚未全部实现。
+- 阶段总体状态：`implemented`；六类 source 已进入统一执行和发布链，但阶段级
+  `smoke-validated` 仍等待每类至少一个真实 fixture。
 - sequence/FASTA → remote MSA → Protenix-v2 → Target Bundle 纵向切片状态：
   `smoke-validated`。
 - 单 Target PyMOL PSE → imported Target Bundle 纵向切片状态：`smoke-validated`。
 - Stage 01 Target Bundle → 自包含 Mol* 5.11.0 Viewer 状态：`smoke-validated`。
-- 通用 Target Bundle schema `0.3` 已声明 coordinate model count/IDs、代表 model 和共享
-  label identity；兼容读取 0.1/0.2。PSE 与 Protenix 当前仍各发布单模型，这是 adapter
+- 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
+  label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
+  PSE 与 Protenix 当前仍各发布单模型，这是 adapter
   限制而非全局结构限制。
 - Viewer data `0.2` 显示 model 数量和代表 model；现有单模型 APOE 页面行为保持不变。
-- 用户 YAML schema `0.3` 固定展示 `stage01`–`stage07`，旧布局可显式迁移且不覆盖原文件。
+- 用户 YAML schema `0.4` 固定展示 `stage01`–`stage07`，旧布局可显式迁移且不覆盖原文件。
+- FASTA/UniProt 使用官方 RCSB sequence/data API 先查严格合格实验结构；本地结构、
+  PDB ID、PSE 和 Target Bundle 均走同一 chain A、mapping、QC、manifest 与 Viewer 交接。
+- `review-gated` 在 identity/chain/structure gate 暂停，审批后同一 run 新建 attempt；
+  `unattended` 只按确定性规则运行，没有唯一实验结构时显式预测。
 - sequence 和 PSE 成功路径都在正式 Stage/Run manifest 发布后自动生成 Viewer report；
   reporting failure 与科学状态分离，不阻塞 Stage 02 handoff。
 - 报告只沿 manifest 声明读取并验证 artifact，复制 mmCIF、FASTA 和 mapping，页面不访问
@@ -65,14 +71,14 @@
 | --- | --- | --- |
 | 裸氨基酸序列 | `implemented` | 严格规范化、标准氨基酸校验和 identity 测试 |
 | FASTA 文件 | `implemented` | 单记录解析；与同序列裸输入产生同一 SHA-256 |
-| EasyDesign YAML 与自动识别 | `implemented` | canonical 0.3 七阶段配置；旧布局兼容/迁移；MSA 与排他输入测试 |
+| EasyDesign YAML 与自动识别 | `implemented` | canonical 0.4、六种 source union、双执行模式与 0.3 兼容迁移 |
 | Run Workspace | `implemented` | 一次实验一个目录、七 Stage 同级、snapshot、索引和浅层 attempt |
-| 本地 PDB/mmCIF | `planned` | 无 |
-| RCSB PDB ID | `planned` | 无 |
-| UniProt accession/名称 | `planned` | 无 |
+| 本地 PDB/mmCIF | `implemented` | 单/多链、auth/label chain、多模型、逐模型缺失、altloc occupancy、ligand/context 测试 |
+| RCSB PDB ID | `smoke-validated` | 1UBQ chain A live run，76 aa、1.8 Å X-ray、Target Bundle 0.4/Viewer 成功 |
+| UniProt accession/名称 | `implemented` | P0CG48→RCSB live 候选含 1UBQ，人工批准后 attempt-0002 成功；名称歧义契约测试 |
 | PyMOL PSE | `smoke-validated` | 独立 PyMOL 3.1.0 环境；合成边界测试和旧 APOE PSE 真实 run |
-| 标准 Target Bundle | `planned` | 目前能生成，尚不能作为输入导入 |
-| Target Bundle coordinate ensemble | `implemented` | schema 0.3、模型 ID/代表 model/共享 label 身份和 0.1/0.2 兼容测试 |
+| 标准 Target Bundle | `implemented` | 0.1–0.4 校验重导入，保留 evidence/context/retrieval 并重建相对路径 |
+| Target Bundle coordinate ensemble | `implemented` | schema 0.4、模型 ID/代表 model/共享 label 身份和 0.1–0.3 兼容测试 |
 | 通用结构预测契约 | `implemented` | request/invocation/product 契约和测试 |
 | Protenix-v2 adapter | `smoke-validated` | 真实 no-MSA CIF/confidence 收集成功 |
 | 预测 Target Bundle 发布 | `smoke-validated` | 真实 143 残基 CIF 逐位映射并发布 6 个 artifact |
@@ -84,16 +90,16 @@
 
 ## Now
 
-- 当前没有进行中的 Stage 01 工作项。S01-007 已完成通用 ensemble 契约，但没有伪装成
-  真实多模型入口 smoke。
-- 下一候选工作项是本地 PDB/mmCIF 输入 adapter；它应成为第一个发布多模型 Bundle 的
-  真实入口，并补结构质量缺失坐标报告。
+- S01-008 已于 2026-07-25T14:11:37+08:00 完成并归档；当前没有未归档的 Stage 01
+  implementation 工作项，下一项是补齐六入口独立 live fixture 矩阵。
 
 ## Next
 
 - 将本地/预计算 MSA 作为可复现 profile；SMART 旧 cache 只作为可选历史审计来源，不再是
   当前主线的外部阻塞。
-- 实现本地 PDB/mmCIF、RCSB PDB ID、UniProt 和标准 Target Bundle 输入 adapter。
+- 为本地 PDB/mmCIF、UniProt 名称、PSE、sequence 和标准 Target Bundle 补齐独立 live
+  fixture，满足阶段级 `smoke-validated` 门槛。
+- 实现 canonical 非 canonical isoform 选择、预计算 MSA 和服务端 ticket/status 采集。
 - 为多 state PSE 和 Protenix 多 seed/sample 分别设计显式 ensemble 策略；不得自动
   选择或平均输出。
 - 扩展 PSE 到复合物、receptor/ligand、多聚体或人工 object/chain/state 选择前，先新增
@@ -223,6 +229,28 @@
 - Developer Preview CLI 已通过同一 orchestration API 暴露 sequence/FASTA 与 PSE
   Stage 01；这属于 UX/工程验证，不改变 Stage 01 总体 `planned` 状态。
 
+### S01-008 六入口与双运行模式
+
+- schema 0.4 覆盖 `local-file`、`pdb-id`、`uniprot`、`uniprot-search` 和
+  `target-bundle` union；local-file 再区分 sequence/FASTA、PDB/mmCIF 与 PSE。
+- unit/contract 覆盖 0.3→0.4、远程 404/429/5xx/timeout/cache、单/多模型结构、label/auth
+  chain、最高 occupancy altloc、Bundle evidence 重导入、Decision revision/hash 和
+  批准后新 attempt 恢复。默认测试不依赖互联网。
+- schema 0.4 新 PSE run 同样规范 target label/auth chain A，并把原 PSE chain/residue
+  保留到 `source_*` mapping；旧 APOE `Axp` artifact 不重写。
+- 远程 retry/error/timeout 每次尝试均保存 evidence；最终失败发布 failed
+  Attempt/StageManifest/RunManifest，不再留下只有初始 running manifest 的半成品 run。
+- 真实 PDB smoke：`1UBQ` chain A 发布 76-aa experimental Target Bundle 0.4、
+  `target.cif`/兼容 PDB、identity/scope/candidate/retrieval/source-context、Viewer 和
+  RunManifest revision 2。
+- 真实 UniProt smoke：
+  `/root/autodl-tmp/s01-008-uniprot.OBb7ZH/runs/project/uniprot-p0cg48-live`；
+  P0CG48 scope 1–76 产生多个严格合格候选（含 1UBQ），先停在
+  `structure-selection`，批准 1UBQ 后以 `attempt-0002` 发布 Bundle，RunManifest
+  revision 3 与 Viewer 成功。
+- FASTA 已改为 RCSB experimental-first；无唯一候选才进入 review gate 或 unattended
+  Protenix。API failure 与零候选使用不同错误，不允许静默 cache/fallback。
+
 ### Target Bundle 0.3 与 canonical 配置回归
 
 - runtime-only validation
@@ -295,7 +323,10 @@
   0.1/0.2 读取兼容；PSE 与 Protenix 的单模型限制下沉到各自 adapter。
 - canonical schema 0.3 的 APOE PSE 真实回归成功发布单模型 descriptor、Viewer 和
   Stage 02 handoff；真实多模型入口仍是下一项工作。
+- 完成 S01-008：canonical schema 0.4、六类 source、官方 UniProt/RCSB retrieval、
+  strict experimental-first、本地多模型结构、Target Bundle 0.4、通用 Decision Gate 和
+  双运行模式进入统一 API；1UBQ 与 P0CG48→1UBQ live smoke 成功。
 
 ## 历史索引
 
-- [2026-07：S01-001 至 S01-007](history/2026-07.md)
+- [2026-07：S01-001 至 S01-008](history/2026-07.md)

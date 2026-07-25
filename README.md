@@ -67,24 +67,43 @@ backends:
 
 ```bash
 easydesign init apoe --target apoe.fasta --stop-after 2 \
-  --stage02-method both
+  --stage02-method both --execution-mode review-gated
+# 也可从远程身份开始
+easydesign init ubiquitin --pdb-id 1UBQ --chain A
+easydesign init egfr --uniprot P00533 --scope-range 25:646
+easydesign init egfr-search --uniprot-query EGFR --taxon-id 9606
 easydesign config validate apoe/easydesign.yaml
 easydesign doctor --config apoe/easydesign.yaml
 easydesign run apoe/easydesign.yaml
 ```
 
-`init` 当前接受 FASTA、裸序列文件和单 Target PSE。sequence/FASTA 默认使用 required
-remote MSA、ColabFold public、无模板 Protenix-v2；PSE 直接导入坐标。Stage 02 默认运行
-彼此独立的 SASA 与 ScanNet CPU 选区，也可在初始 YAML 中选择只运行其中一种。
-PDB/mmCIF、Stage 01 UniProt source 和 Stage 03–07 尚未接入该命令时会明确失败，不会
-静默回退。
+Stage 01 已实现本地 PDB/mmCIF、PDB ID、FASTA/裸序列、UniProt accession/名称、
+单 Target PSE 和已有 Target Bundle 六类 source。FASTA/UniProt 会先用 RCSB 官方
+Sequence Search/Data API 寻找满足严格 scope 门槛的实验结构；没有唯一合格结构时，
+`review-gated` 停在选择门，`unattended` 按 YAML 明确转 required-MSA Protenix-v2。
+PSE 直接导入坐标。Stage 02 可运行独立 SASA/ScanNet；Stage 03–07 仍未实现。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
 
 ```bash
-easydesign config migrate old.yaml --output easydesign-0.3.yaml
+easydesign config migrate old.yaml --output easydesign-0.4.yaml
 ```
+
+默认 `review-gated` 会在 UniProt identity、chain/construct、实验结构和 hotspot 等科学
+选择点暂停：
+
+```bash
+easydesign decisions show RUN_DIR
+easydesign decisions export RUN_DIR --output decision.yaml
+# 选择 option、填写 approved_by
+easydesign decisions approve RUN_DIR --input decision.yaml
+```
+
+`approve` 校验 request revision/hash 后，在同一 run 创建新 attempt 并继续。需要完全
+自动化时可在初始配置选择 `unattended`；它只允许版本化硬规则，不调用 LLM，不融合
+Stage 02 方法，也不会执行真实下单。`init --stop-after 2` 在 review-gated 中默认同时
+写入 SASA/ScanNet，在 unattended 中默认只写 SASA；可用 `--stage02-method` 显式修改。
 
 Stage 02 自动计算结束后会停在 `awaiting-human-approval`，不会伪装成整个 run 已完成。
 从同一种方法选择 2–3 个完整区域并补充理由后，才发布 Stage 03 可用的

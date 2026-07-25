@@ -60,18 +60,26 @@ class ResidueMappingEntry(BaseModel):
     author_chain_id: str = Field(min_length=1, max_length=16)
     author_residue_id: str = Field(min_length=1, max_length=32)
     insertion_code: str | None = Field(default=None, max_length=8)
+    source_label_chain_id: str | None = Field(default=None, max_length=16)
+    source_author_chain_id: str | None = Field(default=None, max_length=16)
+    source_author_residue_id: str | None = Field(default=None, max_length=32)
+    reference_position: int | None = Field(default=None, ge=1)
+    model_presence: tuple[str, ...] = ()
+    source_residue_name: str | None = Field(default=None, max_length=8)
 
 
 class ResidueMapping(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
     target_id: str = Field(pattern=ID_PATTERN)
     sequence_sha256: str = Field(pattern=SHA256_PATTERN)
     entries: tuple[ResidueMappingEntry, ...]
 
     @model_validator(mode="after")
     def validate_mapping(self) -> Self:
+        if self.schema_version not in {"0.1", "0.2"}:
+            raise ValueError(f"不支持 ResidueMapping schema: {self.schema_version}")
         indices = [entry.sequence_index for entry in self.entries]
         if indices != list(range(1, len(self.entries) + 1)):
             raise ValueError("残基映射 sequence_index 必须从 1 连续递增")
@@ -81,7 +89,8 @@ class ResidueMapping(BaseModel):
 class StructureQualityReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
+    origin: TargetStructureOrigin = TargetStructureOrigin.PREDICTED
     backend_name: str = Field(pattern=ID_PATTERN)
     backend_version: str = Field(min_length=1, max_length=128)
     model_name: str = Field(pattern=ID_PATTERN)
@@ -94,6 +103,9 @@ class StructureQualityReport(BaseModel):
     ranking_score: float
     has_clash: bool
     recycle_count: int = Field(ge=0)
+    coordinate_model_count: int = Field(default=1, ge=1)
+    scope_coverage: float = Field(default=1.0, ge=0, le=1)
+    scope_sequence_identity: float = Field(default=1.0, ge=0, le=1)
 
 
 class ImportedStructureQualityReport(BaseModel):
@@ -285,6 +297,17 @@ class TargetBundle(BaseModel):
     provenance: ArtifactRef
     source_annotations: ArtifactRef | None = None
     coordinate_ensemble: CoordinateEnsemble | None = None
+    reference_sequence: ArtifactRef | None = None
+    residue_mapping_tsv: ArtifactRef | None = None
+    identity_report: ArtifactRef | None = None
+    scope_report: ArtifactRef | None = None
+    structure_candidates: ArtifactRef | None = None
+    structure_candidates_tsv: ArtifactRef | None = None
+    retrieval_manifest: ArtifactRef | None = None
+    source_context: ArtifactRef | None = None
+    design_context: ArtifactRef | None = None
+    prediction_confidence: ArtifactRef | None = None
+    target_pdb: ArtifactRef | None = None
 
     @model_validator(mode="after")
     def validate_artifact_producers(self) -> Self:
@@ -295,11 +318,25 @@ class TargetBundle(BaseModel):
             self.quality_report,
             self.provenance,
         )
-        all_artifacts = (
-            artifacts
-            if self.source_annotations is None
-            else artifacts + (self.source_annotations,)
+        optional_artifacts = tuple(
+            artifact
+            for artifact in (
+                self.source_annotations,
+                self.reference_sequence,
+                self.residue_mapping_tsv,
+                self.identity_report,
+                self.scope_report,
+                self.structure_candidates,
+                self.structure_candidates_tsv,
+                self.retrieval_manifest,
+                self.source_context,
+                self.design_context,
+                self.prediction_confidence,
+                self.target_pdb,
+            )
+            if artifact is not None
         )
+        all_artifacts = artifacts + optional_artifacts
         for artifact in all_artifacts:
             if artifact.producer_stage != STAGE_ID:
                 raise ValueError(f"Target Bundle artifact 必须由 {STAGE_ID} 产生")
@@ -312,11 +349,30 @@ class TargetBundle(BaseModel):
                 raise ValueError(
                     f"Target Bundle {self.schema_version} 不支持 coordinate_ensemble"
                 )
-        elif self.schema_version == "0.3":
+        elif self.schema_version in {"0.3", "0.4"}:
             if self.coordinate_ensemble is None:
-                raise ValueError("Target Bundle 0.3 必须声明 coordinate_ensemble")
+                raise ValueError(
+                    f"Target Bundle {self.schema_version} 必须声明 coordinate_ensemble"
+                )
         else:
             raise ValueError(f"不支持 Target Bundle schema: {self.schema_version}")
+        if self.schema_version != "0.4" and any(
+            artifact is not None
+            for artifact in (
+                self.reference_sequence,
+                self.residue_mapping_tsv,
+                self.identity_report,
+                self.scope_report,
+                self.structure_candidates,
+                self.structure_candidates_tsv,
+                self.retrieval_manifest,
+                self.source_context,
+                self.design_context,
+                self.prediction_confidence,
+                self.target_pdb,
+            )
+        ):
+            raise ValueError("Target Bundle 0.1–0.3 不支持 Stage 01 evidence artifact 扩展")
         return self
 
 

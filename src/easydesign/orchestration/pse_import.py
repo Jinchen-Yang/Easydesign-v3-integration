@@ -274,12 +274,25 @@ def execute_pse_import(
             bundle.provenance,
             bundle.source_annotations,
             built.bundle_artifact,
+        ) + tuple(
+            artifact
+            for artifact in (
+                bundle.reference_sequence,
+                bundle.residue_mapping_tsv,
+                bundle.identity_report,
+                bundle.scope_report,
+                bundle.structure_candidates,
+                bundle.structure_candidates_tsv,
+                bundle.retrieval_manifest,
+                bundle.target_pdb,
+            )
+            if artifact is not None
         )
         selected_attempt_id = ATTEMPT_ID
         stage_status = ExecutionStatus.SUCCEEDED
     stage = StageManifest(
         stage_id=StageId.TARGET_PREPARATION,
-        contract_version="0.2",
+        contract_version="0.4",
         status=stage_status,
         created_at=start,
         completed_at=ended,

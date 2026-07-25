@@ -161,9 +161,24 @@ def _run_with_stage01(
         seed=101,
     )
     bundle = built.bundle
+    optional_artifacts = tuple(
+        artifact
+        for artifact in (
+            bundle.reference_sequence,
+            bundle.residue_mapping_tsv,
+            bundle.identity_report,
+            bundle.scope_report,
+            bundle.structure_candidates,
+            bundle.structure_candidates_tsv,
+            bundle.retrieval_manifest,
+            bundle.prediction_confidence,
+            bundle.target_pdb,
+        )
+        if artifact is not None
+    )
     stage = StageManifest(
         stage_id=StageId.TARGET_PREPARATION,
-        contract_version="0.2",
+        contract_version="0.4",
         status=ExecutionStatus.SUCCEEDED,
         created_at=NOW,
         completed_at=NOW,
@@ -174,7 +189,8 @@ def _run_with_stage01(
             bundle.quality_report,
             bundle.provenance,
             built.bundle_artifact,
-        ),
+        )
+        + optional_artifacts,
         attempts=(attempt,),
         selected_attempt_id="attempt-0001",
     )

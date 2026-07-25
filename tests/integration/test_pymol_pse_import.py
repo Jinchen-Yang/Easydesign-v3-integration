@@ -84,7 +84,13 @@ def _create_session(
     elif mode == "non-canonical":
         first.write_text(_protein_pdb(residue_name="MSE"), encoding="utf-8")
     else:
-        first.write_text(_protein_pdb(ligand=mode == "ligand"), encoding="utf-8")
+        first.write_text(
+            _protein_pdb(
+                chains=("X",) if mode == "valid" else ("A",),
+                ligand=mode == "ligand",
+            ),
+            encoding="utf-8",
+        )
     second.write_text(_protein_pdb(), encoding="utf-8")
     session = directory / f"{mode}.pse"
     code = """
@@ -155,7 +161,7 @@ def test_synthetic_single_target_pse_publishes_complete_bundle_and_manifests(
     completed = execute_pse_import(prepared=prepared, adapter=adapter)
 
     bundle = completed.built_bundle.bundle
-    assert bundle.schema_version == "0.3"
+    assert bundle.schema_version == "0.4"
     assert bundle.coordinate_ensemble is not None
     assert bundle.coordinate_ensemble.model_count == 1
     assert bundle.coordinate_ensemble.model_ids == ("1",)
@@ -165,6 +171,10 @@ def test_synthetic_single_target_pse_publishes_complete_bundle_and_manifests(
     assert bundle.source_annotations is not None
     mapping = load_model(bundle.residue_mapping.verify(prepared.workspace.run_root), ResidueMapping)
     assert [entry.label_seq_id for entry in mapping.entries] == list(range(1, 21))
+    assert {entry.label_chain_id for entry in mapping.entries} == {"A"}
+    assert {entry.author_chain_id for entry in mapping.entries} == {"A"}
+    assert {entry.source_author_chain_id for entry in mapping.entries} == {"X"}
+    assert all(entry.reference_position is None for entry in mapping.entries)
     annotations = load_model(
         bundle.source_annotations.verify(prepared.workspace.run_root),
         PseSourceAnnotations,

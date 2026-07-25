@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
-from easydesign.backends.annotations import UniProtAnnotationAdapter
+from easydesign.backends.annotations import (
+    FetchedUniProtRecord,
+    UniProtAnnotationAdapter,
+)
 from easydesign.backends.hotspot import (
     ScanNetBackendError,
     ScanNetEpitopeAdapter,
@@ -27,6 +32,7 @@ from easydesign.core import (
     WorkflowStateType,
     dump_model,
     load_model,
+    sha256_file,
 )
 from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
@@ -67,6 +73,66 @@ class CompletedStage02Run:
     run_manifest: Path
     comparison: Path | None
     report: Path
+
+
+class _FrozenUniProtFetcher:
+    """只消费 Stage 01 已冻结响应；不会发出网络请求。"""
+
+    def __init__(self, record: FetchedUniProtRecord) -> None:
+        self.record = record
+
+    def fetch(self, accession: str) -> FetchedUniProtRecord:
+        if accession != self.record.accession:
+            raise ManifestStateError(
+                "Stage 01 UniProt snapshot accession 与 Stage 02 请求不一致"
+            )
+        return self.record
+
+
+def _frozen_uniprot_fetcher(
+    run_root: Path,
+    bundle: TargetBundle,
+    accession: str,
+) -> _FrozenUniProtFetcher | None:
+    if bundle.retrieval_manifest is None:
+        return None
+    manifest_path = bundle.retrieval_manifest.verify(run_root)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ManifestStateError("Stage 01 retrieval-manifest 无法读取") from error
+    requests = payload.get("requests")
+    if not isinstance(requests, list):
+        raise ManifestStateError("Stage 01 retrieval-manifest requests 不是 list")
+    suffix = f"/uniprotkb/{accession}.json"
+    for request in requests:
+        if not isinstance(request, dict):
+            continue
+        url = request.get("url")
+        relative = request.get("run_artifact_path")
+        if not isinstance(url, str) or not url.split("?", maxsplit=1)[0].endswith(suffix):
+            continue
+        if not isinstance(relative, str):
+            continue
+        path = (run_root / relative).resolve()
+        if not path.is_relative_to(run_root) or not path.is_file():
+            raise ManifestStateError("Stage 01 UniProt snapshot 路径无效")
+        expected_sha = request.get("response_sha256")
+        actual_sha = sha256_file(path)
+        if expected_sha != actual_sha:
+            raise ManifestStateError("Stage 01 UniProt snapshot SHA-256 不一致")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ManifestStateError("Stage 01 UniProt snapshot 顶层不是 object")
+        return _FrozenUniProtFetcher(
+            FetchedUniProtRecord(
+                accession=accession,
+                source_url=url,
+                source_sha256=actual_sha,
+                payload=raw,
+            )
+        )
+    return None
 
 
 def _strictly_later(candidate: datetime, previous: datetime) -> datetime:
@@ -325,6 +391,14 @@ def execute_stage02_comparison(
             )
         annotation_mode = stage02_config.annotations.uniprot
         accession = resolved.user_config.stage01.target.identity.uniprot_accession
+        if accession is None and bundle.identity_report is not None:
+            identity_payload = json.loads(
+                bundle.identity_report.verify(root).read_text(encoding="utf-8")
+            )
+            if isinstance(identity_payload, dict):
+                resolved_accession = identity_payload.get("accession")
+                if isinstance(resolved_accession, str):
+                    accession = resolved_accession
         if annotation_mode is UniProtAnnotationMode.REQUIRED and accession is None:
             raise ManifestStateError(
                 "stage02.annotations.uniprot=required 时必须在 "
@@ -335,9 +409,12 @@ def execute_stage02_comparison(
             if annotation_mode is not UniProtAnnotationMode.OFF
             else None
         )
-        selected_annotation_adapter = annotation_adapter
+        selected_annotation_adapter: Any = annotation_adapter
         if requested_accession is not None and selected_annotation_adapter is None:
-            selected_annotation_adapter = UniProtAnnotationAdapter()
+            frozen = _frozen_uniprot_fetcher(root, bundle, requested_accession)
+            selected_annotation_adapter = (
+                frozen if frozen is not None else UniProtAnnotationAdapter()
+            )
         annotation_report = build_annotation_report(
             target_sequence=target_sequence,
             residue_mapping=mapping,

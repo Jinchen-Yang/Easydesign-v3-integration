@@ -7,8 +7,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `planned` | 两条单模型入口已真实跑通；Target Bundle 0.3 与 Viewer 已具备多模型身份契约。 | 用本地 PDB/mmCIF adapter 首次发布真实多模型 Target Bundle。 | 公共 ColabFold 无 SLA；真实多模型入口和其余输入 adapter 未完成。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | schema 0.3 APOE 双方法已重跑；多模型 SASA、可选 UniProt 和审批交接均已实现。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `implemented` | 六类入口、严格实验结构优先、Target Bundle 0.4 与双运行模式已实现；1UBQ/P0CG48 真实 smoke 通过。 | 补齐六入口 live fixture 矩阵，并把批准的 Stage 02 区域送入 Stage 03。 | 公共 ColabFold 无 SLA；非 canonical isoform、预计算 MSA 和完整 live fixture 矩阵未完成。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | schema 0.4 已消费 Stage 01 冻结 UniProt 证据并支持 unattended 单方法交接；APOE 双方法仍等待人工批准。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `planned` | 尚未实现；filter profile、逐规则审计和 shortlist 均待开发。 | Stage 04 候选契约稳定后建立可版本化 filter engine。 | 依赖 Stage 04 规范候选与原始 artifact。 | 2026-07-24 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -18,7 +18,7 @@
 
 ## Now
 
-- `[S02-005]` canonical schema 0.3 的 APOE PSE→Stage 02 双方法真实回归已完成；当前只
+- `[S02-005]` canonical schema 0.4 兼容的 APOE PSE→Stage 02 双方法真实回归已完成；当前只
   等用户从 SASA 或 ScanNet 中选择并批准 2–3 个完整区域。
 - `[S02]` 多模型 SASA、显式 UniProt annotation policy 和审批契约已完成；详细方法、
   真实结果与仍未实现的证据源见
@@ -26,12 +26,15 @@
 
 ## Next
 
+- `[S01]` 为本地 PDB/mmCIF、UniProt 名称、PSE、sequence 和 Target Bundle 补齐独立
+  live fixture；六入口代码已实现，但阶段级 `smoke-validated` 仍需完整真实矩阵。
 - `[S03]` 用户批准真实 APOE 区域并发布 `hotspots.yaml` 后，启动 BoltzGen YAML；
-  Stage 03 不读取未批准的 automatic Top 3。
+  Stage 03 不读取未批准的 automatic Top 3，并复用通用 YAML/design-matrix gate。
+- `[S05/S06/S07]` 后续分别接入 pilot go/no-go、高成本预算和 Top N 候选包 gate；
+  `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；
   可视化层不得融合 PSE、SASA 和 ScanNet。
 - `[ENG-003]` 建立 sequence-hash MSA cache、自建 ColabFold/MMseqs2 和 CI 平台矩阵。
-- `[S01]` 按排期实现本地 PDB/mmCIF、RCSB、UniProt 和标准 Target Bundle 输入。
 - `[S02]` 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变 CPU 主线。
 
 ## Blocked

@@ -296,9 +296,25 @@ def _initialize_workspace(
         (staging / "results").mkdir()
 
         config_snapshot = staging / "config-snapshot" / "easydesign.yaml"
-        input_snapshot = staging / "input-snapshot" / loaded.source_path.name
+        input_snapshot = (
+            staging / "input-snapshot" / loaded.source_path.name
+            if loaded.source_path is not None
+            else staging / "input-snapshot" / "target-source.json"
+        )
         _exclusive_copy(loaded.config_path, config_snapshot)
-        _exclusive_copy(loaded.source_path, input_snapshot)
+        if loaded.source_path is None:
+            _exclusive_text(
+                json.dumps(
+                    loaded.config.stage01.target.source.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                input_snapshot,
+            )
+        else:
+            _exclusive_copy(loaded.source_path, input_snapshot)
 
         config_ref = ArtifactRef.from_file(
             run_root=staging,
@@ -380,7 +396,11 @@ def _initialize_workspace(
         project_id=loaded.config.project_id,
         run_id=selected_run_id,
         config_snapshot=final_root / "config-snapshot" / "easydesign.yaml",
-        input_snapshot=final_root / "input-snapshot" / loaded.source_path.name,
+        input_snapshot=(
+            final_root / "input-snapshot" / loaded.source_path.name
+            if loaded.source_path is not None
+            else final_root / "input-snapshot" / "target-source.json"
+        ),
         resolved_config=final_root / "config-snapshot" / "resolved-config.json",
         run_manifest=final_root / "manifests" / "run-manifest.v0001.json",
         latest_manifest_pointer=final_root / "manifests" / "LATEST",

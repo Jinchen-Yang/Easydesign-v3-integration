@@ -2,6 +2,13 @@
 
 from .artifacts import ArtifactRef
 from .attempts import Attempt, ErrorInfo, ExecutionStatus
+from .decisions import (
+    DecisionAuthority,
+    DecisionOption,
+    DecisionRecord,
+    DecisionRequest,
+    DecisionStatus,
+)
 from .errors import (
     ArtifactIntegrityError,
     ArtifactNotFoundError,
@@ -47,6 +54,11 @@ __all__ = [
     "CodeIdentity",
     "CodeIdentitySource",
     "ContractError",
+    "DecisionAuthority",
+    "DecisionOption",
+    "DecisionRecord",
+    "DecisionRequest",
+    "DecisionStatus",
     "EasyDesignError",
     "ErrorInfo",
     "EvidenceStatus",

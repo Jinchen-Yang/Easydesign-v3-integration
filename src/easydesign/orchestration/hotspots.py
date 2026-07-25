@@ -294,8 +294,17 @@ def approve_hotspots(
     *,
     input_path: Path,
     approved_at: datetime | None = None,
+    authority: str = "human",
+    policy_id: str | None = None,
 ) -> Path:
-    """验证人工选择并以新 attempt 发布唯一 ``hotspots.yaml``。"""
+    """验证完整区域选择并以新 attempt 发布唯一 ``hotspots.yaml``。"""
+
+    if authority not in {"human", "deterministic-policy"}:
+        raise ManifestStateError(f"未知 hotspot approval authority: {authority}")
+    if authority == "deterministic-policy" and policy_id is None:
+        raise ManifestStateError("deterministic-policy approval 必须提供 policy_id")
+    if authority == "human" and policy_id is not None:
+        raise ManifestStateError("human approval 不得携带 policy_id")
 
     root = run_root.resolve()
     run, run_path, stage01, stage02_path, stage02, bundle = _load_current(root)
@@ -380,6 +389,8 @@ def approve_hotspots(
         annotation_status=annotation.status,
         approval_request_sha256=sha256_file(normalized_request),
         approved_by=request.approved_by,
+        approval_authority=authority,
+        policy_id=policy_id,
         hotspot_sets=approval_sets,
     )
     hotspots_path = _dump_yaml(hotspots, artifacts / "hotspots.yaml")
@@ -392,6 +403,8 @@ def approve_hotspots(
         selected_region_ids=tuple(
             selection.source_region_id for selection in request.selections
         ),
+        authority=authority,
+        policy_id=policy_id,
     )
     record_path = dump_model(record, artifacts / "approval-record.json")
     approval_input_ref = _artifact(
@@ -434,7 +447,11 @@ def approve_hotspots(
         created_at=timestamp,
         started_at=timestamp,
         ended_at=timestamp,
-        backend_name="human-hotspot-approval",
+        backend_name=(
+            "deterministic-hotspot-policy"
+            if authority == "deterministic-policy"
+            else "human-hotspot-approval"
+        ),
         backend_version="0.1",
         executor_name="easydesign-core",
     )
@@ -518,3 +535,56 @@ def approve_hotspots(
         generated_at=timestamp,
     )
     return hotspots_path
+
+
+def approve_hotspots_by_policy(
+    run_root: Path,
+    *,
+    method: RegionMethod,
+    region_count: int,
+    allow_structural_only: bool,
+    policy_id: str = "stage02-single-method-top-regions-v1",
+) -> Path:
+    """unattended 专用：只批准单一方法已发布的完整 Top 2–3。"""
+
+    if region_count not in {2, 3}:
+        raise ManifestStateError("unattended region_count 必须是 2 或 3")
+    root = run_root.resolve()
+    temporary = root / "02-hotspot-discovery" / ".policy-review.yaml"
+    if temporary.exists():
+        raise ManifestStateError(f"临时 policy review 已存在: {temporary}")
+    export_hotspot_review(root, method=method, output=temporary)
+    try:
+        raw = yaml.safe_load(temporary.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ManifestStateError("自动导出的 hotspot review 不是 mapping")
+        selections = raw.get("selections")
+        if not isinstance(selections, list) or len(selections) < region_count:
+            raise ManifestStateError(
+                "自动推荐区域不足 unattended_approval.region_count"
+            )
+        raw["approved_by"] = f"policy:{policy_id}"
+        raw["acknowledge_evidence_limitations"] = allow_structural_only
+        raw["selections"] = selections[:region_count]
+        for selection in raw["selections"]:
+            if not isinstance(selection, dict):
+                raise ManifestStateError("hotspot selection 不是 mapping")
+            selection["design_goal"] = "exploratory"
+            selection["biological_rationale"] = (
+                "Unattended 1.0 deterministic policy selected the complete "
+                "method-ranked region; no biological annotation was used to rerank."
+            )
+            selection["structural_rationale"] = (
+                "The region is a complete connected proposal from the configured "
+                "single Stage 02 method and preserves its original members."
+            )
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            yaml.safe_dump(raw, handle, allow_unicode=True, sort_keys=False)
+        return approve_hotspots(
+            root,
+            input_path=temporary,
+            authority="deterministic-policy",
+            policy_id=policy_id,
+        )
+    finally:
+        temporary.unlink(missing_ok=True)

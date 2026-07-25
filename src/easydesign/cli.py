@@ -24,12 +24,18 @@ from easydesign.orchestration.application import (
     DiagnosticReport,
     PipelineExecution,
     RunPlan,
+    continue_pipeline_after_decision,
     diagnose_runtime,
     execute_pipeline,
     list_runs,
     migrate_run_configuration,
     show_run,
     validate_run_configuration,
+)
+from easydesign.orchestration.decisions import (
+    approve_decision,
+    export_decision,
+    show_decision,
 )
 from easydesign.orchestration.hotspots import approve_hotspots, export_hotspot_review
 from easydesign.orchestration.profile import (
@@ -75,15 +81,30 @@ def _parser() -> argparse.ArgumentParser:
 
     init_parser = commands.add_parser("init", help="从真实 target 创建最小用户项目")
     init_parser.add_argument("project_dir", type=Path)
-    init_parser.add_argument("--target", type=Path, required=True)
+    init_source = init_parser.add_mutually_exclusive_group(required=True)
+    init_source.add_argument("--target", type=Path)
+    init_source.add_argument("--pdb-id")
+    init_source.add_argument("--uniprot")
+    init_source.add_argument("--uniprot-query")
+    init_parser.add_argument("--chain")
+    init_parser.add_argument("--taxon-id", type=int)
     init_parser.add_argument("--project-id")
     init_parser.add_argument("--target-id")
+    init_parser.add_argument(
+        "--execution-mode",
+        choices=("review-gated", "unattended"),
+        default="review-gated",
+    )
+    init_parser.add_argument(
+        "--scope-range",
+        help="UniProt/reference residue range，例如 25:646",
+    )
     init_parser.add_argument("--stop-after", type=int, choices=(1, 2), default=1)
     init_parser.add_argument(
         "--stage02-method",
         choices=("sasa", "scannet", "both"),
-        default="both",
-        help="Stage 02 自动方法（默认 both）",
+        default=None,
+        help="Stage 02 自动方法（review-gated 默认 both；unattended 默认 sasa）",
     )
     _add_json(init_parser)
 
@@ -109,7 +130,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_json(config_validate)
     config_migrate = config_commands.add_parser(
         "migrate",
-        help="将旧 YAML 显式迁移为 canonical 0.3",
+        help="将旧 YAML 显式迁移为 canonical 0.4",
     )
     config_migrate.add_argument("config", type=Path)
     config_migrate.add_argument("--output", type=Path, required=True)
@@ -154,6 +175,25 @@ def _parser() -> argparse.ArgumentParser:
     hotspots_approve.add_argument("run", type=Path)
     hotspots_approve.add_argument("--input", type=Path, required=True)
 
+    decisions_parser = commands.add_parser(
+        "decisions",
+        help="查看、导出或批准任意 Stage 的科学选择门",
+    )
+    decision_commands = decisions_parser.add_subparsers(
+        dest="decisions_command",
+        required=True,
+    )
+    decision_show = decision_commands.add_parser("show", help="显示当前 pending gate")
+    decision_show.add_argument("run", type=Path)
+    _add_json(decision_show)
+    decision_export = decision_commands.add_parser("export", help="导出审批模板")
+    decision_export.add_argument("run", type=Path)
+    decision_export.add_argument("--output", type=Path, required=True)
+    decision_approve = decision_commands.add_parser("approve", help="验证并记录人工决定")
+    decision_approve.add_argument("run", type=Path)
+    decision_approve.add_argument("--input", type=Path, required=True)
+    _add_profile(decision_approve)
+
     runs_parser = commands.add_parser("runs", help="从 run-index 查看运行")
     runs_commands = runs_parser.add_subparsers(dest="runs_command", required=True)
     runs_list = runs_commands.add_parser("list", help="列出 index 声明的 runs")
@@ -196,7 +236,8 @@ def _print_execution(execution: PipelineExecution) -> None:
         print("Dry run 通过；未创建任何 run。")
         _print_plan(execution.plan)
         return
-    print(f"运行成功：{execution.run_root}")
+    print(f"运行状态：{execution.status}")
+    print(f"Run：{execution.run_root}")
     print(f"Run manifest：{execution.run_manifest}")
     if execution.viewer_status is not None:
         print(f"Stage 01 Viewer：{execution.viewer_status}")
@@ -218,18 +259,36 @@ def _runs_root(explicit: Path | None, profile_path: Path | None) -> Path:
 
 def _dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command == "init":
+        scope_range: tuple[int, int] | None = None
+        if arguments.scope_range is not None:
+            try:
+                start_text, end_text = arguments.scope_range.split(":", maxsplit=1)
+                scope_range = (int(start_text), int(end_text))
+            except (TypeError, ValueError) as error:
+                raise ConfigurationError("--scope-range 必须使用 START:END") from error
         initialized = initialize_project(
             project_root=arguments.project_dir,
             target=arguments.target,
+            pdb_id=arguments.pdb_id,
+            chain=arguments.chain,
+            uniprot=arguments.uniprot,
+            uniprot_query=arguments.uniprot_query,
+            taxon_id=arguments.taxon_id,
             project_id=arguments.project_id,
             target_id=arguments.target_id,
             stop_after_stage=arguments.stop_after,
             stage02_method=arguments.stage02_method,
+            execution_mode=arguments.execution_mode,
+            scope_range=scope_range,
         )
         payload = {
             "project_root": str(initialized.project_root),
             "config": str(initialized.config_path),
-            "target": str(initialized.target_path),
+            "target": (
+                None
+                if initialized.target_path is None
+                else str(initialized.target_path)
+            ),
             "format": str(initialized.detected_format),
         }
         if arguments.json:
@@ -335,6 +394,33 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             input_path=arguments.input,
         )
         print(f"Stage 02 已批准：{hotspots}")
+        return 0
+
+    if arguments.command == "decisions":
+        if arguments.decisions_command == "show":
+            request = show_decision(arguments.run)
+            if arguments.json:
+                print(_json_text(request))
+            else:
+                print(f"Decision：{request.decision_id}")
+                print(f"Gate：{request.stage_id}/{request.gate}")
+                print(request.message)
+                for option in request.options:
+                    state = "eligible" if option.eligible else "ineligible"
+                    print(f"- {option.option_id} [{state}] {option.label}")
+            return 0
+        if arguments.decisions_command == "export":
+            output = export_decision(arguments.run, output=arguments.output)
+            print(f"Decision 审批模板已导出：{output}")
+            return 0
+        record = approve_decision(arguments.run, input_path=arguments.input)
+        print(f"Decision 已记录：{record}")
+        execution = continue_pipeline_after_decision(
+            arguments.run,
+            decision_record=record,
+            profile_path=arguments.profile,
+        )
+        _print_execution(execution)
         return 0
 
     if arguments.command == "runs":

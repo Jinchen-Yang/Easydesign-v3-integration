@@ -495,11 +495,11 @@ class ApprovedHotspotSet(BaseModel):
 
 
 class HotspotsFile(BaseModel):
-    """人工批准后供 Stage 03 消费的唯一类型化交接物。"""
+    """人工或确定性策略批准后供 Stage 03 消费的唯一类型化交接物。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    schema_version: str = Field(default="0.2", pattern=r"^0\.[12]$")
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     target_id: str = Field(pattern=ID_PATTERN)
@@ -510,6 +510,11 @@ class HotspotsFile(BaseModel):
     annotation_status: AnnotationStatus
     approval_request_sha256: str = Field(pattern=SHA256_PATTERN)
     approved_by: str = Field(min_length=1, max_length=256)
+    approval_authority: str = Field(
+        default="human",
+        pattern=r"^(human|deterministic-policy)$",
+    )
+    policy_id: str | None = Field(default=None, pattern=ID_PATTERN)
     needs_human_review: bool = False
     ready_for_stage03: bool = True
     hotspot_sets: tuple[ApprovedHotspotSet, ...] = Field(min_length=2, max_length=3)
@@ -521,13 +526,18 @@ class HotspotsFile(BaseModel):
         ids = [hotspot.id for hotspot in self.hotspot_sets]
         if ids != list("ABC")[: len(ids)]:
             raise ValueError("hotspot set id 必须按 A、B、C 连续排列")
+        if self.approval_authority == "deterministic-policy":
+            if self.policy_id is None:
+                raise ValueError("deterministic-policy hotspots 必须记录 policy_id")
+        elif self.policy_id is not None:
+            raise ValueError("human hotspots 不得伪造 policy_id")
         return self
 
 
 class ApprovalRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    schema_version: str = Field(default="0.2", pattern=r"^0\.[12]$")
     status: str = Field(default="approved", pattern=r"^approved$")
     approved_at: datetime
     approved_by: str = Field(min_length=1, max_length=256)
@@ -535,3 +545,14 @@ class ApprovalRecord(BaseModel):
     source_stage_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
     approval_input_sha256: str = Field(pattern=SHA256_PATTERN)
     selected_region_ids: tuple[str, ...] = Field(min_length=2, max_length=3)
+    authority: str = Field(default="human", pattern=r"^(human|deterministic-policy)$")
+    policy_id: str | None = Field(default=None, pattern=ID_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_authority(self) -> Self:
+        if self.authority == "deterministic-policy":
+            if self.policy_id is None:
+                raise ValueError("deterministic-policy approval 必须记录 policy_id")
+        elif self.policy_id is not None:
+            raise ValueError("human approval 不得伪造 policy_id")
+        return self

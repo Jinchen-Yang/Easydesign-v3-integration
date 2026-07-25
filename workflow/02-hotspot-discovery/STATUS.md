@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | schema 0.3 APOE 双方法已重跑；多模型 SASA、可选 UniProt 和审批交接均已实现。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 |
+| `planned` | schema 0.4 已消费 Stage 01 冻结 UniProt 证据并支持 unattended 单方法交接；APOE 双方法仍等待人工批准。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 |
 
 ## 当前结论
 
@@ -35,6 +35,11 @@
 - 人工选择前不会向 Stage 03 发布默认赢家；structural-only 审批必须确认科学证据限制。
 - Developer Preview CLI 已通过同一 orchestration API 调用正式 Stage 02，并从 YAML
   读取独立方法参数、从 runtime profile 读取 ScanNet CPU；这不改变本阶段科学状态。
+- schema 0.4 新 Bundle 优先消费 Stage 01 冻结的 UniProt response，不在 Stage 02
+  重新获取漂移记录；旧 Bundle 仍保留兼容联网路径。
+- `unattended` 只允许单一 SASA 或 ScanNet 方法，按
+  `stage02-single-method-top-regions-v1` 发布完整 Top 2–3 与 policy 证据；双方法比较仍
+  只能走 `review-gated`，不产生融合结果。
 
 ## 功能矩阵
 
@@ -53,6 +58,7 @@
 | 显式 UniProt 功能位点/PTM/topology | `implemented` | 三种策略、确定性映射、零 accession 零网络请求和失败语义测试 |
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
 | 人工批准与 `hotspots.yaml` | `implemented` | revision/hash/完整区域/理由/structural-only acknowledgement 契约测试 |
+| unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
 | ScanNet 带 MSA 模型 | `planned` | 未安装、未测试 |
@@ -175,6 +181,8 @@
   `awaiting-human-approval` 状态和不可变 `hotspots.yaml` 审批契约。
 - 使用 canonical schema 0.3 对真实 APOE PSE 重跑 Stage 01/02；两种方法均成功，
   structural-only 审批模板已导出，真实区域决定保留给用户。
+- 接入 schema 0.4 Stage 01 frozen UniProt snapshot 和 unattended 单方法确定性审批；
+  review-gated 的 APOE 双方法人工决定保持不变。
 
 ## 历史索引
 

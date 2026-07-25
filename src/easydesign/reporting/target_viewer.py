@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from easydesign.core import (
     ArtifactRef,
@@ -73,8 +74,8 @@ class _ViewerSources:
     bundle_path: Path
     bundle: TargetBundle
     mapping: ResidueMapping
-    quality: StructureQualityReport | ImportedStructureQualityReport | None
-    provenance: PredictionProvenance | ImportedStructureProvenance | None
+    quality: StructureQualityReport | ImportedStructureQualityReport | dict[str, Any] | None
+    provenance: PredictionProvenance | ImportedStructureProvenance | dict[str, Any] | None
     annotations: PseSourceAnnotations | None
 
 
@@ -150,8 +151,24 @@ def _load_sources(run_root: Path) -> _ViewerSources:
         bundle.quality_report,
         bundle.provenance,
     )
-    if bundle.source_annotations is not None:
-        bundle_artifacts += (bundle.source_annotations,)
+    bundle_artifacts += tuple(
+        artifact
+        for artifact in (
+            bundle.source_annotations,
+            bundle.reference_sequence,
+            bundle.residue_mapping_tsv,
+            bundle.identity_report,
+            bundle.scope_report,
+            bundle.structure_candidates,
+            bundle.structure_candidates_tsv,
+            bundle.retrieval_manifest,
+            bundle.source_context,
+            bundle.design_context,
+            bundle.prediction_confidence,
+            bundle.target_pdb,
+        )
+        if artifact is not None
+    )
     declared_outputs = {
         artifact.artifact_id: artifact for artifact in stage.output_artifacts
     }
@@ -174,8 +191,8 @@ def _load_sources(run_root: Path) -> _ViewerSources:
     if len(mapping.entries) != bundle.sequence_length:
         raise TargetViewerReportError("Target Bundle 与 residue mapping 的残基数量不一致")
 
-    quality: StructureQualityReport | ImportedStructureQualityReport | None
-    provenance: PredictionProvenance | ImportedStructureProvenance | None
+    quality: StructureQualityReport | ImportedStructureQualityReport | dict[str, Any] | None
+    provenance: PredictionProvenance | ImportedStructureProvenance | dict[str, Any] | None
     if bundle.origin is TargetStructureOrigin.PREDICTED:
         quality = load_model(
             bundle.quality_report.verify(run_root),
@@ -195,8 +212,14 @@ def _load_sources(run_root: Path) -> _ViewerSources:
             ImportedStructureProvenance,
         )
     else:
-        quality = None
-        provenance = None
+        quality_raw = json.loads(
+            bundle.quality_report.verify(run_root).read_text(encoding="utf-8")
+        )
+        provenance_raw = json.loads(
+            bundle.provenance.verify(run_root).read_text(encoding="utf-8")
+        )
+        quality = quality_raw if isinstance(quality_raw, dict) else None
+        provenance = provenance_raw if isinstance(provenance_raw, dict) else None
 
     annotations = (
         None
@@ -223,7 +246,7 @@ def _metric(key: str, label: str, value: str | int | float | bool) -> ViewerMetr
 
 
 def _quality_metrics(
-    quality: StructureQualityReport | ImportedStructureQualityReport | None,
+    quality: StructureQualityReport | ImportedStructureQualityReport | dict[str, Any] | None,
 ) -> tuple[ViewerMetric, ...]:
     if isinstance(quality, StructureQualityReport):
         return (
@@ -242,11 +265,28 @@ def _quality_metrics(
             _metric("missing-ca", "缺失 CA 数", quality.missing_ca_count),
             _metric("water-residues", "忽略水分子数", quality.water_residue_count),
         )
+    if isinstance(quality, dict):
+        values: list[ViewerMetric] = []
+        labels = (
+            ("method", "实验方法"),
+            ("resolution_angstrom", "分辨率 Å"),
+            ("scope_coverage", "Scope 坐标覆盖"),
+            ("scope_sequence_identity", "Scope 序列一致性"),
+            ("coordinate_model_count", "坐标模型数"),
+            ("eligibility", "质量门结论"),
+        )
+        for key, label in labels:
+            value = quality.get(key)
+            if isinstance(value, (str, int, float, bool)):
+                values.append(_metric(key.replace("_", "-"), label, value))
+        return tuple(values) or (
+            _metric("quality-status", "质量报告", "实验结构 QC 已保存"),
+        )
     return (_metric("quality-status", "质量报告", "当前来源尚无 Viewer 适配"),)
 
 
 def _provenance_metrics(
-    provenance: PredictionProvenance | ImportedStructureProvenance | None,
+    provenance: PredictionProvenance | ImportedStructureProvenance | dict[str, Any] | None,
 ) -> tuple[ViewerMetric, ...]:
     if isinstance(provenance, PredictionProvenance):
         values = [
@@ -270,6 +310,21 @@ def _provenance_metrics(
             _metric("author-chain", "Author chain", provenance.author_chain_id),
             _metric("coordinate-state", "Coordinate state", provenance.coordinate_state),
         )
+    if isinstance(provenance, dict):
+        experimental_values: list[ViewerMetric] = []
+        for key, label in (
+            ("source", "结构来源"),
+            ("pdb_id", "PDB ID"),
+            ("uniprot_accession", "UniProt"),
+            ("selected_chain", "来源 chain"),
+            ("fallback_used", "使用 fallback"),
+        ):
+            value = provenance.get(key)
+            if isinstance(value, (str, int, float, bool)):
+                experimental_values.append(_metric(key.replace("_", "-"), label, value))
+        return tuple(experimental_values) or (
+            _metric("provenance-status", "来源详情", "实验结构溯源已保存"),
+        )
     return (_metric("provenance-status", "来源详情", "当前来源尚无 Viewer 适配"),)
 
 
@@ -288,9 +343,15 @@ def _annotations_by_label(
                 f"PSE annotation 引用了 mapping 中不存在的 label_seq_id="
                 f"{annotation.label_seq_id}"
             )
+        source_author_chain = (
+            entry.source_author_chain_id or entry.author_chain_id
+        )
+        source_author_residue = (
+            entry.source_author_residue_id or entry.author_residue_id
+        )
         if (
-            annotation.author_chain_id != entry.author_chain_id
-            or annotation.author_residue_id != entry.author_residue_id
+            annotation.author_chain_id != source_author_chain
+            or annotation.author_residue_id != source_author_residue
             or annotation.insertion_code != entry.insertion_code
         ):
             raise TargetViewerReportError(
@@ -335,6 +396,43 @@ def _viewer_data(sources: _ViewerSources) -> TargetViewerData:
     )
     bundle = sources.bundle
     coordinate_ensemble = bundle.coordinate_ensemble
+    downloads = [
+        ViewerDownload(
+            label="下载 target.cif",
+            relative_path="data/target.cif",
+            sha256=bundle.target_structure.sha256,
+        ),
+        ViewerDownload(
+            label="下载 sequence.fasta",
+            relative_path="data/sequence.fasta",
+            sha256=bundle.sequence.sha256,
+        ),
+        ViewerDownload(
+            label="下载 residue-mapping.json",
+            relative_path="data/residue-mapping.json",
+            sha256=bundle.residue_mapping.sha256,
+        ),
+    ]
+    for reference, label, name in (
+        (bundle.identity_report, "下载身份报告", "identity-report.json"),
+        (bundle.scope_report, "下载设计范围报告", "scope-report.json"),
+        (
+            bundle.structure_candidates,
+            "下载结构候选报告",
+            "structure-candidates.json",
+        ),
+        (bundle.quality_report, "下载结构 QC", "structure-quality.json"),
+        (bundle.source_context, "下载来源结构上下文", "source-context.cif"),
+        (bundle.design_context, "下载设计配体上下文", "design-context.cif"),
+    ):
+        if reference is not None:
+            downloads.append(
+                ViewerDownload(
+                    label=label,
+                    relative_path=f"data/{name}",
+                    sha256=reference.sha256,
+                )
+            )
     return TargetViewerData(
         target_id=bundle.target_id,
         origin=cast(
@@ -363,23 +461,7 @@ def _viewer_data(sources: _ViewerSources) -> TargetViewerData:
         provenance_metrics=_provenance_metrics(sources.provenance),
         annotation=annotation_summary,
         residues=residues,
-        downloads=(
-            ViewerDownload(
-                label="下载 target.cif",
-                relative_path="data/target.cif",
-                sha256=bundle.target_structure.sha256,
-            ),
-            ViewerDownload(
-                label="下载 sequence.fasta",
-                relative_path="data/sequence.fasta",
-                sha256=bundle.sequence.sha256,
-            ),
-            ViewerDownload(
-                label="下载 residue-mapping.json",
-                relative_path="data/residue-mapping.json",
-                sha256=bundle.residue_mapping.sha256,
-            ),
-        ),
+        downloads=tuple(downloads),
     )
 
 
@@ -444,7 +526,7 @@ def _report_artifact(report_root: Path, relative_path: str, artifact_id: str) ->
 
 
 def _output_artifacts(report_root: Path) -> tuple[ArtifactRef, ...]:
-    paths = (
+    paths: list[tuple[str, str]] = list((
         ("index.html", "viewer-html"),
         ("viewer-data.json", "viewer-data"),
         ("data/target.cif", "viewer-target-structure"),
@@ -455,6 +537,18 @@ def _output_artifacts(report_root: Path) -> tuple[ArtifactRef, ...]:
         ("assets/easydesign-viewer.js", "easydesign-viewer-js"),
         ("assets/easydesign-viewer.css", "easydesign-viewer-css"),
         ("assets/MOLSTAR_LICENSE.txt", "molstar-license"),
+    ))
+    paths.extend(
+        (relative_path, artifact_id)
+        for relative_path, artifact_id in (
+            ("data/identity-report.json", "viewer-identity-report"),
+            ("data/scope-report.json", "viewer-scope-report"),
+            ("data/structure-candidates.json", "viewer-structure-candidates"),
+            ("data/structure-quality.json", "viewer-structure-quality"),
+            ("data/source-context.cif", "viewer-source-context"),
+            ("data/design-context.cif", "viewer-design-context"),
+        )
+        if (report_root / relative_path).is_file()
     )
     return tuple(
         _report_artifact(report_root, relative_path, artifact_id)
@@ -527,6 +621,19 @@ def generate_stage01_target_viewer(
             sources.bundle.residue_mapping.verify(root),
             staging / "data" / "residue-mapping.json",
         )
+        for reference, name in (
+            (sources.bundle.identity_report, "identity-report.json"),
+            (sources.bundle.scope_report, "scope-report.json"),
+            (sources.bundle.structure_candidates, "structure-candidates.json"),
+            (sources.bundle.quality_report, "structure-quality.json"),
+            (sources.bundle.source_context, "source-context.cif"),
+            (sources.bundle.design_context, "design-context.cif"),
+        ):
+            if reference is not None:
+                _exclusive_copy(
+                    reference.verify(root),
+                    staging / "data" / name,
+                )
         for destination, source in STATIC_FILES.items():
             _copy_resource(source, staging / destination)
         dump_model(data, staging / "viewer-data.json")

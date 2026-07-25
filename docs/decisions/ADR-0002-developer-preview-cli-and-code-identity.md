@@ -54,3 +54,31 @@ Developer Preview 的配置和运行状态进一步收敛：
 
 这次修订保持原 ADR 的核心边界：CLI/UI 仍只是共享 Python API 的薄入口，旧 manifest
 保持可读，等待人工输入不能被包装成执行成功。
+
+## 2026-07-25 修订：Stage 01 六入口与通用 Decision Gate
+
+Stage 01 与 Developer Preview 的运行边界进一步统一：
+
+1. canonical schema `0.4` 以 discriminated union 表达 `local-file`、`pdb-id`、
+   `uniprot`、`uniprot-search` 和 `target-bundle`；local-file 再识别
+   sequence/FASTA、PDB/mmCIF 与 PSE，覆盖六类入口。
+2. FASTA/sequence 与 UniProt 先调用官方 RCSB Search/Data API，并按明确 design scope
+   重新验证 100% coverage、100% identity、CA 完整性和实验方法质量；不额外部署
+   BLAST/MMseqs。
+3. UniProt/RCSB 请求、响应、headers、时间和 SHA-256 冻结进 run。Stage 02 优先消费
+   Stage 01 身份快照，不重复拉取漂移记录。
+4. `target.cif` 固定为 protein-only、design-scope、规范 chain A；原 chain、author 和
+   UniProt 编号进入 mapping，复合物和 ligand 只进入独立 context artifact。
+5. Target Bundle `0.4` 纳入 identity、scope、candidate、retrieval、context 与可选 PDB
+   投影，同时保持 0.1–0.3 读取兼容，历史 artifact 不重写。
+6. `review-gated` 与 `unattended` 使用相同科学实现。前者在 identity、chain、structure、
+   hotspot 等选择点发布 `DecisionRequest`；后者只允许版本化确定性 policy 生成
+   `DecisionRecord`。
+7. 批准记录钉住 request revision、输入 hash、选项和 authority；恢复时在同一 run
+   新建 attempt，拒绝过期或篡改审批。API failure、零候选、歧义和 QC 不合格使用不同
+   状态，网络失败不得静默读旧 cache 或直接预测。
+8. Stage 03、05、06、07 后续复用相同 Decision Gate。`required_reviews` 不能因
+   unattended 被绕过；Stage 07 最多生成候选下单包，实际采购永远由人执行。
+
+这些变化仍遵守本 ADR 的原始原则：所有命令调用同一 Python API、用户 YAML 是科学配置
+的唯一事实来源，自动化不制造科学批准。

@@ -22,19 +22,28 @@ from easydesign.core import (
     EasyDesignError,
     ManifestStateError,
     RunManifest,
+    StageId,
     load_model,
     resolve_code_identity,
     sha256_file,
 )
+from easydesign.stages.s02_hotspot_discovery import RegionMethod
 
 from .config import (
+    ExecutionMode,
+    LoadedPseRunConfig,
+    LoadedRemoteRunConfig,
     LoadedRunConfig,
     LoadedSequenceRunConfig,
+    LoadedStructureRunConfig,
     ResolvedProtenixMsaProviderConfig,
     Stage02Method,
+    TargetInputFormat,
     load_run_config,
     migrate_run_config,
 )
+from .decisions import load_decision_record_context
+from .hotspots import approve_hotspots_by_policy
 from .profile import (
     PROFILE_ENVIRONMENT_VARIABLE,
     LoadedRuntimeProfile,
@@ -47,12 +56,17 @@ from .profile import (
 )
 from .pse_import import execute_pse_import
 from .sequence_prediction import execute_sequence_prediction
+from .stage01_sources import execute_stage01_source
 from .stage02 import execute_stage02_comparison
 from .workspace import (
+    PreparedRun,
+    PreparedSequenceRun,
     PseRequestWriter,
+    ResolvedRunConfig,
     RunIndex,
+    RunWorkspace,
     initialize_pse_run,
-    initialize_sequence_run,
+    initialize_run_workspace,
 )
 
 PROTENIX_V2_CHECKPOINT_SHA256 = (
@@ -146,11 +160,16 @@ def _selected_runs_root(
 
 
 def _required_backends(loaded: LoadedRunConfig) -> tuple[str, ...]:
-    backends = [
-        "protenix-v2"
-        if isinstance(loaded, LoadedSequenceRunConfig)
-        else "pymol-pse"
-    ]
+    backends: list[str] = []
+    if isinstance(loaded, LoadedSequenceRunConfig):
+        backends.append("protenix-v2")
+    elif isinstance(loaded, LoadedPseRunConfig):
+        backends.append("pymol-pse")
+    elif (
+        isinstance(loaded, LoadedRemoteRunConfig)
+        and loaded.config.structure_prediction is not None
+    ):
+        backends.append("protenix-v2")
     if loaded.config.workflow.stop_after_stage >= 2:
         stage02 = loaded.config.stage02
         assert stage02 is not None
@@ -401,7 +420,10 @@ def diagnose_runtime(
             continue
         try:
             if name == "protenix-v2":
-                if loaded is not None and not isinstance(loaded, LoadedSequenceRunConfig):
+                if loaded is not None and not isinstance(
+                    loaded,
+                    (LoadedSequenceRunConfig, LoadedRemoteRunConfig),
+                ):
                     checks.append(
                         DiagnosticCheck(
                             name=name,
@@ -494,36 +516,8 @@ def execute_pipeline(
     )
     backends = context.loaded_profile.profile.backends
     loaded = context.loaded_config
-    if isinstance(loaded, LoadedSequenceRunConfig):
-        protenix_runtime = backends.protenix_v2
-        assert protenix_runtime is not None
-        checkpoint_sha256 = sha256_file(protenix_runtime.model_checkpoint)
-        first_provider = loaded.msa_execution_plan[0]
-        writer = _protenix_adapter(protenix_runtime, loaded, first_provider)
-        prepared = initialize_sequence_run(
-            config_path=loaded.config_path,
-            runs_root=context.plan.runs_root,
-            input_writer=writer,
-            easydesign_version=easydesign.__version__,
-            code_identity=code_identity,
-            runtime_profile=context.loaded_profile.identity,
-            run_id=run_id,
-        )
-
-        def adapter_builder(
-            provider: ResolvedProtenixMsaProviderConfig,
-        ) -> ProtenixV2Adapter:
-            return _protenix_adapter(protenix_runtime, loaded, provider)
-
-        completed_stage01 = execute_sequence_prediction(
-            prepared=prepared,
-            adapter_builder=adapter_builder,
-            model_checkpoint_sha256=checkpoint_sha256,
-        )
-        run_root = completed_stage01.prepared.workspace.run_root
-        run_manifest = completed_stage01.run_manifest
-        viewer_status = str(completed_stage01.target_viewer.status)
-    else:
+    viewer_status: str | None
+    if isinstance(loaded, LoadedPseRunConfig):
         pymol_runtime = backends.pymol_pse
         assert pymol_runtime is not None
         adapter = _pymol_adapter(pymol_runtime)
@@ -540,6 +534,96 @@ def execute_pipeline(
         run_root = completed_pse.prepared.workspace.run_root
         run_manifest = completed_pse.run_manifest
         viewer_status = str(completed_pse.target_viewer.status)
+    else:
+        prepared_source = initialize_run_workspace(
+            config_path=loaded.config_path,
+            runs_root=context.plan.runs_root,
+            easydesign_version=easydesign.__version__,
+            code_identity=code_identity,
+            runtime_profile=context.loaded_profile.identity,
+            run_id=run_id,
+        )
+        source_outcome = execute_stage01_source(prepared_source)
+        if source_outcome.status == "awaiting-human-approval":
+            return PipelineExecution(
+                status=source_outcome.status,
+                plan=context.plan,
+                run_root=source_outcome.run_root,
+                run_manifest=source_outcome.run_manifest,
+            )
+        if source_outcome.status == "prediction-required":
+            fallback = source_outcome.prediction_fallback
+            assert fallback is not None
+            prediction_config = loaded.config.structure_prediction
+            assert prediction_config is not None
+            from easydesign.backends.structure_prediction import (
+                StructurePredictionRequest,
+            )
+
+            prediction_request = StructurePredictionRequest(
+                job_name=loaded.config.target.target_id,
+                target=fallback.target,
+                seeds=prediction_config.seeds,
+                sample_count=prediction_config.sample_count,
+                msa_mode=prediction_config.msa.mode,
+                template_mode=prediction_config.template_mode,
+                parameter_profile=prediction_config.parameter_profile,
+                cycle_count=prediction_config.cycle_count,
+                diffusion_step_count=prediction_config.diffusion_step_count,
+            )
+            derived = LoadedSequenceRunConfig(
+                config_path=loaded.config_path,
+                config=loaded.config,
+                source_path=prepared_source.workspace.input_snapshot,
+                detected_format=TargetInputFormat.SEQUENCE,
+                target=fallback.target,
+                prediction_request=prediction_request,
+                msa_execution_plan=prediction_config.msa.resolved_providers(),
+                identity_report=fallback.identity_report,
+                scope_report=fallback.scope_report,
+                structure_candidates=tuple(fallback.candidates),
+                retrieval_records=tuple(fallback.retrieval_records),
+                reference_sequence=fallback.reference_sequence,
+                prediction_fallback_reason=fallback.reason,
+            )
+            protenix_runtime = backends.protenix_v2
+            assert protenix_runtime is not None
+            first_provider = derived.msa_execution_plan[0]
+            writer = _protenix_adapter(protenix_runtime, derived, first_provider)
+            protenix_input = writer.write_input(
+                prediction_request,
+                prepared_source.workspace.attempt_root(
+                    StageId.TARGET_PREPARATION,
+                    "attempt-0001",
+                )
+                / "inputs"
+                / "protenix-input.json",
+            )
+            prepared_prediction = PreparedSequenceRun(
+                loaded_config=derived,
+                workspace=prepared_source.workspace,
+                protenix_input=protenix_input,
+            )
+
+            def remote_adapter_builder(
+                provider: ResolvedProtenixMsaProviderConfig,
+            ) -> ProtenixV2Adapter:
+                return _protenix_adapter(protenix_runtime, derived, provider)
+
+            completed_prediction = execute_sequence_prediction(
+                prepared=prepared_prediction,
+                adapter_builder=remote_adapter_builder,
+                model_checkpoint_sha256=sha256_file(
+                    protenix_runtime.model_checkpoint
+                ),
+            )
+            run_root = completed_prediction.prepared.workspace.run_root
+            run_manifest = completed_prediction.run_manifest
+            viewer_status = str(completed_prediction.target_viewer.status)
+        else:
+            run_root = source_outcome.run_root
+            run_manifest = source_outcome.run_manifest
+            viewer_status = source_outcome.viewer_status
 
     if context.plan.stop_after_stage == 2:
         stage02_config = loaded.config.stage02
@@ -554,7 +638,28 @@ def execute_pipeline(
             adapter=stage02_adapter,
         )
         run_manifest = completed_stage02.run_manifest
-        status = "awaiting-human-approval"
+        if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+            approval = stage02_config.unattended_approval
+            assert approval is not None
+            selected_method = stage02_config.methods[0]
+            method = (
+                RegionMethod.SASA_SURFACE_DIVERSITY
+                if selected_method is Stage02Method.SASA
+                else RegionMethod.SCANNET_EPITOPE_NO_MSA
+            )
+            approve_hotspots_by_policy(
+                run_root,
+                method=method,
+                region_count=approval.region_count,
+                allow_structural_only=approval.allow_structural_only,
+            )
+            latest_name = (run_root / "manifests" / "LATEST").read_text(
+                encoding="utf-8"
+            ).strip()
+            run_manifest = run_root / "manifests" / latest_name
+            status = "succeeded"
+        else:
+            status = "awaiting-human-approval"
     else:
         status = "succeeded"
     return PipelineExecution(
@@ -562,6 +667,230 @@ def execute_pipeline(
         plan=context.plan,
         run_root=run_root,
         run_manifest=run_manifest,
+        viewer_status=viewer_status,
+    )
+
+
+def _prepared_existing_run(run_root: Path) -> PreparedRun:
+    """从 run 内不可变快照重建 Stage 01 continuation，不读取原项目文件。"""
+
+    root = run_root.resolve()
+    resolved_path = root / "config-snapshot" / "resolved-config.json"
+    resolved = load_model(resolved_path, ResolvedRunConfig)
+    source_snapshot = resolved.input_snapshot.verify(root)
+    config_path = root / "config-snapshot" / "easydesign.yaml"
+    if resolved.detected_input_format in {
+        TargetInputFormat.SEQUENCE,
+        TargetInputFormat.FASTA,
+    }:
+        if resolved.target is None or resolved.prediction_request is None:
+            raise ManifestStateError("sequence continuation 缺少 resolved target/request")
+        loaded: LoadedRunConfig = LoadedSequenceRunConfig(
+            config_path=config_path,
+            config=resolved.user_config,
+            source_path=source_snapshot,
+            detected_format=resolved.detected_input_format,
+            target=resolved.target,
+            prediction_request=resolved.prediction_request,
+            msa_execution_plan=resolved.msa_execution_plan,
+        )
+    elif resolved.detected_input_format in {
+        TargetInputFormat.PDB,
+        TargetInputFormat.MMCIF,
+    }:
+        loaded = LoadedStructureRunConfig(
+            config_path=config_path,
+            config=resolved.user_config,
+            source_path=source_snapshot,
+            detected_format=resolved.detected_input_format,
+        )
+    elif resolved.detected_input_format in {
+        TargetInputFormat.PDB_ID,
+        TargetInputFormat.UNIPROT,
+        TargetInputFormat.UNIPROT_SEARCH,
+    }:
+        loaded = LoadedRemoteRunConfig(
+            config_path=config_path,
+            config=resolved.user_config,
+            source_path=None,
+            detected_format=resolved.detected_input_format,
+        )
+    elif resolved.detected_input_format is TargetInputFormat.TARGET_BUNDLE:
+        raise ManifestStateError("Target Bundle 导入不会创建 Stage 01 decision gate")
+    else:
+        raise ManifestStateError(
+            f"当前 Stage 01 source 不支持 decision continuation: "
+            f"{resolved.detected_input_format}"
+        )
+    latest_name = (root / "manifests" / "LATEST").read_text(
+        encoding="utf-8"
+    ).strip()
+    current_manifest = root / "manifests" / latest_name
+    workspace = RunWorkspace(
+        runs_root=root.parents[1],
+        run_root=root,
+        project_id=resolved.project_id,
+        run_id=resolved.run_id,
+        config_snapshot=config_path,
+        input_snapshot=source_snapshot,
+        resolved_config=resolved_path,
+        run_manifest=current_manifest,
+        latest_manifest_pointer=root / "manifests" / "LATEST",
+    )
+    return PreparedRun(loaded_config=loaded, workspace=workspace)
+
+
+def _next_stage01_attempt(run_root: Path) -> tuple[str, int]:
+    stage_root = run_root / str(StageId.TARGET_PREPARATION)
+    numbers = []
+    for path in stage_root.glob("attempt-*"):
+        if path.is_dir() and path.name[8:].isdigit():
+            numbers.append(int(path.name[8:]))
+    number = max(numbers, default=0) + 1
+    return f"attempt-{number:04d}", number
+
+
+def continue_pipeline_after_decision(
+    run_root: Path,
+    *,
+    decision_record: Path,
+    profile_path: Path | None = None,
+) -> PipelineExecution:
+    """消费已批准 DecisionRecord，在同一 run 中创建新 attempt 并继续。"""
+
+    prepared = _prepared_existing_run(run_root)
+    request, record = load_decision_record_context(run_root, decision_record)
+    if request.stage_id != str(StageId.TARGET_PREPARATION):
+        raise ManifestStateError(
+            "当前 continuation 只实现 Stage 01 decision；Stage 02 使用 hotspots approve"
+        )
+    if len(record.selected_option_ids) != 1:
+        raise ManifestStateError("Stage 01 decision 必须且只能选择一个 option")
+    option_by_id = {option.option_id: option for option in request.options}
+    selected_option = option_by_id[record.selected_option_ids[0]]
+    loaded_profile = load_runtime_profile(profile_path)
+    attempt_id, attempt_number = _next_stage01_attempt(prepared.workspace.run_root)
+    outcome = execute_stage01_source(
+        prepared,
+        attempt_id=attempt_id,
+        approved_option=selected_option,
+    )
+    plan = RunPlan(
+        project_id=prepared.loaded_config.config.project_id,
+        target_id=prepared.loaded_config.config.target.target_id,
+        detected_input_format=str(prepared.loaded_config.detected_format),
+        stop_after_stage=prepared.loaded_config.config.workflow.stop_after_stage,
+        required_backends=_required_backends(prepared.loaded_config),
+        runs_root=prepared.workspace.runs_root,
+        profile_id=loaded_profile.profile.profile_id,
+    )
+    if outcome.status == "awaiting-human-approval":
+        return PipelineExecution(
+            status=outcome.status,
+            plan=plan,
+            run_root=outcome.run_root,
+            run_manifest=outcome.run_manifest,
+        )
+
+    backends = loaded_profile.profile.backends
+    viewer_status = outcome.viewer_status
+    if outcome.status == "prediction-required":
+        fallback = outcome.prediction_fallback
+        assert fallback is not None
+        prediction_config = prepared.loaded_config.config.structure_prediction
+        assert prediction_config is not None
+        from easydesign.backends.structure_prediction import StructurePredictionRequest
+
+        prediction_request = StructurePredictionRequest(
+            job_name=prepared.loaded_config.config.target.target_id,
+            target=fallback.target,
+            seeds=prediction_config.seeds,
+            sample_count=prediction_config.sample_count,
+            msa_mode=prediction_config.msa.mode,
+            template_mode=prediction_config.template_mode,
+            parameter_profile=prediction_config.parameter_profile,
+            cycle_count=prediction_config.cycle_count,
+            diffusion_step_count=prediction_config.diffusion_step_count,
+        )
+        derived = LoadedSequenceRunConfig(
+            config_path=prepared.loaded_config.config_path,
+            config=prepared.loaded_config.config,
+            source_path=prepared.workspace.input_snapshot,
+            detected_format=TargetInputFormat.SEQUENCE,
+            target=fallback.target,
+            prediction_request=prediction_request,
+            msa_execution_plan=prediction_config.msa.resolved_providers(),
+            identity_report=fallback.identity_report,
+            scope_report=fallback.scope_report,
+            structure_candidates=tuple(fallback.candidates),
+            retrieval_records=tuple(fallback.retrieval_records),
+            reference_sequence=fallback.reference_sequence,
+            prediction_fallback_reason=fallback.reason,
+        )
+        protenix_runtime = backends.protenix_v2
+        if protenix_runtime is None:
+            raise ConfigurationError(
+                "已批准 Protenix fallback，但 runtime profile 未配置 protenix-v2"
+            )
+        first_provider = derived.msa_execution_plan[0]
+        writer = _protenix_adapter(protenix_runtime, derived, first_provider)
+        protenix_input = writer.write_input(
+            prediction_request,
+            prepared.workspace.attempt_root(
+                StageId.TARGET_PREPARATION,
+                attempt_id,
+            )
+            / "inputs"
+            / "protenix-input.json",
+        )
+        prepared_prediction = PreparedSequenceRun(
+            loaded_config=derived,
+            workspace=prepared.workspace,
+            protenix_input=protenix_input,
+        )
+
+        def adapter_builder(
+            provider: ResolvedProtenixMsaProviderConfig,
+        ) -> ProtenixV2Adapter:
+            return _protenix_adapter(protenix_runtime, derived, provider)
+
+        completed = execute_sequence_prediction(
+            prepared=prepared_prediction,
+            adapter_builder=adapter_builder,
+            model_checkpoint_sha256=sha256_file(
+                protenix_runtime.model_checkpoint
+            ),
+            attempt_start=attempt_number,
+        )
+        current_run_manifest = completed.run_manifest
+        viewer_status = str(completed.target_viewer.status)
+    else:
+        current_run_manifest = outcome.run_manifest
+
+    if prepared.loaded_config.config.workflow.stop_after_stage == 2:
+        stage02_config = prepared.loaded_config.config.stage02
+        assert stage02_config is not None
+        stage02_adapter: ScanNetEpitopeAdapter | None = None
+        if Stage02Method.SCANNET in stage02_config.methods:
+            scannet_runtime = backends.scannet_epitope
+            if scannet_runtime is None:
+                raise ConfigurationError(
+                    "Stage 02 选择 ScanNet，但 runtime profile 未配置 scannet-epitope"
+                )
+            stage02_adapter = _scannet_adapter(scannet_runtime)
+        completed_stage02 = execute_stage02_comparison(
+            run_root=prepared.workspace.run_root,
+            adapter=stage02_adapter,
+        )
+        current_run_manifest = completed_stage02.run_manifest
+        status = "awaiting-human-approval"
+    else:
+        status = "succeeded"
+    return PipelineExecution(
+        status=status,
+        plan=plan,
+        run_root=prepared.workspace.run_root,
+        run_manifest=current_run_manifest,
         viewer_status=viewer_status,
     )
 

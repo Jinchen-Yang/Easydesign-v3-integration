@@ -357,8 +357,13 @@ def _publish_run_revision(
         status=status,
         completed_at=completed_at,
         stage_manifest_refs=(stage_ref,),
+        clear_workflow_state=True,
     )
-    path = workspace.run_root / "manifests" / "run-manifest.v0002.json"
+    path = (
+        workspace.run_root
+        / "manifests"
+        / f"run-manifest.v{next_manifest.revision:04d}.json"
+    )
     dump_model(next_manifest, path)
     _atomic_pointer(f"{path.name}\n", workspace.latest_manifest_pointer)
     upsert_run_index_entries(
@@ -388,6 +393,7 @@ def execute_sequence_prediction(
     prepared: PreparedSequenceRun,
     adapter_builder: AdapterBuilder,
     model_checkpoint_sha256: str,
+    attempt_start: int = 1,
     started_at: datetime | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> CompletedSequenceRun:
@@ -405,10 +411,14 @@ def execute_sequence_prediction(
     selected_provider: ResolvedProtenixMsaProviderConfig | None = None
     failure: _InvocationFailure | None = None
     selected_attempt_id: str | None = None
-    attempt_number = 0
+    if attempt_start < 1:
+        raise SequencePredictionExecutionError("attempt_start 必须至少为 1")
+    attempt_number = attempt_start - 1
+    execution_count = 0
 
     for provider_index, provider in enumerate(prepared.loaded_config.msa_execution_plan):
         for provider_attempt in range(provider.max_attempts):
+            execution_count += 1
             attempt_number += 1
             attempt_id = f"attempt-{attempt_number:04d}"
             attempt_root = workspace.attempt_root(
@@ -430,10 +440,10 @@ def execute_sequence_prediction(
                 raise SequencePredictionExecutionError(
                     "adapter_builder 返回的 provider/endpoint/mode/timeout 与 resolved plan 不一致"
                 )
-            if attempt_number == 1:
+            if execution_count == 1:
                 if input_json != prepared.protenix_input or not input_json.is_file():
                     raise SequencePredictionExecutionError(
-                        "attempt-0001 Protenix input 与 workspace 不一致"
+                        f"{attempt_id} Protenix input 与 workspace 不一致"
                     )
             else:
                 adapter.write_input(request, input_json)
@@ -519,6 +529,14 @@ def execute_sequence_prediction(
                     msa_query_sha256=prepared.loaded_config.target.sequence_sha256,
                     msa_ticket=None,
                     msa_ticket_status="not-exposed-by-protenix-cli-2.0.0",
+                    identity_report=prepared.loaded_config.identity_report,
+                    scope_report=prepared.loaded_config.scope_report,
+                    structure_candidates=prepared.loaded_config.structure_candidates,
+                    retrieval_records=prepared.loaded_config.retrieval_records,
+                    reference_sequence=prepared.loaded_config.reference_sequence,
+                    prediction_fallback_reason=(
+                        prepared.loaded_config.prediction_fallback_reason
+                    ),
                 )
             except _InvocationFailure as error:
                 current_failure = error
@@ -609,7 +627,7 @@ def execute_sequence_prediction(
     else:
         assert selected_msa_ref is not None
         bundle = built.bundle
-        output_artifacts = (
+        core_artifacts = (
             bundle.target_structure,
             bundle.sequence,
             bundle.residue_mapping,
@@ -618,12 +636,28 @@ def execute_sequence_prediction(
             selected_msa_ref,
             built.bundle_artifact,
         )
+        optional_artifacts = tuple(
+            artifact
+            for artifact in (
+                bundle.reference_sequence,
+                bundle.residue_mapping_tsv,
+                bundle.identity_report,
+                bundle.scope_report,
+                bundle.structure_candidates,
+                bundle.structure_candidates_tsv,
+                bundle.retrieval_manifest,
+                bundle.prediction_confidence,
+                bundle.target_pdb,
+            )
+            if artifact is not None
+        )
+        output_artifacts = core_artifacts + optional_artifacts
         stage_status = ExecutionStatus.SUCCEEDED
     assert attempts
     last_attempt_id = attempts[-1].attempt_id
     stage = StageManifest(
         stage_id=StageId.TARGET_PREPARATION,
-        contract_version="0.2",
+        contract_version="0.4",
         status=stage_status,
         created_at=start,
         completed_at=ended,

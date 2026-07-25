@@ -1,9 +1,10 @@
 # 01 — Target 准备
 
-**阶段状态：** `planned`。sequence/FASTA 纵向切片已实现；单 Target PSE 导入已完成
-真实 smoke；其他入口仍未实现。
+**阶段状态：** `implemented`。六类入口、schema 0.4、严格实验结构选择、Target Bundle
+0.4 和通用 Decision Gate 已实现；PDB ID/UniProt 与既有 APOE 路径已有真实 smoke，
+完整六入口真实 fixture 矩阵仍待补齐后才能提升为阶段级 `smoke-validated`。
 
-**契约版本：** Target Bundle `0.3`，兼容读取 `0.1/0.2`。
+**契约版本：** Target Bundle `0.4`，兼容读取 `0.1`–`0.3`。
 
 ## 目的
 
@@ -22,10 +23,10 @@ sequence/FASTA 当前只接受单条、由 20 种标准氨基酸组成的输入�
 identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。多记录、空记录和含歧义
 残基的输入明确失败，不静默选择第一条记录。
 
-当前用户入口是一个 target 文件和一个 `easydesign.yaml`。YAML 中的
-`stage01.target.source`
-相对于 YAML 自身解析，`format: auto` 使用文件后缀和内容强证据识别输入。PDB/mmCIF
-等尚未实现的入口可以被识别，但会明确报错，不会回退为 sequence 或 PSE。
+当前用户入口只有一个 `easydesign.yaml`；本地 source 文件路径相对于 YAML 解析。
+`stage01.target.source` 是 discriminated union，必须恰好选择 `local-file`、`pdb-id`、
+`uniprot`、`uniprot-search` 或 `target-bundle`。`local-file` 再以强证据识别
+sequence/FASTA、PDB、mmCIF 或 PSE。识别、联网、结构选择和预测 fallback 均不得静默。
 
 Developer Preview 推荐先通过统一入口创建和运行，不需要 Agent 手工编排：
 
@@ -48,9 +49,11 @@ PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导�
 - 结构选择规则和显式预测 fallback 规则。
 - 可选 chain/domain 选择与生物学约束。
 
-sequence/FASTA 路径通过通用 `StructurePredictionRequest` 访问预测 backend。EasyDesign 1.0
-当前实现为 `protenix==2.0.0` / `protenix-v2`；AFO、AF3 或其他模型只能作为实现同一契约的
-后续 adapter，不得改变 Stage 01 输出。
+sequence/FASTA 和 UniProt 路径先经 RCSB Sequence Search v2/Data API 寻找实验结构，
+只有 design scope 坐标覆盖与序列一致性均为 100%、每个 residue 有 CA 且方法/分辨率
+通过 `experimental-strict-v1` 才能自动采用。无唯一候选时才按执行模式进入人工选择或
+Protenix fallback。预测通过通用 `StructurePredictionRequest` 访问 backend；1.0 当前
+实现为 `protenix==2.0.0` / `protenix-v2`，AFO/AF3 不得成为静默替代。
 
 sequence/FASTA 的用户 YAML 必须声明 `msa` 和 `template_mode`。默认且当前唯一正式主线是
 MSA-backed Protenix-v2；用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
@@ -61,17 +64,30 @@ MSA-backed Protenix-v2；用户 YAML 禁止 `mode: disabled`，no-MSA 只保留�
 当前标准配置：
 
 ```yaml
-schema_version: "0.3"
+schema_version: "0.4"
 project_id: apoe
 workflow:
+  execution_mode: review-gated
   stop_after_stage: 1
+  cache_mode: online
 stage01:
   target:
     id: apoe4-fragment-41-183
-    source: apoe4-fragment-41-183.fasta
-    format: auto
-    identity:
-      uniprot_accession: null
+    source:
+      type: local-file
+      path: apoe4-fragment-41-183.fasta
+      format: auto
+      identity:
+        uniprot_accession: null
+    scope:
+      type: full-sequence
+  structure_selection:
+    policy: experimental-first
+    quality_profile: experimental-strict-v1
+    on_no_eligible_candidate: predict
+    on_ambiguous_candidates: predict
+    preserve_source_context: true
+    keep_ligands: []
   structure_prediction:
     backend: protenix-v2
     msa:
@@ -115,17 +131,23 @@ no-MSA。A3M 必须来自当前 attempt、首条 query 与规范 target 完全�
 PSE 路径使用排他的 YAML 分支：
 
 ```yaml
-schema_version: "0.3"
+schema_version: "0.4"
 project_id: apoe
 workflow:
+  execution_mode: review-gated
   stop_after_stage: 1
+  cache_mode: offline
 stage01:
   target:
     id: apoe-1b68-pse
-    source: apoe_abc.pse
-    format: auto
-    identity:
-      uniprot_accession: null
+    source:
+      type: local-file
+      path: apoe_abc.pse
+      format: auto
+      identity:
+        uniprot_accession: null
+    scope:
+      type: full-sequence
   structure_prediction: null
 stage02: null
 stage03: null
@@ -140,14 +162,54 @@ PSE 必须省略 `structure_prediction`；提供该区块会明确失败。反�
 profile 读取显式绝对 Python 路径；core 禁止扫描 Conda 或系统 Python，也禁止版本
 fallback。
 
+### 六类 source 与 design scope
+
+- `local-file`：FASTA/裸序列、PDB、mmCIF 或严格单 Target PSE；结构可用 auth/label
+  chain 显式选择，本地多模型 PDB/mmCIF 保留 ensemble。
+- `pdb-id`：获取 RCSB entry/entity/mmCIF；用户显式选择的 PDB 若未通过质量门直接失败，
+  不会偷偷换成别的结构。
+- `uniprot`：冻结 canonical UniProt JSON/sequence/features/PDB cross-reference，再查
+  RCSB 候选。
+- `uniprot-search`：必须给 taxonomy ID；只有唯一 reviewed 高置信命中可以自动继续，
+  否则产生 identity decision。
+- `target-bundle`：验证来源 run 的 ArtifactRef 后复制为新 attempt；identity、scope、
+  candidate、context、prediction confidence 和联网响应一并保留并重新建立相对路径。
+- PSE 是 `local-file` 的严格专用分支；颜色仍是未解释 annotation。
+
+scope 支持 `full-sequence`、`residue-range` 和唯一匹配的 UniProt `Domain`、`Chain` 或
+`Topological domain`。所有正式 `target.cif` 只含 scope 内目标蛋白，输出 chain 固定为
+`A`；原始 auth/label chain、author residue、insertion code、reference/UniProt position
+和逐模型 presence 进入 mapping。原复合物保存为 `source-context.cif`，白名单配体只进入
+额外 `design-context.cif`，绝不污染主 `target.cif`。
+
+### 双运行模式与 Decision Gate
+
+- `review-gated`（默认）：身份、chain/construct、结构候选等有歧义时发布不可变
+  `DecisionRequest` 并把 RunManifest 置为 `awaiting-human-approval`。用户通过
+  `easydesign decisions export/approve` 提交带 request SHA-256 的选择；批准后在同一
+  run 新建 attempt 并继续。
+- `unattended`：只接受唯一高置信身份/chain/合格实验结构；没有或存在多个合格结构时按
+  YAML 明确转 Protenix，API 错误则直接失败。该模式不调用 LLM。
+
+两种模式共用同一 source、结构规范化和 Bundle 发布实现。DecisionRecord 只追加不覆盖；
+旧审批、改变后的 request hash 或已不再 eligible 的选项均被拒绝。
+
 ## 输出
 
-- 规范 `target.cif`；后端明确需要时才派生 `target.pdb`。
-- `sequence.fasta`、逐残基编号映射、结构质量报告和来源记录。
+- 规范 `target.cif`；PDB 格式可表达时派生兼容 `target.pdb`。
+- `sequence.fasta`、可用时的 `reference-sequence.fasta`、机器 mapping JSON 和人读 TSV。
+- identity、scope、全部结构候选及淘汰理由、统一 QC、provenance 和 retrieval manifest。
+- 有上下文时的 `source-context.cif`，有白名单配体时的 `design-context.cif`。
 - `target-bundle.json` 及其中每个 artifact 的相对路径、大小、SHA-256 和生产 attempt。
 - `coordinate_ensemble`：model 数量、稳定 model IDs、代表 model 和共享残基身份策略。
 - 说明结构属于实验、导入还是预测来源的 manifest。
 - PSE 额外输出 `source-annotations.json`，记录 CA color index、RGB、hex 和颜色计数。
+
+联网只使用官方 UniProt REST、RCSB Sequence Search v2、RCSB Data API 和 RCSB mmCIF。
+统一 HTTP adapter 对 connect/read 做有界 timeout，429 遵守 `Retry-After`，只有限重试
+网络中断/5xx，4xx 不重试。`online`、`prefer-cache`、`offline` 三种 cache mode 必须
+显式选择；API failure 不是“零候选”，`online` 失败也不会偷用旧 cache。实际消费的响应、
+URL、请求参数、header、时间、大小和 SHA-256 都冻结进 run。
 
 PSE attempt 的稳定目录为：
 
@@ -158,8 +220,16 @@ PSE attempt 的稳定目录为：
 ├── logs/
 └── artifacts/
     ├── target.cif
+    ├── target.pdb
     ├── sequence.fasta
+    ├── reference-sequence.fasta
     ├── residue-mapping.json
+    ├── residue-map.tsv
+    ├── identity-report.json
+    ├── scope-report.json
+    ├── structure-candidates.json
+    ├── structure-candidates.tsv
+    ├── retrieval-manifest.json
     ├── structure-quality.json
     ├── provenance.json
     ├── source-annotations.json
@@ -180,8 +250,16 @@ sequence/FASTA MSA-backed attempt 使用同一浅层布局：
 ├── attempt-manifest.json
 └── artifacts/
     ├── target.cif
+    ├── target.pdb
     ├── sequence.fasta
+    ├── reference-sequence.fasta
     ├── residue-mapping.json
+    ├── residue-map.tsv
+    ├── identity-report.json
+    ├── scope-report.json
+    ├── structure-candidates.json
+    ├── structure-candidates.tsv
+    ├── retrieval-manifest.json
     ├── structure-quality.json
     ├── provenance.json
     ├── target-msa.a3m
@@ -192,7 +270,11 @@ PSE 与 sequence 的正式交接均以 Target Bundle 声明的 `target.cif`（`f
 为准。两者可以有不同序列长度和坐标来源，但文件协议、编号映射和 manifest 链必须一致；
 backend 工作目录中的 PDB/CIF 不属于正式交接。
 
-Target Bundle `0.3` 允许 `target.cif` 包含一个或多个
+schema 0.4 的新 PSE run 也把正式 target label/auth chain 规范为 `A`；PSE 原 chain、
+author residue 和 insertion code 保存到 mapping 的 `source_*` 字段。schema 0.1–0.3 的
+历史 artifact（例如旧 APOE report 的 label chain `Axp`）继续按原 hash 读取，绝不重写。
+
+Target Bundle `0.4` 允许 `target.cif` 包含一个或多个
 `_atom_site.pdbx_PDB_model_num`。`sequence.fasta` 与 mapping 描述所有模型共享的残基
 身份；模型可以缺部分残基或原子，但同一 `label_seq_id` 在不同模型中的氨基酸类型必须
 一致。下游不得把 ensemble 静默压成 model 1。代表模型只服务于展示和输出质心，不替代
@@ -200,7 +282,8 @@ Target Bundle `0.3` 允许 `target.cif` 包含一个或多个
 
 当前 PSE adapter 仍严格单 state，Protenix adapter 仍严格单 seed/单 sample，因此这两条
 已实现入口均发布 `model_count: 1`。这是 adapter 范围，不再是 Target Bundle 的全局
-限制；本地 PDB/mmCIF、预测 ensemble、多 state PSE 和多 seed/sample 策略仍待实现。
+限制；本地 PDB/mmCIF 已能保留 coordinate ensemble。预测 ensemble、多 state PSE 和
+多 seed/sample 的选择策略仍待实现。
 
 ### 便携式 Target Viewer
 
@@ -293,6 +376,10 @@ PSE 还包括 PyMOL Python 未显式配置、版本不是 `3.1.0`、worker 超�
 引用并保留失败 attempt；切换 MSA 服务必须符合 YAML 中有序 provider 计划，切换预测
 backend 或模型必须显式创建新配置和溯源。公共服务不能假定永久稳定。
 
+UniProt/RCSB 的每一次 429/5xx 重试、最终 4xx 和无 HTTP response 的 timeout 都在当前
+attempt 保存独立 evidence record；失败响应不进入成功 cache。结构入口失败后仍发布
+failed Attempt、StageManifest 与 RunManifest，再向 CLI 返回原始错误。
+
 ## 溯源
 
 Manifest 记录上游 manifest/artifact hash、解析后配置、代码版本、adapter/backend 身份与
@@ -324,7 +411,9 @@ PSE provenance 还记录 PyMOL 版本、session inventory、被选中的唯一 o
 - 把预测结构描述成实验结构。
 - 在 Stage 01 将 PyMOL 颜色称为成熟 hotspot 证据。
 - 在 Viewer 中保存 hotspot、批准区域或自动推进 Stage 02。
-- 首版处理复合物、receptor/ligand、多聚体、配体保留、公开上传，或让用户选择
-  object/chain/state。
+- PSE 首版处理复合物、receptor/ligand、多聚体、多 state、公开上传，或让用户选择
+  object/state；这些限制不适用于已实现的本地 PDB/mmCIF source-context。
+- 自动解析非 canonical UniProt isoform、AlphaFoldDB/AFO/AF3 fallback 或另建
+  BLAST/MMseqs 服务。
 
 外部工具只通过 adapter 访问；orchestration、UI 行为和下游决策不属于本阶段。

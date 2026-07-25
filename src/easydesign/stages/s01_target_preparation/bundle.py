@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from collections import Counter
 from pathlib import Path
@@ -173,6 +174,12 @@ def _build_residue_mapping(
                 author_chain_id=author_chain,
                 author_residue_id=author_id,
                 insertion_code=None if insertion in {".", "?"} else insertion,
+                source_label_chain_id=chain,
+                source_author_chain_id=author_chain,
+                source_author_residue_id=author_id,
+                reference_position=sequence_index,
+                model_presence=("1",),
+                source_residue_name=comp,
             ),
         )
 
@@ -235,6 +242,12 @@ def build_predicted_target_bundle(
     msa_query_sha256: str | None = None,
     msa_ticket: str | None = None,
     msa_ticket_status: str | None = None,
+    identity_report: dict[str, Any] | None = None,
+    scope_report: dict[str, Any] | None = None,
+    structure_candidates: tuple[dict[str, Any], ...] = (),
+    retrieval_records: tuple[dict[str, Any], ...] = (),
+    reference_sequence: str | None = None,
+    prediction_fallback_reason: str | None = None,
 ) -> BuiltTargetBundle:
     """发布 sequence、CIF、映射、质量、溯源和 bundle；任何目标已存在都失败。"""
 
@@ -246,17 +259,31 @@ def build_predicted_target_bundle(
         / "artifacts"
     )
     target_cif = artifact_dir / "target.cif"
+    target_pdb: Path | None = artifact_dir / "target.pdb"
     sequence_fasta = artifact_dir / "sequence.fasta"
     mapping_json = artifact_dir / "residue-mapping.json"
     quality_json = artifact_dir / "structure-quality.json"
     provenance_json = artifact_dir / "provenance.json"
+    reference_fasta = artifact_dir / "reference-sequence.fasta"
+    mapping_tsv = artifact_dir / "residue-map.tsv"
+    identity_json = artifact_dir / "identity-report.json"
+    scope_json = artifact_dir / "scope-report.json"
+    candidates_json = artifact_dir / "structure-candidates.json"
+    candidates_tsv = artifact_dir / "structure-candidates.tsv"
+    retrieval_json = artifact_dir / "retrieval-manifest.json"
     bundle_json = artifact_dir / "target-bundle.json"
+    confidence_json = artifact_dir / "prediction-confidence.json"
 
     if not product.structure_path.is_file() or not product.confidence_path.is_file():
         raise PredictionOutputError(f"预测结构不存在: {product.structure_path}")
     verify_sha256(product.structure_path, product.structure_sha256)
     verify_sha256(product.confidence_path, product.confidence_sha256)
     _exclusive_copy(product.structure_path, target_cif)
+    try:
+        gemmi.read_structure(str(target_cif)).write_pdb(str(target_pdb))
+    except Exception:
+        target_pdb = None
+    _exclusive_copy(product.confidence_path, confidence_json)
     _exclusive_text(target.to_fasta(), sequence_fasta)
 
     mapping = _build_residue_mapping(target_cif, target)
@@ -301,9 +328,117 @@ def build_predicted_target_bundle(
     dump_model(mapping, mapping_json)
     dump_model(quality, quality_json)
     dump_model(provenance, provenance_json)
+    reference = normalize_raw_sequence(
+        reference_sequence or target.sequence,
+        target_id=f"{target.target_id}-reference",
+        source_label="reference",
+    )
+    _exclusive_text(reference.to_fasta(), reference_fasta)
+    _exclusive_text(
+        (
+            "sequence_index\tamino_acid\tlabel_chain_id\tlabel_seq_id\t"
+            "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
+            "reference_position\tmodel_presence\n"
+            + "\n".join(
+                "\t".join(
+                    (
+                        str(entry.sequence_index),
+                        entry.amino_acid,
+                        entry.label_chain_id,
+                        str(entry.label_seq_id),
+                        entry.source_author_chain_id or "",
+                        entry.source_author_residue_id or "",
+                        entry.insertion_code or "",
+                        (
+                            ""
+                            if entry.reference_position is None
+                            else str(entry.reference_position)
+                        ),
+                        ",".join(entry.model_presence),
+                    )
+                )
+                for entry in mapping.entries
+            )
+            + "\n"
+        ),
+        mapping_tsv,
+    )
+    identity_payload = identity_report or {
+        "schema_version": "0.1",
+        "status": "explicit-sequence",
+        "identity_resolution": "user-input",
+    }
+    scope_payload = scope_report or {
+        "schema_version": "0.1",
+        "type": "full-sequence",
+        "start": 1,
+        "end": target.length,
+        "length": target.length,
+    }
+    _exclusive_text(
+        json.dumps(identity_payload, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
+        identity_json,
+    )
+    _exclusive_text(
+        json.dumps(scope_payload, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
+        scope_json,
+    )
+    candidate_values = [dict(item) for item in structure_candidates]
+    _exclusive_text(
+        json.dumps(candidate_values, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
+        candidates_json,
+    )
+    _exclusive_text(
+        "pdb_id\tchain\teligible\treasons\n"
+        + "".join(
+            f"{item.get('pdb_id', '')}\t{item.get('chain', '')}\t"
+            f"{str(item.get('eligible', False)).lower()}\t"
+            f"{';'.join(str(reason) for reason in item.get('reasons', []))}\n"
+            for item in candidate_values
+        ),
+        candidates_tsv,
+    )
+    published_retrieval = []
+    for index, record in enumerate(retrieval_records, start=1):
+        published = dict(record)
+        artifact_name = record.get("artifact_name")
+        if isinstance(artifact_name, str):
+            source_response = (
+                resolved_run_root
+                / "01-target-preparation"
+                / attempt_id
+                / "work"
+                / "retrieval"
+                / artifact_name
+            )
+            if source_response.is_file():
+                destination = artifact_dir / "retrieval" / artifact_name
+                _exclusive_copy(source_response, destination)
+                published["run_artifact_path"] = destination.relative_to(
+                    resolved_run_root
+                ).as_posix()
+                published["artifact_id"] = f"retrieval-response-{index:04d}"
+        published_retrieval.append(published)
+    _exclusive_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "prediction_fallback_reason": prediction_fallback_reason,
+                "requests": published_retrieval,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        retrieval_json,
+    )
 
     bundle = TargetBundle(
-        schema_version="0.3",
+        schema_version="0.4",
         target_id=target.target_id,
         origin=TargetStructureOrigin.PREDICTED,
         sequence_length=target.length,
@@ -354,6 +489,82 @@ def build_predicted_target_bundle(
             model_ids=("1",),
             representative_model_id="1",
         ),
+        reference_sequence=_artifact(
+            run_root=resolved_run_root,
+            path=reference_fasta,
+            artifact_id="reference-sequence",
+            role="reference-sequence",
+            file_format="fasta",
+            attempt_id=attempt_id,
+        ),
+        residue_mapping_tsv=_artifact(
+            run_root=resolved_run_root,
+            path=mapping_tsv,
+            artifact_id="residue-map-tsv",
+            role="residue-mapping-projection",
+            file_format="tsv",
+            attempt_id=attempt_id,
+        ),
+        identity_report=_artifact(
+            run_root=resolved_run_root,
+            path=identity_json,
+            artifact_id="identity-report",
+            role="identity-evidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        scope_report=_artifact(
+            run_root=resolved_run_root,
+            path=scope_json,
+            artifact_id="scope-report",
+            role="scope-evidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        structure_candidates=_artifact(
+            run_root=resolved_run_root,
+            path=candidates_json,
+            artifact_id="structure-candidates",
+            role="structure-candidate-report",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        structure_candidates_tsv=_artifact(
+            run_root=resolved_run_root,
+            path=candidates_tsv,
+            artifact_id="structure-candidates-tsv",
+            role="structure-candidate-projection",
+            file_format="tsv",
+            attempt_id=attempt_id,
+        ),
+        retrieval_manifest=_artifact(
+            run_root=resolved_run_root,
+            path=retrieval_json,
+            artifact_id="retrieval-manifest",
+            role="remote-retrieval-evidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        prediction_confidence=_artifact(
+            run_root=resolved_run_root,
+            path=confidence_json,
+            artifact_id="prediction-confidence",
+            role="backend-confidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        target_pdb=(
+            None
+            if target_pdb is None
+            else _artifact(
+                run_root=resolved_run_root,
+                path=target_pdb,
+                artifact_id="target-pdb",
+                role="compatibility-target",
+                file_format="pdb",
+                attempt_id=attempt_id,
+            )
+        ),
     )
     dump_model(bundle, bundle_json)
     bundle_artifact = _artifact(
@@ -387,6 +598,9 @@ def _pdb_to_normalized_cif(source: Path, destination: Path) -> None:
             f"PyMOL worker PDB 必须恰好一条非空 chain，发现 {len(chains)} 条"
         )
     try:
+        chains[0].name = "A"
+        for residue in chains[0]:
+            residue.subchain = "A"
         structure.setup_entities()
         if len(structure.entities) != 1:
             raise ValueError(
@@ -416,8 +630,10 @@ def _validate_pse_mapping(
         if (
             mapped.sequence_index != annotated.sequence_index
             or mapped.amino_acid != annotated.amino_acid
-            or mapped.author_chain_id != annotated.author_chain_id
-            or mapped.author_residue_id != annotated.author_residue_id
+            or mapped.label_chain_id != "A"
+            or mapped.author_chain_id != "A"
+            or mapped.source_author_chain_id != annotated.author_chain_id
+            or mapped.source_author_residue_id != annotated.author_residue_id
             or mapped.insertion_code != annotated.insertion_code
         ):
             raise PredictionOutputError(
@@ -434,7 +650,7 @@ def build_imported_pse_target_bundle(
     source_label: str,
     product: PseExtractionProduct,
 ) -> BuiltTargetBundle:
-    """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.3。"""
+    """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.4。"""
 
     resolved_run_root = run_root.resolve()
     artifact_dir = (
@@ -449,6 +665,14 @@ def build_imported_pse_target_bundle(
     quality_json = artifact_dir / "structure-quality.json"
     provenance_json = artifact_dir / "provenance.json"
     annotations_json = artifact_dir / "source-annotations.json"
+    target_pdb = artifact_dir / "target.pdb"
+    reference_fasta = artifact_dir / "reference-sequence.fasta"
+    mapping_tsv = artifact_dir / "residue-map.tsv"
+    identity_json = artifact_dir / "identity-report.json"
+    scope_json = artifact_dir / "scope-report.json"
+    candidates_json = artifact_dir / "structure-candidates.json"
+    candidates_tsv = artifact_dir / "structure-candidates.tsv"
+    retrieval_json = artifact_dir / "retrieval-manifest.json"
     bundle_json = artifact_dir / "target-bundle.json"
 
     target = normalize_raw_sequence(
@@ -458,7 +682,31 @@ def build_imported_pse_target_bundle(
     )
     _pdb_to_normalized_cif(product.raw_pdb_path, target_cif)
     _exclusive_text(target.to_fasta(), sequence_fasta)
-    mapping = _build_residue_mapping(target_cif, target)
+    _exclusive_text(target.to_fasta(), reference_fasta)
+    try:
+        gemmi.read_structure(str(target_cif)).write_pdb(str(target_pdb))
+    except Exception as error:
+        raise PredictionOutputError("规范 PSE target.cif 无法生成 target.pdb") from error
+    normalized_mapping = _build_residue_mapping(target_cif, target)
+    mapping = ResidueMapping(
+        target_id=normalized_mapping.target_id,
+        sequence_sha256=normalized_mapping.sequence_sha256,
+        entries=tuple(
+            entry.model_copy(
+                update={
+                    "source_label_chain_id": annotated.author_chain_id,
+                    "source_author_chain_id": annotated.author_chain_id,
+                    "source_author_residue_id": annotated.author_residue_id,
+                    "reference_position": None,
+                }
+            )
+            for entry, annotated in zip(
+                normalized_mapping.entries,
+                product.response.residues,
+                strict=True,
+            )
+        ),
+    )
     _validate_pse_mapping(mapping, product)
 
     residue_count = len(product.response.residues)
@@ -523,6 +771,77 @@ def build_imported_pse_target_bundle(
     dump_model(quality, quality_json)
     dump_model(provenance, provenance_json)
     dump_model(annotations, annotations_json)
+    _exclusive_text(
+        (
+            "sequence_index\tamino_acid\tlabel_chain_id\tlabel_seq_id\t"
+            "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
+            "reference_position\tmodel_presence\n"
+            + "\n".join(
+                "\t".join(
+                    (
+                        str(entry.sequence_index),
+                        entry.amino_acid,
+                        entry.label_chain_id,
+                        str(entry.label_seq_id),
+                        entry.source_author_chain_id or "",
+                        entry.source_author_residue_id or "",
+                        entry.insertion_code or "",
+                        (
+                            ""
+                            if entry.reference_position is None
+                            else str(entry.reference_position)
+                        ),
+                        ",".join(entry.model_presence),
+                    )
+                )
+                for entry in mapping.entries
+            )
+            + "\n"
+        ),
+        mapping_tsv,
+    )
+    _exclusive_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "status": "structural-only",
+                "identity_resolution": "not-attempted",
+                "reference_completeness": "observed-pse-only",
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        identity_json,
+    )
+    _exclusive_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "type": "structural-observed",
+                "start": 1,
+                "end": target.length,
+                "length": target.length,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        scope_json,
+    )
+    _exclusive_text("[]\n", candidates_json)
+    _exclusive_text("pdb_id\tchain\teligible\treasons\n", candidates_tsv)
+    _exclusive_text(
+        json.dumps(
+            {"schema_version": "0.1", "requests": []},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        retrieval_json,
+    )
 
     target_structure_ref = _artifact(
         run_root=resolved_run_root,
@@ -573,7 +892,7 @@ def build_imported_pse_target_bundle(
         attempt_id=attempt_id,
     )
     bundle = TargetBundle(
-        schema_version="0.3",
+        schema_version="0.4",
         target_id=target.target_id,
         origin=TargetStructureOrigin.IMPORTED,
         sequence_length=target.length,
@@ -589,6 +908,70 @@ def build_imported_pse_target_bundle(
             model_count=1,
             model_ids=("1",),
             representative_model_id="1",
+        ),
+        reference_sequence=_artifact(
+            run_root=resolved_run_root,
+            path=reference_fasta,
+            artifact_id="reference-sequence",
+            role="reference-sequence",
+            file_format="fasta",
+            attempt_id=attempt_id,
+        ),
+        residue_mapping_tsv=_artifact(
+            run_root=resolved_run_root,
+            path=mapping_tsv,
+            artifact_id="residue-map-tsv",
+            role="residue-mapping-projection",
+            file_format="tsv",
+            attempt_id=attempt_id,
+        ),
+        identity_report=_artifact(
+            run_root=resolved_run_root,
+            path=identity_json,
+            artifact_id="identity-report",
+            role="identity-evidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        scope_report=_artifact(
+            run_root=resolved_run_root,
+            path=scope_json,
+            artifact_id="scope-report",
+            role="scope-evidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        structure_candidates=_artifact(
+            run_root=resolved_run_root,
+            path=candidates_json,
+            artifact_id="structure-candidates",
+            role="structure-candidate-report",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        structure_candidates_tsv=_artifact(
+            run_root=resolved_run_root,
+            path=candidates_tsv,
+            artifact_id="structure-candidates-tsv",
+            role="structure-candidate-projection",
+            file_format="tsv",
+            attempt_id=attempt_id,
+        ),
+        retrieval_manifest=_artifact(
+            run_root=resolved_run_root,
+            path=retrieval_json,
+            artifact_id="retrieval-manifest",
+            role="remote-retrieval-evidence",
+            file_format="json",
+            attempt_id=attempt_id,
+        ),
+        target_pdb=_artifact(
+            run_root=resolved_run_root,
+            path=target_pdb,
+            artifact_id="target-pdb",
+            role="compatibility-target",
+            file_format="pdb",
+            attempt_id=attempt_id,
         ),
     )
     dump_model(bundle, bundle_json)

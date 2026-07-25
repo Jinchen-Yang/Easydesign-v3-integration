@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self, TypeAlias
+from typing import Annotated, Any, Literal, Self, TypeAlias
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -39,11 +39,27 @@ class TargetInputFormat(StrEnum):
     MMCIF = "mmcif"
     PDB = "pdb"
     PSE = "pse"
+    PDB_ID = "pdb-id"
+    UNIPROT = "uniprot"
+    UNIPROT_SEARCH = "uniprot-search"
     TARGET_BUNDLE = "target-bundle"
 
 
+class ExecutionMode(StrEnum):
+    """全流程只共享一套科学逻辑；差别只在科学选择点的 authority。"""
+
+    REVIEW_GATED = "review-gated"
+    UNATTENDED = "unattended"
+
+
+class CacheMode(StrEnum):
+    ONLINE = "online"
+    PREFER_CACHE = "prefer-cache"
+    OFFLINE = "offline"
+
+
 class TargetIdentityConfig(BaseModel):
-    """用户明确提供的生物学身份；首版禁止按名称静默猜测。"""
+    """兼容 0.3 本地文件 identity，并给 Stage 02 提供统一 accession 读取入口。"""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
@@ -53,7 +69,115 @@ class TargetIdentityConfig(BaseModel):
     )
 
 
+class FullSequenceScope(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["full-sequence"] = "full-sequence"
+
+
+class ResidueRangeScope(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["residue-range"]
+    start: int = Field(ge=1)
+    end: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end < self.start:
+            raise ValueError("scope residue-range 的 end 不能小于 start")
+        return self
+
+
+class UniProtFeatureScope(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["uniprot-feature"]
+    feature_type: str = Field(pattern=r"^(Domain|Chain|Topological domain)$")
+    feature_name: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+TargetScope: TypeAlias = Annotated[
+    FullSequenceScope | ResidueRangeScope | UniProtFeatureScope,
+    Field(discriminator="type"),
+]
+
+
+class LocalFileSourceConfig(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    type: Literal["local-file"]
+    path: Path
+    format: TargetInputFormat = TargetInputFormat.AUTO
+    chain: str | None = Field(default=None, min_length=1, max_length=16)
+    chain_namespace: Literal["auth", "label"] = "auth"
+    identity: TargetIdentityConfig = TargetIdentityConfig()
+
+    @model_validator(mode="after")
+    def validate_local_format(self) -> Self:
+        if self.format in {
+            TargetInputFormat.PDB_ID,
+            TargetInputFormat.UNIPROT,
+            TargetInputFormat.UNIPROT_SEARCH,
+        }:
+            raise ValueError("local-file 不接受远程 source format")
+        return self
+
+
+class PdbIdSourceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["pdb-id"]
+    pdb_id: str = Field(pattern=r"^[0-9][A-Za-z0-9]{3}$")
+    chain: str | None = Field(default=None, min_length=1, max_length=16)
+    chain_namespace: Literal["auth", "label"] = "auth"
+
+
+class UniProtSourceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["uniprot"]
+    accession: str = Field(pattern=r"^[A-Z0-9]{6,10}$")
+    organism_taxon_id: int | None = Field(default=None, ge=1)
+    isoform: Literal["canonical"] = "canonical"
+    reviewed: Literal["required", "preferred", "any"] = "required"
+
+
+class UniProtSearchSourceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["uniprot-search"]
+    query: str = Field(min_length=1, max_length=256)
+    organism_taxon_id: int = Field(ge=1)
+    isoform: Literal["canonical"] = "canonical"
+    reviewed: Literal["required", "preferred", "any"] = "required"
+
+
+class TargetBundleSourceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["target-bundle"]
+    path: Path
+    source_run_root: Path
+
+
+TargetSource: TypeAlias = Annotated[
+    LocalFileSourceConfig
+    | PdbIdSourceConfig
+    | UniProtSourceConfig
+    | UniProtSearchSourceConfig
+    | TargetBundleSourceConfig,
+    Field(discriminator="type"),
+]
+
+
 class TargetSourceConfig(BaseModel):
+    """schema 0.4 的 Stage 01 target；名称保留以兼容已有 Python import。"""
+
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
@@ -62,9 +186,32 @@ class TargetSourceConfig(BaseModel):
     )
 
     target_id: str = Field(alias="id", pattern=ID_PATTERN)
-    source: Path
-    format: TargetInputFormat = TargetInputFormat.AUTO
-    identity: TargetIdentityConfig = TargetIdentityConfig()
+    source: TargetSource
+    scope: TargetScope = FullSequenceScope()
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_python_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or isinstance(value.get("source"), dict):
+            return value
+        migrated = dict(value)
+        path = migrated.pop("source")
+        migrated["source"] = {
+            "type": "local-file",
+            "path": path,
+            "format": migrated.pop("format", "auto"),
+            "identity": migrated.pop("identity", {}),
+        }
+        return migrated
+
+    @property
+    def identity(self) -> TargetIdentityConfig:
+        source = self.source
+        if isinstance(source, LocalFileSourceConfig):
+            return source.identity
+        if isinstance(source, UniProtSourceConfig):
+            return TargetIdentityConfig(uniprot_accession=source.accession)
+        return TargetIdentityConfig()
 
 
 class ProtenixMsaProviderConfig(BaseModel):
@@ -176,7 +323,9 @@ class StructurePredictionConfig(BaseModel):
 class WorkflowConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    execution_mode: ExecutionMode = ExecutionMode.REVIEW_GATED
     stop_after_stage: int = Field(default=1, ge=1, le=7)
+    cache_mode: CacheMode = CacheMode.ONLINE
 
 
 class BinderProfile(StrEnum):
@@ -196,12 +345,40 @@ class DesignConfig(BaseModel):
 
     binder_profile: BinderProfile = BinderProfile.VHH
     intent: DesignIntent = DesignIntent.EXPLORATORY
+    required_reviews: tuple[str, ...] = ()
+
+
+class StructureQualityProfile(StrEnum):
+    EXPERIMENTAL_STRICT_V1 = "experimental-strict-v1"
+
+
+class StructureSelectionConfig(BaseModel):
+    """实验结构与预测之间的显式、版本化策略。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    policy: Literal["experimental-first"] = "experimental-first"
+    quality_profile: StructureQualityProfile = (
+        StructureQualityProfile.EXPERIMENTAL_STRICT_V1
+    )
+    on_no_eligible_candidate: Literal["predict", "fail"] = "predict"
+    on_ambiguous_candidates: Literal["predict", "fail"] = "predict"
+    preserve_source_context: bool = True
+    keep_ligands: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_ligands(self) -> Self:
+        normalized = tuple(value.upper() for value in self.keep_ligands)
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("keep_ligands 不能重复")
+        return self
 
 
 class Stage01Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     target: TargetSourceConfig
+    structure_selection: StructureSelectionConfig = StructureSelectionConfig()
     structure_prediction: StructurePredictionConfig | None = None
 
 
@@ -315,6 +492,13 @@ class Stage02AutomaticConfig(BaseModel):
         return self.requested_region_count
 
 
+class Stage02UnattendedApprovalConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    region_count: int = Field(default=3, ge=2, le=3)
+    allow_structural_only: bool = False
+
+
 class Stage02Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -322,6 +506,7 @@ class Stage02Config(BaseModel):
     methods: tuple[Stage02Method, ...] = ()
     annotations: Stage02AnnotationConfig = Stage02AnnotationConfig()
     automatic: Stage02AutomaticConfig | None = Stage02AutomaticConfig()
+    unattended_approval: Stage02UnattendedApprovalConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -358,7 +543,7 @@ class EasyDesignRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.3", pattern=r"^0\.3$")
+    schema_version: str = Field(default="0.4", pattern=r"^0\.4$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
     stage01: Stage01Config
@@ -387,7 +572,28 @@ class EasyDesignRunConfig(BaseModel):
                     None,
                 ),
             }
-            migrated["schema_version"] = "0.3"
+        stage01 = migrated.get("stage01")
+        if isinstance(stage01, dict):
+            stage01 = dict(stage01)
+            target = stage01.get("target")
+            if isinstance(target, dict) and not isinstance(target.get("source"), dict):
+                legacy_target = dict(target)
+                legacy_source = legacy_target.pop("source", None)
+                if legacy_source is not None:
+                    legacy_format = legacy_target.pop("format", "auto")
+                    legacy_identity = legacy_target.pop("identity", {})
+                    stage01["target"] = {
+                        **legacy_target,
+                        "source": {
+                            "type": "local-file",
+                            "path": legacy_source,
+                            "format": legacy_format,
+                            "identity": legacy_identity,
+                        },
+                        "scope": {"type": "full-sequence"},
+                    }
+            migrated["stage01"] = stage01
+        migrated["schema_version"] = "0.4"
         return migrated
 
     @model_validator(mode="after")
@@ -399,6 +605,37 @@ class EasyDesignRunConfig(BaseModel):
                 "Stage 03–07 尚未实现；对应配置必须为 null，"
                 "stop_after_stage 当前不能高于 2"
             )
+        source = self.stage01.target.source
+        is_predictable = (
+            isinstance(source, LocalFileSourceConfig)
+            and source.format
+            in {
+                TargetInputFormat.SEQUENCE,
+                TargetInputFormat.FASTA,
+            }
+        ) or isinstance(source, (UniProtSourceConfig, UniProtSearchSourceConfig))
+        if is_predictable and self.stage01.structure_prediction is None:
+            raise ValueError(
+                "sequence/FASTA/UniProt 输入必须显式提供 structure_prediction，"
+                "以便无合格实验结构时使用 Protenix"
+            )
+        if isinstance(
+            source,
+            (PdbIdSourceConfig, TargetBundleSourceConfig),
+        ) and self.stage01.structure_prediction is not None:
+            raise ValueError(
+                "显式 PDB ID/Target Bundle 输入不得携带 structure_prediction"
+            )
+        if self.workflow.execution_mode is ExecutionMode.UNATTENDED:
+            if self.stage02 is not None and len(self.stage02.methods) != 1:
+                raise ValueError("unattended Stage 02 必须恰好配置一种 method")
+            if (
+                self.stage02 is not None
+                and self.stage02.unattended_approval is None
+            ):
+                raise ValueError(
+                    "unattended Stage 02 必须提供 unattended_approval"
+                )
         return self
 
     @property
@@ -422,6 +659,12 @@ class LoadedSequenceRunConfig:
     target: NormalizedProteinSequence
     prediction_request: StructurePredictionRequest
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...]
+    identity_report: dict[str, Any] | None = None
+    scope_report: dict[str, Any] | None = None
+    structure_candidates: tuple[dict[str, Any], ...] = ()
+    retrieval_records: tuple[dict[str, Any], ...] = ()
+    reference_sequence: str | None = None
+    prediction_fallback_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -432,7 +675,38 @@ class LoadedPseRunConfig:
     detected_format: TargetInputFormat
 
 
-LoadedRunConfig: TypeAlias = LoadedSequenceRunConfig | LoadedPseRunConfig
+@dataclass(frozen=True, slots=True)
+class LoadedStructureRunConfig:
+    config_path: Path
+    config: EasyDesignRunConfig
+    source_path: Path
+    detected_format: TargetInputFormat
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedTargetBundleRunConfig:
+    config_path: Path
+    config: EasyDesignRunConfig
+    source_path: Path
+    source_run_root: Path
+    detected_format: TargetInputFormat = TargetInputFormat.TARGET_BUNDLE
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedRemoteRunConfig:
+    config_path: Path
+    config: EasyDesignRunConfig
+    source_path: None
+    detected_format: TargetInputFormat
+
+
+LoadedRunConfig: TypeAlias = (
+    LoadedSequenceRunConfig
+    | LoadedPseRunConfig
+    | LoadedStructureRunConfig
+    | LoadedTargetBundleRunConfig
+    | LoadedRemoteRunConfig
+)
 
 
 _SUFFIX_FORMATS = {
@@ -531,11 +805,53 @@ def load_run_config(path: Path) -> LoadedRunConfig:
     except ValidationError as error:
         raise ConfigurationError(f"EasyDesign YAML 校验失败: {error}") from error
 
-    source_path = _resolve_source_path(config_path, config.target.source)
+    source = config.target.source
+    if isinstance(source, PdbIdSourceConfig):
+        return LoadedRemoteRunConfig(
+            config_path=config_path,
+            config=config,
+            source_path=None,
+            detected_format=TargetInputFormat.PDB_ID,
+        )
+    if isinstance(source, UniProtSourceConfig):
+        return LoadedRemoteRunConfig(
+            config_path=config_path,
+            config=config,
+            source_path=None,
+            detected_format=TargetInputFormat.UNIPROT,
+        )
+    if isinstance(source, UniProtSearchSourceConfig):
+        return LoadedRemoteRunConfig(
+            config_path=config_path,
+            config=config,
+            source_path=None,
+            detected_format=TargetInputFormat.UNIPROT_SEARCH,
+        )
+    if isinstance(source, TargetBundleSourceConfig):
+        source_path = _resolve_source_path(config_path, source.path)
+        run_root = (
+            source.source_run_root
+            if source.source_run_root.is_absolute()
+            else config_path.parent / source.source_run_root
+        )
+        try:
+            resolved_run_root = run_root.resolve(strict=True)
+        except OSError as error:
+            raise ConfigurationError(
+                f"target-bundle source_run_root 不存在: {run_root}"
+            ) from error
+        return LoadedTargetBundleRunConfig(
+            config_path=config_path,
+            config=config,
+            source_path=source_path,
+            source_run_root=resolved_run_root,
+        )
+    assert isinstance(source, LocalFileSourceConfig)
+    source_path = _resolve_source_path(config_path, source.path)
     detected = (
         detect_target_input_format(source_path)
-        if config.target.format is TargetInputFormat.AUTO
-        else config.target.format
+        if source.format is TargetInputFormat.AUTO
+        else source.format
     )
     if detected is TargetInputFormat.PSE:
         if config.structure_prediction is not None:
@@ -552,10 +868,23 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             source_path=source_path,
             detected_format=detected,
         )
-    if detected not in {TargetInputFormat.SEQUENCE, TargetInputFormat.FASTA}:
-        raise TargetInputError(
-            f"已识别 target format={detected}，但该入口尚未实现；禁止回退到序列预测"
+    if detected in {TargetInputFormat.PDB, TargetInputFormat.MMCIF}:
+        if config.structure_prediction is not None:
+            raise ConfigurationError(
+                "本地 PDB/mmCIF 是显式结构选择，必须省略 structure_prediction"
+            )
+        return LoadedStructureRunConfig(
+            config_path=config_path,
+            config=config,
+            source_path=source_path,
+            detected_format=detected,
         )
+    if detected is TargetInputFormat.TARGET_BUNDLE:
+        raise ConfigurationError(
+            "Target Bundle 必须使用 source.type=target-bundle 并显式提供 source_run_root"
+        )
+    if detected not in {TargetInputFormat.SEQUENCE, TargetInputFormat.FASTA}:
+        raise TargetInputError(f"不支持的本地 target format={detected}")
     if config.structure_prediction is None:
         raise ConfigurationError(
             "sequence/FASTA 输入必须显式提供 structure_prediction"
@@ -602,7 +931,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
 
 
 def migrate_run_config(source: Path, destination: Path) -> Path:
-    """将旧配置显式写成 canonical 0.3；禁止覆盖原文件或目标文件。"""
+    """将旧配置显式写成 canonical 0.4；禁止覆盖原文件或目标文件。"""
 
     source_path = source.resolve(strict=True)
     target_path = destination.expanduser().resolve()
@@ -616,7 +945,29 @@ def migrate_run_config(source: Path, destination: Path) -> Path:
     assert isinstance(stage01, dict)
     target = stage01["target"]
     assert isinstance(target, dict)
-    target["source"] = os.path.relpath(loaded.source_path, target_path.parent)
+    target_source = target["source"]
+    assert isinstance(target_source, dict)
+    if isinstance(
+        loaded,
+        (
+            LoadedSequenceRunConfig,
+            LoadedPseRunConfig,
+            LoadedStructureRunConfig,
+        ),
+    ):
+        target_source["path"] = os.path.relpath(
+            loaded.source_path,
+            target_path.parent,
+        )
+    elif isinstance(loaded, LoadedTargetBundleRunConfig):
+        target_source["path"] = os.path.relpath(
+            loaded.source_path,
+            target_path.parent,
+        )
+        target_source["source_run_root"] = os.path.relpath(
+            loaded.source_run_root,
+            target_path.parent,
+        )
     target_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with target_path.open("x", encoding="utf-8", newline="\n") as handle:

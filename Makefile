@@ -31,7 +31,7 @@ check:
 	$(PYTHON) -m mypy
 
 test:
-	$(PYTHON) -m pytest
+	PYTHONPATH=src $(PYTHON) -m pytest
 
 build:
 	$(PYTHON) -m pip wheel --no-deps --no-build-isolation --wheel-dir dist .

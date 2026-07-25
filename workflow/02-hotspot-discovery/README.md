@@ -18,9 +18,10 @@ Target Bundle/target.cif ┤                                ├─→ 重叠报�
                          └─ ScanNet epitope ─→ 独立 Top 3 ┘
 ```
 
-两种方法同时运行时也不融合、不产生综合分数或默认赢家。自动计算完成后 RunManifest
-保持 `running`，并写入 `workflow_state: awaiting-human-approval`；只有人工批准同一方法
-的 2–3 个完整区域后才发布 `hotspots.yaml`。
+两种方法同时运行时也不融合、不产生综合分数或默认赢家。`review-gated` 自动计算完成后
+RunManifest 保持 `running/awaiting-human-approval`；只有人工批准同一方法的 2–3 个完整
+区域后才发布 `hotspots.yaml`。`unattended` 必须只配置一种方法，并由带 policy ID 的
+硬规则批准完整 Top 2–3；不允许 LLM、跨方法混选或隐藏参数。
 
 ## 输入
 
@@ -29,7 +30,8 @@ Target Bundle/target.cif ┤                                ├─→ 重叠报�
 - `stage02.mode: automatic` 配置。
 - `stage02.methods` 显式选择 `sasa`、`scannet` 或二者。
 - 可选、由用户明确给出的 `avoid_label_seq_ids`。
-- 可选的 `stage01.target.identity.uniprot_accession`；不提供时不猜测身份。
+- 新 Target Bundle 中 Stage 01 冻结的 UniProt identity/retrieval artifact；旧 Bundle
+  才使用兼容联网路径。不提供身份时不猜测 accession。
 
 Stage 02 只能读取上游 manifest 声明且通过大小/SHA-256 校验的 artifact。自动模式不会
 读取 PSE `source-annotations.json`，因此 PSE 颜色不会影响自动区域。
@@ -37,7 +39,7 @@ Stage 02 只能读取上游 manifest 声明且通过大小/SHA-256 校验的 art
 ## 用户配置
 
 ```yaml
-schema_version: "0.3"
+schema_version: "0.4"
 project_id: apoe
 
 design:
@@ -45,15 +47,21 @@ design:
   intent: blocking
 
 workflow:
+  execution_mode: review-gated
   stop_after_stage: 2
+  cache_mode: offline
 
 stage01:
   target:
     id: apoe
-    source: inputs/apoe.pse
-    format: auto
-    identity:
-      uniprot_accession: null
+    source:
+      type: local-file
+      path: inputs/apoe.pse
+      format: auto
+      identity:
+        uniprot_accession: null
+    scope:
+      type: full-sequence
   structure_prediction: null
 
 stage02:
@@ -352,7 +360,8 @@ easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
 - `if_available`：有 accession 才查询；没有时不发网络请求并记录 `not_requested`；
 - `required`：缺 accession、网络失败或映射不可靠都会阻止审批。
 
-本轮只按用户明确给出的 accession 调用 UniProtKB REST，不根据 target 名称猜测身份。实现
+新 schema 0.4 run 优先消费 Stage 01 已冻结的 UniProt JSON，不在 Stage 02 重新获取一个
+可能变化的记录；旧 Bundle 仍兼容按用户明确 accession 调用 UniProtKB REST。实现
 active/binding/site/domain/PTM/topology 等 feature 的确定性序列比对和 label/auth 映射；
 N-X-S/T 只记录为潜在糖基化 motif warning。Annotation 只进入证据和风险，不改变
 SASA/ScanNet 原始分数或排序。

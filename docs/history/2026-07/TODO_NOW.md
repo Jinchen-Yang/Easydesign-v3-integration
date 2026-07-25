@@ -109,3 +109,30 @@
 - 遗留边界：真实多模型输入、自动身份发现、真实 APOE 区域批准、Stage 03–07 和 Agent
   建议层均未完成；本次没有替用户制造批准结果。
 - 提交：`f30205d8a10c837ac4e437639800d1d811d41929`；远端包含关系以最终推送后核对。
+
+## 2026-07-25 — ENG-006 / UX-003：六入口、双模式与可恢复决策
+
+- 状态：`implemented`。
+- 完成时间：2026-07-25T14:11:39+08:00
+- 问题：Stage 01 只有 sequence/PSE 纵向切片，用户无法统一提交本地结构、PDB ID、
+  UniProt 或 Target Bundle；人工选择也只能保存结果，不能在同一 run 恢复。
+- 方案：schema 0.4 建立六入口 source union、scope 和 experimental-first policy；
+  Target Bundle 0.4 冻结身份/候选/网络/context 证据；通用 Decision Gate 支持 human 与
+  deterministic-policy authority，并以新 attempt 恢复。
+- 双模式：`review-gated` 在 identity/chain/structure/hotspot 选择点等待用户；
+  `unattended` 只使用版本化硬规则。两者共享 API 和 artifact，required review 与实际
+  下单不能自动绕过。
+- 工程证据：`make check`、170 passed/8 默认 skipped、显式 PyMOL 后 178 passed、
+  wheel 6/6 和 Playwright 3 passed/2 runtime-only skipped。
+- 真实证据：1UBQ PDB ID 直接发布 76-aa Bundle；P0CG48 scope 1–76 先停在多结构 gate，
+  批准 1UBQ 后同一 run 的 `attempt-0002`、RunManifest revision 3 和 Viewer 成功。
+- 遇到的问题：FASTA 初版绕过 RCSB、approval 不会 resume、Bundle 重导入丢 evidence，
+  以及 Makefile 误导入另一份 editable checkout。
+- 解决办法：所有 sequence/UniProt 统一走候选检索；approval 新建 attempt 并允许连续
+  gate；Bundle 0.4 重发布全部可选 ArtifactRef；PSE 新 run 固定 chain A；每次网络失败
+  留 evidence 并发布 failed manifest；测试固定从当前 `src/` 导入。
+- 遗留边界：阶段级 `smoke-validated` 仍需完整六入口 live fixture；canonical-only、
+  多 state PSE、预计算 MSA、自建 provider、Stage 03/05/06/07 gate 和科学 benchmark
+  继续保留在 TODO。
+- 提交：`feat(stage01): complete six target source workflows`；最终远端 SHA 由推送后
+  HEAD 核对记录确定。

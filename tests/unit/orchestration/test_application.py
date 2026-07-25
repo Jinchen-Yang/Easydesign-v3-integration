@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from easydesign.cli import main
 from easydesign.core import CodeIdentity, CodeIdentitySource, ConfigurationError
@@ -12,11 +13,16 @@ from easydesign.orchestration import (
     DiagnosticCheck,
     DiagnosticReport,
     DiagnosticStatus,
+    continue_pipeline_after_decision,
     execute_pipeline,
     initialize_project,
     initialize_runtime_profile,
     list_runs,
     validate_run_configuration,
+)
+from easydesign.orchestration.decisions import (
+    approve_decision,
+    export_decision,
 )
 from easydesign.orchestration.workspace import RunIndexEntry, upsert_run_index_entries
 
@@ -251,3 +257,62 @@ def test_runs_list_marks_legacy_entry_unavailable_without_scanning(tmp_path: Pat
     assert summaries[0].integrity_status == "unavailable"
     assert summaries[0].manifest_revision == 0
     assert summaries[0].integrity_message is not None
+
+
+def test_local_structural_only_decision_resumes_in_new_attempt(
+    tmp_path: Path,
+) -> None:
+    pdb = tmp_path / "target.pdb"
+    pdb.write_text(
+        """ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00 20.00           N
+ATOM      2  CA  ALA A   1       1.000   0.000   0.000  1.00 20.00           C
+ATOM      3  N   CYS A   2       2.000   0.000   0.000  1.00 20.00           N
+ATOM      4  CA  CYS A   2       3.000   0.000   0.000  1.00 20.00           C
+END
+""",
+        encoding="utf-8",
+    )
+    initialized = initialize_project(
+        project_root=tmp_path / "local-structure",
+        target=pdb,
+    )
+    profile = initialize_runtime_profile(
+        tmp_path / "profile.yaml",
+        runs_root=(tmp_path / "runs").resolve(),
+    )
+
+    paused = execute_pipeline(
+        initialized.config_path,
+        profile_path=profile,
+        run_id="local-structure-decision",
+    )
+
+    assert paused.status == "awaiting-human-approval"
+    assert paused.run_root is not None
+    review = export_decision(
+        paused.run_root,
+        output=tmp_path / "decision.yaml",
+    )
+    payload = yaml.safe_load(review.read_text(encoding="utf-8"))
+    payload["selected_option_ids"] = ["accept-structural-only"]
+    payload["approved_by"] = "unit-test"
+    payload["acknowledgement"] = "Reference completeness is unknown."
+    review.write_text(
+        yaml.safe_dump(payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    record = approve_decision(paused.run_root, input_path=review)
+
+    completed = continue_pipeline_after_decision(
+        paused.run_root,
+        decision_record=record,
+        profile_path=profile,
+    )
+
+    assert completed.status == "succeeded"
+    assert (
+        paused.run_root
+        / "01-target-preparation/attempt-0002/artifacts/target-bundle.json"
+    ).is_file()
+    assert completed.run_manifest is not None
+    assert completed.run_manifest.name == "run-manifest.v0003.json"

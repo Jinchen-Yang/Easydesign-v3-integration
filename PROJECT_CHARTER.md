@@ -61,6 +61,16 @@ Stage 03–07 通过 binder-specific profile、backend 和 filter 扩展。
 系统仍必须显式报告模型选择、经允许的 fallback、人工批准点、负结果和未实现能力；其中
 静默 fallback 始终禁止。
 
+1.0 提供两种共享同一科学实现的执行策略：
+
+- `review-gated` 为默认模式，在身份、结构、区域、设计策略和高成本预算等科学选择点暂停，
+  保存候选与证据，等待类型化人工批准后以新 attempt 继续；
+- `unattended` 只按版本化硬规则和模板自动运行，任何歧义、证据不足或未授权 fallback
+  都明确失败，最多生成候选下单包。
+
+两种模式都不能自动向供应商下单。`required_reviews` 中的 biosafety 等审查无论模式如何
+都必须完成，否则最终只能生成 `draft-order-package`。
+
 ## 4. 不可妥协的工程规则
 
 1. 一个概念只能有一个实现和一个事实来源。
@@ -77,6 +87,10 @@ Stage 03–07 通过 binder-specific profile、backend 和 filter 扩展。
 12. 阶段契约、架构、证据标准和兼容性发生重大变化时记录 ADR。
 13. 生物学身份只能来自显式输入或可审计解析；禁止根据 target 名称静默猜 accession。
 14. 自动候选与人工批准分离；人工输入必须形成不可变 attempt 和类型化下游 artifact。
+15. 联网检索必须保存请求/响应身份并区分“无候选”与“API 失败”；cache 与 fallback
+    只能由配置显式允许。
+16. unattended 决策必须记录 deterministic policy ID、参数和源 artifact hash；不得用
+    Agent/LLM 或 CLI 隐藏参数替代版本化规则。
 
 ## 5. 状态与证据
 

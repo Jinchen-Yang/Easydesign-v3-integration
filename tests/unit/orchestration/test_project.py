@@ -31,7 +31,9 @@ def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Pa
     assert loaded.config.stage02.automatic is not None
     assert loaded.config.stage02.automatic.patch.target_member_count == 12
     config_text = initialized.config_path.read_text(encoding="utf-8")
-    assert config_text.startswith("schema_version: '0.3'")
+    assert config_text.startswith("schema_version: '0.4'")
+    assert "execution_mode: review-gated" in config_text
+    assert "type: local-file" in config_text
     assert all(f"stage0{number}:" in config_text for number in range(1, 8))
     assert "stage03: null" in config_text
     assert initialized.target_path.read_bytes() == fasta.read_bytes()
@@ -51,6 +53,25 @@ def test_initialize_pse_project_omits_prediction(tmp_path: Path) -> None:
 
     assert isinstance(loaded, LoadedPseRunConfig)
     assert loaded.config.structure_prediction is None
+
+
+def test_initialize_unattended_stage02_defaults_to_single_sasa(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+
+    initialized = initialize_project(
+        project_root=tmp_path / "unattended",
+        target=fasta,
+        stop_after_stage=2,
+        execution_mode="unattended",
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert loaded.config.stage02 is not None
+    assert tuple(str(method) for method in loaded.config.stage02.methods) == ("sasa",)
+    assert loaded.config.stage02.unattended_approval is not None
 
 
 def test_initialize_project_refuses_nonempty_destination(tmp_path: Path) -> None:

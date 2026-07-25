@@ -211,17 +211,35 @@ manifest artifact 引用，并在 `_archive/migrations/` 保存旧路径、新�
 
 ### 用户输入到后端输入
 
-sequence 路径的用户界面只有两个文件：
+本地 source 路径的用户界面只有 source 文件与一个配置；远程 source 只需要配置：
 
 ```text
-target.fasta
+target.fasta | target.pdb | target.cif | target.pse | target-bundle.json
 easydesign.yaml
 ```
 
-`easydesign.yaml` schema `0.3` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
-binder profile/intent，未实现阶段写 `null`。输入路径相对于 YAML 所在目录解析。
-EasyDesign 自动识别有强证据的 FASTA、裸序列、PDB、mmCIF、PSE 和 Target Bundle。
-识别成功但 adapter 尚未实现时明确失败，不能回退到另一入口。
+`easydesign.yaml` schema `0.4` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
+binder profile/intent，未实现阶段写 `null`。`stage01.target.source` 是
+`local-file | pdb-id | uniprot | uniprot-search | target-bundle` 的 discriminated union；
+本地路径相对于 YAML 解析。旧 schema 0.3 只在加载边界规范化，run 内
+`resolved-config.json` 永远保存 0.4。
+
+统一 Stage 01 source pipeline 是：
+
+```text
+snapshot/identity/scope
+→ local inventory 或 UniProt/RCSB retrieval
+→ strict candidate QC
+→ experimental selection 或显式 Protenix fallback
+→ protein-only chain A normalization
+→ mapping/QC/provenance/Target Bundle
+→ Viewer
+```
+
+FASTA 与 UniProt 不直接跳到预测：先用 RCSB Sequence Search v2/Data API 查实验结构。
+`experimental-strict-v1` 要求 scope 100% 坐标覆盖、100% 序列一致、每个 residue 有 CA，
+并限制 X-ray ≤3.5 Å、cryo-EM ≤4.0 Å。NMR 只作为 review-only 选项。PDB ID/本地结构是
+用户显式选择，QC 失败时不自动换结构。
 
 用户不提交 Protenix JSON。orchestration 规范化序列并创建通用
 `StructurePredictionRequest`，Protenix adapter 再把它写入：
@@ -255,7 +273,7 @@ stage01:
 `https://api.colabfold.com` + `--msa_server_mode colabfold`；两者由同一 preset 绑定，
 不能分别覆盖。`providers` 是显式顺序计划：重试或切换 provider 必须创建新 attempt，
 终态证据不可覆盖。用户 YAML 不接受 `mode: disabled`，但 Python API 仍保留 no-MSA
-能力，只供明确标记的内部工程 smoke。`resolved-config.json` schema `0.3` 保存 endpoint、
+能力，只供明确标记的内部工程 smoke。`resolved-config.json` schema `0.4` 保存 endpoint、
 server mode、timeout、最大 attempt 数和 backoff；公共 MSA 服务没有可承诺的 SLA。
 
 当前 adapter 已为每个 MSA invocation 绑定 endpoint 和 wall-clock timeout。多 provider
@@ -293,7 +311,8 @@ PSE 路径同样只接受 `target.pse + easydesign.yaml`，但与 sequence 路�
 
 ### Target Bundle ensemble 与 Stage 02 独立方法边界
 
-Target Bundle `0.3` 声明 `coordinate_ensemble`；mmCIF 可以包含一个或多个 model，残基
+Target Bundle `0.4` 声明 `coordinate_ensemble` 和可选 Stage 01 evidence/context
+ArtifactRef；mmCIF 可以包含一个或多个 model，残基
 身份跨模型共享，缺失坐标保留为证据。PSE 与 Protenix 当前 adapter 都仍只生成单模型，
 但该限制不再进入通用 Bundle 契约。Viewer 显示 model 数量和代表 model。
 
@@ -313,6 +332,22 @@ ScanNet v0.1 遇到多模型明确返回 `unsupported_ensemble`。只运行一�
 `workflow_state=awaiting-human-approval`。人工审批通过单独的 `attempt-0002` 选择同一
 方法的 2–3 个完整区域并发布 `hotspots.yaml`；该文件是 Stage 03 唯一入口。structural-only
 审批必须显式确认科学证据限制。
+
+### 远程 adapter、cache 与 Decision Gate
+
+UniProt/RCSB 共用 core 环境中的轻量 `httpx` adapter，不引入新 Conda 环境。adapter
+实施 bounded connect/read timeout、429 `Retry-After`、有限网络/5xx retry 和 4xx
+不重试。cache 位于操作系统用户 cache 目录，但 `online` 不允许失败后静默读取旧值；
+`prefer-cache` 与 `offline` 必须由 YAML 显式声明。实际消费的 response 会复制到 attempt
+artifact，并在 retrieval manifest 中保存 URL、参数、时间、ETag/Last-Modified、大小和
+SHA-256。
+
+`review-gated` 与 `unattended` 共享同一 Stage 实现。前者在 identity、chain/construct、
+structure selection 和 hotspot selection 发布 `DecisionRequest`，RunManifest 保持
+`running/awaiting-human-approval`；`DecisionRecord` 钉住 request revision/hash，批准后
+同一 run 建立新 attempt 并清除 workflow state。后者使用带 policy ID 的确定性规则；
+Stage 02 必须单方法，不能融合或调用 LLM。Stage 03/05/06/07 的 YAML、go/no-go、预算和
+Top N gate 已进入路线图；实际供应商下单始终在系统之外。
 
 ### Binder 类型扩展边界
 
@@ -453,5 +488,10 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-25：UniProt 身份只接受用户显式 accession，annotation 只作证据/warning；
   RunManifest 1.2 用 workflow state 表示等待人工批准，Stage 03 只能读取批准 attempt
   发布的 `hotspots.yaml`。
+- 2026-07-25：schema 0.4 将 Stage 01 统一为六类 source、严格实验结构优先与
+  Target Bundle 0.4；UniProt/RCSB 响应冻结进 run。`review-gated` 与 `unattended`
+  共享实现，通用 DecisionRecord 批准后在同一 run 建立新 attempt，真实下单永不自动化。
+  完整取舍见
+  [`ADR-0002`](decisions/ADR-0002-developer-preview-cli-and-code-identity.md)。
 
 重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。

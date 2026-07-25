@@ -397,14 +397,118 @@ class Stage01Config(BaseModel):
 
 
 class RegionProposalMode(StrEnum):
+    DETECT = "detect"
     AUTOMATIC = "automatic"
-    PSE_ANNOTATIONS = "pse_annotations"
-    MANUAL = "manual"
+    USER_PROVIDED = "user-provided"
 
 
 class Stage02Method(StrEnum):
     SASA = "sasa"
     SCANNET = "scannet"
+
+
+class UserRegionNumbering(StrEnum):
+    SEQUENCE = "sequence"
+    LABEL = "label"
+    AUTH = "auth"
+    UNIPROT = "uniprot"
+
+
+class UserRegionDesignGoal(StrEnum):
+    BLOCKING = "blocking"
+    AFFINITY_SUPPORT = "affinity_support"
+    NONBLOCKING = "nonblocking"
+    DETECTION = "detection"
+    IMAGING = "imaging"
+    EXPLORATORY = "exploratory"
+
+
+class ManualRegionConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    id: Literal["A", "B", "C"]
+    residues: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_residues(self) -> Self:
+        normalized = tuple(str(value).strip() for value in self.residues)
+        if any(not value for value in normalized):
+            raise ValueError("人工区域 residue 不能为空")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError(f"人工区域 {self.id} 内 residue 不能重复")
+        return self
+
+
+class PseColorRegionSourceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["pse-colors"] = "pse-colors"
+    color_scheme: Literal["easydesign-rby-v1"] = "easydesign-rby-v1"
+
+
+class ManualResidueRegionSourceConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    type: Literal["residue-list"] = "residue-list"
+    numbering: UserRegionNumbering
+    chain: str | None = Field(default=None, min_length=1, max_length=16)
+    regions: tuple[ManualRegionConfig, ...] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_regions(self) -> Self:
+        ids = [region.id for region in self.regions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("人工区域 id 不能重复")
+        if ids != sorted(ids, key="ABC".index):
+            raise ValueError("人工区域必须按 A、B、C 顺序声明")
+        if self.numbering is UserRegionNumbering.AUTH and self.chain is None:
+            raise ValueError("auth 编号必须显式提供 chain")
+        if self.numbering is not UserRegionNumbering.AUTH and self.chain is not None:
+            raise ValueError("只有 auth 编号可以声明 chain")
+        return self
+
+
+UserRegionSourceConfig: TypeAlias = Annotated[
+    PseColorRegionSourceConfig | ManualResidueRegionSourceConfig,
+    Field(discriminator="type"),
+]
+
+
+class UserRegionApprovalSelectionConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    id: Literal["A", "B", "C"]
+    design_goal: UserRegionDesignGoal = UserRegionDesignGoal.EXPLORATORY
+    biological_rationale: str = Field(min_length=1, max_length=4096)
+    structural_rationale: str = Field(min_length=1, max_length=4096)
+
+
+class UserRegionInitialApprovalConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    approved_by: str = Field(min_length=1, max_length=256)
+    acknowledge_user_provided_regions: Literal[True]
+    acknowledge_evidence_limitations: Literal[True]
+    selections: tuple[UserRegionApprovalSelectionConfig, ...] = Field(
+        min_length=1,
+        max_length=3,
+    )
+
+    @model_validator(mode="after")
+    def validate_selections(self) -> Self:
+        ids = [selection.id for selection in self.selections]
+        if len(ids) != len(set(ids)):
+            raise ValueError("配置内批准的区域 id 不能重复")
+        if ids != sorted(ids, key="ABC".index):
+            raise ValueError("配置内批准区域必须按 A、B、C 顺序声明")
+        return self
+
+
+class UserProvidedRegionsConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source: UserRegionSourceConfig
+    approval: UserRegionInitialApprovalConfig | None = None
 
 
 class UniProtAnnotationMode(StrEnum):
@@ -520,35 +624,81 @@ class Stage02Config(BaseModel):
     methods: tuple[Stage02Method, ...] = ()
     annotations: Stage02AnnotationConfig = Stage02AnnotationConfig()
     automatic: Stage02AutomaticConfig | None = Stage02AutomaticConfig()
+    user_regions: UserProvidedRegionsConfig | None = None
     unattended_approval: Stage02UnattendedApprovalConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
     def default_methods_for_mode(cls, value: Any) -> Any:
-        if not isinstance(value, dict) or "methods" in value:
+        if not isinstance(value, dict):
             return value
         migrated = dict(value)
+        legacy_mode = migrated.get("mode")
+        if legacy_mode == "pse_annotations":
+            migrated["mode"] = RegionProposalMode.USER_PROVIDED
+            migrated.setdefault(
+                "user_regions",
+                {"source": {"type": "pse-colors"}},
+            )
+        elif legacy_mode == "manual":
+            migrated["mode"] = RegionProposalMode.USER_PROVIDED
+        if migrated.get("mode") in {
+            RegionProposalMode.USER_PROVIDED,
+            str(RegionProposalMode.USER_PROVIDED),
+        }:
+            migrated.setdefault("automatic", None)
+            migrated.setdefault("methods", [])
+        if migrated.get("mode") in {
+            RegionProposalMode.DETECT,
+            str(RegionProposalMode.DETECT),
+        }:
+            migrated.setdefault(
+                "user_regions",
+                {"source": {"type": "pse-colors"}},
+            )
+        if "methods" in migrated:
+            return migrated
         mode = migrated.get("mode", RegionProposalMode.AUTOMATIC)
         migrated["methods"] = (
             [Stage02Method.SASA, Stage02Method.SCANNET]
-            if mode == RegionProposalMode.AUTOMATIC
-            or mode == str(RegionProposalMode.AUTOMATIC)
+            if mode
+            in {
+                RegionProposalMode.AUTOMATIC,
+                RegionProposalMode.DETECT,
+                str(RegionProposalMode.AUTOMATIC),
+                str(RegionProposalMode.DETECT),
+            }
             else []
         )
         return migrated
 
     @model_validator(mode="after")
     def validate_mode(self) -> Self:
-        if self.mode is RegionProposalMode.AUTOMATIC and self.automatic is None:
-            raise ValueError("Stage 02 automatic 模式必须提供 automatic 配置")
-        if self.mode is RegionProposalMode.AUTOMATIC and not self.methods:
-            raise ValueError("Stage 02 automatic 模式至少选择一种 methods")
         if len(self.methods) != len(set(self.methods)):
             raise ValueError("Stage 02 methods 不能重复")
-        if self.mode is not RegionProposalMode.AUTOMATIC and self.automatic is not None:
-            raise ValueError("未实现的 Stage 02 模式不得携带 automatic 配置")
-        if self.mode is not RegionProposalMode.AUTOMATIC and self.methods:
-            raise ValueError("未实现的 Stage 02 模式不得选择 automatic methods")
+        if self.mode in {
+            RegionProposalMode.AUTOMATIC,
+            RegionProposalMode.DETECT,
+        }:
+            if self.automatic is None or not self.methods:
+                raise ValueError(
+                    f"Stage 02 {self.mode} 模式必须提供 automatic 配置和 methods"
+                )
+        if self.mode is RegionProposalMode.AUTOMATIC and self.user_regions is not None:
+            raise ValueError("automatic 模式不得携带 user_regions")
+        if self.mode is RegionProposalMode.USER_PROVIDED:
+            if self.user_regions is None:
+                raise ValueError("user-provided 模式必须提供 user_regions")
+            if self.automatic is not None or self.methods:
+                raise ValueError(
+                    "user-provided 模式不得携带 automatic 配置或 methods"
+                )
+        if self.mode is RegionProposalMode.DETECT:
+            if self.user_regions is None or not isinstance(
+                self.user_regions.source,
+                PseColorRegionSourceConfig,
+            ):
+                raise ValueError("detect 模式的 user_regions 只能使用 pse-colors")
         return self
 
 
@@ -557,7 +707,7 @@ class EasyDesignRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.5", pattern=r"^0\.5$")
+    schema_version: str = Field(default="0.6", pattern=r"^0\.6$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
     stage01: Stage01Config
@@ -607,7 +757,7 @@ class EasyDesignRunConfig(BaseModel):
                         "scope": {"type": "full-sequence"},
                     }
             migrated["stage01"] = stage01
-        migrated["schema_version"] = "0.5"
+        migrated["schema_version"] = "0.6"
         return migrated
 
     @model_validator(mode="after")
@@ -641,15 +791,32 @@ class EasyDesignRunConfig(BaseModel):
                 "显式 PDB ID/Target Bundle 输入不得携带 structure_prediction"
             )
         if self.workflow.execution_mode is ExecutionMode.UNATTENDED:
-            if self.stage02 is not None and len(self.stage02.methods) != 1:
-                raise ValueError("unattended Stage 02 必须恰好配置一种 method")
-            if (
-                self.stage02 is not None
-                and self.stage02.unattended_approval is None
-            ):
-                raise ValueError(
-                    "unattended Stage 02 必须提供 unattended_approval"
-                )
+            stage02 = self.stage02
+            if stage02 is not None:
+                if stage02.mode in {
+                    RegionProposalMode.AUTOMATIC,
+                    RegionProposalMode.DETECT,
+                }:
+                    if len(stage02.methods) != 1:
+                        raise ValueError(
+                            "unattended automatic/detect Stage 02 "
+                            "必须恰好配置一种 method"
+                        )
+                    if stage02.unattended_approval is None:
+                        raise ValueError(
+                            "unattended automatic/detect Stage 02 "
+                            "必须提供 unattended_approval"
+                        )
+                if stage02.mode in {
+                    RegionProposalMode.USER_PROVIDED,
+                    RegionProposalMode.DETECT,
+                }:
+                    assert stage02.user_regions is not None
+                    if stage02.user_regions.approval is None:
+                        raise ValueError(
+                            "unattended user-provided/detect Stage 02 "
+                            "必须在 user_regions 提供 approval"
+                        )
         return self
 
     @property
@@ -968,7 +1135,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
 
 
 def migrate_run_config(source: Path, destination: Path) -> Path:
-    """将旧配置显式写成 canonical 0.5；禁止覆盖原文件或目标文件。"""
+    """将旧配置显式写成 canonical 0.6；禁止覆盖原文件或目标文件。"""
 
     source_path = source.resolve(strict=True)
     target_path = destination.expanduser().resolve()

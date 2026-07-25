@@ -36,6 +36,7 @@ from easydesign.core import (
 )
 from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
+    AnnotationReport,
     AnnotationStatus,
     ProviderExecutionStatus,
     RecommendedRegionSet,
@@ -46,12 +47,17 @@ from easydesign.stages.s02_hotspot_discovery import (
     Stage02Report,
     build_annotation_report,
     compare_independent_methods,
+    has_standard_pse_colors,
     load_structure_context,
+    normalize_manual_regions,
+    normalize_pse_color_regions,
     run_sasa_surface_diversity,
     run_scannet_region_proposals,
 )
 
 from .config import (
+    ManualResidueRegionSourceConfig,
+    PseColorRegionSourceConfig,
     RegionProposalMode,
     Stage02Method,
     UniProtAnnotationMode,
@@ -236,9 +242,13 @@ def _load_stage01(
 
 
 def _pml_selector(region: object) -> str:
-    from easydesign.stages.s02_hotspot_discovery import CandidateSurfaceRegion
+    from easydesign.stages.s02_hotspot_discovery import (
+        CandidateSurfaceRegion,
+        UserProvidedRegion,
+    )
 
-    assert isinstance(region, CandidateSurfaceRegion)
+    if not isinstance(region, (CandidateSurfaceRegion, UserProvidedRegion)):
+        raise TypeError(f"不支持的 Stage 02 region 类型: {type(region).__name__}")
     terms = []
     for member in region.members:
         insertion = member.insertion_code or ""
@@ -304,7 +314,7 @@ def _publish_run_revision(
             stage_id=StageId.HOTSPOT_DISCOVERY,
             action="approve-hotspots",
             message=(
-                "Stage 02 自动选区已完成；必须导出并人工批准完整区域后，"
+                "Stage 02 区域提议已完成；必须导出并人工批准完整区域后，"
                 "才能发布 hotspots.yaml。"
             ),
         )
@@ -325,6 +335,433 @@ def _publish_run_revision(
     return path
 
 
+def _annotation_for_bundle(
+    *,
+    root: Path,
+    bundle: TargetBundle,
+    mapping: ResidueMapping,
+    resolved: ResolvedRunConfig,
+    annotation_adapter: UniProtAnnotationAdapter | None,
+) -> AnnotationReport:
+    sequence_text = bundle.sequence.verify(root).read_text(encoding="utf-8")
+    target_sequence = "".join(
+        line.strip()
+        for line in sequence_text.splitlines()
+        if line.strip() and not line.startswith(">")
+    )
+    if len(target_sequence) != bundle.sequence_length:
+        raise ManifestStateError("Target Bundle sequence artifact 长度与 bundle 不一致")
+    stage02_config = resolved.user_config.stage02
+    assert stage02_config is not None
+    annotation_mode = stage02_config.annotations.uniprot
+    accession = resolved.user_config.stage01.target.identity.uniprot_accession
+    if accession is None and bundle.identity_report is not None:
+        identity_payload = json.loads(
+            bundle.identity_report.verify(root).read_text(encoding="utf-8")
+        )
+        if isinstance(identity_payload, dict):
+            resolved_accession = identity_payload.get("accession")
+            if isinstance(resolved_accession, str):
+                accession = resolved_accession
+    if annotation_mode is UniProtAnnotationMode.REQUIRED and accession is None:
+        raise ManifestStateError(
+            "stage02.annotations.uniprot=required 时必须有可靠 UniProt accession"
+        )
+    requested_accession = (
+        accession if annotation_mode is not UniProtAnnotationMode.OFF else None
+    )
+    selected_adapter: Any = annotation_adapter
+    if requested_accession is not None and selected_adapter is None:
+        frozen = _frozen_uniprot_fetcher(root, bundle, requested_accession)
+        selected_adapter = frozen if frozen is not None else UniProtAnnotationAdapter()
+    report = build_annotation_report(
+        target_sequence=target_sequence,
+        residue_mapping=mapping,
+        accession=requested_accession,
+        fetcher=selected_adapter,
+    )
+    if (
+        annotation_mode is UniProtAnnotationMode.REQUIRED
+        and report.status is not AnnotationStatus.SUCCEEDED
+    ):
+        raise ManifestStateError(
+            "required UniProt annotation 未成功: "
+            f"status={report.status}, error={report.error}"
+        )
+    return report
+
+
+def execute_stage02_user_regions(
+    *,
+    run_root: Path,
+    annotation_adapter: UniProtAnnotationAdapter | None = None,
+    started_at: datetime | None = None,
+) -> CompletedStage02Run:
+    """规范化 PSE 颜色或 YAML 残基列表，并发布可审批的 Stage 02 attempt。"""
+
+    root = run_root.resolve()
+    current, current_path = _load_current_manifest(root)
+    stage01, bundle_ref, bundle_path = _load_stage01(root, current)
+    resolved_path = root / "config-snapshot" / "resolved-config.json"
+    resolved = load_model(resolved_path, ResolvedRunConfig)
+    config = resolved.user_config.stage02
+    if config is None or config.user_regions is None:
+        raise ManifestStateError("Stage 02 用户区域执行缺少 user_regions 配置")
+    source = config.user_regions.source
+    if config.mode is RegionProposalMode.DETECT and not isinstance(
+        source,
+        PseColorRegionSourceConfig,
+    ):
+        raise ManifestStateError("detect 模式只能解析 PSE 固定颜色来源")
+    if config.mode not in {
+        RegionProposalMode.DETECT,
+        RegionProposalMode.USER_PROVIDED,
+    }:
+        raise ManifestStateError(
+            f"mode={config.mode} 不能进入用户区域执行器"
+        )
+
+    attempt_root = root / str(StageId.HOTSPOT_DISCOVERY) / ATTEMPT_ID
+    if attempt_root.exists():
+        raise ManifestStateError(f"Stage 02 attempt 已存在，禁止覆盖: {attempt_root}")
+    artifacts = attempt_root / "artifacts"
+    user_dir = artifacts / "user-provided"
+    annotation_dir = artifacts / "annotations"
+    logs = attempt_root / "logs"
+    for directory in (user_dir, annotation_dir, logs):
+        directory.mkdir(parents=True, exist_ok=False)
+
+    start = datetime.now(UTC) if started_at is None else started_at
+    failure: Exception | None = None
+    output_paths: list[tuple[Path, str, str, str]] = []
+    report_path = artifacts / "stage02-report.json"
+    region_source_name = (
+        "pse-color-annotation"
+        if isinstance(source, PseColorRegionSourceConfig)
+        else "manual-residue-list"
+    )
+    try:
+        bundle, context = load_structure_context(
+            run_root=root,
+            target_bundle_path=bundle_path,
+        )
+        mapping = load_model(bundle.residue_mapping.verify(root), ResidueMapping)
+        annotation = _annotation_for_bundle(
+            root=root,
+            bundle=bundle,
+            mapping=mapping,
+            resolved=resolved,
+            annotation_adapter=annotation_adapter,
+        )
+        annotation_path = dump_model(
+            annotation,
+            annotation_dir / "annotation-report.json",
+        )
+        if isinstance(source, PseColorRegionSourceConfig):
+            region_set, source_evidence, validation = normalize_pse_color_regions(
+                run_root=root,
+                bundle=bundle,
+                context=context,
+                mapping=mapping,
+            )
+        elif isinstance(source, ManualResidueRegionSourceConfig):
+            region_set, source_evidence, validation = normalize_manual_regions(
+                bundle=bundle,
+                context=context,
+                mapping=mapping,
+                numbering=str(source.numbering),
+                chain=source.chain,
+                configured_regions=tuple(
+                    (region.id, region.residues) for region in source.regions
+                ),
+                input_config_sha256=sha256_file(resolved_path),
+            )
+        else:  # pragma: no cover - discriminated union keeps this unreachable
+            raise ManifestStateError(
+                f"未知 user_regions source: {type(source).__name__}"
+            )
+        evidence_path = dump_model(
+            source_evidence,
+            user_dir / "source-evidence.json",
+        )
+        normalized_path = dump_model(
+            region_set,
+            user_dir / "normalized-regions.json",
+        )
+        validation_path = dump_model(
+            validation,
+            user_dir / "region-validation.json",
+        )
+        review_path = _exclusive_text(
+            _review_script(
+                target_relative_path=(
+                    "../../../../" + bundle.target_structure.relative_path
+                ),
+                regions=tuple(region_set.regions),
+                colors=tuple(
+                    {"A": "red", "B": "blue", "C": "yellow"}[region.id]
+                    for region in region_set.regions
+                ),
+                object_name="target_user_regions",
+            ),
+            user_dir / "review-regions.pml",
+        )
+        report = Stage02Report(
+            target_id=bundle.target_id,
+            resolved_region_source=region_source_name,
+            annotation_status=annotation.status,
+            evidence_level=annotation.evidence_level,
+            identity_resolution=annotation.identity_resolution,
+            comparison_status="not-applicable",
+            pse_source_annotations_consumed=isinstance(
+                source,
+                PseColorRegionSourceConfig,
+            ),
+            providers=(
+                ProviderExecutionStatus(
+                    provider=region_source_name,
+                    status="succeeded",
+                    message=(
+                        f"{len(region_set.regions)} user-provided region(s) "
+                        "were normalized without member editing or reranking."
+                    ),
+                ),
+            ),
+            warnings=(
+                "User-provided regions are prior annotations, not validated "
+                "binding residues or energetic hotspots.",
+                "Human approval is required before Stage 03.",
+            )
+            + region_set.warnings,
+        )
+        dump_model(report, report_path)
+        output_paths.extend(
+            (
+                (
+                    annotation_path,
+                    "stage02-annotation-report",
+                    "scientific-annotation",
+                    "json",
+                ),
+                (
+                    evidence_path,
+                    "user-region-source-evidence",
+                    "user-region-source-evidence",
+                    "json",
+                ),
+                (
+                    normalized_path,
+                    "user-provided-regions",
+                    "normalized-user-region-set",
+                    "json",
+                ),
+                (
+                    validation_path,
+                    "user-region-validation",
+                    "user-region-validation",
+                    "json",
+                ),
+                (
+                    review_path,
+                    "user-region-review-script",
+                    "visual-review-script",
+                    "pml",
+                ),
+                (
+                    report_path,
+                    "stage02-report",
+                    "stage-report",
+                    "json",
+                ),
+            )
+        )
+    except Exception as error:
+        failure = error
+
+    ended = _strictly_later(datetime.now(UTC), start)
+    stdout_path = _exclusive_text("", logs / "stdout.log")
+    stderr_path = _exclusive_text(
+        "" if failure is None else str(failure),
+        logs / "stderr.log",
+    )
+    log_refs = (
+        _artifact(
+            run_root=root,
+            path=stdout_path,
+            artifact_id="stage02-stdout",
+            role="backend-log",
+            file_format="text",
+        ),
+        _artifact(
+            run_root=root,
+            path=stderr_path,
+            artifact_id="stage02-stderr",
+            role="backend-log",
+            file_format="text",
+        ),
+    )
+    attempt = Attempt(
+        attempt_id=ATTEMPT_ID,
+        status=(
+            ExecutionStatus.SUCCEEDED
+            if failure is None
+            else ExecutionStatus.FAILED
+        ),
+        created_at=start,
+        started_at=start,
+        ended_at=ended,
+        backend_name=region_source_name,
+        backend_version="easydesign-rby-v1" if "pse" in region_source_name else "0.1",
+        executor_name="easydesign-core",
+        log_artifacts=log_refs,
+        error=(
+            None
+            if failure is None
+            else ErrorInfo(
+                code="stage02-user-regions-failed",
+                message=str(failure)[:4096] or type(failure).__name__,
+                retryable=False,
+            )
+        ),
+    )
+    attempt_manifest = dump_model(attempt, attempt_root / "attempt-manifest.json")
+    bundle = load_model(bundle_path, TargetBundle)
+    input_artifacts = [
+        bundle_ref,
+        bundle.target_structure,
+        bundle.residue_mapping,
+    ]
+    if isinstance(source, PseColorRegionSourceConfig):
+        if bundle.source_annotations is None:
+            # The normalization failure is still represented by the failed attempt.
+            pass
+        else:
+            input_artifacts.append(bundle.source_annotations)
+    output_artifacts = (
+        tuple(
+            _artifact(
+                run_root=root,
+                path=path,
+                artifact_id=artifact_id,
+                role=role,
+                file_format=file_format,
+            )
+            for path, artifact_id, role, file_format in output_paths
+        )
+        if failure is None
+        else ()
+    )
+    stage = StageManifest(
+        stage_id=StageId.HOTSPOT_DISCOVERY,
+        contract_version="0.3",
+        status=(
+            ExecutionStatus.SUCCEEDED
+            if failure is None
+            else ExecutionStatus.FAILED
+        ),
+        created_at=start,
+        completed_at=ended,
+        input_artifacts=tuple(input_artifacts),
+        output_artifacts=output_artifacts,
+        attempts=(attempt,),
+        selected_attempt_id=ATTEMPT_ID if failure is None else None,
+        warnings=(
+            "User-provided regions were preserved without expansion, deletion, "
+            "or reranking.",
+            "PSE colors or YAML residues are user annotations, not scientific validation.",
+            "Human approval is required before hotspots.yaml is published.",
+        ),
+    )
+    stage.validate_inputs_declared_by((stage01,))
+    stage_manifest_path = dump_model(stage, artifacts / "stage-manifest.json")
+    run_manifest_path = _publish_run_revision(
+        run_root=root,
+        current=current,
+        current_path=current_path,
+        stage_manifest_path=stage_manifest_path,
+        ended_at=ended,
+        succeeded=failure is None,
+    )
+    runs_root = root.parent.parent
+    upsert_run_index_entries(
+        runs_root,
+        (
+            RunIndexEntry(
+                category="project-run",
+                path=root.relative_to(runs_root).as_posix(),
+                layout_version="1",
+                status=(
+                    "awaiting-region-selection"
+                    if failure is None
+                    else "stage02-blocked"
+                ),
+                project_id=current.project_id,
+                run_id=current.run_id,
+                notes=(
+                    (
+                        f"Stage 02 {region_source_name} regions normalized; "
+                        "human approval required."
+                    )
+                    if failure is None
+                    else f"Stage 02 {region_source_name} normalization failed."
+                ,),
+            ),
+        ),
+        generated_at=ended,
+    )
+    if failure is not None:
+        raise failure
+    return CompletedStage02Run(
+        run_root=root,
+        attempt_manifest=attempt_manifest,
+        stage_manifest=stage_manifest_path,
+        run_manifest=run_manifest_path,
+        comparison=None,
+        report=report_path,
+    )
+
+
+def execute_stage02(
+    *,
+    run_root: Path,
+    adapter: ScanNetEpitopeAdapter | None = None,
+    annotation_adapter: UniProtAnnotationAdapter | None = None,
+    started_at: datetime | None = None,
+) -> CompletedStage02Run:
+    """按 schema 0.6 显式模式分派；detect 只在无标准色时进入 automatic。"""
+
+    root = run_root.resolve()
+    current, _ = _load_current_manifest(root)
+    _stage01, _bundle_ref, bundle_path = _load_stage01(root, current)
+    resolved = load_model(
+        root / "config-snapshot" / "resolved-config.json",
+        ResolvedRunConfig,
+    )
+    config = resolved.user_config.stage02
+    if config is None:
+        raise ManifestStateError("resolved config 缺少 Stage 02 配置")
+    if config.mode is RegionProposalMode.USER_PROVIDED:
+        return execute_stage02_user_regions(
+            run_root=root,
+            annotation_adapter=annotation_adapter,
+            started_at=started_at,
+        )
+    if config.mode is RegionProposalMode.DETECT:
+        bundle = load_model(bundle_path, TargetBundle)
+        if has_standard_pse_colors(run_root=root, bundle=bundle):
+            return execute_stage02_user_regions(
+                run_root=root,
+                annotation_adapter=annotation_adapter,
+                started_at=started_at,
+            )
+    return execute_stage02_comparison(
+        run_root=root,
+        adapter=adapter,
+        annotation_adapter=annotation_adapter,
+        started_at=started_at,
+    )
+
+
 def execute_stage02_comparison(
     *,
     run_root: Path,
@@ -341,7 +778,10 @@ def execute_stage02_comparison(
     stage02_config = resolved.user_config.stage02
     if stage02_config is None:
         raise ManifestStateError("resolved config 缺少 Stage 02 配置")
-    if stage02_config.mode is not RegionProposalMode.AUTOMATIC:
+    if stage02_config.mode not in {
+        RegionProposalMode.AUTOMATIC,
+        RegionProposalMode.DETECT,
+    }:
         raise ManifestStateError(
             f"Stage 02 mode={stage02_config.mode} 尚未实现；禁止回退到 automatic"
         )

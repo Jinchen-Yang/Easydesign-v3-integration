@@ -215,7 +215,7 @@ backends:
         )
 
     monkeypatch.setattr(
-        "easydesign.orchestration.application.execute_stage02_comparison",
+        "easydesign.orchestration.application.execute_stage02",
         fake_stage02,
     )
 

@@ -6,12 +6,12 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | schema 0.4 已消费 Stage 01 冻结 UniProt 证据并支持 unattended 单方法交接；APOE 双方法仍等待人工批准。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 |
+| `planned` | schema 0.6 已打通 automatic、PSE 固定颜色和 YAML 四编号人工区域；APOE 用户区域已发布可供 Stage 03 消费的 hotspots.yaml 0.3。 | 冻结 Stage 02 工程交接，启动 Stage 03 BoltzGen YAML；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-25 |
 
 ## 当前结论
 
-- 阶段总体状态：`planned`；manual、PSE annotation、外部 annotation 和科学 benchmark
-  尚未完成。
+- 阶段总体状态：`planned`；三条工程输入路线已实现，外部 annotation 扩展和科学
+  benchmark 尚未完成。
 - automatic 方法可按 YAML 选择 SASA、ScanNet 或二者；代码状态：`implemented`。
 - SASA 已支持 Target Bundle coordinate ensemble：逐模型 SASA/图、70% presence/exposure/
   edge/region 完整度、中位数指标和最坏情况区域分离均通过工程测试；单模型回归保持一致。
@@ -40,6 +40,14 @@
 - `unattended` 只允许单一 SASA 或 ScanNet 方法，按
   `stage02-single-method-top-regions-v1` 发布完整 Top 2–3 与 policy 证据；双方法比较仍
   只能走 `review-gated`，不产生融合结果。
+- schema 0.6 的 `detect/automatic/user-provided` 已实现：PSE 固定红/蓝/黄与 YAML
+  sequence/label/auth/UniProt 编号共享 `UserProvidedRegionSet`，成员不扩展、不删除、
+  不重排；显式 automatic 不消费颜色。
+- APOE PSE 颜色和 YAML auth 列表真实运行均得到 A/B/C `9/14/14`，规范 label 成员完全
+  相同、provenance 不同；两条 review-gated run 均通过 attempt-0002 发布
+  `hotspots.yaml` 0.3。
+- 用户区域 unattended 使用初始 YAML 中的真实人员批准，明确记录
+  `approval_authority=human` 与 `approval_source=initial-run-config`，不冒充机器 policy。
 
 ## 功能矩阵
 
@@ -53,11 +61,12 @@
 | ScanNet epitope no-MSA GPU 优化 | `planned` | probe 通过；RTX 4080 真实模型 GEMM 失败，不阻塞 CPU 主线 |
 | 两方法 `3 × 3` 重叠报告 | `implemented` | Jaccard、覆盖率、距离、最佳匹配；无融合字段 |
 | APOE 138-aa 真实双方法 run | `smoke-validated` | schema 0.3 validation run；双方法、comparison、Viewer 和等待审批状态全部成功 |
-| PSE 染色区域导入 | `planned` | 只有明确失败的 provider 接口 |
-| 人工区域上传 | `planned` | 只有明确失败的 provider 接口 |
+| PSE 固定红/蓝/黄区域导入 | `smoke-validated` | 原始 APOE PSE → Target Bundle annotation → 9/14/14 → hotspots.yaml 0.3 |
+| YAML 人工区域上传 | `smoke-validated` | sequence/label/auth/UniProt 四编号契约；APOE auth 9/14/14 与 PSE 完全一致 |
 | 显式 UniProt 功能位点/PTM/topology | `implemented` | 三种策略、确定性映射、零 accession 零网络请求和失败语义测试 |
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
-| 人工批准与 `hotspots.yaml` | `implemented` | revision/hash/完整区域/理由/structural-only acknowledgement 契约测试 |
+| 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
+| detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
@@ -68,29 +77,31 @@
 
 ## Now
 
-### S02-005：APOE 真实人工批准
+### S02-008：用户区域与 automatic 科学 benchmark
 
-- 状态：`planned`；schema 0.3 自动流程已经真实重跑，不替用户编造生物学判断。
-- 当前待用户比较已经生成的 SASA 与 ScanNet Top 3，并选择一种方法。
-- 人工比较后从一种方法批准 2–3 个完整区域，形成真实 `attempt-0002/hotspots.yaml`。
-- 完成门槛：RunManifest 从 `awaiting-human-approval` 转为终态，Stage 03 handoff 的
-  target/method/mapping/evidence/hash 全部可验证。
+- 状态：`planned`；不阻塞 Stage 03 工程开发。
+- 对已染色 APOE 区域、SASA 与 ScanNet 分别做结构/生物学复核，不能因为成功生成
+  `hotspots.yaml` 就宣称区域科学正确。
+- 完成门槛：建立预注册 VHH–抗原 benchmark、负例和区域级指标，分别报告工程成功与
+  科学结果。
 
 ## Next
 
-- 按 S02-005 完成真实 APOE 人工选择；不得把合成审批测试或自动 Top 3 当真实科学批准。
+- 使用已发布的 APOE PSE 用户区域 `hotspots.yaml` 启动 Stage 03；该选择是用户先验，
+  不是自动算法赢家，也不是科学验证结论。
 - 将 GPU 兼容优化作为独立 benchmark：评估兼容旧 CUDA 的硬件/容器，或经科学和
   许可证评审的现代化模型路径；不得修改当前 CPU 主线的模型 commit 或权重。
 - 扩展天然复合物界面、文献、疾病突变和自动身份发现；均先作为证据/warning。
 - 登记 SASA MAX_ASA 常数来源，比较替代归一化表，并为阈值/权重建立 binder-specific
   benchmark；验证前保持当前 v0.1 参数不变。
 - 设计 VHH–抗原 patch benchmark，比较 SASA、ScanNet PPBS、PeSTo 等方法。
-- 实现 PSE annotation 与 manual provider，不改变 automatic 方法结果。
+- 扩展多 state/复合物 PSE、可配置色板和交互式人工选区前先定义新的版本化契约；1.0
+  保持单 target 与固定红/蓝/黄。
 
 ## Blocked
 
 - Stage 02 CPU 自动选区主线当前没有外部 runtime 阻塞。
-- schema 0.3 真实 APOE 自动 run 已完成；只有用户的科学区域选择尚未执行。
+- Stage 03 handoff 已由用户提供 APOE 区域建立，不再受到 Stage 02 工程阻塞。
 - GPU 优化在当前服务器阻塞，但它是后续性能待办，不再阻塞 CPU 主线：
 - 环境已精确建立：Python 3.6.12、TensorFlow GPU 1.14.0、CUDA Toolkit 10.0、
   cuDNN 7.6.5、ScanNet commit
@@ -106,19 +117,21 @@
 ## 验证证据
 
 - `make check` 通过：ruff、strict mypy、compile 和仓库结构检查全部成功。
-- 159 个 pytest 中 151 passed；8 个需要显式 PyMOL 环境变量的集成测试按设计跳过；
-  显式设置真实 PyMOL interpreter 后这 8 项集成测试全部通过，真实 CLI run 也实际调用
-  了独立 PyMOL 环境。
+- 本次完整 pytest 收集 191 项：默认门禁 183 passed、8 个需要显式 PyMOL 环境变量的
+  集成测试按设计 skipped；注入真实 PyMOL 3.1.0 interpreter 后这 8 项全部通过。
+- dev4 wheel 的 6 类资产/console-script 验证通过；Playwright 为 3 passed、2 个
+  runtime-only 真实报告测试按设计 skipped。
 - 单元测试验证：
   - SASA evidence 不包含 ScanNet probability；
   - ScanNet evidence 不包含 raw SASA/rSASA；
   - comparison 的 `fused_score`/`winner` 固定为 `null`；
   - ScanNet residue 缺失和 CPU-only probe 明确失败；
-  - PSE/manual provider 不会回退 automatic。
+  - PSE/manual 两类来源统一为不可变区域集；显式模式不互相回退。
   - 10 模型中 7/10 支持通过、6/10 失败，边共识使用 `ceil(N×0.70)`；
   - 多模型最坏情况中心距离/shell/重原子距离与 ScanNet 明确拒绝；
   - UniProt 缺 accession 不调用网络，显式 accession feature 映射和低 identity review；
-  - structural-only 审批必须 acknowledge，跨方法/旧 revision/改成员明确失败。
+  - structural-only 与 user-provided 分别必须 acknowledge，跨来源/旧 revision/改成员
+    明确失败。
 - 服务器：2 × RTX 4080，compute capability 8.9，driver `580.105.08`，CUDA driver 13.0。
 - 隔离环境：`/root/autodl-tmp/conda_envs/scannet-epitope-gpu`；官方源码/权重为 runtime
   only，commit 如上。
@@ -154,6 +167,26 @@
   `86–89,91–92,95–96,98–99,102,158`，
   `49,52–55,58–59,61–62,65–66,69`。
 - 几何距离缓存后，同一 APOE SASA 结果保持不变，耗时由约 255 秒降至 2.5 秒。
+- S02-006 用户区域真实 PSE run：
+  `runs/apoe-s02-006-pse/20260725-006-stage02-pse-colors-audited`。由原始
+  397,738-byte PSE
+  重新执行 Stage 01/02，`detect` 消费 checksum 正确的
+  `source-annotations.json`，A/B/C 分别为 9/14/14 个成员；auth 编号与计划表完全一致。
+  review-gated attempt-0002 发布 `hotspots.yaml` 0.3，`region_source` 为
+  `pse-color-annotation`、authority 为 human，并记录两类 acknowledgement。
+- S02-006 YAML 等价 run：
+  `runs/apoe-s02-006-manual/20260725-007-stage02-manual-auth-audited`。同一原始 PSE 的
+  Stage 01 结构配合 YAML auth residue-list，得到与颜色路线逐 label 完全一致的
+  9/14/14 成员，`region_source` 为 `manual-residue-list`，并独立发布
+  `hotspots.yaml` 0.3。
+- unattended 人工区域真实 run：
+  `runs/apoe-s02-006-unattended/20260725-008-stage02-manual-unattended-audited`。
+  初始配置中的
+  `approved_by=knitua`、每区 design goal/理由和两类 acknowledgement 被原样留痕，
+  RunManifest 最终为 `succeeded`；审批 authority/source 明确为
+  `human / initial-run-config`。
+- 新测试覆盖固定色板与背景色、四种编号索引、越界/歧义、跨区域重叠 warning、代表模型
+  坐标存在、用户来源审批和旧 automatic 审批回归；全量测试门禁见本次 history。
 
 ## 工作日志
 
@@ -183,8 +216,11 @@
   structural-only 审批模板已导出，真实区域决定保留给用户。
 - 接入 schema 0.4 Stage 01 frozen UniProt snapshot 和 unattended 单方法确定性审批；
   review-gated 的 APOE 双方法人工决定保持不变。
+- 完成 schema 0.6 用户区域通路：固定 PSE 红/蓝/黄与 YAML 人工残基统一规范化，
+  `hotspots.yaml` 0.3 记录 discriminated region source；真实 APOE 两条路径成员对齐并
+  分别发布 Stage 03 handoff。
 
 ## 历史索引
 
-已完成部分见 [`history/2026-07.md`](history/2026-07.md)；当前未关闭项是 S02-005
-真实人工区域批准。
+已完成部分见 [`history/2026-07.md`](history/2026-07.md)；当前未关闭项是 S02-008
+科学 benchmark，不阻塞 Stage 03 工程开发。

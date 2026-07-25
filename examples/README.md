@@ -6,3 +6,8 @@
 
 Stage 01 APOE 示例的用户输入只有 FASTA、`easydesign.yaml` 和来源审计记录。Protenix
 JSON 必须由 adapter 在 run 的 attempt 中生成，不能作为用户输入 fixture 提交。
+
+[`apoe-pse-manual-regions.yaml`](apoe-pse-manual-regions.yaml) 展示 schema 0.6 的
+`user-provided/residue-list`：用 auth chain A 指定与 runtime-only APOE PSE 红/蓝/黄
+完全相同的三组残基。配置文件可以提交，但原始 PSE 不进入 Git。该示例只证明编号导入与
+provenance 契约，不代表三组区域已经科学验证为 APOE binding sites。

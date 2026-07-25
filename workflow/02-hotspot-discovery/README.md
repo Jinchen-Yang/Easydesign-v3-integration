@@ -2,15 +2,23 @@
 
 **总体状态：** `planned`
 
-**自动选区与审批契约版本：** `0.2`
+**选区与审批契约版本：** `0.3`
 
 ## 目的与科学边界
 
 Stage 02 在 Stage 01 规范结构上提出可审计的 `candidate_surface_region`，供人工比较后选择。
 区域成员只描述区域边界，不是已经确认的 binding residues、真实抗体表位或能量学 hotspot。
 
-首版只实现 `automatic`。用户可在最初的七阶段 YAML 中选择只运行 SASA、只运行
-ScanNet，或同时运行两者：
+1.0 提供三种明确模式：
+
+- `detect`：只对包含 PSE `source-annotations.json` 的 Target Bundle 检查固定
+  `easydesign-rby-v1` 红/蓝/黄；命中则按用户区域处理，未命中才执行配置中的
+  automatic fallback。
+- `automatic`：显式忽略任何 PSE 颜色，只运行 SASA、ScanNet 或二者。
+- `user-provided`：显式读取 PSE 固定颜色或 YAML 人工残基。
+
+自动路线中，用户可在最初的七阶段 YAML 中选择只运行 SASA、只运行 ScanNet，或同时
+运行两者：
 
 ```text
                          ┌─ SASA + 三维几何 ─→ 独立 Top 3 ─┐
@@ -20,26 +28,30 @@ Target Bundle/target.cif ┤                                ├─→ 重叠报�
 
 两种方法同时运行时也不融合、不产生综合分数或默认赢家。`review-gated` 自动计算完成后
 RunManifest 保持 `running/awaiting-human-approval`；只有人工批准同一方法的 2–3 个完整
-区域后才发布 `hotspots.yaml`。`unattended` 必须只配置一种方法，并由带 policy ID 的
-硬规则批准完整 Top 2–3；不允许 LLM、跨方法混选或隐藏参数。
+区域后才发布 `hotspots.yaml`。automatic 的 `unattended` 必须只配置一种方法，并由带
+policy ID 的硬规则批准完整 Top 2–3。用户提供区域的 `unattended` 仍记录
+`approval_authority: human`，审批人、逐区理由和两个 acknowledgement 必须已经写入
+初始 YAML；不允许 LLM、跨方法混选或隐藏参数。
 
 ## 输入
 
 - 成功的 Stage 01 `StageManifest`。
 - Stage 01 正式发布的 `target-bundle`、`target-structure` 和 `residue-mapping`。
-- `stage02.mode: automatic` 配置。
-- `stage02.methods` 显式选择 `sasa`、`scannet` 或二者。
+- `stage02.mode: detect|automatic|user-provided` 配置。
+- automatic/detect fallback 使用 `stage02.methods` 显式选择 `sasa`、`scannet` 或
+  二者。
 - 可选、由用户明确给出的 `avoid_label_seq_ids`。
 - 新 Target Bundle 中 Stage 01 冻结的 UniProt identity/retrieval artifact；旧 Bundle
   才使用兼容联网路径。不提供身份时不猜测 accession。
 
-Stage 02 只能读取上游 manifest 声明且通过大小/SHA-256 校验的 artifact。自动模式不会
-读取 PSE `source-annotations.json`，因此 PSE 颜色不会影响自动区域。
+Stage 02 只能读取上游 manifest 声明且通过大小/SHA-256 校验的 artifact。`automatic`
+不会读取 PSE `source-annotations.json`，因此 PSE 颜色不会影响 SASA/ScanNet。PSE 颜色
+只在 `detect` 或显式 `user-provided/pse-colors` 路线消费。
 
 ## 用户配置
 
 ```yaml
-schema_version: "0.4"
+schema_version: "0.6"
 project_id: apoe
 
 design:
@@ -96,8 +108,54 @@ stage06: null
 stage07: null
 ```
 
-`pse_annotations` 和 `manual` 已定义 provider 接口，但当前调用会明确返回
-`not implemented`，不会回退到 automatic。
+PSE 输入由 `easydesign init --target FILE.pse --stop-after 2` 默认生成 `mode: detect`。
+普通 PDB/mmCIF、FASTA、UniProt 等入口默认生成 `automatic`。
+
+显式 PSE 颜色输入：
+
+```yaml
+stage02:
+  mode: user-provided
+  annotations:
+    uniprot: if_available
+  automatic: null
+  methods: []
+  user_regions:
+    source:
+      type: pse-colors
+      color_scheme: easydesign-rby-v1
+    approval: null
+```
+
+YAML 人工区域输入：
+
+```yaml
+stage02:
+  mode: user-provided
+  annotations:
+    uniprot: if_available
+  automatic: null
+  methods: []
+  user_regions:
+    source:
+      type: residue-list
+      numbering: auth
+      chain: A
+      regions:
+        - id: A
+          residues: ["32", "36", "39", "46"]
+        - id: B
+          residues: ["58", "61", "65", "69"]
+    approval: null
+```
+
+人工编号支持 `sequence`、规范 CIF 的 `label`、原结构 `auth` 和可靠映射后的 `uniprot`。
+`auth` 必须给 chain；`uniprot` 在 mapping 不完整或不唯一时明确失败。用户区域允许
+A/B/C 的任意 1–3 个非空子集；成员不扩展、不删除、不重新排名。
+
+固定色板 `easydesign-rby-v1` 为红 `#FF0000 → A`、蓝 `#0000FF → B`、黄
+`#FFFF00 → C`。只读取逐残基 CA 的 RGB/hex；其他颜色均为背景。普通 PDB/mmCIF 不定义
+私有颜色字段，必须使用 YAML 残基列表。
 
 Developer Preview 使用同一个 YAML 继续当前 run：
 
@@ -322,7 +380,26 @@ ScanNet probability 在 EasyDesign 中只叫 `region_propensity`，不叫科学�
 ```
 
 只选择一种方法时只创建该方法目录，不生成伪造的 comparison。自动阶段成功后仍不产生
-Stage 03 输入。人工审批建立第二个不可变 attempt：
+Stage 03 输入。PSE 颜色和 YAML 残基列表则共享以下标准产物：
+
+```text
+02-hotspot-discovery/attempt-0001/artifacts/
+├── user-provided/
+│   ├── source-evidence.json
+│   ├── normalized-regions.json
+│   ├── region-validation.json
+│   └── review-regions.pml
+├── annotations/annotation-report.json
+├── stage02-report.json
+└── stage-manifest.json
+```
+
+`normalized-regions.json` 是不可变 `UserProvidedRegionSet`：保存 target/structure/sequence
+identity、完整 ResidueIdentity、原始 selector、配置或 annotation SHA-256、代表模型
+存在性、区域空间连通性 warning 和跨区域重叠 warning。连通性或区域间重叠不会偷偷修改
+用户成员。
+
+人工审批建立第二个不可变 attempt：
 
 ```text
 02-hotspot-discovery/attempt-0002/
@@ -335,13 +412,25 @@ Stage 03 输入。人工审批建立第二个不可变 attempt：
 ```
 
 ```bash
+# automatic 双方法需要 --method；用户提供区域不填写 --method
 easydesign hotspots export RUN_DIR --method sasa --output hotspots-review.yaml
+easydesign hotspots export RUN_DIR --output hotspots-review.yaml
 easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
 ```
 
-审批必须从同一种方法选择 2–3 个完整推荐区域，不允许混合方法或手工改成员。用户为 A/B/C
-填写 design goal、生物学理由和结构理由；系统从原候选生成 label/auth 编号、范围、证据
-和风险，避免手抄残基。`hotspots.yaml` 是 Stage 03 唯一合法输入。
+automatic 审批必须从同一种方法选择 2–3 个完整推荐区域；用户提供路线批准 1–3 个完整
+区域。二者都禁止混合来源或修改成员。用户为 A/B/C 填写 design goal、生物学理由和结构
+理由；系统生成 label/auth 编号、范围、证据和风险，避免手抄残基。用户区域还必须设置
+`acknowledge_user_provided_regions: true`；structural-only 必须设置
+`acknowledge_evidence_limitations: true`。
+
+`hotspots.yaml` schema 0.3 用 discriminated `region_source` 区分：
+
+- `automatic`：方法、推荐 artifact ID 和 SHA-256；
+- `pse-color-annotation`：色板和 source annotation SHA-256；
+- `manual-residue-list`：编号体系、chain 和 resolved config SHA-256。
+
+`hotspots.yaml` 是 Stage 03 唯一合法输入。
 
 每个区域成员同时保存：
 
@@ -390,7 +479,9 @@ structural-only 仍可人工批准，但审批文件必须显式设置
 - ScanNet residue 数量、序列或工具编号无法完整映射；
 - 无法得到最低数量的空间分散区域；
 - required UniProt annotation 缺失、失败或不能可靠映射；
-- 审批引用旧 revision、混合方法、改变区域成员、缺理由或未确认证据限制。
+- 用户区域 selector 越界/歧义、PSE annotation checksum/编号不一致、代表模型缺坐标；
+- 显式 `pse-colors` 没有固定红/蓝/黄，或 `uniprot` 编号没有可靠 mapping；
+- 审批引用旧 revision、混合来源、改变区域成员、缺理由或未完成 acknowledgement。
 
 ScanNet 失败时允许在 attempt 中保留已经计算的 SASA 文件作为诊断证据，但失败 Stage 不
 发布任何正式 output。重试必须新建 attempt，不得覆盖历史。
@@ -408,6 +499,8 @@ runtime probe 只证明 TensorFlow 能在请求设备执行一个最小 op，不
 - 单模型 APOE SASA 回归不变；多模型 7/10、6/10、边共识、中位数和最坏情况分离测试通过。
 - `off/if_available/required` 与无 accession 零网络请求通过测试。
 - 人工审批发布带 target/method/mapping/evidence/hash 的 `hotspots.yaml`。
+- PSE 颜色和 YAML auth 列表在真实 APOE 上均得到相同 9/14/14 成员，并保留不同
+  provenance；两条均发布 `hotspots.yaml` 0.3。
 - `make check`、`make test`、`make build` 通过。
 
 工程 smoke 通过只能标记 `smoke-validated`；完成 VHH–抗原 benchmark 前不得标记

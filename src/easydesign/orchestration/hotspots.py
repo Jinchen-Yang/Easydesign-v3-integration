@@ -27,6 +27,7 @@ from easydesign.stages.s02_hotspot_discovery import (
     AnnotationReport,
     ApprovalRecord,
     ApprovedHotspotSet,
+    AutomaticRegionSource,
     EvidenceLevel,
     HotspotEvidence,
     HotspotReviewRequest,
@@ -34,8 +35,11 @@ from easydesign.stages.s02_hotspot_discovery import (
     HotspotsFile,
     RecommendedRegionSet,
     RegionMethod,
+    RegionSource,
+    UserProvidedRegionSet,
 )
 
+from .config import UserRegionInitialApprovalConfig
 from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
 
 APPROVAL_ATTEMPT_ID = "attempt-0002"
@@ -142,40 +146,89 @@ def _region_artifact_id(method: RegionMethod) -> str:
 def export_hotspot_review(
     run_root: Path,
     *,
-    method: RegionMethod,
+    method: RegionMethod | None = None,
     output: Path,
 ) -> Path:
     """导出可编辑审批模板；不改变 run。"""
 
     root = run_root.resolve()
     run, _run_path, _stage01, stage02_path, stage02, bundle = _load_current(root)
-    artifact_id = _region_artifact_id(method)
-    region_ref = stage02.require_output(artifact_id)
-    recommended = load_model(region_ref.verify(root), RecommendedRegionSet)
-    if recommended.method is not method:
-        raise ManifestStateError("推荐区域 artifact 的方法身份不一致")
-    if len(recommended.regions) < recommended.minimum_region_count:
-        raise ManifestStateError(
-            "自动候选不足最低数量，不能导出可批准模板；需要人工复核算法或输入"
+    user_ref = next(
+        (
+            reference
+            for reference in stage02.output_artifacts
+            if reference.artifact_id == "user-provided-regions"
+        ),
+        None,
+    )
+    region_source: RegionSource
+    if user_ref is not None:
+        if method is not None:
+            raise ManifestStateError("用户提供区域不接受 SASA/ScanNet method 选择")
+        artifact_id = user_ref.artifact_id
+        region_ref = user_ref
+        user_regions = load_model(
+            region_ref.verify(root),
+            UserProvidedRegionSet,
+        )
+        regions: RecommendedRegionSet | UserProvidedRegionSet = user_regions
+        region_source = user_regions.region_source
+    else:
+        if method is None:
+            available_methods: list[RegionMethod] = []
+            for candidate in RegionMethod:
+                if any(
+                    reference.artifact_id == _region_artifact_id(candidate)
+                    for reference in stage02.output_artifacts
+                ):
+                    available_methods.append(candidate)
+            if len(available_methods) != 1:
+                raise ManifestStateError(
+                    "automatic Stage 02 存在多个或没有可审批方法；请显式指定 --method"
+                )
+            method = available_methods[0]
+        artifact_id = _region_artifact_id(method)
+        region_ref = stage02.require_output(artifact_id)
+        regions = load_model(region_ref.verify(root), RecommendedRegionSet)
+        if regions.method is not method:
+            raise ManifestStateError("推荐区域 artifact 的方法身份不一致")
+        if len(regions.regions) < regions.minimum_region_count:
+            raise ManifestStateError(
+                "自动候选不足最低数量，不能导出可批准模板；需要人工复核算法或输入"
+            )
+        region_source = AutomaticRegionSource(
+            method=method,
+            recommendation_artifact_id=artifact_id,
+            recommendation_sha256=region_ref.sha256,
         )
     annotation_ref = stage02.require_output("stage02-annotation-report")
     annotation = load_model(annotation_ref.verify(root), AnnotationReport)
-    selections = tuple(
-        HotspotReviewSelection(
-            id=area_id,
-            source_region_id=region.region_id,
+    if isinstance(regions, RecommendedRegionSet):
+        selections = tuple(
+            HotspotReviewSelection(
+                id=area_id,
+                source_region_id=region.region_id,
+            )
+            for area_id, region in zip(
+                ("A", "B", "C"),
+                regions.regions,
+                strict=False,
+            )
         )
-        for area_id, region in zip(
-            ("A", "B", "C"),
-            recommended.regions,
-            strict=False,
+    else:
+        selections = tuple(
+            HotspotReviewSelection(
+                id=region.id,
+                source_region_id=region.source_region_id,
+            )
+            for region in regions.regions
         )
-    )
     request = HotspotReviewRequest(
         project_id=run.project_id,
         run_id=run.run_id,
         target_id=bundle.target_id,
         method=method,
+        region_source=region_source,
         source_stage_manifest_sha256=sha256_file(stage02_path),
         source_regions_artifact_id=artifact_id,
         source_regions_sha256=region_ref.sha256,
@@ -202,24 +255,46 @@ def _label_ranges(values: tuple[int, ...]) -> str:
 def _approved_set(
     *,
     selection: HotspotReviewSelection,
-    regions: RecommendedRegionSet,
+    regions: RecommendedRegionSet | UserProvidedRegionSet,
     annotation: AnnotationReport,
 ) -> ApprovedHotspotSet:
-    region_by_id = {region.region_id: region for region in regions.regions}
-    region = region_by_id[selection.source_region_id]
-    label_ids = tuple(member.label_seq_id for member in region.members)
+    if isinstance(regions, RecommendedRegionSet):
+        region_by_id = {region.region_id: region for region in regions.regions}
+        automatic_region = region_by_id[selection.source_region_id]
+        members = automatic_region.members
+        source_region_id = automatic_region.region_id
+        risk_flags: list[str] = []
+        evidence = [
+            HotspotEvidence(
+                type="structural-region",
+                source=str(regions.method),
+                description=(
+                    f"完整自动候选 {automatic_region.region_id}; ranking_score="
+                    f"{automatic_region.ranking_score:.6f}."
+                ),
+            )
+        ]
+    else:
+        user_region_by_id = {
+            region.source_region_id: region for region in regions.regions
+        }
+        user_region = user_region_by_id[selection.source_region_id]
+        members = user_region.members
+        source_region_id = user_region.source_region_id
+        source_type = regions.region_source.type
+        risk_flags = ["user_annotation_requires_biological_review"]
+        evidence = [
+            HotspotEvidence(
+                type="user-provided-region",
+                source=source_type,
+                description=(
+                    f"完整用户区域 {user_region.source_region_id}; "
+                    "members preserved without expansion, deletion, or reranking."
+                ),
+            )
+        ]
+    label_ids = tuple(member.label_seq_id for member in members)
     label_set = set(label_ids)
-    evidence = [
-        HotspotEvidence(
-            type="structural-region",
-            source=str(regions.method),
-            description=(
-                f"完整自动候选 {region.region_id}; ranking_score="
-                f"{region.ranking_score:.6f}."
-            ),
-        )
-    ]
-    risk_flags: list[str] = []
     for feature in annotation.mapped_features:
         if label_set.intersection(feature.label_seq_ids):
             description = feature.description or "no-description"
@@ -250,12 +325,12 @@ def _approved_set(
     auth_residues = tuple(
         f"{member.auth_asym_id}:{member.auth_seq_id}"
         f"{member.insertion_code or ''}"
-        for member in region.members
+        for member in members
     )
     return ApprovedHotspotSet(
         id=selection.id,
         slug=f"area-{selection.id.lower()}-{selection.design_goal}",
-        source_region_id=region.region_id,
+        source_region_id=source_region_id,
         design_goal=selection.design_goal,
         biological_rationale=selection.biological_rationale,
         structural_rationale=selection.structural_rationale,
@@ -296,6 +371,7 @@ def approve_hotspots(
     approved_at: datetime | None = None,
     authority: str = "human",
     policy_id: str | None = None,
+    approval_source: str = "explicit-review",
 ) -> Path:
     """验证完整区域选择并以新 attempt 发布唯一 ``hotspots.yaml``。"""
 
@@ -305,6 +381,16 @@ def approve_hotspots(
         raise ManifestStateError("deterministic-policy approval 必须提供 policy_id")
     if authority == "human" and policy_id is not None:
         raise ManifestStateError("human approval 不得携带 policy_id")
+    if authority == "deterministic-policy":
+        approval_source = "deterministic-policy"
+    if approval_source not in {
+        "explicit-review",
+        "initial-run-config",
+        "deterministic-policy",
+    }:
+        raise ManifestStateError(f"未知 approval_source: {approval_source}")
+    if approval_source == "initial-run-config" and authority != "human":
+        raise ManifestStateError("initial-run-config 必须记录 human authority")
 
     root = run_root.resolve()
     run, run_path, stage01, stage02_path, stage02, bundle = _load_current(root)
@@ -319,18 +405,42 @@ def approve_hotspots(
     if request.source_stage_manifest_sha256 != sha256_file(stage02_path):
         raise ManifestStateError("Stage 02 manifest 已变化；请重新导出审批模板")
     region_ref = stage02.require_output(request.source_regions_artifact_id)
-    if (
-        region_ref.artifact_id != _region_artifact_id(request.method)
-        or region_ref.sha256 != request.source_regions_sha256
-    ):
+    if region_ref.sha256 != request.source_regions_sha256:
         raise ManifestStateError("审批文件引用的推荐区域 artifact 已变化")
-    recommended = load_model(region_ref.verify(root), RecommendedRegionSet)
-    if recommended.method is not request.method:
-        raise ManifestStateError("审批 method 与推荐区域 method 不一致")
-    available = {region.region_id for region in recommended.regions}
+    if isinstance(request.region_source, AutomaticRegionSource):
+        if (
+            request.method is None
+            or region_ref.artifact_id != _region_artifact_id(request.method)
+        ):
+            raise ManifestStateError("automatic 审批的 method/artifact 身份不一致")
+        automatic_regions = load_model(
+            region_ref.verify(root),
+            RecommendedRegionSet,
+        )
+        if (
+            automatic_regions.method is not request.method
+            or request.region_source.recommendation_artifact_id
+            != region_ref.artifact_id
+            or request.region_source.recommendation_sha256 != region_ref.sha256
+        ):
+            raise ManifestStateError("automatic 审批的 region_source 身份不一致")
+        regions: RecommendedRegionSet | UserProvidedRegionSet = automatic_regions
+        available = {
+            region.region_id for region in automatic_regions.regions
+        }
+    else:
+        if region_ref.artifact_id != "user-provided-regions":
+            raise ManifestStateError("用户提供区域必须引用标准化 user-provided artifact")
+        user_regions = load_model(region_ref.verify(root), UserProvidedRegionSet)
+        if user_regions.region_source != request.region_source:
+            raise ManifestStateError("用户区域来源身份与标准化 artifact 不一致")
+        regions = user_regions
+        available = {
+            region.source_region_id for region in user_regions.regions
+        }
     selected = {selection.source_region_id for selection in request.selections}
     if not selected.issubset(available):
-        raise ManifestStateError("审批只能选择同一方法输出的完整推荐区域")
+        raise ManifestStateError("审批只能选择当前 artifact 中的完整区域")
     if not request.approved_by:
         raise ManifestStateError("approved_by 不能为空")
     for selection in request.selections:
@@ -353,6 +463,14 @@ def approve_hotspots(
         raise ManifestStateError(
             "structural-only 审批必须设置 acknowledge_evidence_limitations: true"
         )
+    if (
+        not isinstance(request.region_source, AutomaticRegionSource)
+        and not request.acknowledge_user_provided_regions
+    ):
+        raise ManifestStateError(
+            "用户提供区域审批必须设置 "
+            "acknowledge_user_provided_regions: true"
+        )
 
     attempt_root = root / str(StageId.HOTSPOT_DISCOVERY) / APPROVAL_ATTEMPT_ID
     if attempt_root.exists():
@@ -369,7 +487,7 @@ def approve_hotspots(
     approval_sets = tuple(
         _approved_set(
             selection=selection,
-            regions=recommended,
+            regions=regions,
             annotation=annotation,
         )
         for selection in request.selections
@@ -385,11 +503,13 @@ def approve_hotspots(
             else ("1",)
         ),
         method=request.method,
+        region_source=request.region_source,
         selection_basis=annotation.evidence_level,
         annotation_status=annotation.status,
         approval_request_sha256=sha256_file(normalized_request),
         approved_by=request.approved_by,
         approval_authority=authority,
+        approval_source=approval_source,
         policy_id=policy_id,
         hotspot_sets=approval_sets,
     )
@@ -398,12 +518,20 @@ def approve_hotspots(
         approved_at=timestamp,
         approved_by=request.approved_by,
         method=request.method,
+        region_source=request.region_source,
         source_stage_manifest_sha256=request.source_stage_manifest_sha256,
         approval_input_sha256=sha256_file(copied_input),
         selected_region_ids=tuple(
             selection.source_region_id for selection in request.selections
         ),
+        acknowledge_user_provided_regions=(
+            request.acknowledge_user_provided_regions
+        ),
+        acknowledge_evidence_limitations=(
+            request.acknowledge_evidence_limitations
+        ),
         authority=authority,
+        approval_source=approval_source,
         policy_id=policy_id,
     )
     record_path = dump_model(record, artifacts / "approval-record.json")
@@ -458,7 +586,7 @@ def approve_hotspots(
     dump_model(attempt, attempt_root / "attempt-manifest.json")
     approved_stage = StageManifest(
         stage_id=StageId.HOTSPOT_DISCOVERY,
-        contract_version="0.2",
+        contract_version="0.3",
         status=ExecutionStatus.SUCCEEDED,
         created_at=stage02.created_at,
         completed_at=timestamp,
@@ -467,8 +595,18 @@ def approve_hotspots(
         attempts=stage02.attempts + (attempt,),
         selected_attempt_id=APPROVAL_ATTEMPT_ID,
         warnings=(
-            "Approved regions are complete outputs from one automatic method.",
-            "No SASA/ScanNet score fusion or member editing was performed.",
+            (
+                "Approved regions are complete outputs from one automatic method."
+                if isinstance(regions, RecommendedRegionSet)
+                else "Approved regions are complete user-provided regions."
+            ),
+            "No score fusion or region member editing was performed.",
+            (
+                "User-provided regions require biological review and are not "
+                "scientifically validated binding sites."
+                if not isinstance(regions, RecommendedRegionSet)
+                else "Automatic proposals remain method-specific."
+            ),
             (
                 "Scientific evidence limitations were explicitly acknowledged."
                 if annotation.evidence_level is EvidenceLevel.STRUCTURAL_ONLY
@@ -585,6 +723,68 @@ def approve_hotspots_by_policy(
             input_path=temporary,
             authority="deterministic-policy",
             policy_id=policy_id,
+            approval_source="deterministic-policy",
+        )
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def approve_hotspots_from_initial_config(
+    run_root: Path,
+    *,
+    approval: UserRegionInitialApprovalConfig,
+) -> Path:
+    """unattended 用户区域：消费用户在初始 YAML 中签署的人工批准。"""
+
+    root = run_root.resolve()
+    temporary = root / "02-hotspot-discovery" / ".initial-config-review.yaml"
+    if temporary.exists():
+        raise ManifestStateError(f"临时 config review 已存在: {temporary}")
+    export_hotspot_review(root, method=None, output=temporary)
+    try:
+        raw = yaml.safe_load(temporary.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ManifestStateError("自动导出的 hotspot review 不是 mapping")
+        exported = raw.get("selections")
+        if not isinstance(exported, list):
+            raise ManifestStateError("自动导出的 hotspot selections 不是 list")
+        by_id = {
+            item.id: item
+            for item in approval.selections
+        }
+        exported_ids = {
+            item.get("id")
+            for item in exported
+            if isinstance(item, dict)
+        }
+        if exported_ids != set(by_id):
+            raise ManifestStateError(
+                "unattended 初始审批必须为全部标准化用户区域提供理由"
+            )
+        for selection in exported:
+            if not isinstance(selection, dict):
+                raise ManifestStateError("hotspot selection 不是 mapping")
+            selection_id = selection.get("id")
+            if selection_id not in by_id:
+                raise ManifestStateError("初始审批包含未知区域 id")
+            configured = by_id[selection_id]
+            selection["design_goal"] = str(configured.design_goal)
+            selection["biological_rationale"] = configured.biological_rationale
+            selection["structural_rationale"] = configured.structural_rationale
+        raw["approved_by"] = approval.approved_by
+        raw["acknowledge_user_provided_regions"] = (
+            approval.acknowledge_user_provided_regions
+        )
+        raw["acknowledge_evidence_limitations"] = (
+            approval.acknowledge_evidence_limitations
+        )
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            yaml.safe_dump(raw, handle, allow_unicode=True, sort_keys=False)
+        return approve_hotspots(
+            root,
+            input_path=temporary,
+            authority="human",
+            approval_source="initial-run-config",
         )
     finally:
         temporary.unlink(missing_ok=True)

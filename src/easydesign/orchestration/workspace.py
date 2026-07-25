@@ -73,7 +73,7 @@ class ResolvedRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.5"
+    schema_version: str = "0.6"
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     user_config: EasyDesignRunConfig
@@ -90,7 +90,7 @@ class ResolvedRunConfig(BaseModel):
     def validate_input_branch(self) -> Self:
         if self.schema_version == "0.3" and self.runtime_profile is not None:
             raise ValueError("resolved config 0.3 不支持 runtime_profile")
-        if self.schema_version not in {"0.2", "0.3", "0.4", "0.5"}:
+        if self.schema_version not in {"0.2", "0.3", "0.4", "0.5", "0.6"}:
             raise ValueError(f"不支持的 resolved config schema: {self.schema_version}")
         is_sequence = self.detected_input_format in {
             TargetInputFormat.SEQUENCE,
@@ -356,7 +356,7 @@ def _initialize_workspace(
                 file_format="a3m",
             )
         resolved = ResolvedRunConfig(
-            schema_version="0.5",
+            schema_version="0.6",
             project_id=loaded.config.project_id,
             run_id=selected_run_id,
             user_config=loaded.config,

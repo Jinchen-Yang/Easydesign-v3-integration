@@ -218,11 +218,11 @@ target.fasta | target.pdb | target.cif | target.pse | target-bundle.json
 easydesign.yaml
 ```
 
-`easydesign.yaml` schema `0.5` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
+`easydesign.yaml` schema `0.6` 固定展示 `stage01` 至 `stage07`；`design` 保存跨阶段
 binder profile/intent，未实现阶段写 `null`。`stage01.target.source` 是
 `local-file | pdb-id | uniprot | uniprot-search | target-bundle` 的 discriminated union；
 本地路径相对于 YAML 解析。旧 schema 0.3 只在加载边界规范化，run 内
-`resolved-config.json` 永远保存 0.5。
+`resolved-config.json` 永远保存 0.6。
 
 统一 Stage 01 source pipeline 是：
 
@@ -291,7 +291,7 @@ quality、provenance、Target Bundle 和 Stage/Run manifests，并额外发布 `
 
 Protenix 2.0.0 CLI 不暴露远程 ticket，因此 provenance 会明确记录
 `not-exposed-by-protenix-cli-2.0.0`，不能伪造 ticket。可直接采集 ticket/status 的服务
-sequence-hash cache 和预计算 A3M 已实现并由 schema 0.5 显式选择；自建
+sequence-hash cache 和预计算 A3M 已实现并由 schema 0.6 显式选择；自建
 ColabFold/MMseqs2 profile 仍属于后续实现。
 
 旧版目录（只用于解释历史，不再生成）：
@@ -339,6 +339,26 @@ ScanNet v0.1 遇到多模型明确返回 `unsupported_ensemble`。只运行一�
 `workflow_state=awaiting-human-approval`。人工审批通过单独的 `attempt-0002` 选择同一
 方法的 2–3 个完整区域并发布 `hotspots.yaml`；该文件是 Stage 03 唯一入口。structural-only
 审批必须显式确认科学证据限制。
+
+Stage 02 schema 0.6 还提供统一的用户区域边界：
+
+```text
+Target Bundle
+├── target.cif + mapping + PSE source annotation ─→ 固定 R/B/Y 解析 ─┐
+└── target.cif + mapping + YAML residue selectors ─→ 编号解析 ───────┤
+                                                                    ↓
+                      UserProvidedRegionSet → approval → hotspots.yaml 0.3
+```
+
+标准 PDB/mmCIF 不承载 EasyDesign 私有颜色；PSE 颜色保存在 Stage 01
+`source-annotations.json`，Stage 02 通过 ArtifactRef/SHA-256 消费。`detect` 只有在
+annotation 中存在固定红/蓝/黄时走用户区域，否则进入显式 automatic fallback；
+`automatic` 从不读取颜色。PSE 和 YAML 最终共享同一不可变区域类型、mapping 校验和
+审批实现，避免形成两套 Stage 03 handoff。
+
+automatic unattended 仍是 deterministic-policy。用户区域 unattended 必须由初始配置
+提供真实审批人、逐区理由和 acknowledgement，输出明确记录
+`approval_authority=human` 与 `approval_source=initial-run-config`，不能伪装成算法批准。
 
 ### 远程 adapter、cache 与 Decision Gate
 

@@ -1,33 +1,62 @@
-"""Stage 02 区域来源接口；首版只注册 automatic provider。"""
+"""Stage 02 可替换区域来源的薄 provider 包装。"""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
-from easydesign.core import ConfigurationError
+from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
 
-from .models import RecommendedRegionSet
+from .geometry import StructureContext
+from .models import RecommendedRegionSet, UserProvidedRegionSet
+from .user_regions import normalize_manual_regions, normalize_pse_color_regions
 
 
 class RegionProposalProvider(Protocol):
     provider_name: str
 
-    def propose(self) -> RecommendedRegionSet: ...
+    def propose(self) -> RecommendedRegionSet | UserProvidedRegionSet: ...
 
 
+@dataclass(frozen=True, slots=True)
 class PseAnnotationRegionProvider:
-    provider_name = "pse_annotations"
+    run_root: Path
+    bundle: TargetBundle
+    context: StructureContext
+    mapping: ResidueMapping
+    provider_name = "pse-color-annotation"
 
-    def propose(self) -> RecommendedRegionSet:
-        raise ConfigurationError(
-            "Stage 02 PSE 染色区域导入尚未实现；禁止回退到 automatic"
+    def propose(self) -> UserProvidedRegionSet:
+        regions, _evidence, _validation = normalize_pse_color_regions(
+            run_root=self.run_root,
+            bundle=self.bundle,
+            context=self.context,
+            mapping=self.mapping,
         )
+        return regions
 
 
+@dataclass(frozen=True, slots=True)
 class ManualRegionProvider:
-    provider_name = "manual"
+    bundle: TargetBundle
+    context: StructureContext
+    mapping: ResidueMapping
+    numbering: str
+    chain: str | None
+    configured_regions: Iterable[tuple[str, tuple[str, ...]]]
+    input_config_sha256: str
+    provider_name = "manual-residue-list"
 
-    def propose(self) -> RecommendedRegionSet:
-        raise ConfigurationError(
-            "Stage 02 人工区域上传尚未实现；禁止回退到 automatic"
+    def propose(self) -> UserProvidedRegionSet:
+        regions, _evidence, _validation = normalize_manual_regions(
+            bundle=self.bundle,
+            context=self.context,
+            mapping=self.mapping,
+            numbering=self.numbering,
+            chain=self.chain,
+            configured_regions=self.configured_regions,
+            input_config_sha256=self.input_config_sha256,
         )
+        return regions

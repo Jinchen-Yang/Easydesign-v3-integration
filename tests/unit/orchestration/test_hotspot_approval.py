@@ -44,6 +44,7 @@ from easydesign.stages.s01_target_preparation import (
 from easydesign.stages.s02_hotspot_discovery import (
     AnnotationReport,
     AnnotationStatus,
+    ApprovalRecord,
     CandidateSurfaceRegion,
     EvidenceLevel,
     HotspotsFile,
@@ -438,6 +439,12 @@ def test_structural_only_review_requires_acknowledgement_then_publishes(
     stage02 = load_model(stage02_ref.verify(root), StageManifest)
     assert stage02.selected_attempt_id == "attempt-0002"
     assert stage02.require_output("hotspots").verify(root) == hotspots_path
+    approval_record = load_model(
+        root
+        / "02-hotspot-discovery/attempt-0002/artifacts/approval-record.json",
+        ApprovalRecord,
+    )
+    assert approval_record.acknowledge_evidence_limitations is True
 
 
 def test_review_rejects_region_from_another_method_or_revision(
@@ -462,5 +469,5 @@ def test_review_rejects_region_from_another_method_or_revision(
         encoding="utf-8",
     )
 
-    with pytest.raises(ManifestStateError, match="完整推荐区域"):
+    with pytest.raises(ManifestStateError, match="完整区域"):
         approve_hotspots(root, input_path=review)

@@ -10,10 +10,7 @@ from Bio.PDB.Model import Model
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Structure import Structure
 
-from easydesign.core import ConfigurationError
 from easydesign.stages.s02_hotspot_discovery import (
-    ManualRegionProvider,
-    PseAnnotationRegionProvider,
     RegionMethod,
     RegionParameters,
     StructureContext,
@@ -166,10 +163,3 @@ def test_scannet_requires_complete_residue_probability_mapping() -> None:
             method_version="test-scannet",
             region_parameters=parameters(),
         )
-
-
-def test_unimplemented_region_sources_fail_without_fallback() -> None:
-    with pytest.raises(ConfigurationError, match="PSE 染色区域导入尚未实现"):
-        PseAnnotationRegionProvider().propose()
-    with pytest.raises(ConfigurationError, match="人工区域上传尚未实现"):
-        ManualRegionProvider().propose()

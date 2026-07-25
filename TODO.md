@@ -19,6 +19,7 @@
 | M4 可审计开发历史 | `implemented` | ENG-004 统一 Stage 与顶层完成记录的 RFC 3339 时间戳，并由 `make check` 阻止缺失、重复或无时区记录。 |
 | M5 canonical 配置与科学审批边界 | `smoke-validated` | schema 0.3 展示七阶段；Target Bundle 0.3 支持 ensemble；Stage 02 自动结果停在显式人工批准并只通过 `hotspots.yaml` 交接。 |
 | M6 Stage 01 六入口与双运行模式 | `smoke-validated` | schema 0.5、六 source handler、Decision resume、remote/cache/precomputed MSA 与十条 live fixture 均通过；Stage 01 1.0 工程边界已冻结。 |
+| M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -60,9 +61,9 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | schema 0.5 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 02 审批与 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | schema 0.4 已消费 Stage 01 冻结 UniProt 证据并支持 unattended 单方法交接；APOE 双方法仍等待人工批准。 | 用户从 SASA 或 ScanNet 中批准 2–3 个完整区域，再启动 Stage 03。 | 自动流程无 runtime 阻塞；Stage 03 等待真实人工区域批准，GPU 仅是后续优化。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
-| Stage 03 | `planned` | 尚未实现；1.0 将先生成并校验 VHH BoltzGen 配置。 | 等待 Stage 02 人工批准区域后定义 YAML 与策略 manifest。 | Stage 02 handoff 未建立，VHH scaffold 权利待审查。 | 2026-07-24 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
+| Stage 01 | `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | schema 0.6 已打通 automatic、PSE 固定颜色和 YAML 四编号人工区域；APOE 用户区域已发布可供 Stage 03 消费的 hotspots.yaml 0.3。 | 冻结 Stage 02 工程交接，启动 Stage 03 BoltzGen YAML；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 03 | `planned` | APOE 用户区域 `hotspots.yaml` 0.3 已可消费；Stage 03 代码尚未实现。 | 定义并校验 VHH BoltzGen YAML、设计矩阵与配置 manifest。 | 第三方 VHH scaffold 权利与目标 BoltzGen 版本/资产仍待审计。 | 2026-07-25 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `planned` | 尚未实现；filter profile、逐规则审计和 shortlist 均待开发。 | Stage 04 候选契约稳定后建立可版本化 filter engine。 | 依赖 Stage 04 规范候选与原始 artifact。 | 2026-07-24 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
 | Stage 06 | `planned` | 通用预测接口已在 Stage 01 实现，放大生成和复合物 refold 尚未开始。 | 复用 Protenix-v2 adapter，等待 Stage 05 shortlist 后定义 scale 契约。 | 依赖 Stage 05 入选策略和复合物预测验证。 | 2026-07-24 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |

@@ -32,7 +32,12 @@ def _slug(value: str, *, label: str) -> str:
     return normalized
 
 
-def _stage02_payload(method: str, *, unattended: bool) -> dict[str, object]:
+def _stage02_payload(
+    method: str,
+    *,
+    unattended: bool,
+    detect_pse_colors: bool = False,
+) -> dict[str, object]:
     methods = {
         "both": ["sasa", "scannet"],
         "sasa": ["sasa"],
@@ -44,8 +49,8 @@ def _stage02_payload(method: str, *, unattended: bool) -> dict[str, object]:
         raise ConfigurationError("--stage02-method 必须是 sasa、scannet 或 both") from error
     if unattended and len(selected_methods) != 1:
         raise ConfigurationError("unattended Stage 02 必须选择 sasa 或 scannet，不能 both")
-    return {
-        "mode": "automatic",
+    payload: dict[str, object] = {
+        "mode": "detect" if detect_pse_colors else "automatic",
         "methods": selected_methods,
         "annotations": {"uniprot": "if_available"},
         "automatic": {
@@ -74,6 +79,15 @@ def _stage02_payload(method: str, *, unattended: bool) -> dict[str, object]:
             else None
         ),
     }
+    if detect_pse_colors:
+        payload["user_regions"] = {
+            "source": {
+                "type": "pse-colors",
+                "color_scheme": "easydesign-rby-v1",
+            },
+            "approval": None,
+        }
+    return payload
 
 
 def _prediction_payload(
@@ -136,7 +150,7 @@ def initialize_project(
     precomputed_msa: Path | None = None,
     msa_cache_mode: str = "online",
 ) -> InitializedProject:
-    """生成 schema 0.5；六类 Stage 01 入口全部有显式 init。"""
+    """生成 schema 0.6；六类 Stage 01 入口全部有显式 init。"""
 
     if stop_after_stage not in {1, 2}:
         raise ConfigurationError("Developer Preview init 只支持 --stop-after 1 或 2")
@@ -325,8 +339,17 @@ def initialize_project(
         raise ConfigurationError(
             "--msa-cache-mode 只适用于 FASTA/裸序列/UniProt 预测入口"
         )
+    if (
+        detected is TargetInputFormat.PSE
+        and stop_after_stage == 2
+        and execution_mode == "unattended"
+    ):
+        raise ConfigurationError(
+            "unattended PSE 颜色区域必须由用户在初始 YAML 提供批准人、"
+            "逐区域理由和证据局限确认；请先用 review-gated 初始化后显式编辑配置"
+        )
     payload: dict[str, object] = {
-        "schema_version": "0.5",
+        "schema_version": "0.6",
         "project_id": selected_project_id,
         "design": {
             "binder_profile": "vhh",
@@ -369,6 +392,7 @@ def initialize_project(
             _stage02_payload(
                 selected_stage02_method,
                 unattended=execution_mode == "unattended",
+                detect_pse_colors=detected is TargetInputFormat.PSE,
             )
             if stop_after_stage == 2
             else None

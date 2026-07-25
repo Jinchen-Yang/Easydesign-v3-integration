@@ -160,3 +160,23 @@
   复合物 PSE、Stage 03 UX 和公开 release 仍属后续任务。
 - 提交：`47af2ae715524d4edd50762a819175a9cfb661dd`
   （`feat(stage01): complete six-entry version-one workflow`）。
+
+## 2026-07-25 — M7 / S02-006-USER-REGIONS：用户区域 Stage 03 交接
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-25T22:58:22+08:00
+- 问题：Stage 01 已保留 PSE 颜色，但 Stage 02 只能自动运行 SASA/ScanNet，无法把 PSE
+  染色或初始 YAML 残基作为同一种可审计用户先验。
+- 方案：schema 0.6 增加 detect/automatic/user-provided；固定红 A、蓝 B、黄 C，并将
+  PSE 颜色和 sequence/label/auth/UniProt selector 统一为不可变
+  `UserProvidedRegionSet`。审批后以 hotspots.yaml 0.3 的 discriminated
+  `region_source` 交接。
+- 真实证据：最终 APOE PSE 与 YAML auth 两条 review-gated run 均得到相同 A/B/C
+  9/14/14 规范成员并独立发布 handoff；unattended run 记录真实人员、配置 SHA-256、
+  理由和两类 acknowledgement，未伪装成算法批准。
+- 工程证据：`make check`、183 passed/8 default-skipped、显式 PyMOL 8 passed、dev4
+  wheel 6/6 和 Playwright 3 passed/2 runtime-only skipped 均通过。
+- 结果：Stage 03 handoff 已建立；顶层 Now 转向 S03，S02-008 科学 benchmark 独立保留。
+- 编号说明：早期历史已经使用 S02-006，因此本条追加限定名而不改写旧记录。
+- 提交：本记录所在的 `feat(stage02): import user-provided hotspot regions`；最终 SHA
+  以远端 `main` 核对为准。

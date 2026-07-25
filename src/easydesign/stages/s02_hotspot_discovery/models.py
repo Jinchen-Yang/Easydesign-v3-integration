@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -391,10 +391,131 @@ class MethodComparison(BaseModel):
     best_matches: tuple[RegionOverlap, ...]
 
 
+class AutomaticRegionSource(BaseModel):
+    """自动方法产物的不可变身份。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["automatic"] = "automatic"
+    method: RegionMethod
+    recommendation_artifact_id: str = Field(pattern=ID_PATTERN)
+    recommendation_sha256: str = Field(pattern=SHA256_PATTERN)
+
+
+class PseColorRegionSource(BaseModel):
+    """PSE CA 颜色 annotation 的不可变来源身份。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["pse-color-annotation"] = "pse-color-annotation"
+    color_scheme: Literal["easydesign-rby-v1"] = "easydesign-rby-v1"
+    source_annotation_sha256: str = Field(pattern=SHA256_PATTERN)
+
+
+class ManualResidueListRegionSource(BaseModel):
+    """初始 YAML 中人工残基列表的不可变来源身份。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["manual-residue-list"] = "manual-residue-list"
+    numbering: Literal["sequence", "label", "auth", "uniprot"]
+    chain: str | None = Field(default=None, min_length=1, max_length=16)
+    input_config_sha256: str = Field(pattern=SHA256_PATTERN)
+
+
+RegionSource = Annotated[
+    AutomaticRegionSource | PseColorRegionSource | ManualResidueListRegionSource,
+    Field(discriminator="type"),
+]
+
+UserRegionSource = Annotated[
+    PseColorRegionSource | ManualResidueListRegionSource,
+    Field(discriminator="type"),
+]
+
+
+class UserProvidedRegion(BaseModel):
+    """不扩展、不删减、不重排的一个用户区域。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str = Field(pattern=r"^[ABC]$")
+    source_region_id: str = Field(pattern=ID_PATTERN)
+    members: tuple[ResidueIdentity, ...] = Field(min_length=1)
+    source_selectors: tuple[str, ...] = Field(min_length=1)
+    centroid_angstrom: tuple[float, float, float]
+    warnings: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_members(self) -> Self:
+        labels = [member.label_seq_id for member in self.members]
+        if labels != sorted(labels) or len(labels) != len(set(labels)):
+            raise ValueError("用户区域成员必须按 label_seq_id 升序且不能重复")
+        if len(self.source_selectors) != len(self.members):
+            raise ValueError("用户区域 selector 数量必须与成员数量一致")
+        return self
+
+
+class UserProvidedRegionSet(BaseModel):
+    """PSE 颜色和 YAML 残基列表共享的标准化结果。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    target_id: str = Field(pattern=ID_PATTERN)
+    target_structure_sha256: str = Field(pattern=SHA256_PATTERN)
+    sequence_sha256: str = Field(pattern=SHA256_PATTERN)
+    coordinate_model_ids: tuple[str, ...] = Field(min_length=1)
+    representative_model_id: str = Field(min_length=1, max_length=32)
+    region_source: UserRegionSource
+    regions: tuple[UserProvidedRegion, ...] = Field(min_length=1, max_length=3)
+    warnings: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_regions(self) -> Self:
+        ids = [region.id for region in self.regions]
+        order = {"A": 0, "B": 1, "C": 2}
+        if ids != sorted(ids, key=order.__getitem__) or len(ids) != len(set(ids)):
+            raise ValueError("用户区域 id 必须是按 A/B/C 排序的唯一非空子集")
+        if self.representative_model_id not in self.coordinate_model_ids:
+            raise ValueError("代表模型必须属于 coordinate_model_ids")
+        return self
+
+
+class UserRegionSourceEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    target_id: str = Field(pattern=ID_PATTERN)
+    region_source: UserRegionSource
+    source_artifact_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    source_artifact_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    configured_selectors: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    background_color_counts: dict[str, int] = Field(default_factory=dict)
+    standard_color_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class UserRegionValidationReport(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    status: Literal["succeeded"] = "succeeded"
+    target_id: str = Field(pattern=ID_PATTERN)
+    representative_model_id: str = Field(min_length=1, max_length=32)
+    region_count: int = Field(ge=1, le=3)
+    member_counts: dict[str, int]
+    spatial_component_counts: dict[str, int]
+    all_members_uniquely_mapped: bool = True
+    all_members_present_in_representative_model: bool = True
+    cross_region_overlaps: dict[str, tuple[int, ...]] = Field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
+
+
 class ProviderExecutionStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    method: RegionMethod
+    provider: str = Field(default="automatic", pattern=ID_PATTERN)
+    method: RegionMethod | None = None
     status: str = Field(pattern=ID_PATTERN)
     message: str
 
@@ -402,8 +523,12 @@ class ProviderExecutionStatus(BaseModel):
 class Stage02Report(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
     target_id: str = Field(pattern=ID_PATTERN)
+    resolved_region_source: str = Field(
+        default="automatic",
+        pattern=r"^(automatic|pse-color-annotation|manual-residue-list)$",
+    )
     annotation_status: AnnotationStatus = AnnotationStatus.NOT_IMPLEMENTED
     evidence_level: EvidenceLevel = EvidenceLevel.STRUCTURAL_ONLY
     identity_resolution: IdentityResolutionStatus = (
@@ -421,7 +546,20 @@ class Stage02Report(BaseModel):
 
     @model_validator(mode="after")
     def validate_boundaries(self) -> Self:
-        if self.pse_source_annotations_consumed:
+        if (
+            self.resolved_region_source != "pse-color-annotation"
+            and self.pse_source_annotations_consumed
+        ):
+            raise ValueError("只有 PSE color 路线可以声明消费 PSE annotation")
+        if (
+            self.resolved_region_source == "pse-color-annotation"
+            and not self.pse_source_annotations_consumed
+        ):
+            raise ValueError("PSE color 路线必须如实声明已消费 annotation")
+        if (
+            self.resolved_region_source == "automatic"
+            and self.pse_source_annotations_consumed
+        ):
             raise ValueError("automatic Stage 02 禁止消费 PSE 颜色 annotation")
         if self.fused_ranking_generated:
             raise ValueError("Stage 02 v0.1 禁止融合排名")
@@ -445,28 +583,36 @@ class HotspotReviewSelection(BaseModel):
 class HotspotReviewRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    schema_version: str = Field(default="0.2", pattern=r"^0\.[12]$")
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     target_id: str = Field(pattern=ID_PATTERN)
-    method: RegionMethod
+    method: RegionMethod | None = None
+    region_source: RegionSource
     source_stage_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
     source_regions_artifact_id: str = Field(pattern=ID_PATTERN)
     source_regions_sha256: str = Field(pattern=SHA256_PATTERN)
     selection_basis: EvidenceLevel
     annotation_status: AnnotationStatus
     approved_by: str = Field(default="", max_length=256)
+    acknowledge_user_provided_regions: bool = False
     acknowledge_evidence_limitations: bool = False
-    selections: tuple[HotspotReviewSelection, ...] = Field(min_length=2, max_length=3)
+    selections: tuple[HotspotReviewSelection, ...] = Field(min_length=1, max_length=3)
 
     @model_validator(mode="after")
     def validate_selections(self) -> Self:
         ids = [selection.id for selection in self.selections]
-        if ids != list("ABC")[: len(ids)]:
-            raise ValueError("审批区域 id 必须按 A、B、C 连续排列")
+        order = {"A": 0, "B": 1, "C": 2}
+        if ids != sorted(ids, key=order.__getitem__) or len(ids) != len(set(ids)):
+            raise ValueError("审批区域 id 必须是按 A/B/C 排序的唯一非空子集")
         region_ids = [selection.source_region_id for selection in self.selections]
         if len(region_ids) != len(set(region_ids)):
             raise ValueError("同一自动区域不能重复选择")
+        if isinstance(self.region_source, AutomaticRegionSource):
+            if self.method is None or self.method is not self.region_source.method:
+                raise ValueError("automatic review 的 method/region_source 必须一致")
+        elif self.method is not None:
+            raise ValueError("用户提供区域不得伪造 automatic method")
         return self
 
 
@@ -499,13 +645,14 @@ class HotspotsFile(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = Field(default="0.2", pattern=r"^0\.[12]$")
+    schema_version: str = Field(default="0.3", pattern=r"^0\.[123]$")
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
     target_id: str = Field(pattern=ID_PATTERN)
     target_structure_sha256: str = Field(pattern=SHA256_PATTERN)
     coordinate_model_ids: tuple[str, ...] = Field(min_length=1)
-    method: RegionMethod
+    method: RegionMethod | None = None
+    region_source: RegionSource
     selection_basis: EvidenceLevel
     annotation_status: AnnotationStatus
     approval_request_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -514,45 +661,99 @@ class HotspotsFile(BaseModel):
         default="human",
         pattern=r"^(human|deterministic-policy)$",
     )
+    approval_source: str = Field(
+        default="explicit-review",
+        pattern=r"^(explicit-review|initial-run-config|deterministic-policy)$",
+    )
     policy_id: str | None = Field(default=None, pattern=ID_PATTERN)
     needs_human_review: bool = False
     ready_for_stage03: bool = True
-    hotspot_sets: tuple[ApprovedHotspotSet, ...] = Field(min_length=2, max_length=3)
+    hotspot_sets: tuple[ApprovedHotspotSet, ...] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_region_source(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict) or "region_source" in raw:
+            return raw
+        method = raw.get("method")
+        if method is None:
+            return raw
+        migrated = dict(raw)
+        migrated["region_source"] = {
+            "type": "automatic",
+            "method": method,
+            "recommendation_artifact_id": (
+                "sasa-recommended-regions"
+                if method == RegionMethod.SASA_SURFACE_DIVERSITY
+                else "scannet-recommended-regions"
+            ),
+            "recommendation_sha256": raw.get(
+                "approval_request_sha256",
+                "0" * 64,
+            ),
+        }
+        return migrated
 
     @model_validator(mode="after")
     def validate_ready(self) -> Self:
         if self.needs_human_review or not self.ready_for_stage03:
             raise ValueError("hotspots.yaml 只能表示已经人工批准的 Stage 03 输入")
         ids = [hotspot.id for hotspot in self.hotspot_sets]
-        if ids != list("ABC")[: len(ids)]:
-            raise ValueError("hotspot set id 必须按 A、B、C 连续排列")
+        order = {"A": 0, "B": 1, "C": 2}
+        if ids != sorted(ids, key=order.__getitem__) or len(ids) != len(set(ids)):
+            raise ValueError("hotspot set id 必须是按 A/B/C 排序的唯一非空子集")
+        if isinstance(self.region_source, AutomaticRegionSource):
+            if self.method is None or self.method is not self.region_source.method:
+                raise ValueError("automatic hotspots 的 method/region_source 必须一致")
+            if len(self.hotspot_sets) < 2:
+                raise ValueError("automatic hotspots 至少需要两个区域")
+        elif self.method is not None:
+            raise ValueError("用户提供区域不得伪造 automatic method")
         if self.approval_authority == "deterministic-policy":
             if self.policy_id is None:
                 raise ValueError("deterministic-policy hotspots 必须记录 policy_id")
+            if self.approval_source != "deterministic-policy":
+                raise ValueError("deterministic-policy authority/source 必须一致")
         elif self.policy_id is not None:
             raise ValueError("human hotspots 不得伪造 policy_id")
+        if self.approval_source == "initial-run-config" and self.approval_authority != "human":
+            raise ValueError("初始配置审批必须记录 human authority")
         return self
 
 
 class ApprovalRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = Field(default="0.2", pattern=r"^0\.[12]$")
+    schema_version: str = Field(default="0.3", pattern=r"^0\.[123]$")
     status: str = Field(default="approved", pattern=r"^approved$")
     approved_at: datetime
     approved_by: str = Field(min_length=1, max_length=256)
-    method: RegionMethod
+    method: RegionMethod | None = None
+    region_source: RegionSource
     source_stage_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
     approval_input_sha256: str = Field(pattern=SHA256_PATTERN)
-    selected_region_ids: tuple[str, ...] = Field(min_length=2, max_length=3)
+    selected_region_ids: tuple[str, ...] = Field(min_length=1, max_length=3)
+    acknowledge_user_provided_regions: bool = False
+    acknowledge_evidence_limitations: bool = False
     authority: str = Field(default="human", pattern=r"^(human|deterministic-policy)$")
+    approval_source: str = Field(
+        default="explicit-review",
+        pattern=r"^(explicit-review|initial-run-config|deterministic-policy)$",
+    )
     policy_id: str | None = Field(default=None, pattern=ID_PATTERN)
 
     @model_validator(mode="after")
     def validate_authority(self) -> Self:
+        if isinstance(self.region_source, AutomaticRegionSource):
+            if self.method is None or self.method is not self.region_source.method:
+                raise ValueError("automatic approval 的 method/region_source 必须一致")
+        elif self.method is not None:
+            raise ValueError("用户提供区域不得伪造 automatic method")
         if self.authority == "deterministic-policy":
             if self.policy_id is None:
                 raise ValueError("deterministic-policy approval 必须记录 policy_id")
+            if self.approval_source != "deterministic-policy":
+                raise ValueError("deterministic-policy authority/source 必须一致")
         elif self.policy_id is not None:
             raise ValueError("human approval 不得伪造 policy_id")
         return self

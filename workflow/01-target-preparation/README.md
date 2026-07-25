@@ -1,6 +1,6 @@
 # 01 — Target 准备
 
-**阶段状态：** `smoke-validated`。schema 0.5 的六类入口、严格实验结构选择、
+**阶段状态：** `smoke-validated`。schema 0.6 的六类入口、严格实验结构选择、
 Target Bundle 0.4、通用 Decision Gate、三种 MSA 来源和 Viewer 均已通过
 Proteindigger1 真实 smoke；该状态只证明工程流程可运行，不代表科学准确率。
 
@@ -12,7 +12,7 @@ Proteindigger1 真实 smoke；该状态只证明工程流程可运行，不代�
 
 ```mermaid
 flowchart LR
-    Y["easydesign.yaml<br/>schema 0.5"] --> C["配置解析、输入快照、运行模式"]
+    Y["easydesign.yaml<br/>schema 0.6"] --> C["配置解析、输入快照、运行模式"]
 
     C --> L["① 本地 PDB / mmCIF"]
     C --> R["② RCSB PDB ID"]
@@ -106,7 +106,7 @@ MSA-backed Protenix-v2；用户 YAML 禁止 `mode: disabled`，no-MSA 只保留�
 当前标准配置：
 
 ```yaml
-schema_version: "0.5"
+schema_version: "0.6"
 project_id: apoe
 workflow:
   execution_mode: review-gated
@@ -215,7 +215,7 @@ query/A3M hash、depth、provider 和生成时间。`online` 不读取旧 cache�
 PSE 路径使用排他的 YAML 分支：
 
 ```yaml
-schema_version: "0.5"
+schema_version: "0.6"
 project_id: apoe
 workflow:
   execution_mode: review-gated
@@ -288,6 +288,8 @@ scope 支持 `full-sequence`、`residue-range` 和唯一匹配的 UniProt `Domai
 - `coordinate_ensemble`：model 数量、稳定 model IDs、代表 model 和共享残基身份策略。
 - 说明结构属于实验、导入还是预测来源的 manifest。
 - PSE 额外输出 `source-annotations.json`，记录 CA color index、RGB、hex 和颜色计数。
+  `target.cif` 本身不承载通用显示颜色；Stage 02 必须经 Target Bundle 验证并显式解释
+  固定色板，不能看到彩色 CIF 就猜测 hotspot。
 
 联网只使用官方 UniProt REST、RCSB Sequence Search v2、RCSB Data API 和 RCSB mmCIF。
 统一 HTTP adapter 对 connect/read 做有界 timeout，429 遵守 `Retry-After`，只有限重试
@@ -354,7 +356,7 @@ PSE 与 sequence 的正式交接均以 Target Bundle 声明的 `target.cif`（`f
 为准。两者可以有不同序列长度和坐标来源，但文件协议、编号映射和 manifest 链必须一致；
 backend 工作目录中的 PDB/CIF 不属于正式交接。
 
-schema 0.5 的新 PSE run 也把正式 target label/auth chain 规范为 `A`；PSE 原 chain、
+schema 0.6 的新 PSE run 也把正式 target label/auth chain 规范为 `A`；PSE 原 chain、
 author residue 和 insertion code 保存到 mapping 的 `source_*` 字段。schema 0.1–0.3 的
 历史 artifact（例如旧 APOE report 的 label chain `Axp`）继续按原 hash 读取，绝不重写。
 

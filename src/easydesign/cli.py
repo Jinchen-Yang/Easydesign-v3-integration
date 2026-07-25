@@ -18,7 +18,9 @@ from easydesign.core import (
     ArtifactNotFoundError,
     ConfigurationError,
     EasyDesignError,
+    RunManifest,
     SerializationError,
+    load_model,
 )
 from easydesign.orchestration.application import (
     DiagnosticReport,
@@ -154,7 +156,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_json(config_validate)
     config_migrate = config_commands.add_parser(
         "migrate",
-        help="将旧 YAML 显式迁移为 canonical 0.5",
+        help="将旧 YAML 显式迁移为 canonical 0.6",
     )
     config_migrate.add_argument("config", type=Path)
     config_migrate.add_argument("--output", type=Path, required=True)
@@ -189,7 +191,7 @@ def _parser() -> argparse.ArgumentParser:
     hotspots_export.add_argument(
         "--method",
         choices=("sasa", "scannet"),
-        required=True,
+        help="automatic 双方法时必填；用户提供区域不填写",
     )
     hotspots_export.add_argument("--output", type=Path, required=True)
     hotspots_approve = hotspots_commands.add_parser(
@@ -268,15 +270,34 @@ def _print_execution(execution: PipelineExecution) -> None:
         and execution.run_root is not None
     ):
         print("需要人工选择；下一步：")
-        print(f"  easydesign decisions show {execution.run_root}")
-        print(
-            "  easydesign decisions export "
-            f"{execution.run_root} --output decision.yaml"
+        current = (
+            load_model(execution.run_manifest, RunManifest)
+            if execution.run_manifest is not None
+            else None
         )
-        print(
-            "  easydesign decisions approve "
-            f"{execution.run_root} --input decision.yaml"
-        )
+        if (
+            current is not None
+            and current.workflow_state is not None
+            and current.workflow_state.action == "approve-hotspots"
+        ):
+            print(
+                "  easydesign hotspots export "
+                f"{execution.run_root} --output hotspots-review.yaml"
+            )
+            print(
+                "  easydesign hotspots approve "
+                f"{execution.run_root} --input hotspots-review.yaml"
+            )
+        else:
+            print(f"  easydesign decisions show {execution.run_root}")
+            print(
+                "  easydesign decisions export "
+                f"{execution.run_root} --output decision.yaml"
+            )
+            print(
+                "  easydesign decisions approve "
+                f"{execution.run_root} --input decision.yaml"
+            )
     if execution.viewer_status is not None:
         print(f"Stage 01 Viewer：{execution.viewer_status}")
 
@@ -423,9 +444,13 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command == "hotspots":
         if arguments.hotspots_command == "export":
             method = (
-                RegionMethod.SASA_SURFACE_DIVERSITY
-                if arguments.method == "sasa"
-                else RegionMethod.SCANNET_EPITOPE_NO_MSA
+                None
+                if arguments.method is None
+                else (
+                    RegionMethod.SASA_SURFACE_DIVERSITY
+                    if arguments.method == "sasa"
+                    else RegionMethod.SCANNET_EPITOPE_NO_MSA
+                )
             )
             output = export_hotspot_review(
                 arguments.run,
@@ -434,8 +459,8 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             )
             print(f"Hotspot 审批模板已导出：{output}")
             print(
-                "请填写 approved_by、每个区域的两类理由；structural-only "
-                "还需确认 evidence limitations。"
+                "请填写 approved_by、每个区域的两类理由；用户提供区域和 "
+                "structural-only 证据还需分别确认 acknowledgement。"
             )
             return 0
         hotspots = approve_hotspots(

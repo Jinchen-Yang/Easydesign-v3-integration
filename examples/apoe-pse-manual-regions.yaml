@@ -1,0 +1,63 @@
+schema_version: "0.6"
+project_id: apoe-s02-006-manual
+
+design:
+  binder_profile: vhh
+  intent: exploratory
+  required_reviews: []
+
+workflow:
+  execution_mode: review-gated
+  stop_after_stage: 2
+  cache_mode: online
+
+stage01:
+  target:
+    id: apoe-pse-manual
+    source:
+      type: local-file
+      path: inputs/apoe_abc.pse
+      format: pse
+      chain: null
+      chain_namespace: auth
+      identity:
+        uniprot_accession: null
+    scope:
+      type: full-sequence
+  structure_selection:
+    policy: experimental-first
+    quality_profile: experimental-strict-v1
+    on_no_eligible_candidate: predict
+    on_ambiguous_candidates: predict
+    preserve_source_context: true
+    keep_ligands: []
+  structure_prediction: null
+
+stage02:
+  mode: user-provided
+  annotations:
+    uniprot: if_available
+  automatic: null
+  methods: []
+  user_regions:
+    source:
+      type: residue-list
+      numbering: auth
+      chain: A
+      regions:
+        - id: A
+          residues: ["32", "36", "39", "46", "50", "55", "59", "63", "66"]
+        - id: B
+          residues:
+            ["58", "61", "65", "69", "72", "76", "91", "95", "102", "105", "109", "113", "116", "120"]
+        - id: C
+          residues:
+            ["99", "103", "106", "110", "114", "117", "121", "136", "140", "143", "147", "150", "154", "158"]
+    approval: null
+  unattended_approval: null
+
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | schema 0.5 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 02 审批与 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 |
+| `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 |
 
 ## 当前结论
 
@@ -22,8 +22,8 @@
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
   限制而非全局结构限制。
 - Viewer data `0.2` 显示 model 数量和代表 model；现有单模型 APOE 页面行为保持不变。
-- 用户 YAML schema `0.5` 固定展示 `stage01`–`stage07`，旧 0.3/0.4 可兼容读取并显式
-  迁移，run 内 `resolved-config.json` 统一保存 0.5。
+- 用户 YAML schema `0.6` 固定展示 `stage01`–`stage07`，旧 0.3–0.5 可兼容读取并显式
+  迁移，run 内 `resolved-config.json` 统一保存 0.6。
 - FASTA/UniProt 使用官方 RCSB sequence/data API 先查严格合格实验结构；本地结构、
   PDB ID、PSE 和 Target Bundle 均走同一 chain A、mapping、QC、manifest 与 Viewer 交接。
 - `review-gated` 在 identity/chain/structure gate 暂停，审批后同一 run 新建 attempt；
@@ -42,11 +42,11 @@
   `MMSEQS_SERVICE_HOST_URL=https://api.colabfold.com` 和
   `--msa_server_mode colabfold` 后，Protenix 官方 CLI 得到 609 条 unpaired MSA，并完成
   `use_msa=true`、`use_template=false` 的低预算 GPU 预测。
-- sequence/FASTA schema `0.5` 已把 MSA 设为硬性正式路径：默认 provider 是
+- sequence/FASTA schema `0.6` 已把 MSA 设为硬性正式路径：默认 provider 是
   `colabfold-public`，preset 固定解析到 `https://api.colabfold.com` 和
   `--msa_server_mode colabfold`；用户 YAML 禁止 no-MSA fallback。
 - YAML 可按顺序声明 provider、timeout、最大 attempt 数和 retry backoff；解析后的实际
-  endpoint/mode/预算进入 `resolved-config.json` schema `0.5`。adapter 已将 endpoint
+  endpoint/mode/预算进入 `resolved-config.json` schema `0.6`。adapter 已将 endpoint
   放入 MSA invocation 环境并设置 wall-clock timeout。
 - 公共 ColabFold 不能被描述成永久稳定或具有 SLA。默认不把当前异常的
   `protenix-official` 放入 fallback；sequence-hash cache 和 precomputed A3M 已提供显式

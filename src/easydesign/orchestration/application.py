@@ -23,6 +23,7 @@ from easydesign.core import (
     ManifestStateError,
     RunManifest,
     StageId,
+    StageManifest,
     load_model,
     resolve_code_identity,
     sha256_file,
@@ -43,7 +44,10 @@ from .config import (
     migrate_run_config,
 )
 from .decisions import load_decision_record_context
-from .hotspots import approve_hotspots_by_policy
+from .hotspots import (
+    approve_hotspots_by_policy,
+    approve_hotspots_from_initial_config,
+)
 from .profile import (
     PROFILE_ENVIRONMENT_VARIABLE,
     LoadedRuntimeProfile,
@@ -57,7 +61,7 @@ from .profile import (
 from .sequence_prediction import execute_sequence_prediction
 from .stage01_handlers import execute_pse_source
 from .stage01_sources import execute_stage01_source
-from .stage02 import execute_stage02_comparison
+from .stage02 import execute_stage02
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -660,26 +664,43 @@ def execute_pipeline(
             scannet_runtime = backends.scannet_epitope
             assert scannet_runtime is not None
             stage02_adapter = _scannet_adapter(scannet_runtime)
-        completed_stage02 = execute_stage02_comparison(
+        completed_stage02 = execute_stage02(
             run_root=run_root,
             adapter=stage02_adapter,
         )
         run_manifest = completed_stage02.run_manifest
         if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
-            approval = stage02_config.unattended_approval
-            assert approval is not None
-            selected_method = stage02_config.methods[0]
-            method = (
-                RegionMethod.SASA_SURFACE_DIVERSITY
-                if selected_method is Stage02Method.SASA
-                else RegionMethod.SCANNET_EPITOPE_NO_MSA
+            completed_manifest = load_model(
+                completed_stage02.stage_manifest,
+                StageManifest,
             )
-            approve_hotspots_by_policy(
-                run_root,
-                method=method,
-                region_count=approval.region_count,
-                allow_structural_only=approval.allow_structural_only,
+            used_user_regions = any(
+                reference.artifact_id == "user-provided-regions"
+                for reference in completed_manifest.output_artifacts
             )
+            if used_user_regions:
+                user_regions = stage02_config.user_regions
+                assert user_regions is not None
+                assert user_regions.approval is not None
+                approve_hotspots_from_initial_config(
+                    run_root,
+                    approval=user_regions.approval,
+                )
+            else:
+                approval = stage02_config.unattended_approval
+                assert approval is not None
+                selected_method = stage02_config.methods[0]
+                method = (
+                    RegionMethod.SASA_SURFACE_DIVERSITY
+                    if selected_method is Stage02Method.SASA
+                    else RegionMethod.SCANNET_EPITOPE_NO_MSA
+                )
+                approve_hotspots_by_policy(
+                    run_root,
+                    method=method,
+                    region_count=approval.region_count,
+                    allow_structural_only=approval.allow_structural_only,
+                )
             latest_name = (run_root / "manifests" / "LATEST").read_text(
                 encoding="utf-8"
             ).strip()
@@ -919,12 +940,55 @@ def continue_pipeline_after_decision(
                     "Stage 02 选择 ScanNet，但 runtime profile 未配置 scannet-epitope"
                 )
             stage02_adapter = _scannet_adapter(scannet_runtime)
-        completed_stage02 = execute_stage02_comparison(
+        completed_stage02 = execute_stage02(
             run_root=prepared.workspace.run_root,
             adapter=stage02_adapter,
         )
         current_run_manifest = completed_stage02.run_manifest
-        status = "awaiting-human-approval"
+        if (
+            prepared.loaded_config.config.workflow.execution_mode
+            is ExecutionMode.UNATTENDED
+        ):
+            completed_manifest = load_model(
+                completed_stage02.stage_manifest,
+                StageManifest,
+            )
+            used_user_regions = any(
+                reference.artifact_id == "user-provided-regions"
+                for reference in completed_manifest.output_artifacts
+            )
+            if used_user_regions:
+                user_regions = stage02_config.user_regions
+                assert user_regions is not None
+                assert user_regions.approval is not None
+                approve_hotspots_from_initial_config(
+                    prepared.workspace.run_root,
+                    approval=user_regions.approval,
+                )
+            else:
+                approval = stage02_config.unattended_approval
+                assert approval is not None
+                selected_method = stage02_config.methods[0]
+                method = (
+                    RegionMethod.SASA_SURFACE_DIVERSITY
+                    if selected_method is Stage02Method.SASA
+                    else RegionMethod.SCANNET_EPITOPE_NO_MSA
+                )
+                approve_hotspots_by_policy(
+                    prepared.workspace.run_root,
+                    method=method,
+                    region_count=approval.region_count,
+                    allow_structural_only=approval.allow_structural_only,
+                )
+            latest_name = (
+                prepared.workspace.run_root / "manifests" / "LATEST"
+            ).read_text(encoding="utf-8").strip()
+            current_run_manifest = (
+                prepared.workspace.run_root / "manifests" / latest_name
+            )
+            status = "succeeded"
+        else:
+            status = "awaiting-human-approval"
     else:
         status = "succeeded"
     return PipelineExecution(

@@ -64,7 +64,7 @@ from .sequence_prediction import (
     SequencePredictionExecutionError,
     execute_sequence_prediction,
 )
-from .stage02 import CompletedStage02Run, execute_stage02_comparison
+from .stage02 import CompletedStage02Run, execute_stage02, execute_stage02_comparison
 from .workspace import (
     PreparedPseRun,
     PreparedRun,
@@ -134,6 +134,7 @@ __all__ = [
     "execute_pipeline",
     "execute_sequence_prediction",
     "execute_stage02_comparison",
+    "execute_stage02",
     "export_hotspot_review",
     "approve_hotspots",
     "initialize_pse_run",

@@ -319,7 +319,7 @@ workflow:
         load_run_config(config)
 
 
-def test_stage02_unimplemented_mode_requires_no_automatic_payload(tmp_path: Path) -> None:
+def test_legacy_manual_mode_without_regions_is_rejected(tmp_path: Path) -> None:
     source = tmp_path / "target.pse"
     source.write_bytes(b"runtime-only-pse-placeholder")
     config = tmp_path / "easydesign.yaml"
@@ -339,11 +339,8 @@ stage02:
         encoding="utf-8",
     )
 
-    loaded = load_run_config(config)
-
-    assert isinstance(loaded, LoadedPseRunConfig)
-    assert loaded.config.stage02 is not None
-    assert loaded.config.stage02.mode is RegionProposalMode.MANUAL
+    with pytest.raises(ConfigurationError, match="user_regions"):
+        load_run_config(config)
 
 
 def test_sequence_yaml_requires_structure_prediction(tmp_path: Path) -> None:
@@ -612,7 +609,7 @@ stage07: null
     loaded = load_run_config(config)
 
     assert isinstance(loaded, LoadedPseRunConfig)
-    assert loaded.config.schema_version == "0.5"
+    assert loaded.config.schema_version == "0.6"
     assert loaded.config.stage01.target.identity.uniprot_accession is None
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.methods == ("sasa",)
@@ -675,8 +672,8 @@ workflow:
     migrate_run_config(old, migrated)
     loaded = load_run_config(migrated)
 
-    assert loaded.config.schema_version == "0.5"
-    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.5'")
+    assert loaded.config.schema_version == "0.6"
+    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.6'")
     assert loaded.config.stage01.target.target_id == "demo"
     text = migrated.read_text(encoding="utf-8")
     assert "stage01:" in text
@@ -684,3 +681,107 @@ workflow:
     assert old.read_text(encoding="utf-8").startswith('schema_version: "0.1"')
     with pytest.raises(ConfigurationError, match="禁止覆盖"):
         migrate_run_config(old, migrated)
+
+
+def test_schema_06_accepts_manual_auth_regions_and_human_preapproval(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.6"
+project_id: demo
+workflow:
+  execution_mode: unattended
+  stop_after_stage: 2
+stage01:
+  target:
+    id: demo-pse
+    source:
+      type: local-file
+      path: target.pse
+      format: pse
+  structure_prediction: null
+stage02:
+  mode: user-provided
+  user_regions:
+    source:
+      type: residue-list
+      numbering: auth
+      chain: A
+      regions:
+        - id: A
+          residues: ["32", "36"]
+    approval:
+      approved_by: scientist
+      acknowledge_user_provided_regions: true
+      acknowledge_evidence_limitations: true
+      selections:
+        - id: A
+          design_goal: blocking
+          biological_rationale: User prior.
+          structural_rationale: Surface region selected in PyMOL.
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.config.stage02 is not None
+    assert loaded.config.stage02.mode is RegionProposalMode.USER_PROVIDED
+    assert loaded.config.stage02.methods == ()
+    assert loaded.config.stage02.automatic is None
+
+    unacknowledged = config.read_text(encoding="utf-8").replace(
+        "acknowledge_evidence_limitations: true",
+        "acknowledge_evidence_limitations: false",
+    )
+    invalid = tmp_path / "unacknowledged.yaml"
+    invalid.write_text(unacknowledged, encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="acknowledge_evidence_limitations"):
+        load_run_config(invalid)
+
+
+def test_detect_mode_materializes_fixed_pse_color_source(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"runtime-only-pse-placeholder")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.6"
+project_id: demo
+workflow:
+  stop_after_stage: 2
+stage01:
+  target:
+    id: demo-pse
+    source:
+      type: local-file
+      path: target.pse
+      format: pse
+  structure_prediction: null
+stage02:
+  mode: detect
+  methods: [sasa]
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert loaded.config.stage02 is not None
+    assert loaded.config.stage02.user_regions is not None
+    assert loaded.config.stage02.user_regions.source.type == "pse-colors"

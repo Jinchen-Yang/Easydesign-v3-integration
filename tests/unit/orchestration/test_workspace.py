@@ -69,7 +69,7 @@ def test_initialize_sequence_run_creates_one_shallow_workspace(tmp_path: Path) -
     assert manifest.run_id == "20260724-001"
     assert manifest.config_snapshot.verify(workspace.run_root) == workspace.config_snapshot
     resolved = load_model(workspace.resolved_config, ResolvedRunConfig)
-    assert resolved.schema_version == "0.5"
+    assert resolved.schema_version == "0.6"
     assert resolved.prediction_request is not None
     assert resolved.prediction_request.msa_mode == "remote"
     assert len(resolved.msa_execution_plan) == 1
@@ -121,7 +121,7 @@ def test_initialize_workspace_uses_manifest_12_for_packaged_execution(
     assert manifest.schema_version == "1.2"
     assert manifest.code_identity == identity
     assert manifest.runtime_profile == profile
-    assert resolved.schema_version == "0.5"
+    assert resolved.schema_version == "0.6"
     assert resolved.runtime_profile == profile
 
 

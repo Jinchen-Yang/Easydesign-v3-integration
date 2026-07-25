@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev3`（包版本 `0.1.0.dev3`）
+- 当前版本：`0.1.0-dev4`（包版本 `0.1.0.dev4`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -33,7 +33,7 @@ python -m pip install -e ".[dev]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev3-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev4-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -96,7 +96,7 @@ PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 require
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
 
 ```bash
-easydesign config migrate old.yaml --output easydesign-0.5.yaml
+easydesign config migrate old.yaml --output easydesign-0.6.yaml
 ```
 
 默认 `review-gated` 会在 UniProt identity、chain/construct、实验结构和 hotspot 等科学
@@ -110,8 +110,10 @@ easydesign decisions approve RUN_DIR --input decision.yaml
 ```
 
 `approve` 校验 request revision/hash 后，在同一 run 创建新 attempt 并继续。需要完全
-自动化时可在初始配置选择 `unattended`；它只允许版本化硬规则，不调用 LLM，不融合
-Stage 02 方法，也不会执行真实下单。`init --stop-after 2` 在 review-gated 中默认同时
+自动化时可在初始配置选择 `unattended`；自动科学选择只允许版本化硬规则，不调用 LLM，
+不融合 Stage 02 方法，也不会执行真实下单。用户提供区域可以在初始 YAML 中由真实人员
+预先签署，使 pipeline 连续运行，但仍记录 human authority、理由和 acknowledgement。
+`init --stop-after 2` 在 review-gated 中默认同时
 写入 SASA/ScanNet，在 unattended 中默认只写 SASA；可用 `--stage02-method` 显式修改。
 
 Stage 02 自动计算结束后会停在 `awaiting-human-approval`，不会伪装成整个 run 已完成。
@@ -124,6 +126,16 @@ easydesign hotspots export RUN_DIR \
   --output hotspots-review.yaml
 # 编辑 approved_by、design_goal、两类 rationale；structural-only 还需确认限制
 easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
+```
+
+PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
+红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的
+SASA/ScanNet fallback。普通结构或序列可以在初始 YAML 用
+`user-provided/residue-list` 指定 `sequence`、`label`、`auth` 或 `uniprot` 编号。
+用户区域导出审批时不传 `--method`：
+
+```bash
+easydesign hotspots export RUN_DIR --output hotspots-review.yaml
 ```
 
 `stage01.target.identity.uniprot_accession` 可以为空。Stage 02 的 UniProt annotation 支持

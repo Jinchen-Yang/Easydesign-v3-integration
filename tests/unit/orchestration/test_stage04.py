@@ -19,6 +19,7 @@ from easydesign.core import (
     CodeIdentity,
     CodeIdentitySource,
     ExecutionStatus,
+    ProgressSnapshot,
     RunManifest,
     RuntimeProfileRef,
     StageId,
@@ -436,6 +437,7 @@ def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
         / "04-pilot-generation/attempt-0001/runtime/task-state.json"
     )
     state = load_model(state_path, PilotExecutionState)
+    elapsed_before_resume = state.progress.elapsed_seconds
     atomic_dump_runtime_model(
         state.model_copy(
             update={
@@ -465,6 +467,11 @@ def test_stage04_resume_preserves_complete_candidates_and_runs_only_deficit(
     assert sha256_file(first_candidate) == first_hash
     assert completed.pilot_bundle is not None
     bundle = load_model(completed.pilot_bundle, PilotBundle)
+    final_progress = bundle.progress_final.verify(root)
+    assert (
+        load_model(final_progress, ProgressSnapshot).elapsed_seconds
+        >= elapsed_before_resume
+    )
     index = load_model(bundle.candidate_index.verify(root), CandidateIndex)
     assert all(candidate.design_mask_source is not None for candidate in index.candidates)
     assert all(candidate.designed_binder_residue_ids for candidate in index.candidates)

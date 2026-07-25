@@ -184,6 +184,7 @@ def _snapshot(
     tasks: tuple[TaskRecord, ...],
     updated_at: datetime,
     started_monotonic: float,
+    elapsed_before_seconds: float,
     planned_candidates: int,
     status: str,
     recent_errors: tuple[str, ...] = (),
@@ -196,7 +197,7 @@ def _snapshot(
             assert task.current_device is not None
             per_device[str(task.current_device)] = task.strategy_id
     collected = sum(task.collected_candidates for task in tasks)
-    elapsed = max(time.monotonic() - started_monotonic, 0)
+    elapsed = elapsed_before_seconds + max(time.monotonic() - started_monotonic, 0)
     throughput = collected / elapsed * 3600 if collected > 0 and elapsed > 0 else None
     remaining = planned_candidates - collected
     eta = (
@@ -358,6 +359,7 @@ def execute_stage04(
         tasks = {task.task_id: task for task in state.tasks}
         candidates = list(state.candidates)
         created_at = state.created_at
+        elapsed_before_seconds = state.progress.elapsed_seconds
     else:
         created_at = now
         tasks = {
@@ -369,6 +371,7 @@ def execute_stage04(
             for item in plan.strategies
         }
         candidates = []
+        elapsed_before_seconds = 0.0
 
     rehydrated_candidate_count = _rehydrate_design_mask_evidence(
         root=root,
@@ -387,6 +390,7 @@ def execute_stage04(
             tasks=ordered_tasks(),
             updated_at=datetime.now(UTC),
             started_monotonic=started_monotonic,
+            elapsed_before_seconds=elapsed_before_seconds,
             planned_candidates=planned_candidates,
             status=status,
             recent_errors=tuple(recent_errors),
@@ -804,6 +808,7 @@ def execute_stage04(
         tasks=final_tasks,
         updated_at=datetime.now(UTC),
         started_monotonic=started_monotonic,
+        elapsed_before_seconds=elapsed_before_seconds,
         planned_candidates=planned_candidates,
         status="succeeded",
         recent_errors=tuple(recent_errors),

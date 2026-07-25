@@ -136,6 +136,8 @@ random_seed_status: unsupported-by-boltzgen-0.3.2
 - `progress.json` 使用临时文件、`fsync` 和原子 rename。
 - `task-events.jsonl` 只追加，每行是一个完整 JSON event。
 - event 记录 sequence、时间、task、attempt、状态变化、GPU 和错误。
+- resume 继承此前快照的累计 elapsed time；吞吐率和 ETA 不会把历史候选错误地当成
+  本次进程刚刚生成。
 - `easydesign runs watch` 只读这两个文件，不解析终端文本、不扫描候选目录。
 - 吞吐率与 ETA 是运行时估算，不构成科学结果。
 

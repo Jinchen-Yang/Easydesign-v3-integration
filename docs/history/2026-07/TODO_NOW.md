@@ -158,5 +158,5 @@
   增加回归。
 - 遗留边界：自建 ColabFold/MMseqs2、跨平台重型 backend、非 canonical isoform、
   复合物 PSE、Stage 03 UX 和公开 release 仍属后续任务。
-- 提交：`feat(stage01): complete six-entry version-one workflow`；最终远端 SHA 由推送后
-  核对记录确定。
+- 提交：`47af2ae715524d4edd50762a819175a9cfb661dd`
+  （`feat(stage01): complete six-entry version-one workflow`）。

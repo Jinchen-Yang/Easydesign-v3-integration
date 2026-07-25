@@ -73,7 +73,7 @@
   TaskRecord 明确声明的 task-attempt output，candidate identity 或数量变化即失败，
   已完成候选不会重新生成。
 - 2026-07-26：修正 resume 后吞吐率/ETA 将历史候选除以本次短时长的问题；进度快照现
-  继承并累加此前 elapsed time。
+  使用 attempt 创建时间起算的累计 wall-clock elapsed time。
 
 ## 历史索引
 

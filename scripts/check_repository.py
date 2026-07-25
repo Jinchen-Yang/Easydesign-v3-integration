@@ -269,7 +269,9 @@ def main() -> int:
     for relative in expected_docs:
         require((ROOT / relative).is_file(), f"缺少 {relative}", errors)
 
-    require(len(markdown) <= 30, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
+    # Allow the seven Stage directories to keep one monthly history file each
+    # while still preventing ungoverned one-off documents from accumulating.
+    require(len(markdown) <= 40, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]

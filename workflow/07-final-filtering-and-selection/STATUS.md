@@ -106,6 +106,5 @@
 
 ## 历史索引
 
-工程实现质量门完成后追加
-[`history/2026-07.md`](history/2026-07.md)，记录秒级时间、验证、问题、解决方法、遗留
-范围和完整 commit SHA。
+- [2026-07 工程实现与 TNP backend smoke](history/2026-07.md)。APOE 到达本阶段后
+  必须追加真实候选或 scientific stop，不改写本条工程记录。

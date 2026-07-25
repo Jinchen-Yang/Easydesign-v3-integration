@@ -89,6 +89,23 @@
 
 不得改写历史；原记录有误时追加更正。
 
+## 2026-07-26 — S07-001 / DATA-003：最终候选包与固定 TNP runtime
+
+- 状态：Stage 07 `implemented`；DATA-003 `smoke-validated`。
+- 完成时间：2026-07-26T07:15:41+08:00
+- 问题：Stage 07 缺少确定性深度筛选、多 seed 复核、TNP required evidence 和
+  20+20 人工审核包；TNP 上游又存在未声明依赖、旧 DSSP ABI 和 liability 文件格式/
+  IMGT insertion code 不透明的问题。
+- 方案：实现 final v1.5 profile、共享结构/Protenix adapter、seed 101/202/303、
+  冻结归一化、consensus、TNP strict adapter/receipt、lazy-greedy 多样性和明确
+  scientific stop/operational failure。
+- 工程证据：`make check`、230 passed/8 skipped、dev5 wheel/console script 通过；
+  非 APOE 1000 fixture 产生 2 primary/0 backup；官方 7EOW VHH TNP 真实 batch 与
+  Proteindigger1 全 backend doctor 通过。
+- 真实边界：APOE 仍停留在正在运行的 Stage 04，不提前伪造 Stage 05–07 结论；
+  production 50k 没有执行，实际下单不属于自动流程。
+- 提交：`dc68ab0f8f9f0ea7f7ec697ab62ae00cd19195b2`。
+
 ## 2026-07-25 — UX-002 / ENG-005：canonical 七阶段配置与确定性审批边界
 
 - 状态：`smoke-validated`。

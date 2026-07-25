@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev4`（包版本 `0.1.0.dev4`）
+- 当前版本：`0.1.0-dev5`（包版本 `0.1.0.dev5`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -33,7 +33,7 @@ python -m pip install -e ".[dev]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev4-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev5-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -61,6 +61,10 @@ backends:
     python: /absolute/path/to/scannet/bin/python
     repository_root: /absolute/path/to/ScanNet
     execution_device: cpu
+  boltzgen:
+    executable: /absolute/path/to/boltzgen
+    repository_root: /absolute/path/to/boltzgen-source
+    cache_root: /absolute/path/to/huggingface-cache
 ```
 
 然后从真实 target 创建用户项目：
@@ -91,8 +95,9 @@ Sequence Search/Data API 寻找满足严格 scope 门槛的实验结构；没有
 PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 required-MSA 路径均已达到
 工程 `smoke-validated`；这不代表结构选择或预测准确率经过科学验证。Stage 02 可运行
 独立 SASA/ScanNet 和用户区域。Stage 03 已实现基础 VHH 策略编译：每个批准区域与七个
-官方 scaffold 组合、只写 positive binding，并由 BoltzGen 0.3.2 官方校验；Stage 04–07
-仍在开发。
+官方 scaffold 组合、只写 positive binding，并由 BoltzGen 0.3.2 官方校验。Stage 04
+Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与恢复；APOE 21×40 真实
+验收完成前仍不标记为 `smoke-validated`。Stage 05–07 仍在开发。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：
@@ -142,6 +147,24 @@ easydesign run downstream/easydesign.yaml \
 Stage 03 输出 `StrategyBundle`、design matrix 和每个 region×scaffold 的
 `design.yaml`。当前基础模板不做 crop/CDR 优化，非 hotspot residue 保持中性。
 
+继续运行 Stage 04 时，新配置将 `stop_after_stage` 设为 4，并从已成功 Stage 03 run
+创建不可变 continuation：
+
+```bash
+easydesign run downstream/easydesign.yaml \
+  --from-run /absolute/path/to/succeeded-stage03-run \
+  --run-id downstream-stage04
+
+# 另一个终端只读进度
+easydesign runs watch /absolute/path/to/downstream-stage04
+
+# 进程中断或任务未达标时，仅恢复缺口
+easydesign runs resume /absolute/path/to/downstream-stage04
+```
+
+Stage 04 的 40 指每个策略 40 个“metric row + 原始 complex CIF + refold CIF”完整候选，
+不是 40 次启动，也不是 BoltzGen 最终 `budget=30` 目录中的数量。
+
 PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
 红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的
 SASA/ScanNet fallback。普通结构或序列可以在初始 YAML 用
@@ -162,6 +185,8 @@ easydesign hotspots export RUN_DIR --output hotspots-review.yaml
 ```bash
 easydesign runs list
 easydesign runs show PROJECT_ID/RUN_ID
+easydesign runs watch /absolute/path/to/running-stage04
+easydesign runs resume /absolute/path/to/interrupted-stage04
 easydesign viewer serve /absolute/path/to/run --port 8000
 ```
 

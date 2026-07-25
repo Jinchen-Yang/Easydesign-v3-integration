@@ -13,7 +13,10 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict
 
 import easydesign
-from easydesign.backends.boltzgen import BoltzGenCheckAdapter
+from easydesign.backends.boltzgen import (
+    BoltzGenCheckAdapter,
+    BoltzGenGenerationAdapter,
+)
 from easydesign.backends.hotspot import ScanNetBackendConfig, ScanNetEpitopeAdapter
 from easydesign.backends.structure_prediction import ProtenixV2Adapter
 from easydesign.backends.target_sources import PyMOLPseAdapter
@@ -21,6 +24,7 @@ from easydesign.core import (
     BackendContractError,
     ConfigurationError,
     EasyDesignError,
+    ExecutionStatus,
     ManifestStateError,
     RunManifest,
     StageId,
@@ -65,6 +69,7 @@ from .stage01_handlers import execute_pse_source
 from .stage01_sources import execute_stage01_source
 from .stage02 import execute_stage02
 from .stage03 import execute_stage03, initialize_continuation_run
+from .stage04 import Stage04Execution, execute_stage04
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -76,10 +81,8 @@ from .workspace import (
     initialize_run_workspace,
 )
 
-PROTENIX_V2_CHECKPOINT_SHA256 = (
-    "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
-)
-IMPLEMENTED_STAGE_MAX = 3
+PROTENIX_V2_CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
+IMPLEMENTED_STAGE_MAX = 4
 
 
 class DiagnosticStatus(StrEnum):
@@ -148,6 +151,16 @@ class _RuntimeContext:
     plan: RunPlan
 
 
+def _load_latest_run_manifest(root: Path) -> tuple[RunManifest, Path]:
+    pointer = root / "manifests" / "LATEST"
+    try:
+        name = pointer.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ManifestStateError(f"无法读取 run LATEST: {pointer}") from error
+    path = root / "manifests" / name
+    return load_model(path, RunManifest), path
+
+
 def migrate_run_configuration(source: Path, destination: Path) -> Path:
     """CLI/UI 共用的显式配置迁移入口。"""
 
@@ -174,8 +187,7 @@ def _required_backends(loaded: LoadedRunConfig) -> tuple[str, ...]:
     elif isinstance(loaded, LoadedPseRunConfig):
         backends.append("pymol-pse")
     elif (
-        isinstance(loaded, LoadedRemoteRunConfig)
-        and loaded.config.structure_prediction is not None
+        isinstance(loaded, LoadedRemoteRunConfig) and loaded.config.structure_prediction is not None
     ):
         backends.append("protenix-v2")
     if loaded.config.workflow.stop_after_stage >= 2:
@@ -211,12 +223,8 @@ def validate_run_configuration(
         if selected_profile_path.is_file()
         else RuntimeProfile(profile_id="unconfigured")
     )
-    if (
-        not selected_profile_path.is_file()
-        and (
-            profile_path is not None
-            or os.environ.get(PROFILE_ENVIRONMENT_VARIABLE) is not None
-        )
+    if not selected_profile_path.is_file() and (
+        profile_path is not None or os.environ.get(PROFILE_ENVIRONMENT_VARIABLE) is not None
     ):
         load_runtime_profile(selected_profile_path)
     return RunPlan(
@@ -307,9 +315,7 @@ def _probe_protenix(
     if not runtime.model_root.is_dir():
         raise BackendContractError(f"Protenix model_root 不存在: {runtime.model_root}")
     if not runtime.model_checkpoint.is_file():
-        raise BackendContractError(
-            f"Protenix checkpoint 不存在: {runtime.model_checkpoint}"
-        )
+        raise BackendContractError(f"Protenix checkpoint 不存在: {runtime.model_checkpoint}")
     checkpoint_sha256 = sha256_file(runtime.model_checkpoint)
     if checkpoint_sha256 != PROTENIX_V2_CHECKPOINT_SHA256:
         raise BackendContractError(
@@ -323,11 +329,7 @@ def _probe_protenix(
             cuda_visible_devices=runtime.cuda_visible_devices,
         )
     else:
-        provider = (
-            loaded.msa_execution_plan[0]
-            if loaded.msa_execution_plan
-            else None
-        )
+        provider = loaded.msa_execution_plan[0] if loaded.msa_execution_plan else None
         adapter = _protenix_adapter(runtime, loaded, provider)
     invocation = adapter.version_invocation()
     environment = os.environ.copy()
@@ -341,9 +343,7 @@ def _probe_protenix(
         timeout=invocation.timeout_seconds,
     )
     if completed.returncode != 0:
-        raise BackendContractError(
-            f"Protenix 版本探针失败: {completed.stderr.strip()}"
-        )
+        raise BackendContractError(f"Protenix 版本探针失败: {completed.stderr.strip()}")
     adapter.validate_version_output(completed.stdout)
     return checkpoint_sha256
 
@@ -378,6 +378,16 @@ def _boltzgen_adapter(runtime: BoltzGenRuntime) -> BoltzGenCheckAdapter:
     )
 
 
+def _boltzgen_generation_adapter(
+    runtime: BoltzGenRuntime,
+) -> BoltzGenGenerationAdapter:
+    return BoltzGenGenerationAdapter(
+        check_adapter=_boltzgen_adapter(runtime),
+        generation_timeout_seconds=runtime.generation_timeout_seconds,
+        data_loader_workers=runtime.data_loader_workers,
+    )
+
+
 def diagnose_runtime(
     *,
     profile_path: Path | None = None,
@@ -388,10 +398,7 @@ def diagnose_runtime(
 
     loaded_profile = load_runtime_profile(profile_path)
     loaded = load_run_config(config_path) if config_path is not None else None
-    if (
-        loaded is not None
-        and loaded.config.workflow.stop_after_stage > IMPLEMENTED_STAGE_MAX
-    ):
+    if loaded is not None and loaded.config.workflow.stop_after_stage > IMPLEMENTED_STAGE_MAX:
         raise ConfigurationError(
             f"Developer Preview 当前最高实现到 Stage {IMPLEMENTED_STAGE_MAX:02d}"
         )
@@ -412,11 +419,7 @@ def diagnose_runtime(
             explicit=runs_root,
         )
         if loaded is not None
-        else (
-            runs_root.resolve()
-            if runs_root is not None
-            else loaded_profile.profile.runs_root
-        )
+        else (runs_root.resolve() if runs_root is not None else loaded_profile.profile.runs_root)
     )
     if selected_runs is not None:
         parent = _nearest_existing_parent(selected_runs)
@@ -424,9 +427,7 @@ def diagnose_runtime(
         checks.append(
             DiagnosticCheck(
                 name="runs-root",
-                status=(
-                    DiagnosticStatus.PASSED if writable else DiagnosticStatus.FAILED
-                ),
+                status=(DiagnosticStatus.PASSED if writable else DiagnosticStatus.FAILED),
                 message=f"{selected_runs}（最近存在父目录：{parent}）",
             )
         )
@@ -487,16 +488,12 @@ def diagnose_runtime(
                 assert isinstance(runtime, ScanNetEpitopeRuntime)
                 probe = _scannet_adapter(runtime).probe_runtime()
                 message = (
-                    f"TensorFlow {probe.tensorflow_version}；"
-                    f"device={probe.test_operation_device}"
+                    f"TensorFlow {probe.tensorflow_version}；device={probe.test_operation_device}"
                 )
             else:
                 assert isinstance(runtime, BoltzGenRuntime)
                 boltz_probe = _boltzgen_adapter(runtime).probe()
-                message = (
-                    f"BoltzGen {boltz_probe['version']}；"
-                    f"commit={boltz_probe['commit']}"
-                )
+                message = f"BoltzGen {boltz_probe['version']}；commit={boltz_probe['commit']}"
             checks.append(
                 DiagnosticCheck(
                     name=name,
@@ -659,11 +656,7 @@ def execute_pipeline(
             )
             protenix_runtime = backends.protenix_v2
             assert protenix_runtime is not None
-            first_provider = (
-                derived.msa_execution_plan[0]
-                if derived.msa_execution_plan
-                else None
-            )
+            first_provider = derived.msa_execution_plan[0] if derived.msa_execution_plan else None
             writer = _protenix_adapter(protenix_runtime, derived, first_provider)
             protenix_input = writer.write_input(
                 prediction_request,
@@ -679,9 +672,7 @@ def execute_pipeline(
                 workspace=prepared_source.workspace,
                 protenix_input=protenix_input,
                 precomputed_msa=(
-                    prepared_source.workspace.run_root
-                    / "input-snapshot"
-                    / "target-msa.a3m"
+                    prepared_source.workspace.run_root / "input-snapshot" / "target-msa.a3m"
                     if derived.precomputed_msa_path is not None
                     else None
                 ),
@@ -695,9 +686,7 @@ def execute_pipeline(
             completed_prediction = execute_sequence_prediction(
                 prepared=prepared_prediction,
                 adapter_builder=remote_adapter_builder,
-                model_checkpoint_sha256=sha256_file(
-                    protenix_runtime.model_checkpoint
-                ),
+                model_checkpoint_sha256=sha256_file(protenix_runtime.model_checkpoint),
             )
             run_root = completed_prediction.prepared.workspace.run_root
             run_manifest = completed_prediction.run_manifest
@@ -752,9 +741,7 @@ def execute_pipeline(
                     region_count=approval.region_count,
                     allow_structural_only=approval.allow_structural_only,
                 )
-            latest_name = (run_root / "manifests" / "LATEST").read_text(
-                encoding="utf-8"
-            ).strip()
+            latest_name = (run_root / "manifests" / "LATEST").read_text(encoding="utf-8").strip()
             run_manifest = run_root / "manifests" / latest_name
             status = "succeeded"
         else:
@@ -768,7 +755,14 @@ def execute_pipeline(
     elif context.plan.stop_after_stage < 2:
         status = "succeeded"
 
-    if context.plan.stop_after_stage >= 3:
+    current_run, _ = _load_latest_run_manifest(run_root)
+    completed_stage_ids = {
+        reference.producer_stage for reference in current_run.stage_manifest_refs
+    }
+    if (
+        context.plan.stop_after_stage >= 3
+        and str(StageId.BOLTZGEN_CONFIGURATION) not in completed_stage_ids
+    ):
         boltzgen_runtime = backends.boltzgen
         assert boltzgen_runtime is not None
         completed_stage03 = execute_stage03(
@@ -777,6 +771,22 @@ def execute_pipeline(
         )
         run_manifest = completed_stage03.run_manifest
         status = "succeeded"
+    current_run, _ = _load_latest_run_manifest(run_root)
+    completed_stage_ids = {
+        reference.producer_stage for reference in current_run.stage_manifest_refs
+    }
+    if (
+        context.plan.stop_after_stage >= 4
+        and str(StageId.PILOT_GENERATION) not in completed_stage_ids
+    ):
+        boltzgen_runtime = backends.boltzgen
+        assert boltzgen_runtime is not None
+        completed_stage04 = execute_stage04(
+            run_root=run_root,
+            adapter=_boltzgen_generation_adapter(boltzgen_runtime),
+        )
+        run_manifest = completed_stage04.run_manifest
+        status = completed_stage04.status
     return PipelineExecution(
         status=status,
         plan=context.plan,
@@ -784,6 +794,38 @@ def execute_pipeline(
         run_manifest=run_manifest,
         viewer_status=viewer_status,
     )
+
+
+def resume_pipeline(
+    run_root: Path,
+    *,
+    profile_path: Path | None = None,
+) -> Stage04Execution:
+    """Resume the current manifest-declared running stage without changing config."""
+
+    root = run_root.expanduser().resolve()
+    current, _ = _load_latest_run_manifest(root)
+    if current.status is not ExecutionStatus.RUNNING:
+        raise ManifestStateError("runs resume 只接受 running run")
+    resolved = load_model(
+        root / "config-snapshot" / "resolved-config.json",
+        ResolvedRunConfig,
+    )
+    completed = {reference.producer_stage for reference in current.stage_manifest_refs}
+    if (
+        resolved.stop_after_stage >= 4
+        and str(StageId.BOLTZGEN_CONFIGURATION) in completed
+        and str(StageId.PILOT_GENERATION) not in completed
+    ):
+        profile = load_runtime_profile(profile_path)
+        runtime = profile.profile.backends.boltzgen
+        if runtime is None:
+            raise ConfigurationError("runtime profile 缺少 BoltzGen backend")
+        return execute_stage04(
+            run_root=root,
+            adapter=_boltzgen_generation_adapter(runtime),
+        )
+    raise ConfigurationError("当前 run 没有可恢复的已实现 Stage")
 
 
 def _prepared_existing_run(run_root: Path) -> PreparedRun:
@@ -834,12 +876,9 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
         raise ManifestStateError("Target Bundle 导入不会创建 Stage 01 decision gate")
     else:
         raise ManifestStateError(
-            f"当前 Stage 01 source 不支持 decision continuation: "
-            f"{resolved.detected_input_format}"
+            f"当前 Stage 01 source 不支持 decision continuation: {resolved.detected_input_format}"
         )
-    latest_name = (root / "manifests" / "LATEST").read_text(
-        encoding="utf-8"
-    ).strip()
+    latest_name = (root / "manifests" / "LATEST").read_text(encoding="utf-8").strip()
     current_manifest = root / "manifests" / latest_name
     workspace = RunWorkspace(
         runs_root=root.parents[1],
@@ -952,11 +991,7 @@ def continue_pipeline_after_decision(
             raise ConfigurationError(
                 "已批准 Protenix fallback，但 runtime profile 未配置 protenix-v2"
             )
-        first_provider = (
-            derived.msa_execution_plan[0]
-            if derived.msa_execution_plan
-            else None
-        )
+        first_provider = derived.msa_execution_plan[0] if derived.msa_execution_plan else None
         writer = _protenix_adapter(protenix_runtime, derived, first_provider)
         protenix_input = writer.write_input(
             prediction_request,
@@ -986,9 +1021,7 @@ def continue_pipeline_after_decision(
         completed = execute_sequence_prediction(
             prepared=prepared_prediction,
             adapter_builder=adapter_builder,
-            model_checkpoint_sha256=sha256_file(
-                protenix_runtime.model_checkpoint
-            ),
+            model_checkpoint_sha256=sha256_file(protenix_runtime.model_checkpoint),
             attempt_start=attempt_number,
         )
         current_run_manifest = completed.run_manifest
@@ -1012,10 +1045,7 @@ def continue_pipeline_after_decision(
             adapter=stage02_adapter,
         )
         current_run_manifest = completed_stage02.run_manifest
-        if (
-            prepared.loaded_config.config.workflow.execution_mode
-            is ExecutionMode.UNATTENDED
-        ):
+        if prepared.loaded_config.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
             completed_manifest = load_model(
                 completed_stage02.stage_manifest,
                 StageManifest,
@@ -1048,11 +1078,11 @@ def continue_pipeline_after_decision(
                     allow_structural_only=approval.allow_structural_only,
                 )
             latest_name = (
-                prepared.workspace.run_root / "manifests" / "LATEST"
-            ).read_text(encoding="utf-8").strip()
-            current_run_manifest = (
-                prepared.workspace.run_root / "manifests" / latest_name
+                (prepared.workspace.run_root / "manifests" / "LATEST")
+                .read_text(encoding="utf-8")
+                .strip()
             )
+            current_run_manifest = prepared.workspace.run_root / "manifests" / latest_name
             status = "succeeded"
         else:
             status = "awaiting-human-approval"
@@ -1075,15 +1105,12 @@ def _resolve_run_from_index(runs_root: Path, selector: str) -> Path:
     matches = [
         entry
         for entry in index.entries
-        if entry.category == "project-run"
-        and (entry.run_id == selector or entry.path == selector)
+        if entry.category == "project-run" and (entry.run_id == selector or entry.path == selector)
     ]
     if not matches:
         raise ManifestStateError(f"run-index 没有匹配 run: {selector}")
     if len(matches) > 1:
-        raise ManifestStateError(
-            f"run_id={selector} 在多个项目中重复，请使用 project_id/run_id"
-        )
+        raise ManifestStateError(f"run_id={selector} 在多个项目中重复，请使用 project_id/run_id")
     return (runs_root / matches[0].path).resolve()
 
 

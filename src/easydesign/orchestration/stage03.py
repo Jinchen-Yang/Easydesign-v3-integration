@@ -83,10 +83,7 @@ def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
 
 def _load_upstream(root: Path) -> _Upstream:
     run, run_path = _latest_manifest(root)
-    by_stage = {
-        reference.producer_stage: reference
-        for reference in run.stage_manifest_refs
-    }
+    by_stage = {reference.producer_stage: reference for reference in run.stage_manifest_refs}
     stage01_ref = by_stage.get(str(StageId.TARGET_PREPARATION))
     stage02_ref = by_stage.get(str(StageId.HOTSPOT_DISCOVERY))
     if stage01_ref is None or stage02_ref is None:
@@ -186,10 +183,7 @@ def _publish_run_manifest(
     stop_after_stage: int,
     now: datetime,
 ) -> Path:
-    by_stage = {
-        reference.producer_stage: reference
-        for reference in current.stage_manifest_refs
-    }
+    by_stage = {reference.producer_stage: reference for reference in current.stage_manifest_refs}
     by_stage[str(StageId.BOLTZGEN_CONFIGURATION)] = stage_manifest_ref
     terminal = stop_after_stage == 3
     timestamp = now if now > current.updated_at else current.updated_at + timedelta(microseconds=1)
@@ -198,8 +192,7 @@ def _publish_run_manifest(
         status=ExecutionStatus.SUCCEEDED if terminal else ExecutionStatus.RUNNING,
         completed_at=timestamp if terminal else None,
         stage_manifest_refs=tuple(
-            by_stage[key]
-            for key in sorted(key for key in by_stage if key is not None)
+            by_stage[key] for key in sorted(key for key in by_stage if key is not None)
         ),
         clear_workflow_state=True,
     )
@@ -219,24 +212,36 @@ def initialize_continuation_run(
     runtime_profile: RuntimeProfileRef,
     created_at: datetime | None = None,
 ) -> PreparedRun:
-    """Fork an immutable succeeded Stage 02 handoff into a new downstream run."""
+    """Fork an immutable succeeded handoff into the next configured stage."""
 
     source = source_run_root.resolve()
-    upstream = _load_upstream(source)
-    if upstream.run.status is not ExecutionStatus.SUCCEEDED:
+    source_run, source_run_manifest_path = _latest_manifest(source)
+    if source_run.status is not ExecutionStatus.SUCCEEDED:
         raise ManifestStateError("continuation source 必须是终态 succeeded run")
     loaded = load_run_config(config_path)
-    if loaded.config.workflow.stop_after_stage < 3 or loaded.config.stage03 is None:
-        raise ManifestStateError("continuation 配置必须启用 Stage 03")
-    if loaded.config.project_id != upstream.run.project_id:
-        raise ManifestStateError(
-            "continuation config project_id 必须与 source run 一致"
-        )
-    timestamp = (
-        datetime.now(UTC)
-        if created_at is None
-        else normalize_aware_datetime(created_at)
-    )
+    if loaded.config.project_id != source_run.project_id:
+        raise ManifestStateError("continuation config project_id 必须与 source run 一致")
+    source_stage_refs = tuple(source_run.stage_manifest_refs)
+    if not source_stage_refs:
+        raise ManifestStateError("continuation source 没有已完成 Stage")
+    stage_numbers: list[int] = []
+    copied_stage_sha256: dict[str, str] = {}
+    for reference in source_stage_refs:
+        if reference.producer_stage is None:
+            raise ManifestStateError("continuation source StageManifest 缺少 producer_stage")
+        stage_number = int(reference.producer_stage.split("-", maxsplit=1)[0])
+        manifest = load_model(reference.verify(source), StageManifest)
+        if manifest.status is not ExecutionStatus.SUCCEEDED:
+            raise ManifestStateError(f"continuation source Stage {stage_number:02d} 未成功")
+        stage_numbers.append(stage_number)
+        copied_stage_sha256[reference.producer_stage] = reference.sha256
+    ordered_numbers = sorted(stage_numbers)
+    if ordered_numbers != list(range(1, max(ordered_numbers) + 1)):
+        raise ManifestStateError("continuation source Stage 序列不连续")
+    next_stage = max(ordered_numbers) + 1
+    if loaded.config.workflow.stop_after_stage < next_stage:
+        raise ManifestStateError("continuation config 没有启用 source 之后的下一 Stage")
+    timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
     prepared = initialize_run_workspace(
         config_path=config_path,
         runs_root=runs_root,
@@ -248,9 +253,10 @@ def initialize_continuation_run(
     )
     destination = prepared.workspace.run_root
     try:
-        for stage_id in (StageId.TARGET_PREPARATION, StageId.HOTSPOT_DISCOVERY):
-            source_stage = source / str(stage_id)
-            destination_stage = destination / str(stage_id)
+        for reference in source_stage_refs:
+            assert reference.producer_stage is not None
+            source_stage = source / reference.producer_stage
+            destination_stage = destination / reference.producer_stage
             shutil.copytree(source_stage, destination_stage, dirs_exist_ok=True)
         source_input = source / "input-snapshot"
         if source_input.is_dir():
@@ -262,31 +268,18 @@ def initialize_continuation_run(
         source_record = _json_file(
             {
                 "schema_version": "0.1",
-                "source_project_id": upstream.run.project_id,
-                "source_run_id": upstream.run.run_id,
-                "source_run_manifest_sha256": sha256_file(
-                    upstream.run_manifest_path
-                ),
-                "source_run_manifest_revision": upstream.run.revision,
-                "copied_stage_manifest_sha256": {
-                    str(StageId.TARGET_PREPARATION): (
-                        next(
-                            reference
-                            for reference in upstream.run.stage_manifest_refs
-                            if reference.producer_stage
-                            == str(StageId.TARGET_PREPARATION)
-                        ).sha256
-                    ),
-                    str(StageId.HOTSPOT_DISCOVERY): (
-                        upstream.stage02_manifest_ref.sha256
-                    ),
-                },
+                "source_project_id": source_run.project_id,
+                "source_run_id": source_run.run_id,
+                "source_run_manifest_sha256": sha256_file(source_run_manifest_path),
+                "source_run_manifest_revision": source_run.revision,
+                "next_stage": next_stage,
+                "copied_stage_manifest_sha256": copied_stage_sha256,
             },
             destination / "config-snapshot" / "continuation-source.json",
         )
         if not source_record.is_file():
             raise ManifestStateError("continuation source record 未创建")
-        copied_refs = tuple(upstream.run.stage_manifest_refs)
+        copied_refs = source_stage_refs
         for reference in copied_refs:
             reference.verify(destination)
         current, _ = _latest_manifest(destination)
@@ -300,11 +293,7 @@ def initialize_continuation_run(
             status=ExecutionStatus.RUNNING,
             stage_manifest_refs=copied_refs,
         )
-        manifest_path = (
-            destination
-            / "manifests"
-            / f"run-manifest.v{continued.revision:04d}.json"
-        )
+        manifest_path = destination / "manifests" / f"run-manifest.v{continued.revision:04d}.json"
         dump_model(continued, manifest_path)
         _atomic_text(
             manifest_path.name + "\n",
@@ -315,16 +304,12 @@ def initialize_continuation_run(
             (
                 RunIndexEntry(
                     category="project-run",
-                    path=destination.relative_to(
-                        prepared.workspace.runs_root
-                    ).as_posix(),
+                    path=destination.relative_to(prepared.workspace.runs_root).as_posix(),
                     layout_version="1",
                     status="running",
                     project_id=prepared.workspace.project_id,
                     run_id=prepared.workspace.run_id,
-                    notes=(
-                        "Continued from a checksum-verified succeeded Stage 02 run.",
-                    ),
+                    notes=("Continued from a checksum-verified succeeded upstream run.",),
                 ),
             ),
             generated_at=next_time,
@@ -372,17 +357,9 @@ def execute_stage03(
     config = resolved_config.user_config.stage03
     if config is None:
         raise ManifestStateError("run config 没有 Stage 03 配置")
-    now = (
-        datetime.now(UTC)
-        if executed_at is None
-        else normalize_aware_datetime(executed_at)
-    )
+    now = datetime.now(UTC) if executed_at is None else normalize_aware_datetime(executed_at)
     attempt_id = "attempt-0001"
-    attempt_root = (
-        root
-        / str(StageId.BOLTZGEN_CONFIGURATION)
-        / attempt_id
-    )
+    attempt_root = root / str(StageId.BOLTZGEN_CONFIGURATION) / attempt_id
     artifacts = attempt_root / "artifacts"
     logs = attempt_root / "logs"
     logs.mkdir(parents=True, exist_ok=False)
@@ -408,11 +385,7 @@ def execute_stage03(
     report_path = artifacts / "validation-report.json"
     dump_model(report, report_path)
     if report.status != "passed":
-        failed_ids = tuple(
-            item.strategy_id
-            for item in report.items
-            if item.status == "failed"
-        )
+        failed_ids = tuple(item.strategy_id for item in report.items if item.status == "failed")
         report_ref = _artifact(
             root,
             report_path,
@@ -455,8 +428,7 @@ def execute_stage03(
             error=ErrorInfo(
                 code="boltzgen-validation-failed",
                 message=(
-                    "BoltzGen design specification validation failed: "
-                    + ", ".join(failed_ids)
+                    "BoltzGen design specification validation failed: " + ", ".join(failed_ids)
                 )[:4096],
                 retryable=False,
             ),
@@ -476,9 +448,7 @@ def execute_stage03(
             attempts=(failed_attempt,),
             warnings=("No StrategyBundle was published.",),
         )
-        failed_stage.validate_inputs_declared_by(
-            (upstream.stage01, upstream.stage02)
-        )
+        failed_stage.validate_inputs_declared_by((upstream.stage01, upstream.stage02))
         failed_stage_path = artifacts / "stage-manifest.json"
         dump_model(failed_stage, failed_stage_path)
         failed_stage_ref = _artifact(
@@ -503,19 +473,13 @@ def execute_stage03(
             ),
             clear_workflow_state=True,
         )
-        failed_run_path = (
-            root
-            / "manifests"
-            / f"run-manifest.v{failed_run.revision:04d}.json"
-        )
+        failed_run_path = root / "manifests" / f"run-manifest.v{failed_run.revision:04d}.json"
         dump_model(failed_run, failed_run_path)
         _atomic_text(
             failed_run_path.name + "\n",
             root / "manifests" / "LATEST",
         )
-        raise ManifestStateError(
-            "BoltzGen design specification 校验失败；已发布终态失败 manifest"
-        )
+        raise ManifestStateError("BoltzGen design specification 校验失败；已发布终态失败 manifest")
     write_design_matrix(
         strategies,
         json_path=artifacts / "design-matrix.json",
@@ -526,10 +490,7 @@ def execute_stage03(
             "schema_version": "0.1",
             "registry_id": config.scaffold_registry,
             "license_path": "assets/scaffolds/BOLTZGEN_LICENSE.txt",
-            "assets": [
-                asset.model_dump(mode="json")
-                for asset in scaffold_assets
-            ],
+            "assets": [asset.model_dump(mode="json") for asset in scaffold_assets],
         },
         artifacts / "scaffold-resolution.json",
     )
@@ -647,10 +608,7 @@ def execute_stage03(
                 ),
                 _artifact(
                     root,
-                    artifacts
-                    / "strategies"
-                    / strategy.strategy_id
-                    / "strategy-manifest.json",
+                    artifacts / "strategies" / strategy.strategy_id / "strategy-manifest.json",
                     artifact_id=f"strategy-{strategy.strategy_id}-manifest",
                     role="strategy-manifest",
                     file_format="json",
@@ -729,9 +687,7 @@ def execute_stage03(
             "BoltzGen 0.3.2 does not expose a reliable deterministic generation seed.",
         ),
     )
-    stage_manifest.validate_inputs_declared_by(
-        (upstream.stage01, upstream.stage02)
-    )
+    stage_manifest.validate_inputs_declared_by((upstream.stage01, upstream.stage02))
     stage_manifest_path = artifacts / "stage-manifest.json"
     dump_model(stage_manifest, stage_manifest_path)
     stage_ref = _artifact(
@@ -755,16 +711,10 @@ def execute_stage03(
                 category="project-run",
                 path=root.relative_to(root.parents[1]).as_posix(),
                 layout_version="1",
-                status=(
-                    "succeeded"
-                    if resolved_config.stop_after_stage == 3
-                    else "running"
-                ),
+                status=("succeeded" if resolved_config.stop_after_stage == 3 else "running"),
                 project_id=upstream.run.project_id,
                 run_id=upstream.run.run_id,
-                notes=(
-                    f"Stage 03 compiled {len(strategies)} validated strategies.",
-                ),
+                notes=(f"Stage 03 compiled {len(strategies)} validated strategies.",),
             ),
         ),
         generated_at=now,

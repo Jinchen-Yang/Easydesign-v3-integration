@@ -6,42 +6,65 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | 尚未实现；clean 仓还没有真实 BoltzGen pilot。 | Stage 03 稳定后定义 pilot request/result 与执行器边界。 | 依赖已校验的 Stage 03 策略 bundle。 | 2026-07-24 |
+| `implemented` | S04-001/ENG-008 通用执行器、严格收集、进度、事件和恢复已实现并通过最小真实 BoltzGen smoke。 | 固定代码版本后启动 APOE 21×40，并以 840 个完整候选作为 smoke 门槛。 | 无代码前置阻塞；真实运行必须持续满足 GPU/磁盘门槛。 | 2026-07-26 |
 
 ## 当前结论
 
-- 阶段状态：`planned`。
-- 尚未开始实现；旧仓运行结果不能作为 clean 仓验收证据。
+- 阶段状态：`implemented`；通用代码和最小真实 backend smoke 已通过，但未满足
+  APOE 840-candidate 门槛，因此不能标记 `smoke-validated`。
+- Stage 03 APOE 21/21 StrategyBundle 已通过，可作为正式输入。
+- 完整候选固定为 metric row、原始 complex CIF 和 refold CIF 三者一致；BoltzGen
+  `budget=30` 不是 Stage 04 候选预算。
 
 ## 功能矩阵
 
 | 能力 | 状态 | 当前证据 |
 | --- | --- | --- |
-| BoltzGen backend | `planned` | 无 |
-| local executor | `planned` | 无 |
+| BoltzGen backend | `implemented` | 固定 0.3.2 完整 pipeline 的单候选真实 smoke 成功；严格收集到原始/refold CIF 和 200 个指标 |
+| local executor | `implemented` | 双 GPU、每 GPU 一个串行 strategy；资源门槛、结构化失败和精确 deficit resume 已测试 |
 | Slurm/SMART executor | `planned` | 无 |
-| 任务终态和候选索引 | `planned` | 无 |
+| 任务终态和候选索引 | `implemented` | TaskRecord、ProgressSnapshot、CandidateRecord、PilotBundle 与 manifest-only handoff 已测试 |
 
 ## Now
 
-- 无本阶段实现；项目当前重心是 Stage 02，旧仓结果不作为本阶段证据。
+- `[S04-001]` 在固定实现提交上执行 APOE 21 个 strategy，每组收集 40 个完整候选。
+- `[ENG-008]` 在长任务中验证 `runs watch`、中断恢复和 GPU 归属证据。
 
 ## Next
 
-- 在 Stage 03 策略契约稳定后定义 pilot request/result。
-- 建立执行器与 BoltzGen backend 分离的契约测试。
+- 840/840 完成后审计每组计数、checksum、事件序列和 Run/Stage manifest。
+- 通过 Stage 04 完成门后，将唯一事实来源交给 Stage 05 filter engine。
 
 ## Blocked
 
-- 依赖 Stage 03 的已校验策略 bundle。
+- 无当前实现阻塞。
+- 不终止服务器上的非 EasyDesign GPU 任务；资源繁忙时等待或明确失败。
 
 ## 验证证据
 
-- 尚无工程或科学验证。
+- Stage 03 正式输入：
+  `/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/`
+  `20260726-002-stage03-basic-vhh`，StrategyBundle 21 个 strategy，SHA-256
+  `a8451f5f7f7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87`。
+- 当前服务器审计：两张 RTX 4080 可见；实际启动前仍须重新检查占用。
+- 自动检查：199 passed、8 skipped；Ruff、mypy、wheel build 和 wheel asset
+  21/21 均通过。
+- 最小真实 backend smoke：
+  `/root/autodl-tmp/Protein_design/boltzgen_work/`
+  `easydesign_stage04_backend_smoke_20260726_01/backend-output`。固定
+  BoltzGen 0.3.2 在 GPU 0 完成 design → inverse folding → folding →
+  analysis → filtering，严格收集 1/1 个候选；原始 CIF SHA-256
+  `bfe9fdca4d8ba075de43b0b0dbed5352db9a3c9a66d7b29dc749d79c1454d274`，
+  refold CIF SHA-256
+  `a760f8e3b37935f7c0ae733842a898de0a711888213df34ad72b2b0a0ad12a27`。
+  该单样本 `pass_filters=false` 是候选科学结果，不是后端失败。
 
 ## 工作日志
 
-- 尚无。
+- 2026-07-26：启动 S04-001/ENG-008；审计 BoltzGen 0.3.2 CLI、官方输出和旧运行，
+  区分 `num_designs`、`budget`、`pass_filters` 与 EasyDesign 完整候选。
+- 2026-07-26：完成通用实现、故障注入、恢复测试和单候选真实 backend smoke；
+  Stage 状态升级为 `implemented`，等待 21×40 APOE 真实门槛。
 
 ## 历史索引
 

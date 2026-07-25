@@ -176,3 +176,23 @@ def test_initialize_sequence_project_can_materialize_precomputed_msa(
     assert initialized.msa_path.read_bytes() == a3m.read_bytes()
     assert loaded.precomputed_msa_path == initialized.msa_path
     assert loaded.prediction_request.msa_mode == "precomputed"
+
+
+def test_initialize_stage04_project_materializes_pilot_executor(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+
+    initialized = initialize_project(
+        project_root=tmp_path / "pilot-project",
+        target=fasta,
+        stop_after_stage=4,
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert loaded.config.stage03 is not None
+    assert loaded.config.stage04 is not None
+    assert loaded.config.stage04.executor.devices == (0, 1)
+    assert loaded.config.stage04.executor.workers_per_device == 1
+    assert loaded.config.stage04.required_complete_candidates_per_strategy == 40

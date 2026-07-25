@@ -54,6 +54,7 @@ CORE_MODULES = {
     "identity.py",
     "manifests.py",
     "serialization.py",
+    "tasks.py",
     "timestamps.py",
 }
 CORE_TESTS = {
@@ -64,6 +65,7 @@ CORE_TESTS = {
     "test_hashing.py",
     "test_manifests.py",
     "test_serialization.py",
+    "test_tasks.py",
 }
 ORCHESTRATION_MODULES = {
     "__init__.py",
@@ -85,9 +87,7 @@ STAGE_HISTORY_SECTIONS = (
     "### 解决办法",
     "### 遗留问题",
 )
-HISTORY_TIMESTAMP_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$"
-)
+HISTORY_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
 IGNORED_REPOSITORY_DIRS = {
     "build",
     "dist",
@@ -128,10 +128,7 @@ def require_completion_timestamp(
                 valid_timestamp = False
         require(
             valid_timestamp,
-            (
-                f"{record_label} 完成时间必须是带 UTC offset 的 RFC 3339 秒级时间: "
-                f"{timestamps[0]}"
-            ),
+            (f"{record_label} 完成时间必须是带 UTC offset 的 RFC 3339 秒级时间: {timestamps[0]}"),
             errors,
         )
 
@@ -173,9 +170,7 @@ def main() -> int:
     )
     require(actual_python == PYTHON_STAGES, "Python stage 集合或顺序不一致", errors)
 
-    actual_core_modules = {
-        path.name for path in (ROOT / "src/easydesign/core").glob("*.py")
-    }
+    actual_core_modules = {path.name for path in (ROOT / "src/easydesign/core").glob("*.py")}
     require(actual_core_modules == CORE_MODULES, "core 基础契约模块集合不一致", errors)
     actual_core_tests = {path.name for path in (ROOT / "tests/unit/core").glob("*.py")}
     require(CORE_TESTS <= actual_core_tests, "core 基础契约测试不完整", errors)
@@ -243,10 +238,7 @@ def main() -> int:
                         )
                     require_completion_timestamp(
                         record,
-                        (
-                            f"{history.relative_to(ROOT)} "
-                            f"第 {record_number} 条记录"
-                        ),
+                        (f"{history.relative_to(ROOT)} 第 {record_number} 条记录"),
                         errors,
                     )
                 if status.is_file():
@@ -381,10 +373,7 @@ def main() -> int:
         for record_number, record in enumerate(records, start=1):
             require_completion_timestamp(
                 record,
-                (
-                    f"{history.relative_to(ROOT)} "
-                    f"第 {record_number} 条记录"
-                ),
+                (f"{history.relative_to(ROOT)} 第 {record_number} 条记录"),
                 errors,
             )
 

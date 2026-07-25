@@ -39,6 +39,7 @@ src/easydesign/
 │   ├── manifests.py         # StageManifest 与 RunManifest
 │   ├── serialization.py     # 规范 JSON 读写
 │   ├── hashing.py           # SHA-256 与完整性验证
+│   ├── tasks.py             # TaskRecord、TaskEvent 与 ProgressSnapshot
 │   ├── timestamps.py        # 时区时间统一为 UTC
 │   └── errors.py            # 稳定、可分类的核心异常
 ├── stages/
@@ -160,6 +161,11 @@ Playwright Chromium 测试和许可证审计。EasyDesign 运行时、报告生�
 `easydesign-core` Python；Node、npm 和浏览器不会进入科学 pipeline。
 重型 backend 按其上游要求使用独立 Conda 环境、容器或 module。Core 不激活环境，不向
 重型环境安装自身依赖；adapter 使用显式 executable、工作目录、请求文件和结果 manifest。
+
+Stage 04 generation 复用 Stage 03 的精确 version/commit/cache probe。
+`backends/boltzgen/generation.py` 只把类型化请求转换为无 shell argv；
+`backends/executors/local_multi_gpu.py` 只负责 GPU 资源门槛和每设备一个串行 worker；
+候选完整性由 Stage 04 collector 定义。这三层不得互相复制职责。
 
 站点专属环境路径只能出现在未提交的本地 profile 或调用参数中。仓库代码不得硬编码
 `/root/autodl-tmp`、SMART 路径、用户名或密钥。
@@ -394,6 +400,38 @@ BoltzGen `0.3.2`、固定 commit 和上游 artifact hash。
 `--from-run` continuation：新 run 按字节复制 Stage 01/02 目录和输入 snapshot，复验原
 ArtifactRef，并在 `continuation-source.json` 记录源 RunManifest hash。源 run 和其
 artifact 保持不变；这不是扫描或重新导入科学结果。
+
+### Stage 04 任务、进度和恢复
+
+Stage 04 只读取 Stage 03 manifest 声明的 `StrategyBundle` 与 strategy YAML。一次
+strategy generation 是稳定 `TaskRecord`，每次后端启动是新的 task attempt：
+
+```text
+PilotPlan
+  ├── TaskRecord strategy-1
+  │     ├── task attempt-0001
+  │     └── task attempt-0002
+  └── TaskRecord strategy-2
+        └── task attempt-0001
+```
+
+运行中的可恢复状态位于 Stage attempt 的 `runtime/`：
+
+```text
+progress.json       原子替换，供 CLI/UI 快照读取
+task-state.json     原子替换，保存 task attempts 与 candidate lineage
+task-events.jsonl   append-only，严格连续 sequence
+```
+
+`runs watch` 只读 `progress.json`；`runs resume` 验证 plan checksum、候选结构 checksum
+和 task state 后，只启动未达预算策略。中断时已形成 metric row、原始 complex CIF 与
+refold CIF 的完整候选可以恢复，旧 task attempt 以结构化 interrupted error 关闭；任何
+文件都不会被覆盖。
+
+BoltzGen 的 `num_designs` 是本次生成请求，`budget=30` 是官方最终多样性目录预算，
+`pass_filters` 是后续证据。Stage 04 的成功条件独立定义为：每个策略达到配置数量的
+完整候选，且每个候选同时具有唯一 metric row、原始 complex CIF、refold CIF 和 checksum。
+只有终态成功时才发布 `CandidateIndex` 和 `PilotBundle` 给 Stage 05。
 
 ### 远程 adapter、cache 与 Decision Gate
 

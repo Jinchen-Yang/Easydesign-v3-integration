@@ -254,9 +254,7 @@ class RemoteProtenixMsaConfig(BaseModel):
 
     mode: Literal[MsaMode.REMOTE] = MsaMode.REMOTE
     cache_mode: CacheMode = CacheMode.ONLINE
-    providers: tuple[ProtenixMsaProviderConfig, ...] = (
-        ProtenixMsaProviderConfig(),
-    )
+    providers: tuple[ProtenixMsaProviderConfig, ...] = (ProtenixMsaProviderConfig(),)
     no_msa_fallback: bool = False
 
     @model_validator(mode="after")
@@ -314,9 +312,7 @@ class StructurePredictionConfig(BaseModel):
     backend: str = Field(pattern=ID_PATTERN)
     msa: ProtenixMsaConfig
     template_mode: TemplateMode
-    parameter_profile: PredictionParameterProfile = (
-        PredictionParameterProfile.MODEL_DEFAULT
-    )
+    parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
     seeds: tuple[int, ...] = (101,)
     sample_count: int = Field(default=1, ge=1)
     prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
@@ -328,9 +324,7 @@ class StructurePredictionConfig(BaseModel):
         if self.backend != "protenix-v2":
             raise ValueError("当前 sequence 路径只实现 backend=protenix-v2")
         if len(self.seeds) != 1 or self.sample_count != 1:
-            raise ValueError(
-                "Stage 01 v0.1 必须恰好一个 seed 和一个 sample，避免静默选择预测结构"
-            )
+            raise ValueError("Stage 01 v0.1 必须恰好一个 seed 和一个 sample，避免静默选择预测结构")
         return self
 
 
@@ -346,8 +340,7 @@ class WorkflowConfig(BaseModel):
     def validate_strategy_rounds(self) -> Self:
         if self.max_strategy_rounds != 1:
             raise ValueError(
-                "EasyDesign 1.0 只实现 max_strategy_rounds=1；"
-                "多轮自适应策略属于后续版本"
+                "EasyDesign 1.0 只实现 max_strategy_rounds=1；多轮自适应策略属于后续版本"
             )
         return self
 
@@ -382,9 +375,7 @@ class StructureSelectionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     policy: Literal["experimental-first"] = "experimental-first"
-    quality_profile: StructureQualityProfile = (
-        StructureQualityProfile.EXPERIMENTAL_STRICT_V1
-    )
+    quality_profile: StructureQualityProfile = StructureQualityProfile.EXPERIMENTAL_STRICT_V1
     on_no_eligible_candidate: Literal["predict", "fail"] = "predict"
     on_ambiguous_candidates: Literal["predict", "fail"] = "predict"
     preserve_source_context: bool = True
@@ -594,9 +585,7 @@ class Stage02AutomaticConfig(BaseModel):
         if isinstance(value, dict) and "region_count" in value:
             migrated = dict(value)
             if "requested_region_count" in migrated:
-                raise ValueError(
-                    "region_count 与 requested_region_count 不能同时出现"
-                )
+                raise ValueError("region_count 与 requested_region_count 不能同时出现")
             migrated["requested_region_count"] = migrated.pop("region_count")
             return migrated
         return value
@@ -604,9 +593,7 @@ class Stage02AutomaticConfig(BaseModel):
     @model_validator(mode="after")
     def validate_avoid(self) -> Self:
         if self.minimum_region_count > self.requested_region_count:
-            raise ValueError(
-                "minimum_region_count 不能高于 requested_region_count"
-            )
+            raise ValueError("minimum_region_count 不能高于 requested_region_count")
         if any(value < 1 for value in self.avoid_label_seq_ids):
             raise ValueError("avoid_label_seq_ids 必须为正整数")
         if len(self.avoid_label_seq_ids) != len(set(self.avoid_label_seq_ids)):
@@ -691,18 +678,14 @@ class Stage02Config(BaseModel):
             RegionProposalMode.DETECT,
         }:
             if self.automatic is None or not self.methods:
-                raise ValueError(
-                    f"Stage 02 {self.mode} 模式必须提供 automatic 配置和 methods"
-                )
+                raise ValueError(f"Stage 02 {self.mode} 模式必须提供 automatic 配置和 methods")
         if self.mode is RegionProposalMode.AUTOMATIC and self.user_regions is not None:
             raise ValueError("automatic 模式不得携带 user_regions")
         if self.mode is RegionProposalMode.USER_PROVIDED:
             if self.user_regions is None:
                 raise ValueError("user-provided 模式必须提供 user_regions")
             if self.automatic is not None or self.methods:
-                raise ValueError(
-                    "user-provided 模式不得携带 automatic 配置或 methods"
-                )
+                raise ValueError("user-provided 模式不得携带 automatic 配置或 methods")
         if self.mode is RegionProposalMode.DETECT:
             if self.user_regions is None or not isinstance(
                 self.user_regions.source,
@@ -728,6 +711,11 @@ class LocalMultiGpuExecutorConfig(BaseModel):
     type: Literal["local-multi-gpu"] = "local-multi-gpu"
     devices: tuple[int, ...] = Field(default=(0, 1), min_length=1)
     workers_per_device: Literal[1] = 1
+    max_memory_used_mib: int = Field(default=1024, ge=0)
+    max_utilization_percent: int = Field(default=10, ge=0, le=100)
+    resource_wait_timeout_seconds: float = Field(default=21_600, gt=0)
+    resource_poll_seconds: float = Field(default=15, gt=0, le=300)
+    max_task_attempts: int = Field(default=3, ge=1, le=10)
 
     @model_validator(mode="after")
     def validate_devices(self) -> Self:
@@ -756,14 +744,10 @@ class Stage05StrategySelectionConfig(BaseModel):
 class Stage05Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    filter_profile: Literal["nanobody-filter-standard-v1.5"] = (
-        "nanobody-filter-standard-v1.5"
-    )
+    filter_profile: Literal["nanobody-filter-standard-v1.5"] = "nanobody-filter-standard-v1.5"
     expanded_total_per_strategy: int = Field(default=100, ge=1)
     maximum_tier_a_strategies: int = Field(default=3, ge=1)
-    strategy_selection: Stage05StrategySelectionConfig = (
-        Stage05StrategySelectionConfig()
-    )
+    strategy_selection: Stage05StrategySelectionConfig = Stage05StrategySelectionConfig()
 
 
 class Stage06Config(BaseModel):
@@ -907,13 +891,14 @@ class EasyDesignRunConfig(BaseModel):
                 "sequence/FASTA/UniProt 输入必须显式提供 structure_prediction，"
                 "以便无合格实验结构时使用 Protenix"
             )
-        if isinstance(
-            source,
-            (PdbIdSourceConfig, TargetBundleSourceConfig),
-        ) and self.stage01.structure_prediction is not None:
-            raise ValueError(
-                "显式 PDB ID/Target Bundle 输入不得携带 structure_prediction"
+        if (
+            isinstance(
+                source,
+                (PdbIdSourceConfig, TargetBundleSourceConfig),
             )
+            and self.stage01.structure_prediction is not None
+        ):
+            raise ValueError("显式 PDB ID/Target Bundle 输入不得携带 structure_prediction")
         if self.workflow.execution_mode is ExecutionMode.UNATTENDED:
             stage02 = self.stage02
             if stage02 is not None:
@@ -923,13 +908,11 @@ class EasyDesignRunConfig(BaseModel):
                 }:
                     if len(stage02.methods) != 1:
                         raise ValueError(
-                            "unattended automatic/detect Stage 02 "
-                            "必须恰好配置一种 method"
+                            "unattended automatic/detect Stage 02 必须恰好配置一种 method"
                         )
                     if stage02.unattended_approval is None:
                         raise ValueError(
-                            "unattended automatic/detect Stage 02 "
-                            "必须提供 unattended_approval"
+                            "unattended automatic/detect Stage 02 必须提供 unattended_approval"
                         )
                 if stage02.mode in {
                     RegionProposalMode.USER_PROVIDED,
@@ -954,6 +937,7 @@ class EasyDesignRunConfig(BaseModel):
         """兼容现有内部调用；规范 YAML 只使用 stage01.structure_prediction。"""
 
         return self.stage01.structure_prediction
+
 
 @dataclass(frozen=True, slots=True)
 class LoadedSequenceRunConfig:
@@ -1072,10 +1056,7 @@ def detect_target_input_format(path: Path) -> TargetInputFormat:
         return TargetInputFormat.SEQUENCE
     if stripped.startswith("data_") and "_atom_site." in text:
         return TargetInputFormat.MMCIF
-    if any(
-        stripped.startswith(prefix)
-        for prefix in ("HEADER", "TITLE ", "ATOM  ", "HETATM")
-    ):
+    if any(stripped.startswith(prefix) for prefix in ("HEADER", "TITLE ", "ATOM  ", "HETATM")):
         return TargetInputFormat.PDB
     if _json_is_target_bundle(text):
         return TargetInputFormat.TARGET_BUNDLE
@@ -1102,10 +1083,7 @@ def _resolve_precomputed_msa_path(
     config: EasyDesignRunConfig,
 ) -> Path | None:
     prediction = config.structure_prediction
-    if (
-        prediction is None
-        or not isinstance(prediction.msa, PrecomputedProtenixMsaConfig)
-    ):
+    if prediction is None or not isinstance(prediction.msa, PrecomputedProtenixMsaConfig):
         return None
     return _resolve_source_path(config_path, prediction.msa.path)
 
@@ -1159,9 +1137,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         try:
             resolved_run_root = run_root.resolve(strict=True)
         except OSError as error:
-            raise ConfigurationError(
-                f"target-bundle source_run_root 不存在: {run_root}"
-            ) from error
+            raise ConfigurationError(f"target-bundle source_run_root 不存在: {run_root}") from error
         return LoadedTargetBundleRunConfig(
             config_path=config_path,
             config=config,
@@ -1181,13 +1157,9 @@ def load_run_config(path: Path) -> LoadedRunConfig:
                 "PSE 使用导入坐标，必须省略 structure_prediction；禁止启动结构预测"
             )
         if config.workflow.stop_after_stage >= 2 and config.stage02 is None:
-            raise ConfigurationError(
-                "stop_after_stage >= 2 时必须显式提供 stage02 配置"
-            )
+            raise ConfigurationError("stop_after_stage >= 2 时必须显式提供 stage02 配置")
         if not isinstance(config.target.scope, FullSequenceScope):
-            raise ConfigurationError(
-                "Stage 01 1.0 的 PSE 输入只支持 full-sequence scope"
-            )
+            raise ConfigurationError("Stage 01 1.0 的 PSE 输入只支持 full-sequence scope")
         return LoadedPseRunConfig(
             config_path=config_path,
             config=config,
@@ -1196,9 +1168,7 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         )
     if detected in {TargetInputFormat.PDB, TargetInputFormat.MMCIF}:
         if config.structure_prediction is not None:
-            raise ConfigurationError(
-                "本地 PDB/mmCIF 是显式结构选择，必须省略 structure_prediction"
-            )
+            raise ConfigurationError("本地 PDB/mmCIF 是显式结构选择，必须省略 structure_prediction")
         return LoadedStructureRunConfig(
             config_path=config_path,
             config=config,
@@ -1212,13 +1182,9 @@ def load_run_config(path: Path) -> LoadedRunConfig:
     if detected not in {TargetInputFormat.SEQUENCE, TargetInputFormat.FASTA}:
         raise TargetInputError(f"不支持的本地 target format={detected}")
     if config.structure_prediction is None:
-        raise ConfigurationError(
-            "sequence/FASTA 输入必须显式提供 structure_prediction"
-        )
+        raise ConfigurationError("sequence/FASTA 输入必须显式提供 structure_prediction")
     if config.workflow.stop_after_stage >= 2 and config.stage02 is None:
-        raise ConfigurationError(
-            "stop_after_stage >= 2 时必须显式提供 stage02 配置"
-        )
+        raise ConfigurationError("stop_after_stage >= 2 时必须显式提供 stage02 配置")
 
     text = _read_text(source_path)
     if detected is TargetInputFormat.FASTA:
@@ -1316,7 +1282,5 @@ def migrate_run_config(source: Path, destination: Path) -> Path:
                 sort_keys=False,
             )
     except OSError as error:
-        raise ConfigurationError(
-            f"无法写入迁移配置: path={target_path}, error={error}"
-        ) from error
+        raise ConfigurationError(f"无法写入迁移配置: path={target_path}, error={error}") from error
     return target_path

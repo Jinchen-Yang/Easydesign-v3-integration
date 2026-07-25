@@ -72,6 +72,8 @@ class BoltzGenRuntime(BaseModel):
     repository_root: Path
     cache_root: Path
     timeout_seconds: float = Field(default=300.0, gt=0)
+    generation_timeout_seconds: float = Field(default=172_800.0, gt=0)
+    data_loader_workers: int = Field(default=4, ge=0, le=64)
     validation_workers: int = Field(default=4, ge=1, le=8)
     offline_mode: bool = True
 

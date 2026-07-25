@@ -74,9 +74,7 @@ def _stage02_payload(
             "avoid_label_seq_ids": [],
         },
         "unattended_approval": (
-            {"region_count": 3, "allow_structural_only": False}
-            if unattended
-            else None
+            {"region_count": 3, "allow_structural_only": False} if unattended else None
         ),
     }
     if detect_pse_colors:
@@ -152,10 +150,8 @@ def initialize_project(
 ) -> InitializedProject:
     """生成 schema 0.7；六类 Stage 01 入口全部有显式 init。"""
 
-    if stop_after_stage not in {1, 2, 3}:
-        raise ConfigurationError(
-            "Developer Preview init 只支持 --stop-after 1、2 或 3"
-        )
+    if stop_after_stage not in {1, 2, 3, 4}:
+        raise ConfigurationError("Developer Preview init 只支持 --stop-after 1、2、3 或 4")
     if execution_mode not in {"review-gated", "unattended"}:
         raise ConfigurationError("--execution-mode 必须是 review-gated 或 unattended")
     if chain_namespace not in {"auth", "label"}:
@@ -165,13 +161,9 @@ def initialize_project(
     if scope_feature_name is not None and scope_feature_type is None:
         raise ConfigurationError("--scope-feature-name 必须配合 --scope-feature-type")
     if msa_cache_mode not in {"online", "prefer-cache", "offline"}:
-        raise ConfigurationError(
-            "--msa-cache-mode 必须是 online、prefer-cache 或 offline"
-        )
+        raise ConfigurationError("--msa-cache-mode 必须是 online、prefer-cache 或 offline")
     if precomputed_msa is not None and msa_cache_mode != "online":
-        raise ConfigurationError(
-            "--precomputed-msa 与 --msa-cache-mode 不能同时指定"
-        )
+        raise ConfigurationError("--precomputed-msa 与 --msa-cache-mode 不能同时指定")
     if target_bundle is not None and source_run_root is None:
         raise ConfigurationError("--target-bundle 必须同时提供 --source-run-root")
     if target_bundle is None and source_run_root is not None:
@@ -179,18 +171,20 @@ def initialize_project(
     selected_stage02_method = stage02_method or (
         "sasa" if execution_mode == "unattended" else "both"
     )
-    if sum(
-        (
-            target is not None,
-            target_bundle is not None,
-            pdb_id is not None,
-            uniprot is not None,
-            uniprot_query is not None,
+    if (
+        sum(
+            (
+                target is not None,
+                target_bundle is not None,
+                pdb_id is not None,
+                uniprot is not None,
+                uniprot_query is not None,
+            )
         )
-    ) != 1:
+        != 1
+    ):
         raise ConfigurationError(
-            "--target、--target-bundle、--pdb-id、--uniprot、--uniprot-query "
-            "必须且只能提供一个"
+            "--target、--target-bundle、--pdb-id、--uniprot、--uniprot-query 必须且只能提供一个"
         )
     if uniprot_query is not None and taxon_id is None:
         raise ConfigurationError("--uniprot-query 必须同时提供 --taxon-id")
@@ -211,28 +205,20 @@ def initialize_project(
             raise ConfigurationError(f"Target 必须是文件: {source}")
         detected = detect_target_input_format(source)
         if target_bundle is not None and detected is not TargetInputFormat.TARGET_BUNDLE:
-            raise ConfigurationError(
-                f"--target-bundle 不是有效 Target Bundle: {source}"
-            )
+            raise ConfigurationError(f"--target-bundle 不是有效 Target Bundle: {source}")
         if target is not None and detected is TargetInputFormat.TARGET_BUNDLE:
-            raise ConfigurationError(
-                "Target Bundle 必须使用 --target-bundle 和 --source-run-root"
-            )
+            raise ConfigurationError("Target Bundle 必须使用 --target-bundle 和 --source-run-root")
         if target_bundle is not None:
             assert source_run_root is not None
             try:
                 resolved_source_run_root = source_run_root.resolve(strict=True)
             except OSError as error:
-                raise ConfigurationError(
-                    f"source run root 不存在: {source_run_root}"
-                ) from error
+                raise ConfigurationError(f"source run root 不存在: {source_run_root}") from error
             try:
                 bundle_payload = json.loads(source.read_text(encoding="utf-8"))
                 bundle_target_id = str(bundle_payload["target_id"])
             except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError) as error:
-                raise ConfigurationError(
-                    f"Target Bundle 无法读取 target_id: {source}"
-                ) from error
+                raise ConfigurationError(f"Target Bundle 无法读取 target_id: {source}") from error
     elif pdb_id is not None:
         detected = TargetInputFormat.PDB_ID
     elif uniprot is not None:
@@ -244,9 +230,7 @@ def initialize_project(
         try:
             msa_source = precomputed_msa.resolve(strict=True)
         except OSError as error:
-            raise ConfigurationError(
-                f"预计算 A3M 不存在: {precomputed_msa}"
-            ) from error
+            raise ConfigurationError(f"预计算 A3M 不存在: {precomputed_msa}") from error
         if not msa_source.is_file():
             raise ConfigurationError(f"预计算 A3M 必须是文件: {msa_source}")
 
@@ -255,18 +239,10 @@ def initialize_project(
         raise ConfigurationError(f"项目目录非空，禁止覆盖: {destination}")
     selected_project_id = project_id or _slug(destination.name, label="项目目录名")
     source_label = (
-        source.stem
-        if source is not None
-        else (pdb_id or uniprot or uniprot_query or "target")
+        source.stem if source is not None else (pdb_id or uniprot or uniprot_query or "target")
     )
-    selected_target_id = target_id or (
-        bundle_target_id or _slug(source_label, label="target 输入")
-    )
-    if (
-        bundle_target_id is not None
-        and target_id is not None
-        and target_id != bundle_target_id
-    ):
+    selected_target_id = target_id or (bundle_target_id or _slug(source_label, label="target 输入"))
+    if bundle_target_id is not None and target_id is not None and target_id != bundle_target_id:
         raise ConfigurationError(
             "Target Bundle target_id 禁止在 init 时静默重命名: "
             f"bundle={bundle_target_id}, requested={target_id}"
@@ -334,13 +310,9 @@ def initialize_project(
         TargetInputFormat.UNIPROT_SEARCH,
     }
     if msa_source is not None and not needs_prediction:
-        raise ConfigurationError(
-            "--precomputed-msa 只适用于 FASTA/裸序列/UniProt 预测入口"
-        )
+        raise ConfigurationError("--precomputed-msa 只适用于 FASTA/裸序列/UniProt 预测入口")
     if msa_cache_mode != "online" and not needs_prediction:
-        raise ConfigurationError(
-            "--msa-cache-mode 只适用于 FASTA/裸序列/UniProt 预测入口"
-        )
+        raise ConfigurationError("--msa-cache-mode 只适用于 FASTA/裸序列/UniProt 预测入口")
     if (
         detected is TargetInputFormat.PSE
         and stop_after_stage >= 2
@@ -381,9 +353,7 @@ def initialize_project(
             "structure_prediction": (
                 _prediction_payload(
                     precomputed_msa_path=(
-                        f"inputs/{msa_source.name}"
-                        if msa_source is not None
-                        else None
+                        f"inputs/{msa_source.name}" if msa_source is not None else None
                     ),
                     cache_mode=msa_cache_mode,
                 )
@@ -409,8 +379,21 @@ def initialize_project(
             if stop_after_stage >= 3
             else None
         ),
+        "stage04": (
+            {
+                "backend": "boltzgen-0.3.2",
+                "executor": {
+                    "type": "local-multi-gpu",
+                    "devices": [0, 1],
+                    "workers_per_device": 1,
+                },
+                "required_complete_candidates_per_strategy": 40,
+            }
+            if stop_after_stage >= 4
+            else None
+        ),
     }
-    for stage_number in range(4, 8):
+    for stage_number in range(5, 8):
         payload[f"stage{stage_number:02d}"] = None
 
     created_root = not destination.exists()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import traceback
 from collections.abc import Sequence
 from pathlib import Path
@@ -31,6 +32,7 @@ from easydesign.orchestration.application import (
     execute_pipeline,
     list_runs,
     migrate_run_configuration,
+    resume_pipeline,
     show_run,
     validate_run_configuration,
 )
@@ -46,6 +48,7 @@ from easydesign.orchestration.profile import (
     load_runtime_profile,
 )
 from easydesign.orchestration.project import initialize_project
+from easydesign.orchestration.stage04 import read_stage04_progress
 from easydesign.reporting import (
     HOST,
     create_target_viewer_server,
@@ -125,7 +128,7 @@ def _parser() -> argparse.ArgumentParser:
         default="online",
         help="远程 MSA 缓存策略；默认 online 每次刷新",
     )
-    init_parser.add_argument("--stop-after", type=int, choices=(1, 2, 3), default=1)
+    init_parser.add_argument("--stop-after", type=int, choices=(1, 2, 3, 4), default=1)
     init_parser.add_argument(
         "--stage02-method",
         choices=("sasa", "scannet", "both"),
@@ -236,12 +239,25 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(runs_show)
     runs_show.add_argument("--runs-root", type=Path)
     _add_json(runs_show)
+    runs_watch = runs_commands.add_parser(
+        "watch",
+        help="只读取原子 progress 与事件快照显示当前运行",
+    )
+    runs_watch.add_argument("run", type=Path)
+    runs_watch.add_argument("--interval", type=float, default=5.0)
+    runs_watch.add_argument("--once", action="store_true")
+    _add_json(runs_watch)
+    runs_resume = runs_commands.add_parser(
+        "resume",
+        help="验证 runtime state 后只恢复未达标任务",
+    )
+    runs_resume.add_argument("run", type=Path)
+    _add_profile(runs_resume)
+    _add_json(runs_resume)
 
     viewer_parser = commands.add_parser("viewer", help="查看自包含结构报告")
     viewer_commands = viewer_parser.add_subparsers(dest="viewer_command", required=True)
-    viewer_serve = viewer_commands.add_parser(
-        "serve", help="仅在 127.0.0.1 提供已验证报告"
-    )
+    viewer_serve = viewer_commands.add_parser("serve", help="仅在 127.0.0.1 提供已验证报告")
     viewer_serve.add_argument("run", type=Path)
     viewer_serve.add_argument("--port", type=int, default=8000)
     return parser
@@ -270,10 +286,7 @@ def _print_execution(execution: PipelineExecution) -> None:
     print(f"运行状态：{execution.status}")
     print(f"Run：{execution.run_root}")
     print(f"Run manifest：{execution.run_manifest}")
-    if (
-        execution.status == "awaiting-human-approval"
-        and execution.run_root is not None
-    ):
+    if execution.status == "awaiting-human-approval" and execution.run_root is not None:
         print("需要人工选择；下一步：")
         current = (
             load_model(execution.run_manifest, RunManifest)
@@ -286,23 +299,15 @@ def _print_execution(execution: PipelineExecution) -> None:
             and current.workflow_state.action == "approve-hotspots"
         ):
             print(
-                "  easydesign hotspots export "
-                f"{execution.run_root} --output hotspots-review.yaml"
+                f"  easydesign hotspots export {execution.run_root} --output hotspots-review.yaml"
             )
             print(
-                "  easydesign hotspots approve "
-                f"{execution.run_root} --input hotspots-review.yaml"
+                f"  easydesign hotspots approve {execution.run_root} --input hotspots-review.yaml"
             )
         else:
             print(f"  easydesign decisions show {execution.run_root}")
-            print(
-                "  easydesign decisions export "
-                f"{execution.run_root} --output decision.yaml"
-            )
-            print(
-                "  easydesign decisions approve "
-                f"{execution.run_root} --input decision.yaml"
-            )
+            print(f"  easydesign decisions export {execution.run_root} --output decision.yaml")
+            print(f"  easydesign decisions approve {execution.run_root} --input decision.yaml")
     if execution.viewer_status is not None:
         print(f"Stage 01 Viewer：{execution.viewer_status}")
 
@@ -356,15 +361,9 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         payload = {
             "project_root": str(initialized.project_root),
             "config": str(initialized.config_path),
-            "target": (
-                None
-                if initialized.target_path is None
-                else str(initialized.target_path)
-            ),
+            "target": (None if initialized.target_path is None else str(initialized.target_path)),
             "format": str(initialized.detected_format),
-            "msa": (
-                None if initialized.msa_path is None else str(initialized.msa_path)
-            ),
+            "msa": (None if initialized.msa_path is None else str(initialized.msa_path)),
         }
         if arguments.json:
             print(_json_text(payload))
@@ -504,6 +503,55 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return 0
 
     if arguments.command == "runs":
+        if arguments.runs_command == "watch":
+            if arguments.interval <= 0 or arguments.interval > 60:
+                raise ConfigurationError("--interval 必须在 0 到 60 秒之间")
+            while True:
+                progress = read_stage04_progress(arguments.run)
+                if arguments.json:
+                    print(_json_text(progress), flush=True)
+                else:
+                    print(
+                        f"[{progress.updated_at.isoformat()}] "
+                        f"Stage 04 {progress.status}: "
+                        f"tasks {progress.succeeded_tasks}/{progress.total_tasks}, "
+                        f"running={progress.running_tasks}, failed={progress.failed_tasks}; "
+                        f"candidates {progress.collected_candidates}/"
+                        f"{progress.planned_candidates}",
+                        flush=True,
+                    )
+                    if progress.per_device:
+                        assignments = ", ".join(
+                            f"GPU {device}={strategy}"
+                            for device, strategy in sorted(progress.per_device.items())
+                        )
+                        print(f"  {assignments}", flush=True)
+                    if progress.estimated_remaining_seconds is not None:
+                        print(
+                            f"  ETA≈{progress.estimated_remaining_seconds / 60:.1f} min",
+                            flush=True,
+                        )
+                    for message in progress.recent_errors[-3:]:
+                        print(f"  ERROR {message}", flush=True)
+                if arguments.once or progress.status in {
+                    "succeeded",
+                    "failed",
+                    "incomplete",
+                }:
+                    return 0
+                time.sleep(arguments.interval)
+        if arguments.runs_command == "resume":
+            outcome = resume_pipeline(
+                arguments.run,
+                profile_path=arguments.profile,
+            )
+            if arguments.json:
+                print(_json_text(outcome))
+            else:
+                print(f"Stage 04 恢复状态：{outcome.status}")
+                print(f"完整候选：{outcome.complete_candidate_count}")
+                print(f"Run：{outcome.run_root}")
+            return 0 if outcome.status == "succeeded" else 4
         root = _runs_root(arguments.runs_root, arguments.profile)
         if arguments.runs_command == "list":
             runs = list_runs(root)

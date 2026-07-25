@@ -43,6 +43,13 @@ from .serialization import (
     dump_model,
     load_model,
 )
+from .tasks import (
+    ProgressSnapshot,
+    TaskAttemptRecord,
+    TaskEvent,
+    TaskRecord,
+    TaskStatus,
+)
 
 __all__ = [
     "ArtifactIntegrityError",
@@ -66,6 +73,7 @@ __all__ = [
     "ManifestStateError",
     "PathPolicyError",
     "PredictionOutputError",
+    "ProgressSnapshot",
     "RunManifest",
     "RuntimeProfileRef",
     "SequenceInputError",
@@ -75,6 +83,10 @@ __all__ = [
     "WorkflowState",
     "WorkflowStateType",
     "TargetInputError",
+    "TaskAttemptRecord",
+    "TaskEvent",
+    "TaskRecord",
+    "TaskStatus",
     "UndeclaredArtifactError",
     "canonical_json_bytes",
     "canonical_model_sha256",

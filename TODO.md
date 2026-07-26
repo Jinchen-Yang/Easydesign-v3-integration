@@ -36,8 +36,8 @@
 | `ENG` | Core Engineering | `smoke-validated` | ENG-002/004/005/006/007 已建立代码身份、时间戳、ensemble、联网证据、Decision Gate 与六入口共享 dispatcher。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-008：Stage 04–06 通用任务、进度、事件与恢复执行器；[架构](docs/ARCHITECTURE.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–004 已提供可安装 CLI、六入口 init、显式 MSA 策略、doctor、双模式运行、decision resume、runs 与 Viewer。 | 让真实能力通过一个稳定入口使用。 | 下一步随 Stage 03 增加配置生成与审批 UX；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
-| `UI` | Product UI | `planned` | 尚未开发桌面或 Web 产品 UI。 | 未来只调用相同 Python API，不复制科学逻辑。 | UI-001：在 CLI/API 稳定后定义任务、审阅和恢复流程。 |
-| `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-001：VHH–抗原区域与端到端基准。 |
+| `UI` | Product UI | `planned` | UI-001 产品级本地科研工作台正在开发，保持 manifest-only 与单一 Python API。 | 建立项目、运行、阶段、审批、恢复和候选审阅的一体化工作台。 | UI-001/002/003 与 ENG-009；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002 已固定 VHH7；DATA-003 的 TNP fixed-source/isolated-runtime 与真实 batch smoke 已通过，模型和重型依赖继续 runtime-only。 | 确保 scaffold、模型、fixture 的来源与权利可审计。 | 在公开发布前复审 TNP 完整依赖、NanoBodyBuilder2 模型下载来源和再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
 | `PAPER` | Publication | `planned` | 方法与证据持续积累，尚未冻结论文 claim。 | 形成可追溯方法、图表、benchmark 和补充材料。 | PAPER-001：Stage 01/02 方法和失败证据索引。 |
@@ -58,7 +58,13 @@
 | `DATA-001` | Data & Assets | `planned` | 面向公开 release 的第三方 VHH 资产复审完成。 |
 | `DATA-002` | Data & Assets | `smoke-validated` | 七个官方 VHH scaffold 的来源、MIT 许可证、逐文件 checksum 和 wheel 分发完成。 |
 | `DATA-003` | Data & Assets | `smoke-validated` | TNP fixed commit、Python 3.10 独立环境、完整显式依赖、许可证、严格 adapter 与官方 VHH 单候选真实 batch 已验证；模型仍保持 runtime-only。 |
+| `VAL-001` | Scientific Validation | `planned` | 选择第二条独立真实 target，复用冻结的 1.0 主线进行端到端工程与科学验收。 |
 | `VAL-002` | Scientific Validation | `smoke-validated` | APOE PSE 真实验收完成到 Stage 05：840 pilot、60 扩展和 10 full-target prediction 后如实记录 `stopped-no-scale-winner`；Stage 06/07 未伪运行。 |
+| `VAL-003` | Scientific Validation | `planned` | 冻结 APOE 现有负结果，对相同候选和 MSA 比较 no-template、target-template、target-template+hotspot constraint 及已知 VHH–抗原正对照；任何默认策略变化必须形成新 profile/ADR。 |
+| `UI-001` | Product UI | `planned` | React/TypeScript 本地科研工作台、设计系统与 project/run/stage 导航通过真实 APOE 展示验收。 |
+| `ENG-009` | Core Engineering | `planned` | localhost UI gateway、manifest 投影、安全 artifact token、结构化事件和可恢复 job controller 完成。 |
+| `UI-002` | Product UI | `planned` | 六入口向导、表单/YAML 同步、doctor、真实启动、审批、停止调度和恢复调用统一 Python API。 |
+| `UI-003` | Product UI | `planned` | 七阶段证据视图、APOE 审计回放、Stage 06/07 capability/run 状态分离与 draft-order gate 完成。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
 ### 通用决策门路线

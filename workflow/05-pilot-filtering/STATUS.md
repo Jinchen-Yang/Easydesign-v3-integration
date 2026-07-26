@@ -44,6 +44,10 @@
 
 ## Next
 
+- `[VAL-003]` 使用相同 APOE 候选、target MSA 和 seeds 101/202/303 受控比较
+  no-template、target-template 与 target-template+hotspot constraint，并增加已知
+  VHH–抗原正对照。当前证据只能说明现有 Protenix 验证模式未保持 binder pose，不能
+  直接宣称 Protenix 软件有 bug。
 - 在第二条独立真实 target 上复用相同 frozen profile，验证 winner 或另一种 scientific
   stop。
 - 通过预注册 benchmark 审视 full-target binder-pose gate；任何阈值或参考对齐方法变化

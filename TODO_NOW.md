@@ -18,11 +18,18 @@
 
 ## Now
 
-- 无正在执行的 Stage。APOE PSE 本轮已在 Stage 05 合法发布
-  `stopped-no-scale-winner`；不能绕过科学停止启动 Stage 06/07。
+- `[UI-001]` 建立 React/TypeScript 产品级本地科研工作台和 project/run/stage 信息架构。
+- `[ENG-009]` 建立仅绑定 localhost 的 manifest 投影、安全 artifact API、结构化事件和
+  可恢复任务控制；UI 不复制科学逻辑。
+- `[UI-002]` 接入六入口向导、YAML 同步、doctor、运行、审批和恢复。
+- `[UI-003]` 完成七阶段证据视图与 APOE 回放；APOE Stage 06/07 必须显示
+  `not-reached`，不能绕过 Stage 05 scientific stop。
 
 ## Next
 
+- `[VAL-003]` 冻结当前 APOE 负结果，对相同候选、相同 MSA 和 seeds 101/202/303
+  比较 no-template、target-template、target-template+hotspot constraint，并加入已知
+  VHH–抗原正对照；未形成新 profile/ADR 前不得改变 Stage 05 默认 gate。
 - `[VAL-001]` 选择第二条独立真实 target，复用 frozen 1.0 主线；APOE 的
   binder-pose gate 只能通过预注册 benchmark 和新版本 profile 研究，不能事后调参。
 - `[S06-001]` 通用 1000 smoke / 50000 production plan、25% 磁盘门、共享恢复和精确

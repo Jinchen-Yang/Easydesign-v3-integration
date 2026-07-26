@@ -71,7 +71,8 @@
   的隐式读取。
 - 增加终态发布恢复：崩溃遗留 artifact 只能在模型 identity 或原始 bytes 一致时复用。
 - APOE Stage 05 于 `2026-07-26T09:13:48+08:00` 发布
-  `stopped-no-scale-winner`；按科学停止契约没有创建 Stage 06 workspace/task。
+  `stopped-no-scale-winner`；统一 run 中仅保留预创建的空阶段目录，没有创建 Stage 06
+  attempt、task、shard 或 manifest。
 
 ## 历史索引
 

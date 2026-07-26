@@ -185,3 +185,15 @@ GET /api/v1/runs/{run}/stages/6/execution
   确认并真实启动”按顺序解锁，并在按钮下直接说明当前未开放的原因。
 - 草稿创建后目标输入冻结，避免浏览器选择与已复制到项目中的事实来源发生漂移；专家
   修改 canonical YAML 后必须重新执行 preflight。
+
+## DATA-004 / UX-005 共享案例
+
+- 版本：`0.1.0.dev10`。
+- `examples/apoe-ui-demo` 保存经用户授权的私有仓库只读证据包：307 个被逐一固定
+  SHA-256 的文件、约 65 MiB，不包含约 970 MB 的 backend 中间目录。
+- 共享包保留 Stage 01–05 manifest 闭包、21 个策略、840/100/12/10 各层结果、Stage 04
+  双 GPU 历史和重点候选结构；Stage 06/07 继续显示“尚未开始”。
+- `serve_ui_evidence_bundle.py` 在启动前验证 bundle 清单与 Run/Stage manifest 闭包，
+  然后只把包内 `evidence-runs` 注册为工作台事实来源。
+- 共享包只供协作审阅，不能恢复任务、重新计算或替代服务器完整 run；其中 APOE
+  `stopped-no-scale-winner` 仍是可审计科学负结果。

@@ -18,9 +18,7 @@
 
 ## Now
 
-- `[DATA-004]` 构建 APOE Stage 05 的精简 UI evidence bundle：保留 manifest 闭包、
-  Stage 04 进度、Stage 05 全部指标和 12/10 个重点结构，不提交 970 MB 后端中间目录。
-- `[UX-005]` 将共享案例加入 main，并提供 clone 后的校验和启动说明。
+- 当前没有尚未归档的跨阶段开发任务。
 
 ## Next
 

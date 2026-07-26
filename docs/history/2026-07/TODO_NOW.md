@@ -369,3 +369,33 @@
 - 提交：`0e116db9c6b125d4dc6661ccd4e7a9d4189a2ab8`
   （`fix(ui): make project setup non-linear and stateful`）；本条治理提交以远端 `main`
   最终核对 SHA 为准。
+
+## 2026-07-27 — DATA-004 / UX-005：APOE 合作者只读证据包
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-27T00:39:20+08:00
+- 问题：完整 APOE Stage 05 run 约 1.1 GB、20,955 个文件，其中约 970 MB 是 BoltzGen
+  backend 中间目录；直接提交既违反 `runs/` 治理，也会让协作者难以校验哪些文件属于
+  当前科学证据。仅提交截图又会丢失 21 个策略、840/100/12/10 各层指标、结构和 GPU
+  历史。
+- 方案：新增通用 `reporting.evidence_bundle`，先验证当前 RunManifest、StageManifest
+  和全部 ArtifactRef，再复制正式 manifest 闭包与 12 个初筛候选、10 个 Protenix 候选
+  所需结构；排除未被正式引用的 tasks/work/runtime，并生成逐文件大小与 SHA-256 清单。
+- 共享结果：`examples/apoe-ui-demo` 为约 65 MiB，包含 307 个清单文件；保留 Stage
+  01–05、21 个策略、840 个小规模候选、100 个扩展候选、12 个初筛通过候选、10 个
+  Protenix 复核结果，以及 GPU 0 的 11/440 和 GPU 1 的 10/400 历史分配。
+- 使用入口：`python scripts/serve_ui_evidence_bundle.py examples/apoe-ui-demo
+  --port 8765` 会先完成 bundle 与科学 manifest 双重校验，再绑定 `127.0.0.1` 启动工作台。
+- 验证：真实 bundle 校验通过；真实 FastAPI 投影复核 21/840/100/12/10 和双 GPU 历史；
+  12 个初筛候选均有原始/复折叠结构，10 个还可切换 Protenix；`make check`、239
+  passed/8 个 PyMOL 环境测试按预期 skipped、strict mypy、ruff 和 dev10 wheel/
+  console-script/package-data 验证通过；localhost 服务启动 smoke 通过。
+- 遇到的问题：服务器没有 pnpm，且根分区 pip cache 空间不足；科学结构文件中的合法
+  固定宽度尾随空格也会触发通用文本 diff 检查。
+- 解决办法：使用仓库锁定依赖配合本机 Node/pnpm 构建前端，在
+  `/root/autodl-tmp/easydesign-build-cache` 完成 wheel 缓存；evidence-runs 以 exact-byte
+  Git 属性保存并通过 bundle SHA-256 审计，不修改不可变结构文件。
+- 遗留边界：该包不能恢复 BoltzGen 任务或重算筛选；历史配置保留服务器 provenance
+  路径；APOE 私有资产只获准在当前仓库与合作者共享，公开 release 前必须重新审查。
+- 提交：`980a8eae30e79e4ba0a59bab105f6da6beb1d48f`
+  （`feat(reporting): share verified APOE UI evidence`）。

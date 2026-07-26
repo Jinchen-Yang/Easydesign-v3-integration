@@ -108,11 +108,7 @@ def main() -> int:
         print(f"ERROR: wheel Target Viewer 资源验证失败: {error}", file=sys.stderr)
         return 1
     try:
-        stable_temp = (
-            Path("/tmp")
-            if sys.platform != "win32" and Path("/tmp").is_dir()
-            else None
-        )
+        stable_temp = Path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(
             prefix="easydesign-wheel-smoke-",
             dir=stable_temp,

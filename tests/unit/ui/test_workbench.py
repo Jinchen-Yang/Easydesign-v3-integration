@@ -13,6 +13,7 @@ from easydesign.core import (
     EvidenceStatus,
     ExecutionStatus,
     PathPolicyError,
+    ProgressSnapshot,
     RunManifest,
     StageId,
     StageManifest,
@@ -23,6 +24,7 @@ from easydesign.ui import (
     create_demo_replay,
     create_draft_order_package,
     create_ui_app,
+    get_execution_progress,
     get_run_projection,
 )
 from easydesign.ui.security import ArtifactTokenSigner
@@ -164,6 +166,28 @@ def _audited_run(tmp_path: Path) -> Path:
                     ]
                 },
             ),
+            _artifact(
+                root,
+                stage=StageId.BOLTZGEN_CONFIGURATION,
+                artifact_id="strategy-bundle",
+                value={
+                    "strategies": [
+                        {
+                            "strategy_id": "patch-1__scaffold-x",
+                            "region_id": "patch-1",
+                            "source_hotspot_set_id": "patch-1",
+                            "scaffold_id": "scaffold-x",
+                            "candidates_per_strategy": 4,
+                            "binding_label_seq_ids": [1, 2, 3],
+                            "hotspot_strategy": "H_all",
+                            "crop_enabled": False,
+                            "crop_strategy": "C_full",
+                            "neutral_residue_policy": "unmarked",
+                            "design_specification_sha256": None,
+                        }
+                    ]
+                },
+            ),
         ),
     )
     stage04 = _stage(
@@ -175,11 +199,63 @@ def _audited_run(tmp_path: Path) -> Path:
                 stage=StageId.PILOT_GENERATION,
                 artifact_id="pilot-progress-final",
                 value={
+                    "schema_version": "0.1",
+                    "stage_id": "04-pilot-generation",
+                    "updated_at": NOW.isoformat(),
+                    "status": "succeeded",
+                    "total_tasks": 1,
+                    "pending_tasks": 0,
+                    "waiting_tasks": 0,
+                    "running_tasks": 0,
                     "planned_candidates": 4,
                     "collected_candidates": 4,
                     "succeeded_tasks": 1,
                     "failed_tasks": 0,
-                    "per_device": {"0": {"completed": 1}},
+                    "per_device": {},
+                    "elapsed_seconds": 60,
+                    "throughput_candidates_per_hour": 240,
+                    "estimated_remaining_seconds": 0,
+                    "recent_errors": [],
+                },
+            ),
+            _artifact(
+                root,
+                stage=StageId.PILOT_GENERATION,
+                artifact_id="pilot-task-table",
+                value={
+                    "schema_version": "0.1",
+                    "generated_at": NOW.isoformat(),
+                    "tasks": [
+                        {
+                            "task_id": "pilot-patch-1-scaffold-x",
+                            "strategy_id": "patch-1-scaffold-x",
+                            "status": "succeeded",
+                            "requested_candidates": 4,
+                            "collected_candidates": 4,
+                            "candidate_ids": [
+                                "candidate-1",
+                                "candidate-2",
+                                "candidate-3",
+                                "candidate-4",
+                            ],
+                            "attempts": [
+                                {
+                                    "attempt_number": 1,
+                                    "status": "succeeded",
+                                    "requested_candidates": 4,
+                                    "collected_candidates": 4,
+                                    "device": 0,
+                                    "command_sha256": "a" * 64,
+                                    "output_relative_path": "backend-output",
+                                    "started_at": NOW.isoformat(),
+                                    "ended_at": NOW.isoformat(),
+                                    "return_code": 0,
+                                    "error": None,
+                                }
+                            ],
+                            "current_device": None,
+                        }
+                    ],
                 },
             ),
         ),
@@ -194,9 +270,36 @@ def _audited_run(tmp_path: Path) -> Path:
                 artifact_id="pilot-filter-report",
                 value={
                     "status": "completed",
-                    "candidate_records": [],
-                    "strategy_summaries": [],
-                    "selected_strategy_ids": [],
+                    "candidate_records": [
+                        {
+                            "candidate_id": "candidate-pilot-1",
+                            "strategy_id": "patch-1__scaffold-x",
+                            "sequence": "AAAA",
+                            "eligible_unique_pass": True,
+                            "score_screen": 0.8,
+                            "hard_gate_decisions": [],
+                            "metrics": [
+                                {"metric_id": "hotspot-coverage", "value": 0.5},
+                                {"metric_id": "design-to-target-iptm", "value": 0.6},
+                            ],
+                        }
+                    ],
+                    "strategy_summaries": [
+                        {
+                            "strategy_id": "patch-1__scaffold-x",
+                            "candidate_count": 1,
+                            "unique_sequence_count": 1,
+                            "boltzgen_hard_pass_count": 1,
+                            "final_gate_pass_count": 1,
+                            "final_gate_pass_rate": 1.0,
+                            "tier": "tier-b",
+                            "score_screen_all_median": 0.8,
+                            "score_screen_top_quartile_mean": 0.8,
+                            "score_yaml": 0.8,
+                            "selected_for_expansion": True,
+                        }
+                    ],
+                    "selected_strategy_ids": ["patch-1__scaffold-x"],
                 },
             ),
             _artifact(
@@ -316,6 +419,93 @@ def test_artifact_token_is_signed_and_expires(tmp_path: Path) -> None:
         signer.verify(f"{payload}.{changed}", now=5)
 
 
+def test_live_execution_projection_uses_structured_runtime_state(
+    tmp_path: Path,
+) -> None:
+    run_root = _audited_run(tmp_path)
+    historical = RunManifest.model_validate_json(
+        (run_root / "manifests" / "run-manifest-0001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    active = historical.model_copy(
+        update={
+            "status": ExecutionStatus.RUNNING,
+            "completed_at": None,
+            "stage_manifest_refs": historical.stage_manifest_refs[:3],
+        }
+    )
+    manifest_path = run_root / "manifests" / "run-manifest-0001.json"
+    manifest_path.unlink()
+    dump_model(active, manifest_path)
+    runtime = run_root / "04-pilot-generation" / "attempt-0001" / "runtime"
+    _write_json(
+        run_root,
+        str(runtime.relative_to(run_root) / "task-state.json"),
+        {
+            "schema_version": "0.1",
+            "generated_at": NOW.isoformat(),
+            "tasks": [
+                {
+                    "task_id": "pilot-live",
+                    "strategy_id": "patch-1__scaffold-x",
+                    "status": "running",
+                    "requested_candidates": 4,
+                    "collected_candidates": 2,
+                    "candidate_ids": ["candidate-1", "candidate-2"],
+                    "attempts": [
+                        {
+                            "attempt_number": 1,
+                            "status": "running",
+                            "requested_candidates": 4,
+                            "collected_candidates": 2,
+                            "device": 1,
+                            "command_sha256": "b" * 64,
+                            "output_relative_path": "backend-output",
+                            "started_at": NOW.isoformat(),
+                            "ended_at": None,
+                            "return_code": None,
+                            "error": None,
+                        }
+                    ],
+                    "current_device": 1,
+                }
+            ],
+        },
+    )
+    snapshot = ProgressSnapshot(
+        stage_id="04-pilot-generation",
+        updated_at=NOW,
+        status="running",
+        total_tasks=1,
+        pending_tasks=0,
+        waiting_tasks=0,
+        running_tasks=1,
+        planned_candidates=4,
+        collected_candidates=2,
+        succeeded_tasks=0,
+        failed_tasks=0,
+        per_device={"1": "patch-1__scaffold-x"},
+        elapsed_seconds=30,
+        throughput_candidates_per_hour=240,
+        estimated_remaining_seconds=30,
+    )
+
+    projection = get_execution_progress(
+        run_root,
+        4,
+        runtime_snapshot=snapshot,
+    )
+
+    assert projection.status == "running"
+    assert projection.collected_candidates == 2
+    assert projection.device_history_status == "available"
+    assert projection.devices[0].device == 1
+    assert projection.devices[0].current_task_id == "pilot-live"
+    assert projection.devices[0].assigned_task_count == 1
+    assert projection.devices[0].attempt_count == 1
+
+
 def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> None:
     run_root = _audited_run(tmp_path)
     app = create_ui_app(
@@ -364,6 +554,33 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         )
         assert catalog.status_code == 200
         assert len(catalog.json()) >= 20
+        strategies = client.get(
+            f"/api/v1/runs/{projection.run_key}/stages/5/strategies"
+        )
+        assert strategies.status_code == 200
+        assert strategies.json()[0]["region_id"] == "patch-1"
+        assert strategies.json()[0]["scaffold_id"] == "scaffold-x"
+        aggregate = next(
+            item
+            for item in strategies.json()[0]["metric_aggregates"]
+            if item["metric_id"] == "hotspot-coverage"
+        )
+        assert aggregate["observed_count"] == 1
+        assert aggregate["missing_count"] == 0
+        assert aggregate["mean"] == 0.5
+        execution = client.get(
+            f"/api/v1/runs/{projection.run_key}/stages/4/execution"
+        )
+        assert execution.status_code == 200
+        device = execution.json()["devices"][0]
+        assert device["device"] == 0
+        assert device["assigned_task_count"] == 1
+        assert device["succeeded_task_count"] == 1
+        assert device["attempt_count"] == 1
+        assert device["failed_attempt_count"] == 0
+        assert device["collected_candidates"] == 4
+        assert device["busy_seconds"] == 0
+        assert device["tasks"][0]["retry_count"] == 0
         invalid_sort = client.get(
             f"/api/v1/runs/{projection.run_key}/stages/5/candidates",
             params={"phase": "pilot", "sort_key": "absolute_path"},

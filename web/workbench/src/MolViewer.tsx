@@ -18,6 +18,8 @@ const colors: Record<string, string> = {
   C: "#ffd447",
 };
 
+export const MOL_CANVAS_BACKGROUND = "#EEF1F6";
+
 export function MolViewer({ structureUrl, regions = [], compact = false }: Props) {
   const uid = useId().replaceAll(":", "");
   const elementId = `molstar-${uid}`;
@@ -47,7 +49,7 @@ export function MolViewer({ structureUrl, regions = [], compact = false }: Props
         pluginStateServer: "",
         powerPreference: "high-performance",
         allowMajorPerformanceCaveat: true,
-        viewportBackgroundColor: "#0b1219",
+        viewportBackgroundColor: MOL_CANVAS_BACKGROUND,
       });
       if (disposed) {
         instance.dispose?.();
@@ -56,7 +58,7 @@ export function MolViewer({ structureUrl, regions = [], compact = false }: Props
       viewer.current = instance;
       const mvs = window.molstar.PluginExtensions.mvs;
       const builder = mvs.createBuilder();
-      builder.canvas({ background_color: "#0B1219" });
+      builder.canvas({ background_color: MOL_CANVAS_BACKGROUND });
       const structure = builder.download({ url: structureUrl }).parse({ format: "mmcif" }).modelStructure();
       const representationNode = structure
         .component({ selector: "polymer" })

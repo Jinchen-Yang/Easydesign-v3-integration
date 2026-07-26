@@ -1,6 +1,7 @@
 import type {
   CandidateDetail,
   CandidatePage,
+  ExecutionProgress,
   FilterOverview,
   MetricPresentation,
   ProjectResponse,
@@ -28,6 +29,8 @@ export const api = {
   run: (key: string) => request<Run>(`/api/v1/runs/${key}`),
   stage: (key: string, stage: number) =>
     request<Stage>(`/api/v1/runs/${key}/stages/${stage}`),
+  execution: (key: string, stage: 4 | 6) =>
+    request<ExecutionProgress>(`/api/v1/runs/${key}/stages/${stage}/execution`),
   filterOverview: (key: string) =>
     request<FilterOverview>(`/api/v1/runs/${key}/stages/5/overview`),
   filterStrategies: (key: string) =>

@@ -31,6 +31,8 @@ const stages = states.map((state, index) => ({
   evidence_status: "smoke-validated",
   highlights: index === 0
     ? { target_id: "apoe-1b68-pse", sequence_length: 138, origin: "imported", model_count: 1 }
+    : index === 3
+      ? { strategy_count: 21, planned_candidates: 840, collected_candidates: 840 }
     : index === 4
       ? { pilot_candidate_count: 840, local_gate_pass_count: 12 }
       : {},
@@ -98,8 +100,38 @@ const strategies = Array.from({ length: 21 }, (_, index) => ({
   final_gate_pass_rate: index === 0 ? .05 : 0,
   tier: index === 0 ? "tier-a" : "tier-d",
   score_screen: .5,
+  score_screen_top_quartile_mean: .7,
   score_yaml: .6,
   selected_for_expansion: index === 0,
+  configuration: {
+    hotspot_strategy: "H_all",
+    crop_strategy: "C_full",
+    candidates_per_strategy: 40,
+  },
+  metric_aggregates: [
+    ["hotspot-coverage", .52],
+    ["design-to-target-iptm", .61],
+    ["min-design-to-target-pae", 7.5],
+    ["filter-rmsd-design", 1.2],
+    ["bb_target_aligned_rmsd_design", 1.4],
+    ["target-ca-rmsd", 1.1],
+  ].map(([metric_id, mean]) => ({
+    metric_id,
+    observed_count: 40,
+    missing_count: 0,
+    mean,
+    median: mean,
+    minimum: mean,
+    maximum: mean,
+  })),
+  yaml_artifact: {
+    artifact_id: `strategy-${index}`,
+    role: "boltzgen-design-specification",
+    file_format: "yaml",
+    size_bytes: 1024,
+    sha256: "b".repeat(64),
+    token: `yaml-${index}`,
+  },
 }));
 
 const metrics = [
@@ -158,16 +190,106 @@ async function mockApi(page: Page) {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify(metrics) });
       return;
     }
-    if (url.pathname.endsWith("/stages/5/candidates")) {
+    if (url.pathname.endsWith("/stages/4/execution")) {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
-          phase: url.searchParams.get("phase") || "pilot",
+          stage_number: 4,
+          stage_id: "04-fixture-stage",
+          status: "succeeded",
+          updated_at: run.updated_at,
+          total_tasks: 21,
+          pending_tasks: 0,
+          waiting_tasks: 0,
+          running_tasks: 0,
+          succeeded_tasks: 21,
+          failed_tasks: 0,
+          planned_candidates: 840,
+          collected_candidates: 840,
+          elapsed_seconds: 20914,
+          throughput_candidates_per_hour: 144.6,
+          estimated_remaining_seconds: 0,
+          device_history_status: "available",
+          recent_events: [],
+          recent_errors: [],
+          devices: [
+            {
+              device: 0,
+              assigned_task_count: 11,
+              succeeded_task_count: 11,
+              attempt_count: 14,
+              failed_attempt_count: 3,
+              collected_candidates: 440,
+              busy_seconds: 20885,
+              tasks: [],
+            },
+            {
+              device: 1,
+              assigned_task_count: 10,
+              succeeded_task_count: 10,
+              attempt_count: 14,
+              failed_attempt_count: 4,
+              collected_candidates: 400,
+              busy_seconds: 19402,
+              tasks: [],
+            },
+          ],
+        }),
+      });
+      return;
+    }
+    if (url.pathname.includes("/stages/5/candidates/")) {
+      const candidateId = decodeURIComponent(url.pathname.split("/").at(-1) || "");
+      const phase = url.searchParams.get("phase") || "pilot";
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          candidate_id: candidateId,
+          phase,
+          strategy_id: "A__scaffold-1",
+          sequence: "QVQLVESGGGLVQAGGSLRLSCAAS",
+          gate_status: phase === "full-target" ? "未通过" : "通过",
+          score: .72,
+          metrics: [],
+          decisions: [],
+          failed_reasons: phase === "full-target" ? ["require-binder-pose-rmsd"] : [],
+          backend_metrics: {},
+          structures: {},
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/stages/5/candidates")) {
+      const phase = url.searchParams.get("phase") || "pilot";
+      const items = phase === "full-target"
+        ? candidateItems.slice(0, 10).map((item, index) => ({
+          ...item,
+          phase,
+          gate_status: "未通过",
+          metrics: {
+            "protenix-target-rmsd": 1.3 + index / 10,
+            "protenix-binder-pose-rmsd": 18 + index,
+            "protenix-pairwise-iptm": .35,
+            "protenix-min-interface-pae": 4.33 + index,
+          },
+        }))
+        : phase === "expansion"
+          ? candidateItems.slice(0, 12).map((item, index) => ({
+            ...item,
+            phase,
+            gate_status: "通过",
+            score: 1 - index / 20,
+          }))
+          : candidateItems;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          phase,
           page: 1,
           page_size: 50,
-          total: url.searchParams.get("phase") === "full-target" ? 10 : 840,
-          total_pages: url.searchParams.get("phase") === "full-target" ? 1 : 17,
-          items: candidateItems,
+          total: phase === "full-target" ? 10 : phase === "expansion" ? 12 : 840,
+          total_pages: phase === "pilot" ? 17 : 1,
+          items,
         }),
       });
       return;
@@ -213,8 +335,9 @@ test("project-first navigation and scientific stop are explained in Chinese", as
   await expect(page.getByRole("button", { name: "待审批" })).toHaveCount(0);
   await page.getByRole("button", { name: "查看项目 →" }).click();
   await expect(page.getByRole("heading", { name: "第5步：筛选与验证" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "筛选工作已经完成，已有多层结构证据可供审阅" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "12 个候选值得查看结构" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "当前没有可进入规模化生成的设计策略" })).toBeVisible();
-  await expect(page.getByText("程序已正常完成，但当前结果没有达到进入下一步的科学门槛。")).toBeVisible();
 });
 
 test("stage five exposes strategy, candidate and metric layers", async ({ page }) => {
@@ -229,6 +352,19 @@ test("stage five exposes strategy, candidate and metric layers", async ({ page }
   await page.getByRole("button", { name: "指标说明" }).click();
   await expect(page.getByRole("heading", { name: "结合质量" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Protenix 结合位姿偏差" })).toBeVisible();
+});
+
+test("completed gpu history and staged candidate evidence remain visible", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await expect(page.getByText("等级 A").first()).toBeVisible();
+  await expect(page.getByText("已做 Protenix 复核").first()).toBeVisible();
+  await expect(page.getByText("当前观测到的最低结合位姿 RMSD")).toBeVisible();
+  await page.locator(".stage-node").nth(3).click();
+  await expect(page.getByText("GPU 0")).toBeVisible();
+  await expect(page.getByText("440")).toBeVisible();
+  await expect(page.getByText("GPU 1")).toBeVisible();
+  await expect(page.getByText("400")).toBeVisible();
 });
 
 test("task page does not fall through to technical audit", async ({ page }) => {
@@ -247,6 +383,20 @@ test("font floor and user-facing Chinese navigation meet the product baseline", 
   expect(Number.parseFloat(navSize)).toBeGreaterThanOrEqual(14);
   await expect(page.getByText("Scientific Workbench")).toHaveCount(0);
   await expect(page.getByText("证据审计")).toHaveCount(0);
+});
+
+test("all molecular workspaces use the portable viewer light canvas", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await page.locator(".stage-node").first().click();
+  const background = await page.locator(".mol-card").first().evaluate(
+    (node) => getComputedStyle(node).backgroundColor,
+  );
+  expect(background).toBe("rgb(238, 241, 246)");
+  const toolbar = await page.locator(".mol-toolbar").first().evaluate(
+    (node) => getComputedStyle(node).backgroundColor,
+  );
+  expect(toolbar).toBe("rgb(255, 255, 255)");
 });
 
 test("project and stage-five workspaces keep the approved visual hierarchy", async ({ page, browserName }) => {

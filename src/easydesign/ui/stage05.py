@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -21,6 +22,7 @@ from .models import (
     CandidatePage,
     FilterOverviewProjection,
     MetricPresentation,
+    StrategyMetricAggregate,
     StrategyProjection,
 )
 from .projections import _latest_run_manifest, _state_for_manifest
@@ -370,12 +372,6 @@ def _failed(decisions: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> tup
     )
 
 
-def _split_strategy(strategy_id: str) -> tuple[str, str]:
-    if "__" not in strategy_id:
-        return strategy_id, "—"
-    return tuple(strategy_id.split("__", maxsplit=1))  # type: ignore[return-value]
-
-
 def _product_metric(
     metric_id: str,
     *,
@@ -438,6 +434,10 @@ def _expansion_items(
     expansion: dict[str, Any],
     index: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    predictions = {
+        str(item.get("candidate_id")): item
+        for item in expansion.get("predictions") or []
+    }
     items = []
     for record in expansion.get("candidates") or []:
         candidate_id = str(record.get("candidate_id"))
@@ -454,6 +454,7 @@ def _expansion_items(
                 "decisions": record.get("local_gate_decisions") or [],
                 "failed_rules": _failed(record.get("local_gate_decisions") or []),
                 "backend": backend,
+                "prediction": predictions.get(candidate_id),
             }
         )
     return items
@@ -606,19 +607,128 @@ def get_filter_overview(
     )
 
 
-def list_filter_strategies(run_root: Path) -> tuple[StrategyProjection, ...]:
+_STRATEGY_AGGREGATE_METRICS = (
+    "hotspot-coverage",
+    "design-to-target-iptm",
+    "min-design-to-target-pae",
+    "filter-rmsd-design",
+    "bb_target_aligned_rmsd_design",
+    "target-ca-rmsd",
+    "interface-bsa",
+    "severe-clash-count",
+    "moderate-clash-count",
+)
+
+
+def _strategy_identity_sources(
+    run_root: Path,
+    run: RunManifest,
+    artifacts: dict[str, ArtifactRef],
+) -> tuple[dict[str, dict[str, Any]], dict[str, ArtifactRef]]:
+    stage03_ref = next(
+        (
+            item
+            for item in run.stage_manifest_refs
+            if item.producer_stage == "03-boltzgen-configuration"
+        ),
+        None,
+    )
+    if stage03_ref is None:
+        raise ManifestStateError("当前运行没有 Stage 03 策略运行记录")
+    stage03 = load_model(stage03_ref.verify(run_root), StageManifest)
+    stage03_artifacts = {item.artifact_id: item for item in stage03.output_artifacts}
+    bundle_ref = stage03_artifacts.get("strategy-bundle")
+    if bundle_ref is None:
+        raise ManifestStateError("Stage 03 未声明 strategy-bundle")
+    consumed_bundle_ref = artifacts.get("strategy-bundle")
+    if consumed_bundle_ref is not None and consumed_bundle_ref.sha256 != bundle_ref.sha256:
+        raise ManifestStateError("Stage 05 消费的 strategy-bundle 与当前 Stage 03 不一致")
+    bundle = _load_json(run_root, bundle_ref)
+    identities = {
+        str(item.get("strategy_id")): item
+        for item in bundle.get("strategies") or []
+        if item.get("strategy_id")
+    }
+    yaml_artifacts = {
+        item.artifact_id.removeprefix("strategy-"): item
+        for item in stage03_artifacts.values()
+        if item.artifact_id.startswith("strategy-") and item.file_format in {"yaml", "yml"}
+    }
+    return identities, yaml_artifacts
+
+
+def _strategy_metric_aggregates(
+    records: list[dict[str, Any]],
+) -> tuple[StrategyMetricAggregate, ...]:
+    rows: list[StrategyMetricAggregate] = []
+    for metric_id in _STRATEGY_AGGREGATE_METRICS:
+        observed: list[float] = []
+        for record in records:
+            value = record["metrics"].get(metric_id)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            number = float(value)
+            if math.isfinite(number):
+                observed.append(number)
+        rows.append(
+            StrategyMetricAggregate(
+                metric_id=metric_id,
+                observed_count=len(observed),
+                missing_count=len(records) - len(observed),
+                mean=statistics.fmean(observed) if observed else None,
+                median=statistics.median(observed) if observed else None,
+                minimum=min(observed) if observed else None,
+                maximum=max(observed) if observed else None,
+            )
+        )
+    return tuple(rows)
+
+
+def list_filter_strategies(
+    run_root: Path,
+    *,
+    registry: UiRunRegistry,
+    signer: ArtifactTokenSigner,
+) -> tuple[StrategyProjection, ...]:
     root = run_root.resolve()
-    _, _, artifacts = _stage05_sources(root)
+    run, _, artifacts = _stage05_sources(root)
+    run_key = registry.register(root)
     report = _required_json(root, artifacts, "pilot-filter-report")
+    identities, yaml_artifacts = _strategy_identity_sources(root, run, artifacts)
+    pilot_records = _all_phase_items(root, artifacts, "pilot")
+    records_by_strategy: dict[str, list[dict[str, Any]]] = {}
+    for record in pilot_records:
+        records_by_strategy.setdefault(record["strategy_id"], []).append(record)
     rows = []
     for item in report.get("strategy_summaries") or []:
         strategy_id = str(item.get("strategy_id"))
-        region, scaffold = _split_strategy(strategy_id)
+        identity = identities.get(strategy_id)
+        if identity is None:
+            raise ManifestStateError(f"Stage 03 strategy bundle 缺少策略: {strategy_id}")
+        yaml_ref = yaml_artifacts.get(strategy_id)
+        if yaml_ref is not None and identity.get("design_specification_sha256") != yaml_ref.sha256:
+            raise ManifestStateError(f"策略 YAML identity 不一致: {strategy_id}")
+        yaml_projection = (
+            None
+            if yaml_ref is None
+            else ArtifactProjection(
+                artifact_id=yaml_ref.artifact_id,
+                role=yaml_ref.role,
+                file_format=yaml_ref.file_format,
+                size_bytes=yaml_ref.size_bytes,
+                sha256=yaml_ref.sha256,
+                token=signer.sign(run_key, yaml_ref),
+            )
+        )
         rows.append(
             StrategyProjection(
                 strategy_id=strategy_id,
-                region_id=region,
-                scaffold_id=scaffold,
+                region_id=str(
+                    identity.get("source_hotspot_set_id")
+                    or identity.get("region_id")
+                    or "—"
+                ),
+                scaffold_id=str(identity.get("scaffold_id") or "—"),
                 candidate_count=int(item.get("candidate_count") or 0),
                 unique_sequence_count=int(item.get("unique_sequence_count") or 0),
                 hard_pass_count=int(item.get("boltzgen_hard_pass_count") or 0),
@@ -626,8 +736,25 @@ def list_filter_strategies(run_root: Path) -> tuple[StrategyProjection, ...]:
                 final_gate_pass_rate=float(item.get("final_gate_pass_rate") or 0),
                 tier=str(item.get("tier") or "unknown"),
                 score_screen=float(item.get("score_screen_all_median") or 0),
+                score_screen_top_quartile_mean=float(
+                    item.get("score_screen_top_quartile_mean") or 0
+                ),
                 score_yaml=float(item.get("score_yaml") or 0),
                 selected_for_expansion=bool(item.get("selected_for_expansion")),
+                configuration={
+                    "hotspot_strategy": identity.get("hotspot_strategy"),
+                    "crop_strategy": identity.get("crop_strategy"),
+                    "crop_enabled": identity.get("crop_enabled"),
+                    "neutral_residue_policy": identity.get("neutral_residue_policy"),
+                    "candidates_per_strategy": identity.get("candidates_per_strategy"),
+                    "binding_residue_count": len(
+                        identity.get("binding_label_seq_ids") or []
+                    ),
+                },
+                metric_aggregates=_strategy_metric_aggregates(
+                    records_by_strategy.get(strategy_id, [])
+                ),
+                yaml_artifact=yaml_projection,
             )
         )
     return tuple(rows)
@@ -670,15 +797,18 @@ def list_filter_candidates(
     if failed_rule:
         items = [item for item in items if failed_rule in item["failed_rules"]]
 
-    def sort_value(item: dict[str, Any]) -> tuple[bool, Any]:
+    def sort_value(item: dict[str, Any]) -> Any:
         value = (
             item.get(sort_key)
             if sort_key in {"candidate_id", "strategy_id", "gate_status", "score"}
             else item["metrics"].get(sort_key)
         )
-        return value is None, value
+        return value
 
-    items.sort(key=sort_value, reverse=sort_order == "desc")
+    available = [item for item in items if sort_value(item) is not None]
+    missing = [item for item in items if sort_value(item) is None]
+    available.sort(key=sort_value, reverse=sort_order == "desc")
+    items = [*available, *missing]
     total = len(items)
     start = (page - 1) * page_size
     selected = items[start : start + page_size]

@@ -42,6 +42,7 @@ from easydesign.orchestration import (
 from easydesign.orchestration.decisions import approve_decision, show_decision
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
 
+from .execution import get_execution_progress
 from .jobs import UiJobController, clone_run_configuration
 from .models import UiJobRecord
 from .projections import (
@@ -485,6 +486,38 @@ def create_ui_app(
             _raise_http(error)
             raise
 
+    @app.get("/api/v1/runs/{run_key}/stages/{stage_number}/execution")
+    def stage_execution(
+        run_key: str,
+        stage_number: Annotated[int, ApiPath(ge=1, le=7)],
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            if stage_number not in {4, 6}:
+                raise ConfigurationError("执行进度投影只支持第4步或第6步")
+            root = service.registry.resolve(run_key)
+            runtime_snapshot = None
+            try:
+                snapshot = read_pipeline_progress(root)
+                expected_stage = (
+                    "04-pilot-generation"
+                    if stage_number == 4
+                    else "06-scale-generation-and-refolding"
+                )
+                if snapshot.stage_id == expected_stage:
+                    runtime_snapshot = snapshot
+            except EasyDesignError:
+                pass
+            return get_execution_progress(
+                root,
+                stage_number,
+                runtime_snapshot=runtime_snapshot,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
     @app.get("/api/v1/runs/{run_key}/stages/5/overview")
     def stage05_overview(run_key: str, request: Request) -> Any:
         service = _state(request)
@@ -501,7 +534,11 @@ def create_ui_app(
     def stage05_strategies(run_key: str, request: Request) -> Any:
         service = _state(request)
         try:
-            return list_filter_strategies(service.registry.resolve(run_key))
+            return list_filter_strategies(
+                service.registry.resolve(run_key),
+                registry=service.registry,
+                signer=service.signer,
+            )
         except Exception as error:
             _raise_http(error)
             raise
@@ -770,17 +807,30 @@ def create_ui_app(
                     return
                 try:
                     snapshot = await asyncio.to_thread(read_pipeline_progress, root)
-                    payload = snapshot.model_dump_json()
+                    if snapshot.stage_id in {
+                        "04-pilot-generation",
+                        "06-scale-generation-and-refolding",
+                    }:
+                        stage_number = 4 if snapshot.stage_id.startswith("04-") else 6
+                        execution_projection = await asyncio.to_thread(
+                            get_execution_progress,
+                            root,
+                            stage_number,
+                            runtime_snapshot=snapshot,
+                        )
+                        payload = execution_projection.model_dump_json()
+                    else:
+                        payload = snapshot.model_dump_json()
                     terminal = snapshot.status in {"succeeded", "scientific-stop", "failed"}
                 except EasyDesignError:
-                    projection = await asyncio.to_thread(
+                    run_projection = await asyncio.to_thread(
                         get_run_projection,
                         root,
                         registry=service.registry,
                         signer=service.signer,
                     )
-                    payload = projection.model_dump_json()
-                    terminal = projection.status in {"succeeded", "failed"}
+                    payload = run_projection.model_dump_json()
+                    terminal = run_projection.status in {"succeeded", "failed"}
                 if payload != last:
                     yield f"event: progress\ndata: {payload}\n\n"
                     last = payload

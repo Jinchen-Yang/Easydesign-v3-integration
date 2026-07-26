@@ -4,7 +4,16 @@ import { api } from "./api";
 import { MolViewer } from "./MolViewer";
 import { artifactName, capabilityLabel, stageNames, stageShortNames, stateCopy } from "./product";
 import { StageFive as FilterStageFive } from "./StageFive";
-import type { Artifact, Project, ProjectResponse, Replay, Run, Stage, StageState } from "./types";
+import type {
+  Artifact,
+  ExecutionProgress,
+  Project,
+  ProjectResponse,
+  Replay,
+  Run,
+  Stage,
+  StageState,
+} from "./types";
 import "./styles.css";
 
 const nav = [
@@ -236,44 +245,117 @@ function StageThree({ stage }: { stage: Stage }) {
   );
 }
 
-function StageFour({ stage }: { stage: Stage }) {
+function ExecutionStage({ stage, run }: { stage: Stage; run: Run }) {
+  const [execution, setExecution] = useState<ExecutionProgress>();
+  const [executionError, setExecutionError] = useState("");
+  const isScale = stage.stage_number === 6;
+
+  useEffect(() => {
+    let disposed = false;
+    api.execution(run.run_key, stage.stage_number as 4 | 6)
+      .then((value) => {
+        if (!disposed) setExecution(value);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setExecutionError(error instanceof Error ? error.message : "执行记录读取失败");
+        }
+      });
+    if (stage.state !== "running") {
+      return () => { disposed = true; };
+    }
+    const source = new EventSource(`/api/v1/runs/${run.run_key}/events`);
+    source.addEventListener("progress", (event) => {
+      try {
+        const value = JSON.parse((event as MessageEvent).data) as ExecutionProgress;
+        if (value.stage_id === stage.stage_id && Array.isArray(value.devices)) {
+          setExecution(value);
+          setExecutionError("");
+        }
+      } catch {
+        setExecutionError("收到的实时进度格式无效；刷新页面可重新读取运行记录");
+      }
+    });
+    source.onerror = () => {
+      setExecutionError("实时连接已断开；页面仍保留最近一次结构化进度");
+    };
+    return () => {
+      disposed = true;
+      source.close();
+    };
+  }, [run.run_key, stage.stage_id, stage.stage_number, stage.state]);
+
   const h = stage.highlights;
-  const planned = Number(h.planned_candidates || 0);
-  const collected = Number(h.collected_candidates || 0);
+  const planned = execution?.planned_candidates
+    ?? Number(h.planned_candidates || h.requested_candidates || 0);
+  const collected = execution?.collected_candidates
+    ?? Number(h.collected_candidates || 0);
   const percentage = planned ? Math.min(100, (collected / planned) * 100) : 0;
-  const devices = stage.tables.devices || [];
+  const devices = execution?.devices || [];
   return (
     <div className="content-stack">
       <section className="progress-hero panel">
         <div className="progress-copy">
           <p className="section-label">多 GPU · 可恢复运行</p>
-          <h3>{collected === planned ? "小规模候选已全部生成" : "正在生成小规模候选"}</h3>
-          <p>每个设计方案独立执行；已完成候选、失败原因和重试记录都会保留。</p>
+          <h3>
+            {collected === planned
+              ? `${isScale ? "规模化" : "小规模"}候选已全部生成`
+              : `正在进行${isScale ? "规模化" : "小规模"}生成`}
+          </h3>
+          <p>
+            每个{isScale ? "分片" : "设计方案"}独立执行；已完成候选、失败原因和重试记录都会保留。
+          </p>
         </div>
         <div className="progress-number"><strong>{percentage.toFixed(0)}%</strong><span>{collected} / {planned}</span></div>
         <div className="progress-track"><span style={{ width: `${percentage}%` }} /></div>
       </section>
       <div className="metric-row">
-        <Metric label="设计方案" value={formatNumber(h.strategy_count, 0)} />
-        <Metric label="完成任务" value={formatNumber(h.succeeded_tasks, 0)} />
-        <Metric label="运行时长" value={`${formatNumber(Number(h.elapsed_seconds || 0) / 3600, 2)} h`} />
-        <Metric label="生成速度" value={formatNumber(h.throughput_candidates_per_hour, 1)} note="候选 / 小时" />
+        <Metric label={isScale ? "计算分片" : "设计方案"} value={formatNumber(execution?.total_tasks ?? h.strategy_count ?? h.shard_count, 0)} />
+        <Metric label="完成任务" value={formatNumber(execution?.succeeded_tasks ?? h.succeeded_tasks, 0)} />
+        <Metric label="运行时长" value={`${formatNumber((execution?.elapsed_seconds ?? Number(h.elapsed_seconds || 0)) / 3600, 2)} h`} />
+        <Metric label="生成速度" value={formatNumber(execution?.throughput_candidates_per_hour ?? h.throughput_candidates_per_hour, 1)} note="候选 / 小时" />
       </div>
       <section className="panel gpu-panel">
         <div className="panel-header"><div><p className="section-label">运行进度</p><h3>每张 GPU 的任务分配</h3></div><Status state={stage.state} /></div>
+        {executionError && <div className="inline-notice execution-warning"><span>{executionError}</span></div>}
         <div className="gpu-lanes">
-          {devices.map((device) => {
-            const completed = Number(device.completed ?? device.succeeded ?? device.completed_tasks ?? 0);
-            return (
-            <div className="gpu-lane" key={String(device.device)}>
-              <div><strong>GPU {String(device.device)}</strong><small>按正式任务记录分配</small></div>
-              <div className="lane-track">
-                {Array.from({ length: Math.max(1, completed) }).map((_, item) => <span key={item} />)}
+          {devices.map((device) => (
+            <article className="gpu-lane" key={String(device.device)}>
+              <div className="gpu-identity">
+                <strong>GPU {device.device}</strong>
+                <small>
+                  {device.current_strategy_id
+                    ? `正在运行：${device.current_strategy_id}`
+                    : "当前空闲 · 显示历史任务"}
+                </small>
               </div>
-              <b>已完成 {completed}</b>
+              <div className="lane-track">
+                {Array.from({ length: Math.max(1, device.assigned_task_count) }).map((_, item) => (
+                  <span
+                    className={item < device.succeeded_task_count ? "succeeded" : ""}
+                    key={item}
+                  />
+                ))}
+              </div>
+              <dl className="gpu-stat-grid">
+                <div><dt>分配任务</dt><dd>{device.assigned_task_count}</dd></div>
+                <div><dt>完成任务</dt><dd>{device.succeeded_task_count}</dd></div>
+                <div><dt>执行次数</dt><dd>{device.attempt_count}</dd></div>
+                <div><dt>收集候选</dt><dd>{device.collected_candidates}</dd></div>
+                <div><dt>重试/失败</dt><dd>{device.failed_attempt_count}</dd></div>
+                <div><dt>累计计算</dt><dd>{formatNumber(device.busy_seconds / 3600, 2)} h</dd></div>
+              </dl>
+            </article>
+          ))}
+          {!devices.length && execution && (
+            <div className="empty-state">
+              <strong>此运行未记录历史设备分配</strong>
+              <span>总体候选和任务数量仍来自正式进度记录；页面不会扫描目录或解析终端文本补猜。</span>
             </div>
-          )})}
-          {!devices.length && <div className="empty-state"><strong>当前运行记录没有设备分配信息</strong><span>页面不会根据目录或终端文本猜测 GPU。</span></div>}
+          )}
+          {!devices.length && !execution && !executionError && (
+            <div className="loading-block">正在验证执行记录…</div>
+          )}
         </div>
       </section>
       <EvidenceList stage={stage} />
@@ -358,8 +440,11 @@ function StageContent({ stage, run }: { stage: Stage; run: Run }) {
   if (stage.stage_number === 1) return <StageOne stage={stage} />;
   if (stage.stage_number === 2) return <StageTwo stage={stage} run={run} />;
   if (stage.stage_number === 3) return <StageThree stage={stage} />;
-  if (stage.stage_number === 4) return <StageFour stage={stage} />;
+  if (stage.stage_number === 4) return <ExecutionStage stage={stage} run={run} />;
   if (stage.stage_number === 5) return <FilterStageFive stage={stage} run={run} />;
+  if (stage.stage_number === 6 && stage.state !== "not-reached") {
+    return <ExecutionStage stage={stage} run={run} />;
+  }
   return <FutureStage stage={stage} run={run} />;
 }
 
@@ -378,16 +463,8 @@ function RunWorkspace({
 }) {
   const [selected, setSelected] = useState(5);
   const [cloneStatus, setCloneStatus] = useState("");
-  const [liveStatus, setLiveStatus] = useState("");
   const [showTechnical, setShowTechnical] = useState(false);
   const stage = run.stages[selected - 1];
-  useEffect(() => {
-    if (!run.stages.some((item) => item.state === "running")) return;
-    const source = new EventSource(`/api/v1/runs/${run.run_key}/events`);
-    source.addEventListener("progress", () => setLiveStatus("已收到最新结构化进度"));
-    source.onerror = () => setLiveStatus("进度流已断开；刷新后可恢复观察");
-    return () => source.close();
-  }, [run]);
 
   async function clone() {
     setCloneStatus("正在复制配置与可用 runtime 输入…");
@@ -414,7 +491,7 @@ function RunWorkspace({
           <button type="button" className="primary-button" onClick={clone}>按相同配置重新运行</button>
         </div>
       </header>
-      {(cloneStatus || liveStatus) && <div className="inline-notice"><span>{cloneStatus || liveStatus}</span></div>}
+      {cloneStatus && <div className="inline-notice"><span>{cloneStatus}</span></div>}
       {showTechnical && (
         <section className="technical-record panel">
           <div className="panel-heading"><div><p className="section-label">专家信息</p><h3>运行技术记录</h3></div><span>文件完整性已验证</span></div>

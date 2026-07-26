@@ -56,6 +56,21 @@ function tierName(value: string) {
   return suffix ? `等级 ${suffix}` : "—";
 }
 
+function aggregateName(value: string) {
+  const names: Record<string, string> = {
+    "hotspot-coverage": "结合区域覆盖率",
+    "design-to-target-iptm": "界面 iPTM",
+    "min-design-to-target-pae": "最小界面 PAE",
+    "filter-rmsd-design": "设计链 RMSD",
+    bb_target_aligned_rmsd_design: "目标对齐设计链 RMSD",
+    "target-ca-rmsd": "目标 CA RMSD",
+    "interface-bsa": "界面 BSA",
+    "severe-clash-count": "严重冲突",
+    "moderate-clash-count": "中等冲突",
+  };
+  return names[value] || value;
+}
+
 function structureDisplayName(value: string) {
   const names: Record<string, string> = {
     original: "BoltzGen 原始结构",
@@ -146,41 +161,47 @@ function Conclusion({
   );
 }
 
-function Strategies({ strategies }: { strategies: Strategy[] }) {
+function StrategyHeatmap({ strategies }: { strategies: Strategy[] }) {
   const regions = [...new Set(strategies.map((item) => item.region_id))];
   const scaffolds = [...new Set(strategies.map((item) => item.scaffold_id))];
   const byIdentity = new Map(strategies.map((item) => [`${item.region_id}:${item.scaffold_id}`, item]));
   return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div><p className="section-label">结合区域 × VHH 骨架</p><h3>21 个设计策略的真实表现</h3></div>
+        <span>数字为最终门通过数，蓝框表示进入扩展</span>
+      </div>
+      <div className="strategy-heatmap">
+        <div className="heatmap-corner">结合区域</div>
+        {scaffolds.map((scaffold) => <strong key={scaffold}>{scaffold}</strong>)}
+        {regions.flatMap((region) => [
+          <strong className="heatmap-region" key={`${region}-label`}>{region}</strong>,
+          ...scaffolds.map((scaffold) => {
+            const item = byIdentity.get(`${region}:${scaffold}`);
+            const intensity = Math.min(1, (item?.final_gate_pass_rate || 0) * 8);
+            return (
+              <button
+                type="button"
+                key={`${region}-${scaffold}`}
+                className={item?.selected_for_expansion ? "selected" : ""}
+                style={{ "--heat": intensity } as React.CSSProperties}
+                title={item ? `${item.final_gate_pass_count}/${item.candidate_count} 通过` : "无数据"}
+              >
+                <b>{item?.final_gate_pass_count ?? "—"}</b>
+                <small>{item ? tierName(item.tier) : "—"}</small>
+              </button>
+            );
+          }),
+        ])}
+      </div>
+    </section>
+  );
+}
+
+function Strategies({ strategies }: { strategies: Strategy[] }) {
+  return (
     <div className="filter-section">
-      <section className="panel">
-        <div className="panel-heading">
-          <div><p className="section-label">结合区域 × VHH 骨架</p><h3>21 个设计策略的真实表现</h3></div>
-          <span>颜色表示最终门通过率，星标表示进入扩展</span>
-        </div>
-        <div className="strategy-heatmap">
-          <div className="heatmap-corner">结合区域</div>
-          {scaffolds.map((scaffold) => <strong key={scaffold}>{scaffold}</strong>)}
-          {regions.flatMap((region) => [
-            <strong className="heatmap-region" key={`${region}-label`}>{region}</strong>,
-            ...scaffolds.map((scaffold) => {
-              const item = byIdentity.get(`${region}:${scaffold}`);
-              const intensity = Math.min(1, (item?.final_gate_pass_rate || 0) * 8);
-              return (
-                <button
-                  type="button"
-                  key={`${region}-${scaffold}`}
-                  className={item?.selected_for_expansion ? "selected" : ""}
-                  style={{ "--heat": intensity } as React.CSSProperties}
-                  title={item ? `${item.final_gate_pass_count}/${item.candidate_count} 通过` : "无数据"}
-                >
-                  <b>{item?.final_gate_pass_count ?? "—"}</b>
-                  <small>{item ? tierName(item.tier) : "—"}</small>
-                </button>
-              );
-            }),
-          ])}
-        </div>
-      </section>
+      <StrategyHeatmap strategies={strategies} />
       <section className="panel table-panel">
         <div className="panel-heading">
           <div><p className="section-label">可排序明细</p><h3>全部策略</h3></div>
@@ -188,7 +209,7 @@ function Strategies({ strategies }: { strategies: Strategy[] }) {
         </div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>区域</th><th>VHH 骨架</th><th>候选</th><th>去重序列</th><th>BoltzGen 硬门通过</th><th>最终门通过</th><th>通过率</th><th>策略等级</th><th>筛选得分</th><th>策略得分</th><th>扩展</th></tr></thead>
+            <thead><tr><th>区域</th><th>VHH 骨架</th><th>候选</th><th>去重序列</th><th>BoltzGen 硬门通过</th><th>最终门通过</th><th>通过率</th><th>策略等级</th><th>筛选中位数</th><th>前四分位均值</th><th>策略得分</th><th>配置</th><th>扩展</th></tr></thead>
             <tbody>
               {strategies.map((item) => (
                 <tr key={item.strategy_id}>
@@ -201,7 +222,13 @@ function Strategies({ strategies }: { strategies: Strategy[] }) {
                   <td>{number(item.final_gate_pass_rate * 100, 1)}%</td>
                   <td><span className={`tier tier-${item.tier.at(-1)?.toLowerCase()}`}>{tierName(item.tier)}</span></td>
                   <td>{number(item.score_screen, 3)}</td>
+                  <td>{number(item.score_screen_top_quartile_mean, 3)}</td>
                   <td>{number(item.score_yaml, 3)}</td>
+                  <td>
+                    {item.yaml_artifact
+                      ? <a className="text-link" href={`/api/v1/artifacts/${item.yaml_artifact.token}?download=true`}>下载 YAML</a>
+                      : "未记录"}
+                  </td>
                   <td>{item.selected_for_expansion ? "是" : "—"}</td>
                 </tr>
               ))}
@@ -371,6 +398,233 @@ function Candidates({
   );
 }
 
+function EvidenceOverview({
+  run,
+  overview,
+  strategies,
+  metrics,
+}: {
+  run: Run;
+  overview: FilterOverview;
+  strategies: Strategy[];
+  metrics: MetricPresentation[];
+}) {
+  const [localPass, setLocalPass] = useState<CandidatePage>();
+  const [fullTarget, setFullTarget] = useState<CandidatePage>();
+  const [detail, setDetail] = useState<CandidateDetail>();
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    Promise.all([
+      api.filterCandidates(run.run_key, {
+        phase: "expansion",
+        pageSize: 100,
+        gateStatus: "通过",
+        sortKey: "score",
+        sortOrder: "desc",
+      }),
+      api.filterCandidates(run.run_key, {
+        phase: "full-target",
+        pageSize: 100,
+        sortKey: "protenix-binder-pose-rmsd",
+        sortOrder: "asc",
+      }),
+    ]).then(([nextLocalPass, nextFullTarget]) => {
+      setLocalPass(nextLocalPass);
+      setFullTarget(nextFullTarget);
+    }).catch((value) => {
+      setLoadError(value instanceof Error ? value.message : "候选证据读取失败");
+    });
+  }, [run.run_key]);
+
+  async function openCandidate(candidateId: string, phase: "expansion" | "full-target") {
+    setDetail(await api.filterCandidate(run.run_key, candidateId, phase));
+  }
+
+  const tierOrder: Record<string, number> = {
+    "tier-a": 0,
+    "tier-b": 1,
+    "tier-c": 2,
+    "tier-d": 3,
+  };
+  const leadingStrategies = [...strategies]
+    .sort((left, right) => (
+      (tierOrder[left.tier] ?? 99) - (tierOrder[right.tier] ?? 99)
+      || right.score_yaml - left.score_yaml
+    ))
+    .filter((item) => item.tier === "tier-a" || item.tier === "tier-b");
+  const protenixIds = new Set((fullTarget?.items || []).map((item) => item.candidate_id));
+  const bestPrediction = fullTarget?.items[0];
+
+  return (
+    <div className="filter-section evidence-first">
+      <section className="evidence-result-header">
+        <div>
+          <p className="section-label">第5步结果</p>
+          <h3>筛选工作已经完成，已有多层结构证据可供审阅</h3>
+          <p>
+            本次运行完成了 {overview.counts.pilot} 个小规模候选、{overview.counts.expanded} 个扩展候选和
+            {" "}{overview.counts.full_target} 个 Protenix 复核。最终停止只表示没有候选达到第6步门槛。
+          </p>
+        </div>
+        <div className="evidence-stop-summary">
+          <strong>第6步未解锁</strong>
+          <span>程序正常完成 · 科学门槛未通过</span>
+        </div>
+      </section>
+
+      <StrategyHeatmap strategies={strategies} />
+
+      <section className="strategy-evidence-grid">
+        <div className="tier-summary panel">
+          <div className="panel-heading">
+            <div><p className="section-label">策略分层</p><h3>Tier 分布</h3></div>
+            <span>全部 {strategies.length} 个 YAML</span>
+          </div>
+          <div className="tier-counts">
+            {["tier-a", "tier-b", "tier-c", "tier-d"].map((tier) => (
+              <article key={tier}>
+                <span>{tierName(tier)}</span>
+                <strong>{overview.tier_counts[tier] || 0}</strong>
+                <small>
+                  {tier === "tier-a" ? "至少 2 个最终门候选" : tier === "tier-b" ? "1 个最终门候选" : tier === "tier-c" ? "存在硬门信号" : "未形成可扩展信号"}
+                </small>
+              </article>
+            ))}
+          </div>
+        </div>
+        <div className="leading-strategies panel">
+          <div className="panel-heading">
+            <div><p className="section-label">优先策略证据</p><h3>等级 A 与等级 B</h3></div>
+            <span>均值不填补缺失值</span>
+          </div>
+          <div className="leading-strategy-list">
+            {leadingStrategies.map((strategy) => (
+              <article key={strategy.strategy_id}>
+                <header>
+                  <div>
+                    <span>区域 {strategy.region_id} × {strategy.scaffold_id}</span>
+                    <strong>{tierName(strategy.tier)}</strong>
+                  </div>
+                  {strategy.yaml_artifact && (
+                    <a href={`/api/v1/artifacts/${strategy.yaml_artifact.token}?download=true`}>
+                      下载 YAML
+                    </a>
+                  )}
+                </header>
+                <div className="strategy-score-strip">
+                  <span>最终门 {strategy.final_gate_pass_count}/{strategy.candidate_count}</span>
+                  <span>筛选中位数 {number(strategy.score_screen, 3)}</span>
+                  <span>前四分位均值 {number(strategy.score_screen_top_quartile_mean, 3)}</span>
+                  <span>策略得分 {number(strategy.score_yaml, 3)}</span>
+                </div>
+                <dl>
+                  {strategy.metric_aggregates.slice(0, 6).map((metric) => (
+                    <div key={metric.metric_id}>
+                      <dt>{aggregateName(metric.metric_id)}</dt>
+                      <dd>{number(metric.mean, 3)} <small>均值 · n={metric.observed_count}</small></dd>
+                    </div>
+                  ))}
+                </dl>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel evidence-candidate-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="section-label">初步结构筛选</p>
+            <h3>{localPass?.total ?? overview.counts.local_gate_pass} 个候选值得查看结构</h3>
+          </div>
+          <span>按已有 S_expand_structure 从高到低排列</span>
+        </div>
+        {loadError && <div className="notice error"><strong>候选证据读取失败</strong><span>{loadError}</span></div>}
+        <div className="highlight-candidate-grid">
+          {(localPass?.items || []).map((candidate, index) => (
+            <button
+              type="button"
+              key={candidate.candidate_id}
+              onClick={() => openCandidate(candidate.candidate_id, "expansion")}
+            >
+              <header>
+                <span>#{String(index + 1).padStart(2, "0")}</span>
+                <strong>{candidate.candidate_id}</strong>
+                <i className={protenixIds.has(candidate.candidate_id) ? "reviewed" : ""}>
+                  {protenixIds.has(candidate.candidate_id) ? "已做 Protenix 复核" : "未进入 Protenix Top 10"}
+                </i>
+              </header>
+              <dl>
+                <div><dt>结构得分</dt><dd>{number(candidate.score, 3)}</dd></div>
+                <div><dt>结合区域覆盖率</dt><dd>{number(candidate.metrics["hotspot-coverage"], 3)}</dd></div>
+                <div><dt>界面 iPTM</dt><dd>{number(candidate.metrics["design-to-target-iptm"], 3)}</dd></div>
+                <div><dt>目标 CA RMSD</dt><dd>{number(candidate.metrics["target-ca-rmsd"])} Å</dd></div>
+              </dl>
+              <span className="candidate-open">查看指标与三维结构 →</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel protenix-evidence">
+        <div className="panel-heading">
+          <div>
+            <p className="section-label">完整目标复核</p>
+            <h3>{fullTarget?.total ?? overview.counts.full_target} 个 Protenix 结果仍然是有效证据</h3>
+          </div>
+          <span>按观测到的结合位姿 RMSD 从低到高</span>
+        </div>
+        {bestPrediction && (
+          <div className="best-observed">
+            <span>当前观测到的最低结合位姿 RMSD</span>
+            <strong>{number(bestPrediction.metrics["protenix-binder-pose-rmsd"])} Å</strong>
+            <p>{bestPrediction.candidate_id} · 仍未达到通过门槛，不代表胜出候选。</p>
+          </div>
+        )}
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>候选</th><th>目标 RMSD</th><th>结合位姿 RMSD</th><th>界面 iPTM</th><th>最小界面 PAE</th><th>结论</th><th /></tr></thead>
+            <tbody>
+              {(fullTarget?.items || []).map((candidate) => (
+                <tr key={candidate.candidate_id}>
+                  <td><code>{candidate.candidate_id}</code></td>
+                  <td>{number(candidate.metrics["protenix-target-rmsd"])} Å</td>
+                  <td><b className="pose-value">{number(candidate.metrics["protenix-binder-pose-rmsd"])} Å</b></td>
+                  <td>{number(candidate.metrics["protenix-pairwise-iptm"], 3)}</td>
+                  <td>{number(candidate.metrics["protenix-min-interface-pae"])} Å</td>
+                  <td><span className="fail-text">{candidate.gate_status}</span></td>
+                  <td><button className="text-button" type="button" onClick={() => openCandidate(candidate.candidate_id, "full-target")}>查看结构</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="compact-science-stop">
+        <div>
+          <p className="section-label">进入第6步的判断</p>
+          <h3>{overview.conclusion_title}</h3>
+          <p>{overview.conclusion} 上述策略、指标和结构证据仍然保留并可下载。</p>
+        </div>
+        <span className={`status status-${overview.state}`}>
+          <span className="status-mark" />
+          {stateCopy[overview.state].label}
+        </span>
+      </section>
+
+      {detail && (
+        <CandidateDrawer
+          detail={detail}
+          metrics={metrics}
+          onClose={() => setDetail(undefined)}
+        />
+      )}
+    </div>
+  );
+}
+
 function Glossary({ metrics }: { metrics: MetricPresentation[] }) {
   const groups = [...new Set(metrics.map((metric) => metric.group))];
   return (
@@ -399,7 +653,7 @@ function Glossary({ metrics }: { metrics: MetricPresentation[] }) {
 }
 
 export function StageFive({ stage, run }: { stage: Stage; run: Run }) {
-  const [tab, setTab] = useState("conclusion");
+  const [tab, setTab] = useState("evidence");
   const [overview, setOverview] = useState<FilterOverview>();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [metrics, setMetrics] = useState<MetricPresentation[]>([]);
@@ -423,12 +677,14 @@ export function StageFive({ stage, run }: { stage: Stage; run: Run }) {
     <div className="stage-five">
       <nav className="analysis-tabs" aria-label="筛选分析视图">
         {[
-          ["conclusion", "结果结论"],
+          ["evidence", "筛选证据"],
           ["strategies", "策略比较"],
           ["candidates", "候选筛选"],
           ["metrics", "指标说明"],
+          ["conclusion", "结论与原因"],
         ].map(([id, label]) => <button type="button" className={tab === id ? "active" : ""} onClick={() => setTab(id)} key={id}>{label}</button>)}
       </nav>
+      {tab === "evidence" && <EvidenceOverview run={run} overview={overview} strategies={strategies} metrics={metrics} />}
       {tab === "conclusion" && <Conclusion overview={overview} onSelect={setTab} />}
       {tab === "strategies" && <Strategies strategies={strategies} />}
       {tab === "candidates" && <Candidates run={run} metrics={metrics} />}

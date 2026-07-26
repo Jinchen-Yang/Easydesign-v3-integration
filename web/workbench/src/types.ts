@@ -81,6 +81,52 @@ export interface Replay {
   frames: ReplayFrame[];
 }
 
+export interface TaskExecution {
+  task_id: string;
+  strategy_id: string;
+  status: string;
+  requested_candidates: number;
+  collected_candidates: number;
+  attempt_count: number;
+  retry_count: number;
+  last_device?: number;
+}
+
+export interface DeviceExecution {
+  device: number;
+  current_task_id?: string;
+  current_strategy_id?: string;
+  assigned_task_count: number;
+  succeeded_task_count: number;
+  attempt_count: number;
+  failed_attempt_count: number;
+  collected_candidates: number;
+  busy_seconds: number;
+  tasks: TaskExecution[];
+}
+
+export interface ExecutionProgress {
+  stage_number: number;
+  stage_id: string;
+  status: string;
+  updated_at: string;
+  total_tasks: number;
+  pending_tasks: number;
+  waiting_tasks: number;
+  running_tasks: number;
+  succeeded_tasks: number;
+  failed_tasks: number;
+  planned_candidates: number;
+  collected_candidates: number;
+  elapsed_seconds: number;
+  throughput_candidates_per_hour?: number;
+  estimated_remaining_seconds?: number;
+  device_history_status: string;
+  devices: DeviceExecution[];
+  recent_events: Array<Record<string, unknown>>;
+  recent_errors: string[];
+}
+
 export interface FilterOverview {
   run_key: string;
   state: StageState;
@@ -104,8 +150,20 @@ export interface Strategy {
   final_gate_pass_rate: number;
   tier: string;
   score_screen: number;
+  score_screen_top_quartile_mean: number;
   score_yaml: number;
   selected_for_expansion: boolean;
+  configuration: Record<string, unknown>;
+  metric_aggregates: Array<{
+    metric_id: string;
+    observed_count: number;
+    missing_count: number;
+    mean?: number;
+    median?: number;
+    minimum?: number;
+    maximum?: number;
+  }>;
+  yaml_artifact?: Artifact;
 }
 
 export interface CandidateListItem {

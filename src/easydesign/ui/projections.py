@@ -174,10 +174,10 @@ def _stage_highlights(
             "succeeded_tasks": progress.get("succeeded_tasks"),
             "failed_tasks": progress.get("failed_tasks"),
         }
-        device_rows = []
-        for device, value in (progress.get("per_device") or {}).items():
-            device_rows.append({"device": device, **value})
-        tables["devices"] = device_rows
+        tables["devices"] = [
+            {"device": device, "current_strategy_id": value}
+            for device, value in (progress.get("per_device") or {}).items()
+        ]
     elif stage_number == 5:
         report = _optional_data(run_root, artifacts, "pilot-filter-report") or {}
         expansion = _optional_data(run_root, artifacts, "expansion-validation-report") or {}

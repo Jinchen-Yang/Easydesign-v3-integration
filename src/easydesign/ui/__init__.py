@@ -1,6 +1,7 @@
 """EasyDesign 本地科研工作台的公共 API。"""
 
 from .app import create_ui_app, serve_ui
+from .execution import get_execution_progress
 from .jobs import (
     UiJobController,
     clone_run_configuration,
@@ -44,6 +45,7 @@ __all__ = [
     "create_draft_order_package",
     "create_ui_app",
     "get_project_projection",
+    "get_execution_progress",
     "get_run_projection",
     "get_stage_projection",
     "launch_pipeline_job",

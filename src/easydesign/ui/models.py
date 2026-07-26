@@ -41,6 +41,64 @@ class StageCapability(BaseModel):
     summary: str
 
 
+class TaskExecutionProjection(BaseModel):
+    """一个执行任务的产品投影；科学候选质量不在这里判断。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task_id: str
+    strategy_id: str
+    status: str
+    requested_candidates: int = Field(ge=0)
+    collected_candidates: int = Field(ge=0)
+    attempt_count: int = Field(ge=0)
+    retry_count: int = Field(ge=0)
+    last_device: int | None = Field(default=None, ge=0)
+
+
+class DeviceExecutionProjection(BaseModel):
+    """单个计算设备的当前任务和历史工作量。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device: int = Field(ge=0)
+    current_task_id: str | None = None
+    current_strategy_id: str | None = None
+    assigned_task_count: int = Field(ge=0)
+    succeeded_task_count: int = Field(ge=0)
+    attempt_count: int = Field(ge=0)
+    failed_attempt_count: int = Field(ge=0)
+    collected_candidates: int = Field(ge=0)
+    busy_seconds: float = Field(ge=0)
+    tasks: tuple[TaskExecutionProjection, ...] = ()
+
+
+class ExecutionProgressProjection(BaseModel):
+    """Stage 04/06 共用的实时与历史执行投影。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    stage_number: int = Field(ge=1, le=7)
+    stage_id: str
+    status: str
+    updated_at: datetime
+    total_tasks: int = Field(ge=0)
+    pending_tasks: int = Field(ge=0)
+    waiting_tasks: int = Field(ge=0)
+    running_tasks: int = Field(ge=0)
+    succeeded_tasks: int = Field(ge=0)
+    failed_tasks: int = Field(ge=0)
+    planned_candidates: int = Field(ge=0)
+    collected_candidates: int = Field(ge=0)
+    elapsed_seconds: float = Field(ge=0)
+    throughput_candidates_per_hour: float | None = Field(default=None, ge=0)
+    estimated_remaining_seconds: float | None = Field(default=None, ge=0)
+    device_history_status: str
+    devices: tuple[DeviceExecutionProjection, ...] = ()
+    recent_events: tuple[dict[str, Any], ...] = ()
+    recent_errors: tuple[str, ...] = ()
+
+
 class StageProjection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -167,6 +225,18 @@ class FilterOverviewProjection(BaseModel):
     failed_rule_counts: dict[str, int]
 
 
+class StrategyMetricAggregate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    metric_id: str
+    observed_count: int = Field(ge=0)
+    missing_count: int = Field(ge=0)
+    mean: float | None = None
+    median: float | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+
+
 class StrategyProjection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -180,8 +250,12 @@ class StrategyProjection(BaseModel):
     final_gate_pass_rate: float
     tier: str
     score_screen: float
+    score_screen_top_quartile_mean: float
     score_yaml: float
     selected_for_expansion: bool
+    configuration: dict[str, Any] = Field(default_factory=dict)
+    metric_aggregates: tuple[StrategyMetricAggregate, ...] = ()
+    yaml_artifact: ArtifactProjection | None = None
 
 
 class CandidateListItem(BaseModel):

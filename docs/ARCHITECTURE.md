@@ -660,9 +660,17 @@ projection。服务在投影和下载时重新校验 artifact 大小与 SHA-256�
 run registry 只能注册配置 runs root 下的运行；artifact 请求再次阻止 path traversal
 与 symlink 逃逸。UI 不启用 CORS、不访问 CDN，也不把 manifest 复制到新数据库。
 
-真实长任务由独立 Python worker 调用统一 orchestration API。进度只来自原子
-`progress.json` 和 append-only `task-events.jsonl`，通过同源 SSE 传输；前端不解析
-终端文本。“停止”通过 `EASYDESIGN_UI_DRAIN_FILE` 请求调度器完成当前
+真实长任务由独立 Python worker 调用统一 orchestration API。实时进度只来自原子
+`progress.json` 和 append-only `task-events.jsonl`，通过同源 SSE 传输；前端直接应用
+`ExecutionProgressProjection`，不解析终端文本。已完成 Stage 04/06 则从当前
+StageManifest 声明并通过 SHA-256 的 task table、终态 progress 和 events 重建每张 GPU
+的历史任务、attempt、失败重试、候选数与累计运行时间。两条路径共用：
+
+```text
+GET /api/v1/runs/{run}/stages/{4|6}/execution
+```
+
+“停止”通过 `EASYDESIGN_UI_DRAIN_FILE` 请求调度器完成当前
 strategy/shard 后停止，不终止正在写产物的 backend。服务重启后可通过 manifest 和
 结构化进度恢复观察，operational failure 可创建 resume job。
 
@@ -672,7 +680,7 @@ strategy/shard 后停止，不终止正在写产物的 backend。服务重启后
 在成功 Stage 07 明确声明并通过 checksum 的 `FinalCandidatePackage` 时才返回
 `draft-ready`，且仍不调用供应商。
 
-UI-004 在科学 manifest 与 React 之间增加面向使用者的只读语义投影层。默认页面读取
+UI-004/UI-006 在科学 manifest 与 React 之间增加面向使用者的只读语义投影层。默认页面读取
 `ProjectCardProjection`、run/stage projection 和 Stage 05 专用的 overview、strategy、
 candidate、metric projection；内部 ID、代码身份、hash 和原始文件只进入运行内的
 “技术记录”。React 只负责中文呈现、分页和交互，不能复制 filter threshold 或重新判断
@@ -693,6 +701,12 @@ GET /api/v1/runs/{run}/stages/5/candidates/{candidate_id}
 artifact SHA-256；page size 最大 100，排序字段使用白名单。候选原始、复折叠和 Protenix
 结构必须先从 manifest 声明的 candidate index 解析嵌套 ArtifactRef、复验大小和 hash，
 才能签发短期 token。
+
+Stage 05 策略身份来自 Stage 03 `strategy-bundle` / `design-matrix` ArtifactRef 与
+Stage 05 report 的显式联接，禁止拆 strategy ID 猜 region 或 scaffold。策略指标聚合只
+使用有限数值，保存样本数和缺失数，并计算均值、中位数、最小值与最大值；缺失值不按零
+填充。页面默认顺序为策略/Tier、扩展策略、初筛候选、Protenix 复核，科学停止只在最后
+解释能否进入 Stage 06。
 
 运行状态与证据成熟度分开：
 

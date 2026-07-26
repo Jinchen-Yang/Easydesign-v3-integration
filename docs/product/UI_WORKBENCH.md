@@ -22,8 +22,8 @@ Stage 06/07 只能是 `not-reached`。
 
 ## 视觉与交互
 
-- 视觉继承 Stage 01 Viewer：浅灰背景、白色工作区、蓝色主操作、清晰边框和大面积深色
-  Mol* 画布。
+- 视觉继承 Stage 01 Viewer：浅灰背景、白色工作区、蓝色主操作和清晰边框；第1/2/5/7步
+  的 Mol* 画布统一使用浅灰白 `#EEF1F6`，加载层、工具栏和结构控制均采用浅色体系。
 - 正文 16px，表格与按钮 14px，次要说明 13px，技术元数据不低于 12px；禁止 7–10px
   产品正文。
 - 蓝色表示运行或选中，琥珀色表示等待确认，紫色表示未达到科学继续条件，红色只表示
@@ -46,7 +46,9 @@ Stage 06/07 只能是 `not-reached`。
 
 七阶段显示名固定为“准备目标结构、选择结合区域、生成设计方案、小规模生成、筛选与
 验证、规模化生成、最终候选”。第3步使用真实区域 × scaffold 矩阵；第4/6步共用任务、
-GPU、吞吐和 ETA 组件；第5步固定为“结果结论 / 策略比较 / 候选筛选 / 指标说明”四层。
+GPU、吞吐和 ETA 组件；第5步默认先显示筛选证据，再提供“策略比较 / 候选筛选 /
+指标说明 / 结论与原因”专家入口。科学停止只能作为证据链末端结论，不能隐藏已形成的
+策略、候选、指标或结构。
 
 ## 状态语义
 
@@ -74,7 +76,8 @@ simulated-preview
 - 每次展示或下载 artifact 前验证大小和 SHA-256。
 - 浏览器只接收由 manifest 派生的短期 artifact token，不接收服务器绝对路径。
 - 服务固定绑定 `127.0.0.1`；禁止任意 CORS、路径穿越和 symlink 逃逸。
-- 长任务只从原子 `progress.json` 和 append-only `task-events.jsonl` 读取状态。
+- 长任务实时状态只从原子 `progress.json` 和 append-only `task-events.jsonl` 读取；
+  已完成运行从 StageManifest 声明的 task table、终态 progress 和 events 恢复设备历史。
 - UI 的“停止”首版只表示完成当前任务后停止调度，不强杀当前 backend。
 - 实际向供应商下单永远不是自动动作；UI 最多生成 `draft-order-package` 并请求人工审批。
 
@@ -101,7 +104,10 @@ simulated-preview
 
 - `overview` 回答本次结论、真实数量、转化链、失败规则和下一步建议。
 - `strategies` 提供全部策略的区域、scaffold、候选数、去重数、hard/final gate、Tier、
-  `S_screen`、`F_YAML` 和是否扩展。
+  `S_screen`、前四分位均值、`F_YAML`、是否扩展、原始 YAML 安全下载和规范指标聚合。
+- 策略身份只能从 Stage 03 `strategy-bundle` / `design-matrix` 与 Stage 05 report 的
+  ArtifactRef 联接，禁止拆 strategy ID 字符串猜 region 或 scaffold。
+- 指标聚合保存有效样本数、缺失数、均值、中位数、最小值和最大值；缺失值不得按零填充。
 - `candidates` 后端分页访问 pilot、expansion 和 full-target 三个 phase，page size
   最大 100，排序字段采用白名单。
 - `candidate detail` 展示序列、全部规范指标、原始 BoltzGen 指标、逐规则实测值/操作符/
@@ -109,6 +115,21 @@ simulated-preview
 - `metrics` 统一解释中文名称、科学缩写、定义、单位、来源、方向、用途、当前阈值和
   缺失值处理。
 - JSON 报告按 artifact SHA-256 建立进程内只读缓存；不增加数据库。
+
+## Stage 04/06 执行投影
+
+统一接口：
+
+```text
+GET /api/v1/runs/{run}/stages/4/execution
+GET /api/v1/runs/{run}/stages/6/execution
+```
+
+返回计划/成功/失败/待重试任务、候选数、耗时、吞吐率、ETA，以及每张 GPU 的当前任务、
+历史策略或 shard、attempt、失败重试、候选数和累计运行时间。正在运行时由 SSE 发送同一
+`ExecutionProgressProjection`，前端直接应用结构化 payload；终态页面从 manifest
+声明的 task table/progress/events 重建历史，不以“当前 GPU 已空闲”为由丢失执行证据。
+老运行确实没有设备记录时明确显示“此运行未记录历史设备分配”。
 
 ## UI-001 验收结果
 
@@ -131,9 +152,9 @@ simulated-preview
   达到 `implemented`，下一条可继续的真实 run 仍需做长任务启动、drain、审批和恢复
   浏览器 smoke。
 
-## UI-004 / ENG-010 / UI-005 重构结果
+## UI-004 / ENG-010 / UI-005 / UI-006 / ENG-011 重构结果
 
-- 版本：`0.1.0.dev7`。
+- 版本：`0.1.0.dev8`。
 - 主导航收敛为“我的项目 / 新建设计 / 运行任务”；“运行任务”没有选中运行时展示任务
   列表，不再落入技术审计。
 - 产品术语、字号和颜色形成统一 token；内部工程词从默认页面移至技术记录。
@@ -141,4 +162,9 @@ simulated-preview
   第4/6步共用进度视觉；第6/7步继续区分软件能力与 APOE 本次未到达状态。
 - 第5步的 840/100/10 候选和 21 个策略通过分页产品投影访问，全部规范指标、原始
   BoltzGen 指标、规则门槛、失败原因与候选结构均可进入详情。
+- 第5步默认按“21 个策略与 Tier → 扩展策略 → 12 个初筛候选 → 10 个 Protenix 结果
+  → 第6步条件判断”展示；APOE 的 `1/1/5/14` Tier 分布和最低约 `18.00 Å` 的观测
+  binder pose RMSD 均保留，但不会被误称为通过者。
+- 第4步现有 APOE 运行无需重跑，即可从结构化任务记录恢复 GPU 0 的 11 个策略/
+  440 个候选/14 attempts 与 GPU 1 的 10 个策略/400 个候选/14 attempts。
 - 未改变 Stage 05 门槛、APOE `stopped-no-scale-winner` 结论或任何历史运行记录。

@@ -305,3 +305,37 @@
 - 提交：数据投影
   `66e8fb630c02652801cb44d31c9d826a6973ad6d`；界面、验证和文档提交以远端 `main`
   最终核对 SHA 为准。
+
+## 2026-07-26 — UI-006 / ENG-011：结构、执行进度与筛选证据纠偏
+
+- 状态：UI-004、ENG-010、UI-005、UI-006、ENG-011 均恢复或达到
+  `smoke-validated`。
+- 完成时间：2026-07-26T17:48:37+08:00
+- 问题：第1/2步 Workbench 的 Mol* 背景偏黑；已完成 Stage 04 只显示终态
+  `per_device`，因 GPU 已空闲而误呈现“没有设备分配”；第5步默认把科学停止放在首位，
+  遮蔽了 21 个策略、Tier、初筛候选、正式指标和已有结构。
+- 方案：第1/2/5/7步统一使用旧 Viewer 的 `#EEF1F6` 结构画布；增加 Stage 04/06
+  `ExecutionProgressProjection`，实时消费结构化 SSE、终态从 manifest 声明的 task
+  table/progress/events 重建历史；第5步按“策略/Tier → 扩展策略 → 12 个初筛候选 →
+  10 个 Protenix 复核 → Stage 06 判断”默认展示。
+- 数据修复：策略身份通过 Stage 03 strategy bundle 与 ArtifactRef 联接，不再拆字符串；
+  九类策略指标保存有效/缺失样本数、均值、中位数和极值，缺失值不填零；12 个初筛候选
+  均可打开 BoltzGen 原始/复折叠结构，其中 10 个在同一详情中增加 Protenix 结构切换。
+- APOE 真实证据：Stage 04 恢复 GPU 0 的 11 个策略、440 个候选、14 attempts 与
+  GPU 1 的 10 个策略、400 个候选、14 attempts；Stage 05 Tier A/B/C/D 为
+  `1/1/5/14`，12/12 初筛候选有结构，10/10 有 Protenix 切换，最低观测 binder pose
+  RMSD 为 18.004658 Å，但仍如实保留 `stopped-no-scale-winner`。
+- 验证：`make check`；236 passed、8 个独立 PyMOL 环境测试按预期 skipped；dev8 wheel
+  及 console script 通过；便携 Viewer 5/5；Workbench macOS Chromium 1440/1920 与
+  Firefox 共 26 passed、1 skipped；Linux Chromium 功能验收通过。真实浏览器核对
+  `#EEF1F6`、GPU 历史、12/10 候选层和三结构切换。
+- 遇到的问题：服务器根分区无法写 pip/Playwright 临时数据，Linux 与 macOS 字体渲染
+  又不适合共享像素基准。
+- 解决：临时缓存和浏览器放入 `/root/autodl-tmp`，不删除用户数据；像素回归固定在
+  macOS 1440/1920，Linux 跑相同交互和数据断言。浏览器配置允许显式跳过某一平台不具备
+  的 Firefox 或跨平台像素用例，默认本地验收仍运行完整矩阵。
+- 科学边界：没有修改 Stage 05 阈值、APOE 历史 manifest、科学停止结论或 Stage 06/07
+  `not-reached`；UI 只重排和补全已存在证据。
+- 提交：`daf833a5cc0d4650cd8db512ddd3bfaceb5b7fbd`
+  （`fix(ui): surface evidence and historical execution`）；本条治理提交以远端 `main`
+  最终核对 SHA 为准。

@@ -366,4 +366,6 @@
   浏览器路径为运行环境问题。
 - 遗留问题：UI-002 仍需在下一条可继续的真实科学 run 上验证长任务启动、确认、drain
   和 resume；当前任务只完成向导和输入接收，不把模拟 preflight 视作长任务 smoke。
-- 提交：本条功能提交将在 Git 提交完成后追加完整 SHA；最终状态以远端 `main` 核对为准。
+- 提交：`0e116db9c6b125d4dc6661ccd4e7a9d4189a2ab8`
+  （`fix(ui): make project setup non-linear and stateful`）；本条治理提交以远端 `main`
+  最终核对 SHA 为准。

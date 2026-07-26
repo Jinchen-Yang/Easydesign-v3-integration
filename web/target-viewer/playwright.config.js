@@ -14,6 +14,7 @@ module.exports = defineConfig({
     headless: true,
     viewport: { width: 1440, height: 960 },
     launchOptions: {
+      executablePath: process.env.EASYDESIGN_PLAYWRIGHT_CHROMIUM || undefined,
       args: [
         "--enable-webgl",
         "--ignore-gpu-blocklist",

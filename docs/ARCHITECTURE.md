@@ -648,6 +648,30 @@ SSH 端口转发访问。Mol* 5.11.0 官方预构建 bundle 初始化需要动�
 `script-src` 对经过 checksum 验证的本地同源 bundle保留 `'unsafe-eval'`；`connect-src`
 仍只有自身，页面不接受用户 HTML。未来 CLI/UI 只能包装同一 reporting 与 serving API。
 
+### 本地科研工作台边界
+
+`easydesign ui serve` 使用 FastAPI/Uvicorn 固定监听 `127.0.0.1`，React/TypeScript
+构建产物作为 Python package data 随 wheel 分发。Node.js 只用于前端构建和 Playwright
+测试，不进入 EasyDesign 科学运行时。远程服务器只能通过 SSH 端口转发访问。
+
+浏览器读取的是服务端从当前 RunManifest → StageManifest → ArtifactRef 生成的安全
+projection。服务在投影和下载时重新校验 artifact 大小与 SHA-256；短期 HMAC token
+只携带 run key、相对路径、大小、hash 和过期时间，不向浏览器暴露机器绝对路径。
+run registry 只能注册配置 runs root 下的运行；artifact 请求再次阻止 path traversal
+与 symlink 逃逸。UI 不启用 CORS、不访问 CDN，也不把 manifest 复制到新数据库。
+
+真实长任务由独立 Python worker 调用统一 orchestration API。进度只来自原子
+`progress.json` 和 append-only `task-events.jsonl`，通过同源 SSE 传输；前端不解析
+终端文本。“停止”通过 `EASYDESIGN_UI_DRAIN_FILE` 请求调度器完成当前
+strategy/shard 后停止，不终止正在写产物的 backend。服务重启后可通过 manifest 和
+结构化进度恢复观察，operational failure 可创建 resume job。
+
+软件 capability 与单次 run state 是两套字段：例如 Stage 06/07 可以是
+`implemented`，而一个在 Stage 05 科学停止的 run 必须是 `not-reached`。演示回放只根据
+真实终态 manifest 构造 `simulated-preview` 时间线，不修改科学 artifact。下单 API 只有
+在成功 Stage 07 明确声明并通过 checksum 的 `FinalCandidatePackage` 时才返回
+`draft-ready`，且仍不调用供应商。
+
 运行状态与证据成熟度分开：
 
 - 执行状态：`pending`、`running`、`succeeded`、`failed`、`cancelled`。

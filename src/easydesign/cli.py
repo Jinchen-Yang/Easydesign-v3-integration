@@ -268,6 +268,15 @@ def _parser() -> argparse.ArgumentParser:
     viewer_serve = viewer_commands.add_parser("serve", help="仅在 127.0.0.1 提供已验证报告")
     viewer_serve.add_argument("run", type=Path)
     viewer_serve.add_argument("--port", type=int, default=8000)
+
+    ui_parser = commands.add_parser("ui", help="启动本地产品级科研工作台")
+    ui_commands = ui_parser.add_subparsers(dest="ui_command", required=True)
+    ui_serve = ui_commands.add_parser("serve", help="仅在 127.0.0.1 启动 React 工作台")
+    _add_profile(ui_serve)
+    ui_serve.add_argument("--runs-root", type=Path)
+    ui_serve.add_argument("--projects-root", type=Path)
+    ui_serve.add_argument("--port", type=int, default=8765)
+    ui_serve.add_argument("--open", action="store_true", dest="open_browser")
     return parser
 
 
@@ -335,6 +344,17 @@ def _runs_root(explicit: Path | None, profile_path: Path | None) -> Path:
 
 
 def _dispatch(arguments: argparse.Namespace) -> int:
+    if arguments.command == "ui":
+        from easydesign.ui import serve_ui
+
+        serve_ui(
+            runs_root=_runs_root(arguments.runs_root, arguments.profile),
+            projects_root=arguments.projects_root,
+            profile_path=arguments.profile,
+            port=arguments.port,
+            open_browser=arguments.open_browser,
+        )
+        return 0
     if arguments.command == "init":
         scope_range: tuple[int, int] | None = None
         if arguments.scope_range is not None:

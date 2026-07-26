@@ -12,7 +12,12 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from easydesign.backends.boltzgen import BoltzGenGenerationAdapter
-from easydesign.backends.executors import GpuResourceSnapshot, NvidiaSmiProbe, execute_on_devices
+from easydesign.backends.executors import (
+    GpuResourceSnapshot,
+    NvidiaSmiProbe,
+    execute_on_devices,
+    ui_drain_requested,
+)
 from easydesign.core import (
     ArtifactRef,
     Attempt,
@@ -568,6 +573,7 @@ def execute_stage04(
         pending_plans,
         devices=config.executor.devices,
         worker=execute_task,
+        should_stop=ui_drain_requested,
     )
 
     final_tasks = ordered_tasks()

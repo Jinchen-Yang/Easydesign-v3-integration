@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import subprocess
 import time
 from collections.abc import Callable
@@ -164,8 +165,9 @@ def execute_on_devices(
     *,
     devices: tuple[int, ...],
     worker: Callable[[InputT, int], OutputT],
+    should_stop: Callable[[], bool] | None = None,
 ) -> tuple[DeviceResult[OutputT], ...]:
-    """每个 device 一个串行 worker；返回值按输入顺序稳定排序。"""
+    """每个 device 一个串行 worker；可在当前 item 完成后停止继续调度。"""
 
     if not devices:
         raise ValueError("execute_on_devices 至少需要一个 device")
@@ -179,10 +181,18 @@ def execute_on_devices(
         device: int,
         bucket: list[tuple[int, InputT]],
     ) -> list[DeviceResult[OutputT]]:
-        return [
-            DeviceResult(input_index=index, device=device, result=worker(item, device))
-            for index, item in bucket
-        ]
+        results: list[DeviceResult[OutputT]] = []
+        for index, item in bucket:
+            if should_stop is not None and should_stop():
+                break
+            results.append(
+                DeviceResult(
+                    input_index=index,
+                    device=device,
+                    result=worker(item, device),
+                )
+            )
+        return results
 
     results: list[DeviceResult[OutputT]] = []
     with ThreadPoolExecutor(
@@ -196,3 +206,10 @@ def execute_on_devices(
         for future in futures:
             results.extend(future.result())
     return tuple(sorted(results, key=lambda item: item.input_index))
+
+
+def ui_drain_requested() -> bool:
+    """读取可选调度停止标记；不终止已经启动的 backend。"""
+
+    value = os.environ.get("EASYDESIGN_UI_DRAIN_FILE")
+    return False if value is None else Path(value).is_file()

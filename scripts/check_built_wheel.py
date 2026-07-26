@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from zipfile import BadZipFile, ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 PACKAGE_PREFIX = "easydesign/reporting/static/target_viewer"
+UI_PREFIX = "easydesign/ui/static"
 SCAFFOLD_PREFIX = (
     "easydesign/resources/scaffolds/vhh/official_boltzgen_0_3_2"
 )
@@ -52,8 +54,8 @@ def main() -> int:
         print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
         return 1
     wheel = wheels[0]
-    if "0.1.0.dev5" not in wheel.name:
-        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev5: {wheel.name}", file=sys.stderr)
+    if "0.1.0.dev6" not in wheel.name:
+        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev6: {wheel.name}", file=sys.stderr)
         return 1
     source_root = ROOT / "src" / PACKAGE_PREFIX
     try:
@@ -77,13 +79,53 @@ def main() -> int:
                         file=sys.stderr,
                     )
                     return 1
+            ui_source = ROOT / "src" / UI_PREFIX
+            ui_files = tuple(
+                sorted(
+                    path.relative_to(ui_source).as_posix()
+                    for path in ui_source.rglob("*")
+                    if path.is_file()
+                )
+            )
+            if not ui_files or "index.html" not in ui_files:
+                print("ERROR: UI 构建产物缺少 index.html", file=sys.stderr)
+                return 1
+            if not any(item.endswith(".js") for item in ui_files) or not any(
+                item.endswith(".css") for item in ui_files
+            ):
+                print("ERROR: UI 构建产物缺少 JS/CSS", file=sys.stderr)
+                return 1
+            for relative in ui_files:
+                member = f"{UI_PREFIX}/{relative}"
+                source = ui_source / relative
+                if archive.read(member) != source.read_bytes():
+                    print(
+                        f"ERROR: wheel UI 资源与源码字节不一致: {relative}",
+                        file=sys.stderr,
+                    )
+                    return 1
     except (BadZipFile, KeyError, OSError) as error:
         print(f"ERROR: wheel Target Viewer 资源验证失败: {error}", file=sys.stderr)
         return 1
     try:
-        with tempfile.TemporaryDirectory(prefix="easydesign-wheel-smoke-") as temporary:
+        stable_temp = (
+            Path("/tmp")
+            if sys.platform != "win32" and Path("/tmp").is_dir()
+            else None
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="easydesign-wheel-smoke-",
+            dir=stable_temp,
+        ) as temporary:
             environment = Path(temporary) / "venv"
-            venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
+            # Some relocatable Conda/bundled Python runtimes cannot execute ensurepip
+            # inside a second-level venv.  Use the invoking pip's supported --python
+            # target while keeping the smoke environment isolated from source imports.
+            venv.EnvBuilder(
+                with_pip=False,
+                system_site_packages=True,
+                symlinks=sys.platform != "win32",
+            ).create(environment)
             python = (
                 environment / "Scripts" / "python.exe"
                 if sys.platform == "win32"
@@ -94,11 +136,21 @@ def main() -> int:
                 if sys.platform == "win32"
                 else environment / "bin" / "easydesign"
             )
+            dependency_environment = os.environ.copy()
+            dependency_environment["PYTHONPATH"] = os.pathsep.join(
+                item
+                for item in sys.path
+                if item
+                and "site-packages" in item
+                and str(ROOT) not in item
+            )
             subprocess.run(
                 [
-                    str(python),
+                    sys.executable,
                     "-m",
                     "pip",
+                    "--python",
+                    str(python),
                     "install",
                     "--force-reinstall",
                     "--no-deps",
@@ -115,8 +167,9 @@ def main() -> int:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                env=dependency_environment,
             ).stdout.strip()
-            if version != "0.1.0.dev5":
+            if version != "0.1.0.dev6":
                 raise RuntimeError(f"console-script 版本异常: {version}")
             subprocess.run(
                 [str(python), "-m", "easydesign", "--help"],
@@ -124,14 +177,22 @@ def main() -> int:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                env=dependency_environment,
+            )
+            subprocess.run(
+                [str(command), "ui", "--help"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=dependency_environment,
             )
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"ERROR: wheel 安装或 console-script smoke 失败: {error}", file=sys.stderr)
         return 1
     print(
         f"wheel assets and console script verified: {wheel.name} "
-        f"({len(EXPECTED_VIEWER) + len(EXPECTED_SCAFFOLDS)}/"
-        f"{len(EXPECTED_VIEWER) + len(EXPECTED_SCAFFOLDS)})"
+        "(Target Viewer、VHH7、Workbench resources)"
     )
     return 0
 

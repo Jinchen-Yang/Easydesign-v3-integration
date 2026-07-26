@@ -219,7 +219,11 @@ def execute_boltzgen_candidate_task(
         try:
             result = adapter.execute(request)
             return_code = result.return_code
-            ended_at = result.ended_at
+            # Adapter timestamps may be rounded, frozen in tests, or originate from a
+            # backend clock that is marginally behind the orchestrator clock.  Runtime
+            # task state must remain chronologically valid without rewriting backend
+            # provenance stored by the adapter.
+            ended_at = max(result.ended_at, started_at)
             new_candidates = collect_boltzgen_candidates(
                 run_root=root,
                 backend_output=result.output_directory,

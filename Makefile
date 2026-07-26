@@ -3,9 +3,11 @@ CONDA ?= conda
 CONDA_ENV ?= easydesign-core
 NODE ?= node
 NPM ?= npm
+PNPM ?= pnpm
 WEB_DIR ?= web/target-viewer
+UI_WEB_DIR ?= web/workbench
 
-.PHONY: help env-create env-update check test build test-web
+.PHONY: help env-create env-update check test build build-ui test-web
 
 help:
 	@echo "make env-create CONDA=/path/to/conda"
@@ -13,7 +15,8 @@ help:
 	@echo "make check PYTHON=/path/to/python3.11"
 	@echo "make test  PYTHON=/path/to/python3.11"
 	@echo "make build PYTHON=/path/to/python3.11"
-	@echo "make test-web NPM=/path/to/npm"
+	@echo "make build-ui PNPM=/path/to/pnpm"
+	@echo "make test-web NPM=/path/to/npm PNPM=/path/to/pnpm"
 
 env-create:
 	$(CONDA) env create --file environment.yml
@@ -33,9 +36,14 @@ check:
 test:
 	PYTHONPATH=src $(PYTHON) -m pytest
 
-build:
+build: build-ui
 	$(PYTHON) -m pip wheel --no-deps --no-build-isolation --wheel-dir dist .
 	$(PYTHON) scripts/check_built_wheel.py
 
-test-web:
+build-ui:
+	cd $(UI_WEB_DIR) && $(PNPM) install --frozen-lockfile
+	cd $(UI_WEB_DIR) && $(PNPM) build
+
+test-web: build-ui
 	cd $(WEB_DIR) && EASYDESIGN_CORE_PYTHON=$(PYTHON) $(NPM) test
+	cd $(UI_WEB_DIR) && $(PNPM) test

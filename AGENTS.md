@@ -115,6 +115,11 @@ Agent 必须自动完成以下收尾工作：
     - Mol* license、bundle 内第三方 license notices 和资产登记；
     - Python wheel package-data 验证、Playwright 浏览器测试和 ADR/架构文档。
     许可证审计未通过时停止 vendoring，任务保持 Blocked，不能只替换 JS 文件。
+14. 修改产品工作台时必须同步 React/TypeScript 源码、`pnpm-lock.yaml`、Python UI
+    gateway、wheel package data 和 Playwright。浏览器端只消费 Python API 的类型化
+    projection，不得复制科学阈值、从目录猜测 artifact、解析终端日志或暴露绝对路径。
+    Stage capability、run state、scientific stop、operational failure 和 demo replay
+    必须使用不同字段及明确文案；没有真实 FinalCandidatePackage 时禁止解锁下单草案。
 
 ## 4. 阻塞与询问
 

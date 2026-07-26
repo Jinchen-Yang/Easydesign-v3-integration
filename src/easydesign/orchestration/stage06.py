@@ -16,7 +16,11 @@ from typing import TypeVar
 from pydantic import BaseModel, ConfigDict
 
 from easydesign.backends.boltzgen import BoltzGenGenerationAdapter
-from easydesign.backends.executors import NvidiaSmiProbe, execute_on_devices
+from easydesign.backends.executors import (
+    NvidiaSmiProbe,
+    execute_on_devices,
+    ui_drain_requested,
+)
 from easydesign.core import (
     ArtifactRef,
     Attempt,
@@ -600,6 +604,7 @@ def execute_stage06(
         pending,
         devices=plan.devices,
         worker=run_shard,
+        should_stop=ui_drain_requested,
     )
     for result in results:
         tasks[pending[result.input_index].task_id] = result.result

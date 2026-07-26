@@ -8,13 +8,14 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev5`（包版本 `0.1.0.dev5`）
+- 当前版本：`0.1.0-dev6`（包版本 `0.1.0.dev6`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
 - EasyDesign 1.0：先聚焦 VHH，跑通第一条真实、完整、可审计的参考主线
 - 长期产品边界：多 binder 类型的一键式端到端设计平台
-- 当前不承诺设计准确率；已提供 Developer Preview CLI，尚无正式 UI 或公开 release
+- 当前不承诺设计准确率；已提供 Developer Preview CLI 和 localhost 科研工作台，尚无
+  公开 release
 
 这里的“一键式”是指用户不需要手工拼接多个后端、搬运中间文件或猜测失败位置；关键科学
 选择、失败状态和人工批准仍然显式保存，不能被“一键”隐藏。
@@ -29,11 +30,11 @@ git clone git@github.com:Knitua/Easydesign.git
 cd Easydesign
 
 # 开发安装
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,ui]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev5-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev6-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -100,14 +101,38 @@ PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 require
 工程 `smoke-validated`；这不代表结构选择或预测准确率经过科学验证。Stage 02 可运行
 独立 SASA/ScanNet 和用户区域。Stage 03 已实现基础 VHH 策略编译：每个批准区域与七个
 官方 scaffold 组合、只写 positive binding，并由 BoltzGen 0.3.2 官方校验。Stage 04
-Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与恢复；APOE 21×40 真实
-验收完成前仍不标记为 `smoke-validated`。Stage 05 已实现 v1.5 pilot 硬门、逐规则审计、
-Tier A 扩展到总计 100、full-target Protenix 和唯一 scale strategy；等待 Stage 04
-APOE 输入完成后做真实验收。Stage 06 已实现 2×500 smoke、20×2500 production plan、
+Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与恢复；APOE 21×40 共
+840 个完整候选已通过真实工程 smoke。Stage 05 已实现 v1.5 pilot 硬门、逐规则审计、
+Tier A 扩展到总计 100、full-target Protenix 和唯一 scale strategy；APOE 有 12 个
+local-gate pass，但 Top 10 的 binder pose 均不稳定，因此合法发布
+`stopped-no-scale-winner`。Stage 06 已实现 2×500 smoke、20×2500 production plan、
 25% 磁盘门、分片恢复和精确 merge；APOE 真实 1000 必须等待 Stage 05 唯一 winner，
 本轮不会启动 50k。Stage 07 已实现 v1.5 深筛、Protenix seed 101/202/303、一致性门、
-TNP required evidence 和确定性 20+20 审核包；固定 TNP backend smoke 与 APOE
-Stage 04–06 上游门完成前保持 `implemented`，不提前声称真实 Stage 07 smoke。
+TNP required evidence 和确定性 20+20 审核包；固定 TNP backend smoke 已通过，但
+APOE 因 Stage 05 科学停止而没有进入 Stage 06/07。
+
+## 本地科研工作台
+
+UI 与 CLI 调用同一套 Python API；科学事实仍来自 manifest，不保存第二份数据库。
+
+```bash
+python -m pip install -e ".[dev,ui]"
+easydesign ui serve \
+  --runs-root /absolute/path/to/runs \
+  --projects-root /absolute/path/to/ui-projects \
+  --port 8765
+```
+
+浏览器打开 `http://127.0.0.1:8765`。远程服务器使用 SSH 端口转发：
+
+```bash
+ssh -L 8765:127.0.0.1:8765 USER@SERVER
+```
+
+工作台提供六入口项目向导、canonical YAML、配置校验、doctor、真实 worker 启动、
+Decision Gate、结构化进度、完成当前任务后停止调度、恢复、只读回放和七阶段证据视图。
+APOE 当前页面会把 Stage 05 标为“科学停止”，同时把 Stage 06/07 显示为“软件已实现 /
+本次 run 未到达”。没有真实 `FinalCandidatePackage` 时，下单草案按钮保持禁用。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：

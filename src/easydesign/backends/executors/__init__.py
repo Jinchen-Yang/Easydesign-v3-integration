@@ -5,6 +5,7 @@ from .local_multi_gpu import (
     GpuResourceSnapshot,
     NvidiaSmiProbe,
     execute_on_devices,
+    ui_drain_requested,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "GpuResourceSnapshot",
     "NvidiaSmiProbe",
     "execute_on_devices",
+    "ui_drain_requested",
 ]

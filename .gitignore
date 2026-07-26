@@ -16,6 +16,7 @@ node_modules/
 test-results/
 playwright-report/
 .tmp-fixtures/
+*.tsbuildinfo
 
 # Environments and local configuration
 .venv/

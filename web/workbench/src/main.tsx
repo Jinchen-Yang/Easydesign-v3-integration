@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
 import { MolViewer } from "./MolViewer";
@@ -587,55 +587,159 @@ function NewDesign({
   projects: Project[];
   onCreated: (projectId: string) => Promise<void>;
 }) {
+  const wizardSteps = ["目标输入", "设计意图", "区域策略", "预算与资源", "检查并启动"];
+  const [activeStep, setActiveStep] = useState(1);
   const [source, setSource] = useState("pse");
   const [stage, setStage] = useState(2);
   const [projectId, setProjectId] = useState("new-design");
   const [sourceValue, setSourceValue] = useState("");
   const [inputFile, setInputFile] = useState<File>();
+  const [uploadReceipt, setUploadReceipt] = useState<{
+    upload_token: string;
+    filename: string;
+    size_bytes: number;
+    sha256: string;
+  }>();
+  const [uploadState, setUploadState] = useState<
+    "idle" | "uploading" | "uploaded" | "failed"
+  >("idle");
+  const [uploadMessage, setUploadMessage] = useState("");
+  const uploadSequence = useRef(0);
   const [taxonId, setTaxonId] = useState("9606");
   const [uniprotMode, setUniprotMode] = useState("accession");
   const [executionMode, setExecutionMode] = useState("review-gated");
+  const [designIntent, setDesignIntent] = useState("exploratory");
   const [stage02Method, setStage02Method] = useState("both");
   const [generatedYaml, setGeneratedYaml] = useState("");
   const [createdProject, setCreatedProject] = useState("");
   const [actionStatus, setActionStatus] = useState("");
+  const [preflightState, setPreflightState] = useState<
+    "idle" | "checking" | "passed" | "blocked" | "failed"
+  >("idle");
   const [busy, setBusy] = useState(false);
   const availableRuns = projects.flatMap((project) => project.runs);
+  const isLocalSource = ["pse", "local-file", "sequence"].includes(source);
+  const sourceReady = isLocalSource
+    ? uploadState === "uploaded" && Boolean(uploadReceipt)
+    : Boolean(sourceValue.trim());
+  const projectReady = Boolean(projectId.trim());
+  const intentNames: Record<string, string> = {
+    exploratory: "探索性设计",
+    blocking: "阻断",
+    nonblocking: "非阻断",
+    detection: "检测",
+    imaging: "成像",
+  };
+  const methodNames: Record<string, string> = {
+    both: "SASA 与 ScanNet 分别比较",
+    sasa: "SASA 表面区域",
+    scannet: "ScanNet 区域",
+  };
+  const stepStates = [
+    sourceReady && projectReady
+      ? "已填写"
+      : uploadState === "uploading"
+        ? "正在接收"
+        : "待填写",
+    "已设置",
+    stage < 2 ? "不运行" : "已设置",
+    "已设置",
+    preflightState === "passed"
+      ? "检查通过"
+      : createdProject
+        ? "等待检查"
+        : "等待生成草稿",
+  ];
   const previewYaml = useMemo(() => `schema_version: "0.7"
 project_id: ${projectId || "new-design"}
 design:
   binder_profile: vhh
-  intent: exploratory
+  intent: ${designIntent}
 workflow:
   execution_mode: ${executionMode}
   stop_after_stage: ${stage}
 stage01:
   target:
     source:
-      type: ${source === "pse" ? "local-file" : source}
-      ${source === "pse" ? "format: pse" : `value: "${sourceValue}"`}
-stage02:
+      type: ${isLocalSource ? "local-file" : source}
+      ${isLocalSource
+    ? `path: "inputs/${inputFile?.name || "尚未选择文件"}"\n      format: ${source === "pse" ? "pse" : "auto"}`
+    : `value: "${sourceValue}"`}
+stage02: ${stage < 2 ? "null" : `
   mode: ${source === "pse" ? "detect" : "automatic"}
-  methods: [${stage02Method === "both" ? "sasa, scannet" : stage02Method}]
+  methods: [${stage02Method === "both" ? "sasa, scannet" : stage02Method}]`}
 stage03: ${stage >= 3 ? "{profile: boltzgen-vhh-basic-v1}" : "null"}
 stage04: ${stage >= 4 ? "{backend: boltzgen-0.3.2}" : "null"}
 stage05: ${stage >= 5 ? "{filter_profile: nanobody-filter-standard-v1.5}" : "null"}
 stage06: ${stage >= 6 ? "{scale_profile: smoke-1000}" : "null"}
 stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
-`, [executionMode, projectId, source, sourceValue, stage, stage02Method]);
+`, [
+    designIntent,
+    executionMode,
+    inputFile?.name,
+    isLocalSource,
+    projectId,
+    source,
+    sourceValue,
+    stage,
+    stage02Method,
+  ]);
   const yaml = generatedYaml || previewYaml;
+
+  function selectSource(nextSource: string) {
+    if (createdProject) return;
+    setSource(nextSource);
+    setSourceValue("");
+    setInputFile(undefined);
+    setUploadReceipt(undefined);
+    setUploadState("idle");
+    setUploadMessage("");
+    uploadSequence.current += 1;
+  }
+
+  async function receiveInputFile(file?: File) {
+    const requestSequence = uploadSequence.current + 1;
+    uploadSequence.current = requestSequence;
+    setInputFile(file);
+    setUploadReceipt(undefined);
+    setUploadMessage("");
+    if (!file) {
+      setUploadState("idle");
+      return;
+    }
+    if (file.size > 64 * 1024 * 1024) {
+      setUploadState("failed");
+      setUploadMessage("文件超过 64 MiB 上限，请选择更小的输入文件。");
+      return;
+    }
+    setUploadState("uploading");
+    setUploadMessage("正在安全接收文件…");
+    try {
+      const receipt = await api.upload(file.name, await fileAsBase64(file));
+      if (uploadSequence.current !== requestSequence) return;
+      setUploadReceipt(receipt);
+      setUploadState("uploaded");
+      setUploadMessage(
+        `后端已接收 ${receipt.filename}（${humanBytes(receipt.size_bytes)}），可以继续查看或配置其他步骤。`,
+      );
+    } catch (value) {
+      if (uploadSequence.current !== requestSequence) return;
+      setUploadState("failed");
+      setUploadMessage(value instanceof Error ? value.message : "文件接收失败");
+    }
+  }
 
   async function createDraft() {
     setBusy(true);
-    setActionStatus("正在上传输入并生成标准配置…");
+    setActionStatus("正在生成标准项目配置…");
     try {
       let selectedValue = sourceValue.trim();
       let sourceType = source;
       let sourceRunKey: string | undefined;
-      if (["pse", "local-file", "sequence"].includes(source)) {
-        if (!inputFile) throw new Error("请选择本地输入文件");
-        const receipt = await api.upload(inputFile.name, await fileAsBase64(inputFile));
-        selectedValue = receipt.upload_token;
+      if (isLocalSource) {
+        if (uploadState === "uploading") throw new Error("文件仍在接收，请稍候");
+        if (!uploadReceipt) throw new Error("请先选择文件，并等待“后端已接收”的提示");
+        selectedValue = uploadReceipt.upload_token;
         sourceType = "local-file";
       } else if (source === "target-bundle") {
         const selectedRun = availableRuns.find((run) => run.run_key === sourceValue);
@@ -657,13 +761,16 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
         source_value: selectedValue,
         taxon_id: sourceType === "uniprot-search" ? Number(taxonId) : undefined,
         execution_mode: executionMode,
+        design_intent: designIntent,
         stop_after_stage: stage,
         stage02_method: stage02Method,
         source_run_key: sourceRunKey,
       });
       setCreatedProject(result.project_id);
       setGeneratedYaml(result.config);
-      setActionStatus("草稿已创建。下一步先校验 YAML 与运行环境。");
+      setActionStatus("草稿已创建。下一步先校验配置和本机运行环境。");
+      setPreflightState("idle");
+      setActiveStep(5);
       await onCreated(result.project_id);
     } catch (value) {
       setActionStatus(value instanceof Error ? value.message : "创建项目失败");
@@ -675,6 +782,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
   async function validateDraft() {
     if (!createdProject) return;
     setBusy(true);
+    setPreflightState("checking");
     setActionStatus("正在检查配置和运行环境…");
     try {
       await api.updateConfig(createdProject, generatedYaml);
@@ -685,7 +793,9 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
           ? "配置和所需工具检查通过，可以确认后开始真实运行。"
           : "配置有效，但当前运行所需工具尚未就绪。",
       );
+      setPreflightState(diagnostic.ok ? "passed" : "blocked");
     } catch (value) {
+      setPreflightState("failed");
       setActionStatus(value instanceof Error ? value.message : "校验失败");
     } finally {
       setBusy(false);
@@ -693,7 +803,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
   }
 
   async function launch() {
-    if (!createdProject) return;
+    if (!createdProject || preflightState !== "passed") return;
     setBusy(true);
     setActionStatus("正在完成启动前检查并创建独立任务…");
     try {
@@ -709,58 +819,147 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
 
   return (
     <div className="new-page">
-      <header className="page-heading compact"><div><p className="section-label">开始新的蛋白设计</p><h1>新建设计</h1><p>选择目标来源、结合区域方法和运行范围，系统会同步生成标准配置。</p></div></header>
+      <header className="page-heading compact"><div><p className="section-label">开始新的蛋白设计</p><h1>新建设计</h1><p>可以先查看任意步骤；只有最终检查和真实启动需要完整填写。</p></div></header>
       <div className="wizard">
-        <div className="wizard-steps">
-          {["目标输入", "设计意图", "区域策略", "预算与资源", "检查并启动"].map((item, i) => <div className={i === 0 ? "active" : ""} key={item}><span>{i + 1}</span><strong>{item}</strong></div>)}
+        <div className="wizard-steps" aria-label="新建设计步骤">
+          {wizardSteps.map((item, index) => (
+            <button
+              type="button"
+              className={`${activeStep === index + 1 ? "active" : ""} ${
+                ["已填写", "已设置", "检查通过"].includes(stepStates[index])
+                  ? "complete"
+                  : ""
+              }`}
+              key={item}
+              onClick={() => setActiveStep(index + 1)}
+              aria-current={activeStep === index + 1 ? "step" : undefined}
+            >
+              <span>{index + 1}</span>
+              <span><strong>{item}</strong><small>{stepStates[index]}</small></span>
+            </button>
+          ))}
         </div>
         <section className="wizard-form">
-          <p className="section-label">第一项 · 目标来源</p>
-          <h2>你的目标蛋白从哪里来？</h2>
-          <p>六种入口最终都会得到同一种规范目标结构包和 chain A 的 target.cif。</p>
-          <div className="two-field-row">
-            <label><span>项目名称</span><input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-            <label><span>运行方式</span><select value={executionMode} onChange={(event) => setExecutionMode(event.target.value)}><option value="review-gated">遇到科学选择时等待确认（推荐）</option><option value="unattended">按预设规则连续运行</option></select></label>
-          </div>
-          <div className="source-grid">
-            {[
-              ["pse", "PyMOL PSE", "读取单个目标和红、蓝、黄区域标注"],
-              ["local-file", "PDB / mmCIF", "本地实验结构与编号映射"],
-              ["sequence", "FASTA / 序列", "检索实验结构或使用 MSA 进行预测"],
-              ["pdb-id", "RCSB PDB ID", "下载指定实验结构"],
-              ["uniprot", "UniProt", "读取蛋白身份、注释和候选结构"],
-              ["target-bundle", "目标结构包", "复用已验证的上游结果"],
-            ].map(([id, title, copy]) => (
-              <button type="button" className={source === id ? "selected" : ""} onClick={() => setSource(id)} key={id}><span className="source-icon">{title.slice(0, 1)}</span><strong>{title}</strong><small>{copy}</small></button>
-            ))}
-          </div>
-          <label className="upload-field">
-            <span>输入文件、UniProt accession 或来源运行</span>
-            {["pse", "local-file", "sequence"].includes(source) ? (
-              <div><input type="text" readOnly value={inputFile?.name || ""} placeholder="尚未选择文件" /><label className="file-button">浏览…<input type="file" onChange={(event) => setInputFile(event.target.files?.[0])} /></label></div>
-            ) : source === "target-bundle" ? (
-              <select value={sourceValue} onChange={(event) => setSourceValue(event.target.value)}>
-                <option value="">选择一次已有运行</option>
-                {availableRuns.map((run) => <option key={run.run_key} value={run.run_key}>{run.project_id} / {run.run_id}</option>)}
-              </select>
-            ) : (
-              <div><input value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder={source === "pdb-id" ? "例如 1UBQ" : uniprotMode === "search" ? "例如 EGFR" : "例如 P00533"} /></div>
-            )}
-          </label>
-          {source === "uniprot" && <div className="two-field-row"><label><span>UniProt 查找方式</span><select value={uniprotMode} onChange={(event) => setUniprotMode(event.target.value)}><option value="accession">精确 accession</option><option value="search">按名称或基因名搜索</option></select></label>{uniprotMode === "search" && <label><span>物种编号</span><input value={taxonId} onChange={(event) => setTaxonId(event.target.value)} /></label>}</div>}
-          <label className="upload-field"><span>第2步区域选择方法</span><select value={stage02Method} onChange={(event) => setStage02Method(event.target.value)}><option value="both">SASA + ScanNet（分别比较）</option><option value="sasa">SASA</option><option value="scannet">ScanNet</option></select></label>
-          <div className="stage-budget"><span>运行到第几步</span>{[1,2,3,4,5,6,7].map((value) => <button className={stage === value ? "active" : ""} type="button" onClick={() => setStage(value)} key={value}>{value}</button>)}</div>
-          {actionStatus && <div className="form-status">{actionStatus}</div>}
+          {activeStep === 1 && (
+            <>
+              <p className="section-label">第一项 · 目标来源</p>
+              <h2>你的目标蛋白从哪里来？</h2>
+              <p>六种入口最终都会得到同一种规范目标结构包和 chain A 的 target.cif。</p>
+              <label className="wide-field"><span>项目名称</span><input value={projectId} disabled={Boolean(createdProject)} onChange={(event) => setProjectId(event.target.value)} /></label>
+              <div className="source-grid">
+                {[
+                  ["pse", "PyMOL PSE", "读取单个目标和红、蓝、黄区域标注"],
+                  ["local-file", "PDB / mmCIF", "本地实验结构与编号映射"],
+                  ["sequence", "FASTA / 序列", "检索实验结构或使用 MSA 进行预测"],
+                  ["pdb-id", "RCSB PDB ID", "下载指定实验结构"],
+                  ["uniprot", "UniProt", "读取蛋白身份、注释和候选结构"],
+                  ["target-bundle", "目标结构包", "复用已验证的上游结果"],
+                ].map(([id, title, copy]) => (
+                  <button type="button" disabled={Boolean(createdProject)} className={source === id ? "selected" : ""} onClick={() => selectSource(id)} key={id}><span className="source-icon">{title.slice(0, 1)}</span><strong>{title}</strong><small>{copy}</small></button>
+                ))}
+              </div>
+              <label className="upload-field">
+                <span>目标输入</span>
+                {isLocalSource ? (
+                  <>
+                    <div><input type="text" readOnly value={inputFile?.name || ""} placeholder="尚未选择文件" /><label className={`file-button ${createdProject ? "disabled" : ""}`}>浏览…<input aria-label="选择本地文件" type="file" disabled={Boolean(createdProject)} onChange={(event) => void receiveInputFile(event.target.files?.[0])} /></label></div>
+                    <div className={`upload-receipt upload-${uploadState}`} role="status">
+                      <span className="upload-state-mark" />
+                      <div>
+                        <strong>{uploadState === "uploaded" ? "文件已接收" : uploadState === "uploading" ? "正在接收文件" : uploadState === "failed" ? "文件接收失败" : "尚未选择文件"}</strong>
+                        <small>{uploadMessage || "选择文件后会立即传给本地 EasyDesign 服务，并显示大小和完整性摘要。"}</small>
+                        {uploadReceipt && <code>SHA-256 {uploadReceipt.sha256.slice(0, 12)}…</code>}
+                      </div>
+                    </div>
+                  </>
+                ) : source === "target-bundle" ? (
+                  <select value={sourceValue} disabled={Boolean(createdProject)} onChange={(event) => setSourceValue(event.target.value)}>
+                    <option value="">选择一次已有运行</option>
+                    {availableRuns.map((run) => <option key={run.run_key} value={run.run_key}>{run.project_id} / {run.run_id}</option>)}
+                  </select>
+                ) : (
+                  <div><input value={sourceValue} disabled={Boolean(createdProject)} onChange={(event) => setSourceValue(event.target.value)} placeholder={source === "pdb-id" ? "例如 1UBQ" : uniprotMode === "search" ? "例如 EGFR" : "例如 P00533"} /></div>
+                )}
+              </label>
+              {source === "uniprot" && <div className="two-field-row"><label><span>UniProt 查找方式</span><select value={uniprotMode} disabled={Boolean(createdProject)} onChange={(event) => setUniprotMode(event.target.value)}><option value="accession">精确 accession</option><option value="search">按名称或基因名搜索</option></select></label>{uniprotMode === "search" && <label><span>物种编号</span><input value={taxonId} disabled={Boolean(createdProject)} onChange={(event) => setTaxonId(event.target.value)} /></label>}</div>}
+            </>
+          )}
+          {activeStep === 2 && (
+            <>
+              <p className="section-label">第二项 · 设计目标</p>
+              <h2>你希望这个 binder 做什么？</h2>
+              <p>这里描述设计意图，不会替代后续科学筛选。EasyDesign 1.0 先提供 VHH 主线。</p>
+              <div className="binder-choice">
+                <button type="button" className="selected"><strong>VHH / Nanobody</strong><small>1.0 已实现的参考主线</small></button>
+                <button type="button" disabled><strong>蛋白 Binder</strong><small>后续版本</small></button>
+                <button type="button" disabled><strong>肽 Binder</strong><small>后续版本</small></button>
+              </div>
+              <label className="wide-field"><span>设计意图</span><select value={designIntent} disabled={Boolean(createdProject)} onChange={(event) => setDesignIntent(event.target.value)}><option value="exploratory">探索性设计</option><option value="blocking">阻断</option><option value="nonblocking">非阻断</option><option value="detection">检测</option><option value="imaging">成像</option></select></label>
+              <label className="wide-field"><span>遇到科学选择时</span><select value={executionMode} disabled={Boolean(createdProject)} onChange={(event) => setExecutionMode(event.target.value)}><option value="review-gated">暂停并等待人工确认（推荐）</option><option value="unattended">按已配置的确定规则连续运行</option></select></label>
+              <div className="notice"><strong>当前选择</strong><span>VHH · {intentNames[designIntent]} · {executionMode === "review-gated" ? "需要时等待确认" : "连续运行"}</span></div>
+            </>
+          )}
+          {activeStep === 3 && (
+            <>
+              <p className="section-label">第三项 · 结合区域</p>
+              <h2>第2步怎样得到设计区域？</h2>
+              <p>区域来源会保留证据和编号映射。自动方法彼此独立，不会生成隐藏的融合赢家。</p>
+              {source === "pse" && <div className="notice"><strong>先检查 PSE 染色</strong><span>发现标准红、蓝、黄色时作为用户区域；没有标准色时再运行下面选择的自动方法。</span></div>}
+              <div className="method-choice">
+                {[
+                  ["both", "SASA 与 ScanNet", "分别计算和比较，等待人工选择"],
+                  ["sasa", "SASA", "表面暴露度和三维连通区域"],
+                  ["scannet", "ScanNet", "独立的逐残基 epitope 分数"],
+                ].map(([id, title, copy]) => <button type="button" disabled={Boolean(createdProject)} className={stage02Method === id ? "selected" : ""} onClick={() => setStage02Method(id)} key={id}><strong>{title}</strong><small>{copy}</small></button>)}
+              </div>
+              {executionMode === "unattended" && stage02Method === "both" && <div className="notice error"><strong>需要调整</strong><span>连续运行必须选择一种区域方法；两种方法比较需要人工确认。</span></div>}
+            </>
+          )}
+          {activeStep === 4 && (
+            <>
+              <p className="section-label">第四项 · 运行范围</p>
+              <h2>这次准备运行到哪一步？</h2>
+              <p>可以先查看全部范围。真正启动前，系统会按所选步骤检查环境、GPU、模型和磁盘。</p>
+              <div className="stage-budget"><span>运行到第几步</span>{[1,2,3,4,5,6,7].map((value) => <button className={stage === value ? "active" : ""} disabled={Boolean(createdProject)} type="button" onClick={() => setStage(value)} key={value}>{value}</button>)}</div>
+              <div className="budget-summary">
+                <article><span>第3步基础方案</span><strong>区域 × 7 个 VHH scaffold</strong><small>每个策略 40 个小规模候选</small></article>
+                <article><span>第4步小规模生成</span><strong>双 GPU 可恢复运行</strong><small>实际任务量由区域数量决定</small></article>
+                <article><span>第6步规模化</span><strong>smoke-1000</strong><small>只有第5步选出唯一策略后才会到达</small></article>
+              </div>
+              <div className="notice"><strong>本次范围</strong><span>运行到第 {stage} 步：{stageNames[stage - 1]}</span></div>
+            </>
+          )}
+          {activeStep === 5 && (
+            <>
+              <p className="section-label">第五项 · 启动前检查</p>
+              <h2>确认输入、配置和运行环境</h2>
+              <p>浏览步骤不需要提前填完；从这里开始才统一判断哪些内容会阻止创建或启动。</p>
+              <div className="readiness-list">
+                <div className={sourceReady && projectReady ? "ready" : "missing"}><span>{sourceReady && projectReady ? "✓" : "!"}</span><div><strong>目标输入</strong><small>{sourceReady ? (uploadReceipt?.filename || sourceValue || "来源运行已选择") : "尚未形成可用输入"}{!projectReady ? "；项目名称为空" : ""}</small></div><button type="button" onClick={() => setActiveStep(1)}>查看</button></div>
+                <div className="ready"><span>✓</span><div><strong>设计意图</strong><small>VHH · {intentNames[designIntent]} · {executionMode === "review-gated" ? "等待确认模式" : "连续运行模式"}</small></div><button type="button" onClick={() => setActiveStep(2)}>查看</button></div>
+                <div className={executionMode === "unattended" && stage02Method === "both" ? "missing" : "ready"}><span>{executionMode === "unattended" && stage02Method === "both" ? "!" : "✓"}</span><div><strong>区域策略</strong><small>{methodNames[stage02Method]}</small></div><button type="button" onClick={() => setActiveStep(3)}>查看</button></div>
+                <div className="ready"><span>✓</span><div><strong>运行范围</strong><small>运行到第 {stage} 步</small></div><button type="button" onClick={() => setActiveStep(4)}>查看</button></div>
+              </div>
+              {createdProject && <div className="notice"><strong>项目草稿已创建</strong><span>{createdProject}。目标输入已复制到项目，若要更换目标请新建另一个设计。</span></div>}
+              {actionStatus && <div className={`form-status ${preflightState === "failed" || preflightState === "blocked" ? "error" : ""}`}>{actionStatus}</div>}
+              <div className="launch-actions">
+                <button className="secondary-button" onClick={createDraft} disabled={busy || Boolean(createdProject) || !sourceReady || !projectReady || (executionMode === "unattended" && stage02Method === "both")}>{busy && !createdProject ? "正在生成…" : "1. 生成项目草稿"}</button>
+                <button className="secondary-button" onClick={validateDraft} disabled={busy || !createdProject}>{preflightState === "checking" ? "正在检查…" : "2. 检查配置与环境"}</button>
+                <button className="primary-button" onClick={launch} disabled={busy || !createdProject || preflightState !== "passed"}>3. 确认并真实启动 →</button>
+              </div>
+              <p className="launch-help">{!sourceReady ? "请先在“目标输入”选择并等待文件接收完成。" : !createdProject ? "输入已就绪，可以生成项目草稿。" : preflightState !== "passed" ? "项目草稿已建立；检查通过后才会开放真实启动。" : "全部检查通过。点击启动会创建新的、可恢复的运行任务。"}</p>
+            </>
+          )}
           <div className="wizard-actions">
-            <button className="secondary-button" onClick={createDraft} disabled={busy || Boolean(createdProject)}>生成项目草稿</button>
-            <button className="secondary-button" onClick={validateDraft} disabled={busy || !createdProject}>检查配置与环境</button>
-            <button className="primary-button" onClick={launch} disabled={busy || !createdProject}>确认并真实启动 →</button>
+            <button className="secondary-button" type="button" disabled={activeStep === 1} onClick={() => setActiveStep((value) => Math.max(1, value - 1))}>← 上一步</button>
+            <span>第 {activeStep} / 5 项</span>
+            <button className="secondary-button" type="button" disabled={activeStep === 5} onClick={() => setActiveStep((value) => Math.min(5, value + 1))}>下一步 →</button>
           </div>
         </section>
         <aside className="yaml-preview">
           <div><span>标准 YAML 配置预览</span><b>schema 0.7</b></div>
           {createdProject
-            ? <textarea aria-label="Canonical YAML" value={generatedYaml} onChange={(event) => setGeneratedYaml(event.target.value)} />
+            ? <textarea aria-label="Canonical YAML" value={generatedYaml} onChange={(event) => { setGeneratedYaml(event.target.value); setPreflightState("idle"); }} />
             : <pre>{yaml}</pre>}
           <p>最终配置由 EasyDesign 生成并再次检查；右侧为专家可编辑视图。</p>
         </aside>

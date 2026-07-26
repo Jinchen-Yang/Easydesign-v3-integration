@@ -168,6 +168,66 @@ const candidateItems = Array.from({ length: 50 }, (_, index) => ({
 async function mockApi(page: Page) {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/uploads" && route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          upload_token: "upload-fixture",
+          filename: "target.pse",
+          size_bytes: 18,
+          sha256: "a".repeat(64),
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/projects" && route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          project_id: "new-design",
+          config: [
+            'schema_version: "0.7"',
+            "project_id: new-design",
+            "design:",
+            "  binder_profile: vhh",
+            "  intent: exploratory",
+            "workflow:",
+            "  execution_mode: review-gated",
+            "  stop_after_stage: 2",
+            "stage01:",
+            "  target:",
+            "    source:",
+            "      type: local-file",
+            "      path: inputs/target.pse",
+            "stage02:",
+            "  mode: detect",
+          ].join("\n"),
+          status: "draft",
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/config") && route.request().method() === "PUT") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ status: "valid", plan: {} }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/preflight") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ plan: {}, diagnostic: { ok: true } }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/jobs" && route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ job_id: "job-fixture", status: "queued" }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/projects") {
       await route.fulfill({
         contentType: "application/json",
@@ -430,4 +490,40 @@ test("new design exposes six entry classes and standard YAML", async ({ page }) 
   }
   await expect(page.getByText("标准 YAML 配置预览")).toBeVisible();
   await expect(page.getByText('schema_version: "0.7"')).toBeVisible();
+});
+
+test("new design steps are freely browsable and file receipt unlocks final checks", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+
+  await page.getByRole("button", { name: /预算与资源/ }).click();
+  await expect(page.getByRole("heading", { name: "这次准备运行到哪一步？" })).toBeVisible();
+  await page.getByRole("button", { name: /设计意图/ }).click();
+  await expect(page.getByRole("heading", { name: "你希望这个 binder 做什么？" })).toBeVisible();
+  await page.getByRole("button", { name: /目标输入/ }).click();
+
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await expect(page.getByText("文件已接收", { exact: true })).toBeVisible();
+  await expect(page.getByText(/后端已接收 target\.pse/)).toBeVisible();
+  await expect(page.getByText('path: "inputs/target.pse"')).toBeVisible();
+
+  await page.getByRole("button", { name: /检查并启动/ }).click();
+  const createDraft = page.getByRole("button", { name: "1. 生成项目草稿" });
+  const validate = page.getByRole("button", { name: "2. 检查配置与环境" });
+  const launch = page.getByRole("button", { name: "3. 确认并真实启动 →" });
+  await expect(createDraft).toBeEnabled();
+  await expect(validate).toBeDisabled();
+  await expect(launch).toBeDisabled();
+
+  await createDraft.click();
+  await expect(page.getByText(/草稿已创建/).first()).toBeVisible();
+  await expect(validate).toBeEnabled();
+  await expect(launch).toBeDisabled();
+  await validate.click();
+  await expect(page.getByText(/配置和所需工具检查通过/)).toBeVisible();
+  await expect(launch).toBeEnabled();
 });

@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev8`（包版本 `0.1.0.dev8`）
+- 当前版本：`0.1.0-dev9`（包版本 `0.1.0.dev9`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -34,7 +34,7 @@ python -m pip install -e ".[dev,ui]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev8-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev9-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -133,6 +133,11 @@ ssh -L 8765:127.0.0.1:8765 USER@SERVER
 项目向导、标准 YAML、配置与环境检查、真实任务启动、人工确认、结构化进度、完成当前
 任务后停止调度、恢复、只读回放和七阶段结果视图。内部运行编号、代码身份、hash 与原始
 输出只进入单次运行的“技术记录”。
+
+“新建设计”的目标输入、设计意图、区域策略、预算与资源、检查并启动五项可以自由切换，
+不要求先填完第一项才能阅读后续内容。选择本地 PSE、PDB/mmCIF 或 FASTA 后，页面会立即
+显示“正在接收 / 文件已接收 / 接收失败”和文件大小、SHA-256 摘要；只有最终生成草稿、
+环境检查和真实启动按顺序受完整性门槛约束。
 
 APOE 当前页面会把第5步标为“未达到继续条件”，并提供 840 个小规模候选、21 个策略、
 100 个扩展候选和 10 个 Protenix 复核候选的分页分析；第6/7步同时显示“软件能力已实现 /

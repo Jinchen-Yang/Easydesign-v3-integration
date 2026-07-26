@@ -30,6 +30,7 @@ from easydesign.core import (
     PathPolicyError,
     canonical_model_sha256,
 )
+from easydesign.core.hashing import sha256_bytes
 from easydesign.orchestration import (
     approve_hotspots,
     diagnose_runtime,
@@ -78,6 +79,7 @@ class UploadReceipt(BaseModel):
     upload_token: str
     filename: str
     size_bytes: int
+    sha256: str
 
 
 class ProjectCreateRequest(BaseModel):
@@ -90,6 +92,7 @@ class ProjectCreateRequest(BaseModel):
     taxon_id: int | None = None
     chain: str | None = None
     execution_mode: str = "review-gated"
+    design_intent: str = "exploratory"
     stop_after_stage: int = Field(default=1, ge=1, le=7)
     stage02_method: str | None = None
     source_run_key: str | None = None
@@ -316,11 +319,28 @@ def create_ui_app(
             raise HTTPException(status_code=400, detail="上传内容不是合法 base64") from error
         if len(content) > 64 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
+        if not content:
+            raise HTTPException(status_code=400, detail="不能上传空文件")
         token = f"upload-{uuid4().hex}"
-        target = service.upload_root / f"{token}-{filename}"
-        target.write_bytes(content)
+        upload_directory = service.upload_root / token
+        upload_directory.mkdir()
+        target = upload_directory / filename
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=upload_directory,
+            prefix=".receiving-",
+            delete=False,
+        ) as handle:
+            handle.write(content)
+            temporary = Path(handle.name)
+        temporary.replace(target)
         service.uploads[token] = target
-        return UploadReceipt(upload_token=token, filename=filename, size_bytes=len(content))
+        return UploadReceipt(
+            upload_token=token,
+            filename=filename,
+            size_bytes=len(content),
+            sha256=sha256_bytes(content),
+        )
 
     @app.post("/api/v1/projects")
     def initialize(payload: ProjectCreateRequest, request: Request) -> dict[str, Any]:
@@ -332,12 +352,15 @@ def create_ui_app(
                 "project_id": payload.project_id,
                 "target_id": payload.target_id,
                 "execution_mode": payload.execution_mode,
+                "design_intent": payload.design_intent,
                 "stop_after_stage": payload.stop_after_stage,
                 "stage02_method": payload.stage02_method,
             }
+            uploaded_source: Path | None = None
             if payload.source_type == "local-file":
                 try:
-                    kwargs["target"] = service.uploads[source_value]
+                    uploaded_source = service.uploads[source_value]
+                    kwargs["target"] = uploaded_source
                 except KeyError as error:
                     raise ConfigurationError("未知或已失效的 upload token") from error
             elif payload.source_type == "pdb-id":
@@ -368,6 +391,14 @@ def create_ui_app(
             else:
                 raise ConfigurationError(f"不支持的 source_type: {payload.source_type}")
             outcome = initialize_project(**kwargs)
+            if uploaded_source is not None:
+                service.uploads.pop(source_value, None)
+                try:
+                    uploaded_source.unlink(missing_ok=True)
+                    uploaded_source.parent.rmdir()
+                except OSError:
+                    # 项目已成功创建；临时文件清理失败不能把成功响应改写成失败。
+                    pass
             return {
                 "project_id": payload.project_id,
                 "config": outcome.config_path.read_text(encoding="utf-8"),

@@ -139,7 +139,12 @@ export const api = {
       method: "POST",
     }),
   upload: (filename: string, contentBase64: string) =>
-    request<{ upload_token: string }>("/api/v1/uploads", {
+    request<{
+      upload_token: string;
+      filename: string;
+      size_bytes: number;
+      sha256: string;
+    }>("/api/v1/uploads", {
       method: "POST",
       body: JSON.stringify({ filename, content_base64: contentBase64 }),
     }),

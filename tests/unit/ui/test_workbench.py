@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -606,3 +608,65 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
     artifact_path.write_text("tampered", encoding="utf-8")
     with TestClient(app) as client:
         assert client.get(f"/api/v1/artifacts/{token}").status_code == 400
+
+
+def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "jobs",
+    )
+    content = b">target\nACDEFGHIKLMNPQRSTVWY\n"
+    with TestClient(app) as client:
+        receipt_response = client.post(
+            "/api/v1/uploads",
+            json={
+                "filename": "target.fasta",
+                "content_base64": base64.b64encode(content).decode("ascii"),
+            },
+        )
+        assert receipt_response.status_code == 200
+        receipt = receipt_response.json()
+        assert receipt["filename"] == "target.fasta"
+        assert receipt["size_bytes"] == len(content)
+        assert receipt["sha256"] == hashlib.sha256(content).hexdigest()
+
+        project_response = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "target-demo",
+                "source_type": "local-file",
+                "source_value": receipt["upload_token"],
+                "execution_mode": "review-gated",
+                "design_intent": "detection",
+                "stop_after_stage": 1,
+            },
+        )
+        assert project_response.status_code == 200
+        config = project_response.json()["config"]
+        assert "intent: detection" in config
+        assert "path: inputs/target.fasta" in config
+        assert (
+            tmp_path / "projects" / "target-demo" / "inputs" / "target.fasta"
+        ).read_bytes() == content
+
+        reused = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "target-demo-reused",
+                "source_type": "local-file",
+                "source_value": receipt["upload_token"],
+                "stop_after_stage": 1,
+            },
+        )
+        assert reused.status_code == 400
+        assert "已失效" in reused.json()["detail"]
+
+        empty = client.post(
+            "/api/v1/uploads",
+            json={"filename": "empty.pse", "content_base64": ""},
+        )
+        assert empty.status_code == 400
+        assert "空文件" in empty.json()["detail"]

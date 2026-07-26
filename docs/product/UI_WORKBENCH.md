@@ -168,3 +168,18 @@ GET /api/v1/runs/{run}/stages/6/execution
 - 第4步现有 APOE 运行无需重跑，即可从结构化任务记录恢复 GPU 0 的 11 个策略/
   440 个候选/14 attempts 与 GPU 1 的 10 个策略/400 个候选/14 attempts。
 - 未改变 Stage 05 门槛、APOE `stopped-no-scale-winner` 结论或任何历史运行记录。
+
+## UI-007 / ENG-012 新建设计向导
+
+- 版本：`0.1.0.dev9`。
+- 顶部“目标输入 / 设计意图 / 区域策略 / 预算与资源 / 检查并启动”都是可点击的真实
+  页面，不以第一项完成度阻止浏览；每项同时显示待填写、正在接收、已设置或检查通过。
+- 第2项明确展示当前 1.0 的 VHH profile、blocking/nonblocking/detection/imaging/
+  exploratory 意图和 review-gated/unattended 运行方式；第3项解释 PSE 染色检测与
+  SASA/ScanNet 的独立关系；第4项解释 Stage 03/04/06 的默认预算和到达条件。
+- 本地文件选择会立即传给 localhost gateway。界面只有在后端返回文件名、大小和
+  SHA-256 receipt 后才显示“文件已接收”；失败、超限、空文件和重选都有独立状态。
+- 第5项集中显示输入、意图、区域和范围 readiness；“生成项目草稿 → 检查配置与环境 →
+  确认并真实启动”按顺序解锁，并在按钮下直接说明当前未开放的原因。
+- 草稿创建后目标输入冻结，避免浏览器选择与已复制到项目中的事实来源发生漂移；专家
+  修改 canonical YAML 后必须重新执行 preflight。

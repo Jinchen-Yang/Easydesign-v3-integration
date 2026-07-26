@@ -339,3 +339,31 @@
 - 提交：`daf833a5cc0d4650cd8db512ddd3bfaceb5b7fbd`
   （`fix(ui): surface evidence and historical execution`）；本条治理提交以远端 `main`
   最终核对 SHA 为准。
+
+## 2026-07-26 — UI-007 / ENG-012：非线性新建设计与文件接收状态
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-26T22:21:15+08:00
+- 问题：新建设计把五项画成步骤轨道，却只有第一项可见，使用者必须先猜完目标输入才能
+  阅读后续设计意图、区域策略和预算；浏览器选中文件后又只显示本地文件名，没有告诉
+  使用者后端是否真正收到，草稿、环境检查和真实启动的禁用原因也不清楚。
+- 方案：改为五项可任意切换的非线性向导，每项显示待填写、正在接收、已填写、已设置或
+  检查通过；完整性集中在第五项解释。文件选择立即调用 localhost upload API，后端原子
+  写入受控 token 目录并返回 basename、大小和 SHA-256；只有 receipt 成功才把输入标记
+  为可用，草稿创建后单次消费 token 并冻结输入。
+- 产品证据：使用者可以在没有目标文件时直接查看第2、3、4、5项；选择 PSE、PDB/mmCIF
+  或 FASTA 后能看到正在接收、成功或失败，且标准 YAML 立即显示
+  `inputs/<filename>`。草稿、配置/环境检查、真实启动按 `未开放 → 可用` 顺序变化，
+  每个未开放状态都提供中文原因和返回对应项目的入口。
+- 验证：Python 3.11 repository check、237 passed/8 skipped、dev9 wheel/console
+  script/package data 均通过；Workbench 在 1440×900 和 1920×1080 Chromium 共
+  20/20 通过，其中真实 File API 用例覆盖自由切换、上传 receipt、草稿、preflight 和
+  启动按钮解锁。后端单元测试覆盖 SHA-256、原文件名复制、token 单次消费及空文件拒绝。
+- 遇到的问题：首次尝试在 Proteindigger1 直接调用 `/usr/bin/chromium-browser` 时命中
+  失效的 Snap wrapper；这不是页面失败，也没有用它冒充 Linux 浏览器通过。
+- 解决：产品交互和双尺寸浏览器回归使用仓库固定的 Playwright Chromium；Python gateway、
+  完整构建和 wheel 在 Proteindigger1 的 Python 3.11 环境独立复验，并保留 Linux
+  浏览器路径为运行环境问题。
+- 遗留问题：UI-002 仍需在下一条可继续的真实科学 run 上验证长任务启动、确认、drain
+  和 resume；当前任务只完成向导和输入接收，不把模拟 preflight 视作长任务 smoke。
+- 提交：本条功能提交将在 Git 提交完成后追加完整 SHA；最终状态以远端 `main` 核对为准。

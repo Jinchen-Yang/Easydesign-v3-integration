@@ -142,6 +142,7 @@ def initialize_project(
     stop_after_stage: int = 1,
     stage02_method: str | None = None,
     execution_mode: str = "review-gated",
+    design_intent: str = "exploratory",
     scope_range: tuple[int, int] | None = None,
     scope_feature_type: str | None = None,
     scope_feature_name: str | None = None,
@@ -154,6 +155,16 @@ def initialize_project(
         raise ConfigurationError("Developer Preview init 只支持 --stop-after 1 到 7")
     if execution_mode not in {"review-gated", "unattended"}:
         raise ConfigurationError("--execution-mode 必须是 review-gated 或 unattended")
+    if design_intent not in {
+        "blocking",
+        "nonblocking",
+        "detection",
+        "imaging",
+        "exploratory",
+    }:
+        raise ConfigurationError(
+            "design_intent 必须是 blocking、nonblocking、detection、imaging 或 exploratory"
+        )
     if chain_namespace not in {"auth", "label"}:
         raise ConfigurationError("--chain-namespace 必须是 auth 或 label")
     if scope_range is not None and scope_feature_type is not None:
@@ -327,7 +338,7 @@ def initialize_project(
         "project_id": selected_project_id,
         "design": {
             "binder_profile": "vhh",
-            "intent": "exploratory",
+            "intent": design_intent,
             "required_reviews": [],
         },
         "workflow": {

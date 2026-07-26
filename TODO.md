@@ -22,7 +22,7 @@
 | M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | M8 Stage 03 基础策略编译 | `smoke-validated` | schema 0.7、通用 region×official VHH7 策略、固定 scaffold 资产和 BoltzGen 0.3.2 官方校验已完成；APOE 21/21 通过。 |
 | M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 已在 Stage 05 合法科学停止。 |
-| M10 产品级科研工作台 | `smoke-validated` | dev8 工作台已完成统一浅色结构工作区、Stage 04/06 实时/历史执行投影和 Stage 05 证据优先分析；真实 APOE、双尺寸 Chromium 与 Firefox smoke 通过。 |
+| M10 产品级科研工作台 | `smoke-validated` | dev9 工作台已完成统一浅色结构工作区、执行/筛选证据和可自由浏览的新建设计向导；文件接收、草稿、检查与启动状态边界通过双尺寸 Chromium 和 Python API 验收。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -37,7 +37,7 @@
 | `ENG` | Core Engineering | `smoke-validated` | ENG-002/004/005/006/007 已建立代码身份、时间戳、ensemble、联网证据、Decision Gate 与六入口共享 dispatcher。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-008：Stage 04–06 通用任务、进度、事件与恢复执行器；[架构](docs/ARCHITECTURE.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–004 已提供可安装 CLI、六入口 init、显式 MSA 策略、doctor、双模式运行、decision resume、runs 与 Viewer。 | 让真实能力通过一个稳定入口使用。 | 下一步随 Stage 03 增加配置生成与审批 UX；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
-| `UI` | Product UI | `smoke-validated` | dev8 本地科研工作台已统一浅色结构工作区，并以证据优先方式呈现策略、候选、结构和科学停止。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `UI` | Product UI | `smoke-validated` | dev9 本地科研工作台已统一结构/筛选证据，并以非线性五步向导连接输入、配置、检查和真实启动。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002 已固定 VHH7；DATA-003 的 TNP fixed-source/isolated-runtime 与真实 batch smoke 已通过，模型和重型依赖继续 runtime-only。 | 确保 scaffold、模型、fixture 的来源与权利可审计。 | 在公开发布前复审 TNP 完整依赖、NanoBodyBuilder2 模型下载来源和再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
@@ -71,6 +71,8 @@
 | `UI-005` | Product UI | `smoke-validated` | Stage 05 已默认展示 21 个策略、Tier、12 个初筛候选、10 个 Protenix 结果，再说明科学停止。 |
 | `UI-006` | Product UI | `smoke-validated` | 统一浅色 Mol* 工作区与证据优先 Stage 05 已通过 1440/1920 视觉回归及真实 APOE 浏览器验收。 |
 | `ENG-011` | Core Engineering | `smoke-validated` | Stage 04/06 统一 execution API 已覆盖实时 SSE 和历史重建；APOE 840 候选双 GPU 记录恢复准确。 |
+| `UI-007` | Product UI | `smoke-validated` | 五步向导可自由浏览并显示逐步 readiness；草稿、环境检查和真实启动只在各自边界按顺序解锁。 |
+| `ENG-012` | Core Engineering | `smoke-validated` | 本地文件立即原子接收并返回 filename/size/SHA-256 receipt；token 单次消费、空文件/超限/失败/重选均有明确处置。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
 ### 通用决策门路线

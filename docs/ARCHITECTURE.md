@@ -654,6 +654,14 @@ SSH 端口转发访问。Mol* 5.11.0 官方预构建 bundle 初始化需要动�
 构建产物作为 Python package data 随 wheel 分发。Node.js 只用于前端构建和 Playwright
 测试，不进入 EasyDesign 科学运行时。远程服务器只能通过 SSH 端口转发访问。
 
+新建设计采用非线性五步向导：步骤切换只改变表单投影，不执行科学逻辑，也不以前序字段
+是否完整限制用户阅读后续配置；完整性只在创建项目草稿、preflight 和真实启动三个动作
+边界统一判断。浏览器选择本地文件后立即调用同源 `/api/v1/uploads`，服务把最多
+64 MiB 的内容原子写入受控 `.ui-uploads/<token>/`，返回不含机器路径的 token、原始
+basename、大小和 SHA-256。项目初始化只能消费当前服务签发的 token，成功复制到
+`PROJECT/inputs/` 后使 token 失效并尽力清理临时副本。前端文件名本身不代表上传成功；
+只有收到后端 receipt 才能将目标输入标记为就绪。
+
 浏览器读取的是服务端从当前 RunManifest → StageManifest → ArtifactRef 生成的安全
 projection。服务在投影和下载时重新校验 artifact 大小与 SHA-256；短期 HMAC token
 只携带 run key、相对路径、大小、hash 和过期时间，不向浏览器暴露机器绝对路径。

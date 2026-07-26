@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 完成全仓质量门和实现提交；APOE 只在 Stage 04–06 上游门通过后运行。 | APOE 验收依赖 Stage 04/05/06；当前实现不能提前宣称真实 Stage 07 smoke。 | 2026-07-26 |
+| `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 |
 
 ## 当前结论
 
@@ -35,25 +35,24 @@
 | 90/10 lazy-greedy 主备选择 | `implemented` | quality/diversity/tie 与不足 40 不补齐测试 |
 | 可恢复进度、事件与 operational failure | `implemented` | 原子 state、append-only 日志、非发布 failure 测试 |
 | 非 APOE 1000-candidate 完整集成 | `implemented` | Stage 03→07 fixture，三 seed、TNP、2 primary |
-| APOE Stage 07 真实运行 | `planned` | 依赖 Stage 04 840、Stage 05 winner 与 Stage 06 新 1000 |
+| APOE Stage 07 真实运行 | `planned` | 本轮明确未运行：Stage 05 `stopped-no-scale-winner`，因此没有合法 Stage 06 ScaleBundle |
 | 真实 production-50000 候选包 | `planned` | 50k 本轮没有运行授权 |
 
 ## Now
 
-- Stage 07 不占用顶层 `Now`；顶层仍只跟踪正在运行的 `[S04-001]`。
-- 形成独立功能提交、追加带完整 SHA 的 history，并核对 GitHub `main`。
+- 无。Stage 07 通用实现与 TNP backend smoke 已冻结，本轮 APOE 未到达本阶段。
 
 ## Next
 
-- Stage 04 840 个候选发布后运行 APOE Stage 05。
-- 只有 Stage 05 发布唯一 winner 才运行 Stage 06 新 1000。
-- APOE 到达 Stage 07 后，按冻结 v1.5 规则产生真实非空或空
+- 新的真实 target 只有在 Stage 05 发布唯一 winner 并完成 Stage 06 新 1000 后，才按
+  冻结 v1.5 规则产生真实非空或空
   `smoke-review-package`，不修改门槛迎合结果。
 - 增加第二条独立真实 target、正式候选 review gate、湿实验反馈和阈值校准。
 
 ## Blocked
 
-- APOE Stage 07 真实验收依赖 Stage 04/05/06 顺序完成，不是 Stage 07 代码阻塞。
+- APOE 在 Stage 05 的 scientific stop 是终态，不列作 Stage 07 operational blocker；
+  本轮不允许绕过它。
 - production 50k 未授权，不能用当前 smoke 结果声称 production readiness。
 
 ## 验证证据
@@ -81,7 +80,8 @@
   `04681aaa17bf0b7b50c8dc3da8068d61ea1893fc04388d3c45b4739d55006601`。
 - 上述 TNP 样本如实得到 high risk、3 amber、0 red 和 6 条 liability；这只验证
   backend/证据链，不代表最终 APOE 候选结论。
-- APOE real run：待上游 gate。
+- APOE real run：未创建；Stage 05
+  `20260726-004-stage05-pilot-filter` 已合法停止且没有 ScaleBundle。
 
 ## 工作日志
 
@@ -103,8 +103,9 @@
   `numbering_label`，防止 insertion code 被无声压成同一个 `111`。
 - 发现根分区接近满载，所有 TNP pip 临时文件和 cache 改用数据盘，不清理其他任务缓存。
 - APOE Stage 04 继续独立运行，本次 Stage 07 开发未终止或抢占现有 GPU 任务。
+- APOE Stage 05 于 `2026-07-26T09:13:48+08:00` 发布
+  `stopped-no-scale-winner`；按契约未创建 Stage 06/07 APOE 任务或候选包。
 
 ## 历史索引
 
-- [2026-07 工程实现与 TNP backend smoke](history/2026-07.md)。APOE 到达本阶段后
-  必须追加真实候选或 scientific stop，不改写本条工程记录。
+- [2026-07 工程实现、TNP backend smoke 与 APOE 未运行边界](history/2026-07.md)。

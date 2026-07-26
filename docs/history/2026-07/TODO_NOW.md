@@ -212,3 +212,21 @@
   `/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/`
   `20260726-003-stage04-pilot`。
 - 提交：由本次 Stage 04 验收文档提交记录，完整 SHA 在提交完成后以 Git 历史为准。
+
+## 2026-07-26 — S05-001 / VAL-002：APOE full-target 科学停止
+
+- 状态：Stage 05 `smoke-validated`；VAL-002 已如实完成到 scientific stop。
+- 完成时间：2026-07-26T09:13:48+08:00
+- 结果：840 个 pilot 得到 Tier A/B/C/D = 1/1/5/14；唯一 Tier A
+  region A × gontivimab 新增 60 个后达到 100，12 个通过 local gate。
+- full-target 证据：Top 10 全部完成 Protenix seed 101；target required MSA depth
+  584、binder query-only、no-template、无 no-MSA fallback。target CA RMSD
+  1.266–2.000 Å 全部通过，但 binder pose RMSD 18.005–31.726 Å 全部超过 3 Å。
+- 终态：`stopped-no-scale-winner`，RunManifest revision 3 succeeded 且
+  integrity verified；没有创建 APOE Stage 06/07 task、ScaleBundle 或候选包。
+- 证据路径：
+  `/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/`
+  `20260726-004-stage05-pilot-filter`。
+- 科学边界：不放宽门槛迎合 APOE；Stage 06/07 通用能力保持 `implemented`，需要新的
+  合法 winner 才做真实 smoke。
+- 提交：由本次 Stage 05 真实验收文档提交记录，完整 SHA 在提交完成后以 Git 历史为准。

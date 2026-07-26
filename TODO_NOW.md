@@ -11,23 +11,24 @@
 | Stage 02 | `planned` | schema 0.6 已打通 automatic、PSE 固定颜色和 YAML 四编号人工区域；APOE 用户区域已发布可供 Stage 03 消费的 hotspots.yaml 0.3。 | 冻结 Stage 02 工程交接，启动 Stage 03 BoltzGen YAML；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-25 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
-| Stage 05 | `implemented` | Nanobody Filter Standard v1.5 的 pilot 审计、Tier、100-candidate 扩展、Protenix full-target 与唯一策略选择已形成统一可恢复实现。 | 等待 Stage 04 APOE 840-candidate 正式输入后运行真实 Stage 05。 | 真实 APOE 验收依赖 Stage 04 完成；代码实现无前置阻塞。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 完成自动测试与最小 backend smoke；APOE 仅在 Stage 05 选出唯一策略后运行真实 1000。 | APOE 真实验收依赖 Stage 04/05 上游门；50k 没有本轮执行授权。 | 2026-07-26 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
-| Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 完成全仓质量门和实现提交；APOE 只在 Stage 04–06 上游门通过后运行。 | APOE 验收依赖 Stage 04/05/06；当前实现不能提前宣称真实 Stage 07 smoke。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+| Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 保持通用能力冻结；APOE 因 Stage 05 无 scale winner，本轮不创建 1000 任务。 | 无代码阻塞；APOE 已科学停止，50k 也没有本轮执行授权。 | 2026-07-26 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## Now
 
-- `[S05-001]` 对 APOE Stage 04 已发布的 840 个候选执行 Nanobody Filter Standard
-  v1.5 逐规则审计、Tier 分层、最多三组扩展到 100，并如实选出唯一策略或发布
-  scientific stop。
+- 无正在执行的 Stage。APOE PSE 本轮已在 Stage 05 合法发布
+  `stopped-no-scale-winner`；不能绕过科学停止启动 Stage 06/07。
 
 ## Next
 
+- `[VAL-001]` 选择第二条独立真实 target，复用 frozen 1.0 主线；APOE 的
+  binder-pose gate 只能通过预注册 benchmark 和新版本 profile 研究，不能事后调参。
 - `[S06-001]` 通用 1000 smoke / 50000 production plan、25% 磁盘门、共享恢复和精确
-  merge 已实现；仅在 Stage 05 唯一 winner 存在时真实执行已授权的 1000。
+  merge 已实现；仅在未来 Stage 05 唯一 winner 存在时真实执行已授权的 1000。
 - `[S07-001]` 通用深度筛选、Protenix 三 seed、TNP 和多样性候选包已实现，固定 TNP
-  backend 单候选真实 smoke 已通过；APOE 仍等待 Stage 04–06 顺序 gate。
+  backend 单候选真实 smoke 已通过；APOE 因 Stage 05 科学停止而不会进入本轮 Stage 07。
 - `[S05/S06/S07]` 分别接入 pilot go/no-go、高成本预算和 Top N 候选包 gate；
   `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 完成自动测试与最小 backend smoke；APOE 仅在 Stage 05 选出唯一策略后运行真实 1000。 | APOE 真实验收依赖 Stage 04/05 上游门；50k 没有本轮执行授权。 | 2026-07-26 |
+| `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 保持通用能力冻结；APOE 因 Stage 05 无 scale winner，本轮不创建 1000 任务。 | 无代码阻塞；APOE 已科学停止，50k 也没有本轮执行授权。 | 2026-07-26 |
 
 ## 当前结论
 
@@ -28,24 +28,24 @@
 | 中断恢复与增量收集 | `implemented` | 稳定 task/shard/ordinal、共享恢复状态机 |
 | 精确 merge 与覆盖报告 | `implemented` | 1000 fixture 校验 identity 唯一和 ordinal `1..1000` |
 | 发布中断恢复 | `implemented` | 终态 artifact identity/bytes 校验后复用，不覆盖 |
-| APOE 新 1000 候选 | `planned` | 等待 Stage 04/05 真实门 |
+| APOE 新 1000 候选 | `planned` | 本轮明确未运行：Stage 05 发布 `stopped-no-scale-winner`，按契约没有合法 Stage 06 输入 |
 | 真实 50,000 | `planned` | 本轮未授权 |
 
 ## Now
 
-- Stage 06 不占用顶层 `Now`；当前顶层仍只跟踪正在运行的 S04-001。
-- 完成全套自动测试与最小真实 BoltzGen backend smoke，冻结 `implemented` 证据。
+- 无。Stage 06 通用实现已冻结，本轮 APOE 未到达本阶段。
 
 ## Next
 
-- Stage 04 840 个候选发布后真实运行 Stage 05。
-- 只有 Stage 05 唯一 winner 存在时，执行 APOE `smoke-1000`。
+- 在第二条独立真实 target 或未来新版本策略产生唯一 Stage 05 winner 后，再执行
+  `smoke-1000`。
 - 用真实运行重新测量每 candidate 磁盘峰值，并评估当前 20×安全倍率。
 - 在另行授权前只验证 `production-50000` plan/resume，不创建真实 50k 任务。
 
 ## Blocked
 
-- APOE 真实 Stage 06 依赖 Stage 05 唯一 scale winner。
+- APOE 的 `stopped-no-scale-winner` 是终态科学结果，不是 Stage 06 operational
+  blocker，也不能靠跳过 gate 解决。
 - production 50k 依赖显式预算、容量和运行授权；当前不构成代码阻塞。
 
 ## 验证证据
@@ -56,7 +56,8 @@
 - 全仓：`make check`、`218 passed, 8 skipped`、`make build` 通过；wheel 的
   `21/21` 个资产和 console script 校验通过。
 - 最小真实 backend smoke：待完成。
-- APOE 真实 run：待 Stage 05 gate。
+- APOE 真实 run：未创建；Stage 05 run
+  `20260726-004-stage05-pilot-filter` 已以 `stopped-no-scale-winner` 成功终止。
 
 ## 工作日志
 
@@ -69,8 +70,9 @@
 - 将 Stage 04 candidate index 正式加入 Stage 06 input artifact，避免容量测量成为未声明
   的隐式读取。
 - 增加终态发布恢复：崩溃遗留 artifact 只能在模型 identity 或原始 bytes 一致时复用。
+- APOE Stage 05 于 `2026-07-26T09:13:48+08:00` 发布
+  `stopped-no-scale-winner`；按科学停止契约没有创建 Stage 06 workspace/task。
 
 ## 历史索引
 
-- [2026-07 工程实现归档](history/2026-07.md)。APOE 1000 只在上游唯一 winner 后追加
-  真实验收记录；production 50k 未授权。
+- [2026-07 工程实现与 APOE 未运行边界](history/2026-07.md)。production 50k 未授权。

@@ -197,3 +197,18 @@
 - 编号说明：早期历史已经使用 S02-006，因此本条追加限定名而不改写旧记录。
 - 提交：本记录所在的 `feat(stage02): import user-provided hotspot regions`；最终 SHA
   以远端 `main` 核对为准。
+
+## 2026-07-26 — S04-001 / ENG-008：APOE 21×40 pilot 真实验收
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-26T07:54:40+08:00
+- 结果：固定 BoltzGen 0.3.2 与官方 VHH7 在双 RTX 4080 上完成 21 个策略，每组
+  40 个完整候选，共 840 个；RunManifest revision 3 为 `succeeded` 且完整性验证通过。
+- 恢复证据：7xl0 首次只有 39/40，执行器保留原 39 个并精确补跑 1 个；最终
+  21/21 task succeeded、0 terminal failure、840 个 candidate ID 唯一。
+- 科学边界：官方 `pass_filters=true` 仅 28 个；Stage 04 不筛赢家，全部候选交由
+  Stage 05 v1.5 重新审计，APOE 仍可能合法得到 scientific stop。
+- 证据路径：
+  `/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/`
+  `20260726-003-stage04-pilot`。
+- 提交：由本次 Stage 04 验收文档提交记录，完整 SHA 在提交完成后以 Git 历史为准。

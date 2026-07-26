@@ -1,0 +1,84 @@
+schema_version: "0.7"
+project_id: apoe-s02-006-pse
+design:
+  binder_profile: vhh
+  intent: exploratory
+  required_reviews: []
+workflow:
+  execution_mode: review-gated
+  stop_after_stage: 5
+  cache_mode: online
+  max_strategy_rounds: 1
+stage01:
+  target:
+    id: apoe-pse-rby
+    source:
+      type: local-file
+      path: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260725-006-stage02-pse-colors-audited/input-snapshot/apoe_abc.pse
+      format: pse
+      chain: null
+      chain_namespace: auth
+      identity:
+        uniprot_accession: null
+    scope:
+      type: full-sequence
+  structure_selection:
+    policy: experimental-first
+    quality_profile: experimental-strict-v1
+    on_no_eligible_candidate: predict
+    on_ambiguous_candidates: predict
+    preserve_source_context: true
+    keep_ligands: []
+  structure_prediction: null
+stage02:
+  mode: user-provided
+  methods: []
+  annotations:
+    uniprot: if_available
+  automatic: null
+  unattended_approval: null
+  user_regions:
+    source:
+      type: pse-colors
+      color_scheme: easydesign-rby-v1
+    approval: null
+stage03:
+  profile: boltzgen-vhh-basic-v1
+  scaffold_registry: official-vhh7-v1
+  candidates_per_strategy: 40
+stage04:
+  backend: boltzgen-0.3.2
+  executor:
+    type: local-multi-gpu
+    devices: [0, 1]
+    workers_per_device: 1
+    max_memory_used_mib: 1024
+    max_utilization_percent: 10
+    resource_wait_timeout_seconds: 21600
+    resource_poll_seconds: 15
+    max_task_attempts: 3
+  required_complete_candidates_per_strategy: 40
+stage05:
+  filter_profile: nanobody-filter-standard-v1.5
+  expanded_total_per_strategy: 100
+  maximum_tier_a_strategies: 3
+  strategy_selection:
+    full_target_refold_top_n: 10
+    require_unique_winner: true
+  full_target_prediction:
+    backend: protenix-v2
+    target_msa:
+      mode: remote
+      cache_mode: online
+      providers:
+        - provider: colabfold-public
+          timeout_seconds: 1800
+          max_attempts: 3
+          retry_backoff_seconds: 30
+      no_msa_fallback: false
+    binder_msa: query-only
+    template_mode: disabled
+    parameter_profile: model-default
+    prediction_timeout_seconds: 7200
+stage06: null
+stage07: null

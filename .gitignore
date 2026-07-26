@@ -52,6 +52,9 @@ slurm-*.out
 *.tar.gz
 *.zip
 
+# Explicitly audited, compact, repository-shared evidence bundle.
+!examples/apoe-ui-demo/**/*.log
+
 # Secrets
 *secret*
 *credentials*

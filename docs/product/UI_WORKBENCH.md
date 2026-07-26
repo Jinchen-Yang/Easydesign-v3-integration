@@ -89,7 +89,9 @@ simulated-preview
 - Stage 06/07：显示软件能力已实现、当前 APOE run 未到达。
 - “回放已验证案例”只重放已审计状态；“按相同配置重新运行”创建新 run，并在资源预检和
   用户确认后启动真实 backend。
-- APOE runtime、PSE、大型候选和模型不得提交 Git；自动测试使用小型通用 fixture。
+- APOE 完整 runtime、模型和后端中间目录不得提交 Git；自动测试使用小型通用 fixture。
+  经 DATA-004 明确授权的精简只读 evidence bundle 可以提交私有 `main`，但必须保留
+  manifest 闭包、逐文件 SHA-256、科学停止语义，并明确不能恢复任务或替代完整 run。
 
 ## 完成门槛
 

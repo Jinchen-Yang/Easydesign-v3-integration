@@ -1,0 +1,6 @@
+{
+  "schema_version": "0.1",
+  "source_relative_path": "input-snapshot/apoe_abc.pse",
+  "source_sha256": "7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651",
+  "target_id": "apoe-pse-rby"
+}

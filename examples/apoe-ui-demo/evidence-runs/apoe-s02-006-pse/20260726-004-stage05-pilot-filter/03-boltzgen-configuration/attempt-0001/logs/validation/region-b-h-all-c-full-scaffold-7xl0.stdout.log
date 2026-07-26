@@ -1,0 +1,11 @@
+Using dataset artifact: /root/autodl-tmp/Protein_design/boltzgen_cache/huggingface/datasets--boltzgen--inference-data/snapshots/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip
+************** Checking design spec: design.yaml **************
+
+Removing leading and/or trailing unresolved residues from included part of chain A in /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-002-stage03-basic-vhh/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.cif.
+  Leading unresolved:  
+  Trailing unresolved: ALA,ALA,ALA,HIS,HIS,HIS,HIS,HIS,HIS
+
+Chain ids conflict with existing chain ids. Renaming with {'A': 'B'}. This is for the structure from '../../assets/scaffolds/7xl0.yaml'.
+Total designed residues: 33
+Design specification visualization is written to design.cif
+***************************************************************

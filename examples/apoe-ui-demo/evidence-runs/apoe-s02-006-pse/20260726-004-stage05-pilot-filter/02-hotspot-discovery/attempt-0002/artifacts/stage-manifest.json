@@ -1,0 +1,148 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "backend_name": "pse-color-annotation",
+      "backend_version": "easydesign-rby-v1",
+      "created_at": "2026-07-25T14:56:24.819648Z",
+      "ended_at": "2026-07-25T14:56:24.872519Z",
+      "error": null,
+      "executor_name": "easydesign-core",
+      "log_artifacts": [
+        {
+          "artifact_id": "stage02-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "02-hotspot-discovery",
+          "relative_path": "02-hotspot-discovery/attempt-0001/logs/stdout.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "stage02-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "02-hotspot-discovery",
+          "relative_path": "02-hotspot-discovery/attempt-0001/logs/stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        }
+      ],
+      "seed": null,
+      "started_at": "2026-07-25T14:56:24.819648Z",
+      "status": "succeeded"
+    },
+    {
+      "attempt_id": "attempt-0002",
+      "backend_name": "human-hotspot-approval",
+      "backend_version": "0.1",
+      "created_at": "2026-07-25T14:57:30.921603Z",
+      "ended_at": "2026-07-25T14:57:30.921603Z",
+      "error": null,
+      "executor_name": "easydesign-core",
+      "log_artifacts": [],
+      "seed": null,
+      "started_at": "2026-07-25T14:57:30.921603Z",
+      "status": "succeeded"
+    }
+  ],
+  "completed_at": "2026-07-25T14:57:30.921603Z",
+  "contract_version": "0.3",
+  "created_at": "2026-07-25T14:56:24.819648Z",
+  "input_artifacts": [
+    {
+      "artifact_id": "target-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target-bundle.json",
+      "role": "target-bundle",
+      "sha256": "37c03968c38311bbd4813b0020bfacc43cc94663786d035dc33306e4cda36c83",
+      "size_bytes": 6248
+    },
+    {
+      "artifact_id": "target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target.cif",
+      "role": "canonical-target",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "artifact_id": "residue-mapping",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/residue-mapping.json",
+      "role": "residue-mapping",
+      "sha256": "8303f13bacea3ec47b3bcd5ee4feae5eda40271da87700b2f33b91e93c36b1bb",
+      "size_bytes": 61489
+    },
+    {
+      "artifact_id": "source-annotations",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/source-annotations.json",
+      "role": "source-annotations",
+      "sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+      "size_bytes": 37181
+    },
+    {
+      "artifact_id": "hotspot-approval-input",
+      "file_format": "yaml",
+      "producer_attempt": null,
+      "producer_stage": null,
+      "relative_path": "02-hotspot-discovery/attempt-0002/inputs/hotspots-review.yaml",
+      "role": "human-approval-input",
+      "sha256": "f7851bfbbeda9bc34c398e1b99ad5b5ef0d318de73dcefff13cbfa459e7c8b59",
+      "size_bytes": 1524
+    }
+  ],
+  "output_artifacts": [
+    {
+      "artifact_id": "approval-request",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0002",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0002/artifacts/approval-request.yaml",
+      "role": "normalized-human-approval",
+      "sha256": "baeae8544253c46c0101c1d936543c185e6e33bb3e69053fec9ee7ca2b885f2a",
+      "size_bytes": 1548
+    },
+    {
+      "artifact_id": "approval-record",
+      "file_format": "json",
+      "producer_attempt": "attempt-0002",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0002/artifacts/approval-record.json",
+      "role": "human-approval-record",
+      "sha256": "6cdccbf61c5cde30e46ab4562667372d0b84f63f006f76d6b1c5e0a0dfe133cd",
+      "size_bytes": 814
+    },
+    {
+      "artifact_id": "hotspots",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0002",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0002/artifacts/hotspots.yaml",
+      "role": "stage03-hotspot-input",
+      "sha256": "9865be52c3dd04d8dbcf3bac22023c7311561ab2fd2cc75d773bd06d512114c3",
+      "size_bytes": 3303
+    }
+  ],
+  "schema_version": "1.0",
+  "selected_attempt_id": "attempt-0002",
+  "stage_id": "02-hotspot-discovery",
+  "status": "succeeded",
+  "warnings": [
+    "Approved regions are complete user-provided regions.",
+    "No score fusion or region member editing was performed.",
+    "User-provided regions require biological review and are not scientifically validated binding sites.",
+    "Scientific evidence limitations were explicitly acknowledged."
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "code": "stopped-no-scale-winner",
+  "evidence_artifact_sha256": [
+    "c9909a6a75f1786bb6ca293ea4944bc8fc40b25e27985e90642a498eb94bfdb7"
+  ],
+  "message": "No strategy passed full-target expansion validation.",
+  "occurred_at": "2026-07-26T01:13:48.232947Z",
+  "schema_version": "0.1",
+  "stage_id": "05-pilot-filtering"
+}

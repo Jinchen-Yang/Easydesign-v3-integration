@@ -1,0 +1,31 @@
+{
+  "adapter_runtime_seconds": 0.8863118067383766,
+  "author_chain_id": "A",
+  "backend_name": "pymol-pse",
+  "backend_version": "3.1.0",
+  "coordinate_state": 1,
+  "fallback_used": false,
+  "inventory": [
+    {
+      "atom_count": 1305,
+      "ignored": false,
+      "name": "1B68",
+      "object_type": "object:molecule",
+      "protein_atom_count": 1172,
+      "state_count": 1
+    },
+    {
+      "atom_count": 0,
+      "ignored": true,
+      "name": "sele",
+      "object_type": "selection",
+      "protein_atom_count": 0,
+      "state_count": 0
+    }
+  ],
+  "schema_version": "0.1",
+  "selected_object": "1B68",
+  "source_format": "pse",
+  "source_sha256": "7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651",
+  "worker_runtime_seconds": 0.830377
+}

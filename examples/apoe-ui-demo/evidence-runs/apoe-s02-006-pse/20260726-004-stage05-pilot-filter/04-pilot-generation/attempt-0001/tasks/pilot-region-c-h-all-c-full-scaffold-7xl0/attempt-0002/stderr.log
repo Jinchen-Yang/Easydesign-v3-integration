@@ -1,0 +1,5 @@
+Processing samples:   0%|          | 0/1 [00:00<?, ?it/s]Processing samples: 100%|██████████| 1/1 [00:08<00:00,  8.24s/it]Processing samples: 100%|██████████| 1/1 [00:09<00:00,  9.31s/it]
+Loading saved metrics from disk. 1% of total:   0%|          | 0/1 [00:00<?, ?it/s]Loading saved metrics from disk. 1% of total: 100%|██████████| 1/1 [00:00<00:00, 57.82it/s]
+copy top design files: 0it [00:00, ?it/s]copy top design files: 1it [00:00, 689.97it/s]
+copy diversity files:   0%|          | 0/1 [00:00<?, ?it/s]copy diversity files: 100%|██████████| 1/1 [00:00<00:00, 1435.42it/s]
+Making liability plots for top 0 sequences.: 0it [00:00, ?it/s]Making liability plots for top 0 sequences.: 0it [00:00, ?it/s]

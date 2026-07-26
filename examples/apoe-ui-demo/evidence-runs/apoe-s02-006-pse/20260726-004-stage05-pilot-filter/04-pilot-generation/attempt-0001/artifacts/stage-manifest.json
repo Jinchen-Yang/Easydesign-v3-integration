@@ -1,0 +1,673 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "backend_name": "boltzgen",
+      "backend_version": "0.3.2",
+      "created_at": "2026-07-25T18:06:05.933955Z",
+      "ended_at": "2026-07-25T23:54:40.749802Z",
+      "error": null,
+      "executor_name": "local-multi-gpu",
+      "log_artifacts": [
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-7eow-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7eow/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "b4fb20bda9eb69300fb29aac96d502e2278f923337bba4152aed96248ee43a56",
+          "size_bytes": 26209
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-7eow-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7eow/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "b75bc00adbbbeaf52cefc68dd08d1167f827a7c42a54452e0157d49f6f8995c5",
+          "size_bytes": 4148
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-7xl0-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7xl0/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "b383c352c9de4851a2fe4251e4cda0e0489b80acc1fec549ff2ab5d71bd72116",
+          "size_bytes": 26904
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-7xl0-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7xl0/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "2f02a974f031c72c05c104571acc7bff29a784f2edf3617d0e726e9877a33778",
+          "size_bytes": 7473
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-8coh-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8coh/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "1bc085d5b830e349e92bf667d3cc3d36919d376b1010080d6375c70527161473",
+          "size_bytes": 25184
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-8coh-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8coh/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "b88324ea51d8e146cbb4fcdc750b985b1284883f81860ce8ac9fac2dd28a54b3",
+          "size_bytes": 4181
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-8z8v-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8z8v/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "a692340206d4c49098fda4ed53d91b0158aba69d2c88ff9eb479ff6b55777fd5",
+          "size_bytes": 26194
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-8z8v-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8z8v/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "111d45c02cff8f4663cfe0905b40cf14c724f865c2ca0759b50ea76d130e06c2",
+          "size_bytes": 3857
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-gontivimab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "5ac38e3471830a41efb95df130582a3cff0563ad35a38eece3a39559c166281e",
+          "size_bytes": 25328
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-gontivimab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "a9c06f361387b8a292d9f6a3ae033740fb4002b77cab6cdc3c8c84ecbf52647d",
+          "size_bytes": 3927
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-isecarosmab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-isecarosmab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "dfc7b73a8d6cb4861d51180116c2242fbde94f259678b82033ea01d2847317d0",
+          "size_bytes": 25352
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-isecarosmab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-isecarosmab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "f81ff8299c617891bc65659324750f6ece67b5816e97e24400a212bf768c2224",
+          "size_bytes": 4055
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "759a971cdd3be2aa27cff3c446ecd7091bc4c4a0926926717e339257c81d3c53",
+          "size_bytes": 14200
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "b5cbcb70ebf92cc309a74b5affe75d4d4e00ecd65393a7948a901fbbbeb6de53",
+          "size_bytes": 7484
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0002-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0002/stdout.log",
+          "role": "backend-log",
+          "sha256": "89636baf1332cd64989e2342ea7e9ae230509daff9522b0e3b0c17e6f6565a72",
+          "size_bytes": 810
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0002-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0002/stderr.log",
+          "role": "backend-log",
+          "sha256": "93acd1c772704b6c2d6e979ef544f1b186df5680952da601ee7c4f296c515b2b",
+          "size_bytes": 8306
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0003-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0003/stdout.log",
+          "role": "backend-log",
+          "sha256": "a5b3d96f7f2836839463e2443dbae8566a71d2e5fae647555948e7f44de37f3a",
+          "size_bytes": 522
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0003-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0003/stderr.log",
+          "role": "backend-log",
+          "sha256": "11f41d9161231a2b2b8eadab72265843e16797e7e980078ae00b5d28f3ebd443",
+          "size_bytes": 7506
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0004-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0004/stdout.log",
+          "role": "backend-log",
+          "sha256": "2911aeb06bffc82a2f659d3f94205568c230d26166798e9547d84ccb1a2785f5",
+          "size_bytes": 25352
+        },
+        {
+          "artifact_id": "pilot-region-a-h-all-c-full-scaffold-sonelokimab-attempt-0004-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0004/stderr.log",
+          "role": "backend-log",
+          "sha256": "4fde4381b816b9c0cff862b3ec9476a5f7d2caa2d24d982e88cab8abc81675c5",
+          "size_bytes": 7001
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "54fc59eab1c9b25e9277e1b84f2a67f74bbb5f8e6d4a446b565354426f38961b",
+          "size_bytes": 15744
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "c8089575881678e9a12ebbd6ffe75a0659be9fac09325c2417c3407e38dd34b2",
+          "size_bytes": 4506
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0002-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0002/stdout.log",
+          "role": "backend-log",
+          "sha256": "1fdbbabe1a926b23d2f35df8c8ea9a445b3007ddb4daee59ed8e732273c9fc7f",
+          "size_bytes": 810
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0002-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0002/stderr.log",
+          "role": "backend-log",
+          "sha256": "bda6b68b6cfdbd6c3d9c072f38e310b7c473951400a838e85657e5b8e83da17f",
+          "size_bytes": 7504
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0003-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0003/stdout.log",
+          "role": "backend-log",
+          "sha256": "e465a1aa705a71bb8f5e72df0ebf5602ad9e5809d81efc738bdd03cdef8995bb",
+          "size_bytes": 426
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0003-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0003/stderr.log",
+          "role": "backend-log",
+          "sha256": "667d6488f74fa5a3d4de2029d12852029cfa40c213e15b621c9b5a739a2a759f",
+          "size_bytes": 8388
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0004-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0004/stdout.log",
+          "role": "backend-log",
+          "sha256": "b84f38876a8c77ce24b7596e914648a084b897fecbd67b574fbb0ffbd3b74236",
+          "size_bytes": 26209
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7eow-attempt-0004-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0004/stderr.log",
+          "role": "backend-log",
+          "sha256": "1d8b98206fdb77c628a138b74cd69b850077c8dd49fb362efdd8b23b4a53c0a8",
+          "size_bytes": 4029
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7xl0-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7xl0/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "dedd9e5f173f9fb81dedaad8cc7656ca12363e994102fea454bc79c6206e1f46",
+          "size_bytes": 26905
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-7xl0-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7xl0/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "2b149a1662652d207fc59feac3cbe638def77cb8932f3013dedd9b3a532c2081",
+          "size_bytes": 4314
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-8coh-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8coh/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "9aaf59fa02a3ebb7c846e90a69719a2138f7459763460b739e89b40272a7704e",
+          "size_bytes": 25184
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-8coh-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8coh/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "2f97cb9bb22cbbda1013e43922c87bd15b310e84692bfcee8ed153f5e1f3fc90",
+          "size_bytes": 3861
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-8z8v-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8z8v/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "99c0a4a4764232a80769303e44e729bd57834cb7696ab90d0ba6f56d8ba25f42",
+          "size_bytes": 26194
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-8z8v-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8z8v/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "8fffc725ff729b493da2e866bbfaf7d3b979241c29824b387d040d6f206e90e1",
+          "size_bytes": 3643
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-gontivimab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-gontivimab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "d53b6d9369937c88c7e6cd3682b1239e81d3a63e686f647b7c14fa66f9d41366",
+          "size_bytes": 25328
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-gontivimab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-gontivimab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "8d4d5010f9ec59ef41339ac05d71a8d9cda4b0857385a74988ad1745362ddc20",
+          "size_bytes": 3807
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-isecarosmab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-isecarosmab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "0080f45d8d9bd932f69c10ad164268506ed8a532ddc6eb8a609ffb896eaedd18",
+          "size_bytes": 25352
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-isecarosmab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-isecarosmab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "bd57d71cdbaa73b366d0b31031ca23760c6ed7245d1d900b03b9fba631b64395",
+          "size_bytes": 3792
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-sonelokimab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-sonelokimab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "775ef5a65aa236e7b7affc74f8b928900859de014d011c53c930a9423c36a837",
+          "size_bytes": 25352
+        },
+        {
+          "artifact_id": "pilot-region-b-h-all-c-full-scaffold-sonelokimab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-sonelokimab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "61d4c6e3f63f114eed29c72640f2cd677213b33774825d7bb3bfb6a62a9d6857",
+          "size_bytes": 4283
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-7eow-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7eow/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "67a9a388a3c2de328088034f2fea9373138233e05692e5bdea6c24e320e4a76c",
+          "size_bytes": 26209
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-7eow-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7eow/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "fa0813c63826eee05bb3665a45ecc348bc57c53dff90395e5d5d4644ef1570ab",
+          "size_bytes": 3879
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-7xl0-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "ee607b47d4f52bbfd971b8aa7723b20c026a3407e8a360ea82af005cbde3fb9f",
+          "size_bytes": 26968
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-7xl0-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "ca26778b40b59e7314e5f3d65482562720fd01ee41a079826311baf239728e42",
+          "size_bytes": 3867
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-7xl0-attempt-0002-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/stdout.log",
+          "role": "backend-log",
+          "sha256": "f88d87ec5077f86fcf61a657e058eaff90f826fb615aaebff6fd777c4dc67058",
+          "size_bytes": 12421
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-7xl0-attempt-0002-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/stderr.log",
+          "role": "backend-log",
+          "sha256": "83a84c37462e3919a098ad3d362e52eec3e23dc3aa7197c6d414b35a1103da3f",
+          "size_bytes": 798
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-8coh-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8coh/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "86b96566b26d9aed0ae0982a008e995c3d2f8d63e68d1a19a6fd032a10c3de80",
+          "size_bytes": 25184
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-8coh-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8coh/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "97b4a2aea4b0ebd0233b94807d48ad8357c9f784dd1a38c1df8e5dba895b09b3",
+          "size_bytes": 4063
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-8z8v-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8z8v/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "c0807c2d19f18ac106a3cdb5141a64085042776732f5928e95930424da62fe4e",
+          "size_bytes": 26194
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-8z8v-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8z8v/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "31b04f658a3375d46a47cefba7d7cc3e60ce74205da2d506038aa8cc9a9ba62b",
+          "size_bytes": 3761
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-gontivimab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-gontivimab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "4b4c7c910367aa84a39044a0486d33e2459816275c1a9fa09995810e4cc5dfaa",
+          "size_bytes": 25328
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-gontivimab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-gontivimab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "5efb42bdfa84df155b2c00983205242fb6d01a24bdab97213b429ea7e7dec346",
+          "size_bytes": 4019
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-isecarosmab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-isecarosmab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "fa0614f4eaa114fe07847741c2bb20591a507206bb21761e3ecb7ddb645d6247",
+          "size_bytes": 25352
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-isecarosmab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-isecarosmab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "b161c3ac2cc564a5ad8e09e8fe2675d3a64adb8d6122d2d567b8f8a04b6b5b78",
+          "size_bytes": 4287
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-sonelokimab-attempt-0001-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-sonelokimab/attempt-0001/stdout.log",
+          "role": "backend-log",
+          "sha256": "6bd9fb3b880f759091c24d0fe2761cab76f04183d530a151d06c6e42cd72853c",
+          "size_bytes": 25352
+        },
+        {
+          "artifact_id": "pilot-region-c-h-all-c-full-scaffold-sonelokimab-attempt-0001-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "04-pilot-generation",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-sonelokimab/attempt-0001/stderr.log",
+          "role": "backend-log",
+          "sha256": "fa29e0af824ba58409ad70ff8ce99df3d320828c1f8f38c9d31dbca9b805d0af",
+          "size_bytes": 4036
+        }
+      ],
+      "seed": null,
+      "started_at": "2026-07-25T18:06:05.933955Z",
+      "status": "succeeded"
+    }
+  ],
+  "completed_at": "2026-07-25T23:54:40.749802Z",
+  "contract_version": "0.1",
+  "created_at": "2026-07-25T18:06:05.933955Z",
+  "input_artifacts": [
+    {
+      "artifact_id": "strategy-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategy-bundle.json",
+      "role": "stage04-strategy-input",
+      "sha256": "a8451f5f7f7b7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87",
+      "size_bytes": 20687
+    }
+  ],
+  "output_artifacts": [
+    {
+      "artifact_id": "pilot-plan",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/pilot-plan.json",
+      "role": "pilot-execution-plan",
+      "sha256": "42520d8dfb94090612c778beabcd2dfc3398175239ac2f8b0e369c9e3ad97ac5",
+      "size_bytes": 15852
+    },
+    {
+      "artifact_id": "pilot-task-table",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/task-table.json",
+      "role": "task-terminal-records",
+      "sha256": "a8010a69bfebd537cef11e4d111a135dbd244550444fd6e52137831a3d033b48",
+      "size_bytes": 79170
+    },
+    {
+      "artifact_id": "candidate-index",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/candidate-index.json",
+      "role": "stage05-candidate-input",
+      "sha256": "432ebb9638dbc50585ebd4d930bdc7e17f6a1b675320961dfadea4f3cfd299c5",
+      "size_bytes": 9049102
+    },
+    {
+      "artifact_id": "pilot-progress-final",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/progress-final.json",
+      "role": "terminal-progress",
+      "sha256": "b4ea65bcffc9f0b8eccda38710b11a1cf0e93606ca322cb8770943ec63073ce6",
+      "size_bytes": 652
+    },
+    {
+      "artifact_id": "pilot-task-events",
+      "file_format": "jsonl",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/task-events.jsonl",
+      "role": "append-only-task-events",
+      "sha256": "a1ce5c135e2f9f98da6e8eb051c4195148c7250d7c88f022dfd4c908fc0eaea2",
+      "size_bytes": 23074
+    },
+    {
+      "artifact_id": "pilot-backend-environment",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/backend-environment.json",
+      "role": "backend-environment",
+      "sha256": "54108b5879566cb722ac29bcda1f29634609b73596acda93d5a2374f69980b60",
+      "size_bytes": 1184
+    },
+    {
+      "artifact_id": "pilot-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/pilot-bundle.json",
+      "role": "stage05-pilot-input",
+      "sha256": "0619db6eb77c0a84b1ef830038530f3c782164a279c23a8b14d9e3098e2735d0",
+      "size_bytes": 3070
+    }
+  ],
+  "schema_version": "1.0",
+  "selected_attempt_id": "attempt-0001",
+  "stage_id": "04-pilot-generation",
+  "status": "succeeded",
+  "warnings": [
+    "Stage 04 candidate completeness is not a scientific filter pass.",
+    "BoltzGen 0.3.2 does not expose a reliable deterministic generation seed."
+  ]
+}

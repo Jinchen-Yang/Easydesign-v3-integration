@@ -1,0 +1,104 @@
+Traceback (most recent call last):
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py", line 53, in <module>
+    main(config, args)
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py", line 47, in main
+    task.run(config)
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/task/predict/predict.py", line 191, in run
+    self.lightning_trainer.predict(
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 941, in predict
+    return call._call_and_handle_interrupt(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 49, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 990, in _predict_impl
+    results = self._run(model, ckpt_path=ckpt_path, weights_only=weights_only)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1079, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1118, in _run_stage
+    return self.predict_loop.run()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/loops/prediction_loop.py", line 125, in run
+    self._predict_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/loops/prediction_loop.py", line 255, in _predict_step
+    predictions = call._call_strategy_hook(trainer, "predict_step", *step_args)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 329, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 438, in predict_step
+    return self.lightning_module.predict_step(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/models/boltz.py", line 1377, in predict_step
+    raise e
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/models/boltz.py", line 1281, in predict_step
+    out = self(
+          ^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/models/boltz.py", line 660, in forward
+    struct_out = self.structure_module.sample(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/modules/diffusion.py", line 591, in sample
+    atom_coords_denoised, net_out = self.preconditioned_network_forward(
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/modules/diffusion.py", line 404, in preconditioned_network_forward
+    net_out = self.score_model(
+              ^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/modules/diffusion.py", line 202, in forward
+    a = self.token_transformer(
+        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/modules/transformers.py", line 129, in forward
+    a = layer(
+        ^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/modules/transformers.py", line 189, in forward
+    b = self.adaln(a, s)
+        ^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/model/modules/transformers.py", line 32, in forward
+    a = sigmoid(self.s_scale(s)) * a + self.s_bias(s)
+                ^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/conda_envs/boltzgen/lib/python3.11/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 475451) is killed by signal: Terminated. 

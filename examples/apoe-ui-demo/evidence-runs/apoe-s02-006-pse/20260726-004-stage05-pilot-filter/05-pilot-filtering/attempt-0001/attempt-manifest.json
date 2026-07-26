@@ -1,0 +1,13 @@
+{
+  "attempt_id": "attempt-0001",
+  "backend_name": "easydesign-filtering",
+  "backend_version": "nanobody-filter-standard-v1.5",
+  "created_at": "2026-07-26T00:06:11.630854Z",
+  "ended_at": "2026-07-26T01:13:48.237088Z",
+  "error": null,
+  "executor_name": "local-multi-gpu",
+  "log_artifacts": [],
+  "seed": null,
+  "started_at": "2026-07-26T00:06:11.630854Z",
+  "status": "succeeded"
+}

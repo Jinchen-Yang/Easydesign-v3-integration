@@ -1,0 +1,10 @@
+{
+  "a3m_sha256": "55f97a4ae641a2907639570757359f25f577630968395b0a51e8034511856154",
+  "binder_msa": "query-only",
+  "depth": 584,
+  "endpoint": "https://api.colabfold.com",
+  "no_msa_fallback": false,
+  "provider": "colabfold-public",
+  "schema_version": "0.1",
+  "target_sequence_sha256": "f805c6ca91a7d925814212be97c34f0de339067c8a7ade2826dd5168da6bd2af"
+}

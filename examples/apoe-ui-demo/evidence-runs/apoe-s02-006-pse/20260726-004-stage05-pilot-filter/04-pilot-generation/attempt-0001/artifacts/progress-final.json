@@ -1,0 +1,21 @@
+{
+  "collected_candidates": 840,
+  "elapsed_seconds": 20914.80052,
+  "estimated_remaining_seconds": 0.0,
+  "failed_tasks": 0,
+  "pending_tasks": 0,
+  "per_device": {},
+  "planned_candidates": 840,
+  "recent_errors": [
+    "pilot-region-c-h-all-c-full-scaffold-7xl0: incomplete-candidate-output: BoltzGen returned zero but only produced 39/40 complete candidates."
+  ],
+  "running_tasks": 0,
+  "schema_version": "0.1",
+  "stage_id": "04-pilot-generation",
+  "status": "succeeded",
+  "succeeded_tasks": 21,
+  "throughput_candidates_per_hour": 144.58660493119538,
+  "total_tasks": 21,
+  "updated_at": "2026-07-25T23:54:40.734475Z",
+  "waiting_tasks": 0
+}

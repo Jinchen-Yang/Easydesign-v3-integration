@@ -1,0 +1,12 @@
+entities:
+- file:
+    path: ../../assets/target.cif
+    include:
+    - chain:
+        id: A
+    binding_types:
+    - chain:
+        id: A
+        binding: 10,14,17,24,28,33,37,41,44
+- file:
+    path: ../../assets/scaffolds/8z8v.yaml

@@ -1,5 +1,10 @@
 """Auditable, read-only reports derived from immutable scientific artifacts."""
 
+from .evidence_bundle import (
+    UiEvidenceBundleOutcome,
+    build_ui_evidence_bundle,
+    verify_ui_evidence_bundle,
+)
 from .models import (
     GENERATOR_VERSION,
     MOLSTAR_VERSION,
@@ -37,15 +42,18 @@ __all__ = [
     "TargetViewerOutcome",
     "TargetViewerReportError",
     "TargetViewerReportManifest",
+    "UiEvidenceBundleOutcome",
     "ViewerAnnotationSummary",
     "ViewerColorCount",
     "ViewerDownload",
     "ViewerMetric",
     "ViewerResidue",
     "create_target_viewer_server",
+    "build_ui_evidence_bundle",
     "generate_stage01_target_viewer",
     "generate_stage01_target_viewer_nonblocking",
     "resolve_latest_target_viewer_report",
     "resolve_target_viewer_argument",
     "verify_target_viewer_report",
+    "verify_ui_evidence_bundle",
 ]

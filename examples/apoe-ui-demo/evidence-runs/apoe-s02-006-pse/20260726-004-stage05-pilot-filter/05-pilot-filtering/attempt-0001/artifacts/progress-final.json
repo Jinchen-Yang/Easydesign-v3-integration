@@ -1,0 +1,20 @@
+{
+  "collected_candidates": 10,
+  "elapsed_seconds": 4056.584966,
+  "estimated_remaining_seconds": 0.0,
+  "failed_tasks": 0,
+  "pending_tasks": 0,
+  "per_device": {},
+  "phase": "stage05-complete",
+  "planned_candidates": 10,
+  "recent_errors": [],
+  "running_tasks": 0,
+  "schema_version": "0.1",
+  "stage_id": "05-pilot-filtering",
+  "status": "scientific-stop",
+  "succeeded_tasks": 10,
+  "throughput_candidates_per_hour": 8.874459749205707,
+  "total_tasks": 10,
+  "updated_at": "2026-07-26T01:13:48.234073Z",
+  "waiting_tasks": 0
+}

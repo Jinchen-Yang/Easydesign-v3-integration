@@ -1,0 +1,220 @@
+{
+  "backend_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+  "backend_name": "boltzgen",
+  "backend_version": "0.3.2",
+  "checked_at": "2026-07-25T17:12:10.164385Z",
+  "items": [
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-7eow.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-7eow.stdout.log",
+      "stdout_sha256": "f76ed1ccdc83d31d5411d5a423b51154c1951fcc621f2d487717135107443df0",
+      "strategy_id": "region-a-h-all-c-full-scaffold-7eow"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-7xl0.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-7xl0.stdout.log",
+      "stdout_sha256": "44c9357a9df36545fd70d278b4a5b8c41e6a55b04982b3ad931dc8c4ff33148c",
+      "strategy_id": "region-a-h-all-c-full-scaffold-7xl0"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-8coh.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-8coh.stdout.log",
+      "stdout_sha256": "ae4e5b0936b58c94df0ef6e17dc1e678d9fc59a0826f3cbcbfd357526abd463d",
+      "strategy_id": "region-a-h-all-c-full-scaffold-8coh"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-8z8v.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-8z8v.stdout.log",
+      "stdout_sha256": "de5c219f46787260351816afe48676fad3169418571cf2101fe9f248266b0a4e",
+      "strategy_id": "region-a-h-all-c-full-scaffold-8z8v"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-gontivimab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-gontivimab.stdout.log",
+      "stdout_sha256": "a86f51a6fdbd27a807dac56204c767ffaa2b2a0133684b568a9ef108b3461242",
+      "strategy_id": "region-a-h-all-c-full-scaffold-gontivimab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-isecarosmab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-isecarosmab.stdout.log",
+      "stdout_sha256": "a49438e4995253c63853049b2b68c9c357d8d30635379685cc946bbed0a7ed63",
+      "strategy_id": "region-a-h-all-c-full-scaffold-isecarosmab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-a-h-all-c-full-scaffold-sonelokimab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-a-h-all-c-full-scaffold-sonelokimab.stdout.log",
+      "stdout_sha256": "362cad435b31046e2b438d4c1fa56398cc99300626c1838aec23ba8104316ab0",
+      "strategy_id": "region-a-h-all-c-full-scaffold-sonelokimab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-7eow.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-7eow.stdout.log",
+      "stdout_sha256": "cd4ac17b77ae2d9727cb80fd4b8cc56d67fa77c3113a13d1fe8bbe304a1a54d8",
+      "strategy_id": "region-b-h-all-c-full-scaffold-7eow"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-7xl0.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-7xl0.stdout.log",
+      "stdout_sha256": "f6b0ff19541a2a3c58959094efdb952ca49a558d0d581f82f2a7a05867235911",
+      "strategy_id": "region-b-h-all-c-full-scaffold-7xl0"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-8coh.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-8coh.stdout.log",
+      "stdout_sha256": "53c7acba399c677b5384acc4edb7f2f2ac0216ee911724bfbaf7225cd914867b",
+      "strategy_id": "region-b-h-all-c-full-scaffold-8coh"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-8z8v.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-8z8v.stdout.log",
+      "stdout_sha256": "2654928be0154a35ffd781044664f716883dc514add17ad9a4297425c061e940",
+      "strategy_id": "region-b-h-all-c-full-scaffold-8z8v"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-gontivimab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-gontivimab.stdout.log",
+      "stdout_sha256": "d4d664bb94ad3ad203139e37eb25855473520e9613cfb8cdf4cc377b1442f76f",
+      "strategy_id": "region-b-h-all-c-full-scaffold-gontivimab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-isecarosmab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-isecarosmab.stdout.log",
+      "stdout_sha256": "af5f0805906bc33e5c6d3007fc23dcc977c43be853b014264732293eb1cf28bf",
+      "strategy_id": "region-b-h-all-c-full-scaffold-isecarosmab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-b-h-all-c-full-scaffold-sonelokimab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-b-h-all-c-full-scaffold-sonelokimab.stdout.log",
+      "stdout_sha256": "645c7e1e67d950114d58fe0445b76c0d749dfcd7350db2a05fb8deb598fe90d2",
+      "strategy_id": "region-b-h-all-c-full-scaffold-sonelokimab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-7eow.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-7eow.stdout.log",
+      "stdout_sha256": "cc19ad08a7b093e8bc1e54596ac100dffbe73c5d692cc8d919bb53f3273124bb",
+      "strategy_id": "region-c-h-all-c-full-scaffold-7eow"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-7xl0.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-7xl0.stdout.log",
+      "stdout_sha256": "44c9357a9df36545fd70d278b4a5b8c41e6a55b04982b3ad931dc8c4ff33148c",
+      "strategy_id": "region-c-h-all-c-full-scaffold-7xl0"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-8coh.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-8coh.stdout.log",
+      "stdout_sha256": "946cd45fe1c366d9e9552755bc669c2f8b5a44d5b428caeae36eb875a3454423",
+      "strategy_id": "region-c-h-all-c-full-scaffold-8coh"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-8z8v.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-8z8v.stdout.log",
+      "stdout_sha256": "f565e242d3b0ce882a6e2d9c828a1098eb2b53641803d495e3fe7ea9cd7c38cc",
+      "strategy_id": "region-c-h-all-c-full-scaffold-8z8v"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-gontivimab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-gontivimab.stdout.log",
+      "stdout_sha256": "1b136a96f0c11fd7a2ece51a6d6e7f2220fd3c252050ebdad2b5456c4132f99d",
+      "strategy_id": "region-c-h-all-c-full-scaffold-gontivimab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-isecarosmab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-isecarosmab.stdout.log",
+      "stdout_sha256": "af5f0805906bc33e5c6d3007fc23dcc977c43be853b014264732293eb1cf28bf",
+      "strategy_id": "region-c-h-all-c-full-scaffold-isecarosmab"
+    },
+    {
+      "message": "BoltzGen check passed.",
+      "return_code": 0,
+      "status": "passed",
+      "stderr_path": "region-c-h-all-c-full-scaffold-sonelokimab.stderr.log",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "region-c-h-all-c-full-scaffold-sonelokimab.stdout.log",
+      "stdout_sha256": "678332723e893a7e27c567a8902afb96b947ea4dfdf78eea4a8e5cafafd533b4",
+      "strategy_id": "region-c-h-all-c-full-scaffold-sonelokimab"
+    }
+  ],
+  "schema_version": "0.1",
+  "status": "passed"
+}

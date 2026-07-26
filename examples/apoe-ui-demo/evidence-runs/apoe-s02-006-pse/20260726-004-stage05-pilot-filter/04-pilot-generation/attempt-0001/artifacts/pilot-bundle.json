@@ -1,0 +1,78 @@
+{
+  "backend_environment": {
+    "artifact_id": "pilot-backend-environment",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/backend-environment.json",
+    "role": "backend-environment",
+    "sha256": "54108b5879566cb722ac29bcda1f29634609b73596acda93d5a2374f69980b60",
+    "size_bytes": 1184
+  },
+  "candidate_index": {
+    "artifact_id": "candidate-index",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/candidate-index.json",
+    "role": "stage05-candidate-input",
+    "sha256": "432ebb9638dbc50585ebd4d930bdc7e17f6a1b675320961dfadea4f3cfd299c5",
+    "size_bytes": 9049102
+  },
+  "complete_candidate_count": 840,
+  "complete_candidates_per_strategy": 40,
+  "generated_at": "2026-07-25T23:54:40.748824Z",
+  "pilot_plan": {
+    "artifact_id": "pilot-plan",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/pilot-plan.json",
+    "role": "pilot-execution-plan",
+    "sha256": "42520d8dfb94090612c778beabcd2dfc3398175239ac2f8b0e369c9e3ad97ac5",
+    "size_bytes": 15852
+  },
+  "progress_final": {
+    "artifact_id": "pilot-progress-final",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/progress-final.json",
+    "role": "terminal-progress",
+    "sha256": "b4ea65bcffc9f0b8eccda38710b11a1cf0e93606ca322cb8770943ec63073ce6",
+    "size_bytes": 652
+  },
+  "schema_version": "0.1",
+  "status": "succeeded",
+  "strategy_bundle": {
+    "artifact_id": "strategy-bundle",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "03-boltzgen-configuration",
+    "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategy-bundle.json",
+    "role": "stage04-strategy-input",
+    "sha256": "a8451f5f7f7b7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87",
+    "size_bytes": 20687
+  },
+  "strategy_count": 21,
+  "task_events": {
+    "artifact_id": "pilot-task-events",
+    "file_format": "jsonl",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/task-events.jsonl",
+    "role": "append-only-task-events",
+    "sha256": "a1ce5c135e2f9f98da6e8eb051c4195148c7250d7c88f022dfd4c908fc0eaea2",
+    "size_bytes": 23074
+  },
+  "task_table": {
+    "artifact_id": "pilot-task-table",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/task-table.json",
+    "role": "task-terminal-records",
+    "sha256": "a8010a69bfebd537cef11e4d111a135dbd244550444fd6e52137831a3d033b48",
+    "size_bytes": 79170
+  }
+}

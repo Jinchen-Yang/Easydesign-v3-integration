@@ -1,0 +1,17 @@
+{
+  "accession": null,
+  "canonical_sequence_length": null,
+  "error": null,
+  "evidence_level": "structural_only",
+  "identity_resolution": "not_attempted",
+  "mapped_features": [],
+  "motif_warnings": [],
+  "schema_version": "0.1",
+  "sequence_identity": null,
+  "sequence_mismatches": [],
+  "source_sha256": null,
+  "source_url": null,
+  "status": "not_requested",
+  "target_coverage": null,
+  "uniprot_release": null
+}

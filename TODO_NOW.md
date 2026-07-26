@@ -18,8 +18,9 @@
 
 ## Now
 
-- 当前无进行中的实现任务。UI-007/ENG-012 已完成并归档；下一项工作应从下方 Next
-  显式移入 Now 后再开始。
+- `[DATA-004]` 构建 APOE Stage 05 的精简 UI evidence bundle：保留 manifest 闭包、
+  Stage 04 进度、Stage 05 全部指标和 12/10 个重点结构，不提交 970 MB 后端中间目录。
+- `[UX-005]` 将共享案例加入 main，并提供 clone 后的校验和启动说明。
 
 ## Next
 

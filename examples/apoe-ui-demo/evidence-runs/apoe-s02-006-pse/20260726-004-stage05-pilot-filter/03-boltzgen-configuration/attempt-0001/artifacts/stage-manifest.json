@@ -1,0 +1,1144 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "backend_name": "boltzgen",
+      "backend_version": "0.3.2",
+      "created_at": "2026-07-25T17:12:10.164385Z",
+      "ended_at": "2026-07-25T17:12:10.164385Z",
+      "error": null,
+      "executor_name": "easydesign-core",
+      "log_artifacts": [
+        {
+          "artifact_id": "stage03-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/stdout.log",
+          "role": "backend-log",
+          "sha256": "78c6a6271e747701f8c5eaea3101fd84163db85c4b1ad3c687a8ad33585eefee",
+          "size_bytes": 52
+        },
+        {
+          "artifact_id": "stage03-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-7eow-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7eow.stdout.log",
+          "role": "backend-log",
+          "sha256": "f76ed1ccdc83d31d5411d5a423b51154c1951fcc621f2d487717135107443df0",
+          "size_bytes": 741
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-7eow-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7eow.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-7xl0-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7xl0.stdout.log",
+          "role": "backend-log",
+          "sha256": "44c9357a9df36545fd70d278b4a5b8c41e6a55b04982b3ad931dc8c4ff33148c",
+          "size_bytes": 880
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-7xl0-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7xl0.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-8coh-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8coh.stdout.log",
+          "role": "backend-log",
+          "sha256": "ae4e5b0936b58c94df0ef6e17dc1e678d9fc59a0826f3cbcbfd357526abd463d",
+          "size_bytes": 532
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-8coh-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8coh.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-8z8v-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8z8v.stdout.log",
+          "role": "backend-log",
+          "sha256": "de5c219f46787260351816afe48676fad3169418571cf2101fe9f248266b0a4e",
+          "size_bytes": 738
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-8z8v-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8z8v.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-gontivimab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-gontivimab.stdout.log",
+          "role": "backend-log",
+          "sha256": "a86f51a6fdbd27a807dac56204c767ffaa2b2a0133684b568a9ef108b3461242",
+          "size_bytes": 538
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-gontivimab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-gontivimab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-isecarosmab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-isecarosmab.stdout.log",
+          "role": "backend-log",
+          "sha256": "a49438e4995253c63853049b2b68c9c357d8d30635379685cc946bbed0a7ed63",
+          "size_bytes": 539
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-isecarosmab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-isecarosmab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-sonelokimab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-sonelokimab.stdout.log",
+          "role": "backend-log",
+          "sha256": "362cad435b31046e2b438d4c1fa56398cc99300626c1838aec23ba8104316ab0",
+          "size_bytes": 539
+        },
+        {
+          "artifact_id": "validation-region-a-h-all-c-full-scaffold-sonelokimab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-sonelokimab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-7eow-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7eow.stdout.log",
+          "role": "backend-log",
+          "sha256": "cd4ac17b77ae2d9727cb80fd4b8cc56d67fa77c3113a13d1fe8bbe304a1a54d8",
+          "size_bytes": 741
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-7eow-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7eow.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-7xl0-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7xl0.stdout.log",
+          "role": "backend-log",
+          "sha256": "f6b0ff19541a2a3c58959094efdb952ca49a558d0d581f82f2a7a05867235911",
+          "size_bytes": 880
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-7xl0-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7xl0.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-8coh-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8coh.stdout.log",
+          "role": "backend-log",
+          "sha256": "53c7acba399c677b5384acc4edb7f2f2ac0216ee911724bfbaf7225cd914867b",
+          "size_bytes": 532
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-8coh-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8coh.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-8z8v-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8z8v.stdout.log",
+          "role": "backend-log",
+          "sha256": "2654928be0154a35ffd781044664f716883dc514add17ad9a4297425c061e940",
+          "size_bytes": 738
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-8z8v-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8z8v.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-gontivimab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-gontivimab.stdout.log",
+          "role": "backend-log",
+          "sha256": "d4d664bb94ad3ad203139e37eb25855473520e9613cfb8cdf4cc377b1442f76f",
+          "size_bytes": 538
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-gontivimab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-gontivimab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-isecarosmab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-isecarosmab.stdout.log",
+          "role": "backend-log",
+          "sha256": "af5f0805906bc33e5c6d3007fc23dcc977c43be853b014264732293eb1cf28bf",
+          "size_bytes": 539
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-isecarosmab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-isecarosmab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-sonelokimab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-sonelokimab.stdout.log",
+          "role": "backend-log",
+          "sha256": "645c7e1e67d950114d58fe0445b76c0d749dfcd7350db2a05fb8deb598fe90d2",
+          "size_bytes": 539
+        },
+        {
+          "artifact_id": "validation-region-b-h-all-c-full-scaffold-sonelokimab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-sonelokimab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-7eow-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7eow.stdout.log",
+          "role": "backend-log",
+          "sha256": "cc19ad08a7b093e8bc1e54596ac100dffbe73c5d692cc8d919bb53f3273124bb",
+          "size_bytes": 741
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-7eow-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7eow.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-7xl0-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7xl0.stdout.log",
+          "role": "backend-log",
+          "sha256": "44c9357a9df36545fd70d278b4a5b8c41e6a55b04982b3ad931dc8c4ff33148c",
+          "size_bytes": 880
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-7xl0-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7xl0.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-8coh-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8coh.stdout.log",
+          "role": "backend-log",
+          "sha256": "946cd45fe1c366d9e9552755bc669c2f8b5a44d5b428caeae36eb875a3454423",
+          "size_bytes": 532
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-8coh-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8coh.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-8z8v-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8z8v.stdout.log",
+          "role": "backend-log",
+          "sha256": "f565e242d3b0ce882a6e2d9c828a1098eb2b53641803d495e3fe7ea9cd7c38cc",
+          "size_bytes": 738
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-8z8v-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8z8v.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-gontivimab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-gontivimab.stdout.log",
+          "role": "backend-log",
+          "sha256": "1b136a96f0c11fd7a2ece51a6d6e7f2220fd3c252050ebdad2b5456c4132f99d",
+          "size_bytes": 538
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-gontivimab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-gontivimab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-isecarosmab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-isecarosmab.stdout.log",
+          "role": "backend-log",
+          "sha256": "af5f0805906bc33e5c6d3007fc23dcc977c43be853b014264732293eb1cf28bf",
+          "size_bytes": 539
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-isecarosmab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-isecarosmab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-sonelokimab-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-sonelokimab.stdout.log",
+          "role": "backend-log",
+          "sha256": "678332723e893a7e27c567a8902afb96b947ea4dfdf78eea4a8e5cafafd533b4",
+          "size_bytes": 539
+        },
+        {
+          "artifact_id": "validation-region-c-h-all-c-full-scaffold-sonelokimab-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "03-boltzgen-configuration",
+          "relative_path": "03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-sonelokimab.stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        }
+      ],
+      "seed": null,
+      "started_at": "2026-07-25T17:12:10.164385Z",
+      "status": "succeeded"
+    }
+  ],
+  "completed_at": "2026-07-25T17:12:10.164385Z",
+  "contract_version": "0.1",
+  "created_at": "2026-07-25T17:12:10.164385Z",
+  "input_artifacts": [
+    {
+      "artifact_id": "target-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target-bundle.json",
+      "role": "target-bundle",
+      "sha256": "37c03968c38311bbd4813b0020bfacc43cc94663786d035dc33306e4cda36c83",
+      "size_bytes": 6248
+    },
+    {
+      "artifact_id": "target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target.cif",
+      "role": "canonical-target",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "artifact_id": "hotspots",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0002",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0002/artifacts/hotspots.yaml",
+      "role": "stage03-hotspot-input",
+      "sha256": "9865be52c3dd04d8dbcf3bac22023c7311561ab2fd2cc75d773bd06d512114c3",
+      "size_bytes": 3303
+    }
+  ],
+  "output_artifacts": [
+    {
+      "artifact_id": "strategy-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategy-bundle.json",
+      "role": "stage04-strategy-input",
+      "sha256": "a8451f5f7f7b7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87",
+      "size_bytes": 20687
+    },
+    {
+      "artifact_id": "design-matrix",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/design-matrix.json",
+      "role": "strategy-matrix",
+      "sha256": "ae1dc81d4c830fdbf9f75750ffbcd4cb47203d1e9d9bde49102dd3372ca1dd89",
+      "size_bytes": 16178
+    },
+    {
+      "artifact_id": "design-matrix-tsv",
+      "file_format": "tsv",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/design-matrix.tsv",
+      "role": "human-readable-strategy-matrix",
+      "sha256": "f21eb889bafac08ab4cf5ca6a71ed62e818e21d9bfd72926504a887aea5e1a7a",
+      "size_bytes": 5506
+    },
+    {
+      "artifact_id": "strategy-validation",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/validation-report.json",
+      "role": "backend-validation",
+      "sha256": "48c73788cd9a7ef5219d160307ac2dda9f6ac428b21aadb84f726d9e3cbbc9a6",
+      "size_bytes": 10689
+    },
+    {
+      "artifact_id": "scaffold-resolution",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/scaffold-resolution.json",
+      "role": "scaffold-provenance",
+      "sha256": "1ec59b5a51c4bed4d1e4b160bb2771b2e1cc4091b4cb563866ba0225cdf78351",
+      "size_bytes": 3739
+    },
+    {
+      "artifact_id": "boltzgen-capability",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/boltzgen-capability.json",
+      "role": "backend-capability",
+      "sha256": "a650d3160ab71bce6b80d763b6ef7f6ead0df64a1db07b35a2ca267f6bb1019c",
+      "size_bytes": 286
+    },
+    {
+      "artifact_id": "strategy-target",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/target.cif",
+      "role": "portable-strategy-target",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "artifact_id": "scaffold-7eow-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7eow.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "970d152c7834b32ae99a6f80fe30fd87602682106c4a833ce1aef6f030213ffc",
+      "size_bytes": 1052
+    },
+    {
+      "artifact_id": "scaffold-7eow-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7eow.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "c642dd357cd364463d9cc78203ee31dc67b3ee0dad6efc3043b94576897dcbea",
+      "size_bytes": 647713
+    },
+    {
+      "artifact_id": "scaffold-7xl0-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "15dba3e9eaf55b6e5a24cc0b52ee58abe26d7357ba5419eb0fe998bf5eefe7f0",
+      "size_bytes": 1052
+    },
+    {
+      "artifact_id": "scaffold-7xl0-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "0042fd3761f1aee883db62f72f86b8a5fca75198d9e2f265be197b7d44320c34",
+      "size_bytes": 451294
+    },
+    {
+      "artifact_id": "scaffold-8coh-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8coh.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "f09e48b23df8a1d3e5b41f2a8f99201476861ffffc5f4aaa1d13d46a2ac35450",
+      "size_bytes": 1074
+    },
+    {
+      "artifact_id": "scaffold-8coh-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8coh.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "9d4f66737ca499933bf7a31e3ac064a52a094a388a597c4164f8469cd2b6579f",
+      "size_bytes": 432568
+    },
+    {
+      "artifact_id": "scaffold-8z8v-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8z8v.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "d76d2a421edd3c86b04ead4ec72c7f4022906dd703e2b48015222d61b5d82cb5",
+      "size_bytes": 1047
+    },
+    {
+      "artifact_id": "scaffold-8z8v-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8z8v.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "71674d0516398244d2543d0863dd588689cc8e9b3dcfded1a404784adad57638",
+      "size_bytes": 616743
+    },
+    {
+      "artifact_id": "scaffold-gontivimab-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/gontivimab.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "237b439cb309b6fcba244aa85cdb408e62c8382cb47ee7c81931df7589898166",
+      "size_bytes": 946
+    },
+    {
+      "artifact_id": "scaffold-gontivimab-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/gontivimab.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "e91fa5a772c3b7a9f1a6c51190abe3b879925d2a2a18ae093ac14ddcb96e3cab",
+      "size_bytes": 83986
+    },
+    {
+      "artifact_id": "scaffold-isecarosmab-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/isecarosmab.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "bf25cd10dc65e99b947e915bfe2be3316956fc71216263a66aeb4415edf48b0d",
+      "size_bytes": 1065
+    },
+    {
+      "artifact_id": "scaffold-isecarosmab-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/isecarosmab.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "b41d13efbed1ca989d04e3238c48a8b02b145a6927c850596c8f673d515a7f67",
+      "size_bytes": 75503
+    },
+    {
+      "artifact_id": "scaffold-sonelokimab-spec",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/sonelokimab.yaml",
+      "role": "vhh-scaffold-specification",
+      "sha256": "87c4d65ea8bac576c4c89acb2d2e0f66fddb2729124d0719ae6c0b6a91580888",
+      "size_bytes": 943
+    },
+    {
+      "artifact_id": "scaffold-sonelokimab-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/sonelokimab.cif",
+      "role": "vhh-scaffold-structure",
+      "sha256": "2a95c49075263ac4aa7580bf225ed512be1ca4deb9d5637e02e73e58d31a2f95",
+      "size_bytes": 83162
+    },
+    {
+      "artifact_id": "boltzgen-scaffold-license",
+      "file_format": "text",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/BOLTZGEN_LICENSE.txt",
+      "role": "third-party-license",
+      "sha256": "1d3aafee1429a716ca9afbe1760adf3a461cf61e750e92756dee510bdc0b7911",
+      "size_bytes": 1070
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-7eow",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7eow/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "7693eeed3519783db65c9fb11f0636d8b4f09283772940f1139d71ca75ee66de",
+      "size_bytes": 233
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-7eow-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7eow/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "8d1b855ea75d5b0554c31f1b95b000c6e961484e3685aa8787d56f043ba33776",
+      "size_bytes": 769
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-7xl0",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7xl0/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "9ef5f67df7f187862cae9b45acbd7b1e997efb73b148541f9ad2cdc3917c341f",
+      "size_bytes": 233
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-7xl0-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7xl0/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "ff668a6c0f5e53cd4da9a02ff2d192f129513219acd89a1b2dcdd90a254bbc10",
+      "size_bytes": 769
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-8coh",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8coh/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "c1de99bc5646249e5857caf9fdb8a8a6fccde5d2ced063d5f291357e9c8e65ff",
+      "size_bytes": 233
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-8coh-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8coh/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "b88f66304aee71da31d803e2e425eeed877c3a8c0350b4a7835b33a93b7ca44d",
+      "size_bytes": 769
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-8z8v",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8z8v/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "7b1416bceeffe389758a5a715cd9c652da193bb3d3f56d0660a9c80d2064e85c",
+      "size_bytes": 233
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-8z8v-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8z8v/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "3b08e38e173746c9fba66127e5d4ce598822b0d0b747d642b0c3ca5843240b8f",
+      "size_bytes": 769
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-gontivimab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-gontivimab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "efe62c69e954ce585e17657702c3dffebd9821a7cdb0edd88f67cc51c02b75ae",
+      "size_bytes": 239
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-gontivimab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-gontivimab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "21f2010880d0bee898d3d45fc47a8c9395dbf03bc8ed19e1312d3be3e744801f",
+      "size_bytes": 787
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-isecarosmab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-isecarosmab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "d8925feb786c0debbcaa0c572627f6baa52079ba5d0193648c024cebbae08804",
+      "size_bytes": 240
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-isecarosmab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-isecarosmab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "a963d17ec2a6a1ec099bf8c62280aaa86415a75f3e569630e69654a12012d984",
+      "size_bytes": 790
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-sonelokimab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-sonelokimab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "bf4714b0bbc012879530287285cd5dd848985c9df0be936bf09e2d25057323b5",
+      "size_bytes": 240
+    },
+    {
+      "artifact_id": "strategy-region-a-h-all-c-full-scaffold-sonelokimab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-sonelokimab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "a5c304308dfdd634c80fbf1035c0f50047fbf852c92587449d96e7b566e9b311",
+      "size_bytes": 790
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-7eow",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7eow/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "3739c098c4f580b35a9082a5a1c8a52c303faaf8160720afefbb985216fab6a8",
+      "size_bytes": 248
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-7eow-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7eow/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "6a2fdc585baebb5a50f751c3b1977a7f081c07d81ab88a0522d86b3d2aa263cb",
+      "size_bytes": 809
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-7xl0",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7xl0/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "269822316df686684051e0c8ef29adf33023ebe10cc0dd8b4ee8f85f1b6097ca",
+      "size_bytes": 248
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-7xl0-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7xl0/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "3d118e703c39be7edf110c4b7af8cf90d671b747f6a1042f36ea961bda169c44",
+      "size_bytes": 809
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-8coh",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8coh/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "2c54ea734b9104f046bdcefa26e34b502f4921504fcee5703278820c3c49bca9",
+      "size_bytes": 248
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-8coh-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8coh/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "1f4cba8e5004bde52aee346bcc8f196c18b060bfff8a4fc7047bfac4ea7450cb",
+      "size_bytes": 809
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-8z8v",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8z8v/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "2159b26010a04feb5b7fdf515ca591d0f546ed87ad69f259859e61b70c564704",
+      "size_bytes": 248
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-8z8v-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8z8v/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "323ec82842be6e33526b1fef9149482a39a5bb3ddfe076f9e90a4846368a7492",
+      "size_bytes": 809
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-gontivimab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-gontivimab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "8d355e8f8d4030182e25fef279a612e86d21cd81137cc5a16035a76f94a63d98",
+      "size_bytes": 254
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-gontivimab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-gontivimab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "3ec4b64f9d671ba3214d9ecae35bcbd6f7df46c7e344f5b225591c719b6b15f7",
+      "size_bytes": 827
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-isecarosmab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-isecarosmab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "63f0fe9eca009f1d059d2efb7fbb91a1e3c66de07e34f2da5466062650f55b16",
+      "size_bytes": 255
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-isecarosmab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-isecarosmab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "a68da22adbcf053a2457612ff2d1b28437fdecfc4c9541269a6dd6c1cab1f98e",
+      "size_bytes": 830
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-sonelokimab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-sonelokimab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "9df7e7608747e9b1c22c5934694abf2fe916a2298faf5f46f8d38411925840a4",
+      "size_bytes": 255
+    },
+    {
+      "artifact_id": "strategy-region-b-h-all-c-full-scaffold-sonelokimab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-sonelokimab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "e497a5939fd6af62886cf866f607bf684cc104c4039048336c19e93d8ec0bda1",
+      "size_bytes": 830
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-7eow",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7eow/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "a3719de2f16583811db4ad64ebc7806c4fcf7ece50617091ff889c99dafa5020",
+      "size_bytes": 255
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-7eow-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7eow/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "08d6890b38c76c4f6d89cc42023aa87cd94f764a718de67e5e8113e1b675b427",
+      "size_bytes": 816
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-7xl0",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7xl0/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "7df2dbc708e3078d1c45684e69d20ea16199180a68fa475d530091c281cfa4f8",
+      "size_bytes": 255
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-7xl0-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7xl0/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "e302b253107f25629c206db9c3d4a45a5421016246c289e5d3b3afa944a2376e",
+      "size_bytes": 816
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-8coh",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8coh/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "cebcd234476ae44dd100669cda9646114dabb4c36d3ff4ccc43fb936327fa6b3",
+      "size_bytes": 255
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-8coh-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8coh/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "06b21a939bd0de3c4f07c63f35a30ca924e643db336fbb321d3e9a276b158fef",
+      "size_bytes": 816
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-8z8v",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8z8v/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "a840b71cdddb18d89e5b2992b9ac0bf03500204bfefe47d2579eeccb7ec497f4",
+      "size_bytes": 255
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-8z8v-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8z8v/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "ab4d52cd1816365f916bf5334ebe0b3f526d0e3c2852eab7dcde442091bace2f",
+      "size_bytes": 816
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-gontivimab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-gontivimab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "eea0e06c712329c0ceb375808b14c89d3ef6a6ace42c48c8728c4dd49cac73bc",
+      "size_bytes": 261
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-gontivimab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-gontivimab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "bd98d80aa688e271a97daaba0dc1d8fa9b67836aa416d6128d30dbf0acc4d892",
+      "size_bytes": 834
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-isecarosmab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-isecarosmab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "6b4e2f9304ac29739c2dbed666bb24daf1416ab255b48bfc22c31207729a4147",
+      "size_bytes": 262
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-isecarosmab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-isecarosmab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "d4dab618f2caa6367a55c3a816199c6ddfe2e074aab4db1db230de3c976055c2",
+      "size_bytes": 837
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-sonelokimab",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-sonelokimab/design.yaml",
+      "role": "boltzgen-design-specification",
+      "sha256": "c7d66c3c5bfb10095b29d59330dcca508c48a169c0e309200e4a52efeef859d1",
+      "size_bytes": 262
+    },
+    {
+      "artifact_id": "strategy-region-c-h-all-c-full-scaffold-sonelokimab-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-sonelokimab/strategy-manifest.json",
+      "role": "strategy-manifest",
+      "sha256": "2f71b2ed9050720ff583776a586b28c6a5f0fb5178d05a731112cde06ac2fe1c",
+      "size_bytes": 837
+    }
+  ],
+  "schema_version": "1.0",
+  "selected_attempt_id": "attempt-0001",
+  "stage_id": "03-boltzgen-configuration",
+  "status": "succeeded",
+  "warnings": [
+    "Basic 1.0 template only: H_all + C_full.",
+    "Non-hotspot residues remain neutral and are not emitted as not_binding.",
+    "BoltzGen 0.3.2 does not expose a reliable deterministic generation seed."
+  ]
+}

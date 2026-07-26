@@ -1,0 +1,1556 @@
+{
+  "bundle_type": "easydesign-ui-evidence",
+  "coverage": {
+    "backend_intermediate_directories_included": false,
+    "stage05_local_pass_structure_files": 24,
+    "stage05_protenix_structure_files": 10,
+    "stage_count": 5
+  },
+  "evidence_status": "implemented",
+  "file_count": 307,
+  "files": [
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/identity-report.json",
+      "sha256": "c196e0e91f8024b2fa71f69a87350466c03f941ac8a42862b8035f79aace54d0",
+      "size_bytes": 190
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/provenance.json",
+      "sha256": "213ff2ac96bf202f24b742362bb4d7eb03495e333482fd671289e088ac1387b8",
+      "size_bytes": 769
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/reference-sequence.fasta",
+      "sha256": "e7a97f0737b5a2eb52df4281dcd972b24f4866d8642472ce053d30531bfbd795",
+      "size_bytes": 163
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/residue-map.tsv",
+      "sha256": "1066885a9489556b17acd92cde6ebba03e9100018fa1adb6a133f3e22cd42768",
+      "size_bytes": 2886
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/residue-mapping.json",
+      "sha256": "8303f13bacea3ec47b3bcd5ee4feae5eda40271da87700b2f33b91e93c36b1bb",
+      "size_bytes": 61489
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/retrieval-manifest.json",
+      "sha256": "0541317f69fd184250a983920e0ede8545807f2a0b083f4dd99f011e65eb03dd",
+      "size_bytes": 77
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/scope-report.json",
+      "sha256": "cb2f2c8871ed172783bfef93eb5ee865d0d97f4ea43aa9a5e4678ab04feace20",
+      "size_bytes": 108
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/sequence.fasta",
+      "sha256": "fa4c891209a59fdd855485cbf34a567f19a880788c018ae64939e63182f32ebd",
+      "size_bytes": 153
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/source-annotations.json",
+      "sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+      "size_bytes": 37181
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/structure-candidates.json",
+      "sha256": "6b6dca105e7336f58b5e19a0c1861e8c3bc2b5ba9349019d7be6955fbf28ef51",
+      "size_bytes": 120
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/structure-candidates.tsv",
+      "sha256": "87c1a04b2e39993c593c52e17d4a0042a4a4ffb53c2e76ddc14c0726ca798533",
+      "size_bytes": 30
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/structure-quality.json",
+      "sha256": "0b5f5a286a07821a0c0ca483645c9b0fb6cd8291a25ec15faf867bfef7c4cd63",
+      "size_bytes": 285
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/target-bundle.json",
+      "sha256": "37c03968c38311bbd4813b0020bfacc43cc94663786d035dc33306e4cda36c83",
+      "size_bytes": 6248
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/target.cif",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/artifacts/target.pdb",
+      "sha256": "096fcb86fb73d0fc684fe5cf818bb28376bbb70420b39a45f1614cf2306c59bd",
+      "size_bytes": 96147
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/attempt-manifest.json",
+      "sha256": "0328c9a6670930ee93312cda3789114d80dc71909dd1e638c045477bdab11d87",
+      "size_bytes": 1122
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/inputs/pse-request.json",
+      "sha256": "9103280e8a0a963ff4245c17aebe9d039f30634a43b2beb9ba1613f41671b9ff",
+      "size_bytes": 205
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/logs/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/attempt-0001/logs/stdout.log",
+      "sha256": "1785fcfaa5cd299dd8cbdd2e9b2f4c8a561b855748af4670674decf2dedb4702",
+      "size_bytes": 32
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/01-target-preparation/stage-manifest.v0001.json",
+      "sha256": "87594c9db122cf400aab610d3570148f7e106284778be24b341204acc18b3c84",
+      "size_bytes": 8185
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/annotations/annotation-report.json",
+      "sha256": "62128532f6f6fd87fd9da595de120f3c1719438d9f9506537a30774c51f11965",
+      "size_bytes": 423
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/stage-manifest.json",
+      "sha256": "0bfaf3817b96393df38ac261c25bef86fa5daf68a9362c01b38ef42263924d12",
+      "size_bytes": 6082
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/stage02-report.json",
+      "sha256": "50fb803215df18a054f6095f2b23f7e5ab0826ef16cd37baa5a96e04aaa07c8d",
+      "size_bytes": 870
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/user-provided/normalized-regions.json",
+      "sha256": "0d8db84c8aa58e5e7c3fe9b82690ac2120c307044ef65aa0fd0996ff171e1c77",
+      "size_bytes": 11301
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/user-provided/region-validation.json",
+      "sha256": "cf9e72bfd085ce669f440e09de486dbdc3add0a08522bbf1d4be11e38bcd02c3",
+      "size_bytes": 485
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/user-provided/review-regions.pml",
+      "sha256": "0ad0e763b500b7d0b6619f18c42364ac88b19ede11acd78bbf0b43a3a1edef8f",
+      "size_bytes": 1593
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/artifacts/user-provided/source-evidence.json",
+      "sha256": "221c8f278cfdc623813343ddda4fb35393635746074f63b2924b5dacc498b789",
+      "size_bytes": 1465
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/attempt-manifest.json",
+      "sha256": "612abe48109572fe1e77348abf1c6f8ccc8fd2d30daa822083e1669e2412d06d",
+      "size_bytes": 1143
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/logs/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0001/logs/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0002/artifacts/approval-record.json",
+      "sha256": "6cdccbf61c5cde30e46ab4562667372d0b84f63f006f76d6b1c5e0a0dfe133cd",
+      "size_bytes": 814
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0002/artifacts/approval-request.yaml",
+      "sha256": "baeae8544253c46c0101c1d936543c185e6e33bb3e69053fec9ee7ca2b885f2a",
+      "size_bytes": 1548
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0002/artifacts/hotspots.yaml",
+      "sha256": "9865be52c3dd04d8dbcf3bac22023c7311561ab2fd2cc75d773bd06d512114c3",
+      "size_bytes": 3303
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0002/artifacts/stage-manifest.json",
+      "sha256": "64ac6db96046fb7e7719ba103eac4d3d4210aed079932409161838d8ce8980d6",
+      "size_bytes": 5588
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0002/attempt-manifest.json",
+      "sha256": "947a08d368e8d67d60bc8a06ca5337e2c272ab407fe09b13e94cc7e85ec3dd1f",
+      "size_bytes": 365
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/02-hotspot-discovery/attempt-0002/inputs/hotspots-review.yaml",
+      "sha256": "f7851bfbbeda9bc34c398e1b99ad5b5ef0d318de73dcefff13cbfa459e7c8b59",
+      "size_bytes": 1524
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7eow.cif",
+      "sha256": "c642dd357cd364463d9cc78203ee31dc67b3ee0dad6efc3043b94576897dcbea",
+      "size_bytes": 647713
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7eow.yaml",
+      "sha256": "970d152c7834b32ae99a6f80fe30fd87602682106c4a833ce1aef6f030213ffc",
+      "size_bytes": 1052
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.cif",
+      "sha256": "0042fd3761f1aee883db62f72f86b8a5fca75198d9e2f265be197b7d44320c34",
+      "size_bytes": 451294
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.yaml",
+      "sha256": "15dba3e9eaf55b6e5a24cc0b52ee58abe26d7357ba5419eb0fe998bf5eefe7f0",
+      "size_bytes": 1052
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8coh.cif",
+      "sha256": "9d4f66737ca499933bf7a31e3ac064a52a094a388a597c4164f8469cd2b6579f",
+      "size_bytes": 432568
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8coh.yaml",
+      "sha256": "f09e48b23df8a1d3e5b41f2a8f99201476861ffffc5f4aaa1d13d46a2ac35450",
+      "size_bytes": 1074
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8z8v.cif",
+      "sha256": "71674d0516398244d2543d0863dd588689cc8e9b3dcfded1a404784adad57638",
+      "size_bytes": 616743
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/8z8v.yaml",
+      "sha256": "d76d2a421edd3c86b04ead4ec72c7f4022906dd703e2b48015222d61b5d82cb5",
+      "size_bytes": 1047
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/BOLTZGEN_LICENSE.txt",
+      "sha256": "1d3aafee1429a716ca9afbe1760adf3a461cf61e750e92756dee510bdc0b7911",
+      "size_bytes": 1070
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/gontivimab.cif",
+      "sha256": "e91fa5a772c3b7a9f1a6c51190abe3b879925d2a2a18ae093ac14ddcb96e3cab",
+      "size_bytes": 83986
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/gontivimab.yaml",
+      "sha256": "237b439cb309b6fcba244aa85cdb408e62c8382cb47ee7c81931df7589898166",
+      "size_bytes": 946
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/isecarosmab.cif",
+      "sha256": "b41d13efbed1ca989d04e3238c48a8b02b145a6927c850596c8f673d515a7f67",
+      "size_bytes": 75503
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/isecarosmab.yaml",
+      "sha256": "bf25cd10dc65e99b947e915bfe2be3316956fc71216263a66aeb4415edf48b0d",
+      "size_bytes": 1065
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/sonelokimab.cif",
+      "sha256": "2a95c49075263ac4aa7580bf225ed512be1ca4deb9d5637e02e73e58d31a2f95",
+      "size_bytes": 83162
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/sonelokimab.yaml",
+      "sha256": "87c4d65ea8bac576c4c89acb2d2e0f66fddb2729124d0719ae6c0b6a91580888",
+      "size_bytes": 943
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/assets/target.cif",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/boltzgen-capability.json",
+      "sha256": "a650d3160ab71bce6b80d763b6ef7f6ead0df64a1db07b35a2ca267f6bb1019c",
+      "size_bytes": 286
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/design-matrix.json",
+      "sha256": "ae1dc81d4c830fdbf9f75750ffbcd4cb47203d1e9d9bde49102dd3372ca1dd89",
+      "size_bytes": 16178
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/design-matrix.tsv",
+      "sha256": "f21eb889bafac08ab4cf5ca6a71ed62e818e21d9bfd72926504a887aea5e1a7a",
+      "size_bytes": 5506
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/scaffold-resolution.json",
+      "sha256": "1ec59b5a51c4bed4d1e4b160bb2771b2e1cc4091b4cb563866ba0225cdf78351",
+      "size_bytes": 3739
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/stage-manifest.json",
+      "sha256": "5d726ae3904ea4d0ee7b94ccac2e5a42b88f2e5eb0787e2aad67c79bb0195368",
+      "size_bytes": 55873
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7eow/design.cif",
+      "sha256": "ad9fa4edd33ffa15d075e6b20ff406c382963ea66e2d12539bacf3ca472ea1cc",
+      "size_bytes": 173598
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7eow/design.yaml",
+      "sha256": "7693eeed3519783db65c9fb11f0636d8b4f09283772940f1139d71ca75ee66de",
+      "size_bytes": 233
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7eow/strategy-manifest.json",
+      "sha256": "8d1b855ea75d5b0554c31f1b95b000c6e961484e3685aa8787d56f043ba33776",
+      "size_bytes": 769
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7xl0/design.cif",
+      "sha256": "274e78770e26946cdbb0018367b72072400f243cb95d42845e76189b1baf6509",
+      "size_bytes": 168757
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7xl0/design.yaml",
+      "sha256": "9ef5f67df7f187862cae9b45acbd7b1e997efb73b148541f9ad2cdc3917c341f",
+      "size_bytes": 233
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-7xl0/strategy-manifest.json",
+      "sha256": "ff668a6c0f5e53cd4da9a02ff2d192f129513219acd89a1b2dcdd90a254bbc10",
+      "size_bytes": 769
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8coh/design.cif",
+      "sha256": "eda89537c291615c1e2eb22c0ae28c779b8ee6270c917f38d0097a0a309b6bd6",
+      "size_bytes": 172311
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8coh/design.yaml",
+      "sha256": "c1de99bc5646249e5857caf9fdb8a8a6fccde5d2ced063d5f291357e9c8e65ff",
+      "size_bytes": 233
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8coh/strategy-manifest.json",
+      "sha256": "b88f66304aee71da31d803e2e425eeed877c3a8c0350b4a7835b33a93b7ca44d",
+      "size_bytes": 769
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8z8v/design.cif",
+      "sha256": "d2e2eb5abfb9fa37d11acb6586f6358ea5b122fec76c492e8b10cdc8ebe96d32",
+      "size_bytes": 166215
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8z8v/design.yaml",
+      "sha256": "7b1416bceeffe389758a5a715cd9c652da193bb3d3f56d0660a9c80d2064e85c",
+      "size_bytes": 233
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-8z8v/strategy-manifest.json",
+      "sha256": "3b08e38e173746c9fba66127e5d4ce598822b0d0b747d642b0c3ca5843240b8f",
+      "size_bytes": 769
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-gontivimab/design.cif",
+      "sha256": "8283249f2e7a9e113dd14ec24b13e431e7a63730588f1701125c9793fe2c7fc8",
+      "size_bytes": 175604
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-gontivimab/design.yaml",
+      "sha256": "efe62c69e954ce585e17657702c3dffebd9821a7cdb0edd88f67cc51c02b75ae",
+      "size_bytes": 239
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-gontivimab/strategy-manifest.json",
+      "sha256": "21f2010880d0bee898d3d45fc47a8c9395dbf03bc8ed19e1312d3be3e744801f",
+      "size_bytes": 787
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-isecarosmab/design.cif",
+      "sha256": "f236f2f9ffe7821124d7ad17bc1e8a4f37440c1bbf23354953a7a1dd0dae57f5",
+      "size_bytes": 166937
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-isecarosmab/design.yaml",
+      "sha256": "d8925feb786c0debbcaa0c572627f6baa52079ba5d0193648c024cebbae08804",
+      "size_bytes": 240
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-isecarosmab/strategy-manifest.json",
+      "sha256": "a963d17ec2a6a1ec099bf8c62280aaa86415a75f3e569630e69654a12012d984",
+      "size_bytes": 790
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-sonelokimab/design.cif",
+      "sha256": "92131d5bc24ef6997263b85d9b98526fd8935106fee9d24ac0fe7be6f724fa82",
+      "size_bytes": 171661
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-sonelokimab/design.yaml",
+      "sha256": "bf4714b0bbc012879530287285cd5dd848985c9df0be936bf09e2d25057323b5",
+      "size_bytes": 240
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-a-h-all-c-full-scaffold-sonelokimab/strategy-manifest.json",
+      "sha256": "a5c304308dfdd634c80fbf1035c0f50047fbf852c92587449d96e7b566e9b311",
+      "size_bytes": 790
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7eow/design.cif",
+      "sha256": "466b1e21ee0035b9b49e78479ed7ada05868a901fcd6e16519d10aef1227e9e8",
+      "size_bytes": 173688
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7eow/design.yaml",
+      "sha256": "3739c098c4f580b35a9082a5a1c8a52c303faaf8160720afefbb985216fab6a8",
+      "size_bytes": 248
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7eow/strategy-manifest.json",
+      "sha256": "6a2fdc585baebb5a50f751c3b1977a7f081c07d81ab88a0522d86b3d2aa263cb",
+      "size_bytes": 809
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7xl0/design.cif",
+      "sha256": "30267037bfb8018d0a44cc8c13a244785b0309ee996ef45a0bb7d3e629a17c66",
+      "size_bytes": 168792
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7xl0/design.yaml",
+      "sha256": "269822316df686684051e0c8ef29adf33023ebe10cc0dd8b4ee8f85f1b6097ca",
+      "size_bytes": 248
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-7xl0/strategy-manifest.json",
+      "sha256": "3d118e703c39be7edf110c4b7af8cf90d671b747f6a1042f36ea961bda169c44",
+      "size_bytes": 809
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8coh/design.cif",
+      "sha256": "a3fd20a5c24da0396ffbef3e5144c96a85f8100582bc85c14bf884ecceeb3454",
+      "size_bytes": 172325
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8coh/design.yaml",
+      "sha256": "2c54ea734b9104f046bdcefa26e34b502f4921504fcee5703278820c3c49bca9",
+      "size_bytes": 248
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8coh/strategy-manifest.json",
+      "sha256": "1f4cba8e5004bde52aee346bcc8f196c18b060bfff8a4fc7047bfac4ea7450cb",
+      "size_bytes": 809
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8z8v/design.cif",
+      "sha256": "f6dd03fea58aee424745eca7b461f28f5077a487e21af67505d28a748de73d19",
+      "size_bytes": 166311
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8z8v/design.yaml",
+      "sha256": "2159b26010a04feb5b7fdf515ca591d0f546ed87ad69f259859e61b70c564704",
+      "size_bytes": 248
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-8z8v/strategy-manifest.json",
+      "sha256": "323ec82842be6e33526b1fef9149482a39a5bb3ddfe076f9e90a4846368a7492",
+      "size_bytes": 809
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-gontivimab/design.cif",
+      "sha256": "ea7e47285493676c022e60a8aff8cc19a129b100717d39b7c8188a13d22f1ab1",
+      "size_bytes": 175605
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-gontivimab/design.yaml",
+      "sha256": "8d355e8f8d4030182e25fef279a612e86d21cd81137cc5a16035a76f94a63d98",
+      "size_bytes": 254
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-gontivimab/strategy-manifest.json",
+      "sha256": "3ec4b64f9d671ba3214d9ecae35bcbd6f7df46c7e344f5b225591c719b6b15f7",
+      "size_bytes": 827
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-isecarosmab/design.cif",
+      "sha256": "f9fe3f4598e13ba3f769bfb4bfda276fe493c859c376e66031e80f294c9a98aa",
+      "size_bytes": 166951
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-isecarosmab/design.yaml",
+      "sha256": "63f0fe9eca009f1d059d2efb7fbb91a1e3c66de07e34f2da5466062650f55b16",
+      "size_bytes": 255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-isecarosmab/strategy-manifest.json",
+      "sha256": "a68da22adbcf053a2457612ff2d1b28437fdecfc4c9541269a6dd6c1cab1f98e",
+      "size_bytes": 830
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-sonelokimab/design.cif",
+      "sha256": "63642807a499cafb09a6225535913d561d952a680cfb0ec57aae8df334ceb96c",
+      "size_bytes": 171752
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-sonelokimab/design.yaml",
+      "sha256": "9df7e7608747e9b1c22c5934694abf2fe916a2298faf5f46f8d38411925840a4",
+      "size_bytes": 255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-b-h-all-c-full-scaffold-sonelokimab/strategy-manifest.json",
+      "sha256": "e497a5939fd6af62886cf866f607bf684cc104c4039048336c19e93d8ec0bda1",
+      "size_bytes": 830
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7eow/design.cif",
+      "sha256": "68ec11b5b3e542f2ae292d9fc2dc5dc8291a26472083a5330893a1a3c2bb6e71",
+      "size_bytes": 173699
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7eow/design.yaml",
+      "sha256": "a3719de2f16583811db4ad64ebc7806c4fcf7ece50617091ff889c99dafa5020",
+      "size_bytes": 255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7eow/strategy-manifest.json",
+      "sha256": "08d6890b38c76c4f6d89cc42023aa87cd94f764a718de67e5e8113e1b675b427",
+      "size_bytes": 816
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7xl0/design.cif",
+      "sha256": "5ff763e43c4e16d7b9b7c18a5064248a53332929384374a7136e624c363b6004",
+      "size_bytes": 168801
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7xl0/design.yaml",
+      "sha256": "7df2dbc708e3078d1c45684e69d20ea16199180a68fa475d530091c281cfa4f8",
+      "size_bytes": 255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7xl0/strategy-manifest.json",
+      "sha256": "e302b253107f25629c206db9c3d4a45a5421016246c289e5d3b3afa944a2376e",
+      "size_bytes": 816
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8coh/design.cif",
+      "sha256": "f740eef453c79e0a8b52cf35f4618087162a295e37310ddea10d63c7603d79c2",
+      "size_bytes": 172355
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8coh/design.yaml",
+      "sha256": "cebcd234476ae44dd100669cda9646114dabb4c36d3ff4ccc43fb936327fa6b3",
+      "size_bytes": 255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8coh/strategy-manifest.json",
+      "sha256": "06b21a939bd0de3c4f07c63f35a30ca924e643db336fbb321d3e9a276b158fef",
+      "size_bytes": 816
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8z8v/design.cif",
+      "sha256": "1fec73f27fcb78ca0a7c28636caf00fdcae6f880b3b7df5a48c2602fb8741568",
+      "size_bytes": 166341
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8z8v/design.yaml",
+      "sha256": "a840b71cdddb18d89e5b2992b9ac0bf03500204bfefe47d2579eeccb7ec497f4",
+      "size_bytes": 255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-8z8v/strategy-manifest.json",
+      "sha256": "ab4d52cd1816365f916bf5334ebe0b3f526d0e3c2852eab7dcde442091bace2f",
+      "size_bytes": 816
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-gontivimab/design.cif",
+      "sha256": "4eb0271d37506e58894934b76216dca614d2cee84ae0b0efe2f4033e1a5312b2",
+      "size_bytes": 175648
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-gontivimab/design.yaml",
+      "sha256": "eea0e06c712329c0ceb375808b14c89d3ef6a6ace42c48c8728c4dd49cac73bc",
+      "size_bytes": 261
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-gontivimab/strategy-manifest.json",
+      "sha256": "bd98d80aa688e271a97daaba0dc1d8fa9b67836aa416d6128d30dbf0acc4d892",
+      "size_bytes": 834
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-isecarosmab/design.cif",
+      "sha256": "c753bebb91424de71bc6b12334503b7aee7b2df440c3bac09a7db5378b10c3cf",
+      "size_bytes": 166981
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-isecarosmab/design.yaml",
+      "sha256": "6b4e2f9304ac29739c2dbed666bb24daf1416ab255b48bfc22c31207729a4147",
+      "size_bytes": 262
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-isecarosmab/strategy-manifest.json",
+      "sha256": "d4dab618f2caa6367a55c3a816199c6ddfe2e074aab4db1db230de3c976055c2",
+      "size_bytes": 837
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-sonelokimab/design.cif",
+      "sha256": "9a5f070cc9532ce451750e73b8b8348f7bed03ee0aa5a6f6ffa15d2fbe355359",
+      "size_bytes": 171724
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-sonelokimab/design.yaml",
+      "sha256": "c7d66c3c5bfb10095b29d59330dcca508c48a169c0e309200e4a52efeef859d1",
+      "size_bytes": 262
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-sonelokimab/strategy-manifest.json",
+      "sha256": "2f71b2ed9050720ff583776a586b28c6a5f0fb5178d05a731112cde06ac2fe1c",
+      "size_bytes": 837
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/strategy-bundle.json",
+      "sha256": "a8451f5f7f7b7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87",
+      "size_bytes": 20687
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/artifacts/validation-report.json",
+      "sha256": "48c73788cd9a7ef5219d160307ac2dda9f6ac428b21aadb84f726d9e3cbbc9a6",
+      "size_bytes": 10689
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/attempt-manifest.json",
+      "sha256": "a0a660bbd4889987f8971ee9da5ec8d4881ff62b6e07efd061ad2a9f97b59dbc",
+      "size_bytes": 21498
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/stdout.log",
+      "sha256": "78c6a6271e747701f8c5eaea3101fd84163db85c4b1ad3c687a8ad33585eefee",
+      "size_bytes": 52
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7eow.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7eow.stdout.log",
+      "sha256": "f76ed1ccdc83d31d5411d5a423b51154c1951fcc621f2d487717135107443df0",
+      "size_bytes": 741
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7xl0.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-7xl0.stdout.log",
+      "sha256": "44c9357a9df36545fd70d278b4a5b8c41e6a55b04982b3ad931dc8c4ff33148c",
+      "size_bytes": 880
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8coh.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8coh.stdout.log",
+      "sha256": "ae4e5b0936b58c94df0ef6e17dc1e678d9fc59a0826f3cbcbfd357526abd463d",
+      "size_bytes": 532
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8z8v.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-8z8v.stdout.log",
+      "sha256": "de5c219f46787260351816afe48676fad3169418571cf2101fe9f248266b0a4e",
+      "size_bytes": 738
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-gontivimab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-gontivimab.stdout.log",
+      "sha256": "a86f51a6fdbd27a807dac56204c767ffaa2b2a0133684b568a9ef108b3461242",
+      "size_bytes": 538
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-isecarosmab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-isecarosmab.stdout.log",
+      "sha256": "a49438e4995253c63853049b2b68c9c357d8d30635379685cc946bbed0a7ed63",
+      "size_bytes": 539
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-sonelokimab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-a-h-all-c-full-scaffold-sonelokimab.stdout.log",
+      "sha256": "362cad435b31046e2b438d4c1fa56398cc99300626c1838aec23ba8104316ab0",
+      "size_bytes": 539
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7eow.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7eow.stdout.log",
+      "sha256": "cd4ac17b77ae2d9727cb80fd4b8cc56d67fa77c3113a13d1fe8bbe304a1a54d8",
+      "size_bytes": 741
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7xl0.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-7xl0.stdout.log",
+      "sha256": "f6b0ff19541a2a3c58959094efdb952ca49a558d0d581f82f2a7a05867235911",
+      "size_bytes": 880
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8coh.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8coh.stdout.log",
+      "sha256": "53c7acba399c677b5384acc4edb7f2f2ac0216ee911724bfbaf7225cd914867b",
+      "size_bytes": 532
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8z8v.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-8z8v.stdout.log",
+      "sha256": "2654928be0154a35ffd781044664f716883dc514add17ad9a4297425c061e940",
+      "size_bytes": 738
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-gontivimab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-gontivimab.stdout.log",
+      "sha256": "d4d664bb94ad3ad203139e37eb25855473520e9613cfb8cdf4cc377b1442f76f",
+      "size_bytes": 538
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-isecarosmab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-isecarosmab.stdout.log",
+      "sha256": "af5f0805906bc33e5c6d3007fc23dcc977c43be853b014264732293eb1cf28bf",
+      "size_bytes": 539
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-sonelokimab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-b-h-all-c-full-scaffold-sonelokimab.stdout.log",
+      "sha256": "645c7e1e67d950114d58fe0445b76c0d749dfcd7350db2a05fb8deb598fe90d2",
+      "size_bytes": 539
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7eow.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7eow.stdout.log",
+      "sha256": "cc19ad08a7b093e8bc1e54596ac100dffbe73c5d692cc8d919bb53f3273124bb",
+      "size_bytes": 741
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7xl0.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-7xl0.stdout.log",
+      "sha256": "44c9357a9df36545fd70d278b4a5b8c41e6a55b04982b3ad931dc8c4ff33148c",
+      "size_bytes": 880
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8coh.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8coh.stdout.log",
+      "sha256": "946cd45fe1c366d9e9552755bc669c2f8b5a44d5b428caeae36eb875a3454423",
+      "size_bytes": 532
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8z8v.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-8z8v.stdout.log",
+      "sha256": "f565e242d3b0ce882a6e2d9c828a1098eb2b53641803d495e3fe7ea9cd7c38cc",
+      "size_bytes": 738
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-gontivimab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-gontivimab.stdout.log",
+      "sha256": "1b136a96f0c11fd7a2ece51a6d6e7f2220fd3c252050ebdad2b5456c4132f99d",
+      "size_bytes": 538
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-isecarosmab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-isecarosmab.stdout.log",
+      "sha256": "af5f0805906bc33e5c6d3007fc23dcc977c43be853b014264732293eb1cf28bf",
+      "size_bytes": 539
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-sonelokimab.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/03-boltzgen-configuration/attempt-0001/logs/validation/region-c-h-all-c-full-scaffold-sonelokimab.stdout.log",
+      "sha256": "678332723e893a7e27c567a8902afb96b947ea4dfdf78eea4a8e5cafafd533b4",
+      "size_bytes": 539
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/backend-environment.json",
+      "sha256": "54108b5879566cb722ac29bcda1f29634609b73596acda93d5a2374f69980b60",
+      "size_bytes": 1184
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/candidate-index.json",
+      "sha256": "432ebb9638dbc50585ebd4d930bdc7e17f6a1b675320961dfadea4f3cfd299c5",
+      "size_bytes": 9049102
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/pilot-bundle.json",
+      "sha256": "0619db6eb77c0a84b1ef830038530f3c782164a279c23a8b14d9e3098e2735d0",
+      "size_bytes": 3070
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/pilot-plan.json",
+      "sha256": "42520d8dfb94090612c778beabcd2dfc3398175239ac2f8b0e369c9e3ad97ac5",
+      "size_bytes": 15852
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/progress-final.json",
+      "sha256": "b4ea65bcffc9f0b8eccda38710b11a1cf0e93606ca322cb8770943ec63073ce6",
+      "size_bytes": 652
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/stage-manifest.json",
+      "sha256": "7fc7930a4b525f4b2e0d10aab0e06bb3f4e04463c9620e8e8d34c3d1eb240285",
+      "size_bytes": 34000
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/task-events.jsonl",
+      "sha256": "a1ce5c135e2f9f98da6e8eb051c4195148c7250d7c88f022dfd4c908fc0eaea2",
+      "size_bytes": 23074
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/artifacts/task-table.json",
+      "sha256": "a8010a69bfebd537cef11e4d111a135dbd244550444fd6e52137831a3d033b48",
+      "size_bytes": 79170
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/attempt-manifest.json",
+      "sha256": "b87959c77e9a2b3f19b4306fc501e0c3cfb0b2f0e8824d02905443ee24a14f6c",
+      "size_bytes": 27914
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7eow/attempt-0001/stderr.log",
+      "sha256": "b75bc00adbbbeaf52cefc68dd08d1167f827a7c42a54452e0157d49f6f8995c5",
+      "size_bytes": 4148
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7eow/attempt-0001/stdout.log",
+      "sha256": "b4fb20bda9eb69300fb29aac96d502e2278f923337bba4152aed96248ee43a56",
+      "size_bytes": 26209
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7xl0/attempt-0001/stderr.log",
+      "sha256": "2f02a974f031c72c05c104571acc7bff29a784f2edf3617d0e726e9877a33778",
+      "size_bytes": 7473
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-7xl0/attempt-0001/stdout.log",
+      "sha256": "b383c352c9de4851a2fe4251e4cda0e0489b80acc1fec549ff2ab5d71bd72116",
+      "size_bytes": 26904
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8coh/attempt-0001/stderr.log",
+      "sha256": "b88324ea51d8e146cbb4fcdc750b985b1284883f81860ce8ac9fac2dd28a54b3",
+      "size_bytes": 4181
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8coh/attempt-0001/stdout.log",
+      "sha256": "1bc085d5b830e349e92bf667d3cc3d36919d376b1010080d6375c70527161473",
+      "size_bytes": 25184
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8z8v/attempt-0001/stderr.log",
+      "sha256": "111d45c02cff8f4663cfe0905b40cf14c724f865c2ca0759b50ea76d130e06c2",
+      "size_bytes": 3857
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-8z8v/attempt-0001/stdout.log",
+      "sha256": "a692340206d4c49098fda4ed53d91b0158aba69d2c88ff9eb479ff6b55777fd5",
+      "size_bytes": 26194
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_03.cif",
+      "sha256": "c33eb10f94c453b9b9b3d4614a9162ff5ee4b72132a0445ee4fabc5448cd7937",
+      "size_bytes": 182718
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_15.cif",
+      "sha256": "6dc56cf58c8fcf9984f85b9eb1f8ed8741959d4504b8103166169b5d122a6fa6",
+      "size_bytes": 180156
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_18.cif",
+      "sha256": "5cf03fa62ab91e26fce0575fb0ae84014db3901f750d0ee850a9bbc8c09dbf51",
+      "size_bytes": 180227
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_24.cif",
+      "sha256": "28309ee9a624577c9d3e9fecc9e23e441c881f9f5695962b1f4dc8d0b7b6060b",
+      "size_bytes": 183133
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_33.cif",
+      "sha256": "7202c1be91300b3c1311b38d8251d3df448d4638abed8404fca22534267b5b8d",
+      "size_bytes": 180578
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_38.cif",
+      "sha256": "9f98da0539220270e3324e33d5effa4d5b8bee5fba9d706f5454d37cd8511c8b",
+      "size_bytes": 179782
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_03.cif",
+      "sha256": "cff5074df293dd9d5c9df0a69341b153c0500d14c5881c4c9e964525f76d3cc9",
+      "size_bytes": 202144
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_15.cif",
+      "sha256": "ca8a47039c55a0b43e791a12a36f20eaebbe7a00ba805e306ed4ede80c9178a1",
+      "size_bytes": 198620
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_18.cif",
+      "sha256": "047a0b5ac2ca9ad3fc7bb6f979899222d81b269ea241b31eaa53457fc96477da",
+      "size_bytes": 198836
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_24.cif",
+      "sha256": "bcdcf5c018e1ceb56e320fc3ae660fcce8dead3cb5fca2ee284934f5be109476",
+      "size_bytes": 202086
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_33.cif",
+      "sha256": "91bd24567755aaf284e40736631abe06b0c3b4d370627bef0aa216907d011a2b",
+      "size_bytes": 198935
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_38.cif",
+      "sha256": "58fa42e091e64b59c9437714ee5e5154273a3afadeb28fcf6243e9cfcf1519d2",
+      "size_bytes": 198075
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/stderr.log",
+      "sha256": "a9c06f361387b8a292d9f6a3ae033740fb4002b77cab6cdc3c8c84ecbf52647d",
+      "size_bytes": 3927
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/stdout.log",
+      "sha256": "5ac38e3471830a41efb95df130582a3cff0563ad35a38eece3a39559c166281e",
+      "size_bytes": 25328
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-isecarosmab/attempt-0001/stderr.log",
+      "sha256": "f81ff8299c617891bc65659324750f6ece67b5816e97e24400a212bf768c2224",
+      "size_bytes": 4055
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-isecarosmab/attempt-0001/stdout.log",
+      "sha256": "dfc7b73a8d6cb4861d51180116c2242fbde94f259678b82033ea01d2847317d0",
+      "size_bytes": 25352
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0001/stderr.log",
+      "sha256": "b5cbcb70ebf92cc309a74b5affe75d4d4e00ecd65393a7948a901fbbbeb6de53",
+      "size_bytes": 7484
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0001/stdout.log",
+      "sha256": "759a971cdd3be2aa27cff3c446ecd7091bc4c4a0926926717e339257c81d3c53",
+      "size_bytes": 14200
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0002/stderr.log",
+      "sha256": "93acd1c772704b6c2d6e979ef544f1b186df5680952da601ee7c4f296c515b2b",
+      "size_bytes": 8306
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0002/stdout.log",
+      "sha256": "89636baf1332cd64989e2342ea7e9ae230509daff9522b0e3b0c17e6f6565a72",
+      "size_bytes": 810
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0003/stderr.log",
+      "sha256": "11f41d9161231a2b2b8eadab72265843e16797e7e980078ae00b5d28f3ebd443",
+      "size_bytes": 7506
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0003/stdout.log",
+      "sha256": "a5b3d96f7f2836839463e2443dbae8566a71d2e5fae647555948e7f44de37f3a",
+      "size_bytes": 522
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0004/stderr.log",
+      "sha256": "4fde4381b816b9c0cff862b3ec9476a5f7d2caa2d24d982e88cab8abc81675c5",
+      "size_bytes": 7001
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-a-h-all-c-full-scaffold-sonelokimab/attempt-0004/stdout.log",
+      "sha256": "2911aeb06bffc82a2f659d3f94205568c230d26166798e9547d84ccb1a2785f5",
+      "size_bytes": 25352
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0001/stderr.log",
+      "sha256": "c8089575881678e9a12ebbd6ffe75a0659be9fac09325c2417c3407e38dd34b2",
+      "size_bytes": 4506
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0001/stdout.log",
+      "sha256": "54fc59eab1c9b25e9277e1b84f2a67f74bbb5f8e6d4a446b565354426f38961b",
+      "size_bytes": 15744
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0002/stderr.log",
+      "sha256": "bda6b68b6cfdbd6c3d9c072f38e310b7c473951400a838e85657e5b8e83da17f",
+      "size_bytes": 7504
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0002/stdout.log",
+      "sha256": "1fdbbabe1a926b23d2f35df8c8ea9a445b3007ddb4daee59ed8e732273c9fc7f",
+      "size_bytes": 810
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0003/stderr.log",
+      "sha256": "667d6488f74fa5a3d4de2029d12852029cfa40c213e15b621c9b5a739a2a759f",
+      "size_bytes": 8388
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0003/stdout.log",
+      "sha256": "e465a1aa705a71bb8f5e72df0ebf5602ad9e5809d81efc738bdd03cdef8995bb",
+      "size_bytes": 426
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0004/stderr.log",
+      "sha256": "1d8b98206fdb77c628a138b74cd69b850077c8dd49fb362efdd8b23b4a53c0a8",
+      "size_bytes": 4029
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7eow/attempt-0004/stdout.log",
+      "sha256": "b84f38876a8c77ce24b7596e914648a084b897fecbd67b574fbb0ffbd3b74236",
+      "size_bytes": 26209
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7xl0/attempt-0001/stderr.log",
+      "sha256": "2b149a1662652d207fc59feac3cbe638def77cb8932f3013dedd9b3a532c2081",
+      "size_bytes": 4314
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-7xl0/attempt-0001/stdout.log",
+      "sha256": "dedd9e5f173f9fb81dedaad8cc7656ca12363e994102fea454bc79c6206e1f46",
+      "size_bytes": 26905
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8coh/attempt-0001/stderr.log",
+      "sha256": "2f97cb9bb22cbbda1013e43922c87bd15b310e84692bfcee8ed153f5e1f3fc90",
+      "size_bytes": 3861
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8coh/attempt-0001/stdout.log",
+      "sha256": "9aaf59fa02a3ebb7c846e90a69719a2138f7459763460b739e89b40272a7704e",
+      "size_bytes": 25184
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8z8v/attempt-0001/stderr.log",
+      "sha256": "8fffc725ff729b493da2e866bbfaf7d3b979241c29824b387d040d6f206e90e1",
+      "size_bytes": 3643
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-8z8v/attempt-0001/stdout.log",
+      "sha256": "99c0a4a4764232a80769303e44e729bd57834cb7696ab90d0ba6f56d8ba25f42",
+      "size_bytes": 26194
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-gontivimab/attempt-0001/stderr.log",
+      "sha256": "8d4d5010f9ec59ef41339ac05d71a8d9cda4b0857385a74988ad1745362ddc20",
+      "size_bytes": 3807
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-gontivimab/attempt-0001/stdout.log",
+      "sha256": "d53b6d9369937c88c7e6cd3682b1239e81d3a63e686f647b7c14fa66f9d41366",
+      "size_bytes": 25328
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-isecarosmab/attempt-0001/stderr.log",
+      "sha256": "bd57d71cdbaa73b366d0b31031ca23760c6ed7245d1d900b03b9fba631b64395",
+      "size_bytes": 3792
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-isecarosmab/attempt-0001/stdout.log",
+      "sha256": "0080f45d8d9bd932f69c10ad164268506ed8a532ddc6eb8a609ffb896eaedd18",
+      "size_bytes": 25352
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-sonelokimab/attempt-0001/stderr.log",
+      "sha256": "61d4c6e3f63f114eed29c72640f2cd677213b33774825d7bb3bfb6a62a9d6857",
+      "size_bytes": 4283
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-b-h-all-c-full-scaffold-sonelokimab/attempt-0001/stdout.log",
+      "sha256": "775ef5a65aa236e7b7affc74f8b928900859de014d011c53c930a9423c36a837",
+      "size_bytes": 25352
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7eow/attempt-0001/stderr.log",
+      "sha256": "fa0813c63826eee05bb3665a45ecc348bc57c53dff90395e5d5d4644ef1570ab",
+      "size_bytes": 3879
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7eow/attempt-0001/stdout.log",
+      "sha256": "67a9a388a3c2de328088034f2fea9373138233e05692e5bdea6c24e320e4a76c",
+      "size_bytes": 26209
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0001/stderr.log",
+      "sha256": "ca26778b40b59e7314e5f3d65482562720fd01ee41a079826311baf239728e42",
+      "size_bytes": 3867
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0001/stdout.log",
+      "sha256": "ee607b47d4f52bbfd971b8aa7723b20c026a3407e8a360ea82af005cbde3fb9f",
+      "size_bytes": 26968
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/stderr.log",
+      "sha256": "83a84c37462e3919a098ad3d362e52eec3e23dc3aa7197c6d414b35a1103da3f",
+      "size_bytes": 798
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/stdout.log",
+      "sha256": "f88d87ec5077f86fcf61a657e058eaff90f826fb615aaebff6fd777c4dc67058",
+      "size_bytes": 12421
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8coh/attempt-0001/stderr.log",
+      "sha256": "97b4a2aea4b0ebd0233b94807d48ad8357c9f784dd1a38c1df8e5dba895b09b3",
+      "size_bytes": 4063
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8coh/attempt-0001/stdout.log",
+      "sha256": "86b96566b26d9aed0ae0982a008e995c3d2f8d63e68d1a19a6fd032a10c3de80",
+      "size_bytes": 25184
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8z8v/attempt-0001/stderr.log",
+      "sha256": "31b04f658a3375d46a47cefba7d7cc3e60ce74205da2d506038aa8cc9a9ba62b",
+      "size_bytes": 3761
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-8z8v/attempt-0001/stdout.log",
+      "sha256": "c0807c2d19f18ac106a3cdb5141a64085042776732f5928e95930424da62fe4e",
+      "size_bytes": 26194
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-gontivimab/attempt-0001/stderr.log",
+      "sha256": "5efb42bdfa84df155b2c00983205242fb6d01a24bdab97213b429ea7e7dec346",
+      "size_bytes": 4019
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-gontivimab/attempt-0001/stdout.log",
+      "sha256": "4b4c7c910367aa84a39044a0486d33e2459816275c1a9fa09995810e4cc5dfaa",
+      "size_bytes": 25328
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-isecarosmab/attempt-0001/stderr.log",
+      "sha256": "b161c3ac2cc564a5ad8e09e8fe2675d3a64adb8d6122d2d567b8f8a04b6b5b78",
+      "size_bytes": 4287
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-isecarosmab/attempt-0001/stdout.log",
+      "sha256": "fa0614f4eaa114fe07847741c2bb20591a507206bb21761e3ecb7ddb645d6247",
+      "size_bytes": 25352
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-sonelokimab/attempt-0001/stderr.log",
+      "sha256": "fa29e0af824ba58409ad70ff8ce99df3d320828c1f8f38c9d31dbca9b805d0af",
+      "size_bytes": 4036
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-sonelokimab/attempt-0001/stdout.log",
+      "sha256": "6bd9fb3b880f759091c24d0fe2761cab76f04183d530a151d06c6e42cd72853c",
+      "size_bytes": 25352
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/expansion-candidate-index.json",
+      "sha256": "0433d07e42985d26f94ddaf7209a9fa6fd2b85c814711c8c6169819a66a16489",
+      "size_bytes": 1086024
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/expansion-validation-report.json",
+      "sha256": "c9909a6a75f1786bb6ca293ea4944bc8fc40b25e27985e90642a498eb94bfdb7",
+      "size_bytes": 211663
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/filter-profile.yaml",
+      "sha256": "18a47b038d85e7770a4d69a1ea5b31f937b3da1b43ed42abb6e6159421bb3fb1",
+      "size_bytes": 1793
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/pilot-filter-report.json",
+      "sha256": "9d58fb67af26bec9722918a691a65fc5b8d2b6170786170753a9e2f546dfbf1f",
+      "size_bytes": 7273871
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/progress-final.json",
+      "sha256": "28811d8cc349099078cc0906103f3549982be4e052fbf902945db95f9d1fbb99",
+      "size_bytes": 536
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/scientific-stop.json",
+      "sha256": "96c71c085d23695c09decb56caf57b60e356d747b7eeb255dce674cee5c602af",
+      "size_bytes": 328
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/stage-manifest.json",
+      "sha256": "a0e5b1e867b94baf7f5694e258beb314018f5d2bf713479545522c12c22f5261",
+      "size_bytes": 28130
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/stage05-bundle.json",
+      "sha256": "401259623dd43cf5a17dfed20fd81b6868d61002bcc1eabfab1b68134b5d9073",
+      "size_bytes": 3938
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/target-msa-evidence.json",
+      "sha256": "0783f8e6a0e02a5284481b9596c88581b2b0c055585a2e2a1fb84e2401796c05",
+      "size_bytes": 361
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/target-msa.a3m",
+      "sha256": "55f97a4ae641a2907639570757359f25f577630968395b0a51e8034511856154",
+      "size_bytes": 117142
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/artifacts/task-events.jsonl",
+      "sha256": "147bc53691ad618291e2278941f1b9afb0f2a4b423d0ba080ffa0041fb3dc048",
+      "size_bytes": 8938
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/attempt-manifest.json",
+      "sha256": "d9eb63aa84b131ca3a876b313a9a66a9cb66351f7182d2795fd28eae1ba693b4",
+      "size_bytes": 389
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_09.cif",
+      "sha256": "c012299b3dcea5c7bddbe7e81aa2e32f715d92ac2875b3d8661e45ae1cbf26d4",
+      "size_bytes": 177729
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_11.cif",
+      "sha256": "68158faaae01d165e7c366f60f5a3bcba422342a70f241b71e14b3b027b7a300",
+      "size_bytes": 183709
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_15.cif",
+      "sha256": "85939dfb44d6d346af4368b426e00a64c055ceeb989d7d45549926414a6184a5",
+      "size_bytes": 179006
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_28.cif",
+      "sha256": "020faec2bde0e7fffe751f2509e9be282136921631c4efbe83d837c4098641f2",
+      "size_bytes": 180938
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_40.cif",
+      "sha256": "99c9904826ad697f80b7102929f5a19c068fd985441ceca4d322d63abc27fbeb",
+      "size_bytes": 177610
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/design_56.cif",
+      "sha256": "be64cb4aa50a5d679523cfd756a8915248954c5327cae9bd08d51dd1af04684f",
+      "size_bytes": 179250
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_09.cif",
+      "sha256": "064a2861127e255279b01469aa4533c4e3d4e95e6ffbe866b5362c3a08e9d211",
+      "size_bytes": 195559
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_11.cif",
+      "sha256": "5d86a6424d7ec0b622d4357dd9f893d9cbe9d860694645fc15ae86b27c142281",
+      "size_bytes": 203016
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_15.cif",
+      "sha256": "8d62a91e78887da163845f7dfbef9c3856c3a9641cd7e3778cfd5deb29fa329c",
+      "size_bytes": 197031
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_28.cif",
+      "sha256": "a7facf975b3ae2b6b5a99b504536e141cdf3ed81b000143c064dd6e6896796a9",
+      "size_bytes": 199761
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_40.cif",
+      "sha256": "a50bb358ac001246ba1bdff25cd0969ecc3dfe3879667de5c65b7116285d3c5b",
+      "size_bytes": 195228
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/tasks/expand-region-a-h-all-c-full-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_56.cif",
+      "sha256": "e734e4f16131066476f4eb677dab4853bfa198fbe1a2ab9721018547427fb458",
+      "size_bytes": 197713
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001_full_data_sample_0.json",
+      "sha256": "ce2164a06adff361ecd5556cd7c3f8b41599ec89fce4c9f18cc64c388d23f525",
+      "size_bytes": 3482168
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001_sample_0.cif",
+      "sha256": "0905def5c494c16270d23cdf40b9f5761a6f21af575caecd28e3e4ddb25252d2",
+      "size_bytes": 213746
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001_summary_confidence_sample_0.json",
+      "sha256": "288800014467f63a85a32d9a535cb1a43ef4cef7cbfd327c283549c9b3599b13",
+      "size_bytes": 1253
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002_full_data_sample_0.json",
+      "sha256": "0a2e0151b24dbd1a54858dd036538a70dc78ca40435861e4fb1a120b02e5ab36",
+      "size_bytes": 3603273
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002_sample_0.cif",
+      "sha256": "b7cfb2ba99cc0c871e4589d5e38365b718220b106ba76f4c5049867267421389",
+      "size_bytes": 217382
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002_summary_confidence_sample_0.json",
+      "sha256": "b985870dc908771a7c43d1526556780bed67dd21a540ecfde7595c2a4d32e61f",
+      "size_bytes": 1257
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003_full_data_sample_0.json",
+      "sha256": "c175016f0600845f89df0a9f01677833ac94f40e216db9544193338e7b204443",
+      "size_bytes": 3521834
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003_sample_0.cif",
+      "sha256": "0b0ef9df3bc1d9614a78d30bf191c40e9122bace8f5b99fbacc4868749226cc3",
+      "size_bytes": 212154
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003_summary_confidence_sample_0.json",
+      "sha256": "dfbbc26172f423052809c058482570f58bea9ceab1b0e0c4471978de9a6191bb",
+      "size_bytes": 1249
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004_full_data_sample_0.json",
+      "sha256": "3e41c63fec9f46ebc31ede8b638e8a3d660a85a4843c5e3afe5489547a7ed076",
+      "size_bytes": 3513287
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004_sample_0.cif",
+      "sha256": "5a3dbb558352232b1d492cb2eebc504c70f7e87edc46aa488d0e76bb9cb962a4",
+      "size_bytes": 216204
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004_summary_confidence_sample_0.json",
+      "sha256": "c0af8b8ec41b6e900038bfc7de6809899d9c8f2e105fecb6609a32d8722f4780",
+      "size_bytes": 1257
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005_full_data_sample_0.json",
+      "sha256": "e4b6d577e6ed66c337e32752775834f4a1613d9c98dd3d49aca874d893d84f69",
+      "size_bytes": 3447505
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005_sample_0.cif",
+      "sha256": "8ad01eda56760998d5c93a334279b7bf1400582440f3e6e5bd311d477564a0f7",
+      "size_bytes": 215895
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005_summary_confidence_sample_0.json",
+      "sha256": "bc75c3e4a0e1edad3a44fe40eb4d992ce616349b40b6d258c6584226d571bb25",
+      "size_bytes": 1250
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006_full_data_sample_0.json",
+      "sha256": "94a04fe8feb05e0f10bdf1c3eb60b327319e53769de981cb1e5c8cd790c94089",
+      "size_bytes": 3596278
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006_sample_0.cif",
+      "sha256": "2a000c3d0d30f8e47e63e47af043450ff228106e9aff75b11527ade1d41ac28f",
+      "size_bytes": 215294
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006_summary_confidence_sample_0.json",
+      "sha256": "7509abac039ade8e1943db0c70b516ea3db109d0d9cdc99b0070ed2d4f902b75",
+      "size_bytes": 1240
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041_full_data_sample_0.json",
+      "sha256": "730eeb4b93ae31ba147f323edba9096af5ee33ffa9ada761b73ad03098f6f4f5",
+      "size_bytes": 3444906
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041_sample_0.cif",
+      "sha256": "494bf55f8ee7f589d4f8ef10cf581fdb91e26e130ebd714159d9ca2154598b05",
+      "size_bytes": 214688
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041_summary_confidence_sample_0.json",
+      "sha256": "abbb7d6e5048dd158d5f2b3e773450a1091a359ebe2351d608d4439ad0f4b9df",
+      "size_bytes": 1248
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042_full_data_sample_0.json",
+      "sha256": "9b77215cbccaaad74bba15ae388de4a8f8fc1ec236ee3e28e8049cc66179c2b8",
+      "size_bytes": 3449688
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042_sample_0.cif",
+      "sha256": "337027477cd4751636a78eb49d0064708cf6e1673790f62b5ee1130be6e2865b",
+      "size_bytes": 214992
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042_summary_confidence_sample_0.json",
+      "sha256": "3f8ea8d2584c9f32bec38788b03cc42d42c994a4302889078d0fe491bf078fed",
+      "size_bytes": 1252
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044_full_data_sample_0.json",
+      "sha256": "b4dee1c3a316ae42ff2c4f822835dc36843c040827c11cb6ea7cf4634cd5923f",
+      "size_bytes": 3634310
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044_sample_0.cif",
+      "sha256": "15a056239b369377cbc1423f9fab0475c80578521c4712018957fab5aea8ecfc",
+      "size_bytes": 216470
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044_summary_confidence_sample_0.json",
+      "sha256": "4ef1b9ee9b2abbf0f4ad4af1b924682524d3d3e783e19974553642610c863a9c",
+      "size_bytes": 1255
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045_full_data_sample_0.json",
+      "sha256": "b004d982965a75bfe5011802b5d05edd0a5c5153361f9686e43f4a467ab30ceb",
+      "size_bytes": 3392574
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045_sample_0.cif",
+      "sha256": "6cde34c6c7540116cda0411a550802d8f81ec4e307e1b0b51776d5e6eecbabb9",
+      "size_bytes": 213075
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045_summary_confidence_sample_0.json",
+      "sha256": "d42b1a4e631fcdad4173fc57470cfd5aacbfbb13a62afe9140915e68ebc1fbee",
+      "size_bytes": 1253
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/config-snapshot/continuation-source.json",
+      "sha256": "d684dc21d865e349659f27f9531fe8d9954d63a22e659ddf9c51ac2749abfe1c",
+      "size_bytes": 707
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/config-snapshot/easydesign.yaml",
+      "sha256": "b2430d88b4b67e5eb23f7535023ac83a69b0826b5299df0aeac01ceda83d1ac8",
+      "size_bytes": 2197
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/config-snapshot/resolved-config.json",
+      "sha256": "f84753c4b439854bbd3cccc95820b030a914cce22d21ec5ff9bd74c4ca72a427",
+      "size_bytes": 3934
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/input-snapshot/apoe_abc.pse",
+      "sha256": "7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651",
+      "size_bytes": 397738
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/manifests/LATEST",
+      "sha256": "a1ea7abe4d171ed5fb95f7d63a22b54604fba52458f67852842f44e50a6e92b4",
+      "size_bytes": 24
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/manifests/run-manifest.v0001.json",
+      "sha256": "8c0f4b72d50ef85b2a75ff7e79657f7147708c427f4be24a54545e6a1033b3e4",
+      "size_bytes": 1174
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/manifests/run-manifest.v0002.json",
+      "sha256": "90c00a176029c96895f442bd39a333ad1e856114e3c3dfac0040b81b863d461f",
+      "size_bytes": 2853
+    },
+    {
+      "path": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/manifests/run-manifest.v0003.json",
+      "sha256": "d7c618b552e0469dc6167b68aa04bcee3e4d7e8bed2c5685960190d713680e07",
+      "size_bytes": 3282
+    },
+    {
+      "path": "evidence-runs/run-index.json",
+      "sha256": "fb8ab88feaf4af109269b658bbc0f855e486eb71c38e89656afd7eb1ee9a2899",
+      "size_bytes": 451
+    }
+  ],
+  "generated_at": "2026-07-26T16:34:03.725435Z",
+  "project_id": "apoe-s02-006-pse",
+  "run_id": "20260726-004-stage05-pilot-filter",
+  "run_manifest": "evidence-runs/apoe-s02-006-pse/20260726-004-stage05-pilot-filter/manifests/run-manifest.v0003.json",
+  "schema_version": "0.1",
+  "scientific_status": "succeeded",
+  "size_bytes": 67470391,
+  "source_run_manifest_sha256": "d7c618b552e0469dc6167b68aa04bcee3e4d7e8bed2c5685960190d713680e07"
+}

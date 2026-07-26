@@ -1,0 +1,24 @@
+{
+  "acknowledge_evidence_limitations": true,
+  "acknowledge_user_provided_regions": true,
+  "approval_input_sha256": "f7851bfbbeda9bc34c398e1b99ad5b5ef0d318de73dcefff13cbfa459e7c8b59",
+  "approval_source": "explicit-review",
+  "approved_at": "2026-07-25T14:57:30.921603Z",
+  "approved_by": "knitua",
+  "authority": "human",
+  "method": null,
+  "policy_id": null,
+  "region_source": {
+    "color_scheme": "easydesign-rby-v1",
+    "source_annotation_sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+    "type": "pse-color-annotation"
+  },
+  "schema_version": "0.3",
+  "selected_region_ids": [
+    "user-region-a",
+    "user-region-b",
+    "user-region-c"
+  ],
+  "source_stage_manifest_sha256": "0bfaf3817b96393df38ac261c25bef86fa5daf68a9362c01b38ef42263924d12",
+  "status": "approved"
+}

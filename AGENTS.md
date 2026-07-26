@@ -125,6 +125,11 @@ Agent 必须自动完成以下收尾工作：
     主导航保持用户任务导向，审批进入动态通知和对应运行，环境进入设置。Stage 05 大型
     报告必须通过 manifest-only 后端分页投影，前端不得整体加载报告、复制阈值或根据
     内部 rule ID 自行判断科学结论。
+16. `runs/` 仍不得提交。确需通过 Git 共享真实案例时，只能生成独立的只读 evidence
+    bundle：必须验证 Run/Stage manifest 闭包和逐文件 SHA-256，排除 backend
+    `tasks/work/runtime` 等重型中间目录，登记来源、授权、大小和科学边界，并证明仓库内
+    UI 能读取。Evidence bundle 不得被描述为可恢复的完整 run，也不得包含密钥、模型
+    权重或未审计第三方资产。
 
 ## 4. 阻塞与询问
 

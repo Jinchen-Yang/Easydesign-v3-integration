@@ -716,6 +716,26 @@ Stage 05 report 的显式联接，禁止拆 strategy ID 猜 region 或 scaffold�
 填充。页面默认顺序为策略/Tier、扩展策略、初筛候选、Protenix 复核，科学停止只在最后
 解释能否进入 Stage 06。
 
+### 仓库共享的只读运行证据
+
+完整 `runs/` 仍属于 runtime-only。`reporting.evidence_bundle` 只为经明确授权的协作审阅
+生成精简副本：
+
+```text
+完整 run
+→ 验证当前 RunManifest / StageManifest / ArtifactRef
+→ 复制正式 manifest 闭包
+→ 补充 UI 指定的重点候选结构
+→ 排除 backend tasks/work/runtime
+→ bundle-manifest.json（逐文件大小与 SHA-256）
+→ evidence-runs/run-index.json
+```
+
+共享包可以作为 `easydesign ui serve` 的只读 `runs_root`，但不是可恢复执行目录。生成器
+不得篡改原 manifest 或把被裁剪的中间文件伪装为正式 artifact；如果正式 ArtifactRef
+位于通常被裁剪的目录，仍必须按 manifest 闭包复制。`serve_ui_evidence_bundle.py`
+先验证 bundle 清单和科学 manifest 闭包，再启动 localhost UI。
+
 运行状态与证据成熟度分开：
 
 - 执行状态：`pending`、`running`、`succeeded`、`failed`、`cancelled`。

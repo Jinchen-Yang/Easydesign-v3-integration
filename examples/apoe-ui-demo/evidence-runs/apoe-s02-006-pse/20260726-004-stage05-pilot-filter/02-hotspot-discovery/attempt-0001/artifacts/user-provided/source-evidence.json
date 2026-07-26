@@ -1,0 +1,64 @@
+{
+  "background_color_counts": {
+    "#33FF33": 101
+  },
+  "configured_selectors": {
+    "A": [
+      "A:32@#FF0000",
+      "A:36@#FF0000",
+      "A:39@#FF0000",
+      "A:46@#FF0000",
+      "A:50@#FF0000",
+      "A:55@#FF0000",
+      "A:59@#FF0000",
+      "A:63@#FF0000",
+      "A:66@#FF0000"
+    ],
+    "B": [
+      "A:58@#0000FF",
+      "A:61@#0000FF",
+      "A:65@#0000FF",
+      "A:69@#0000FF",
+      "A:72@#0000FF",
+      "A:76@#0000FF",
+      "A:91@#0000FF",
+      "A:95@#0000FF",
+      "A:102@#0000FF",
+      "A:105@#0000FF",
+      "A:109@#0000FF",
+      "A:113@#0000FF",
+      "A:116@#0000FF",
+      "A:120@#0000FF"
+    ],
+    "C": [
+      "A:99@#FFFF00",
+      "A:103@#FFFF00",
+      "A:106@#FFFF00",
+      "A:110@#FFFF00",
+      "A:114@#FFFF00",
+      "A:117@#FFFF00",
+      "A:121@#FFFF00",
+      "A:136@#FFFF00",
+      "A:140@#FFFF00",
+      "A:143@#FFFF00",
+      "A:147@#FFFF00",
+      "A:150@#FFFF00",
+      "A:154@#FFFF00",
+      "A:158@#FFFF00"
+    ]
+  },
+  "region_source": {
+    "color_scheme": "easydesign-rby-v1",
+    "source_annotation_sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+    "type": "pse-color-annotation"
+  },
+  "schema_version": "0.1",
+  "source_artifact_id": "source-annotations",
+  "source_artifact_sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+  "standard_color_counts": {
+    "#0000FF": 14,
+    "#FF0000": 9,
+    "#FFFF00": 14
+  },
+  "target_id": "apoe-pse-rby"
+}

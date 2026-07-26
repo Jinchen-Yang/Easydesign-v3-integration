@@ -1,0 +1,39 @@
+schema_version: '0.2'
+project_id: apoe-s02-006-pse
+run_id: 20260725-006-stage02-pse-colors-audited
+target_id: apoe-pse-rby
+method: null
+region_source:
+  type: pse-color-annotation
+  color_scheme: easydesign-rby-v1
+  source_annotation_sha256: b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7
+source_stage_manifest_sha256: 0bfaf3817b96393df38ac261c25bef86fa5daf68a9362c01b38ef42263924d12
+source_regions_artifact_id: user-provided-regions
+source_regions_sha256: 0d8db84c8aa58e5e7c3fe9b82690ac2120c307044ef65aa0fd0996ff171e1c77
+selection_basis: structural_only
+annotation_status: not_requested
+approved_by: knitua
+acknowledge_user_provided_regions: true
+acknowledge_evidence_limitations: true
+selections:
+- id: A
+  source_region_id: user-region-a
+  design_goal: exploratory
+  biological_rationale: User supplied APOE region prior; biological meaning requires
+    review.
+  structural_rationale: Exact PSE-color residues were mapped to normalized chain A
+    without member editing.
+- id: B
+  source_region_id: user-region-b
+  design_goal: exploratory
+  biological_rationale: User supplied APOE region prior; biological meaning requires
+    review.
+  structural_rationale: Exact PSE-color residues were mapped to normalized chain A
+    without member editing.
+- id: C
+  source_region_id: user-region-c
+  design_goal: exploratory
+  biological_rationale: User supplied APOE region prior; biological meaning requires
+    review.
+  structural_rationale: Exact PSE-color residues were mapped to normalized chain A
+    without member editing.

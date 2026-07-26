@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "project-run",
+      "layout_version": "1",
+      "notes": [
+        "Repository-shared read-only UI evidence bundle."
+      ],
+      "path": "apoe-s02-006-pse/20260726-004-stage05-pilot-filter",
+      "project_id": "apoe-s02-006-pse",
+      "run_id": "20260726-004-stage05-pilot-filter",
+      "status": "succeeded"
+    }
+  ],
+  "generated_at": "2026-07-26T16:34:03.725435+00:00",
+  "schema_version": "0.1"
+}

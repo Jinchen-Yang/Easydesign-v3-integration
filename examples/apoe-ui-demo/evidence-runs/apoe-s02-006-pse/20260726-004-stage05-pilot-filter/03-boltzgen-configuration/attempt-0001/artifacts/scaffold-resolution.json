@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "license": "MIT",
+      "scaffold_id": "7eow",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/7eow.yaml",
+      "specification_sha256": "970d152c7834b32ae99a6f80fe30fd87602682106c4a833ce1aef6f030213ffc",
+      "structure_path": "assets/scaffolds/7eow.cif",
+      "structure_sha256": "c642dd357cd364463d9cc78203ee31dc67b3ee0dad6efc3043b94576897dcbea"
+    },
+    {
+      "license": "MIT",
+      "scaffold_id": "7xl0",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/7xl0.yaml",
+      "specification_sha256": "15dba3e9eaf55b6e5a24cc0b52ee58abe26d7357ba5419eb0fe998bf5eefe7f0",
+      "structure_path": "assets/scaffolds/7xl0.cif",
+      "structure_sha256": "0042fd3761f1aee883db62f72f86b8a5fca75198d9e2f265be197b7d44320c34"
+    },
+    {
+      "license": "MIT",
+      "scaffold_id": "8coh",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/8coh.yaml",
+      "specification_sha256": "f09e48b23df8a1d3e5b41f2a8f99201476861ffffc5f4aaa1d13d46a2ac35450",
+      "structure_path": "assets/scaffolds/8coh.cif",
+      "structure_sha256": "9d4f66737ca499933bf7a31e3ac064a52a094a388a597c4164f8469cd2b6579f"
+    },
+    {
+      "license": "MIT",
+      "scaffold_id": "8z8v",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/8z8v.yaml",
+      "specification_sha256": "d76d2a421edd3c86b04ead4ec72c7f4022906dd703e2b48015222d61b5d82cb5",
+      "structure_path": "assets/scaffolds/8z8v.cif",
+      "structure_sha256": "71674d0516398244d2543d0863dd588689cc8e9b3dcfded1a404784adad57638"
+    },
+    {
+      "license": "MIT",
+      "scaffold_id": "gontivimab",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/gontivimab.yaml",
+      "specification_sha256": "237b439cb309b6fcba244aa85cdb408e62c8382cb47ee7c81931df7589898166",
+      "structure_path": "assets/scaffolds/gontivimab.cif",
+      "structure_sha256": "e91fa5a772c3b7a9f1a6c51190abe3b879925d2a2a18ae093ac14ddcb96e3cab"
+    },
+    {
+      "license": "MIT",
+      "scaffold_id": "isecarosmab",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/isecarosmab.yaml",
+      "specification_sha256": "bf25cd10dc65e99b947e915bfe2be3316956fc71216263a66aeb4415edf48b0d",
+      "structure_path": "assets/scaffolds/isecarosmab.cif",
+      "structure_sha256": "b41d13efbed1ca989d04e3238c48a8b02b145a6927c850596c8f673d515a7f67"
+    },
+    {
+      "license": "MIT",
+      "scaffold_id": "sonelokimab",
+      "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+      "source_repository": "https://github.com/HannesStark/boltzgen",
+      "specification_path": "assets/scaffolds/sonelokimab.yaml",
+      "specification_sha256": "87c4d65ea8bac576c4c89acb2d2e0f66fddb2729124d0719ae6c0b6a91580888",
+      "structure_path": "assets/scaffolds/sonelokimab.cif",
+      "structure_sha256": "2a95c49075263ac4aa7580bf225ed512be1ca4deb9d5637e02e73e58d31a2f95"
+    }
+  ],
+  "license_path": "assets/scaffolds/BOLTZGEN_LICENSE.txt",
+  "registry_id": "official-vhh7-v1",
+  "schema_version": "0.1"
+}

@@ -1,0 +1,12 @@
+entities:
+- file:
+    path: ../../assets/target.cif
+    include:
+    - chain:
+        id: A
+    binding_types:
+    - chain:
+        id: A
+        binding: 36,39,43,47,50,54,67,71,78,81,85,89,92,96
+- file:
+    path: ../../assets/scaffolds/sonelokimab.yaml

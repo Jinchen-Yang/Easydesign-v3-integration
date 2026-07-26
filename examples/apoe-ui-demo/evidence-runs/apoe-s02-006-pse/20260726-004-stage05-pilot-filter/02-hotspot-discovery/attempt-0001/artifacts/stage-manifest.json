@@ -1,0 +1,154 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "backend_name": "pse-color-annotation",
+      "backend_version": "easydesign-rby-v1",
+      "created_at": "2026-07-25T14:56:24.819648Z",
+      "ended_at": "2026-07-25T14:56:24.872519Z",
+      "error": null,
+      "executor_name": "easydesign-core",
+      "log_artifacts": [
+        {
+          "artifact_id": "stage02-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "02-hotspot-discovery",
+          "relative_path": "02-hotspot-discovery/attempt-0001/logs/stdout.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "artifact_id": "stage02-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "02-hotspot-discovery",
+          "relative_path": "02-hotspot-discovery/attempt-0001/logs/stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        }
+      ],
+      "seed": null,
+      "started_at": "2026-07-25T14:56:24.819648Z",
+      "status": "succeeded"
+    }
+  ],
+  "completed_at": "2026-07-25T14:56:24.872519Z",
+  "contract_version": "0.3",
+  "created_at": "2026-07-25T14:56:24.819648Z",
+  "input_artifacts": [
+    {
+      "artifact_id": "target-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target-bundle.json",
+      "role": "target-bundle",
+      "sha256": "37c03968c38311bbd4813b0020bfacc43cc94663786d035dc33306e4cda36c83",
+      "size_bytes": 6248
+    },
+    {
+      "artifact_id": "target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target.cif",
+      "role": "canonical-target",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "artifact_id": "residue-mapping",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/residue-mapping.json",
+      "role": "residue-mapping",
+      "sha256": "8303f13bacea3ec47b3bcd5ee4feae5eda40271da87700b2f33b91e93c36b1bb",
+      "size_bytes": 61489
+    },
+    {
+      "artifact_id": "source-annotations",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/source-annotations.json",
+      "role": "source-annotations",
+      "sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+      "size_bytes": 37181
+    }
+  ],
+  "output_artifacts": [
+    {
+      "artifact_id": "stage02-annotation-report",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0001/artifacts/annotations/annotation-report.json",
+      "role": "scientific-annotation",
+      "sha256": "62128532f6f6fd87fd9da595de120f3c1719438d9f9506537a30774c51f11965",
+      "size_bytes": 423
+    },
+    {
+      "artifact_id": "user-region-source-evidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0001/artifacts/user-provided/source-evidence.json",
+      "role": "user-region-source-evidence",
+      "sha256": "221c8f278cfdc623813343ddda4fb35393635746074f63b2924b5dacc498b789",
+      "size_bytes": 1465
+    },
+    {
+      "artifact_id": "user-provided-regions",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0001/artifacts/user-provided/normalized-regions.json",
+      "role": "normalized-user-region-set",
+      "sha256": "0d8db84c8aa58e5e7c3fe9b82690ac2120c307044ef65aa0fd0996ff171e1c77",
+      "size_bytes": 11301
+    },
+    {
+      "artifact_id": "user-region-validation",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0001/artifacts/user-provided/region-validation.json",
+      "role": "user-region-validation",
+      "sha256": "cf9e72bfd085ce669f440e09de486dbdc3add0a08522bbf1d4be11e38bcd02c3",
+      "size_bytes": 485
+    },
+    {
+      "artifact_id": "user-region-review-script",
+      "file_format": "pml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0001/artifacts/user-provided/review-regions.pml",
+      "role": "visual-review-script",
+      "sha256": "0ad0e763b500b7d0b6619f18c42364ac88b19ede11acd78bbf0b43a3a1edef8f",
+      "size_bytes": 1593
+    },
+    {
+      "artifact_id": "stage02-report",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0001/artifacts/stage02-report.json",
+      "role": "stage-report",
+      "sha256": "50fb803215df18a054f6095f2b23f7e5ab0826ef16cd37baa5a96e04aaa07c8d",
+      "size_bytes": 870
+    }
+  ],
+  "schema_version": "1.0",
+  "selected_attempt_id": "attempt-0001",
+  "stage_id": "02-hotspot-discovery",
+  "status": "succeeded",
+  "warnings": [
+    "User-provided regions were preserved without expansion, deletion, or reranking.",
+    "PSE colors or YAML residues are user annotations, not scientific validation.",
+    "Human approval is required before hotspots.yaml is published."
+  ]
+}

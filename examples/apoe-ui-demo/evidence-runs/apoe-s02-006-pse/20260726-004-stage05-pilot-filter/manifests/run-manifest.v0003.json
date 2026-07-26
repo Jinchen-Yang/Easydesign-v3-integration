@@ -1,0 +1,89 @@
+{
+  "code_commit": null,
+  "code_identity": {
+    "content_sha256": null,
+    "dirty": false,
+    "distribution": "easydesign",
+    "git_commit": "de4dea2e552fd1e6a6ad5d69952beffcddae514c",
+    "source": "git",
+    "version": "0.1.0.dev5"
+  },
+  "completed_at": "2026-07-26T01:13:48.237088Z",
+  "config_snapshot": {
+    "artifact_id": "run-config",
+    "file_format": "yaml",
+    "producer_attempt": null,
+    "producer_stage": null,
+    "relative_path": "config-snapshot/easydesign.yaml",
+    "role": "user-config-snapshot",
+    "sha256": "b2430d88b4b67e5eb23f7535023ac83a69b0826b5299df0aeac01ceda83d1ac8",
+    "size_bytes": 2197
+  },
+  "created_at": "2026-07-26T00:06:08.016481Z",
+  "easydesign_version": "0.1.0.dev5",
+  "evidence_status": "implemented",
+  "previous_manifest_sha256": "811b66f425719fdc4af5d19fb68e3d12f0cc0d1daf1db45a048de25e833ea727",
+  "project_id": "apoe-s02-006-pse",
+  "revision": 3,
+  "run_id": "20260726-004-stage05-pilot-filter",
+  "runtime_profile": {
+    "profile_id": "proteindigger1-local",
+    "sha256": "61f84e4bc6e9ca90f4574f466bede82cdf60c958fc0319d5f360544c93f0de0b"
+  },
+  "schema_version": "1.2",
+  "stage_manifest_refs": [
+    {
+      "artifact_id": "stage-01-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/stage-manifest.v0001.json",
+      "role": "stage-manifest",
+      "sha256": "87594c9db122cf400aab610d3570148f7e106284778be24b341204acc18b3c84",
+      "size_bytes": 8185
+    },
+    {
+      "artifact_id": "stage-02-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0002",
+      "producer_stage": "02-hotspot-discovery",
+      "relative_path": "02-hotspot-discovery/attempt-0002/artifacts/stage-manifest.json",
+      "role": "stage-manifest",
+      "sha256": "64ac6db96046fb7e7719ba103eac4d3d4210aed079932409161838d8ce8980d6",
+      "size_bytes": 5588
+    },
+    {
+      "artifact_id": "stage-03-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/stage-manifest.json",
+      "role": "stage-manifest",
+      "sha256": "5d726ae3904ea4d0ee7b94ccac2e5a42b88f2e5eb0787e2aad67c79bb0195368",
+      "size_bytes": 55873
+    },
+    {
+      "artifact_id": "stage-04-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/stage-manifest.json",
+      "role": "stage-manifest",
+      "sha256": "7fc7930a4b525f4b2e0d10aab0e06bb3f4e04463c9620e8e8d34c3d1eb240285",
+      "size_bytes": 34000
+    },
+    {
+      "artifact_id": "stage-05-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/stage-manifest.json",
+      "role": "stage-manifest",
+      "sha256": "a0e5b1e867b94baf7f5694e258beb314018f5d2bf713479545522c12c22f5261",
+      "size_bytes": 28130
+    }
+  ],
+  "status": "succeeded",
+  "updated_at": "2026-07-26T01:13:48.237088Z",
+  "workflow_state": null
+}

@@ -1,0 +1,25 @@
+{
+  "annotation_status": "not_requested",
+  "comparison_status": "not-applicable",
+  "evidence_level": "structural_only",
+  "fused_ranking_generated": false,
+  "identity_resolution": "not_attempted",
+  "providers": [
+    {
+      "message": "3 user-provided region(s) were normalized without member editing or reranking.",
+      "method": null,
+      "provider": "pse-color-annotation",
+      "status": "succeeded"
+    }
+  ],
+  "pse_source_annotations_consumed": true,
+  "resolved_region_source": "pse-color-annotation",
+  "schema_version": "0.3",
+  "stage03_handoff": "awaiting_region_selection",
+  "target_id": "apoe-pse-rby",
+  "warnings": [
+    "User-provided regions are prior annotations, not validated binding residues or energetic hotspots.",
+    "Human approval is required before Stage 03.",
+    "region-B-has-3-spatial-components;user-members-preserved"
+  ]
+}

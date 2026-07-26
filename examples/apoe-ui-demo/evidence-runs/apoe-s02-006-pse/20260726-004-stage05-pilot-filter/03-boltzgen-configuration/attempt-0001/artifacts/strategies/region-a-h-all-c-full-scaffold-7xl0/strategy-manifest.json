@@ -1,0 +1,29 @@
+{
+  "binding_label_seq_ids": [
+    10,
+    14,
+    17,
+    24,
+    28,
+    33,
+    37,
+    41,
+    44
+  ],
+  "candidates_per_strategy": 40,
+  "compilation_status": "compiled",
+  "crop_enabled": false,
+  "crop_strategy": "C_full",
+  "design_specification_path": "strategies/region-a-h-all-c-full-scaffold-7xl0/design.yaml",
+  "design_specification_sha256": "9ef5f67df7f187862cae9b45acbd7b1e997efb73b148541f9ad2cdc3917c341f",
+  "hotspot_strategy": "H_all",
+  "neutral_residue_policy": "unmarked",
+  "region_id": "a",
+  "scaffold_id": "7xl0",
+  "scaffold_registry": "official-vhh7-v1",
+  "schema_version": "0.1",
+  "source_hotspot_set_id": "A",
+  "strategy_id": "region-a-h-all-c-full-scaffold-7xl0",
+  "strategy_profile": "boltzgen-vhh-basic-v1",
+  "target_chain": "A"
+}

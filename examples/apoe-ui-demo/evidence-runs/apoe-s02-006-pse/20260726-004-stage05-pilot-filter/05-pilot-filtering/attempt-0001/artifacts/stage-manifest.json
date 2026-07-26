@@ -1,0 +1,482 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "backend_name": "easydesign-filtering",
+      "backend_version": "nanobody-filter-standard-v1.5",
+      "created_at": "2026-07-26T00:06:11.630854Z",
+      "ended_at": "2026-07-26T01:13:48.237088Z",
+      "error": null,
+      "executor_name": "local-multi-gpu",
+      "log_artifacts": [],
+      "seed": null,
+      "started_at": "2026-07-26T00:06:11.630854Z",
+      "status": "succeeded"
+    }
+  ],
+  "completed_at": "2026-07-26T01:13:48.237088Z",
+  "contract_version": "0.1",
+  "created_at": "2026-07-26T00:06:11.630854Z",
+  "input_artifacts": [
+    {
+      "artifact_id": "target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target.cif",
+      "role": "canonical-target",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "artifact_id": "target-sequence",
+      "file_format": "fasta",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/sequence.fasta",
+      "role": "canonical-sequence",
+      "sha256": "fa4c891209a59fdd855485cbf34a567f19a880788c018ae64939e63182f32ebd",
+      "size_bytes": 153
+    },
+    {
+      "artifact_id": "strategy-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "03-boltzgen-configuration",
+      "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategy-bundle.json",
+      "role": "stage04-strategy-input",
+      "sha256": "a8451f5f7f7b7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87",
+      "size_bytes": 20687
+    },
+    {
+      "artifact_id": "pilot-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/pilot-bundle.json",
+      "role": "stage05-pilot-input",
+      "sha256": "0619db6eb77c0a84b1ef830038530f3c782164a279c23a8b14d9e3098e2735d0",
+      "size_bytes": 3070
+    },
+    {
+      "artifact_id": "candidate-index",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "04-pilot-generation",
+      "relative_path": "04-pilot-generation/attempt-0001/artifacts/candidate-index.json",
+      "role": "stage05-candidate-input",
+      "sha256": "432ebb9638dbc50585ebd4d930bdc7e17f6a1b675320961dfadea4f3cfd299c5",
+      "size_bytes": 9049102
+    }
+  ],
+  "output_artifacts": [
+    {
+      "artifact_id": "nanobody-filter-profile",
+      "file_format": "yaml",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/filter-profile.yaml",
+      "role": "versioned-filter-profile",
+      "sha256": "18a47b038d85e7770a4d69a1ea5b31f937b3da1b43ed42abb6e6159421bb3fb1",
+      "size_bytes": 1793
+    },
+    {
+      "artifact_id": "pilot-filter-report",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/pilot-filter-report.json",
+      "role": "pilot-filter-audit",
+      "sha256": "9d58fb67af26bec9722918a691a65fc5b8d2b6170786170753a9e2f546dfbf1f",
+      "size_bytes": 7273871
+    },
+    {
+      "artifact_id": "expansion-candidate-index",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/expansion-candidate-index.json",
+      "role": "stage05-expanded-candidates",
+      "sha256": "0433d07e42985d26f94ddaf7209a9fa6fd2b85c814711c8c6169819a66a16489",
+      "size_bytes": 1086024
+    },
+    {
+      "artifact_id": "stage05-progress-final",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/progress-final.json",
+      "role": "terminal-progress-snapshot",
+      "sha256": "28811d8cc349099078cc0906103f3549982be4e052fbf902945db95f9d1fbb99",
+      "size_bytes": 536
+    },
+    {
+      "artifact_id": "stage05-task-events",
+      "file_format": "jsonl",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/task-events.jsonl",
+      "role": "append-only-task-events",
+      "sha256": "147bc53691ad618291e2278941f1b9afb0f2a4b423d0ba080ffa0041fb3dc048",
+      "size_bytes": 8938
+    },
+    {
+      "artifact_id": "stage05-target-msa",
+      "file_format": "a3m",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/target-msa.a3m",
+      "role": "protenix-required-target-msa",
+      "sha256": "55f97a4ae641a2907639570757359f25f577630968395b0a51e8034511856154",
+      "size_bytes": 117142
+    },
+    {
+      "artifact_id": "stage05-msa-evidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/target-msa-evidence.json",
+      "role": "full-target-msa-provenance",
+      "sha256": "0783f8e6a0e02a5284481b9596c88581b2b0c055585a2e2a1fb84e2401796c05",
+      "size_bytes": 361
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0001-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "0905def5c494c16270d23cdf40b9f5761a6f21af575caecd28e3e4ddb25252d2",
+      "size_bytes": 213746
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0001-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "288800014467f63a85a32d9a535cb1a43ef4cef7cbfd327c283549c9b3599b13",
+      "size_bytes": 1253
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0001-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0001_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "ce2164a06adff361ecd5556cd7c3f8b41599ec89fce4c9f18cc64c388d23f525",
+      "size_bytes": 3482168
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0002-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "b7cfb2ba99cc0c871e4589d5e38365b718220b106ba76f4c5049867267421389",
+      "size_bytes": 217382
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0002-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "b985870dc908771a7c43d1526556780bed67dd21a540ecfde7595c2a4d32e61f",
+      "size_bytes": 1257
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0002-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0002_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "0a2e0151b24dbd1a54858dd036538a70dc78ca40435861e4fb1a120b02e5ab36",
+      "size_bytes": 3603273
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0003-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "0b0ef9df3bc1d9614a78d30bf191c40e9122bace8f5b99fbacc4868749226cc3",
+      "size_bytes": 212154
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0003-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "dfbbc26172f423052809c058482570f58bea9ceab1b0e0c4471978de9a6191bb",
+      "size_bytes": 1249
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0003-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0003_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "c175016f0600845f89df0a9f01677833ac94f40e216db9544193338e7b204443",
+      "size_bytes": 3521834
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0004-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "5a3dbb558352232b1d492cb2eebc504c70f7e87edc46aa488d0e76bb9cb962a4",
+      "size_bytes": 216204
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0004-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "c0af8b8ec41b6e900038bfc7de6809899d9c8f2e105fecb6609a32d8722f4780",
+      "size_bytes": 1257
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0004-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0004_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "3e41c63fec9f46ebc31ede8b638e8a3d660a85a4843c5e3afe5489547a7ed076",
+      "size_bytes": 3513287
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0005-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "8ad01eda56760998d5c93a334279b7bf1400582440f3e6e5bd311d477564a0f7",
+      "size_bytes": 215895
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0005-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "bc75c3e4a0e1edad3a44fe40eb4d992ce616349b40b6d258c6584226d571bb25",
+      "size_bytes": 1250
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0005-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0005_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "e4b6d577e6ed66c337e32752775834f4a1613d9c98dd3d49aca874d893d84f69",
+      "size_bytes": 3447505
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0006-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "2a000c3d0d30f8e47e63e47af043450ff228106e9aff75b11527ade1d41ac28f",
+      "size_bytes": 215294
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0006-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "7509abac039ade8e1943db0c70b516ea3db109d0d9cdc99b0070ed2d4f902b75",
+      "size_bytes": 1240
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0006-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0006_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "94a04fe8feb05e0f10bdf1c3eb60b327319e53769de981cb1e5c8cd790c94089",
+      "size_bytes": 3596278
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0041-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "494bf55f8ee7f589d4f8ef10cf581fdb91e26e130ebd714159d9ca2154598b05",
+      "size_bytes": 214688
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0041-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "abbb7d6e5048dd158d5f2b3e773450a1091a359ebe2351d608d4439ad0f4b9df",
+      "size_bytes": 1248
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0041-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0041_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "730eeb4b93ae31ba147f323edba9096af5ee33ffa9ada761b73ad03098f6f4f5",
+      "size_bytes": 3444906
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0042-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "337027477cd4751636a78eb49d0064708cf6e1673790f62b5ee1130be6e2865b",
+      "size_bytes": 214992
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0042-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "3f8ea8d2584c9f32bec38788b03cc42d42c994a4302889078d0fe491bf078fed",
+      "size_bytes": 1252
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0042-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0042_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "9b77215cbccaaad74bba15ae388de4a8f8fc1ec236ee3e28e8049cc66179c2b8",
+      "size_bytes": 3449688
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0044-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "15a056239b369377cbc1423f9fab0475c80578521c4712018957fab5aea8ecfc",
+      "size_bytes": 216470
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0044-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "4ef1b9ee9b2abbf0f4ad4af1b924682524d3d3e783e19974553642610c863a9c",
+      "size_bytes": 1255
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0044-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0044_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "b4dee1c3a316ae42ff2c4f822835dc36843c040827c11cb6ea7cf4634cd5923f",
+      "size_bytes": 3634310
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0045-full-target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045_sample_0.cif",
+      "role": "stage05-full-target-prediction",
+      "sha256": "6cde34c6c7540116cda0411a550802d8f81ec4e307e1b0b51776d5e6eecbabb9",
+      "size_bytes": 213075
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0045-full-target-summary",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045_summary_confidence_sample_0.json",
+      "role": "protenix-summary-confidence",
+      "sha256": "d42b1a4e631fcdad4173fc57470cfd5aacbfbb13a62afe9140915e68ebc1fbee",
+      "size_bytes": 1253
+    },
+    {
+      "artifact_id": "region-a-h-all-c-full-scaffold-gontivimab-candidate-0045-full-target-confidence",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/work/full-target/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/attempt-0001/output/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045/seed_101/predictions/region-a-h-all-c-full-scaffold-gontivimab-candidate-0045_full_data_sample_0.json",
+      "role": "protenix-full-confidence",
+      "sha256": "b004d982965a75bfe5011802b5d05edd0a5c5153361f9686e43f4a467ab30ceb",
+      "size_bytes": 3392574
+    },
+    {
+      "artifact_id": "expansion-validation-report",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/expansion-validation-report.json",
+      "role": "stage05-scale-strategy-evidence",
+      "sha256": "c9909a6a75f1786bb6ca293ea4944bc8fc40b25e27985e90642a498eb94bfdb7",
+      "size_bytes": 211663
+    },
+    {
+      "artifact_id": "stage05-scientific-stop",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/scientific-stop.json",
+      "role": "scientific-negative-result",
+      "sha256": "96c71c085d23695c09decb56caf57b60e356d747b7eeb255dce674cee5c602af",
+      "size_bytes": 328
+    },
+    {
+      "artifact_id": "stage05-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "05-pilot-filtering",
+      "relative_path": "05-pilot-filtering/attempt-0001/artifacts/stage05-bundle.json",
+      "role": "stage06-strategy-input-or-stop",
+      "sha256": "401259623dd43cf5a17dfed20fd81b6868d61002bcc1eabfab1b68134b5d9073",
+      "size_bytes": 3938
+    }
+  ],
+  "schema_version": "1.0",
+  "selected_attempt_id": "attempt-0001",
+  "stage_id": "05-pilot-filtering",
+  "status": "succeeded",
+  "warnings": [
+    "Scientific stop: stopped-no-scale-winner.",
+    "Software execution succeeded; no scale strategy was published."
+  ]
+}

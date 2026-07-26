@@ -1,0 +1,137 @@
+{
+  "detected_input_format": "pse",
+  "input_snapshot": {
+    "artifact_id": "target-source",
+    "file_format": "pse",
+    "producer_attempt": null,
+    "producer_stage": null,
+    "relative_path": "input-snapshot/apoe_abc.pse",
+    "role": "target-source-snapshot",
+    "sha256": "7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651",
+    "size_bytes": 397738
+  },
+  "msa_execution_plan": [],
+  "precomputed_msa_snapshot": null,
+  "prediction_request": null,
+  "project_id": "apoe-s02-006-pse",
+  "run_id": "20260726-004-stage05-pilot-filter",
+  "runtime_profile": {
+    "profile_id": "proteindigger1-local",
+    "sha256": "61f84e4bc6e9ca90f4574f466bede82cdf60c958fc0319d5f360544c93f0de0b"
+  },
+  "schema_version": "0.7",
+  "stop_after_stage": 5,
+  "target": null,
+  "user_config": {
+    "design": {
+      "binder_profile": "vhh",
+      "intent": "exploratory",
+      "required_reviews": []
+    },
+    "project_id": "apoe-s02-006-pse",
+    "schema_version": "0.7",
+    "stage01": {
+      "structure_prediction": null,
+      "structure_selection": {
+        "keep_ligands": [],
+        "on_ambiguous_candidates": "predict",
+        "on_no_eligible_candidate": "predict",
+        "policy": "experimental-first",
+        "preserve_source_context": true,
+        "quality_profile": "experimental-strict-v1"
+      },
+      "target": {
+        "scope": {
+          "type": "full-sequence"
+        },
+        "source": {
+          "chain": null,
+          "chain_namespace": "auth",
+          "format": "pse",
+          "identity": {
+            "uniprot_accession": null
+          },
+          "path": "/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260725-006-stage02-pse-colors-audited/input-snapshot/apoe_abc.pse",
+          "type": "local-file"
+        },
+        "target_id": "apoe-pse-rby"
+      }
+    },
+    "stage02": {
+      "annotations": {
+        "uniprot": "if_available"
+      },
+      "automatic": null,
+      "methods": [],
+      "mode": "user-provided",
+      "unattended_approval": null,
+      "user_regions": {
+        "approval": null,
+        "source": {
+          "color_scheme": "easydesign-rby-v1",
+          "type": "pse-colors"
+        }
+      }
+    },
+    "stage03": {
+      "candidates_per_strategy": 40,
+      "profile": "boltzgen-vhh-basic-v1",
+      "scaffold_registry": "official-vhh7-v1"
+    },
+    "stage04": {
+      "backend": "boltzgen-0.3.2",
+      "executor": {
+        "devices": [
+          0,
+          1
+        ],
+        "max_memory_used_mib": 1024,
+        "max_task_attempts": 3,
+        "max_utilization_percent": 10,
+        "resource_poll_seconds": 15.0,
+        "resource_wait_timeout_seconds": 21600.0,
+        "type": "local-multi-gpu",
+        "workers_per_device": 1
+      },
+      "required_complete_candidates_per_strategy": 40
+    },
+    "stage05": {
+      "expanded_total_per_strategy": 100,
+      "filter_profile": "nanobody-filter-standard-v1.5",
+      "full_target_prediction": {
+        "backend": "protenix-v2",
+        "binder_msa": "query-only",
+        "parameter_profile": "model-default",
+        "prediction_timeout_seconds": 7200,
+        "target_msa": {
+          "cache_mode": "online",
+          "mode": "remote",
+          "no_msa_fallback": false,
+          "providers": [
+            {
+              "endpoint": null,
+              "max_attempts": 3,
+              "provider": "colabfold-public",
+              "retry_backoff_seconds": 30,
+              "timeout_seconds": 1800
+            }
+          ]
+        },
+        "template_mode": "disabled"
+      },
+      "maximum_tier_a_strategies": 3,
+      "strategy_selection": {
+        "full_target_refold_top_n": 10,
+        "require_unique_winner": true
+      }
+    },
+    "stage06": null,
+    "stage07": null,
+    "workflow": {
+      "cache_mode": "online",
+      "execution_mode": "review-gated",
+      "max_strategy_rounds": 1,
+      "stop_after_stage": 5
+    }
+  }
+}

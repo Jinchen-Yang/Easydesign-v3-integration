@@ -73,6 +73,8 @@
 | `ENG-011` | Core Engineering | `smoke-validated` | Stage 04/06 统一 execution API 已覆盖实时 SSE 和历史重建；APOE 840 候选双 GPU 记录恢复准确。 |
 | `UI-007` | Product UI | `smoke-validated` | 五步向导可自由浏览并显示逐步 readiness；草稿、环境检查和真实启动只在各自边界按顺序解锁。 |
 | `ENG-012` | Core Engineering | `smoke-validated` | 本地文件立即原子接收并返回 filename/size/SHA-256 receipt；token 单次消费、空文件/超限/失败/重选均有明确处置。 |
+| `DATA-004` | Data & Assets | `planned` | 将 APOE Stage 05 真实结果整理为 main 可承载、manifest 完整且不含原始大规模中间文件的 UI evidence bundle。 |
+| `UX-005` | CLI & Developer Experience | `planned` | 为仓库内共享案例提供一条命令启动与校验入口，使合作者 clone 后直接查看相同 APOE 证据。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
 ### 通用决策门路线

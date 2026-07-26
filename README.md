@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev9`（包版本 `0.1.0.dev9`）
+- 当前版本：`0.1.0-dev10`（包版本 `0.1.0.dev10`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -34,7 +34,7 @@ python -m pip install -e ".[dev,ui]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev9-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev10-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -142,6 +142,20 @@ ssh -L 8765:127.0.0.1:8765 USER@SERVER
 APOE 当前页面会把第5步标为“未达到继续条件”，并提供 840 个小规模候选、21 个策略、
 100 个扩展候选和 10 个 Protenix 复核候选的分页分析；第6/7步同时显示“软件能力已实现 /
 本次运行尚未开始”。没有真实 `FinalCandidatePackage` 时，湿实验候选草案按钮保持禁用。
+
+### 查看仓库内 APOE 共享结果
+
+`main` 包含一个经过完整性校验的 APOE 只读证据包。它保留 Stage 01–05 的运行记录、
+Stage 04 双 GPU 历史、全部筛选指标，以及 12 个初筛候选和 10 个 Protenix 复核候选
+所需结构；不包含约 970 MB 的 BoltzGen 后端中间目录。
+
+```bash
+python scripts/serve_ui_evidence_bundle.py examples/apoe-ui-demo --port 8765
+```
+
+脚本会先逐文件验证 SHA-256 和 Run/Stage manifest 闭包，再启动本地工作台。浏览器打开
+`http://127.0.0.1:8765`。这个共享包用于结果审阅，不能替代完整 run 进行恢复执行或重新
+计算。详细边界见 [`examples/apoe-ui-demo/README.md`](examples/apoe-ui-demo/README.md)。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：

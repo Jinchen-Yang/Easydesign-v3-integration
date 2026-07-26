@@ -1,0 +1,23 @@
+{
+  "all_members_present_in_representative_model": true,
+  "all_members_uniquely_mapped": true,
+  "cross_region_overlaps": {},
+  "member_counts": {
+    "A": 9,
+    "B": 14,
+    "C": 14
+  },
+  "region_count": 3,
+  "representative_model_id": "1",
+  "schema_version": "0.1",
+  "spatial_component_counts": {
+    "A": 1,
+    "B": 3,
+    "C": 1
+  },
+  "status": "succeeded",
+  "target_id": "apoe-pse-rby",
+  "warnings": [
+    "region-B-has-3-spatial-components;user-members-preserved"
+  ]
+}

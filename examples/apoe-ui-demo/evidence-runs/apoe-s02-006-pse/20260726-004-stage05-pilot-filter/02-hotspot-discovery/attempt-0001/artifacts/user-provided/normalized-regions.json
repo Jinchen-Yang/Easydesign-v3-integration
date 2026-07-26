@@ -1,0 +1,434 @@
+{
+  "coordinate_model_ids": [
+    "1"
+  ],
+  "region_source": {
+    "color_scheme": "easydesign-rby-v1",
+    "source_annotation_sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+    "type": "pse-color-annotation"
+  },
+  "regions": [
+    {
+      "centroid_angstrom": [
+        8.987888888888888,
+        7.2875555555555565,
+        34.082222222222214
+      ],
+      "id": "A",
+      "members": [
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "32",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 10,
+          "sequence_index": 10
+        },
+        {
+          "amino_acid": "Y",
+          "auth_asym_id": "A",
+          "auth_seq_id": "36",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 14,
+          "sequence_index": 14
+        },
+        {
+          "amino_acid": "W",
+          "auth_asym_id": "A",
+          "auth_seq_id": "39",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 17,
+          "sequence_index": 17
+        },
+        {
+          "amino_acid": "Q",
+          "auth_asym_id": "A",
+          "auth_seq_id": "46",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 24,
+          "sequence_index": 24
+        },
+        {
+          "amino_acid": "E",
+          "auth_asym_id": "A",
+          "auth_seq_id": "50",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 28,
+          "sequence_index": 28
+        },
+        {
+          "amino_acid": "Q",
+          "auth_asym_id": "A",
+          "auth_seq_id": "55",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 33,
+          "sequence_index": 33
+        },
+        {
+          "amino_acid": "E",
+          "auth_asym_id": "A",
+          "auth_seq_id": "59",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 37,
+          "sequence_index": 37
+        },
+        {
+          "amino_acid": "L",
+          "auth_asym_id": "A",
+          "auth_seq_id": "63",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 41,
+          "sequence_index": 41
+        },
+        {
+          "amino_acid": "E",
+          "auth_asym_id": "A",
+          "auth_seq_id": "66",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 44,
+          "sequence_index": 44
+        }
+      ],
+      "source_region_id": "user-region-a",
+      "source_selectors": [
+        "A:32@#FF0000",
+        "A:36@#FF0000",
+        "A:39@#FF0000",
+        "A:46@#FF0000",
+        "A:50@#FF0000",
+        "A:55@#FF0000",
+        "A:59@#FF0000",
+        "A:63@#FF0000",
+        "A:66@#FF0000"
+      ],
+      "warnings": []
+    },
+    {
+      "centroid_angstrom": [
+        7.935142857142856,
+        14.229142857142858,
+        20.21842857142857
+      ],
+      "id": "B",
+      "members": [
+        {
+          "amino_acid": "Q",
+          "auth_asym_id": "A",
+          "auth_seq_id": "58",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 36,
+          "sequence_index": 36
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "61",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 39,
+          "sequence_index": 39
+        },
+        {
+          "amino_acid": "D",
+          "auth_asym_id": "A",
+          "auth_seq_id": "65",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 43,
+          "sequence_index": 43
+        },
+        {
+          "amino_acid": "K",
+          "auth_asym_id": "A",
+          "auth_seq_id": "69",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 47,
+          "sequence_index": 47
+        },
+        {
+          "amino_acid": "K",
+          "auth_asym_id": "A",
+          "auth_seq_id": "72",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 50,
+          "sequence_index": 50
+        },
+        {
+          "amino_acid": "S",
+          "auth_asym_id": "A",
+          "auth_seq_id": "76",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 54,
+          "sequence_index": 54
+        },
+        {
+          "amino_acid": "A",
+          "auth_asym_id": "A",
+          "auth_seq_id": "91",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 67,
+          "sequence_index": 67
+        },
+        {
+          "amino_acid": "K",
+          "auth_asym_id": "A",
+          "auth_seq_id": "95",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 71,
+          "sequence_index": 71
+        },
+        {
+          "amino_acid": "A",
+          "auth_asym_id": "A",
+          "auth_seq_id": "102",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 78,
+          "sequence_index": 78
+        },
+        {
+          "amino_acid": "G",
+          "auth_asym_id": "A",
+          "auth_seq_id": "105",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 81,
+          "sequence_index": 81
+        },
+        {
+          "amino_acid": "E",
+          "auth_asym_id": "A",
+          "auth_seq_id": "109",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 85,
+          "sequence_index": 85
+        },
+        {
+          "amino_acid": "G",
+          "auth_asym_id": "A",
+          "auth_seq_id": "113",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 89,
+          "sequence_index": 89
+        },
+        {
+          "amino_acid": "V",
+          "auth_asym_id": "A",
+          "auth_seq_id": "116",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 92,
+          "sequence_index": 92
+        },
+        {
+          "amino_acid": "G",
+          "auth_asym_id": "A",
+          "auth_seq_id": "120",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 96,
+          "sequence_index": 96
+        }
+      ],
+      "source_region_id": "user-region-b",
+      "source_selectors": [
+        "A:58@#0000FF",
+        "A:61@#0000FF",
+        "A:65@#0000FF",
+        "A:69@#0000FF",
+        "A:72@#0000FF",
+        "A:76@#0000FF",
+        "A:91@#0000FF",
+        "A:95@#0000FF",
+        "A:102@#0000FF",
+        "A:105@#0000FF",
+        "A:109@#0000FF",
+        "A:113@#0000FF",
+        "A:116@#0000FF",
+        "A:120@#0000FF"
+      ],
+      "warnings": [
+        "region-B-has-3-spatial-components;user-members-preserved"
+      ]
+    },
+    {
+      "centroid_angstrom": [
+        5.194142857142858,
+        23.03907142857142,
+        27.791
+      ],
+      "id": "C",
+      "members": [
+        {
+          "amino_acid": "A",
+          "auth_asym_id": "A",
+          "auth_seq_id": "99",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 75,
+          "sequence_index": 75
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "103",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 79,
+          "sequence_index": 79
+        },
+        {
+          "amino_acid": "A",
+          "auth_asym_id": "A",
+          "auth_seq_id": "106",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 82,
+          "sequence_index": 82
+        },
+        {
+          "amino_acid": "D",
+          "auth_asym_id": "A",
+          "auth_seq_id": "110",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 86,
+          "sequence_index": 86
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "114",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 90,
+          "sequence_index": 90
+        },
+        {
+          "amino_acid": "Q",
+          "auth_asym_id": "A",
+          "auth_seq_id": "117",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 93,
+          "sequence_index": 93
+        },
+        {
+          "amino_acid": "E",
+          "auth_asym_id": "A",
+          "auth_seq_id": "121",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 97,
+          "sequence_index": 97
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "136",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 112,
+          "sequence_index": 112
+        },
+        {
+          "amino_acid": "H",
+          "auth_asym_id": "A",
+          "auth_seq_id": "140",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 116,
+          "sequence_index": 116
+        },
+        {
+          "amino_acid": "K",
+          "auth_asym_id": "A",
+          "auth_seq_id": "143",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 119,
+          "sequence_index": 119
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "147",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 123,
+          "sequence_index": 123
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "150",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 126,
+          "sequence_index": 126
+        },
+        {
+          "amino_acid": "D",
+          "auth_asym_id": "A",
+          "auth_seq_id": "154",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 130,
+          "sequence_index": 130
+        },
+        {
+          "amino_acid": "R",
+          "auth_asym_id": "A",
+          "auth_seq_id": "158",
+          "insertion_code": null,
+          "label_asym_id": "A",
+          "label_seq_id": 134,
+          "sequence_index": 134
+        }
+      ],
+      "source_region_id": "user-region-c",
+      "source_selectors": [
+        "A:99@#FFFF00",
+        "A:103@#FFFF00",
+        "A:106@#FFFF00",
+        "A:110@#FFFF00",
+        "A:114@#FFFF00",
+        "A:117@#FFFF00",
+        "A:121@#FFFF00",
+        "A:136@#FFFF00",
+        "A:140@#FFFF00",
+        "A:143@#FFFF00",
+        "A:147@#FFFF00",
+        "A:150@#FFFF00",
+        "A:154@#FFFF00",
+        "A:158@#FFFF00"
+      ],
+      "warnings": []
+    }
+  ],
+  "representative_model_id": "1",
+  "schema_version": "0.1",
+  "sequence_sha256": "f805c6ca91a7d925814212be97c34f0de339067c8a7ade2826dd5168da6bd2af",
+  "target_id": "apoe-pse-rby",
+  "target_structure_sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+  "warnings": [
+    "region-B-has-3-spatial-components;user-members-preserved"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "binding_label_seq_ids": [
+    10,
+    14,
+    17,
+    24,
+    28,
+    33,
+    37,
+    41,
+    44
+  ],
+  "candidates_per_strategy": 40,
+  "compilation_status": "compiled",
+  "crop_enabled": false,
+  "crop_strategy": "C_full",
+  "design_specification_path": "strategies/region-a-h-all-c-full-scaffold-isecarosmab/design.yaml",
+  "design_specification_sha256": "d8925feb786c0debbcaa0c572627f6baa52079ba5d0193648c024cebbae08804",
+  "hotspot_strategy": "H_all",
+  "neutral_residue_policy": "unmarked",
+  "region_id": "a",
+  "scaffold_id": "isecarosmab",
+  "scaffold_registry": "official-vhh7-v1",
+  "schema_version": "0.1",
+  "source_hotspot_set_id": "A",
+  "strategy_id": "region-a-h-all-c-full-scaffold-isecarosmab",
+  "strategy_profile": "boltzgen-vhh-basic-v1",
+  "target_chain": "A"
+}

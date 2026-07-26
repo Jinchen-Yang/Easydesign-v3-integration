@@ -1,2 +1,3 @@
 src/easydesign/reporting/static/target_viewer/vendor/molstar/* -diff -text
 src/easydesign/resources/scaffolds/vhh/official_boltzgen_0_3_2/* -diff -text
+examples/apoe-ui-demo/evidence-runs/** -diff -text -whitespace

@@ -1,0 +1,44 @@
+{
+  "capability": {
+    "backend": "boltzgen",
+    "commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+    "molecule_dataset_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+    "offline_mode": "true",
+    "random_seed_status": "unsupported-by-boltzgen-0.3.2",
+    "version": "0.3.2"
+  },
+  "executor": {
+    "devices": [
+      0,
+      1
+    ],
+    "max_memory_used_mib": 1024,
+    "max_task_attempts": 3,
+    "max_utilization_percent": 10,
+    "resource_poll_seconds": 15.0,
+    "resource_wait_timeout_seconds": 21600.0,
+    "type": "local-multi-gpu",
+    "workers_per_device": 1
+  },
+  "gpu_preflight": [
+    {
+      "compute_process_pids": [],
+      "device": 0,
+      "memory_total_mib": 32760,
+      "memory_used_mib": 0,
+      "name": "NVIDIA GeForce RTX 4080",
+      "utilization_percent": 0,
+      "uuid": "GPU-4798bf6a-f250-95ee-c8ba-2e7404e6807e"
+    },
+    {
+      "compute_process_pids": [],
+      "device": 1,
+      "memory_total_mib": 32760,
+      "memory_used_mib": 0,
+      "name": "NVIDIA GeForce RTX 4080",
+      "utilization_percent": 0,
+      "uuid": "GPU-be838c3e-6cff-9e97-eddc-db4278fb93ae"
+    }
+  ],
+  "schema_version": "0.1"
+}

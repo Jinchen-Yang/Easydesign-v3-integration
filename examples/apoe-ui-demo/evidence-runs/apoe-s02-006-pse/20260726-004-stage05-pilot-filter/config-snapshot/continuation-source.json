@@ -1,0 +1,14 @@
+{
+  "copied_stage_manifest_sha256": {
+    "01-target-preparation": "87594c9db122cf400aab610d3570148f7e106284778be24b341204acc18b3c84",
+    "02-hotspot-discovery": "64ac6db96046fb7e7719ba103eac4d3d4210aed079932409161838d8ce8980d6",
+    "03-boltzgen-configuration": "5d726ae3904ea4d0ee7b94ccac2e5a42b88f2e5eb0787e2aad67c79bb0195368",
+    "04-pilot-generation": "7fc7930a4b525f4b2e0d10aab0e06bb3f4e04463c9620e8e8d34c3d1eb240285"
+  },
+  "next_stage": 5,
+  "schema_version": "0.1",
+  "source_project_id": "apoe-s02-006-pse",
+  "source_run_id": "20260726-003-stage04-pilot",
+  "source_run_manifest_revision": 3,
+  "source_run_manifest_sha256": "fd93c28823b35f17a6f595ad2d1aa623f5b0a376ab2f1ad923f16f0933babe04"
+}

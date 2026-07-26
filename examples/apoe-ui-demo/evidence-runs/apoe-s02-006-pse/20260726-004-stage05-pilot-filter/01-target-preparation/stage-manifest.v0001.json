@@ -1,0 +1,212 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "backend_name": "pymol-pse",
+      "backend_version": "3.1.0",
+      "created_at": "2026-07-25T14:56:23.684680Z",
+      "ended_at": "2026-07-25T14:56:24.780632Z",
+      "error": null,
+      "executor_name": "local-subprocess",
+      "log_artifacts": [
+        {
+          "artifact_id": "pymol-stdout",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "01-target-preparation",
+          "relative_path": "01-target-preparation/attempt-0001/logs/stdout.log",
+          "role": "backend-log",
+          "sha256": "1785fcfaa5cd299dd8cbdd2e9b2f4c8a561b855748af4670674decf2dedb4702",
+          "size_bytes": 32
+        },
+        {
+          "artifact_id": "pymol-stderr",
+          "file_format": "text",
+          "producer_attempt": "attempt-0001",
+          "producer_stage": "01-target-preparation",
+          "relative_path": "01-target-preparation/attempt-0001/logs/stderr.log",
+          "role": "backend-log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        }
+      ],
+      "seed": null,
+      "started_at": "2026-07-25T14:56:23.684680Z",
+      "status": "succeeded"
+    }
+  ],
+  "completed_at": "2026-07-25T14:56:24.780632Z",
+  "contract_version": "0.4",
+  "created_at": "2026-07-25T14:56:23.684680Z",
+  "input_artifacts": [
+    {
+      "artifact_id": "target-source",
+      "file_format": "pse",
+      "producer_attempt": null,
+      "producer_stage": null,
+      "relative_path": "input-snapshot/apoe_abc.pse",
+      "role": "target-source-snapshot",
+      "sha256": "7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651",
+      "size_bytes": 397738
+    }
+  ],
+  "output_artifacts": [
+    {
+      "artifact_id": "target-structure",
+      "file_format": "mmcif",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target.cif",
+      "role": "canonical-target",
+      "sha256": "d2c059c83467ae838fdd2a5ee5b72d667766f756fdddf8c1ceaf5f4d334300a1",
+      "size_bytes": 81067
+    },
+    {
+      "artifact_id": "target-sequence",
+      "file_format": "fasta",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/sequence.fasta",
+      "role": "canonical-sequence",
+      "sha256": "fa4c891209a59fdd855485cbf34a567f19a880788c018ae64939e63182f32ebd",
+      "size_bytes": 153
+    },
+    {
+      "artifact_id": "residue-mapping",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/residue-mapping.json",
+      "role": "residue-mapping",
+      "sha256": "8303f13bacea3ec47b3bcd5ee4feae5eda40271da87700b2f33b91e93c36b1bb",
+      "size_bytes": 61489
+    },
+    {
+      "artifact_id": "structure-quality",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/structure-quality.json",
+      "role": "structure-quality",
+      "sha256": "0b5f5a286a07821a0c0ca483645c9b0fb6cd8291a25ec15faf867bfef7c4cd63",
+      "size_bytes": 285
+    },
+    {
+      "artifact_id": "target-provenance",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/provenance.json",
+      "role": "provenance",
+      "sha256": "213ff2ac96bf202f24b742362bb4d7eb03495e333482fd671289e088ac1387b8",
+      "size_bytes": 769
+    },
+    {
+      "artifact_id": "source-annotations",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/source-annotations.json",
+      "role": "source-annotations",
+      "sha256": "b3b1a1b8401cdb783daef6ff36906e8ab534e280c2a2b9d282ba49f371bb7cd7",
+      "size_bytes": 37181
+    },
+    {
+      "artifact_id": "target-bundle",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target-bundle.json",
+      "role": "target-bundle",
+      "sha256": "37c03968c38311bbd4813b0020bfacc43cc94663786d035dc33306e4cda36c83",
+      "size_bytes": 6248
+    },
+    {
+      "artifact_id": "reference-sequence",
+      "file_format": "fasta",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/reference-sequence.fasta",
+      "role": "reference-sequence",
+      "sha256": "e7a97f0737b5a2eb52df4281dcd972b24f4866d8642472ce053d30531bfbd795",
+      "size_bytes": 163
+    },
+    {
+      "artifact_id": "residue-map-tsv",
+      "file_format": "tsv",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/residue-map.tsv",
+      "role": "residue-mapping-projection",
+      "sha256": "1066885a9489556b17acd92cde6ebba03e9100018fa1adb6a133f3e22cd42768",
+      "size_bytes": 2886
+    },
+    {
+      "artifact_id": "identity-report",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/identity-report.json",
+      "role": "identity-evidence",
+      "sha256": "c196e0e91f8024b2fa71f69a87350466c03f941ac8a42862b8035f79aace54d0",
+      "size_bytes": 190
+    },
+    {
+      "artifact_id": "scope-report",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/scope-report.json",
+      "role": "scope-evidence",
+      "sha256": "cb2f2c8871ed172783bfef93eb5ee865d0d97f4ea43aa9a5e4678ab04feace20",
+      "size_bytes": 108
+    },
+    {
+      "artifact_id": "structure-candidates",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/structure-candidates.json",
+      "role": "structure-candidate-report",
+      "sha256": "6b6dca105e7336f58b5e19a0c1861e8c3bc2b5ba9349019d7be6955fbf28ef51",
+      "size_bytes": 120
+    },
+    {
+      "artifact_id": "structure-candidates-tsv",
+      "file_format": "tsv",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/structure-candidates.tsv",
+      "role": "structure-candidate-projection",
+      "sha256": "87c1a04b2e39993c593c52e17d4a0042a4a4ffb53c2e76ddc14c0726ca798533",
+      "size_bytes": 30
+    },
+    {
+      "artifact_id": "retrieval-manifest",
+      "file_format": "json",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/retrieval-manifest.json",
+      "role": "remote-retrieval-evidence",
+      "sha256": "0541317f69fd184250a983920e0ede8545807f2a0b083f4dd99f011e65eb03dd",
+      "size_bytes": 77
+    },
+    {
+      "artifact_id": "target-pdb",
+      "file_format": "pdb",
+      "producer_attempt": "attempt-0001",
+      "producer_stage": "01-target-preparation",
+      "relative_path": "01-target-preparation/attempt-0001/artifacts/target.pdb",
+      "role": "compatibility-target",
+      "sha256": "096fcb86fb73d0fc684fe5cf818bb28376bbb70420b39a45f1614cf2306c59bd",
+      "size_bytes": 96147
+    }
+  ],
+  "schema_version": "1.0",
+  "selected_attempt_id": "attempt-0001",
+  "stage_id": "01-target-preparation",
+  "status": "succeeded",
+  "warnings": [
+    "PyMOL colors are preserved as uninterpreted source annotations."
+  ]
+}

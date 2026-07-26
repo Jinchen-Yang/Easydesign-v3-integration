@@ -1,0 +1,109 @@
+Predicting: |          | 0/? [00:00<?, ?it/s][Step 1/5] design - Predicting: |          | 0/? [00:00<?, ?it/s][Step 1/5] design - Predicting: |          | 0/? [00:00<?, ?it/s]Predicting DataLoader 0:   0%|          | 0/1 [00:00<?, ?it/s]   [Step 1/5] design - Predicting DataLoader 0: :   0%|          | 0/1 [00:00<?, ?it/s]Switched step_scale to 2.0
+Switched noise_scale to 0.88
+[Step 1/5] design - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:22<00:00,  0.04it/s]Number of failed examples: 0
+[Step 1/5] design - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:22<00:00,  0.04it/s]
+Removing leading and/or trailing unresolved residues from included part of chain A in /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.cif.
+  Leading unresolved:  
+  Trailing unresolved: ALA,ALA,ALA,HIS,HIS,HIS,HIS,HIS,HIS
+
+Chain ids conflict with existing chain ids. Renaming with {'A': 'B'}. This is for the structure from '../../assets/scaffolds/7xl0.yaml'.
+
+Initializing FromGeneratedDataModule datasets for /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/intermediate_designs
+[Info] Number of files to process (including already processed ones): 1
+Found 1 targets and 1 remaining designs that still need to be processed in this step.
+Predicting: |          | 0/? [00:00<?, ?it/s][Step 2/5] inverse_folding - Predicting: |          | 0/? [00:00<?, ?it/s][Step 2/5] inverse_folding - Predicting: |          | 0/? [00:00<?, ?it/s]Predicting DataLoader 0:   0%|          | 0/1 [00:00<?, ?it/s]            [Step 2/5] inverse_folding - Predicting DataLoader 0: :   0%|          | 0/1 [00:00<?, ?it/s][Step 2/5] inverse_folding - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:01<00:00,  0.97it/s]Number of failed examples: 0
+[Step 2/5] inverse_folding - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:01<00:00,  0.97it/s]
+Initializing FromGeneratedDataModule datasets for /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/intermediate_designs_inverse_folded
+[Info] Number of files to process (including already processed ones): 1
+Found 1 targets and 1 remaining designs that still need to be processed in this step.
+Predicting: |          | 0/? [00:00<?, ?it/s][Step 3/5] folding - Predicting: |          | 0/? [00:00<?, ?it/s][Step 3/5] folding - Predicting: |          | 0/? [00:00<?, ?it/s]Predicting DataLoader 0:   0%|          | 0/1 [00:00<?, ?it/s]    [Step 3/5] folding - Predicting DataLoader 0: :   0%|          | 0/1 [00:00<?, ?it/s][Step 3/5] folding - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:15<00:00,  0.06it/s]Number of failed structure predictions: 0
+[Step 3/5] folding - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:15<00:00,  0.06it/s]
+Initializing FromGeneratedDataModule datasets for /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/intermediate_designs_inverse_folded
+[Info] Number of files to process (including already processed ones): 1
+Found 1 targets and 1 remaining designs that still need to be processed in this step.
+Computed metrics successfully for 1 out of 1.
+Number of targets: 1. Number of designs: 1.
+Total number of designs:     1
+Duplicates found: 0. Removing duplicates. 1 designs remain.
+
+Num designs that pass the has_x filter with threshold 0 where lower is better: 1
+Remaining designs: 1
+Num designs that pass the filter_rmsd filter with threshold 2.5 where lower is better: 0
+Remaining designs: 0
+Num designs that pass the filter_rmsd_design filter with threshold 2.5 where lower is better: 1
+Remaining designs: 0
+Num designs that pass the CYS_fraction filter with threshold 0 where lower is better: 1
+Remaining designs: 0
+Num designs that pass the ALA_fraction filter with threshold 0.3 where lower is better: 1
+Remaining designs: 0
+Num designs that pass the GLY_fraction filter with threshold 0.3 where lower is better: 1
+Remaining designs: 0
+Num designs that pass the GLU_fraction filter with threshold 0.3 where lower is better: 1
+Remaining designs: 0
+Num designs that pass the LEU_fraction filter with threshold 0.3 where lower is better: 1
+Remaining designs: 0
+Num designs that pass the VAL_fraction filter with threshold 0.3 where lower is better: 1
+Remaining designs: 0
+Only 0 designs pass filters. We highly recommend relaxing the thresholds.
+
+
+Files + CSV saved to /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/final_ranked_designs
+
+Writing design files is done. Now making plots for a final summary .pdf file with statistics.
+A description of metrics and summarizing plots was written to: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/final_ranked_designs/results_overview.pdf
+
+=== Configuring pipeline ===
+Using dataset artifact: /root/autodl-tmp/Protein_design/boltzgen_cache/huggingface/datasets--boltzgen--inference-data/snapshots/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip
+Creating output directory: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output
+************** Checking design spec: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/03-boltzgen-configuration/attempt-0001/artifacts/strategies/region-c-h-all-c-full-scaffold-7xl0/design.yaml **************
+
+Removing leading and/or trailing unresolved residues from included part of chain A in /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/03-boltzgen-configuration/attempt-0001/artifacts/assets/scaffolds/7xl0.cif.
+  Leading unresolved:  
+  Trailing unresolved: ALA,ALA,ALA,HIS,HIS,HIS,HIS,HIS,HIS
+
+Chain ids conflict with existing chain ids. Renaming with {'A': 'B'}. This is for the structure from '../../assets/scaffolds/7xl0.yaml'.
+Total designed residues: 30
+Design specification visualization is written to /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/design.cif
+*****************************************************************************************************************************************************************************************************************************************************************
+Using kernels: True [device capability: (8, 9)]
+Config overrides for protocol nanobody-anything: {'analysis': ['largest_hydrophobic=false', 'largest_hydrophobic_refolded=false'], 'filtering': ['filter_cysteine=true']}
+Using 1 devices
+Raw designs will be saved to: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/intermediate_designs
+Using diffusion batch size: 1
+Number of diffusion batches: 1
+Using model artifact: /root/autodl-tmp/Protein_design/boltzgen_cache/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltzgen1_diverse.ckpt
+Using model artifact: /root/autodl-tmp/Protein_design/boltzgen_cache/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltzgen1_adherence.ckpt
+Inverse fold will avoid the following residues: ['CYS']
+Inverse-folded designs will be saved to: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/intermediate_designs_inverse_folded
+Using model artifact: /root/autodl-tmp/Protein_design/boltzgen_cache/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltzgen1_ifold.ckpt
+Using model artifact: /root/autodl-tmp/Protein_design/boltzgen_cache/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltz2_conf_final.ckpt
+Final ranked designs will be saved to: /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/final_ranked_designs
+[1] design                   
+[2] inverse_folding          
+[3] folding                  
+[4] analysis                 
+[5] filtering                
+Configuration complete. Configs written to /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/config
+Steps manifest written to /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/steps.yaml
+
+=== Executing pipeline ===
+**************************************************
+Pipeline step 1 of 5: design
+Running command: /root/autodl-tmp/conda_envs/boltzgen/bin/python /root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/config/design.yaml
+✓ Step design completed successfully in 75.4s
+**************************************************
+Pipeline step 2 of 5: inverse_folding
+Running command: /root/autodl-tmp/conda_envs/boltzgen/bin/python /root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/config/inverse_folding.yaml
+✓ Step inverse_folding completed successfully in 10.3s
+**************************************************
+Pipeline step 3 of 5: folding
+Running command: /root/autodl-tmp/conda_envs/boltzgen/bin/python /root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/config/folding.yaml
+✓ Step folding completed successfully in 69.2s
+**************************************************
+Pipeline step 4 of 5: analysis
+Running command: /root/autodl-tmp/conda_envs/boltzgen/bin/python /root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/config/analysis.yaml
+✓ Step analysis completed successfully in 18.1s
+**************************************************
+Pipeline step 5 of 5: filtering
+Running command: /root/autodl-tmp/conda_envs/boltzgen/bin/python /root/autodl-tmp/Protein_design/boltzgen/src/boltzgen/resources/main.py /root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/20260726-003-stage04-pilot/04-pilot-generation/attempt-0001/tasks/pilot-region-c-h-all-c-full-scaffold-7xl0/attempt-0002/backend-output/config/filtering.yaml
+✓ Step filtering completed successfully in 12.9s

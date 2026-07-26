@@ -1,0 +1,96 @@
+{
+  "expansion_candidate_index": {
+    "artifact_id": "expansion-candidate-index",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/expansion-candidate-index.json",
+    "role": "stage05-expanded-candidates",
+    "sha256": "0433d07e42985d26f94ddaf7209a9fa6fd2b85c814711c8c6169819a66a16489",
+    "size_bytes": 1086024
+  },
+  "expansion_validation_report": {
+    "artifact_id": "expansion-validation-report",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/expansion-validation-report.json",
+    "role": "stage05-scale-strategy-evidence",
+    "sha256": "c9909a6a75f1786bb6ca293ea4944bc8fc40b25e27985e90642a498eb94bfdb7",
+    "size_bytes": 211663
+  },
+  "filter_profile": {
+    "artifact_id": "nanobody-filter-profile",
+    "file_format": "yaml",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/filter-profile.yaml",
+    "role": "versioned-filter-profile",
+    "sha256": "18a47b038d85e7770a4d69a1ea5b31f937b3da1b43ed42abb6e6159421bb3fb1",
+    "size_bytes": 1793
+  },
+  "generated_at": "2026-07-26T01:13:48.236059Z",
+  "pilot_bundle": {
+    "artifact_id": "pilot-bundle",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "04-pilot-generation",
+    "relative_path": "04-pilot-generation/attempt-0001/artifacts/pilot-bundle.json",
+    "role": "stage05-pilot-input",
+    "sha256": "0619db6eb77c0a84b1ef830038530f3c782164a279c23a8b14d9e3098e2735d0",
+    "size_bytes": 3070
+  },
+  "pilot_filter_report": {
+    "artifact_id": "pilot-filter-report",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/pilot-filter-report.json",
+    "role": "pilot-filter-audit",
+    "sha256": "9d58fb67af26bec9722918a691a65fc5b8d2b6170786170753a9e2f546dfbf1f",
+    "size_bytes": 7273871
+  },
+  "progress_final": {
+    "artifact_id": "stage05-progress-final",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/progress-final.json",
+    "role": "terminal-progress-snapshot",
+    "sha256": "28811d8cc349099078cc0906103f3549982be4e052fbf902945db95f9d1fbb99",
+    "size_bytes": 536
+  },
+  "schema_version": "0.1",
+  "scientific_stop": {
+    "artifact_id": "stage05-scientific-stop",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/scientific-stop.json",
+    "role": "scientific-negative-result",
+    "sha256": "96c71c085d23695c09decb56caf57b60e356d747b7eeb255dce674cee5c602af",
+    "size_bytes": 328
+  },
+  "status": "stopped-no-scale-winner",
+  "strategy_bundle": {
+    "artifact_id": "strategy-bundle",
+    "file_format": "json",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "03-boltzgen-configuration",
+    "relative_path": "03-boltzgen-configuration/attempt-0001/artifacts/strategy-bundle.json",
+    "role": "stage04-strategy-input",
+    "sha256": "a8451f5f7f7b7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87",
+    "size_bytes": 20687
+  },
+  "task_events": {
+    "artifact_id": "stage05-task-events",
+    "file_format": "jsonl",
+    "producer_attempt": "attempt-0001",
+    "producer_stage": "05-pilot-filtering",
+    "relative_path": "05-pilot-filtering/attempt-0001/artifacts/task-events.jsonl",
+    "role": "append-only-task-events",
+    "sha256": "147bc53691ad618291e2278941f1b9afb0f2a4b423d0ba080ffa0041fb3dc048",
+    "size_bytes": 8938
+  },
+  "winner_strategy_id": null
+}

@@ -1,0 +1,1843 @@
+{
+  "annotation_type": "pymol-ca-color",
+  "color_counts": [
+    {
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "residue_count": 101
+    },
+    {
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "residue_count": 14
+    },
+    {
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "residue_count": 14
+    },
+    {
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "residue_count": 9
+    }
+  ],
+  "interpretation": "uninterpreted",
+  "residues": [
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "23",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 1
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "24",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 2
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "25",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 3
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "26",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 4
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "27",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 5
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "28",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 6
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "29",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 7
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "30",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 8
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "31",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 9
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "32",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 10
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "33",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 11
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "34",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 12
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "35",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 13
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "36",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 14
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "37",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 15
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "38",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 16
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "39",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 17
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "40",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 18
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "41",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 19
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "42",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 20
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "43",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 21
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "44",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 22
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "45",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 23
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "46",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 24
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "47",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 25
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "48",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 26
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "49",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 27
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "50",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 28
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "51",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 29
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "52",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 30
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "53",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 31
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "54",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 32
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "55",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 33
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "56",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 34
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "57",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 35
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "58",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 36
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "59",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 37
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "60",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 38
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "61",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 39
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "62",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 40
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "63",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 41
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "64",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 42
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "65",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 43
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "66",
+      "ca_color_hex": "#FF0000",
+      "ca_color_index": 4,
+      "ca_color_rgb": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 44
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "67",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 45
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "68",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 46
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "69",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 47
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "70",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 48
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "71",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 49
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "72",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 50
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "73",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 51
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "74",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 52
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "75",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 53
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "76",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 54
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "77",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 55
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "78",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 56
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "79",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 57
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "80",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 58
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "81",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 59
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "82",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 60
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "83",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 61
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "86",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 62
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "87",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 63
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "88",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 64
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "89",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 65
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "90",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 66
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "91",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 67
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "92",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 68
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "93",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 69
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "94",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 70
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "95",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 71
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "96",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 72
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "97",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 73
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "98",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 74
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "99",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 75
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "100",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 76
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "101",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 77
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "102",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 78
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "103",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 79
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "104",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 80
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "105",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 81
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "106",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 82
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "107",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 83
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "108",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 84
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "109",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 85
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "110",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 86
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "111",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 87
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "112",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 88
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "113",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 89
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "114",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 90
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "115",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 91
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "116",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 92
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "117",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 93
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "118",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 94
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "119",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 95
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "120",
+      "ca_color_hex": "#0000FF",
+      "ca_color_index": 2,
+      "ca_color_rgb": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 96
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "121",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 97
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "122",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 98
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "123",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 99
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "124",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 100
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "125",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 101
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "126",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 102
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "127",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 103
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "128",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 104
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "129",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 105
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "130",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 106
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "131",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 107
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "132",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 108
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "133",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 109
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "134",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 110
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "135",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 111
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "136",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 112
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "137",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 113
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "138",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 114
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "139",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 115
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "140",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 116
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "141",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 117
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "142",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 118
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "143",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 119
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "144",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 120
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "145",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 121
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "146",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 122
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "147",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 123
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "148",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 124
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "149",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 125
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "150",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 126
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "151",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 127
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "152",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 128
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "153",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 129
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "154",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 130
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "155",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 131
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "156",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 132
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "157",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 133
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "158",
+      "ca_color_hex": "#FFFF00",
+      "ca_color_index": 6,
+      "ca_color_rgb": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "insertion_code": null,
+      "label_seq_id": 134
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "159",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 135
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "160",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 136
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "161",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 137
+    },
+    {
+      "author_chain_id": "A",
+      "author_residue_id": "162",
+      "ca_color_hex": "#33FF33",
+      "ca_color_index": 26,
+      "ca_color_rgb": [
+        0.2,
+        1.0,
+        0.2
+      ],
+      "insertion_code": null,
+      "label_seq_id": 138
+    }
+  ],
+  "schema_version": "0.1"
+}

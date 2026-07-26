@@ -1,0 +1,12 @@
+{
+  "canonical_residue_count": 138,
+  "coordinate_state_count": 1,
+  "ligand_heavy_atom_count": 0,
+  "missing_ca_count": 0,
+  "origin": "imported",
+  "protein_chain_count": 1,
+  "residue_count": 138,
+  "residues_with_ca": 138,
+  "schema_version": "0.1",
+  "water_residue_count": 133
+}

@@ -672,6 +672,28 @@ strategy/shard 后停止，不终止正在写产物的 backend。服务重启后
 在成功 Stage 07 明确声明并通过 checksum 的 `FinalCandidatePackage` 时才返回
 `draft-ready`，且仍不调用供应商。
 
+UI-004 在科学 manifest 与 React 之间增加面向使用者的只读语义投影层。默认页面读取
+`ProjectCardProjection`、run/stage projection 和 Stage 05 专用的 overview、strategy、
+candidate、metric projection；内部 ID、代码身份、hash 和原始文件只进入运行内的
+“技术记录”。React 只负责中文呈现、分页和交互，不能复制 filter threshold 或重新判断
+候选是否通过。
+
+Stage 05 的 840 个 pilot、100 个 expansion 和 10 个 full-target prediction 通过以下
+分页接口访问，而不是把 7–9 MiB 报告整体发送给浏览器：
+
+```text
+GET /api/v1/runs/{run}/stages/5/overview
+GET /api/v1/runs/{run}/stages/5/strategies
+GET /api/v1/runs/{run}/stages/5/metrics
+GET /api/v1/runs/{run}/stages/5/candidates
+GET /api/v1/runs/{run}/stages/5/candidates/{candidate_id}
+```
+
+服务只读取当前 Stage 05 manifest 声明的 report 和 candidate index。JSON 缓存身份包含
+artifact SHA-256；page size 最大 100，排序字段使用白名单。候选原始、复折叠和 Protenix
+结构必须先从 manifest 声明的 candidate index 解析嵌套 ArtifactRef、复验大小和 hash，
+才能签发短期 token。
+
 运行状态与证据成熟度分开：
 
 - 执行状态：`pending`、`running`、`succeeded`、`failed`、`cancelled`。

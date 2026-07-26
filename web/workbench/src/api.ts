@@ -1,4 +1,14 @@
-import type { ProjectResponse, Replay, Run, Stage } from "./types";
+import type {
+  CandidateDetail,
+  CandidatePage,
+  FilterOverview,
+  MetricPresentation,
+  ProjectResponse,
+  Replay,
+  Run,
+  Stage,
+  Strategy,
+} from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -18,6 +28,43 @@ export const api = {
   run: (key: string) => request<Run>(`/api/v1/runs/${key}`),
   stage: (key: string, stage: number) =>
     request<Stage>(`/api/v1/runs/${key}/stages/${stage}`),
+  filterOverview: (key: string) =>
+    request<FilterOverview>(`/api/v1/runs/${key}/stages/5/overview`),
+  filterStrategies: (key: string) =>
+    request<Strategy[]>(`/api/v1/runs/${key}/stages/5/strategies`),
+  filterMetrics: (key: string) =>
+    request<MetricPresentation[]>(`/api/v1/runs/${key}/stages/5/metrics`),
+  filterCandidates: (
+    key: string,
+    parameters: {
+      phase: string;
+      page?: number;
+      pageSize?: number;
+      strategyId?: string;
+      gateStatus?: string;
+      failedRule?: string;
+      sortKey?: string;
+      sortOrder?: string;
+    },
+  ) => {
+    const query = new URLSearchParams({
+      phase: parameters.phase,
+      page: String(parameters.page || 1),
+      page_size: String(parameters.pageSize || 50),
+      sort_key: parameters.sortKey || "candidate_id",
+      sort_order: parameters.sortOrder || "asc",
+    });
+    if (parameters.strategyId) query.set("strategy_id", parameters.strategyId);
+    if (parameters.gateStatus) query.set("gate_status", parameters.gateStatus);
+    if (parameters.failedRule) query.set("failed_rule", parameters.failedRule);
+    return request<CandidatePage>(
+      `/api/v1/runs/${key}/stages/5/candidates?${query.toString()}`,
+    );
+  },
+  filterCandidate: (key: string, candidateId: string, phase: string) =>
+    request<CandidateDetail>(
+      `/api/v1/runs/${key}/stages/5/candidates/${encodeURIComponent(candidateId)}?phase=${encodeURIComponent(phase)}`,
+    ),
   replay: (key: string) => request<Replay>(`/api/v1/runs/${key}/replay`),
   decision: (key: string) =>
     request<{ request: Record<string, unknown>; request_sha256: string }>(

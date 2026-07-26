@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev6`（包版本 `0.1.0.dev6`）
+- 当前版本：`0.1.0-dev7`（包版本 `0.1.0.dev7`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -34,7 +34,7 @@ python -m pip install -e ".[dev,ui]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev6-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev7-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -129,10 +129,14 @@ easydesign ui serve \
 ssh -L 8765:127.0.0.1:8765 USER@SERVER
 ```
 
-工作台提供六入口项目向导、canonical YAML、配置校验、doctor、真实 worker 启动、
-Decision Gate、结构化进度、完成当前任务后停止调度、恢复、只读回放和七阶段证据视图。
-APOE 当前页面会把 Stage 05 标为“科学停止”，同时把 Stage 06/07 显示为“软件已实现 /
-本次 run 未到达”。没有真实 `FinalCandidatePackage` 时，下单草案按钮保持禁用。
+默认界面使用中文并只保留“我的项目 / 新建设计 / 运行任务”三个主入口。工作台提供六入口
+项目向导、标准 YAML、配置与环境检查、真实任务启动、人工确认、结构化进度、完成当前
+任务后停止调度、恢复、只读回放和七阶段结果视图。内部运行编号、代码身份、hash 与原始
+输出只进入单次运行的“技术记录”。
+
+APOE 当前页面会把第5步标为“未达到继续条件”，并提供 840 个小规模候选、21 个策略、
+100 个扩展候选和 10 个 Protenix 复核候选的分页分析；第6/7步同时显示“软件能力已实现 /
+本次运行尚未开始”。没有真实 `FinalCandidatePackage` 时，湿实验候选草案按钮保持禁用。
 
 新项目配置固定显示 `stage01`–`stage07`，未实现阶段写 `null`；`design` 保存 binder
 profile 与用途。旧配置可显式迁移，原文件不会被覆盖：

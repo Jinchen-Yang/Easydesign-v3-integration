@@ -267,3 +267,31 @@
   `3bbc5c4aafc090eb1cfd432135f6142e47e717b6`、
   `d0e916fd0eeb4d33ea3bdbb34fbd8858b326d633`；最终文档提交以远端 `main`
   核对结果为准。
+
+## 2026-07-26 — UI-004 / ENG-010 / UI-005：科研工作台全面重构
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-26T15:54:37+08:00
+- 问题：dev6 页面普遍使用 7–10px 正文，主导航混入审批、环境和审计等内部功能，
+  默认文案直接暴露 manifest、artifact、checksum、run ID 等工程词；第5步只显示
+  10 个 Protenix 候选的少量指标，840 个 pilot、100 个 expansion、21 个策略和正式
+  指标没有形成可用产品入口。
+- 方案：主导航收敛为“我的项目 / 新建设计 / 运行任务”，动态确认进入对应任务，环境
+  进入设置，代码身份和文件完整性进入运行内技术记录；视觉全面继承 Stage 01 Viewer，
+  正文/表格/元数据基线分别为 16/14/12px，并抽出统一结构工作区。
+- 数据层：增加 Stage 05 overview、strategy、metric、candidate page 和 candidate
+  detail 投影。大型 JSON 以 artifact SHA-256 为缓存身份，分页最大 100；原始、refold
+  和 Protenix 结构从当前 manifest 声明的 candidate index 解析、复验后签发短期 token。
+- 产品层：第5步拆成“结果结论 / 策略比较 / 候选筛选 / 指标说明”，支持 840 个 pilot、
+  100 个 expansion、10 个 full-target 和 21 个策略；默认表格保持关键列，候选详情提供
+  全部正式指标、原始 BoltzGen 指标、逐规则门槛、失败原因和结构切换。
+- 验证证据：Python UI unit、ruff、mypy、TypeScript/Vite build 和 Chromium 1440
+  产品测试通过；1440 项目页和第5步页面形成稳定视觉基线。最终 Python 3.11 全量测试、
+  wheel、双尺寸/多浏览器和 Proteindigger1 真实 APOE 投影证据记录在本任务交付。
+- 科学边界：没有改变 Stage 05 阈值、APOE `stopped-no-scale-winner`、Stage 06/07
+  `not-reached` 或任何历史 manifest；VAL-003 继续作为独立受控实验。
+- 遗留问题：UI-002 仍需在一条可继续的真实运行上验证完整启动、确认、停止调度和恢复；
+  REP-002 overlay、第二真实案例、Windows shell 和正式公网/多人系统仍未完成。
+- 提交：数据投影
+  `66e8fb630c02652801cb44d31c9d826a6973ad6d`；界面、验证和文档提交以远端 `main`
+  最终核对 SHA 为准。

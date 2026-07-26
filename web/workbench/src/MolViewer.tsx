@@ -24,6 +24,7 @@ export function MolViewer({ structureUrl, regions = [], compact = false }: Props
   const viewer = useRef<MolstarViewer | null>(null);
   const [status, setStatus] = useState("等待结构");
   const [regionTheme, setRegionTheme] = useState(regions.length > 0);
+  const [representation, setRepresentation] = useState<"cartoon" | "surface" | "ball_and_stick">("cartoon");
 
   useEffect(() => {
     let disposed = false;
@@ -57,13 +58,13 @@ export function MolViewer({ structureUrl, regions = [], compact = false }: Props
       const builder = mvs.createBuilder();
       builder.canvas({ background_color: "#0B1219" });
       const structure = builder.download({ url: structureUrl }).parse({ format: "mmcif" }).modelStructure();
-      const representation = structure
+      const representationNode = structure
         .component({ selector: "polymer" })
-        .representation({ type: "cartoon" });
+        .representation({ type: representation });
       if (regionTheme) {
         for (const region of regions) {
           for (const residue of region.label_seq_ids) {
-            representation.color({
+            representationNode.color({
               selector: { label_asym_id: "A", label_seq_id: residue },
               color: colors[region.id] || "#22a68a",
             });
@@ -81,7 +82,7 @@ export function MolViewer({ structureUrl, regions = [], compact = false }: Props
       viewer.current?.dispose?.();
       viewer.current = null;
     };
-  }, [structureUrl, elementId, compact, regionTheme, regions]);
+  }, [structureUrl, elementId, compact, regionTheme, regions, representation]);
 
   return (
     <div className={`mol-card ${compact ? "compact" : ""}`}>
@@ -89,6 +90,9 @@ export function MolViewer({ structureUrl, regions = [], compact = false }: Props
         <span className="live-dot" />
         <span>{status}</span>
         <div className="mol-actions">
+          <button type="button" className={representation === "cartoon" ? "active" : ""} onClick={() => setRepresentation("cartoon")}>Cartoon</button>
+          <button type="button" className={representation === "surface" ? "active" : ""} onClick={() => setRepresentation("surface")}>Surface</button>
+          <button type="button" className={representation === "ball_and_stick" ? "active" : ""} onClick={() => setRepresentation("ball_and_stick")}>Stick</button>
           {regions.length > 0 && (
             <button
               type="button"

@@ -120,6 +120,11 @@ Agent 必须自动完成以下收尾工作：
     projection，不得复制科学阈值、从目录猜测 artifact、解析终端日志或暴露绝对路径。
     Stage capability、run state、scientific stop、operational failure 和 demo replay
     必须使用不同字段及明确文案；没有真实 FinalCandidatePackage 时禁止解锁下单草案。
+15. 产品工作台默认界面必须使用中文产品语义，除品牌和科学缩写外不得直接显示内部
+    manifest/artifact/checksum/run ID 等工程词；这些信息只能进入运行内“技术记录”。
+    主导航保持用户任务导向，审批进入动态通知和对应运行，环境进入设置。Stage 05 大型
+    报告必须通过 manifest-only 后端分页投影，前端不得整体加载报告、复制阈值或根据
+    内部 rule ID 自行判断科学结论。
 
 ## 4. 阻塞与询问
 

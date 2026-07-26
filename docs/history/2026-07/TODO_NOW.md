@@ -230,3 +230,40 @@
 - 科学边界：不放宽门槛迎合 APOE；Stage 06/07 通用能力保持 `implemented`，需要新的
   合法 winner 才做真实 smoke。
 - 提交：由本次 Stage 05 真实验收文档提交记录，完整 SHA 在提交完成后以 Git 历史为准。
+
+## 2026-07-26 — UI-001 / ENG-009 / UI-002 / UI-003：产品级科研工作台
+
+- 状态：UI-001、ENG-009、UI-003 `smoke-validated`；UI-002 `implemented`。
+- 完成时间：2026-07-26T13:19:19+08:00
+- 问题：既有 CLI 和 artifact 足以运行科学流程，但缺少面向使用者的项目/run/stage
+  工作台，也缺少把科学停止、操作失败、软件能力和单次 run 状态分开的产品语义。
+- 方案：建立 React/TypeScript 明亮科研工作台和 FastAPI localhost gateway；所有结构、
+  指标、进度和下载只来自 RunManifest → StageManifest → ArtifactRef，artifact 使用
+  短期签名 token 并在发送前复验大小与 SHA-256。
+- 交互：完成六入口项目向导、canonical YAML、doctor、独立 worker、SSE、完成当前任务
+  后停止调度、恢复、Stage 01 Decision、Stage 02 hotspot YAML 审批、只读 replay 和
+  draft-order gate；浏览器不包含科学逻辑。
+- 七阶段结果：真实 APOE Stage 01–04 为 `succeeded`；Stage 05 如实显示 840 pilot、
+  1 个 Tier A、100 expansion、12 local pass、10 个 Protenix prediction 和
+  `stopped-no-scale-winner`；Stage 06/07 同时显示通用能力 `implemented` 与该 run
+  `not-reached`。
+- 安全与可移植性：服务只绑定 `127.0.0.1`，无 CORS/CDN/任意路径读取；React 产物进入
+  Python wheel；Node 只用于构建和 Playwright。服务器根分区已满时，构建显式使用
+  `/root/autodl-tmp` 的 `TMPDIR` 和 pip cache，没有删除用户数据。
+- 验证：Python 3.11 `make check`、235 passed/8 skipped、dev6 wheel/console-script/
+  静态资产通过；本机 Chromium 1440/1920 与 Firefox 9/9，Proteindigger1 Chromium
+  1440/1920 6/6；真实 APOE localhost health、18 个 project 索引和完整投影通过。
+- 遇到的问题：初版 Stage 02 range parser 无法展开 `1..3`；GPU 型号、21 个策略和
+  APOE 文案被写死在展示层；服务器只有 Corepack shim 而没有全局 `pnpm`。
+- 解决：增加 range 展开和去重、全部数字/设备/项目改为 manifest 投影、补齐 hotspot
+  审批 API，并允许 Playwright 通过显式 dev-server command 和 Chromium executable
+  在服务器复验。
+- 遗留问题：UI-002 仍需在下一条可继续的真实 run 验收完整长任务启动、drain、审批和
+  resume；Firefox 服务器专项、Windows shell、REP-002 SASA/ScanNet overlay、正式
+  账号/公网/多人系统均未宣称完成。
+- 提交：
+  `cbbec251db6d224c5d93e7ec05de742f86a711dc`、
+  `1a23d7891d6e97cf653dafa1825d2019eed2cb67`、
+  `3bbc5c4aafc090eb1cfd432135f6142e47e717b6`、
+  `d0e916fd0eeb4d33ea3bdbb34fbd8858b326d633`；最终文档提交以远端 `main`
+  核对结果为准。

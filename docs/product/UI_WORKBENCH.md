@@ -83,3 +83,24 @@ simulated-preview
 - 七阶段视图从 manifest/artifact 投影，不硬编码 APOE ID、残基或候选数量。
 - Playwright 覆盖主要状态、Mol*、artifact 下载、回放隔离和 draft-order gate。
 - Proteindigger1 真实 APOE run 的 UI 投影与 CLI/API 证据一致。
+
+## UI-001 验收结果
+
+- 完成时间：2026-07-26T13:19:19+08:00
+- 版本：`0.1.0.dev6`。
+- 启动入口：`easydesign ui serve --runs-root RUNS_ROOT --port 8765`；固定监听
+  `127.0.0.1`，远程机器通过 SSH 端口转发访问。
+- Python 3.11：`make check` 通过，235 passed、8 个需要显式 PyMOL 环境的集成测试
+  按预期 skipped；wheel 同时包含 Workbench、Mol* Target Viewer 和 VHH7 资产。
+- 浏览器：本机 Chromium 1440/1920 与 Firefox 共 9/9 通过；Proteindigger1
+  Chromium 1440/1920 共 6/6 通过。
+- 真实证据：
+  `/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/`
+  `20260726-004-stage05-pilot-filter` 投影为 Stage 01–04 `succeeded`、Stage 05
+  `scientific-stop`、Stage 06/07 `not-reached`；完整性为 `verified`。
+- Stage 05 页面来自 manifest 的事实为 840 pilot、1 个 Tier A、100 expansion、
+  12 local pass、10 Protenix prediction、0 full-target gate pass。UI 只登记
+  `VAL-003 planned`，不把当前现象宣称为 Protenix bug。
+- 完成范围：UI-001、ENG-009 与 UI-003 达到 `smoke-validated`；UI-002 的接口和界面
+  达到 `implemented`，下一条可继续的真实 run 仍需做长任务启动、drain、审批和恢复
+  浏览器 smoke。

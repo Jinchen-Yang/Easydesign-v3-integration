@@ -18,18 +18,17 @@
 
 ## Now
 
-- `[UI-001]` 建立 React/TypeScript 产品级本地科研工作台和 project/run/stage 信息架构。
-- `[ENG-009]` 建立仅绑定 localhost 的 manifest 投影、安全 artifact API、结构化事件和
-  可恢复任务控制；UI 不复制科学逻辑。
-- `[UI-002]` 接入六入口向导、YAML 同步、doctor、运行、审批和恢复。
-- `[UI-003]` 完成七阶段证据视图与 APOE 回放；APOE Stage 06/07 必须显示
-  `not-reached`，不能绕过 Stage 05 scientific stop。
+- 当前没有处于编码中的任务；UI-001/ENG-009/UI-002/UI-003 已归档到
+  [2026-07 项目历史](docs/history/2026-07/TODO_NOW.md)。
 
 ## Next
 
 - `[VAL-003]` 冻结当前 APOE 负结果，对相同候选、相同 MSA 和 seeds 101/202/303
   比较 no-template、target-template、target-template+hotspot constraint，并加入已知
   VHH–抗原正对照；未形成新 profile/ADR 前不得改变 Stage 05 默认 gate。
+- `[UI-002]` 在下一条可继续的真实 run 上验收浏览器中的 doctor、启动、hotspot
+  审批、drain 和 resume；当前 API/界面已实现，但不以只读 APOE scientific-stop
+  冒充长任务交互 smoke。
 - `[VAL-001]` 选择第二条独立真实 target，复用 frozen 1.0 主线；APOE 的
   binder-pose gate 只能通过预注册 benchmark 和新版本 profile 研究，不能事后调参。
 - `[S06-001]` 通用 1000 smoke / 50000 production plan、25% 磁盘门、共享恢复和精确

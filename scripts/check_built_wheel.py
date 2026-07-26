@@ -133,12 +133,28 @@ def main() -> int:
                 else environment / "bin" / "easydesign"
             )
             dependency_environment = os.environ.copy()
+            installed_site_packages = subprocess.run(
+                [
+                    str(python),
+                    "-c",
+                    "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ).stdout.strip()
             dependency_environment["PYTHONPATH"] = os.pathsep.join(
-                item
-                for item in sys.path
-                if item
-                and "site-packages" in item
-                and str(ROOT) not in item
+                [
+                    installed_site_packages,
+                    *[
+                        item
+                        for item in sys.path
+                        if item
+                        and "site-packages" in item
+                        and str(ROOT) not in item
+                    ],
+                ]
             )
             subprocess.run(
                 [

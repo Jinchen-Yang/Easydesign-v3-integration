@@ -285,9 +285,19 @@
 - 产品层：第5步拆成“结果结论 / 策略比较 / 候选筛选 / 指标说明”，支持 840 个 pilot、
   100 个 expansion、10 个 full-target 和 21 个策略；默认表格保持关键列，候选详情提供
   全部正式指标、原始 BoltzGen 指标、逐规则门槛、失败原因和结构切换。
-- 验证证据：Python UI unit、ruff、mypy、TypeScript/Vite build 和 Chromium 1440
-  产品测试通过；1440 项目页和第5步页面形成稳定视觉基线。最终 Python 3.11 全量测试、
-  wheel、双尺寸/多浏览器和 Proteindigger1 真实 APOE 投影证据记录在本任务交付。
+- 验证证据：本地 `make check/test/build` 通过（235 passed、8 skipped），Workbench
+  Chromium 1440/1920 与 Firefox 共 20 passed、1 skipped，便携 Stage 01 Viewer
+  3 passed、2 个仅真实服务器 fixture 的测试 skipped。Proteindigger1 Python 3.11
+  `make check/test` 同样通过，并直接读取真实 APOE run，核对 840 个 pilot、21 个策略、
+  100 个 expansion、10 个 Protenix、25 个指标、Stage 05 `scientific-stop`、Stage
+  06/07 `not-reached` 和 run integrity `verified`。
+- 真实浏览器：通过 SSH localhost 转发打开 Proteindigger1 dev7 工作台，确认真实项目页、
+  动态 2 个待确认事项、七阶段中文轨道、第5步结论、840 候选分页和
+  `bb_target_aligned_rmsd_design` 中文指标列均来自服务器运行记录。
+- 额外问题：服务器核心环境仍保留旧 dev6 distribution metadata；旧 wheel smoke 将依赖
+  环境的 site-packages 放在临时 wheel 前面，导致 console script 错读 dev6。
+- 解决：wheel smoke 显式将临时安装 site-packages 放在依赖 PYTHONPATH 最前面，隔离旧
+  metadata 后再验证 console script 和 wheel 资产，避免通过重装服务器环境掩盖测试污染。
 - 科学边界：没有改变 Stage 05 阈值、APOE `stopped-no-scale-winner`、Stage 06/07
   `not-reached` 或任何历史 manifest；VAL-003 继续作为独立受控实验。
 - 遗留问题：UI-002 仍需在一条可继续的真实运行上验证完整启动、确认、停止调度和恢复；

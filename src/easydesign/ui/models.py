@@ -132,3 +132,93 @@ class DraftOrderOutcome(BaseModel):
     reason: str
     candidate_count: int = Field(ge=0)
     package_token: str | None = None
+
+
+class MetricPresentation(BaseModel):
+    """面向科研用户的指标说明；科学规则仍来自冻结的筛选记录。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    metric_id: str
+    name: str
+    abbreviation: str | None = None
+    group: str
+    definition: str
+    unit: str | None = None
+    source: str
+    direction: str
+    role: str
+    missing_value_policy: str
+    operator: str | None = None
+    threshold: float | int | bool | str | None = None
+
+
+class FilterOverviewProjection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_key: str
+    state: UiStageState
+    conclusion_title: str
+    conclusion: str
+    next_actions: tuple[str, ...]
+    counts: dict[str, int]
+    tier_counts: dict[str, int]
+    step_chain: tuple[dict[str, Any], ...]
+    failed_rule_counts: dict[str, int]
+
+
+class StrategyProjection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    strategy_id: str
+    region_id: str
+    scaffold_id: str
+    candidate_count: int
+    unique_sequence_count: int
+    hard_pass_count: int
+    final_gate_pass_count: int
+    final_gate_pass_rate: float
+    tier: str
+    score_screen: float
+    score_yaml: float
+    selected_for_expansion: bool
+
+
+class CandidateListItem(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    candidate_id: str
+    phase: str
+    strategy_id: str
+    sequence_length: int | None = None
+    gate_status: str
+    score: float | None = None
+    metrics: dict[str, float | int | bool | str | None]
+    failed_rules: tuple[str, ...] = ()
+
+
+class CandidatePage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    phase: str
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    total: int = Field(ge=0)
+    total_pages: int = Field(ge=0)
+    items: tuple[CandidateListItem, ...]
+
+
+class CandidateDetailProjection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    candidate_id: str
+    phase: str
+    strategy_id: str
+    sequence: str | None
+    gate_status: str
+    score: float | None
+    metrics: tuple[dict[str, Any], ...]
+    decisions: tuple[dict[str, Any], ...]
+    failed_reasons: tuple[str, ...]
+    backend_metrics: dict[str, float | int | bool | str | None]
+    structures: dict[str, ArtifactProjection]

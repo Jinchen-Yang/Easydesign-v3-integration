@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import uvicorn
 import yaml  # type: ignore[import-untyped]
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as ApiPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +53,13 @@ from .projections import (
     stream_run_events,
 )
 from .security import ArtifactTokenSigner, UiRunRegistry
+from .stage05 import (
+    get_filter_candidate,
+    get_filter_overview,
+    list_filter_candidates,
+    list_filter_strategies,
+    metric_catalog,
+)
 
 LOCAL_HOST = "127.0.0.1"
 
@@ -471,6 +478,86 @@ def create_ui_app(
             return get_stage_projection(
                 service.registry.resolve(run_key),
                 stage_number,
+                registry=service.registry,
+                signer=service.signer,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/runs/{run_key}/stages/5/overview")
+    def stage05_overview(run_key: str, request: Request) -> Any:
+        service = _state(request)
+        try:
+            return get_filter_overview(
+                service.registry.resolve(run_key),
+                registry=service.registry,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/runs/{run_key}/stages/5/strategies")
+    def stage05_strategies(run_key: str, request: Request) -> Any:
+        service = _state(request)
+        try:
+            return list_filter_strategies(service.registry.resolve(run_key))
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/runs/{run_key}/stages/5/metrics")
+    def stage05_metrics(run_key: str, request: Request) -> Any:
+        service = _state(request)
+        try:
+            return metric_catalog(service.registry.resolve(run_key))
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/runs/{run_key}/stages/5/candidates")
+    def stage05_candidates(
+        run_key: str,
+        request: Request,
+        phase: Annotated[str, Query(pattern=r"^(pilot|expansion|full-target)$")] = "pilot",
+        strategy_id: str | None = None,
+        gate_status: str | None = None,
+        failed_rule: str | None = None,
+        page: Annotated[int, Query(ge=1)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        sort_key: str = "candidate_id",
+        sort_order: Annotated[str, Query(pattern=r"^(asc|desc)$")] = "asc",
+    ) -> Any:
+        service = _state(request)
+        try:
+            return list_filter_candidates(
+                service.registry.resolve(run_key),
+                phase=cast(Any, phase),
+                strategy_id=strategy_id,
+                gate_status=gate_status,
+                failed_rule=failed_rule,
+                page=page,
+                page_size=page_size,
+                sort_key=sort_key,
+                sort_order=cast(Any, sort_order),
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/runs/{run_key}/stages/5/candidates/{candidate_id}")
+    def stage05_candidate(
+        run_key: str,
+        candidate_id: str,
+        request: Request,
+        phase: Annotated[str, Query(pattern=r"^(pilot|expansion|full-target)$")] = "pilot",
+    ) -> Any:
+        service = _state(request)
+        try:
+            return get_filter_candidate(
+                service.registry.resolve(run_key),
+                candidate_id,
+                phase=cast(Any, phase),
                 registry=service.registry,
                 signer=service.signer,
             )

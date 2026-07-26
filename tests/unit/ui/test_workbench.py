@@ -233,7 +233,7 @@ def _audited_run(tmp_path: Path) -> Path:
         revision=1,
         project_id="target-alpha",
         run_id="run-scientific-stop",
-        easydesign_version="0.1.0.dev6",
+        easydesign_version="0.1.0.dev7",
         code_commit="a" * 40,
         status=ExecutionStatus.SUCCEEDED,
         evidence_status=EvidenceStatus.IMPLEMENTED,
@@ -338,6 +338,37 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         assert client.get("/api/v1/health", headers={"host": "example.com"}).status_code == 403
         response = client.get(f"/api/v1/artifacts/{token}")
         assert response.status_code == 200
+        overview = client.get(
+            f"/api/v1/runs/{projection.run_key}/stages/5/overview"
+        )
+        assert overview.status_code == 200
+        assert overview.json()["counts"]["expanded"] == 1
+        assert overview.json()["conclusion_title"] == "当前没有可进入规模化生成的设计策略"
+        candidates = client.get(
+            f"/api/v1/runs/{projection.run_key}/stages/5/candidates",
+            params={"phase": "expansion", "page_size": 1},
+        )
+        assert candidates.status_code == 200
+        assert candidates.json()["total"] == 1
+        detail = client.get(
+            (
+                f"/api/v1/runs/{projection.run_key}/stages/5/candidates/"
+                "candidate-1"
+            ),
+            params={"phase": "expansion"},
+        )
+        assert detail.status_code == 200
+        assert detail.json()["candidate_id"] == "candidate-1"
+        catalog = client.get(
+            f"/api/v1/runs/{projection.run_key}/stages/5/metrics"
+        )
+        assert catalog.status_code == 200
+        assert len(catalog.json()) >= 20
+        invalid_sort = client.get(
+            f"/api/v1/runs/{projection.run_key}/stages/5/candidates",
+            params={"phase": "pilot", "sort_key": "absolute_path"},
+        )
+        assert invalid_sort.status_code == 400
         invalid_method = client.get(
             f"/api/v1/runs/{projection.run_key}/hotspots/review?method=winner"
         )

@@ -31,13 +31,16 @@ from easydesign.core import (
     canonical_model_sha256,
 )
 from easydesign.orchestration import (
+    approve_hotspots,
     diagnose_runtime,
+    export_hotspot_review,
     initialize_project,
     list_runs,
     read_pipeline_progress,
     validate_run_configuration,
 )
 from easydesign.orchestration.decisions import approve_decision, show_decision
+from easydesign.stages.s02_hotspot_discovery import RegionMethod
 
 from .jobs import UiJobController, clone_run_configuration
 from .models import UiJobRecord
@@ -122,6 +125,13 @@ class DecisionApprovalRequest(BaseModel):
     selected_option_ids: list[str] = Field(min_length=1)
     approved_by: str = Field(min_length=1, max_length=256)
     acknowledgement: str | None = Field(default=None, max_length=4096)
+    confirmed: bool = False
+
+
+class HotspotApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    yaml_text: str = Field(min_length=1, max_length=1_000_000)
     confirmed: bool = False
 
 
@@ -552,6 +562,80 @@ def create_ui_app(
                 profile_path=service.profile_path,
                 confirmed=True,
             )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/runs/{run_key}/hotspots/review")
+    def hotspot_review(
+        run_key: str,
+        request: Request,
+        method: str | None = None,
+    ) -> dict[str, str]:
+        service = _state(request)
+        selected_method: RegionMethod | None
+        if method is None:
+            selected_method = None
+        elif method == "sasa":
+            selected_method = RegionMethod.SASA_SURFACE_DIVERSITY
+        elif method == "scannet":
+            selected_method = RegionMethod.SCANNET_EPITOPE_NO_MSA
+        else:
+            raise HTTPException(status_code=400, detail="method 只允许 sasa 或 scannet")
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".yaml",
+                prefix="easydesign-ui-hotspots-",
+                delete=False,
+            ) as handle:
+                output = Path(handle.name)
+            try:
+                export_hotspot_review(
+                    service.registry.resolve(run_key),
+                    method=selected_method,
+                    output=output,
+                )
+                yaml_text = output.read_text(encoding="utf-8")
+            finally:
+                output.unlink(missing_ok=True)
+            return {"run_key": run_key, "yaml": yaml_text}
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/runs/{run_key}/hotspots/approve")
+    def hotspot_approve(
+        run_key: str,
+        payload: HotspotApprovalRequest,
+        request: Request,
+    ) -> dict[str, str]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("Hotspot 审批必须明确 confirmed=true")
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".yaml",
+                prefix="easydesign-ui-hotspots-approval-",
+                delete=False,
+            ) as handle:
+                handle.write(payload.yaml_text)
+                approval_path = Path(handle.name)
+            try:
+                approve_hotspots(
+                    service.registry.resolve(run_key),
+                    input_path=approval_path,
+                )
+            finally:
+                approval_path.unlink(missing_ok=True)
+            return {
+                "status": "approved",
+                "run_key": run_key,
+                "next_action": "resume",
+            }
         except Exception as error:
             _raise_http(error)
             raise

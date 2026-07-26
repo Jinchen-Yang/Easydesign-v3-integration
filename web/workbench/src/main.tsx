@@ -120,6 +120,24 @@ function artifactUrl(artifacts: Artifact[], id: string) {
   return value ? `/api/v1/artifacts/${value.token}` : undefined;
 }
 
+function parseLabelRanges(value: unknown) {
+  const selected: number[] = [];
+  for (const token of String(value || "").split(",")) {
+    const normalized = token.trim();
+    if (!normalized) continue;
+    const range = normalized.match(/^(\d+)\.\.(\d+)$/);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      for (let position = start; position <= end; position += 1) selected.push(position);
+      continue;
+    }
+    const position = Number(normalized);
+    if (Number.isFinite(position)) selected.push(position);
+  }
+  return [...new Set(selected)];
+}
+
 function StageOne({ stage }: { stage: Stage }) {
   const h = stage.highlights;
   const structure = artifactUrl(stage.artifacts, "target-structure");
@@ -148,10 +166,7 @@ function StageTwo({ stage, run }: { stage: Stage; run: Run }) {
   const structure = artifactUrl(stageOne.artifacts, "target-structure");
   const regions = (stage.tables.regions || []).map((item) => ({
     id: String(item.id),
-    label_seq_ids: String(item.label_ranges || "")
-      .split(",")
-      .map(Number)
-      .filter(Number.isFinite),
+    label_seq_ids: parseLabelRanges(item.label_ranges),
   }));
   return (
     <div className="stage-grid">
@@ -213,6 +228,7 @@ function StageThree({ stage }: { stage: Stage }) {
           ))}
         </div>
       </section>
+      <EvidenceList stage={stage} />
     </div>
   );
 }
@@ -222,11 +238,12 @@ function StageFour({ stage }: { stage: Stage }) {
   const planned = Number(h.planned_candidates || 0);
   const collected = Number(h.collected_candidates || 0);
   const percentage = planned ? Math.min(100, (collected / planned) * 100) : 0;
+  const devices = stage.tables.devices || [];
   return (
     <div className="content-stack">
       <section className="progress-hero panel">
         <div className="progress-copy">
-          <p className="panel-kicker">双 GPU · 可恢复执行</p>
+          <p className="panel-kicker">多设备 · 可恢复执行</p>
           <h3>{collected === planned ? "Pilot generation 完整收集" : "Pilot generation 进行中"}</h3>
           <p>每个 strategy 独立 attempt；完整候选和失败原因均已进入 manifest。</p>
         </div>
@@ -242,17 +259,21 @@ function StageFour({ stage }: { stage: Stage }) {
       <section className="panel gpu-panel">
         <div className="panel-header"><div><p className="panel-kicker">执行轨迹</p><h3>GPU strategy lanes</h3></div><Status state={stage.state} /></div>
         <div className="gpu-lanes">
-          {[0, 1].map((device, index) => (
-            <div className="gpu-lane" key={device}>
-              <div><strong>GPU {device}</strong><small>RTX 4080 · one worker</small></div>
+          {devices.map((device) => {
+            const completed = Number(device.completed ?? device.succeeded ?? device.completed_tasks ?? 0);
+            return (
+            <div className="gpu-lane" key={String(device.device)}>
+              <div><strong>GPU {String(device.device)}</strong><small>manifest-declared device lane</small></div>
               <div className="lane-track">
-                {Array.from({ length: index === 0 ? 11 : 10 }).map((_, item) => <span key={item} />)}
+                {Array.from({ length: Math.max(1, completed) }).map((_, item) => <span key={item} />)}
               </div>
-              <b>{index === 0 ? 11 : 10} strategies</b>
+              <b>{completed} completed</b>
             </div>
-          ))}
+          )})}
+          {!devices.length && <div className="empty-state"><strong>当前 manifest 没有设备分配表</strong><span>UI 不根据目录或终端文本猜测 GPU。</span></div>}
         </div>
       </section>
+      <EvidenceList stage={stage} />
     </div>
   );
 }
@@ -276,13 +297,13 @@ function StageFive({ stage }: { stage: Stage }) {
         <div>
           <p className="panel-kicker">SCIENTIFIC STOP · 软件运行正常</p>
           <h3>没有策略通过 full-target binder-pose gate</h3>
-          <p>12 个候选通过 local gate；Top 10 Protenix 均未保持原 binder pose。现有证据不等同于证明 Protenix 软件有 bug。</p>
+          <p>{formatNumber(h.local_gate_pass_count, 0)} 个候选通过 local gate；{formatNumber(h.protenix_prediction_count, 0)} 个 Protenix 预测均未通过 binder-pose gate。现有证据不等同于证明 Protenix 软件有 bug。</p>
         </div>
         <span className="val-tag">VAL-003 · planned</span>
       </section>
       <div className="filter-layout">
         <section className="panel funnel-panel">
-          <div className="panel-header"><div><p className="panel-kicker">筛选漏斗</p><h3>840 → scientific stop</h3></div></div>
+          <div className="panel-header"><div><p className="panel-kicker">筛选漏斗</p><h3>{formatNumber(h.pilot_candidate_count, 0)} → scientific stop</h3></div></div>
           <div className="funnel">
             {funnel.map(([label, value], index) => (
               <div key={label} style={{ width: `${100 - index * 9}%` }}>
@@ -301,7 +322,7 @@ function StageFive({ stage }: { stage: Stage }) {
         </section>
       </div>
       <section className="panel">
-        <div className="panel-header"><div><p className="panel-kicker">Top 10 full-target predictions</p><h3>候选逐项证据</h3></div><span className="evidence-chip">target RMSD 全部通过</span></div>
+        <div className="panel-header"><div><p className="panel-kicker">{formatNumber(h.protenix_prediction_count, 0)} full-target predictions</p><h3>候选逐项证据</h3></div><span className="evidence-chip">manifest evidence</span></div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Candidate</th><th>Target RMSD</th><th>Binder pose RMSD</th><th>pairwise ipTM</th><th>Min interface PAE</th><th>结论</th></tr></thead>
@@ -320,6 +341,7 @@ function StageFive({ stage }: { stage: Stage }) {
           </table>
         </div>
       </section>
+      <EvidenceList stage={stage} />
     </div>
   );
 }
@@ -338,19 +360,22 @@ function shortCandidate(value: string) {
 function FutureStage({ stage, run }: { stage: Stage; run: Run }) {
   const stageFive = run.stages[4];
   const isSix = stage.stage_number === 6;
+  const upstreamReason = stageFive.state === "scientific-stop"
+    ? "Stage 05 已发布 stopped-no-scale-winner，因此没有合法上游 artifact 可以进入本阶段。"
+    : "当前 run 尚未发布本阶段所需的完整上游 artifact。";
   return (
     <div className="content-stack">
       <section className="not-reached-card">
         <div>
-          <p className="panel-kicker">当前 APOE RUN</p>
+          <p className="panel-kicker">当前 RUN · {run.project_id}</p>
           <h3>本阶段未到达</h3>
-          <p>Stage 05 已发布 <code>stopped-no-scale-winner</code>，因此没有合法上游 artifact 可以进入本阶段。</p>
+          <p>{upstreamReason}</p>
         </div>
         <Status state="not-reached" />
       </section>
       <section className="panel capability-panel">
         <div className="capability-head">
-          <div><span className="capability-label">SOFTWARE CAPABILITY</span><h3>{stage.capability.summary}</h3><p>功能存在不代表本次 APOE 已执行。</p></div>
+          <div><span className="capability-label">SOFTWARE CAPABILITY</span><h3>{stage.capability.summary}</h3><p>功能存在不代表本次运行已经执行。</p></div>
           <span className="implemented-badge">{stage.capability.status}</span>
         </div>
         {isSix ? (
@@ -733,6 +758,7 @@ function OperationsPage({
   const [decision, setDecision] = useState<Record<string, unknown>>();
   const [selectedOption, setSelectedOption] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
+  const [hotspotYaml, setHotspotYaml] = useState("");
   const runs = projects.flatMap((project) => project.runs);
   const approvals = runs.flatMap((run) =>
     run.stages
@@ -750,8 +776,14 @@ function OperationsPage({
         const first = options?.find((option) => option.eligible !== false);
         setSelectedOption(String(first?.option_id || ""));
       })
-      .catch((value: unknown) => {
-        setMessage(value instanceof Error ? value.message : "无法读取待审批请求");
+      .catch(async () => {
+        try {
+          const result = await api.hotspotReview(approvalRunKey);
+          setHotspotYaml(result.yaml);
+          setMessage("这是 Stage 02 hotspot 审批模板；请补全批准人、理由与 acknowledgement。");
+        } catch (value) {
+          setMessage(value instanceof Error ? value.message : "无法读取待审批请求");
+        }
       });
   }, [approvalRunKey, type]);
 
@@ -771,8 +803,18 @@ function OperationsPage({
         setMessage(value instanceof Error ? value.message : "审批失败");
       }
     }
+    async function approveHotspotPending() {
+      if (!approvalRunKey || !hotspotYaml.trim()) return;
+      setMessage("正在验证区域、编号、证据限制并发布不可变 hotspots.yaml…");
+      try {
+        await api.approveHotspots(approvalRunKey, hotspotYaml);
+        setMessage("Hotspot 已批准；请返回 run 工作台使用“恢复未完成任务”继续后续 Stage。");
+      } catch (value) {
+        setMessage(value instanceof Error ? value.message : "Hotspot 审批失败");
+      }
+    }
     const options = decision?.options as Array<Record<string, unknown>> | undefined;
-    return <div className="utility-page"><header className="page-heading compact"><div><p className="eyebrow">DECISION AUTHORITY</p><h1>待审批</h1><p>身份、结构、hotspot 与高成本预算均保留人工 authority。</p></div></header><section className="panel utility-panel">{approvals.length ? <>{approvals.map(({ run, stage }) => <div className="utility-row" key={`${run.run_key}-${stage.stage_number}`}><div><strong>{run.project_id} · Stage {stage.stage_number}</strong><small>{stage.summary}</small></div><Status state={stage.state} /></div>)}{decision && <div className="decision-form"><p>{String(decision.message || "请选择经过验证的 option")}</p><div className="option-list">{(options || []).map((option) => <label key={String(option.option_id)} className={option.eligible === false ? "ineligible" : ""}><input type="radio" name="decision-option" value={String(option.option_id)} checked={selectedOption === String(option.option_id)} disabled={option.eligible === false} onChange={(event) => setSelectedOption(event.target.value)} /><span><strong>{String(option.label)}</strong><small>{String(option.description || "")}</small></span></label>)}</div><div className="two-field-row"><label><span>批准人</span><input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="真实姓名或稳定 ID" /></label><button className="primary-button" onClick={approvePending} disabled={!selectedOption || !approvedBy.trim()}>确认并继续</button></div></div>}{message && <div className="form-status">{message}</div>}</> : <div className="empty-state"><strong>当前没有待审批事项</strong><span>审批不会被 UI 自动跳过。</span></div>}</section></div>;
+    return <div className="utility-page"><header className="page-heading compact"><div><p className="eyebrow">DECISION AUTHORITY</p><h1>待审批</h1><p>身份、结构、hotspot 与高成本预算均保留人工 authority。</p></div></header><section className="panel utility-panel">{approvals.length ? <>{approvals.map(({ run, stage }) => <div className="utility-row" key={`${run.run_key}-${stage.stage_number}`}><div><strong>{run.project_id} · Stage {stage.stage_number}</strong><small>{stage.summary}</small></div><Status state={stage.state} /></div>)}{decision && <div className="decision-form"><p>{String(decision.message || "请选择经过验证的 option")}</p><div className="option-list">{(options || []).map((option) => <label key={String(option.option_id)} className={option.eligible === false ? "ineligible" : ""}><input type="radio" name="decision-option" value={String(option.option_id)} checked={selectedOption === String(option.option_id)} disabled={option.eligible === false} onChange={(event) => setSelectedOption(event.target.value)} /><span><strong>{String(option.label)}</strong><small>{String(option.description || "")}</small></span></label>)}</div><div className="two-field-row"><label><span>批准人</span><input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="真实姓名或稳定 ID" /></label><button className="primary-button" onClick={approvePending} disabled={!selectedOption || !approvedBy.trim()}>确认并继续</button></div></div>}{hotspotYaml && <div className="decision-form"><p>Stage 02 Hotspot 审批文件</p><textarea aria-label="Hotspot approval YAML" value={hotspotYaml} onChange={(event) => setHotspotYaml(event.target.value)} /><button className="primary-button" onClick={approveHotspotPending}>验证并批准 hotspots.yaml</button></div>}{message && <div className="form-status">{message}</div>}</> : <div className="empty-state"><strong>当前没有待审批事项</strong><span>审批不会被 UI 自动跳过。</span></div>}</section></div>;
   }
   if (type === "environment") {
     async function diagnose() {

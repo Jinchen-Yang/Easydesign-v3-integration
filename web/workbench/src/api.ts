@@ -38,6 +38,18 @@ export const api = {
         confirmed: true,
       }),
     }),
+  hotspotReview: (key: string, method?: "sasa" | "scannet") =>
+    request<{ run_key: string; yaml: string }>(
+      `/api/v1/runs/${key}/hotspots/review${method ? `?method=${method}` : ""}`,
+    ),
+  approveHotspots: (key: string, yamlText: string) =>
+    request<{ status: string; run_key: string; next_action: string }>(
+      `/api/v1/runs/${key}/hotspots/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ yaml_text: yamlText, confirmed: true }),
+      },
+    ),
   resume: (key: string) =>
     request<Record<string, unknown>>(`/api/v1/runs/${key}/resume`, {
       method: "POST",

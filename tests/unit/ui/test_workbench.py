@@ -338,6 +338,15 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         assert client.get("/api/v1/health", headers={"host": "example.com"}).status_code == 403
         response = client.get(f"/api/v1/artifacts/{token}")
         assert response.status_code == 200
+        invalid_method = client.get(
+            f"/api/v1/runs/{projection.run_key}/hotspots/review?method=winner"
+        )
+        assert invalid_method.status_code == 400
+        unconfirmed = client.post(
+            f"/api/v1/runs/{projection.run_key}/hotspots/approve",
+            json={"yaml_text": "schema_version: '0.3'", "confirmed": False},
+        )
+        assert unconfirmed.status_code == 400
 
     artifact_path = (
         run_root

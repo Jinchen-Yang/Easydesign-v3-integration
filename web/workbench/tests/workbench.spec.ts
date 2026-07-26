@@ -137,7 +137,7 @@ test("dashboard and scientific-stop workspace keep software and run state separa
   await page.getByRole("button", { name: /06 规模生成/ }).click();
   await expect(page.getByRole("heading", { name: "本阶段未到达" })).toBeVisible();
   await expect(page.getByText("2×500 / 20×2500 分片能力")).toBeVisible();
-  await expect(page.getByText("功能存在不代表本次 APOE 已执行。")).toBeVisible();
+  await expect(page.getByText("功能存在不代表本次运行已经执行。")).toBeVisible();
 
   await page.getByRole("button", { name: /07 最终筛选与选择/ }).click();
   await expect(page.getByRole("button", { name: "生成湿实验候选草案" })).toBeDisabled();

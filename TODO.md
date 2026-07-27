@@ -22,7 +22,7 @@
 | M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | M8 Stage 03 基础策略编译 | `smoke-validated` | schema 0.7、通用 region×official VHH7 策略、固定 scaffold 资产和 BoltzGen 0.3.2 官方校验已完成；APOE 21/21 通过。 |
 | M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 已在 Stage 05 合法科学停止。 |
-| M10 产品级科研工作台 | `smoke-validated` | dev9 工作台已完成统一浅色结构工作区、执行/筛选证据和可自由浏览的新建设计向导；文件接收、草稿、检查与启动状态边界通过双尺寸 Chromium 和 Python API 验收。 |
+| M10 产品级科研工作台 | `smoke-validated` | dev15 工作台已完成统一浅色结构工作区、执行/筛选证据、全流程向导和按步骤 Stage 01 单页运行；PSE 流式接收与自动结构审查通过真实 APOE 验收。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
 | M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
 | M13 项目与设计路线整理 | `smoke-validated` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA、PSE 新分支与浏览器验收均已完成。 |
@@ -40,7 +40,7 @@
 | `ENG` | Core Engineering | `smoke-validated` | manifest、Decision Gate、跨主机执行与统一 run layout 已形成可审计工程底座。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-018：历史 checkpoint 逐 run 依赖报告与可恢复归档；[运行目录规则](docs/architecture/RUN_LAYOUT.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–005 已提供可安装 CLI、六入口 init、运行管理、Viewer 与经过校验的一条命令共享案例入口。 | 让真实能力和可审计结果通过稳定入口使用。 | 下一步验证跨平台共享案例和可继续长任务 UX；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
-| `UI` | Product UI | `smoke-validated` | dev9 本地科研工作台已统一结构/筛选证据，并以非线性五步向导连接输入、配置、检查和真实启动。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `UI` | Product UI | `smoke-validated` | dev15 同时提供可自由浏览的全流程向导和上传后直达结构审查的按步骤 Stage 01 单页流程。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002/003 固定 VHH7 和 TNP runtime；DATA-004 将 APOE 结果压缩为有授权、逐文件校验的私有仓库证据包。 | 确保 scaffold、模型、fixture 和共享结果的来源、授权与边界可审计。 | 公开发布前复审 APOE 私有资产、TNP 依赖和模型再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
@@ -87,11 +87,11 @@
 | `VAL-004` | Scientific Validation | `smoke-validated` | `runs/apoe-fasta/20260727-002-stage01-protenix` 真实消费 143 aa FASTA 与 SHA-256 为 `12d913…f72716` 的 609-depth A3M，发布 Protenix-v2 Target Bundle 0.4 和 Viewer。 |
 | `UI-009` | Product UI | `smoke-validated` | 全流程七阶段可自由浏览；按步骤路线已从真实 APOE Stage 01 建立独立 Stage 02 continuation；开发者自检与科研项目保持隔离。 |
 | `UI-010` | Product UI | `smoke-validated` | 项目可在运行索引中显式指定一条主展示运行；新分支继续保留在历史中，但不会擅自覆盖首页选定结果。 |
-| `UI-011` | Product UI | `implemented` | 按步骤设计收敛为单页 Stage 01 体验：PSE 接收后自动校验、运行并进入结构审查；真实浏览器验收完成前不提升状态。 |
+| `UI-011` | Product UI | `smoke-validated` | 按步骤设计已收敛为单页 Stage 01：PSE 接收后自动校验、运行并进入结构审查，真实 APOE 与双尺寸浏览器验收通过。 |
 | `ENG-016` | Core Engineering | `smoke-validated` | DesignSession 0.1 的不可变 config revision、run lineage、冻结输入重定位和等待审批状态已由真实 APOE continuation 验证。 |
 | `ENG-017` | Core Engineering | `smoke-validated` | Project/Run/Stage/Attempt/branch 语义、同 run 阶段延续、惰性 Stage 目录、项目导航和归档空壳清理均通过真实目录验收。 |
 | `ENG-018` | Core Engineering | `planned` | 为 dev14 前的 Stage checkpoint runs 生成依赖报告，并对无引用终态 run 提供逐 run 可恢复归档；不合并或重写科学文件。 |
-| `ENG-019` | Core Engineering | `implemented` | 用有界原始字节流替代浏览器 Base64 文件预处理，并为上传、任务状态查询和错误终态建立稳定接口；真实 PSE 验收完成前不提升状态。 |
+| `ENG-019` | Core Engineering | `smoke-validated` | 有界原始字节流已替代浏览器 Base64 预处理；上传终态、job 查询、配置 runs root 和 DesignSession lineage 均通过真实 PSE 验收。 |
 | `REP-003` | Reporting & Visualization | `implemented` | Stage 02 产品层已提供区域理由、批准人和证据限制确认；保存后的科学授权仍使用现有 Stage 02/Decision 契约。 |
 | `REP-004` | Reporting & Visualization | `smoke-validated` | Mol* 单实例、过期加载防护、表示/相机就绪门已通过真实 143 aa APOE FASTA 与 PSE 红蓝黄页面的可见结构和非背景像素验收。 |
 | `S02-009` | Scientific Pipeline | `smoke-validated` | APOE PSE 三层编辑器已将 A/B/C 9/14/14 保存为新的 `manual-residue-list` Stage 02 分支，并停在人工确认门；旧运行保持不变。 |

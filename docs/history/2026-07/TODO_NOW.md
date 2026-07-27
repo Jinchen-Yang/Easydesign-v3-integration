@@ -545,3 +545,38 @@
   分别进入 ENG-018 与后续 ADR，不在本次偷偷移动仍可能被引用的历史证据。
 - 实现提交：`ef8847ad47c1eb593f42a071b36722a3740a957f`
   （`refactor(core): unify staged run layout`）。
+
+## 2026-07-28 — UI-011 / ENG-019：按步骤 Stage 01 单页运行
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-28T00:58:17+08:00
+- 问题：浏览器在发送上传请求前先用 `FileReader` 为整个文件生成 Base64；用户选择
+  APOE PSE 后请求没有到达 localhost gateway，界面又没有超时，因而永久停在“正在接收
+  文件”。按步骤设计还错误复用全流程的第5项启动页，让用户手动经历草稿、环境检查和
+  真实启动三层工程操作。
+- 方案：新增 64 MiB 有界的原始字节流上传接口，边接收边计算 SHA-256，浏览器设置
+  120 秒超时并保证成功/失败终态。按步骤 PSE receipt 成功后，在同一页面依次执行配置
+  生成、preflight、Stage 01 job 和结构化状态轮询；完成后凭 `run_key` 直接进入第1步
+  结构审查。全流程设计的显式第5项保持不变。
+- 工程修复：localhost job 现在使用 UI 实际配置的 `runs_root`，并携带 session ID 与
+  Stage 编号；worker 成功后把 run key 写入 DesignSession lineage。旧 JSON/Base64
+  上传端点只为兼容保留，新的 Workbench 不再调用。
+- 真实验证：`runs/_validation/ui011-pC8Ldb` 对 397,738-byte `apoe_abc.pse`
+  （SHA-256
+  `7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651`）
+  完成 raw receipt、doctor 和 Stage 01；run
+  `ui011-pse-smoke/20260727t165230z` 为 `succeeded`，目标 138 aa，Stage 01 发布
+  15 个工作台可见正式输出。DesignSession 为 `succeeded`，lineage 包含 run key
+  `74f21b1f3766a30e9df0e4e1`。
+- 自动验证：`make check` 通过；全仓 264 passed、8 个独立 PyMOL 集成测试按配置
+  skipped；Workbench Chromium 1440×900 与 1920×1080 共 26/26 passed；
+  Target Viewer 3 passed/2 个真实可选案例 skipped；dev15 wheel、console script 和
+  package data 校验通过。
+- 遇到的问题：真实验收使用独立 runs root 时暴露出 UI job 没有把配置的 runs root
+  传给 worker、且首次启动没有写回 DesignSession 的旧缺口。
+- 解决办法：LaunchRequest 增加成对校验的 session/stage 身份，job controller 显式
+  接收 registry runs root；新增单 job 查询接口供前端轮询，不扫描目录或解析终端文本。
+- 遗留边界：PSE 等低成本本地导入可自动执行；FASTA/序列等可能触发预测的入口仍需在
+  同一页面点击“开始准备结构”。本轮不改变任何 Stage 01 科学契约或 APOE 主项目结果。
+- 实现提交：`df4d81167950a54c04ddd218eb2baf9536eb2921`
+  （`fix(ui): streamline stepwise target preparation`）。

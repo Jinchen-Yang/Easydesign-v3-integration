@@ -255,3 +255,28 @@ dev13 真实验收补充：
   `awaiting-human-approval`，旧科学 run 不变。
 - continuation 不复用旧项目的悬空相对路径：Stage 01 冻结输入与预计算 MSA 按
   SHA-256 原子复制到新项目，并使用可移动的相对引用。
+
+## UI-010：项目主展示运行
+
+“我的项目”中的一张卡片代表项目，不等于项目中最新创建的分支。项目可以在运行索引中
+显式指定一条“主展示运行”：
+
+- 首页使用指定运行呈现阶段进度、最近结论和“查看项目”入口。
+- 同项目中更晚创建的 continuation、等待确认分支或远程探索运行仍保留在运行任务和历史
+  运行中，不会覆盖项目卡片。
+- 未指定主展示运行的项目继续采用最近更新的可验证运行，保持旧索引兼容。
+- 选择动作只更新可再生导航索引；科学 manifest、artifact 和 checksum 保持不变。
+
+当前服务器明确指定：
+
+- `apoe-s02-006-pse` → `20260726-004-stage05-pilot-filter`，首页展示 Stage 01–05
+  真实结果与 Stage 05 科学停止。
+- `apoe-fasta` 未被本次操作修改，继续展示原有 Stage 01 Protenix 结果。
+
+维护入口：
+
+```bash
+easydesign projects select-primary PROJECT_ID \
+  --run-id RUN_ID \
+  --runs-root RUNS_ROOT
+```

@@ -52,6 +52,7 @@ from easydesign.orchestration.project_catalog import (
     archive_project,
     list_project_catalog,
     restore_project,
+    select_project_primary_run,
 )
 from easydesign.orchestration.remote_execution import (
     list_remote_executor_ids,
@@ -389,6 +390,15 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(projects_restore)
     projects_restore.add_argument("--runs-root", type=Path)
     _add_json(projects_restore)
+    projects_select_primary = projects_commands.add_parser(
+        "select-primary",
+        help="指定项目首页展示的运行，不修改科学结果",
+    )
+    projects_select_primary.add_argument("project_id")
+    projects_select_primary.add_argument("--run-id", required=True)
+    _add_profile(projects_select_primary)
+    projects_select_primary.add_argument("--runs-root", type=Path)
+    _add_json(projects_select_primary)
 
     viewer_parser = commands.add_parser("viewer", help="查看自包含结构报告")
     viewer_commands = viewer_parser.add_subparsers(dest="viewer_command", required=True)
@@ -556,6 +566,32 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             else:
                 for entry in entries:
                     print(f"{entry.project_id}: {entry.category}, {entry.run_count} 个运行")
+            return 0
+        if arguments.projects_command == "select-primary":
+            selected = select_project_primary_run(
+                root,
+                project_id=arguments.project_id,
+                run_id=arguments.run_id,
+            )
+            selected_payload = {
+                "project_id": selected.project_id,
+                "run_id": selected.run_id,
+                "path": selected.path,
+                "index_path": str(selected.index_path),
+            }
+            if arguments.json:
+                print(
+                    json.dumps(
+                        selected_payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            else:
+                print(
+                    f"项目首页已改为展示：{selected.project_id}/{selected.run_id}"
+                )
             return 0
         project_outcome = (
             archive_project(root, arguments.project_id)

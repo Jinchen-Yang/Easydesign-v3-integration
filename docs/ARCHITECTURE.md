@@ -874,6 +874,12 @@ DesignSession。UI 服务启动时从 `run-index.json` 注册已验证 run，深
 - `archived-project-run`：移动到 `runs/_archive/`，只在设置中显示，可恢复。
 - `developer-smoke-run`：只在开发者自检历史中显示，禁止作为科学输入。
 
+项目首页展示哪一次运行也由 `run-index.json` 显式声明。每个活跃项目最多一个
+`is_project_primary: true`；没有声明时才按最近更新时间展示。选择主展示运行只改变
+导航投影，不改写该 run 的 manifest、artifact、状态或 checksum，也不隐藏同项目的其他
+历史运行。较新的 continuation、科学审批分支和远程探索运行因此不会自动替换用户已经
+选定的项目首页结论。
+
 归档是原子路径治理：移动前后都验证 RunManifest、StageManifest、ArtifactRef、大小和
 SHA-256；运行中、带锁或被远程任务引用的项目拒绝移动。归档不会改写科学文件或其
 checksum。

@@ -3,7 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from datetime import UTC, datetime
+import shutil
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,13 @@ from easydesign.core import (
     StageManifest,
     TaskHeartbeat,
     dump_model,
+    load_model,
+)
+from easydesign.orchestration import (
+    RunIndex,
+    RunIndexEntry,
+    select_project_primary_run,
+    upsert_run_index_entries,
 )
 from easydesign.ui import (
     UiRunRegistry,
@@ -28,6 +36,7 @@ from easydesign.ui import (
     create_draft_order_package,
     create_ui_app,
     get_execution_progress,
+    get_project_projection,
     get_run_projection,
 )
 from easydesign.ui.security import ArtifactTokenSigner
@@ -374,6 +383,131 @@ def test_projection_separates_scientific_stop_from_stage_capability(
     assert projection.stages[5].capability.status == "implemented"
     assert projection.stages[6].state == "not-reached"
     assert projection.stages[6].capability.status == "implemented"
+
+
+def test_project_primary_run_is_explicit_and_does_not_follow_newest_branch(
+    tmp_path: Path,
+) -> None:
+    primary_root = _audited_run(tmp_path)
+    newer_root = tmp_path / "runs" / "target-alpha" / "run-newer-stage02"
+    shutil.copytree(primary_root, newer_root)
+    latest_name = (newer_root / "manifests" / "LATEST").read_text(
+        encoding="utf-8"
+    ).strip()
+    newer_manifest = load_model(newer_root / "manifests" / latest_name, RunManifest)
+    newer_manifest_name = "run-manifest-0002.json"
+    dump_model(
+        newer_manifest.model_copy(
+            update={
+                "run_id": "run-newer-stage02",
+                "updated_at": NOW + timedelta(hours=1),
+                "completed_at": NOW + timedelta(hours=1),
+            }
+        ),
+        newer_root / "manifests" / newer_manifest_name,
+    )
+    (newer_root / "manifests" / "LATEST").write_text(
+        f"{newer_manifest_name}\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        tmp_path / "runs",
+        "run-index.json",
+        {
+            "schema_version": "0.1",
+            "generated_at": NOW.isoformat(),
+            "entries": [
+                {
+                    "category": "project-run",
+                    "path": "target-alpha/run-scientific-stop",
+                    "layout_version": "0.2",
+                    "status": "succeeded",
+                    "project_id": "target-alpha",
+                    "run_id": "run-scientific-stop",
+                    "notes": [],
+                },
+                {
+                    "category": "project-run",
+                    "path": "target-alpha/run-newer-stage02",
+                    "layout_version": "0.2",
+                    "status": "succeeded",
+                    "project_id": "target-alpha",
+                    "run_id": "run-newer-stage02",
+                    "notes": [],
+                },
+                {
+                    "category": "project-run",
+                    "path": "other-target/run-primary",
+                    "layout_version": "0.2",
+                    "status": "succeeded",
+                    "project_id": "other-target",
+                    "run_id": "run-primary",
+                    "is_project_primary": True,
+                    "notes": [],
+                },
+            ],
+        },
+    )
+    registry = UiRunRegistry(tmp_path / "runs")
+    signer = ArtifactTokenSigner(b"test-secret")
+
+    before = get_project_projection(
+        "target-alpha",
+        registry=registry,
+        signer=signer,
+    )
+    assert before.latest_run is not None
+    assert before.latest_run.run_id == "run-newer-stage02"
+
+    outcome = select_project_primary_run(
+        tmp_path / "runs",
+        project_id="target-alpha",
+        run_id="run-scientific-stop",
+        changed_at=NOW + timedelta(hours=2),
+    )
+    after = get_project_projection(
+        "target-alpha",
+        registry=registry,
+        signer=signer,
+    )
+    index = load_model(tmp_path / "runs" / "run-index.json", RunIndex)
+
+    assert outcome.run_id == "run-scientific-stop"
+    assert after.latest_run is not None
+    assert after.latest_run.run_id == "run-scientific-stop"
+    assert after.runs[0].run_id == "run-newer-stage02"
+    assert {
+        (entry.project_id, entry.run_id)
+        for entry in index.entries
+        if entry.is_project_primary
+    } == {
+        ("target-alpha", "run-scientific-stop"),
+        ("other-target", "run-primary"),
+    }
+
+    upsert_run_index_entries(
+        tmp_path / "runs",
+        (
+            RunIndexEntry(
+                category="project-run",
+                path="target-alpha/run-scientific-stop",
+                layout_version="0.2",
+                status="succeeded",
+                project_id="target-alpha",
+                run_id="run-scientific-stop",
+                notes=("Updated without changing the project display selection.",),
+            ),
+        ),
+        generated_at=NOW + timedelta(hours=3),
+    )
+    preserved = load_model(tmp_path / "runs" / "run-index.json", RunIndex)
+    selected_entry = next(
+        entry
+        for entry in preserved.entries
+        if entry.project_id == "target-alpha"
+        and entry.run_id == "run-scientific-stop"
+    )
+    assert selected_entry.is_project_primary is True
 
 
 def test_replay_is_read_only_and_uses_manifest_scientific_stop(tmp_path: Path) -> None:

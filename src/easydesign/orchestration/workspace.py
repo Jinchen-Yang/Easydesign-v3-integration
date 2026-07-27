@@ -136,6 +136,7 @@ class RunIndexEntry(BaseModel):
     status: str = Field(min_length=1, max_length=64)
     project_id: str | None = Field(default=None, pattern=ID_PATTERN)
     run_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    is_project_primary: bool = False
     notes: tuple[str, ...] = ()
 
 
@@ -156,6 +157,20 @@ class RunIndex(BaseModel):
         paths = [entry.path for entry in self.entries]
         if len(paths) != len(set(paths)):
             raise ValueError("run-index path 不能重复")
+        primary_projects = [
+            (entry.category, entry.project_id)
+            for entry in self.entries
+            if entry.is_project_primary
+        ]
+        if len(primary_projects) != len(set(primary_projects)):
+            raise ValueError("同一分类中的项目只能指定一个主展示运行")
+        for entry in self.entries:
+            if entry.is_project_primary and (
+                entry.category != "project-run"
+                or entry.project_id is None
+                or entry.run_id is None
+            ):
+                raise ValueError("主展示运行必须是含 project_id/run_id 的 project-run")
         return self
 
 
@@ -260,7 +275,11 @@ def upsert_run_index_entries(
     if index_path.is_file():
         existing = load_model(index_path, RunIndex).entries
     by_path = {entry.path: entry for entry in existing}
-    by_path.update({entry.path: entry for entry in entries})
+    for entry in entries:
+        previous = by_path.get(entry.path)
+        if previous is not None and previous.is_project_primary:
+            entry = entry.model_copy(update={"is_project_primary": True})
+        by_path[entry.path] = entry
     index = RunIndex(
         generated_at=generated_at,
         entries=tuple(by_path[path] for path in sorted(by_path)),

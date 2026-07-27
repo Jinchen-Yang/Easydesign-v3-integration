@@ -54,6 +54,14 @@ class ProjectArchiveOutcome:
     index_path: Path
 
 
+@dataclass(frozen=True, slots=True)
+class ProjectPrimaryRunOutcome:
+    project_id: str
+    run_id: str
+    path: str
+    index_path: Path
+
+
 def _load_index(runs_root: Path) -> RunIndex:
     index_path = runs_root.resolve() / "run-index.json"
     if not index_path.is_file():
@@ -87,6 +95,61 @@ def list_project_catalog(
             paths=tuple(sorted(paths)),
         )
         for (project_id, category), paths in sorted(grouped.items())
+    )
+
+
+def select_project_primary_run(
+    runs_root: Path,
+    *,
+    project_id: str,
+    run_id: str,
+    changed_at: datetime | None = None,
+) -> ProjectPrimaryRunOutcome:
+    """选择项目首页展示的运行；不改变运行或科学产物。"""
+
+    root = runs_root.resolve()
+    index = _load_index(root)
+    matches = [
+        entry
+        for entry in index.entries
+        if entry.category == PROJECT_RUN
+        and entry.project_id == project_id
+        and entry.run_id == run_id
+    ]
+    if not matches:
+        raise ConfigurationError(
+            f"项目 {project_id} 没有可作为主展示运行的 run_id={run_id}"
+        )
+    if len(matches) != 1:
+        raise ManifestStateError(
+            f"项目 {project_id} 的 run_id={run_id} 在索引中不唯一"
+        )
+    selected = matches[0]
+    _verify_run_at_path(root, selected.path)
+    updated = tuple(
+        entry.model_copy(
+            update={
+                "is_project_primary": (
+                    entry.category == PROJECT_RUN
+                    and entry.project_id == project_id
+                    and entry.run_id == run_id
+                )
+            }
+        )
+        if entry.category == PROJECT_RUN and entry.project_id == project_id
+        else entry
+        for entry in index.entries
+    )
+    index_path = replace_run_index_entries(
+        root,
+        updated,
+        generated_at=changed_at or datetime.now(UTC),
+    )
+    return ProjectPrimaryRunOutcome(
+        project_id=project_id,
+        run_id=run_id,
+        path=selected.path,
+        index_path=index_path,
     )
 
 
@@ -208,6 +271,7 @@ def _move_project(
             update={
                 "category": destination_category,
                 "path": relative.as_posix(),
+                "is_project_primary": False,
                 "notes": entry.notes
                 + (
                     (

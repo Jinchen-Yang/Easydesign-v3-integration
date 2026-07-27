@@ -20,7 +20,7 @@ from easydesign.core import (
     canonical_model_sha256,
     load_model,
 )
-from easydesign.orchestration import list_runs
+from easydesign.orchestration import RunIndex, list_runs
 
 from .models import (
     ArtifactProjection,
@@ -431,10 +431,29 @@ def get_project_projection(
             reverse=True,
         )
     )
+    index = load_model(registry.runs_root / "run-index.json", RunIndex)
+    primary_entries = [
+        entry
+        for entry in index.entries
+        if entry.category == "project-run"
+        and entry.project_id == project_id
+        and entry.is_project_primary
+    ]
+    primary_projection = projections[0] if projections else None
+    if primary_entries:
+        primary_run_id = primary_entries[0].run_id
+        primary_projection = next(
+            (item for item in projections if item.run_id == primary_run_id),
+            None,
+        )
+        if primary_projection is None:
+            raise ManifestStateError(
+                f"项目 {project_id} 的主展示运行不可验证: {primary_run_id}"
+            )
     return ProjectProjection(
         project_id=project_id,
         run_count=len(projections),
-        latest_run=projections[0] if projections else None,
+        latest_run=primary_projection,
         runs=projections,
     )
 

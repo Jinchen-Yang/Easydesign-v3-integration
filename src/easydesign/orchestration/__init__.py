@@ -78,9 +78,11 @@ from .project_catalog import (
     PROJECT_RUN,
     ProjectArchiveOutcome,
     ProjectCatalogEntry,
+    ProjectPrimaryRunOutcome,
     archive_project,
     list_project_catalog,
     restore_project,
+    select_project_primary_run,
 )
 from .pse_import import CompletedPseRun, execute_pse_import
 from .remote_execution import (
@@ -151,6 +153,7 @@ __all__ = [
     "DEVELOPER_SMOKE_RUN",
     "ProjectArchiveOutcome",
     "ProjectCatalogEntry",
+    "ProjectPrimaryRunOutcome",
     "PyMOLPseRuntime",
     "RegionProposalMode",
     "ResolvedProtenixMsaProviderConfig",
@@ -228,6 +231,7 @@ __all__ = [
     "show_run",
     "archive_project",
     "restore_project",
+    "select_project_primary_run",
     "submit_remote_pipeline",
     "sync_remote_pipeline",
     "upsert_run_index_entries",

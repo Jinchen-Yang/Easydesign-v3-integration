@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +17,7 @@ from easydesign.core import (
     RunManifest,
     StageManifest,
     load_model,
+    sha256_file,
 )
 
 from .config import (
@@ -24,6 +28,7 @@ from .config import (
     Stage07Config,
     load_run_config,
 )
+from .workspace import ResolvedRunConfig
 
 
 def _latest_run(run_root: Path) -> RunManifest:
@@ -143,7 +148,7 @@ def _stage_payload(
                 seen_residues.update(residues)
                 normalized.append({"id": region_id, "residues": residues})
             normalized.sort(key=lambda item: "ABC".index(str(item["id"])))
-            payload = {
+            user_payload: dict[str, Any] = {
                 "mode": "user-provided",
                 "methods": [],
                 "automatic": None,
@@ -166,7 +171,9 @@ def _stage_payload(
             if approvals is not None:
                 if not isinstance(approvals, list) or len(approvals) != len(normalized):
                     raise ConfigurationError("人工区域必须为每个区域提供理由")
-                payload["user_regions"]["approval"] = {
+                user_regions = user_payload["user_regions"]
+                assert isinstance(user_regions, dict)
+                user_regions["approval"] = {
                     "approved_by": str(selected.get("approved_by") or ""),
                     "acknowledge_user_provided_regions": bool(
                         selected.get("acknowledge_user_provided_regions")
@@ -178,36 +185,123 @@ def _stage_payload(
                 }
             elif execution_mode == "unattended":
                 raise ConfigurationError("连续运行的人工区域必须为每个区域提供理由")
-            return payload
+            return user_payload
         method = str(selected.get("method", "both"))
         if method not in {"sasa", "scannet", "both"}:
             raise ConfigurationError("Stage 02 method 只允许 sasa/scannet/both")
         if execution_mode == "unattended" and method == "both":
             raise ConfigurationError("连续运行的 Stage 02 必须选择一种自动方法")
         methods = ["sasa", "scannet"] if method == "both" else [method]
-        payload: dict[str, Any] = {
+        automatic_payload: dict[str, Any] = {
             "mode": "automatic",
             "methods": methods,
             "annotations": {"uniprot": "if_available"},
         }
         if execution_mode == "unattended":
-            payload["unattended_approval"] = {
+            automatic_payload["unattended_approval"] = {
                 "region_count": int(selected.get("region_count", 3)),
                 "allow_structural_only": bool(
                     selected.get("allow_structural_only", False)
                 ),
             }
-        return payload
-    model = {
-        3: Stage03Config,
-        4: Stage04Config,
-        5: Stage05Config,
-        6: Stage06Config,
-        7: Stage07Config,
-    }.get(stage_number)
-    if model is None:
-        raise ConfigurationError("Stage 01 不能通过 continuation 配置")
-    return model.model_validate(selected).model_dump(mode="json")
+        return automatic_payload
+    if stage_number == 3:
+        return Stage03Config.model_validate(selected).model_dump(mode="json")
+    if stage_number == 4:
+        return Stage04Config.model_validate(selected).model_dump(mode="json")
+    if stage_number == 5:
+        return Stage05Config.model_validate(selected).model_dump(mode="json")
+    if stage_number == 6:
+        return Stage06Config.model_validate(selected).model_dump(mode="json")
+    if stage_number == 7:
+        return Stage07Config.model_validate(selected).model_dump(mode="json")
+    raise ConfigurationError("Stage 01 不能通过 continuation 配置")
+
+
+def _copy_verified_continuation_input(
+    source: Path,
+    destination: Path,
+    expected_sha256: str,
+) -> Path:
+    """把冻结输入复制到产品项目；已存在同字节文件可安全复用。"""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if not destination.is_file() or sha256_file(destination) != expected_sha256:
+            raise ConfigurationError(f"continuation 输入已存在但内容不同: {destination}")
+        return destination
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+        shutil.copyfile(source, temporary)
+        if sha256_file(temporary) != expected_sha256:
+            raise ManifestStateError("continuation 输入复制后 SHA-256 不一致")
+        os.replace(temporary, destination)
+        return destination
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _rebase_continuation_inputs(
+    *,
+    source_run_root: Path,
+    output: Path,
+    payload: dict[str, Any],
+) -> None:
+    """让新 revision 只引用已冻结、可解析的输入，不依赖旧项目目录。"""
+
+    resolved_path = source_run_root / "config-snapshot" / "resolved-config.json"
+    if not resolved_path.is_file():
+        raise ManifestStateError("continuation source 缺少 resolved-config.json")
+    resolved = load_model(resolved_path, ResolvedRunConfig)
+    stage01 = payload.get("stage01")
+    if not isinstance(stage01, dict):
+        return
+    target = stage01.get("target")
+    source_config = target.get("source") if isinstance(target, dict) else None
+    if not isinstance(source_config, dict):
+        return
+    source_type = str(source_config.get("type") or "")
+    inputs_root = output.parent / "inputs" / "continuation" / resolved.run_id
+
+    if source_type == "local-file":
+        snapshot = resolved.input_snapshot.verify(source_run_root)
+        copied = _copy_verified_continuation_input(
+            snapshot,
+            inputs_root / snapshot.name,
+            resolved.input_snapshot.sha256,
+        )
+        source_config["path"] = Path(os.path.relpath(copied, output.parent)).as_posix()
+    elif source_type == "target-bundle":
+        snapshot = resolved.input_snapshot.verify(source_run_root)
+        copied = _copy_verified_continuation_input(
+            snapshot,
+            inputs_root / snapshot.name,
+            resolved.input_snapshot.sha256,
+        )
+        source_config["path"] = Path(os.path.relpath(copied, output.parent)).as_posix()
+        source_config["source_run_root"] = Path(
+            os.path.relpath(source_run_root, output.parent)
+        ).as_posix()
+
+    if resolved.precomputed_msa_snapshot is not None:
+        msa_snapshot = resolved.precomputed_msa_snapshot.verify(source_run_root)
+        copied_msa = _copy_verified_continuation_input(
+            msa_snapshot,
+            inputs_root / "target-msa.a3m",
+            resolved.precomputed_msa_snapshot.sha256,
+        )
+        prediction = stage01.get("structure_prediction")
+        msa = prediction.get("msa") if isinstance(prediction, dict) else None
+        if isinstance(msa, dict) and msa.get("mode") == "precomputed":
+            msa["path"] = Path(os.path.relpath(copied_msa, output.parent)).as_posix()
 
 
 def materialize_continuation_config(
@@ -253,6 +347,11 @@ def materialize_continuation_config(
         payload[f"stage{future:02d}"] = None
     output = destination.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    _rebase_continuation_inputs(
+        source_run_root=source,
+        output=output,
+        payload=payload,
+    )
     try:
         with output.open("x", encoding="utf-8", newline="\n") as handle:
             yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)

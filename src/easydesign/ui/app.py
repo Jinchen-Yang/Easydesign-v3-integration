@@ -314,6 +314,7 @@ def create_ui_app(
         profile_path=profile_path,
         job_root=job_root,
     )
+    state.discover_runs()
     app = FastAPI(
         title="EasyDesign Scientific Workbench",
         version=easydesign.__version__,
@@ -332,7 +333,8 @@ def create_ui_app(
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
-            "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; "
+            "font-src 'self' data:; connect-src 'self' data: blob:; "
+            "worker-src 'self' blob:; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -1256,6 +1258,9 @@ def create_ui_app(
                 runs_root=service.registry.runs_root,
                 run_id=selected_run_id,
                 continue_after_stage=1,
+                session_id=session.session_id,
+                session_root=service.sessions.root,
+                stage_number=2,
                 confirmed=True,
             )
             session = service.sessions.update_status(
@@ -1366,6 +1371,9 @@ def create_ui_app(
                     profile_path=service.profile_path,
                     runs_root=service.registry.runs_root,
                     run_id=selected_run_id,
+                    session_id=session.session_id,
+                    session_root=service.sessions.root,
+                    stage_number=next_stage,
                     confirmed=True,
                 )
                 session = service.sessions.update_status(

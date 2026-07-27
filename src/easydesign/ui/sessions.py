@@ -6,6 +6,7 @@ import os
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal, cast
 from uuid import uuid4
 
 from easydesign.core import ConfigurationError, dump_model, load_model
@@ -35,12 +36,22 @@ class DesignSessionStore:
         execution_mode: str,
         created_at: datetime | None = None,
     ) -> DesignSession:
+        if design_mode not in {"full-workflow", "stepwise", "developer-smoke"}:
+            raise ConfigurationError("无效的产品设计模式")
+        if execution_mode not in {"unattended", "review-gated"}:
+            raise ConfigurationError("无效的产品运行方式")
         now = created_at or datetime.now(tz=UTC)
         session = DesignSession(
             session_id=f"session-{uuid4().hex[:16]}",
             project_id=project_id,
-            design_mode=design_mode,
-            execution_mode=execution_mode,
+            design_mode=cast(
+                Literal["full-workflow", "stepwise", "developer-smoke"],
+                design_mode,
+            ),
+            execution_mode=cast(
+                Literal["unattended", "review-gated"],
+                execution_mode,
+            ),
             created_at=now,
             updated_at=now,
         )
@@ -57,8 +68,7 @@ class DesignSessionStore:
 
     def list(self) -> tuple[DesignSession, ...]:
         sessions = (
-            load_model(path, DesignSession)
-            for path in self.root.glob("session-*/session.json")
+            load_model(path, DesignSession) for path in self.root.glob("session-*/session.json")
         )
         return tuple(sorted(sessions, key=lambda item: item.updated_at, reverse=True))
 

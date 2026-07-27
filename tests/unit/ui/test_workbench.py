@@ -542,6 +542,9 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         health = client.get("/api/v1/health")
         assert health.status_code == 200
         assert health.headers["content-security-policy"].startswith("default-src")
+        assert "connect-src 'self' data: blob:" in health.headers[
+            "content-security-policy"
+        ]
         assert client.get("/api/v1/health", headers={"host": "example.com"}).status_code == 403
         response = client.get(f"/api/v1/artifacts/{token}")
         assert response.status_code == 200
@@ -623,6 +626,44 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
     artifact_path.write_text("tampered", encoding="utf-8")
     with TestClient(app) as client:
         assert client.get(f"/api/v1/artifacts/{token}").status_code == 400
+
+
+def test_gateway_registers_verified_runs_before_first_project_request(
+    tmp_path: Path,
+) -> None:
+    run_root = _audited_run(tmp_path)
+    _write_json(
+        tmp_path / "runs",
+        "run-index.json",
+        {
+            "schema_version": "0.1",
+            "generated_at": NOW.isoformat(),
+            "entries": [
+                {
+                    "category": "project-run",
+                    "path": "target-alpha/run-scientific-stop",
+                    "layout_version": "0.2",
+                    "status": "succeeded",
+                    "project_id": "target-alpha",
+                    "run_id": "run-scientific-stop",
+                    "notes": [],
+                }
+            ],
+        },
+    )
+    registry = UiRunRegistry(tmp_path / "runs")
+    run_key = registry.register(run_root)
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/v1/runs/{run_key}")
+
+    assert response.status_code == 200
+    assert response.json()["run_key"] == run_key
 
 
 def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(

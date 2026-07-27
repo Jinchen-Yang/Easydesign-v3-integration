@@ -507,11 +507,19 @@ function RunWorkspace({
   onResume: () => Promise<void>;
   replay?: Replay;
 }) {
-  const [selected, setSelected] = useState(5);
+  const latestReachedStage = (
+    [...run.stages].reverse().find((item) => item.state !== "not-reached")
+      ?.stage_number || 1
+  );
+  const [selected, setSelected] = useState(latestReachedStage);
   const [cloneStatus, setCloneStatus] = useState("");
   const [showTechnical, setShowTechnical] = useState(false);
   const [showRegionEditor, setShowRegionEditor] = useState(false);
   const stage = run.stages[selected - 1];
+
+  useEffect(() => {
+    setSelected(latestReachedStage);
+  }, [latestReachedStage, run.run_key]);
 
   async function clone() {
     setCloneStatus("正在复制配置与可用 runtime 输入…");

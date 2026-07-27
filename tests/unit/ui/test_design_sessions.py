@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from easydesign.core import (
     ArtifactRef,
     Attempt,
+    CodeIdentity,
+    CodeIdentitySource,
     EvidenceStatus,
     ExecutionStatus,
     RunManifest,
@@ -20,12 +22,16 @@ from easydesign.orchestration import (
     RunIndex,
     RunIndexEntry,
     archive_project,
+    initialize_project,
     list_project_catalog,
+    materialize_continuation_config,
     replace_run_index_entries,
     restore_project,
     stage_form_definition,
     upsert_run_index_entries,
 )
+from easydesign.orchestration.config import LoadedPseRunConfig, load_run_config
+from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.ui import create_ui_app
 from easydesign.ui.sessions import DesignSessionStore
 
@@ -182,6 +188,49 @@ def test_project_archive_preserves_legacy_layout_without_manifest(
 
     assert restored.category == "project-run"
     assert evidence.read_text(encoding="utf-8") == "historical evidence\n"
+
+
+def test_stage02_continuation_rebases_frozen_local_input(
+    tmp_path: Path,
+) -> None:
+    pse = tmp_path / "source" / "target.pse"
+    pse.parent.mkdir()
+    pse.write_bytes(b"trusted-pse-fixture")
+    initialized = initialize_project(
+        project_root=tmp_path / "source-project",
+        target=pse,
+        stop_after_stage=1,
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev13",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev13",
+            source=CodeIdentitySource.INSTALLED_PACKAGE,
+            dirty=False,
+            content_sha256="b" * 64,
+        ),
+        run_id="stage01-source",
+    )
+    output = tmp_path / "continuation-project" / "stage02.yaml"
+
+    materialize_continuation_config(
+        source_run_root=prepared.workspace.run_root,
+        destination=output,
+        stage_number=2,
+        continue_after_stage=1,
+        execution_mode="review-gated",
+        options={
+            "mode": "user-provided",
+            "regions": [{"id": "A", "label_seq_ids": [1, 2]}],
+        },
+    )
+
+    loaded = load_run_config(output)
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.source_path.read_bytes() == pse.read_bytes()
+    assert loaded.source_path.is_relative_to(output.parent)
 
 
 def _region_editor_run(runs_root: Path) -> Path:

@@ -513,7 +513,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             precomputed_msa=arguments.precomputed_msa,
             msa_cache_mode=arguments.msa_cache_mode,
         )
-        payload = {
+        init_payload = {
             "project_root": str(initialized.project_root),
             "config": str(initialized.config_path),
             "target": (None if initialized.target_path is None else str(initialized.target_path)),
@@ -521,7 +521,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             "msa": (None if initialized.msa_path is None else str(initialized.msa_path)),
         }
         if arguments.json:
-            print(_json_text(payload))
+            print(_json_text(init_payload))
         else:
             print(f"项目已创建：{initialized.project_root}")
             print(f"下一步：easydesign config validate {initialized.config_path}")
@@ -535,7 +535,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 include_archived=arguments.include_archived,
                 include_developer_smoke=arguments.include_developer_smoke,
             )
-            payload = [
+            projects_payload = [
                 {
                     "project_id": entry.project_id,
                     "category": entry.category,
@@ -545,31 +545,35 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 for entry in entries
             ]
             if arguments.json:
-                print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+                print(
+                    json.dumps(
+                        projects_payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
             else:
                 for entry in entries:
-                    print(
-                        f"{entry.project_id}: {entry.category}, "
-                        f"{entry.run_count} 个运行"
-                    )
+                    print(f"{entry.project_id}: {entry.category}, {entry.run_count} 个运行")
             return 0
-        outcome = (
+        project_outcome = (
             archive_project(root, arguments.project_id)
             if arguments.projects_command == "archive"
             else restore_project(root, arguments.project_id)
         )
-        payload = {
-            "project_id": outcome.project_id,
-            "category": outcome.category,
-            "moved_paths": [list(item) for item in outcome.moved_paths],
-            "index_path": str(outcome.index_path),
+        project_payload = {
+            "project_id": project_outcome.project_id,
+            "category": project_outcome.category,
+            "moved_paths": [list(item) for item in project_outcome.moved_paths],
+            "index_path": str(project_outcome.index_path),
         }
         if arguments.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+            print(json.dumps(project_payload, ensure_ascii=False, indent=2, sort_keys=True))
         else:
             action = "已归档" if arguments.projects_command == "archive" else "已恢复"
-            print(f"项目{action}：{outcome.project_id}")
-            for source, destination in outcome.moved_paths:
+            print(f"项目{action}：{project_outcome.project_id}")
+            for source, destination in project_outcome.moved_paths:
                 print(f"- {source} → {destination}")
         return 0
 
@@ -681,10 +685,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 print(f"远端主机：{probe.hostname}")
                 print(f"EasyDesign：{probe.easydesign_version}")
                 print(f"GPU：{probe.gpu_count}")
-                print(
-                    "运行盘可用："
-                    f"{probe.filesystem_available_bytes / 1024**3:.1f} GiB"
-                )
+                print(f"运行盘可用：{probe.filesystem_available_bytes / 1024**3:.1f} GiB")
             return 0
         if arguments.remote_command == "submit":
             submission = submit_remote_pipeline(
@@ -937,30 +938,27 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     return 0
                 time.sleep(arguments.interval)
         if arguments.runs_command == "resume":
-            outcome = resume_pipeline(
+            resume_outcome = resume_pipeline(
                 arguments.run,
                 profile_path=arguments.profile,
             )
             if arguments.json:
-                print(_json_text(outcome))
+                print(_json_text(resume_outcome))
             else:
-                print(f"恢复状态：{outcome.status}")
-                if isinstance(outcome, Stage04Execution):
-                    print(f"完整候选：{outcome.complete_candidate_count}")
-                elif isinstance(outcome, Stage05Execution):
+                print(f"恢复状态：{resume_outcome.status}")
+                if isinstance(resume_outcome, Stage04Execution):
+                    print(f"完整候选：{resume_outcome.complete_candidate_count}")
+                elif isinstance(resume_outcome, Stage05Execution):
+                    print(f"胜出策略：{resume_outcome.selected_strategy_id or '无（科学停止）'}")
+                elif isinstance(resume_outcome, Stage06Execution):
+                    print(f"规模候选：{resume_outcome.complete_candidate_count}")
+                elif isinstance(resume_outcome, Stage07Execution):
                     print(
-                        "胜出策略："
-                        f"{outcome.selected_strategy_id or '无（科学停止）'}"
+                        f"最终候选：primary={resume_outcome.primary_count}，"
+                        f"backup={resume_outcome.backup_count}"
                     )
-                elif isinstance(outcome, Stage06Execution):
-                    print(f"规模候选：{outcome.complete_candidate_count}")
-                elif isinstance(outcome, Stage07Execution):
-                    print(
-                        f"最终候选：primary={outcome.primary_count}，"
-                        f"backup={outcome.backup_count}"
-                    )
-                print(f"Run：{outcome.run_root}")
-            return 4 if outcome.status == "incomplete" else 0
+                print(f"Run：{resume_outcome.run_root}")
+            return 4 if resume_outcome.status == "incomplete" else 0
         root = _runs_root(arguments.runs_root, arguments.profile)
         if arguments.runs_command == "list":
             runs = list_runs(root)

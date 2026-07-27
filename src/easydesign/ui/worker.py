@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from easydesign.orchestration.application import (
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 
 from .models import UiJobRecord
+from .sessions import DesignSessionStore
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -29,7 +31,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs-root", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--continue-after-stage", type=int)
+    parser.add_argument("--session-root", type=Path)
     return parser
+
+
+def _run_key(run_root: Path) -> str:
+    return hashlib.sha256(str(run_root.resolve()).encode("utf-8")).hexdigest()[:24]
 
 
 def main() -> int:
@@ -48,7 +55,7 @@ def main() -> int:
                 continue_after_stage=arguments.continue_after_stage,
             )
             status = outcome.status
-            run_key = None
+            run_key = None if outcome.run_root is None else _run_key(outcome.run_root)
             run_id = outcome.plan.project_id if outcome.run_root is None else outcome.run_root.name
         elif arguments.operation == "resume":
             if arguments.run_root is None:
@@ -68,6 +75,18 @@ def main() -> int:
             status = continued.status
             run_key = None
             run_id = arguments.run_root.name
+        if (
+            record.session_id is not None
+            and record.stage_number is not None
+            and arguments.session_root is not None
+            and run_key is not None
+        ):
+            DesignSessionStore(arguments.session_root).attach_run(
+                record.session_id,
+                run_key=run_key,
+                status=str(getattr(status, "value", status)),
+                stage_number=record.stage_number,
+            )
         updated = record.model_copy(
             update={
                 "status": status,

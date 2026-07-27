@@ -181,6 +181,8 @@ class UiJobRecord(BaseModel):
     config_path: str | None = None
     run_key: str | None = None
     run_id: str | None = None
+    session_id: str | None = None
+    stage_number: int | None = Field(default=None, ge=1, le=7)
     process_id: int | None = None
     drain_requested: bool = False
     created_at: datetime

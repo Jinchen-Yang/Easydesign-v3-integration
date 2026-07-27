@@ -123,12 +123,17 @@ class UiJobController:
         run_id: str | None = None,
         continue_after_stage: int | None = None,
         decision_record: Path | None = None,
+        session_id: str | None = None,
+        session_root: Path | None = None,
+        stage_number: int | None = None,
         confirmed: bool,
     ) -> UiJobRecord:
         if not confirmed:
             raise ConfigurationError("真实运行必须经过 UI 资源摘要确认")
         if operation not in {"run", "resume", "decision"}:
             raise ConfigurationError("UI job operation 只支持 run/resume/decision")
+        if session_id is not None and (session_root is None or stage_number is None):
+            raise ConfigurationError("产品会话 job 必须同时提供 session root 和 stage")
         if operation == "run":
             if config_path is None:
                 raise ConfigurationError("run job 必须提供 config_path")
@@ -175,6 +180,8 @@ class UiJobController:
             status="queued",
             config_path=None if config_path is None else str(config_path.resolve()),
             run_id=selected_run_id,
+            session_id=session_id,
+            stage_number=stage_number,
             created_at=now,
             updated_at=now,
         )
@@ -205,6 +212,8 @@ class UiJobController:
             command.extend(["--run-id", run_id])
         if continue_after_stage is not None:
             command.extend(["--continue-after-stage", str(continue_after_stage)])
+        if session_root is not None:
+            command.extend(["--session-root", str(session_root.resolve())])
         environment = os.environ.copy()
         environment["EASYDESIGN_UI_DRAIN_FILE"] = str(drain_path)
         process = subprocess.Popen(

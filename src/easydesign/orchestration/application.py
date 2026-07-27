@@ -167,6 +167,23 @@ def _load_latest_run_manifest(root: Path) -> tuple[RunManifest, Path]:
     return load_model(path, RunManifest), path
 
 
+def _continuation_start_stage(source_run: Path) -> int:
+    run, _ = _load_latest_run_manifest(source_run.resolve())
+    if run.status is not ExecutionStatus.SUCCEEDED:
+        raise ManifestStateError("continuation source 必须是终态 succeeded run")
+    stage_numbers = sorted(
+        int(reference.producer_stage.split("-", maxsplit=1)[0])
+        for reference in run.stage_manifest_refs
+        if reference.producer_stage is not None
+    )
+    if not stage_numbers or stage_numbers != list(range(1, max(stage_numbers) + 1)):
+        raise ManifestStateError("continuation source Stage 序列必须从 01 连续")
+    start_stage = max(stage_numbers) + 1
+    if start_stage > IMPLEMENTED_STAGE_MAX:
+        raise ManifestStateError("continuation source 已完成所有已实现 Stage")
+    return start_stage
+
+
 def migrate_run_configuration(source: Path, destination: Path) -> Path:
     """CLI/UI 共用的显式配置迁移入口。"""
 
@@ -186,26 +203,38 @@ def _selected_runs_root(
     return (config_path.resolve().parent / "runs").resolve()
 
 
-def _required_backends(loaded: LoadedRunConfig) -> tuple[str, ...]:
+def _required_backends(
+    loaded: LoadedRunConfig,
+    *,
+    start_stage: int = 1,
+) -> tuple[str, ...]:
+    if start_stage < 1 or start_stage > IMPLEMENTED_STAGE_MAX:
+        raise ConfigurationError(f"start_stage 不在已实现范围: {start_stage}")
     backends: list[str] = []
-    if isinstance(loaded, LoadedSequenceRunConfig):
+    if start_stage <= 1 and isinstance(loaded, LoadedSequenceRunConfig):
         backends.append("protenix-v2")
-    elif isinstance(loaded, LoadedPseRunConfig):
+    elif start_stage <= 1 and isinstance(loaded, LoadedPseRunConfig):
         backends.append("pymol-pse")
     elif (
-        isinstance(loaded, LoadedRemoteRunConfig) and loaded.config.structure_prediction is not None
+        start_stage <= 1
+        and isinstance(loaded, LoadedRemoteRunConfig)
+        and loaded.config.structure_prediction is not None
     ):
         backends.append("protenix-v2")
-    if loaded.config.workflow.stop_after_stage >= 2:
+    stop_after = loaded.config.workflow.stop_after_stage
+    if start_stage <= 2 <= stop_after:
         stage02 = loaded.config.stage02
         assert stage02 is not None
         if Stage02Method.SCANNET in stage02.methods:
             backends.append("scannet-epitope")
-    if loaded.config.workflow.stop_after_stage >= 3:
+    if start_stage <= 6 and stop_after >= max(start_stage, 3):
         backends.append("boltzgen")
-    if loaded.config.workflow.stop_after_stage >= 5 and "protenix-v2" not in backends:
+    if (
+        (start_stage <= 5 <= stop_after or start_stage <= 7 <= stop_after)
+        and "protenix-v2" not in backends
+    ):
         backends.append("protenix-v2")
-    if loaded.config.workflow.stop_after_stage >= 7:
+    if start_stage <= 7 <= stop_after:
         backends.append("tnp")
     return tuple(backends)
 
@@ -255,6 +284,7 @@ def _context(
     *,
     profile_path: Path | None,
     runs_root: Path | None,
+    start_stage: int = 1,
 ) -> _RuntimeContext:
     loaded = load_run_config(config_path)
     stop_after = loaded.config.workflow.stop_after_stage
@@ -269,7 +299,7 @@ def _context(
         target_id=loaded.config.target.target_id,
         detected_input_format=str(loaded.detected_format),
         stop_after_stage=stop_after,
-        required_backends=_required_backends(loaded),
+        required_backends=_required_backends(loaded, start_stage=start_stage),
         runs_root=_selected_runs_root(
             config_path=loaded.config_path,
             profile=profile.profile,
@@ -435,6 +465,7 @@ def diagnose_runtime(
     profile_path: Path | None = None,
     config_path: Path | None = None,
     runs_root: Path | None = None,
+    start_stage: int = 1,
 ) -> DiagnosticReport:
     """探测显式 profile；配置存在时只要求本次运行需要的 backend。"""
 
@@ -444,7 +475,11 @@ def diagnose_runtime(
         raise ConfigurationError(
             f"Developer Preview 当前最高实现到 Stage {IMPLEMENTED_STAGE_MAX:02d}"
         )
-    required = set(_required_backends(loaded)) if loaded is not None else set()
+    required = (
+        set(_required_backends(loaded, start_stage=start_stage))
+        if loaded is not None
+        else set()
+    )
     checks: list[DiagnosticCheck] = []
     python_ok = (3, 11) <= sys.version_info[:2] < (3, 13)
     checks.append(
@@ -579,15 +614,22 @@ def execute_pipeline(
 ) -> PipelineExecution:
     """验证后执行当前已实现阶段，或从已验证上游 run 继续。"""
 
+    start_stage = (
+        1
+        if continue_from_run is None
+        else _continuation_start_stage(continue_from_run)
+    )
     context = _context(
         config_path,
         profile_path=profile_path,
         runs_root=runs_root,
+        start_stage=start_stage,
     )
     report = diagnose_runtime(
         profile_path=context.loaded_profile.path,
         config_path=context.loaded_config.config_path,
         runs_root=context.plan.runs_root,
+        start_stage=start_stage,
     )
     if not report.ok:
         failures = "; ".join(

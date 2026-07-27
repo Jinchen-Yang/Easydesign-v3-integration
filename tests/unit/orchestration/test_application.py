@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from easydesign.cli import main
 from easydesign.core import CodeIdentity, CodeIdentitySource, ConfigurationError
@@ -22,6 +23,7 @@ from easydesign.orchestration import (
 from easydesign.orchestration.application import (
     PROTENIX_V2_CHECKPOINT_SHA256,
     _probe_protenix,
+    _required_backends,
 )
 from easydesign.orchestration.config import LoadedSequenceRunConfig, load_run_config
 from easydesign.orchestration.profile import ProtenixV2Runtime
@@ -99,6 +101,33 @@ def test_sasa_only_stage02_does_not_require_scannet_backend(tmp_path: Path) -> N
     plan = validate_run_configuration(initialized.config_path)
 
     assert plan.required_backends == ("pymol-pse",)
+
+
+def test_stage06_continuation_only_requires_boltzgen_backend(tmp_path: Path) -> None:
+    pse = tmp_path / "target.pse"
+    pse.write_bytes(b"synthetic")
+    initialized = initialize_project(
+        project_root=tmp_path / "demo",
+        target=pse,
+        stop_after_stage=2,
+        stage02_method="sasa",
+    )
+    payload = yaml.safe_load(initialized.config_path.read_text(encoding="utf-8"))
+    payload["workflow"]["stop_after_stage"] = 6
+    payload["stage03"] = {}
+    payload["stage04"] = {}
+    payload["stage05"] = {}
+    payload["stage06"] = {
+        "scale_profile": "smoke-1000",
+        "preauthorized_candidate_limit": 1000,
+    }
+    initialized.config_path.write_text(
+        yaml.safe_dump(payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert _required_backends(loaded, start_stage=6) == ("boltzgen",)
 
 
 def test_cli_init_and_config_validate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

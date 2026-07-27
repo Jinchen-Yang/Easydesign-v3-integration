@@ -290,6 +290,8 @@ easydesign remote status suzhou2-a100x8 target-scale-50k
 远端通过 systemd transient worker 独立执行并维护自己的 RunManifest、分片状态和事件。
 SSH 连接中断不会终止任务。远端仍使用 `local-multi-gpu` 执行器，因此 GPU 列表写在
 `stage04.executor.devices`，SSH 只负责跨主机提交，不复制 Stage 04/06 科学逻辑。
+Continuation 的 preflight 只探测尚未完成阶段需要的 backend；例如从成功 Stage 05
+继续 Stage 06 时，远端只要求 BoltzGen，不要求重新安装或探测 PyMOL/Protenix。
 
 PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
 红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的

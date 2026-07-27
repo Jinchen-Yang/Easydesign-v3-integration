@@ -518,6 +518,9 @@ Stage 06 不复制生成/收集逻辑，也不把 Stage 04/05 候选计入 scale
 profile。远端版本必须与控制端完全一致，远端 runs root 必须预先存在并通过容量探针。
 控制端只保存小型 `SshRemoteSubmission` 记录；科学事实和恢复身份以远端 run 为准。
 SSH 会话断开不影响 systemd worker，状态查询也不得从终端文本或目录名称推测进度。
+Continuation preflight 从 source RunManifest 的最高连续 Stage 推导 `start_stage`，只探测
+后续仍会执行的 backend；Stage 06 continuation 因而只要求 BoltzGen，而不会重复要求
+Stage 01 的 PyMOL 或 Stage 05 的 Protenix 环境。
 
 ### Stage 07 深度筛选、三 seed 与审核包
 

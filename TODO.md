@@ -25,7 +25,7 @@
 | M10 产品级科研工作台 | `smoke-validated` | dev9 工作台已完成统一浅色结构工作区、执行/筛选证据和可自由浏览的新建设计向导；文件接收、草稿、检查与启动状态边界通过双尺寸 Chromium 和 Python API 验收。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
 | M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
-| M13 项目与设计路线整理 | `implemented` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA 与浏览器验收完成后提升为 `smoke-validated`。 |
+| M13 项目与设计路线整理 | `smoke-validated` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA、PSE 新分支与浏览器验收均已完成。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -83,13 +83,13 @@
 | `ENG-014` | Core Engineering | `smoke-validated` | SSH watch/resume、manifest 驱动 metadata/complete 同步和 BoltzGen task heartbeat 已通过真实 Suzhou2 运行只读验收。 |
 | `S06-003` | Scientific Pipeline | `implemented` | Stage 06 远程协作闭环完成；旧 worker 保持兼容，新 dev12 任务记录逐 shard heartbeat。 |
 | `UI-008` | Product UI | `smoke-validated` | 新建设计可显式选择本机或 profile 远端；运行任务页可刷新、同步和恢复远端任务，双尺寸 Chromium 验收通过。 |
-| `ENG-015` | Core Engineering | `implemented` | 项目目录只从 run-index 读取；归档/恢复原子迁移路径、保持科学文件字节不变并重新验证 manifest/ArtifactRef，运行中、锁定或远程引用项目拒绝归档。 |
-| `VAL-004` | Scientific Validation | `implemented` | 新 `apoe-fasta` 使用冻结 143 aa FASTA 与 SHA-256 为 `12d913…f72716` 的 609-depth A3M；真实 Protenix Stage 01 重跑和 Viewer 验收待本轮服务器交付完成。 |
-| `UI-009` | Product UI | `implemented` | 新建设计明确分为全流程、按步骤和开发者自检；全流程七阶段可自由浏览，按步骤设计每次只要求当前 Stage 并通过 continuation 建立新 run。 |
-| `ENG-016` | Core Engineering | `implemented` | DesignSession 0.1 以不可变 config revision 和 run lineage 组织 continuation，不替代科学 manifest，也不覆盖历史 run。 |
+| `ENG-015` | Core Engineering | `smoke-validated` | 项目目录只从 run-index 读取；17 个非主项目已可恢复归档并通过字节/manifest 完整性复验，普通项目页只保留两个 APOE 主项目。 |
+| `VAL-004` | Scientific Validation | `smoke-validated` | `runs/apoe-fasta/20260727-002-stage01-protenix` 真实消费 143 aa FASTA 与 SHA-256 为 `12d913…f72716` 的 609-depth A3M，发布 Protenix-v2 Target Bundle 0.4 和 Viewer。 |
+| `UI-009` | Product UI | `smoke-validated` | 全流程七阶段可自由浏览；按步骤路线已从真实 APOE Stage 01 建立独立 Stage 02 continuation；开发者自检与科研项目保持隔离。 |
+| `ENG-016` | Core Engineering | `smoke-validated` | DesignSession 0.1 的不可变 config revision、run lineage、冻结输入重定位和等待审批状态已由真实 APOE continuation 验证。 |
 | `REP-003` | Reporting & Visualization | `implemented` | Stage 02 产品层已提供区域理由、批准人和证据限制确认；保存后的科学授权仍使用现有 Stage 02/Decision 契约。 |
-| `REP-004` | Reporting & Visualization | `implemented` | Mol* 每个容器只建立一个实例，串行更新表示、拒绝过期加载，并以真实结构和 representation 后才报告就绪；浏览器像素验收待完成。 |
-| `S02-009` | Scientific Pipeline | `implemented` | 任意成功 Target Bundle 均可在结构/序列上重选 A/B/C；来源颜色、当前批准区域和编辑层独立，保存为新 `manual-residue-list` Stage 02 分支。 |
+| `REP-004` | Reporting & Visualization | `smoke-validated` | Mol* 单实例、过期加载防护、表示/相机就绪门已通过真实 143 aa APOE FASTA 与 PSE 红蓝黄页面的可见结构和非背景像素验收。 |
+| `S02-009` | Scientific Pipeline | `smoke-validated` | APOE PSE 三层编辑器已将 A/B/C 9/14/14 保存为新的 `manual-residue-list` Stage 02 分支，并停在人工确认门；旧运行保持不变。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
@@ -114,7 +114,7 @@
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 01 | `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 已供 Stage 03 使用。 | 完成交互式重选真实浏览器验收；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 新分支已停在人工确认门。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |

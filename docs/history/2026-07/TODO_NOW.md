@@ -448,3 +448,44 @@
 - 遗留边界：当前 metadata 镜像只用于协作查看；50k 终态后再执行 complete 同步和候选
   闭包验收。SSH 首版仍要求 OpenSSH、rsync、systemd，Slurm/SMART 保留后续。
 - 实现提交：`1e3c4ae7742919cca5f909200d8ffa7bad7813d5`。
+
+## 2026-07-27 — UI-009 / ENG-015 / ENG-016 / REP-004 / S02-009 / VAL-004
+
+- 状态：`smoke-validated`；真实后端微型自检继续由 `VAL-005` 跟踪。
+- 完成时间：2026-07-27T19:21:46+08:00
+- 完成内容：普通项目目录只保留 `apoe-s02-006-pse` 与 `apoe-fasta`；17 个非主项目
+  进入可恢复归档。全流程、按步骤和开发者自检三条路线完成；Stage 02 交互式区域编辑
+  可建立不可变 continuation 分支。
+- APOE FASTA 证据：
+  `runs/apoe-fasta/20260727-002-stage01-protenix` 真实消费 143 aa FASTA、609-depth
+  A3M（SHA-256 `12d913001bd955c05544b084f396f6b17bc0086ae69cfca5cd376ab722f72716`）
+  和 Protenix-v2 2.0.0，发布 Target Bundle 0.4 与 Viewer。
+- APOE PSE 证据：
+  `runs/apoe-s02-006-pse/20260727-003-stage02-reselection-lineage` 保存 A/B/C
+  `9/14/14` 的 `manual-residue-list`，RunManifest revision 3 停在
+  `awaiting-human-approval`；DesignSession 记录稳定 run key
+  `c63204b57808e88a26efb0cf`。
+- Mol* 证据：真实 APOE FASTA 与 PSE 页面均建立 structure/representation 和相机取景；
+  FASTA 页面非背景像素比例约 5.2%，PSE 页面显示来源红蓝黄与独立编辑层，不再把空
+  canvas 误报为就绪。
+- 自检证据：`selftest-20260727t104835z-f73dfb` 在
+  `runs/_selftests/selftest-20260727t104835z-f73dfb/synthetic-7b3b6c1c7288`
+  确定性完成 Stage 01–07，并通过 `developer-smoke-run` 分类从普通项目隔离。
+- 遇到的问题：Stage 01 决策恢复丢失 precomputed MSA；legacy-0 归档没有 manifest；
+  Mol* WASM data URL 被 CSP 阻止；Stage 01-only run 默认误跳 Stage 05；continuation
+  引用旧项目相对输入；UI 深链接依赖先访问项目列表；worker 未写回 session lineage。
+- 解决办法：恢复 resolved config 中的 precomputed MSA；legacy run 使用字节级清单保持
+  可恢复；CSP 明确允许 self/data/blob；运行页默认选择最高已达 Stage；冻结输入按
+  SHA-256 原子复制并重写相对路径；服务启动注册 run-index；worker 写回 run key、stage
+  和终态。
+- 验证：真实 run `runs show` 完整性通过；源 APOE 审计 run 的 `LATEST` 保持
+  `run-manifest.v0004.json`；全仓 259 passed、8 个显式 PyMOL 环境集成测试按预期
+  skipped；Workbench Chromium 双尺寸 26/26，Target Viewer 3 passed/2 skipped；
+  dev13 wheel、console script 与 package data 校验通过。
+- 遗留边界：真实后端微型自检尚未执行；交互区域是用户证据，不等于科学验证；新的
+  Stage 02 分支在人工批准前不能进入 Stage 03。
+- 提交：初始实现为 `e7c21ded2de4a12f4e23f1c4f3b9bb63ba4d4bcd`；
+  MSA 决策恢复为 `f82e315757b70c7053a473865646e19dbe9d616f`；
+  legacy 归档为 `d8b281fe67599193ff24fd23232a0b1e523b9379`；最终运行修复与文档
+  为 `627b36dbd7d67662eb6b5ea080cebc069417ff1d`；本记录文档 SHA 以所在提交
+  和远端 `main` 为准。

@@ -243,3 +243,15 @@ Mol* 不再以 canvas DOM 存在或 hierarchy 中只有 model 作为成功。Vie
 当前验收边界必须如实区分：快速确定性七步自检已经实现；真实后端微型自检尚未完成固定
 非 APOE coherent Stage 01–05 和 Stage 06/07 probe，因此产品按钮只生成
 `not-started` 记录，不能显示为通过。
+
+dev13 真实验收补充：
+
+- 普通项目页严格只显示 `apoe-s02-006-pse` 与 `apoe-fasta`；归档和开发自检分别进入
+  设置中的独立目录。
+- `apoe-fasta/20260727-002-stage01-protenix` 真实消费 143 aa FASTA 与 609-depth A3M，
+  Mol* 在 `#EEF1F6` 画布上建立真实 representation；非背景像素占整页约 5.2%。
+- APOE PSE Stage 02 编辑器真实显示结构、来源红蓝黄和编辑层，并建立
+  `20260727-003-stage02-reselection-lineage`。产品会话记录 revision、run key 和
+  `awaiting-human-approval`，旧科学 run 不变。
+- continuation 不复用旧项目的悬空相对路径：Stage 01 冻结输入与预计算 MSA 按
+  SHA-256 原子复制到新项目，并使用可移动的相对引用。

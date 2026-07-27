@@ -8,7 +8,7 @@
 | 项目 | 输入与用途 | 当前边界 | 服务器路径 |
 | --- | --- | --- | --- |
 | `apoe-s02-006-pse` | 138 aa 单 Target PSE；包含红/蓝/黄用户区域，用于 Stage 01–05 和远程规模运行展示 | Stage 01–04 完成；Stage 05 合法科学停止；探索性 Stage 06 远程运行单独审计 | `runs/apoe-s02-006-pse/` |
-| `apoe-fasta` | 冻结 143 aa FASTA + 609-depth 预计算 A3M；用于清晰的 sequence→Protenix Stage 01 与按步骤设计起点 | 必须以新 run 真实调用 Protenix；不得把旧 run 改名或重导入 Bundle 冒充 | `runs/apoe-fasta/` |
+| `apoe-fasta` | 冻结 143 aa FASTA + 609-depth 预计算 A3M；用于清晰的 sequence→Protenix Stage 01 与按步骤设计起点 | `20260727-002-stage01-protenix` 已真实调用 Protenix-v2，发布 143 aa Target Bundle 0.4 与 Viewer；首个失败 run 保留为修复前证据 | `runs/apoe-fasta/` |
 
 APOE FASTA 的固定 A3M SHA-256：
 
@@ -16,12 +16,20 @@ APOE FASTA 的固定 A3M SHA-256：
 12d913001bd955c05544b084f396f6b17bc0086ae69cfca5cd376ab722f72716
 ```
 
-成功验收必须同时证明 143 aa、MSA depth 609、predicted/Protenix-v2、Target Bundle、
-Viewer 和 Stage 02 可消费交接。
+真实验收 run：
+
+```text
+runs/apoe-fasta/20260727-002-stage01-protenix
+```
+
+该 run 已同时证明 143 aa、MSA depth 609、predicted/Protenix-v2 2.0.0、Target Bundle
+0.4、Viewer 和 Stage 02 可消费交接。`20260727-001-stage01-protenix` 保留
+`precomputed-msa-missing` 失败证据，用于证明决策恢复路径修复前后的区别，不冒充成功。
 
 ## 可恢复归档
 
-Stage 01 六入口验证、旧 APOE 开发 run、手工区域等价 run 和 CLI smoke 等非主案例移动到：
+Stage 01 六入口验证、旧 APOE 开发 run、手工区域等价 run 和 CLI smoke 等 17 个
+非主项目已移动到：
 
 ```text
 runs/_archive/<project_id>/<run_id>/
@@ -49,6 +57,15 @@ easydesign projects restore PROJECT_ID
   run 和 Stage 06/07 adapter probe 真正完成后才可报告通过；当前仅登记待运行记录。
 
 科学停止不等于后端失败。真实后端微型自检必须分别报告工程链路、后端健康和科学结果。
+
+当前确定性验收：
+
+```text
+selftest-20260727t104835z-f73dfb
+runs/_selftests/selftest-20260727t104835z-f73dfb/synthetic-7b3b6c1c7288
+```
+
+该记录完成 Stage 01–07 工程链，并通过 `developer-smoke-run` 分类从普通项目页隔离。
 
 ## 治理规则
 

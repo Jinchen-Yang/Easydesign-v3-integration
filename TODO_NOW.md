@@ -8,7 +8,7 @@
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 01 | `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 已供 Stage 03 使用。 | 完成交互式重选真实浏览器验收；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 新分支已停在人工确认门。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -18,10 +18,6 @@
 
 ## Now
 
-- `[UI-009/ENG-015/ENG-016/REP-004/S02-009/VAL-004]` 正在完成项目目录整理、三种
-  设计路线、通用 continuation、Mol* 真实渲染、交互式重选区和新的 APOE FASTA
-  Stage 01 验收；任何一项在真实运行、浏览器或完整性门未通过前都保持
-  `implemented`，不得提前称为 smoke-validated。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与
@@ -32,6 +28,10 @@
 - `[VAL-005]` 快速确定性七步自检已实现并与科研项目隔离；真实后端微型自检还必须使用
   固定非 APOE fixture 完成 Stage 01–05，并为 Stage 06/07 建立真实 adapter probe。
   当前“准备真实后端自检”只创建 `not-started` 记录，不能被报告为通过。
+- `[UI-009/ENG-015/ENG-016/REP-004/S02-009/VAL-004]` 已完成 dev13 真实验收：
+  普通项目只保留两个 APOE 主案例，FASTA 真实 Protenix Stage 01、PSE 交互选区新分支、
+  DesignSession lineage、Mol* 可见结构和确定性七步自检均有运行证据。后续只处理新发现
+  的回归，不再作为 Now 中的开发任务。
 - `[VAL-003]` 冻结当前 APOE 负结果，对相同候选、相同 MSA 和 seeds 101/202/303
   比较 no-template、target-template、target-template+hotspot constraint，并加入已知
   VHH–抗原正对照；未形成新 profile/ADR 前不得改变 Stage 05 默认 gate。

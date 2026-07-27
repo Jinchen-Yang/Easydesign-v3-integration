@@ -862,6 +862,12 @@ continuation 只复制上游 RunManifest 当前声明且通过 SHA-256 的连续
 运行。用户修改 Stage 02 区域或任何上游决定时，系统创建新分支；DesignSession 负责把
 分支呈现成用户可理解的时间线，StageManifest 仍决定科学交接。
 
+生成下一阶段 revision 时，本地输入和 precomputed MSA 也必须从源 run 的冻结快照验证，
+再原子复制到产品项目的 `inputs/continuation/<source_run_id>/` 并写入相对路径，不能继续
+引用旧项目目录。worker 创建新 run 后计算稳定 run key，并把 run key、阶段和终态写回
+DesignSession。UI 服务启动时从 `run-index.json` 注册已验证 run，深链接不依赖用户先访问
+项目列表。
+
 项目目录只读取 `run-index.json` 的 category：
 
 - `project-run`：显示在普通项目和运行任务。

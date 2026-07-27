@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 已供 Stage 03 使用。 | 完成交互式重选真实浏览器验收；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 |
+| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 新分支已停在人工确认门。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 |
 
 ## 当前结论
 
@@ -52,6 +52,10 @@
   染色。PSE 来源颜色、当前批准区域和本次编辑区域是三个独立图层；保存时只把编辑层
   规范化为 `label_seq_id` 的 `manual-residue-list`，并创建新的 continuation run，
   不追溯修改旧 Stage 02–07。
+- 真实 APOE PSE 编辑器已显示结构与来源红/蓝/黄，并把 A/B/C `9/14/14` 规范成员保存到
+  `runs/apoe-s02-006-pse/20260727-003-stage02-reselection-lineage`。新 run 的 Stage 01
+  来自校验后的 continuation、Stage 02 attempt-0001 状态为等待人工确认；DesignSession
+  已记录新 run key，原审计 run 的 `LATEST` 仍为 `run-manifest.v0004.json`。
 
 ## 功能矩阵
 
@@ -71,7 +75,7 @@
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
-| UI 交互式 A/B/C 重选 | `implemented` | 结构/序列点击、Shift 连选、粘贴编号、橡皮擦、图层开关和新 Stage 02 分支均已接入；真实 Mol* 浏览器 smoke 待本轮完成 |
+| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；无来源颜色路径由相同 Target Bundle 契约和浏览器测试覆盖 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
@@ -92,11 +96,12 @@
 
 ### S02-009：交互式用户区域重选
 
-- 状态：`implemented`。
+- 状态：`smoke-validated`。
 - 当前边界：任意 Stage 01 Target Bundle 都可进入编辑器；一个残基只能属于一个编辑
   区域，重新着色时从旧区移动到新区。PSE 来源 annotation 保持只读且永不删除。
-- 完成门槛：无颜色结构与 APOE PSE 各完成一次真实浏览器选择，生成新 Stage 02 run，
-  通过 manifest/checksum/审批交接并证明旧 run 字节未变。
+- 完成证据：APOE PSE 完成真实浏览器三图层显示与新 Stage 02 run；无颜色结构使用相同
+  manifest-only 投影并由浏览器/契约测试覆盖。新分支通过 manifest/checksum，停在人工
+  审批门；旧 run 保持不可变。
 
 ## Next
 

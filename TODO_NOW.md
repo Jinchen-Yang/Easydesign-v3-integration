@@ -18,10 +18,6 @@
 
 ## Now
 
-- `[ENG-017]` 重构 run 目录语义：正常逐阶段延续改为同一 run 的不可变配置/manifest
-  revision，Stage 目录惰性创建；增加项目导航文件、归档空壳清理和 legacy dry-run
-  迁移检查。稳定规则记录在 `docs/architecture/RUN_LAYOUT.md`，不把唯一规则副本放入
-  被忽略的运行目录。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与
@@ -29,6 +25,9 @@
 
 ## Next
 
+- `[ENG-018]` 对 `apoe-s02-006-pse` 中 dev14 之前的 Stage 02/03/04 checkpoint runs
+  生成逐 run 依赖报告；只对终态、未被远程任务引用且 manifest 闭包完整的冗余 checkpoint
+  提供可恢复单 run 归档。历史科学文件不合并、不重写；内容寻址去重另立 ADR。
 - `[VAL-005]` 快速确定性七步自检已实现并与科研项目隔离；真实后端微型自检还必须使用
   固定非 APOE fixture 完成 Stage 01–05，并为 Stage 06/07 建立真实 adapter probe。
   当前“准备真实后端自检”只创建 `not-started` 记录，不能被报告为通过。

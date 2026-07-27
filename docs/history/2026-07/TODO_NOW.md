@@ -513,3 +513,35 @@
   API 增加“设为项目首页”按钮。
 - 实现提交：本记录对应的 `fix(ui): pin the APOE PSE stage05 project result`；完整 SHA
   在推送后由远端 `main` 核对。
+
+## 2026-07-28 — ENG-017：统一 Run 目录与同 Run 阶段延续
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-28T00:31:59+08:00
+- 问题：旧产品 continuation 会为每个下一 Stage 新建 run，并复制全部上游目录；run
+  初始化又提前创建七个 Stage 空目录。这使一次实验被拆成多个 checkpoint run、重复占用
+  磁盘，也让 `runs/` 顶层残留 17 个已归档项目空壳。
+- 方案：新增 `docs/architecture/RUN_LAYOUT.md`，固定 Project/Run/Stage/Attempt 与
+  branch 语义。正常下一 Stage 通过新的 config/RunManifest revision 继续同一 run；
+  重新选区、换 target 或改写已完成 Stage 才建立分支。Stage 目录改为首次执行时惰性
+  创建；`PROJECT.json`/`PRIMARY` 作为可再生导航，manifest 继续是科学事实来源。
+- 安全边界：成功终态的旧 RunManifest 不被修改，新 revision 保存前驱 hash、新配置、
+  新代码/profile 身份；同 run 续跑会拒绝输入 hash 或已完成 Stage 配置变化。历史
+  Stage 02/03/04 checkpoint runs 暂不合并或重写，后续由 ENG-018 先做逐 run 依赖报告。
+- 真实目录治理：Proteindigger1 为两个 APOE 项目生成项目导航并固定主 run；只删除
+  run-index 已确认归档且内容为空的 17 个一级项目壳。APOE PSE 原文件仍为 397,738
+  bytes，SHA-256 仍是
+  `7d382a2fd158bd4664ef3d17296591e380ff01232926ed5bc86a9bcd7a813651`；
+  Stage 05 主 run 的 Stage 01 `target.cif` 仍存在。
+- 验证：`make check` 通过；全仓 263 passed、8 个独立 PyMOL 环境集成测试按设计
+  skipped；新增 30 项定向契约回归通过；dev14 wheel、console script/package data
+  通过。Target Viewer 3 passed/2 个真实可选案例 skipped；Workbench 固定 Chromium
+  双尺寸 26/26 passed。
+- 遇到的问题：Proteindigger1 默认 shell 的 Node 18 不能执行 pnpm 11，且首次给
+  Playwright 的 Chromium 路径使用了旧 `chrome-linux` 目录名。
+- 解决办法：显式使用 `easydesign-reporting-web` 的 Node 22、固定 pnpm 和服务器已安装
+  的 `chromium-1228/chrome-linux64/chrome`，不下载临时浏览器或改变科学环境。
+- 遗留问题：dev14 之前的 checkpoint runs 保持可读；逐 run 可恢复归档和内容寻址去重
+  分别进入 ENG-018 与后续 ADR，不在本次偷偷移动仍可能被引用的历史证据。
+- 实现提交：`ef8847ad47c1eb593f42a071b36722a3740a957f`
+  （`refactor(core): unify staged run layout`）。

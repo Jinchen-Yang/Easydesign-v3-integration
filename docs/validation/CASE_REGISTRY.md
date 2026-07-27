@@ -10,6 +10,11 @@
 | `apoe-s02-006-pse` | 138 aa 单 Target PSE；包含红/蓝/黄用户区域，用于 Stage 01–05 和远程规模运行展示 | Stage 01–04 完成；Stage 05 合法科学停止；探索性 Stage 06 远程运行单独审计 | `runs/apoe-s02-006-pse/` |
 | `apoe-fasta` | 冻结 143 aa FASTA + 609-depth 预计算 A3M；用于清晰的 sequence→Protenix Stage 01 与按步骤设计起点 | `20260727-002-stage01-protenix` 已真实调用 Protenix-v2，发布 143 aa Target Bundle 0.4 与 Viewer；首个失败 run 保留为修复前证据 | `runs/apoe-fasta/` |
 
+两个活跃项目目录现在均包含可再生 `PROJECT.json` 和 `PRIMARY`。PSE 项目主展示 run 固定为
+`20260726-004-stage05-pilot-filter`，FASTA 项目固定为
+`20260727-002-stage01-protenix`。导航文件不替代 manifest；详细 Project/Run/Stage/
+Attempt 规则见 [`RUN_LAYOUT.md`](../architecture/RUN_LAYOUT.md)。
+
 APOE FASTA 的固定 A3M SHA-256：
 
 ```text
@@ -46,6 +51,10 @@ easydesign projects restore PROJECT_ID
 恢复后再次验证 manifest/ArtifactRef 闭包。运行中、带锁或仍被远程任务记录引用的项目
 拒绝归档。活跃项目和归档项目都不得仅凭目录扫描进入产品；分类以 `run-index.json` 为
 唯一事实来源。
+
+2026-07-28 已在再次核对 run-index 后清理这 17 个项目留在 `runs/` 顶层的空目录壳；
+实际 run 仍完整位于 `_archive/`。`runs/` 顶层当前只保留两个活跃项目及
+`_archive/_development/_selftests/_validation` 系统目录。
 
 ## 开发者自检
 

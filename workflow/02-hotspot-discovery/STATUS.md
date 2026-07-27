@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；编辑器现在默认复制上游 APOE 9/14/14 区域并可显式从空白开始。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
+| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；编辑器支持触摸缩放，并取消逐区重复理由表单。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
 
 ## 当前结论
 
@@ -52,6 +52,9 @@
   染色。PSE 来源颜色、当前批准区域和本次编辑区域是三个独立图层；保存时只把编辑层
   规范化为 `label_seq_id` 的 `manual-residue-list`，并创建新的 continuation run，
   不追溯修改旧 Stage 02–07。
+- UI-013 不再逐区询问设计目的和两类理由；设计目的继承 canonical `design.intent`，
+  orchestration 只生成关于用户选择和已验证编号/坐标的保守说明。真实批准人和证据限制
+  acknowledgement 仍为必填。
 - 真实 APOE PSE 编辑器已显示结构与来源红/蓝/黄，并把 A/B/C `9/14/14` 规范成员保存到
   `runs/apoe-s02-006-pse/20260727-003-stage02-reselection-lineage`。新 run 的 Stage 01
   来自校验后的 continuation、Stage 02 attempt-0001 状态为等待人工确认；DesignSession
@@ -75,7 +78,7 @@
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
-| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；无来源颜色路径由相同 Target Bundle 契约和浏览器测试覆盖 |
+| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；逐区重复理由已移除，设计意图/保守说明由 orchestration 统一生成 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |

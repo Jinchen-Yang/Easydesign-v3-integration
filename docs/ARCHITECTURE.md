@@ -371,6 +371,11 @@ annotation 中存在固定红/蓝/黄时走用户区域，否则进入显式 aut
 automatic unattended 仍是 deterministic-policy。用户区域 unattended 必须由初始配置
 提供真实审批人、逐区理由和 acknowledgement，输出明确记录
 `approval_authority=human` 与 `approval_source=initial-run-config`，不能伪装成算法批准。
+Workbench 的交互式重选不重复询问三套理由：产品请求只提交规范区域、真实批准人和两个
+acknowledgement；orchestration 从 canonical `design.intent` 生成 design goal，并将
+生物学/结构说明限制为“用户选择、无独立生物学证据”和“编号/坐标已验证、未自动结构
+优选”。生成后的 typed approval 仍进入 resolved config 和审计链，React 不生成科学
+依据。
 
 ### Stage 03 策略编译与 continuation
 
@@ -896,6 +901,9 @@ Mol* 工作台采用单实例生命周期。一个 React 容器只创建一个 V
 图层通过串行 MVS state 更新，generation token 丢弃过期结果。首次结构加载固定
 `keepCamera=false` 并显式重置取景；只有 hierarchy 同时包含 structure 和
 representation 才报告“结构已就绪”。
+Workbench 与便携 Target Viewer 都在 Mol* 宿主、canvas 和运行时内部画布层强制
+`touch-action: none` 与局部 overscroll containment。Mol* 自带的双指手势因此接收完整
+touch stream，页面本身不会在结构画布上抢占缩放。
 
 开发者自检分两层：
 

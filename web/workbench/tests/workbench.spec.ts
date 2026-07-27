@@ -603,6 +603,10 @@ test("all molecular workspaces use the portable viewer light canvas", async ({ p
     (node) => getComputedStyle(node).backgroundColor,
   );
   expect(toolbar).toBe("rgb(255, 255, 255)");
+  const touchAction = await page.locator(".mol-viewport").first().evaluate(
+    (node) => getComputedStyle(node).touchAction,
+  );
+  expect(touchAction).toBe("none");
 });
 
 test("project and stage-five workspaces keep the approved visual hierarchy", async ({ page, browserName }) => {
@@ -741,4 +745,8 @@ test("stage two region editor keeps source layers and editable selection separat
   await expect(page.locator(".region-editor-feedback")).toHaveText(
     "已隐藏上游颜色并清空本次编辑层；现在可以从空白结构重新选择。",
   );
+  await expect(page.getByText("设计目的", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("生物学理由", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("结构理由", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/无需为 A、B、C 分别重复填写目的和理由/)).toBeVisible();
 });

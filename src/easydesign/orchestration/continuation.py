@@ -117,6 +117,7 @@ def _stage_payload(
     *,
     execution_mode: str,
     options: dict[str, Any] | None,
+    design_intent: str = "exploratory",
 ) -> dict[str, Any]:
     selected = options or {}
     if stage_number == 2:
@@ -168,13 +169,30 @@ def _stage_payload(
                 "annotations": {"uniprot": "if_available"},
             }
             approvals = selected.get("approvals")
+            approved_by = str(selected.get("approved_by") or "").strip()
+            if approvals is None and approved_by:
+                approvals = [
+                    {
+                        "id": item["id"],
+                        "design_goal": design_intent,
+                        "biological_rationale": (
+                            "用户在 EasyDesign 中明确选择该区域；"
+                            "当前未提供独立生物学证据。"
+                        ),
+                        "structural_rationale": (
+                            "EasyDesign 已验证所选残基的编号映射与代表模型坐标存在；"
+                            "未执行自动结构优选。"
+                        ),
+                    }
+                    for item in normalized
+                ]
             if approvals is not None:
                 if not isinstance(approvals, list) or len(approvals) != len(normalized):
                     raise ConfigurationError("人工区域必须为每个区域提供理由")
                 user_regions = user_payload["user_regions"]
                 assert isinstance(user_regions, dict)
                 user_regions["approval"] = {
-                    "approved_by": str(selected.get("approved_by") or ""),
+                    "approved_by": approved_by,
                     "acknowledge_user_provided_regions": bool(
                         selected.get("acknowledge_user_provided_regions")
                     ),
@@ -335,10 +353,17 @@ def materialize_continuation_config(
         raise ConfigurationError("execution_mode 无效")
     workflow["execution_mode"] = execution_mode
     workflow["stop_after_stage"] = stage_number
+    design = payload.get("design")
+    design_intent = (
+        str(design.get("intent") or "exploratory")
+        if isinstance(design, dict)
+        else "exploratory"
+    )
     payload[f"stage{stage_number:02d}"] = _stage_payload(
         stage_number,
         execution_mode=execution_mode,
         options=options,
+        design_intent=design_intent,
     )
     for future in range(stage_number + 1, 8):
         payload[f"stage{future:02d}"] = None

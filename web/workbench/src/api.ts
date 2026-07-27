@@ -148,7 +148,6 @@ export const api = {
       session_id: string;
       execution_mode: "unattended" | "review-gated";
       regions: Array<{ id: string; label_seq_ids: number[] }>;
-      approvals: Array<Record<string, unknown>>;
       approved_by: string;
       acknowledge_user_provided_regions: boolean;
       acknowledge_evidence_limitations: boolean;

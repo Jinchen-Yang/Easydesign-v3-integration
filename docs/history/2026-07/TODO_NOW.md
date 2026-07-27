@@ -598,3 +598,18 @@
 - 科学边界：不修改筛选规则、区域科学结论或历史 manifest；人工区域科学验证仍属于
   S02-008。
 - 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。
+
+## 2026-07-28 — UI-013 / REP-005：简化区域确认与 Mol* 触摸缩放
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-28T02:12:46+08:00
+- 问题：Mol* 内部内联 `touch-action: manipulation` 让浏览器抢占双指手势；Stage 02
+  又要求用户为 A/B/C 重复填写项目级意图和两类理由。
+- 方案：Workbench 与便携 Viewer 统一覆盖全部画布层为 `touch-action: none`；UI 只收集
+  区域、批准人和证据限制确认，orchestration 继承 canonical 设计意图并生成明确“不含
+  独立生物学证据/未自动优选”的 typed rationale。
+- 验证：`make check`、265 passed/8 skipped、dev17 wheel；Target Viewer 3 passed/2
+  runtime-only skipped；Workbench 双尺寸 Chromium 26/26 passed。
+- 遗留：不同触摸硬件与 Safari 的主观手感进入跨平台真机验收；S02-008 科学 benchmark
+  不受本次产品简化影响。
+- 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。

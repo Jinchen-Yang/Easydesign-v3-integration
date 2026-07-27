@@ -119,6 +119,14 @@ test("predicted report loads Mol*, mapping controls and local downloads", async 
 
   await expect(page.locator("#load-state")).toHaveText("已就绪");
   await expect(page.locator("#molstar-viewer canvas")).toBeVisible();
+  await expect(page.locator("#molstar-viewer")).toHaveCSS("touch-action", "none");
+  await expect(page.locator("#molstar-viewer canvas")).toHaveCSS(
+    "touch-action",
+    "none"
+  );
+  await expect(
+    page.locator('#molstar-viewer [style*="touch-action"]').first()
+  ).toHaveCSS("touch-action", "none");
   await expect(page.locator("#pse-controls")).toBeHidden();
   await expect(page.locator("#target-summary")).toContainText("predicted");
   await expect(page.locator("#provenance-metrics")).toContainText("609");

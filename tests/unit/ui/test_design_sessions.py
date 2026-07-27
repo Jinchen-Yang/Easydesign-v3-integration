@@ -233,6 +233,72 @@ def test_stage02_continuation_rebases_frozen_local_input(
     assert loaded.source_path.is_relative_to(output.parent)
 
 
+def test_stage02_interactive_regions_reuse_design_intent_and_system_evidence(
+    tmp_path: Path,
+) -> None:
+    pse = tmp_path / "source" / "target.pse"
+    pse.parent.mkdir()
+    pse.write_bytes(b"trusted-pse-fixture")
+    initialized = initialize_project(
+        project_root=tmp_path / "source-project",
+        target=pse,
+        stop_after_stage=1,
+        design_intent="blocking",
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev17",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev17",
+            source=CodeIdentitySource.INSTALLED_PACKAGE,
+            dirty=False,
+            content_sha256="c" * 64,
+        ),
+        run_id="stage01-source",
+    )
+    output = tmp_path / "continuation-project" / "stage02.yaml"
+
+    materialize_continuation_config(
+        source_run_root=prepared.workspace.run_root,
+        destination=output,
+        stage_number=2,
+        continue_after_stage=1,
+        execution_mode="unattended",
+        options={
+            "mode": "user-provided",
+            "regions": [
+                {"id": "A", "label_seq_ids": [1, 2]},
+                {"id": "C", "label_seq_ids": [7]},
+            ],
+            "approved_by": "scientist-01",
+            "acknowledge_user_provided_regions": True,
+            "acknowledge_evidence_limitations": True,
+        },
+    )
+
+    loaded = load_run_config(output)
+    assert isinstance(loaded, LoadedPseRunConfig)
+    assert loaded.config.stage02 is not None
+    assert loaded.config.stage02.user_regions is not None
+    approval = loaded.config.stage02.user_regions.approval
+    assert approval is not None
+    assert approval.approved_by == "scientist-01"
+    assert [selection.id for selection in approval.selections] == ["A", "C"]
+    assert all(
+        selection.design_goal.value == "blocking"
+        for selection in approval.selections
+    )
+    assert all(
+        "未提供独立生物学证据" in selection.biological_rationale
+        for selection in approval.selections
+    )
+    assert all(
+        "编号映射与代表模型坐标存在" in selection.structural_rationale
+        for selection in approval.selections
+    )
+
+
 def _region_editor_run(runs_root: Path) -> Path:
     root = runs_root / "colored-target" / "run-001"
     root.mkdir(parents=True)

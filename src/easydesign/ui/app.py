@@ -149,7 +149,6 @@ class RegionRevisionRequest(BaseModel):
     session_id: str
     execution_mode: str = "review-gated"
     regions: list[dict[str, Any]] = Field(min_length=1, max_length=3)
-    approvals: list[dict[str, Any]] = Field(min_length=1, max_length=3)
     approved_by: str = Field(min_length=1, max_length=256)
     acknowledge_user_provided_regions: bool = False
     acknowledge_evidence_limitations: bool = False
@@ -1320,7 +1319,6 @@ def create_ui_app(
                 options={
                     "mode": "user-provided",
                     "regions": payload.regions,
-                    "approvals": payload.approvals,
                     "approved_by": payload.approved_by,
                     "acknowledge_user_provided_regions": True,
                     "acknowledge_evidence_limitations": True,

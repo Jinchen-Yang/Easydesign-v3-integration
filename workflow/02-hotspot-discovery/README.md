@@ -174,8 +174,14 @@ PSE 来源红/蓝/黄。这样左侧 A/B/C 数量始终描述当前可保存的�
 “从空白开始”同时清空第三层并隐藏两个只读参考层，但不删除 PSE annotation 或历史批准
 结果；“恢复上游区域”可以重新复制。A/B/C 按钮只切换画笔，实际成员必须通过点击结构、
 点击序列或粘贴编号加入，每次操作都显示规范残基编号反馈。一个残基在编辑层只能属于一个
-区域；改用另一支画笔会把它从旧区域移动到新区。保存要求每个非空区域填写 design goal、
-生物学理由和结构理由，并记录批准人及 evidence limitation 确认。
+区域；改用另一支画笔会把它从旧区域移动到新区。最终 typed approval 要为每个非空区域
+保存 design goal、生物学说明和结构说明，并记录批准人及 evidence limitation 确认。
+
+工作台不再把这些稳定字段作为 A/B/C 三套重复表单展示：`design_goal` 继承项目级
+`design.intent`；生物学说明固定如实记录“用户明确选择、当前未提供独立生物学证据”；
+结构说明只记录 EasyDesign 已完成编号映射和代表模型坐标验证，并明确“未执行自动结构
+优选”。用户仍须填写一次真实批准人，并确认人工区域不等于已经验证的结合位点。直接
+编写 YAML 或调用底层 API 时，完整的逐区 typed selection 仍是科学契约的一部分。
 
 保存永远建立新的 Stage 02 continuation run：
 
@@ -451,8 +457,9 @@ easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
 ```
 
 automatic 审批必须从同一种方法选择 2–3 个完整推荐区域；用户提供路线批准 1–3 个完整
-区域。二者都禁止混合来源或修改成员。用户为 A/B/C 填写 design goal、生物学理由和结构
-理由；系统生成 label/auth 编号、范围、证据和风险，避免手抄残基。用户区域还必须设置
+区域。二者都禁止混合来源或修改成员。外部 YAML/API 必须提供逐区 typed selection；
+工作台交互式重选则继承项目设计意图，并生成不夸大证据的逐区说明。系统生成 label/auth
+编号、范围、证据和风险，避免手抄残基。用户区域还必须设置
 `acknowledge_user_provided_regions: true`；structural-only 必须设置
 `acknowledge_evidence_limitations: true`。
 

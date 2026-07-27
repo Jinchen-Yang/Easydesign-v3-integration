@@ -255,6 +255,14 @@ h1 {
 
 #molstar-viewer {
   background: #eef1f6;
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+#molstar-viewer canvas,
+#molstar-viewer [style*="touch-action"] {
+  touch-action: none !important;
+  overscroll-behavior: contain;
 }
 
 .error-panel {

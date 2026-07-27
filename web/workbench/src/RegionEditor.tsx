@@ -82,15 +82,6 @@ export function RegionEditor({
   const [executionMode, setExecutionMode] = useState<"review-gated" | "unattended">("review-gated");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("manual");
   const [allowStructuralOnly, setAllowStructuralOnly] = useState(false);
-  const [rationales, setRationales] = useState<Record<RegionId, {
-    designGoal: string;
-    biological: string;
-    structural: string;
-  }>>({
-    A: { designGoal: "exploratory", biological: "", structural: "" },
-    B: { designGoal: "exploratory", biological: "", structural: "" },
-    C: { designGoal: "exploratory", biological: "", structural: "" },
-  });
   const [acknowledge, setAcknowledge] = useState(false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -237,13 +228,6 @@ export function RegionEditor({
       setStatus("请填写批准人；用户选区必须保留明确的人类责任记录。");
       return;
     }
-    for (const region of populated) {
-      const rationale = rationales[region.id];
-      if (!rationale.biological.trim() || !rationale.structural.trim()) {
-        setStatus(`请补充区域 ${region.id} 的生物学理由和结构理由。`);
-        return;
-      }
-    }
     if (!acknowledge) {
       setStatus("请确认：用户标注区域不等同于已经验证的真实结合位点。");
       return;
@@ -269,17 +253,10 @@ export function RegionEditor({
           .map(([label]) => label)
           .sort((left, right) => left - right),
       }));
-      const approvals = populated.map(({ id }) => ({
-        id,
-        design_goal: rationales[id].designGoal,
-        biological_rationale: rationales[id].biological.trim(),
-        structural_rationale: rationales[id].structural.trim(),
-      }));
       await api.reviseRegions(run.run_key, {
         session_id: session.session_id,
         execution_mode: executionMode,
         regions,
-        approvals,
         approved_by: approvedBy.trim(),
         acknowledge_user_provided_regions: true,
         acknowledge_evidence_limitations: true,
@@ -522,16 +499,10 @@ export function RegionEditor({
           })}
         </div>
         <div className="region-editor-approval">
-          <div className="approval-grid">
-            {counts.filter((item) => item.count > 0).map(({ id, count }) => (
-              <article key={id}>
-                <h3>区域 {id} <span>{count} 个残基</span></h3>
-                <label><span>设计目的</span><select value={rationales[id].designGoal} onChange={(event) => setRationales((current) => ({ ...current, [id]: { ...current[id], designGoal: event.target.value } }))}><option value="exploratory">探索性</option><option value="blocking">阻断</option><option value="nonblocking">非阻断</option><option value="detection">检测</option><option value="imaging">成像</option></select></label>
-                <label><span>生物学理由</span><textarea value={rationales[id].biological} onChange={(event) => setRationales((current) => ({ ...current, [id]: { ...current[id], biological: event.target.value } }))} /></label>
-                <label><span>结构理由</span><textarea value={rationales[id].structural} onChange={(event) => setRationales((current) => ({ ...current, [id]: { ...current[id], structural: event.target.value } }))} /></label>
-              </article>
-            ))}
-          </div>
+          <p className="approval-summary">
+            EasyDesign 会沿用本项目的设计意图，并记录已完成的编号映射与坐标验证；
+            无需为 A、B、C 分别重复填写目的和理由。
+          </p>
           <div className="approval-footer">
             <label><span>批准人</span><input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="真实姓名或稳定 ID" /></label>
             <label><span>后续运行方式</span><select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}><option value="review-gated">保存后等待再次确认</option><option value="unattended">按本次人工提交连续运行</option></select></label>

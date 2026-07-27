@@ -48,6 +48,11 @@ from easydesign.orchestration.profile import (
     load_runtime_profile,
 )
 from easydesign.orchestration.project import initialize_project
+from easydesign.orchestration.project_catalog import (
+    archive_project,
+    list_project_catalog,
+    restore_project,
+)
 from easydesign.orchestration.remote_execution import (
     list_remote_executor_ids,
     list_remote_job_records,
@@ -354,6 +359,37 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(runs_resume)
     _add_json(runs_resume)
 
+    projects_parser = commands.add_parser(
+        "projects",
+        help="查看、归档或恢复运行索引声明的项目",
+    )
+    projects_commands = projects_parser.add_subparsers(
+        dest="projects_command",
+        required=True,
+    )
+    projects_list = projects_commands.add_parser("list", help="列出项目目录")
+    _add_profile(projects_list)
+    projects_list.add_argument("--runs-root", type=Path)
+    projects_list.add_argument("--include-archived", action="store_true")
+    projects_list.add_argument("--include-developer-smoke", action="store_true")
+    _add_json(projects_list)
+    projects_archive = projects_commands.add_parser(
+        "archive",
+        help="将终态项目移动到可恢复归档，不改写科学文件",
+    )
+    projects_archive.add_argument("project_id")
+    _add_profile(projects_archive)
+    projects_archive.add_argument("--runs-root", type=Path)
+    _add_json(projects_archive)
+    projects_restore = projects_commands.add_parser(
+        "restore",
+        help="将归档项目恢复到普通项目目录",
+    )
+    projects_restore.add_argument("project_id")
+    _add_profile(projects_restore)
+    projects_restore.add_argument("--runs-root", type=Path)
+    _add_json(projects_restore)
+
     viewer_parser = commands.add_parser("viewer", help="查看自包含结构报告")
     viewer_commands = viewer_parser.add_subparsers(dest="viewer_command", required=True)
     viewer_serve = viewer_commands.add_parser("serve", help="仅在 127.0.0.1 提供已验证报告")
@@ -489,6 +525,52 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         else:
             print(f"项目已创建：{initialized.project_root}")
             print(f"下一步：easydesign config validate {initialized.config_path}")
+        return 0
+
+    if arguments.command == "projects":
+        root = _runs_root(arguments.runs_root, arguments.profile)
+        if arguments.projects_command == "list":
+            entries = list_project_catalog(
+                root,
+                include_archived=arguments.include_archived,
+                include_developer_smoke=arguments.include_developer_smoke,
+            )
+            payload = [
+                {
+                    "project_id": entry.project_id,
+                    "category": entry.category,
+                    "run_count": entry.run_count,
+                    "paths": list(entry.paths),
+                }
+                for entry in entries
+            ]
+            if arguments.json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+            else:
+                for entry in entries:
+                    print(
+                        f"{entry.project_id}: {entry.category}, "
+                        f"{entry.run_count} 个运行"
+                    )
+            return 0
+        outcome = (
+            archive_project(root, arguments.project_id)
+            if arguments.projects_command == "archive"
+            else restore_project(root, arguments.project_id)
+        )
+        payload = {
+            "project_id": outcome.project_id,
+            "category": outcome.category,
+            "moved_paths": [list(item) for item in outcome.moved_paths],
+            "index_path": str(outcome.index_path),
+        }
+        if arguments.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            action = "已归档" if arguments.projects_command == "archive" else "已恢复"
+            print(f"项目{action}：{outcome.project_id}")
+            for source, destination in outcome.moved_paths:
+                print(f"- {source} → {destination}")
         return 0
 
     if arguments.command == "profile":

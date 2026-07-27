@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | schema 0.6 已打通 automatic、PSE 固定颜色和 YAML 四编号人工区域；APOE 用户区域已发布可供 Stage 03 消费的 hotspots.yaml 0.3。 | 冻结 Stage 02 工程交接，启动 Stage 03 BoltzGen YAML；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-25 |
+| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 已供 Stage 03 使用。 | 完成交互式重选真实浏览器验收；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 |
 
 ## 当前结论
 
@@ -48,6 +48,10 @@
   `hotspots.yaml` 0.3。
 - 用户区域 unattended 使用初始 YAML 中的真实人员批准，明确记录
   `approval_authority=human` 与 `approval_source=initial-run-config`，不冒充机器 policy。
+- S02-009 产品入口允许任何成功 Stage 01 Target Bundle 重新选择区域，不要求 PSE
+  染色。PSE 来源颜色、当前批准区域和本次编辑区域是三个独立图层；保存时只把编辑层
+  规范化为 `label_seq_id` 的 `manual-residue-list`，并创建新的 continuation run，
+  不追溯修改旧 Stage 02–07。
 
 ## 功能矩阵
 
@@ -67,6 +71,7 @@
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
+| UI 交互式 A/B/C 重选 | `implemented` | 结构/序列点击、Shift 连选、粘贴编号、橡皮擦、图层开关和新 Stage 02 分支均已接入；真实 Mol* 浏览器 smoke 待本轮完成 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
@@ -85,6 +90,14 @@
 - 完成门槛：建立预注册 VHH–抗原 benchmark、负例和区域级指标，分别报告工程成功与
   科学结果。
 
+### S02-009：交互式用户区域重选
+
+- 状态：`implemented`。
+- 当前边界：任意 Stage 01 Target Bundle 都可进入编辑器；一个残基只能属于一个编辑
+  区域，重新着色时从旧区移动到新区。PSE 来源 annotation 保持只读且永不删除。
+- 完成门槛：无颜色结构与 APOE PSE 各完成一次真实浏览器选择，生成新 Stage 02 run，
+  通过 manifest/checksum/审批交接并证明旧 run 字节未变。
+
 ## Next
 
 - 使用已发布的 APOE PSE 用户区域 `hotspots.yaml` 启动 Stage 03；该选择是用户先验，
@@ -95,8 +108,8 @@
 - 登记 SASA MAX_ASA 常数来源，比较替代归一化表，并为阈值/权重建立 binder-specific
   benchmark；验证前保持当前 v0.1 参数不变。
 - 设计 VHH–抗原 patch benchmark，比较 SASA、ScanNet PPBS、PeSTo 等方法。
-- 扩展多 state/复合物 PSE、可配置色板和交互式人工选区前先定义新的版本化契约；1.0
-  保持单 target 与固定红/蓝/黄。
+- 扩展多 state/复合物 PSE 和可配置色板前先定义新的版本化契约；1.0 保持单 target、
+  固定来源红/蓝/黄，并允许编辑层重新选择。
 
 ## Blocked
 

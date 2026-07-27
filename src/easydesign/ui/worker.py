@@ -28,6 +28,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile", type=Path)
     parser.add_argument("--runs-root", type=Path)
     parser.add_argument("--run-id")
+    parser.add_argument("--continue-after-stage", type=int)
     return parser
 
 
@@ -43,6 +44,8 @@ def main() -> int:
                 profile_path=arguments.profile,
                 runs_root=arguments.runs_root,
                 run_id=arguments.run_id,
+                continue_from_run=arguments.run_root,
+                continue_after_stage=arguments.continue_after_stage,
             )
             status = outcome.status
             run_key = None

@@ -139,6 +139,18 @@ Agent 必须自动完成以下收尾工作：
     静默采用未知主机、杀死远端既有进程，或因 SSH 提交成功就声称科学运行已完成。
     Stage 05 科学停止后的探索性放大还必须保存带来源 Bundle SHA-256 的人工授权，
     历史科学结论不得被改写。
+18. DesignSession 只组织产品流程、不可变配置 revision 和 run lineage，不是科学事实
+    来源。按步骤延续、修改上游决定或重新选择区域必须创建新的 continuation run；
+    禁止覆盖既有 RunManifest、StageManifest 或 artifact。
+19. 项目列表只能读取 `run-index.json` 分类，禁止用前端硬编码隐藏案例。归档必须原子
+    移动、可恢复，并在移动前后验证 manifest/ArtifactRef 闭包；运行中、带锁或被远程
+    job 引用的项目不得归档。
+20. `developer-smoke-run` 必须与科研 `project-run` 隔离。合成工程自检产物必须显式
+    禁止科学复用；真实后端自检只有实际调用固定后端并保存证据后才能标记通过，
+    `ready/not-started` 不能包装成 smoke success。
+21. Mol* 页面只有在真实 structure 和 representation 都建立后才能显示“结构已就绪”。
+    每个容器只拥有一个 Viewer，异步切换必须用 generation token 和串行加载保护；
+    浏览器验收要验证可见非背景结构，不能只检查 canvas 元素存在。
 
 ## 4. 阻塞与询问
 

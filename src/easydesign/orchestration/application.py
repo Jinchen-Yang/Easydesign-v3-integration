@@ -167,7 +167,11 @@ def _load_latest_run_manifest(root: Path) -> tuple[RunManifest, Path]:
     return load_model(path, RunManifest), path
 
 
-def _continuation_start_stage(source_run: Path) -> int:
+def _continuation_start_stage(
+    source_run: Path,
+    *,
+    continue_after_stage: int | None = None,
+) -> int:
     run, _ = _load_latest_run_manifest(source_run.resolve())
     if run.status is not ExecutionStatus.SUCCEEDED:
         raise ManifestStateError("continuation source 必须是终态 succeeded run")
@@ -178,7 +182,12 @@ def _continuation_start_stage(source_run: Path) -> int:
     )
     if not stage_numbers or stage_numbers != list(range(1, max(stage_numbers) + 1)):
         raise ManifestStateError("continuation source Stage 序列必须从 01 连续")
-    start_stage = max(stage_numbers) + 1
+    if continue_after_stage is not None:
+        if continue_after_stage < 1 or continue_after_stage > max(stage_numbers):
+            raise ManifestStateError("continue_after_stage 不在 source 已完成阶段内")
+        start_stage = continue_after_stage + 1
+    else:
+        start_stage = max(stage_numbers) + 1
     if start_stage > IMPLEMENTED_STAGE_MAX:
         raise ManifestStateError("continuation source 已完成所有已实现 Stage")
     return start_stage
@@ -611,13 +620,17 @@ def execute_pipeline(
     run_id: str | None = None,
     dry_run: bool = False,
     continue_from_run: Path | None = None,
+    continue_after_stage: int | None = None,
 ) -> PipelineExecution:
     """验证后执行当前已实现阶段，或从已验证上游 run 继续。"""
 
     start_stage = (
         1
         if continue_from_run is None
-        else _continuation_start_stage(continue_from_run)
+        else _continuation_start_stage(
+            continue_from_run,
+            continue_after_stage=continue_after_stage,
+        )
     )
     context = _context(
         config_path,
@@ -658,8 +671,6 @@ def execute_pipeline(
     loaded = context.loaded_config
     viewer_status: str | None
     if continue_from_run is not None:
-        if context.plan.stop_after_stage < 3:
-            raise ConfigurationError("--from-run 只用于继续 Stage 03 及后续阶段")
         if run_id is None:
             raise ConfigurationError("--from-run 必须显式提供 --run-id")
         prepared_continuation = initialize_continuation_run(
@@ -669,6 +680,7 @@ def execute_pipeline(
             run_id=run_id,
             code_identity=code_identity,
             runtime_profile=context.loaded_profile.identity,
+            copy_through_stage=continue_after_stage,
         )
         run_root = prepared_continuation.workspace.run_root
         run_manifest = prepared_continuation.workspace.run_manifest
@@ -798,7 +810,17 @@ def execute_pipeline(
             run_manifest = source_outcome.run_manifest
             viewer_status = source_outcome.viewer_status
 
-    if continue_from_run is None and context.plan.stop_after_stage >= 2:
+    completed_before_stage02: set[str | None] = set()
+    if continue_from_run is not None:
+        current_before_stage02, _ = _load_latest_run_manifest(run_root)
+        completed_before_stage02 = {
+            reference.producer_stage
+            for reference in current_before_stage02.stage_manifest_refs
+        }
+    if (
+        context.plan.stop_after_stage >= 2
+        and str(StageId.HOTSPOT_DISCOVERY) not in completed_before_stage02
+    ):
         stage02_config = loaded.config.stage02
         assert stage02_config is not None
         stage02_adapter: ScanNetEpitopeAdapter | None = None

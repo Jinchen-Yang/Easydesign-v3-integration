@@ -179,6 +179,85 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname === "/api/v1/project-catalog") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ entries: [] }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/self-tests") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: route.request().method() === "POST"
+          ? JSON.stringify({
+            schema_version: "0.1",
+            self_test_id: "selftest-fixture",
+            mode: "deterministic-seven-stage",
+            status: "passed",
+            engineering_status: "passed",
+            backend_status: "not-requested",
+            scientific_status: "not-applicable",
+            stage_statuses: Object.fromEntries(
+              Array.from({ length: 7 }, (_, index) => [`stage${String(index + 1).padStart(2, "0")}`, "passed"]),
+            ),
+            environment: {},
+            created_at: "2026-07-27T00:00:00Z",
+            updated_at: "2026-07-27T00:00:01Z",
+            message: "七阶段工程链路通过。",
+          })
+          : JSON.stringify([]),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/design-sessions") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/regions/editor")) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          run_key: run.run_key,
+          target_id: "apoe-1b68-pse",
+          target_structure_sha256: "a".repeat(64),
+          structure: {
+            artifact_id: "target-structure",
+            role: "normalized-target-structure",
+            file_format: "cif",
+            size_bytes: 12,
+            sha256: "a".repeat(64),
+            token: "target-token",
+          },
+          source_annotation_status: "uninterpreted annotation",
+          current_region_source: "pse-color-annotation",
+          residues: [
+            {
+              label_seq_id: 1,
+              amino_acid: "A",
+              sequence_index: 1,
+              auth_chain_id: "A",
+              auth_residue_id: "23",
+              source_color: "#FF0000",
+              current_region: "A",
+            },
+            {
+              label_seq_id: 2,
+              amino_acid: "C",
+              sequence_index: 2,
+              auth_chain_id: "A",
+              auth_residue_id: "24",
+              source_color: "#0000FF",
+              current_region: "B",
+            },
+          ],
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/remote-jobs") {
       await route.fulfill({
         contentType: "application/json",
@@ -221,6 +300,19 @@ async function mockApi(page: Page) {
             "  mode: detect",
           ].join("\n"),
           status: "draft",
+          session: {
+            schema_version: "0.1",
+            session_id: "session-fixture",
+            project_id: "new-design",
+            design_mode: "full-workflow",
+            execution_mode: "review-gated",
+            current_stage: 2,
+            status: "draft",
+            config_revisions: [],
+            run_lineage: [],
+            created_at: "2026-07-27T00:00:00Z",
+            updated_at: "2026-07-27T00:00:00Z",
+          },
         }),
       });
       return;
@@ -502,7 +594,9 @@ test("demo replay is conspicuous and read-only", async ({ page }) => {
 test("new design exposes six entry classes and standard YAML", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();
-  await expect(page.getByRole("heading", { name: "新建设计" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "选择设计路线" })).toBeVisible();
+  await page.getByRole("button", { name: /全流程设计/ }).click();
+  await expect(page.getByRole("heading", { name: "全流程设计" })).toBeVisible();
   for (const source of ["PyMOL PSE", "PDB / mmCIF", "FASTA / 序列", "RCSB PDB ID", "UniProt", "目标结构包"]) {
     await expect(page.getByRole("button", { name: new RegExp(source) })).toBeVisible();
   }
@@ -513,9 +607,16 @@ test("new design exposes six entry classes and standard YAML", async ({ page }) 
 test("new design steps are freely browsable and file receipt unlocks final checks", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /全流程设计/ }).click();
+
+  for (const stage of ["目标结构", "结合区域", "设计方案", "小规模", "筛选验证", "规模化", "最终候选"]) {
+    await expect(
+      page.locator(".scientific-stage-browser").getByRole("button", { name: new RegExp(stage) }),
+    ).toBeVisible();
+  }
 
   await page.getByRole("button", { name: /预算与资源/ }).click();
-  await expect(page.getByRole("heading", { name: "这次准备运行到哪一步？" })).toBeVisible();
+  await expect(page.getByText("运行到第几步")).toBeVisible();
   await expect(page.getByLabel("在哪里运行")).toContainText("远程服务器 · suzhou2-a100x8");
   await page.getByLabel("在哪里运行").selectOption("suzhou2-a100x8");
   await page.getByRole("button", { name: /设计意图/ }).click();
@@ -546,4 +647,40 @@ test("new design steps are freely browsable and file receipt unlocks final check
   await validate.click();
   await expect(page.getByText(/远程执行服务器 suzhou2-a100x8 可连接/)).toBeVisible();
   await expect(launch).toBeEnabled();
+});
+
+test("stepwise design only asks for stage one before the first launch", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await expect(page.getByRole("heading", { name: "按步骤设计" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /第1步目标输入/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /检查并启动/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /区域策略/ })).toHaveCount(0);
+  await expect(page.getByText("本次只要求完成第1步")).toBeVisible();
+});
+
+test("developer smoke is separated from scientific projects", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /开发者自检/ }).click();
+  await expect(page.getByRole("heading", { name: "开发者全阶段自检" })).toBeVisible();
+  await page.getByRole("button", { name: "运行快速七步自检" }).click();
+  await expect(page.getByText("七阶段工程链路通过。")).toBeVisible();
+});
+
+test("stage two region editor keeps source layers and editable selection separate", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await page.locator(".stage-node").nth(1).click();
+  await page.getByRole("button", { name: "重新选择结合区域" }).click();
+  await expect(page.getByRole("heading", { name: "重新选择结合区域" })).toBeVisible();
+  await expect(page.getByLabel("显示 PSE 来源颜色")).toBeChecked();
+  await expect(page.getByLabel("显示当前批准区域")).toBeChecked();
+  await page.getByRole("button", { name: /区域 B/ }).click();
+  const firstResidue = page.locator(".sequence-editor button").first();
+  await firstResidue.click();
+  await expect(firstResidue).toHaveClass(/region-b/);
+  await page.getByRole("button", { name: "清空本次选择" }).click();
+  await expect(firstResidue).not.toHaveClass(/region-b/);
 });

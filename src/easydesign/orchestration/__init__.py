@@ -44,6 +44,11 @@ from .config import (
     detect_target_input_format,
     load_run_config,
 )
+from .continuation import (
+    materialize_continuation_config,
+    next_stage_number,
+    stage_form_definition,
+)
 from .hotspots import approve_hotspots, export_hotspot_review
 from .migration import (
     RunMigrationManifest,
@@ -67,6 +72,16 @@ from .profile import (
     resolve_runtime_profile_path,
 )
 from .project import InitializedProject, initialize_project
+from .project_catalog import (
+    ARCHIVED_PROJECT_RUN,
+    DEVELOPER_SMOKE_RUN,
+    PROJECT_RUN,
+    ProjectArchiveOutcome,
+    ProjectCatalogEntry,
+    archive_project,
+    list_project_catalog,
+    restore_project,
+)
 from .pse_import import CompletedPseRun, execute_pse_import
 from .remote_execution import (
     list_remote_executor_ids,
@@ -104,6 +119,7 @@ from .workspace import (
     initialize_pse_run,
     initialize_run_workspace,
     initialize_sequence_run,
+    replace_run_index_entries,
     upsert_run_index_entries,
 )
 
@@ -130,6 +146,11 @@ __all__ = [
     "PreparedPseRun",
     "PreparedRun",
     "PipelineExecution",
+    "PROJECT_RUN",
+    "ARCHIVED_PROJECT_RUN",
+    "DEVELOPER_SMOKE_RUN",
+    "ProjectArchiveOutcome",
+    "ProjectCatalogEntry",
     "PyMOLPseRuntime",
     "RegionProposalMode",
     "ResolvedProtenixMsaProviderConfig",
@@ -166,6 +187,9 @@ __all__ = [
     "WorkflowConfig",
     "detect_target_input_format",
     "diagnose_runtime",
+    "materialize_continuation_config",
+    "next_stage_number",
+    "stage_form_definition",
     "continue_pipeline_after_decision",
     "default_runtime_profile_path",
     "fingerprint_tree",
@@ -188,6 +212,7 @@ __all__ = [
     "initialize_sequence_run",
     "load_run_config",
     "load_runtime_profile",
+    "list_project_catalog",
     "list_runs",
     "list_remote_executor_ids",
     "list_remote_job_records",
@@ -201,9 +226,12 @@ __all__ = [
     "resolve_runtime_profile_path",
     "resume_remote_pipeline",
     "show_run",
+    "archive_project",
+    "restore_project",
     "submit_remote_pipeline",
     "sync_remote_pipeline",
     "upsert_run_index_entries",
+    "replace_run_index_entries",
     "validate_run_configuration",
     "InitializedProject",
 ]

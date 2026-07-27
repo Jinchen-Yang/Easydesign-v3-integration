@@ -16,6 +16,7 @@ from platformdirs import user_data_path
 from easydesign.core import ConfigurationError, RunManifest, dump_model, load_model
 from easydesign.orchestration import (
     diagnose_runtime,
+    next_stage_number,
     validate_run_configuration,
 )
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
@@ -120,6 +121,7 @@ class UiJobController:
         profile_path: Path | None = None,
         runs_root: Path | None = None,
         run_id: str | None = None,
+        continue_after_stage: int | None = None,
         decision_record: Path | None = None,
         confirmed: bool,
     ) -> UiJobRecord:
@@ -135,10 +137,20 @@ class UiJobController:
                 profile_path=profile_path,
                 runs_root=runs_root,
             )
+            start_stage = (
+                1
+                if run_root is None
+                else (
+                    continue_after_stage + 1
+                    if continue_after_stage is not None
+                    else next_stage_number(run_root)
+                )
+            )
             diagnostic = diagnose_runtime(
                 profile_path=profile_path,
                 config_path=config_path,
                 runs_root=runs_root,
+                start_stage=start_stage,
             )
             if not diagnostic.ok:
                 failures = "; ".join(
@@ -191,6 +203,8 @@ class UiJobController:
             command.extend(["--runs-root", str(runs_root.resolve())])
         if run_id is not None:
             command.extend(["--run-id", run_id])
+        if continue_after_stage is not None:
+            command.extend(["--continue-after-stage", str(continue_after_stage)])
         environment = os.environ.copy()
         environment["EASYDESIGN_UI_DRAIN_FILE"] = str(drain_path)
         process = subprocess.Popen(

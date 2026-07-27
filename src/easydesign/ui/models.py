@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -188,6 +188,60 @@ class UiJobRecord(BaseModel):
     error: str | None = None
 
 
+class DesignConfigRevision(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    revision: int = Field(ge=1)
+    stage_number: int = Field(ge=1, le=7)
+    relative_path: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime
+
+
+class DesignSession(BaseModel):
+    """产品流程记录；不替代或修改科学 RunManifest。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    session_id: str
+    project_id: str
+    design_mode: Literal["full-workflow", "stepwise", "developer-smoke"]
+    execution_mode: Literal["unattended", "review-gated"]
+    current_stage: int = Field(default=1, ge=1, le=7)
+    status: Literal[
+        "draft",
+        "ready",
+        "running",
+        "awaiting-human-approval",
+        "succeeded",
+        "scientific-stop",
+        "operational-failed",
+    ] = "draft"
+    config_revisions: tuple[DesignConfigRevision, ...] = ()
+    run_lineage: tuple[str, ...] = ()
+    created_at: datetime
+    updated_at: datetime
+
+
+class SelfTestRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    self_test_id: str
+    mode: Literal["deterministic-seven-stage", "real-backend-micro"]
+    status: str
+    engineering_status: str
+    backend_status: str
+    scientific_status: str
+    stage_statuses: dict[str, str] = Field(default_factory=dict)
+    run_key: str | None = None
+    environment: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    message: str
+
+
 class DraftOrderOutcome(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -302,3 +356,29 @@ class CandidateDetailProjection(BaseModel):
     failed_reasons: tuple[str, ...]
     backend_metrics: dict[str, float | int | bool | str | None]
     structures: dict[str, ArtifactProjection]
+
+
+class RegionEditorResidue(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label_seq_id: int = Field(ge=1)
+    amino_acid: str = Field(min_length=1, max_length=3)
+    sequence_index: int = Field(ge=1)
+    auth_chain_id: str
+    auth_residue_id: str
+    insertion_code: str | None = None
+    reference_position: int | None = Field(default=None, ge=1)
+    source_color: str | None = None
+    current_region: str | None = Field(default=None, pattern=r"^[ABC]$")
+
+
+class RegionEditorProjection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_key: str
+    target_id: str
+    target_structure_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    structure: ArtifactProjection
+    source_annotation_status: str
+    current_region_source: str | None = None
+    residues: tuple[RegionEditorResidue, ...]

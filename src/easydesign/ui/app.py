@@ -10,6 +10,7 @@ import tempfile
 import threading
 import webbrowser
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
 from uuid import uuid4
@@ -33,16 +34,21 @@ from easydesign.core import (
 from easydesign.core.hashing import sha256_bytes
 from easydesign.orchestration import (
     approve_hotspots,
+    archive_project,
     diagnose_runtime,
     export_hotspot_review,
     initialize_project,
+    list_project_catalog,
     list_remote_executor_ids,
     list_remote_job_records,
     list_runs,
+    materialize_continuation_config,
     observe_remote_pipeline,
     probe_remote_executor,
     read_pipeline_progress,
+    restore_project,
     resume_remote_pipeline,
+    stage_form_definition,
     submit_remote_pipeline,
     sync_remote_pipeline,
     validate_run_configuration,
@@ -52,7 +58,7 @@ from easydesign.stages.s02_hotspot_discovery import RegionMethod
 
 from .execution import get_execution_progress
 from .jobs import UiJobController, clone_run_configuration
-from .models import UiJobRecord
+from .models import DesignSession, SelfTestRecord, UiJobRecord
 from .projections import (
     create_demo_replay,
     create_draft_order_package,
@@ -61,7 +67,10 @@ from .projections import (
     get_stage_projection,
     stream_run_events,
 )
+from .regions import get_region_editor_projection
 from .security import ArtifactTokenSigner, UiRunRegistry
+from .selftest import SelfTestStore
+from .sessions import DesignSessionStore
 from .stage05 import (
     get_filter_candidate,
     get_filter_overview,
@@ -103,6 +112,54 @@ class ProjectCreateRequest(BaseModel):
     stop_after_stage: int = Field(default=1, ge=1, le=7)
     stage02_method: str | None = None
     source_run_key: str | None = None
+    design_mode: str = "full-workflow"
+    session_id: str | None = None
+
+
+class DesignSessionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    design_mode: str
+    execution_mode: str = "review-gated"
+
+
+class ContinuationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    stage_number: int = Field(ge=2, le=7)
+    execution_mode: str = "review-gated"
+    options: dict[str, Any] = Field(default_factory=dict)
+    run_id: str | None = None
+    confirmed: bool = False
+
+
+class CatalogActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed: bool = False
+
+
+class RegionRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    execution_mode: str = "review-gated"
+    regions: list[dict[str, Any]] = Field(min_length=1, max_length=3)
+    approvals: list[dict[str, Any]] = Field(min_length=1, max_length=3)
+    approved_by: str = Field(min_length=1, max_length=256)
+    acknowledge_user_provided_regions: bool = False
+    acknowledge_evidence_limitations: bool = False
+    run_id: str | None = None
+    confirmed: bool = False
+
+
+class SelfTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str
+    confirmed: bool = False
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -177,6 +234,11 @@ class UiServiceState:
         self.projects_root.mkdir(parents=True, exist_ok=True)
         self.profile_path = None if profile_path is None else profile_path.expanduser().resolve()
         self.jobs = UiJobController(job_root)
+        self.sessions = DesignSessionStore(self.projects_root / ".design-sessions")
+        self.self_tests = SelfTestStore(
+            self.projects_root / ".self-tests",
+            self.registry.runs_root,
+        )
         self.upload_root = self.projects_root / ".ui-uploads"
         self.upload_root.mkdir(parents=True, exist_ok=True)
         self.uploads: dict[str, Path] = {}
@@ -311,6 +373,148 @@ def create_ui_app(
             _raise_http(error)
             raise
 
+    @app.get("/api/v1/project-catalog")
+    def project_catalog(
+        request: Request,
+        include_archived: bool = True,
+        include_developer_smoke: bool = True,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            entries = list_project_catalog(
+                service.registry.runs_root,
+                include_archived=include_archived,
+                include_developer_smoke=include_developer_smoke,
+            )
+            return {
+                "entries": [
+                    {
+                        "project_id": entry.project_id,
+                        "category": entry.category,
+                        "run_count": entry.run_count,
+                        "paths": list(entry.paths),
+                    }
+                    for entry in entries
+                ]
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/project-catalog/{project_id}/archive")
+    def archive_catalog_project(
+        project_id: str,
+        payload: CatalogActionRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("归档项目必须明确 confirmed=true")
+            referenced = {
+                record.submission.project_id for record in list_remote_job_records()
+            }
+            if project_id in referenced:
+                raise ConfigurationError(
+                    "项目仍被控制端远程任务记录引用；请先确认远程任务终态并移除引用"
+                )
+            outcome = archive_project(service.registry.runs_root, project_id)
+            return {
+                "project_id": outcome.project_id,
+                "category": outcome.category,
+                "moved_paths": [list(item) for item in outcome.moved_paths],
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/project-catalog/{project_id}/restore")
+    def restore_catalog_project(
+        project_id: str,
+        payload: CatalogActionRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("恢复项目必须明确 confirmed=true")
+            outcome = restore_project(service.registry.runs_root, project_id)
+            service.discover_runs()
+            return {
+                "project_id": outcome.project_id,
+                "category": outcome.category,
+                "moved_paths": [list(item) for item in outcome.moved_paths],
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/design-sessions")
+    def design_sessions(request: Request) -> tuple[DesignSession, ...]:
+        return _state(request).sessions.list()
+
+    @app.post("/api/v1/design-sessions")
+    def create_design_session(
+        payload: DesignSessionCreateRequest,
+        request: Request,
+    ) -> DesignSession:
+        try:
+            return _state(request).sessions.create(
+                project_id=payload.project_id,
+                design_mode=payload.design_mode,
+                execution_mode=payload.execution_mode,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/self-tests")
+    def self_tests(request: Request) -> tuple[SelfTestRecord, ...]:
+        return _state(request).self_tests.list()
+
+    @app.post("/api/v1/self-tests")
+    def run_self_test(
+        payload: SelfTestRequest,
+        request: Request,
+    ) -> SelfTestRecord:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("开发者自检必须明确 confirmed=true")
+            if payload.mode == "deterministic-seven-stage":
+                return service.self_tests.run_deterministic()
+            if payload.mode == "real-backend-micro":
+                return service.self_tests.record_real_backend_plan(
+                    environment={
+                        "profile": (
+                            "default"
+                            if service.profile_path is None
+                            else service.profile_path.name
+                        ),
+                        "execution": "not-started",
+                    }
+                )
+            raise ConfigurationError("未知的开发者自检模式")
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/design-sessions/{session_id}")
+    def design_session(session_id: str, request: Request) -> DesignSession:
+        try:
+            return _state(request).sessions.load(session_id)
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/config/forms/{stage_number}")
+    def config_form(stage_number: int) -> dict[str, Any]:
+        try:
+            return stage_form_definition(stage_number)
+        except Exception as error:
+            _raise_http(error)
+            raise
+
     @app.get("/api/v1/projects/{project_id}")
     def project(project_id: str, request: Request) -> Any:
         service = _state(request)
@@ -362,6 +566,21 @@ def create_ui_app(
     def initialize(payload: ProjectCreateRequest, request: Request) -> dict[str, Any]:
         service = _state(request)
         try:
+            if payload.design_mode == "stepwise" and payload.stop_after_stage != 1:
+                raise ConfigurationError("按步骤设计首次运行只能停止在 Stage 01")
+            if payload.design_mode == "developer-smoke":
+                raise ConfigurationError("开发者自检必须使用专用自检接口")
+            session = (
+                service.sessions.create(
+                    project_id=payload.project_id,
+                    design_mode=payload.design_mode,
+                    execution_mode=payload.execution_mode,
+                )
+                if payload.session_id is None
+                else service.sessions.load(payload.session_id)
+            )
+            if session.project_id != payload.project_id:
+                raise ConfigurationError("产品会话与项目 ID 不一致")
             source_value = payload.source_value
             kwargs: dict[str, Any] = {
                 "project_root": service.projects_root / payload.project_id,
@@ -407,6 +626,11 @@ def create_ui_app(
             else:
                 raise ConfigurationError(f"不支持的 source_type: {payload.source_type}")
             outcome = initialize_project(**kwargs)
+            session = service.sessions.add_config_revision(
+                session.session_id,
+                stage_number=1 if payload.design_mode == "stepwise" else payload.stop_after_stage,
+                config_path=outcome.config_path,
+            )
             if uploaded_source is not None:
                 service.uploads.pop(source_value, None)
                 try:
@@ -419,6 +643,7 @@ def create_ui_app(
                 "project_id": payload.project_id,
                 "config": outcome.config_path.read_text(encoding="utf-8"),
                 "status": "draft",
+                "session": session.model_dump(mode="json"),
             }
         except Exception as error:
             _raise_http(error)
@@ -946,6 +1171,106 @@ def create_ui_app(
             _raise_http(error)
             raise
 
+    @app.get("/api/v1/runs/{run_key}/regions/editor")
+    def region_editor(run_key: str, request: Request) -> Any:
+        service = _state(request)
+        try:
+            return get_region_editor_projection(
+                service.registry.resolve(run_key),
+                run_key=run_key,
+                signer=service.signer,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/runs/{run_key}/regions/revise")
+    def revise_regions(
+        run_key: str,
+        payload: RegionRevisionRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("重新选择区域必须明确 confirmed=true")
+            if not payload.acknowledge_user_provided_regions:
+                raise ConfigurationError("必须确认这些区域来自用户选择")
+            if not payload.acknowledge_evidence_limitations:
+                raise ConfigurationError("必须确认用户区域仍需生物学审阅")
+            session = service.sessions.load(payload.session_id)
+            source = service.registry.resolve(run_key)
+            projection = get_region_editor_projection(
+                source,
+                run_key=run_key,
+                signer=service.signer,
+            )
+            valid_labels = {item.label_seq_id for item in projection.residues}
+            requested_labels = {
+                int(value)
+                for region in payload.regions
+                for value in region.get("label_seq_ids", [])
+            }
+            missing = sorted(requested_labels - valid_labels)
+            if missing:
+                raise ConfigurationError(f"区域包含不存在的 label_seq_id: {missing}")
+            project_root = (service.projects_root / session.project_id).resolve()
+            try:
+                project_root.relative_to(service.projects_root)
+            except ValueError as error:
+                raise PathPolicyError("产品会话项目路径逃出 projects_root") from error
+            project_root.mkdir(parents=True, exist_ok=True)
+            revision = len(session.config_revisions) + 1
+            generated = project_root / (
+                f"easydesign.stage02.rev{revision:04d}.yaml"
+            )
+            materialize_continuation_config(
+                source_run_root=source,
+                destination=generated,
+                stage_number=2,
+                execution_mode=payload.execution_mode,
+                continue_after_stage=1,
+                options={
+                    "mode": "user-provided",
+                    "regions": payload.regions,
+                    "approvals": payload.approvals,
+                    "approved_by": payload.approved_by,
+                    "acknowledge_user_provided_regions": True,
+                    "acknowledge_evidence_limitations": True,
+                },
+            )
+            session = service.sessions.add_config_revision(
+                session.session_id,
+                stage_number=2,
+                config_path=generated,
+            )
+            selected_run_id = payload.run_id or (
+                datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
+                + "-stage02-regions"
+            )
+            job = service.jobs.launch(
+                operation="run",
+                config_path=generated,
+                run_root=source,
+                profile_path=service.profile_path,
+                runs_root=service.registry.runs_root,
+                run_id=selected_run_id,
+                continue_after_stage=1,
+                confirmed=True,
+            )
+            session = service.sessions.update_status(
+                session.session_id,
+                status="running",
+                current_stage=2,
+            )
+            return {
+                "session": session.model_dump(mode="json"),
+                "job": job.model_dump(mode="json"),
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
     @app.post("/api/v1/runs/{run_key}/hotspots/approve")
     def hotspot_approve(
         run_key: str,
@@ -976,6 +1301,84 @@ def create_ui_app(
                 "status": "approved",
                 "run_key": run_key,
                 "next_action": "resume",
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/runs/{run_key}/continue/{next_stage}")
+    def continue_to_next_stage(
+        run_key: str,
+        next_stage: int,
+        payload: ContinuationRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("继续下一阶段必须明确 confirmed=true")
+            if payload.stage_number != next_stage:
+                raise ConfigurationError("URL stage 与请求 stage_number 不一致")
+            session = service.sessions.load(payload.session_id)
+            source = service.registry.resolve(run_key)
+            project_root = (service.projects_root / session.project_id).resolve()
+            try:
+                project_root.relative_to(service.projects_root)
+            except ValueError as error:
+                raise PathPolicyError("产品会话项目路径逃出 projects_root") from error
+            project_root.mkdir(parents=True, exist_ok=True)
+            revision = len(session.config_revisions) + 1
+            generated = project_root / (
+                f"easydesign.stage{next_stage:02d}.rev{revision:04d}.yaml"
+            )
+            materialize_continuation_config(
+                source_run_root=source,
+                destination=generated,
+                stage_number=next_stage,
+                execution_mode=payload.execution_mode,
+                options=payload.options,
+            )
+            try:
+                session = service.sessions.add_config_revision(
+                    session.session_id,
+                    stage_number=next_stage,
+                    config_path=generated,
+                )
+                canonical = project_root / "easydesign.yaml"
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    dir=project_root,
+                    prefix=".easydesign.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as handle:
+                    handle.write(generated.read_bytes())
+                    temporary = Path(handle.name)
+                temporary.replace(canonical)
+                selected_run_id = payload.run_id or (
+                    datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
+                    + f"-stage{next_stage:02d}"
+                )
+                job = service.jobs.launch(
+                    operation="run",
+                    config_path=generated,
+                    run_root=source,
+                    profile_path=service.profile_path,
+                    runs_root=service.registry.runs_root,
+                    run_id=selected_run_id,
+                    confirmed=True,
+                )
+                session = service.sessions.update_status(
+                    session.session_id,
+                    status="running",
+                    current_stage=next_stage,
+                )
+            except Exception:
+                generated.unlink(missing_ok=True)
+                raise
+            return {
+                "session": session.model_dump(mode="json"),
+                "job": job.model_dump(mode="json"),
             }
         except Exception as error:
             _raise_http(error)

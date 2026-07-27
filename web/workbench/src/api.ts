@@ -1,12 +1,16 @@
 import type {
   CandidateDetail,
   CandidatePage,
+  DesignSession,
   ExecutionProgress,
   FilterOverview,
   MetricPresentation,
   ProjectResponse,
+  ProjectCatalogEntry,
+  RegionEditorProjection,
   Replay,
   Run,
+  SelfTestRecord,
   Stage,
   Strategy,
 } from "./types";
@@ -26,6 +30,42 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   projects: () => request<ProjectResponse>("/api/v1/projects"),
+  projectCatalog: () =>
+    request<{ entries: ProjectCatalogEntry[] }>(
+      "/api/v1/project-catalog?include_archived=true&include_developer_smoke=true",
+    ),
+  archiveProject: (projectId: string) =>
+    request<Record<string, unknown>>(
+      `/api/v1/project-catalog/${encodeURIComponent(projectId)}/archive`,
+      { method: "POST", body: JSON.stringify({ confirmed: true }) },
+    ),
+  restoreProject: (projectId: string) =>
+    request<Record<string, unknown>>(
+      `/api/v1/project-catalog/${encodeURIComponent(projectId)}/restore`,
+      { method: "POST", body: JSON.stringify({ confirmed: true }) },
+    ),
+  designSessions: () => request<DesignSession[]>("/api/v1/design-sessions"),
+  selfTests: () => request<SelfTestRecord[]>("/api/v1/self-tests"),
+  runSelfTest: (mode: SelfTestRecord["mode"]) =>
+    request<SelfTestRecord>("/api/v1/self-tests", {
+      method: "POST",
+      body: JSON.stringify({ mode, confirmed: true }),
+    }),
+  createDesignSession: (
+    projectId: string,
+    designMode: DesignSession["design_mode"],
+    executionMode: DesignSession["execution_mode"],
+  ) =>
+    request<DesignSession>("/api/v1/design-sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: projectId,
+        design_mode: designMode,
+        execution_mode: executionMode,
+      }),
+    }),
+  configForm: (stage: number) =>
+    request<Record<string, unknown>>(`/api/v1/config/forms/${stage}`),
   run: (key: string) => request<Run>(`/api/v1/runs/${key}`),
   stage: (key: string, stage: number) =>
     request<Stage>(`/api/v1/runs/${key}/stages/${stage}`),
@@ -100,6 +140,41 @@ export const api = {
         body: JSON.stringify({ yaml_text: yamlText, confirmed: true }),
       },
     ),
+  regionEditor: (key: string) =>
+    request<RegionEditorProjection>(`/api/v1/runs/${key}/regions/editor`),
+  reviseRegions: (
+    key: string,
+    body: {
+      session_id: string;
+      execution_mode: "unattended" | "review-gated";
+      regions: Array<{ id: string; label_seq_ids: number[] }>;
+      approvals: Array<Record<string, unknown>>;
+      approved_by: string;
+      acknowledge_user_provided_regions: boolean;
+      acknowledge_evidence_limitations: boolean;
+    },
+  ) =>
+    request<Record<string, unknown>>(`/api/v1/runs/${key}/regions/revise`, {
+      method: "POST",
+      body: JSON.stringify({ ...body, confirmed: true }),
+    }),
+  continueRun: (
+    key: string,
+    stage: number,
+    body: {
+      session_id: string;
+      execution_mode: "unattended" | "review-gated";
+      options?: Record<string, unknown>;
+    },
+  ) =>
+    request<Record<string, unknown>>(`/api/v1/runs/${key}/continue/${stage}`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...body,
+        stage_number: stage,
+        confirmed: true,
+      }),
+    }),
   resume: (key: string) =>
     request<Record<string, unknown>>(`/api/v1/runs/${key}/resume`, {
       method: "POST",
@@ -190,7 +265,12 @@ export const api = {
       body: JSON.stringify({ filename, content_base64: contentBase64 }),
     }),
   createProject: (body: Record<string, unknown>) =>
-    request<{ project_id: string; config: string; status: string }>("/api/v1/projects", {
+    request<{
+      project_id: string;
+      config: string;
+      status: string;
+      session: DesignSession;
+    }>("/api/v1/projects", {
       method: "POST",
       body: JSON.stringify(body),
     }),

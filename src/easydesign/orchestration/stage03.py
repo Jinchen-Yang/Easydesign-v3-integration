@@ -211,6 +211,7 @@ def initialize_continuation_run(
     code_identity: CodeIdentity,
     runtime_profile: RuntimeProfileRef,
     created_at: datetime | None = None,
+    copy_through_stage: int | None = None,
 ) -> PreparedRun:
     """Fork an immutable succeeded handoff into the next configured stage."""
 
@@ -221,7 +222,16 @@ def initialize_continuation_run(
     loaded = load_run_config(config_path)
     if loaded.config.project_id != source_run.project_id:
         raise ManifestStateError("continuation config project_id 必须与 source run 一致")
-    source_stage_refs = tuple(source_run.stage_manifest_refs)
+    source_stage_refs = tuple(
+        reference
+        for reference in source_run.stage_manifest_refs
+        if copy_through_stage is None
+        or (
+            reference.producer_stage is not None
+            and int(reference.producer_stage.split("-", maxsplit=1)[0])
+            <= copy_through_stage
+        )
+    )
     if not source_stage_refs:
         raise ManifestStateError("continuation source 没有已完成 Stage")
     stage_numbers: list[int] = []

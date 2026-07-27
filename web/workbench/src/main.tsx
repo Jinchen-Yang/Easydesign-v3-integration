@@ -3,16 +3,19 @@ import { createRoot } from "react-dom/client";
 import { api } from "./api";
 import { MolViewer } from "./MolViewer";
 import { artifactName, capabilityLabel, stageNames, stageShortNames, stateCopy } from "./product";
+import { RegionEditor } from "./RegionEditor";
 import { StageFive as FilterStageFive } from "./StageFive";
 import type {
   Artifact,
   ExecutionProgress,
   Project,
+  ProjectCatalogEntry,
   ProjectResponse,
   RemoteExecutor,
   RemoteJob,
   Replay,
   Run,
+  SelfTestRecord,
   Stage,
   StageState,
 } from "./types";
@@ -135,7 +138,13 @@ function parseLabelRanges(value: unknown) {
   return [...new Set(selected)];
 }
 
-function StageOne({ stage }: { stage: Stage }) {
+function StageOne({
+  stage,
+  onConfigureNext,
+}: {
+  stage: Stage;
+  onConfigureNext: () => void;
+}) {
   const h = stage.highlights;
   const structure = artifactUrl(stage.artifacts, "target-structure");
   return (
@@ -150,6 +159,9 @@ function StageOne({ stage }: { stage: Stage }) {
             <Metric label="结构模型数" value={formatNumber(h.model_count, 0)} />
             <Metric label="缺失的 CA 原子" value={formatNumber(h.missing_ca_count, 0)} />
           </div>
+          <button type="button" className="primary-button region-reselect-button" onClick={onConfigureNext}>
+            配置下一步：选择结合区域
+          </button>
         </section>
         <EvidenceList stage={stage} limit={8} />
       </aside>
@@ -158,7 +170,15 @@ function StageOne({ stage }: { stage: Stage }) {
   );
 }
 
-function StageTwo({ stage, run }: { stage: Stage; run: Run }) {
+function StageTwo({
+  stage,
+  run,
+  onReselect,
+}: {
+  stage: Stage;
+  run: Run;
+  onReselect: () => void;
+}) {
   const stageOne = run.stages[0];
   const structure = artifactUrl(stageOne.artifacts, "target-structure");
   const regions = (stage.tables.regions || []).map((item) => ({
@@ -195,6 +215,10 @@ function StageTwo({ stage, run }: { stage: Stage; run: Run }) {
             用户区域属于人工结构先验，不自动等同于经过能量学验证的结合热点；确认人：
             {String(stage.highlights.approved_by || "—")}。
           </p>
+          <button type="button" className="primary-button region-reselect-button" onClick={onReselect}>
+            重新选择结合区域
+          </button>
+          <p className="fine">可隐藏来源颜色、清空本次编辑层并重新涂选 A/B/C；保存会建立新分支，不会覆盖这次运行。</p>
         </section>
         <EvidenceList stage={stage} />
       </aside>
@@ -446,9 +470,21 @@ function EvidenceList({ stage, limit = 12 }: { stage: Stage; limit?: number }) {
   );
 }
 
-function StageContent({ stage, run }: { stage: Stage; run: Run }) {
-  if (stage.stage_number === 1) return <StageOne stage={stage} />;
-  if (stage.stage_number === 2) return <StageTwo stage={stage} run={run} />;
+function StageContent({
+  stage,
+  run,
+  onReselectRegions,
+}: {
+  stage: Stage;
+  run: Run;
+  onReselectRegions: () => void;
+}) {
+  if (stage.stage_number === 1) {
+    return <StageOne stage={stage} onConfigureNext={onReselectRegions} />;
+  }
+  if (stage.stage_number === 2) {
+    return <StageTwo stage={stage} run={run} onReselect={onReselectRegions} />;
+  }
   if (stage.stage_number === 3) return <StageThree stage={stage} />;
   if (stage.stage_number === 4) return <ExecutionStage stage={stage} run={run} />;
   if (stage.stage_number === 5) return <FilterStageFive stage={stage} run={run} />;
@@ -474,6 +510,7 @@ function RunWorkspace({
   const [selected, setSelected] = useState(5);
   const [cloneStatus, setCloneStatus] = useState("");
   const [showTechnical, setShowTechnical] = useState(false);
+  const [showRegionEditor, setShowRegionEditor] = useState(false);
   const stage = run.stages[selected - 1];
 
   async function clone() {
@@ -527,7 +564,18 @@ function RunWorkspace({
         <div><p className="section-label">设计流程</p><h2>{stageNames[stage.stage_number - 1]}</h2><p>{stateCopy[stage.state].description}</p></div>
         <div className="stage-state-block"><Status state={stage.state} /><span>{capabilityLabel(stage.capability.status)}</span></div>
       </div>
-      <StageContent stage={stage} run={run} />
+      <StageContent
+        stage={stage}
+        run={run}
+        onReselectRegions={() => setShowRegionEditor(true)}
+      />
+      {showRegionEditor && (
+        <RegionEditor
+          run={run}
+          onClose={() => setShowRegionEditor(false)}
+          onSubmitted={(message) => setCloneStatus(message)}
+        />
+      )}
     </div>
   );
 }
@@ -590,6 +638,105 @@ function Dashboard({
   );
 }
 
+function DeveloperSmoke({ onBack }: { onBack: () => void }) {
+  const [records, setRecords] = useState<SelfTestRecord[]>([]);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState<"deterministic-seven-stage" | "real-backend-micro">();
+
+  async function refresh() {
+    try {
+      setRecords(await api.selfTests());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "无法读取自检历史");
+    }
+  }
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function run(mode: SelfTestRecord["mode"]) {
+    setBusy(mode);
+    setStatus(
+      mode === "deterministic-seven-stage"
+        ? "正在建立七阶段确定性 manifest 链…"
+        : "正在登记真实后端微型自检，并冻结环境预检要求…",
+    );
+    try {
+      const record = await api.runSelfTest(mode);
+      setStatus(record.message);
+      await refresh();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "开发者自检失败");
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  return (
+    <div className="developer-smoke-page">
+      <header className="page-heading compact">
+        <div>
+          <p className="section-label">与科研项目隔离</p>
+          <h1>开发者全阶段自检</h1>
+          <p>工程自检验证软件链路；真实后端自检验证外部工具。两者都不能作为科学结果或下单依据。</p>
+        </div>
+        <button type="button" className="secondary-button" onClick={onBack}>返回设计路线</button>
+      </header>
+      <div className="self-test-cards">
+        <article>
+          <span className="self-test-number">第一层</span>
+          <h2>快速确定性七步自检</h2>
+          <p>不使用网络、GPU 或重型工具，真实创建七个阶段的 attempt、输出引用和运行记录。</p>
+          <ul>
+            <li>验证 Stage 01–07 工程串联</li>
+            <li>验证不可变运行记录和文件完整性</li>
+            <li>显式标记为 synthetic-engineering-smoke</li>
+          </ul>
+          <button type="button" className="primary-button" disabled={Boolean(busy)} onClick={() => void run("deterministic-seven-stage")}>
+            {busy === "deterministic-seven-stage" ? "正在运行…" : "运行快速七步自检"}
+          </button>
+        </article>
+        <article>
+          <span className="self-test-number">第二层</span>
+          <h2>真实后端微型自检</h2>
+          <p>使用固定非 APOE 案例调用真实后端；科学停止不算失败，后端崩溃或产物损坏才算失败。</p>
+          <ul>
+            <li>先检查环境、GPU、磁盘与模型</li>
+            <li>Stage 01–05 使用极小预算</li>
+            <li>Stage 06/07 使用独立 adapter probe</li>
+          </ul>
+          <button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={() => void run("real-backend-micro")}>
+            {busy === "real-backend-micro" ? "正在登记…" : "准备真实后端自检"}
+          </button>
+          <small>当前按钮只建立待运行记录；完成固定 fixture 和资源预检后才允许启动重型工具。</small>
+        </article>
+      </div>
+      {status && <div className="form-status">{status}</div>}
+      <section className="panel self-test-history">
+        <div className="panel-heading">
+          <div><p className="section-label">设置中的独立历史</p><h3>最近自检</h3></div>
+          <span>{records.length} 条</span>
+        </div>
+        {records.map((record) => (
+          <div className="self-test-record" key={record.self_test_id}>
+            <div>
+              <strong>{record.mode === "deterministic-seven-stage" ? "快速确定性七步自检" : "真实后端微型自检"}</strong>
+              <small>{formatTime(record.updated_at)} · {record.self_test_id}</small>
+              <p>{record.message}</p>
+            </div>
+            <div>
+              <span>工程：{record.engineering_status}</span>
+              <span>后端：{record.backend_status}</span>
+              <span>科学：{record.scientific_status}</span>
+            </div>
+          </div>
+        ))}
+        {!records.length && <div className="empty-state"><strong>还没有自检记录</strong><span>快速自检通常在数秒内完成。</span></div>}
+      </section>
+    </div>
+  );
+}
+
 function NewDesign({
   projects,
   onCreated,
@@ -598,6 +745,10 @@ function NewDesign({
   onCreated: (projectId: string) => Promise<void>;
 }) {
   const wizardSteps = ["目标输入", "设计意图", "区域策略", "预算与资源", "检查并启动"];
+  const [designMode, setDesignMode] = useState<
+    "full-workflow" | "stepwise" | "developer-smoke" | undefined
+  >();
+  const [browsedStage, setBrowsedStage] = useState(1);
   const [activeStep, setActiveStep] = useState(1);
   const [source, setSource] = useState("pse");
   const [stage, setStage] = useState(2);
@@ -624,6 +775,7 @@ function NewDesign({
   const [executorId, setExecutorId] = useState("local");
   const [generatedYaml, setGeneratedYaml] = useState("");
   const [createdProject, setCreatedProject] = useState("");
+  const [sessionId, setSessionId] = useState("");
   const [actionStatus, setActionStatus] = useState("");
   const [preflightState, setPreflightState] = useState<
     "idle" | "checking" | "passed" | "blocked" | "failed"
@@ -702,6 +854,22 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     stage02Method,
   ]);
   const yaml = generatedYaml || previewYaml;
+
+  function selectDesignMode(
+    selected: "full-workflow" | "stepwise" | "developer-smoke",
+  ) {
+    setDesignMode(selected);
+    setCreatedProject("");
+    setSessionId("");
+    setGeneratedYaml("");
+    setActionStatus("");
+    setPreflightState("idle");
+    if (selected === "stepwise") {
+      setStage(1);
+      setActiveStep(1);
+      setBrowsedStage(1);
+    }
+  }
 
   function selectSource(nextSource: string) {
     if (createdProject) return;
@@ -782,8 +950,10 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
         stop_after_stage: stage,
         stage02_method: stage02Method,
         source_run_key: sourceRunKey,
+        design_mode: designMode || "full-workflow",
       });
       setCreatedProject(result.project_id);
+      setSessionId(result.session.session_id);
       setGeneratedYaml(result.config);
       setActionStatus("草稿已创建。下一步先校验配置和本机运行环境。");
       setPreflightState("idle");
@@ -836,6 +1006,13 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
           ? `任务已提交到 ${selectedExecutor}：${String(job.job_id || "job")}。可在“运行任务”同步进度和结果。`
           : `真实任务已创建：${String(job.job_id || "job")}。`,
       );
+      if (designMode === "stepwise") {
+        setActionStatus(
+          `第1步任务已创建：${String(job.job_id || "job")}。完成后请在“运行任务”打开结果，`
+          + "结构页面会提供“配置下一步：选择结合区域”。"
+          + (sessionId ? ` 产品会话：${sessionId}` : ""),
+        );
+      }
     } catch (value) {
       setActionStatus(value instanceof Error ? value.message : "启动失败");
     } finally {
@@ -843,25 +1020,115 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     }
   }
 
+  if (!designMode) {
+    return (
+      <div className="new-page">
+        <header className="page-heading compact">
+          <div>
+            <p className="section-label">开始新的蛋白设计</p>
+            <h1>选择设计路线</h1>
+            <p>三条路线使用相同的科学实现；区别只在于什么时候配置、什么时候暂停。</p>
+          </div>
+        </header>
+        <div className="design-route-grid">
+          <button type="button" onClick={() => selectDesignMode("full-workflow")}>
+            <span>01</span>
+            <div>
+              <h2>全流程设计</h2>
+              <p>开始前查看并配置第1–7步，然后选择连续运行，或在科学选择处暂停确认。</p>
+              <strong>适合：已经明确整体方案和预算</strong>
+            </div>
+            <b>进入 →</b>
+          </button>
+          <button type="button" onClick={() => selectDesignMode("stepwise")}>
+            <span>02</span>
+            <div>
+              <h2>按步骤设计</h2>
+              <p>现在只提交第1步。结构完成后直接查看 Mol* 结果，再配置第2步。</p>
+              <strong>适合：边看结果边做科学决策</strong>
+            </div>
+            <b>进入 →</b>
+          </button>
+          <button type="button" onClick={() => selectDesignMode("developer-smoke")}>
+            <span>03</span>
+            <div>
+              <h2>开发者自检</h2>
+              <p>先跑快速确定性七步工程自检；需要时再运行真实后端微型检查。</p>
+              <strong>结果与科研项目隔离</strong>
+            </div>
+            <b>进入 →</b>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (designMode === "developer-smoke") {
+    return (
+      <DeveloperSmoke
+        onBack={() => setDesignMode(undefined)}
+      />
+    );
+  }
+
+  const visibleWizardSteps = designMode === "stepwise"
+    ? [
+      { step: 1, label: "第1步目标输入", state: stepStates[0] },
+      { step: 5, label: "检查并启动", state: stepStates[4] },
+    ]
+    : wizardSteps.map((label, index) => ({
+      step: index + 1,
+      label,
+      state: stepStates[index],
+    }));
+
   return (
     <div className="new-page">
-      <header className="page-heading compact"><div><p className="section-label">开始新的蛋白设计</p><h1>新建设计</h1><p>可以先查看任意步骤；只有最终检查和真实启动需要完整填写。</p></div></header>
-      <div className="wizard">
-        <div className="wizard-steps" aria-label="新建设计步骤">
-          {wizardSteps.map((item, index) => (
+      <header className="page-heading compact">
+        <div>
+          <p className="section-label">开始新的蛋白设计</p>
+          <h1>{designMode === "stepwise" ? "按步骤设计" : "全流程设计"}</h1>
+          <p>{designMode === "stepwise" ? "本次只要求完成第1步；得到结构后再配置下一步。" : "可以先查看任意科学阶段；只有最终检查和真实启动需要完整填写。"}</p>
+        </div>
+        <button type="button" className="secondary-button" onClick={() => setDesignMode(undefined)}>更换设计路线</button>
+      </header>
+      {designMode === "full-workflow" && (
+        <div className="scientific-stage-browser" aria-label="七阶段配置浏览">
+          {[1,2,3,4,5,6,7].map((value) => (
             <button
               type="button"
-              className={`${activeStep === index + 1 ? "active" : ""} ${
-                ["已填写", "已设置", "检查通过"].includes(stepStates[index])
+              key={value}
+              className={browsedStage === value ? "active" : ""}
+              onClick={() => {
+                setBrowsedStage(value);
+                if (value === 1) setActiveStep(1);
+                else if (value === 2) setActiveStep(3);
+                else setActiveStep(4);
+              }}
+            >
+              <span>{value}</span>
+              <strong>{stageShortNames[value - 1]}</strong>
+              <small>{value <= stage ? "已纳入本次运行" : "可查看，尚未纳入"}</small>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="wizard">
+        <div className="wizard-steps" aria-label="新建设计步骤">
+          {visibleWizardSteps.map((item, index) => (
+            <button
+              type="button"
+              className={`${activeStep === item.step ? "active" : ""} ${
+                ["已填写", "已设置", "检查通过"].includes(item.state)
                   ? "complete"
                   : ""
               }`}
-              key={item}
-              onClick={() => setActiveStep(index + 1)}
-              aria-current={activeStep === index + 1 ? "step" : undefined}
+              key={item.step}
+              onClick={() => setActiveStep(item.step)}
+              aria-current={activeStep === item.step ? "step" : undefined}
             >
               <span>{index + 1}</span>
-              <span><strong>{item}</strong><small>{stepStates[index]}</small></span>
+              <span><strong>{item.label}</strong><small>{item.state}</small></span>
             </button>
           ))}
         </div>
@@ -943,9 +1210,26 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
           )}
           {activeStep === 4 && (
             <>
-              <p className="section-label">第四项 · 运行范围</p>
-              <h2>这次准备运行到哪一步？</h2>
+              <p className="section-label">第 {browsedStage} 步 · 配置要求</p>
+              <h2>{stageNames[browsedStage - 1]}</h2>
               <p>可以先查看全部范围。真正启动前，系统会按所选步骤检查环境、GPU、模型和磁盘。</p>
+              {browsedStage >= 3 && (
+                <div className="stage-requirement-preview">
+                  <strong>{browsedStage <= stage ? "已使用标准配置纳入本次运行" : "当前只查看，不会自动改变运行范围"}</strong>
+                  <p>
+                    {browsedStage === 3 && "把已批准结合区域编译为 BoltzGen 基础方案；非结合区域保持中性。"}
+                    {browsedStage === 4 && "对每个设计方案进行小规模、多 GPU、可恢复生成。"}
+                    {browsedStage === 5 && "按版本化门槛筛选，并决定是否存在可放大的唯一策略。"}
+                    {browsedStage === 6 && "对胜出策略执行分片式规模化生成；高成本预算需要明确授权。"}
+                    {browsedStage === 7 && "深度复核、聚类和多样性选择，输出主候选与备选草案。"}
+                  </p>
+                  {browsedStage > stage && (
+                    <button type="button" className="secondary-button" onClick={() => setStage(browsedStage)}>
+                      将本次运行范围扩展到第 {browsedStage} 步
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="stage-budget"><span>运行到第几步</span>{[1,2,3,4,5,6,7].map((value) => <button className={stage === value ? "active" : ""} disabled={Boolean(createdProject)} type="button" onClick={() => setStage(value)} key={value}>{value}</button>)}</div>
               <label className="executor-selector">
                 <span>在哪里运行</span>
@@ -988,7 +1272,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               {createdProject && <div className="notice"><strong>项目草稿已创建</strong><span>{createdProject}。目标输入已复制到项目，若要更换目标请新建另一个设计。</span></div>}
               {actionStatus && <div className={`form-status ${preflightState === "failed" || preflightState === "blocked" ? "error" : ""}`}>{actionStatus}</div>}
               <div className="launch-actions">
-                <button className="secondary-button" onClick={createDraft} disabled={busy || Boolean(createdProject) || !sourceReady || !projectReady || (executionMode === "unattended" && stage02Method === "both")}>{busy && !createdProject ? "正在生成…" : "1. 生成项目草稿"}</button>
+                <button className="secondary-button" onClick={createDraft} disabled={busy || Boolean(createdProject) || !sourceReady || !projectReady || (stage >= 2 && executionMode === "unattended" && stage02Method === "both")}>{busy && !createdProject ? "正在生成…" : "1. 生成项目草稿"}</button>
                 <button className="secondary-button" onClick={validateDraft} disabled={busy || !createdProject}>{preflightState === "checking" ? "正在检查…" : "2. 检查配置与环境"}</button>
                 <button className="primary-button" onClick={launch} disabled={busy || !createdProject || preflightState !== "passed"}>3. 确认并真实启动 →</button>
               </div>
@@ -996,9 +1280,9 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
             </>
           )}
           <div className="wizard-actions">
-            <button className="secondary-button" type="button" disabled={activeStep === 1} onClick={() => setActiveStep((value) => Math.max(1, value - 1))}>← 上一步</button>
-            <span>第 {activeStep} / 5 项</span>
-            <button className="secondary-button" type="button" disabled={activeStep === 5} onClick={() => setActiveStep((value) => Math.min(5, value + 1))}>下一步 →</button>
+            <button className="secondary-button" type="button" disabled={activeStep === 1} onClick={() => setActiveStep(designMode === "stepwise" ? 1 : Math.max(1, activeStep - 1))}>← 上一步</button>
+            <span>{designMode === "stepwise" ? (activeStep === 1 ? "填写目标输入" : "检查并启动第1步") : `第 ${activeStep} / 5 项`}</span>
+            <button className="secondary-button" type="button" disabled={activeStep === 5} onClick={() => setActiveStep(designMode === "stepwise" ? 5 : Math.min(5, activeStep + 1))}>下一步 →</button>
           </div>
         </section>
         <aside className="yaml-preview">
@@ -1137,6 +1421,8 @@ function OperationsPage({
   const [selectedOption, setSelectedOption] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
   const [hotspotYaml, setHotspotYaml] = useState("");
+  const [catalog, setCatalog] = useState<ProjectCatalogEntry[]>([]);
+  const [selfTests, setSelfTests] = useState<SelfTestRecord[]>([]);
   const runs = projects.flatMap((project) => project.runs);
   const approvals = runs.flatMap((run) =>
     run.stages
@@ -1164,6 +1450,11 @@ function OperationsPage({
         }
       });
   }, [approvalRunKey, type]);
+  useEffect(() => {
+    if (type !== "environment") return;
+    api.projectCatalog().then((value) => setCatalog(value.entries)).catch(() => setCatalog([]));
+    api.selfTests().then(setSelfTests).catch(() => setSelfTests([]));
+  }, [type]);
 
   if (type === "decisions") {
     async function approvePending() {
@@ -1205,7 +1496,37 @@ function OperationsPage({
         setMessage(value instanceof Error ? value.message : "环境检查失败");
       }
     }
-    return <div className="utility-page"><header className="page-heading compact"><div><p className="section-label">设置</p><h1>运行环境</h1><p>检查 Protenix、BoltzGen、PyMOL、ScanNet、TNP、GPU 和模型是否满足所选任务。</p></div></header><section className="panel utility-panel"><div className="two-field-row"><label><span>选择一个项目配置</span><select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}><option value="">请选择项目</option>{editableProjects.map((project) => <option key={project}>{project}</option>)}</select></label><button className="primary-button" onClick={diagnose} disabled={!selectedProject}>检查运行环境</button></div>{!editableProjects.length && <div className="notice"><strong>当前没有可编辑项目</strong><span>你仍可查看已有运行；新建项目后才能按配置检查环境。</span></div>}{message && <div className="form-status">{message}</div>}{diagnostic && <pre className="audit-json">{JSON.stringify(diagnostic, null, 2)}</pre>}</section><section className="panel software-info"><p className="section-label">软件信息</p><h3>EasyDesign 本地科研工作台</h3><p>工作台只监听 127.0.0.1。科研结果继续由不可变运行记录和文件完整性校验保护。</p></section></div>;
+    async function changeArchive(entry: ProjectCatalogEntry) {
+      setMessage(entry.category === "archived-project-run" ? "正在恢复项目…" : "正在归档项目…");
+      try {
+        if (entry.category === "archived-project-run") {
+          await api.restoreProject(entry.project_id);
+        } else {
+          await api.archiveProject(entry.project_id);
+        }
+        const value = await api.projectCatalog();
+        setCatalog(value.entries);
+        setMessage("项目目录已更新；科学文件和校验值没有被改写。");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "项目目录操作失败");
+      }
+    }
+    const archiveEntries = catalog.filter((entry) => entry.category === "archived-project-run");
+    const activeEntries = catalog.filter((entry) => entry.category === "project-run");
+    return <div className="utility-page">
+      <header className="page-heading compact"><div><p className="section-label">设置</p><h1>运行环境</h1><p>检查 Protenix、BoltzGen、PyMOL、ScanNet、TNP、GPU 和模型是否满足所选任务。</p></div></header>
+      <section className="panel utility-panel"><div className="two-field-row"><label><span>选择一个项目配置</span><select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}><option value="">请选择项目</option>{editableProjects.map((project) => <option key={project}>{project}</option>)}</select></label><button className="primary-button" onClick={diagnose} disabled={!selectedProject}>检查运行环境</button></div>{!editableProjects.length && <div className="notice"><strong>当前没有可编辑项目</strong><span>你仍可查看已有运行；新建项目后才能按配置检查环境。</span></div>}{message && <div className="form-status">{message}</div>}{diagnostic && <pre className="audit-json">{JSON.stringify(diagnostic, null, 2)}</pre>}</section>
+      <section className="panel settings-catalog">
+        <div className="panel-heading"><div><p className="section-label">可恢复项目目录</p><h3>活跃项目与归档项目</h3></div><span>{activeEntries.length} 个活跃 · {archiveEntries.length} 个归档</span></div>
+        {[...activeEntries, ...archiveEntries].map((entry) => <div className="catalog-row" key={`${entry.category}-${entry.project_id}`}><div><strong>{entry.project_id}</strong><small>{entry.run_count} 次运行 · {entry.category === "project-run" ? "我的项目中可见" : "已从默认列表隐藏"}</small></div><button type="button" onClick={() => void changeArchive(entry)}>{entry.category === "project-run" ? "归档" : "恢复"}</button></div>)}
+      </section>
+      <section className="panel settings-catalog">
+        <div className="panel-heading"><div><p className="section-label">开发者工具</p><h3>自检历史</h3></div><span>{selfTests.length} 条</span></div>
+        {selfTests.map((record) => <div className="catalog-row" key={record.self_test_id}><div><strong>{record.mode === "deterministic-seven-stage" ? "快速确定性七步自检" : "真实后端微型自检"}</strong><small>{formatTime(record.updated_at)} · 工程 {record.engineering_status} · 后端 {record.backend_status}</small></div><span>{record.status}</span></div>)}
+        {!selfTests.length && <div className="empty-state"><strong>还没有开发者自检记录</strong></div>}
+      </section>
+      <section className="panel software-info"><p className="section-label">软件信息</p><h3>EasyDesign 本地科研工作台</h3><p>工作台只监听 127.0.0.1。科研结果继续由不可变运行记录和文件完整性校验保护。</p></section>
+    </div>;
   }
   return <div className="utility-page"><header className="page-heading compact"><div><p className="eyebrow">EVIDENCE CHAIN</p><h1>证据审计</h1><p>所有内容来自当前 manifest 声明并通过 checksum 的 artifact。</p></div></header>{audited ? <><div className="metric-row"><Metric label="Run" value={audited.run_id} /><Metric label="代码版本" value={audited.code_version} /><Metric label="Commit" value={audited.code_commit?.slice(0, 10) || "installed package"} /><Metric label="完整性" value={audited.integrity_status} /></div><section className="panel utility-panel"><div className="audit-chain">{audited.stages.map((stage) => <div key={stage.stage_number}><span>Stage {stage.stage_number}</span><strong>{stage.artifacts.length} artifacts</strong><Status state={stage.state} small /></div>)}</div></section></> : <div className="empty-state"><strong>暂无 run 可审计</strong></div>}</div>;
 }

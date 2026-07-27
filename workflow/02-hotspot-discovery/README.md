@@ -157,6 +157,32 @@ A/B/C 的任意 1–3 个非空子集；成员不扩展、不删除、不重新�
 `#FFFF00 → C`。只读取逐残基 CA 的 RGB/hex；其他颜色均为背景。普通 PDB/mmCIF 不定义
 私有颜色字段，必须使用 YAML 残基列表。
 
+## 工作台交互式重选区
+
+成功的 Stage 01 Target Bundle 都可以从工作台进入“重新选择结合区域”，不要求原始输入
+是 PSE，也不要求已经存在 Stage 02。编辑器把显示状态分成三个互不覆盖的事实层：
+
+1. PSE 来源颜色：来自 Stage 01 `source-annotations.json`，只读，可隐藏/恢复。
+2. 当前批准区域：来自当前 Stage 02 `hotspots.yaml`，只读参考，可隐藏/复制到编辑层。
+3. 本次编辑区域：A=红、B=蓝、C=黄，可通过结构点击、序列点击、Shift 连选、粘贴规范
+   `label_seq_id` 或橡皮擦修改。
+
+“清空本次选择”只清除第三层，不修改 PSE annotation 或历史批准结果。一个残基在编辑层
+只能属于一个区域；改用另一支画笔会把它从旧区域移动到新区。保存要求每个非空区域填写
+design goal、生物学理由和结构理由，并记录批准人及 evidence limitation 确认。
+
+保存永远建立新的 Stage 02 continuation run：
+
+```text
+已验证 Stage 01 run
+→ 新 config revision（manual-residue-list / label numbering）
+→ 新 Stage 02 run
+→ review-gated 等待确认，或记录初始 human authority 后继续
+```
+
+旧 RunManifest、StageManifest、`hotspots.yaml` 和下游结果保持不变。UI 只是编辑和调用
+同一 Python API；编号校验、授权和科学交接仍由 Stage 02 契约执行。
+
 Developer Preview 使用同一个 YAML 继续当前 run：
 
 ```bash

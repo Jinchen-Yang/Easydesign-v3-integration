@@ -269,6 +269,23 @@ def upsert_run_index_entries(
     return index_path
 
 
+def replace_run_index_entries(
+    runs_root: Path,
+    entries: tuple[RunIndexEntry, ...],
+    *,
+    generated_at: datetime,
+) -> Path:
+    """原子替换可再生运行索引，用于归档等需要改变路径的受控迁移。"""
+
+    index_path = runs_root / "run-index.json"
+    index = RunIndex(
+        generated_at=generated_at,
+        entries=tuple(sorted(entries, key=lambda entry: entry.path)),
+    )
+    _atomic_replace_json(index, index_path)
+    return index_path
+
+
 def _generated_run_id(created_at: datetime) -> str:
     utc = normalize_aware_datetime(created_at)
     return utc.strftime("%Y%m%dt%H%M%Sz").lower()

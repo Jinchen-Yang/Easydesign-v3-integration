@@ -65,6 +65,71 @@ export interface ProjectResponse {
   editable_projects: string[];
 }
 
+export interface DesignSession {
+  schema_version: "0.1";
+  session_id: string;
+  project_id: string;
+  design_mode: "full-workflow" | "stepwise" | "developer-smoke";
+  execution_mode: "unattended" | "review-gated";
+  current_stage: number;
+  status: string;
+  config_revisions: Array<{
+    revision: number;
+    stage_number: number;
+    relative_path: string;
+    sha256: string;
+    created_at: string;
+  }>;
+  run_lineage: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCatalogEntry {
+  project_id: string;
+  category: "project-run" | "archived-project-run" | "developer-smoke-run";
+  run_count: number;
+  paths: string[];
+}
+
+export interface RegionEditorResidue {
+  label_seq_id: number;
+  amino_acid: string;
+  sequence_index: number;
+  auth_chain_id: string;
+  auth_residue_id: string;
+  insertion_code?: string;
+  reference_position?: number;
+  source_color?: string;
+  current_region?: "A" | "B" | "C";
+}
+
+export interface RegionEditorProjection {
+  run_key: string;
+  target_id: string;
+  target_structure_sha256: string;
+  structure: Artifact;
+  source_annotation_status: string;
+  current_region_source?: string;
+  residues: RegionEditorResidue[];
+}
+
+export interface SelfTestRecord {
+  schema_version: "0.1";
+  self_test_id: string;
+  mode: "deterministic-seven-stage" | "real-backend-micro";
+  status: string;
+  engineering_status: string;
+  backend_status: string;
+  scientific_status: string;
+  stage_statuses: Record<string, string>;
+  run_key?: string;
+  environment: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+  message: string;
+}
+
 export interface ReplayFrame {
   frame_id: string;
   label: string;
@@ -237,8 +302,26 @@ export interface MetricPresentation {
 }
 
 export interface MolstarViewer {
+  subscribe?: (
+    subject: unknown,
+    handler: (event: any) => void,
+  ) => { unsubscribe?: () => void };
   plugin: {
-    managers: { camera: { reset: () => void } };
+    behaviors?: {
+      interaction?: {
+        click?: unknown;
+      };
+    };
+    managers: {
+      camera: { reset: () => void };
+      structure?: {
+        hierarchy?: {
+          current?: {
+            structures?: unknown[];
+          };
+        };
+      };
+    };
     dispose?: () => void;
   };
   dispose?: () => void;
@@ -258,6 +341,27 @@ declare global {
             state: unknown,
             options: Record<string, unknown>,
           ) => Promise<void>;
+        };
+      };
+      lib?: {
+        structure?: {
+          StructureElement?: {
+            Loci?: {
+              is: (value: unknown) => boolean;
+              forEachLocation: (
+                value: unknown,
+                callback: (location: unknown) => void,
+              ) => void;
+            };
+          };
+          StructureProperties?: {
+            chain?: {
+              label_asym_id: (location: unknown) => string;
+            };
+            residue?: {
+              label_seq_id: (location: unknown) => number;
+            };
+          };
         };
       };
     };

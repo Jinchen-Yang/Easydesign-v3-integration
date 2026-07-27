@@ -846,3 +846,41 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
   [`ADR-0002`](decisions/ADR-0002-developer-preview-cli-and-code-identity.md)。
 
 重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。
+
+## 产品会话、项目目录与开发者自检
+
+`DesignSession 0.1` 是产品导航层，不是科学事实来源。它只记录设计模式、运行方式、当前
+阶段、不可变配置 revision 和 run lineage：
+
+```text
+全流程设计 ── 一份 canonical 配置 ── 新科学 run
+按步骤设计 ── Stage N 结果 ── continuation config ── 新 Stage N+1 run
+开发者自检 ── developer-smoke-run ── 与普通项目目录隔离
+```
+
+continuation 只复制上游 RunManifest 当前声明且通过 SHA-256 的连续 Stage，不覆盖旧
+运行。用户修改 Stage 02 区域或任何上游决定时，系统创建新分支；DesignSession 负责把
+分支呈现成用户可理解的时间线，StageManifest 仍决定科学交接。
+
+项目目录只读取 `run-index.json` 的 category：
+
+- `project-run`：显示在普通项目和运行任务。
+- `archived-project-run`：移动到 `runs/_archive/`，只在设置中显示，可恢复。
+- `developer-smoke-run`：只在开发者自检历史中显示，禁止作为科学输入。
+
+归档是原子路径治理：移动前后都验证 RunManifest、StageManifest、ArtifactRef、大小和
+SHA-256；运行中、带锁或被远程任务引用的项目拒绝移动。归档不会改写科学文件或其
+checksum。
+
+Mol* 工作台采用单实例生命周期。一个 React 容器只创建一个 Viewer；结构、表示和区域
+图层通过串行 MVS state 更新，generation token 丢弃过期结果。首次结构加载固定
+`keepCamera=false` 并显式重置取景；只有 hierarchy 同时包含 structure 和
+representation 才报告“结构已就绪”。
+
+开发者自检分两层：
+
+- 快速确定性工程自检真实发布 Stage 01–07 的 manifest/attempt/artifact 链，但所有
+  产物标记为 `synthetic-engineering-smoke`，禁止用于科学结论。
+- 真实后端微型自检必须使用固定非 APOE fixture。当前 dev13 只建立诚实的
+  `not-started` 记录和资源预检边界；在 Stage 01–05 coherent run 与 Stage 06/07
+  adapter probe 真正执行前，不得报告为通过。

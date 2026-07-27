@@ -65,6 +65,7 @@ from .config import (
 from .workspace import (
     ResolvedRunConfig,
     RunIndexEntry,
+    load_resolved_run_config,
     upsert_run_index_entries,
 )
 
@@ -402,8 +403,7 @@ def execute_stage02_user_regions(
     root = run_root.resolve()
     current, current_path = _load_current_manifest(root)
     stage01, bundle_ref, bundle_path = _load_stage01(root, current)
-    resolved_path = root / "config-snapshot" / "resolved-config.json"
-    resolved = load_model(resolved_path, ResolvedRunConfig)
+    resolved, resolved_path = load_resolved_run_config(root)
     config = resolved.user_config.stage02
     if config is None or config.user_regions is None:
         raise ManifestStateError("Stage 02 用户区域执行缺少 user_regions 配置")
@@ -733,10 +733,7 @@ def execute_stage02(
     root = run_root.resolve()
     current, _ = _load_current_manifest(root)
     _stage01, _bundle_ref, bundle_path = _load_stage01(root, current)
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     config = resolved.user_config.stage02
     if config is None:
         raise ManifestStateError("resolved config 缺少 Stage 02 配置")
@@ -774,7 +771,7 @@ def execute_stage02_comparison(
     root = run_root.resolve()
     current, current_path = _load_current_manifest(root)
     stage01, bundle_ref, bundle_path = _load_stage01(root, current)
-    resolved = load_model(root / "config-snapshot" / "resolved-config.json", ResolvedRunConfig)
+    resolved, _ = load_resolved_run_config(root)
     stage02_config = resolved.user_config.stage02
     if stage02_config is None:
         raise ManifestStateError("resolved config 缺少 Stage 02 配置")

@@ -140,8 +140,11 @@ Agent 必须自动完成以下收尾工作：
     Stage 05 科学停止后的探索性放大还必须保存带来源 Bundle SHA-256 的人工授权，
     历史科学结论不得被改写。
 18. DesignSession 只组织产品流程、不可变配置 revision 和 run lineage，不是科学事实
-    来源。按步骤延续、修改上游决定或重新选择区域必须创建新的 continuation run；
-    禁止覆盖既有 RunManifest、StageManifest 或 artifact。
+    来源。未改变已完成上游科学选择的按步骤延续必须留在同一 run，并通过新的
+    config/RunManifest revision 继续；修改 target、已完成 Stage 配置、上游决定或重新
+    选择区域必须创建带 parent/fork 证据的新分支 run。两种方式都禁止覆盖既有
+    RunManifest、StageManifest 或 artifact。详细目录语义以
+    `docs/architecture/RUN_LAYOUT.md` 为准。
 19. 项目列表只能读取 `run-index.json` 分类，禁止用前端硬编码隐藏案例。归档必须原子
     移动、可恢复，并在移动前后验证 manifest/ArtifactRef 闭包；运行中、带锁或被远程
     job 引用的项目不得归档。
@@ -151,6 +154,9 @@ Agent 必须自动完成以下收尾工作：
 21. Mol* 页面只有在真实 structure 和 representation 都建立后才能显示“结构已就绪”。
     每个容器只拥有一个 Viewer，异步切换必须用 generation token 和串行加载保护；
     浏览器验收要验证可见非背景结构，不能只检查 canvas 元素存在。
+22. Stage 目录必须惰性创建；未开始的 Stage 不得预创建空壳。Project、Run、Stage、
+    Attempt 和 branch 的语义必须遵守 `docs/architecture/RUN_LAYOUT.md`。正常下一阶段
+    不得复制已完成 Stage；归档后的空项目壳只能依据 run-index 精确、安全地清理。
 
 ## 4. 阻塞与询问
 

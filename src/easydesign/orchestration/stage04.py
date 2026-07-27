@@ -54,7 +54,12 @@ from .boltzgen_tasks import (
     recover_interrupted_boltzgen_task,
 )
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
-from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
+from .workspace import (
+    ResolvedRunConfig,
+    RunIndexEntry,
+    load_resolved_run_config,
+    upsert_run_index_entries,
+)
 
 
 class Stage04Execution(BaseModel):
@@ -317,10 +322,7 @@ def execute_stage04(
         for reference in upstream.run.stage_manifest_refs
     ):
         raise ManifestStateError("Stage 04 已发布，禁止覆盖")
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     config = resolved.user_config.stage04
     if config is None:
         raise ManifestStateError("run config 没有 Stage 04 配置")

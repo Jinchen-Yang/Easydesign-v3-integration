@@ -43,7 +43,9 @@ from .workspace import (
     PreparedRun,
     ResolvedRunConfig,
     RunIndexEntry,
+    RunWorkspace,
     initialize_run_workspace,
+    load_resolved_run_config,
     upsert_run_index_entries,
 )
 
@@ -345,6 +347,232 @@ def initialize_continuation_run(
     )
 
 
+def _assert_completed_configuration_unchanged(
+    *,
+    root: Path,
+    previous: ResolvedRunConfig,
+    loaded: object,
+    completed_through_stage: int,
+) -> None:
+    """阻止同 run continuation 偷改已经完成的科学输入或配置。"""
+
+    current_config = getattr(loaded, "config", None)
+    if current_config is None:
+        raise ManifestStateError("continuation config 未解析为 EasyDesign 配置")
+    if current_config.design != previous.user_config.design:
+        raise ManifestStateError("修改 design 必须创建分支 run")
+    if (
+        current_config.workflow.max_strategy_rounds
+        != previous.user_config.workflow.max_strategy_rounds
+    ):
+        raise ManifestStateError("修改已冻结的策略轮次必须创建分支 run")
+
+    previous_stage01 = previous.user_config.stage01.model_dump(mode="python")
+    current_stage01 = current_config.stage01.model_dump(mode="python")
+    previous_source = previous_stage01["target"]["source"]
+    current_source = current_stage01["target"]["source"]
+    if previous_source.get("type") != current_source.get("type"):
+        raise ManifestStateError("修改 Stage 01 source 类型必须创建分支 run")
+    ignored_source_keys = {"path", "source_run_root"}
+    for key in ignored_source_keys:
+        previous_source.pop(key, None)
+        current_source.pop(key, None)
+    previous_prediction = previous_stage01.get("structure_prediction")
+    current_prediction = current_stage01.get("structure_prediction")
+    if isinstance(previous_prediction, dict) and isinstance(current_prediction, dict):
+        previous_msa = previous_prediction.get("msa")
+        current_msa = current_prediction.get("msa")
+        if isinstance(previous_msa, dict) and isinstance(current_msa, dict):
+            previous_msa.pop("path", None)
+            current_msa.pop("path", None)
+    if previous_stage01 != current_stage01:
+        raise ManifestStateError("修改已完成 Stage 01 配置必须创建分支 run")
+
+    source_path = getattr(loaded, "source_path", None)
+    if source_path is not None:
+        input_snapshot = previous.input_snapshot.verify(root)
+        if sha256_file(Path(source_path)) != sha256_file(input_snapshot):
+            raise ManifestStateError("continuation 输入与冻结 Stage 01 输入不一致")
+    precomputed_msa_path = getattr(loaded, "precomputed_msa_path", None)
+    if precomputed_msa_path is not None:
+        if previous.precomputed_msa_snapshot is None:
+            raise ManifestStateError("continuation 新增预计算 MSA 必须创建分支 run")
+        previous_msa_snapshot = previous.precomputed_msa_snapshot.verify(root)
+        if sha256_file(Path(precomputed_msa_path)) != sha256_file(previous_msa_snapshot):
+            raise ManifestStateError("continuation MSA 与冻结输入不一致")
+
+    for stage_number in range(2, completed_through_stage + 1):
+        field_name = f"stage{stage_number:02d}"
+        if getattr(current_config, field_name) != getattr(
+            previous.user_config,
+            field_name,
+        ):
+            raise ManifestStateError(
+                f"修改已完成 Stage {stage_number:02d} 配置必须创建分支 run"
+            )
+
+
+def continue_run_in_place(
+    *,
+    source_run_root: Path,
+    config_path: Path,
+    code_identity: CodeIdentity,
+    runtime_profile: RuntimeProfileRef,
+    continued_at: datetime | None = None,
+    continue_after_stage: int | None = None,
+) -> PreparedRun:
+    """不复制上游目录，在同一 run 中发布下一阶段配置 revision。"""
+
+    root = source_run_root.resolve()
+    current, current_path = _latest_manifest(root)
+    if current.status is not ExecutionStatus.SUCCEEDED:
+        raise ManifestStateError("同 run continuation 只接受 succeeded run")
+    loaded = load_run_config(config_path)
+    if loaded.config.project_id != current.project_id:
+        raise ManifestStateError("continuation config project_id 必须与当前 run 一致")
+    stage_numbers = sorted(
+        int(reference.producer_stage.split("-", maxsplit=1)[0])
+        for reference in current.stage_manifest_refs
+        if reference.producer_stage is not None
+    )
+    if not stage_numbers or stage_numbers != list(range(1, max(stage_numbers) + 1)):
+        raise ManifestStateError("同 run continuation 要求 Stage 从 01 连续")
+    for reference in current.stage_manifest_refs:
+        stage_manifest = load_model(reference.verify(root), StageManifest)
+        if stage_manifest.status is not ExecutionStatus.SUCCEEDED:
+            raise ManifestStateError(
+                f"同 run continuation 的上游未成功: {stage_manifest.stage_id}"
+            )
+    completed_through = max(stage_numbers)
+    if continue_after_stage is not None and continue_after_stage != completed_through:
+        raise ManifestStateError(
+            "从较早 Stage 改写流程必须创建分支 run，不能原地 continuation"
+        )
+    next_stage = completed_through + 1
+    if loaded.config.workflow.stop_after_stage < next_stage:
+        raise ManifestStateError("continuation config 没有启用下一 Stage")
+
+    previous_resolved, _ = load_resolved_run_config(root)
+    _assert_completed_configuration_unchanged(
+        root=root,
+        previous=previous_resolved,
+        loaded=loaded,
+        completed_through_stage=completed_through,
+    )
+    timestamp = (
+        datetime.now(UTC)
+        if continued_at is None
+        else normalize_aware_datetime(continued_at)
+    )
+    if timestamp <= current.updated_at:
+        timestamp = current.updated_at + timedelta(microseconds=1)
+    revision_number = current.revision + 1
+    revisions_root = root / "config-snapshot" / "revisions"
+    revision_name = f"revision-{revision_number:04d}"
+    revision_root = revisions_root / revision_name
+    if revision_root.exists():
+        raise ManifestStateError(f"config revision 已存在，拒绝覆盖: {revision_root}")
+    revisions_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{revision_name}.creating-",
+            dir=revisions_root,
+        )
+    )
+    try:
+        config_copy = staging / "easydesign.yaml"
+        shutil.copyfile(loaded.config_path, config_copy)
+        resolved = previous_resolved.model_copy(
+            update={
+                "user_config": loaded.config,
+                "stop_after_stage": loaded.config.workflow.stop_after_stage,
+                "runtime_profile": runtime_profile,
+            }
+        )
+        resolved_copy = staging / "resolved-config.json"
+        dump_model(resolved, resolved_copy)
+        _json_file(
+            {
+                "schema_version": "0.1",
+                "mode": "same-run-stage-continuation",
+                "project_id": current.project_id,
+                "run_id": current.run_id,
+                "completed_through_stage": completed_through,
+                "next_stage": next_stage,
+                "previous_run_manifest": current_path.name,
+                "previous_run_manifest_sha256": sha256_file(current_path),
+                "continued_at": timestamp.isoformat(),
+            },
+            staging / "continuation.json",
+        )
+        staging.rename(revision_root)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+    config_path_in_run = revision_root / "easydesign.yaml"
+    resolved_path_in_run = revision_root / "resolved-config.json"
+    config_ref = ArtifactRef.from_file(
+        run_root=root,
+        relative_path=config_path_in_run.relative_to(root).as_posix(),
+        artifact_id="run-config",
+        role="user-config-snapshot",
+        file_format="yaml",
+    )
+    continued = current.continue_after_success(
+        updated_at=timestamp,
+        config_snapshot=config_ref,
+        easydesign_version=easydesign.__version__,
+        code_identity=code_identity,
+        runtime_profile=runtime_profile,
+    )
+    manifest_path = root / "manifests" / f"run-manifest.v{continued.revision:04d}.json"
+    try:
+        dump_model(continued, manifest_path)
+        _atomic_text(
+            f"revisions/{revision_name}/resolved-config.json\n",
+            root / "config-snapshot" / "CURRENT",
+        )
+        _atomic_text(manifest_path.name + "\n", root / "manifests" / "LATEST")
+    except Exception:
+        revision_root.rename(
+            revisions_root / f".{revision_name}.unpublished"
+        )
+        raise
+    runs_root = root.parents[1]
+    upsert_run_index_entries(
+        runs_root,
+        (
+            RunIndexEntry(
+                category="project-run",
+                path=root.relative_to(runs_root).as_posix(),
+                layout_version="2",
+                status="running",
+                project_id=current.project_id,
+                run_id=current.run_id,
+                notes=(
+                    f"Continued in place from Stage {completed_through:02d} "
+                    f"to Stage {next_stage:02d}.",
+                ),
+            ),
+        ),
+        generated_at=timestamp,
+    )
+    workspace = RunWorkspace(
+        runs_root=runs_root,
+        run_root=root,
+        project_id=current.project_id,
+        run_id=current.run_id,
+        config_snapshot=config_path_in_run,
+        input_snapshot=previous_resolved.input_snapshot.verify(root),
+        resolved_config=resolved_path_in_run,
+        run_manifest=manifest_path,
+        latest_manifest_pointer=root / "manifests" / "LATEST",
+    )
+    return PreparedRun(loaded_config=loaded, workspace=workspace)
+
+
 def execute_stage03(
     *,
     run_root: Path,
@@ -360,10 +588,7 @@ def execute_stage03(
         for reference in upstream.run.stage_manifest_refs
     ):
         raise ManifestStateError("Stage 03 已发布，禁止覆盖")
-    resolved_config = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved_config, _ = load_resolved_run_config(root)
     config = resolved_config.user_config.stage03
     if config is None:
         raise ManifestStateError("run config 没有 Stage 03 配置")

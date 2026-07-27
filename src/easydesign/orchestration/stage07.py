@@ -95,7 +95,12 @@ from .complex_prediction_support import (
 from .config import ResolvedProtenixMsaProviderConfig
 from .stage04 import _atomic_text
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
-from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
+from .workspace import (
+    ResolvedRunConfig,
+    RunIndexEntry,
+    load_resolved_run_config,
+    upsert_run_index_entries,
+)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 ComplexAdapterBuilder = Callable[
@@ -1301,10 +1306,7 @@ def _execute_stage07(
         for item in upstream.run.stage_manifest_refs
     ):
         raise ManifestStateError("Stage 07 已发布，禁止覆盖")
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     config = resolved.user_config.stage07
     stage04_config = resolved.user_config.stage04
     if config is None or stage04_config is None:

@@ -51,8 +51,13 @@ def test_initialize_sequence_run_creates_one_shallow_workspace(tmp_path: Path) -
     assert workspace.config_snapshot.is_file()
     assert workspace.input_snapshot.is_file()
     assert workspace.resolved_config.is_file()
-    assert all(workspace.stage_root(stage).is_dir() for stage in StageId)
-    assert (workspace.run_root / "results").is_dir()
+    assert workspace.stage_root(StageId.TARGET_PREPARATION).is_dir()
+    assert all(
+        not workspace.stage_root(stage).exists()
+        for stage in StageId
+        if stage is not StageId.TARGET_PREPARATION
+    )
+    assert not (workspace.run_root / "results").exists()
     assert prepared.protenix_input == (
         workspace.run_root
         / "01-target-preparation/attempt-0001/inputs/protenix-input.json"
@@ -77,6 +82,12 @@ def test_initialize_sequence_run_creates_one_shallow_workspace(tmp_path: Path) -
 
     index = load_model(tmp_path / "runs/run-index.json", RunIndex)
     assert index.entries[0].path == "apoe/20260724-001"
+    navigation = json.loads(
+        (tmp_path / "runs/apoe/PROJECT.json").read_text(encoding="utf-8")
+    )
+    assert navigation["project_id"] == "apoe"
+    assert navigation["runs"][0]["run_id"] == "20260724-001"
+    assert not (tmp_path / "runs/apoe/PRIMARY").exists()
 
 
 def test_initialize_sequence_run_refuses_existing_run(tmp_path: Path) -> None:

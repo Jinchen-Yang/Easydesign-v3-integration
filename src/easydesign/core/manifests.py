@@ -387,3 +387,44 @@ class RunManifest(BaseModel):
             }
         )
         return self.__class__.model_validate(payload)
+
+    def continue_after_success(
+        self,
+        *,
+        updated_at: datetime,
+        config_snapshot: ArtifactRef,
+        easydesign_version: str,
+        code_identity: CodeIdentity,
+        runtime_profile: RuntimeProfileRef,
+    ) -> Self:
+        """在保留终态快照的前提下，为下一 Stage 重新开启同一个 run。
+
+        只有成功终态可以继续。失败、科学停止或等待人工动作必须先使用各自的恢复/
+        决策协议，不能借本方法绕过。
+        """
+
+        from .serialization import canonical_model_sha256
+
+        if self.status is not ExecutionStatus.SUCCEEDED:
+            raise ManifestStateError("只有 succeeded RunManifest 可以继续下一 Stage")
+        if self.schema_version not in {"1.1", "1.2"}:
+            raise ManifestStateError("旧 RunManifest schema 不支持同 run 阶段延续")
+        if updated_at <= self.updated_at:
+            raise ManifestStateError("续跑 revision 的 updated_at 必须晚于当前 revision")
+        payload = self.model_dump(mode="python")
+        payload.update(
+            {
+                "revision": self.revision + 1,
+                "previous_manifest_sha256": canonical_model_sha256(self),
+                "updated_at": updated_at,
+                "status": ExecutionStatus.RUNNING,
+                "completed_at": None,
+                "config_snapshot": config_snapshot,
+                "easydesign_version": easydesign_version,
+                "code_commit": None,
+                "code_identity": code_identity,
+                "runtime_profile": runtime_profile,
+                "workflow_state": None,
+            }
+        )
+        return self.__class__.model_validate(payload)

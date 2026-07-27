@@ -18,6 +18,10 @@
 
 ## Now
 
+- `[ENG-017]` 重构 run 目录语义：正常逐阶段延续改为同一 run 的不可变配置/manifest
+  revision，Stage 目录惰性创建；增加项目导航文件、归档空壳清理和 legacy dry-run
+  迁移检查。稳定规则记录在 `docs/architecture/RUN_LAYOUT.md`，不把唯一规则副本放入
+  被忽略的运行目录。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与

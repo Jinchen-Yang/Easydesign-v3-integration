@@ -71,7 +71,11 @@ from .sequence_prediction import execute_sequence_prediction
 from .stage01_handlers import execute_pse_source
 from .stage01_sources import execute_stage01_source
 from .stage02 import execute_stage02
-from .stage03 import execute_stage03, initialize_continuation_run
+from .stage03 import (
+    continue_run_in_place,
+    execute_stage03,
+    initialize_continuation_run,
+)
 from .stage04 import Stage04Execution, execute_stage04
 from .stage05 import ComplexAdapterBuilder, Stage05Execution, execute_stage05
 from .stage06 import Stage06Execution, execute_stage06
@@ -80,11 +84,11 @@ from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
     PseRequestWriter,
-    ResolvedRunConfig,
     RunIndex,
     RunWorkspace,
     initialize_pse_run,
     initialize_run_workspace,
+    load_resolved_run_config,
 )
 
 PROTENIX_V2_CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
@@ -671,17 +675,25 @@ def execute_pipeline(
     loaded = context.loaded_config
     viewer_status: str | None
     if continue_from_run is not None:
-        if run_id is None:
-            raise ConfigurationError("--from-run 必须显式提供 --run-id")
-        prepared_continuation = initialize_continuation_run(
-            source_run_root=continue_from_run,
-            config_path=loaded.config_path,
-            runs_root=context.plan.runs_root,
-            run_id=run_id,
-            code_identity=code_identity,
-            runtime_profile=context.loaded_profile.identity,
-            copy_through_stage=continue_after_stage,
-        )
+        source_manifest, _ = _load_latest_run_manifest(continue_from_run.resolve())
+        if run_id is None or run_id == source_manifest.run_id:
+            prepared_continuation = continue_run_in_place(
+                source_run_root=continue_from_run,
+                config_path=loaded.config_path,
+                code_identity=code_identity,
+                runtime_profile=context.loaded_profile.identity,
+                continue_after_stage=continue_after_stage,
+            )
+        else:
+            prepared_continuation = initialize_continuation_run(
+                source_run_root=continue_from_run,
+                config_path=loaded.config_path,
+                runs_root=context.plan.runs_root,
+                run_id=run_id,
+                code_identity=code_identity,
+                runtime_profile=context.loaded_profile.identity,
+                copy_through_stage=continue_after_stage,
+            )
         run_root = prepared_continuation.workspace.run_root
         run_manifest = prepared_continuation.workspace.run_manifest
         viewer_status = None
@@ -1001,10 +1013,7 @@ def resume_pipeline(
     current, _ = _load_latest_run_manifest(root)
     if current.status is not ExecutionStatus.RUNNING:
         raise ManifestStateError("runs resume 只接受 running run")
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     completed = {reference.producer_stage for reference in current.stage_manifest_refs}
     if (
         resolved.stop_after_stage >= 4
@@ -1086,10 +1095,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
 
     root = run_root.expanduser().resolve()
     current, _ = _load_latest_run_manifest(root)
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     refs = {item.producer_stage: item for item in current.stage_manifest_refs}
     stage05_id = str(StageId.PILOT_FILTERING)
     stage04_id = str(StageId.PILOT_GENERATION)
@@ -1158,15 +1164,15 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
     """从 run 内不可变快照重建 Stage 01 continuation，不读取原项目文件。"""
 
     root = run_root.resolve()
-    resolved_path = root / "config-snapshot" / "resolved-config.json"
-    resolved = load_model(resolved_path, ResolvedRunConfig)
+    resolved, resolved_path = load_resolved_run_config(root)
     source_snapshot = resolved.input_snapshot.verify(root)
     precomputed_msa_snapshot = (
         resolved.precomputed_msa_snapshot.verify(root)
         if resolved.precomputed_msa_snapshot is not None
         else None
     )
-    config_path = root / "config-snapshot" / "easydesign.yaml"
+    current_run, _ = _load_latest_run_manifest(root)
+    config_path = current_run.config_snapshot.verify(root)
     if resolved.detected_input_format in {
         TargetInputFormat.SEQUENCE,
         TargetInputFormat.FASTA,

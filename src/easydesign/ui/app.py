@@ -1360,17 +1360,13 @@ def create_ui_app(
                     handle.write(generated.read_bytes())
                     temporary = Path(handle.name)
                 temporary.replace(canonical)
-                selected_run_id = payload.run_id or (
-                    datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
-                    + f"-stage{next_stage:02d}"
-                )
                 job = service.jobs.launch(
                     operation="run",
                     config_path=generated,
                     run_root=source,
                     profile_path=service.profile_path,
                     runs_root=service.registry.runs_root,
-                    run_id=selected_run_id,
+                    run_id=None,
                     session_id=session.session_id,
                     session_root=service.sessions.root,
                     stage_number=next_stage,

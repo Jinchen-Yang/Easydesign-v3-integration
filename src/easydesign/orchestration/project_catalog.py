@@ -224,6 +224,36 @@ def _verify_run_at_path(root: Path, relative_path: str) -> RunManifest:
     return run
 
 
+def prune_archived_project_shells(runs_root: Path) -> tuple[str, ...]:
+    """只删除 run-index 已归档且当前为空的一级项目目录。"""
+
+    root = runs_root.resolve()
+    index = _load_index(root)
+    archived = {
+        entry.project_id
+        for entry in index.entries
+        if entry.category == ARCHIVED_PROJECT_RUN and entry.project_id is not None
+    }
+    active = {
+        entry.project_id
+        for entry in index.entries
+        if entry.category == PROJECT_RUN and entry.project_id is not None
+    }
+    removed: list[str] = []
+    for project_id in sorted(archived - active):
+        project_root = root / project_id
+        if not project_root.exists():
+            continue
+        if project_root.is_symlink() or not project_root.is_dir():
+            raise ManifestStateError(f"归档项目壳不是普通目录: {project_root}")
+        contents = tuple(project_root.iterdir())
+        if contents:
+            continue
+        project_root.rmdir()
+        removed.append(project_id)
+    return tuple(removed)
+
+
 def _move_project(
     runs_root: Path,
     *,
@@ -315,6 +345,8 @@ def _move_project(
             generated_at=timestamp,
         )
         index_replaced = True
+        if archive:
+            prune_archived_project_shells(root)
     except Exception:
         for source, destination in reversed(completed):
             if destination.exists() and not source.exists():

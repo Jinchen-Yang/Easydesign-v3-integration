@@ -88,6 +88,7 @@
 | `UI-009` | Product UI | `smoke-validated` | 全流程七阶段可自由浏览；按步骤路线已从真实 APOE Stage 01 建立独立 Stage 02 continuation；开发者自检与科研项目保持隔离。 |
 | `UI-010` | Product UI | `smoke-validated` | 项目可在运行索引中显式指定一条主展示运行；新分支继续保留在历史中，但不会擅自覆盖首页选定结果。 |
 | `ENG-016` | Core Engineering | `smoke-validated` | DesignSession 0.1 的不可变 config revision、run lineage、冻结输入重定位和等待审批状态已由真实 APOE continuation 验证。 |
+| `ENG-017` | Core Engineering | `implemented` | 统一 Project/Run/Stage/Attempt/branch 语义，正常阶段延续留在同一 run；完成惰性目录、项目导航、归档空壳清理和 legacy 迁移验收后提升为 smoke-validated。 |
 | `REP-003` | Reporting & Visualization | `implemented` | Stage 02 产品层已提供区域理由、批准人和证据限制确认；保存后的科学授权仍使用现有 Stage 02/Decision 契约。 |
 | `REP-004` | Reporting & Visualization | `smoke-validated` | Mol* 单实例、过期加载防护、表示/相机就绪门已通过真实 143 aa APOE FASTA 与 PSE 红蓝黄页面的可见结构和非背景像素验收。 |
 | `S02-009` | Scientific Pipeline | `smoke-validated` | APOE PSE 三层编辑器已将 A/B/C 9/14/14 保存为新的 `manual-residue-list` Stage 02 分支，并停在人工确认门；旧运行保持不变。 |

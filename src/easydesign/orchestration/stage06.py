@@ -61,7 +61,11 @@ from .boltzgen_tasks import (
 from .config import Stage06Config
 from .stage04 import _atomic_text
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
-from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
+from .workspace import (
+    RunIndexEntry,
+    load_resolved_run_config,
+    upsert_run_index_entries,
+)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -461,10 +465,7 @@ def execute_stage06(
         for item in upstream.run.stage_manifest_refs
     ):
         raise ManifestStateError("Stage 06 已发布，禁止覆盖")
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     config = resolved.user_config.stage06
     stage04_config = resolved.user_config.stage04
     if config is None or stage04_config is None:

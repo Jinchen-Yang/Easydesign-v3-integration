@@ -81,6 +81,7 @@ from .project_catalog import (
     ProjectPrimaryRunOutcome,
     archive_project,
     list_project_catalog,
+    prune_archived_project_shells,
     restore_project,
     select_project_primary_run,
 )
@@ -105,6 +106,7 @@ from .sequence_prediction import (
 from .stage02 import CompletedStage02Run, execute_stage02, execute_stage02_comparison
 from .stage03 import (
     Stage03Execution,
+    continue_run_in_place,
     execute_stage03,
     initialize_continuation_run,
 )
@@ -114,6 +116,8 @@ from .workspace import (
     PreparedPseRun,
     PreparedRun,
     PreparedSequenceRun,
+    ProjectNavigation,
+    ProjectRunNavigation,
     ResolvedRunConfig,
     RunIndex,
     RunIndexEntry,
@@ -121,6 +125,7 @@ from .workspace import (
     initialize_pse_run,
     initialize_run_workspace,
     initialize_sequence_run,
+    load_resolved_run_config,
     replace_run_index_entries,
     upsert_run_index_entries,
 )
@@ -145,6 +150,8 @@ __all__ = [
     "ProtenixV2Runtime",
     "ProtenixMsaProviderConfig",
     "PreparedSequenceRun",
+    "ProjectNavigation",
+    "ProjectRunNavigation",
     "PreparedPseRun",
     "PreparedRun",
     "PipelineExecution",
@@ -183,6 +190,7 @@ __all__ = [
     "Stage06Config",
     "Stage07Config",
     "Stage03Execution",
+    "continue_run_in_place",
     "Stage06Execution",
     "Stage07Execution",
     "TargetInputFormat",
@@ -213,9 +221,11 @@ __all__ = [
     "initialize_runtime_profile",
     "initialize_run_workspace",
     "initialize_sequence_run",
+    "load_resolved_run_config",
     "load_run_config",
     "load_runtime_profile",
     "list_project_catalog",
+    "prune_archived_project_shells",
     "list_runs",
     "list_remote_executor_ids",
     "list_remote_job_records",

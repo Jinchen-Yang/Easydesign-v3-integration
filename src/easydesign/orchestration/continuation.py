@@ -28,7 +28,7 @@ from .config import (
     Stage07Config,
     load_run_config,
 )
-from .workspace import ResolvedRunConfig
+from .workspace import load_resolved_run_config
 
 
 def _latest_run(run_root: Path) -> RunManifest:
@@ -257,10 +257,7 @@ def _rebase_continuation_inputs(
 ) -> None:
     """让新 revision 只引用已冻结、可解析的输入，不依赖旧项目目录。"""
 
-    resolved_path = source_run_root / "config-snapshot" / "resolved-config.json"
-    if not resolved_path.is_file():
-        raise ManifestStateError("continuation source 缺少 resolved-config.json")
-    resolved = load_model(resolved_path, ResolvedRunConfig)
+    resolved, _ = load_resolved_run_config(source_run_root)
     stage01 = payload.get("stage01")
     if not isinstance(stage01, dict):
         return

@@ -184,33 +184,38 @@ runs/
 ├── run-index.json                 # 可再生导航索引，不是科学 artifact
 ├── _development/                  # backend smoke、外部服务诊断
 ├── _archive/                      # 旧布局迁移清单，不放当前项目 run
-└── <project_id>/<run_id>/
-    ├── input-snapshot/
-    ├── config-snapshot/
-    │   ├── easydesign.yaml
-    │   └── resolved-config.json
-    ├── manifests/
+└── <project_id>/
+    ├── PROJECT.json               # 可再生项目导航投影
+    ├── PRIMARY                    # 可选的主展示 run ID
+    └── <run_id>/
+      ├── input-snapshot/
+      ├── config-snapshot/
+      │   ├── easydesign.yaml
+      │   ├── resolved-config.json
+      │   ├── CURRENT
+      │   └── revisions/
+      ├── manifests/
     │   ├── LATEST
     │   ├── run-manifest.v0001.json
     │   └── run-manifest.v0002.json
-    ├── 01-target-preparation/
+      ├── 01-target-preparation/
     │   └── attempt-0001/
     │       ├── inputs/
     │       ├── logs/
     │       └── artifacts/
-    ├── 02-hotspot-discovery/
-    ├── 03-boltzgen-configuration/
-    ├── 04-pilot-generation/
-    ├── 05-pilot-filtering/
-    ├── 06-scale-generation-and-refolding/
-    ├── 07-final-filtering-and-selection/
-    └── results/                    # 面向人的最终汇总，不取代正式 artifact
+      ├── 02-hotspot-discovery/
+      ├── ...
+      └── results/                  # 面向人的最终汇总，不取代正式 artifact
 ```
 
 同一次实验从 Stage 01 到 Stage 07 始终使用同一个 run 根目录；七个 Stage 是同级目录，
 下游不得嵌套到上游目录。`attempt-0001/` 直接位于 Stage 目录，取消没有语义增量的
 `attempts/` 中间层。后端安装和服务可用性 smoke 不属于项目 run，必须进入
-`_development/`。
+`_development/`。Stage 目录只在真正开始时创建，未到达阶段不得预创建空壳。
+
+正常的“配置下一步”在同一 run 中保存新的 config/RunManifest revision；只有改变
+target、已完成 Stage 参数、上游科学决定或重新选区时才创建分支 run。完整稳定规则见
+[`RUN_LAYOUT.md`](architecture/RUN_LAYOUT.md)。
 
 早期运行可以整体迁移，但不得改写内部文件。迁移前后必须验证目录 fingerprint 和所有
 manifest artifact 引用，并在 `_archive/migrations/` 保存旧路径、新路径、文件数、字节数
@@ -397,10 +402,11 @@ CLI 不拼接 YAML。
 每个文件在源代码中固定 SHA-256，运行时验证后复制到 attempt；StrategyBundle 同时记录
 BoltzGen `0.3.2`、固定 commit 和上游 artifact hash。
 
-已成功结束的 Stage 02 run 不能追加 RunManifest revision。下游工作使用显式
-`--from-run` continuation：新 run 按字节复制 Stage 01/02 目录和输入 snapshot，复验原
-ArtifactRef，并在 `continuation-source.json` 记录源 RunManifest hash。源 run 和其
-artifact 保持不变；这不是扫描或重新导入科学结果。
+已成功结束的 Stage 02 可以在不改变上游科学身份时继续同一个 run：当前终态
+RunManifest 保持不可变，新配置写入 `config-snapshot/revisions/`，新的 RunManifest
+revision 将 run 重新置为 `running`。如果从较早 Stage 改写参数或重新选区，则建立带
+parent/fork 证据的分支 run。legacy `--from-run --run-id NEW_ID` 复制式 continuation
+继续可读，但不再是产品默认路径。
 
 ### Stage 04 任务、进度和恢复
 
@@ -854,19 +860,21 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 
 ```text
 全流程设计 ── 一份 canonical 配置 ── 新科学 run
-按步骤设计 ── Stage N 结果 ── continuation config ── 新 Stage N+1 run
+按步骤设计 ── Stage N 结果 ── config revision ── 同一 run 的 Stage N+1
+修改上游决定 ── branch config ── 新分支 run
 开发者自检 ── developer-smoke-run ── 与普通项目目录隔离
 ```
 
-continuation 只复制上游 RunManifest 当前声明且通过 SHA-256 的连续 Stage，不覆盖旧
-运行。用户修改 Stage 02 区域或任何上游决定时，系统创建新分支；DesignSession 负责把
-分支呈现成用户可理解的时间线，StageManifest 仍决定科学交接。
+正常 continuation 验证上游 RunManifest 当前声明且通过 SHA-256 的连续 Stage，不复制
+上游目录，也不覆盖旧 manifest。用户修改 Stage 02 区域或任何已完成上游决定时，系统
+创建新分支；DesignSession 负责把同 run 的阶段推进和跨 run 分支呈现成用户可理解的
+时间线，StageManifest 仍决定科学交接。
 
 生成下一阶段 revision 时，本地输入和 precomputed MSA 也必须从源 run 的冻结快照验证，
 再原子复制到产品项目的 `inputs/continuation/<source_run_id>/` 并写入相对路径，不能继续
-引用旧项目目录。worker 创建新 run 后计算稳定 run key，并把 run key、阶段和终态写回
-DesignSession。UI 服务启动时从 `run-index.json` 注册已验证 run，深链接不依赖用户先访问
-项目列表。
+引用旧项目目录。worker 继续同一 run 时保持稳定 run key，并把 run key、阶段和终态写回
+DesignSession；分支运行才产生新的 run key。UI 服务启动时从 `run-index.json` 注册已验证
+run，深链接不依赖用户先访问项目列表。
 
 项目目录只读取 `run-index.json` 的 category：
 

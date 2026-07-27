@@ -40,7 +40,11 @@ from easydesign.stages.s02_hotspot_discovery import (
 )
 
 from .config import UserRegionInitialApprovalConfig
-from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
+from .workspace import (
+    RunIndexEntry,
+    load_resolved_run_config,
+    upsert_run_index_entries,
+)
 
 APPROVAL_ATTEMPT_ID = "attempt-0002"
 
@@ -632,10 +636,7 @@ def approve_hotspots(
         for reference in run.stage_manifest_refs
         if reference.producer_stage != str(StageId.HOTSPOT_DISCOVERY)
     )
-    resolved = load_model(
-        root / "config-snapshot" / "resolved-config.json",
-        ResolvedRunConfig,
-    )
+    resolved, _ = load_resolved_run_config(root)
     completed = resolved.stop_after_stage == 2
     next_run = run.next_revision(
         updated_at=timestamp,

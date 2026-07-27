@@ -127,6 +127,26 @@ class ResolvedRunConfig(BaseModel):
         return self
 
 
+def load_resolved_run_config(run_root: Path) -> tuple[ResolvedRunConfig, Path]:
+    """读取当前解析配置；兼容没有 CURRENT 指针的历史 run。"""
+
+    root = run_root.resolve()
+    config_root = root / "config-snapshot"
+    pointer = config_root / "CURRENT"
+    if pointer.is_file():
+        relative = pointer.read_text(encoding="utf-8").strip()
+        if not relative:
+            raise ManifestStateError("config-snapshot/CURRENT 不能为空")
+        path = (config_root / relative).resolve()
+        if not path.is_relative_to(config_root.resolve()):
+            raise ManifestStateError("config-snapshot/CURRENT 逃逸 config-snapshot")
+    else:
+        path = config_root / "resolved-config.json"
+    if not path.is_file():
+        raise ManifestStateError(f"当前 resolved config 不存在: {path}")
+    return load_model(path, ResolvedRunConfig), path
+
+
 class RunIndexEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -172,6 +192,32 @@ class RunIndex(BaseModel):
             ):
                 raise ValueError("主展示运行必须是含 project_id/run_id 的 project-run")
         return self
+
+
+class ProjectRunNavigation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: str = Field(pattern=ID_PATTERN)
+    relative_path: str = Field(min_length=1)
+    status: str = Field(min_length=1, max_length=64)
+    is_primary: bool = False
+
+
+class ProjectNavigation(BaseModel):
+    """项目目录中的可再生导航投影，不属于科学证据。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.1"
+    project_id: str = Field(pattern=ID_PATTERN)
+    primary_run_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    generated_at: datetime
+    runs: tuple[ProjectRunNavigation, ...]
+
+    @field_validator("generated_at")
+    @classmethod
+    def normalize_generated_at(cls, value: datetime) -> datetime:
+        return normalize_aware_datetime(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +308,94 @@ def _atomic_replace_json(model: BaseModel, path: Path) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def _atomic_replace_text(text: str, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _sync_project_navigation_files(runs_root: Path, index: RunIndex) -> None:
+    """从 run-index 生成 PROJECT.json/PRIMARY，并移除归档后的导航空壳。"""
+
+    root = runs_root.resolve()
+    active: dict[str, list[RunIndexEntry]] = {}
+    for entry in index.entries:
+        if (
+            entry.category != "project-run"
+            or entry.project_id is None
+            or entry.run_id is None
+        ):
+            continue
+        parts = Path(entry.path).parts
+        if len(parts) < 2 or parts[0] != entry.project_id:
+            continue
+        active.setdefault(entry.project_id, []).append(entry)
+
+    for project_id, entries in active.items():
+        project_root = root / project_id
+        if project_root.is_symlink():
+            raise ManifestStateError(f"项目目录不能是符号链接: {project_root}")
+        project_root.mkdir(parents=True, exist_ok=True)
+        ordered = sorted(entries, key=lambda entry: (entry.run_id or "", entry.path))
+        primary = next((entry.run_id for entry in ordered if entry.is_project_primary), None)
+        navigation = ProjectNavigation(
+            project_id=project_id,
+            primary_run_id=primary,
+            generated_at=index.generated_at,
+            runs=tuple(
+                ProjectRunNavigation(
+                    run_id=entry.run_id or "",
+                    relative_path=entry.path,
+                    status=entry.status,
+                    is_primary=entry.is_project_primary,
+                )
+                for entry in ordered
+            ),
+        )
+        _atomic_replace_json(navigation, project_root / "PROJECT.json")
+        primary_path = project_root / "PRIMARY"
+        if primary is None:
+            primary_path.unlink(missing_ok=True)
+        else:
+            _atomic_replace_text(primary + "\n", primary_path)
+
+    if not root.is_dir():
+        return
+    for project_root in root.iterdir():
+        if (
+            not project_root.is_dir()
+            or project_root.is_symlink()
+            or project_root.name.startswith("_")
+            or project_root.name in active
+        ):
+            continue
+        project_file = project_root / "PROJECT.json"
+        primary_file = project_root / "PRIMARY"
+        if project_file.is_file():
+            project_file.unlink()
+            primary_file.unlink(missing_ok=True)
+            try:
+                project_root.rmdir()
+            except OSError:
+                pass
+
+
 def upsert_run_index_entries(
     runs_root: Path,
     entries: tuple[RunIndexEntry, ...],
@@ -285,6 +419,7 @@ def upsert_run_index_entries(
         entries=tuple(by_path[path] for path in sorted(by_path)),
     )
     _atomic_replace_json(index, index_path)
+    _sync_project_navigation_files(runs_root, index)
     return index_path
 
 
@@ -302,6 +437,7 @@ def replace_run_index_entries(
         entries=tuple(sorted(entries, key=lambda entry: entry.path)),
     )
     _atomic_replace_json(index, index_path)
+    _sync_project_navigation_files(runs_root, index)
     return index_path
 
 
@@ -346,10 +482,6 @@ def _initialize_workspace(
         )
     )
     try:
-        for stage_id in StageId:
-            (staging / str(stage_id)).mkdir()
-        (staging / "results").mkdir()
-
         config_snapshot = staging / "config-snapshot" / "easydesign.yaml"
         input_snapshot = (
             staging / "input-snapshot" / loaded.source_path.name
@@ -422,6 +554,7 @@ def _initialize_workspace(
         )
         resolved_path = staging / "config-snapshot" / "resolved-config.json"
         dump_model(resolved, resolved_path)
+        _exclusive_text("resolved-config.json\n", staging / "config-snapshot" / "CURRENT")
 
         manifest = RunManifest(
             schema_version="1.2" if code_identity is not None else "1.0",

@@ -311,6 +311,58 @@ def test_run_manifest_11_preserves_structured_code_identity(now) -> None:
     assert revised.code_commit is None
 
 
+def test_succeeded_run_can_continue_with_new_immutable_config_revision(now) -> None:
+    old_identity = CodeIdentity(
+        version="0.1.0.dev13",
+        source=CodeIdentitySource.GIT,
+        git_commit="1" * 40,
+        dirty=False,
+    )
+    new_identity = CodeIdentity(
+        version="0.1.0.dev14",
+        source=CodeIdentitySource.GIT,
+        git_commit="2" * 40,
+        dirty=False,
+    )
+    profile = RuntimeProfileRef(profile_id="server-local", sha256="3" * 64)
+    running = RunManifest(
+        schema_version="1.2",
+        revision=1,
+        project_id="apoe",
+        run_id="run-001",
+        easydesign_version="0.1.0.dev13",
+        code_identity=old_identity,
+        runtime_profile=profile,
+        status=ExecutionStatus.RUNNING,
+        evidence_status=EvidenceStatus.IMPLEMENTED,
+        created_at=now,
+        updated_at=now,
+        config_snapshot=artifact("config-v1"),
+    )
+    succeeded = running.next_revision(
+        updated_at=now + timedelta(seconds=1),
+        status=ExecutionStatus.SUCCEEDED,
+        completed_at=now + timedelta(seconds=1),
+    )
+
+    continued = succeeded.continue_after_success(
+        updated_at=now + timedelta(seconds=2),
+        config_snapshot=artifact("config-v2"),
+        easydesign_version="0.1.0.dev14",
+        code_identity=new_identity,
+        runtime_profile=profile,
+    )
+
+    assert succeeded.status is ExecutionStatus.SUCCEEDED
+    assert succeeded.completed_at is not None
+    assert continued.status is ExecutionStatus.RUNNING
+    assert continued.completed_at is None
+    assert continued.revision == 3
+    assert continued.previous_manifest_sha256 == canonical_model_sha256(succeeded)
+    assert continued.config_snapshot.artifact_id == "config-v2"
+    assert continued.code_identity == new_identity
+
+
 def test_run_manifest_11_rejects_legacy_code_commit(now) -> None:
     with pytest.raises(ValidationError, match="不得.*code_commit"):
         RunManifest(

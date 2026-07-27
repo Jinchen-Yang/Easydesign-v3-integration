@@ -51,6 +51,7 @@ from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.project_catalog import (
     archive_project,
     list_project_catalog,
+    prune_archived_project_shells,
     restore_project,
     select_project_primary_run,
 )
@@ -399,6 +400,13 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(projects_select_primary)
     projects_select_primary.add_argument("--runs-root", type=Path)
     _add_json(projects_select_primary)
+    projects_prune_empty = projects_commands.add_parser(
+        "prune-empty",
+        help="只清理索引已归档项目留下的空一级目录",
+    )
+    _add_profile(projects_prune_empty)
+    projects_prune_empty.add_argument("--runs-root", type=Path)
+    _add_json(projects_prune_empty)
 
     viewer_parser = commands.add_parser("viewer", help="查看自包含结构报告")
     viewer_commands = viewer_parser.add_subparsers(dest="viewer_command", required=True)
@@ -592,6 +600,25 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 print(
                     f"项目首页已改为展示：{selected.project_id}/{selected.run_id}"
                 )
+            return 0
+        if arguments.projects_command == "prune-empty":
+            removed = prune_archived_project_shells(root)
+            prune_payload = {"removed_project_shells": list(removed)}
+            if arguments.json:
+                print(
+                    json.dumps(
+                        prune_payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            elif removed:
+                print("已清理归档空项目目录：")
+                for project_id in removed:
+                    print(f"- {project_id}")
+            else:
+                print("没有可安全清理的归档空项目目录。")
             return 0
         project_outcome = (
             archive_project(root, arguments.project_id)

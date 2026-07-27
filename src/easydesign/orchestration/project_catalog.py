@@ -13,6 +13,7 @@ from easydesign.core import (
     RunManifest,
     StageManifest,
     load_model,
+    sha256_file,
 )
 
 from .workspace import (
@@ -29,6 +30,11 @@ PAUSED_INDEX_STATUSES = {
     "awaiting-human-approval",
     "awaiting-region-selection",
     "stage02-blocked",
+}
+LEGACY_TERMINAL_INDEX_STATUSES = {
+    "stage01-succeeded",
+    "succeeded",
+    "failed",
 }
 
 
@@ -87,6 +93,18 @@ def list_project_catalog(
 def _assert_movable(root: Path, entry: RunIndexEntry) -> None:
     if entry.run_id is None or entry.project_id is None:
         raise ManifestStateError(f"项目运行索引缺少 project_id/run_id: {entry.path}")
+    source = (root / entry.path).resolve()
+    if not source.is_relative_to(root) or not source.is_dir():
+        raise ManifestStateError(f"运行路径不在 runs_root 或不存在: {entry.path}")
+    if entry.layout_version == "legacy-0":
+        if entry.status not in LEGACY_TERMINAL_INDEX_STATUSES:
+            raise ManifestStateError(
+                f"旧版运行 {entry.path} 状态为 {entry.status}，不能归档或恢复"
+            )
+        _legacy_layout_fingerprint(root, entry.path)
+        if any(source.rglob("*.lock")):
+            raise ManifestStateError(f"运行目录仍存在锁文件，拒绝移动: {entry.path}")
+        return
     run = _verify_run_at_path(root, entry.path)
     run_status = str(run.status)
     if (
@@ -96,11 +114,31 @@ def _assert_movable(root: Path, entry: RunIndexEntry) -> None:
         raise ManifestStateError(
             f"运行 {entry.path} 状态为 {run.status}，未终态运行不能归档或恢复"
         )
-    source = (root / entry.path).resolve()
-    if not source.is_relative_to(root) or not source.is_dir():
-        raise ManifestStateError(f"运行路径不在 runs_root 或不存在: {entry.path}")
     if any(source.rglob("*.lock")):
         raise ManifestStateError(f"运行目录仍存在锁文件，拒绝移动: {entry.path}")
+
+
+def _legacy_layout_fingerprint(
+    root: Path,
+    relative_path: str,
+) -> tuple[tuple[str, str, int, str], ...]:
+    """为无 manifest 的只读历史目录建立可重复字节清单。"""
+
+    run_root = (root / relative_path).resolve()
+    if not run_root.is_relative_to(root) or not run_root.is_dir():
+        raise ManifestStateError(f"旧版运行路径不存在或逃逸 runs_root: {relative_path}")
+    inventory: list[tuple[str, str, int, str]] = []
+    for path in sorted(run_root.rglob("*")):
+        if path.is_symlink():
+            raise ManifestStateError(f"旧版运行含符号链接，拒绝移动: {path}")
+        relative = path.relative_to(run_root).as_posix()
+        if path.is_dir():
+            inventory.append((relative, "directory", 0, ""))
+        elif path.is_file():
+            inventory.append((relative, "file", path.stat().st_size, sha256_file(path)))
+        else:
+            raise ManifestStateError(f"旧版运行含不支持的目录项: {path}")
+    return tuple(inventory)
 
 
 def _verify_run_at_path(root: Path, relative_path: str) -> RunManifest:
@@ -145,6 +183,11 @@ def _move_project(
         )
     for entry in selected:
         _assert_movable(root, entry)
+    legacy_fingerprints = {
+        entry.path: _legacy_layout_fingerprint(root, entry.path)
+        for entry in selected
+        if entry.layout_version == "legacy-0"
+    }
 
     replacements: dict[str, RunIndexEntry] = {}
     moves: list[tuple[Path, Path]] = []
@@ -184,8 +227,18 @@ def _move_project(
             destination.parent.mkdir(parents=True, exist_ok=True)
             os.replace(source, destination)
             completed.append((source, destination))
-        for replacement in replacements.values():
-            _verify_run_at_path(root, replacement.path)
+        for source_entry in selected:
+            replacement = replacements[source_entry.path]
+            if source_entry.layout_version == "legacy-0":
+                if (
+                    _legacy_layout_fingerprint(root, replacement.path)
+                    != legacy_fingerprints[source_entry.path]
+                ):
+                    raise ManifestStateError(
+                        f"旧版运行移动后字节清单改变: {replacement.path}"
+                    )
+            else:
+                _verify_run_at_path(root, replacement.path)
         updated = tuple(
             replacements.get(entry.path, entry)
             for entry in index.entries

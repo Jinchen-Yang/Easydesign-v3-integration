@@ -142,6 +142,48 @@ def test_project_archive_and_restore_move_index_paths_without_changing_run(
     ) == before_latest
 
 
+def test_project_archive_preserves_legacy_layout_without_manifest(
+    tmp_path: Path,
+) -> None:
+    runs_root = tmp_path / "runs"
+    legacy_root = runs_root / "legacy-target" / "legacy-run"
+    evidence = legacy_root / "01-target-preparation" / "attempts" / "README.txt"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_text("historical evidence\n", encoding="utf-8")
+    replace_run_index_entries(
+        runs_root,
+        (
+            RunIndexEntry(
+                category="project-run",
+                path="legacy-target/legacy-run",
+                layout_version="legacy-0",
+                status="stage01-succeeded",
+                project_id="legacy-target",
+                run_id="legacy-run",
+            ),
+        ),
+        generated_at=datetime(2026, 7, 27, 9, 0, tzinfo=UTC),
+    )
+
+    archived = archive_project(runs_root, "legacy-target")
+
+    archived_evidence = (
+        runs_root
+        / "_archive"
+        / "legacy-target"
+        / "legacy-run"
+        / evidence.relative_to(legacy_root)
+    )
+    assert archived.category == "archived-project-run"
+    assert archived_evidence.read_text(encoding="utf-8") == "historical evidence\n"
+    assert not legacy_root.exists()
+
+    restored = restore_project(runs_root, "legacy-target")
+
+    assert restored.category == "project-run"
+    assert evidence.read_text(encoding="utf-8") == "historical evidence\n"
+
+
 def _region_editor_run(runs_root: Path) -> Path:
     root = runs_root / "colored-target" / "run-001"
     root.mkdir(parents=True)

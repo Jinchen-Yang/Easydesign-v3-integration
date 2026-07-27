@@ -573,6 +573,7 @@ def execute_stage06(
     events_path = runtime / "task-events.jsonl"
     journal = TaskEventJournal(events_path)
     plan_sha256 = sha256_file(plan_path)
+    heartbeats: dict[str, TaskHeartbeat]
     if state_path.exists():
         state = load_model(state_path, ScaleExecutionState)
         if state.plan_sha256 != plan_sha256:
@@ -604,7 +605,7 @@ def execute_stage06(
         }
         candidates = []
         created_at = now
-        heartbeats: dict[str, TaskHeartbeat] = {}
+        heartbeats = {}
 
     lock = threading.RLock()
     recent_errors: list[str] = []

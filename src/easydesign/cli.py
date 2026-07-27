@@ -569,12 +569,12 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         if arguments.remote_command == "list":
             executor_ids = list_remote_executor_ids(profile_path=arguments.profile)
             records = list_remote_job_records()
-            payload = {
+            remote_list_payload = {
                 "executors": list(executor_ids),
                 "jobs": [item.model_dump(mode="json") for item in records],
             }
             if arguments.json:
-                print(_json_text(payload))
+                print(_json_text(remote_list_payload))
             else:
                 print("可用远端：")
                 for executor_id in executor_ids:
@@ -644,11 +644,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                         profile_path=arguments.profile,
                     )
                 if arguments.json:
-                    payload: dict[str, Any] = observation.model_dump(mode="json")
-                    payload["sync"] = (
+                    observation_payload: dict[str, Any] = observation.model_dump(mode="json")
+                    observation_payload["sync"] = (
                         None if sync_report is None else sync_report.model_dump(mode="json")
                     )
-                    print(_json_text(payload), flush=True)
+                    print(_json_text(observation_payload), flush=True)
                 else:
                     worker = observation.worker
                     print(
@@ -709,7 +709,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 print(f"远端 run：{record.submission.remote_run_root}")
             return 0
         if arguments.remote_command == "sync":
-            report = sync_remote_pipeline(
+            sync_result = sync_remote_pipeline(
                 executor_id=arguments.executor_id,
                 job_id=arguments.job_id,
                 destination=arguments.to,
@@ -717,14 +717,14 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 profile_path=arguments.profile,
             )
             if arguments.json:
-                print(_json_text(report))
+                print(_json_text(sync_result))
             else:
-                print(f"远端镜像：{report.destination}")
-                print(f"同步文件：{report.file_count}")
-                print(f"同步大小：{report.size_bytes / 1024**2:.1f} MiB")
+                print(f"远端镜像：{sync_result.destination}")
+                print(f"同步文件：{sync_result.file_count}")
+                print(f"同步大小：{sync_result.size_bytes / 1024**2:.1f} MiB")
                 print(
                     "完整嵌套 artifact："
-                    f"{'是' if report.completed_artifact_closure else '否（元数据模式）'}"
+                    f"{'是' if sync_result.completed_artifact_closure else '否（元数据模式）'}"
                 )
             return 0
         submission = read_remote_submission(
@@ -801,11 +801,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             output = export_decision(arguments.run, output=arguments.output)
             print(f"Decision 审批模板已导出：{output}")
             return 0
-        record = approve_decision(arguments.run, input_path=arguments.input)
-        print(f"Decision 已记录：{record}")
+        decision_record = approve_decision(arguments.run, input_path=arguments.input)
+        print(f"Decision 已记录：{decision_record}")
         execution = continue_pipeline_after_decision(
             arguments.run,
-            decision_record=record,
+            decision_record=decision_record,
             profile_path=arguments.profile,
         )
         _print_execution(execution)

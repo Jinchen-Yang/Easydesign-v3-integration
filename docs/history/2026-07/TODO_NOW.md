@@ -427,3 +427,24 @@
   （SSH executor 与人工 scale authority）；
   `f3562aef74b9d34a451db93cae92f4e3c879ec02`
   （continuation backend preflight）。
+
+## 2026-07-27 — ENG-014 / UI-008：远程协作查看、同步与恢复
+
+- 状态：`smoke-validated`；Stage 06 科学生成仍由 `S06-002` 在 Now 跟踪。
+- 完成时间：2026-07-27T12:53:23+08:00
+- 问题：首版 SSH 只能提交和查 systemd 状态，不能连续读取科学进度、同步结果或从 UI
+  选择执行位置；旧 worker 长任务期间也没有结构化存活心跳。
+- 方案：增加版本化 job record、远端 watch/resume、manifest 驱动的 metadata/complete
+  rsync 和 task heartbeat；Workbench 通过 localhost API 选择远端、查看状态、同步镜像
+  和恢复，不向浏览器暴露 SSH 配置。
+- 验证：真实 Suzhou2 任务读取到 `active/running`、8 running/12 pending；控制端同步
+  246 文件和 59,263,753 bytes 并验证 RunManifest SHA-256。全仓 249 passed/8 skipped，
+  wheel 检查通过，Chromium 双尺寸 18/18 通过。
+- 遇到的问题：当前 50k 由 dev11 启动，无法安全热替换为带 heartbeat 的进程；服务器
+  Playwright 默认查找了未安装的 1234 浏览器 revision。
+- 解决：不停止、不附加和不改写旧 worker；dev12 对旧 ProgressSnapshot 向后兼容，新
+  任务/合法 resume 才记录 heartbeat。浏览器验收使用服务器已安装的固定 Chromium
+  revision 1228，不下载临时浏览器。
+- 遗留边界：当前 metadata 镜像只用于协作查看；50k 终态后再执行 complete 同步和候选
+  闭包验收。SSH 首版仍要求 OpenSSH、rsync、systemd，Slurm/SMART 保留后续。
+- 实现提交：`1e3c4ae7742919cca5f909200d8ffa7bad7813d5`。

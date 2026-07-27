@@ -205,13 +205,21 @@ export const api = {
         }),
       },
     ),
-  launch: (projectId: string, runId?: string, executorId?: string) =>
+  launch: (
+    projectId: string,
+    runId?: string,
+    executorId?: string,
+    sessionId?: string,
+    stageNumber?: number,
+  ) =>
     request<Record<string, unknown>>("/api/v1/jobs", {
       method: "POST",
       body: JSON.stringify({
         project_id: projectId,
         run_id: runId,
         executor_id: executorId,
+        session_id: sessionId,
+        stage_number: stageNumber,
         confirmed: true,
       }),
     }),
@@ -254,16 +262,41 @@ export const api = {
     request<Record<string, unknown>>(`/api/v1/runs/${key}/draft-order-package`, {
       method: "POST",
     }),
-  upload: (filename: string, contentBase64: string) =>
-    request<{
-      upload_token: string;
-      filename: string;
-      size_bytes: number;
-      sha256: string;
-    }>("/api/v1/uploads", {
-      method: "POST",
-      body: JSON.stringify({ filename, content_base64: contentBase64 }),
-    }),
+  upload: async (file: File) => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(
+        `/api/v1/uploads/raw?filename=${encodeURIComponent(file.name)}`,
+        {
+          method: "POST",
+          body: file,
+          cache: "no-store",
+          headers: { "Content-Type": "application/octet-stream" },
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(payload.detail || `HTTP ${response.status}`);
+      }
+      return await response.json() as {
+        upload_token: string;
+        filename: string;
+        size_bytes: number;
+        sha256: string;
+      };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error("文件接收超时，请检查连接后重试");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  },
+  job: (jobId: string) =>
+    request<Record<string, unknown>>(`/api/v1/jobs/${encodeURIComponent(jobId)}`),
   createProject: (body: Record<string, unknown>) =>
     request<{
       project_id: string;

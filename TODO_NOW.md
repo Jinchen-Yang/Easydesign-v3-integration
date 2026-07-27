@@ -18,6 +18,9 @@
 
 ## Now
 
+- `[UI-011/ENG-019]` 修复按步骤设计的 PSE 文件接收卡死：浏览器改用有界原始字节流，
+  上传必须进入成功或失败终态；按步骤路线移除复用自全流程的“第5项启动前检查”，PSE
+  接收后在同一页面完成配置、doctor 和 Stage 01 启动，成功后直接进入目标结构审查。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与

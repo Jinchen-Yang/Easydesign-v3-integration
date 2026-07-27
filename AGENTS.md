@@ -157,6 +157,11 @@ Agent 必须自动完成以下收尾工作：
 22. Stage 目录必须惰性创建；未开始的 Stage 不得预创建空壳。Project、Run、Stage、
     Attempt 和 branch 的语义必须遵守 `docs/architecture/RUN_LAYOUT.md`。正常下一阶段
     不得复制已完成 Stage；归档后的空项目壳只能依据 run-index 精确、安全地清理。
+23. 按步骤设计的首次 Stage 01 必须保持单页产品流程：文件接收、配置校验、按需 doctor
+    和任务状态都在当前上下文显示。PSE 等低成本本地导入可在 receipt 成功后直接启动并
+    跳转结构审查；可能触发预测或远程计算的入口仍需当前页明确授权。不得重新暴露通用
+    “第5项启动前检查”，也不得为了简化界面跳过后端 preflight、job record、
+    DesignSession lineage 或配置的 runs root。
 
 ## 4. 阻塞与询问
 

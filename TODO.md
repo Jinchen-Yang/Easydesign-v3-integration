@@ -87,9 +87,11 @@
 | `VAL-004` | Scientific Validation | `smoke-validated` | `runs/apoe-fasta/20260727-002-stage01-protenix` 真实消费 143 aa FASTA 与 SHA-256 为 `12d913…f72716` 的 609-depth A3M，发布 Protenix-v2 Target Bundle 0.4 和 Viewer。 |
 | `UI-009` | Product UI | `smoke-validated` | 全流程七阶段可自由浏览；按步骤路线已从真实 APOE Stage 01 建立独立 Stage 02 continuation；开发者自检与科研项目保持隔离。 |
 | `UI-010` | Product UI | `smoke-validated` | 项目可在运行索引中显式指定一条主展示运行；新分支继续保留在历史中，但不会擅自覆盖首页选定结果。 |
+| `UI-011` | Product UI | `implemented` | 按步骤设计收敛为单页 Stage 01 体验：PSE 接收后自动校验、运行并进入结构审查；真实浏览器验收完成前不提升状态。 |
 | `ENG-016` | Core Engineering | `smoke-validated` | DesignSession 0.1 的不可变 config revision、run lineage、冻结输入重定位和等待审批状态已由真实 APOE continuation 验证。 |
 | `ENG-017` | Core Engineering | `smoke-validated` | Project/Run/Stage/Attempt/branch 语义、同 run 阶段延续、惰性 Stage 目录、项目导航和归档空壳清理均通过真实目录验收。 |
 | `ENG-018` | Core Engineering | `planned` | 为 dev14 前的 Stage checkpoint runs 生成依赖报告，并对无引用终态 run 提供逐 run 可恢复归档；不合并或重写科学文件。 |
+| `ENG-019` | Core Engineering | `implemented` | 用有界原始字节流替代浏览器 Base64 文件预处理，并为上传、任务状态查询和错误终态建立稳定接口；真实 PSE 验收完成前不提升状态。 |
 | `REP-003` | Reporting & Visualization | `implemented` | Stage 02 产品层已提供区域理由、批准人和证据限制确认；保存后的科学授权仍使用现有 Stage 02/Decision 契约。 |
 | `REP-004` | Reporting & Visualization | `smoke-validated` | Mol* 单实例、过期加载防护、表示/相机就绪门已通过真实 143 aa APOE FASTA 与 PSE 红蓝黄页面的可见结构和非背景像素验收。 |
 | `S02-009` | Scientific Pipeline | `smoke-validated` | APOE PSE 三层编辑器已将 A/B/C 9/14/14 保存为新的 `manual-residue-list` Stage 02 分支，并停在人工确认门；旧运行保持不变。 |

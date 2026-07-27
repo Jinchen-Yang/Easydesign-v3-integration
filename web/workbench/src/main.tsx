@@ -48,13 +48,15 @@ function humanBytes(value: number) {
   return `${(value / 1024 ** 2).toFixed(1)} MiB`;
 }
 
-async function fileAsBase64(file: File) {
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error("无法读取输入文件"));
-    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] || "");
-    reader.readAsDataURL(file);
-  });
+type UploadReceipt = {
+  upload_token: string;
+  filename: string;
+  size_bytes: number;
+  sha256: string;
+};
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function Status({ state, small = false }: { state: StageState; small?: boolean }) {
@@ -748,9 +750,11 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
 function NewDesign({
   projects,
   onCreated,
+  onRunReady,
 }: {
   projects: Project[];
   onCreated: (projectId: string) => Promise<void>;
+  onRunReady: (runKey: string) => Promise<void>;
 }) {
   const wizardSteps = ["目标输入", "设计意图", "区域策略", "预算与资源", "检查并启动"];
   const [designMode, setDesignMode] = useState<
@@ -763,12 +767,7 @@ function NewDesign({
   const [projectId, setProjectId] = useState("new-design");
   const [sourceValue, setSourceValue] = useState("");
   const [inputFile, setInputFile] = useState<File>();
-  const [uploadReceipt, setUploadReceipt] = useState<{
-    upload_token: string;
-    filename: string;
-    size_bytes: number;
-    sha256: string;
-  }>();
+  const [uploadReceipt, setUploadReceipt] = useState<UploadReceipt>();
   const [uploadState, setUploadState] = useState<
     "idle" | "uploading" | "uploaded" | "failed"
   >("idle");
@@ -787,6 +786,9 @@ function NewDesign({
   const [actionStatus, setActionStatus] = useState("");
   const [preflightState, setPreflightState] = useState<
     "idle" | "checking" | "passed" | "blocked" | "failed"
+  >("idle");
+  const [stepwisePhase, setStepwisePhase] = useState<
+    "idle" | "preparing" | "checking" | "running" | "failed"
   >("idle");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -872,6 +874,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     setGeneratedYaml("");
     setActionStatus("");
     setPreflightState("idle");
+    setStepwisePhase("idle");
     if (selected === "stepwise") {
       setStage(1);
       setActiveStep(1);
@@ -887,6 +890,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     setUploadReceipt(undefined);
     setUploadState("idle");
     setUploadMessage("");
+    setStepwisePhase("idle");
     uploadSequence.current += 1;
   }
 
@@ -907,32 +911,37 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     }
     setUploadState("uploading");
     setUploadMessage("正在安全接收文件…");
+    let received = false;
     try {
-      const receipt = await api.upload(file.name, await fileAsBase64(file));
+      const receipt = await api.upload(file);
       if (uploadSequence.current !== requestSequence) return;
+      received = true;
       setUploadReceipt(receipt);
       setUploadState("uploaded");
       setUploadMessage(
-        `后端已接收 ${receipt.filename}（${humanBytes(receipt.size_bytes)}），可以继续查看或配置其他步骤。`,
+        `本地服务已接收 ${receipt.filename}（${humanBytes(receipt.size_bytes)}），文件完整性已记录。`,
       );
+      if (designMode === "stepwise" && source === "pse") {
+        await startStepwiseStageOne(receipt);
+      }
     } catch (value) {
       if (uploadSequence.current !== requestSequence) return;
-      setUploadState("failed");
-      setUploadMessage(value instanceof Error ? value.message : "文件接收失败");
+      if (!received) {
+        setUploadState("failed");
+        setUploadMessage(value instanceof Error ? value.message : "文件接收失败");
+      }
     }
   }
 
-  async function createDraft() {
-    setBusy(true);
-    setActionStatus("正在生成标准项目配置…");
-    try {
+  async function initializeDraft(receiptOverride?: UploadReceipt) {
       let selectedValue = sourceValue.trim();
       let sourceType = source;
       let sourceRunKey: string | undefined;
       if (isLocalSource) {
         if (uploadState === "uploading") throw new Error("文件仍在接收，请稍候");
-        if (!uploadReceipt) throw new Error("请先选择文件，并等待“后端已接收”的提示");
-        selectedValue = uploadReceipt.upload_token;
+        const selectedReceipt = receiptOverride || uploadReceipt;
+        if (!selectedReceipt) throw new Error("请先选择文件，并等待“文件已接收”的提示");
+        selectedValue = selectedReceipt.upload_token;
         sourceType = "local-file";
       } else if (source === "target-bundle") {
         const selectedRun = availableRuns.find((run) => run.run_key === sourceValue);
@@ -963,10 +972,18 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
       setCreatedProject(result.project_id);
       setSessionId(result.session.session_id);
       setGeneratedYaml(result.config);
-      setActionStatus("草稿已创建。下一步先校验配置和本机运行环境。");
       setPreflightState("idle");
-      setActiveStep(5);
+      if (designMode === "full-workflow") setActiveStep(5);
       await onCreated(result.project_id);
+      return result;
+  }
+
+  async function createDraft() {
+    setBusy(true);
+    setActionStatus("正在生成标准项目配置…");
+    try {
+      await initializeDraft();
+      setActionStatus("草稿已创建。下一步先校验配置和本机运行环境。");
     } catch (value) {
       setActionStatus(value instanceof Error ? value.message : "创建项目失败");
     } finally {
@@ -1008,7 +1025,13 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     try {
       const selectedExecutor = executorId === "local" ? undefined : executorId;
       await api.preflight(createdProject, selectedExecutor);
-      const job = await api.launch(createdProject, undefined, selectedExecutor);
+      const job = await api.launch(
+        createdProject,
+        undefined,
+        selectedExecutor,
+        sessionId || undefined,
+        sessionId ? stage : undefined,
+      );
       setActionStatus(
         selectedExecutor
           ? `任务已提交到 ${selectedExecutor}：${String(job.job_id || "job")}。可在“运行任务”同步进度和结果。`
@@ -1023,6 +1046,74 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
       }
     } catch (value) {
       setActionStatus(value instanceof Error ? value.message : "启动失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function waitForStageOneJob(jobId: string) {
+    for (let attempt = 0; attempt < 1800; attempt += 1) {
+      const record = await api.job(jobId);
+      const status = String(record.status || "");
+      if (!["queued", "running"].includes(status)) return record;
+      await wait(1000);
+    }
+    throw new Error("第1步仍在服务器运行，请到“运行任务”继续查看进度");
+  }
+
+  async function startStepwiseStageOne(receiptOverride?: UploadReceipt) {
+    if (designMode !== "stepwise" || busy) return;
+    setBusy(true);
+    setStepwisePhase("preparing");
+    setActionStatus("文件已接收，正在建立第1步项目配置…");
+    try {
+      let activeProject = createdProject;
+      let activeConfig = generatedYaml;
+      let activeSessionId = sessionId;
+      if (!activeProject) {
+        const result = await initializeDraft(receiptOverride);
+        activeProject = result.project_id;
+        activeConfig = result.config;
+        activeSessionId = result.session.session_id;
+      }
+      setStepwisePhase("checking");
+      setPreflightState("checking");
+      setActionStatus("正在检查第1步需要的 PyMOL 环境和输入配置…");
+      await api.updateConfig(activeProject, activeConfig);
+      const result = await api.preflight(activeProject);
+      const diagnostic = result.diagnostic as { ok?: boolean; status?: string };
+      const passed = diagnostic.ok === true || diagnostic.status === "remote-reachable";
+      if (!passed) {
+        throw new Error("第1步运行环境未通过检查，请在“设置”中修复后重试");
+      }
+      setPreflightState("passed");
+      setStepwisePhase("running");
+      setActionStatus("检查通过，正在准备目标结构。完成后会自动进入结构审查…");
+      const launched = await api.launch(
+        activeProject,
+        undefined,
+        undefined,
+        activeSessionId || undefined,
+        activeSessionId ? 1 : undefined,
+      );
+      const jobId = String(launched.job_id || "");
+      if (!jobId) throw new Error("服务器没有返回第1步任务编号");
+      const completed = await waitForStageOneJob(jobId);
+      const status = String(completed.status || "");
+      const runKey = String(completed.run_key || "");
+      if (status === "operational-failed") {
+        throw new Error(String(completed.error || "第1步运行失败"));
+      }
+      if (!runKey) {
+        throw new Error(`第1步结束状态为 ${status || "unknown"}，但没有可审查的运行记录`);
+      }
+      setActionStatus("第1步已完成，正在打开目标结构审查…");
+      await onCreated(activeProject);
+      await onRunReady(runKey);
+    } catch (value) {
+      setStepwisePhase("failed");
+      setPreflightState("failed");
+      setActionStatus(value instanceof Error ? value.message : "第1步未能完成");
     } finally {
       setBusy(false);
     }
@@ -1081,8 +1172,17 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
 
   const visibleWizardSteps = designMode === "stepwise"
     ? [
-      { step: 1, label: "第1步目标输入", state: stepStates[0] },
-      { step: 5, label: "检查并启动", state: stepStates[4] },
+      {
+        step: 1,
+        label: "第1步：准备目标结构",
+        state: stepwisePhase === "running"
+          ? "正在运行"
+          : stepwisePhase === "checking" || stepwisePhase === "preparing"
+            ? "正在准备"
+            : stepwisePhase === "failed"
+              ? "需要处理"
+              : stepStates[0],
+      },
     ]
     : wizardSteps.map((label, index) => ({
       step: index + 1,
@@ -1121,7 +1221,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
           ))}
         </div>
       )}
-      <div className="wizard">
+      <div className={`wizard ${designMode === "stepwise" ? "wizard-stepwise" : ""}`}>
         <div className="wizard-steps" aria-label="新建设计步骤">
           {visibleWizardSteps.map((item, index) => (
             <button
@@ -1156,14 +1256,14 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                   ["uniprot", "UniProt", "读取蛋白身份、注释和候选结构"],
                   ["target-bundle", "目标结构包", "复用已验证的上游结果"],
                 ].map(([id, title, copy]) => (
-                  <button type="button" disabled={Boolean(createdProject)} className={source === id ? "selected" : ""} onClick={() => selectSource(id)} key={id}><span className="source-icon">{title.slice(0, 1)}</span><strong>{title}</strong><small>{copy}</small></button>
+                  <button type="button" disabled={Boolean(createdProject) || busy} className={source === id ? "selected" : ""} onClick={() => selectSource(id)} key={id}><span className="source-icon">{title.slice(0, 1)}</span><strong>{title}</strong><small>{copy}</small></button>
                 ))}
               </div>
               <label className="upload-field">
                 <span>目标输入</span>
                 {isLocalSource ? (
                   <>
-                    <div><input type="text" readOnly value={inputFile?.name || ""} placeholder="尚未选择文件" /><label className={`file-button ${createdProject ? "disabled" : ""}`}>浏览…<input aria-label="选择本地文件" type="file" disabled={Boolean(createdProject)} onChange={(event) => void receiveInputFile(event.target.files?.[0])} /></label></div>
+                    <div><input type="text" readOnly value={inputFile?.name || ""} placeholder="尚未选择文件" /><label className={`file-button ${createdProject || busy ? "disabled" : ""}`}>浏览…<input aria-label="选择本地文件" type="file" disabled={Boolean(createdProject) || busy} onChange={(event) => void receiveInputFile(event.target.files?.[0])} /></label></div>
                     <div className={`upload-receipt upload-${uploadState}`} role="status">
                       <span className="upload-state-mark" />
                       <div>
@@ -1183,6 +1283,48 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                 )}
               </label>
               {source === "uniprot" && <div className="two-field-row"><label><span>UniProt 查找方式</span><select value={uniprotMode} disabled={Boolean(createdProject)} onChange={(event) => setUniprotMode(event.target.value)}><option value="accession">精确 accession</option><option value="search">按名称或基因名搜索</option></select></label>{uniprotMode === "search" && <label><span>物种编号</span><input value={taxonId} disabled={Boolean(createdProject)} onChange={(event) => setTaxonId(event.target.value)} /></label>}</div>}
+              {designMode === "stepwise" && (
+                <div className={`stepwise-stage-one-status phase-${stepwisePhase}`} role="status">
+                  <div>
+                    <strong>
+                      {stepwisePhase === "preparing" && "正在建立第1步配置"}
+                      {stepwisePhase === "checking" && "正在检查输入和运行环境"}
+                      {stepwisePhase === "running" && "正在准备目标结构"}
+                      {stepwisePhase === "failed" && "第1步需要处理"}
+                      {stepwisePhase === "idle" && (source === "pse"
+                        ? "上传 PSE 后将自动准备结构"
+                        : "输入就绪后开始准备结构")}
+                    </strong>
+                    <small>
+                      {actionStatus || (
+                        source === "pse"
+                          ? "文件接收成功后，系统会自动完成检查和第1步运行，并直接打开结构审查。"
+                          : "所有检查都在当前页面完成，不会再跳到单独的“启动前检查”页面。"
+                      )}
+                    </small>
+                  </div>
+                  {sourceReady && source !== "pse" && !createdProject && stepwisePhase === "idle" && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void startStepwiseStageOne()}
+                    >
+                      开始准备结构 →
+                    </button>
+                  )}
+                  {stepwisePhase === "failed" && (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={busy || (!createdProject && !sourceReady)}
+                      onClick={() => void startStepwiseStageOne()}
+                    >
+                      重新执行第1步
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
           {activeStep === 2 && (
@@ -1266,7 +1408,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               <div className="notice"><strong>本次范围</strong><span>运行到第 {stage} 步：{stageNames[stage - 1]}</span></div>
             </>
           )}
-          {activeStep === 5 && (
+          {designMode === "full-workflow" && activeStep === 5 && (
             <>
               <p className="section-label">第五项 · 启动前检查</p>
               <h2>确认输入、配置和运行环境</h2>
@@ -1287,11 +1429,13 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               <p className="launch-help">{!sourceReady ? "请先在“目标输入”选择并等待文件接收完成。" : !createdProject ? "输入已就绪，可以生成项目草稿。" : preflightState !== "passed" ? "项目草稿已建立；检查通过后才会开放真实启动。" : "全部检查通过。点击启动会创建新的、可恢复的运行任务。"}</p>
             </>
           )}
-          <div className="wizard-actions">
-            <button className="secondary-button" type="button" disabled={activeStep === 1} onClick={() => setActiveStep(designMode === "stepwise" ? 1 : Math.max(1, activeStep - 1))}>← 上一步</button>
-            <span>{designMode === "stepwise" ? (activeStep === 1 ? "填写目标输入" : "检查并启动第1步") : `第 ${activeStep} / 5 项`}</span>
-            <button className="secondary-button" type="button" disabled={activeStep === 5} onClick={() => setActiveStep(designMode === "stepwise" ? 5 : Math.min(5, activeStep + 1))}>下一步 →</button>
-          </div>
+          {designMode === "full-workflow" && (
+            <div className="wizard-actions">
+              <button className="secondary-button" type="button" disabled={activeStep === 1} onClick={() => setActiveStep(Math.max(1, activeStep - 1))}>← 上一步</button>
+              <span>第 {activeStep} / 5 项</span>
+              <button className="secondary-button" type="button" disabled={activeStep === 5} onClick={() => setActiveStep(Math.min(5, activeStep + 1))}>下一步 →</button>
+            </div>
+          )}
         </section>
         <aside className="yaml-preview">
           <div><span>标准 YAML 配置预览</span><b>schema 0.7</b></div>
@@ -1558,6 +1702,12 @@ function App() {
     }
   }
 
+  async function openCompletedRun(runKey: string) {
+    await refreshProjects();
+    const completedRun = await api.run(runKey);
+    openRun(completedRun);
+  }
+
   useEffect(() => {
     void refreshProjects();
   }, []);
@@ -1612,7 +1762,13 @@ function App() {
         {error && <div className="api-error"><strong>本地 API 暂不可用</strong><span>{error}</span></div>}
         {loading ? <div className="loading-screen"><span /><strong>正在读取运行记录…</strong></div> :
           page === "projects" ? <Dashboard projects={data.projects} onOpen={openRun} onNew={() => setPage("new")} /> :
-          page === "new" ? <NewDesign projects={data.projects} onCreated={refreshProjects} /> :
+          page === "new" ? (
+            <NewDesign
+              projects={data.projects}
+              onCreated={refreshProjects}
+              onRunReady={openCompletedRun}
+            />
+          ) :
           page === "tasks" ? <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} /> :
           page === "run" && selectedRun ? <RunWorkspace run={selectedRun} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} replay={replay} /> :
           page === "settings" ? <OperationsPage type="environment" projects={data.projects} editableProjects={data.editable_projects} selectedRun={selectedRun} /> :

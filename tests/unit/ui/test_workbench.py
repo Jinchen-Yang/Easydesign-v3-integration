@@ -862,6 +862,56 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         assert "空文件" in empty.json()["detail"]
 
 
+def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "jobs",
+    )
+    content = b"fixture-pse-binary\\x00\\x01\\x02"
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/uploads/raw",
+            params={"filename": "target.pse"},
+            content=content,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        assert response.status_code == 200
+        receipt = response.json()
+        assert receipt["filename"] == "target.pse"
+        assert receipt["size_bytes"] == len(content)
+        assert receipt["sha256"] == hashlib.sha256(content).hexdigest()
+
+        project = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "raw-pse-demo",
+                "source_type": "local-file",
+                "source_value": receipt["upload_token"],
+                "execution_mode": "review-gated",
+                "design_intent": "exploratory",
+                "stop_after_stage": 1,
+                "design_mode": "stepwise",
+            },
+        )
+        assert project.status_code == 200
+        assert (
+            tmp_path / "projects" / "raw-pse-demo" / "inputs" / "target.pse"
+        ).read_bytes() == content
+
+        empty = client.post(
+            "/api/v1/uploads/raw",
+            params={"filename": "empty.pse"},
+            content=b"",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        assert empty.status_code == 400
+        assert "空文件" in empty.json()["detail"]
+
+
 def test_gateway_lists_only_profile_declared_remote_executor_ids(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import mimetypes
 import tempfile
@@ -80,6 +81,7 @@ from .stage05 import (
 )
 
 LOCAL_HOST = "127.0.0.1"
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
 
 class UploadRequest(BaseModel):
@@ -181,6 +183,8 @@ class LaunchRequest(BaseModel):
     project_id: str
     run_id: str | None = None
     executor_id: str | None = None
+    session_id: str | None = None
+    stage_number: int | None = Field(default=None, ge=1, le=7)
     confirmed: bool = False
 
 
@@ -539,7 +543,7 @@ def create_ui_app(
             content = base64.b64decode(payload.content_base64, validate=True)
         except ValueError as error:
             raise HTTPException(status_code=400, detail="上传内容不是合法 base64") from error
-        if len(content) > 64 * 1024 * 1024:
+        if len(content) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
         if not content:
             raise HTTPException(status_code=400, detail="不能上传空文件")
@@ -562,6 +566,65 @@ def create_ui_app(
             filename=filename,
             size_bytes=len(content),
             sha256=sha256_bytes(content),
+        )
+
+    @app.post("/api/v1/uploads/raw")
+    async def upload_raw(
+        request: Request,
+        filename: Annotated[str, Query(min_length=1, max_length=255)],
+    ) -> UploadReceipt:
+        """流式接收浏览器文件，避免先在浏览器生成完整 Base64 副本。"""
+
+        service = _state(request)
+        safe_filename = _safe_filename(filename)
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                declared_size = int(content_length)
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail="Content-Length 非法") from error
+            if declared_size > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
+        token = f"upload-{uuid4().hex}"
+        upload_directory = service.upload_root / token
+        upload_directory.mkdir()
+        target = upload_directory / safe_filename
+        temporary: Path | None = None
+        size_bytes = 0
+        digest = hashlib.sha256()
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=upload_directory,
+                prefix=".receiving-",
+                delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
+                async for chunk in request.stream():
+                    if not chunk:
+                        continue
+                    size_bytes += len(chunk)
+                    if size_bytes > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
+                    handle.write(chunk)
+                    digest.update(chunk)
+            if size_bytes == 0:
+                raise HTTPException(status_code=400, detail="不能上传空文件")
+            temporary.replace(target)
+        except BaseException:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            try:
+                upload_directory.rmdir()
+            except OSError:
+                pass
+            raise
+        service.uploads[token] = target
+        return UploadReceipt(
+            upload_token=token,
+            filename=safe_filename,
+            size_bytes=size_bytes,
+            sha256=digest.hexdigest(),
         )
 
     @app.post("/api/v1/projects")
@@ -723,6 +786,14 @@ def create_ui_app(
     def launch(payload: LaunchRequest, request: Request) -> Any:
         service = _state(request)
         try:
+            if (payload.session_id is None) != (payload.stage_number is None):
+                raise ConfigurationError(
+                    "产品会话启动必须同时提供 session_id 和 stage_number"
+                )
+            if payload.session_id is not None:
+                session = service.sessions.load(payload.session_id)
+                if session.project_id != payload.project_id:
+                    raise ConfigurationError("产品会话与启动项目不一致")
             if payload.executor_id is not None:
                 if not payload.confirmed:
                     raise ConfigurationError("远程真实启动需要 confirmed=true")
@@ -748,7 +819,13 @@ def create_ui_app(
                 operation="run",
                 config_path=service.project_config(payload.project_id),
                 profile_path=service.profile_path,
+                runs_root=service.registry.runs_root,
                 run_id=payload.run_id,
+                session_id=payload.session_id,
+                session_root=(
+                    None if payload.session_id is None else service.sessions.root
+                ),
+                stage_number=payload.stage_number,
                 confirmed=payload.confirmed,
             )
         except Exception as error:
@@ -890,6 +967,14 @@ def create_ui_app(
     @app.get("/api/v1/jobs")
     def jobs(request: Request) -> tuple[UiJobRecord, ...]:
         return _state(request).jobs.list()
+
+    @app.get("/api/v1/jobs/{job_id}")
+    def job(job_id: str, request: Request) -> UiJobRecord:
+        try:
+            return _state(request).jobs.load(job_id)
+        except Exception as error:
+            _raise_http(error)
+            raise
 
     @app.post("/api/v1/jobs/{job_id}/drain")
     def drain(job_id: str, request: Request) -> UiJobRecord:

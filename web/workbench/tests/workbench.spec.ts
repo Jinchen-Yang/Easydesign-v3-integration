@@ -61,6 +61,18 @@ const run = {
   stages,
 };
 
+const stepwiseRun = {
+  ...run,
+  run_key: "stepwise-run-key",
+  project_id: "new-design",
+  run_id: "stage01-pse-fixture",
+  stages: stages.map((item, index) => ({
+    ...item,
+    state: index === 0 ? "succeeded" : "not-reached",
+    summary: index === 0 ? "目标结构已准备，可以开始结构审查" : "尚未开始",
+  })),
+};
+
 const overview = {
   run_key: run.run_key,
   state: "scientific-stop",
@@ -265,7 +277,7 @@ async function mockApi(page: Page) {
       });
       return;
     }
-    if (url.pathname === "/api/v1/uploads" && route.request().method() === "POST") {
+    if (url.pathname === "/api/v1/uploads/raw" && route.request().method() === "POST") {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -278,6 +290,11 @@ async function mockApi(page: Page) {
       return;
     }
     if (url.pathname === "/api/v1/projects" && route.request().method() === "POST") {
+      const requestBody = route.request().postDataJSON() as {
+        design_mode?: string;
+        stop_after_stage?: number;
+      };
+      const stepwise = requestBody.design_mode === "stepwise";
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -290,23 +307,23 @@ async function mockApi(page: Page) {
             "  intent: exploratory",
             "workflow:",
             "  execution_mode: review-gated",
-            "  stop_after_stage: 2",
+            `  stop_after_stage: ${stepwise ? 1 : 2}`,
             "stage01:",
             "  target:",
             "    source:",
             "      type: local-file",
             "      path: inputs/target.pse",
-            "stage02:",
-            "  mode: detect",
+            stepwise ? "stage02: null" : "stage02:",
+            stepwise ? "" : "  mode: detect",
           ].join("\n"),
           status: "draft",
           session: {
             schema_version: "0.1",
             session_id: "session-fixture",
             project_id: "new-design",
-            design_mode: "full-workflow",
+            design_mode: stepwise ? "stepwise" : "full-workflow",
             execution_mode: "review-gated",
-            current_stage: 2,
+            current_stage: stepwise ? 1 : 2,
             status: "draft",
             config_revisions: [],
             run_lineage: [],
@@ -335,6 +352,18 @@ async function mockApi(page: Page) {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ job_id: "job-fixture", status: "queued" }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/jobs/job-fixture") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          job_id: "job-fixture",
+          status: "succeeded",
+          run_key: stepwiseRun.run_key,
+          run_id: stepwiseRun.run_id,
+        }),
       });
       return;
     }
@@ -489,6 +518,13 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname === `/api/v1/runs/${stepwiseRun.run_key}`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(stepwiseRun),
+      });
+      return;
+    }
     await route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
   });
 }
@@ -629,7 +665,7 @@ test("new design steps are freely browsable and file receipt unlocks final check
     buffer: Buffer.from("fixture-pse-content"),
   });
   await expect(page.getByText("文件已接收", { exact: true })).toBeVisible();
-  await expect(page.getByText(/后端已接收 target\.pse/)).toBeVisible();
+  await expect(page.getByText(/本地服务已接收 target\.pse/)).toBeVisible();
   await expect(page.getByText('path: "inputs/target.pse"')).toBeVisible();
 
   await page.getByRole("button", { name: /检查并启动/ }).click();
@@ -649,15 +685,27 @@ test("new design steps are freely browsable and file receipt unlocks final check
   await expect(launch).toBeEnabled();
 });
 
-test("stepwise design only asks for stage one before the first launch", async ({ page }) => {
+test("stepwise PSE upload runs stage one and opens structure review directly", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();
   await page.getByRole("button", { name: /按步骤设计/ }).click();
   await expect(page.getByRole("heading", { name: "按步骤设计" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /第1步目标输入/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /检查并启动/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /第1步：准备目标结构/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /检查并启动/ })).toHaveCount(0);
+  await expect(page.getByText(/第五项 · 启动前检查/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /区域策略/ })).toHaveCount(0);
   await expect(page.getByText("本次只要求完成第1步")).toBeVisible();
+
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+
+  await expect(page.getByRole("heading", { name: "第1步：准备目标结构" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "new-design" })).toBeVisible();
+  await expect(page.getByText("138 aa")).toBeVisible();
+  await expect(page.getByRole("button", { name: "配置下一步：选择结合区域" })).toBeVisible();
 });
 
 test("developer smoke is separated from scientific projects", async ({ page }) => {

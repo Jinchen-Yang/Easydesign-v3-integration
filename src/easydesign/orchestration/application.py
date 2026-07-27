@@ -1161,6 +1161,11 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
     resolved_path = root / "config-snapshot" / "resolved-config.json"
     resolved = load_model(resolved_path, ResolvedRunConfig)
     source_snapshot = resolved.input_snapshot.verify(root)
+    precomputed_msa_snapshot = (
+        resolved.precomputed_msa_snapshot.verify(root)
+        if resolved.precomputed_msa_snapshot is not None
+        else None
+    )
     config_path = root / "config-snapshot" / "easydesign.yaml"
     if resolved.detected_input_format in {
         TargetInputFormat.SEQUENCE,
@@ -1176,6 +1181,7 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
             target=resolved.target,
             prediction_request=resolved.prediction_request,
             msa_execution_plan=resolved.msa_execution_plan,
+            precomputed_msa_path=precomputed_msa_snapshot,
         )
     elif resolved.detected_input_format in {
         TargetInputFormat.PDB,
@@ -1197,6 +1203,7 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
             config=resolved.user_config,
             source_path=None,
             detected_format=resolved.detected_input_format,
+            precomputed_msa_path=precomputed_msa_snapshot,
         )
     elif resolved.detected_input_format is TargetInputFormat.TARGET_BUNDLE:
         raise ManifestStateError("Target Bundle 导入不会创建 Stage 01 decision gate")

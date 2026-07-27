@@ -22,12 +22,17 @@ from easydesign.orchestration import (
 )
 from easydesign.orchestration.application import (
     PROTENIX_V2_CHECKPOINT_SHA256,
+    _prepared_existing_run,
     _probe_protenix,
     _required_backends,
 )
 from easydesign.orchestration.config import LoadedSequenceRunConfig, load_run_config
 from easydesign.orchestration.profile import ProtenixV2Runtime
-from easydesign.orchestration.workspace import RunIndexEntry, upsert_run_index_entries
+from easydesign.orchestration.workspace import (
+    RunIndexEntry,
+    initialize_run_workspace,
+    upsert_run_index_entries,
+)
 
 
 def _project_and_profile(tmp_path: Path) -> tuple[Path, Path]:
@@ -86,6 +91,42 @@ def test_dry_run_preflight_does_not_create_run(
 
     assert outcome.status == "dry-run"
     assert not (tmp_path / "runs").exists()
+
+
+def test_stage01_decision_continuation_restores_precomputed_msa_snapshot(
+    tmp_path: Path,
+) -> None:
+    sequence = "ACDEFGHIKLMNPQRSTVWY"
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(f">target\n{sequence}\n", encoding="utf-8")
+    a3m = tmp_path / "target.a3m"
+    a3m.write_text(
+        f">query\n{sequence}\n>homolog\n{sequence}\n",
+        encoding="utf-8",
+    )
+    initialized = initialize_project(
+        project_root=tmp_path / "demo",
+        target=fasta,
+        precomputed_msa=a3m,
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev13",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev13",
+            source=CodeIdentitySource.INSTALLED_PACKAGE,
+            dirty=False,
+            content_sha256="b" * 64,
+        ),
+        run_id="precomputed-decision",
+    )
+
+    restored = _prepared_existing_run(prepared.workspace.run_root)
+
+    assert isinstance(restored.loaded_config, LoadedSequenceRunConfig)
+    assert restored.loaded_config.precomputed_msa_path is not None
+    assert restored.loaded_config.precomputed_msa_path.read_bytes() == a3m.read_bytes()
 
 
 def test_sasa_only_stage02_does_not_require_scannet_backend(tmp_path: Path) -> None:

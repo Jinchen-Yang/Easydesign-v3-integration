@@ -8,6 +8,7 @@ from .models import (
     ScaleProfile,
     ScaleResourceReport,
     ScaleShard,
+    ScaleStrategyAuthorization,
     ScaleTaskTable,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "ScaleProfile",
     "ScaleResourceReport",
     "ScaleShard",
+    "ScaleStrategyAuthorization",
     "ScaleTaskTable",
 ]

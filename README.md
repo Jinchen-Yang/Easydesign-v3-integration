@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev10`（包版本 `0.1.0.dev10`）
+- 当前版本：`0.1.0-dev11`（包版本 `0.1.0.dev11`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -34,7 +34,7 @@ python -m pip install -e ".[dev,ui]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev10-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev11-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -251,6 +251,45 @@ easydesign runs resume /absolute/path/to/downstream-stage07
 
 Stage 07 的非空结果最多包含 20 个 primary 和 20 个 backup；不足时不补齐。候选包始终
 等待人工审阅且未下单，1000-candidate 路径只能称为 `smoke-review-package`。
+
+### 提交到另一台计算服务器
+
+控制端 runtime profile 可以显式登记 SSH executor。EasyDesign 不扫描 SSH config，也不
+复制控制端私钥；`identity_file`、known-hosts、远端工作目录、远端 EasyDesign 和远端
+profile 都必须给绝对路径。科学 YAML 不保存主机地址或密钥。
+
+```yaml
+remote_executors:
+  suzhou2-a100x8:
+    host: 192.0.2.10
+    user: root
+    port: 22
+    identity_file: /absolute/path/to/dedicated_ed25519
+    known_hosts_file: /absolute/path/to/known_hosts
+    ssh_executable: /usr/bin/ssh
+    rsync_executable: /usr/bin/rsync
+    remote_work_root: /data/easydesign
+    remote_runs_root: /data/easydesign/runs
+    remote_easydesign_executable: /data/easydesign/bin/easydesign
+    remote_profile: /data/easydesign/profile.yaml
+```
+
+先做只读探针，再提交一个 checksum 验证通过的终态上游 run：
+
+```bash
+easydesign remote probe suzhou2-a100x8
+easydesign remote submit suzhou2-a100x8 \
+  --job-id target-scale-50k \
+  --run-id stage06-50k \
+  --config easydesign.yaml \
+  --from-run /absolute/path/to/succeeded-stage05-run
+easydesign remote status suzhou2-a100x8 target-scale-50k
+```
+
+控制端先校验配置、代码版本和上游 manifest，再用 rsync 复制完整 continuation 输入；
+远端通过 systemd transient worker 独立执行并维护自己的 RunManifest、分片状态和事件。
+SSH 连接中断不会终止任务。远端仍使用 `local-multi-gpu` 执行器，因此 GPU 列表写在
+`stage04.executor.devices`，SSH 只负责跨主机提交，不复制 Stage 04/06 科学逻辑。
 
 PSE 项目默认使用 `stage02.mode: detect`：若 Target Bundle 中存在固定
 红 `A`、蓝 `B`、黄 `C`，则把这些颜色作为用户区域；没有标准色才运行 YAML 中的

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
-from easydesign.core import ArtifactRef
-from easydesign.orchestration.stage06 import build_scale_plan
+from easydesign.core import ArtifactRef, ManifestStateError
+from easydesign.orchestration.config import Stage06Config
+from easydesign.orchestration.stage06 import (
+    _resolve_strategy_authorization,
+    build_scale_plan,
+)
 from easydesign.stages.s06_scale_generation_and_refolding import (
     ScaleCoverageReport,
     ScaleProfile,
@@ -72,6 +77,84 @@ def test_scale_plan_rejects_candidate_budget_above_authorization() -> None:
             devices=(0, 1),
             preauthorized_candidate_limit=1_000,
             generated_at=NOW,
+        )
+
+
+def test_manual_scale_authorization_requires_two_explicit_acknowledgements() -> None:
+    payload = {
+        "scale_profile": "production-50000",
+        "preauthorized_candidate_limit": 50_000,
+        "manual_strategy_authorization": {
+            "strategy_id": "tier-a-strategy",
+            "authorized_by": "principal-investigator",
+            "reason": "Run this strategy as an explicitly exploratory production-scale test.",
+            "source_stage05_bundle_sha256": SHA256,
+        },
+    }
+    with pytest.raises(ValidationError, match="acknowledge"):
+        Stage06Config.model_validate(payload)
+
+    payload["manual_strategy_authorization"].update(
+        {
+            "acknowledge_stage05_scientific_stop": True,
+            "acknowledge_not_scientifically_eligible": True,
+        }
+    )
+    config = Stage06Config.model_validate(payload)
+    assert config.manual_strategy_authorization is not None
+    assert config.manual_strategy_authorization.strategy_id == "tier-a-strategy"
+
+
+def test_manual_scale_authorization_only_accepts_stage05_expanded_tier_a() -> None:
+    config = Stage06Config.model_validate(
+        {
+            "scale_profile": "production-50000",
+            "preauthorized_candidate_limit": 50_000,
+            "manual_strategy_authorization": {
+                "strategy_id": "tier-a-strategy",
+                "authorized_by": "principal-investigator",
+                "reason": (
+                    "Run this strategy as an explicitly exploratory "
+                    "production-scale test."
+                ),
+                "source_stage05_bundle_sha256": SHA256,
+                "acknowledge_stage05_scientific_stop": True,
+                "acknowledge_not_scientifically_eligible": True,
+            },
+        }
+    )
+    upstream = SimpleNamespace(
+        stage05_bundle=SimpleNamespace(
+            status="stopped-no-scale-winner",
+            winner_strategy_id=None,
+        ),
+        stage05_bundle_ref=SimpleNamespace(sha256=SHA256),
+        pilot_filter_report=SimpleNamespace(
+            selected_strategy_ids=("tier-a-strategy",),
+        ),
+        strategy_bundle=SimpleNamespace(
+            strategies=(SimpleNamespace(strategy_id="tier-a-strategy"),),
+        ),
+    )
+
+    authorization = _resolve_strategy_authorization(
+        upstream=upstream,  # type: ignore[arg-type]
+        config=config,
+        authorized_at=NOW,
+    )
+
+    assert authorization.mode == "manual-stage05-stop-override"
+    assert authorization.strategy_id == "tier-a-strategy"
+    with pytest.raises(ManifestStateError, match="已扩展"):
+        _resolve_strategy_authorization(
+            upstream=SimpleNamespace(
+                **{
+                    **upstream.__dict__,
+                    "pilot_filter_report": SimpleNamespace(selected_strategy_ids=()),
+                }
+            ),  # type: ignore[arg-type]
+            config=config,
+            authorized_at=NOW,
         )
 
 

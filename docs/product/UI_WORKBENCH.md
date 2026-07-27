@@ -188,7 +188,7 @@ GET /api/v1/runs/{run}/stages/6/execution
 
 ## DATA-004 / UX-005 共享案例
 
-- 版本：`0.1.0.dev10`。
+- 版本：`0.1.0.dev11`。
 - `examples/apoe-ui-demo` 保存经用户授权的私有仓库只读证据包：307 个被逐一固定
   SHA-256 的文件、约 65 MiB，不包含约 970 MB 的 backend 中间目录。
 - 共享包保留 Stage 01–05 manifest 闭包、21 个策略、840/100/12/10 各层结果、Stage 04

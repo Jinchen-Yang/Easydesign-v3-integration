@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import yaml  # type: ignore[import-untyped]
 from platformdirs import user_config_path
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+)
 
 from easydesign.core import ConfigurationError, RuntimeProfileRef, sha256_file
 from easydesign.core.artifacts import ID_PATTERN
@@ -102,6 +109,46 @@ class TnpRuntime(BaseModel):
         return value
 
 
+class SshRemoteRuntime(BaseModel):
+    """Deployment-only SSH control plane for running EasyDesign on another host."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    host: str = Field(pattern=r"^[A-Za-z0-9.-]+$")
+    user: str = Field(default="root", pattern=r"^[A-Za-z0-9._-]+$")
+    port: int = Field(default=22, ge=1, le=65535)
+    identity_file: Path
+    known_hosts_file: Path = Path("/root/.ssh/known_hosts")
+    ssh_executable: Path = Path("/usr/bin/ssh")
+    rsync_executable: Path = Path("/usr/bin/rsync")
+    remote_work_root: Path
+    remote_runs_root: Path
+    remote_easydesign_executable: Path
+    remote_profile: Path
+    launcher: Literal["systemd-run"] = "systemd-run"
+    connect_timeout_seconds: int = Field(default=15, ge=1, le=120)
+
+    @field_validator(
+        "identity_file",
+        "known_hosts_file",
+        "ssh_executable",
+        "rsync_executable",
+        "remote_work_root",
+        "remote_runs_root",
+        "remote_easydesign_executable",
+        "remote_profile",
+    )
+    @classmethod
+    def require_absolute_path(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            raise ValueError("SSH remote runtime 路径必须是绝对路径")
+        return value
+
+
 class RuntimeBackends(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -121,12 +168,23 @@ class RuntimeProfile(BaseModel):
     profile_id: str = Field(default="local", pattern=ID_PATTERN)
     runs_root: Path | None = None
     backends: RuntimeBackends = RuntimeBackends()
+    remote_executors: dict[str, SshRemoteRuntime] = Field(default_factory=dict)
 
     @field_validator("runs_root")
     @classmethod
     def require_absolute_runs_root(cls, value: Path | None) -> Path | None:
         if value is not None and not value.is_absolute():
             raise ValueError("runs_root 必须是绝对路径")
+        return value
+
+    @field_validator("remote_executors")
+    @classmethod
+    def validate_remote_executor_ids(
+        cls,
+        value: dict[str, SshRemoteRuntime],
+    ) -> dict[str, SshRemoteRuntime]:
+        if any(re.fullmatch(ID_PATTERN, executor_id) is None for executor_id in value):
+            raise ValueError("remote executor ID 不符合稳定 ID 规则")
         return value
 
 

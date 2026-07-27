@@ -24,6 +24,7 @@
 | M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 已在 Stage 05 合法科学停止。 |
 | M10 产品级科研工作台 | `smoke-validated` | dev9 工作台已完成统一浅色结构工作区、执行/筛选证据和可自由浏览的新建设计向导；文件接收、草稿、检查与启动状态边界通过双尺寸 Chromium 和 Python API 验收。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
+| M12 跨服务器执行 | `implemented` | dev11 提供显式 SSH whole-run 提交、版本/known-host/manifest 校验、持久 worker 和远端独立恢复；Suzhou2 真实 50k 正在验收。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -76,6 +77,8 @@
 | `ENG-012` | Core Engineering | `smoke-validated` | 本地文件立即原子接收并返回 filename/size/SHA-256 receipt；token 单次消费、空文件/超限/失败/重选均有明确处置。 |
 | `DATA-004` | Data & Assets | `smoke-validated` | APOE Stage 05 已形成 65 MiB、307 文件的 manifest 完整 UI evidence bundle；约 970 MB backend 中间目录未提交。 |
 | `UX-005` | CLI & Developer Experience | `smoke-validated` | 合作者 clone `main` 后可用一条命令完成 SHA-256/manifest 校验并启动相同 APOE 工作台。 |
+| `ENG-013` | Core Engineering | `implemented` | whole-run SSH executor、严格主机/版本探针、rsync staging、systemd worker、远端独立 manifest/progress/resume 和 CLI 完成；等待 Suzhou2 长任务持续验收。 |
+| `S06-002` | Scientific Pipeline | `implemented` | 以源 Stage05Bundle SHA-256 和双重 acknowledgement 人工授权已扩展 Tier A 的探索性 50k；APOE Stage 05 科学停止保持不变，远端运行待完成。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
 ### 通用决策门路线
@@ -87,7 +90,7 @@
 | --- | --- | --- | --- |
 | Stage 03 | BoltzGen YAML 与设计矩阵确认 | `planned` | review-gated 由人确认；unattended 只允许版本化确定性 policy。 |
 | Stage 05 | pilot filter 后 go/no-go | `planned` | 保存逐规则证据、预算和批准 authority。 |
-| Stage 06 | 高成本规模预算授权 | `planned` | 启动大规模生成前显式批准预算与 backend profile。 |
+| Stage 06 | 高成本规模预算授权 | `implemented` | 预算、源 Stage05Bundle、授权人、理由和科学限制确认进入不可变 ScalePlan；通用 Decision UI 后续补齐。 |
 | Stage 07 | Top N 候选包批准 | `planned` | 只生成候选下单包；供应商下单永远由人工执行。 |
 | 跨阶段 | biosafety 等 required review | `planned` | 未完成时最多生成 `draft-order-package`，不因 unattended 绕过。 |
 
@@ -103,7 +106,7 @@
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 保持通用能力冻结；APOE 因 Stage 05 无 scale winner，本轮不创建 1000 任务。 | 无代码阻塞；APOE 已科学停止，50k 也没有本轮执行授权。 | 2026-07-26 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `implemented` | S06-001 的分片/恢复已完成；S06-002 新增带科学边界的人工规模授权与 SSH whole-run 提交。 | 在 Suzhou2 八张 A100 上运行 APOE 唯一已扩展 Tier A 的 20×2500 探索性 50k。 | 无代码阻塞；50k 为长任务，完成前保持 Now，Stage 05 科学停止不变。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 

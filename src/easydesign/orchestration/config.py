@@ -766,11 +766,29 @@ class Stage05Config(BaseModel):
     full_target_prediction: ComplexPredictionConfig = ComplexPredictionConfig()
 
 
+class Stage06ManualStrategyAuthorizationConfig(BaseModel):
+    """Explicit human authority to scale a selected Tier A after a scientific stop."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    strategy_id: str = Field(pattern=ID_PATTERN)
+    authorized_by: str = Field(min_length=1, max_length=256)
+    reason: str = Field(min_length=20, max_length=4096)
+    source_stage05_bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    acknowledge_stage05_scientific_stop: Literal[True]
+    acknowledge_not_scientifically_eligible: Literal[True]
+
+
 class Stage06Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     scale_profile: Literal["smoke-1000", "production-50000"] = "smoke-1000"
     preauthorized_candidate_limit: int = Field(default=1000, ge=1)
+    manual_strategy_authorization: Stage06ManualStrategyAuthorizationConfig | None = None
 
     @model_validator(mode="after")
     def validate_authorized_limit(self) -> Self:

@@ -39,7 +39,7 @@ from easydesign.core import (
 )
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import CandidateIndex
-from easydesign.stages.s05_pilot_filtering import Stage05Bundle
+from easydesign.stages.s05_pilot_filtering import PilotFilterReport, Stage05Bundle
 from easydesign.stages.s06_scale_generation_and_refolding import (
     ScaleBundle,
     ScaleCoverageReport,
@@ -48,6 +48,7 @@ from easydesign.stages.s06_scale_generation_and_refolding import (
     ScaleProfile,
     ScaleResourceReport,
     ScaleShard,
+    ScaleStrategyAuthorization,
     ScaleTaskTable,
 )
 
@@ -56,6 +57,7 @@ from .boltzgen_tasks import (
     execute_boltzgen_candidate_task,
     recover_interrupted_boltzgen_task,
 )
+from .config import Stage06Config
 from .stage04 import _atomic_text
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
 from .workspace import ResolvedRunConfig, RunIndexEntry, upsert_run_index_entries
@@ -87,6 +89,7 @@ class _Upstream:
     pilot_candidate_index: CandidateIndex
     stage05_bundle_ref: ArtifactRef
     stage05_bundle: Stage05Bundle
+    pilot_filter_report: PilotFilterReport
 
 
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
@@ -127,14 +130,15 @@ def _load_upstream(root: Path) -> _Upstream:
     pilot_index = load_model(pilot_index_ref.verify(root), CandidateIndex)
     stage05_ref = stage05.require_output("stage05-bundle")
     stage05_bundle = load_model(stage05_ref.verify(root), Stage05Bundle)
-    if stage05_bundle.status != "winner-selected" or stage05_bundle.winner_strategy_id is None:
-        raise ManifestStateError(
-            f"Stage 05 status={stage05_bundle.status}，没有 Stage 06 scale winner"
-        )
     if stage05_bundle.strategy_bundle != strategy_ref:
         raise ManifestStateError("Stage05Bundle 与 StrategyBundle identity 不一致")
-    if not any(
-        item.strategy_id == stage05_bundle.winner_strategy_id for item in strategy.strategies
+    pilot_filter_report = load_model(
+        stage05_bundle.pilot_filter_report.verify(root),
+        PilotFilterReport,
+    )
+    if stage05_bundle.winner_strategy_id is not None and not any(
+        item.strategy_id == stage05_bundle.winner_strategy_id
+        for item in strategy.strategies
     ):
         raise ManifestStateError("Stage05Bundle winner 不在 StrategyBundle")
     for candidate in pilot_index.candidates:
@@ -155,6 +159,65 @@ def _load_upstream(root: Path) -> _Upstream:
         pilot_candidate_index=pilot_index,
         stage05_bundle_ref=stage05_ref,
         stage05_bundle=stage05_bundle,
+        pilot_filter_report=pilot_filter_report,
+    )
+
+
+def _resolve_strategy_authorization(
+    *,
+    upstream: _Upstream,
+    config: Stage06Config,
+    authorized_at: datetime,
+) -> ScaleStrategyAuthorization:
+    bundle = upstream.stage05_bundle
+    manual = config.manual_strategy_authorization
+    if bundle.status == "winner-selected":
+        if bundle.winner_strategy_id is None:
+            raise ManifestStateError("Stage 05 winner-selected 缺少 winner strategy")
+        if manual is not None:
+            raise ManifestStateError("Stage 05 已有 winner 时不得声明 manual override")
+        return ScaleStrategyAuthorization(
+            mode="stage05-winner",
+            strategy_id=bundle.winner_strategy_id,
+            authorized_at=authorized_at,
+            authorized_by="stage05-deterministic-policy",
+            reason="Stage 05 published the unique scientifically eligible scale winner.",
+            source_stage05_status=bundle.status,
+            source_stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
+        )
+    if bundle.status == "stopped-no-tier-a":
+        raise ManifestStateError("Stage 05 没有 Tier A；Stage 06 不允许人工越过该边界")
+    if bundle.status != "stopped-no-scale-winner":
+        raise ManifestStateError(f"Stage 05 status={bundle.status} 不支持 Stage 06")
+    if manual is None:
+        raise ManifestStateError(
+            "Stage 05 stopped-no-scale-winner；缺少显式 manual strategy authorization"
+        )
+    if manual.source_stage05_bundle_sha256 != upstream.stage05_bundle_ref.sha256:
+        raise ManifestStateError("manual strategy authorization 的 Stage05Bundle SHA-256 不一致")
+    if manual.strategy_id not in upstream.pilot_filter_report.selected_strategy_ids:
+        raise ManifestStateError(
+            "manual strategy authorization 只能选择 Stage 05 已扩展的 Tier A strategy"
+        )
+    if not any(
+        item.strategy_id == manual.strategy_id
+        for item in upstream.strategy_bundle.strategies
+    ):
+        raise ManifestStateError("manual strategy authorization 不在 StrategyBundle")
+    return ScaleStrategyAuthorization(
+        mode="manual-stage05-stop-override",
+        strategy_id=manual.strategy_id,
+        authorized_at=authorized_at,
+        authorized_by=manual.authorized_by,
+        reason=manual.reason,
+        source_stage05_status=bundle.status,
+        source_stage05_bundle_sha256=manual.source_stage05_bundle_sha256,
+        acknowledge_stage05_scientific_stop=(
+            manual.acknowledge_stage05_scientific_stop
+        ),
+        acknowledge_not_scientifically_eligible=(
+            manual.acknowledge_not_scientifically_eligible
+        ),
     )
 
 
@@ -288,6 +351,7 @@ def build_scale_plan(
     devices: tuple[int, ...],
     preauthorized_candidate_limit: int,
     generated_at: datetime,
+    strategy_authorization: ScaleStrategyAuthorization | None = None,
 ) -> ScalePlan:
     """Build the deterministic 2×500 or 20×2500 shard layout."""
 
@@ -304,12 +368,22 @@ def build_scale_plan(
         )
         for index in range(requested // shard_size)
     )
+    authorization = strategy_authorization or ScaleStrategyAuthorization(
+        mode="stage05-winner",
+        strategy_id=strategy_id,
+        authorized_at=generated_at,
+        authorized_by="stage05-deterministic-policy",
+        reason="Stage 05 published the unique scientifically eligible scale winner.",
+        source_stage05_status="winner-selected",
+        source_stage05_bundle_sha256=stage05_bundle_sha256,
+    )
     return ScalePlan(
         generated_at=generated_at,
         profile=profile,
         strategy_id=strategy_id,
         strategy_bundle_sha256=strategy_bundle_sha256,
         stage05_bundle_sha256=stage05_bundle_sha256,
+        strategy_authorization=authorization,
         design_specification=design_specification,
         requested_new_candidates=requested,
         preauthorized_candidate_limit=preauthorized_candidate_limit,
@@ -394,8 +468,12 @@ def execute_stage06(
         raise ManifestStateError("Stage 06 缺少 stage04/stage06 config")
     now = datetime.now(UTC) if executed_at is None else executed_at
     profile = ScaleProfile(config.scale_profile)
-    winner = upstream.stage05_bundle.winner_strategy_id
-    assert winner is not None
+    authorization = _resolve_strategy_authorization(
+        upstream=upstream,
+        config=config,
+        authorized_at=now,
+    )
+    winner = authorization.strategy_id
     strategy = next(
         item for item in upstream.strategy_bundle.strategies if item.strategy_id == winner
     )
@@ -408,7 +486,21 @@ def execute_stage06(
     artifacts = attempt_root / "artifacts"
     runtime = attempt_root / "runtime"
     resource_path = artifacts / "resource-report.json"
+    authorization_path = artifacts / "scale-strategy-authorization.json"
     plan_path = artifacts / "scale-plan.json"
+    authorization = _dump_or_verify_model(
+        authorization,
+        authorization_path,
+        ScaleStrategyAuthorization,
+        ignore_fields=frozenset({"authorized_at"}),
+    )
+    authorization_ref = _artifact(
+        root,
+        authorization_path,
+        artifact_id="scale-strategy-authorization",
+        role="human-or-policy-scale-authority",
+        file_format="json",
+    )
     if plan_path.exists():
         plan = load_model(plan_path, ScalePlan)
         report = load_model(resource_path, ScaleResourceReport)
@@ -425,6 +517,7 @@ def execute_stage06(
             or plan.stage05_bundle_sha256 != upstream.stage05_bundle_ref.sha256
             or plan.strategy_id != winner
             or plan.profile is not profile
+            or plan.strategy_authorization != authorization
             or plan.design_specification != specification
             or plan.resource_report != resource_ref
             or plan.devices != stage04_config.executor.devices
@@ -459,6 +552,7 @@ def execute_stage06(
             devices=stage04_config.executor.devices,
             preauthorized_candidate_limit=config.preauthorized_candidate_limit,
             generated_at=now,
+            strategy_authorization=authorization,
         )
         dump_model(plan, plan_path)
     if not report.passed or not plan.execution_authorized:
@@ -704,6 +798,7 @@ def execute_stage06(
             role="scale-storage-preflight",
             file_format="json",
         ),
+        authorization_ref,
         _artifact(
             root,
             task_table_path,
@@ -754,12 +849,13 @@ def execute_stage06(
         strategy_bundle=upstream.strategy_bundle_ref,
         scale_plan=output_refs[0],
         resource_report=output_refs[1],
-        task_table=output_refs[2],
-        candidate_index=output_refs[3],
-        coverage_report=output_refs[4],
-        progress_final=output_refs[5],
-        task_events=output_refs[6],
-        backend_environment=output_refs[7],
+        strategy_authorization=output_refs[2],
+        task_table=output_refs[3],
+        candidate_index=output_refs[4],
+        coverage_report=output_refs[5],
+        progress_final=output_refs[6],
+        task_events=output_refs[7],
+        backend_environment=output_refs[8],
         profile=profile,
         strategy_id=winner,
         requested_new_candidates=plan.requested_new_candidates,
@@ -803,6 +899,7 @@ def execute_stage06(
         datetime.now(UTC),
         created_at + timedelta(microseconds=1),
     )
+    remote_executor_id = os.environ.get("EASYDESIGN_REMOTE_EXECUTOR_ID")
     proposed_attempt = Attempt(
         attempt_id="attempt-0001",
         status=ExecutionStatus.SUCCEEDED,
@@ -811,7 +908,11 @@ def execute_stage06(
         ended_at=proposed_completed_at,
         backend_name="boltzgen",
         backend_version="0.3.2",
-        executor_name="local-multi-gpu",
+        executor_name=(
+            "local-multi-gpu"
+            if remote_executor_id is None
+            else f"ssh-remote-{remote_executor_id}"
+        ),
         log_artifacts=tuple(log_refs),
     )
     attempt = _dump_or_verify_model(
@@ -836,9 +937,24 @@ def execute_stage06(
         output_artifacts=(*output_refs, bundle_ref),
         attempts=(attempt,),
         selected_attempt_id="attempt-0001",
-        warnings=(
-            "Stage 06 generated new candidates only; Stage 04/05 candidates are not counted.",
-            "smoke-1000 is an engineering smoke, not a production order package.",
+        warnings=tuple(
+            (
+                "Stage 06 generated new candidates only; Stage 04/05 candidates are not counted.",
+                (
+                    "production-50000 is a generated candidate population, not a "
+                    "scientifically validated order package."
+                    if profile is ScaleProfile.PRODUCTION_50000
+                    else "smoke-1000 is an engineering smoke, not a production order package."
+                ),
+                *(
+                    (
+                        "Human override scaled a Stage 05 Tier A despite "
+                        "stopped-no-scale-winner; scientific eligibility remains false.",
+                    )
+                    if authorization.mode == "manual-stage05-stop-override"
+                    else ()
+                ),
+            )
         ),
     )
     proposed_stage_manifest.validate_inputs_declared_by(

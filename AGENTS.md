@@ -130,6 +130,12 @@ Agent 必须自动完成以下收尾工作：
     `tasks/work/runtime` 等重型中间目录，登记来源、授权、大小和科学边界，并证明仓库内
     UI 能读取。Evidence bundle 不得被描述为可恢复的完整 run，也不得包含密钥、模型
     权重或未审计第三方资产。
+17. 跨主机计算只能使用 runtime profile 中显式声明的 SSH executor。提交前必须验证
+    known-host、独立密钥、远端 EasyDesign 版本、GPU、磁盘、上游 manifest 和配置
+    SHA-256；远端 run 自己发布 manifest、progress 和 events。禁止复制控制端私钥、
+    静默采用未知主机、杀死远端既有进程，或因 SSH 提交成功就声称科学运行已完成。
+    Stage 05 科学停止后的探索性放大还必须保存带来源 Bundle SHA-256 的人工授权，
+    历史科学结论不得被改写。
 
 ## 4. 阻塞与询问
 

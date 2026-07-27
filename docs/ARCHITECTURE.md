@@ -470,9 +470,12 @@ query-only、template disabled，full confidence 为必需输出。Stage 01 和 
 
 ### Stage 06 分片规模生成
 
-Stage 06 只在 Stage 05 发布唯一 winner 后运行。它同时把 Stage 03 strategy YAML、
-Stage 05 winner bundle 和 Stage 04 candidate index 声明为输入；后者仅用于从正式
-ArtifactRef 测量候选磁盘基线，不能成为 manifest 外的隐式读取。
+Stage 06 默认只在 Stage 05 发布唯一 winner 后运行。研究负责人也可以在
+`stopped-no-scale-winner` 后显式授权放大一个已经由 Stage 05 扩展过的 Tier A；该例外
+不会改变 Stage 05 结论，并形成独立 `ScaleStrategyAuthorization`。没有 Tier A 时禁止
+越过。Stage 06 同时把 Stage 03 strategy YAML、Stage 05 bundle 和 Stage 04 candidate
+index 声明为输入；后者仅用于从正式 ArtifactRef 测量候选磁盘基线，不能成为 manifest
+外的隐式读取。
 
 ```text
 ScaleResourceReport
@@ -495,6 +498,26 @@ Stage 06 不复制生成/收集逻辑，也不把 Stage 04/05 候选计入 scale
 原子 progress/state 与 append-only events；发布中断后，终态 artifact 只有在模型 identity
 或原始 bytes 完全一致时才可复用。Stage 07 只读取 StageManifest 声明、checksum 正确且
 覆盖无缺口的 ScaleBundle/CandidateIndex。
+
+### 整个 run 的 SSH 控制面
+
+跨主机能力位于 deployment 层，不是新的科学 executor 类型：
+
+```text
+控制端 runtime profile
+→ 严格 known-host / dedicated identity / version probe
+→ 校验 succeeded source RunManifest 与 config hash
+→ rsync 完整 continuation source
+→ 远端 systemd EasyDesign worker
+→ 远端 local-multi-gpu executor
+→ 远端独立 manifest / progress / events / resume
+```
+
+这样 Stage 04/06 仍只维护一套本地多 GPU 任务语义；SSH 只负责把整个 EasyDesign run
+提交到另一台机器。科学配置不保存 IP、密钥或机器绝对路径，它们只存在于控制端 runtime
+profile。远端版本必须与控制端完全一致，远端 runs root 必须预先存在并通过容量探针。
+控制端只保存小型 `SshRemoteSubmission` 记录；科学事实和恢复身份以远端 run 为准。
+SSH 会话断开不影响 systemd worker，状态查询也不得从终端文本或目录名称推测进度。
 
 ### Stage 07 深度筛选、三 seed 与审核包
 
@@ -790,6 +813,11 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
   RunManifest 1.1 code identity 和本地 wheel 安装；CLI/UI 继续只调用同一 application
   API。完整取舍见
   [`ADR-0002`](decisions/ADR-0002-developer-preview-cli-and-code-identity.md)。
+- 2026-07-27：跨服务器计算采用 whole-run SSH control plane；远端继续使用同一
+  local-multi-GPU Stage executor，并独立维护 manifest/progress/resume。Stage 05
+  `stopped-no-scale-winner` 之后只允许对已扩展 Tier A 进行带双重确认和 Bundle
+  SHA-256 的人工探索性放大。完整取舍见
+  [`ADR-0003`](decisions/ADR-0003-ssh-remote-runs-and-manual-scale-authority.md)。
 - 2026-07-25：用户配置统一为 schema 0.3 的 `stage01`–`stage07`；Target Bundle 0.3
   支持 coordinate ensemble，SASA 将单模型推广为多模型共识；ScanNet 多模型明确拒绝。
 - 2026-07-25：UniProt 身份只接受用户显式 accession，annotation 只作证据/warning；

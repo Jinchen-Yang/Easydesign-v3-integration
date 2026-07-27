@@ -84,6 +84,52 @@ class ScaleResourceReport(BaseModel):
         return self
 
 
+class ScaleStrategyAuthorization(BaseModel):
+    """Authority and scientific boundary for the strategy selected for scale."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    schema_version: Literal["0.1"] = "0.1"
+    mode: Literal["stage05-winner", "manual-stage05-stop-override"]
+    strategy_id: str = Field(pattern=ID_PATTERN)
+    authorized_at: datetime
+    authorized_by: str = Field(min_length=1, max_length=256)
+    reason: str = Field(min_length=1, max_length=4096)
+    source_stage05_status: Literal[
+        "winner-selected",
+        "stopped-no-scale-winner",
+    ]
+    source_stage05_bundle_sha256: str = Field(pattern=SHA256_PATTERN)
+    acknowledge_stage05_scientific_stop: bool = False
+    acknowledge_not_scientifically_eligible: bool = False
+
+    @model_validator(mode="after")
+    def validate_authority(self) -> Self:
+        if self.mode == "stage05-winner":
+            if self.source_stage05_status != "winner-selected":
+                raise ValueError("Stage 05 winner authorization 必须来自 winner-selected")
+            if (
+                self.acknowledge_stage05_scientific_stop
+                or self.acknowledge_not_scientifically_eligible
+            ):
+                raise ValueError(
+                    "正常 winner authorization 不得伪造 scientific-stop acknowledgement"
+                )
+        else:
+            if self.source_stage05_status != "stopped-no-scale-winner":
+                raise ValueError("manual override 只接受 stopped-no-scale-winner")
+            if not (
+                self.acknowledge_stage05_scientific_stop
+                and self.acknowledge_not_scientifically_eligible
+            ):
+                raise ValueError("manual override 必须确认 scientific stop 与科学不合格边界")
+        return self
+
+
 class ScalePlan(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -93,6 +139,7 @@ class ScalePlan(BaseModel):
     strategy_id: str = Field(pattern=ID_PATTERN)
     strategy_bundle_sha256: str = Field(pattern=SHA256_PATTERN)
     stage05_bundle_sha256: str = Field(pattern=SHA256_PATTERN)
+    strategy_authorization: ScaleStrategyAuthorization
     design_specification: ArtifactRef
     requested_new_candidates: int = Field(ge=1)
     preauthorized_candidate_limit: int = Field(ge=1)
@@ -116,6 +163,8 @@ class ScalePlan(BaseModel):
             raise ValueError("ScalePlan shard/task identity 不能重复")
         if any(item.strategy_id != self.strategy_id for item in self.shards):
             raise ValueError("ScalePlan shard strategy 不一致")
+        if self.strategy_authorization.strategy_id != self.strategy_id:
+            raise ValueError("ScalePlan strategy authorization 与 strategy 不一致")
         ordered = sorted(self.shards, key=lambda item: item.ordinal_start)
         expected_start = 1
         for shard in ordered:
@@ -189,6 +238,7 @@ class ScaleBundle(BaseModel):
     generated_at: datetime
     stage05_bundle: ArtifactRef
     strategy_bundle: ArtifactRef
+    strategy_authorization: ArtifactRef
     scale_plan: ArtifactRef
     resource_report: ArtifactRef
     task_table: ArtifactRef

@@ -4,16 +4,18 @@
 
 **契约版本：** `0.1`
 
-**实现任务：** `S06-001`
+**实现任务：** `S06-001`、`S06-002`
 
 ## 目的
 
-Stage 06 只做一件事：把 Stage 05 唯一批准的策略按已授权预算生成一批全新的、
-完整且可追溯的 BoltzGen 候选，并把它们无缺口地交给 Stage 07。
+Stage 06 只做一件事：把 Stage 05 唯一批准的策略，或负责人明确授权的已扩展 Tier A，
+按已授权预算生成一批全新的、完整且可追溯的 BoltzGen 候选，并把它们无缺口地交给
+Stage 07。
 
 本阶段不会重新选择策略，也不会把 Stage 04/05 的候选计入 scale 数量。当前
 `smoke-1000` 必须新生成 1000 个候选；`production-50000` 是可规划、可恢复的正式规模
-profile，但本轮没有获得真实执行授权。
+profile。APOE 于 2026-07-27 获得一次独立的人工作为探索性生成的真实 50k 授权；该授权
+不改变 Stage 05 科学停止。
 
 这里的“复折叠”指固定 BoltzGen 0.3.2 pipeline 内的 folding/refolding/analysis 产物。
 多 seed Protenix 深度复合物预测属于 Stage 07，不能混入 Stage 06。
@@ -24,12 +26,14 @@ Stage 06 只读取当前 `RunManifest` 声明且逐一通过大小与 SHA-256 �
 
 - Stage 03 `StrategyBundle` 和唯一胜出策略的 `design.yaml`；
 - Stage 04 `CandidateIndex`，仅用于冻结实测候选磁盘基线；
-- Stage 05 `Stage05Bundle`，且状态必须是 `winner-selected`；
+- Stage 05 `Stage05Bundle`；
 - schema 0.7 的 `stage04.executor` 与 `stage06` 配置；
 - runtime profile 显式声明的 BoltzGen backend。
 
-Stage 05 为 `stopped-no-tier-a` 或 `stopped-no-scale-winner` 时 Stage 06 不得启动。代码不
-扫描上游目录猜赢家，也不从文件名推断候选。
+默认要求 `winner-selected`。`stopped-no-scale-winner` 只有在配置提供双重确认的
+`manual_strategy_authorization` 时才能选择 Stage 05 已经扩展过的 Tier A；Stage 05
+结论不被重写。`stopped-no-tier-a` 永远不得越过。代码不扫描上游目录猜策略，也不从
+文件名推断候选。
 
 ## 配置
 
@@ -41,12 +45,19 @@ stage06:
   preauthorized_candidate_limit: 1000
 ```
 
-已实现但本次不真实启动的 production profile：
+production profile：
 
 ```yaml
 stage06:
   scale_profile: production-50000
   preauthorized_candidate_limit: 50000
+  manual_strategy_authorization:
+    strategy_id: selected-tier-a-strategy
+    authorized_by: principal-investigator
+    reason: "Exploratory scale generation despite the frozen Stage 05 scientific stop."
+    source_stage05_bundle_sha256: 64-character-lowercase-sha256
+    acknowledge_stage05_scientific_stop: true
+    acknowledge_not_scientifically_eligible: true
 ```
 
 profile 冻结以下布局：
@@ -54,10 +65,15 @@ profile 冻结以下布局：
 | Profile | 新候选总数 | Shard 数 | 每 shard 数 | 本轮真实授权 |
 | --- | ---: | ---: | ---: | --- |
 | `smoke-1000` | 1,000 | 2 | 500 | 是 |
-| `production-50000` | 50,000 | 20 | 2,500 | 否，只验证计划与恢复契约 |
+| `production-50000` | 50,000 | 20 | 2,500 | 必须逐 run 显式授权 |
 
 `preauthorized_candidate_limit` 小于 profile 规模时配置校验直接失败。50,000 不是代码中
 到处散落的常数，而是 `ScaleProfile` 的一个版本化能力。
+
+人工 override 不是补写 `winner_strategy_id`：系统会发布
+`scale-strategy-authorization.json`，保存授权人、理由、Stage05Bundle SHA-256、
+`stopped-no-scale-winner` 与双重 acknowledgement。它只批准生成预算，不表示候选通过
+Protenix 或具备实验成功概率。
 
 ## 执行流程
 
@@ -97,6 +113,7 @@ refolded structure 和 design mask 的实际字节数计算每候选基线。当
 - profile、预授权上限、GPU 和 `workers_per_device=1`；
 - 每个 shard 的稳定 ID、task ID、候选 ordinal 起止和数量；
 - 冻结的资源报告 identity。
+- 正常 Stage 05 winner 或人工探索性 override 的完整授权 identity。
 
 `smoke-1000` 的两个 shard 固定覆盖 `1–500` 与 `501–1000`；
 `production-50000` 的二十个 shard 连续覆盖 `1–50000`。ordinal 断裂、重叠、重复 task
@@ -120,6 +137,11 @@ design
 执行器只等待资源，不终止服务器上的其他进程。BoltzGen 0.3.2 没有可靠公开 seed，
 因此 provenance 如实保存
 `random_seed_status: unsupported-by-boltzgen-0.3.2`。
+
+运行可位于本机，也可由控制端通过 `easydesign remote submit` 复制整个 succeeded
+continuation source 到另一台服务器。SSH 只负责提交；远端仍使用本节的
+`local-multi-gpu` executor，并独立写 manifest、progress 和 events。断开 SSH 不会终止
+systemd worker。
 
 ### 4. 恢复与不可变发布
 
@@ -155,6 +177,7 @@ Stage 06 版本化并导出：
 06-scale-generation-and-refolding/attempt-0001/
 ├── artifacts/
 │   ├── resource-report.json
+│   ├── scale-strategy-authorization.json
 │   ├── scale-plan.json
 │   ├── scale-task-table.json
 │   ├── scale-candidate-index.json
@@ -175,7 +198,7 @@ Stage 06 版本化并导出：
 ```
 
 `ScaleBundle` 同时引用 plan、资源门、task table、candidate index、coverage、terminal
-progress、append-only events 和 backend environment。Stage 07 只能通过当前
+progress、append-only events、backend environment 和 scale authority。Stage 07 只能通过当前
 StageManifest 声明的 `ScaleBundle`/`CandidateIndex` 消费结果。
 
 ## CLI
@@ -187,6 +210,13 @@ easydesign run easydesign.yaml
 easydesign runs watch RUN_DIR
 easydesign runs resume RUN_DIR
 easydesign runs show RUN_DIR
+
+# 控制端提交到显式 SSH executor
+easydesign remote probe REMOTE_ID
+easydesign remote submit REMOTE_ID \
+  --job-id JOB_ID --run-id RUN_ID \
+  --config easydesign.yaml --from-run SUCCEEDED_STAGE05_RUN
+easydesign remote status REMOTE_ID JOB_ID
 ```
 
 `watch` 只读取结构化 progress；显示 stage、phase、总数、成功/失败/重试、GPU 分配、
@@ -205,6 +235,7 @@ Stage 07。
 - shard 未收集到完整数量；
 - candidate identity 重复、ordinal 缺口或 artifact 损坏；
 - 后端、日志或终态产物发布不完整。
+- 远端版本、known-host、source manifest、配置、GPU 或磁盘探针不满足契约。
 
 这些情况不能发布 succeeded ScaleBundle，也不能被记成合法科学负结果。
 
@@ -226,11 +257,10 @@ APOE 若在 Stage 05 合法科学停止，不降低门槛；Stage 06 通用工�
 
 本轮不做：
 
-- 真实启动 50,000；
 - 把 Stage 04/05 候选计入 1000；
 - Stage 06 内再次筛选或更换 strategy；
 - Protenix 多 seed、TNP、最终排名或候选下单包；
-- 自动扩容、Slurm/SMART 和跨节点调度；
+- 自动扩容、Slurm/SMART 和单 run 跨节点调度；
 - 为通过结果而修改 scientific threshold；
 - 供应商下单或公网运行服务。
 

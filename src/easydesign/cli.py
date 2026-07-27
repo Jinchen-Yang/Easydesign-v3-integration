@@ -48,6 +48,12 @@ from easydesign.orchestration.profile import (
     load_runtime_profile,
 )
 from easydesign.orchestration.project import initialize_project
+from easydesign.orchestration.remote_execution import (
+    probe_remote_executor,
+    read_remote_status,
+    read_remote_submission,
+    submit_remote_pipeline,
+)
 from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.orchestration.stage05 import Stage05Execution
 from easydesign.orchestration.stage06 import Stage06Execution
@@ -190,6 +196,35 @@ def _parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--dry-run", action="store_true")
     _add_json(run_parser)
+
+    remote_parser = commands.add_parser(
+        "remote",
+        help="通过显式 SSH executor 探测、提交和查看整个 EasyDesign run",
+    )
+    remote_commands = remote_parser.add_subparsers(
+        dest="remote_command",
+        required=True,
+    )
+    remote_probe = remote_commands.add_parser("probe", help="只读检查远端运行环境")
+    remote_probe.add_argument("executor_id")
+    _add_profile(remote_probe)
+    _add_json(remote_probe)
+    remote_submit = remote_commands.add_parser(
+        "submit",
+        help="校验并复制上游 run，在远端 systemd worker 中启动 continuation",
+    )
+    remote_submit.add_argument("executor_id")
+    remote_submit.add_argument("--job-id", required=True)
+    remote_submit.add_argument("--run-id", required=True)
+    remote_submit.add_argument("--config", type=Path, required=True)
+    remote_submit.add_argument("--from-run", type=Path, required=True)
+    _add_profile(remote_submit)
+    _add_json(remote_submit)
+    remote_status = remote_commands.add_parser("status", help="查询远端 worker 状态")
+    remote_status.add_argument("executor_id")
+    remote_status.add_argument("job_id")
+    _add_profile(remote_status)
+    _add_json(remote_status)
 
     hotspots_parser = commands.add_parser(
         "hotspots",
@@ -472,6 +507,65 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             print(_json_text(execution))
         else:
             _print_execution(execution)
+        return 0
+
+    if arguments.command == "remote":
+        if arguments.remote_command == "probe":
+            probe = probe_remote_executor(
+                executor_id=arguments.executor_id,
+                profile_path=arguments.profile,
+            )
+            if arguments.json:
+                print(_json_text(probe))
+            else:
+                print(f"远端主机：{probe.hostname}")
+                print(f"EasyDesign：{probe.easydesign_version}")
+                print(f"GPU：{probe.gpu_count}")
+                print(
+                    "运行盘可用："
+                    f"{probe.filesystem_available_bytes / 1024**3:.1f} GiB"
+                )
+            return 0
+        if arguments.remote_command == "submit":
+            submission = submit_remote_pipeline(
+                executor_id=arguments.executor_id,
+                job_id=arguments.job_id,
+                run_id=arguments.run_id,
+                config_path=arguments.config,
+                source_run=arguments.from_run,
+                profile_path=arguments.profile,
+            )
+            if arguments.json:
+                print(_json_text(submission))
+            else:
+                print(f"远端任务已提交：{submission.unit_name}")
+                print(f"远端 run：{submission.remote_run_root}")
+                print(
+                    "查看状态："
+                    f"easydesign remote status {submission.executor_id} "
+                    f"{submission.job_id}"
+                )
+            return 0
+        submission = read_remote_submission(
+            executor_id=arguments.executor_id,
+            job_id=arguments.job_id,
+        )
+        status = read_remote_status(
+            executor_id=arguments.executor_id,
+            job_id=arguments.job_id,
+            profile_path=arguments.profile,
+        )
+        status_payload: dict[str, Any] = {
+            "submission": submission.model_dump(mode="json"),
+            "worker": status.model_dump(mode="json"),
+        }
+        if arguments.json:
+            print(_json_text(status_payload))
+        else:
+            print(f"远端任务：{submission.unit_name}")
+            print(f"Worker：{status.active_state}/{status.sub_state}")
+            print(f"退出码：{status.exec_main_status}")
+            print(f"远端 run：{submission.remote_run_root}")
         return 0
 
     if arguments.command == "hotspots":

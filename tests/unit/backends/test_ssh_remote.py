@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from pytest import MonkeyPatch
+
+from easydesign.backends.executors import SshRemoteConnection, SshRemoteExecutor
+
+
+def _executor(tmp_path: Path) -> SshRemoteExecutor:
+    identity = tmp_path / "id_ed25519"
+    known_hosts = tmp_path / "known_hosts"
+    identity.write_text("private\n", encoding="utf-8")
+    known_hosts.write_text("host key\n", encoding="utf-8")
+    return SshRemoteExecutor(
+        SshRemoteConnection(
+            executor_id="suzhou2-a100x8",
+            host="192.0.2.10",
+            user="root",
+            port=22,
+            identity_file=identity,
+            known_hosts_file=known_hosts,
+            ssh_executable=Path("/usr/bin/ssh"),
+            rsync_executable=Path("/usr/bin/rsync"),
+            remote_work_root=Path("/data/easydesign"),
+            remote_runs_root=Path("/data/easydesign/runs"),
+            remote_easydesign_executable=Path("/data/easydesign/bin/easydesign"),
+            remote_profile=Path("/data/easydesign/profile.yaml"),
+            connect_timeout_seconds=15,
+        )
+    )
+
+
+def test_ssh_probe_requires_strict_host_identity_and_reports_resources(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(command: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        joined = " ".join(command)
+        if " hostname" in joined:
+            stdout = "remote-a100\n"
+        elif "--version" in joined:
+            stdout = "0.1.0.dev11\n"
+        elif "nvidia-smi" in joined:
+            stdout = "\n".join(str(index) for index in range(8)) + "\n"
+        else:
+            stdout = "1B-blocks  Available\n7000000000000 6500000000000\n"
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    probe = _executor(tmp_path).probe()
+
+    assert probe.gpu_count == 8
+    assert probe.filesystem_available_bytes == 6_500_000_000_000
+    assert all("BatchMode=yes" in item for item in commands)
+    assert all("StrictHostKeyChecking=yes" in item for item in commands)
+    assert all(
+        any(argument.startswith("UserKnownHostsFile=") for argument in item)
+        for item in commands
+    )
+
+
+def test_ssh_submission_stages_exact_config_and_uses_persistent_systemd_worker(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    source = tmp_path / "source-run"
+    source.mkdir()
+    (source / "manifest.json").write_text("{}\n", encoding="utf-8")
+    config = tmp_path / "custom-name.yaml"
+    config.write_text("schema_version: '0.7'\n", encoding="utf-8")
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(command: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="Running as unit easydesign-apoe-50k.service.\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    submission = _executor(tmp_path).submit(
+        job_id="apoe-50k",
+        project_id="apoe",
+        run_id="scale-50k",
+        source_run=source,
+        source_run_manifest_sha256="a" * 64,
+        config_path=config,
+        config_sha256="b" * 64,
+    )
+
+    rsync_commands = [item for item in commands if item[0] == "/usr/bin/rsync"]
+    assert len(rsync_commands) == 2
+    assert rsync_commands[1][-1].endswith(
+        ":/data/easydesign/jobs/apoe-50k/input/easydesign.yaml"
+    )
+    launch = next(item for item in commands if "systemd-run" in item[-1])
+    assert "EASYDESIGN_REMOTE_EXECUTOR_ID=suzhou2-a100x8" in launch[-1]
+    assert "--from-run /data/easydesign/jobs/apoe-50k/source-run" in launch[-1]
+    assert submission.remote_run_root == "/data/easydesign/runs/apoe/scale-50k"
+    assert submission.source_run_manifest_sha256 == "a" * 64

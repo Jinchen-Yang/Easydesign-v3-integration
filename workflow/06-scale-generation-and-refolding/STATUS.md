@@ -6,16 +6,16 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S06-001 已实现 2×500/20×2500 分片计划、25% 磁盘门、精确 merge 和共享恢复执行器。 | 保持通用能力冻结；APOE 因 Stage 05 无 scale winner，本轮不创建 1000 任务。 | 无代码阻塞；APOE 已科学停止，50k 也没有本轮执行授权。 | 2026-07-26 |
+| `implemented` | S06-001 的分片/恢复已完成；S06-002 新增带科学边界的人工规模授权与 SSH whole-run 提交。 | 在 Suzhou2 八张 A100 上运行 APOE 唯一已扩展 Tier A 的 20×2500 探索性 50k。 | 无代码阻塞；50k 为长任务，完成前保持 Now，Stage 05 科学停止不变。 | 2026-07-27 |
 
 ## 当前结论
 
 - 阶段状态：`implemented`，不是 `smoke-validated`。
 - `smoke-1000` 表示全新 1000 个候选，固定为两个 500-candidate shard。
-- `production-50000` 的二十个 2500-candidate shard 计划契约已实现，但不真实启动。
+- `production-50000` 的二十个 2500-candidate shard 已获得一次 APOE 探索性真实授权。
 - Stage 06 复用 Stage 04 的 BoltzGen adapter、collector、TaskRecord、事件与恢复执行器。
 - Stage 04/05 候选不计入 scale 数量；Stage 07 才执行 Protenix 深度筛选和 TNP。
-- 软件能力与 APOE 科学结果分别报告；Stage 05 科学停止不会被改阈值绕过。
+- 软件能力与 APOE 科学结果分别报告；人工授权生成不会修改 Stage 05 科学停止。
 
 ## 功能矩阵
 
@@ -28,25 +28,31 @@
 | 中断恢复与增量收集 | `implemented` | 稳定 task/shard/ordinal、共享恢复状态机 |
 | 精确 merge 与覆盖报告 | `implemented` | 1000 fixture 校验 identity 唯一和 ordinal `1..1000` |
 | 发布中断恢复 | `implemented` | 终态 artifact identity/bytes 校验后复用，不覆盖 |
-| APOE 新 1000 候选 | `planned` | 本轮明确未运行：Stage 05 发布 `stopped-no-scale-winner`，按契约没有合法 Stage 06 输入 |
-| 真实 50,000 | `planned` | 本轮未授权 |
+| Stage 05 停止后的人工探索性授权 | `implemented` | 只接受已扩展 Tier A、源 Bundle SHA-256、授权人/理由和双重确认；`stopped-no-tier-a` 禁止越过 |
+| SSH whole-run 提交 | `implemented` | dedicated key、strict known-host、精确版本探针、rsync、systemd worker、远端独立 run |
+| APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
+| APOE 真实 50,000 | `running` | Suzhou2 8×A100，20×2500；完成前不得称为 ScaleBundle 成功 |
 
 ## Now
 
-- 无。Stage 06 通用实现已冻结，本轮 APOE 未到达本阶段。
+- `[S06-002]` 跟踪 APOE `region-a-h-all-c-full-scaffold-gontivimab` 的
+  `production-50000`，验证 20 个 shard 的任务、候选 identity、GPU 分配、断线后
+  systemd 存活和 resume。
+- `[ENG-013]` 用 Suzhou2 真实部署验证 SSH probe/submit/status；远端 run 才是科学事实
+  来源，控制端 job record 只用于定位。
 
 ## Next
 
-- 在第二条独立真实 target 或未来新版本策略产生唯一 Stage 05 winner 后，再执行
+- APOE 50k 完成后验证精确 1..50000 ordinal、无重复/缺口、ScaleBundle 与所有 checksum。
+- 在第二条独立真实 target 或未来新版本策略产生唯一 Stage 05 winner 后，按正常主线执行
   `smoke-1000`。
 - 用真实运行重新测量每 candidate 磁盘峰值，并评估当前 20×安全倍率。
-- 在另行授权前只验证 `production-50000` plan/resume，不创建真实 50k 任务。
+- 把 remote job/progress 纳入 UI 长任务页；科学配置继续不保存 SSH 主机或密钥。
 
 ## Blocked
 
-- APOE 的 `stopped-no-scale-winner` 是终态科学结果，不是 Stage 06 operational
-  blocker，也不能靠跳过 gate 解决。
-- production 50k 依赖显式预算、容量和运行授权；当前不构成代码阻塞。
+- 无当前 blocker。APOE 的 `stopped-no-scale-winner` 仍是冻结科学结果；本次人工授权
+  只批准探索性生成预算，不批准科学结论或进入 Stage 07。
 
 ## 验证证据
 
@@ -56,8 +62,11 @@
 - 全仓：`make check`、`218 passed, 8 skipped`、`make build` 通过；wheel 的
   `21/21` 个资产和 console script 校验通过。
 - 最小真实 backend smoke：待完成。
-- APOE 真实 run：未创建；Stage 05 run
-  `20260726-004-stage05-pilot-filter` 已以 `stopped-no-scale-winner` 成功终止。
+- SSH 单元/类型检查：严格 host identity、精确 config staging、persistent systemd、
+  profile 绝对路径和双 acknowledgement 已覆盖。
+- APOE source：Stage 05 run `20260726-004-stage05-pilot-filter` 保持
+  `stopped-no-scale-winner`；Stage05Bundle SHA-256
+  `401259623dd43cf5a17dfed20fd81b6868d61002bcc1eabfab1b68134b5d9073`。
 
 ## 工作日志
 
@@ -73,6 +82,15 @@
 - APOE Stage 05 于 `2026-07-26T09:13:48+08:00` 发布
   `stopped-no-scale-winner`；统一 run 中仅保留预创建的空阶段目录，没有创建 Stage 06
   attempt、task、shard 或 manifest。
+
+### 2026-07-27
+
+- 负责人明确要求跳过 APOE Tier A 的 100-candidate 科学结果，直接在 Suzhou2 八张卡做
+  50k 探索性生成。
+- 没有改写 Stage 05 winner；新增 `ScaleStrategyAuthorization`，只允许
+  `stopped-no-scale-winner` 中已扩展 Tier A，并冻结源 Bundle hash 与双重确认。
+- SSH 采用 whole-run control plane：控制端 staging，远端 systemd worker 继续调用同一
+  local multi-GPU Stage 06。
 
 ## 历史索引
 

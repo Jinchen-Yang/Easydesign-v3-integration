@@ -38,6 +38,7 @@ venv/
 # Runtime artifacts and model assets
 runs/*
 !runs/.gitkeep
+projects/*
 models/*
 !models/.gitkeep
 *.ckpt

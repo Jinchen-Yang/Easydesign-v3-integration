@@ -404,7 +404,7 @@ def main() -> int:
     )
 
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    for pattern in ("runs/*", "models/*", "*.safetensors", ".env"):
+    for pattern in ("runs/*", "projects/*", "models/*", "*.safetensors", ".env"):
         require(pattern in ignore, f"缺少 ignore 规则: {pattern}", errors)
 
     require(not (ROOT / "LICENSE").exists(), "IP 决策前不得添加 LICENSE", errors)

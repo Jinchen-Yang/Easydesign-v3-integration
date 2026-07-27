@@ -29,7 +29,7 @@
 | 精确 merge 与覆盖报告 | `implemented` | 1000 fixture 校验 identity 唯一和 ordinal `1..1000` |
 | 发布中断恢复 | `implemented` | 终态 artifact identity/bytes 校验后复用，不覆盖 |
 | Stage 05 停止后的人工探索性授权 | `implemented` | 只接受已扩展 Tier A、源 Bundle SHA-256、授权人/理由和双重确认；`stopped-no-tier-a` 禁止越过 |
-| SSH whole-run 提交 | `implemented` | dedicated key、strict known-host、精确版本探针、rsync、systemd worker、远端独立 run |
+| SSH whole-run 提交 | `smoke-validated` | Suzhou2 dedicated key、strict known-host、dev11 精确版本、rsync、systemd worker 与远端独立 run 真实通过 |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
 | APOE 真实 50,000 | `running` | Suzhou2 8×A100，20×2500；完成前不得称为 ScaleBundle 成功 |
 
@@ -38,8 +38,6 @@
 - `[S06-002]` 跟踪 APOE `region-a-h-all-c-full-scaffold-gontivimab` 的
   `production-50000`，验证 20 个 shard 的任务、候选 identity、GPU 分配、断线后
   systemd 存活和 resume。
-- `[ENG-013]` 用 Suzhou2 真实部署验证 SSH probe/submit/status；远端 run 才是科学事实
-  来源，控制端 job record 只用于定位。
 
 ## Next
 
@@ -61,9 +59,16 @@
   SHA-256；磁盘门失败时没有创建 task。
 - 全仓：`make check`、`218 passed, 8 skipped`、`make build` 通过；wheel 的
   `21/21` 个资产和 console script 校验通过。
-- 最小真实 backend smoke：待完成。
+- 真实 backend smoke：Suzhou2 8×A100 已同时启动首批 8 个 production shard，
+  systemd worker、结构化进度、设备绑定和实际 CIF 写入均已验证；50,000 完整性验收
+  仍在运行。
 - SSH 单元/类型检查：严格 host identity、精确 config staging、persistent systemd、
   profile 绝对路径和双 acknowledgement 已覆盖。
+- Suzhou2 真实提交：`easydesign-apoe-tier-a-50k-20260727` 为
+  `active/running`；远端 run
+  `/data/easydesign/runs/apoe-s02-006-pse/20260727-001-stage06-tier-a-50k-suzhou2`。
+  20 个 shard 已创建，首批 shard 0001–0008 分别绑定 GPU 0–7；八张 A100 均观测到
+  BoltzGen 进程约 4.5–5.3 GiB、95–97% utilization，并开始写入设计。
 - APOE source：Stage 05 run `20260726-004-stage05-pilot-filter` 保持
   `stopped-no-scale-winner`；Stage05Bundle SHA-256
   `401259623dd43cf5a17dfed20fd81b6868d61002bcc1eabfab1b68134b5d9073`。
@@ -91,6 +96,8 @@
   `stopped-no-scale-winner` 中已扩展 Tier A，并冻结源 Bundle hash 与双重确认。
 - SSH 采用 whole-run control plane：控制端 staging，远端 systemd worker 继续调用同一
   local multi-GPU Stage 06。
+- 提交前曾观察到 GPU 0 上有两条既有 BindCraft，未终止或挤占；正式提交时八张卡均已
+  释放，resource gate 通过后首批八个 shard 同时启动。
 
 ## 历史索引
 

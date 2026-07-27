@@ -399,3 +399,31 @@
   路径；APOE 私有资产只获准在当前仓库与合作者共享，公开 release 前必须重新审查。
 - 提交：`980a8eae30e79e4ba0a59bab105f6da6beb1d48f`
   （`feat(reporting): share verified APOE UI evidence`）。
+
+## 2026-07-27 — ENG-013：SSH whole-run 远程执行
+
+- 状态：`smoke-validated`；APOE 50k 科学运行本身继续由 `S06-002` 在 Now 跟踪。
+- 完成时间：2026-07-27T11:40:31+08:00
+- 问题：Stage 04–06 只能在控制端本机运行；手工 SSH 复制 YAML 会丢失 source manifest、
+  配置身份、systemd 持久性和 Stage 06 恢复证据。Continuation preflight 还会错误要求
+  已完成 Stage 01/05 的 PyMOL 与 Protenix。
+- 方案：建立 runtime-profile 驱动的 whole-run SSH control plane，严格验证 dedicated
+  identity、known-host、EasyDesign 版本、GPU、磁盘、source RunManifest 和配置 hash，
+  rsync 完整 continuation source 后由远端 systemd worker 调用同一 local multi-GPU
+  executor；preflight 从 source 的最高连续 Stage 计算真正后续 backend。
+- 验证证据：Suzhou2 报告 8×A100、约 6.5 TiB 可用空间、EasyDesign
+  `0.1.0.dev11`、BoltzGen `0.3.2` 和固定 commit
+  `a3149cf18eeb58648d1abbb27539bd73f746cdda`。真实 unit
+  `easydesign-apoe-tier-a-50k-20260727` 为 `active/running`，首批八个 shard 分别在
+  GPU 0–7 达到约 95–97% utilization，并开始产生设计文件。
+- 遇到的问题：提交前 GPU 0 短暂存在两条 BindCraft；远端只配置 BoltzGen 时又暴露了
+  continuation preflight 过度探测旧 Stage backend 的缺陷。
+- 解决办法：未终止既有任务，等待八卡真正空闲后再通过资源门；将后端需求按
+  `start_stage..stop_after_stage` 求交，只在 Stage 06 continuation 探测 BoltzGen。
+- 遗留边界：SSH 首版依赖 OpenSSH、rsync 与 systemd，尚未实现 Slurm/SMART 或单 run
+  跨节点；远端 50k 未完成前不能宣称 Stage 06 succeeded 或生成 ScaleBundle。
+- 提交：
+  `23c91988d5c623d08e1fb35e621b837f2d8c6503`
+  （SSH executor 与人工 scale authority）；
+  `f3562aef74b9d34a451db93cae92f4e3c879ec02`
+  （continuation backend preflight）。

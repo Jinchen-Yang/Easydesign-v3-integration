@@ -24,7 +24,7 @@
 | M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 已在 Stage 05 合法科学停止。 |
 | M10 产品级科研工作台 | `smoke-validated` | dev9 工作台已完成统一浅色结构工作区、执行/筛选证据和可自由浏览的新建设计向导；文件接收、草稿、检查与启动状态边界通过双尺寸 Chromium 和 Python API 验收。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
-| M12 跨服务器执行 | `implemented` | dev11 提供显式 SSH whole-run 提交、版本/known-host/manifest 校验、持久 worker 和远端独立恢复；Suzhou2 真实 50k 正在验收。 |
+| M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -77,7 +77,7 @@
 | `ENG-012` | Core Engineering | `smoke-validated` | 本地文件立即原子接收并返回 filename/size/SHA-256 receipt；token 单次消费、空文件/超限/失败/重选均有明确处置。 |
 | `DATA-004` | Data & Assets | `smoke-validated` | APOE Stage 05 已形成 65 MiB、307 文件的 manifest 完整 UI evidence bundle；约 970 MB backend 中间目录未提交。 |
 | `UX-005` | CLI & Developer Experience | `smoke-validated` | 合作者 clone `main` 后可用一条命令完成 SHA-256/manifest 校验并启动相同 APOE 工作台。 |
-| `ENG-013` | Core Engineering | `implemented` | whole-run SSH executor、严格主机/版本探针、rsync staging、systemd worker、远端独立 manifest/progress/resume 和 CLI 完成；等待 Suzhou2 长任务持续验收。 |
+| `ENG-013` | Core Engineering | `smoke-validated` | whole-run SSH executor、严格主机/版本探针、rsync staging、systemd worker、远端独立 manifest/progress/resume 和 CLI 已由 Suzhou2 8×A100 真实提交验证。 |
 | `S06-002` | Scientific Pipeline | `implemented` | 以源 Stage05Bundle SHA-256 和双重 acknowledgement 人工授权已扩展 Tier A 的探索性 50k；APOE Stage 05 科学停止保持不变，远端运行待完成。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 

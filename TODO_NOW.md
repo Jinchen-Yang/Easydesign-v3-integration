@@ -18,11 +18,9 @@
 
 ## Now
 
-- `[ENG-013]` 在 Suzhou2 验收 whole-run SSH 提交：8 张 A100、固定 EasyDesign/BoltzGen
-  版本、远端独立 manifest/progress、systemd 持久 worker 和断线后状态查询。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
-  Stage 05 `stopped-no-scale-winner` 不变，跟踪 20×2500 分片直到完成或形成可恢复的
-  operational failure 证据。
+  Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
+  已在 8×A100 运行，跟踪 20 个分片直到完成或形成可恢复的 operational failure 证据。
 
 ## Next
 

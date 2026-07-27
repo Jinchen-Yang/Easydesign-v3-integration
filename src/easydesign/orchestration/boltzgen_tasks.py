@@ -11,11 +11,13 @@ from pathlib import Path
 
 from easydesign.backends.boltzgen import (
     BoltzGenGenerationAdapter,
+    BoltzGenGenerationHeartbeat,
     BoltzGenGenerationRequest,
 )
 from easydesign.core import (
     ErrorInfo,
     TaskAttemptRecord,
+    TaskHeartbeat,
     TaskRecord,
     TaskStatus,
 )
@@ -39,6 +41,7 @@ class TaskTransition:
 
 
 TaskTransitionCallback = Callable[[TaskTransition], None]
+TaskHeartbeatCallback = Callable[[TaskHeartbeat], None]
 
 
 def _command_sha256(command: tuple[str, ...]) -> str:
@@ -159,6 +162,7 @@ def execute_boltzgen_candidate_task(
     device: int,
     maximum_attempts_this_invocation: int,
     on_transition: TaskTransitionCallback,
+    on_heartbeat: TaskHeartbeatCallback | None = None,
     ordinal_offset: int = 0,
 ) -> TaskRecord:
     """Run exact deficits with immutable attempts and strict candidate collection."""
@@ -217,7 +221,36 @@ def execute_boltzgen_candidate_task(
         ended_at = datetime.now(UTC)
         new_candidates: tuple[CandidateRecord, ...] = ()
         try:
-            result = adapter.execute(request)
+            heartbeat_task_id = current.task_id
+            heartbeat_strategy_id = current.strategy_id
+            heartbeat_attempt_number = attempt_number
+
+            def emit_heartbeat(
+                value: BoltzGenGenerationHeartbeat,
+                task_id: str = heartbeat_task_id,
+                strategy_id: str = heartbeat_strategy_id,
+                task_attempt_number: int = heartbeat_attempt_number,
+            ) -> None:
+                if on_heartbeat is None:
+                    return
+                on_heartbeat(
+                    TaskHeartbeat(
+                        task_id=task_id,
+                        strategy_id=strategy_id,
+                        device=device,
+                        attempt_number=task_attempt_number,
+                        phase=value.phase,
+                        updated_at=value.observed_at,
+                        elapsed_seconds=value.elapsed_seconds,
+                        message=value.message,
+                    )
+                )
+
+            result = (
+                adapter.execute(request)
+                if on_heartbeat is None
+                else adapter.execute(request, heartbeat_callback=emit_heartbeat)
+            )
             return_code = result.return_code
             # Adapter timestamps may be rounded, frozen in tests, or originate from a
             # backend clock that is marginally behind the orchestrator clock.  Runtime

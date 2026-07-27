@@ -12,7 +12,7 @@
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-001 的分片/恢复已完成；S06-002 新增带科学边界的人工规模授权与 SSH whole-run 提交。 | 在 Suzhou2 八张 A100 上运行 APOE 唯一已扩展 Tier A 的 20×2500 探索性 50k。 | 无代码阻塞；50k 为长任务，完成前保持 Now，Stage 05 科学停止不变。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `implemented` | S06-003 已补齐远程 watch、心跳、恢复、manifest 同步和 UI 服务器选择；APOE 50k 继续运行。 | 跟踪 Suzhou2 20×2500，并用控制端只读镜像让合作者查看相同运行记录。 | 无代码阻塞；当前 dev11 worker 没有心跳字段，新提交/恢复的 dev12 任务才产生心跳。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
@@ -20,7 +20,8 @@
 
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
-  已在 8×A100 运行，跟踪 20 个分片直到完成或形成可恢复的 operational failure 证据。
+  已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与
+  UI 服务器选择；继续跟踪 20 个分片直到完成或形成可恢复的 operational failure 证据。
 
 ## Next
 

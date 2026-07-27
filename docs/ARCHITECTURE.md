@@ -510,17 +510,30 @@ Stage 06 不复制生成/收集逻辑，也不把 Stage 04/05 候选计入 scale
 → rsync 完整 continuation source
 → 远端 systemd EasyDesign worker
 → 远端 local-multi-gpu executor
-→ 远端独立 manifest / progress / events / resume
+→ 远端独立 manifest / progress / events / task heartbeat
+→ manifest 驱动的控制端只读镜像 / resume
 ```
 
 这样 Stage 04/06 仍只维护一套本地多 GPU 任务语义；SSH 只负责把整个 EasyDesign run
 提交到另一台机器。科学配置不保存 IP、密钥或机器绝对路径，它们只存在于控制端 runtime
 profile。远端版本必须与控制端完全一致，远端 runs root 必须预先存在并通过容量探针。
-控制端只保存小型 `SshRemoteSubmission` 记录；科学事实和恢复身份以远端 run 为准。
+控制端保存版本化 `SshRemoteJobRecord`（submission、当前 systemd unit、unit 历史和
+resume 次数）；科学事实和恢复身份仍以远端 run 为准。
 SSH 会话断开不影响 systemd worker，状态查询也不得从终端文本或目录名称推测进度。
 Continuation preflight 从 source RunManifest 的最高连续 Stage 推导 `start_stage`，只探测
 后续仍会执行的 backend；Stage 06 continuation 因而只要求 BoltzGen，而不会重复要求
 Stage 01 的 PyMOL 或 Stage 05 的 Protenix 环境。
+
+BoltzGen adapter 在重型 subprocess 存活期间周期性发出 `TaskHeartbeat`；Stage 04/06
+将每个运行中 task 的最新 heartbeat 原子写入 `ProgressSnapshot`，终态移除。heartbeat
+不读取后端中间目录，也不增加候选计数。远程控制端通过 `runs watch --once --json`
+读取同一 snapshot。
+
+结果回传分两层：`metadata` 拉取当前 Run/Stage manifest 闭包、顶层声明 artifact 和
+runtime progress/state/events；`complete` 再递归拉取 JSON 中出现的 ArtifactRef。同步
+使用 rsync `--files-from` 的 manifest-derived 白名单，随后逐一验证大小/SHA-256，并在
+控制端 runs root 写只读镜像。SSH host、identity、绝对路径和 profile 不进入科学配置或
+浏览器响应。
 
 ### Stage 07 深度筛选、三 seed 与审核包
 

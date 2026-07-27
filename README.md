@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev11`（包版本 `0.1.0.dev11`）
+- 当前版本：`0.1.0-dev12`（包版本 `0.1.0.dev12`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -34,7 +34,7 @@ python -m pip install -e ".[dev,ui]"
 
 # 或从本地 wheel 安装
 python -m build
-python -m pip install dist/easydesign-0.1.0.dev11-py3-none-any.whl
+python -m pip install dist/easydesign-0.1.0.dev12-py3-none-any.whl
 ```
 
 先创建用户级本机 profile：
@@ -128,6 +128,30 @@ easydesign ui serve \
 ```bash
 ssh -L 8765:127.0.0.1:8765 USER@SERVER
 ```
+
+若 runtime profile 声明了 SSH executor，新建设计可在“预算与资源”中选择运行位置。
+命令行使用相同的远程 API：
+
+```bash
+easydesign remote list
+easydesign remote probe suzhou2-a100x8
+
+# 从 Stage 01 起提交完整项目
+easydesign remote submit suzhou2-a100x8 \
+  --job-id demo-remote-001 --run-id run-remote-001 \
+  --config PROJECT/easydesign.yaml --project-root PROJECT
+
+# 查看结构化进度，并把只读运行记录同步给本机/合作者 UI
+easydesign remote watch suzhou2-a100x8 demo-remote-001
+easydesign remote sync suzhou2-a100x8 demo-remote-001 \
+  --to runs/PROJECT_ID/RUN_ID --mode metadata
+
+# 仅当远端 worker 已停止时恢复未完成任务
+easydesign remote resume suzhou2-a100x8 demo-remote-001
+```
+
+`metadata` 适合协作查看进度和正式报告；运行完成后可用 `complete` 拉取 manifest 声明的
+完整候选闭包。两者都验证大小与 SHA-256，不同步模型权重、密钥或未声明目录。
 
 默认界面使用中文并只保留“我的项目 / 新建设计 / 运行任务”三个主入口。工作台提供六入口
 项目向导、标准 YAML、配置与环境检查、真实任务启动、人工确认、结构化进度、完成当前

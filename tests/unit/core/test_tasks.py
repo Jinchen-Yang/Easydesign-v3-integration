@@ -9,6 +9,7 @@ from easydesign.core import (
     ProgressSnapshot,
     TaskAttemptRecord,
     TaskEvent,
+    TaskHeartbeat,
     TaskRecord,
     TaskStatus,
 )
@@ -132,3 +133,40 @@ def test_progress_counts_and_event_sequence_are_typed() -> None:
             planned_candidates=80,
             collected_candidates=20,
         )
+
+
+def test_progress_snapshot_carries_unique_long_task_heartbeats() -> None:
+    heartbeat = TaskHeartbeat(
+        task_id="scale-shard-01",
+        strategy_id="strategy-one",
+        device=3,
+        attempt_number=1,
+        phase="boltzgen-running",
+        updated_at=NOW,
+        elapsed_seconds=91.5,
+        message="BoltzGen process is still running.",
+    )
+    progress = ProgressSnapshot(
+        stage_id="06-scale-generation-and-refolding",
+        updated_at=NOW,
+        status="running",
+        total_tasks=1,
+        pending_tasks=0,
+        waiting_tasks=0,
+        running_tasks=1,
+        succeeded_tasks=0,
+        failed_tasks=0,
+        planned_candidates=2500,
+        collected_candidates=0,
+        per_device={"3": "strategy-one"},
+        task_heartbeats=(heartbeat,),
+    )
+
+    assert progress.task_heartbeats[0].elapsed_seconds == 91.5
+    invalid = progress.model_dump()
+    invalid["task_heartbeats"] = [
+        heartbeat.model_dump(),
+        heartbeat.model_dump(),
+    ]
+    with pytest.raises(ValueError, match="heartbeat identity"):
+        ProgressSnapshot.model_validate(invalid)

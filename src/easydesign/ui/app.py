@@ -36,8 +36,15 @@ from easydesign.orchestration import (
     diagnose_runtime,
     export_hotspot_review,
     initialize_project,
+    list_remote_executor_ids,
+    list_remote_job_records,
     list_runs,
+    observe_remote_pipeline,
+    probe_remote_executor,
     read_pipeline_progress,
+    resume_remote_pipeline,
+    submit_remote_pipeline,
+    sync_remote_pipeline,
     validate_run_configuration,
 )
 from easydesign.orchestration.decisions import approve_decision, show_decision
@@ -108,6 +115,7 @@ class PreflightRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: str
+    executor_id: str | None = None
 
 
 class LaunchRequest(BaseModel):
@@ -115,6 +123,7 @@ class LaunchRequest(BaseModel):
 
     project_id: str
     run_id: str | None = None
+    executor_id: str | None = None
     confirmed: bool = False
 
 
@@ -127,6 +136,13 @@ class CloneRunRequest(BaseModel):
 class ConfirmedActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    confirmed: bool = False
+
+
+class RemoteSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str = Field(default="metadata", pattern=r"^(metadata|complete)$")
     confirmed: bool = False
 
 
@@ -447,22 +463,60 @@ def create_ui_app(
         try:
             config = service.project_config(payload.project_id)
             plan = validate_run_configuration(config, profile_path=service.profile_path)
-            diagnostic = diagnose_runtime(
-                profile_path=service.profile_path,
-                config_path=config,
-            )
+            if payload.executor_id is None:
+                diagnostic: Any = diagnose_runtime(
+                    profile_path=service.profile_path,
+                    config_path=config,
+                )
+            else:
+                diagnostic = {
+                    "status": "remote-reachable",
+                    "executor_id": payload.executor_id,
+                    "probe": probe_remote_executor(
+                        executor_id=payload.executor_id,
+                        profile_path=service.profile_path,
+                    ).model_dump(mode="json"),
+                    "note": (
+                        "远端提交前还会在冻结输入后执行配置校验和按需环境检查。"
+                    ),
+                }
             return {
                 "plan": plan.model_dump(mode="json"),
-                "diagnostic": diagnostic.model_dump(mode="json"),
+                "diagnostic": (
+                    diagnostic.model_dump(mode="json")
+                    if isinstance(diagnostic, BaseModel)
+                    else diagnostic
+                ),
             }
         except Exception as error:
             _raise_http(error)
             raise
 
     @app.post("/api/v1/jobs")
-    def launch(payload: LaunchRequest, request: Request) -> UiJobRecord:
+    def launch(payload: LaunchRequest, request: Request) -> Any:
         service = _state(request)
         try:
+            if payload.executor_id is not None:
+                if not payload.confirmed:
+                    raise ConfigurationError("远程真实启动需要 confirmed=true")
+                run_id = payload.run_id or f"remote-{uuid4().hex[:16]}"
+                submission = submit_remote_pipeline(
+                    executor_id=payload.executor_id,
+                    job_id=f"ui-{uuid4().hex[:16]}",
+                    run_id=run_id,
+                    config_path=service.project_config(payload.project_id),
+                    project_root=service.project_config(payload.project_id).parent,
+                    profile_path=service.profile_path,
+                )
+                return {
+                    "kind": "remote",
+                    "executor_id": submission.executor_id,
+                    "job_id": submission.job_id,
+                    "project_id": submission.project_id,
+                    "run_id": submission.run_id,
+                    "submitted_at": submission.submitted_at.isoformat(),
+                    "status": submission.status,
+                }
             return service.jobs.launch(
                 operation="run",
                 config_path=service.project_config(payload.project_id),
@@ -470,6 +524,138 @@ def create_ui_app(
                 run_id=payload.run_id,
                 confirmed=payload.confirmed,
             )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/remote-executors")
+    def remote_executors(request: Request) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            return {
+                "executors": [
+                    {"executor_id": executor_id, "label": executor_id}
+                    for executor_id in list_remote_executor_ids(
+                        profile_path=service.profile_path
+                    )
+                ]
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/remote-jobs")
+    def remote_jobs() -> dict[str, Any]:
+        return {
+            "jobs": [
+                {
+                    "executor_id": record.submission.executor_id,
+                    "job_id": record.submission.job_id,
+                    "project_id": record.submission.project_id,
+                    "run_id": record.submission.run_id,
+                    "submitted_at": record.submission.submitted_at.isoformat(),
+                    "active_unit_name": record.active_unit_name,
+                    "resume_count": record.resume_count,
+                }
+                for record in list_remote_job_records()
+            ]
+        }
+
+    @app.get("/api/v1/remote-jobs/{executor_id}/{job_id}")
+    def remote_job(executor_id: str, job_id: str, request: Request) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            observation = observe_remote_pipeline(
+                executor_id=executor_id,
+                job_id=job_id,
+                profile_path=service.profile_path,
+            )
+            return {
+                "executor_id": observation.executor_id,
+                "job_id": observation.job_id,
+                "checked_at": observation.checked_at.isoformat(),
+                "worker": observation.worker.model_dump(mode="json"),
+                "progress": (
+                    None
+                    if observation.progress is None
+                    else observation.progress.model_dump(mode="json")
+                ),
+                "progress_error": observation.progress_error,
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-jobs/{executor_id}/{job_id}/resume")
+    def remote_resume(
+        executor_id: str,
+        job_id: str,
+        payload: ConfirmedActionRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("远程恢复需要 confirmed=true")
+            record = resume_remote_pipeline(
+                executor_id=executor_id,
+                job_id=job_id,
+                profile_path=service.profile_path,
+            )
+            return {
+                "executor_id": executor_id,
+                "job_id": job_id,
+                "active_unit_name": record.active_unit_name,
+                "resume_count": record.resume_count,
+                "status": "resume-submitted",
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-jobs/{executor_id}/{job_id}/sync")
+    def remote_sync(
+        executor_id: str,
+        job_id: str,
+        payload: RemoteSyncRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("远程结果同步需要 confirmed=true")
+            record = next(
+                (
+                    item
+                    for item in list_remote_job_records(executor_id=executor_id)
+                    if item.submission.job_id == job_id
+                ),
+                None,
+            )
+            if record is None:
+                raise ConfigurationError("远程任务记录不存在")
+            destination = (
+                service.registry.runs_root
+                / record.submission.project_id
+                / record.submission.run_id
+            )
+            report = sync_remote_pipeline(
+                executor_id=executor_id,
+                job_id=job_id,
+                destination=destination,
+                mode=payload.mode,
+                profile_path=service.profile_path,
+            )
+            service.discover_runs()
+            return {
+                "status": "synced",
+                "executor_id": executor_id,
+                "job_id": job_id,
+                "mode": report.mode,
+                "file_count": report.file_count,
+                "size_bytes": report.size_bytes,
+                "run_manifest_sha256": report.run_manifest_sha256,
+            }
         except Exception as error:
             _raise_http(error)
             raise

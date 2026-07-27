@@ -4,7 +4,7 @@
 
 **契约版本：** `0.1`
 
-**实现任务：** `S06-001`、`S06-002`
+**实现任务：** `S06-001`、`S06-002`、`S06-003`
 
 ## 目的
 
@@ -143,9 +143,24 @@ continuation source 到另一台服务器。SSH 只负责提交；远端仍使�
 `local-multi-gpu` executor，并独立写 manifest、progress 和 events。断开 SSH 不会终止
 systemd worker。
 
+`S06-003` 将远程执行补齐为可协作的闭环：
+
+- 可以提交已有 continuation，也可以把含 `easydesign.yaml` 与 `inputs/` 的新项目从
+  Stage 01 起提交；远端会先执行配置校验和按需 doctor。
+- `remote watch` 同时读取 systemd worker 和远端 `runs watch --once --json`，不会把
+  SSH 连通误当成科学任务仍在推进。
+- BoltzGen 长任务每 30 秒把 process-alive heartbeat 原子写入 `ProgressSnapshot`；
+  heartbeat 只证明后端进程存活，不把中间 CIF 计作完整候选。
+- worker 停止或主机重启后，`remote resume` 创建新的 systemd unit；原 unit 与恢复次数
+  保存在控制端 `SshRemoteJobRecord`，运行中的 worker 禁止重复恢复。
+- `remote sync --mode metadata` 拉取 Run/Stage manifest、顶层声明 artifact 与
+  progress/state/events；`complete` 再递归拉取 JSON 中声明的候选 ArtifactRef。
+  两种模式都逐一验证大小和 SHA-256，不扫描目录猜结果。
+
 ### 4. 恢复与不可变发布
 
 - `progress.json` 和 `scale-state.json` 原子替换；
+- 运行中 `task_heartbeats` 按 task identity 覆盖更新，任务结束时移除；
 - `task-events.jsonl` 只追加，不解析终端文本；
 - 每个 shard/task attempt 有独立目录、命令、日志和终态；
 - 中断后先严格收集完整候选，再建立新 attempt 补足差额；
@@ -217,10 +232,20 @@ easydesign remote submit REMOTE_ID \
   --job-id JOB_ID --run-id RUN_ID \
   --config easydesign.yaml --from-run SUCCEEDED_STAGE05_RUN
 easydesign remote status REMOTE_ID JOB_ID
+easydesign remote watch REMOTE_ID JOB_ID
+easydesign remote sync REMOTE_ID JOB_ID \
+  --to runs/PROJECT_ID/RUN_ID --mode metadata
+easydesign remote resume REMOTE_ID JOB_ID
+
+# 从 Stage 01 起把整个项目提交到远端
+easydesign remote submit REMOTE_ID \
+  --job-id JOB_ID --run-id RUN_ID \
+  --config PROJECT/easydesign.yaml --project-root PROJECT
 ```
 
 `watch` 只读取结构化 progress；显示 stage、phase、总数、成功/失败/重试、GPU 分配、
-吞吐率与 ETA。CLI 不包含分片、资源或科学逻辑。
+吞吐率、ETA 与 task heartbeat。CLI 不包含分片、资源或科学逻辑。Workbench 的“在哪里
+运行”选择框和“运行任务”远程卡片调用同一组 API。
 
 ## 科学停止与软件失败
 
@@ -236,6 +261,7 @@ Stage 07。
 - candidate identity 重复、ordinal 缺口或 artifact 损坏；
 - 后端、日志或终态产物发布不完整。
 - 远端版本、known-host、source manifest、配置、GPU 或磁盘探针不满足契约。
+- 远程 metadata/complete 镜像有缺失、篡改或 symlink/path traversal。
 
 这些情况不能发布 succeeded ScaleBundle，也不能被记成合法科学负结果。
 

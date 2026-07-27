@@ -61,7 +61,12 @@ def _read_events(path: Path) -> tuple[TaskEvent, ...]:
 
 def _runtime_paths(run_root: Path, stage_id: str) -> tuple[Path, Path]:
     runtime = run_root / stage_id / "attempt-0001" / "runtime"
-    return runtime / "task-state.json", runtime / "task-events.jsonl"
+    state_name = (
+        "scale-state.json"
+        if stage_id == "06-scale-generation-and-refolding"
+        else "task-state.json"
+    )
+    return runtime / state_name, runtime / "task-events.jsonl"
 
 
 def _stage_manifest(
@@ -111,10 +116,17 @@ def _duration_seconds(started_at: datetime, ended_at: datetime | None, now: date
     return max(0.0, (end - started_at).total_seconds())
 
 
-def _task_projection(task: TaskRecord) -> TaskExecutionProjection:
+def _task_projection(
+    task: TaskRecord,
+    snapshot: ProgressSnapshot,
+) -> TaskExecutionProjection:
     last_device = task.current_device
     if last_device is None and task.attempts:
         last_device = task.attempts[-1].device
+    heartbeat = next(
+        (item for item in snapshot.task_heartbeats if item.task_id == task.task_id),
+        None,
+    )
     return TaskExecutionProjection(
         task_id=task.task_id,
         strategy_id=task.strategy_id,
@@ -124,6 +136,11 @@ def _task_projection(task: TaskRecord) -> TaskExecutionProjection:
         attempt_count=len(task.attempts),
         retry_count=max(0, len(task.attempts) - 1),
         last_device=last_device,
+        latest_heartbeat_at=None if heartbeat is None else heartbeat.updated_at,
+        heartbeat_elapsed_seconds=(
+            None if heartbeat is None else heartbeat.elapsed_seconds
+        ),
+        heartbeat_message=None if heartbeat is None else heartbeat.message,
     )
 
 
@@ -177,6 +194,14 @@ def _device_projections(
             and task.attempts[-1].device == device
         )
         active = current.get(device)
+        active_heartbeat = next(
+            (
+                item
+                for item in snapshot.task_heartbeats
+                if active is not None and item.task_id == active.task_id
+            ),
+            None,
+        )
         rows.append(
             DeviceExecutionProjection(
                 device=device,
@@ -188,7 +213,16 @@ def _device_projections(
                 failed_attempt_count=failed_attempt_count[device],
                 collected_candidates=sum(task.collected_candidates for task in succeeded),
                 busy_seconds=busy_seconds[device],
-                tasks=tuple(_task_projection(task) for task in assigned),
+                latest_heartbeat_at=(
+                    None if active_heartbeat is None else active_heartbeat.updated_at
+                ),
+                heartbeat_elapsed_seconds=(
+                    None if active_heartbeat is None else active_heartbeat.elapsed_seconds
+                ),
+                heartbeat_message=(
+                    None if active_heartbeat is None else active_heartbeat.message
+                ),
+                tasks=tuple(_task_projection(task, snapshot) for task in assigned),
             )
         )
     return tuple(rows)

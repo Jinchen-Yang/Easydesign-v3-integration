@@ -31,6 +31,7 @@ from easydesign.core import (
     StageId,
     StageManifest,
     TaskEvent,
+    TaskHeartbeat,
     TaskRecord,
     TaskStatus,
     dump_model,
@@ -399,6 +400,7 @@ def _snapshot(
     tasks: tuple[TaskRecord, ...],
     created_at: datetime,
     status: str,
+    task_heartbeats: tuple[TaskHeartbeat, ...] = (),
     recent_errors: tuple[str, ...] = (),
 ) -> ProgressSnapshot:
     updated_at = datetime.now(UTC)
@@ -436,6 +438,7 @@ def _snapshot(
         elapsed_seconds=elapsed,
         throughput_candidates_per_hour=throughput,
         estimated_remaining_seconds=eta,
+        task_heartbeats=task_heartbeats,
         recent_errors=recent_errors[-10:],
     )
 
@@ -577,6 +580,11 @@ def execute_stage06(
         tasks = {item.task_id: item for item in state.tasks}
         candidates = list(state.candidates)
         created_at = state.created_at
+        heartbeats = {
+            item.task_id: item
+            for item in state.progress.task_heartbeats
+            if item.task_id in tasks
+        }
         if set(tasks) != {item.task_id for item in plan.shards}:
             raise ManifestStateError("Stage 06 runtime shard identity 不一致")
         for candidate in candidates:
@@ -596,6 +604,7 @@ def execute_stage06(
         }
         candidates = []
         created_at = now
+        heartbeats: dict[str, TaskHeartbeat] = {}
 
     lock = threading.RLock()
     recent_errors: list[str] = []
@@ -608,6 +617,9 @@ def execute_stage06(
             tasks=ordered_tasks(),
             created_at=created_at,
             status=status,
+            task_heartbeats=tuple(
+                heartbeats[key] for key in sorted(heartbeats)
+            ),
             recent_errors=tuple(recent_errors),
         )
         atomic_dump_runtime_model(snapshot, progress_path)
@@ -626,6 +638,8 @@ def execute_stage06(
     def transition(update: TaskTransition) -> None:
         with lock:
             tasks[update.task.task_id] = update.task
+            if update.task.status is not TaskStatus.RUNNING:
+                heartbeats.pop(update.task.task_id, None)
             candidates.extend(update.new_candidates)
             if update.error is not None:
                 recent_errors.append(
@@ -647,6 +661,14 @@ def execute_stage06(
                 )
             )
             persist("incomplete" if update.event_type == "task-incomplete" else "running")
+
+    def heartbeat(update: TaskHeartbeat) -> None:
+        with lock:
+            task = tasks.get(update.task_id)
+            if task is None or task.status is not TaskStatus.RUNNING:
+                return
+            heartbeats[update.task_id] = update
+            persist("running")
 
     for shard in plan.shards:
         update = recover_interrupted_boltzgen_task(
@@ -688,6 +710,7 @@ def execute_stage06(
             device=device,
             maximum_attempts_this_invocation=stage04_config.executor.max_task_attempts,
             on_transition=transition,
+            on_heartbeat=heartbeat,
             ordinal_offset=shard.ordinal_start - 1,
         )
 

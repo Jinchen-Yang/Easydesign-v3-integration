@@ -119,16 +119,57 @@ export const api = {
       `/api/v1/projects/${projectId}/config`,
       { method: "PUT", body: JSON.stringify({ yaml_text: yamlText }) },
     ),
-  preflight: (projectId: string) =>
+  preflight: (projectId: string, executorId?: string) =>
     request<{ plan: Record<string, unknown>; diagnostic: Record<string, unknown> }>(
       "/api/v1/preflight",
-      { method: "POST", body: JSON.stringify({ project_id: projectId }) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projectId,
+          executor_id: executorId,
+        }),
+      },
     ),
-  launch: (projectId: string, runId?: string) =>
+  launch: (projectId: string, runId?: string, executorId?: string) =>
     request<Record<string, unknown>>("/api/v1/jobs", {
       method: "POST",
-      body: JSON.stringify({ project_id: projectId, run_id: runId, confirmed: true }),
+      body: JSON.stringify({
+        project_id: projectId,
+        run_id: runId,
+        executor_id: executorId,
+        confirmed: true,
+      }),
     }),
+  remoteExecutors: () =>
+    request<{ executors: Array<{ executor_id: string; label: string }> }>(
+      "/api/v1/remote-executors",
+    ),
+  remoteJobs: () =>
+    request<{ jobs: Array<Record<string, unknown>> }>("/api/v1/remote-jobs"),
+  remoteJob: (executorId: string, jobId: string) =>
+    request<Record<string, unknown>>(
+      `/api/v1/remote-jobs/${executorId}/${jobId}`,
+    ),
+  syncRemoteJob: (
+    executorId: string,
+    jobId: string,
+    mode: "metadata" | "complete" = "metadata",
+  ) =>
+    request<Record<string, unknown>>(
+      `/api/v1/remote-jobs/${executorId}/${jobId}/sync`,
+      {
+        method: "POST",
+        body: JSON.stringify({ mode, confirmed: true }),
+      },
+    ),
+  resumeRemoteJob: (executorId: string, jobId: string) =>
+    request<Record<string, unknown>>(
+      `/api/v1/remote-jobs/${executorId}/${jobId}/resume`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirmed: true }),
+      },
+    ),
   jobs: () => request<Array<Record<string, unknown>>>("/api/v1/jobs"),
   drain: (jobId: string) =>
     request<Record<string, unknown>>(`/api/v1/jobs/${jobId}/drain`, {

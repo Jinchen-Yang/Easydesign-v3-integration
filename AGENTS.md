@@ -56,6 +56,9 @@
     删除或重排用户区域成员。
 16. UniProt/RCSB 等远程响应必须经过有界 timeout/retry、显式 cache mode 和 run 内
     snapshot；API 失败不得解释成空候选，也不得在 `online` 模式静默读取旧 cache。
+17. SSH 远程执行必须来自 runtime profile 的显式 executor；禁止扫描 SSH config、自动
+    选择机器或把密钥写入科学 YAML。结果同步只能使用 manifest-derived 文件白名单并
+    重新验证 SHA-256；heartbeat 只表示进程存活，不能把中间文件计作完整候选。
 
 ## 3. 完成任务前
 

@@ -135,6 +135,26 @@ class TaskEvent(BaseModel):
         return normalize_aware_datetime(value)
 
 
+class TaskHeartbeat(BaseModel):
+    """长任务仍存活的结构化心跳；不把后端中间文件计作完整候选。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    task_id: str = Field(pattern=ID_PATTERN)
+    strategy_id: str = Field(pattern=ID_PATTERN)
+    device: int = Field(ge=0)
+    attempt_number: int = Field(ge=1)
+    phase: str = Field(pattern=ID_PATTERN)
+    updated_at: datetime
+    elapsed_seconds: float = Field(ge=0)
+    message: str = Field(min_length=1, max_length=512)
+
+    @field_validator("updated_at")
+    @classmethod
+    def normalize_datetime(cls, value: datetime) -> datetime:
+        return normalize_aware_datetime(value)
+
+
 class ProgressSnapshot(BaseModel):
     """供 CLI/UI 读取的原子进度快照。"""
 
@@ -157,6 +177,7 @@ class ProgressSnapshot(BaseModel):
     elapsed_seconds: float = Field(default=0, ge=0)
     throughput_candidates_per_hour: float | None = Field(default=None, ge=0)
     estimated_remaining_seconds: float | None = Field(default=None, ge=0)
+    task_heartbeats: tuple[TaskHeartbeat, ...] = ()
     recent_errors: tuple[str, ...] = ()
 
     @field_validator("updated_at")
@@ -177,4 +198,7 @@ class ProgressSnapshot(BaseModel):
             raise ValueError("progress task 状态计数之和必须等于 total_tasks")
         if self.collected_candidates > self.planned_candidates:
             raise ValueError("progress collected_candidates 不能超过 planned_candidates")
+        heartbeat_ids = [item.task_id for item in self.task_heartbeats]
+        if len(heartbeat_ids) != len(set(heartbeat_ids)):
+            raise ValueError("progress task heartbeat identity 不能重复")
         return self

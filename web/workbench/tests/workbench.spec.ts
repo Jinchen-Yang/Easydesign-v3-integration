@@ -168,6 +168,24 @@ const candidateItems = Array.from({ length: 50 }, (_, index) => ({
 async function mockApi(page: Page) {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/remote-executors") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          executors: [
+            { executor_id: "suzhou2-a100x8", label: "suzhou2-a100x8" },
+          ],
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/remote-jobs") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/uploads" && route.request().method() === "POST") {
       await route.fulfill({
         contentType: "application/json",
@@ -498,6 +516,8 @@ test("new design steps are freely browsable and file receipt unlocks final check
 
   await page.getByRole("button", { name: /预算与资源/ }).click();
   await expect(page.getByRole("heading", { name: "这次准备运行到哪一步？" })).toBeVisible();
+  await expect(page.getByLabel("在哪里运行")).toContainText("远程服务器 · suzhou2-a100x8");
+  await page.getByLabel("在哪里运行").selectOption("suzhou2-a100x8");
   await page.getByRole("button", { name: /设计意图/ }).click();
   await expect(page.getByRole("heading", { name: "你希望这个 binder 做什么？" })).toBeVisible();
   await page.getByRole("button", { name: /目标输入/ }).click();
@@ -524,6 +544,6 @@ test("new design steps are freely browsable and file receipt unlocks final check
   await expect(validate).toBeEnabled();
   await expect(launch).toBeDisabled();
   await validate.click();
-  await expect(page.getByText(/配置和所需工具检查通过/)).toBeVisible();
+  await expect(page.getByText(/远程执行服务器 suzhou2-a100x8 可连接/)).toBeVisible();
   await expect(launch).toBeEnabled();
 });

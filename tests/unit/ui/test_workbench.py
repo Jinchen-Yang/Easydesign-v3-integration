@@ -19,6 +19,7 @@ from easydesign.core import (
     RunManifest,
     StageId,
     StageManifest,
+    TaskHeartbeat,
     dump_model,
 )
 from easydesign.ui import (
@@ -491,6 +492,18 @@ def test_live_execution_projection_uses_structured_runtime_state(
         elapsed_seconds=30,
         throughput_candidates_per_hour=240,
         estimated_remaining_seconds=30,
+        task_heartbeats=(
+            TaskHeartbeat(
+                task_id="pilot-live",
+                strategy_id="patch-1__scaffold-x",
+                device=1,
+                attempt_number=1,
+                phase="boltzgen-running",
+                updated_at=NOW,
+                elapsed_seconds=29,
+                message="BoltzGen process is still running.",
+            ),
+        ),
     )
 
     projection = get_execution_progress(
@@ -506,6 +519,8 @@ def test_live_execution_projection_uses_structured_runtime_state(
     assert projection.devices[0].current_task_id == "pilot-live"
     assert projection.devices[0].assigned_task_count == 1
     assert projection.devices[0].attempt_count == 1
+    assert projection.devices[0].heartbeat_elapsed_seconds == 29
+    assert projection.devices[0].tasks[0].latest_heartbeat_at == NOW
 
 
 def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> None:
@@ -670,3 +685,31 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         )
         assert empty.status_code == 400
         assert "空文件" in empty.json()["detail"]
+
+
+def test_gateway_lists_only_profile_declared_remote_executor_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "easydesign.ui.app.list_remote_executor_ids",
+        lambda **_: ("suzhou2-a100x8",),
+    )
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/remote-executors")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "executors": [
+            {
+                "executor_id": "suzhou2-a100x8",
+                "label": "suzhou2-a100x8",
+            }
+        ]
+    }

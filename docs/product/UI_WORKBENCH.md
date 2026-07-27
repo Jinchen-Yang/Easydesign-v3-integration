@@ -188,7 +188,7 @@ GET /api/v1/runs/{run}/stages/6/execution
 
 ## DATA-004 / UX-005 共享案例
 
-- 版本：`0.1.0.dev11`。
+- 版本：`0.1.0.dev12`。
 - `examples/apoe-ui-demo` 保存经用户授权的私有仓库只读证据包：307 个被逐一固定
   SHA-256 的文件、约 65 MiB，不包含约 970 MB 的 backend 中间目录。
 - 共享包保留 Stage 01–05 manifest 闭包、21 个策略、840/100/12/10 各层结果、Stage 04
@@ -197,3 +197,17 @@ GET /api/v1/runs/{run}/stages/6/execution
   然后只把包内 `evidence-runs` 注册为工作台事实来源。
 - 共享包只供协作审阅，不能恢复任务、重新计算或替代服务器完整 run；其中 APOE
   `stopped-no-scale-winner` 仍是可审计科学负结果。
+
+## UI-008：远程执行与协作查看
+
+- “新建设计 → 预算与资源”列出当前服务器和 runtime profile 显式声明的远端；选择不会
+  写入科学 YAML。远端 preflight 先验证控制端配置和 SSH/version/GPU/disk 探针，提交
+  冻结输入后再在远端执行配置校验与按需 doctor。
+- “运行任务”列出控制端已知远程任务，可读取 worker 与结构化 progress、同步
+  metadata 镜像，并在 worker 已停止时显式恢复。运行中的 worker 禁止重复 resume。
+- metadata 镜像进入同一个本地 runs root 后，项目、运行和 Stage 页面复用现有
+  manifest-only 投影；浏览器不直接访问 SSH、不接收私钥、IP 或远端绝对路径。
+- Stage 04/06 的运行设备卡片显示最新 task heartbeat。旧版 worker 没有 heartbeat 时
+  如实显示现有结构化进度，不扫描中间目录补猜。
+- 远端选择、preflight 文案和启动解锁已在 Chromium 1440×900、1920×1080 验收；
+  Python gateway 另有 profile-only executor 列表契约测试。

@@ -90,6 +90,9 @@ export interface TaskExecution {
   attempt_count: number;
   retry_count: number;
   last_device?: number;
+  latest_heartbeat_at?: string;
+  heartbeat_elapsed_seconds?: number;
+  heartbeat_message?: string;
 }
 
 export interface DeviceExecution {
@@ -102,7 +105,25 @@ export interface DeviceExecution {
   failed_attempt_count: number;
   collected_candidates: number;
   busy_seconds: number;
+  latest_heartbeat_at?: string;
+  heartbeat_elapsed_seconds?: number;
+  heartbeat_message?: string;
   tasks: TaskExecution[];
+}
+
+export interface RemoteExecutor {
+  executor_id: string;
+  label: string;
+}
+
+export interface RemoteJob {
+  executor_id: string;
+  job_id: string;
+  project_id: string;
+  run_id: string;
+  submitted_at: string;
+  active_unit_name: string;
+  resume_count: number;
 }
 
 export interface ExecutionProgress {

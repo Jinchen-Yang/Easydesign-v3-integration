@@ -151,7 +151,12 @@ class _FakeGenerationAdapter:
             str(request.requested_candidates),
         )
 
-    def execute(self, request: BoltzGenGenerationRequest) -> BoltzGenGenerationResult:
+    def execute(
+        self,
+        request: BoltzGenGenerationRequest,
+        *,
+        heartbeat_callback: object | None = None,
+    ) -> BoltzGenGenerationResult:
         output = request.output_directory
         originals = output / "intermediate_designs_inverse_folded"
         refolds = originals / "refold_cif"

@@ -54,6 +54,9 @@ class TaskExecutionProjection(BaseModel):
     attempt_count: int = Field(ge=0)
     retry_count: int = Field(ge=0)
     last_device: int | None = Field(default=None, ge=0)
+    latest_heartbeat_at: datetime | None = None
+    heartbeat_elapsed_seconds: float | None = Field(default=None, ge=0)
+    heartbeat_message: str | None = None
 
 
 class DeviceExecutionProjection(BaseModel):
@@ -70,6 +73,9 @@ class DeviceExecutionProjection(BaseModel):
     failed_attempt_count: int = Field(ge=0)
     collected_candidates: int = Field(ge=0)
     busy_seconds: float = Field(ge=0)
+    latest_heartbeat_at: datetime | None = None
+    heartbeat_elapsed_seconds: float | None = Field(default=None, ge=0)
+    heartbeat_message: str | None = None
     tasks: tuple[TaskExecutionProjection, ...] = ()
 
 

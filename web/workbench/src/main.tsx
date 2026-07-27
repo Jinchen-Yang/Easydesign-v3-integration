@@ -9,6 +9,8 @@ import type {
   ExecutionProgress,
   Project,
   ProjectResponse,
+  RemoteExecutor,
+  RemoteJob,
   Replay,
   Run,
   Stage,
@@ -328,6 +330,14 @@ function ExecutionStage({ stage, run }: { stage: Stage; run: Run }) {
                     ? `正在运行：${device.current_strategy_id}`
                     : "当前空闲 · 显示历史任务"}
                 </small>
+                {device.latest_heartbeat_at && (
+                  <small>
+                    最近心跳：{formatTime(device.latest_heartbeat_at)}
+                    {device.heartbeat_elapsed_seconds != null
+                      ? ` · 本次任务已运行 ${formatNumber(device.heartbeat_elapsed_seconds / 60, 1)} 分钟`
+                      : ""}
+                  </small>
+                )}
               </div>
               <div className="lane-track">
                 {Array.from({ length: Math.max(1, device.assigned_task_count) }).map((_, item) => (
@@ -610,6 +620,8 @@ function NewDesign({
   const [executionMode, setExecutionMode] = useState("review-gated");
   const [designIntent, setDesignIntent] = useState("exploratory");
   const [stage02Method, setStage02Method] = useState("both");
+  const [executors, setExecutors] = useState<RemoteExecutor[]>([]);
+  const [executorId, setExecutorId] = useState("local");
   const [generatedYaml, setGeneratedYaml] = useState("");
   const [createdProject, setCreatedProject] = useState("");
   const [actionStatus, setActionStatus] = useState("");
@@ -617,6 +629,11 @@ function NewDesign({
     "idle" | "checking" | "passed" | "blocked" | "failed"
   >("idle");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.remoteExecutors()
+      .then((value) => setExecutors(value.executors))
+      .catch(() => setExecutors([]));
+  }, []);
   const availableRuns = projects.flatMap((project) => project.runs);
   const isLocalSource = ["pse", "local-file", "sequence"].includes(source);
   const sourceReady = isLocalSource
@@ -786,14 +803,18 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     setActionStatus("正在检查配置和运行环境…");
     try {
       await api.updateConfig(createdProject, generatedYaml);
-      const result = await api.preflight(createdProject);
-      const diagnostic = result.diagnostic as { ok?: boolean };
+      const selectedExecutor = executorId === "local" ? undefined : executorId;
+      const result = await api.preflight(createdProject, selectedExecutor);
+      const diagnostic = result.diagnostic as { ok?: boolean; status?: string };
+      const passed = diagnostic.ok === true || diagnostic.status === "remote-reachable";
       setActionStatus(
-        diagnostic.ok
-          ? "配置和所需工具检查通过，可以确认后开始真实运行。"
+        passed
+          ? selectedExecutor
+            ? `配置有效，远程执行服务器 ${selectedExecutor} 可连接，可以确认后提交。`
+            : "配置和所需工具检查通过，可以确认后开始真实运行。"
           : "配置有效，但当前运行所需工具尚未就绪。",
       );
-      setPreflightState(diagnostic.ok ? "passed" : "blocked");
+      setPreflightState(passed ? "passed" : "blocked");
     } catch (value) {
       setPreflightState("failed");
       setActionStatus(value instanceof Error ? value.message : "校验失败");
@@ -807,9 +828,14 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     setBusy(true);
     setActionStatus("正在完成启动前检查并创建独立任务…");
     try {
-      await api.preflight(createdProject);
-      const job = await api.launch(createdProject);
-      setActionStatus(`真实任务已创建：${String(job.job_id || "job")}。`);
+      const selectedExecutor = executorId === "local" ? undefined : executorId;
+      await api.preflight(createdProject, selectedExecutor);
+      const job = await api.launch(createdProject, undefined, selectedExecutor);
+      setActionStatus(
+        selectedExecutor
+          ? `任务已提交到 ${selectedExecutor}：${String(job.job_id || "job")}。可在“运行任务”同步进度和结果。`
+          : `真实任务已创建：${String(job.job_id || "job")}。`,
+      );
     } catch (value) {
       setActionStatus(value instanceof Error ? value.message : "启动失败");
     } finally {
@@ -921,6 +947,25 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               <h2>这次准备运行到哪一步？</h2>
               <p>可以先查看全部范围。真正启动前，系统会按所选步骤检查环境、GPU、模型和磁盘。</p>
               <div className="stage-budget"><span>运行到第几步</span>{[1,2,3,4,5,6,7].map((value) => <button className={stage === value ? "active" : ""} disabled={Boolean(createdProject)} type="button" onClick={() => setStage(value)} key={value}>{value}</button>)}</div>
+              <label className="executor-selector">
+                <span>在哪里运行</span>
+                <select
+                  value={executorId}
+                  disabled={Boolean(createdProject)}
+                  onChange={(event) => {
+                    setExecutorId(event.target.value);
+                    setPreflightState("idle");
+                  }}
+                >
+                  <option value="local">当前服务器</option>
+                  {executors.map((executor) => (
+                    <option key={executor.executor_id} value={executor.executor_id}>
+                      远程服务器 · {executor.label}
+                    </option>
+                  ))}
+                </select>
+                <small>远程任务通过 SSH 提交；输入、配置、版本和结果仍按运行记录校验。</small>
+              </label>
               <div className="budget-summary">
                 <article><span>第3步基础方案</span><strong>区域 × 7 个 VHH scaffold</strong><small>每个策略 40 个小规模候选</small></article>
                 <article><span>第4步小规模生成</span><strong>双 GPU 可恢复运行</strong><small>实际任务量由区域数量决定</small></article>
@@ -938,7 +983,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                 <div className={sourceReady && projectReady ? "ready" : "missing"}><span>{sourceReady && projectReady ? "✓" : "!"}</span><div><strong>目标输入</strong><small>{sourceReady ? (uploadReceipt?.filename || sourceValue || "来源运行已选择") : "尚未形成可用输入"}{!projectReady ? "；项目名称为空" : ""}</small></div><button type="button" onClick={() => setActiveStep(1)}>查看</button></div>
                 <div className="ready"><span>✓</span><div><strong>设计意图</strong><small>VHH · {intentNames[designIntent]} · {executionMode === "review-gated" ? "等待确认模式" : "连续运行模式"}</small></div><button type="button" onClick={() => setActiveStep(2)}>查看</button></div>
                 <div className={executionMode === "unattended" && stage02Method === "both" ? "missing" : "ready"}><span>{executionMode === "unattended" && stage02Method === "both" ? "!" : "✓"}</span><div><strong>区域策略</strong><small>{methodNames[stage02Method]}</small></div><button type="button" onClick={() => setActiveStep(3)}>查看</button></div>
-                <div className="ready"><span>✓</span><div><strong>运行范围</strong><small>运行到第 {stage} 步</small></div><button type="button" onClick={() => setActiveStep(4)}>查看</button></div>
+                <div className="ready"><span>✓</span><div><strong>运行范围</strong><small>运行到第 {stage} 步 · {executorId === "local" ? "当前服务器" : executorId}</small></div><button type="button" onClick={() => setActiveStep(4)}>查看</button></div>
               </div>
               {createdProject && <div className="notice"><strong>项目草稿已创建</strong><span>{createdProject}。目标输入已复制到项目，若要更换目标请新建另一个设计。</span></div>}
               {actionStatus && <div className={`form-status ${preflightState === "failed" || preflightState === "blocked" ? "error" : ""}`}>{actionStatus}</div>}
@@ -971,13 +1016,57 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
 function TasksPage({
   projects,
   onOpen,
+  onRefresh,
 }: {
   projects: Project[];
   onOpen: (run: Run) => void;
+  onRefresh: () => Promise<void>;
 }) {
+  const [remoteJobs, setRemoteJobs] = useState<RemoteJob[]>([]);
+  const [remoteStatus, setRemoteStatus] = useState<Record<string, string>>({});
+  const [remoteMessage, setRemoteMessage] = useState("");
   const runs = projects
     .flatMap((project) => project.runs)
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  useEffect(() => {
+    api.remoteJobs()
+      .then((value) => setRemoteJobs(value.jobs as unknown as RemoteJob[]))
+      .catch(() => setRemoteJobs([]));
+  }, []);
+  function remoteKey(job: RemoteJob) {
+    return `${job.executor_id}/${job.job_id}`;
+  }
+  async function observeRemote(job: RemoteJob) {
+    const value = await api.remoteJob(job.executor_id, job.job_id);
+    const worker = value.worker as { active_state?: string; sub_state?: string };
+    const progress = value.progress as { status?: string; collected_candidates?: number; planned_candidates?: number } | undefined;
+    setRemoteStatus((current) => ({
+      ...current,
+      [remoteKey(job)]: progress
+        ? `${progress.status || "运行中"} · ${progress.collected_candidates || 0}/${progress.planned_candidates || 0}`
+        : `${worker.active_state || "unknown"} / ${worker.sub_state || "unknown"}`,
+    }));
+  }
+  async function syncRemote(job: RemoteJob) {
+    setRemoteMessage(`正在从 ${job.executor_id} 同步运行记录…`);
+    try {
+      await api.syncRemoteJob(job.executor_id, job.job_id, "metadata");
+      await onRefresh();
+      setRemoteMessage("运行记录已同步；页面现在可以查看远端 manifest 声明的进度与证据。");
+    } catch (value) {
+      setRemoteMessage(value instanceof Error ? value.message : "远程同步失败");
+    }
+  }
+  async function resumeRemote(job: RemoteJob) {
+    setRemoteMessage(`正在请求 ${job.executor_id} 恢复未完成任务…`);
+    try {
+      await api.resumeRemoteJob(job.executor_id, job.job_id);
+      await observeRemote(job);
+      setRemoteMessage("恢复任务已提交；已完成分片不会重跑。");
+    } catch (value) {
+      setRemoteMessage(value instanceof Error ? value.message : "远程恢复失败");
+    }
+  }
   function stateForRun(run: Run): StageState {
     for (const state of ["operational-failed", "awaiting-human-approval", "running", "scientific-stop"] as StageState[]) {
       if (run.stages.some((stage) => stage.state === state)) return state;
@@ -1006,6 +1095,26 @@ function TasksPage({
         })}
         {runs.length === 0 && <div className="empty-state large"><strong>还没有运行任务</strong><span>从“新建设计”创建第一个任务。</span></div>}
       </section>
+      {remoteJobs.length > 0 && (
+        <section className="panel remote-task-list">
+          <div className="panel-heading"><div><p className="section-label">远程计算</p><h3>其他服务器上的任务</h3></div><span>{remoteJobs.length} 个任务</span></div>
+          {remoteJobs.map((job) => (
+            <article key={remoteKey(job)} className="remote-task-card">
+              <div>
+                <strong>{job.project_id} · {job.run_id}</strong>
+                <small>{job.executor_id} · 提交于 {formatTime(job.submitted_at)}</small>
+                <span>{remoteStatus[remoteKey(job)] || "点击“刷新状态”读取远端结构化进度"}</span>
+              </div>
+              <div className="remote-task-actions">
+                <button type="button" onClick={() => void observeRemote(job)}>刷新状态</button>
+                <button type="button" onClick={() => void syncRemote(job)}>同步运行记录</button>
+                <button type="button" onClick={() => void resumeRemote(job)}>恢复未完成任务</button>
+              </div>
+            </article>
+          ))}
+          {remoteMessage && <div className="form-status">{remoteMessage}</div>}
+        </section>
+      )}
     </div>
   );
 }
@@ -1175,10 +1284,10 @@ function App() {
         {loading ? <div className="loading-screen"><span /><strong>正在读取运行记录…</strong></div> :
           page === "projects" ? <Dashboard projects={data.projects} onOpen={openRun} onNew={() => setPage("new")} /> :
           page === "new" ? <NewDesign projects={data.projects} onCreated={refreshProjects} /> :
-          page === "tasks" ? <TasksPage projects={data.projects} onOpen={openRun} /> :
+          page === "tasks" ? <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} /> :
           page === "run" && selectedRun ? <RunWorkspace run={selectedRun} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} replay={replay} /> :
           page === "settings" ? <OperationsPage type="environment" projects={data.projects} editableProjects={data.editable_projects} selectedRun={selectedRun} /> :
-          <TasksPage projects={data.projects} onOpen={openRun} />}
+          <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} />}
       </main>
     </div>
   );

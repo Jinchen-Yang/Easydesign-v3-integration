@@ -47,6 +47,7 @@ from .tasks import (
     ProgressSnapshot,
     TaskAttemptRecord,
     TaskEvent,
+    TaskHeartbeat,
     TaskRecord,
     TaskStatus,
 )
@@ -85,6 +86,7 @@ __all__ = [
     "TargetInputError",
     "TaskAttemptRecord",
     "TaskEvent",
+    "TaskHeartbeat",
     "TaskRecord",
     "TaskStatus",
     "UndeclaredArtifactError",

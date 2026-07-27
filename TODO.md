@@ -79,6 +79,9 @@
 | `UX-005` | CLI & Developer Experience | `smoke-validated` | 合作者 clone `main` 后可用一条命令完成 SHA-256/manifest 校验并启动相同 APOE 工作台。 |
 | `ENG-013` | Core Engineering | `smoke-validated` | whole-run SSH executor、严格主机/版本探针、rsync staging、systemd worker、远端独立 manifest/progress/resume 和 CLI 已由 Suzhou2 8×A100 真实提交验证。 |
 | `S06-002` | Scientific Pipeline | `implemented` | 以源 Stage05Bundle SHA-256 和双重 acknowledgement 人工授权已扩展 Tier A 的探索性 50k；APOE Stage 05 科学停止保持不变，远端运行待完成。 |
+| `ENG-014` | Core Engineering | `smoke-validated` | SSH watch/resume、manifest 驱动 metadata/complete 同步和 BoltzGen task heartbeat 已通过真实 Suzhou2 运行只读验收。 |
+| `S06-003` | Scientific Pipeline | `implemented` | Stage 06 远程协作闭环完成；旧 worker 保持兼容，新 dev12 任务记录逐 shard heartbeat。 |
+| `UI-008` | Product UI | `smoke-validated` | 新建设计可显式选择本机或 profile 远端；运行任务页可刷新、同步和恢复远端任务，双尺寸 Chromium 验收通过。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 
 ### 通用决策门路线
@@ -106,7 +109,7 @@
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-001 的分片/恢复已完成；S06-002 新增带科学边界的人工规模授权与 SSH whole-run 提交。 | 在 Suzhou2 八张 A100 上运行 APOE 唯一已扩展 Tier A 的 20×2500 探索性 50k。 | 无代码阻塞；50k 为长任务，完成前保持 Now，Stage 05 科学停止不变。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `implemented` | S06-003 已补齐远程 watch、心跳、恢复、manifest 同步和 UI 服务器选择；APOE 50k 继续运行。 | 跟踪 Suzhou2 20×2500，并用控制端只读镜像让合作者查看相同运行记录。 | 无代码阻塞；当前 dev11 worker 没有心跳字段，新提交/恢复的 dev12 任务才产生心跳。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 

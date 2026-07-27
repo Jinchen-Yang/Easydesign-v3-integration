@@ -69,10 +69,16 @@ from .profile import (
 from .project import InitializedProject, initialize_project
 from .pse_import import CompletedPseRun, execute_pse_import
 from .remote_execution import (
+    list_remote_executor_ids,
+    list_remote_job_records,
+    observe_remote_pipeline,
     probe_remote_executor,
+    read_remote_job_record,
     read_remote_status,
     read_remote_submission,
+    resume_remote_pipeline,
     submit_remote_pipeline,
+    sync_remote_pipeline,
 )
 from .sequence_prediction import (
     CompletedSequenceRun,
@@ -183,14 +189,20 @@ __all__ = [
     "load_run_config",
     "load_runtime_profile",
     "list_runs",
+    "list_remote_executor_ids",
+    "list_remote_job_records",
+    "observe_remote_pipeline",
     "read_pipeline_progress",
+    "read_remote_job_record",
     "read_remote_status",
     "read_remote_submission",
     "migrate_run_directories",
     "probe_remote_executor",
     "resolve_runtime_profile_path",
+    "resume_remote_pipeline",
     "show_run",
     "submit_remote_pipeline",
+    "sync_remote_pipeline",
     "upsert_run_index_entries",
     "validate_run_configuration",
     "InitializedProject",

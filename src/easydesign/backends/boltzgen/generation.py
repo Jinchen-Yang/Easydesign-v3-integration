@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,10 +40,24 @@ class BoltzGenGenerationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class BoltzGenGenerationHeartbeat:
+    """后端进程存活心跳；不宣称中间文件已成为完整候选。"""
+
+    observed_at: datetime
+    elapsed_seconds: float
+    phase: str = "boltzgen-running"
+    message: str = "BoltzGen process is still running."
+
+
+BoltzGenHeartbeatCallback = Callable[[BoltzGenGenerationHeartbeat], None]
+
+
+@dataclass(frozen=True, slots=True)
 class BoltzGenGenerationAdapter:
     check_adapter: BoltzGenCheckAdapter
     generation_timeout_seconds: float = 172_800.0
     data_loader_workers: int = 4
+    heartbeat_interval_seconds: float = 30.0
 
     def probe(self) -> dict[str, str]:
         return self.check_adapter.probe()
@@ -78,6 +94,8 @@ class BoltzGenGenerationAdapter:
     def execute(
         self,
         request: BoltzGenGenerationRequest,
+        *,
+        heartbeat_callback: BoltzGenHeartbeatCallback | None = None,
     ) -> BoltzGenGenerationResult:
         self.probe()
         if not request.design_specification.is_file():
@@ -100,6 +118,38 @@ class BoltzGenGenerationAdapter:
         if self.check_adapter.offline_mode:
             environment["HF_HUB_OFFLINE"] = "1"
         started = datetime.now(UTC)
+        heartbeat_stop = threading.Event()
+        heartbeat_errors: list[Exception] = []
+
+        def emit_heartbeats() -> None:
+            while not heartbeat_stop.wait(self.heartbeat_interval_seconds):
+                if heartbeat_callback is None:
+                    continue
+                observed = datetime.now(UTC)
+                try:
+                    heartbeat_callback(
+                        BoltzGenGenerationHeartbeat(
+                            observed_at=observed,
+                            elapsed_seconds=max(
+                                0.0,
+                                (observed - started).total_seconds(),
+                            ),
+                        )
+                    )
+                except Exception as error:  # pragma: no cover - defensive thread boundary
+                    heartbeat_errors.append(error)
+                    return
+
+        heartbeat_thread: threading.Thread | None = None
+        if heartbeat_callback is not None:
+            if self.heartbeat_interval_seconds <= 0:
+                raise BackendContractError("BoltzGen heartbeat interval 必须为正数")
+            heartbeat_thread = threading.Thread(
+                target=emit_heartbeats,
+                name="easydesign-boltzgen-heartbeat",
+                daemon=True,
+            )
+            heartbeat_thread.start()
         try:
             with (
                 request.stdout_path.open("x", encoding="utf-8") as stdout_handle,
@@ -123,6 +173,14 @@ class BoltzGenGenerationAdapter:
                     "\nEasyDesign operational timeout after "
                     f"{self.generation_timeout_seconds} seconds.\n"
                 )
+        finally:
+            heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=max(1.0, self.heartbeat_interval_seconds))
+        if heartbeat_errors:
+            raise BackendContractError(
+                f"BoltzGen heartbeat 写入失败: {heartbeat_errors[0]}"
+            ) from heartbeat_errors[0]
         ended = datetime.now(UTC)
         return BoltzGenGenerationResult(
             command=command,

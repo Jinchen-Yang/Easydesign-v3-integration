@@ -49,10 +49,16 @@ from easydesign.orchestration.profile import (
 )
 from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.remote_execution import (
+    list_remote_executor_ids,
+    list_remote_job_records,
+    observe_remote_pipeline,
     probe_remote_executor,
+    read_remote_job_record,
     read_remote_status,
     read_remote_submission,
+    resume_remote_pipeline,
     submit_remote_pipeline,
+    sync_remote_pipeline,
 )
 from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.orchestration.stage05 import Stage05Execution
@@ -205,6 +211,12 @@ def _parser() -> argparse.ArgumentParser:
         dest="remote_command",
         required=True,
     )
+    remote_list = remote_commands.add_parser(
+        "list",
+        help="列出 profile 中的远端和控制端已知任务",
+    )
+    _add_profile(remote_list)
+    _add_json(remote_list)
     remote_probe = remote_commands.add_parser("probe", help="只读检查远端运行环境")
     remote_probe.add_argument("executor_id")
     _add_profile(remote_probe)
@@ -217,7 +229,13 @@ def _parser() -> argparse.ArgumentParser:
     remote_submit.add_argument("--job-id", required=True)
     remote_submit.add_argument("--run-id", required=True)
     remote_submit.add_argument("--config", type=Path, required=True)
-    remote_submit.add_argument("--from-run", type=Path, required=True)
+    remote_source = remote_submit.add_mutually_exclusive_group(required=True)
+    remote_source.add_argument("--from-run", type=Path)
+    remote_source.add_argument(
+        "--project-root",
+        type=Path,
+        help="从 Stage 01 开始时复制包含 config/inputs 的项目目录",
+    )
     _add_profile(remote_submit)
     _add_json(remote_submit)
     remote_status = remote_commands.add_parser("status", help="查询远端 worker 状态")
@@ -225,6 +243,44 @@ def _parser() -> argparse.ArgumentParser:
     remote_status.add_argument("job_id")
     _add_profile(remote_status)
     _add_json(remote_status)
+    remote_watch = remote_commands.add_parser(
+        "watch",
+        help="持续读取远端 worker 和结构化运行进度",
+    )
+    remote_watch.add_argument("executor_id")
+    remote_watch.add_argument("job_id")
+    remote_watch.add_argument("--interval", type=float, default=5.0)
+    remote_watch.add_argument("--once", action="store_true")
+    remote_watch.add_argument("--sync-to", type=Path)
+    remote_watch.add_argument(
+        "--sync-mode",
+        choices=("metadata", "complete"),
+        default="metadata",
+    )
+    _add_profile(remote_watch)
+    _add_json(remote_watch)
+    remote_resume = remote_commands.add_parser(
+        "resume",
+        help="为已停止的远端 run 创建新的持久恢复 worker",
+    )
+    remote_resume.add_argument("executor_id")
+    remote_resume.add_argument("job_id")
+    _add_profile(remote_resume)
+    _add_json(remote_resume)
+    remote_sync = remote_commands.add_parser(
+        "sync",
+        help="按远端 manifest 增量同步只读运行镜像",
+    )
+    remote_sync.add_argument("executor_id")
+    remote_sync.add_argument("job_id")
+    remote_sync.add_argument("--to", type=Path, required=True)
+    remote_sync.add_argument(
+        "--mode",
+        choices=("metadata", "complete"),
+        default="metadata",
+    )
+    _add_profile(remote_sync)
+    _add_json(remote_sync)
 
     hotspots_parser = commands.add_parser(
         "hotspots",
@@ -510,6 +566,28 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return 0
 
     if arguments.command == "remote":
+        if arguments.remote_command == "list":
+            executor_ids = list_remote_executor_ids(profile_path=arguments.profile)
+            records = list_remote_job_records()
+            payload = {
+                "executors": list(executor_ids),
+                "jobs": [item.model_dump(mode="json") for item in records],
+            }
+            if arguments.json:
+                print(_json_text(payload))
+            else:
+                print("可用远端：")
+                for executor_id in executor_ids:
+                    print(f"- {executor_id}")
+                print("已知任务：")
+                for record in records:
+                    submission = record.submission
+                    print(
+                        f"- {submission.executor_id}/{submission.job_id}: "
+                        f"{submission.project_id}/{submission.run_id} "
+                        f"(resume={record.resume_count})"
+                    )
+            return 0
         if arguments.remote_command == "probe":
             probe = probe_remote_executor(
                 executor_id=arguments.executor_id,
@@ -533,6 +611,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 run_id=arguments.run_id,
                 config_path=arguments.config,
                 source_run=arguments.from_run,
+                project_root=arguments.project_root,
                 profile_path=arguments.profile,
             )
             if arguments.json:
@@ -546,7 +625,113 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     f"{submission.job_id}"
                 )
             return 0
+        if arguments.remote_command == "watch":
+            if arguments.interval <= 0 or arguments.interval > 60:
+                raise ConfigurationError("--interval 必须在 0 到 60 秒之间")
+            while True:
+                observation = observe_remote_pipeline(
+                    executor_id=arguments.executor_id,
+                    job_id=arguments.job_id,
+                    profile_path=arguments.profile,
+                )
+                sync_report = None
+                if arguments.sync_to is not None:
+                    sync_report = sync_remote_pipeline(
+                        executor_id=arguments.executor_id,
+                        job_id=arguments.job_id,
+                        destination=arguments.sync_to,
+                        mode=arguments.sync_mode,
+                        profile_path=arguments.profile,
+                    )
+                if arguments.json:
+                    payload: dict[str, Any] = observation.model_dump(mode="json")
+                    payload["sync"] = (
+                        None if sync_report is None else sync_report.model_dump(mode="json")
+                    )
+                    print(_json_text(payload), flush=True)
+                else:
+                    worker = observation.worker
+                    print(
+                        f"[{observation.checked_at.isoformat()}] "
+                        f"{observation.executor_id}/{observation.job_id} "
+                        f"worker={worker.active_state}/{worker.sub_state}",
+                        flush=True,
+                    )
+                    if observation.progress is not None:
+                        progress = observation.progress
+                        print(
+                            f"  {progress.stage_id}: tasks "
+                            f"{progress.succeeded_tasks}/{progress.total_tasks}, "
+                            f"running={progress.running_tasks}, "
+                            f"failed={progress.failed_tasks}; candidates "
+                            f"{progress.collected_candidates}/"
+                            f"{progress.planned_candidates}",
+                            flush=True,
+                        )
+                        for heartbeat in progress.task_heartbeats:
+                            print(
+                                f"  HEARTBEAT GPU {heartbeat.device} "
+                                f"{heartbeat.task_id}: "
+                                f"{heartbeat.elapsed_seconds / 60:.1f} min",
+                                flush=True,
+                            )
+                    elif observation.progress_error is not None:
+                        print(f"  进度暂不可用：{observation.progress_error}", flush=True)
+                    if sync_report is not None:
+                        print(
+                            f"  镜像已同步：{sync_report.destination} "
+                            f"({sync_report.file_count} files)",
+                            flush=True,
+                        )
+                progress_terminal = (
+                    observation.progress is not None
+                    and observation.progress.status
+                    in {"succeeded", "scientific-stop", "failed", "incomplete"}
+                )
+                worker_terminal = observation.worker.active_state in {
+                    "failed",
+                    "inactive",
+                }
+                if arguments.once or progress_terminal or worker_terminal:
+                    return 0
+                time.sleep(arguments.interval)
+        if arguments.remote_command == "resume":
+            record = resume_remote_pipeline(
+                executor_id=arguments.executor_id,
+                job_id=arguments.job_id,
+                profile_path=arguments.profile,
+            )
+            if arguments.json:
+                print(_json_text(record))
+            else:
+                print(f"远端恢复 worker 已提交：{record.active_unit_name}")
+                print(f"恢复次数：{record.resume_count}")
+                print(f"远端 run：{record.submission.remote_run_root}")
+            return 0
+        if arguments.remote_command == "sync":
+            report = sync_remote_pipeline(
+                executor_id=arguments.executor_id,
+                job_id=arguments.job_id,
+                destination=arguments.to,
+                mode=arguments.mode,
+                profile_path=arguments.profile,
+            )
+            if arguments.json:
+                print(_json_text(report))
+            else:
+                print(f"远端镜像：{report.destination}")
+                print(f"同步文件：{report.file_count}")
+                print(f"同步大小：{report.size_bytes / 1024**2:.1f} MiB")
+                print(
+                    "完整嵌套 artifact："
+                    f"{'是' if report.completed_artifact_closure else '否（元数据模式）'}"
+                )
+            return 0
         submission = read_remote_submission(
+            executor_id=arguments.executor_id,
+            job_id=arguments.job_id,
+        )
+        record = read_remote_job_record(
             executor_id=arguments.executor_id,
             job_id=arguments.job_id,
         )
@@ -563,6 +748,8 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             print(_json_text(status_payload))
         else:
             print(f"远端任务：{submission.unit_name}")
+            if record.active_unit_name != submission.unit_name:
+                print(f"当前恢复 worker：{record.active_unit_name}")
             print(f"Worker：{status.active_state}/{status.sub_state}")
             print(f"退出码：{status.exec_main_status}")
             print(f"远端 run：{submission.remote_run_root}")

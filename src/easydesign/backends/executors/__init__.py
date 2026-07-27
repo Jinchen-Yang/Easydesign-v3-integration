@@ -10,9 +10,12 @@ from .local_multi_gpu import (
 from .ssh_remote import (
     SshRemoteConnection,
     SshRemoteExecutor,
+    SshRemoteJobRecord,
+    SshRemoteObservation,
     SshRemoteProbe,
     SshRemoteStatus,
     SshRemoteSubmission,
+    SshRemoteSyncReport,
 )
 
 __all__ = [
@@ -21,9 +24,12 @@ __all__ = [
     "NvidiaSmiProbe",
     "SshRemoteConnection",
     "SshRemoteExecutor",
+    "SshRemoteJobRecord",
+    "SshRemoteObservation",
     "SshRemoteProbe",
     "SshRemoteStatus",
     "SshRemoteSubmission",
+    "SshRemoteSyncReport",
     "execute_on_devices",
     "ui_drain_requested",
 ]

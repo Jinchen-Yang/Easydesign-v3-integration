@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pytest import MonkeyPatch
 
 from easydesign.backends.executors import SshRemoteConnection, SshRemoteExecutor
+from easydesign.core import ProgressSnapshot
 
 
 def _executor(tmp_path: Path) -> SshRemoteExecutor:
@@ -105,3 +107,54 @@ def test_ssh_submission_stages_exact_config_and_uses_persistent_systemd_worker(
     assert "--from-run /data/easydesign/jobs/apoe-50k/source-run" in launch[-1]
     assert submission.remote_run_root == "/data/easydesign/runs/apoe/scale-50k"
     assert submission.source_run_manifest_sha256 == "a" * 64
+
+
+def test_ssh_progress_resume_and_manifest_file_pull_are_explicit(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    snapshot = ProgressSnapshot(
+        stage_id="06-scale-generation-and-refolding",
+        updated_at=datetime(2026, 7, 27, 4, 0, tzinfo=UTC),
+        status="running",
+        total_tasks=20,
+        pending_tasks=12,
+        waiting_tasks=0,
+        running_tasks=8,
+        succeeded_tasks=0,
+        failed_tasks=0,
+        planned_candidates=50_000,
+        collected_candidates=0,
+    )
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(command: tuple[str, ...], **_: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        joined = " ".join(command)
+        stdout = (
+            snapshot.model_dump_json()
+            if "runs watch" in joined
+            else "Running as unit easydesign-job-resume-0001.service.\n"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    executor = _executor(tmp_path)
+
+    observed = executor.progress(Path("/data/easydesign/runs/project/run"))
+    resume_output = executor.resume(
+        remote_run_root=Path("/data/easydesign/runs/project/run"),
+        unit_name="easydesign-job-resume-0001",
+    )
+    executor.pull_files(
+        remote_root=Path("/data/easydesign/runs/project/run"),
+        relative_paths=("manifests/LATEST", "manifests/run-manifest-r0001.json"),
+        destination=tmp_path / "mirror",
+    )
+
+    assert observed.planned_candidates == 50_000
+    assert "resume" in resume_output
+    pull = next(item for item in commands if item[0] == "/usr/bin/rsync")
+    assert "--files-from" in pull
+    assert pull[-2].endswith(":/data/easydesign/runs/project/run/")
+    assert any("runs resume" in item[-1] for item in commands)

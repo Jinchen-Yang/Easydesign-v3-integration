@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S06-001 的分片/恢复已完成；S06-002 新增带科学边界的人工规模授权与 SSH whole-run 提交。 | 在 Suzhou2 八张 A100 上运行 APOE 唯一已扩展 Tier A 的 20×2500 探索性 50k。 | 无代码阻塞；50k 为长任务，完成前保持 Now，Stage 05 科学停止不变。 | 2026-07-27 |
+| `implemented` | S06-003 已补齐远程 watch、心跳、恢复、manifest 同步和 UI 服务器选择；APOE 50k 继续运行。 | 跟踪 Suzhou2 20×2500，并用控制端只读镜像让合作者查看相同运行记录。 | 无代码阻塞；当前 dev11 worker 没有心跳字段，新提交/恢复的 dev12 任务才产生心跳。 | 2026-07-27 |
 
 ## 当前结论
 
@@ -16,6 +16,7 @@
 - Stage 06 复用 Stage 04 的 BoltzGen adapter、collector、TaskRecord、事件与恢复执行器。
 - Stage 04/05 候选不计入 scale 数量；Stage 07 才执行 Protenix 深度筛选和 TNP。
 - 软件能力与 APOE 科学结果分别报告；人工授权生成不会修改 Stage 05 科学停止。
+- 远程科学事实仍由远端 run 发布；控制端镜像只是 checksum 验证后的只读副本。
 
 ## 功能矩阵
 
@@ -30,6 +31,9 @@
 | 发布中断恢复 | `implemented` | 终态 artifact identity/bytes 校验后复用，不覆盖 |
 | Stage 05 停止后的人工探索性授权 | `implemented` | 只接受已扩展 Tier A、源 Bundle SHA-256、授权人/理由和双重确认；`stopped-no-tier-a` 禁止越过 |
 | SSH whole-run 提交 | `smoke-validated` | Suzhou2 dedicated key、strict known-host、dev11 精确版本、rsync、systemd worker 与远端独立 run 真实通过 |
+| 远程状态、恢复与结果同步 | `smoke-validated` | dev12 从控制端真实读取 8 running/12 pending，并同步 246 文件、59,263,753 bytes 的 metadata 镜像 |
+| 长任务结构化 heartbeat | `implemented` | BoltzGen adapter → TaskHeartbeat → 原子 ProgressSnapshot → CLI/UI；旧 dev11 运行不追写伪心跳 |
+| UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
 | APOE 真实 50,000 | `running` | Suzhou2 8×A100，20×2500；完成前不得称为 ScaleBundle 成功 |
 
@@ -45,7 +49,7 @@
 - 在第二条独立真实 target 或未来新版本策略产生唯一 Stage 05 winner 后，按正常主线执行
   `smoke-1000`。
 - 用真实运行重新测量每 candidate 磁盘峰值，并评估当前 20×安全倍率。
-- 把 remote job/progress 纳入 UI 长任务页；科学配置继续不保存 SSH 主机或密钥。
+- 50k 完成后执行 `complete` 同步，并用同一 Workbench 投影复核候选与 ScaleBundle。
 
 ## Blocked
 
@@ -57,8 +61,8 @@
 - 模型与计划测试：1000/50000 profile、连续 shard、预授权拒绝、coverage 失败。
 - 集成 fixture：非 APOE target 精确生成 1000 个新候选；发布恢复复用同一 bundle
   SHA-256；磁盘门失败时没有创建 task。
-- 全仓：`make check`、`218 passed, 8 skipped`、`make build` 通过；wheel 的
-  `21/21` 个资产和 console script 校验通过。
+- dev12 回归：`make check`、247 passed/8 skipped；strict Ruff/mypy 通过；Workbench
+  非视觉交互在 Chromium 1440×900 与 1920×1080 共 18/18 通过。
 - 真实 backend smoke：Suzhou2 8×A100 已同时启动首批 8 个 production shard，
   systemd worker、结构化进度、设备绑定和实际 CIF 写入均已验证；50,000 完整性验收
   仍在运行。
@@ -69,6 +73,11 @@
   `/data/easydesign/runs/apoe-s02-006-pse/20260727-001-stage06-tier-a-50k-suzhou2`。
   20 个 shard 已创建，首批 shard 0001–0008 分别绑定 GPU 0–7；八张 A100 均观测到
   BoltzGen 进程约 4.5–5.3 GiB、95–97% utilization，并开始写入设计。
+- 2026-07-27 dev12 控制端 `remote watch --once` 读取到 worker
+  `active/running`、8 running、12 pending、50,000 planned；`metadata` 同步到
+  Proteindigger1 的同项目/run 路径，验证 246 个文件、59,263,753 bytes 和
+  RunManifest SHA-256
+  `56a0d8c5ed32c45a17489b3d59a2635db0de40252a7c5013af0481a683a56a5e`。
 - APOE source：Stage 05 run `20260726-004-stage05-pilot-filter` 保持
   `stopped-no-scale-winner`；Stage05Bundle SHA-256
   `401259623dd43cf5a17dfed20fd81b6868d61002bcc1eabfab1b68134b5d9073`。
@@ -98,7 +107,10 @@
   local multi-GPU Stage 06。
 - 提交前曾观察到 GPU 0 上有两条既有 BindCraft，未终止或挤占；正式提交时八张卡均已
   释放，resource gate 通过后首批八个 shard 同时启动。
+- 增加远程 watch/sync/resume、Stage 06 `scale-state.json` UI 读取、长任务 heartbeat
+  和 Workbench executor 选择。当前运行由 dev11 启动，因此保持空 heartbeat，而不是
+  事后伪造；后续 dev12 新任务或合法 resume 自动开始记录。
 
 ## 历史索引
 
-- [2026-07 工程实现与 APOE 未运行边界](history/2026-07.md)。production 50k 未授权。
+- [2026-07 工程实现、远程协作闭环与 APOE 运行边界](history/2026-07.md)。

@@ -135,7 +135,7 @@ def test_normal_next_stage_continues_same_run_without_copying_upstream(
     continued = continue_run_in_place(
         source_run_root=root,
         config_path=continuation_config,
-        code_identity=_identity("0.1.0.dev15", "2"),
+        code_identity=_identity("0.1.0.dev16", "2"),
         runtime_profile=profile,
         continued_at=created + timedelta(seconds=3),
     )

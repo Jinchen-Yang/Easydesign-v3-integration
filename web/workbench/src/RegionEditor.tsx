@@ -49,6 +49,19 @@ function regionCounts(selection: Map<number, RegionId>) {
   }));
 }
 
+function upstreamSelection(projection: RegionEditorProjection) {
+  const current = new Map<number, RegionId>();
+  const source = new Map<number, RegionId>();
+  for (const residue of projection.residues) {
+    const sourceId = sourceRegion(residue.source_color);
+    if (sourceId) source.set(residue.label_seq_id, sourceId);
+    if (residue.current_region) {
+      current.set(residue.label_seq_id, residue.current_region);
+    }
+  }
+  return current.size > 0 ? current : source;
+}
+
 export function RegionEditor({
   run,
   onClose,
@@ -87,7 +100,16 @@ export function RegionEditor({
     let disposed = false;
     api.regionEditor(run.run_key)
       .then((value) => {
-        if (!disposed) setProjection(value);
+        if (!disposed) {
+          const initial = upstreamSelection(value);
+          setProjection(value);
+          setSelection(initial);
+          if (initial.size > 0) {
+            setStatus(
+              `已将上游的 ${initial.size} 个区域残基复制到本次可编辑层；可直接修改，或选择“从空白开始”。`,
+            );
+          }
+        }
       })
       .catch((error: unknown) => {
         if (!disposed) {
@@ -146,16 +168,41 @@ export function RegionEditor({
       return next;
     });
     lastSelected.current = labelSeqId;
+    setStatus(
+      tool === "erase"
+        ? `已将规范残基 ${labelSeqId} 移出本次编辑区域。`
+        : `已将规范残基 ${labelSeqId} 设为区域 ${tool}。`,
+    );
   }
 
-  function loadCurrent() {
+  function loadUpstream() {
     if (!projection) return;
-    setSelection(new Map(
-      projection.residues
-        .filter((item) => item.current_region)
-        .map((item) => [item.label_seq_id, item.current_region!] as const),
-    ));
-    setStatus("已把当前批准区域复制到本次编辑层；原始运行没有被修改。");
+    const restored = upstreamSelection(projection);
+    setSelection(restored);
+    setShowSource(true);
+    setShowCurrent(true);
+    setStatus(
+      restored.size > 0
+        ? `已恢复上游的 ${restored.size} 个区域残基；原始运行没有被修改。`
+        : "当前上游没有 PSE 标注或已批准区域，本次编辑层保持为空。",
+    );
+  }
+
+  function startBlank() {
+    setSelection(new Map());
+    setShowSource(false);
+    setShowCurrent(false);
+    lastSelected.current = undefined;
+    setStatus("已隐藏上游颜色并清空本次编辑层；现在可以从空白结构重新选择。");
+  }
+
+  function chooseTool(nextTool: Tool) {
+    setTool(nextTool);
+    setStatus(
+      nextTool === "erase"
+        ? "已切换到橡皮擦；请点击结构或下方序列中的残基。"
+        : `已切换到区域 ${nextTool} 画笔；请继续点击结构或下方序列中的残基。`,
+    );
   }
 
   function pasteSelection() {
@@ -416,22 +463,22 @@ export function RegionEditor({
                   type="button"
                   className={tool === id ? "selected" : ""}
                   style={{ "--region-color": REGION_COLORS[id] } as CSSProperties}
-                  onClick={() => setTool(id)}
+                  onClick={() => chooseTool(id)}
                   key={id}
                 >
                   <i />
                   区域 {id}
-                  <small>{counts.find((item) => item.id === id)?.count || 0} 个残基</small>
+                  <small>本次可编辑 {counts.find((item) => item.id === id)?.count || 0} 个残基</small>
                 </button>
               ))}
-              <button type="button" className={tool === "erase" ? "selected" : ""} onClick={() => setTool("erase")}>
+              <button type="button" className={tool === "erase" ? "selected" : ""} onClick={() => chooseTool("erase")}>
                 橡皮擦
                 <small>移出编辑区域</small>
               </button>
             </div>
             <div className="editor-actions-row">
-              <button type="button" onClick={loadCurrent}>载入当前区域</button>
-              <button type="button" onClick={() => setSelection(new Map())}>清空本次选择</button>
+              <button type="button" onClick={loadUpstream}>恢复上游区域</button>
+              <button type="button" onClick={startBlank}>从空白开始</button>
             </div>
             <div className="paste-residues">
               <label>
@@ -446,7 +493,8 @@ export function RegionEditor({
                 应用到当前画笔
               </button>
             </div>
-            <p className="fine">点击结构或序列选择单个残基；在序列上按住 Shift 可连续选择。重新着色会自动把残基从旧区域移动到新区域。</p>
+            <p className="fine">区域 A/B/C 按钮只是切换画笔；还需要点击右侧结构或下方序列中的残基。重新着色会自动把残基从旧区域移动到新区域。</p>
+            {status && <div className="region-editor-feedback">{status}</div>}
           </aside>
           <div className="region-editor-structure">
             <MolViewer

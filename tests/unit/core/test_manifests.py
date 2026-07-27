@@ -319,7 +319,7 @@ def test_succeeded_run_can_continue_with_new_immutable_config_revision(now) -> N
         dirty=False,
     )
     new_identity = CodeIdentity(
-        version="0.1.0.dev15",
+        version="0.1.0.dev16",
         source=CodeIdentitySource.GIT,
         git_commit="2" * 40,
         dirty=False,
@@ -348,7 +348,7 @@ def test_succeeded_run_can_continue_with_new_immutable_config_revision(now) -> N
     continued = succeeded.continue_after_success(
         updated_at=now + timedelta(seconds=2),
         config_snapshot=artifact("config-v2"),
-        easydesign_version="0.1.0.dev15",
+        easydesign_version="0.1.0.dev16",
         code_identity=new_identity,
         runtime_profile=profile,
     )

@@ -725,10 +725,20 @@ test("stage two region editor keeps source layers and editable selection separat
   await expect(page.getByRole("heading", { name: "重新选择结合区域" })).toBeVisible();
   await expect(page.getByLabel("显示 PSE 来源颜色")).toBeChecked();
   await expect(page.getByLabel("显示当前批准区域")).toBeChecked();
+  await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 1 个残基");
+  await expect(page.getByRole("button", { name: /区域 B/ })).toContainText("本次可编辑 1 个残基");
   await page.getByRole("button", { name: /区域 B/ }).click();
   const firstResidue = page.locator(".sequence-editor button").first();
   await firstResidue.click();
   await expect(firstResidue).toHaveClass(/region-b/);
-  await page.getByRole("button", { name: "清空本次选择" }).click();
+  await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 0 个残基");
+  await expect(page.getByRole("button", { name: /区域 B/ })).toContainText("本次可编辑 2 个残基");
+  await expect(page.locator(".region-editor-feedback")).toHaveText("已将规范残基 1 设为区域 B。");
+  await page.getByRole("button", { name: "从空白开始" }).click();
   await expect(firstResidue).not.toHaveClass(/region-b/);
+  await expect(page.getByLabel("显示 PSE 来源颜色")).not.toBeChecked();
+  await expect(page.getByLabel("显示当前批准区域")).not.toBeChecked();
+  await expect(page.locator(".region-editor-feedback")).toHaveText(
+    "已隐藏上游颜色并清空本次编辑层；现在可以从空白结构重新选择。",
+  );
 });

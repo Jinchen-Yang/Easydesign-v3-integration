@@ -621,6 +621,8 @@ textarea { padding: 10px; }
 .paste-residues textarea { min-height: 64px; resize: vertical; }
 .region-editor-structure { min-width: 0; }
 .region-editor-structure .mol-card, .region-editor-structure .mol-viewport { min-height: 625px; }
+.region-editor-structure canvas { cursor: crosshair !important; }
+.region-editor-feedback { padding: 10px 11px; border: 1px solid #c8d8f5; border-radius: 8px; background: #f0f5ff; color: #315a9f; font-size: 13px; line-height: 1.5; }
 .sequence-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; margin: 0 16px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .sequence-editor button { min-height: 48px; display: grid; place-items: center; gap: 1px; padding: 4px; border: 1px solid #dbe1e9; border-radius: 6px; background: #fafbfc; color: #344158; cursor: pointer; }
 .sequence-editor button strong { font-size: 14px; }

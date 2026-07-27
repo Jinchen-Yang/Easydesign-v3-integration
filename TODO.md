@@ -40,7 +40,7 @@
 | `ENG` | Core Engineering | `smoke-validated` | manifest、Decision Gate、跨主机执行与统一 run layout 已形成可审计工程底座。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-018：历史 checkpoint 逐 run 依赖报告与可恢复归档；[运行目录规则](docs/architecture/RUN_LAYOUT.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–005 已提供可安装 CLI、六入口 init、运行管理、Viewer 与经过校验的一条命令共享案例入口。 | 让真实能力和可审计结果通过稳定入口使用。 | 下一步验证跨平台共享案例和可继续长任务 UX；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | REP-001 自包含 Mol* Target Viewer 已通过真实 APOE smoke。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
-| `UI` | Product UI | `smoke-validated` | dev15 同时提供可自由浏览的全流程向导和上传后直达结构审查的按步骤 Stage 01 单页流程。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `UI` | Product UI | `smoke-validated` | dev16 提供全流程/按步骤路线，并让 Stage 02 上游区域、可编辑计数和从空白重选保持一致。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002/003 固定 VHH7 和 TNP runtime；DATA-004 将 APOE 结果压缩为有授权、逐文件校验的私有仓库证据包。 | 确保 scaffold、模型、fixture 和共享结果的来源、授权与边界可审计。 | 公开发布前复审 APOE 私有资产、TNP 依赖和模型再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
@@ -88,6 +88,7 @@
 | `UI-009` | Product UI | `smoke-validated` | 全流程七阶段可自由浏览；按步骤路线已从真实 APOE Stage 01 建立独立 Stage 02 continuation；开发者自检与科研项目保持隔离。 |
 | `UI-010` | Product UI | `smoke-validated` | 项目可在运行索引中显式指定一条主展示运行；新分支继续保留在历史中，但不会擅自覆盖首页选定结果。 |
 | `UI-011` | Product UI | `smoke-validated` | 按步骤设计已收敛为单页 Stage 01：PSE 接收后自动校验、运行并进入结构审查，真实 APOE 与双尺寸浏览器验收通过。 |
+| `UI-012` | Product UI | `smoke-validated` | Stage 02 手工编辑默认复制当前批准区域或 PSE 来源颜色；APOE 初始 9/14/14、从空白 0/0/0、恢复与结构/序列点击反馈均已验证。 |
 | `ENG-016` | Core Engineering | `smoke-validated` | DesignSession 0.1 的不可变 config revision、run lineage、冻结输入重定位和等待审批状态已由真实 APOE continuation 验证。 |
 | `ENG-017` | Core Engineering | `smoke-validated` | Project/Run/Stage/Attempt/branch 语义、同 run 阶段延续、惰性 Stage 目录、项目导航和归档空壳清理均通过真实目录验收。 |
 | `ENG-018` | Core Engineering | `planned` | 为 dev14 前的 Stage checkpoint runs 生成依赖报告，并对无引用终态 run 提供逐 run 可恢复归档；不合并或重写科学文件。 |
@@ -119,7 +120,7 @@
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 01 | `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；APOE 9/14/14 新分支已停在人工确认门。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-27 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；编辑器现在默认复制上游 APOE 9/14/14 区域并可显式从空白开始。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |

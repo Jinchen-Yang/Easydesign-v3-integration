@@ -375,7 +375,15 @@ Workbench 的交互式重选不重复询问三套理由：产品请求只提交�
 acknowledgement；orchestration 从 canonical `design.intent` 生成 design goal，并将
 生物学/结构说明限制为“用户选择、无独立生物学证据”和“编号/坐标已验证、未自动结构
 优选”。生成后的 typed approval 仍进入 resolved config 和审计链，React 不生成科学
-依据。
+依据。该显式用户提交本身就是 human approval，无论后续运行方式是否为 review-gated，
+都不再制造一次内容相同的第二审批。automatic review-gated 的候选选择仍保留独立门。
+
+重新选择 Stage 02 时，continuation 显式声明 `continue_after_stage=1`。core 逐一验证
+Stage 01 的 StageManifest 状态和 ArtifactRef checksum，再建立新 run；它不要求来源
+RunManifest 整体已经 `succeeded`，因为来源可能正在等待旧 Stage 02 审批或已经包含
+不应被复制的下游结果。没有显式前缀的普通 continuation 仍要求完整 succeeded run。
+UI job 只通过原子 job record 显示 `queued/running/terminal`，不使用固定等待时间、
+目录猜测或终端文本。
 
 ### Stage 03 策略编译与 continuation
 

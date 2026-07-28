@@ -165,7 +165,7 @@ A/B/C 的任意 1–3 个非空子集；成员不扩展、不删除、不重新�
 1. PSE 来源颜色：来自 Stage 01 `source-annotations.json`，只读，可隐藏/恢复。
 2. 当前批准区域：来自当前 Stage 02 `hotspots.yaml`，只读参考，可隐藏/恢复。
 3. 本次编辑区域：A=红、B=蓝、C=黄，可通过结构点击、序列点击、Shift 连选、粘贴规范
-   `label_seq_id` 或橡皮擦修改。
+   `label_seq_id` 修改。同一画笔再次点击已属于该区域的残基即取消选择。
 
 进入手工编辑时，系统先把“当前批准区域”复制到本次编辑层；若尚无 Stage 02，则复制
 PSE 来源红/蓝/黄。这样左侧 A/B/C 数量始终描述当前可保存的编辑成员，不会出现结构已
@@ -174,7 +174,7 @@ PSE 来源红/蓝/黄。这样左侧 A/B/C 数量始终描述当前可保存的�
 “从空白开始”同时清空第三层并隐藏两个只读参考层，但不删除 PSE annotation 或历史批准
 结果；“恢复上游区域”可以重新复制。A/B/C 按钮只切换画笔，实际成员必须通过点击结构、
 点击序列或粘贴编号加入，每次操作都显示规范残基编号反馈。一个残基在编辑层只能属于一个
-区域；改用另一支画笔会把它从旧区域移动到新区。最终 typed approval 要为每个非空区域
+区域；再次点击同一区域即取消，改用另一支画笔会把它从旧区域移动到新区。最终 typed approval 要为每个非空区域
 保存 design goal、生物学说明和结构说明，并记录批准人及 evidence limitation 确认。
 
 工作台不再把这些稳定字段作为 A/B/C 三套重复表单展示：`design_goal` 继承项目级
@@ -189,11 +189,16 @@ PSE 来源红/蓝/黄。这样左侧 A/B/C 数量始终描述当前可保存的�
 已验证 Stage 01 run
 → 新 config revision（manual-residue-list / label numbering）
 → 新 Stage 02 run
-→ review-gated 等待确认，或记录初始 human authority 后继续
+→ 显式人工提交直接记录 human authority；automatic review-gated 等待候选确认
 ```
 
 旧 RunManifest、StageManifest、`hotspots.yaml` 和下游结果保持不变。UI 只是编辑和调用
 同一 Python API；编号校验、授权和科学交接仍由 Stage 02 契约执行。
+
+重新运行 Stage 02 时只要求来源 run 的 Stage 01 成功前缀完整、checksum 正确；来源 run
+可以因为旧 Stage 02 正在等待确认或已经存在后续结果而尚未终态。新任务创建后，工作台
+轮询结构化 job record，显示排队/运行进度，并在终态自动打开新分支。固定时长等待和
+目录扫描都不是状态判断依据。
 
 Developer Preview 使用同一个 YAML 继续当前 run：
 

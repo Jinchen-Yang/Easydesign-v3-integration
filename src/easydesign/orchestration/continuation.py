@@ -40,6 +40,30 @@ def _latest_run(run_root: Path) -> RunManifest:
     return load_model(run_root / "manifests" / name, RunManifest)
 
 
+def _successful_stage_prefix(run_root: Path, *, through_stage: int) -> None:
+    """验证可安全分支的不可变成功 Stage 前缀，不要求整个 run 已终态。"""
+
+    if through_stage < 1 or through_stage > 6:
+        raise ConfigurationError("continue_after_stage 必须在 1–6")
+    root = run_root.resolve()
+    run = _latest_run(root)
+    selected: list[int] = []
+    for reference in run.stage_manifest_refs:
+        if reference.producer_stage is None:
+            raise ManifestStateError("StageManifest 引用缺少 producer_stage")
+        stage_number = int(reference.producer_stage.split("-", maxsplit=1)[0])
+        if stage_number > through_stage:
+            continue
+        stage = load_model(reference.verify(root), StageManifest)
+        if stage.status is not ExecutionStatus.SUCCEEDED:
+            raise ManifestStateError(f"上游阶段未成功: {reference.producer_stage}")
+        selected.append(stage_number)
+    if sorted(selected) != list(range(1, through_stage + 1)):
+        raise ManifestStateError(
+            f"source run 没有完整成功的 Stage 01–{through_stage:02d} 前缀"
+        )
+
+
 def next_stage_number(run_root: Path) -> int:
     root = run_root.resolve()
     run = _latest_run(root)
@@ -331,6 +355,8 @@ def materialize_continuation_config(
     """生成下一 Stage 配置；不覆盖现有 revision。"""
 
     source = source_run_root.resolve()
+    if continue_after_stage is not None:
+        _successful_stage_prefix(source, through_stage=continue_after_stage)
     expected = (
         next_stage_number(source)
         if continue_after_stage is None

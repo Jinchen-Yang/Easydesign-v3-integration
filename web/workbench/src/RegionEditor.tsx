@@ -5,7 +5,6 @@ import { MolViewer } from "./MolViewer";
 import type { DesignSession, RegionEditorProjection, Run } from "./types";
 
 type RegionId = "A" | "B" | "C";
-type Tool = RegionId | "erase";
 type SelectionMode = "manual" | "sasa" | "scannet" | "both";
 
 const REGION_COLORS: Record<RegionId, string> = {
@@ -69,12 +68,12 @@ export function RegionEditor({
 }: {
   run: Run;
   onClose: () => void;
-  onSubmitted: (message: string) => void;
+  onSubmitted: (message: string, runKey?: string) => void;
 }) {
   const [projection, setProjection] = useState<RegionEditorProjection>();
   const [loadingError, setLoadingError] = useState("");
   const [selection, setSelection] = useState<Map<number, RegionId>>(new Map());
-  const [tool, setTool] = useState<Tool>("A");
+  const [tool, setTool] = useState<RegionId>("A");
   const [showSource, setShowSource] = useState(true);
   const [showCurrent, setShowCurrent] = useState(true);
   const [pasteValue, setPasteValue] = useState("");
@@ -85,7 +84,71 @@ export function RegionEditor({
   const [acknowledge, setAcknowledge] = useState(false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activeJobId, setActiveJobId] = useState("");
   const lastSelected = useRef<number | undefined>(undefined);
+  const completionMessage = useRef("");
+  const submittedCallback = useRef(onSubmitted);
+
+  useEffect(() => {
+    submittedCallback.current = onSubmitted;
+  }, [onSubmitted]);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const record = await api.job(activeJobId);
+        if (disposed) return;
+        const jobStatus = String(record.status || "");
+        if (jobStatus === "queued" || jobStatus === "running") {
+          setBusy(true);
+          setStatus(
+            jobStatus === "queued"
+              ? "第2步任务已排队，正在等待执行资源…"
+              : "第2步正在运行；页面会自动更新，无需重复提交。",
+          );
+          timer = window.setTimeout(() => void poll(), 1000);
+          return;
+        }
+        setBusy(false);
+        setActiveJobId("");
+        if (jobStatus === "succeeded") {
+          const message = completionMessage.current
+            || "第2步已完成，现在可以配置下一阶段。";
+          setStatus(message);
+          const runKey = String(record.run_key || "");
+          submittedCallback.current(message, runKey || undefined);
+          return;
+        }
+        if (jobStatus === "awaiting-human-approval") {
+          const message = "自动候选区域已生成，等待你比较并确认后再进入下一阶段。";
+          setStatus(message);
+          const runKey = String(record.run_key || "");
+          submittedCallback.current(message, runKey || undefined);
+          return;
+        }
+        const error = String(record.error || "");
+        setStatus(
+          error
+            ? `第2步运行失败：${error}`
+            : `第2步没有完成，任务状态：${jobStatus || "未知"}`,
+        );
+      } catch (error) {
+        if (!disposed) {
+          setBusy(false);
+          setActiveJobId("");
+          setStatus(error instanceof Error ? error.message : "无法读取第2步任务进度");
+        }
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [activeJobId]);
 
   useEffect(() => {
     let disposed = false;
@@ -149,19 +212,20 @@ export function RegionEditor({
         }
       }
     }
+    const removeFromCurrentRegion = selection.get(labelSeqId) === tool;
     setSelection((current) => {
       const next = new Map(current);
       for (const label of targets) {
         if (!available.has(label)) continue;
-        if (tool === "erase") next.delete(label);
+        if (next.get(label) === tool) next.delete(label);
         else next.set(label, tool);
       }
       return next;
     });
     lastSelected.current = labelSeqId;
     setStatus(
-      tool === "erase"
-        ? `已将规范残基 ${labelSeqId} 移出本次编辑区域。`
+      removeFromCurrentRegion
+        ? `已取消规范残基 ${labelSeqId} 的区域 ${tool} 选择。`
         : `已将规范残基 ${labelSeqId} 设为区域 ${tool}。`,
     );
   }
@@ -187,13 +251,9 @@ export function RegionEditor({
     setStatus("已隐藏上游颜色并清空本次编辑层；现在可以从空白结构重新选择。");
   }
 
-  function chooseTool(nextTool: Tool) {
+  function chooseTool(nextTool: RegionId) {
     setTool(nextTool);
-    setStatus(
-      nextTool === "erase"
-        ? "已切换到橡皮擦；请点击结构或下方序列中的残基。"
-        : `已切换到区域 ${nextTool} 画笔；请继续点击结构或下方序列中的残基。`,
-    );
+    setStatus(`已切换到区域 ${nextTool}；再次点击同一区域的残基即可取消选择。`);
   }
 
   function pasteSelection() {
@@ -205,10 +265,7 @@ export function RegionEditor({
       if (missing.length) throw new Error(`结构中不存在编号：${missing.join(", ")}`);
       setSelection((current) => {
         const next = new Map(current);
-        for (const value of values) {
-          if (tool === "erase") next.delete(value);
-          else next.set(value, tool);
-        }
+        for (const value of values) next.set(value, tool);
         return next;
       });
       setPasteValue("");
@@ -253,7 +310,7 @@ export function RegionEditor({
           .map(([label]) => label)
           .sort((left, right) => left - right),
       }));
-      await api.reviseRegions(run.run_key, {
+      const response = await api.reviseRegions(run.run_key, {
         session_id: session.session_id,
         execution_mode: executionMode,
         regions,
@@ -261,15 +318,16 @@ export function RegionEditor({
         acknowledge_user_provided_regions: true,
         acknowledge_evidence_limitations: true,
       });
-      const message = executionMode === "review-gated"
-        ? "新的 Stage 02 分支已启动；完成后会进入“等待你的确认”。"
-        : "新的 Stage 02 分支已启动；本次明确提交记录为人工批准。";
-      setStatus(message);
-      onSubmitted(message);
+      const jobId = String(response.job.job_id || "");
+      if (!jobId) throw new Error("第2步任务没有返回可跟踪的 job_id");
+      completionMessage.current = (
+        "人工选区已保存并完成确认；第2步已完成，现在可以配置下一阶段。"
+      );
+      setActiveJobId(jobId);
+      setStatus("人工选区已提交，正在验证编号、坐标和运行记录…");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "保存区域失败");
-    } finally {
       setBusy(false);
+      setStatus(error instanceof Error ? error.message : "保存区域失败");
     }
   }
 
@@ -293,7 +351,7 @@ export function RegionEditor({
           executionMode,
         );
       }
-      await api.continueRun(run.run_key, 2, {
+      const response = await api.continueRun(run.run_key, 2, {
         session_id: session.session_id,
         execution_mode: executionMode,
         options: {
@@ -301,15 +359,18 @@ export function RegionEditor({
           allow_structural_only: allowStructuralOnly,
         },
       });
-      const message = selectionMode === "both"
-        ? "新的第2步已启动；SASA 与 ScanNet 会独立运行，完成后等待你比较确认。"
-        : `新的第2步已启动；将使用 ${selectionMode === "sasa" ? "SASA" : "ScanNet"} 选择区域。`;
-      setStatus(message);
-      onSubmitted(message);
+      const jobId = String(response.job.job_id || "");
+      if (!jobId) throw new Error("第2步任务没有返回可跟踪的 job_id");
+      completionMessage.current = selectionMode === "both"
+        ? "SASA 与 ScanNet 已分别完成，等待你比较并确认区域。"
+        : executionMode === "unattended"
+          ? `第2步已使用 ${selectionMode === "sasa" ? "SASA" : "ScanNet"} 完成并自动批准，可以配置下一阶段。`
+          : `第2步已使用 ${selectionMode === "sasa" ? "SASA" : "ScanNet"} 生成候选，等待你确认区域。`;
+      setActiveJobId(jobId);
+      setStatus("第2步任务已创建，正在读取运行进度…");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "启动自动选区失败");
-    } finally {
       setBusy(false);
+      setStatus(error instanceof Error ? error.message : "启动自动选区失败");
     }
   }
 
@@ -417,6 +478,11 @@ export function RegionEditor({
               {executionMode === "unattended" && selectionMode === "both" && (
                 <p className="field-error">连续运行不能替你决定两种方法的赢家，请改为单一方法或暂停确认。</p>
               )}
+              {busy && (
+                <div className="region-editor-job-progress" role="progressbar" aria-label="第2步正在运行">
+                  <span />
+                </div>
+              )}
               {status && <div className="form-status">{status}</div>}
             </div>
           </section>
@@ -448,10 +514,6 @@ export function RegionEditor({
                   <small>本次可编辑 {counts.find((item) => item.id === id)?.count || 0} 个残基</small>
                 </button>
               ))}
-              <button type="button" className={tool === "erase" ? "selected" : ""} onClick={() => chooseTool("erase")}>
-                橡皮擦
-                <small>移出编辑区域</small>
-              </button>
             </div>
             <div className="editor-actions-row">
               <button type="button" onClick={loadUpstream}>恢复上游区域</button>
@@ -470,7 +532,7 @@ export function RegionEditor({
                 应用到当前画笔
               </button>
             </div>
-            <p className="fine">区域 A/B/C 按钮只是切换画笔；还需要点击右侧结构或下方序列中的残基。重新着色会自动把残基从旧区域移动到新区域。</p>
+            <p className="fine">选择区域 A/B/C 后，点击结构或序列中的残基进行标记；再次点击同一区域的残基即可取消。切换区域后点击会把残基移动到新区域。</p>
             {status && <div className="region-editor-feedback">{status}</div>}
           </aside>
           <div className="region-editor-structure">
@@ -505,10 +567,15 @@ export function RegionEditor({
           </p>
           <div className="approval-footer">
             <label><span>批准人</span><input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="真实姓名或稳定 ID" /></label>
-            <label><span>后续运行方式</span><select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}><option value="review-gated">保存后等待再次确认</option><option value="unattended">按本次人工提交连续运行</option></select></label>
+            <label><span>后续运行方式</span><select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}><option value="review-gated">本步确认后暂停，由我配置下一步</option><option value="unattended">本步确认后按已配置流程继续</option></select></label>
             <label className="acknowledgement"><input type="checkbox" checked={acknowledge} onChange={(event) => setAcknowledge(event.target.checked)} /><span>我确认这些是用户提供的设计区域，并不代表已经验证的真实结合位点。</span></label>
             <button type="button" className="primary-button" disabled={busy} onClick={save}>{busy ? "正在建立新分支…" : "保存并建立新的第2步分支"}</button>
           </div>
+          {busy && (
+            <div className="region-editor-job-progress" role="progressbar" aria-label="第2步正在运行">
+              <span />
+            </div>
+          )}
           {status && <div className="form-status">{status}</div>}
         </div>
           </>

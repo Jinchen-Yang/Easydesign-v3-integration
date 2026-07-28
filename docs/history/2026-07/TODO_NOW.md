@@ -613,3 +613,23 @@
 - 遗留：不同触摸硬件与 Safari 的主观手感进入跨平台真机验收；S02-008 科学 benchmark
   不受本次产品简化影响。
 - 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。
+
+## 2026-07-28 — UI-014 / ENG-020：Stage 02 分支与选区闭环
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-28T09:17:44+08:00
+- 问题：Stage 02 重新选择时错误要求来源整条 RunManifest 为 `succeeded`，导致处于
+  `awaiting-human-approval` 的旧 run 在任务创建前报“只有 succeeded run 可以配置
+  下一阶段”。人工选区已经提交批准人与证据限制确认，却还被安排第二次相同审批；页面
+  也没有区分创建前错误与真实后台等待。
+- 方案：Stage 02 分支显式固定 `continue_after_stage=1`，逐一验证 Stage 01
+  StageManifest 和 ArtifactRef 后只复制成功前缀。人工用户区域中的 typed approval
+  无论 execution mode 均一次发布；automatic review-gated 保留候选选择门。前端轮询
+  原子 job record，只在 queued/running 时显示进度，终态自动打开新分支。
+- 交互：移除橡皮擦；Mol* 与序列共用 toggle，同区再次点击取消，切换区域后点击移动。
+- 验证：成功前缀分支定向测试 10/10 通过，旧 Stage 01 manifest SHA-256 不变；全仓
+  Python 265 passed、8 个独立 PyMOL 集成测试按配置 skipped；Workbench Chromium
+  双尺寸 30/30、Target Viewer 3 passed/2 个 runtime-only 案例 skipped；dev18 wheel、
+  console script 和 package data 校验通过。
+- 遗留：automatic 双方法的结果比较仍需真实用户选出一种方法；这不是软件等待或失败。
+- 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选均已形成同一 Stage 02 分支交接；编辑器支持触摸缩放，并取消逐区重复理由表单。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
+| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev18 修复成功前缀分支、一次人工批准、真实任务进度和同区再次点击取消。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
 
 ## 当前结论
 
@@ -55,6 +55,12 @@
 - UI-013 不再逐区询问设计目的和两类理由；设计目的继承 canonical `design.intent`，
   orchestration 只生成关于用户选择和已验证编号/坐标的保守说明。真实批准人和证据限制
   acknowledgement 仍为必填。
+- UI-014/ENG-020 修复了重新运行 Stage 02 的状态边界：只验证并复制 Stage 01 成功
+  前缀，不要求来源整条 run 已终态；显式人工选区提交一次即发布 human approval。
+  automatic review-gated 仍在候选生成后等待科学选择。工作台只在 job
+  `queued/running` 时显示进度，并在终态打开新分支。
+- 区域编辑器不再提供独立橡皮擦。Mol* 和序列均使用同一 toggle：同区再次点击取消，
+  切换画笔后点击则移动到新区。
 - 真实 APOE PSE 编辑器已显示结构与来源红/蓝/黄，并把 A/B/C `9/14/14` 规范成员保存到
   `runs/apoe-s02-006-pse/20260727-003-stage02-reselection-lineage`。新 run 的 Stage 01
   来自校验后的 continuation、Stage 02 attempt-0001 状态为等待人工确认；DesignSession
@@ -78,7 +84,7 @@
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
-| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；逐区重复理由已移除，设计意图/保守说明由 orchestration 统一生成 |
+| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；dev18 增加成功前缀分支、一次批准、job 进度和同区再次点击取消 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |
@@ -101,14 +107,16 @@
 
 - 状态：`smoke-validated`。
 - 当前边界：任意 Stage 01 Target Bundle 都可进入编辑器；一个残基只能属于一个编辑
-  区域，重新着色时从旧区移动到新区。PSE 来源 annotation 保持只读且永不删除。
+  区域，同区再次点击取消，重新着色时从旧区移动到新区。PSE 来源 annotation 保持只读
+  且永不删除。
 - 产品语义：进入编辑器时优先把当前批准区域复制到本次可编辑层；没有批准区域时复制
   PSE 来源红/蓝/黄。APOE 因而默认显示 A/B/C `9/14/14`，而不是让只读颜色与左侧
   `0/0/0` 计数同时出现。“从空白开始”会清空编辑层并隐藏两个只读参考图层；“恢复上游
   区域”可重新复制上游成员。
 - 完成证据：APOE PSE 完成真实浏览器三图层显示与新 Stage 02 run；无颜色结构使用相同
-  manifest-only 投影并由浏览器/契约测试覆盖。新分支通过 manifest/checksum，停在人工
-  审批门；旧 run 保持不可变。
+  manifest-only 投影并由浏览器/契约测试覆盖。历史 dev13 分支按当时契约停在人工审批
+  门；dev18 起显式人工提交一次完成批准，automatic review-gated 仍等待选择。旧 run
+  保持不可变。
 
 ## Next
 

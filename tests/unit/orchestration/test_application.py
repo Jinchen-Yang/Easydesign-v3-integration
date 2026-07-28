@@ -9,7 +9,17 @@ import pytest
 import yaml
 
 from easydesign.cli import main
-from easydesign.core import CodeIdentity, CodeIdentitySource, ConfigurationError
+from easydesign.core import (
+    ArtifactRef,
+    Attempt,
+    CodeIdentity,
+    CodeIdentitySource,
+    ConfigurationError,
+    ExecutionStatus,
+    StageId,
+    StageManifest,
+    dump_model,
+)
 from easydesign.orchestration import (
     DiagnosticCheck,
     DiagnosticReport,
@@ -282,8 +292,48 @@ backends:
 
     def fake_stage02(**kwargs: object) -> object:
         captured["scannet_adapter"] = kwargs["adapter"]
+        stage_manifest = run_root / (
+            "02-hotspot-discovery/attempt-0001/stage-manifest.json"
+        )
+        completed_at = datetime(2026, 7, 28, tzinfo=UTC)
+        report = stage_manifest.parent / "artifacts/stage02-report.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("{}\n", encoding="utf-8")
+        report_ref = ArtifactRef.from_file(
+            run_root=run_root,
+            relative_path=report.relative_to(run_root).as_posix(),
+            artifact_id="stage02-report",
+            role="stage-report",
+            file_format="json",
+            producer_stage=str(StageId.HOTSPOT_DISCOVERY),
+            producer_attempt="attempt-0001",
+        )
+        attempt = Attempt(
+            attempt_id="attempt-0001",
+            status=ExecutionStatus.SUCCEEDED,
+            created_at=completed_at,
+            started_at=completed_at,
+            ended_at=completed_at,
+            backend_name="test",
+            backend_version="1",
+            executor_name="test",
+        )
+        dump_model(
+            StageManifest(
+                stage_id=StageId.HOTSPOT_DISCOVERY,
+                contract_version="0.3",
+                status=ExecutionStatus.SUCCEEDED,
+                created_at=completed_at,
+                completed_at=completed_at,
+                output_artifacts=(report_ref,),
+                attempts=(attempt,),
+                selected_attempt_id=attempt.attempt_id,
+            ),
+            stage_manifest,
+        )
         return SimpleNamespace(
-            run_manifest=run_root / "manifests/run-manifest.v0003.json"
+            run_manifest=run_root / "manifests/run-manifest.v0003.json",
+            stage_manifest=stage_manifest,
         )
 
     monkeypatch.setattr(

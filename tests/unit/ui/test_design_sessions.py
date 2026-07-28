@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -34,6 +34,67 @@ from easydesign.orchestration.config import LoadedPseRunConfig, load_run_config
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.ui import create_ui_app
 from easydesign.ui.sessions import DesignSessionStore
+
+
+def _publish_stage01_success(run_root: Path, initial_manifest: Path) -> None:
+    completed_at = datetime(2026, 7, 27, 7, 0, tzinfo=UTC)
+    attempt_root = run_root / str(StageId.TARGET_PREPARATION) / "attempt-0001"
+    artifact = attempt_root / "artifacts/target-placeholder.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("{}\n", encoding="utf-8")
+    artifact_ref = ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=artifact.relative_to(run_root).as_posix(),
+        artifact_id="target-placeholder",
+        role="test-output",
+        file_format="json",
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt="attempt-0001",
+    )
+    attempt = Attempt(
+        attempt_id="attempt-0001",
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=completed_at,
+        started_at=completed_at,
+        ended_at=completed_at,
+        backend_name="test",
+        backend_version="1",
+        executor_name="test",
+    )
+    stage_manifest_path = attempt_root / "stage-manifest.json"
+    dump_model(
+        StageManifest(
+            stage_id=StageId.TARGET_PREPARATION,
+            contract_version="0.4",
+            status=ExecutionStatus.SUCCEEDED,
+            created_at=completed_at,
+            completed_at=completed_at,
+            output_artifacts=(artifact_ref,),
+            attempts=(attempt,),
+            selected_attempt_id=attempt.attempt_id,
+        ),
+        stage_manifest_path,
+    )
+    stage_ref = ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=stage_manifest_path.relative_to(run_root).as_posix(),
+        artifact_id="stage01-manifest",
+        role="stage-manifest",
+        file_format="json",
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt="attempt-0001",
+    )
+    current = load_model(initial_manifest, RunManifest)
+    timestamp = max(completed_at, current.updated_at + timedelta(seconds=1))
+    succeeded = current.next_revision(
+        updated_at=timestamp,
+        status=ExecutionStatus.SUCCEEDED,
+        completed_at=timestamp,
+        stage_manifest_refs=(stage_ref,),
+    )
+    manifest = run_root / "manifests/run-manifest.v0002.json"
+    dump_model(succeeded, manifest)
+    (run_root / "manifests/LATEST").write_text(f"{manifest.name}\n", encoding="utf-8")
 
 
 def test_design_session_tracks_immutable_config_revisions(tmp_path: Path) -> None:
@@ -213,6 +274,10 @@ def test_stage02_continuation_rebases_frozen_local_input(
         ),
         run_id="stage01-source",
     )
+    _publish_stage01_success(
+        prepared.workspace.run_root,
+        prepared.workspace.run_manifest,
+    )
     output = tmp_path / "continuation-project" / "stage02.yaml"
 
     materialize_continuation_config(
@@ -257,6 +322,10 @@ def test_stage02_interactive_regions_reuse_design_intent_and_system_evidence(
         ),
         run_id="stage01-source",
     )
+    _publish_stage01_success(
+        prepared.workspace.run_root,
+        prepared.workspace.run_manifest,
+    )
     output = tmp_path / "continuation-project" / "stage02.yaml"
 
     materialize_continuation_config(
@@ -264,7 +333,7 @@ def test_stage02_interactive_regions_reuse_design_intent_and_system_evidence(
         destination=output,
         stage_number=2,
         continue_after_stage=1,
-        execution_mode="unattended",
+        execution_mode="review-gated",
         options={
             "mode": "user-provided",
             "regions": [

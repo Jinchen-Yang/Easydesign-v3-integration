@@ -219,7 +219,10 @@ def initialize_continuation_run(
 
     source = source_run_root.resolve()
     source_run, source_run_manifest_path = _latest_manifest(source)
-    if source_run.status is not ExecutionStatus.SUCCEEDED:
+    if (
+        copy_through_stage is None
+        and source_run.status is not ExecutionStatus.SUCCEEDED
+    ):
         raise ManifestStateError("continuation source 必须是终态 succeeded run")
     loaded = load_run_config(config_path)
     if loaded.config.project_id != source_run.project_id:
@@ -248,9 +251,14 @@ def initialize_continuation_run(
         stage_numbers.append(stage_number)
         copied_stage_sha256[reference.producer_stage] = reference.sha256
     ordered_numbers = sorted(stage_numbers)
-    if ordered_numbers != list(range(1, max(ordered_numbers) + 1)):
+    expected_last = (
+        copy_through_stage
+        if copy_through_stage is not None
+        else max(ordered_numbers)
+    )
+    if ordered_numbers != list(range(1, expected_last + 1)):
         raise ManifestStateError("continuation source Stage 序列不连续")
-    next_stage = max(ordered_numbers) + 1
+    next_stage = expected_last + 1
     if loaded.config.workflow.stop_after_stage < next_stage:
         raise ManifestStateError("continuation config 没有启用 source 之后的下一 Stage")
     timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)

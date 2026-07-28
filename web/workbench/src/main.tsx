@@ -501,12 +501,14 @@ function RunWorkspace({
   onReplay,
   onClone,
   onResume,
+  onOpenRun,
   replay,
 }: {
   run: Run;
   onReplay: () => void;
   onClone: () => Promise<void>;
   onResume: () => Promise<void>;
+  onOpenRun: (runKey: string) => Promise<void>;
   replay?: Replay;
 }) {
   const latestReachedStage = (
@@ -583,7 +585,13 @@ function RunWorkspace({
         <RegionEditor
           run={run}
           onClose={() => setShowRegionEditor(false)}
-          onSubmitted={(message) => setCloneStatus(message)}
+          onSubmitted={(message, runKey) => {
+            setCloneStatus(message);
+            if (runKey) {
+              setShowRegionEditor(false);
+              void onOpenRun(runKey);
+            }
+          }}
         />
       )}
     </div>
@@ -1770,7 +1778,7 @@ function App() {
             />
           ) :
           page === "tasks" ? <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} /> :
-          page === "run" && selectedRun ? <RunWorkspace run={selectedRun} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} replay={replay} /> :
+          page === "run" && selectedRun ? <RunWorkspace run={selectedRun} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} onOpenRun={openCompletedRun} replay={replay} /> :
           page === "settings" ? <OperationsPage type="environment" projects={data.projects} editableProjects={data.editable_projects} selectedRun={selectedRun} /> :
           <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} />}
       </main>

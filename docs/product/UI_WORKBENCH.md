@@ -236,9 +236,12 @@ GET /api/v1/runs/{run}/stages/6/execution
 Stage 02 结果页提供“重新选择结合区域”：
 
 - PSE 来源颜色、当前批准区域和本次编辑区域为三个独立图层。
-- 可以隐藏来源颜色、清空编辑层、点击结构/序列、Shift 连选、粘贴编号和使用橡皮擦。
+- 可以隐藏来源颜色、清空编辑层、点击结构/序列、Shift 连选和粘贴编号。
+- 不提供独立橡皮擦；同一画笔再次点击已属于该区域的残基即取消选择，Mol* 与序列使用
+  同一个交互规则。
 - A/B/C 分别为红/蓝/黄，一个残基只能属于一个编辑区域。
-- 保存要求逐区理由、批准人和证据限制确认，并建立新的 Stage 02 分支。
+- 保存要求批准人和证据限制确认；逐区保守说明由 Python 契约生成，并建立新的 Stage 02
+  分支。
 
 Mol* 不再以 canvas DOM 存在或 hierarchy 中只有 model 作为成功。Viewer 单实例串行加载
 结构状态，首次强制相机取景；结构和 representation 都建立后才显示“结构已就绪”。快速
@@ -345,3 +348,18 @@ APOE PSE 的初始可编辑计数必须为 A/B/C `9/14/14`。从空白开始后�
   `touch-action: manipulation`，将双指缩放交还给 Mol*。
 - 浏览器门禁同时检查 Workbench 宿主和真实便携 Viewer canvas 的计算样式为
   `touch-action: none`。
+
+## UI-014 / ENG-020：Stage 02 continuation 与真实任务进度
+
+版本：`0.1.0.dev18`。
+
+- Stage 02 重新配置不是固定时长等待。automatic 和人工选区都从 checksum 正确的
+  Stage 01 成功前缀建立新分支；来源 run 可处于等待确认或包含旧的后续阶段。
+- 人工选区的批准人和两项 acknowledgement 就是本次人类批准。Stage 02 成功发布
+  `hotspots.yaml` 后不再追加第二次相同审批。
+- automatic `review-gated` 仍会在候选生成后等待用户选择；这是真实科学门，不与人工
+  提交混为一谈。
+- 页面只在后台 job 真实处于 `queued/running` 时显示进度条，并每秒读取 job record。
+  终态后自动打开新 run；失败时显示结构化错误，不让用户反复点击创建重复分支。
+- Mol* 与序列残基采用统一 toggle：当前画笔首次点击选中，再次点击取消；切换画笔后
+  点击则把残基移动至新区。

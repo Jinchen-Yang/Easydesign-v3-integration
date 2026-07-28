@@ -153,10 +153,13 @@ export const api = {
       acknowledge_evidence_limitations: boolean;
     },
   ) =>
-    request<Record<string, unknown>>(`/api/v1/runs/${key}/regions/revise`, {
-      method: "POST",
-      body: JSON.stringify({ ...body, confirmed: true }),
-    }),
+    request<{ job: Record<string, unknown>; session: DesignSession }>(
+      `/api/v1/runs/${key}/regions/revise`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ...body, confirmed: true }),
+      },
+    ),
   continueRun: (
     key: string,
     stage: number,
@@ -166,14 +169,17 @@ export const api = {
       options?: Record<string, unknown>;
     },
   ) =>
-    request<Record<string, unknown>>(`/api/v1/runs/${key}/continue/${stage}`, {
-      method: "POST",
-      body: JSON.stringify({
-        ...body,
-        stage_number: stage,
-        confirmed: true,
-      }),
-    }),
+    request<{ job: Record<string, unknown>; session: DesignSession }>(
+      `/api/v1/runs/${key}/continue/${stage}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          stage_number: stage,
+          confirmed: true,
+        }),
+      },
+    ),
   resume: (key: string) =>
     request<Record<string, unknown>>(`/api/v1/runs/${key}/resume`, {
       method: "POST",

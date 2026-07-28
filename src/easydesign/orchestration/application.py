@@ -176,19 +176,32 @@ def _continuation_start_stage(
     *,
     continue_after_stage: int | None = None,
 ) -> int:
-    run, _ = _load_latest_run_manifest(source_run.resolve())
-    if run.status is not ExecutionStatus.SUCCEEDED:
+    root = source_run.resolve()
+    run, _ = _load_latest_run_manifest(root)
+    if continue_after_stage is None and run.status is not ExecutionStatus.SUCCEEDED:
         raise ManifestStateError("continuation source 必须是终态 succeeded run")
-    stage_numbers = sorted(
-        int(reference.producer_stage.split("-", maxsplit=1)[0])
-        for reference in run.stage_manifest_refs
-        if reference.producer_stage is not None
+    selected: list[tuple[int, StageManifest]] = []
+    for reference in run.stage_manifest_refs:
+        if reference.producer_stage is None:
+            raise ManifestStateError("continuation source StageManifest 缺少 producer_stage")
+        stage_number = int(reference.producer_stage.split("-", maxsplit=1)[0])
+        if continue_after_stage is not None and stage_number > continue_after_stage:
+            continue
+        selected.append((stage_number, load_model(reference.verify(root), StageManifest)))
+    stage_numbers = sorted(number for number, _ in selected)
+    expected_last = (
+        continue_after_stage
+        if continue_after_stage is not None
+        else (max(stage_numbers) if stage_numbers else 0)
     )
-    if not stage_numbers or stage_numbers != list(range(1, max(stage_numbers) + 1)):
+    if not stage_numbers or stage_numbers != list(range(1, expected_last + 1)):
         raise ManifestStateError("continuation source Stage 序列必须从 01 连续")
+    for stage_number, stage_manifest in selected:
+        if stage_manifest.status is not ExecutionStatus.SUCCEEDED:
+            raise ManifestStateError(
+                f"continuation source Stage {stage_number:02d} 未成功"
+            )
     if continue_after_stage is not None:
-        if continue_after_stage < 1 or continue_after_stage > max(stage_numbers):
-            raise ManifestStateError("continue_after_stage 不在 source 已完成阶段内")
         start_stage = continue_after_stage + 1
     else:
         start_stage = max(stage_numbers) + 1
@@ -845,22 +858,36 @@ def execute_pipeline(
             adapter=stage02_adapter,
         )
         run_manifest = completed_stage02.run_manifest
-        if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
-            completed_manifest = load_model(
-                completed_stage02.stage_manifest,
-                StageManifest,
+        completed_manifest = load_model(
+            completed_stage02.stage_manifest,
+            StageManifest,
+        )
+        used_user_regions = any(
+            reference.artifact_id == "user-provided-regions"
+            for reference in completed_manifest.output_artifacts
+        )
+        user_regions = stage02_config.user_regions if used_user_regions else None
+        explicit_user_approval = (
+            user_regions is not None and user_regions.approval is not None
+        )
+        if explicit_user_approval:
+            assert user_regions is not None
+            assert user_regions.approval is not None
+            approve_hotspots_from_initial_config(
+                run_root,
+                approval=user_regions.approval,
             )
-            used_user_regions = any(
-                reference.artifact_id == "user-provided-regions"
-                for reference in completed_manifest.output_artifacts
+            latest_name = (
+                (run_root / "manifests" / "LATEST")
+                .read_text(encoding="utf-8")
+                .strip()
             )
+            run_manifest = run_root / "manifests" / latest_name
+            status = "succeeded"
+        elif loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
             if used_user_regions:
-                user_regions = stage02_config.user_regions
-                assert user_regions is not None
-                assert user_regions.approval is not None
-                approve_hotspots_from_initial_config(
-                    run_root,
-                    approval=user_regions.approval,
+                raise ConfigurationError(
+                    "连续运行的用户区域缺少显式人员批准"
                 )
             else:
                 approval = stage02_config.unattended_approval
@@ -877,7 +904,11 @@ def execute_pipeline(
                     region_count=approval.region_count,
                     allow_structural_only=approval.allow_structural_only,
                 )
-            latest_name = (run_root / "manifests" / "LATEST").read_text(encoding="utf-8").strip()
+            latest_name = (
+                (run_root / "manifests" / "LATEST")
+                .read_text(encoding="utf-8")
+                .strip()
+            )
             run_manifest = run_root / "manifests" / latest_name
             status = "succeeded"
         else:
@@ -1384,22 +1415,41 @@ def continue_pipeline_after_decision(
             adapter=stage02_adapter,
         )
         current_run_manifest = completed_stage02.run_manifest
-        if prepared.loaded_config.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
-            completed_manifest = load_model(
-                completed_stage02.stage_manifest,
-                StageManifest,
+        completed_manifest = load_model(
+            completed_stage02.stage_manifest,
+            StageManifest,
+        )
+        used_user_regions = any(
+            reference.artifact_id == "user-provided-regions"
+            for reference in completed_manifest.output_artifacts
+        )
+        user_regions = stage02_config.user_regions if used_user_regions else None
+        explicit_user_approval = (
+            user_regions is not None and user_regions.approval is not None
+        )
+        if explicit_user_approval:
+            assert user_regions is not None
+            assert user_regions.approval is not None
+            approve_hotspots_from_initial_config(
+                prepared.workspace.run_root,
+                approval=user_regions.approval,
             )
-            used_user_regions = any(
-                reference.artifact_id == "user-provided-regions"
-                for reference in completed_manifest.output_artifacts
+            latest_name = (
+                (prepared.workspace.run_root / "manifests" / "LATEST")
+                .read_text(encoding="utf-8")
+                .strip()
             )
+            current_run_manifest = (
+                prepared.workspace.run_root / "manifests" / latest_name
+            )
+            status = "succeeded"
+        elif (
+            prepared.loaded_config.config.workflow.execution_mode
+            is ExecutionMode.UNATTENDED
+        ):
             if used_user_regions:
-                user_regions = stage02_config.user_regions
-                assert user_regions is not None
-                assert user_regions.approval is not None
-                approve_hotspots_from_initial_config(
-                    prepared.workspace.run_root,
-                    approval=user_regions.approval,
+                raise ConfigurationError(
+                    "连续运行的用户区域缺少显式人员批准"
                 )
             else:
                 approval = stage02_config.unattended_approval

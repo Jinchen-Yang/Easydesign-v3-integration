@@ -20,6 +20,7 @@ from easydesign.core import (
 from easydesign.orchestration import (
     RunIndexEntry,
     continue_run_in_place,
+    initialize_continuation_run,
     initialize_project,
     materialize_continuation_config,
     prune_archived_project_shells,
@@ -157,6 +158,33 @@ def test_normal_next_stage_continues_same_run_without_copying_upstream(
     assert latest.config_snapshot.verify(root) == (
         root / "config-snapshot/revisions/revision-0004/easydesign.yaml"
     )
+
+    branch_config = tmp_path / "project" / "stage02-branch.yaml"
+    materialize_continuation_config(
+        source_run_root=root,
+        destination=branch_config,
+        stage_number=2,
+        execution_mode="review-gated",
+        continue_after_stage=1,
+        options={"mode": "automatic", "methods": ["sasa"]},
+    )
+    branched = initialize_continuation_run(
+        source_run_root=root,
+        config_path=branch_config,
+        runs_root=tmp_path / "runs",
+        run_id="stage02-branch",
+        code_identity=_identity("0.1.0.dev18", "3"),
+        runtime_profile=profile,
+        created_at=created + timedelta(seconds=4),
+        copy_through_stage=1,
+    )
+
+    assert branched.workspace.run_root != root
+    branch_manifest = load_model(branched.workspace.run_manifest, RunManifest)
+    assert branch_manifest.status is ExecutionStatus.RUNNING
+    assert branch_manifest.run_id == "stage02-branch"
+    assert branch_manifest.stage_manifest_refs == (stage_ref,)
+    assert sha256_file(stage_manifest_path) == stage_sha_before
 
 
 def test_prune_only_removes_empty_shell_for_archived_project(tmp_path: Path) -> None:

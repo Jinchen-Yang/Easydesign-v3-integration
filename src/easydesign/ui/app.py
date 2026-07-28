@@ -1419,12 +1419,14 @@ def create_ui_app(
             generated = project_root / (
                 f"easydesign.stage{next_stage:02d}.rev{revision:04d}.yaml"
             )
+            continue_after_stage = 1 if next_stage == 2 else None
             materialize_continuation_config(
                 source_run_root=source,
                 destination=generated,
                 stage_number=next_stage,
                 execution_mode=payload.execution_mode,
                 options=payload.options,
+                continue_after_stage=continue_after_stage,
             )
             try:
                 session = service.sessions.add_config_revision(
@@ -1449,7 +1451,18 @@ def create_ui_app(
                     run_root=source,
                     profile_path=service.profile_path,
                     runs_root=service.registry.runs_root,
-                    run_id=None,
+                    run_id=(
+                        payload.run_id
+                        or (
+                            datetime.now(tz=UTC)
+                            .strftime("%Y%m%dt%H%M%Sz")
+                            .lower()
+                            + "-stage02-selection"
+                        )
+                        if next_stage == 2
+                        else payload.run_id
+                    ),
+                    continue_after_stage=continue_after_stage,
                     session_id=session.session_id,
                     session_root=service.sessions.root,
                     stage_number=next_stage,

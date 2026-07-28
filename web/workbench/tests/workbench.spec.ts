@@ -73,6 +73,33 @@ const stepwiseRun = {
   })),
 };
 
+const automaticStageTwoRun = {
+  ...stepwiseRun,
+  run_key: "automatic-stage02-run-key",
+  run_id: "stage02-sasa-fixture",
+  stages: stages.map((item, index) => ({
+    ...item,
+    state: index === 0
+      ? "succeeded"
+      : index === 1
+        ? "awaiting-human-approval"
+        : "not-reached",
+    summary: index === 1 ? "自动候选区域已生成，等待人工确认" : item.summary,
+  })),
+};
+
+const manualStageTwoRun = {
+  ...stepwiseRun,
+  run_key: "manual-stage02-run-key",
+  project_id: "apoe",
+  run_id: "stage02-manual-fixture",
+  stages: stages.map((item, index) => ({
+    ...item,
+    state: index < 2 ? "succeeded" : "not-reached",
+    summary: index === 1 ? "人工区域已批准并发布" : item.summary,
+  })),
+};
+
 const overview = {
   run_key: run.run_key,
   state: "scientific-stop",
@@ -178,6 +205,7 @@ const candidateItems = Array.from({ length: 50 }, (_, index) => ({
 }));
 
 async function mockApi(page: Page) {
+  const jobPolls = new Map<string, number>();
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/remote-executors") {
@@ -225,7 +253,21 @@ async function mockApi(page: Page) {
     if (url.pathname === "/api/v1/design-sessions") {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify([]),
+        body: route.request().method() === "POST"
+          ? JSON.stringify({
+            schema_version: "0.1",
+            session_id: "session-stage02",
+            project_id: "apoe",
+            design_mode: "stepwise",
+            execution_mode: "review-gated",
+            current_stage: 2,
+            status: "draft",
+            config_revisions: [],
+            run_lineage: [],
+            created_at: "2026-07-28T00:00:00Z",
+            updated_at: "2026-07-28T00:00:00Z",
+          })
+          : JSON.stringify([]),
       });
       return;
     }
@@ -364,6 +406,56 @@ async function mockApi(page: Page) {
           run_key: stepwiseRun.run_key,
           run_id: stepwiseRun.run_id,
         }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/continue/2") && route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          session: {},
+          job: { job_id: "job-stage02-auto", status: "running" },
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/regions/revise") && route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          session: {},
+          job: { job_id: "job-stage02-manual", status: "running" },
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/jobs/job-stage02-auto") {
+      const count = (jobPolls.get("auto") || 0) + 1;
+      jobPolls.set("auto", count);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(count === 1
+          ? { job_id: "job-stage02-auto", status: "running" }
+          : {
+            job_id: "job-stage02-auto",
+            status: "awaiting-human-approval",
+            run_key: automaticStageTwoRun.run_key,
+          }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/jobs/job-stage02-manual") {
+      const count = (jobPolls.get("manual") || 0) + 1;
+      jobPolls.set("manual", count);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(count === 1
+          ? { job_id: "job-stage02-manual", status: "running" }
+          : {
+            job_id: "job-stage02-manual",
+            status: "succeeded",
+            run_key: manualStageTwoRun.run_key,
+          }),
       });
       return;
     }
@@ -522,6 +614,20 @@ async function mockApi(page: Page) {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify(stepwiseRun),
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/runs/${automaticStageTwoRun.run_key}`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(automaticStageTwoRun),
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/runs/${manualStageTwoRun.run_key}`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(manualStageTwoRun),
       });
       return;
     }
@@ -738,6 +844,13 @@ test("stage two region editor keeps source layers and editable selection separat
   await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 0 个残基");
   await expect(page.getByRole("button", { name: /区域 B/ })).toContainText("本次可编辑 2 个残基");
   await expect(page.locator(".region-editor-feedback")).toHaveText("已将规范残基 1 设为区域 B。");
+  await expect(page.getByRole("button", { name: "橡皮擦" })).toHaveCount(0);
+  await firstResidue.click();
+  await expect(firstResidue).not.toHaveClass(/region-b/);
+  await expect(page.getByRole("button", { name: /区域 B/ })).toContainText("本次可编辑 1 个残基");
+  await expect(page.locator(".region-editor-feedback")).toHaveText(
+    "已取消规范残基 1 的区域 B 选择。",
+  );
   await page.getByRole("button", { name: "从空白开始" }).click();
   await expect(firstResidue).not.toHaveClass(/region-b/);
   await expect(page.getByLabel("显示 PSE 来源颜色")).not.toBeChecked();
@@ -749,4 +862,34 @@ test("stage two region editor keeps source layers and editable selection separat
   await expect(page.getByText("生物学理由", { exact: true })).toHaveCount(0);
   await expect(page.getByText("结构理由", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/无需为 A、B、C 分别重复填写目的和理由/)).toBeVisible();
+});
+
+test("stage two automatic branch shows real progress and opens the new run", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
+  await page.getByRole("button", { name: /^SASA/ }).click();
+  await page.getByRole("button", { name: "启动第2步" }).click();
+  await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "第2步：选择结合区域" })).toBeVisible();
+  await expect(page.locator(".status-awaiting-human-approval")).toContainText("等待你的确认");
+});
+
+test("explicit manual regions complete one approval and open a succeeded branch", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await page.locator(".stage-node").nth(1).click();
+  await page.getByRole("button", { name: "重新选择结合区域" }).click();
+  await page.getByLabel("批准人").fill("scientist-01");
+  await page.getByText(/我确认这些是用户提供的设计区域/).click();
+  await page.getByRole("button", { name: "保存并建立新的第2步分支" }).click();
+  await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "第2步：选择结合区域" })).toBeVisible();
+  await expect(page.getByText("已完成", { exact: true }).first()).toBeVisible();
 });

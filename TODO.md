@@ -100,6 +100,8 @@
 | `UI-013` | Product UI | `smoke-validated` | Stage 02 不再重复询问 A/B/C 的设计目的和两类理由；设计意图继承 canonical 配置，保守说明由 orchestration 生成，批准人与证据限制确认保留。 |
 | `UI-014` | Product UI | `smoke-validated` | Stage 02 显示真实 job 进度并在终态打开新分支；dev19 补充提交前逐项校验、问题字段聚焦和明确按钮状态。 |
 | `ENG-020` | Core Engineering | `smoke-validated` | Stage 02 continuation 只复制并验证成功的 Stage 01 前缀；显式人工区域提交一次完成 human approval，不要求来源整条 run 终态。 |
+| `UI-015` | Product UI | `planned` | 将七阶段结果标签重构为连续步骤工作区；Stage 02 嵌入页面，Stage 03 提供真实配置、运行和完成后前进。 |
+| `ENG-021` | Core Engineering | `planned` | 为按步骤 continuation 提供产品化表单投影、任务状态与目标 Stage 恢复，不在 React 复制科学默认值。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 

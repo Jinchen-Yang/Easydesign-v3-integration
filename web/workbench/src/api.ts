@@ -12,7 +12,9 @@ import type {
   Run,
   SelfTestRecord,
   Stage,
+  StageFormDefinition,
   Strategy,
+  UiJobRecord,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -65,7 +67,7 @@ export const api = {
       }),
     }),
   configForm: (stage: number) =>
-    request<Record<string, unknown>>(`/api/v1/config/forms/${stage}`),
+    request<StageFormDefinition>(`/api/v1/config/forms/${stage}`),
   run: (key: string) => request<Run>(`/api/v1/runs/${key}`),
   stage: (key: string, stage: number) =>
     request<Stage>(`/api/v1/runs/${key}/stages/${stage}`),
@@ -169,7 +171,7 @@ export const api = {
       options?: Record<string, unknown>;
     },
   ) =>
-    request<{ job: Record<string, unknown>; session: DesignSession }>(
+    request<{ job: UiJobRecord; session: DesignSession }>(
       `/api/v1/runs/${key}/continue/${stage}`,
       {
         method: "POST",
@@ -301,7 +303,7 @@ export const api = {
     }
   },
   job: (jobId: string) =>
-    request<Record<string, unknown>>(`/api/v1/jobs/${encodeURIComponent(jobId)}`),
+    request<UiJobRecord>(`/api/v1/jobs/${encodeURIComponent(jobId)}`),
   createProject: (body: Record<string, unknown>) =>
     request<{
       project_id: string;

@@ -27,6 +27,7 @@
 | 基础 BoltzGen YAML 编译 | `implemented` | 通用 region×scaffold 笛卡尔积；positive binding only |
 | BoltzGen 0.3.2 官方校验 | `implemented` | 精确 version/commit/clean-tree probe 和逐 YAML `boltzgen check` |
 | StrategyBundle/矩阵/manifest | `implemented` | 类型化 JSON、TSV、逐策略 manifest 和全部 ArtifactRef |
+| Workbench 按步骤入口 | `smoke-validated` | Stage 02 完成后显示真实区域×七骨架配置；任务成功后自动定位 Stage 04 |
 | APOE 21/21 真实 smoke | `smoke-validated` | 正式 continuation run succeeded；21/21 官方 check passed |
 
 ## Now
@@ -78,6 +79,9 @@
 - 2026-07-26：首次正式 continuation run 在 capability 抢先写入 artifacts 后被
   immutable compiler 拒绝；调整为先 probe、后编译、再写 capability，新 run 成功，
   失败运行未被覆盖。
+- 2026-07-28：工作台把 Stage 03 从空结果占位改为正式 continuation 配置页；区域数、
+  七个 scaffold、方案数和预算均来自上游投影与 Python 配置，运行完成后自动进入
+  Stage 04，历史矩阵仍可返回查看。
 
 ## 历史索引
 

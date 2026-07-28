@@ -18,6 +18,9 @@
 
 ## Now
 
+- `[UI-015/ENG-021]` 重构按步骤设计为连续七阶段工作区：Stage 02 从覆盖式弹窗变为
+  嵌入页面；成功步骤平滑前进；Stage 03 从 Python 表单投影读取基础模板并可真实生成、
+  校验设计方案。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与

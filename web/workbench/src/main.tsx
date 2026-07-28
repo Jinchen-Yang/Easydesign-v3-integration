@@ -7,6 +7,7 @@ import { RegionEditor } from "./RegionEditor";
 import { StageFive as FilterStageFive } from "./StageFive";
 import type {
   Artifact,
+  DesignSession,
   ExecutionProgress,
   Project,
   ProjectCatalogEntry,
@@ -17,6 +18,7 @@ import type {
   Run,
   SelfTestRecord,
   Stage,
+  StageFormDefinition,
   StageState,
 } from "./types";
 import "./styles.css";
@@ -95,11 +97,26 @@ function StageRail({
   selected: number;
   onSelect: (value: number) => void;
 }) {
+  const rail = useRef<HTMLDivElement>(null);
+  const buttons = useRef(new Map<number, HTMLButtonElement>());
+
+  useEffect(() => {
+    buttons.current.get(selected)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [selected]);
+
   return (
-    <div className="stage-rail" aria-label="七阶段进度">
+    <div className="stage-rail" aria-label="七阶段进度" ref={rail}>
       {stages.map((stage) => (
         <button
           key={stage.stage_number}
+          ref={(element) => {
+            if (element) buttons.current.set(stage.stage_number, element);
+            else buttons.current.delete(stage.stage_number);
+          }}
           type="button"
           className={`stage-node ${selected === stage.stage_number ? "selected" : ""}`}
           onClick={() => onSelect(stage.stage_number)}
@@ -114,6 +131,225 @@ function StageRail({
         </button>
       ))}
     </div>
+  );
+}
+
+function completedPrefix(run: Run, stageNumber: number) {
+  return run.stages
+    .filter((item) => item.stage_number < stageNumber)
+    .every((item) => item.state === "succeeded");
+}
+
+function stageRegionCount(run: Run) {
+  const stageTwo = run.stages[1];
+  const highlighted = Number(stageTwo?.highlights.region_count || 0);
+  return highlighted || (stageTwo?.tables.regions || []).length;
+}
+
+function chooseContinuationSession(
+  sessions: DesignSession[],
+  run: Run,
+) {
+  const candidates = [...sessions].reverse();
+  return candidates.find(
+    (item) => item.design_mode === "stepwise"
+      && item.run_lineage.includes(run.run_key),
+  ) || candidates.find(
+    (item) => item.design_mode === "stepwise"
+      && item.project_id === run.project_id,
+  );
+}
+
+function StageContinuationSetup({
+  stage,
+  run,
+  onCompleted,
+}: {
+  stage: Stage;
+  run: Run;
+  onCompleted: (runKey: string, destinationStage: number) => Promise<void>;
+}) {
+  const [definition, setDefinition] = useState<StageFormDefinition>();
+  const [loadError, setLoadError] = useState("");
+  const [status, setStatus] = useState("");
+  const [jobId, setJobId] = useState("");
+  const [resourceConfirmed, setResourceConfirmed] = useState(false);
+  const expensive = stage.stage_number === 4 || stage.stage_number === 6;
+
+  useEffect(() => {
+    let disposed = false;
+    setDefinition(undefined);
+    setLoadError("");
+    api.configForm(stage.stage_number)
+      .then((value) => {
+        if (!disposed) setDefinition(value);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setLoadError(error instanceof Error ? error.message : "无法读取本步骤配置");
+        }
+      });
+    return () => { disposed = true; };
+  }, [stage.stage_number]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const record = await api.job(jobId);
+        if (disposed) return;
+        if (record.status === "queued" || record.status === "running") {
+          setStatus(
+            record.status === "queued"
+              ? `第${stage.stage_number}步已排队，正在等待运行资源…`
+              : `第${stage.stage_number}步正在运行；页面会在完成后自动前进。`,
+          );
+          timer = window.setTimeout(() => void poll(), 1000);
+          return;
+        }
+        setJobId("");
+        if (record.status === "succeeded") {
+          setStatus(`第${stage.stage_number}步已完成，正在打开下一步…`);
+          if (record.run_key) {
+            await onCompleted(
+              record.run_key,
+              Math.min(7, stage.stage_number + 1),
+            );
+          }
+          return;
+        }
+        if (record.status === "awaiting-human-approval") {
+          setStatus(`第${stage.stage_number}步已生成候选，正在打开待确认结果…`);
+          if (record.run_key) await onCompleted(record.run_key, stage.stage_number);
+          return;
+        }
+        setStatus(
+          record.error
+            ? `第${stage.stage_number}步运行失败：${record.error}`
+            : `第${stage.stage_number}步没有完成，任务状态：${record.status}`,
+        );
+      } catch (error) {
+        if (!disposed) {
+          setJobId("");
+          setStatus(error instanceof Error ? error.message : "无法读取任务状态");
+        }
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [jobId, onCompleted, stage.stage_number]);
+
+  async function start() {
+    if (!definition || jobId || (expensive && !resourceConfirmed)) return;
+    setStatus(`正在验证第${stage.stage_number}步配置和运行环境…`);
+    try {
+      const sessions = await api.designSessions();
+      let session = chooseContinuationSession(sessions, run);
+      if (!session) {
+        session = await api.createDesignSession(
+          run.project_id,
+          "stepwise",
+          "review-gated",
+        );
+      }
+      const response = await api.continueRun(run.run_key, stage.stage_number, {
+        session_id: session.session_id,
+        execution_mode: session.execution_mode,
+        options: definition.defaults,
+      });
+      setJobId(response.job.job_id);
+      setStatus(`第${stage.stage_number}步任务已创建，正在读取真实运行状态…`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "无法启动本步骤");
+    }
+  }
+
+  if (loadError) {
+    return <div className="notice error"><strong>无法配置本步骤</strong><span>{loadError}</span></div>;
+  }
+  if (!definition) {
+    return <div className="loading-block">正在读取第{stage.stage_number}步的版本化配置…</div>;
+  }
+
+  const facts = [...definition.presentation.facts];
+  if (stage.stage_number === 3) {
+    const regionCount = stageRegionCount(run);
+    const scaffoldCount = Number(
+      facts.find((item) => item.label === "VHH 骨架")?.value || 0,
+    );
+    const perStrategy = Number(definition.defaults.candidates_per_strategy || 0);
+    facts.unshift({
+      label: "已批准区域",
+      value: regionCount,
+      note: "来自第2步正式结果",
+    });
+    facts.push({
+      label: "设计方案",
+      value: regionCount * scaffoldCount,
+      note: `${regionCount} 个区域 × ${scaffoldCount} 个骨架`,
+    });
+    facts.push({
+      label: "第4步候选预算",
+      value: regionCount * scaffoldCount * perStrategy,
+      note: "第3步只生成和验证设计文件",
+    });
+  }
+
+  return (
+    <section className="stage-setup panel">
+      <div className="stage-setup-copy">
+        <p className="section-label">已具备开始条件</p>
+        <h3>配置第{stage.stage_number}步：{definition.title}</h3>
+        <p>{definition.presentation.description}</p>
+      </div>
+      <div className="stage-setup-facts">
+        {facts.map((fact) => (
+          <article key={`${fact.label}-${String(fact.value)}`}>
+            <span>{fact.label}</span>
+            <strong>{String(fact.value)}</strong>
+            {fact.note && <small>{fact.note}</small>}
+          </article>
+        ))}
+      </div>
+      {stage.stage_number === 3 && (
+        <div className="stage-setup-note">
+          <strong>本步不会启动候选生成</strong>
+          <span>只把已批准区域写为正向结合约束；其他残基保持中性，并使用固定 BoltzGen 版本验证 YAML。</span>
+        </div>
+      )}
+      {expensive && (
+        <label className="stage-resource-confirmation">
+          <input
+            type="checkbox"
+            checked={resourceConfirmed}
+            onChange={(event) => setResourceConfirmed(event.target.checked)}
+          />
+          <span>我确认本步骤会调用真实计算后端；EasyDesign 将先检查 GPU、磁盘和运行环境。</span>
+        </label>
+      )}
+      <div className="stage-setup-actions">
+        <button
+          type="button"
+          className="primary-button"
+          disabled={Boolean(jobId) || (expensive && !resourceConfirmed)}
+          onClick={() => void start()}
+        >
+          {jobId ? `第${stage.stage_number}步正在运行…` : definition.presentation.action_label}
+        </button>
+        <span>配置来自 EasyDesign Python 契约；页面不会自行改写科学参数。</span>
+      </div>
+      {jobId && (
+        <div className="stage-continuation-progress" role="progressbar" aria-label={`第${stage.stage_number}步正在运行`}>
+          <span />
+        </div>
+      )}
+      {status && <div className="form-status">{status}</div>}
+    </section>
   );
 }
 
@@ -475,21 +711,67 @@ function EvidenceList({ stage, limit = 12 }: { stage: Stage; limit?: number }) {
 function StageContent({
   stage,
   run,
+  editingRegions,
   onReselectRegions,
+  onCancelRegionEditing,
+  onRegionSubmitted,
+  onContinuationCompleted,
 }: {
   stage: Stage;
   run: Run;
+  editingRegions: boolean;
   onReselectRegions: () => void;
+  onCancelRegionEditing: () => void;
+  onRegionSubmitted: (
+    message: string,
+    runKey?: string,
+    destinationStage?: number,
+  ) => void;
+  onContinuationCompleted: (
+    runKey: string,
+    destinationStage: number,
+  ) => Promise<void>;
 }) {
   if (stage.stage_number === 1) {
     return <StageOne stage={stage} onConfigureNext={onReselectRegions} />;
   }
   if (stage.stage_number === 2) {
+    if (stage.state === "not-reached" || editingRegions) {
+      return (
+        <RegionEditor
+          run={run}
+          presentation="embedded"
+          onClose={onCancelRegionEditing}
+          onSubmitted={onRegionSubmitted}
+        />
+      );
+    }
     return <StageTwo stage={stage} run={run} onReselect={onReselectRegions} />;
   }
-  if (stage.stage_number === 3) return <StageThree stage={stage} />;
-  if (stage.stage_number === 4) return <ExecutionStage stage={stage} run={run} />;
-  if (stage.stage_number === 5) return <FilterStageFive stage={stage} run={run} />;
+  if (stage.state === "not-reached" && completedPrefix(run, stage.stage_number)) {
+    return (
+      <StageContinuationSetup
+        stage={stage}
+        run={run}
+        onCompleted={onContinuationCompleted}
+      />
+    );
+  }
+  if (stage.stage_number === 3) {
+    return stage.state === "not-reached"
+      ? <FutureStage stage={stage} run={run} />
+      : <StageThree stage={stage} />;
+  }
+  if (stage.stage_number === 4) {
+    return stage.state === "not-reached"
+      ? <FutureStage stage={stage} run={run} />
+      : <ExecutionStage stage={stage} run={run} />;
+  }
+  if (stage.stage_number === 5) {
+    return stage.state === "not-reached"
+      ? <FutureStage stage={stage} run={run} />
+      : <FilterStageFive stage={stage} run={run} />;
+  }
   if (stage.stage_number === 6 && stage.state !== "not-reached") {
     return <ExecutionStage stage={stage} run={run} />;
   }
@@ -502,28 +784,38 @@ function RunWorkspace({
   onClone,
   onResume,
   onOpenRun,
+  initialStage,
   replay,
 }: {
   run: Run;
   onReplay: () => void;
   onClone: () => Promise<void>;
   onResume: () => Promise<void>;
-  onOpenRun: (runKey: string) => Promise<void>;
+  onOpenRun: (runKey: string, destinationStage?: number) => Promise<void>;
+  initialStage?: number;
   replay?: Replay;
 }) {
   const latestReachedStage = (
     [...run.stages].reverse().find((item) => item.state !== "not-reached")
       ?.stage_number || 1
   );
-  const [selected, setSelected] = useState(latestReachedStage);
+  const [selected, setSelected] = useState(initialStage || latestReachedStage);
+  const [slideDirection, setSlideDirection] = useState<"forward" | "backward">("forward");
   const [cloneStatus, setCloneStatus] = useState("");
   const [showTechnical, setShowTechnical] = useState(false);
-  const [showRegionEditor, setShowRegionEditor] = useState(false);
+  const [editingRegions, setEditingRegions] = useState(false);
   const stage = run.stages[selected - 1];
 
   useEffect(() => {
-    setSelected(latestReachedStage);
-  }, [latestReachedStage, run.run_key]);
+    setSelected(initialStage || latestReachedStage);
+    setEditingRegions(false);
+  }, [initialStage, latestReachedStage, run.run_key]);
+
+  function selectStage(next: number) {
+    setSlideDirection(next >= selected ? "forward" : "backward");
+    setSelected(next);
+    setEditingRegions(false);
+  }
 
   async function clone() {
     setCloneStatus("正在复制配置与可用 runtime 输入…");
@@ -571,29 +863,40 @@ function RunWorkspace({
           </div>
         </section>
       )}
-      <StageRail stages={run.stages} selected={selected} onSelect={setSelected} />
+      <StageRail stages={run.stages} selected={selected} onSelect={selectStage} />
       <div className="stage-title-row">
         <div><p className="section-label">设计流程</p><h2>{stageNames[stage.stage_number - 1]}</h2><p>{stateCopy[stage.state].description}</p></div>
         <div className="stage-state-block"><Status state={stage.state} /><span>{capabilityLabel(stage.capability.status)}</span></div>
       </div>
-      <StageContent
-        stage={stage}
-        run={run}
-        onReselectRegions={() => setShowRegionEditor(true)}
-      />
-      {showRegionEditor && (
-        <RegionEditor
+      <div
+        className={`stage-slide stage-slide-${slideDirection}`}
+        key={`${run.run_key}-${selected}-${editingRegions ? "edit" : "view"}`}
+      >
+        <StageContent
+          stage={stage}
           run={run}
-          onClose={() => setShowRegionEditor(false)}
-          onSubmitted={(message, runKey) => {
+          editingRegions={editingRegions}
+          onReselectRegions={() => {
+            if (stage.stage_number === 1) {
+              selectStage(2);
+              return;
+            }
+            setEditingRegions(true);
+          }}
+          onCancelRegionEditing={() => {
+            if (stage.state === "not-reached") selectStage(1);
+            else setEditingRegions(false);
+          }}
+          onRegionSubmitted={(message, runKey, destinationStage) => {
             setCloneStatus(message);
             if (runKey) {
-              setShowRegionEditor(false);
-              void onOpenRun(runKey);
+              setEditingRegions(false);
+              void onOpenRun(runKey, destinationStage);
             }
           }}
+          onContinuationCompleted={onOpenRun}
         />
-      )}
+      </div>
     </div>
   );
 }
@@ -1695,6 +1998,7 @@ function App() {
   const [data, setData] = useState<ProjectResponse>({ projects: [], editable_projects: [] });
   const [page, setPage] = useState("projects");
   const [selectedRun, setSelectedRun] = useState<Run>();
+  const [selectedRunStage, setSelectedRunStage] = useState<number>();
   const [replay, setReplay] = useState<Replay>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1710,18 +2014,19 @@ function App() {
     }
   }
 
-  async function openCompletedRun(runKey: string) {
+  async function openCompletedRun(runKey: string, destinationStage?: number) {
     await refreshProjects();
     const completedRun = await api.run(runKey);
-    openRun(completedRun);
+    openRun(completedRun, destinationStage);
   }
 
   useEffect(() => {
     void refreshProjects();
   }, []);
 
-  function openRun(run: Run) {
+  function openRun(run: Run, destinationStage?: number) {
     setSelectedRun(run);
+    setSelectedRunStage(destinationStage);
     setReplay(undefined);
     setPage("run");
   }
@@ -1778,7 +2083,7 @@ function App() {
             />
           ) :
           page === "tasks" ? <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} /> :
-          page === "run" && selectedRun ? <RunWorkspace run={selectedRun} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} onOpenRun={openCompletedRun} replay={replay} /> :
+          page === "run" && selectedRun ? <RunWorkspace run={selectedRun} initialStage={selectedRunStage} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} onOpenRun={openCompletedRun} replay={replay} /> :
           page === "settings" ? <OperationsPage type="environment" projects={data.projects} editableProjects={data.editable_projects} selectedRun={selectedRun} /> :
           <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} />}
       </main>

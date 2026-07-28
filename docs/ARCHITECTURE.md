@@ -889,6 +889,26 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 DesignSession；分支运行才产生新的 run key。UI 服务启动时从 `run-index.json` 注册已验证
 run，深链接不依赖用户先访问项目列表。
 
+按步骤设计使用同一个七阶段工作区呈现结果与后续配置。Stage 轨道只负责导航；当前
+Stage 的状态决定内容：
+
+```text
+succeeded / scientific-stop / operational-failed
+→ manifest-only 结果投影
+
+not-reached + 连续成功上游
+→ Python stage_form_definition 产品投影
+→ 用户确认
+→ POST /runs/{run}/continue/{stage}
+→ UiJobRecord 轮询
+→ 完成后定位下一 Stage
+```
+
+Stage 02 的结构选区编辑器作为工作区内嵌内容存在，不再拥有独立的全屏导航语义。
+Stage 03–07 的表单默认值由 orchestration 类型生成；React 不复制 profile、预算、
+scaffold registry 或筛选参数。配置 revision、run lineage、StageManifest 和
+ArtifactRef 仍分别承担产品导航、科学状态和产物身份，不因页面动画发生变化。
+
 项目目录只读取 `run-index.json` 的 category：
 
 - `project-run`：显示在普通项目和运行任务。

@@ -219,6 +219,21 @@ easydesign run downstream/easydesign.yaml \
   --run-id downstream-stage03
 ```
 
+## 科研工作台
+
+在“按步骤设计”中完成 Stage 02 后，工作台会自动定位到
+“第3步：生成设计方案”，展示：
+
+- Stage 02 已批准区域数；
+- `official-vhh7-v1` 的七个 scaffold；
+- `区域数 × scaffold 数` 的设计方案数；
+- 每套方案的小规模候选预算和下一步总预算；
+- positive binding、非 hotspot 中性以及“本步不生成候选”的边界。
+
+用户点击“生成并验证设计方案”后，页面调用与 CLI 相同的 orchestration API，轮询真实
+任务状态。成功时自动打开第4步；点击顶部第3步仍可返回查看真实设计矩阵、YAML 校验和
+下载。界面参数来自 Python 类型化配置，前端不拼接 BoltzGen YAML。
+
 新建项目配置若已经包含可连续的 Stage 01/02 unattended 路线，也可直接执行：
 
 ```bash

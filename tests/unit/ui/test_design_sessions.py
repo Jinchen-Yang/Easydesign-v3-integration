@@ -136,6 +136,12 @@ def test_stage_forms_expose_all_seven_stages_without_stage01_input() -> None:
         "automatic",
         "user-provided",
     ]
+    assert definitions[2]["presentation"]["action_label"] == "生成并验证设计方案"
+    assert definitions[2]["presentation"]["facts"][1] == {
+        "label": "VHH 骨架",
+        "value": 7,
+        "note": "official-vhh7-v1",
+    }
     assert definitions[6]["defaults"]["final_filter_profile"] == (
         "nanobody-final-v1.5"
     )

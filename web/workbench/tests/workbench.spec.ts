@@ -97,6 +97,42 @@ const manualStageTwoRun = {
     ...item,
     state: index < 2 ? "succeeded" : "not-reached",
     summary: index === 1 ? "人工区域已批准并发布" : item.summary,
+    highlights: index === 1
+      ? { region_count: 3, region_source: "manual-residue-list" }
+      : item.highlights,
+    tables: index === 1
+      ? { regions: [{ id: "A" }, { id: "B" }, { id: "C" }] }
+      : item.tables,
+  })),
+};
+
+const stageThreeRun = {
+  ...manualStageTwoRun,
+  run_key: "stage03-run-key",
+  run_id: "stage03-basic-vhh-fixture",
+  stages: stages.map((item, index) => ({
+    ...item,
+    state: index < 3 ? "succeeded" : "not-reached",
+    summary: index === 2 ? "21 个设计方案已生成并验证" : item.summary,
+    highlights: index === 2
+      ? {
+        strategy_count: 21,
+        region_count: 3,
+        scaffold_count: 7,
+        planned_candidates: 840,
+      }
+      : item.highlights,
+    tables: index === 2
+      ? {
+        strategies: ["A", "B", "C"].flatMap((region) =>
+          Array.from({ length: 7 }, (_, scaffold) => ({
+            region_id: region,
+            scaffold_id: `scaffold-${scaffold + 1}`,
+            strategy_id: `${region}__scaffold-${scaffold + 1}`,
+            candidates_per_strategy: 40,
+          }))),
+      }
+      : item.tables,
   })),
 };
 
@@ -271,6 +307,43 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname === "/api/v1/config/forms/3") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          schema_version: "0.1",
+          stage_number: 3,
+          title: "生成设计方案",
+          defaults: {
+            profile: "boltzgen-vhh-basic-v1",
+            scaffold_registry: "official-vhh7-v1",
+            candidates_per_strategy: 40,
+          },
+          presentation: {
+            description: "把所有已批准区域分别与官方 VHH 骨架组合，生成并验证 BoltzGen 设计文件。",
+            action_label: "生成并验证设计方案",
+            facts: [
+              {
+                label: "基础模板",
+                value: "boltzgen-vhh-basic-v1",
+                note: "正向结合约束；其余残基保持中性",
+              },
+              {
+                label: "VHH 骨架",
+                value: 7,
+                note: "official-vhh7-v1",
+              },
+              {
+                label: "每套候选预算",
+                value: 40,
+                note: "在第4步执行小规模生成",
+              },
+            ],
+          },
+        }),
+      });
+      return;
+    }
     if (url.pathname.endsWith("/regions/editor")) {
       await route.fulfill({
         contentType: "application/json",
@@ -419,6 +492,16 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname.endsWith("/continue/3") && route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          session: {},
+          job: { job_id: "job-stage03", status: "running" },
+        }),
+      });
+      return;
+    }
     if (url.pathname.endsWith("/regions/revise") && route.request().method() === "POST") {
       await route.fulfill({
         contentType: "application/json",
@@ -455,6 +538,21 @@ async function mockApi(page: Page) {
             job_id: "job-stage02-manual",
             status: "succeeded",
             run_key: manualStageTwoRun.run_key,
+          }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/jobs/job-stage03") {
+      const count = (jobPolls.get("stage03") || 0) + 1;
+      jobPolls.set("stage03", count);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(count === 1
+          ? { job_id: "job-stage03", status: "running" }
+          : {
+            job_id: "job-stage03",
+            status: "succeeded",
+            run_key: stageThreeRun.run_key,
           }),
       });
       return;
@@ -628,6 +726,13 @@ async function mockApi(page: Page) {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify(manualStageTwoRun),
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/runs/${stageThreeRun.run_key}`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(stageThreeRun),
       });
       return;
     }
@@ -816,6 +921,14 @@ test("stepwise PSE upload runs stage one and opens structure review directly", a
   await expect(page.getByRole("heading", { name: "new-design" })).toBeVisible();
   await expect(page.getByText("138 aa")).toBeVisible();
   await expect(page.getByRole("button", { name: "配置下一步：选择结合区域" })).toBeVisible();
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
+  await expect(page.getByRole("heading", { name: "第2步：选择结合区域" })).toBeVisible();
+  await expect(page.locator(".stage-node").nth(1)).toHaveClass(/selected/);
+  await expect(page.locator(".region-editor-embedded")).toBeVisible();
+  await expect(page.locator(".region-editor-overlay")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "选择结合区域", exact: true }),
+  ).toBeVisible();
 });
 
 test("developer smoke is separated from scientific projects", async ({ page }) => {
@@ -894,6 +1007,29 @@ test("explicit manual regions complete one approval and open a succeeded branch"
   await page.getByText(/我确认这些是用户提供的设计区域/).click();
   await page.getByRole("button", { name: "保存并建立新的第2步分支" }).click();
   await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "第2步：选择结合区域" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "第3步：生成设计方案", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "配置第3步：生成设计方案" })).toBeVisible();
+  await expect(page.getByText("3 个区域 × 7 个骨架")).toBeVisible();
   await expect(page.getByText("已完成", { exact: true }).first()).toBeVisible();
+});
+
+test("stage three continuation runs from Python defaults and advances to stage four", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await page.locator(".stage-node").nth(1).click();
+  await page.getByRole("button", { name: "重新选择结合区域" }).click();
+  await page.getByLabel("批准人").fill("scientist-01");
+  await page.getByText(/我确认这些是用户提供的设计区域/).click();
+  await page.getByRole("button", { name: "保存并建立新的第2步分支" }).click();
+  await expect(page.getByRole("heading", { name: "配置第3步：生成设计方案" })).toBeVisible();
+
+  await page.getByRole("button", { name: "生成并验证设计方案" }).click();
+  await expect(page.getByRole("progressbar", { name: "第3步正在运行" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "第4步：小规模生成" })).toBeVisible();
+  await expect(page.locator(".stage-node").nth(3)).toHaveClass(/selected/);
+  await page.locator(".stage-node").nth(2).click();
+  await expect(page.getByText("21").first()).toBeVisible();
+  await expect(page.getByText("结合区域 × VHH 骨架设计矩阵")).toBeVisible();
 });

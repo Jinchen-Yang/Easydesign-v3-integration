@@ -19,6 +19,7 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 from .config import (
     Stage03Config,
@@ -101,6 +102,7 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
     )
     if stage_number not in range(1, 8):
         raise ConfigurationError("stage_number 必须在 1–7")
+    presentation: dict[str, Any]
     if stage_number == 1:
         defaults: dict[str, Any] = {
             "source_types": [
@@ -112,12 +114,22 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
                 "target-bundle",
             ],
         }
+        presentation = {
+            "description": "准备规范目标结构、序列、编号映射和来源证据。",
+            "action_label": "开始准备目标结构",
+            "facts": [],
+        }
     elif stage_number == 2:
         defaults = {
             "mode": "automatic",
             "methods": ["sasa", "scannet"],
             "annotations": {"uniprot": "if_available"},
             "available_modes": ["automatic", "user-provided"],
+        }
+        presentation = {
+            "description": "通过人工标注或独立自动方法确定可提交的结合区域。",
+            "action_label": "开始选择结合区域",
+            "facts": [],
         }
     else:
         model = {
@@ -128,11 +140,124 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
             7: Stage07Config(),
         }[stage_number]
         defaults = model.model_dump(mode="json")
+        if stage_number == 3:
+            presentation = {
+                "description": (
+                    "把所有已批准区域分别与官方 VHH 骨架组合，生成并验证 "
+                    "BoltzGen 设计文件。"
+                ),
+                "action_label": "生成并验证设计方案",
+                "facts": [
+                    {
+                        "label": "基础模板",
+                        "value": defaults["profile"],
+                        "note": "正向结合约束；其余残基保持中性",
+                    },
+                    {
+                        "label": "VHH 骨架",
+                        "value": len(SCAFFOLD_IDS),
+                        "note": defaults["scaffold_registry"],
+                    },
+                    {
+                        "label": "每套候选预算",
+                        "value": defaults["candidates_per_strategy"],
+                        "note": "在第4步执行小规模生成",
+                    },
+                ],
+            }
+        elif stage_number == 4:
+            presentation = {
+                "description": "按设计方案运行可恢复的小规模 BoltzGen 生成。",
+                "action_label": "检查资源并开始小规模生成",
+                "facts": [
+                    {
+                        "label": "生成后端",
+                        "value": defaults["backend"],
+                        "note": "使用结构化任务与进度记录",
+                    },
+                    {
+                        "label": "目标候选数",
+                        "value": defaults[
+                            "required_complete_candidates_per_strategy"
+                        ],
+                        "note": "每套设计方案",
+                    },
+                    {
+                        "label": "默认设备数",
+                        "value": len(defaults["executor"]["devices"]),
+                        "note": "实际设备由运行环境检查确认",
+                    },
+                ],
+            }
+        elif stage_number == 5:
+            presentation = {
+                "description": "逐规则筛选小规模候选并选择是否进入规模化生成。",
+                "action_label": "开始筛选与验证",
+                "facts": [
+                    {
+                        "label": "筛选标准",
+                        "value": defaults["filter_profile"],
+                        "note": "阈值由版本化 profile 决定",
+                    },
+                    {
+                        "label": "扩展总数",
+                        "value": defaults["expanded_total_per_strategy"],
+                        "note": "每个入选策略",
+                    },
+                    {
+                        "label": "完整目标复核",
+                        "value": defaults["strategy_selection"][
+                            "full_target_refold_top_n"
+                        ],
+                        "note": "每个扩展策略的候选数",
+                    },
+                ],
+            }
+        elif stage_number == 6:
+            presentation = {
+                "description": "对唯一入选策略进行分片、可恢复的规模化生成。",
+                "action_label": "检查预算并开始规模化生成",
+                "facts": [
+                    {
+                        "label": "规模方案",
+                        "value": defaults["scale_profile"],
+                        "note": "高成本运行必须明确授权",
+                    },
+                    {
+                        "label": "预授权上限",
+                        "value": defaults["preauthorized_candidate_limit"],
+                        "note": "完整候选",
+                    },
+                ],
+            }
+        else:
+            presentation = {
+                "description": "深度筛选、聚类并形成可供人工审阅的主备候选包。",
+                "action_label": "开始最终筛选",
+                "facts": [
+                    {
+                        "label": "最终标准",
+                        "value": defaults["final_filter_profile"],
+                        "note": "不会自动向供应商下单",
+                    },
+                    {
+                        "label": "主候选",
+                        "value": defaults["primary_count"],
+                        "note": "不足时输出实际数量",
+                    },
+                    {
+                        "label": "备选候选",
+                        "value": defaults["backup_count"],
+                        "note": "不足时输出实际数量",
+                    },
+                ],
+            }
     return {
         "schema_version": "0.1",
         "stage_number": stage_number,
         "title": names[stage_number - 1],
         "defaults": defaults,
+        "presentation": presentation,
     }
 
 

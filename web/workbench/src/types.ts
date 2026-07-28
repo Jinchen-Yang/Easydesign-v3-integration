@@ -85,6 +85,31 @@ export interface DesignSession {
   updated_at: string;
 }
 
+export interface StageFormDefinition {
+  schema_version: "0.1";
+  stage_number: number;
+  title: string;
+  defaults: Record<string, unknown>;
+  presentation: {
+    description: string;
+    action_label: string;
+    facts: Array<{
+      label: string;
+      value: string | number | boolean;
+      note?: string;
+    }>;
+  };
+}
+
+export interface UiJobRecord {
+  job_id: string;
+  status: string;
+  run_key?: string;
+  run_id?: string;
+  error?: string;
+  stage_number?: number;
+}
+
 export interface ProjectCatalogEntry {
   project_id: string;
   category: "project-run" | "archived-project-run" | "developer-smoke-run";

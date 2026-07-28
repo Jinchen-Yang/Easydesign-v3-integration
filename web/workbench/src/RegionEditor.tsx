@@ -65,11 +65,14 @@ export function RegionEditor({
   run,
   onClose,
   onSubmitted,
+  presentation = "dialog",
 }: {
   run: Run;
   onClose: () => void;
-  onSubmitted: (message: string, runKey?: string) => void;
+  onSubmitted: (message: string, runKey?: string, destinationStage?: number) => void;
+  presentation?: "dialog" | "embedded";
 }) {
+  const embedded = presentation === "embedded";
   const [projection, setProjection] = useState<RegionEditorProjection>();
   const [loadingError, setLoadingError] = useState("");
   const [selection, setSelection] = useState<Map<number, RegionId>>(new Map());
@@ -124,14 +127,14 @@ export function RegionEditor({
             || "第2步已完成，现在可以配置下一阶段。";
           setStatus(message);
           const runKey = String(record.run_key || "");
-          submittedCallback.current(message, runKey || undefined);
+          submittedCallback.current(message, runKey || undefined, 3);
           return;
         }
         if (jobStatus === "awaiting-human-approval") {
           const message = "自动候选区域已生成，等待你比较并确认后再进入下一阶段。";
           setStatus(message);
           const runKey = String(record.run_key || "");
-          submittedCallback.current(message, runKey || undefined);
+          submittedCallback.current(message, runKey || undefined, 2);
           return;
         }
         const error = String(record.error || "");
@@ -386,18 +389,28 @@ export function RegionEditor({
 
   if (loadingError) {
     return (
-      <div className="region-editor-overlay" role="dialog" aria-modal="true">
+      <div
+        className={embedded ? "region-editor-embedded" : "region-editor-overlay"}
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
+      >
         <section className="region-editor-shell compact-dialog">
           <h2>无法打开区域编辑器</h2>
           <p>{loadingError}</p>
-          <button type="button" className="primary-button" onClick={onClose}>关闭</button>
+          <button type="button" className="primary-button" onClick={onClose}>
+            {embedded ? "返回上一步" : "关闭"}
+          </button>
         </section>
       </div>
     );
   }
   if (!projection) {
     return (
-      <div className="region-editor-overlay" role="dialog" aria-modal="true">
+      <div
+        className={embedded ? "region-editor-embedded" : "region-editor-overlay"}
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
+      >
         <section className="region-editor-shell compact-dialog">
           <div className="loading-block">正在验证目标结构、编号映射和区域来源…</div>
         </section>
@@ -410,15 +423,30 @@ export function RegionEditor({
     (item) => item.stage_number === 2,
   )?.state === "not-reached";
   return (
-    <div className="region-editor-overlay" role="dialog" aria-modal="true" aria-label="重新选择结合区域">
+    <div
+      className={embedded ? "region-editor-embedded" : "region-editor-overlay"}
+      role={embedded ? "region" : "dialog"}
+      aria-modal={embedded ? undefined : true}
+      aria-label={stageTwoNotReached ? "选择结合区域" : "重新选择结合区域"}
+    >
       <section className="region-editor-shell">
         <header className="region-editor-header">
           <div>
-            <p className="section-label">第2步 · 建立新分支</p>
-            <h2>重新选择结合区域</h2>
-            <p>编辑层与 PSE 来源颜色、已批准区域相互独立；保存不会追溯修改旧运行。</p>
+            <p className="section-label">
+              {stageTwoNotReached ? "第2步 · 配置结合区域" : "第2步 · 建立新分支"}
+            </p>
+            <h2>{stageTwoNotReached ? "选择结合区域" : "重新选择结合区域"}</h2>
+            <p>
+              {stageTwoNotReached
+                ? "完成本步后会继续到设计方案；来源颜色、自动方法和人工编辑始终保留各自证据。"
+                : "编辑层与 PSE 来源颜色、已批准区域相互独立；保存不会追溯修改旧运行。"}
+            </p>
           </div>
-          <button type="button" className="dialog-close" onClick={onClose}>关闭</button>
+          {(!embedded || !stageTwoNotReached) && (
+            <button type="button" className="dialog-close" onClick={onClose}>
+              {embedded ? "返回已完成结果" : "关闭"}
+            </button>
+          )}
         </header>
         {stageTwoNotReached && (
           <section className="stage-two-route-picker">

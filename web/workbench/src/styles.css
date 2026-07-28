@@ -463,11 +463,20 @@ textarea { padding: 10px; }
 .self-test-cards button { width: 100%; }
 .self-test-cards > article > small { display: block; margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .self-test-history { margin-top: 18px; }
-.self-test-record { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 17px 22px; border-top: 1px solid var(--line); }
+.self-test-record { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 17px 22px; border: 0; border-top: 1px solid var(--line); background: white; color: inherit; text-align: left; cursor: pointer; }
+.self-test-record:hover { background: #f8faff; }
 .self-test-record strong, .self-test-record small { display: block; }
 .self-test-record small { margin-top: 3px; color: var(--muted); font-size: 12px; }
 .self-test-record p { margin: 8px 0 0; color: #4b586d; font-size: 14px; }
 .self-test-record > div:last-child { display: grid; align-content: center; gap: 4px; color: #526078; font-size: 12px; }
+.real-self-test-workspace { margin-top: 18px; padding: 22px; }
+.real-self-test-workspace .panel-heading p { margin: 6px 0 0; color: var(--muted); }
+.self-test-stage-rail { margin: 20px 0; }
+.self-test-stage-detail { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #f8faff; }
+.self-test-stage-detail h3 { margin: 5px 0 7px; font-size: 22px; }
+.self-test-stage-detail p { margin: 0; color: var(--muted); }
+.self-test-stage-detail button { flex: 0 0 auto; min-width: 180px; }
+.stage-orb.state-ready { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
 .scientific-stage-browser { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; margin-bottom: 16px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .scientific-stage-browser button { min-width: 0; min-height: 86px; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-content: center; gap: 2px 8px; padding: 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #4c596d; cursor: pointer; text-align: left; }
 .scientific-stage-browser button:hover, .scientific-stage-browser button.active { border-color: #b8caf3; background: var(--blue-soft); color: var(--blue); }
@@ -697,6 +706,31 @@ textarea { padding: 10px; }
 .stage-setup-actions > span { color: var(--muted); font-size: 13px; }
 .stage-continuation-progress { position: relative; height: 9px; margin: 18px 0 0; overflow: hidden; border-radius: 999px; background: #dfe6f2; }
 .stage-continuation-progress span { position: absolute; inset-block: 0; width: 36%; border-radius: inherit; background: var(--blue); animation: region-job-progress 1.15s ease-in-out infinite; }
+.install-center { margin-bottom: 18px; padding: 0 24px 24px; }
+.install-center .panel-heading { margin: 0 -24px 20px; padding: 20px 24px; }
+.install-center .panel-heading > span { max-width: 48%; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; text-align: right; }
+.install-note { margin: 0 0 18px; padding: 13px 15px; border: 1px solid #c8d8f5; border-radius: 9px; background: #f1f6fe; color: #36567f; font-size: 14px; line-height: 1.55; }
+.disk-preflight { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: #f7f9fc; color: var(--muted); font-size: 14px; }
+.disk-preflight strong { color: var(--ink); }
+.disk-preflight.available { border-color: #a8dcc7; background: #f0faf6; }
+.disk-preflight.failed { border-color: #efb8b2; background: #fff5f4; }
+.install-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+.install-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 18px; }
+.install-grid > div, .setup-jobs { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; }
+.install-grid h4, .setup-jobs h4 { margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--line); background: #f8fafc; font-size: 16px; }
+.install-row { min-height: 55px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 16px; border-top: 1px solid #edf0f4; }
+.install-row:first-of-type { border-top: 0; }
+.install-row strong, .install-row small { display: block; }
+.install-row strong { color: var(--ink); font-size: 14px; }
+.install-row small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.install-row > span:last-child { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: #edf1f6; color: #536177; font-size: 12px; font-weight: 740; }
+.install-row > span[data-status="available"], .install-row > span[data-status="succeeded"] { background: var(--green-soft); color: var(--green); }
+.install-row > span[data-status="awaiting-approval"], .install-row > span[data-status="running"] { background: var(--amber-soft); color: var(--amber); }
+.install-row > span[data-status="failed"], .install-row > span[data-status="incomplete"] { background: var(--red-soft); color: var(--red); }
+.install-row.asset > label { min-width: 0; display: flex; align-items: flex-start; gap: 9px; }
+.install-row.asset input { width: 17px; height: 17px; margin-top: 2px; }
+.setup-jobs { margin-top: 18px; }
+.quarantine-summary { margin-top: 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 
 /* 旧版只读组件的兼容样式；默认产品路由不再展示它们。 */
 .science-stop, .filter-layout, .funnel, .comparison-split, .run-cards, .overview-grid, .recent-section { display: none; }

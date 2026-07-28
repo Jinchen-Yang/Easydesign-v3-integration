@@ -182,6 +182,7 @@ class UiJobRecord(BaseModel):
     run_key: str | None = None
     run_id: str | None = None
     session_id: str | None = None
+    self_test_id: str | None = None
     stage_number: int | None = Field(default=None, ge=1, le=7)
     process_id: int | None = None
     drain_requested: bool = False
@@ -238,6 +239,12 @@ class SelfTestRecord(BaseModel):
     scientific_status: str
     stage_statuses: dict[str, str] = Field(default_factory=dict)
     run_key: str | None = None
+    run_relative_path: str | None = None
+    current_stage: int = Field(default=0, ge=0, le=7)
+    next_stage: int | None = Field(default=None, ge=1, le=7)
+    active_job_id: str | None = None
+    config_relative_path: str | None = None
+    fixture_asset_id: str | None = None
     environment: dict[str, str] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime

@@ -11,7 +11,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import yaml  # type: ignore[import-untyped]
-from platformdirs import user_data_path
 
 from easydesign.core import ConfigurationError, RunManifest, dump_model, load_model
 from easydesign.orchestration import (
@@ -19,7 +18,12 @@ from easydesign.orchestration import (
     next_stage_number,
     validate_run_configuration,
 )
-from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
+from easydesign.orchestration.task_tracking import (
+    atomic_dump_runtime_model,
+    load_latest_runtime_model,
+)
+from easydesign.safe_writes import read_last_text_line
+from easydesign.workspace_context import WorkspaceContext
 
 from .models import UiJobRecord
 
@@ -27,7 +31,7 @@ from .models import UiJobRecord
 def _latest_manifest(run_root: Path) -> RunManifest:
     pointer = run_root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ConfigurationError(f"无法读取 source run: {run_root}") from error
     return load_model(run_root / "manifests" / name, RunManifest)
@@ -42,7 +46,11 @@ def clone_run_configuration(
     """复制已冻结配置和本地输入到新项目；不修改 source run。"""
 
     source = source_run_root.expanduser().resolve()
-    target = destination.expanduser().resolve()
+    context = WorkspaceContext.discover()
+    target = context.require_write_path(
+        destination,
+        purpose="UI 项目配置克隆",
+    )
     if target.exists() and any(target.iterdir()):
         raise ConfigurationError(f"目标项目目录非空，拒绝覆盖: {target}")
     manifest = _latest_manifest(source)
@@ -90,7 +98,7 @@ class UiJobController:
 
     def __init__(self, state_root: Path | None = None) -> None:
         selected = (
-            user_data_path("easydesign") / "ui" / "jobs"
+            WorkspaceContext.discover().ui_job_root
             if state_root is None
             else state_root
         )
@@ -101,12 +109,15 @@ class UiJobController:
         return self.state_root / f"{job_id}.json"
 
     def load(self, job_id: str) -> UiJobRecord:
-        return load_model(self._path(job_id), UiJobRecord)
+        return load_latest_runtime_model(self._path(job_id), UiJobRecord)
 
     def list(self) -> tuple[UiJobRecord, ...]:
         return tuple(
             sorted(
-                (load_model(path, UiJobRecord) for path in self.state_root.glob("job-*.json")),
+                (
+                    load_latest_runtime_model(path, UiJobRecord)
+                    for path in self.state_root.glob("job-*.json")
+                ),
                 key=lambda item: item.updated_at,
                 reverse=True,
             )
@@ -125,6 +136,9 @@ class UiJobController:
         decision_record: Path | None = None,
         session_id: str | None = None,
         session_root: Path | None = None,
+        self_test_id: str | None = None,
+        self_test_root: Path | None = None,
+        self_test_runs_root: Path | None = None,
         stage_number: int | None = None,
         confirmed: bool,
     ) -> UiJobRecord:
@@ -134,6 +148,14 @@ class UiJobController:
             raise ConfigurationError("UI job operation 只支持 run/resume/decision")
         if session_id is not None and (session_root is None or stage_number is None):
             raise ConfigurationError("产品会话 job 必须同时提供 session root 和 stage")
+        if self_test_id is not None and (
+            self_test_root is None
+            or self_test_runs_root is None
+            or stage_number is None
+        ):
+            raise ConfigurationError(
+                "开发者自检 job 必须同时提供 self-test root、runs root 和 stage"
+            )
         if operation == "run":
             if config_path is None:
                 raise ConfigurationError("run job 必须提供 config_path")
@@ -181,6 +203,7 @@ class UiJobController:
             config_path=None if config_path is None else str(config_path.resolve()),
             run_id=selected_run_id,
             session_id=session_id,
+            self_test_id=self_test_id,
             stage_number=stage_number,
             created_at=now,
             updated_at=now,
@@ -214,6 +237,12 @@ class UiJobController:
             command.extend(["--continue-after-stage", str(continue_after_stage)])
         if session_root is not None:
             command.extend(["--session-root", str(session_root.resolve())])
+        if self_test_root is not None:
+            command.extend(["--self-test-root", str(self_test_root.resolve())])
+        if self_test_runs_root is not None:
+            command.extend(
+                ["--self-test-runs-root", str(self_test_runs_root.resolve())]
+            )
         environment = os.environ.copy()
         environment["EASYDESIGN_UI_DRAIN_FILE"] = str(drain_path)
         process = subprocess.Popen(

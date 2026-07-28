@@ -9,6 +9,7 @@ import type {
   Artifact,
   DesignSession,
   ExecutionProgress,
+  InstallStatus,
   Project,
   ProjectCatalogEntry,
   ProjectResponse,
@@ -177,19 +178,21 @@ function StageContinuationSetup({
   const expensive = stage.stage_number === 4 || stage.stage_number === 6;
 
   useEffect(() => {
-    let disposed = false;
+    const requestedStage = stage.stage_number;
     setDefinition(undefined);
     setLoadError("");
-    api.configForm(stage.stage_number)
+    api.configForm(requestedStage)
       .then((value) => {
-        if (!disposed) setDefinition(value);
+        if (value.stage_number !== requestedStage) {
+          throw new Error(
+            `配置阶段不匹配：请求第${requestedStage}步，实际返回第${value.stage_number}步`,
+          );
+        }
+        setDefinition(value);
       })
       .catch((error: unknown) => {
-        if (!disposed) {
-          setLoadError(error instanceof Error ? error.message : "无法读取本步骤配置");
-        }
+        setLoadError(error instanceof Error ? error.message : "无法读取本步骤配置");
       });
-    return () => { disposed = true; };
   }, [stage.stage_number]);
 
   useEffect(() => {
@@ -963,12 +966,22 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
   const [records, setRecords] = useState<SelfTestRecord[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState<"deterministic-seven-stage" | "real-backend-micro">();
+  const [active, setActive] = useState<SelfTestRecord>();
+  const [selectedStage, setSelectedStage] = useState(1);
+  const [stageJobId, setStageJobId] = useState("");
 
   async function refresh() {
     try {
-      setRecords(await api.selfTests());
+      const latest = await api.selfTests();
+      setRecords(latest);
+      if (active) {
+        const updated = latest.find((item) => item.self_test_id === active.self_test_id);
+        if (updated) setActive(updated);
+      }
+      return latest;
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "无法读取自检历史");
+      return [];
     }
   }
   useEffect(() => {
@@ -985,6 +998,10 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
     try {
       const record = await api.runSelfTest(mode);
       setStatus(record.message);
+      if (mode === "real-backend-micro") {
+        setActive(record);
+        setSelectedStage(record.next_stage || 1);
+      }
       await refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "开发者自检失败");
@@ -992,6 +1009,89 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
       setBusy(undefined);
     }
   }
+
+  useEffect(() => {
+    if (!stageJobId) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const job = await api.job(stageJobId);
+        if (disposed) return;
+        if (job.status === "queued" || job.status === "running") {
+          setStatus(
+            job.status === "queued"
+              ? `第${selectedStage}步已排队，正在等待运行资源…`
+              : `第${selectedStage}步正在调用真实后端…`,
+          );
+          timer = window.setTimeout(() => void poll(), 1200);
+          return;
+        }
+        setStageJobId("");
+        const latest = await refresh();
+        const updated = latest.find((item) => item.self_test_id === active?.self_test_id);
+        if (updated) {
+          setActive(updated);
+          setSelectedStage(updated.next_stage || updated.current_stage || selectedStage);
+          setStatus(updated.message);
+        } else {
+          setStatus(job.error || `第${selectedStage}步已结束`);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setStageJobId("");
+          setStatus(error instanceof Error ? error.message : "无法读取自检进度");
+        }
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [stageJobId, selectedStage, active?.self_test_id]);
+
+  async function runRealStage() {
+    if (!active) return;
+    const stage = active.next_stage;
+    if (!stage) {
+      setStatus("真实后端七阶段微型自检已经结束。");
+      return;
+    }
+    setSelectedStage(stage);
+    setStatus(`正在启动第${stage}步真实后端自检…`);
+    try {
+      const outcome = await api.runSelfTestStage(active.self_test_id, stage);
+      setActive(outcome.record);
+      if (outcome.job) {
+        setStageJobId(outcome.job.job_id);
+      } else {
+        setSelectedStage(outcome.record.next_stage || stage);
+        setStatus(outcome.record.message);
+        await refresh();
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "真实后端自检启动失败");
+    }
+  }
+
+  const selfTestStates = active
+    ? Array.from({ length: 7 }, (_, index) => {
+        const number = index + 1;
+        const value = active.stage_statuses[`stage${String(number).padStart(2, "0")}`];
+        return value === "passed"
+          ? "succeeded"
+          : value === "running"
+            ? "running"
+            : value === "scientific-stop"
+              ? "scientific-stop"
+              : value === "operational-failed"
+                ? "operational-failed"
+                : active.next_stage === number
+                  ? "ready"
+                  : "not-reached";
+      })
+    : [];
 
   return (
     <div className="developer-smoke-page">
@@ -1029,17 +1129,107 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
           <button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={() => void run("real-backend-micro")}>
             {busy === "real-backend-micro" ? "正在登记…" : "准备真实后端自检"}
           </button>
-          <small>当前按钮只建立待运行记录；完成固定 fixture 和资源预检后才允许启动重型工具。</small>
+          <small>准备完成后会出现七步滑动工作区；每一步都由你明确点击，采用极小真实预算。</small>
         </article>
       </div>
       {status && <div className="form-status">{status}</div>}
+      {active && active.mode === "real-backend-micro" && (
+        <section className="panel real-self-test-workspace">
+          <div className="panel-heading">
+            <div>
+              <p className="section-label">固定非 APOE 案例 · 1UBQ</p>
+              <h3>真实后端逐阶段微型自检</h3>
+              <p>第1–5步运行真实流程；第6、7步各执行一次真实 adapter 探针。</p>
+            </div>
+            <span>{active.status}</span>
+          </div>
+          <div className="stage-rail self-test-stage-rail" aria-label="真实后端七阶段自检">
+            {selfTestStates.map((stageState, index) => {
+              const stage = index + 1;
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  className={`stage-node ${selectedStage === stage ? "selected" : ""}`}
+                  onClick={() => setSelectedStage(stage)}
+                >
+                  <span className={`stage-orb state-${stageState}`}>{String(stage).padStart(2, "0")}</span>
+                  <span className="stage-name">{stageShortNames[index]}</span>
+                  <span className="stage-mini-state">
+                    {stageState === "succeeded"
+                      ? "已通过"
+                      : stageState === "running"
+                        ? "正在运行"
+                        : stageState === "scientific-stop"
+                          ? "科学停止"
+                          : stageState === "operational-failed"
+                            ? "后端失败"
+                            : stageState === "ready"
+                              ? "可以开始"
+                              : "尚未开始"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="self-test-stage-detail">
+            <div>
+              <p className="section-label">第{selectedStage}步</p>
+              <h3>{stageNames[selectedStage - 1]}</h3>
+              <p>
+                {selectedStage <= 5
+                  ? "使用一个区域、一个 VHH 骨架和极小候选预算调用真实后端。"
+                  : "只执行一个真实 adapter probe，不启动 1,000 或 50,000 规模任务。"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={
+                Boolean(stageJobId)
+                || active.status === "blocked"
+                || active.next_stage !== selectedStage
+              }
+              onClick={() => void runRealStage()}
+            >
+              {stageJobId
+                ? `第${selectedStage}步正在运行…`
+                : active.next_stage === selectedStage
+                  ? `运行第${selectedStage}步`
+                  : selfTestStates[selectedStage - 1] === "succeeded"
+                    ? "本步骤已通过"
+                    : "请先完成前一步"}
+            </button>
+          </div>
+          {active.status === "blocked" && (
+            <div className="inline-notice execution-warning">
+              请先进入“设置 → 安装与环境”，完成所有环境、许可和模型资产。
+            </div>
+          )}
+          {stageJobId && (
+            <div className="stage-continuation-progress" role="progressbar" aria-label="真实后端自检正在运行">
+              <span />
+            </div>
+          )}
+        </section>
+      )}
       <section className="panel self-test-history">
         <div className="panel-heading">
           <div><p className="section-label">设置中的独立历史</p><h3>最近自检</h3></div>
           <span>{records.length} 条</span>
         </div>
         {records.map((record) => (
-          <div className="self-test-record" key={record.self_test_id}>
+          <button
+            type="button"
+            className="self-test-record"
+            key={record.self_test_id}
+            onClick={() => {
+              if (record.mode === "real-backend-micro") {
+                setActive(record);
+                setSelectedStage(record.next_stage || record.current_stage || 1);
+              }
+            }}
+          >
             <div>
               <strong>{record.mode === "deterministic-seven-stage" ? "快速确定性七步自检" : "真实后端微型自检"}</strong>
               <small>{formatTime(record.updated_at)} · {record.self_test_id}</small>
@@ -1050,7 +1240,7 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
               <span>后端：{record.backend_status}</span>
               <span>科学：{record.scientific_status}</span>
             </div>
-          </div>
+          </button>
         ))}
         {!records.length && <div className="empty-state"><strong>还没有自检记录</strong><span>快速自检通常在数秒内完成。</span></div>}
       </section>
@@ -1886,6 +2076,8 @@ function OperationsPage({
   const [hotspotYaml, setHotspotYaml] = useState("");
   const [catalog, setCatalog] = useState<ProjectCatalogEntry[]>([]);
   const [selfTests, setSelfTests] = useState<SelfTestRecord[]>([]);
+  const [installStatus, setInstallStatus] = useState<InstallStatus>();
+  const [acceptedLicenses, setAcceptedLicenses] = useState<string[]>([]);
   const runs = projects.flatMap((project) => project.runs);
   const approvals = runs.flatMap((run) =>
     run.stages
@@ -1917,7 +2109,18 @@ function OperationsPage({
     if (type !== "environment") return;
     api.projectCatalog().then((value) => setCatalog(value.entries)).catch(() => setCatalog([]));
     api.selfTests().then(setSelfTests).catch(() => setSelfTests([]));
+    api.installStatus().then(setInstallStatus).catch(() => setInstallStatus(undefined));
   }, [type]);
+  useEffect(() => {
+    if (
+      type !== "environment"
+      || !installStatus?.jobs.some((job) => job.status === "running")
+    ) return;
+    const timer = window.setInterval(() => {
+      api.installStatus().then(setInstallStatus).catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [installStatus?.jobs, type]);
 
   if (type === "decisions") {
     async function approvePending() {
@@ -1949,6 +2152,19 @@ function OperationsPage({
     return <div className="utility-page"><header className="page-heading compact"><div><p className="eyebrow">DECISION AUTHORITY</p><h1>待审批</h1><p>身份、结构、hotspot 与高成本预算均保留人工 authority。</p></div></header><section className="panel utility-panel">{approvals.length ? <>{approvals.map(({ run, stage }) => <div className="utility-row" key={`${run.run_key}-${stage.stage_number}`}><div><strong>{run.project_id} · Stage {stage.stage_number}</strong><small>{stage.summary}</small></div><Status state={stage.state} /></div>)}{decision && <div className="decision-form"><p>{String(decision.message || "请选择经过验证的 option")}</p><div className="option-list">{(options || []).map((option) => <label key={String(option.option_id)} className={option.eligible === false ? "ineligible" : ""}><input type="radio" name="decision-option" value={String(option.option_id)} checked={selectedOption === String(option.option_id)} disabled={option.eligible === false} onChange={(event) => setSelectedOption(event.target.value)} /><span><strong>{String(option.label)}</strong><small>{String(option.description || "")}</small></span></label>)}</div><div className="two-field-row"><label><span>批准人</span><input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="真实姓名或稳定 ID" /></label><button className="primary-button" onClick={approvePending} disabled={!selectedOption || !approvedBy.trim()}>确认并继续</button></div></div>}{hotspotYaml && <div className="decision-form"><p>Stage 02 Hotspot 审批文件</p><textarea aria-label="Hotspot approval YAML" value={hotspotYaml} onChange={(event) => setHotspotYaml(event.target.value)} /><button className="primary-button" onClick={approveHotspotPending}>验证并批准 hotspots.yaml</button></div>}{message && <div className="form-status">{message}</div>}</> : <div className="empty-state"><strong>当前没有待审批事项</strong><span>审批不会被 UI 自动跳过。</span></div>}</section></div>;
   }
   if (type === "environment") {
+    async function refreshInstallStatus() {
+      setInstallStatus(await api.installStatus());
+    }
+    async function launchSetup(minimal: boolean) {
+      setMessage(minimal ? "正在启动 core/UI 安装…" : "正在启动完整仓库内安装…");
+      try {
+        const result = await api.launchSetup(minimal, acceptedLicenses);
+        setMessage(`安装任务 ${result.job_id} 已启动；状态会从结构化注册表更新。`);
+        await refreshInstallStatus();
+      } catch (value) {
+        setMessage(value instanceof Error ? value.message : "安装任务启动失败");
+      }
+    }
     async function diagnose() {
       setMessage("正在检查当前配置需要的运行工具…");
       try {
@@ -1976,8 +2192,78 @@ function OperationsPage({
     }
     const archiveEntries = catalog.filter((entry) => entry.category === "archived-project-run");
     const activeEntries = catalog.filter((entry) => entry.category === "project-run");
+    const installLabel = (status: string) => ({
+      "not-installed": "未安装",
+      available: "可用",
+      failed: "失败",
+      "awaiting-approval": "待许可确认",
+      "unsupported-platform": "当前平台不支持",
+      running: "安装中",
+      succeeded: "已完成",
+      incomplete: "未完整完成",
+      "finished-before-ui-restart": "已结束，请核对注册表",
+    }[status] || status);
     return <div className="utility-page">
       <header className="page-heading compact"><div><p className="section-label">设置</p><h1>运行环境</h1><p>检查 Protenix、BoltzGen、PyMOL、ScanNet、TNP、GPU 和模型是否满足所选任务。</p></div></header>
+      <section className="panel install-center">
+        <div className="panel-heading">
+          <div><p className="section-label">仓库内自包含运行工作区</p><h3>安装与环境</h3></div>
+          <span>{installStatus?.workspace || "正在读取工作区"}</span>
+        </div>
+        <p className="install-note">环境、模型、缓存和安装日志只写入当前 EasyDesign 仓库的 runtime/。系统代理、Shell 配置、Git 全局配置和 base Conda 不会被修改。</p>
+        {installStatus?.plan && <div className={`disk-preflight ${installStatus.plan.disk.sufficient ? "available" : "failed"}`}>
+          <strong>{installStatus.plan.disk.sufficient ? "工作区磁盘满足完整安装要求" : "工作区磁盘不足，完整安装会在写入前停止"}</strong>
+          <span>
+            可用 {humanBytes(installStatus.plan.disk.free_bytes)}
+            {" · "}增量峰值约 {humanBytes(installStatus.plan.disk.incremental_peak_bytes)}
+            {" · "}安全保留 {humanBytes(installStatus.plan.disk.reserve_bytes)}
+          </span>
+        </div>}
+        <div className="install-actions">
+          <button type="button" onClick={() => void launchSetup(true)}>仅安装 core 与界面</button>
+          <button className="primary-button" type="button" onClick={() => void launchSetup(false)}>安装全部已确认组件</button>
+          <button type="button" onClick={() => void refreshInstallStatus()}>刷新状态</button>
+        </div>
+        <div className="install-grid">
+          <div>
+            <h4>运行环境</h4>
+            {(installStatus?.environments || []).map((item) => <div className="install-row" key={item.environment_id}>
+              <strong>{item.environment_id}</strong>
+              <span data-status={item.status}>{installLabel(item.status)}</span>
+            </div>)}
+          </div>
+          <div>
+            <h4>模型与运行资产</h4>
+            {(installStatus?.assets || []).map((item) => {
+              const id = item.asset_id || "";
+              const checked = acceptedLicenses.includes(id);
+              return <div className="install-row asset" key={id}>
+                <label>
+                  {item.license_confirmation_required && <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => setAcceptedLicenses((current) =>
+                      event.target.checked
+                        ? [...new Set([...current, id])]
+                        : current.filter((value) => value !== id),
+                    )}
+                  />}
+                  <span><strong>{id}</strong><small>{item.license || "未声明许可"}</small></span>
+                </label>
+                <span data-status={item.status}>{installLabel(item.status)}</span>
+              </div>;
+            })}
+          </div>
+        </div>
+        {!!installStatus?.jobs.length && <div className="setup-jobs">
+          <h4>最近安装任务</h4>
+          {installStatus.jobs.slice(0, 4).map((job) => <div className="install-row" key={job.job_id}>
+            <span><strong>{job.job_id}</strong><small>{formatTime(job.started_at)}</small></span>
+            <span data-status={job.status}>{installLabel(job.status)}</span>
+          </div>)}
+        </div>}
+        <div className="quarantine-summary">隔离区：{installStatus?.quarantine.entries || 0} 项。EasyDesign 不会自动清理；任何清理都需要对精确路径另行批准。</div>
+      </section>
       <section className="panel utility-panel"><div className="two-field-row"><label><span>选择一个项目配置</span><select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}><option value="">请选择项目</option>{editableProjects.map((project) => <option key={project}>{project}</option>)}</select></label><button className="primary-button" onClick={diagnose} disabled={!selectedProject}>检查运行环境</button></div>{!editableProjects.length && <div className="notice"><strong>当前没有可编辑项目</strong><span>你仍可查看已有运行；新建项目后才能按配置检查环境。</span></div>}{message && <div className="form-status">{message}</div>}{diagnostic && <pre className="audit-json">{JSON.stringify(diagnostic, null, 2)}</pre>}</section>
       <section className="panel settings-catalog">
         <div className="panel-heading"><div><p className="section-label">可恢复项目目录</p><h3>活跃项目与归档项目</h3></div><span>{activeEntries.length} 个活跃 · {archiveEntries.length} 个归档</span></div>
@@ -2015,9 +2301,9 @@ function App() {
   }
 
   async function openCompletedRun(runKey: string, destinationStage?: number) {
-    await refreshProjects();
     const completedRun = await api.run(runKey);
     openRun(completedRun, destinationStage);
+    await refreshProjects();
   }
 
   useEffect(() => {
@@ -2083,7 +2369,18 @@ function App() {
             />
           ) :
           page === "tasks" ? <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} /> :
-          page === "run" && selectedRun ? <RunWorkspace run={selectedRun} initialStage={selectedRunStage} onReplay={startReplay} onClone={cloneSelectedRun} onResume={resumeSelectedRun} onOpenRun={openCompletedRun} replay={replay} /> :
+          page === "run" && selectedRun ? (
+            <RunWorkspace
+              key={`${selectedRun.run_key}-${selectedRunStage ?? "latest"}`}
+              run={selectedRun}
+              initialStage={selectedRunStage}
+              onReplay={startReplay}
+              onClone={cloneSelectedRun}
+              onResume={resumeSelectedRun}
+              onOpenRun={openCompletedRun}
+              replay={replay}
+            />
+          ) :
           page === "settings" ? <OperationsPage type="environment" projects={data.projects} editableProjects={data.editable_projects} selectedRun={selectedRun} /> :
           <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} />}
       </main>

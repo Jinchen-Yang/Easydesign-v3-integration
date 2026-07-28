@@ -11,7 +11,11 @@ export default defineConfig({
   snapshotPathTemplate:
     "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
   timeout: 30_000,
+  expect: {
+    timeout: 15_000,
+  },
   fullyParallel: false,
+  workers: 2,
   retries: 0,
   grepInvert: skipVisualRegression ? /approved visual hierarchy/ : undefined,
   reporter: "line",

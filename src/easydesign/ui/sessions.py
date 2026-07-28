@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
 
-from easydesign.core import ConfigurationError, dump_model, load_model
+from easydesign.core import ConfigurationError, dump_model
 from easydesign.core.hashing import sha256_file
+from easydesign.orchestration.task_tracking import (
+    atomic_dump_runtime_model,
+    load_latest_runtime_model,
+)
 
 from .models import DesignConfigRevision, DesignSession
 
@@ -64,33 +66,18 @@ class DesignSessionStore:
         path = self._path(session_id)
         if not path.is_file():
             raise ConfigurationError(f"产品会话不存在: {session_id}")
-        return load_model(path, DesignSession)
+        return load_latest_runtime_model(path, DesignSession)
 
     def list(self) -> tuple[DesignSession, ...]:
         sessions = (
-            load_model(path, DesignSession) for path in self.root.glob("session-*/session.json")
+            load_latest_runtime_model(path, DesignSession)
+            for path in self.root.glob("session-*/session.json")
         )
         return tuple(sorted(sessions, key=lambda item: item.updated_at, reverse=True))
 
     def _replace(self, value: DesignSession) -> None:
         path = self._path(value.session_id)
-        temporary: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                prefix=".session.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
-            temporary.unlink()
-            dump_model(value, temporary)
-            os.replace(temporary, path)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        atomic_dump_runtime_model(value, path)
 
     def add_config_revision(
         self,

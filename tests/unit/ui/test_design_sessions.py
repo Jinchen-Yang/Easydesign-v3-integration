@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from easydesign.core import (
@@ -36,6 +37,24 @@ from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.ui import create_ui_app
 from easydesign.ui.models import UiJobRecord
 from easydesign.ui.sessions import DesignSessionStore
+
+
+@pytest.fixture(autouse=True)
+def _declare_test_workspace(tmp_path: Path) -> None:
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "workspace_id: test-workspace",
+                "runtime_root: runtime",
+                "projects_root: projects",
+                "runs_root: runs",
+                "archives_root: archives",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
 
 
 def _publish_stage01_success(run_root: Path, initial_manifest: Path) -> None:
@@ -156,7 +175,7 @@ def test_ui_continuation_uses_completed_stage_prefix_after_stage03(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     service = app.state.easydesign
     session = service.sessions.create(
@@ -218,7 +237,7 @@ def test_deterministic_self_test_completes_seven_stages_and_stays_hidden(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     with TestClient(app) as client:
         response = client.post(
@@ -238,13 +257,37 @@ def test_deterministic_self_test_completes_seven_stages_and_stays_hidden(
         assert catalog[0]["category"] == "developer-smoke-run"
 
 
+def test_real_backend_self_test_blocks_before_creating_fake_run(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/self-tests",
+            json={"mode": "real-backend-micro", "confirmed": True},
+        )
+
+    assert response.status_code == 200
+    record = response.json()
+    assert record["status"] == "blocked"
+    assert record["backend_status"] == "not-ready"
+    assert record["fixture_asset_id"] == "validation-1ubq-cif"
+    assert record["stage_statuses"] == {}
+    assert not (tmp_path / "runs" / "run-index.json").exists()
+
+
 def test_project_archive_and_restore_move_index_paths_without_changing_run(
     tmp_path: Path,
 ) -> None:
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     with TestClient(app) as client:
         record = client.post(
@@ -616,7 +659,7 @@ def test_region_editor_keeps_source_color_and_current_region_as_separate_layers(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     run_key = app.state.easydesign.registry.register(run_root)
     with TestClient(app) as client:

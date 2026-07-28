@@ -30,6 +30,7 @@ from easydesign.orchestration import (
     select_project_primary_run,
     upsert_run_index_entries,
 )
+from easydesign.safe_writes import read_last_text_line
 from easydesign.ui import (
     UiRunRegistry,
     create_demo_replay,
@@ -42,6 +43,24 @@ from easydesign.ui import (
 from easydesign.ui.security import ArtifactTokenSigner
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _declare_test_workspace(tmp_path: Path) -> None:
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "workspace_id: test-workspace",
+                "runtime_root: runtime",
+                "projects_root: projects",
+                "runs_root: runs",
+                "archives_root: archives",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
 
 
 def _write_json(root: Path, relative: str, value: object) -> None:
@@ -391,9 +410,7 @@ def test_project_primary_run_is_explicit_and_does_not_follow_newest_branch(
     primary_root = _audited_run(tmp_path)
     newer_root = tmp_path / "runs" / "target-alpha" / "run-newer-stage02"
     shutil.copytree(primary_root, newer_root)
-    latest_name = (newer_root / "manifests" / "LATEST").read_text(
-        encoding="utf-8"
-    ).strip()
+    latest_name = read_last_text_line(newer_root / "manifests" / "LATEST")
     newer_manifest = load_model(newer_root / "manifests" / latest_name, RunManifest)
     newer_manifest_name = "run-manifest-0002.json"
     dump_model(
@@ -573,7 +590,7 @@ def test_live_execution_projection_uses_structured_runtime_state(
         }
     )
     manifest_path = run_root / "manifests" / "run-manifest-0001.json"
-    manifest_path.unlink()
+    manifest_path.rename(manifest_path.with_name(f"{manifest_path.name}.missing"))
     dump_model(active, manifest_path)
     runtime = run_root / "04-pilot-generation" / "attempt-0001" / "runtime"
     _write_json(
@@ -662,7 +679,7 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     service = app.state.easydesign
     projection = get_run_projection(
@@ -790,7 +807,7 @@ def test_gateway_registers_verified_runs_before_first_project_request(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
 
     with TestClient(app) as client:
@@ -806,7 +823,7 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     content = b">target\nACDEFGHIKLMNPQRSTVWY\n"
     with TestClient(app) as client:
@@ -868,7 +885,7 @@ def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
     content = b"fixture-pse-binary\\x00\\x01\\x02"
 
@@ -923,7 +940,7 @@ def test_gateway_lists_only_profile_declared_remote_executor_ids(
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
-        job_root=tmp_path / "jobs",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
     )
 
     with TestClient(app) as client:

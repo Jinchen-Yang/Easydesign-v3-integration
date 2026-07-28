@@ -149,10 +149,55 @@ export interface SelfTestRecord {
   scientific_status: string;
   stage_statuses: Record<string, string>;
   run_key?: string;
+  run_relative_path?: string;
+  current_stage: number;
+  next_stage?: number;
+  active_job_id?: string;
+  config_relative_path?: string;
+  fixture_asset_id?: string;
   environment: Record<string, string>;
   created_at: string;
   updated_at: string;
   message: string;
+}
+
+export interface RuntimeInstallItem {
+  environment_id?: string;
+  asset_id?: string;
+  status: string;
+  license?: string;
+  license_confirmation_required?: boolean;
+  destination?: string;
+  current?: Record<string, unknown>;
+}
+
+export interface SetupJob {
+  job_id: string;
+  status: string;
+  pid: number;
+  started_at: string;
+  minimal: boolean;
+  accepted_license_ids: string[];
+  return_code?: number;
+}
+
+export interface InstallStatus {
+  workspace: string;
+  plan: {
+    disk: {
+      free_bytes: number;
+      incremental_peak_bytes: number;
+      reserve_bytes: number;
+      sufficient: boolean;
+    };
+  };
+  environments: RuntimeInstallItem[];
+  assets: RuntimeInstallItem[];
+  jobs: SetupJob[];
+  quarantine: {
+    path: string;
+    entries: number;
+  };
 }
 
 export interface ReplayFrame {

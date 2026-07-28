@@ -4,6 +4,7 @@ import type {
   DesignSession,
   ExecutionProgress,
   FilterOverview,
+  InstallStatus,
   MetricPresentation,
   ProjectResponse,
   ProjectCatalogEntry,
@@ -31,6 +32,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  installStatus: () => request<InstallStatus>("/api/v1/install/status"),
+  launchSetup: (minimal: boolean, acceptedLicenseIds: string[]) =>
+    request<{ job_id: string; status: string; pid: number }>("/api/v1/install/setup", {
+      method: "POST",
+      body: JSON.stringify({
+        minimal,
+        accepted_license_ids: acceptedLicenseIds,
+        confirmed: true,
+      }),
+    }),
   projects: () => request<ProjectResponse>("/api/v1/projects"),
   projectCatalog: () =>
     request<{ entries: ProjectCatalogEntry[] }>(
@@ -53,6 +64,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ mode, confirmed: true }),
     }),
+  runSelfTestStage: (selfTestId: string, stage: number) =>
+    request<{ record: SelfTestRecord; job: UiJobRecord | null }>(
+      `/api/v1/self-tests/${encodeURIComponent(selfTestId)}/stages/${stage}/run`,
+      {
+        method: "POST",
+        body: JSON.stringify({ stage_number: stage, confirmed: true }),
+      },
+    ),
   createDesignSession: (
     projectId: string,
     designMode: DesignSession["design_mode"],

@@ -16,6 +16,7 @@ from easydesign.orchestration.application import (
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 
 from .models import UiJobRecord
+from .selftest import SelfTestStore
 from .sessions import DesignSessionStore
 
 
@@ -32,6 +33,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id")
     parser.add_argument("--continue-after-stage", type=int)
     parser.add_argument("--session-root", type=Path)
+    parser.add_argument("--self-test-root", type=Path)
+    parser.add_argument("--self-test-runs-root", type=Path)
     return parser
 
 
@@ -87,6 +90,23 @@ def main() -> int:
                 status=str(getattr(status, "value", status)),
                 stage_number=record.stage_number,
             )
+        if (
+            record.self_test_id is not None
+            and record.stage_number is not None
+            and arguments.self_test_root is not None
+            and arguments.self_test_runs_root is not None
+        ):
+            SelfTestStore(
+                arguments.self_test_root,
+                arguments.self_test_runs_root,
+                profile_path=arguments.profile,
+            ).mark_job_finished(
+                record.self_test_id,
+                stage_number=record.stage_number,
+                status=str(getattr(status, "value", status)),
+                run_key=run_key,
+                run_root=outcome.run_root if arguments.operation == "run" else arguments.run_root,
+            )
         updated = record.model_copy(
             update={
                 "status": status,
@@ -98,6 +118,24 @@ def main() -> int:
         atomic_dump_runtime_model(updated, arguments.job_record)
         return 0
     except Exception as error:
+        if (
+            record.self_test_id is not None
+            and record.stage_number is not None
+            and arguments.self_test_root is not None
+            and arguments.self_test_runs_root is not None
+        ):
+            SelfTestStore(
+                arguments.self_test_root,
+                arguments.self_test_runs_root,
+                profile_path=arguments.profile,
+            ).mark_job_finished(
+                record.self_test_id,
+                stage_number=record.stage_number,
+                status="operational-failed",
+                run_key=None,
+                run_root=arguments.run_root,
+                error=str(error)[:4096] or error.__class__.__name__,
+            )
         failed = record.model_copy(
             update={
                 "status": "operational-failed",

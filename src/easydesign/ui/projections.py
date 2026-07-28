@@ -21,6 +21,8 @@ from easydesign.core import (
     load_model,
 )
 from easydesign.orchestration import RunIndex, list_runs
+from easydesign.orchestration.task_tracking import load_latest_runtime_model
+from easydesign.safe_writes import read_last_text_line
 
 from .models import (
     ArtifactProjection,
@@ -67,7 +69,7 @@ STAGE_CAPABILITIES = (
 def _latest_run_manifest(run_root: Path) -> tuple[RunManifest, Path]:
     pointer = run_root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 RunManifest LATEST: {pointer}") from error
     path = run_root / "manifests" / name
@@ -431,7 +433,10 @@ def get_project_projection(
             reverse=True,
         )
     )
-    index = load_model(registry.runs_root / "run-index.json", RunIndex)
+    index = load_latest_runtime_model(
+        registry.runs_root / "run-index.json",
+        RunIndex,
+    )
     primary_entries = [
         entry
         for entry in index.entries

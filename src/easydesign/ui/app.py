@@ -7,7 +7,8 @@ import base64
 import hashlib
 import json
 import mimetypes
-import tempfile
+import os
+import subprocess
 import threading
 import webbrowser
 from collections.abc import AsyncIterator
@@ -55,7 +56,15 @@ from easydesign.orchestration import (
     validate_run_configuration,
 )
 from easydesign.orchestration.decisions import approve_decision, show_decision
+from easydesign.orchestration.runtime_setup import (
+    asset_status,
+    environment_status,
+    initialize_workspace_metadata,
+    setup_plan,
+)
+from easydesign.safe_writes import quarantine_if_workspace_path, read_last_text_line
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
+from easydesign.workspace_context import WorkspaceContext
 
 from .execution import get_execution_progress
 from .jobs import UiJobController, clone_run_configuration
@@ -163,6 +172,21 @@ class SelfTestRequest(BaseModel):
     confirmed: bool = False
 
 
+class SelfTestStageRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage_number: int = Field(ge=1, le=7)
+    confirmed: bool = False
+
+
+class SetupLaunchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    minimal: bool = False
+    accepted_license_ids: list[str] = Field(default_factory=list)
+    confirmed: bool = False
+
+
 class ConfigUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -231,20 +255,43 @@ class UiServiceState:
         profile_path: Path | None,
         job_root: Path | None,
     ) -> None:
-        self.registry = UiRunRegistry(runs_root)
-        self.signer = ArtifactTokenSigner()
-        self.projects_root = projects_root.expanduser().resolve()
-        self.projects_root.mkdir(parents=True, exist_ok=True)
-        self.profile_path = None if profile_path is None else profile_path.expanduser().resolve()
-        self.jobs = UiJobController(job_root)
-        self.sessions = DesignSessionStore(self.projects_root / ".design-sessions")
-        self.self_tests = SelfTestStore(
-            self.projects_root / ".self-tests",
-            self.registry.runs_root,
+        self.workspace = WorkspaceContext.discover(runs_root)
+        initialize_workspace_metadata(self.workspace)
+        self.registry = UiRunRegistry(
+            self.workspace.require_write_path(runs_root, purpose="UI runs root")
         )
-        self.upload_root = self.projects_root / ".ui-uploads"
+        self.signer = ArtifactTokenSigner()
+        self.projects_root = self.workspace.require_write_path(
+            projects_root,
+            purpose="UI projects root",
+        )
+        self.projects_root.mkdir(parents=True, exist_ok=True)
+        selected_profile = self.workspace.profile_path if profile_path is None else profile_path
+        self.profile_path = self.workspace.require_write_path(
+            selected_profile,
+            purpose="UI runtime profile",
+        )
+        selected_jobs = self.workspace.ui_job_root if job_root is None else job_root
+        self.jobs = UiJobController(
+            self.workspace.require_write_path(selected_jobs, purpose="UI job root")
+        )
+        self.ui_state_root = self.workspace.runtime_root / "state" / "ui"
+        self.ui_state_root.mkdir(parents=True, exist_ok=True)
+        self.sessions = DesignSessionStore(self.ui_state_root / "design-sessions")
+        self.self_tests = SelfTestStore(
+            self.ui_state_root / "self-tests",
+            self.registry.runs_root,
+            workspace=self.workspace,
+            profile_path=self.profile_path,
+        )
+        self.upload_root = self.workspace.runtime_root / "tmp" / "ui-uploads"
         self.upload_root.mkdir(parents=True, exist_ok=True)
+        self.temporary_root = self.workspace.runtime_root / "tmp" / "ui"
+        self.temporary_root.mkdir(parents=True, exist_ok=True)
         self.uploads: dict[str, Path] = {}
+        self.setup_job_root = self.workspace.runtime_root / "state" / "setup-jobs"
+        self.setup_job_root.mkdir(parents=True, exist_ok=True)
+        self.setup_processes: dict[str, subprocess.Popen[bytes]] = {}
 
     def project_config(self, project_id: str) -> Path:
         root = (self.projects_root / project_id).resolve()
@@ -252,24 +299,144 @@ class UiServiceState:
             root.relative_to(self.projects_root)
         except ValueError as error:
             raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        pointer = root / "CONFIG_CURRENT"
         path = root / "easydesign.yaml"
+        if pointer.is_file():
+            selected = Path(read_last_text_line(pointer))
+            if selected.is_absolute():
+                raise PathPolicyError("CONFIG_CURRENT 必须保存项目内相对路径")
+            path = (root / selected).resolve()
+            try:
+                path.relative_to(root)
+            except ValueError as error:
+                raise PathPolicyError("CONFIG_CURRENT 逃出项目目录") from error
         if not path.is_file():
             raise ConfigurationError(f"项目配置不存在: {project_id}")
         return path
 
+    def publish_project_config(self, project_id: str, yaml_text: str) -> Path:
+        root = (self.projects_root / project_id).resolve()
+        try:
+            root.relative_to(self.projects_root)
+        except ValueError as error:
+            raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        revisions = root / "config-revisions"
+        revisions.mkdir(parents=True, exist_ok=True)
+        existing = sorted(revisions.glob("easydesign.rev-*.yaml"))
+        revision = len(existing) + 1
+        destination = revisions / f"easydesign.rev-{revision:06d}.yaml"
+        with destination.open("x", encoding="utf-8") as handle:
+            handle.write(yaml_text)
+            if not yaml_text.endswith("\n"):
+                handle.write("\n")
+        self.activate_project_config(project_id, destination)
+        return destination
+
+    def activate_project_config(self, project_id: str, config_path: Path) -> None:
+        root = (self.projects_root / project_id).resolve()
+        selected = config_path.resolve()
+        try:
+            relative = selected.relative_to(root)
+        except ValueError as error:
+            raise PathPolicyError("项目配置必须位于对应项目目录内") from error
+        if not selected.is_file():
+            raise ConfigurationError("准备激活的项目配置不存在")
+        with (root / "CONFIG_CURRENT").open("a", encoding="utf-8") as handle:
+            handle.write(f"{relative.as_posix()}\n")
+
+    def temporary_file(self, *, prefix: str, suffix: str) -> Path:
+        return self.temporary_root / f"{prefix}-{uuid4().hex}{suffix}"
+
     def projects(self) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                path.parent.name
-                for path in self.projects_root.glob("*/easydesign.yaml")
-                if path.is_file()
-            )
-        )
+        values: list[str] = []
+        for root in self.projects_root.iterdir():
+            if not root.is_dir():
+                continue
+            if (root / "easydesign.yaml").is_file() or (root / "CONFIG_CURRENT").is_file():
+                values.append(root.name)
+        return tuple(sorted(values))
 
     def discover_runs(self) -> None:
         for summary in list_runs(self.registry.runs_root):
             if summary.integrity_status == "verified":
                 self.registry.register(summary.path)
+
+    def launch_setup(
+        self,
+        *,
+        minimal: bool,
+        accepted_license_ids: tuple[str, ...],
+    ) -> dict[str, Any]:
+        job_id = f"setup-{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:10]}"
+        job_root = self.setup_job_root / job_id
+        job_root.mkdir()
+        command = [str(self.workspace.root / "easydesign"), "setup"]
+        if minimal:
+            command.append("--minimal")
+        for asset_id in accepted_license_ids:
+            command.extend(("--accept-license", asset_id))
+        stdout_path = self.workspace.runtime_root / "logs" / f"{job_id}.stdout.log"
+        stderr_path = self.workspace.runtime_root / "logs" / f"{job_id}.stderr.log"
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        with (
+            stdout_path.open("xb") as stdout,
+            stderr_path.open("xb") as stderr,
+        ):
+            process = subprocess.Popen(
+                command,
+                cwd=self.workspace.root,
+                env={**os.environ, **self.workspace.child_environment()},
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                shell=False,
+                start_new_session=True,
+            )
+        request_path = job_root / "request.json"
+        with request_path.open("x", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "schema_version": "0.1",
+                    "job_id": job_id,
+                    "command": command,
+                    "minimal": minimal,
+                    "accepted_license_ids": list(accepted_license_ids),
+                    "pid": process.pid,
+                    "started_at": datetime.now(tz=UTC).isoformat(),
+                    "stdout": stdout_path.relative_to(self.workspace.root).as_posix(),
+                    "stderr": stderr_path.relative_to(self.workspace.root).as_posix(),
+                },
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+            handle.write("\n")
+        self.setup_processes[job_id] = process
+        return {"job_id": job_id, "status": "running", "pid": process.pid}
+
+    def setup_jobs(self) -> list[dict[str, Any]]:
+        jobs: list[dict[str, Any]] = []
+        for request_path in sorted(self.setup_job_root.glob("*/request.json"), reverse=True):
+            payload = json.loads(request_path.read_text(encoding="utf-8"))
+            job_id = str(payload["job_id"])
+            process = self.setup_processes.get(job_id)
+            if process is not None:
+                return_code = process.poll()
+                status = (
+                    "running"
+                    if return_code is None
+                    else ("succeeded" if return_code == 0 else "incomplete")
+                )
+            else:
+                return_code = None
+                try:
+                    os.kill(int(payload["pid"]), 0)
+                except (OSError, ValueError):
+                    status = "finished-before-ui-restart"
+                else:
+                    status = "running"
+            jobs.append({**payload, "status": status, "return_code": return_code})
+        return jobs
 
 
 def _state(request: Request) -> UiServiceState:
@@ -353,6 +520,45 @@ def create_ui_app(
             "host_policy": "localhost-only",
             "science_source": "manifest-only",
         }
+
+    @app.get("/api/v1/install/plan")
+    def install_plan(request: Request, minimal: bool = False) -> dict[str, Any]:
+        service = _state(request)
+        return setup_plan(service.workspace, minimal=minimal)
+
+    @app.get("/api/v1/install/status")
+    def install_status(request: Request) -> dict[str, Any]:
+        service = _state(request)
+        return {
+            "workspace": str(service.workspace.root),
+            "plan": setup_plan(service.workspace, minimal=False),
+            "environments": environment_status(service.workspace)["environments"],
+            "assets": asset_status(service.workspace)["assets"],
+            "jobs": service.setup_jobs(),
+            "quarantine": {
+                "path": "runtime/quarantine",
+                "entries": len(
+                    tuple(
+                        (
+                            service.workspace.runtime_root / "quarantine"
+                        ).glob("*")
+                    )
+                ),
+            },
+        }
+
+    @app.post("/api/v1/install/setup")
+    def launch_install(
+        payload: SetupLaunchRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        if not payload.confirmed:
+            raise HTTPException(status_code=400, detail="安装必须明确 confirmed=true")
+        return service.launch_setup(
+            minimal=payload.minimal,
+            accepted_license_ids=tuple(payload.accepted_license_ids),
+        )
 
     @app.get("/api/v1/projects")
     def projects(request: Request) -> dict[str, Any]:
@@ -489,17 +695,72 @@ def create_ui_app(
             if payload.mode == "deterministic-seven-stage":
                 return service.self_tests.run_deterministic()
             if payload.mode == "real-backend-micro":
-                return service.self_tests.record_real_backend_plan(
-                    environment={
-                        "profile": (
-                            "default"
-                            if service.profile_path is None
-                            else service.profile_path.name
-                        ),
-                        "execution": "not-started",
-                    }
-                )
+                return service.self_tests.prepare_real_backend()
             raise ConfigurationError("未知的开发者自检模式")
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/self-tests/{self_test_id}/stages/{stage_number}/run")
+    def run_self_test_stage(
+        self_test_id: str,
+        stage_number: int,
+        payload: SelfTestStageRunRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("真实后端自检必须明确 confirmed=true")
+            if payload.stage_number != stage_number:
+                raise ConfigurationError("URL stage 与请求 stage_number 不一致")
+            record = service.self_tests.load(self_test_id)
+            if stage_number in {6, 7}:
+                updated = service.self_tests.run_adapter_probe(
+                    self_test_id,
+                    stage_number=stage_number,
+                )
+                return {"record": updated.model_dump(mode="json"), "job": None}
+            source_run = (
+                None
+                if record.run_relative_path is None
+                else service.self_tests.runs_root / record.run_relative_path
+            )
+            config_path = service.self_tests.stage_config(
+                self_test_id,
+                stage_number=stage_number,
+                source_run_root=source_run,
+            )
+            job = service.jobs.launch(
+                operation="run",
+                config_path=config_path,
+                run_root=source_run,
+                profile_path=service.profile_path,
+                runs_root=service.registry.runs_root,
+                run_id=(
+                    f"{self_test_id}-stage01"
+                    if stage_number == 1
+                    else None
+                ),
+                continue_after_stage=(
+                    None if stage_number == 1 else stage_number - 1
+                ),
+                self_test_id=self_test_id,
+                self_test_root=service.self_tests.root,
+                self_test_runs_root=service.self_tests.runs_root,
+                stage_number=stage_number,
+                confirmed=True,
+            )
+            updated = service.self_tests.mark_job_started(
+                self_test_id,
+                stage_number=stage_number,
+                job_id=job.job_id,
+                config_path=config_path,
+            )
+            return {
+                "record": updated.model_dump(mode="json"),
+                "job": job.model_dump(mode="json"),
+            }
         except Exception as error:
             _raise_http(error)
             raise
@@ -550,15 +811,8 @@ def create_ui_app(
         upload_directory = service.upload_root / token
         upload_directory.mkdir()
         target = upload_directory / filename
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=upload_directory,
-            prefix=".receiving-",
-            delete=False,
-        ) as handle:
+        with target.open("xb") as handle:
             handle.write(content)
-            temporary = Path(handle.name)
-        temporary.replace(target)
         service.uploads[token] = target
         return UploadReceipt(
             upload_token=token,
@@ -588,17 +842,10 @@ def create_ui_app(
         upload_directory = service.upload_root / token
         upload_directory.mkdir()
         target = upload_directory / safe_filename
-        temporary: Path | None = None
         size_bytes = 0
         digest = hashlib.sha256()
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=upload_directory,
-                prefix=".receiving-",
-                delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
+            with target.open("xb") as handle:
                 async for chunk in request.stream():
                     if not chunk:
                         continue
@@ -609,14 +856,12 @@ def create_ui_app(
                     digest.update(chunk)
             if size_bytes == 0:
                 raise HTTPException(status_code=400, detail="不能上传空文件")
-            temporary.replace(target)
         except BaseException:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
-            try:
-                upload_directory.rmdir()
-            except OSError:
-                pass
+            quarantine_if_workspace_path(
+                upload_directory,
+                operation=token,
+                reason="UI 文件接收未完成",
+            )
             raise
         service.uploads[token] = target
         return UploadReceipt(
@@ -697,12 +942,11 @@ def create_ui_app(
             )
             if uploaded_source is not None:
                 service.uploads.pop(source_value, None)
-                try:
-                    uploaded_source.unlink(missing_ok=True)
-                    uploaded_source.parent.rmdir()
-                except OSError:
-                    # 项目已成功创建；临时文件清理失败不能把成功响应改写成失败。
-                    pass
+                quarantine_if_workspace_path(
+                    uploaded_source.parent,
+                    operation=f"consumed-{source_value}",
+                    reason="上传输入已复制进项目，保留原接收证据",
+                )
             return {
                 "project_id": payload.project_id,
                 "config": outcome.config_path.read_text(encoding="utf-8"),
@@ -730,18 +974,27 @@ def create_ui_app(
     ) -> dict[str, Any]:
         service = _state(request)
         try:
-            path = service.project_config(project_id)
-            temporary = path.with_suffix(".ui-validation.yaml")
-            temporary.write_text(payload.yaml_text, encoding="utf-8")
+            operation_id = f"config-validation-{uuid4().hex}"
+            temporary = service.temporary_root / f"{operation_id}.yaml"
+            with temporary.open("x", encoding="utf-8") as handle:
+                handle.write(payload.yaml_text)
             try:
                 plan = validate_run_configuration(
                     temporary,
                     profile_path=service.profile_path,
                 )
             finally:
-                temporary.unlink(missing_ok=True)
-            path.write_text(payload.yaml_text, encoding="utf-8")
-            return {"status": "valid", "plan": plan.model_dump(mode="json")}
+                quarantine_if_workspace_path(
+                    temporary,
+                    operation=operation_id,
+                    reason="UI 配置校验 staging 已终止",
+                )
+            published = service.publish_project_config(project_id, payload.yaml_text)
+            return {
+                "status": "valid",
+                "config_path": published.relative_to(service.projects_root).as_posix(),
+                "plan": plan.model_dump(mode="json"),
+            }
         except Exception as error:
             _raise_http(error)
             raise
@@ -1194,19 +1447,20 @@ def create_ui_app(
                 "approved_by": payload.approved_by,
                 "acknowledgement": payload.acknowledgement,
             }
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
+            approval_path = service.temporary_file(
+                prefix="decision-approval",
                 suffix=".yaml",
-                prefix="easydesign-ui-decision-",
-                delete=False,
-            ) as handle:
+            )
+            with approval_path.open("x", encoding="utf-8") as handle:
                 yaml.safe_dump(approval, handle, allow_unicode=True, sort_keys=False)
-                approval_path = Path(handle.name)
             try:
                 record = approve_decision(root, input_path=approval_path)
             finally:
-                approval_path.unlink(missing_ok=True)
+                quarantine_if_workspace_path(
+                    approval_path,
+                    operation="ui-decision-approval",
+                    reason="UI 决策审批 staging 已终止",
+                )
             return service.jobs.launch(
                 operation="decision",
                 run_root=root,
@@ -1235,14 +1489,10 @@ def create_ui_app(
         else:
             raise HTTPException(status_code=400, detail="method 只允许 sasa 或 scannet")
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
+            output = service.temporary_file(
+                prefix="hotspot-review",
                 suffix=".yaml",
-                prefix="easydesign-ui-hotspots-",
-                delete=False,
-            ) as handle:
-                output = Path(handle.name)
+            )
             try:
                 export_hotspot_review(
                     service.registry.resolve(run_key),
@@ -1251,7 +1501,11 @@ def create_ui_app(
                 )
                 yaml_text = output.read_text(encoding="utf-8")
             finally:
-                output.unlink(missing_ok=True)
+                quarantine_if_workspace_path(
+                    output,
+                    operation="ui-hotspot-review",
+                    reason="UI hotspot review staging 已终止",
+                )
             return {"run_key": run_key, "yaml": yaml_text}
         except Exception as error:
             _raise_http(error)
@@ -1329,6 +1583,7 @@ def create_ui_app(
                 stage_number=2,
                 config_path=generated,
             )
+            service.activate_project_config(session.project_id, generated)
             selected_run_id = payload.run_id or (
                 datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
                 + "-stage02-regions"
@@ -1369,22 +1624,23 @@ def create_ui_app(
         try:
             if not payload.confirmed:
                 raise ConfigurationError("Hotspot 审批必须明确 confirmed=true")
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
+            approval_path = service.temporary_file(
+                prefix="hotspot-approval",
                 suffix=".yaml",
-                prefix="easydesign-ui-hotspots-approval-",
-                delete=False,
-            ) as handle:
+            )
+            with approval_path.open("x", encoding="utf-8") as handle:
                 handle.write(payload.yaml_text)
-                approval_path = Path(handle.name)
             try:
                 approve_hotspots(
                     service.registry.resolve(run_key),
                     input_path=approval_path,
                 )
             finally:
-                approval_path.unlink(missing_ok=True)
+                quarantine_if_workspace_path(
+                    approval_path,
+                    operation="ui-hotspot-approval",
+                    reason="UI hotspot approval staging 已终止",
+                )
             return {
                 "status": "approved",
                 "run_key": run_key,
@@ -1437,17 +1693,7 @@ def create_ui_app(
                     stage_number=next_stage,
                     config_path=generated,
                 )
-                canonical = project_root / "easydesign.yaml"
-                with tempfile.NamedTemporaryFile(
-                    mode="wb",
-                    dir=project_root,
-                    prefix=".easydesign.",
-                    suffix=".tmp",
-                    delete=False,
-                ) as handle:
-                    handle.write(generated.read_bytes())
-                    temporary = Path(handle.name)
-                temporary.replace(canonical)
+                service.activate_project_config(session.project_id, generated)
                 job = service.jobs.launch(
                     operation="run",
                     config_path=generated,
@@ -1477,7 +1723,11 @@ def create_ui_app(
                     current_stage=next_stage,
                 )
             except Exception:
-                generated.unlink(missing_ok=True)
+                quarantine_if_workspace_path(
+                    generated,
+                    operation=f"ui-stage{next_stage:02d}-continuation",
+                    reason="UI continuation 未能启动",
+                )
                 raise
             return {
                 "session": session.model_dump(mode="json"),
@@ -1628,6 +1878,7 @@ def serve_ui(
     runs_root: Path,
     projects_root: Path | None = None,
     profile_path: Path | None = None,
+    job_root: Path | None = None,
     port: int = 8765,
     open_browser: bool = False,
 ) -> None:
@@ -1637,6 +1888,7 @@ def serve_ui(
         runs_root=runs_root,
         projects_root=projects_root,
         profile_path=profile_path,
+        job_root=job_root,
     )
     url = f"http://{LOCAL_HOST}:{port}"
     print(f"EasyDesign 科研工作台：{url}")

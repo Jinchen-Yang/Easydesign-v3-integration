@@ -691,3 +691,69 @@
 - 边界：没有替用户启动 Stage 04 的 21×40 真实 BoltzGen 任务；真实计算仍必须由用户
   在资源确认后主动启动。开发者微型全阶段自检继续由 `VAL-005` 独立实施。
 - 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。
+
+## 2026-07-29 — ENG-023 / UX-006 / DATA-005 / UI-016 / VAL-006：仓库内自包含运行工作区
+
+- 状态：`implemented`；完整科学后端验收仍受许可确认和磁盘安全门限制。
+- 完成时间：2026-07-29T03:18:00+08:00
+- 问题：旧部署把 profile、环境、模型、缓存和 UI 任务分散在 home 与服务器绝对路径；
+  新 clone 无法只靠仓库复建。首版内容身份仍只是环境配方哈希，BoltzGen 只登记了
+  `mols.zip`，五个 checkpoint 会被上游默认逻辑隐式联网获取。启动器创建 core 后也没有
+  将自动发现的 Conda 路径传给第二阶段安装器。
+- 方案：增加根 `./easydesign`、`WorkspaceContext`、schema 0.2 相对 profile、
+  append-only 环境/资产 registry 和 `runtime/` 写入边界。七个环境现由提交到 Git 的
+  `linux-64` Conda explicit package set 与精确 pip package set重建，sidecar SHA-256
+  参与 lock 身份。BoltzGen 两个 design、inverse-fold、folding、affinity checkpoint
+  与 molecule dataset 分别登记官方来源、大小、MIT 许可和 SHA-256；运行 argv 显式
+  使用本地路径并保持 offline。旧 lock/profile 不覆盖，新增必需资产由当前 adapter
+  contract 叠加验证。
+- 安全：安装子进程的 HOME、TMPDIR、XDG、Conda/pip/Node/Playwright cache、pip config
+  和 Git config 全部收敛到当前 `runtime/`；父进程环境、系统代理、Git 全局配置、
+  shell profile、base Conda 和 `/etc/environment` 不修改。失败 staging 进入
+  quarantine；业务代码的直接删除 API 由仓库检查拒绝。
+- UI/自检：安装中心展示七环境、十五资产、许可门、磁盘预检、结构化 setup job 和
+  quarantine；真实后端自检复用七阶段轨道与固定非 APOE 1UBQ fixture，Stage 05 科学
+  停止与 operational failure 分开。
+- 验证：Proteindigger 隔离工作区成功从解析锁新建并注册
+  `easydesign-core-f63c06f1b66f` 与 `reporting-web-488d4b96d9e6`；重复 minimal setup
+  复用同一 lock-addressed prefix。完整计划如实报告七环境约 73 GiB 安装/缓存峰值、
+  十五项资产约 11.5 GiB 和工作区约 91 GiB 可用空间；加 10% 安全余量后不足，因此在
+  创建剩余新环境前拒绝，旧环境没有被删除。全仓 Python 回归与最终构建证据见本任务
+  最终提交。
+- 遗留：13 项许可敏感资产必须由用户逐项确认后才能下载；具备足够空间的全新
+  Proteindigger clone 仍需完成七环境、全资产 checksum、`doctor --full` 与 VAL-006
+  真实逐步运行。macOS/Windows 只承诺 core/UI，平台验收仍在 Next。
+- 提交：以本记录所在提交和远端分支完整 SHA 为准。
+
+## 2026-07-29 — ENG-023 验收更正：profile 声明、后端可用性与完整 doctor
+
+- 状态：`implemented`；本记录更正上条过早写入的“完成时间”，ENG-023 仍在
+  `TODO_NOW.md` 的 Now，未达到完整科学后端 smoke。
+- 完成时间：2026-07-29T04:16:48+08:00
+- 时间边界：只表示本次诊断更正完成，不表示 ENG-023 全后端验收完成。
+- 发现的问题：schema 0.2 profile 已经声明后端 environment/asset ID，但加载层只向
+  orchestration 返回完全可用的 adapter。尚未安装完整时该值为 `None`，doctor 随后错误
+  显示“profile 未配置”，而 `--full` 没有把这些后端列入 required 集合，最终退出码仍为
+  0。
+- 修正：`LoadedRuntimeProfile` 同时保留 portable 声明和解析后的 runtime；
+  `initialize_runtime_profile()` 与 setup 共用完整后端声明。`doctor --full` 现在要求
+  Protenix、PyMOL、ScanNet、BoltzGen 和 TNP 全部达到当前 lock 与必需资产条件；未就绪
+  时逐项显示“已声明但未完整可用”并返回退出码 3。普通 doctor 继续允许 core/UI 在未装
+  科学后端时启动。
+- 自动证据：`make check` 通过；Python 为 280 passed、8 个需独立 PyMOL 环境的集成
+  测试 skipped；wheel、console script、Target Viewer、Workbench 与 VHH7 package data
+  验证通过。Workbench 为 47 passed、1 skipped；Target Viewer 为 3 passed、2 个缺少
+  runtime-only APOE 报告的测试 skipped。
+- 启动验收：`./easydesign ui --port 18769` 能自动翻译到 `ui serve`，localhost
+  health 返回 dev21 与 `manifest-only`；服务终止后端口释放。启动器和
+  `WorkspaceContext` 均原样继承父进程代理变量，只重定向 HOME/cache/tmp/Git config，
+  不会清空、创建或修改用户代理。
+- 服务器证据：当前 lock 的 `easydesign-core-f63c06f1b66f` 与
+  `reporting-web-488d4b96d9e6` 为 available；五个旧 lock 科学环境只作为 outdated
+  证据保留。数据盘可用约 88.3 GiB，环境安装与缓存峰值约 73 GiB，资产另需约
+  11.5 GiB 且必须保留安全余量；完整 setup 在创建剩余环境前拒绝。系统盘已满，但本任务
+  没有清理或修改系统文件。
+- 阻塞：13 项许可敏感资产仍需用户逐项确认；完整七环境、全部资产 checksum 和
+  VAL-006 真实后端逐步运行必须在扩容或新的足够空间实例上继续。不得为了通过验收而删除
+  旧环境、quarantine、cache 或科学运行。
+- 提交：以本记录所在提交和远端 `codex/workspace-runtime` 完整 SHA 为准。

@@ -107,3 +107,42 @@
 - 不使用任何带删除语义的同步选项。
 - 不清理系统盘或数据盘；磁盘空间问题只做只读审计并单独报告。
 - GitHub 拉取完成后先核对 commit、版本、文件数量和仓库状态，再进行任何环境恢复。
+
+## 9. EasyDesign 自包含工作区边界
+
+正常运行以仓库根 `easydesign-workspace.yaml` 为唯一定位依据。仓库内允许写入的顶级
+目录固定为：
+
+```text
+runtime/
+projects/
+runs/
+archives/
+.git/
+```
+
+约束如下：
+
+1. `./easydesign` 必须从自身位置解析工作区；不得依赖调用者当前目录、全局 PATH、
+   `/root/.config/easydesign` 或其他 home 目录。
+2. 用户显式选择的 PSE、PDB、mmCIF、FASTA、A3M、SSH key 等外部文件只允许读取。
+   EasyDesign 不得在其父目录创建 cache、sidecar、日志或临时文件。
+3. Conda、pip、Node、Corepack、Playwright 和下载器的临时 HOME/cache/tmp 只能由安装
+   器作为子进程环境变量传入 `runtime/`；不得写入 shell profile、系统代理、Git 全局
+   配置或 base Conda。pip 必须忽略系统/用户配置和 user-site；Git 必须使用工作区内
+   仅含 safe-directory 的隔离配置，不得 include 用户全局 Git 配置。
+4. 新环境、模型、run 和发布 artifact 必须先写入全新 staging，校验后原子发布到此前
+   不存在的目标。目标已存在时拒绝覆盖。
+5. 失败 staging、失败下载和临时上传只能移动到
+   `runtime/quarantine/<operation-id>/`。系统不自动删除 quarantine、旧环境、旧模型、
+   cache 或科学运行。
+6. mutable registry/index 必须保存不可变 revision；读取最高合法 revision。损坏的新
+   revision 不得覆盖或遮蔽更早的有效记录。
+7. SSH 后端只能写入 runtime profile 中明确声明的远程工作区；禁止把“可连接服务器”
+   推断成“可向任意远程目录写入”。
+8. BoltzGen、Protenix、ScanNet、TNP 等后端只有在环境 lock 与全部必需 asset 的当前
+   revision、大小和 SHA-256 均通过后才可暴露给运行层。缺少任一 checkpoint 必须显示
+   `awaiting-approval/not-installed`，禁止让后端自行联网补齐。
+
+旧部署导入使用显式 `./easydesign workspace import-legacy ...`。导入只复制并校验证据；
+原 profile、环境、模型、cache 和 run 全部保留，旧 Conda 环境不得直接搬迁或删除。

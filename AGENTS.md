@@ -66,6 +66,19 @@
 17. SSH 远程执行必须来自 runtime profile 的显式 executor；禁止扫描 SSH config、自动
     选择机器或把密钥写入科学 YAML。结果同步只能使用 manifest-derived 文件白名单并
     重新验证 SHA-256；heartbeat 只表示进程存活，不能把中间文件计作完整候选。
+18. 正常本机运行必须从仓库根 `easydesign-workspace.yaml` 建立唯一
+    `WorkspaceContext`。CLI、UI、后台 worker、cache、环境和模型不得各自推导
+    `~/.config`、`~/.cache`、`~/.local` 或服务器绝对路径。允许的本地写入根仅为
+    `runtime/`、`projects/`、`runs/`、`archives/` 和 `.git/`；用户显式选择的外部输入
+    只读。旧 home 配置只能由显式 `workspace import-legacy` 导入。
+19. `./easydesign setup` 传给 Conda、pip、Node、Playwright 和下载器的 HOME、TMPDIR、
+    XDG/cache 变量只能存在于子进程环境，且全部解析到当前仓库 `runtime/`。禁止修改
+    `/etc/environment`、shell profile、Git 全局配置、系统代理、base Conda 或系统证书。
+    TLS 只能显式读取系统 CA，不能通过关闭校验解决网络问题。
+20. 环境、模型、asset、mutable index 和 setup 状态必须通过安全写入层发布到新路径或
+    新 revision。业务代码禁止直接使用 `unlink()`、`rmtree()`、`rmdir()`、`os.remove()`
+    或覆盖式 rename；失败 staging 移入 `runtime/quarantine/<operation-id>/` 并保留。
+    quarantine、旧环境、旧模型、cache 和 run 均不得自动清理。
 
 ## 3. 完成任务前
 
@@ -185,6 +198,18 @@ Agent 必须自动完成以下收尾工作：
     run 正在等待后续审批而拒绝合法分支，也不得复制前缀之后的 Stage。人工区域的明确
     提交只批准一次；界面进度必须来自结构化 job record，不能以固定时长、目录扫描或
     终端文本猜测。Stage 02 选区不提供独立橡皮擦：结构和序列均以同区再次点击取消。
+28. Runtime 配方、环境 lock、资产目录和许可状态属于不同事实。环境目录必须包含 lock
+    身份和安装后 inventory；模型只有来源、版本、大小、SHA-256 与许可门全部通过后才能
+    标记 `available`。`awaiting-approval`、部分安装或探针失败不得包装成 setup 成功。
+    正式 Linux setup 必须消费提交到 Git 且 sidecar SHA-256 匹配的 Conda explicit
+    package set 与精确 pip package set；不得在安装时退回宽范围配方求解。
+29. 真实后端开发者自检必须复用普通按步骤工作区和生产 adapter。固定非 APOE fixture、
+    1 个区域、1 个 scaffold 与极小预算可以降低成本，但不能替换后端、放宽科学阈值或
+    伪造 Stage 05 赢家。Stage 05 科学停止是合法科学结果；环境崩溃、缺 artifact 或
+    checksum 错误才是后端失败。
+30. BoltzGen 运行必须显式传入 registry 验证过的两个 design checkpoint、inverse-fold、
+    folding、affinity checkpoint 和 molecule dataset 本地路径。禁止依赖上游默认
+    Hugging Face 标识在运行阶段隐式下载。
 
 ## 4. 阻塞与询问
 

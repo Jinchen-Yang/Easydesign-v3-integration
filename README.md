@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev20`（包版本 `0.1.0.dev20`）
+- 当前版本：`0.1.0-dev21`（包版本 `0.1.0.dev21`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -22,60 +22,63 @@ binder 的科学约束不会被强行混成一种算法。
 
 ## 五分钟开始
 
-EasyDesign core 可以使用 Conda，也可以安装到已有的 Python 3.11 环境。Protenix、PyMOL
-和 ScanNet 等重型工具仍保持独立环境，不会被 `pip install easydesign` 混装。
+Linux 克隆后的标准入口只有仓库根部启动器。它从自身位置确定工作区，不依赖当前目录、
+全局 `PATH`、`~/.config` 或用户级缓存。Protenix、PyMOL、ScanNet、BoltzGen 和 TNP
+仍使用隔离环境，但环境、模型、缓存、状态和日志全部位于本仓库的 `runtime/`。
 
 ```bash
 git clone git@github.com:Knitua/Easydesign.git
 cd Easydesign
 
-# 开发安装
-python -m pip install -e ".[dev,ui]"
-
-# 或从本地 wheel 安装
-python -m build
-python -m pip install dist/easydesign-0.1.0.dev20-py3-none-any.whl
+./easydesign setup --plan
+./easydesign setup
+./easydesign doctor --full
+./easydesign ui
 ```
 
-先创建用户级本机 profile：
+`setup --plan` 不下载任何内容；完整 `setup` 在下载每个许可敏感资产前要求明确确认。
+七个 Linux 环境都从提交到 Git 的 `linux-64` Conda explicit lock 和精确 pip package
+set 重建，不再在安装时重新解析宽范围依赖。环境 lock 改变会创建新目录，旧环境保持
+不变。BoltzGen 的五个 checkpoint 与 molecule dataset 分别登记来源、大小、MIT 许可和
+SHA-256；未确认的资产保持 `awaiting-approval`，后端不会被报告为可用。
+安装器只把 `HOME`、`TMPDIR`、Conda/Pip/Corepack/Playwright 缓存等环境变量传给自己的
+子进程；pip 子进程忽略系统/用户 pip 配置并禁止 user-site。不写 shell profile、系统
+代理、Git 全局配置、base Conda 或 `/etc/environment`。父进程已有的代理变量只读继承
+给子进程，EasyDesign 不清空、不创建也不持久化代理配置。如 Conda 不在 `PATH`：
 
 ```bash
-easydesign profile init
-easydesign profile show
+./easydesign setup --conda /absolute/path/to/conda
 ```
 
-`profile init` 不扫描 Conda 或模型目录。使用者需要显式填写本机绝对路径，例如：
+查看哪些资产仍待许可确认：
 
-```yaml
-schema_version: "0.1"
-profile_id: local
-runs_root: /absolute/path/to/runs
-backends:
-  protenix_v2:
-    executable: /absolute/path/to/protenix
-    model_root: /absolute/path/to/protenix-model-root
-    model_checkpoint: /absolute/path/to/protenix-v2.pt
-    cuda_visible_devices: "0"
-  pymol_pse:
-    python: /absolute/path/to/pymol-pse/bin/python
-  scannet_epitope:
-    python: /absolute/path/to/scannet/bin/python
-    repository_root: /absolute/path/to/ScanNet
-    execution_device: cpu
-  boltzgen:
-    executable: /absolute/path/to/boltzgen
-    repository_root: /absolute/path/to/boltzgen-source
-    cache_root: /absolute/path/to/huggingface-cache
-  tnp:
-    python: /absolute/path/to/tnp/bin/python
-    executable: /absolute/path/to/TNP/bin/TNP
-    repository_root: /absolute/path/to/TNP
+```bash
+./easydesign assets status
+./easydesign setup --accept-license ASSET_ID
+```
+
+`--accept-license` 只确认命令中精确列出的资产，不会一次性接受其他条款。
+
+`./easydesign doctor` 只检查当前工作区、core 和本次配置实际需要的后端；
+`./easydesign doctor --full` 要求五个科学后端及其必需资产全部达到当前 lock，并在任一
+后端尚未安装、版本过期或资产缺失时返回非零退出码。工作区已经声明但尚未安装完整的
+后端会显示“已声明但未完整可用”，不会再被误报成 profile 缺失或完整安装成功。
+
+本机部署描述固定为仓库内 `runtime/profile.yaml` schema 0.2。它只保存环境/资产 ID
+和相对路径；实际 executable 由带 SHA-256 的注册表解析。普通使用不再读取
+`/root/.config/easydesign`、`~/.cache/easydesign`、`~/.local/share/easydesign`
+或 `~/.local/state/easydesign`。旧部署必须显式导入，且原文件保持不变：
+
+```bash
+./easydesign workspace import-legacy \
+  --profile /root/.config/easydesign/profile.yaml \
+  --env-root /root/autodl-tmp/conda_envs
 ```
 
 然后从真实 target 创建用户项目：
 
 ```bash
-easydesign init apoe --target apoe.fasta --stop-after 2 \
+./easydesign init apoe --target apoe.fasta --stop-after 2 \
   --stage02-method both --execution-mode review-gated
 # 也可从远程身份开始
 easydesign init ubiquitin --pdb-id 1UBQ --chain A
@@ -88,9 +91,9 @@ easydesign init apoe-cache --target apoe.fasta --msa-cache-mode offline
 easydesign init copied-target \
   --target-bundle /path/to/target-bundle.json \
   --source-run-root /path/to/source-run
-easydesign config validate apoe/easydesign.yaml
-easydesign doctor --config apoe/easydesign.yaml
-easydesign run apoe/easydesign.yaml
+./easydesign config validate apoe/easydesign.yaml
+./easydesign doctor --config apoe/easydesign.yaml
+./easydesign run apoe/easydesign.yaml
 ```
 
 Stage 01 已实现本地 PDB/mmCIF、PDB ID、FASTA/裸序列、UniProt accession/名称、
@@ -116,11 +119,7 @@ APOE 因 Stage 05 科学停止而没有进入 Stage 06/07。
 UI 与 CLI 调用同一套 Python API；科学事实仍来自 manifest，不保存第二份数据库。
 
 ```bash
-python -m pip install -e ".[dev,ui]"
-easydesign ui serve \
-  --runs-root /absolute/path/to/runs \
-  --projects-root /absolute/path/to/ui-projects \
-  --port 8765
+./easydesign ui
 ```
 
 浏览器打开 `http://127.0.0.1:8765`。远程服务器使用 SSH 端口转发：

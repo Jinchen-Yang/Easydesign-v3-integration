@@ -63,7 +63,9 @@ easydesign projects restore PROJECT_ID
 - `deterministic-seven-stage`：无网络/GPU，真实创建七阶段工程证据链；标记
   `synthetic-engineering-smoke`，禁止用于科学结论或下单。
 - `real-backend-micro`：固定非 APOE fixture 的真实工具链。只有 Stage 01–05 coherent
-  run 和 Stage 06/07 adapter probe 真正完成后才可报告通过；当前仅登记待运行记录。
+  run 和 Stage 06/07 adapter probe 真正完成后才可报告通过。当前执行器已使用固定
+  `validation-1ubq-cif` asset、1 个区域、1 个 scaffold 和极小预算接入七阶段工作区；
+  环境或模型未安装/未许可时明确停在 `blocked`，不得报告通过。
 
 科学停止不等于后端失败。真实后端微型自检必须分别报告工程链路、后端健康和科学结果。
 
@@ -75,6 +77,18 @@ runs/_selftests/selftest-20260727t104835z-f73dfb/synthetic-7b3b6c1c7288
 ```
 
 该记录完成 Stage 01–07 工程链，并通过 `developer-smoke-run` 分类从普通项目页隔离。
+
+真实后端 fixture：
+
+```text
+asset_id: validation-1ubq-cif
+source: https://files.rcsb.org/download/1UBQ.cif
+size: 103220 bytes
+sha256: 056f98710cb2b36f633c45e41902a02eb446e82871da21ff2dd44f74a56ca0f6
+```
+
+下载受资产登记和 wwPDB 使用条款确认门控制。fixture、生成的 PSE、后端输出和自检 run
+只存在于当前工作区 runtime/runs，不进入 Git。
 
 ## 治理规则
 

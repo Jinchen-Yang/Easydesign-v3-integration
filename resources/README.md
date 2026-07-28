@@ -3,11 +3,20 @@
 `scaffolds/vhh/` 只允许存放经过审查、允许再分发的小型 VHH scaffold。
 `provenance/ASSET_REGISTER.tsv` 是资产来源的事实来源。每项资产使用前必须记录稳定
 身份、文件 checksum、来源、不可变版本、许可证、用途、再分发权和审查状态。
+`configs/runtime-assets.yaml` 是自包含安装器实际消费的机器目录；当前登记 15 项
+runtime 资产。两者必须在同一次提交中同步：前者负责长期来源审计，后者负责下载、
+许可确认、大小和 SHA-256 校验。
 
 Stage 03 已引入 `official-vhh7-v1`：它来自 BoltzGen `0.3.2` 的固定官方 commit，
 包括七个 VHH scaffold 的 YAML/mmCIF 和上游 MIT license。文件由 Python package
 data 分发，运行时先验证固定 SHA-256，再复制到不可变 attempt；不使用旧仓来源不明的
 scaffold。权重和大型数据不得进入 Git。
+
+BoltzGen runtime 除固定源码和 molecule dataset 外，还显式登记 diverse、adherence、
+inverse-fold、folding 和 affinity 五个 checkpoint。EasyDesign 只把校验后的仓库内
+路径传给隔离子进程，并启用 offline mode；缺少任一资产时 backend 不得显示为可用，
+也不得让上游库按 Hugging Face ID 静默联网。大型资产只进入 Git 忽略的
+`runtime/models/`，新工作区下载前必须完成对应许可确认。
 
 固定 registry：
 
@@ -35,6 +44,7 @@ Stage 01 Target Viewer 是当前唯一随 Python wheel 分发的第三方前端�
 Stage 07 的 TNP 仅作为独立 runtime 使用，不随 wheel 分发源码、模型或依赖：
 
 - 固定 TNP commit `29dcac72f1380e8538e8870f45a699d3c6156162`；
+- 固定上游为 `https://github.com/oxpig/TNP.git`；
 - 固定上游 BSD-3-Clause `LICENCE` 与 `bin/TNP` 源文件 SHA-256；
 - `environments/tnp.yml` 固定 Python 3.10、ANARCI、Biopython、DSSP、
   ImmuneBuilder/NanoBodyBuilder2、Torch 和直接数值依赖；

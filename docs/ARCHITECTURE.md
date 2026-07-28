@@ -12,8 +12,10 @@ easydesign-clean/
 ├── AGENTS.md                 # Agent 自动工作协议
 ├── TODO.md                   # 宏观里程碑和七阶段状态索引
 ├── TODO_NOW.md               # 跨阶段当前重点、阻塞和历史索引
+├── easydesign                # 从自身位置发现工作区的唯一启动器
+├── easydesign-workspace.yaml # 可移植工作区声明
 ├── environment.yml           # easydesign-core Conda 环境入口
-├── environments/             # 重型 backend 的独立 Conda 环境声明
+├── environments/             # 环境配方与 linux-64 内容身份锁
 ├── pyproject.toml            # Python 包、运行依赖和开发依赖
 ├── Makefile                  # 环境、检查、测试和构建入口
 ├── workflow/                 # 七阶段契约、动态状态和阶段历史
@@ -23,8 +25,10 @@ easydesign-clean/
 ├── resources/                # 已审查小型资产与来源登记
 ├── examples/                 # 最小可复现示例
 ├── scripts/                  # 仅调用 API 的开发脚本
-├── runs/                     # 项目 run、开发验证、历史归档和可再生索引，Git 忽略
-└── models/                   # 权重和模型缓存，Git 忽略
+├── runtime/                  # 本机环境、模型、缓存、状态与隔离区，Git 忽略
+├── projects/                 # 用户输入和 canonical 配置，Git 忽略
+├── runs/                     # 不可变科学运行与可再生索引，Git 忽略
+└── archives/                 # 只移动、不删除的可恢复归档，Git 忽略
 ```
 
 ## 2. Python 源码层级
@@ -129,7 +133,8 @@ Agent 开始工作的时间。秒级时间和显式 UTC offset 都是必需项�
 
 ## 5. 环境拓扑
 
-当前统一使用 Conda 管理环境，但每个重型工具仍保持隔离：
+当前统一使用 Conda 管理环境，但每个重型工具仍保持隔离。所有本机可变状态收敛在当前
+仓库的 `runtime/`，不再要求用户拼接分散在 home、系统盘和数据盘的路径：
 
 ```text
 easydesign-core (Python 3.11)
@@ -142,13 +147,19 @@ easydesign-core (Python 3.11)
 └── executor adapter     → local/Slurm/SMART
 ```
 
-`environment.yml` 创建 `easydesign-core`；`pyproject.toml` 是 Python 依赖和
-`easydesign` console-script 的唯一声明源。源码 editable 安装、普通本地安装和 wheel
-安装都必须产生同一个命令入口。
+根启动器按 lock 身份安装到 `runtime/envs/<environment-id>-<lock-sha>/`。lock 变化时
+建立新目录并切换 append-only 注册记录，旧环境保留；失败 staging 移入
+`runtime/quarantine/`，不会递归删除。提交到 Git 的
+`environments/locks/*-linux-64.conda-lock.txt` 是 Conda explicit package set；
+需要 pip 的环境另有精确 `pip-lock.txt`，schema 0.2 JSON 同时冻结 sidecar SHA-256、
+Python 版本、探针和安装预算。`environment.yml` 与 `environments/*.yml` 只作为人类
+可读配方，不参与正式 setup 的依赖重新解析。`pyproject.toml` 仍是 EasyDesign 自身
+Python API 和 console-script 声明源；core 在锁定依赖后以 `--no-deps`、
+`--no-build-isolation` editable 安装当前源码。
 `environments/protenix-v2.yml` 固定 EasyDesign 1.0 当前结构预测后端的独立环境。
 `environments/pymol-pse.yml` 固定 PyMOL PSE 导入环境的 Python 3.11 和
 `pymol-open-source=3.1.0`。Core 不导入 PyMOL，也不扫描 Conda 或系统 Python；正式 CLI
-从用户级 runtime profile 读取绝对 Python 路径。Adapter 先做精确版本探针，再用
+从仓库内 profile 的 environment/asset ID 解析可执行文件。Adapter 先做精确版本探针，再用
 无 shell 的 argv 执行只依赖标准库和 PyMOL 的 worker。请求和 response 使用 JSON，
 worker 导出的原始蛋白坐标使用 PDB，core 再规范化为 mmCIF。
 `environments/scannet-epitope.yml` 当前固定 ScanNet 的遗留 Python 3.6.12、
@@ -165,17 +176,41 @@ Playwright Chromium 测试和许可证审计。EasyDesign 运行时、报告生�
 
 Stage 04 generation 复用 Stage 03 的精确 version/commit/cache probe。
 `backends/boltzgen/generation.py` 只把类型化请求转换为无 shell argv；
+BoltzGen 的 diverse/adherence、inverse-fold、folding、affinity 五个 checkpoint 和
+`mols.zip` 必须全部由 asset registry 标记可用。adapter 将六个本地绝对路径显式传给
+BoltzGen 并设置 offline mode，不允许回到 Hugging Face 默认标识后隐式联网。
 `backends/executors/local_multi_gpu.py` 只负责 GPU 资源门槛和每设备一个串行 worker；
 候选完整性由 Stage 04 collector 定义。这三层不得互相复制职责。
 
-站点专属环境路径只能出现在未提交的本地 profile 或调用参数中。仓库代码不得硬编码
+站点专属环境路径只能出现在工作区内未提交的注册表或 SSH profile 中。仓库代码不得硬编码
 `/root/autodl-tmp`、SMART 路径、用户名或密钥。
 
-Runtime profile 默认位于操作系统标准用户配置目录。解析优先级为 `--profile`、
-`EASYDESIGN_PROFILE`、用户级默认文件；只选择一个完整 profile，不扫描环境、不合并多个
-文件。profile 保存 executable、模型和设备等部署信息，用户 `easydesign.yaml` 只保存
-科学配置。run 记录 profile ID 与文件 SHA-256，以及实际 backend/model/device identity，
-但不复制机器绝对路径。
+正常运行只使用 `runtime/profile.yaml` schema 0.2；它只保存相对路径与
+environment/asset ID，不保存 `/root/...` 等机器绝对路径。用户 `easydesign.yaml`
+只保存科学配置。run 记录 profile ID 与文件 SHA-256，以及实际 backend/model/device
+identity，但不复制机器绝对路径。旧用户级 profile 只能通过显式
+`workspace import-legacy` 复制校验证据后迁移，原文件和旧环境保持不变。
+
+### 5.1 WorkspaceContext 与写入边界
+
+`WorkspaceContext` 从 `easydesign-workspace.yaml` 解析唯一部署边界，并被 CLI、UI、
+缓存、后台 worker 和 SSH executor 显式传递。正常 EasyDesign 本地写入只允许：
+
+```text
+runtime/
+projects/
+runs/
+archives/
+.git/        # 仅用户明确执行 Git 工作流时
+```
+
+外部输入、Conda executable 和 SSH 身份可以按用户明确选择只读访问；SSH 任务只写
+profile 声明的远程工作区。业务代码不得修改 `/etc/environment`、shell profile、
+系统代理、Git 全局配置和 base Conda。发布先写全新 staging，校验后原子移动；目标已
+存在一律拒绝覆盖。缓存、旧环境、旧模型、quarantine 和 run 不自动清理。
+安装子进程使用仓库内 HOME/XDG/cache/tmp、独立 Git config、`PIP_CONFIG_FILE=/dev/null`
+和关闭 user-site；这些变量不会写回父 shell。网络代理如由宿主显式提供，只对当前子进程
+只读继承，EasyDesign 不创建、修改或删除代理配置。
 
 ## 6. 运行目录层级
 

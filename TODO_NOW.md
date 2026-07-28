@@ -18,6 +18,16 @@
 
 ## Now
 
+- `[ENG-023/UX-006]` 在 Proteindigger 的全新 clone 验证仓库内
+  `runtime/profile.yaml`、setup 恢复、doctor 和一条命令 UI。当前锁的 core/web 已从
+  仓库内 lock 重建；`doctor --full` 已能把五个未就绪科学后端逐项判为失败。不得修改
+  base Conda、系统代理、Git 全局配置、shell profile 或仓库外用户数据。
+- `[DATA-005]` 已完成七环境解析后的 linux-64 Conda/pip lock 与十五项资产来源、大小、
+  SHA-256 和许可门；继续完成用户逐项确认后的下载发布验收。待许可必须保留
+  `awaiting-approval`，不能静默跳过或报告安装成功。
+- `[UI-016/VAL-006]` 完成安装中心浏览器验收，并在许可资产和后端就绪后逐步真实运行
+  固定非 APOE 1UBQ 自检。Stage 05 科学停止允许；后端失败和科学停止必须分开显示。
+
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与
@@ -25,6 +35,11 @@
 
 ## Next
 
+- `[DATA-005]` 在具备足够数据盘空间的全新 clone 验证七个解析锁的完整重建；当前
+  Proteindigger 隔离验收目录因保留旧环境只剩约 88.3 GiB，完整 setup 的保守峰值与安全
+  余量不足，安装器已在写入前如实拒绝，未清理旧环境规避门槛。
+- `[UX-006]` 在 macOS/Windows 验证 core/UI minimal setup，并通过显式 SSH executor
+  使用 Linux 科学后端；不得在桌面平台伪装重型后端可用。
 - `[UI-015/ENG-021]` dev20 已完成连续七阶段工作区：Stage 02 不再覆盖式弹窗；
   Stage 03 显示真实 `3×7=21` 方案、每方案 40 和 840 候选预算；统一任务成功后定位
   下一 Stage。按步骤续跑现依据连续成功的 Stage 前缀，不再错误要求开放中的整个 run
@@ -66,10 +81,11 @@
 
 ## Blocked
 
-- `[ENG-022]` 新 ProteinDigger 数据盘上的目标目录已只读确认不存在，根级删除禁令已经
-  落盘；GitHub 私有仓库尚未授权本机新生成的只读 deploy key，因此尚未创建父目录或
-  clone。获得只读授权后只能克隆到全新
-  `/root/autodl-tmp/Protein_design/easydesign-clean`，禁止覆盖和删除式同步。
+- `[DATA-005/VAL-006]` Protenix、BoltzGen、ScanNet 和验证 fixture 的受控资产在
+  用户逐项确认相应许可前保持 `awaiting-approval`；真实后端逐步自检不能在资产缺失时
+  标记通过。当前数据盘约 88.3 GiB 可用，而环境安装/缓存保守峰值约 73 GiB、资产另需
+  约 11.5 GiB 并且还必须保留安全余量；完整 setup 因此在写入前拒绝。系统盘当前也已满，
+  EasyDesign 不清理系统文件；需要用户提供更大数据盘或明确扩容后再验收全部后端。
 - `[S01]` 默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
   SLA；remote、显式 offline cache、precomputed A3M、真实 APOE run 和 Stage 02
   交接均已完成。Protenix 官方 endpoint 持续 `PENDING`，不进入

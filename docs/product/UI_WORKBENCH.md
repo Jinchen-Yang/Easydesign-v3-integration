@@ -408,3 +408,52 @@ APOE PSE 的初始可编辑计数必须为 A/B/C `9/14/14`。从空白开始后�
 等待用户配置下一步时，Run 保持 `running` 是正常状态；只要 Stage 01 至当前上游阶段
 连续为 `succeeded`、StageManifest 与 ArtifactRef 完整性通过，就可以发布新的配置
 revision 并执行下一阶段。`failed`、`cancelled`、前缀不连续或上游校验失败仍明确拒绝。
+
+## UI-016 / VAL-006：仓库内安装中心与真实后端逐步自检
+
+版本：`0.1.0.dev21`。
+
+安装与环境页面直接读取仓库内 `runtime/` 的不可变环境/资产 revision，不读取
+`/root/.config/easydesign`，也不扫描系统 Conda。七个环境和模型分别显示：
+
+```text
+未安装 / 安装中 / 待许可 / 可用 / 失败
+```
+
+- “安装计划”显示环境、资产、下载量、磁盘峰值、许可与目标相对路径。
+- 环境状态会区分当前 lock 的 `available` 与旧 lock 的 `outdated`；旧目录继续保留。
+- BoltzGen 只有五个 checkpoint、molecule dataset 和固定源码七项全部可用时才显示
+  “可用”，不能因 Python package 已安装而提前解锁 Stage 04/06。
+- “完整安装”调用与 `./easydesign setup` 相同的 Python API；UI 只轮询结构化 setup
+  记录，不解析终端输出。
+- 缺后端时新项目页面指向具体环境或资产，不再抛出 profile 文件不存在。
+- `./easydesign ui` 自动使用当前工作区的 profile、projects 和 runs。
+
+真实后端微型自检已从只登记记录升级为逐 Stage 执行器：
+
+```text
+固定 1UBQ mmCIF asset
+→ PyMOL 生成 runtime-only 单 target PSE
+→ Stage 01–05：1 个区域 × 1 个官方 scaffold × 极小候选预算
+→ Stage 06/07：各执行一个真实 adapter probe
+```
+
+它与普通“按步骤设计”共用七阶段轨道、job、continuation、结构和指标页面。每一步都由
+用户明确点击；环境/模型未就绪时记录 `blocked` 和具体缺项，不会创建假成功 run。
+Stage 05 没有 Tier A 可以合法结束为科学停止；Stage 06/07 probe 只验证 adapter 健康，
+不伪造主线的 scale winner 或最终候选。所有记录分类为 `developer-smoke-run`，禁止用于
+科学结论或下单。
+
+当前交付边界：执行器与产品投影已实现；只有 Proteindigger 上七个环境、所需资产许可、
+checksum 和真实逐步运行全部完成后，`VAL-006` 才能从 `implemented` 升级为
+`smoke-validated`。
+
+安装中心与 doctor 必须区分三种事实：
+
+1. profile 已声明某后端；
+2. 当前 lock 的环境与全部必需资产是否可用；
+3. 本次科学配置是否实际需要并已探测该后端。
+
+普通 `doctor` 允许 core/UI 工作区在科学后端尚未安装时启动；`doctor --full` 则把每个
+未达到第2项的科学后端记为失败并返回非零状态。界面不得把“已声明但未完整安装”翻译成
+“profile 文件不存在”。

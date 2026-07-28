@@ -64,6 +64,9 @@ stage03:
   profile: boltzgen-vhh-basic-v1
   scaffold_registry: official-vhh7-v1
   candidates_per_strategy: 40
+  # 普通科研运行省略该字段，使用全部七个官方 scaffold。
+  # 开发者真实后端微型自检可显式选择严格非空子集：
+  # scaffold_ids: [7eow]
 
 stage04: null
 stage05: null
@@ -73,6 +76,9 @@ stage07: null
 
 `max_strategy_rounds` 当前只接受 `1`。Stage 03 1.0 只接受
 `design.binder_profile: vhh`，未知 profile/registry/字段会在创建 run 前失败。
+`scaffold_ids` 省略时固定使用 registry 的全部七个 scaffold；若提供，只允许
+`official-vhh7-v1` 中的非空、无重复子集。这个缩减入口用于固定成本的真实 backend
+probe，不改变普通 1.0 默认矩阵，也不能在运行后静默减少 scaffold。
 
 机器部署位置进入未提交的 runtime profile：
 

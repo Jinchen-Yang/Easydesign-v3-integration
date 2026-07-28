@@ -297,7 +297,11 @@ def main() -> int:
         environment_text = environment.read_text(encoding="utf-8")
         require("name: easydesign-core" in environment_text, "Conda 环境名异常", errors)
         require("python=3.11" in environment_text, "Conda 环境必须使用 Python 3.11", errors)
-        require("-e .[dev]" in environment_text, "Conda 环境未 editable 安装开发依赖", errors)
+        require(
+            "-e .[dev,ui]" in environment_text,
+            "Conda 环境未 editable 安装开发与 UI 依赖",
+            errors,
+        )
 
     protenix_environment = ROOT / "environments/protenix-v2.yml"
     require(protenix_environment.is_file(), "缺少 Protenix-v2 独立环境声明", errors)

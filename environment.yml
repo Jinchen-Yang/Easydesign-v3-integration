@@ -6,5 +6,5 @@ dependencies:
   - pip>=24
   - setuptools>=69
   - wheel
-  - pip:
-      - -e .[dev]
+    - pip:
+      - -e .[dev,ui]

@@ -646,3 +646,28 @@
   勾选提交、进度和成功分支。
 - 遗留：确认必须由用户亲自完成，UI 不自动批准科学选择。
 - 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。
+
+## 2026-07-28 — UI-015 / ENG-021：连续七阶段工作区
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-28T12:36:40+08:00
+- 问题：Stage 01 完成后，Stage 02 以覆盖式弹窗打开；Stage 02 完成后，Stage 03
+  只显示空结果卡片和破折号，没有配置、启动或继续入口。七阶段轨道因此只是结果标签，
+  不是可推进的产品流程。
+- 方案：把 Stage 02 编辑器改为工作区内嵌内容；对上游连续成功、当前尚未开始的
+  Stage 03–07 显示 Python 生成的表单投影、运行边界和统一 continuation action。
+  `UiJobRecord` 的成功/等待确认/失败终态分别驱动目标 Stage 定位，不在 React 复制
+  scaffold、预算或筛选 profile。
+- 真实验收：服务器 dev20 工作台的 `new-design` 显示 Stage 01/02 已完成；点击
+  Stage 03 得到 `3 个区域 × 7 个骨架 = 21` 个设计方案、每方案 40 和第4步总预算
+  840，且只有用户点击后才会生成并验证 YAML。Stage 02 重选页面
+  `.region-editor-embedded=1`、`.region-editor-overlay=0`。
+- 自动验证：`make check` 通过；Python 全仓 265 passed、8 个独立 PyMOL 集成测试按
+  配置 skipped；dev20 wheel、console script、Workbench/Mol* 资产校验通过。Chromium
+  1440 的 15 个交互回归全部通过；新增连续流程在 Chromium 1920 与 Firefox 共 6/6
+  通过。服务器便携 Viewer 为 3 passed、2 个 runtime-only 案例 skipped；服务器
+  Workbench 浏览器二进制未安装，因此未把该环境错误误报为产品失败。
+- 边界：本轮没有替用户点击真实 Stage 03 启动按钮，没有修改已有 scientific
+  manifest、Stage 03 模板或候选预算；Stage 04/06 仍要求用户确认真实计算资源。
+- 实现提交：`5587a21f10da3759fbaa28e2a638161bab6033fa`
+  （`feat(ui): connect the seven-stage workspace`）。

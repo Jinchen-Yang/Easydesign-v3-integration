@@ -18,9 +18,6 @@
 
 ## Now
 
-- `[UI-015/ENG-021]` 重构按步骤设计为连续七阶段工作区：Stage 02 从覆盖式弹窗变为
-  嵌入页面；成功步骤平滑前进；Stage 03 从 Python 表单投影读取基础模板并可真实生成、
-  校验设计方案。
 - `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
   Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
   已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与
@@ -28,6 +25,9 @@
 
 ## Next
 
+- `[UI-015/ENG-021]` dev20 已完成连续七阶段工作区：Stage 02 不再覆盖式弹窗；
+  Stage 03 显示真实 `3×7=21` 方案、每方案 40 和 840 候选预算；统一任务成功后定位
+  下一 Stage。后续只在第二真实案例和真实长任务中继续做产品验收，不重复实现科学逻辑。
 - `[ENG-018]` 对 `apoe-s02-006-pse` 中 dev14 之前的 Stage 02/03/04 checkpoint runs
   生成逐 run 依赖报告；只对终态、未被远程任务引用且 manifest 闭包完整的冗余 checkpoint
   提供可恢复单 run 归档。历史科学文件不合并、不重写；内容寻址去重另立 ADR。

@@ -22,7 +22,7 @@
 | M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | M8 Stage 03 基础策略编译 | `smoke-validated` | schema 0.7、通用 region×official VHH7 策略、固定 scaffold 资产和 BoltzGen 0.3.2 官方校验已完成；APOE 21/21 通过。 |
 | M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 已在 Stage 05 合法科学停止。 |
-| M10 产品级科研工作台 | `smoke-validated` | dev15 工作台已完成统一浅色结构工作区、执行/筛选证据、全流程向导和按步骤 Stage 01 单页运行；PSE 流式接收与自动结构审查通过真实 APOE 验收。 |
+| M10 产品级科研工作台 | `smoke-validated` | dev20 工作台已形成连续七阶段轨道、内嵌 Stage 02、Stage 03–07 配置/运行/终态前进；PSE 流式接收、结构审查和真实 Stage 03 配置投影通过验收。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
 | M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
 | M13 项目与设计路线整理 | `smoke-validated` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA、PSE 新分支与浏览器验收均已完成。 |
@@ -40,7 +40,7 @@
 | `ENG` | Core Engineering | `smoke-validated` | manifest、Decision Gate、跨主机执行与统一 run layout 已形成可审计工程底座。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-018：历史 checkpoint 逐 run 依赖报告与可恢复归档；[运行目录规则](docs/architecture/RUN_LAYOUT.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–005 已提供可安装 CLI、六入口 init、运行管理、Viewer 与经过校验的一条命令共享案例入口。 | 让真实能力和可审计结果通过稳定入口使用。 | 下一步验证跨平台共享案例和可继续长任务 UX；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | 自包含 Target Viewer 与 Workbench Mol* 统一支持浅色画布和触摸双指缩放。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
-| `UI` | Product UI | `smoke-validated` | dev19 让 Stage 02 人工提交逐项显示缺失确认、聚焦问题字段并在真实 job 期间反馈进度。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `UI` | Product UI | `smoke-validated` | dev20 将七阶段结果、下一步配置、任务状态和自动定位收敛到同一个连续工作区。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002/003 固定 VHH7 和 TNP runtime；DATA-004 将 APOE 结果压缩为有授权、逐文件校验的私有仓库证据包。 | 确保 scaffold、模型、fixture 和共享结果的来源、授权与边界可审计。 | 公开发布前复审 APOE 私有资产、TNP 依赖和模型再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
@@ -100,8 +100,8 @@
 | `UI-013` | Product UI | `smoke-validated` | Stage 02 不再重复询问 A/B/C 的设计目的和两类理由；设计意图继承 canonical 配置，保守说明由 orchestration 生成，批准人与证据限制确认保留。 |
 | `UI-014` | Product UI | `smoke-validated` | Stage 02 显示真实 job 进度并在终态打开新分支；dev19 补充提交前逐项校验、问题字段聚焦和明确按钮状态。 |
 | `ENG-020` | Core Engineering | `smoke-validated` | Stage 02 continuation 只复制并验证成功的 Stage 01 前缀；显式人工区域提交一次完成 human approval，不要求来源整条 run 终态。 |
-| `UI-015` | Product UI | `planned` | 将七阶段结果标签重构为连续步骤工作区；Stage 02 嵌入页面，Stage 03 提供真实配置、运行和完成后前进。 |
-| `ENG-021` | Core Engineering | `planned` | 为按步骤 continuation 提供产品化表单投影、任务状态与目标 Stage 恢复，不在 React 复制科学默认值。 |
+| `UI-015` | Product UI | `smoke-validated` | 七阶段轨道支持点击和完成后平滑前进；Stage 02 已内嵌，Stage 03 从真实 `3×7` 配置启动并在成功后定位 Stage 04。 |
+| `ENG-021` | Core Engineering | `smoke-validated` | Python 为 Stage 01–07 提供产品表单投影；统一 continuation job 返回目标 Stage，React 不复制科学默认值。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 

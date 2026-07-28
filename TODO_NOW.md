@@ -66,6 +66,10 @@
 
 ## Blocked
 
+- `[ENG-022]` 新 ProteinDigger 数据盘上的目标目录已只读确认不存在，根级删除禁令已经
+  落盘；GitHub 私有仓库尚未授权本机新生成的只读 deploy key，因此尚未创建父目录或
+  clone。获得只读授权后只能克隆到全新
+  `/root/autodl-tmp/Protein_design/easydesign-clean`，禁止覆盖和删除式同步。
 - `[S01]` 默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
   SLA；remote、显式 offline cache、precomputed A3M、真实 APOE run 和 Stage 02
   交接均已完成。Protenix 官方 endpoint 持续 `PENDING`，不进入

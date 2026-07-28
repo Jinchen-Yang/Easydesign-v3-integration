@@ -102,6 +102,7 @@
 | `ENG-020` | Core Engineering | `smoke-validated` | Stage 02 continuation 只复制并验证成功的 Stage 01 前缀；显式人工区域提交一次完成 human approval，不要求来源整条 run 终态。 |
 | `UI-015` | Product UI | `smoke-validated` | 七阶段轨道支持点击和完成后平滑前进；Stage 02 已内嵌，Stage 03 从真实 `3×7` 配置启动并在成功后定位 Stage 04。 |
 | `ENG-021` | Core Engineering | `smoke-validated` | Python 为 Stage 01–07 提供产品表单投影；按步骤 continuation 依据连续成功 Stage 前缀推进，开放中的 running Run 不再被旧终态规则误拒绝。 |
+| `ENG-022` | Core Engineering | `implemented` | 根级 `DATA_SAFETY.md` 已把默认禁止删除、逐次审批、非覆盖归档和非破坏性跨主机恢复定义为最高优先级制度；ProteinDigger 的全新数据盘 clone 等待 GitHub 只读密钥授权。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 

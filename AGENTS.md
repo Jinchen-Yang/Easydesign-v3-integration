@@ -3,13 +3,20 @@
 本文件是任何 Coding Agent 进入本仓库后必须自动执行的工作协议。用户无需在每次任务中
 重复提醒更新 TODO、测试、文档或提交。
 
+## 0. 最高优先级数据安全制度
+
+任何任务开始前必须完整阅读并遵守根目录的 [`DATA_SAFETY.md`](DATA_SAFETY.md)。
+未经用户针对本次操作的逐次、精确批准，禁止一切删除、清空、覆盖、删除式同步、环境
+移除和隐式数据丢弃。移动和归档必须使用精确绝对路径、禁止覆盖，并在操作前后完成
+清单与完整性验证。任何其他规则与 `DATA_SAFETY.md` 冲突时，以后者为准。
+
 ## 1. 开始任务前
 
 1. 确认当前仓库、分支和工作树状态；不得覆盖他人未提交修改。
    同时执行 `git fetch origin`，比较本地 `HEAD` 与 `origin/main`；网络或权限失败时必须
    明确记录，不能把未核对状态写成“已同步”。
-2. 阅读 `PROJECT_CHARTER.md`、`docs/ARCHITECTURE.md`、`TODO.md` 和
-   `TODO_NOW.md`。
+2. 阅读 `DATA_SAFETY.md`、`PROJECT_CHARTER.md`、`docs/ARCHITECTURE.md`、
+   `TODO.md` 和 `TODO_NOW.md`。
 3. 阅读本次涉及的 workflow 阶段 `README.md`、`STATUS.md`；恢复旧任务时还要从
    `STATUS.md` 的历史索引读取最近一条相关记录。
 4. 判断任务是否属于实质性任务。代码、依赖、配置、契约、架构或科学行为变化都属于

@@ -36,6 +36,7 @@ from easydesign.core import (
     sha256_file,
 )
 from easydesign.core.timestamps import normalize_aware_datetime
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import (
     CandidateIndex,
@@ -53,7 +54,11 @@ from .boltzgen_tasks import (
     execute_boltzgen_candidate_task,
     recover_interrupted_boltzgen_task,
 )
-from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
+from .task_tracking import (
+    TaskEventJournal,
+    atomic_dump_runtime_model,
+    load_latest_runtime_model,
+)
 from .workspace import (
     ResolvedRunConfig,
     RunIndexEntry,
@@ -87,7 +92,7 @@ class _Upstream:
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 RunManifest LATEST: {pointer}") from error
     path = root / "manifests" / name
@@ -800,4 +805,4 @@ def read_stage04_progress(run_root: Path) -> ProgressSnapshot:
         / "runtime"
         / "progress.json"
     )
-    return load_model(path, ProgressSnapshot)
+    return load_latest_runtime_model(path, ProgressSnapshot)

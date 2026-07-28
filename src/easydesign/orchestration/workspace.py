@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import tempfile
@@ -32,6 +31,11 @@ from easydesign.core import (
 )
 from easydesign.core.artifacts import ID_PATTERN
 from easydesign.core.timestamps import normalize_aware_datetime
+from easydesign.safe_writes import (
+    append_pointer_revision,
+    quarantine_if_workspace_path,
+    read_last_text_line,
+)
 
 from .config import (
     EasyDesignRunConfig,
@@ -42,6 +46,7 @@ from .config import (
     TargetInputFormat,
     load_run_config,
 )
+from .task_tracking import atomic_dump_runtime_model, load_latest_runtime_model
 
 
 class PredictionInputWriter(Protocol):
@@ -134,7 +139,7 @@ def load_resolved_run_config(run_root: Path) -> tuple[ResolvedRunConfig, Path]:
     config_root = root / "config-snapshot"
     pointer = config_root / "CURRENT"
     if pointer.is_file():
-        relative = pointer.read_text(encoding="utf-8").strip()
+        relative = read_last_text_line(pointer)
         if not relative:
             raise ManifestStateError("config-snapshot/CURRENT 不能为空")
         path = (config_root / relative).resolve()
@@ -279,55 +284,11 @@ def _exclusive_text(text: str, destination: Path) -> None:
 
 
 def _atomic_replace_json(model: BaseModel, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = json.dumps(
-        model.model_dump(mode="json", exclude_none=False),
-        ensure_ascii=False,
-        allow_nan=False,
-        indent=2,
-        sort_keys=True,
-    )
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(content)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    atomic_dump_runtime_model(model, path)
 
 
 def _atomic_replace_text(text: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, text)
 
 
 def _sync_project_navigation_files(runs_root: Path, index: RunIndex) -> None:
@@ -371,7 +332,11 @@ def _sync_project_navigation_files(runs_root: Path, index: RunIndex) -> None:
         _atomic_replace_json(navigation, project_root / "PROJECT.json")
         primary_path = project_root / "PRIMARY"
         if primary is None:
-            primary_path.unlink(missing_ok=True)
+            quarantine_if_workspace_path(
+                primary_path,
+                operation="project-navigation",
+                reason="项目当前没有 primary run；保留旧 pointer 供审计",
+            )
         else:
             _atomic_replace_text(primary + "\n", primary_path)
 
@@ -386,14 +351,12 @@ def _sync_project_navigation_files(runs_root: Path, index: RunIndex) -> None:
         ):
             continue
         project_file = project_root / "PROJECT.json"
-        primary_file = project_root / "PRIMARY"
         if project_file.is_file():
-            project_file.unlink()
-            primary_file.unlink(missing_ok=True)
-            try:
-                project_root.rmdir()
-            except OSError:
-                pass
+            quarantine_if_workspace_path(
+                project_root,
+                operation="project-navigation-shell",
+                reason="项目已不在活跃 run-index；导航空壳移入隔离区",
+            )
 
 
 def upsert_run_index_entries(
@@ -407,7 +370,7 @@ def upsert_run_index_entries(
     index_path = runs_root / "run-index.json"
     existing: tuple[RunIndexEntry, ...] = ()
     if index_path.is_file():
-        existing = load_model(index_path, RunIndex).entries
+        existing = load_latest_runtime_model(index_path, RunIndex).entries
     by_path = {entry.path: entry for entry in existing}
     for entry in entries:
         previous = by_path.get(entry.path)
@@ -588,7 +551,11 @@ def _initialize_workspace(
         staging.rename(final_root)
     except Exception:
         if staging.exists():
-            shutil.rmtree(staging)
+            quarantine_if_workspace_path(
+                staging,
+                operation="initialize-run",
+                reason="run workspace 创建失败",
+            )
         raise
 
     workspace = RunWorkspace(

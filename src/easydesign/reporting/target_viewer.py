@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import tempfile
@@ -24,6 +23,11 @@ from easydesign.core import (
     dump_model,
     load_model,
     sha256_file,
+)
+from easydesign.safe_writes import (
+    append_pointer_revision,
+    quarantine_if_workspace_path,
+    read_last_text_line,
 )
 from easydesign.stages.s01_target_preparation import (
     ImportedStructureProvenance,
@@ -80,30 +84,12 @@ class _ViewerSources:
 
 
 def _atomic_pointer(content: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, content)
 
 
 def _read_pointer(path: Path, pattern: re.Pattern[str], label: str) -> str:
     try:
-        value = path.read_text(encoding="utf-8").strip()
+        value = read_last_text_line(path)
     except OSError as error:
         raise TargetViewerReportError(f"无法读取 {label} pointer: {path}") from error
     if pattern.fullmatch(value) is None:
@@ -667,8 +653,17 @@ def generate_stage01_target_viewer(
         )
     except (EasyDesignError, OSError, ValueError, KeyError, TypeError) as error:
         if staging.exists():
-            shutil.rmtree(staging)
-        staging.mkdir()
+            quarantine_if_workspace_path(
+                staging,
+                operation="target-viewer",
+                reason="Viewer 成功报告生成失败；保留原 staging",
+            )
+        failure_staging = Path(
+            tempfile.mkdtemp(
+                prefix=f".report-{revision:04d}.failed-",
+                dir=report_base,
+            )
+        )
         error_info = ErrorInfo(
             code=_failure_code(error),
             message=(str(error) or type(error).__name__)[:4096],
@@ -685,8 +680,8 @@ def generate_stage01_target_viewer(
             source_target_structure_sha256=source_hashes["structure"],
             error=error_info,
         )
-        dump_model(manifest, staging / "report-manifest.json")
-        _publish_report(staging, final_root, report_base)
+        dump_model(manifest, failure_staging / "report-manifest.json")
+        _publish_report(failure_staging, final_root, report_base)
         return TargetViewerOutcome(
             status=ExecutionStatus.FAILED,
             report_root=final_root,

@@ -54,7 +54,14 @@ def package_tree_sha256(package_root: Path, *, metadata_files: tuple[Path, ...] 
 
 def _git_output(repository_root: Path, *arguments: str) -> str:
     completed = subprocess.run(
-        ["git", "-C", str(repository_root), *arguments],
+        [
+            "git",
+            "-c",
+            f"safe.directory={repository_root}",
+            "-C",
+            str(repository_root),
+            *arguments,
+        ],
         check=False,
         capture_output=True,
         text=True,

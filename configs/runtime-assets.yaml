@@ -1,0 +1,134 @@
+schema_version: "0.1"
+assets:
+  - asset_id: validation-1ubq-cif
+    kind: file
+    source: https://files.rcsb.org/download/1UBQ.cif
+    destination: validation/1ubq/1UBQ.cif
+    sha256: 056f98710cb2b36f633c45e41902a02eb446e82871da21ff2dd44f74a56ca0f6
+    expected_size_bytes: 103220
+    estimated_install_bytes: 103220
+    license: wwPDB-data-terms
+    license_confirmation_required: true
+  - asset_id: protenix-v2-checkpoint
+    kind: file
+    source: https://hf-mirror.com/TMF001/protenix-v2-weights/resolve/main/protenix-v2.pt
+    destination: protenix-v2/checkpoint/protenix-v2.pt
+    sha256: 8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599
+    expected_size_bytes: 1859785497
+    estimated_install_bytes: 1859785497
+    license: Apache-2.0
+    license_confirmation_required: true
+  - asset_id: protenix-ccd-components
+    kind: file
+    source: https://protenix.tos-cn-beijing.volces.com/common/components.cif
+    destination: protenix-v2/common/components.cif
+    sha256: bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5
+    expected_size_bytes: 490777362
+    estimated_install_bytes: 490777362
+    license: wwPDB-data-terms
+    license_confirmation_required: true
+  - asset_id: protenix-ccd-rdkit-cache
+    kind: file
+    source: https://protenix.tos-cn-beijing.volces.com/common/components.cif.rdkit_mol.pkl
+    destination: protenix-v2/common/components.cif.rdkit_mol.pkl
+    sha256: d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35
+    expected_size_bytes: 142498117
+    estimated_install_bytes: 142498117
+    license: Apache-2.0-and-wwPDB-data-terms
+    license_confirmation_required: true
+  - asset_id: protenix-pdb-clusters
+    kind: file
+    source: https://protenix.tos-cn-beijing.volces.com/common/clusters-by-entity-40.txt
+    destination: protenix-v2/common/clusters-by-entity-40.txt
+    sha256: 1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c
+    expected_size_bytes: 21699572
+    estimated_install_bytes: 21699572
+    license: Apache-2.0-and-wwPDB-data-terms
+    license_confirmation_required: true
+  - asset_id: protenix-obsolete-releases
+    kind: file
+    source: https://protenix.tos-cn-beijing.volces.com/common/obsolete_release_date.csv
+    destination: protenix-v2/common/obsolete_release_date.csv
+    sha256: a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33
+    expected_size_bytes: 134716
+    estimated_install_bytes: 134716
+    license: Apache-2.0-and-wwPDB-data-terms
+    license_confirmation_required: true
+  - asset_id: scannet-code-and-epitope-models
+    kind: git
+    source: https://github.com/jertubiana/ScanNet.git
+    destination: scannet/a61623cd98d2
+    revision: a61623cd98d243c2ff4cd03fc3619d2d22ec50e7
+    estimated_install_bytes: 524288000
+    license: Apache-2.0
+    license_confirmation_required: true
+  - asset_id: boltzgen-inference-molecule-dataset
+    kind: file
+    source: https://huggingface.co/datasets/boltzgen/inference-data/resolve/main/mols.zip
+    destination: boltzgen/huggingface/datasets--boltzgen--inference-data/snapshots/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip
+    sha256: 3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53
+    expected_size_bytes: 391401102
+    estimated_install_bytes: 391401102
+    license: MIT
+    license_confirmation_required: true
+  - asset_id: boltzgen-design-diverse-checkpoint
+    kind: file
+    source: https://huggingface.co/boltzgen/boltzgen-1/resolve/main/boltzgen1_diverse.ckpt
+    destination: boltzgen/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltzgen1_diverse.ckpt
+    sha256: 360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c
+    expected_size_bytes: 1930847192
+    estimated_install_bytes: 1930847192
+    license: MIT
+    license_confirmation_required: true
+  - asset_id: boltzgen-design-adherence-checkpoint
+    kind: file
+    source: https://huggingface.co/boltzgen/boltzgen-1/resolve/main/boltzgen1_adherence.ckpt
+    destination: boltzgen/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltzgen1_adherence.ckpt
+    sha256: ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d
+    expected_size_bytes: 1930858014
+    estimated_install_bytes: 1930858014
+    license: MIT
+    license_confirmation_required: true
+  - asset_id: boltzgen-inverse-fold-checkpoint
+    kind: file
+    source: https://huggingface.co/boltzgen/boltzgen-1/resolve/main/boltzgen1_ifold.ckpt
+    destination: boltzgen/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltzgen1_ifold.ckpt
+    sha256: dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578
+    expected_size_bytes: 12582656
+    estimated_install_bytes: 12582656
+    license: MIT
+    license_confirmation_required: true
+  - asset_id: boltzgen-folding-checkpoint
+    kind: file
+    source: https://huggingface.co/boltzgen/boltzgen-1/resolve/main/boltz2_conf_final.ckpt
+    destination: boltzgen/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltz2_conf_final.ckpt
+    sha256: 525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530
+    expected_size_bytes: 2087255089
+    estimated_install_bytes: 2087255089
+    license: MIT
+    license_confirmation_required: true
+  - asset_id: boltzgen-affinity-checkpoint
+    kind: file
+    source: https://huggingface.co/boltzgen/boltzgen-1/resolve/main/boltz2_aff.ckpt
+    destination: boltzgen/huggingface/models--boltzgen--boltzgen-1/snapshots/c1be29e1f82ffcc72264f64b993c43fb4e0d17f0/boltz2_aff.ckpt
+    sha256: 6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090
+    expected_size_bytes: 2061914091
+    estimated_install_bytes: 2061914091
+    license: MIT
+    license_confirmation_required: true
+  - asset_id: boltzgen-source-a3149cf
+    kind: git
+    source: https://github.com/HannesStark/boltzgen.git
+    destination: boltzgen/source/a3149cf18eeb
+    revision: a3149cf18eeb58648d1abbb27539bd73f746cdda
+    estimated_install_bytes: 524288000
+    license: MIT
+    license_confirmation_required: false
+  - asset_id: tnp-source-29dcac72
+    kind: git
+    source: https://github.com/oxpig/TNP.git
+    destination: tnp/source/29dcac72f138
+    revision: 29dcac72f1380e8538e8870f45a699d3c6156162
+    estimated_install_bytes: 268435456
+    license: BSD-3-Clause
+    license_confirmation_required: false

@@ -8,6 +8,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 
 from easydesign.core import BackendContractError, sha256_file
@@ -24,6 +25,80 @@ def _text_sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+_MODEL_SNAPSHOT = "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0"
+_DATASET_SNAPSHOT = "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c"
+_ARTIFACT_IDENTITY: dict[str, tuple[str, int]] = {
+    "boltzgen1_diverse.ckpt": (
+        "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c",
+        1_930_847_192,
+    ),
+    "boltzgen1_adherence.ckpt": (
+        "ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d",
+        1_930_858_014,
+    ),
+    "boltzgen1_ifold.ckpt": (
+        "dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578",
+        12_582_656,
+    ),
+    "boltz2_conf_final.ckpt": (
+        "525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530",
+        2_087_255_089,
+    ),
+    "boltz2_aff.ckpt": (
+        "6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090",
+        2_061_914_091,
+    ),
+    "mols.zip": (
+        "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        391_401_102,
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class BoltzGenArtifacts:
+    design_diverse: Path
+    design_adherence: Path
+    inverse_fold: Path
+    folding: Path
+    affinity: Path
+    molecule_dataset: Path
+
+
+@lru_cache(maxsize=64)
+def _sha256_for_unchanged_file(
+    path: Path,
+    *,
+    size: int,
+    modified_ns: int,
+) -> str:
+    del size, modified_ns
+    return sha256_file(path)
+
+
+def _verify_artifact(path: Path) -> str:
+    expected_sha256, expected_size = _ARTIFACT_IDENTITY[path.name]
+    if not path.is_file():
+        raise BackendContractError(f"BoltzGen 固定资产不存在: {path}")
+    stat = path.stat()
+    if stat.st_size != expected_size:
+        raise BackendContractError(
+            "BoltzGen 固定资产大小不匹配: "
+            f"path={path}, expected={expected_size}, actual={stat.st_size}"
+        )
+    actual_sha256 = _sha256_for_unchanged_file(
+        path,
+        size=stat.st_size,
+        modified_ns=stat.st_mtime_ns,
+    )
+    if actual_sha256 != expected_sha256:
+        raise BackendContractError(
+            "BoltzGen 固定资产 SHA-256 不匹配: "
+            f"path={path}, expected={expected_sha256}, actual={actual_sha256}"
+        )
+    return actual_sha256
+
+
 @dataclass(frozen=True, slots=True)
 class BoltzGenCheckAdapter:
     executable: Path
@@ -32,6 +107,28 @@ class BoltzGenCheckAdapter:
     timeout_seconds: float = 300.0
     validation_workers: int = 4
     offline_mode: bool = True
+
+    def artifact_paths(self) -> BoltzGenArtifacts:
+        model_root = (
+            self.cache_root
+            / "models--boltzgen--boltzgen-1"
+            / "snapshots"
+            / _MODEL_SNAPSHOT
+        )
+        dataset_root = (
+            self.cache_root
+            / "datasets--boltzgen--inference-data"
+            / "snapshots"
+            / _DATASET_SNAPSHOT
+        )
+        return BoltzGenArtifacts(
+            design_diverse=model_root / "boltzgen1_diverse.ckpt",
+            design_adherence=model_root / "boltzgen1_adherence.ckpt",
+            inverse_fold=model_root / "boltzgen1_ifold.ckpt",
+            folding=model_root / "boltz2_conf_final.ckpt",
+            affinity=model_root / "boltz2_aff.ckpt",
+            molecule_dataset=dataset_root / "mols.zip",
+        )
 
     def _run(
         self,
@@ -66,15 +163,18 @@ class BoltzGenCheckAdapter:
             raise BackendContractError(
                 f"BoltzGen cache_root 不存在: {self.cache_root}"
             )
-        molecule_archives = tuple(
-            self.cache_root.glob(
-                "datasets--boltzgen--inference-data/snapshots/*/mols.zip"
+        artifacts = self.artifact_paths()
+        artifact_hashes = {
+            path.name: _verify_artifact(path)
+            for path in (
+                artifacts.design_diverse,
+                artifacts.design_adherence,
+                artifacts.inverse_fold,
+                artifacts.folding,
+                artifacts.affinity,
+                artifacts.molecule_dataset,
             )
-        )
-        if len(molecule_archives) != 1 or not molecule_archives[0].is_file():
-            raise BackendContractError(
-                "BoltzGen cache 必须包含唯一固定 inference-data mols.zip snapshot"
-            )
+        }
         version = self._run([str(self.executable), "--version"])
         version_text = (version.stdout + "\n" + version.stderr).strip()
         if version.returncode != 0 or BOLTZGEN_VERSION not in version_text:
@@ -109,7 +209,14 @@ class BoltzGenCheckAdapter:
             "backend": "boltzgen",
             "version": BOLTZGEN_VERSION,
             "commit": BOLTZGEN_COMMIT,
-            "molecule_dataset_sha256": sha256_file(molecule_archives[0]),
+            "design_diverse_sha256": artifact_hashes["boltzgen1_diverse.ckpt"],
+            "design_adherence_sha256": artifact_hashes[
+                "boltzgen1_adherence.ckpt"
+            ],
+            "inverse_fold_sha256": artifact_hashes["boltzgen1_ifold.ckpt"],
+            "folding_sha256": artifact_hashes["boltz2_conf_final.ckpt"],
+            "affinity_sha256": artifact_hashes["boltz2_aff.ckpt"],
+            "molecule_dataset_sha256": artifact_hashes["mols.zip"],
             "offline_mode": str(self.offline_mode).lower(),
             "random_seed_status": "unsupported-by-boltzgen-0.3.2",
         }
@@ -132,6 +239,9 @@ class BoltzGenCheckAdapter:
         ) -> subprocess.CompletedProcess[str]:
             specification = artifacts_root / strategy.design_specification_path
             argv = [str(self.executable), "check", specification.name]
+            argv.extend(
+                ["--moldir", str(self.artifact_paths().molecule_dataset)]
+            )
             argv.extend(["--cache", str(self.cache_root)])
             return self._run(argv, cwd=specification.parent)
 

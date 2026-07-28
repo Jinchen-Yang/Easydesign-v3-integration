@@ -12,6 +12,7 @@ import yaml  # type: ignore[import-untyped]
 
 from easydesign.core import ConfigurationError
 from easydesign.core.artifacts import ID_PATTERN
+from easydesign.safe_writes import quarantine_if_workspace_path
 
 from .config import TargetInputFormat, detect_target_input_format, load_run_config
 
@@ -436,7 +437,6 @@ def initialize_project(
         ),
     }
 
-    created_root = not destination.exists()
     destination.mkdir(parents=True, exist_ok=True)
     input_directory = destination / "inputs"
     config_path = destination / "easydesign.yaml"
@@ -460,11 +460,11 @@ def initialize_project(
         if loaded.detected_format is not detected:
             raise ConfigurationError("生成项目的输入格式复核不一致")
     except Exception:
-        shutil.rmtree(input_directory, ignore_errors=True)
-        config_path.unlink(missing_ok=True)
-        (destination / ".gitignore").unlink(missing_ok=True)
-        if created_root:
-            destination.rmdir()
+        quarantine_if_workspace_path(
+            destination,
+            operation="initialize-project",
+            reason="项目初始化或回读校验失败",
+        )
         raise
     return InitializedProject(
         project_root=destination,

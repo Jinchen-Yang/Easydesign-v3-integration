@@ -1,6 +1,6 @@
 """BoltzGen capability and execution adapters."""
 
-from .check import BoltzGenCheckAdapter
+from .check import BoltzGenArtifacts, BoltzGenCheckAdapter
 from .generation import (
     BoltzGenGenerationAdapter,
     BoltzGenGenerationHeartbeat,
@@ -11,6 +11,7 @@ from .generation import (
 
 __all__ = [
     "BoltzGenCheckAdapter",
+    "BoltzGenArtifacts",
     "BoltzGenGenerationAdapter",
     "BoltzGenGenerationHeartbeat",
     "BoltzGenGenerationRequest",

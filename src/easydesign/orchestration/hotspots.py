@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import shutil
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -21,6 +19,11 @@ from easydesign.core import (
     dump_model,
     load_model,
     sha256_file,
+)
+from easydesign.safe_writes import (
+    append_pointer_revision,
+    quarantine_if_workspace_path,
+    read_last_text_line,
 )
 from easydesign.stages.s01_target_preparation import TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
@@ -54,24 +57,7 @@ def _strictly_later(candidate: datetime, previous: datetime) -> datetime:
 
 
 def _atomic_pointer(text: str, path: Path) -> None:
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, text)
 
 
 def _exclusive_copy(source: Path, destination: Path) -> Path:
@@ -112,7 +98,7 @@ def _load_current(
 ) -> tuple[RunManifest, Path, StageManifest, Path, StageManifest, TargetBundle]:
     latest = run_root / "manifests" / "LATEST"
     try:
-        manifest_name = latest.read_text(encoding="utf-8").strip()
+        manifest_name = read_last_text_line(latest)
     except OSError as error:
         raise ManifestStateError(f"无法读取 run manifest LATEST: {latest}") from error
     run_path = run_root / "manifests" / manifest_name
@@ -717,17 +703,27 @@ def approve_hotspots_by_policy(
                 "The region is a complete connected proposal from the configured "
                 "single Stage 02 method and preserves its original members."
             )
-        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        approved_input = temporary.with_name(".policy-review-approved.yaml")
+        with approved_input.open("x", encoding="utf-8", newline="\n") as handle:
             yaml.safe_dump(raw, handle, allow_unicode=True, sort_keys=False)
         return approve_hotspots(
             root,
-            input_path=temporary,
+            input_path=approved_input,
             authority="deterministic-policy",
             policy_id=policy_id,
             approval_source="deterministic-policy",
         )
     finally:
-        temporary.unlink(missing_ok=True)
+        quarantine_if_workspace_path(
+            temporary,
+            operation="hotspot-policy-review",
+            reason="自动审批 staging 已消费",
+        )
+        quarantine_if_workspace_path(
+            locals().get("approved_input"),
+            operation="hotspot-policy-review-approved",
+            reason="自动审批输入已复制进不可变 attempt",
+        )
 
 
 def approve_hotspots_from_initial_config(
@@ -779,13 +775,23 @@ def approve_hotspots_from_initial_config(
         raw["acknowledge_evidence_limitations"] = (
             approval.acknowledge_evidence_limitations
         )
-        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        approved_input = temporary.with_name(".initial-review-approved.yaml")
+        with approved_input.open("x", encoding="utf-8", newline="\n") as handle:
             yaml.safe_dump(raw, handle, allow_unicode=True, sort_keys=False)
         return approve_hotspots(
             root,
-            input_path=temporary,
+            input_path=approved_input,
             authority="human",
             approval_source="initial-run-config",
         )
     finally:
-        temporary.unlink(missing_ok=True)
+        quarantine_if_workspace_path(
+            temporary,
+            operation="hotspot-initial-review",
+            reason="初始审批 staging 已消费",
+        )
+        quarantine_if_workspace_path(
+            locals().get("approved_input"),
+            operation="hotspot-initial-review-approved",
+            reason="初始审批输入已复制进不可变 attempt",
+        )

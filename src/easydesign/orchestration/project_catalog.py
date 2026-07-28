@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,7 +14,9 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.safe_writes import read_last_text_line
 
+from .task_tracking import load_latest_runtime_model
 from .workspace import (
     RunIndex,
     RunIndexEntry,
@@ -66,7 +67,7 @@ def _load_index(runs_root: Path) -> RunIndex:
     index_path = runs_root.resolve() / "run-index.json"
     if not index_path.is_file():
         raise ConfigurationError(f"运行索引不存在: {index_path}")
-    return load_model(index_path, RunIndex)
+    return load_latest_runtime_model(index_path, RunIndex)
 
 
 def list_project_catalog(
@@ -210,7 +211,7 @@ def _verify_run_at_path(root: Path, relative_path: str) -> RunManifest:
         raise ManifestStateError(f"运行路径不在 runs_root 或不存在: {relative_path}")
     pointer = run_root / "manifests" / "LATEST"
     try:
-        latest = pointer.read_text(encoding="utf-8").strip()
+        latest = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取运行 LATEST: {relative_path}") from error
     run = load_model(run_root / "manifests" / latest, RunManifest)
@@ -225,33 +226,10 @@ def _verify_run_at_path(root: Path, relative_path: str) -> RunManifest:
 
 
 def prune_archived_project_shells(runs_root: Path) -> tuple[str, ...]:
-    """只删除 run-index 已归档且当前为空的一级项目目录。"""
+    """兼容旧 API；安全制度下不再自动删除空目录。"""
 
-    root = runs_root.resolve()
-    index = _load_index(root)
-    archived = {
-        entry.project_id
-        for entry in index.entries
-        if entry.category == ARCHIVED_PROJECT_RUN and entry.project_id is not None
-    }
-    active = {
-        entry.project_id
-        for entry in index.entries
-        if entry.category == PROJECT_RUN and entry.project_id is not None
-    }
-    removed: list[str] = []
-    for project_id in sorted(archived - active):
-        project_root = root / project_id
-        if not project_root.exists():
-            continue
-        if project_root.is_symlink() or not project_root.is_dir():
-            raise ManifestStateError(f"归档项目壳不是普通目录: {project_root}")
-        contents = tuple(project_root.iterdir())
-        if contents:
-            continue
-        project_root.rmdir()
-        removed.append(project_id)
-    return tuple(removed)
+    _load_index(runs_root.resolve())
+    return ()
 
 
 def _move_project(
@@ -319,7 +297,7 @@ def _move_project(
     try:
         for source, destination in moves:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(source, destination)
+            source.rename(destination)
             completed.append((source, destination))
         for source_entry in selected:
             replacement = replacements[source_entry.path]
@@ -345,13 +323,11 @@ def _move_project(
             generated_at=timestamp,
         )
         index_replaced = True
-        if archive:
-            prune_archived_project_shells(root)
     except Exception:
         for source, destination in reversed(completed):
             if destination.exists() and not source.exists():
                 source.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(destination, source)
+                destination.rename(source)
         if index_replaced:
             replace_run_index_entries(
                 root,

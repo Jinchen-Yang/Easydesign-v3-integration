@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -59,30 +58,15 @@ def dump_model(model: BaseModel, path: Path) -> Path:
     except (TypeError, ValueError) as error:
         raise SerializationError(f"模型无法 JSON 序列化: {error}") from error
 
-    temporary_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
+        with path.open("x", encoding="utf-8") as handle:
             handle.write(content)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-            temporary_path = Path(handle.name)
-        os.link(temporary_path, path)
-        temporary_path.unlink()
     except FileExistsError as error:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
         raise ManifestStateError(f"不可覆盖已存在的 manifest: {path}") from error
     except OSError as error:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
         raise SerializationError(f"Manifest 写入失败: path={path}, error={error}") from error
     return path
 
@@ -90,6 +74,11 @@ def dump_model(model: BaseModel, path: Path) -> Path:
 def load_model(path: Path, model_type: type[ModelT]) -> ModelT:
     """从 JSON 文件读取并严格校验契约模型。"""
 
+    revision_root = path.with_name(f"{path.name}.revisions")
+    if revision_root.is_dir():
+        revisions = sorted(revision_root.glob("revision-*.json"))
+        if revisions:
+            path = revisions[-1]
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:

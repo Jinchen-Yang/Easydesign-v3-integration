@@ -153,13 +153,9 @@ def _validate_json_artifact_refs(run_root: Path) -> None:
 
 
 def _remove_empty_source_parents(runs_root: Path, source: Path) -> None:
-    candidate = source.parent
-    while candidate != runs_root and runs_root in candidate.parents:
-        try:
-            candidate.rmdir()
-        except OSError:
-            break
-        candidate = candidate.parent
+    """兼容旧迁移流程；空目录保留，避免任何隐式删除。"""
+
+    _ = (runs_root, source)
 
 
 def migrate_run_directories(

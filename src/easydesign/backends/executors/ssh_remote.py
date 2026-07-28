@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Self
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core import BackendContractError, ProgressSnapshot
 from easydesign.core.artifacts import ID_PATTERN
+from easydesign.workspace_context import WorkspaceContext
 
 
 class SshRemoteProbe(BaseModel):
@@ -521,44 +522,58 @@ class SshRemoteExecutor:
         )
         if not selected:
             raise BackendContractError("SSH sync 文件清单不能为空")
+        context = WorkspaceContext.discover()
+        context.ensure_layout()
+        destination = context.require_write_path(
+            destination,
+            purpose="SSH manifest 文件同步",
+        )
         destination.mkdir(parents=True, exist_ok=True)
         connection = self.connection
         ssh_transport = shlex.join(self._ssh_prefix()[:-1])
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            prefix="easydesign-remote-files-",
-            suffix=".txt",
-        ) as handle:
-            handle.write("\n".join(selected) + "\n")
-            handle.flush()
+        files_from = (
+            context.runtime_root
+            / "tmp"
+            / f"easydesign-remote-files-{uuid4().hex}.txt"
+        )
+        context.assert_write_path(files_from)
+        try:
+            with files_from.open("x", encoding="utf-8") as handle:
+                handle.write("\n".join(selected) + "\n")
             command = (
                 str(connection.rsync_executable),
                 "--archive",
                 "--partial",
                 "--protect-args",
                 "--files-from",
-                handle.name,
+                str(files_from),
                 "--rsh",
                 ssh_transport,
                 f"{self.destination}:{remote_root.as_posix().rstrip('/')}/",
                 f"{destination}/",
             )
-            try:
-                completed = subprocess.run(
-                    command,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=86_400,
-                )
-            except (OSError, subprocess.TimeoutExpired) as error:
-                raise BackendContractError(f"SSH rsync pull 失败: {error}") from error
-        if completed.returncode != 0:
-            detail = (completed.stderr.strip() or completed.stdout.strip())[:4096]
-            raise BackendContractError(
-                f"SSH rsync pull exit={completed.returncode}: {detail}"
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=86_400,
             )
+            if completed.returncode != 0:
+                detail = (completed.stderr.strip() or completed.stdout.strip())[:4096]
+                raise BackendContractError(
+                    f"SSH rsync pull exit={completed.returncode}: {detail}"
+                )
+        except (OSError, subprocess.TimeoutExpired, BackendContractError) as error:
+            if files_from.exists():
+                context.quarantine(
+                    files_from,
+                    operation="ssh-files-from",
+                    reason=f"SSH manifest 文件同步未完成: {error}",
+                )
+            if isinstance(error, BackendContractError):
+                raise
+            raise BackendContractError(f"SSH rsync pull 失败: {error}") from error
 
     def status(self, unit_name: str) -> SshRemoteStatus:
         completed = self._run_remote(

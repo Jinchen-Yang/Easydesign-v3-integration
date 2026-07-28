@@ -6,7 +6,6 @@ import csv
 import hashlib
 import json
 import os
-import tempfile
 from collections.abc import Iterable
 from importlib import resources
 from pathlib import Path
@@ -73,16 +72,8 @@ def _exclusive_text(content: str, path: Path) -> None:
 
 def _atomic_json(payload: object, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
+        with path.open("x", encoding="utf-8") as handle:
             json.dump(
                 payload,
                 handle,
@@ -94,13 +85,8 @@ def _atomic_json(payload: object, path: Path) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        if path.exists():
-            raise ManifestStateError(f"Stage 03 禁止覆盖 artifact: {path}")
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    except FileExistsError as error:
+        raise ManifestStateError(f"Stage 03 禁止覆盖 artifact: {path}") from error
 
 
 def materialize_scaffold_registry(destination: Path) -> tuple[ScaffoldAsset, ...]:
@@ -192,6 +178,7 @@ def compile_basic_vhh_matrix(
     hotspots: HotspotsFile,
     artifacts_root: Path,
     candidates_per_strategy: int,
+    scaffold_ids: tuple[str, ...] | None = None,
 ) -> tuple[tuple[ScaffoldAsset, ...], tuple[StrategyRecord, ...]]:
     """Compile the complete region × official VHH scaffold matrix.
 
@@ -206,6 +193,16 @@ def compile_basic_vhh_matrix(
         )
     if candidates_per_strategy < 1:
         raise ManifestStateError("candidates_per_strategy 必须为正整数")
+    selected_scaffolds = SCAFFOLD_IDS if scaffold_ids is None else scaffold_ids
+    unknown_scaffolds = sorted(set(selected_scaffolds) - set(SCAFFOLD_IDS))
+    if unknown_scaffolds:
+        raise ManifestStateError(
+            f"scaffold_ids 包含未登记的官方 scaffold: {unknown_scaffolds}"
+        )
+    if not selected_scaffolds:
+        raise ManifestStateError("scaffold_ids 至少包含一个官方 scaffold")
+    if len(selected_scaffolds) != len(set(selected_scaffolds)):
+        raise ManifestStateError("scaffold_ids 不能重复")
     if artifacts_root.exists() and any(artifacts_root.iterdir()):
         raise ManifestStateError(
             f"Stage 03 artifacts 目录必须为空: {artifacts_root}"
@@ -228,13 +225,14 @@ def compile_basic_vhh_matrix(
             }
         )
         for asset in raw_assets
+        if asset.scaffold_id in selected_scaffolds
     )
 
     records: list[StrategyRecord] = []
     for hotspot_set in hotspots.hotspot_sets:
         region_id = hotspot_set.id.lower()
         labels = tuple(hotspot_set.label_seq_ids)
-        for scaffold_id in SCAFFOLD_IDS:
+        for scaffold_id in selected_scaffolds:
             strategy_id = _strategy_id(hotspot_set.id, scaffold_id)
             strategy_dir = artifacts_root / "strategies" / strategy_id
             specification_path = strategy_dir / "design.yaml"

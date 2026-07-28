@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.2",
+  "environment_id": "reporting-web",
+  "platform": "linux-64",
+  "conda_explicit": "environments/locks/reporting-web-linux-64.conda-lock.txt",
+  "conda_explicit_sha256": "10708f8cc9e66d7c56c107218f14454c9829e059bddca8cccab29ad335a9bb61",
+  "python": null,
+  "probe": ["node", "--version"],
+  "estimated_install_bytes": 536870912,
+  "lock_kind": "resolved-package-set"
+}

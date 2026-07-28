@@ -63,6 +63,7 @@ from easydesign.filtering import (
     unpaired_designed_cysteine_residue_ids,
 )
 from easydesign.filtering.structure_metrics import ParsedChain
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import CandidateIndex, CandidateRecord
 from easydesign.stages.s05_pilot_filtering import (
@@ -94,7 +95,11 @@ from .complex_prediction_support import (
 )
 from .config import ResolvedProtenixMsaProviderConfig
 from .stage04 import _atomic_text
-from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
+from .task_tracking import (
+    TaskEventJournal,
+    atomic_dump_runtime_model,
+    load_latest_runtime_model,
+)
 from .workspace import (
     ResolvedRunConfig,
     RunIndexEntry,
@@ -174,7 +179,7 @@ class _Upstream:
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 RunManifest LATEST: {pointer}") from error
     path = root / "manifests" / name
@@ -1640,7 +1645,7 @@ def _execute_stage07(
     terminal_time = max(datetime.now(UTC), now + timedelta(microseconds=1))
     runtime_progress_path = runtime / "progress.json"
     if runtime_progress_path.is_file():
-        observed_progress = load_model(
+        observed_progress = load_latest_runtime_model(
             runtime_progress_path,
             ProgressSnapshot,
         )
@@ -1811,7 +1816,10 @@ def execute_stage07(
             progress: ProgressSnapshot | None = None
             if progress_path.is_file():
                 try:
-                    progress = load_model(progress_path, ProgressSnapshot)
+                    progress = load_latest_runtime_model(
+                        progress_path,
+                        ProgressSnapshot,
+                    )
                 except Exception:
                     progress = None
             message = str(error)[:4096] or error.__class__.__name__

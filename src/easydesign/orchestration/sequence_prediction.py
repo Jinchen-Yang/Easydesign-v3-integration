@@ -7,15 +7,12 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-
-from platformdirs import user_cache_path
 
 from easydesign.backends.structure_prediction import (
     BackendInvocation,
@@ -40,10 +37,12 @@ from easydesign.reporting import (
     TargetViewerOutcome,
     generate_stage01_target_viewer_nonblocking,
 )
+from easydesign.safe_writes import append_pointer_revision, read_last_text_line
 from easydesign.stages.s01_target_preparation import (
     BuiltTargetBundle,
     build_predicted_target_bundle,
 )
+from easydesign.workspace_context import WorkspaceContext
 
 from .config import (
     CacheMode,
@@ -236,7 +235,7 @@ def _msa_cache_paths(
         separators=(",", ":"),
     ).encode()
     key = hashlib.sha256(identity).hexdigest()
-    root = user_cache_path("easydesign") / "msa-v1" / sequence_sha256 / key
+    root = WorkspaceContext.discover().msa_cache_root / sequence_sha256 / key
     return root / "target.a3m", root / "manifest.json"
 
 
@@ -249,6 +248,16 @@ def _load_msa_cache(
         sequence_sha256=prepared.loaded_config.target.sequence_sha256,
         provider=provider,
     )
+    cache_root = a3m.parent
+    pointer = cache_root / "CURRENT"
+    if pointer.is_file():
+        try:
+            revision = (cache_root / read_last_text_line(pointer)).resolve()
+            revision.relative_to(cache_root.resolve())
+        except (OSError, ValueError):
+            return None
+        a3m = revision / "target.a3m"
+        manifest_path = revision / "manifest.json"
     if not a3m.is_file() or not manifest_path.is_file():
         return None
     try:
@@ -276,15 +285,23 @@ def _store_msa_cache(
     provider: ResolvedProtenixMsaProviderConfig,
     evidence: _MsaEvidence,
 ) -> None:
-    a3m, manifest_path = _msa_cache_paths(
+    legacy_a3m, _legacy_manifest = _msa_cache_paths(
         sequence_sha256=prepared.loaded_config.target.sequence_sha256,
         provider=provider,
     )
-    a3m.parent.mkdir(parents=True, exist_ok=True)
-    temporary_a3m = a3m.with_suffix(".a3m.tmp")
-    temporary_manifest = manifest_path.with_suffix(".json.tmp")
-    shutil.copyfile(evidence.published_a3m, temporary_a3m)
-    temporary_manifest.write_text(
+    cache_root = legacy_a3m.parent
+    revisions = cache_root / "revisions"
+    revisions.mkdir(parents=True, exist_ok=True)
+    revision_id = (
+        datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        + f"-{evidence.sha256[:12]}"
+    )
+    revision = revisions / revision_id
+    revision.mkdir()
+    a3m = revision / "target.a3m"
+    manifest_path = revision / "manifest.json"
+    _exclusive_copy(evidence.published_a3m, a3m)
+    _exclusive_text(
         json.dumps(
             {
                 "schema_version": "0.1",
@@ -303,10 +320,12 @@ def _store_msa_cache(
             sort_keys=True,
         )
         + "\n",
-        encoding="utf-8",
+        manifest_path,
     )
-    os.replace(temporary_a3m, a3m)
-    os.replace(temporary_manifest, manifest_path)
+    _atomic_pointer(
+        revision.relative_to(cache_root).as_posix(),
+        cache_root / "CURRENT",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,25 +364,7 @@ def _exclusive_copy(source: Path, destination: Path) -> Path:
 
 
 def _atomic_pointer(text: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, text)
 
 
 def _artifact(

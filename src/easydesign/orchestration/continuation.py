@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,7 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.safe_writes import quarantine_if_workspace_path, read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 from .config import (
@@ -35,7 +35,7 @@ from .workspace import load_resolved_run_config
 def _latest_run(run_root: Path) -> RunManifest:
     pointer = run_root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 continuation source: {run_root}") from error
     return load_model(run_root / "manifests" / name, RunManifest)
@@ -397,23 +397,23 @@ def _copy_verified_continuation_input(
         if not destination.is_file() or sha256_file(destination) != expected_sha256:
             raise ConfigurationError(f"continuation 输入已存在但内容不同: {destination}")
         return destination
-    temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            dir=destination.parent,
-            prefix=f".{destination.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-        shutil.copyfile(source, temporary)
-        if sha256_file(temporary) != expected_sha256:
+        with source.open("rb") as input_handle, destination.open("xb") as output_handle:
+            shutil.copyfileobj(input_handle, output_handle)
+        if sha256_file(destination) != expected_sha256:
+            quarantine_if_workspace_path(
+                destination,
+                operation="continuation-input",
+                reason="continuation 输入复制后 SHA-256 不一致",
+            )
             raise ManifestStateError("continuation 输入复制后 SHA-256 不一致")
-        os.replace(temporary, destination)
         return destination
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    except FileExistsError as error:
+        if sha256_file(destination) != expected_sha256:
+            raise ConfigurationError(
+                f"continuation 输入已存在但内容不同: {destination}"
+            ) from error
+        return destination
 
 
 def _rebase_continuation_inputs(
@@ -533,6 +533,10 @@ def materialize_continuation_config(
     try:
         load_run_config(output)
     except Exception:
-        output.unlink(missing_ok=True)
+        quarantine_if_workspace_path(
+            output,
+            operation="continuation-config",
+            reason="生成的 continuation 配置未通过 schema 校验",
+        )
         raise
     return output

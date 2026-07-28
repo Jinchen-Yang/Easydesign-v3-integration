@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2",
+  "environment_id": "tnp",
+  "platform": "linux-64",
+  "conda_explicit": "environments/locks/tnp-linux-64.conda-lock.txt",
+  "conda_explicit_sha256": "ec26eaa80f6911e51065d3405f09a8af8b321692976ad8ec924f70644d55476f",
+  "pip_requirements": "environments/locks/tnp-linux-64.pip-lock.txt",
+  "pip_requirements_sha256": "ecdc57c422c47cc9caad53d1ff03193307d0b902973d92bcec8842c045dd5e00",
+  "python": "3.10",
+  "probe": ["python", "-c", "import theraprofnano; print('29dcac72')"],
+  "estimated_install_bytes": 10737418240,
+  "lock_kind": "resolved-package-set"
+}

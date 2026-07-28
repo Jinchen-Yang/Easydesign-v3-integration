@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -32,6 +30,7 @@ from easydesign.reporting import (
     TargetViewerOutcome,
     generate_stage01_target_viewer_nonblocking,
 )
+from easydesign.safe_writes import append_pointer_revision
 from easydesign.stages.s01_target_preparation import (
     BuiltTargetBundle,
     build_imported_pse_target_bundle,
@@ -65,25 +64,7 @@ def _exclusive_text(text: str, path: Path) -> Path:
 
 
 def _atomic_pointer(text: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, text)
 
 
 def _artifact(

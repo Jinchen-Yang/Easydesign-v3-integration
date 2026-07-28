@@ -67,6 +67,13 @@ from easydesign.orchestration.remote_execution import (
     submit_remote_pipeline,
     sync_remote_pipeline,
 )
+from easydesign.orchestration.runtime_setup import (
+    asset_status,
+    environment_status,
+    import_legacy_deployment,
+    setup_plan,
+    setup_workspace,
+)
 from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.orchestration.stage05 import Stage05Execution
 from easydesign.orchestration.stage06 import Stage06Execution
@@ -77,6 +84,7 @@ from easydesign.reporting import (
     resolve_target_viewer_argument,
 )
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
+from easydesign.workspace_context import WorkspaceContext
 
 
 def _json_text(value: BaseModel | tuple[BaseModel, ...] | dict[str, Any]) -> str:
@@ -105,6 +113,45 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=easydesign.__version__)
     parser.add_argument("--debug", action="store_true", help="失败时显示完整 traceback")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    setup_parser = commands.add_parser(
+        "setup",
+        help="在当前仓库 runtime/ 内安装 EasyDesign 环境与资产",
+    )
+    setup_parser.add_argument("--plan", action="store_true", help="只显示计划，不写入")
+    setup_parser.add_argument("--minimal", action="store_true", help="仅安装 core/UI")
+    setup_parser.add_argument(
+        "--accept-license",
+        action="append",
+        default=[],
+        metavar="ASSET_ID",
+        help="确认一个运行资产的许可；可重复提供",
+    )
+    setup_parser.add_argument("--conda", type=Path, help="显式 Conda executable")
+    _add_json(setup_parser)
+
+    env_parser = commands.add_parser("env", help="查看仓库内环境注册状态")
+    env_commands = env_parser.add_subparsers(dest="env_command", required=True)
+    env_status_parser = env_commands.add_parser("status", help="显示七个环境的状态")
+    _add_json(env_status_parser)
+
+    assets_parser = commands.add_parser("assets", help="查看仓库内模型和资产状态")
+    assets_commands = assets_parser.add_subparsers(dest="assets_command", required=True)
+    assets_status_parser = assets_commands.add_parser("status", help="显示运行资产状态")
+    _add_json(assets_status_parser)
+
+    workspace_parser = commands.add_parser("workspace", help="管理仓库内运行工作区")
+    workspace_commands = workspace_parser.add_subparsers(
+        dest="workspace_command",
+        required=True,
+    )
+    import_legacy_parser = workspace_commands.add_parser(
+        "import-legacy",
+        help="复制旧部署证据并按新锁重建；不会改动原目录",
+    )
+    import_legacy_parser.add_argument("--profile", type=Path, required=True)
+    import_legacy_parser.add_argument("--env-root", type=Path, required=True)
+    _add_json(import_legacy_parser)
 
     init_parser = commands.add_parser("init", help="从真实 target 创建最小用户项目")
     init_parser.add_argument("project_dir", type=Path)
@@ -195,6 +242,11 @@ def _parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--config", type=Path)
     _add_profile(doctor_parser)
     doctor_parser.add_argument("--runs-root", type=Path)
+    doctor_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="要求并探测全部本地科学后端；任一未就绪即返回失败",
+    )
     _add_json(doctor_parser)
 
     run_parser = commands.add_parser("run", help="执行 YAML 声明的已实现阶段")
@@ -474,12 +526,114 @@ def _print_execution(execution: PipelineExecution) -> None:
         print(f"Stage 01 Viewer：{execution.viewer_status}")
 
 
+def _format_setup_plan(payload: dict[str, Any]) -> str:
+    def human_bytes(value: int) -> str:
+        amount = float(value)
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if amount < 1024 or unit == "TiB":
+                return f"{amount:.1f} {unit}"
+            amount /= 1024
+        return f"{amount:.1f} TiB"
+
+    lines = [
+        "EasyDesign 安装计划",
+        f"工作区：{payload['workspace']}",
+        f"模式：{payload['mode']}",
+        "环境：",
+    ]
+    for environment in payload["environments"]:
+        lines.append(
+            f"- {environment['environment_id']} → {environment['target']} "
+            f"(lock {str(environment['lock_sha256'])[:12]}；"
+            f"约 {human_bytes(environment['estimated_install_bytes'])})"
+        )
+    assets = payload["assets"]
+    if assets:
+        lines.append("运行资产：")
+        for asset in assets:
+            approval = (
+                "需要许可确认"
+                if asset["license_confirmation_required"]
+                else "无需额外确认"
+            )
+            lines.append(
+                f"- {asset['asset_id']}（{asset['license']}；{approval}；"
+                f"约 {human_bytes(asset['estimated_install_bytes'])}）"
+            )
+    disk = payload["disk"]
+    lines.extend(
+        (
+            "磁盘预检：",
+            f"- 当前可用：{human_bytes(disk['free_bytes'])}",
+            f"- 本次增量峰值估算：{human_bytes(disk['incremental_peak_bytes'])}",
+            f"- 安装后安全保留：{human_bytes(disk['reserve_bytes'])}",
+            f"- 结论：{'空间满足要求' if disk['sufficient'] else '空间不足，安装将被拒绝'}",
+        )
+    )
+    lines.append("所有写入均限制在 runtime/、projects/、runs/、archives/。")
+    lines.append("不会修改系统代理、shell profile、Git 全局配置或 base Conda。")
+    return "\n".join(lines)
+
+
+def _confirmed_setup_licenses(
+    payload: dict[str, Any],
+    *,
+    accepted: set[str],
+    allow_prompt: bool,
+) -> set[str]:
+    """Collect explicit per-asset consent without ever auto-accepting terms."""
+
+    pending = [
+        asset
+        for asset in payload["assets"]
+        if asset["license_confirmation_required"]
+        and asset["asset_id"] not in accepted
+    ]
+    if not pending or not allow_prompt:
+        return accepted
+    print("以下运行资产需要在下载前逐项确认许可：")
+    for asset in pending:
+        answer = input(
+            f"- {asset['asset_id']}（{asset['license']}），确认下载并用于本机运行？[y/N] "
+        ).strip().lower()
+        if answer in {"y", "yes"}:
+            accepted.add(str(asset["asset_id"]))
+    return accepted
+
+
+def _print_setup_summary(summary: BaseModel) -> None:
+    payload = summary.model_dump(mode="json")
+    print(f"工作区：{payload['workspace']}")
+    print(f"安装模式：{payload['mode']}")
+    for record in payload["environments"]:
+        print(f"[{record['status']}] 环境 {record['environment_id']}")
+    for record in payload["assets"]:
+        print(f"[{record['status']}] 资产 {record['asset_id']}")
+    if payload["awaiting_approval"]:
+        print("以下资产仍需明确许可确认：")
+        for asset_id in payload["awaiting_approval"]:
+            print(f"- {asset_id}")
+        print("确认后重新运行：./easydesign setup --accept-license ASSET_ID")
+    print("安装完成。" if payload["ok"] else "安装尚未完整完成；详情已记录，可安全重试。")
+
+
+def _format_runtime_status(payload: dict[str, Any]) -> str:
+    if "report" in payload:
+        return f"旧部署证据已复制：{payload['report']}\n原路径保持不变。"
+    key = "environments" if "environments" in payload else "assets"
+    lines = [f"工作区：{payload['workspace']}"]
+    for item in payload[key]:
+        item_id = item.get("environment_id", item.get("asset_id"))
+        lines.append(f"[{item['status']}] {item_id}")
+    return "\n".join(lines)
+
+
 def _runs_root(explicit: Path | None, profile_path: Path | None) -> Path:
     if explicit is not None:
         return explicit.expanduser().resolve()
     selected = profile_path
     if selected is None and not default_runtime_profile_path().is_file():
-        return (Path.cwd() / "runs").resolve()
+        return WorkspaceContext.discover().runs_root
     loaded = load_runtime_profile(selected)
     return (
         loaded.profile.runs_root.resolve()
@@ -489,13 +643,68 @@ def _runs_root(explicit: Path | None, profile_path: Path | None) -> Path:
 
 
 def _dispatch(arguments: argparse.Namespace) -> int:
+    if arguments.command in {"setup", "env", "assets", "workspace"}:
+        context = WorkspaceContext.discover()
+        if arguments.command == "setup":
+            payload = setup_plan(context, minimal=arguments.minimal)
+            if arguments.plan:
+                print(
+                    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+                    if arguments.json
+                    else _format_setup_plan(payload)
+                )
+                return 0
+            accepted_license_ids = _confirmed_setup_licenses(
+                payload,
+                accepted=set(arguments.accept_license),
+                allow_prompt=(
+                    not arguments.minimal
+                    and not arguments.json
+                    and sys.stdin.isatty()
+                ),
+            )
+            summary = setup_workspace(
+                context,
+                minimal=arguments.minimal,
+                accepted_license_ids=accepted_license_ids,
+                conda_executable=arguments.conda,
+            )
+            if arguments.json:
+                print(_json_text(summary))
+            else:
+                _print_setup_summary(summary)
+            return 0 if summary.ok else 3
+        if arguments.command == "env":
+            payload = environment_status(context)
+        elif arguments.command == "assets":
+            payload = asset_status(context)
+        else:
+            migration_report = import_legacy_deployment(
+                context,
+                profile_path=arguments.profile,
+                environment_root=arguments.env_root,
+            )
+            payload = {"status": "imported", "report": str(migration_report)}
+        if arguments.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(_format_runtime_status(payload))
+        return 0
     if arguments.command == "ui":
         from easydesign.ui import serve_ui
 
+        context = WorkspaceContext.discover()
         serve_ui(
             runs_root=_runs_root(arguments.runs_root, arguments.profile),
-            projects_root=arguments.projects_root,
-            profile_path=arguments.profile,
+            projects_root=(
+                context.projects_root
+                if arguments.projects_root is None
+                else arguments.projects_root
+            ),
+            profile_path=(
+                context.profile_path if arguments.profile is None else arguments.profile
+            ),
+            job_root=context.ui_job_root,
             port=arguments.port,
             open_browser=arguments.open_browser,
         )
@@ -692,6 +901,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             profile_path=arguments.profile,
             config_path=arguments.config,
             runs_root=arguments.runs_root,
+            full=arguments.full,
         )
         if arguments.json:
             print(_json_text(report))

@@ -22,6 +22,8 @@ playwright-report/
 # Environments and local configuration
 .venv/
 venv/
+runtime/*
+!runtime/README.md
 .env
 .env.*
 !.env.example
@@ -41,6 +43,8 @@ runs/*
 projects/*
 models/*
 !models/.gitkeep
+archives/*
+!archives/.gitkeep
 *.ckpt
 *.safetensors
 *.pt

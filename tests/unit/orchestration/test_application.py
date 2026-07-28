@@ -24,6 +24,7 @@ from easydesign.orchestration import (
     DiagnosticCheck,
     DiagnosticReport,
     DiagnosticStatus,
+    diagnose_runtime,
     execute_pipeline,
     initialize_project,
     initialize_runtime_profile,
@@ -45,6 +46,35 @@ from easydesign.orchestration.workspace import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _declare_test_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "workspace_id: test-workspace",
+                "runtime_root: runtime",
+                "projects_root: projects",
+                "runs_root: runs",
+                "archives_root: archives",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    repository = Path(__file__).resolve().parents[3]
+    git_config = tmp_path / "runtime" / "state" / "git" / "test.config"
+    git_config.parent.mkdir(parents=True, exist_ok=True)
+    git_config.write_text(
+        f"[safe]\n\tdirectory = {repository}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(git_config))
+
+
 def _project_and_profile(tmp_path: Path) -> tuple[Path, Path]:
     fasta = tmp_path / "target.fasta"
     fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
@@ -53,7 +83,7 @@ def _project_and_profile(tmp_path: Path) -> tuple[Path, Path]:
         target=fasta,
     )
     profile = initialize_runtime_profile(
-        tmp_path / "profile.yaml",
+        tmp_path / "runtime" / "profile.yaml",
         runs_root=(tmp_path / "runs").resolve(),
     )
     return initialized.config_path, profile
@@ -70,9 +100,40 @@ def test_config_validation_does_not_require_backend_profile(
 
     plan = validate_run_configuration(initialized.config_path)
 
-    assert plan.profile_id == "unconfigured"
+    assert plan.profile_id == "workspace-local"
     assert plan.required_backends == ("protenix-v2",)
-    assert not plan.runs_root.exists()
+    assert plan.runs_root.name == "runs"
+    assert not (plan.runs_root / "demo").exists()
+
+
+def test_full_doctor_fails_when_declared_workspace_backends_are_not_installed(
+    tmp_path: Path,
+) -> None:
+    profile = initialize_runtime_profile(
+        tmp_path / "runtime" / "profile.yaml",
+        runs_root=(tmp_path / "runs").resolve(),
+    )
+
+    regular = diagnose_runtime(profile_path=profile)
+    full = diagnose_runtime(profile_path=profile, full=True)
+
+    assert regular.ok
+    assert not full.ok
+    unavailable = {
+        check.name: check
+        for check in full.checks
+        if check.name
+        in {"protenix-v2", "pymol-pse", "scannet-epitope", "boltzgen", "tnp"}
+    }
+    assert set(unavailable) == {
+        "protenix-v2",
+        "pymol-pse",
+        "scannet-epitope",
+        "boltzgen",
+        "tnp",
+    }
+    assert all(check.status is DiagnosticStatus.FAILED for check in unavailable.values())
+    assert all("已声明" in check.message for check in unavailable.values())
 
 
 def test_dry_run_preflight_does_not_create_run(
@@ -400,7 +461,7 @@ END
         target=pdb,
     )
     profile = initialize_runtime_profile(
-        tmp_path / "profile.yaml",
+        tmp_path / "runtime" / "profile.yaml",
         runs_root=(tmp_path / "runs").resolve(),
     )
 

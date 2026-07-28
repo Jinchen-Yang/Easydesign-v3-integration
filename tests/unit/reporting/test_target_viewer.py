@@ -42,6 +42,7 @@ from easydesign.reporting import (
     resolve_latest_target_viewer_report,
     verify_target_viewer_report,
 )
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation import (
     ColorCount,
     PseSourceAnnotations,
@@ -274,10 +275,9 @@ def test_generate_portable_report_and_new_immutable_revision(
     assert second.status is ExecutionStatus.SUCCEEDED
     assert second.report_root.name == "report-0002"
     assert first.manifest_path.read_bytes() == first_manifest_bytes
-    assert (
-        run_root
-        / "results/01-target-preparation/target-viewer/LATEST"
-    ).read_text(encoding="utf-8") == "report-0002/report-manifest.json\n"
+    assert read_last_text_line(
+        run_root / "results/01-target-preparation/target-viewer/LATEST"
+    ) == "report-0002/report-manifest.json"
 
 
 def test_source_tampering_publishes_failed_revision_without_fallback(
@@ -386,7 +386,7 @@ def test_failed_stage_publishes_failed_report(tmp_path: Path) -> None:
     stage_path = run_root / "01-target-preparation/stage-manifest.v0001.json"
     run_path = run_root / "manifests/run-manifest.v0001.json"
     run = load_model(run_path, RunManifest)
-    stage_path.unlink()
+    stage_path.rename(stage_path.with_name(f"{stage_path.name}.missing"))
     failed_attempt = Attempt(
         attempt_id="attempt-0001",
         status=ExecutionStatus.FAILED,
@@ -421,7 +421,7 @@ def test_failed_stage_publishes_failed_report(tmp_path: Path) -> None:
         producer_stage="01-target-preparation",
         producer_attempt="attempt-0001",
     )
-    run_path.unlink()
+    run_path.rename(run_path.with_name(f"{run_path.name}.missing"))
     failed_stage_run = RunManifest.model_validate(
         {
             **run.model_dump(mode="python"),

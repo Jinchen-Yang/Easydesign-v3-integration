@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from platformdirs import user_cache_path
 from pydantic import BaseModel, ConfigDict, Field
 
 from easydesign.core import BackendContractError, sha256_file
+from easydesign.workspace_context import WorkspaceContext
 
 UNIPROT_BASE = "https://rest.uniprot.org"
 RCSB_SEARCH_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
@@ -81,7 +81,7 @@ class ScientificHttpClient:
         self.cache_root = (
             cache_root
             if cache_root is not None
-            else user_cache_path("easydesign") / "remote-v1"
+            else WorkspaceContext.discover().remote_cache_root
         )
         self.max_attempts = max_attempts
         self._client = client or httpx.Client(

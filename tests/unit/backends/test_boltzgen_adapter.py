@@ -76,3 +76,44 @@ def test_validation_returns_failed_report_and_preserves_raw_logs(
     assert (tmp_path / "logs/region-7eow.stderr.log").read_text(
         encoding="utf-8"
     ) == "binding error\n"
+
+
+def test_validation_passes_explicit_local_molecule_dataset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts = tmp_path / "artifacts"
+    relative = Path("strategies/region/design.yaml")
+    strategy = _strategy(artifacts / relative, "region-7eow").model_copy(
+        update={"design_specification_path": relative.as_posix()}
+    )
+    adapter = BoltzGenCheckAdapter(
+        executable=tmp_path / "boltzgen",
+        repository_root=tmp_path / "repository",
+        cache_root=tmp_path / "cache",
+    )
+    monkeypatch.setattr(BoltzGenCheckAdapter, "probe", lambda _self: {})
+    commands: list[tuple[str, ...]] = []
+
+    def run(
+        _self: BoltzGenCheckAdapter,
+        argv: list[str],
+        *,
+        cwd: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd
+        commands.append(tuple(argv))
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(BoltzGenCheckAdapter, "_run", run)
+
+    report = adapter.validate(
+        artifacts_root=artifacts,
+        strategies=(strategy,),
+        checked_at=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+    )
+
+    assert report.status == "passed"
+    command = commands[0]
+    assert command[command.index("--moldir") + 1].endswith("mols.zip")
+    assert not any(item.startswith("huggingface:") for item in command)

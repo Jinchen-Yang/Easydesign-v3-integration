@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2",
+  "environment_id": "boltzgen",
+  "platform": "linux-64",
+  "conda_explicit": "environments/locks/boltzgen-linux-64.conda-lock.txt",
+  "conda_explicit_sha256": "bf363d3d752482a1a1626577acfefc6f9f5e7dc47fd4910f29869deebacfa679",
+  "pip_requirements": "environments/locks/boltzgen-linux-64.pip-lock.txt",
+  "pip_requirements_sha256": "e5d9679901064c53ebace06d31dc068b3bd66f6055dd5f16c024d63f72a35990",
+  "python": "3.11.15",
+  "probe": ["python", "-c", "import boltzgen; print(getattr(boltzgen, '__version__', '0.3.2'))"],
+  "estimated_install_bytes": 12884901888,
+  "lock_kind": "resolved-package-set"
+}

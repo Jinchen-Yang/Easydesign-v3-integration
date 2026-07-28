@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -31,6 +30,11 @@ from easydesign.core import (
     sha256_file,
 )
 from easydesign.core.timestamps import normalize_aware_datetime
+from easydesign.safe_writes import (
+    append_pointer_revision,
+    quarantine_if_workspace_path,
+    read_last_text_line,
+)
 from easydesign.stages.s02_hotspot_discovery import HotspotsFile
 from easydesign.stages.s03_boltzgen_configuration import (
     StrategyBundle,
@@ -76,7 +80,7 @@ class _Upstream:
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 RunManifest LATEST: {pointer}") from error
     path = root / "manifests" / name
@@ -118,25 +122,7 @@ def _load_upstream(root: Path) -> _Upstream:
 
 
 def _atomic_text(text: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, text)
 
 
 def _json_file(payload: object, path: Path) -> Path:
@@ -336,7 +322,11 @@ def initialize_continuation_run(
         )
     except Exception:
         if destination.exists():
-            shutil.rmtree(destination)
+            quarantine_if_workspace_path(
+                destination,
+                operation="initialize-continuation-run",
+                reason="continuation run 初始化失败",
+            )
         raise
     _, latest_path = _latest_manifest(destination)
     return PreparedRun(
@@ -527,7 +517,11 @@ def continue_run_in_place(
         staging.rename(revision_root)
     except Exception:
         if staging.exists():
-            shutil.rmtree(staging)
+            quarantine_if_workspace_path(
+                staging,
+                operation="publish-config-revision",
+                reason="配置 revision 发布失败",
+            )
         raise
 
     config_path_in_run = revision_root / "easydesign.yaml"
@@ -633,6 +627,7 @@ def execute_stage03(
         hotspots=hotspots,
         artifacts_root=artifacts,
         candidates_per_strategy=config.candidates_per_strategy,
+        scaffold_ids=config.scaffold_ids,
     )
     _json_file(capability, artifacts / "boltzgen-capability.json")
     report = adapter.validate(

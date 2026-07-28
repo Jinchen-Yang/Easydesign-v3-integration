@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +22,33 @@ def test_repository_foundation_contract() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_repository_launcher_preserves_proxy_and_translates_ui_shortcut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = runpy.run_path(
+        str(ROOT / "easydesign"),
+        run_name="easydesign_launcher_test",
+    )
+    translate = namespace["_translate_arguments"]
+    child_environment = namespace["_child_environment"]
+    monkeypatch.setenv("HTTPS_PROXY", "http://user-owned-proxy.invalid:7898")
+
+    assert translate(["ui"]) == ["ui", "serve"]
+    assert translate(["ui", "--port", "8765"]) == [
+        "ui",
+        "serve",
+        "--port",
+        "8765",
+    ]
+    assert translate(["ui", "serve", "--port", "8765"]) == [
+        "ui",
+        "serve",
+        "--port",
+        "8765",
+    ]
+    assert child_environment()["HTTPS_PROXY"] == os.environ["HTTPS_PROXY"]
 
 
 @pytest.mark.parametrize(

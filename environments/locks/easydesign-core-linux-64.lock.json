@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.2",
+  "environment_id": "easydesign-core",
+  "platform": "linux-64",
+  "conda_explicit": "environments/locks/easydesign-core-linux-64.conda-lock.txt",
+  "conda_explicit_sha256": "76cb5aee669fb3b860620b82ab049bb51b0cebc8e2162aa2c7224d050edf3ec3",
+  "pip_requirements": "environments/locks/easydesign-core-linux-64.pip-lock.txt",
+  "pip_requirements_sha256": "96d2c80e1dcff06994a236d522fce6e567c06be926877dde165512bca9c8fd2b",
+  "install_workspace_package": true,
+  "python": "3.11",
+  "probe": ["python", "-c", "import easydesign; print(easydesign.__version__)"],
+  "estimated_install_bytes": 1073741824,
+  "lock_kind": "resolved-package-set"
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import csv
 import re
 import sys
@@ -96,8 +97,59 @@ IGNORED_REPOSITORY_DIRS = {
     "node_modules",
     "playwright-report",
     "runs",
+    "runtime",
     "test-results",
 }
+FORBIDDEN_DELETE_CALLS = {
+    "os.remove",
+    "os.unlink",
+    "os.rmdir",
+    "shutil.rmtree",
+}
+FORBIDDEN_DELETE_METHODS = {"unlink", "rmdir"}
+
+
+def destructive_write_calls() -> list[str]:
+    """Find deletion primitives that bypass the quarantine-only write policy."""
+
+    violations: list[str] = []
+    source_root = ROOT / "src" / "easydesign"
+    for path in sorted(source_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            qualified: str | None = None
+            if isinstance(function, ast.Attribute):
+                if isinstance(function.value, ast.Name):
+                    qualified = f"{function.value.id}.{function.attr}"
+                elif function.attr in FORBIDDEN_DELETE_METHODS:
+                    qualified = function.attr
+            if (
+                qualified in FORBIDDEN_DELETE_CALLS
+                or qualified in FORBIDDEN_DELETE_METHODS
+            ):
+                violations.append(
+                    f"{path.relative_to(ROOT)}:{node.lineno} 调用了 {qualified}"
+                )
+            if (
+                isinstance(function, ast.Attribute)
+                and function.attr in {"run", "Popen", "call", "check_call", "check_output"}
+                and node.args
+                and isinstance(node.args[0], (ast.List, ast.Tuple))
+                and node.args[0].elts
+            ):
+                first = node.args[0].elts[0]
+                if isinstance(first, ast.Constant) and first.value in {
+                    "rm",
+                    "unlink",
+                    "rmdir",
+                }:
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{node.lineno} 启动了删除命令"
+                    )
+    return violations
 
 
 def require(condition: bool, message: str, errors: list[str]) -> None:
@@ -147,6 +199,12 @@ def project_markdown() -> list[Path]:
 
 def main() -> int:
     errors: list[str] = []
+    require(
+        not destructive_write_calls(),
+        "业务代码存在未经安全层封装的删除操作: "
+        + "; ".join(destructive_write_calls()),
+        errors,
+    )
 
     actual_root_docs = {path.name for path in ROOT.glob("*.md")}
     require(actual_root_docs == ROOT_DOCS, "根目录 Markdown 集合不符合精简规则", errors)
@@ -257,6 +315,7 @@ def main() -> int:
         "configs/README.md",
         "examples/README.md",
         "resources/README.md",
+        "runtime/README.md",
         "workflow/README.md",
     }
     for relative in expected_docs:
@@ -264,11 +323,11 @@ def main() -> int:
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
-    require(len(markdown) <= 41, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
+    require(len(markdown) <= 42, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev20", "项目版本异常", errors)
+    require(project["version"] == "0.1.0.dev21", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require(
         project.get("scripts") == {"easydesign": "easydesign.cli:main"},
@@ -446,10 +505,34 @@ def main() -> int:
                 "approved-runtime-only",
                 "approved-vendored",
                 "approved-private-repository",
+                "awaiting-user-approval",
             },
-            f"资产登记第 {row_number} 行尚未完成审查",
+            f"资产登记第 {row_number} 行审查状态无法识别",
             errors,
         )
+
+    registered_asset_ids = {
+        row[0] for row in asset_rows[1:] if len(row) == len(expected_asset_header)
+    }
+    runtime_catalog_text = (ROOT / "configs/runtime-assets.yaml").read_text(
+        encoding="utf-8"
+    )
+    runtime_asset_ids = set(
+        re.findall(r"(?m)^  - asset_id: ([a-z0-9][a-z0-9-]+)$", runtime_catalog_text)
+    )
+    require(
+        len(runtime_asset_ids) == 15,
+        f"runtime 资产目录数量异常: {len(runtime_asset_ids)}",
+        errors,
+    )
+    require(
+        runtime_asset_ids <= registered_asset_ids,
+        (
+            "runtime 资产未同步到长期来源登记: "
+            f"{sorted(runtime_asset_ids - registered_asset_ids)}"
+        ),
+        errors,
+    )
 
     if errors:
         for error in errors:

@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
-from platformdirs import user_state_path
 from pydantic import BaseModel
 
 import easydesign
@@ -34,6 +33,8 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.safe_writes import read_last_text_line
+from easydesign.workspace_context import WorkspaceContext
 
 from .config import load_run_config
 from .profile import LoadedRuntimeProfile, SshRemoteRuntime, load_runtime_profile
@@ -121,7 +122,7 @@ def _latest_source_run(source_run: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     if not pointer.is_file():
         raise ManifestStateError(f"remote submission source 缺少 LATEST: {pointer}")
-    manifest_path = root / "manifests" / pointer.read_text(encoding="utf-8").strip()
+    manifest_path = root / "manifests" / read_last_text_line(pointer)
     manifest = load_model(manifest_path, RunManifest)
     if manifest.status is not ExecutionStatus.SUCCEEDED:
         raise ManifestStateError("remote submission source run 必须是 succeeded")
@@ -133,8 +134,7 @@ def _latest_source_run(source_run: Path) -> tuple[RunManifest, Path]:
 
 def remote_job_record_path(executor_id: str, job_id: str) -> Path:
     return (
-        user_state_path("easydesign", appauthor=False)
-        / "remote-jobs"
+        WorkspaceContext.discover().remote_job_root
         / executor_id
         / f"{job_id}.json"
     )
@@ -170,7 +170,7 @@ def list_remote_job_records(
     *,
     executor_id: str | None = None,
 ) -> tuple[SshRemoteJobRecord, ...]:
-    root = user_state_path("easydesign", appauthor=False) / "remote-jobs"
+    root = WorkspaceContext.discover().remote_job_root
     if not root.is_dir():
         return ()
     candidates = (
@@ -367,7 +367,14 @@ def _remote_manifest_closure(
     executor: SshRemoteExecutor,
     remote_root: Path,
 ) -> tuple[RunManifest, str, tuple[StageManifest, ...], set[str]]:
-    latest_name = executor.read_text(remote_root / "manifests" / "LATEST").strip()
+    remote_pointer_lines = [
+        line.strip()
+        for line in executor.read_text(remote_root / "manifests" / "LATEST").splitlines()
+        if line.strip()
+    ]
+    if not remote_pointer_lines:
+        raise ManifestStateError("远端 run LATEST 没有有效 revision")
+    latest_name = remote_pointer_lines[-1]
     if Path(latest_name).name != latest_name or not latest_name.endswith(".json"):
         raise ManifestStateError("远端 LATEST 指针无效")
     latest_relative = f"manifests/{latest_name}"

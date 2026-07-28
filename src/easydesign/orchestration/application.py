@@ -35,6 +35,7 @@ from easydesign.core import (
     resolve_code_identity,
     sha256_file,
 )
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
 
 from .config import (
@@ -80,6 +81,7 @@ from .stage04 import Stage04Execution, execute_stage04
 from .stage05 import ComplexAdapterBuilder, Stage05Execution, execute_stage05
 from .stage06 import Stage06Execution, execute_stage06
 from .stage07 import Stage07Execution, execute_stage07
+from .task_tracking import load_latest_runtime_model
 from .workspace import (
     PreparedRun,
     PreparedSequenceRun,
@@ -164,7 +166,7 @@ class _RuntimeContext:
 def _load_latest_run_manifest(root: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 run LATEST: {pointer}") from error
     path = root / "manifests" / name
@@ -492,6 +494,7 @@ def diagnose_runtime(
     config_path: Path | None = None,
     runs_root: Path | None = None,
     start_stage: int = 1,
+    full: bool = False,
 ) -> DiagnosticReport:
     """探测显式 profile；配置存在时只要求本次运行需要的 backend。"""
 
@@ -504,7 +507,11 @@ def diagnose_runtime(
     required = (
         set(_required_backends(loaded, start_stage=start_stage))
         if loaded is not None
-        else set()
+        else (
+            {"protenix-v2", "pymol-pse", "scannet-epitope", "boltzgen", "tnp"}
+            if full
+            else set()
+        )
     )
     checks: list[DiagnosticCheck] = []
     python_ok = (3, 11) <= sys.version_info[:2] < (3, 13)
@@ -544,6 +551,22 @@ def diagnose_runtime(
         ("tnp", backends.tnp),
     ):
         if runtime is None:
+            portable = loaded_profile.portable_profile
+            binding_names = {
+                "protenix-v2": "protenix_v2",
+                "pymol-pse": "pymol_pse",
+                "scannet-epitope": "scannet_epitope",
+                "boltzgen": "boltzgen",
+                "tnp": "tnp",
+            }
+            declared = (
+                portable is not None
+                and getattr(
+                    portable.backend_bindings,
+                    binding_names[name],
+                )
+                is not None
+            )
             checks.append(
                 DiagnosticCheck(
                     name=name,
@@ -552,7 +575,11 @@ def diagnose_runtime(
                         if name in required
                         else DiagnosticStatus.NOT_CONFIGURED
                     ),
-                    message="profile 未配置该 backend",
+                    message=(
+                        "工作区已声明该 backend，但当前锁版本的环境或必需资产尚未完整可用"
+                        if declared
+                        else "profile 未声明该 backend"
+                    ),
                 )
             )
             continue
@@ -877,11 +904,7 @@ def execute_pipeline(
                 run_root,
                 approval=user_regions.approval,
             )
-            latest_name = (
-                (run_root / "manifests" / "LATEST")
-                .read_text(encoding="utf-8")
-                .strip()
-            )
+            latest_name = read_last_text_line(run_root / "manifests" / "LATEST")
             run_manifest = run_root / "manifests" / latest_name
             status = "succeeded"
         elif loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
@@ -904,11 +927,7 @@ def execute_pipeline(
                     region_count=approval.region_count,
                     allow_structural_only=approval.allow_structural_only,
                 )
-            latest_name = (
-                (run_root / "manifests" / "LATEST")
-                .read_text(encoding="utf-8")
-                .strip()
-            )
+            latest_name = read_last_text_line(run_root / "manifests" / "LATEST")
             run_manifest = run_root / "manifests" / latest_name
             status = "succeeded"
         else:
@@ -1143,7 +1162,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
         and resolved.stop_after_stage >= 7
         and stage06_id in refs
     ):
-        return load_model(
+        return load_latest_runtime_model(
             root / stage07_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
@@ -1158,7 +1177,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
         and resolved.stop_after_stage >= 6
         and stage05_id in refs
     ):
-        return load_model(
+        return load_latest_runtime_model(
             root / stage06_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
@@ -1173,7 +1192,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
         and resolved.stop_after_stage >= 5
         and stage04_id in refs
     ):
-        return load_model(
+        return load_latest_runtime_model(
             root / stage05_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
@@ -1184,7 +1203,7 @@ def read_pipeline_progress(run_root: Path) -> ProgressSnapshot:
             ProgressSnapshot,
         )
     if current.status is ExecutionStatus.RUNNING and resolved.stop_after_stage >= 4:
-        return load_model(
+        return load_latest_runtime_model(
             root / stage04_id / "attempt-0001" / "runtime" / "progress.json",
             ProgressSnapshot,
         )
@@ -1248,7 +1267,7 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
         raise ManifestStateError(
             f"当前 Stage 01 source 不支持 decision continuation: {resolved.detected_input_format}"
         )
-    latest_name = (root / "manifests" / "LATEST").read_text(encoding="utf-8").strip()
+    latest_name = read_last_text_line(root / "manifests" / "LATEST")
     current_manifest = root / "manifests" / latest_name
     workspace = RunWorkspace(
         runs_root=root.parents[1],
@@ -1434,10 +1453,8 @@ def continue_pipeline_after_decision(
                 prepared.workspace.run_root,
                 approval=user_regions.approval,
             )
-            latest_name = (
-                (prepared.workspace.run_root / "manifests" / "LATEST")
-                .read_text(encoding="utf-8")
-                .strip()
+            latest_name = read_last_text_line(
+                prepared.workspace.run_root / "manifests" / "LATEST"
             )
             current_run_manifest = (
                 prepared.workspace.run_root / "manifests" / latest_name
@@ -1466,10 +1483,8 @@ def continue_pipeline_after_decision(
                     region_count=approval.region_count,
                     allow_structural_only=approval.allow_structural_only,
                 )
-            latest_name = (
-                (prepared.workspace.run_root / "manifests" / "LATEST")
-                .read_text(encoding="utf-8")
-                .strip()
+            latest_name = read_last_text_line(
+                prepared.workspace.run_root / "manifests" / "LATEST"
             )
             current_run_manifest = prepared.workspace.run_root / "manifests" / latest_name
             status = "succeeded"
@@ -1490,7 +1505,7 @@ def _resolve_run_from_index(runs_root: Path, selector: str) -> Path:
     index_path = runs_root / "run-index.json"
     if not index_path.is_file():
         raise ManifestStateError(f"run-index 不存在: {index_path}")
-    index = load_model(index_path, RunIndex)
+    index = load_latest_runtime_model(index_path, RunIndex)
     matches = [
         entry
         for entry in index.entries
@@ -1510,7 +1525,7 @@ def show_run(runs_root: Path, selector: str) -> RunSummary:
     run_root = _resolve_run_from_index(root, selector)
     latest_pointer = run_root / "manifests" / "LATEST"
     try:
-        latest_name = latest_pointer.read_text(encoding="utf-8").strip()
+        latest_name = read_last_text_line(latest_pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 run LATEST: {latest_pointer}") from error
     manifest_path = run_root / "manifests" / latest_name
@@ -1539,7 +1554,7 @@ def list_runs(runs_root: Path) -> tuple[RunSummary, ...]:
     index_path = root / "run-index.json"
     if not index_path.is_file():
         return ()
-    index = load_model(index_path, RunIndex)
+    index = load_latest_runtime_model(index_path, RunIndex)
     summaries = []
     for entry in index.entries:
         if entry.category != "project-run" or entry.run_id is None:

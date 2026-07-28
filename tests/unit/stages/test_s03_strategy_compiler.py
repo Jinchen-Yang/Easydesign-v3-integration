@@ -155,6 +155,25 @@ def test_strategy_bundle_records_complete_registry_and_upstream_identity(
     assert bundle.random_seed_status == "unsupported-by-boltzgen-0.3.2"
 
 
+def test_compiler_allows_explicit_official_scaffold_subset_for_backend_probe(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.cif"
+    target.write_text("data_target\n#\n", encoding="utf-8")
+
+    scaffold_assets, strategies = compile_basic_vhh_matrix(
+        target_cif=target,
+        hotspots=_hotspots(target, ("probe-region",)),
+        artifacts_root=tmp_path / "artifacts",
+        candidates_per_strategy=1,
+        scaffold_ids=("7eow",),
+    )
+
+    assert [asset.scaffold_id for asset in scaffold_assets] == ["7eow"]
+    assert [strategy.scaffold_id for strategy in strategies] == ["7eow"]
+    assert strategies[0].candidates_per_strategy == 1
+
+
 def test_compiler_rejects_target_checksum_mismatch_and_overwrite(
     tmp_path: Path,
 ) -> None:

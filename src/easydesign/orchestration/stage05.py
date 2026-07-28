@@ -64,6 +64,7 @@ from easydesign.filtering import (
     select_scale_strategy,
 )
 from easydesign.filtering.structure_metrics import ParsedChain
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import (
     CandidateIndex,
@@ -93,7 +94,11 @@ from .complex_prediction_support import (
 )
 from .config import ResolvedProtenixMsaProviderConfig
 from .stage04 import _atomic_text
-from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
+from .task_tracking import (
+    TaskEventJournal,
+    atomic_dump_runtime_model,
+    load_latest_runtime_model,
+)
 from .workspace import (
     ResolvedRunConfig,
     RunIndexEntry,
@@ -163,7 +168,7 @@ class _Upstream:
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 RunManifest LATEST: {pointer}") from error
     path = root / "manifests" / name
@@ -258,7 +263,7 @@ def _publish_final_execution_evidence(
     runtime_progress = runtime / "progress.json"
     if not runtime_progress.is_file():
         raise ManifestStateError("Stage 05 缺少 runtime progress，不能发布终态")
-    observed = load_model(runtime_progress, ProgressSnapshot)
+    observed = load_latest_runtime_model(runtime_progress, ProgressSnapshot)
     final_progress = observed.model_copy(
         update={
             "updated_at": completed_at,
@@ -544,7 +549,7 @@ def _prepare_target_msa(
             shutil.copyfileobj(source_handle, destination_handle)
             destination_handle.flush()
             os.fsync(destination_handle.fileno())
-        os.replace(temporary, destination)
+        temporary.rename(destination)
 
     if state_path.exists():
         state = load_model(state_path, _TargetMsaState)

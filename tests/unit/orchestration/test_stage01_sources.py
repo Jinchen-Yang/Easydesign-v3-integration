@@ -20,6 +20,7 @@ from easydesign.core import (
 from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.stage01_sources import execute_stage01_source
 from easydesign.orchestration.workspace import initialize_run_workspace
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation import TargetBundle
 from easydesign.stages.s02_hotspot_discovery import load_structure_context
 
@@ -267,9 +268,7 @@ def test_structural_only_local_range_is_rejected_as_ambiguous(
         / "stage-manifest.v0001.json",
         StageManifest,
     )
-    latest_name = prepared.workspace.latest_manifest_pointer.read_text(
-        encoding="utf-8"
-    ).strip()
+    latest_name = read_last_text_line(prepared.workspace.latest_manifest_pointer)
     run = load_model(
         prepared.workspace.run_root / "manifests" / latest_name,
         RunManifest,

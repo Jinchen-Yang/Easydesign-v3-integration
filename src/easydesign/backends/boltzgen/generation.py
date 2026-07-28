@@ -65,6 +65,7 @@ class BoltzGenGenerationAdapter:
     def build_command(self, request: BoltzGenGenerationRequest) -> tuple[str, ...]:
         if request.requested_candidates < 1:
             raise BackendContractError("BoltzGen requested_candidates 必须为正整数")
+        artifacts = self.check_adapter.artifact_paths()
         return (
             str(self.check_adapter.executable),
             "run",
@@ -87,6 +88,17 @@ class BoltzGenGenerationAdapter:
             "0.001",
             "--filter_biased",
             "true",
+            "--design_checkpoints",
+            str(artifacts.design_diverse),
+            str(artifacts.design_adherence),
+            "--inverse_fold_checkpoint",
+            str(artifacts.inverse_fold),
+            "--folding_checkpoint",
+            str(artifacts.folding),
+            "--affinity_checkpoint",
+            str(artifacts.affinity),
+            "--moldir",
+            str(artifacts.molecule_dataset),
             "--cache",
             str(self.check_adapter.cache_root),
         )

@@ -22,4 +22,6 @@ def _resolve_version() -> str:
 
 __version__ = _resolve_version()
 
-__all__ = ["__version__"]
+from .workspace_context import WorkspaceContext, WorkspaceDeclaration  # noqa: E402
+
+__all__ = ["WorkspaceContext", "WorkspaceDeclaration", "__version__"]

@@ -27,6 +27,7 @@ from easydesign.orchestration import (
     replace_run_index_entries,
 )
 from easydesign.orchestration.workspace import initialize_run_workspace
+from easydesign.safe_writes import read_last_text_line
 
 
 def _identity(version: str, digit: str) -> CodeIdentity:
@@ -146,11 +147,11 @@ def test_normal_next_stage_continues_open_run_from_succeeded_stage_prefix(
     assert {
         path.name
         for path in (tmp_path / "runs" / prepared.workspace.project_id).iterdir()
-    } == {"one-coherent-run", "PROJECT.json"}
+    } == {"one-coherent-run", "PROJECT.json", "PROJECT.json.revisions"}
     assert not (root / str(StageId.HOTSPOT_DISCOVERY)).exists()
     assert sha256_file(stage_manifest_path) == stage_sha_before
-    assert (root / "config-snapshot/CURRENT").read_text(encoding="utf-8") == (
-        "revisions/revision-0004/resolved-config.json\n"
+    assert read_last_text_line(root / "config-snapshot/CURRENT") == (
+        "revisions/revision-0004/resolved-config.json"
     )
     latest = load_model(root / "manifests/run-manifest.v0004.json", RunManifest)
     assert latest.status is ExecutionStatus.RUNNING
@@ -210,6 +211,6 @@ def test_prune_only_removes_empty_shell_for_archived_project(tmp_path: Path) -> 
 
     removed = prune_archived_project_shells(runs_root)
 
-    assert removed == ("archived-target",)
-    assert not (runs_root / "archived-target").exists()
+    assert removed == ()
+    assert (runs_root / "archived-target").is_dir()
     assert (runs_root / "untracked-empty").is_dir()

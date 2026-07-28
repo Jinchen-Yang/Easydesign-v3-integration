@@ -35,6 +35,7 @@ from easydesign.orchestration.hotspots import (
     export_hotspot_review,
 )
 from easydesign.orchestration.workspace import ResolvedRunConfig
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation import (
     CoordinateEnsemble,
     ResidueMapping,
@@ -427,7 +428,7 @@ def test_structural_only_review_requires_acknowledgement_then_publishes(
     assert [item.id for item in hotspots.hotspot_sets] == ["A", "B", "C"]
     assert hotspots.hotspot_sets[0].label_seq_ids == (1, 2, 3, 4, 5)
     assert hotspots.hotspot_sets[0].label_ranges == "1..5"
-    latest = (root / "manifests/LATEST").read_text(encoding="utf-8").strip()
+    latest = read_last_text_line(root / "manifests/LATEST")
     run = load_model(root / "manifests" / latest, RunManifest)
     assert run.status is ExecutionStatus.SUCCEEDED
     assert run.workflow_state is None

@@ -1,0 +1,6 @@
+schema_version: "0.1"
+workspace_id: easydesign-local
+runtime_root: runtime
+projects_root: projects
+runs_root: runs
+archives_root: archives

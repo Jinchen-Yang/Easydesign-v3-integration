@@ -48,6 +48,23 @@ def test_generation_command_freezes_full_nanobody_pipeline_parameters(
     assert command[command.index("--alpha") + 1] == "0.001"
     assert command[command.index("--filter_biased") + 1] == "true"
     assert command[command.index("--devices") + 1] == "1"
+    assert command[command.index("--design_checkpoints") + 1].endswith(
+        "boltzgen1_diverse.ckpt"
+    )
+    assert command[command.index("--design_checkpoints") + 2].endswith(
+        "boltzgen1_adherence.ckpt"
+    )
+    assert command[command.index("--inverse_fold_checkpoint") + 1].endswith(
+        "boltzgen1_ifold.ckpt"
+    )
+    assert command[command.index("--folding_checkpoint") + 1].endswith(
+        "boltz2_conf_final.ckpt"
+    )
+    assert command[command.index("--affinity_checkpoint") + 1].endswith(
+        "boltz2_aff.ckpt"
+    )
+    assert command[command.index("--moldir") + 1].endswith("mols.zip")
+    assert not any(item.startswith("huggingface:") for item in command)
     assert "CUDA_VISIBLE_DEVICES" not in command
 
 

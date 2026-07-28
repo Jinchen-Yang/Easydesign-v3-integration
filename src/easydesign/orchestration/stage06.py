@@ -6,7 +6,6 @@ import json
 import math
 import os
 import shutil
-import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -38,6 +37,7 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import CandidateIndex
 from easydesign.stages.s05_pilot_filtering import PilotFilterReport, Stage05Bundle
@@ -100,7 +100,7 @@ class _Upstream:
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
     pointer = root / "manifests" / "LATEST"
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(pointer)
     except OSError as error:
         raise ManifestStateError(f"无法读取 RunManifest LATEST: {pointer}") from error
     path = root / "manifests" / name
@@ -272,32 +272,16 @@ def _write_or_verify_bytes(content: bytes, path: Path) -> None:
             raise ManifestStateError(f"Stage 06 已有终态 artifact bytes 不一致: {path}")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
+        with path.open("xb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-            temporary_path = Path(handle.name)
-        os.link(temporary_path, path)
-        temporary_path.unlink()
     except FileExistsError as error:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
         if path.read_bytes() != content:
             raise ManifestStateError(
                 f"Stage 06 并发发布的 artifact bytes 不一致: {path}"
             ) from error
-    except OSError:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-        raise
 
 
 def _resource_report(

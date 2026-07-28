@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
+from typing import TypeVar
 
 from pydantic import BaseModel
 
-from easydesign.core import ManifestStateError, TaskEvent, load_model
+from easydesign.core import ManifestStateError, SerializationError, TaskEvent, load_model
+
+RuntimeModel = TypeVar("RuntimeModel", bound=BaseModel)
 
 
 def atomic_dump_runtime_model(model: BaseModel, path: Path) -> Path:
-    """运行期可替换快照；终态 artifact 仍由不可覆盖发布负责。"""
+    """Append a runtime snapshot revision without replacing prior bytes."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(
@@ -23,26 +25,51 @@ def atomic_dump_runtime_model(model: BaseModel, path: Path) -> Path:
         indent=2,
         sort_keys=True,
     )
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(payload)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    if not path.exists():
+        try:
+            with path.open("x", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            return path
+        except FileExistsError:
+            pass
+    revision_root = path.with_name(f"{path.name}.revisions")
+    revision_root.mkdir(parents=True, exist_ok=True)
+    sequence = len(tuple(revision_root.glob("revision-*.json"))) + 1
+    while True:
+        revision = revision_root / f"revision-{sequence:08d}.json"
+        try:
+            with revision.open("x", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            break
+        except FileExistsError:
+            sequence += 1
     return path
+
+
+def load_latest_runtime_model(
+    path: Path,
+    model_type: type[RuntimeModel],
+) -> RuntimeModel:
+    """Read the highest valid immutable snapshot revision."""
+
+    candidates = [path]
+    revision_root = path.with_name(f"{path.name}.revisions")
+    candidates.extend(sorted(revision_root.glob("revision-*.json")))
+    errors: list[str] = []
+    for candidate in reversed(candidates):
+        try:
+            return load_model(candidate, model_type)
+        except (OSError, SerializationError, ValueError) as error:
+            errors.append(f"{candidate.name}: {error}")
+    raise ManifestStateError(
+        f"runtime snapshot 没有合法 revision: {path}; " + "; ".join(errors)
+    )
 
 
 class TaskEventJournal:

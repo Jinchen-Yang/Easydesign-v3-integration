@@ -702,7 +702,28 @@ class Stage03Config(BaseModel):
 
     profile: Literal["boltzgen-vhh-basic-v1"] = "boltzgen-vhh-basic-v1"
     scaffold_registry: Literal["official-vhh7-v1"] = "official-vhh7-v1"
+    scaffold_ids: tuple[
+        Literal[
+            "7eow",
+            "7xl0",
+            "8coh",
+            "8z8v",
+            "gontivimab",
+            "isecarosmab",
+            "sonelokimab",
+        ],
+        ...,
+    ] | None = None
     candidates_per_strategy: int = Field(default=40, ge=1)
+
+    @model_validator(mode="after")
+    def validate_scaffold_subset(self) -> Self:
+        if self.scaffold_ids is not None:
+            if not self.scaffold_ids:
+                raise ValueError("scaffold_ids 至少包含一个官方 VHH scaffold")
+            if len(self.scaffold_ids) != len(set(self.scaffold_ids)):
+                raise ValueError("scaffold_ids 不能重复")
+        return self
 
 
 class LocalMultiGpuExecutorConfig(BaseModel):

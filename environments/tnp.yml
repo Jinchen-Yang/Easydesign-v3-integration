@@ -29,4 +29,4 @@ dependencies:
       - einops==0.8.2
       - requests==2.34.2
       - ImmuneBuilder==1.2
-      - theraprofnano @ git+https://github.com/oxpig/Therapeutic_Nanobody_Profiler.git@29dcac72f1380e8538e8870f45a699d3c6156162
+      - theraprofnano @ git+https://github.com/oxpig/TNP.git@29dcac72f1380e8538e8870f45a699d3c6156162

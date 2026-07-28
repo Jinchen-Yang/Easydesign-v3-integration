@@ -46,6 +46,7 @@ from easydesign.orchestration.stage06 import execute_stage06
 from easydesign.orchestration.stage07 import execute_stage07
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
+from easydesign.safe_writes import append_pointer_revision
 from easydesign.stages.s03_boltzgen_configuration import (
     ScaffoldAsset,
     StrategyBundle,
@@ -953,10 +954,7 @@ def test_stage06_generates_exactly_one_thousand_new_candidates_in_two_shards(
     scale_bundle_sha256 = sha256_file(stage06.scale_bundle)
     terminal_run = load_model(stage06.run_manifest, RunManifest)
     previous_manifest = root / "manifests" / f"run-manifest.v{terminal_run.revision - 1:04d}.json"
-    (root / "manifests" / "LATEST").write_text(
-        previous_manifest.name + "\n",
-        encoding="utf-8",
-    )
+    append_pointer_revision(root / "manifests" / "LATEST", previous_manifest.name)
     recovered_publish = execute_stage06(
         run_root=root,
         adapter=generation,  # type: ignore[arg-type]

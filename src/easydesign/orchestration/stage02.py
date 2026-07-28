@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,6 +32,7 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.safe_writes import append_pointer_revision, read_last_text_line
 from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
     AnnotationReport,
@@ -164,24 +163,7 @@ def _exclusive_copy(source: Path, destination: Path) -> Path:
 
 
 def _atomic_pointer(text: str, path: Path) -> None:
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary = Path(handle.name)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    append_pointer_revision(path, text)
 
 
 def _artifact(
@@ -206,7 +188,7 @@ def _artifact(
 def _load_current_manifest(run_root: Path) -> tuple[RunManifest, Path]:
     latest = run_root / "manifests" / "LATEST"
     try:
-        name = latest.read_text(encoding="utf-8").strip()
+        name = read_last_text_line(latest)
     except OSError as error:
         raise ManifestStateError(f"无法读取 run manifest LATEST: {latest}") from error
     path = run_root / "manifests" / name

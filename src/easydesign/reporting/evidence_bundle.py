@@ -12,6 +12,7 @@ from typing import Any
 
 from easydesign.core import ArtifactRef, RunManifest, StageManifest, load_model
 from easydesign.core.hashing import sha256_file
+from easydesign.safe_writes import read_last_text_line
 
 _PRUNED_RUNTIME_DIRECTORIES = frozenset({"logs", "runtime", "tasks", "work"})
 
@@ -149,7 +150,7 @@ def build_ui_evidence_bundle(
         raise ValueError(f"Evidence bundle 输出目录必须为空: {output}")
 
     pointer = source / "manifests" / "LATEST"
-    latest_name = pointer.read_text(encoding="utf-8").strip()
+    latest_name = read_last_text_line(pointer)
     latest_path = source / "manifests" / latest_name
     manifest = load_model(latest_path, RunManifest)
     stages = _verify_manifest_closure(source, manifest)

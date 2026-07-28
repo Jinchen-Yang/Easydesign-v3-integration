@@ -4,6 +4,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
 from pytest import MonkeyPatch
 
 from easydesign.backends.executors import SshRemoteConnection, SshRemoteExecutor
@@ -139,6 +140,20 @@ def test_ssh_progress_resume_and_manifest_file_pull_are_explicit(
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "0.1",
+                "workspace_id": "ssh-test",
+                "runtime_root": "runtime",
+                "projects_root": "projects",
+                "runs_root": "runs",
+                "archives_root": "archives",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EASYDESIGN_WORKSPACE", str(tmp_path))
     executor = _executor(tmp_path)
 
     observed = executor.progress(Path("/data/easydesign/runs/project/run"))
@@ -149,7 +164,7 @@ def test_ssh_progress_resume_and_manifest_file_pull_are_explicit(
     executor.pull_files(
         remote_root=Path("/data/easydesign/runs/project/run"),
         relative_paths=("manifests/LATEST", "manifests/run-manifest-r0001.json"),
-        destination=tmp_path / "mirror",
+        destination=tmp_path / "runs" / "mirror",
     )
 
     assert observed.planned_candidates == 50_000

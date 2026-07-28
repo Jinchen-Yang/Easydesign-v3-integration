@@ -40,7 +40,7 @@
 | `ENG` | Core Engineering | `smoke-validated` | manifest、Decision Gate、跨主机执行与统一 run layout 已形成可审计工程底座。 | 保持一个 API、不可变证据与跨平台 core。 | ENG-018：历史 checkpoint 逐 run 依赖报告与可恢复归档；[运行目录规则](docs/architecture/RUN_LAYOUT.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–005 已提供可安装 CLI、六入口 init、运行管理、Viewer 与经过校验的一条命令共享案例入口。 | 让真实能力和可审计结果通过稳定入口使用。 | 下一步验证跨平台共享案例和可继续长任务 UX；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `smoke-validated` | 自包含 Target Viewer 与 Workbench Mol* 统一支持浅色画布和触摸双指缩放。 | 保持只读、便携、最小暴露的科学报告。 | REP-002：SASA/ScanNet overlay；可视化批准 UX 后续开发。 |
-| `UI` | Product UI | `smoke-validated` | dev18 修复 Stage 02 分支前缀、一次人工批准、真实 job 进度和同区再次点击取消。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `UI` | Product UI | `smoke-validated` | dev19 让 Stage 02 人工提交逐项显示缺失确认、聚焦问题字段并在真实 job 期间反馈进度。 | 在第二真实案例和可继续长任务上验证完整交互。 | UI-002 长任务 UX、第二案例和跨平台验收；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002/003 固定 VHH7 和 TNP runtime；DATA-004 将 APOE 结果压缩为有授权、逐文件校验的私有仓库证据包。 | 确保 scaffold、模型、fixture 和共享结果的来源、授权与边界可审计。 | 公开发布前复审 APOE 私有资产、TNP 依赖和模型再分发边界。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
@@ -98,7 +98,7 @@
 | `REP-005` | Reporting & Visualization | `smoke-validated` | Workbench 与便携 Stage 01 Viewer 的 Mol* 宿主、canvas 和运行时画布层均固定 `touch-action: none`，双指手势由 Mol* 接收。 |
 | `S02-009` | Scientific Pipeline | `smoke-validated` | APOE PSE 三层编辑器已将 A/B/C 9/14/14 保存为新的 `manual-residue-list` Stage 02 分支，并停在人工确认门；旧运行保持不变。 |
 | `UI-013` | Product UI | `smoke-validated` | Stage 02 不再重复询问 A/B/C 的设计目的和两类理由；设计意图继承 canonical 配置，保守说明由 orchestration 生成，批准人与证据限制确认保留。 |
-| `UI-014` | Product UI | `smoke-validated` | Stage 02 显示真实 job 进度并在终态打开新分支；Mol* 与序列均支持同区再次点击取消，不再提供橡皮擦。 |
+| `UI-014` | Product UI | `smoke-validated` | Stage 02 显示真实 job 进度并在终态打开新分支；dev19 补充提交前逐项校验、问题字段聚焦和明确按钮状态。 |
 | `ENG-020` | Core Engineering | `smoke-validated` | Stage 02 continuation 只复制并验证成功的 Stage 01 前缀；显式人工区域提交一次完成 human approval，不要求来源整条 run 终态。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
@@ -124,7 +124,7 @@
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 01 | `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev18 修复成功前缀分支、一次人工批准、真实任务进度和同区再次点击取消。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev19 补齐人工提交的逐项校验、高亮聚焦、真实任务进度和成功跳转。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |

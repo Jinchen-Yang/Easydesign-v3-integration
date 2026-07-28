@@ -652,6 +652,17 @@ textarea { padding: 10px; }
 .approval-summary { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .approval-footer { display: grid; grid-template-columns: minmax(190px, .7fr) minmax(250px, 1fr) minmax(320px, 1.5fr) auto; align-items: end; gap: 12px; }
 .approval-footer .acknowledgement { align-self: center; }
+.approval-footer .field-attention {
+  color: var(--red);
+  background: var(--red-soft);
+  border: 1px solid #e9bec5;
+  border-radius: 8px;
+  padding: 10px;
+}
+.approval-footer label.field-attention input {
+  border-color: var(--red);
+  outline: 2px solid #b33a4a24;
+}
 
 /* 旧版只读组件的兼容样式；默认产品路由不再展示它们。 */
 .science-stop, .filter-layout, .funnel, .comparison-split, .run-cards, .overview-grid, .recent-section { display: none; }

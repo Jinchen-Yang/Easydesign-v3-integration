@@ -8,7 +8,7 @@
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 01 | `smoke-validated` | schema 0.6 六类入口、三种 required-MSA 来源、Target Bundle 0.4、Viewer 与 Stage 02 交接均通过真实矩阵。 | 冻结 Stage 01 1.0 边界，把开发重心移交 Stage 03。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-25 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev18 修复成功前缀分支、一次人工批准、真实任务进度和同区再次点击取消。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev19 补齐人工提交的逐项校验、高亮聚焦、真实任务进度和成功跳转。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -35,9 +35,10 @@
   普通项目只保留两个 APOE 主案例，FASTA 真实 Protenix Stage 01、PSE 交互选区新分支、
   DesignSession lineage、Mol* 可见结构和确定性七步自检均有运行证据。后续只处理新发现
   的回归，不再作为 Now 中的开发任务。
-- `[UI-014/ENG-020/S02-009]` dev18 已修复 Stage 02 continuation：automatic 与人工
-  路线都只继承 checksum 正确的 Stage 01 成功前缀；人工提交一次完成批准，真实 job
-  排队/运行状态显示进度，终态自动打开新分支。Mol* 与序列同区再次点击均可取消。
+- `[UI-014/ENG-020/S02-009]` dev19 已修复 Stage 02 continuation 与人工提交反馈：
+  两条路线只继承 checksum 正确的 Stage 01 成功前缀；批准人或证据限制确认缺失时逐项
+  高亮并聚焦，条件满足后显示真实 job 进度，终态自动打开新分支。Mol* 与序列同区再次
+  点击均可取消。
 - `[VAL-003]` 冻结当前 APOE 负结果，对相同候选、相同 MSA 和 seeds 101/202/303
   比较 no-template、target-template、target-template+hotspot constraint，并加入已知
   VHH–抗原正对照；未形成新 profile/ADR 前不得改变 Stage 05 默认 gate。

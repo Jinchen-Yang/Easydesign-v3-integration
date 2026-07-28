@@ -173,7 +173,7 @@ def test_normal_next_stage_continues_same_run_without_copying_upstream(
         config_path=branch_config,
         runs_root=tmp_path / "runs",
         run_id="stage02-branch",
-        code_identity=_identity("0.1.0.dev18", "3"),
+        code_identity=_identity("0.1.0.dev19", "3"),
         runtime_profile=profile,
         created_at=created + timedelta(seconds=4),
         copy_through_stage=1,

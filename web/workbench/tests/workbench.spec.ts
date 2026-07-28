@@ -887,6 +887,10 @@ test("explicit manual regions complete one approval and open a succeeded branch"
   await page.locator(".stage-node").nth(1).click();
   await page.getByRole("button", { name: "重新选择结合区域" }).click();
   await page.getByLabel("批准人").fill("scientist-01");
+  await expect(page.getByRole("button", { name: "还需勾选确认" })).toBeVisible();
+  await page.getByRole("button", { name: "还需勾选确认" }).click();
+  await expect(page.getByRole("alert")).toContainText("提交前还差 1 项");
+  await expect(page.getByLabel(/我确认这些是用户提供的设计区域/)).toBeFocused();
   await page.getByText(/我确认这些是用户提供的设计区域/).click();
   await page.getByRole("button", { name: "保存并建立新的第2步分支" }).click();
   await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();

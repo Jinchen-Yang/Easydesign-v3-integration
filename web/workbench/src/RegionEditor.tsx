@@ -83,9 +83,14 @@ export function RegionEditor({
   const [allowStructuralOnly, setAllowStructuralOnly] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
   const [status, setStatus] = useState("");
+  const [validationField, setValidationField] = useState<
+    "approved-by" | "acknowledgement" | undefined
+  >();
   const [busy, setBusy] = useState(false);
   const [activeJobId, setActiveJobId] = useState("");
   const lastSelected = useRef<number | undefined>(undefined);
+  const approvedByInput = useRef<HTMLInputElement>(null);
+  const acknowledgementInput = useRef<HTMLInputElement>(null);
   const completionMessage = useRef("");
   const submittedCallback = useRef(onSubmitted);
 
@@ -282,13 +287,18 @@ export function RegionEditor({
       return;
     }
     if (!approvedBy.trim()) {
-      setStatus("请填写批准人；用户选区必须保留明确的人类责任记录。");
+      setValidationField("approved-by");
+      setStatus("提交前还差 1 项：请填写批准人。用户选区必须保留明确的人类责任记录。");
+      approvedByInput.current?.focus();
       return;
     }
     if (!acknowledge) {
-      setStatus("请确认：用户标注区域不等同于已经验证的真实结合位点。");
+      setValidationField("acknowledgement");
+      setStatus("提交前还差 1 项：请勾选确认框。用户标注区域不等同于已经验证的真实结合位点。");
+      acknowledgementInput.current?.focus();
       return;
     }
+    setValidationField(undefined);
     setBusy(true);
     setStatus("正在创建新的 Stage 02 分支…");
     try {
@@ -566,17 +576,59 @@ export function RegionEditor({
             无需为 A、B、C 分别重复填写目的和理由。
           </p>
           <div className="approval-footer">
-            <label><span>批准人</span><input value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="真实姓名或稳定 ID" /></label>
+            <label className={validationField === "approved-by" ? "field-attention" : ""}>
+              <span>批准人</span>
+              <input
+                ref={approvedByInput}
+                value={approvedBy}
+                aria-invalid={validationField === "approved-by"}
+                onChange={(event) => {
+                  setApprovedBy(event.target.value);
+                  if (event.target.value.trim() && validationField === "approved-by") {
+                    setValidationField(undefined);
+                    setStatus("");
+                  }
+                }}
+                placeholder="真实姓名或稳定 ID"
+              />
+            </label>
             <label><span>后续运行方式</span><select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}><option value="review-gated">本步确认后暂停，由我配置下一步</option><option value="unattended">本步确认后按已配置流程继续</option></select></label>
-            <label className="acknowledgement"><input type="checkbox" checked={acknowledge} onChange={(event) => setAcknowledge(event.target.checked)} /><span>我确认这些是用户提供的设计区域，并不代表已经验证的真实结合位点。</span></label>
-            <button type="button" className="primary-button" disabled={busy} onClick={save}>{busy ? "正在建立新分支…" : "保存并建立新的第2步分支"}</button>
+            <label className={`acknowledgement ${validationField === "acknowledgement" ? "field-attention" : ""}`}>
+              <input
+                ref={acknowledgementInput}
+                type="checkbox"
+                checked={acknowledge}
+                aria-invalid={validationField === "acknowledgement"}
+                onChange={(event) => {
+                  setAcknowledge(event.target.checked);
+                  if (event.target.checked && validationField === "acknowledgement") {
+                    setValidationField(undefined);
+                    setStatus("");
+                  }
+                }}
+              />
+              <span>我确认这些是用户提供的设计区域，并不代表已经验证的真实结合位点。</span>
+            </label>
+            <button type="button" className="primary-button" disabled={busy} onClick={save}>
+              {busy
+                ? "正在建立新分支…"
+                : !approvedBy.trim()
+                  ? "请先填写批准人"
+                  : !acknowledge
+                    ? "还需勾选确认"
+                    : "保存并建立新的第2步分支"}
+            </button>
           </div>
           {busy && (
             <div className="region-editor-job-progress" role="progressbar" aria-label="第2步正在运行">
               <span />
             </div>
           )}
-          {status && <div className="form-status">{status}</div>}
+          {status && (
+            <div className={`form-status ${validationField ? "error" : ""}`} role={validationField ? "alert" : undefined}>
+              {status}
+            </div>
+          )}
         </div>
           </>
         )}

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev18 修复成功前缀分支、一次人工批准、真实任务进度和同区再次点击取消。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
+| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev19 补齐人工提交的逐项校验、高亮聚焦、真实任务进度和成功跳转。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
 
 ## 当前结论
 
@@ -84,7 +84,7 @@
 | 天然界面/文献/疾病突变 annotation | `planned` | 未实现 |
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
-| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；dev18 增加成功前缀分支、一次批准、job 进度和同区再次点击取消 |
+| UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；dev19 增加缺失确认逐项反馈、问题字段聚焦、job 进度和成功跳转 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |

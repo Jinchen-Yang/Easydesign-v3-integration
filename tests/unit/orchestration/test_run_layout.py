@@ -38,7 +38,7 @@ def _identity(version: str, digit: str) -> CodeIdentity:
     )
 
 
-def test_normal_next_stage_continues_same_run_without_copying_upstream(
+def test_normal_next_stage_continues_open_run_from_succeeded_stage_prefix(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "input" / "target.pse"
@@ -111,14 +111,13 @@ def test_normal_next_stage_continues_same_run_without_copying_upstream(
         updated_at=created + timedelta(seconds=1),
         status=ExecutionStatus.RUNNING,
     )
-    succeeded = running.next_revision(
+    step_complete = running.next_revision(
         updated_at=created + timedelta(seconds=2),
-        status=ExecutionStatus.SUCCEEDED,
-        completed_at=created + timedelta(seconds=2),
+        status=ExecutionStatus.RUNNING,
         stage_manifest_refs=(stage_ref,),
     )
     dump_model(running, root / "manifests/run-manifest.v0002.json")
-    dump_model(succeeded, root / "manifests/run-manifest.v0003.json")
+    dump_model(step_complete, root / "manifests/run-manifest.v0003.json")
     (root / "manifests/LATEST").write_text(
         "run-manifest.v0003.json\n",
         encoding="utf-8",
@@ -130,6 +129,7 @@ def test_normal_next_stage_continues_same_run_without_copying_upstream(
         destination=continuation_config,
         stage_number=2,
         execution_mode="review-gated",
+        continue_after_stage=1,
         options={"mode": "automatic", "methods": ["sasa"]},
     )
 
@@ -139,6 +139,7 @@ def test_normal_next_stage_continues_same_run_without_copying_upstream(
         code_identity=_identity("0.1.0.dev17", "2"),
         runtime_profile=profile,
         continued_at=created + timedelta(seconds=3),
+        continue_after_stage=1,
     )
 
     assert continued.workspace.run_root == root

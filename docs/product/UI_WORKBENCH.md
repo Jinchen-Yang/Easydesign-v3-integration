@@ -403,3 +403,8 @@ APOE PSE 的初始可编辑计数必须为 A/B/C `9/14/14`。从空白开始后�
 
 当前产品边界：用户仍需逐步点击每一阶段的启动动作；这不是默认自动启动高成本 GPU
 任务。连续无人值守模式继续由 canonical YAML 的 `workflow.execution_mode` 控制。
+
+续跑状态必须按“成功 Stage 前缀”判断，而不是要求整个 Run 已经终态成功。按步骤设计在
+等待用户配置下一步时，Run 保持 `running` 是正常状态；只要 Stage 01 至当前上游阶段
+连续为 `succeeded`、StageManifest 与 ArtifactRef 完整性通过，就可以发布新的配置
+revision 并执行下一阶段。`failed`、`cancelled`、前缀不连续或上游校验失败仍明确拒绝。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -33,6 +34,7 @@ from easydesign.orchestration import (
 from easydesign.orchestration.config import LoadedPseRunConfig, load_run_config
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.ui import create_ui_app
+from easydesign.ui.models import UiJobRecord
 from easydesign.ui.sessions import DesignSessionStore
 
 
@@ -145,6 +147,69 @@ def test_stage_forms_expose_all_seven_stages_without_stage01_input() -> None:
     assert definitions[6]["defaults"]["final_filter_profile"] == (
         "nanobody-final-v1.5"
     )
+
+
+def test_ui_continuation_uses_completed_stage_prefix_after_stage03(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "jobs",
+    )
+    service = app.state.easydesign
+    session = service.sessions.create(
+        project_id="stepwise-target",
+        design_mode="stepwise",
+        execution_mode="review-gated",
+    )
+    source_run = tmp_path / "runs/stepwise-target/run-001"
+    source_run.mkdir(parents=True)
+    observed: dict[str, Any] = {}
+
+    def fake_materialize(**kwargs: Any) -> Path:
+        observed["materialize"] = kwargs
+        destination = kwargs["destination"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text('schema_version: "0.7"\n', encoding="utf-8")
+        return destination
+
+    def fake_launch(**kwargs: Any) -> UiJobRecord:
+        observed["launch"] = kwargs
+        now = datetime.now(tz=UTC)
+        return UiJobRecord(
+            job_id="job-stage04",
+            operation="run",
+            status="running",
+            config_path=str(kwargs["config_path"]),
+            session_id=session.session_id,
+            stage_number=4,
+            created_at=now,
+            updated_at=now,
+        )
+
+    import easydesign.ui.app as ui_app_module
+
+    monkeypatch.setattr(service.registry, "resolve", lambda _run_key: source_run)
+    monkeypatch.setattr(ui_app_module, "materialize_continuation_config", fake_materialize)
+    monkeypatch.setattr(service.jobs, "launch", fake_launch)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs/source-run/continue/4",
+            json={
+                "session_id": session.session_id,
+                "stage_number": 4,
+                "execution_mode": "review-gated",
+                "options": {},
+                "confirmed": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert observed["materialize"]["continue_after_stage"] == 3
+    assert observed["launch"]["continue_after_stage"] == 3
 
 
 def test_deterministic_self_test_completes_seven_stages_and_stays_hidden(

@@ -363,6 +363,46 @@ def test_succeeded_run_can_continue_with_new_immutable_config_revision(now) -> N
     assert continued.code_identity == new_identity
 
 
+def test_running_stepwise_run_can_publish_next_stage_config(now) -> None:
+    old_identity = CodeIdentity(
+        version="0.1.0.dev20",
+        source=CodeIdentitySource.GIT,
+        git_commit="1" * 40,
+        dirty=False,
+    )
+    new_identity = old_identity.model_copy(update={"git_commit": "2" * 40})
+    profile = RuntimeProfileRef(profile_id="server-local", sha256="3" * 64)
+    running = RunManifest(
+        schema_version="1.2",
+        revision=1,
+        project_id="apoe",
+        run_id="stepwise-run",
+        easydesign_version="0.1.0.dev20",
+        code_identity=old_identity,
+        runtime_profile=profile,
+        status=ExecutionStatus.RUNNING,
+        evidence_status=EvidenceStatus.IMPLEMENTED,
+        created_at=now,
+        updated_at=now,
+        config_snapshot=artifact("config-v3"),
+    )
+
+    continued = running.continue_with_config(
+        updated_at=now + timedelta(seconds=1),
+        config_snapshot=artifact("config-v4"),
+        easydesign_version="0.1.0.dev20",
+        code_identity=new_identity,
+        runtime_profile=profile,
+    )
+
+    assert continued.status is ExecutionStatus.RUNNING
+    assert continued.revision == 2
+    assert continued.completed_at is None
+    assert continued.previous_manifest_sha256 == canonical_model_sha256(running)
+    assert continued.config_snapshot.artifact_id == "config-v4"
+    assert continued.code_identity == new_identity
+
+
 def test_run_manifest_11_rejects_legacy_code_commit(now) -> None:
     with pytest.raises(ValidationError, match="不得.*code_commit"):
         RunManifest(

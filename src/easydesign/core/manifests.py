@@ -403,10 +403,40 @@ class RunManifest(BaseModel):
         决策协议，不能借本方法绕过。
         """
 
-        from .serialization import canonical_model_sha256
-
         if self.status is not ExecutionStatus.SUCCEEDED:
             raise ManifestStateError("只有 succeeded RunManifest 可以继续下一 Stage")
+        return self.continue_with_config(
+            updated_at=updated_at,
+            config_snapshot=config_snapshot,
+            easydesign_version=easydesign_version,
+            code_identity=code_identity,
+            runtime_profile=runtime_profile,
+        )
+
+    def continue_with_config(
+        self,
+        *,
+        updated_at: datetime,
+        config_snapshot: ArtifactRef,
+        easydesign_version: str,
+        code_identity: CodeIdentity,
+        runtime_profile: RuntimeProfileRef,
+    ) -> Self:
+        """为已验证成功 Stage 前缀发布下一阶段配置 revision。
+
+        按步骤设计在阶段之间保持 Run 为 ``running``；终态 ``succeeded``
+        仍可用原有继续语义重新开启。失败或取消的 run 必须走恢复协议。
+        """
+
+        from .serialization import canonical_model_sha256
+
+        if self.status not in {
+            ExecutionStatus.RUNNING,
+            ExecutionStatus.SUCCEEDED,
+        }:
+            raise ManifestStateError(
+                "只有 running 或 succeeded RunManifest 可以继续下一 Stage"
+            )
         if self.schema_version not in {"1.1", "1.2"}:
             raise ManifestStateError("旧 RunManifest schema 不支持同 run 阶段延续")
         if updated_at <= self.updated_at:

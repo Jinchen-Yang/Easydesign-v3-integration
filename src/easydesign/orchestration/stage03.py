@@ -433,8 +433,19 @@ def continue_run_in_place(
 
     root = source_run_root.resolve()
     current, current_path = _latest_manifest(root)
-    if current.status is not ExecutionStatus.SUCCEEDED:
+    if (
+        continue_after_stage is None
+        and current.status is not ExecutionStatus.SUCCEEDED
+    ):
         raise ManifestStateError("同 run continuation 只接受 succeeded run")
+    if (
+        continue_after_stage is not None
+        and current.status
+        not in {ExecutionStatus.RUNNING, ExecutionStatus.SUCCEEDED}
+    ):
+        raise ManifestStateError(
+            "按成功 Stage 前缀继续只接受 running 或 succeeded run"
+        )
     loaded = load_run_config(config_path)
     if loaded.config.project_id != current.project_id:
         raise ManifestStateError("continuation config project_id 必须与当前 run 一致")
@@ -528,7 +539,12 @@ def continue_run_in_place(
         role="user-config-snapshot",
         file_format="yaml",
     )
-    continued = current.continue_after_success(
+    continuation = (
+        current.continue_after_success
+        if continue_after_stage is None
+        else current.continue_with_config
+    )
+    continued = continuation(
         updated_at=timestamp,
         config_snapshot=config_ref,
         easydesign_version=easydesign.__version__,

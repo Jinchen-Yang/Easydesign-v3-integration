@@ -1419,7 +1419,10 @@ def create_ui_app(
             generated = project_root / (
                 f"easydesign.stage{next_stage:02d}.rev{revision:04d}.yaml"
             )
-            continue_after_stage = 1 if next_stage == 2 else None
+            # Stepwise runs remain open while the user inspects each completed
+            # stage.  Continuing therefore depends on the verified succeeded
+            # Stage prefix, not on the whole RunManifest being terminal.
+            continue_after_stage = next_stage - 1
             materialize_continuation_config(
                 source_run_root=source,
                 destination=generated,

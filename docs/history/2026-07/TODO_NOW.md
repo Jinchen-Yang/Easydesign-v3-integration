@@ -671,3 +671,23 @@
   manifest、Stage 03 模板或候选预算；Stage 04/06 仍要求用户确认真实计算资源。
 - 实现提交：`5587a21f10da3759fbaa28e2a638161bab6033fa`
   （`feat(ui): connect the seven-stage workspace`）。
+
+## 2026-07-28 — UI-015 / ENG-021：按成功阶段前缀继续运行
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-07-28T15:34:51+08:00
+- 问题：按步骤设计在 Stage 03 成功后，整条 Run 仍处于 `running`，而 UI 只有在
+  Stage 02→03 时传递成功阶段前缀；Stage 03→04 及以后退回到“整条 Run 必须
+  succeeded”的旧条件，因此错误显示“只有 succeeded run 可以配置下一阶段”。
+- 方案：所有 continuation 统一携带 `next_stage - 1` 作为上游完成边界；core 逐一验证
+  Stage 01 至该边界的 StageManifest、状态、连续性和 ArtifactRef，再允许仍为
+  `running` 的分步 Run 发布下一版配置。`failed`、`cancelled`、阶段缺口或前缀不完整
+  继续明确拒绝。
+- 验证：新增 RunManifest、orchestration 和 UI endpoint 三层回归；定向测试
+  29 passed；全仓 Python 267 passed、8 个独立 PyMOL 集成测试按配置 skipped；
+  `make check` 与 dev20 wheel/package-data 构建验证通过。浏览器回归覆盖
+  Stage 03→04 continuation；视觉基线中与动态项目时间数据相关的约 1% 差异不作为
+  本次状态修复依据。
+- 边界：没有替用户启动 Stage 04 的 21×40 真实 BoltzGen 任务；真实计算仍必须由用户
+  在资源确认后主动启动。开发者微型全阶段自检继续由 `VAL-005` 独立实施。
+- 提交：以本记录所在提交和远端 `main` 完整 SHA 为准。

@@ -32,6 +32,7 @@ ROOT_DOCS = {
     "README.md",
     "PROJECT_CHARTER.md",
     "AGENTS.md",
+    "DATA_SAFETY.md",
     "TODO.md",
     "TODO_NOW.md",
 }
@@ -263,7 +264,7 @@ def main() -> int:
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
-    require(len(markdown) <= 40, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
+    require(len(markdown) <= 41, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]

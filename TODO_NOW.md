@@ -20,8 +20,10 @@
 
 - `[ENG-023/UX-006]` 在 Proteindigger 的全新 clone 验证仓库内
   `runtime/profile.yaml`、setup 恢复、doctor 和一条命令 UI。当前锁的 core/web 已从
-  仓库内 lock 重建；`doctor --full` 已能把五个未就绪科学后端逐项判为失败。不得修改
-  base Conda、系统代理、Git 全局配置、shell profile 或仓库外用户数据。
+  仓库内 lock 重建；dev22 增加 `--component` 逐后端计划与安装，PyMOL 3.1.0 已在
+  `runtime/envs/` 真实重建并通过探针，BoltzGen 环境正在按独立计划恢复。
+  `doctor --full` 继续把未就绪科学后端逐项判为失败。不得修改 base Conda、系统代理、
+  Git 全局配置、shell profile 或仓库外用户数据。
 - `[DATA-005]` 已完成七环境解析后的 linux-64 Conda/pip lock 与十五项资产来源、大小、
   SHA-256 和许可门；继续完成用户逐项确认后的下载发布验收。待许可必须保留
   `awaiting-approval`，不能静默跳过或报告安装成功。
@@ -35,9 +37,9 @@
 
 ## Next
 
-- `[DATA-005]` 在具备足够数据盘空间的全新 clone 验证七个解析锁的完整重建；当前
-  Proteindigger 隔离验收目录因保留旧环境只剩约 88.3 GiB，完整 setup 的保守峰值与安全
-  余量不足，安装器已在写入前如实拒绝，未清理旧环境规避门槛。
+- `[DATA-005]` 继续按 PyMOL、BoltzGen、Protenix、ScanNet、TNP 顺序逐组件验证解析锁；
+  每次只按本组件环境、必需资产与最大单资产 staging 计算峰值，并在完成后读取真实剩余
+  空间。完整全量计划仍保留自己的磁盘门；不得通过删除旧环境、缓存或运行规避门槛。
 - `[UX-006]` 在 macOS/Windows 验证 core/UI minimal setup，并通过显式 SSH executor
   使用 Linux 科学后端；不得在桌面平台伪装重型后端可用。
 - `[UI-015/ENG-021]` dev20 已完成连续七阶段工作区：Stage 02 不再覆盖式弹窗；
@@ -83,9 +85,9 @@
 
 - `[DATA-005/VAL-006]` Protenix、BoltzGen、ScanNet 和验证 fixture 的受控资产在
   用户逐项确认相应许可前保持 `awaiting-approval`；真实后端逐步自检不能在资产缺失时
-  标记通过。当前数据盘约 88.3 GiB 可用，而环境安装/缓存保守峰值约 73 GiB、资产另需
-  约 11.5 GiB 并且还必须保留安全余量；完整 setup 因此在写入前拒绝。系统盘当前也已满，
-  EasyDesign 不清理系统文件；需要用户提供更大数据盘或明确扩容后再验收全部后端。
+  标记通过。完整全量 setup 仍可能因峰值与安全余量拒绝，但逐后端安装已经开始且
+  PyMOL 当前 lock 已可用；模型和数据资产仍等待精确许可确认。系统盘当前也已满，
+  EasyDesign 不清理系统文件，也不把安装临时文件写到系统盘。
 - `[S01]` 默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
   SLA；remote、显式 offline cache、precomputed A3M、真实 APOE run 和 Stage 02
   交接均已完成。Protenix 官方 endpoint 持续 `PENDING`，不进入

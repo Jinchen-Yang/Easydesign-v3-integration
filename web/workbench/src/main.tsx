@@ -2155,10 +2155,22 @@ function OperationsPage({
     async function refreshInstallStatus() {
       setInstallStatus(await api.installStatus());
     }
-    async function launchSetup(minimal: boolean) {
-      setMessage(minimal ? "正在启动 core/UI 安装…" : "正在启动完整仓库内安装…");
+    async function launchSetup(minimal: boolean, component?: string) {
+      const componentLabels: Record<string, string> = {
+        "core-ui": "core 与界面",
+        "pymol-pse": "PyMOL / PSE",
+        "protenix-v2": "Protenix-v2",
+        "scannet-epitope": "ScanNet",
+        boltzgen: "BoltzGen",
+        tnp: "TNP",
+      };
+      setMessage(
+        component
+          ? `正在启动 ${componentLabels[component] || component} 安装…`
+          : (minimal ? "正在启动 core/UI 安装…" : "正在启动完整仓库内安装…"),
+      );
       try {
-        const result = await api.launchSetup(minimal, acceptedLicenses);
+        const result = await api.launchSetup(minimal, component, acceptedLicenses);
         setMessage(`安装任务 ${result.job_id} 已启动；状态会从结构化注册表更新。`);
         await refreshInstallStatus();
       } catch (value) {
@@ -2192,6 +2204,13 @@ function OperationsPage({
     }
     const archiveEntries = catalog.filter((entry) => entry.category === "archived-project-run");
     const activeEntries = catalog.filter((entry) => entry.category === "project-run");
+    const componentLabels: Record<string, string> = {
+      "pymol-pse": "安装 PyMOL / PSE",
+      "protenix-v2": "安装 Protenix-v2",
+      "scannet-epitope": "安装 ScanNet",
+      boltzgen: "安装 BoltzGen",
+      tnp: "安装 TNP",
+    };
     const installLabel = (status: string) => ({
       "not-installed": "未安装",
       available: "可用",
@@ -2223,6 +2242,29 @@ function OperationsPage({
           <button type="button" onClick={() => void launchSetup(true)}>仅安装 core 与界面</button>
           <button className="primary-button" type="button" onClick={() => void launchSetup(false)}>安装全部已确认组件</button>
           <button type="button" onClick={() => void refreshInstallStatus()}>刷新状态</button>
+        </div>
+        <div className="component-install-grid">
+          {Object.entries(componentLabels).map(([component, label]) => {
+            const componentPlan = installStatus?.component_plans?.[component];
+            const sufficient = componentPlan?.disk.sufficient ?? false;
+            return <article key={component}>
+              <div>
+                <strong>{label}</strong>
+                <small>
+                  {componentPlan
+                    ? `本次峰值约 ${humanBytes(componentPlan.disk.incremental_peak_bytes)}`
+                    : "正在计算组件计划"}
+                </small>
+              </div>
+              <button
+                type="button"
+                disabled={!sufficient}
+                onClick={() => void launchSetup(false, component)}
+              >
+                {sufficient ? "单独安装" : "空间不足"}
+              </button>
+            </article>;
+          })}
         </div>
         <div className="install-grid">
           <div>

@@ -273,7 +273,7 @@ def _translate_arguments(arguments: list[str]) -> list[str]:
 
 def main() -> int:
     arguments = sys.argv[1:]
-    if arguments[:2] == ["setup", "--plan"] or arguments == ["setup", "--plan"]:
+    if arguments == ["setup", "--plan"]:
         return _show_plan()
     conda_executable = None
     if "--conda" in arguments:

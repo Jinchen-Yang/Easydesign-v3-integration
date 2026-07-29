@@ -33,11 +33,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   installStatus: () => request<InstallStatus>("/api/v1/install/status"),
-  launchSetup: (minimal: boolean, acceptedLicenseIds: string[]) =>
+  launchSetup: (
+    minimal: boolean,
+    component: string | undefined,
+    acceptedLicenseIds: string[],
+  ) =>
     request<{ job_id: string; status: string; pid: number }>("/api/v1/install/setup", {
       method: "POST",
       body: JSON.stringify({
         minimal,
+        component,
         accepted_license_ids: acceptedLicenseIds,
         confirmed: true,
       }),

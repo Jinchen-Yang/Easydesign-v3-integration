@@ -106,9 +106,9 @@
 | `ENG-022` | Core Engineering | `implemented` | 根级 `DATA_SAFETY.md` 已把默认禁止删除、逐次审批、非覆盖归档和非破坏性跨主机恢复定义为最高优先级制度；新 ProteinDigger 已通过独立 deploy key 克隆到数据盘新目录。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `ENG-023` | Core Engineering | `implemented` | `WorkspaceContext`、仓库根标记、相对 profile、不可变 registry、安全写入边界和旧部署显式导入已实现；完整服务器验收进行中。 |
-| `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；完整安装、断点恢复与跨平台入口仍待最终矩阵。 |
+| `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev22 增加 core/UI、PyMOL、Protenix、ScanNet、BoltzGen、TNP 的独立组件计划与安装。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |
-| `UI-016` | Product UI | `implemented` | 安装中心展示环境/资产状态、安装计划和结构化进度；缺 profile 不再作为用户错误。 |
+| `UI-016` | Product UI | `implemented` | 安装中心展示环境/资产状态、完整及逐后端安装计划和结构化进度；缺 profile 不再作为用户错误。 |
 | `VAL-006` | Scientific Validation | `implemented` | 固定 1UBQ fixture 的真实 Stage 01–05 逐步执行器与 Stage 06/07 adapter probe 已实现；只有实际全后端运行完成后才升级 smoke。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
 

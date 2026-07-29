@@ -757,3 +757,31 @@
   VAL-006 真实后端逐步运行必须在扩容或新的足够空间实例上继续。不得为了通过验收而删除
   旧环境、quarantine、cache 或科学运行。
 - 提交：以本记录所在提交和远端 `codex/workspace-runtime` 完整 SHA 为准。
+
+## 2026-07-29 — UX-006 / DATA-005：按科学后端独立安装
+
+- 状态：`implemented`；PyMOL 已真实可用，BoltzGen 环境恢复正在执行，许可资产仍未
+  获得逐项确认。
+- 完成时间：2026-07-29T10:31:00+08:00
+- 问题：完整 setup 把五个科学后端及全部资产合并为一个磁盘门，导致任一后端都不能
+  先独立恢复；此前峰值又把全部资产同时按双份 staging 估算，明显高于安装器逐项发布
+  时的真实并存量。环境失败记录还会把 pip 或工作区包安装错误统称为 Conda create
+  失败。
+- 方案：增加 `setup --component`，固定支持 `pymol-pse`、`protenix-v2`、
+  `scannet-epitope`、`boltzgen` 和 `tnp`，每次只选择对应环境与必需资产。峰值按
+  “环境+保留 cache+全部最终资产+最大单资产 staging”计算，仍保留 10%/至少 5 GiB
+  安全余量。安装中心使用同一 Python 计划显示每个后端的状态、峰值与独立安装按钮；
+  pip、Conda 和工作区包三个阶段分别记录失败原因。
+- 真实验证：Proteindigger 的 `pymol-pse-cb7663df6a30` 已在仓库内重建并通过
+  PyMOL 3.1.0 探针；BoltzGen 组件在约 88 GiB 可用数据盘上通过自己的约 34 GiB
+  峰值门并进入锁定依赖安装。系统盘保持只读现状，安装 HOME、TMP 和 cache 全部位于
+  仓库 `runtime/`。Python 为 286 passed、8 个需要显式 runtime 解释器的集成测试
+  skipped；Workbench 为 47 passed、1 skipped，Target Viewer 为 3 passed、2 个
+  runtime-only 案例 skipped；dev22 wheel、console script 和 package data 校验通过。
+- 安全边界：没有删除 quarantine、旧环境、cache 或运行结果，没有修改系统代理、
+  base Conda、Git 全局配置或 shell profile。模型与 checkpoint 仍必须由用户逐项确认
+  对应许可；环境建成但必需资产未通过时，后端不得标记 available。
+- 遗留：继续观察 BoltzGen 长时网络下载并以 registry 终态为准；随后按用户确认顺序
+  恢复 Protenix、ScanNet 与 TNP。`ENG-023/DATA-005/VAL-006` 继续留在 Now/Blocked，
+  本记录不表示全后端或真实科学自检已经完成。
+- 提交：以本记录所在提交和远端 `codex/workspace-runtime` 完整 SHA 为准。

@@ -50,6 +50,68 @@ def test_setup_plan_keeps_every_target_inside_workspace() -> None:
         assert Path(asset["target"]).parts[:2] == ("runtime", "models")
 
 
+@pytest.mark.parametrize(
+    ("component", "environment_id", "asset_ids"),
+    (
+        ("pymol-pse", "pymol-pse", ()),
+        (
+            "protenix-v2",
+            "protenix-v2",
+            (
+                "protenix-v2-checkpoint",
+                "protenix-ccd-components",
+                "protenix-ccd-rdkit-cache",
+                "protenix-pdb-clusters",
+                "protenix-obsolete-releases",
+            ),
+        ),
+        (
+            "scannet-epitope",
+            "scannet-epitope",
+            ("scannet-code-and-epitope-models",),
+        ),
+        (
+            "boltzgen",
+            "boltzgen",
+            (
+                "boltzgen-inference-molecule-dataset",
+                "boltzgen-design-diverse-checkpoint",
+                "boltzgen-design-adherence-checkpoint",
+                "boltzgen-inverse-fold-checkpoint",
+                "boltzgen-folding-checkpoint",
+                "boltzgen-affinity-checkpoint",
+                "boltzgen-source-a3149cf",
+            ),
+        ),
+        ("tnp", "tnp", ("tnp-source-29dcac72",)),
+    ),
+)
+def test_component_plan_contains_only_requested_backend(
+    component: str,
+    environment_id: str,
+    asset_ids: tuple[str, ...],
+) -> None:
+    repository = Path(__file__).resolve().parents[3]
+    context = WorkspaceContext.from_root(repository)
+
+    plan = setup_plan(context, minimal=False, component=component)
+
+    assert plan["mode"] == "component"
+    assert plan["component"] == component
+    assert [item["environment_id"] for item in plan["environments"]] == [
+        environment_id
+    ]
+    assert tuple(item["asset_id"] for item in plan["assets"]) == asset_ids
+
+
+def test_setup_plan_rejects_conflicting_component_scope() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    context = WorkspaceContext.from_root(repository)
+
+    with pytest.raises(ConfigurationError, match="不能同时使用"):
+        setup_plan(context, minimal=True, component="pymol-pse")
+
+
 def test_asset_license_gate_writes_record_without_network(tmp_path: Path) -> None:
     context = _workspace(tmp_path)
     definition = AssetDefinition(
@@ -79,7 +141,7 @@ def test_disk_preflight_refuses_before_initializing_workspace(
     monkeypatch.setattr(
         runtime_setup,
         "setup_plan",
-        lambda _context, *, minimal: {
+        lambda _context, *, minimal, component=None: {
             "disk": {
                 "sufficient": False,
                 "incremental_peak_bytes": 100,

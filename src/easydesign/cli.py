@@ -68,6 +68,7 @@ from easydesign.orchestration.remote_execution import (
     sync_remote_pipeline,
 )
 from easydesign.orchestration.runtime_setup import (
+    SETUP_COMPONENT_IDS,
     asset_status,
     environment_status,
     import_legacy_deployment,
@@ -119,7 +120,13 @@ def _parser() -> argparse.ArgumentParser:
         help="在当前仓库 runtime/ 内安装 EasyDesign 环境与资产",
     )
     setup_parser.add_argument("--plan", action="store_true", help="只显示计划，不写入")
-    setup_parser.add_argument("--minimal", action="store_true", help="仅安装 core/UI")
+    setup_scope = setup_parser.add_mutually_exclusive_group()
+    setup_scope.add_argument("--minimal", action="store_true", help="仅安装 core/UI")
+    setup_scope.add_argument(
+        "--component",
+        choices=SETUP_COMPONENT_IDS,
+        help="只安装一个后端及其必需资产",
+    )
     setup_parser.add_argument(
         "--accept-license",
         action="append",
@@ -541,6 +548,8 @@ def _format_setup_plan(payload: dict[str, Any]) -> str:
         f"模式：{payload['mode']}",
         "环境：",
     ]
+    if payload.get("component"):
+        lines.insert(3, f"组件：{payload['component']}")
     for environment in payload["environments"]:
         lines.append(
             f"- {environment['environment_id']} → {environment['target']} "
@@ -605,6 +614,8 @@ def _print_setup_summary(summary: BaseModel) -> None:
     payload = summary.model_dump(mode="json")
     print(f"工作区：{payload['workspace']}")
     print(f"安装模式：{payload['mode']}")
+    if payload.get("component"):
+        print(f"安装组件：{payload['component']}")
     for record in payload["environments"]:
         print(f"[{record['status']}] 环境 {record['environment_id']}")
     for record in payload["assets"]:
@@ -613,7 +624,15 @@ def _print_setup_summary(summary: BaseModel) -> None:
         print("以下资产仍需明确许可确认：")
         for asset_id in payload["awaiting_approval"]:
             print(f"- {asset_id}")
-        print("确认后重新运行：./easydesign setup --accept-license ASSET_ID")
+        component_option = (
+            f" --component {payload['component']}"
+            if payload.get("component")
+            else ""
+        )
+        print(
+            "确认后重新运行："
+            f"./easydesign setup{component_option} --accept-license ASSET_ID"
+        )
     print("安装完成。" if payload["ok"] else "安装尚未完整完成；详情已记录，可安全重试。")
 
 
@@ -646,7 +665,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command in {"setup", "env", "assets", "workspace"}:
         context = WorkspaceContext.discover()
         if arguments.command == "setup":
-            payload = setup_plan(context, minimal=arguments.minimal)
+            payload = setup_plan(
+                context,
+                minimal=arguments.minimal,
+                component=arguments.component,
+            )
             if arguments.plan:
                 print(
                     json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
@@ -666,6 +689,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             summary = setup_workspace(
                 context,
                 minimal=arguments.minimal,
+                component=arguments.component,
                 accepted_license_ids=accepted_license_ids,
                 conda_executable=arguments.conda,
             )

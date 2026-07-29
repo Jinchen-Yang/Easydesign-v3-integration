@@ -156,6 +156,12 @@ Python 版本、探针和安装预算。`environment.yml` 与 `environments/*.ym
 可读配方，不参与正式 setup 的依赖重新解析。`pyproject.toml` 仍是 EasyDesign 自身
 Python API 和 console-script 声明源；core 在锁定依赖后以 `--no-deps`、
 `--no-build-isolation` editable 安装当前源码。
+安装选择分为完整、最小和单组件三种投影。单组件以
+`core-ui`、`pymol-pse`、`protenix-v2`、`scannet-epitope`、`boltzgen` 或 `tnp`
+为稳定 ID，同时选择恰好对应的环境 lock 与必需资产集合。环境先构建，资产逐个 staging
+并校验后发布，因此磁盘峰值按“环境及其缓存 + 已发布资产 + 最大单资产 staging”计算，
+不再假设所有后端与所有资产同一时刻重复存在。完整安装与组件安装共用
+`setup_workspace()`，CLI 和 UI 不得维护第二套映射。
 `environments/protenix-v2.yml` 固定 EasyDesign 1.0 当前结构预测后端的独立环境。
 `environments/pymol-pse.yml` 固定 PyMOL PSE 导入环境的 Python 3.11 和
 `pymol-open-source=3.1.0`。Core 不导入 PyMOL，也不扫描 Conda 或系统 Python；正式 CLI

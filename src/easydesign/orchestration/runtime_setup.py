@@ -31,9 +31,41 @@ ENVIRONMENT_IDS = (
     "tnp",
 )
 MINIMAL_ENVIRONMENT_IDS = ("easydesign-core", "reporting-web")
+SETUP_COMPONENT_ENVIRONMENTS: dict[str, tuple[str, ...]] = {
+    "core-ui": MINIMAL_ENVIRONMENT_IDS,
+    "pymol-pse": ("pymol-pse",),
+    "protenix-v2": ("protenix-v2",),
+    "scannet-epitope": ("scannet-epitope",),
+    "boltzgen": ("boltzgen",),
+    "tnp": ("tnp",),
+}
+SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
+    "core-ui": (),
+    "pymol-pse": (),
+    "protenix-v2": (
+        "protenix-v2-checkpoint",
+        "protenix-ccd-components",
+        "protenix-ccd-rdkit-cache",
+        "protenix-pdb-clusters",
+        "protenix-obsolete-releases",
+    ),
+    "scannet-epitope": ("scannet-code-and-epitope-models",),
+    "boltzgen": (
+        "boltzgen-inference-molecule-dataset",
+        "boltzgen-design-diverse-checkpoint",
+        "boltzgen-design-adherence-checkpoint",
+        "boltzgen-inverse-fold-checkpoint",
+        "boltzgen-folding-checkpoint",
+        "boltzgen-affinity-checkpoint",
+        "boltzgen-source-a3149cf",
+    ),
+    "tnp": ("tnp-source-29dcac72",),
+}
+SETUP_COMPONENT_IDS = tuple(SETUP_COMPONENT_ENVIRONMENTS)
 GIB = 1024**3
 MINIMUM_FREE_RESERVE_BYTES = 5 * GIB
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+SetupMode = Literal["minimal", "full", "component"]
 
 
 class EnvironmentLock(BaseModel):
@@ -112,11 +144,44 @@ class SetupSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     workspace: Path
-    mode: Literal["minimal", "full"]
+    mode: SetupMode
+    component: str | None = None
     environments: tuple[EnvironmentRecord, ...]
     assets: tuple[AssetRecord, ...]
     ok: bool
     awaiting_approval: tuple[str, ...] = ()
+
+
+def _setup_selection(
+    context: WorkspaceContext,
+    *,
+    minimal: bool,
+    component: str | None,
+) -> tuple[SetupMode, tuple[str, ...], tuple[AssetDefinition, ...]]:
+    if minimal and component is not None:
+        raise ConfigurationError("--minimal 与 --component 不能同时使用")
+    catalog = _load_assets(context)
+    if component is None:
+        if minimal:
+            return "minimal", MINIMAL_ENVIRONMENT_IDS, ()
+        return "full", ENVIRONMENT_IDS, catalog.assets
+    if component not in SETUP_COMPONENT_ENVIRONMENTS:
+        supported = ", ".join(SETUP_COMPONENT_IDS)
+        raise ConfigurationError(
+            f"未知安装组件: {component}；可用组件: {supported}"
+        )
+    definitions = {asset.asset_id: asset for asset in catalog.assets}
+    asset_ids = SETUP_COMPONENT_ASSETS[component]
+    missing = tuple(asset_id for asset_id in asset_ids if asset_id not in definitions)
+    if missing:
+        raise ConfigurationError(
+            f"安装组件 {component} 引用了未登记资产: {', '.join(missing)}"
+        )
+    return (
+        "component",
+        SETUP_COMPONENT_ENVIRONMENTS[component],
+        tuple(definitions[asset_id] for asset_id in asset_ids),
+    )
 
 
 def _load_lock(context: WorkspaceContext, environment_id: str) -> tuple[EnvironmentLock, Path]:
@@ -435,6 +500,7 @@ def ensure_environment(
             reason="现有 lock-addressed 环境未通过探针；保留后重建",
         )
     if not prefix.exists():
+        install_phase = "conda-create"
         command = [
             str(_conda_executable(conda_executable)),
             "create",
@@ -451,6 +517,7 @@ def ensure_environment(
             check=False,
         )
         if completed.returncode == 0 and pip_requirements is not None:
+            install_phase = "pip-lock-install"
             completed = subprocess.run(
                 [
                     str(prefix / "bin" / "python"),
@@ -458,6 +525,7 @@ def ensure_environment(
                     "pip",
                     "install",
                     "--no-deps",
+                    "--no-build-isolation",
                     "--requirement",
                     str(pip_requirements),
                 ],
@@ -466,6 +534,7 @@ def ensure_environment(
                 check=False,
             )
         if completed.returncode == 0 and lock.install_workspace_package:
+            install_phase = "workspace-package-install"
             completed = subprocess.run(
                 [
                     str(prefix / "bin" / "python"),
@@ -486,8 +555,12 @@ def ensure_environment(
                 context.quarantine(
                     prefix,
                     operation=f"setup-{environment_id}",
-                    reason=f"Conda environment create 返回 {completed.returncode}",
+                    reason=(
+                        f"{install_phase} 返回 {completed.returncode}；"
+                        "环境 staging 已保留"
+                    ),
                 )
+            failure_message = f"{install_phase} 返回 {completed.returncode}"
             failed = EnvironmentRecord(
                 environment_id=environment_id,
                 lock_sha256=lock_sha256,
@@ -495,6 +568,7 @@ def ensure_environment(
                 status="failed",
                 probe_command=lock.probe,
                 probe_returncode=completed.returncode,
+                probe_stderr=failure_message,
                 recorded_at=datetime.now(tz=UTC),
             )
             _append_record(context.environment_registry_root, failed)
@@ -847,10 +921,11 @@ def setup_workspace(
     context: WorkspaceContext,
     *,
     minimal: bool,
+    component: str | None = None,
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
 ) -> SetupSummary:
-    plan = setup_plan(context, minimal=minimal)
+    plan = setup_plan(context, minimal=minimal, component=component)
     disk = plan["disk"]
     if not disk["sufficient"]:
         raise ConfigurationError(
@@ -860,7 +935,11 @@ def setup_workspace(
             f"当前可用 {disk['free_bytes']} bytes"
         )
     initialize_workspace_metadata(context)
-    selected = MINIMAL_ENVIRONMENT_IDS if minimal else ENVIRONMENT_IDS
+    mode, selected, selected_assets = _setup_selection(
+        context,
+        minimal=minimal,
+        component=component,
+    )
     environment_records = tuple(
         ensure_environment(
             context,
@@ -870,15 +949,14 @@ def setup_workspace(
         for environment_id in selected
     )
     asset_records: tuple[AssetRecord, ...] = ()
-    if not minimal:
-        catalog = _load_assets(context)
+    if selected_assets:
         asset_records = tuple(
             ensure_asset(
                 context,
                 asset,
                 accepted_license_ids=accepted_license_ids,
             )
-            for asset in catalog.assets
+            for asset in selected_assets
         )
     awaiting = tuple(
         record.asset_id
@@ -890,7 +968,8 @@ def setup_workspace(
     )
     return SetupSummary(
         workspace=context.root,
-        mode="minimal" if minimal else "full",
+        mode=mode,
+        component=component,
         environments=environment_records,
         assets=asset_records,
         ok=ok,
@@ -898,8 +977,17 @@ def setup_workspace(
     )
 
 
-def setup_plan(context: WorkspaceContext, *, minimal: bool) -> dict[str, Any]:
-    selected = MINIMAL_ENVIRONMENT_IDS if minimal else ENVIRONMENT_IDS
+def setup_plan(
+    context: WorkspaceContext,
+    *,
+    minimal: bool,
+    component: str | None = None,
+) -> dict[str, Any]:
+    mode, selected, selected_assets = _setup_selection(
+        context,
+        minimal=minimal,
+        component=component,
+    )
     environments: list[dict[str, Any]] = []
     for environment_id in selected:
         lock, path = _load_lock(context, environment_id)
@@ -946,16 +1034,15 @@ def setup_plan(context: WorkspaceContext, *, minimal: bool) -> dict[str, Any]:
             }
         )
     assets = []
-    if not minimal:
-        for asset in _load_assets(context).assets:
-            payload = asset.model_dump(mode="json")
-            payload["target"] = str(
-                Path("runtime") / "models" / asset.destination
-            )
-            payload["already_present"] = (
-                context.runtime_root / "models" / asset.destination
-            ).exists()
-            assets.append(payload)
+    for asset in selected_assets:
+        payload = asset.model_dump(mode="json")
+        payload["target"] = str(
+            Path("runtime") / "models" / asset.destination
+        )
+        payload["already_present"] = (
+            context.runtime_root / "models" / asset.destination
+        ).exists()
+        assets.append(payload)
     pending_environment_bytes = sum(
         int(item["estimated_install_bytes"])
         for item in environments
@@ -966,11 +1053,24 @@ def setup_plan(context: WorkspaceContext, *, minimal: bool) -> dict[str, Any]:
         for item in assets
         if not item["already_present"]
     )
-    # Conda/package caches and atomic asset staging temporarily coexist with
-    # the published result. The conservative multiplier is intentional.
-    incremental_peak_bytes = (
-        pending_environment_bytes * 2
-        + pending_asset_bytes * 2
+    pending_asset_sizes = [
+        int(item["estimated_install_bytes"])
+        for item in assets
+        if not item["already_present"]
+    ]
+    # Environments are built before assets, and assets are staged one at a
+    # time. Account for the retained package cache plus the largest single
+    # asset staging copy instead of pretending every asset is duplicated at
+    # the same time.
+    environment_and_cache_bytes = pending_environment_bytes * 2
+    asset_phase_bytes = (
+        environment_and_cache_bytes
+        + pending_asset_bytes
+        + max(pending_asset_sizes, default=0)
+    )
+    incremental_peak_bytes = max(
+        environment_and_cache_bytes,
+        asset_phase_bytes,
     )
     disk_usage = shutil.disk_usage(context.root)
     reserve_bytes = max(
@@ -980,7 +1080,8 @@ def setup_plan(context: WorkspaceContext, *, minimal: bool) -> dict[str, Any]:
     sufficient = disk_usage.free >= incremental_peak_bytes + reserve_bytes
     return {
         "workspace": str(context.root),
-        "mode": "minimal" if minimal else "full",
+        "mode": mode,
+        "component": component,
         "environments": environments,
         "assets": assets,
         "disk": {

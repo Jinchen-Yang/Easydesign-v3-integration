@@ -38,7 +38,7 @@ test:
 	PYTHONPATH=src TMPDIR=$(CURDIR)/runtime/tmp $(PYTHON) -m pytest --basetemp=runtime/tmp/pytest-$$(date +%s)-$$$$
 
 build: build-ui
-	@test ! -e dist/easydesign-0.1.0.dev21-py3-none-any.whl || \
+	@test ! -e dist/easydesign-0.1.0.dev22-py3-none-any.whl || \
 		{ echo "拒绝覆盖现有 wheel；请保留它并使用新的版本号"; exit 1; }
 	PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PYTHONNOUSERSITE=1 \
 		$(PYTHON) -m pip wheel --no-deps --no-build-isolation --wheel-dir dist .
@@ -52,7 +52,7 @@ build-ui:
 		staging="runtime/tmp/ui-build-$$(date +%s)-$$$$"; \
 		test ! -e "$$staging"; \
 		cd $(UI_WEB_DIR) && EASYDESIGN_UI_OUT_DIR="$(CURDIR)/$$staging" $(PNPM) build; \
-		cd $(CURDIR) && $(PYTHON) scripts/publish_ui_build.py "$$staging"
+		cd "$(CURDIR)" && $(PYTHON) scripts/publish_ui_build.py "$$staging"
 
 test-web: build-ui
 	cd $(WEB_DIR) && EASYDESIGN_CORE_PYTHON=$(PYTHON) $(NPM) test

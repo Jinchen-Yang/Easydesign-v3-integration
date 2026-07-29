@@ -177,6 +177,7 @@ export interface SetupJob {
   pid: number;
   started_at: string;
   minimal: boolean;
+  component?: string;
   accepted_license_ids: string[];
   return_code?: number;
 }
@@ -191,6 +192,15 @@ export interface InstallStatus {
       sufficient: boolean;
     };
   };
+  component_plans: Record<string, {
+    component?: string;
+    disk: {
+      free_bytes: number;
+      incremental_peak_bytes: number;
+      reserve_bytes: number;
+      sufficient: boolean;
+    };
+  }>;
   environments: RuntimeInstallItem[];
   assets: RuntimeInstallItem[];
   jobs: SetupJob[];

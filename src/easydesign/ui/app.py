@@ -57,6 +57,7 @@ from easydesign.orchestration import (
 )
 from easydesign.orchestration.decisions import approve_decision, show_decision
 from easydesign.orchestration.runtime_setup import (
+    SETUP_COMPONENT_IDS,
     asset_status,
     environment_status,
     initialize_workspace_metadata,
@@ -183,6 +184,7 @@ class SetupLaunchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     minimal: bool = False
+    component: str | None = None
     accepted_license_ids: list[str] = Field(default_factory=list)
     confirmed: bool = False
 
@@ -365,6 +367,7 @@ class UiServiceState:
         self,
         *,
         minimal: bool,
+        component: str | None,
         accepted_license_ids: tuple[str, ...],
     ) -> dict[str, Any]:
         job_id = f"setup-{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:10]}"
@@ -373,6 +376,8 @@ class UiServiceState:
         command = [str(self.workspace.root / "easydesign"), "setup"]
         if minimal:
             command.append("--minimal")
+        if component is not None:
+            command.extend(("--component", component))
         for asset_id in accepted_license_ids:
             command.extend(("--accept-license", asset_id))
         stdout_path = self.workspace.runtime_root / "logs" / f"{job_id}.stdout.log"
@@ -400,6 +405,7 @@ class UiServiceState:
                     "job_id": job_id,
                     "command": command,
                     "minimal": minimal,
+                    "component": component,
                     "accepted_license_ids": list(accepted_license_ids),
                     "pid": process.pid,
                     "started_at": datetime.now(tz=UTC).isoformat(),
@@ -522,9 +528,17 @@ def create_ui_app(
         }
 
     @app.get("/api/v1/install/plan")
-    def install_plan(request: Request, minimal: bool = False) -> dict[str, Any]:
+    def install_plan(
+        request: Request,
+        minimal: bool = False,
+        component: str | None = None,
+    ) -> dict[str, Any]:
         service = _state(request)
-        return setup_plan(service.workspace, minimal=minimal)
+        return setup_plan(
+            service.workspace,
+            minimal=minimal,
+            component=component,
+        )
 
     @app.get("/api/v1/install/status")
     def install_status(request: Request) -> dict[str, Any]:
@@ -532,6 +546,14 @@ def create_ui_app(
         return {
             "workspace": str(service.workspace.root),
             "plan": setup_plan(service.workspace, minimal=False),
+            "component_plans": {
+                component: setup_plan(
+                    service.workspace,
+                    minimal=False,
+                    component=component,
+                )
+                for component in SETUP_COMPONENT_IDS
+            },
             "environments": environment_status(service.workspace)["environments"],
             "assets": asset_status(service.workspace)["assets"],
             "jobs": service.setup_jobs(),
@@ -555,8 +577,19 @@ def create_ui_app(
         service = _state(request)
         if not payload.confirmed:
             raise HTTPException(status_code=400, detail="安装必须明确 confirmed=true")
+        if payload.minimal and payload.component is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="minimal 与 component 不能同时指定",
+            )
+        if (
+            payload.component is not None
+            and payload.component not in SETUP_COMPONENT_IDS
+        ):
+            raise HTTPException(status_code=400, detail="未知安装组件")
         return service.launch_setup(
             minimal=payload.minimal,
+            component=payload.component,
             accepted_license_ids=tuple(payload.accepted_license_ids),
         )
 

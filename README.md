@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev21`（包版本 `0.1.0.dev21`）
+- 当前版本：`0.1.0-dev22`（包版本 `0.1.0.dev22`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -31,12 +31,26 @@ git clone git@github.com:Knitua/Easydesign.git
 cd Easydesign
 
 ./easydesign setup --plan
-./easydesign setup
+./easydesign setup --component pymol-pse
 ./easydesign doctor --full
 ./easydesign ui
 ```
 
 `setup --plan` 不下载任何内容；完整 `setup` 在下载每个许可敏感资产前要求明确确认。
+建议在开发机和空间受限服务器上按后端逐项安装，并在每一步后复核实际剩余空间：
+
+```bash
+./easydesign setup --component pymol-pse --plan
+./easydesign setup --component pymol-pse
+./easydesign setup --component protenix-v2 --plan
+./easydesign setup --component scannet-epitope --plan
+./easydesign setup --component boltzgen --plan
+./easydesign setup --component tnp --plan
+```
+
+每个组件计划只计算该后端环境、必需资产、当前未安装内容和最大单资产 staging 峰值，
+不会把其他后端同时计入。`core-ui` 也可作为组件名，等价于 `--minimal`。不带
+`--component` 的 `./easydesign setup` 仍表示完整安装。
 七个 Linux 环境都从提交到 Git 的 `linux-64` Conda explicit lock 和精确 pip package
 set 重建，不再在安装时重新解析宽范围依赖。环境 lock 改变会创建新目录，旧环境保持
 不变。BoltzGen 的五个 checkpoint 与 molecule dataset 分别登记来源、大小、MIT 许可和

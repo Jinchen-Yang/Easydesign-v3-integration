@@ -715,6 +715,12 @@ textarea { padding: 10px; }
 .disk-preflight.available { border-color: #a8dcc7; background: #f0faf6; }
 .disk-preflight.failed { border-color: #efb8b2; background: #fff5f4; }
 .install-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+.component-install-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: -4px 0 20px; }
+.component-install-grid article { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 70px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.component-install-grid strong, .component-install-grid small { display: block; }
+.component-install-grid strong { color: var(--ink); font-size: 14px; }
+.component-install-grid small { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.component-install-grid button { flex: 0 0 auto; }
 .install-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 18px; }
 .install-grid > div, .setup-jobs { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; }
 .install-grid h4, .setup-jobs h4 { margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--line); background: #f8fafc; font-size: 16px; }

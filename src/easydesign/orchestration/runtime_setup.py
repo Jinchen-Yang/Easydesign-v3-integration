@@ -12,6 +12,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
@@ -65,6 +66,7 @@ SETUP_COMPONENT_IDS = tuple(SETUP_COMPONENT_ENVIRONMENTS)
 GIB = 1024**3
 MINIMUM_FREE_RESERVE_BYTES = 5 * GIB
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
 SetupMode = Literal["minimal", "full", "component"]
 
 
@@ -150,6 +152,48 @@ class SetupSummary(BaseModel):
     assets: tuple[AssetRecord, ...]
     ok: bool
     awaiting_approval: tuple[str, ...] = ()
+    pip_index_url: str = DEFAULT_PIP_INDEX_URL
+
+
+def validate_pip_index_url(value: str) -> str:
+    """Accept an explicit HTTPS package index without credentials or secrets."""
+
+    normalized = value.rstrip("/")
+    parsed = urlparse(normalized)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ConfigurationError(
+            "Pip index 必须是无凭据、无 query/fragment 的 HTTPS URL"
+        )
+    return normalized
+
+
+def _pip_reliability_arguments(python: Path) -> list[str]:
+    """Use resumable downloads when the locked pip version supports them."""
+
+    base = ["--timeout", "120", "--retries", "10"]
+    completed = subprocess.run(
+        [str(python), "-c", "import pip; print(pip.__version__)"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return base
+    try:
+        major_text, minor_text, *_ = completed.stdout.strip().split(".")
+        version = (int(major_text), int(minor_text))
+    except ValueError:
+        return base
+    if version >= (25, 2):
+        base.extend(("--resume-retries", "10"))
+    return base
 
 
 def _setup_selection(
@@ -450,6 +494,7 @@ def ensure_environment(
     environment_id: str,
     *,
     conda_executable: Path | None = None,
+    pip_index_url: str = DEFAULT_PIP_INDEX_URL,
 ) -> EnvironmentRecord:
     """Create one immutable lock-addressed environment and probe it."""
 
@@ -466,6 +511,7 @@ def ensure_environment(
         _append_record(context.environment_registry_root, record)
         return record
     context.ensure_layout()
+    selected_pip_index = validate_pip_index_url(pip_index_url)
     lock, lock_path = _load_lock(context, environment_id)
     lock_sha256 = sha256_file(lock_path)
     conda_explicit = _verified_lock_input(
@@ -518,6 +564,11 @@ def ensure_environment(
         )
         if completed.returncode == 0 and pip_requirements is not None:
             install_phase = "pip-lock-install"
+            pip_environment = {
+                **os.environ,
+                **context.child_environment(),
+                "PIP_INDEX_URL": selected_pip_index,
+            }
             completed = subprocess.run(
                 [
                     str(prefix / "bin" / "python"),
@@ -526,11 +577,12 @@ def ensure_environment(
                     "install",
                     "--no-deps",
                     "--no-build-isolation",
+                    *_pip_reliability_arguments(prefix / "bin" / "python"),
                     "--requirement",
                     str(pip_requirements),
                 ],
                 cwd=context.root,
-                env={**os.environ, **context.child_environment()},
+                env=pip_environment,
                 check=False,
             )
         if completed.returncode == 0 and lock.install_workspace_package:
@@ -547,7 +599,11 @@ def ensure_environment(
                     ".[dev,ui]",
                 ],
                 cwd=context.root,
-                env={**os.environ, **context.child_environment()},
+                env={
+                    **os.environ,
+                    **context.child_environment(),
+                    "PIP_INDEX_URL": selected_pip_index,
+                },
                 check=False,
             )
         if completed.returncode != 0:
@@ -924,7 +980,9 @@ def setup_workspace(
     component: str | None = None,
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
+    pip_index_url: str = DEFAULT_PIP_INDEX_URL,
 ) -> SetupSummary:
+    selected_pip_index = validate_pip_index_url(pip_index_url)
     plan = setup_plan(context, minimal=minimal, component=component)
     disk = plan["disk"]
     if not disk["sufficient"]:
@@ -945,6 +1003,7 @@ def setup_workspace(
             context,
             environment_id,
             conda_executable=conda_executable,
+            pip_index_url=selected_pip_index,
         )
         for environment_id in selected
     )
@@ -974,6 +1033,7 @@ def setup_workspace(
         assets=asset_records,
         ok=ok,
         awaiting_approval=awaiting,
+        pip_index_url=selected_pip_index,
     )
 
 

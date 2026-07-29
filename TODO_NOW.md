@@ -21,12 +21,17 @@
 - `[ENG-023/UX-006]` 在 Proteindigger 的全新 clone 验证仓库内
   `runtime/profile.yaml`、setup 恢复、doctor 和一条命令 UI。当前锁的 core/web 已从
   仓库内 lock 重建；dev22 增加 `--component` 逐后端计划与安装，PyMOL 3.1.0 已在
-  `runtime/envs/` 真实重建并通过探针，BoltzGen 环境正在按独立计划恢复。
+  `runtime/envs/` 真实重建并通过探针，BoltzGen 0.3.2 环境也已通过当前 lock 探针；
+  Protenix 当前 lock 正在按独立计划恢复。
+  dev23 将远程长时安装统一为 `setup --detach` 持久任务；CLI 与 UI 共享不可变
+  request/process/result，SSH 或浏览器断开不再中断安装或丢失终态。网络异常时允许
+  为单个任务显式指定经过审计的 HTTPS pip 源，并把选择写入请求；禁止修改全局代理或
+  自动切换镜像。
   `doctor --full` 继续把未就绪科学后端逐项判为失败。不得修改 base Conda、系统代理、
   Git 全局配置、shell profile 或仓库外用户数据。
 - `[DATA-005]` 已完成七环境解析后的 linux-64 Conda/pip lock 与十五项资产来源、大小、
   SHA-256 和许可门；继续完成用户逐项确认后的下载发布验收。待许可必须保留
-  `awaiting-approval`，不能静默跳过或报告安装成功。
+  `awaiting-approval`，不能静默跳过或把“环境可导入”报告成“完整后端可运行”。
 - `[UI-016/VAL-006]` 完成安装中心浏览器验收，并在许可资产和后端就绪后逐步真实运行
   固定非 APOE 1UBQ 自检。Stage 05 科学停止允许；后端失败和科学停止必须分开显示。
 
@@ -86,8 +91,9 @@
 - `[DATA-005/VAL-006]` Protenix、BoltzGen、ScanNet 和验证 fixture 的受控资产在
   用户逐项确认相应许可前保持 `awaiting-approval`；真实后端逐步自检不能在资产缺失时
   标记通过。完整全量 setup 仍可能因峰值与安全余量拒绝，但逐后端安装已经开始且
-  PyMOL 当前 lock 已可用；模型和数据资产仍等待精确许可确认。系统盘当前也已满，
-  EasyDesign 不清理系统文件，也不把安装临时文件写到系统盘。
+  PyMOL 当前 lock 已可用；模型和数据资产仍等待精确许可确认。系统盘空间仍紧张，
+  EasyDesign 不清理系统文件；环境、模型、缓存、临时文件和构建缓存均必须写入数据盘
+  当前仓库的 `runtime/`。
 - `[S01]` 默认 ColabFold endpoint 已成功验证，但公共服务没有 EasyDesign 可承诺的
   SLA；remote、显式 offline cache、precomputed A3M、真实 APOE run 和 Stage 02
   交接均已完成。Protenix 官方 endpoint 持续 `PENDING`，不进入

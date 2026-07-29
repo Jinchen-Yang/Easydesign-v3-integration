@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev22`（包版本 `0.1.0.dev22`）
+- 当前版本：`0.1.0-dev23`（包版本 `0.1.0.dev23`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -31,7 +31,8 @@ git clone git@github.com:Knitua/Easydesign.git
 cd Easydesign
 
 ./easydesign setup --plan
-./easydesign setup --component pymol-pse
+./easydesign setup --component pymol-pse --detach
+./easydesign setup --status
 ./easydesign doctor --full
 ./easydesign ui
 ```
@@ -41,11 +42,15 @@ cd Easydesign
 
 ```bash
 ./easydesign setup --component pymol-pse --plan
-./easydesign setup --component pymol-pse
+./easydesign setup --component pymol-pse --detach
 ./easydesign setup --component protenix-v2 --plan
+./easydesign setup --component protenix-v2 --detach
 ./easydesign setup --component scannet-epitope --plan
+./easydesign setup --component scannet-epitope --detach
 ./easydesign setup --component boltzgen --plan
+./easydesign setup --component boltzgen --detach
 ./easydesign setup --component tnp --plan
+./easydesign setup --component tnp --detach
 ```
 
 每个组件计划只计算该后端环境、必需资产、当前未安装内容和最大单资产 staging 峰值，
@@ -55,6 +60,21 @@ cd Easydesign
 set 重建，不再在安装时重新解析宽范围依赖。环境 lock 改变会创建新目录，旧环境保持
 不变。BoltzGen 的五个 checkpoint 与 molecule dataset 分别登记来源、大小、MIT 许可和
 SHA-256；未确认的资产保持 `awaiting-approval`，后端不会被报告为可用。
+
+远程服务器安装一律推荐 `--detach`。它会通过无 shell 的独立 worker 启动安装，并把
+不可变 request、进程身份、终态 result 和 stdout/stderr 日志写在当前仓库
+`runtime/state/setup-jobs/` 与 `runtime/logs/`。关闭 SSH、浏览器或 UI 不会关闭 worker；
+重新登录后可读取同一任务：
+
+```bash
+./easydesign setup --status
+./easydesign setup --status --job-id setup-YYYYMMDDTHHMMSSZ-XXXXXXXXXX
+```
+
+只有 `result.json` 显示 `succeeded`，且 `./easydesign env status`、资产状态和版本探针
+均通过，后端才算可用。`incomplete` 通常表示仍待许可资产，`failed` 表示安装器捕获到
+明确错误，`interrupted` 表示进程已不在且没有终态记录；以上状态都不会触发自动删除。
+完整安装与故障恢复流程见 [环境安装手册](environments/README.md)。
 安装器只把 `HOME`、`TMPDIR`、Conda/Pip/Corepack/Playwright 缓存等环境变量传给自己的
 子进程；pip 子进程忽略系统/用户 pip 配置并禁止 user-site。不写 shell profile、系统
 代理、Git 全局配置、base Conda 或 `/etc/environment`。父进程已有的代理变量只读继承
@@ -63,6 +83,24 @@ SHA-256；未确认的资产保持 `awaiting-approval`，后端不会被报告�
 ```bash
 ./easydesign setup --conda /absolute/path/to/conda
 ```
+
+长时间安装同时使用 `--detach`：
+
+```bash
+./easydesign setup --component boltzgen --conda /absolute/path/to/conda --detach
+```
+
+默认 package index 是官方 `https://pypi.org/simple`。如果当前服务器已实测官方 CDN
+吞吐过低，可只为这一次安装显式选择可信 HTTPS 镜像；例如中国大陆服务器：
+
+```bash
+./easydesign setup --component boltzgen \
+  --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+  --detach
+```
+
+EasyDesign 不会自动切换镜像，也不会把该值写进 pip 全局配置或代理；选择结果进入 setup
+request 供审计。带用户名、密码、query 或 fragment 的 index URL 会被拒绝。
 
 查看哪些资产仍待许可确认：
 

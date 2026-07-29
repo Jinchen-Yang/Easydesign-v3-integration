@@ -12,6 +12,7 @@ from easydesign.orchestration.runtime_setup import (
     ensure_asset,
     setup_plan,
     setup_workspace,
+    validate_pip_index_url,
 )
 from easydesign.workspace_context import WorkspaceContext
 
@@ -159,3 +160,14 @@ def test_disk_preflight_refuses_before_initializing_workspace(
         )
 
     assert not context.profile_path.exists()
+
+
+def test_pip_index_must_be_explicit_safe_https_url() -> None:
+    assert (
+        validate_pip_index_url("https://pypi.tuna.tsinghua.edu.cn/simple/")
+        == "https://pypi.tuna.tsinghua.edu.cn/simple"
+    )
+    with pytest.raises(ConfigurationError, match="无凭据"):
+        validate_pip_index_url("https://user:secret@example.test/simple")
+    with pytest.raises(ConfigurationError, match="HTTPS"):
+        validate_pip_index_url("http://example.test/simple")

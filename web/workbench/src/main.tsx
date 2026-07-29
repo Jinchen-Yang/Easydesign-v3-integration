@@ -2220,7 +2220,7 @@ function OperationsPage({
       running: "安装中",
       succeeded: "已完成",
       incomplete: "未完整完成",
-      "finished-before-ui-restart": "已结束，请核对注册表",
+      interrupted: "安装中断，可安全重试",
     }[status] || status);
     return <div className="utility-page">
       <header className="page-heading compact"><div><p className="section-label">设置</p><h1>运行环境</h1><p>检查 Protenix、BoltzGen、PyMOL、ScanNet、TNP、GPU 和模型是否满足所选任务。</p></div></header>

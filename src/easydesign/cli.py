@@ -75,6 +75,11 @@ from easydesign.orchestration.runtime_setup import (
     setup_plan,
     setup_workspace,
 )
+from easydesign.orchestration.setup_jobs import (
+    launch_setup_job,
+    list_setup_jobs,
+    read_setup_job,
+)
 from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.orchestration.stage05 import Stage05Execution
 from easydesign.orchestration.stage06 import Stage06Execution
@@ -119,7 +124,18 @@ def _parser() -> argparse.ArgumentParser:
         "setup",
         help="在当前仓库 runtime/ 内安装 EasyDesign 环境与资产",
     )
-    setup_parser.add_argument("--plan", action="store_true", help="只显示计划，不写入")
+    setup_action = setup_parser.add_mutually_exclusive_group()
+    setup_action.add_argument("--plan", action="store_true", help="只显示计划，不写入")
+    setup_action.add_argument(
+        "--detach",
+        action="store_true",
+        help="持久后台安装；关闭 SSH 或浏览器不会中断",
+    )
+    setup_action.add_argument(
+        "--status",
+        action="store_true",
+        help="只读取最近安装任务状态",
+    )
     setup_scope = setup_parser.add_mutually_exclusive_group()
     setup_scope.add_argument("--minimal", action="store_true", help="仅安装 core/UI")
     setup_scope.add_argument(
@@ -135,6 +151,15 @@ def _parser() -> argparse.ArgumentParser:
         help="确认一个运行资产的许可；可重复提供",
     )
     setup_parser.add_argument("--conda", type=Path, help="显式 Conda executable")
+    setup_parser.add_argument(
+        "--pip-index-url",
+        default="https://pypi.org/simple",
+        help="只用于本次安装子进程的 HTTPS Python package index",
+    )
+    setup_parser.add_argument(
+        "--job-id",
+        help="与 --status 一起查看一个安装任务",
+    )
     _add_json(setup_parser)
 
     env_parser = commands.add_parser("env", help="查看仓库内环境注册状态")
@@ -647,6 +672,26 @@ def _format_runtime_status(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _format_setup_job(payload: BaseModel) -> str:
+    values = payload.model_dump(mode="json")
+    lines = [
+        f"安装任务：{values['job_id']}",
+        f"状态：{values['status']}",
+        f"组件：{values.get('component') or ('core-ui' if values['minimal'] else 'all')}",
+        f"Pip index：{values['pip_index_url']}",
+        f"开始时间：{values['started_at']}",
+        f"标准输出：{values['stdout_relative_path']}",
+        f"错误输出：{values['stderr_relative_path']}",
+    ]
+    if values.get("completed_at"):
+        lines.append(f"完成时间：{values['completed_at']}")
+    if values.get("return_code") is not None:
+        lines.append(f"退出码：{values['return_code']}")
+    if values.get("error"):
+        lines.append(f"错误：{values['error']}")
+    return "\n".join(lines)
+
+
 def _runs_root(explicit: Path | None, profile_path: Path | None) -> Path:
     if explicit is not None:
         return explicit.expanduser().resolve()
@@ -665,6 +710,31 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command in {"setup", "env", "assets", "workspace"}:
         context = WorkspaceContext.discover()
         if arguments.command == "setup":
+            if arguments.status:
+                if (
+                    arguments.minimal
+                    or arguments.component is not None
+                    or arguments.accept_license
+                    or arguments.conda is not None
+                    or arguments.pip_index_url != "https://pypi.org/simple"
+                ):
+                    raise ConfigurationError(
+                        "--status 不能与安装范围、许可或 Conda 参数同时使用"
+                    )
+                jobs = (
+                    (read_setup_job(context, arguments.job_id),)
+                    if arguments.job_id
+                    else list_setup_jobs(context)
+                )
+                if arguments.json:
+                    print(_json_text(jobs))
+                elif not jobs:
+                    print("当前工作区还没有持久安装任务。")
+                else:
+                    print("\n\n".join(_format_setup_job(job) for job in jobs))
+                return 0
+            if arguments.job_id is not None:
+                raise ConfigurationError("--job-id 只能与 --status 一起使用")
             payload = setup_plan(
                 context,
                 minimal=arguments.minimal,
@@ -686,12 +756,31 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     and sys.stdin.isatty()
                 ),
             )
+            if arguments.detach:
+                job = launch_setup_job(
+                    context,
+                    minimal=arguments.minimal,
+                    component=arguments.component,
+                    accepted_license_ids=accepted_license_ids,
+                    conda_executable=arguments.conda,
+                    pip_index_url=arguments.pip_index_url,
+                )
+                if arguments.json:
+                    print(_json_text(job))
+                else:
+                    print(_format_setup_job(job))
+                    print(
+                        "\n可安全关闭当前 SSH；稍后运行 "
+                        f"./easydesign setup --status --job-id {job.job_id}"
+                    )
+                return 0
             summary = setup_workspace(
                 context,
                 minimal=arguments.minimal,
                 component=arguments.component,
                 accepted_license_ids=accepted_license_ids,
                 conda_executable=arguments.conda,
+                pip_index_url=arguments.pip_index_url,
             )
             if arguments.json:
                 print(_json_text(summary))

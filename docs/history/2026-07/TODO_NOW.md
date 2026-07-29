@@ -786,3 +786,36 @@
   恢复 Protenix、ScanNet 与 TNP。`ENG-023/DATA-005/VAL-006` 继续留在 Now/Blocked，
   本记录不表示全后端或真实科学自检已经完成。
 - 提交：以本记录所在提交和远端 `codex/workspace-runtime` 完整 SHA 为准。
+
+## 2026-07-29 — UX-006：可恢复长时安装与显式下载源
+
+- 状态：`implemented`；BoltzGen 0.3.2 环境真实重建并通过探针，模型资产继续等待精确
+  许可确认。
+- 完成时间：2026-07-29T13:47:38+08:00
+- 问题：前台安装会因 SSH 输出连接断开而提前结束；官方 PyPI 下载一个约 581 MB 的
+  CUDA wheel 时仅收到约 11 MB 便发生 `IncompleteRead`。原 setup 没有跨 UI/CLI
+  重启保存进程身份，也不能为单次任务显式选择下载源。
+- 方案：增加不可变 setup job、独立 worker session 和
+  `setup --detach/--status`。任务保存 request、process、result、stdout 和 stderr；
+  进程身份使用不可预测 token 校验，UI 与 CLI 共用同一投影。pip 使用 120 秒超时和
+  10 次重试；支持的 pip 版本启用断点续传重试。部署者可为单任务显式指定无凭据的
+  HTTPS `--pip-index-url`，该值进入审计记录，不修改系统代理、pip 全局配置或后续任务。
+- 真实验证：官方源失败任务安全结束并把环境 staging 保留到 quarantine；随后
+  BoltzGen 以清华 HTTPS 镜像后台重试，大型 NVIDIA wheel 的实际吞吐由约 10 KiB/s
+  提升至约 100 MiB/s。任务约 9 分钟完成，environment registry 的 probe 返回
+  BoltzGen `0.3.2`；由于六项运行资产未获许可，setup 终态如实为 `incomplete`。
+  worker、下载缓存、环境、临时文件、日志和状态均位于数据盘当前 clone 的 `runtime/`。
+  任务 ID 为 `setup-20260729T054115Z-909855065b`。
+- 自动证据：`make check` 通过；Python 291 passed、8 个需独立 PyMOL 解释器的集成
+  测试按配置 skipped；dev23 wheel、console script 和 package data 构建通过。浏览器
+  测试首次明确暴露 Playwright 默认查找系统盘缓存，Makefile 已改为传入仓库内 HOME、
+  XDG、pip/npm/corepack 和 Playwright cache；随后 Target Viewer 与 Workbench 的
+  `.last-run.json` 均为 `passed`，浏览器二进制从数据盘 `runtime/cache/playwright`
+  解析，未回退到 `/root/.cache`。
+- 安全边界：没有删除失败环境、cache、quarantine、模型或运行结果；没有修改系统代理、
+  base Conda、Git 全局配置、shell profile 或 `/etc/environment`。许可资产没有因环境
+  安装而被自动接受。
+- 遗留：继续等待 Protenix 当前 lock 的后台任务终态；随后按单组件顺序恢复 ScanNet
+  与 TNP。Playwright 浏览器属于开发验收资产，后续 setup 仍需把其显式状态与普通用户
+  只需已构建静态 UI 的边界解释清楚。
+- 提交：以本记录所在提交和远端 `codex/workspace-runtime` 完整 SHA 为准。

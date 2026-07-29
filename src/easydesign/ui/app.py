@@ -7,8 +7,6 @@ import base64
 import hashlib
 import json
 import mimetypes
-import os
-import subprocess
 import threading
 import webbrowser
 from collections.abc import AsyncIterator
@@ -62,6 +60,10 @@ from easydesign.orchestration.runtime_setup import (
     environment_status,
     initialize_workspace_metadata,
     setup_plan,
+)
+from easydesign.orchestration.setup_jobs import (
+    launch_setup_job,
+    list_setup_jobs,
 )
 from easydesign.safe_writes import quarantine_if_workspace_path, read_last_text_line
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
@@ -291,10 +293,6 @@ class UiServiceState:
         self.temporary_root = self.workspace.runtime_root / "tmp" / "ui"
         self.temporary_root.mkdir(parents=True, exist_ok=True)
         self.uploads: dict[str, Path] = {}
-        self.setup_job_root = self.workspace.runtime_root / "state" / "setup-jobs"
-        self.setup_job_root.mkdir(parents=True, exist_ok=True)
-        self.setup_processes: dict[str, subprocess.Popen[bytes]] = {}
-
     def project_config(self, project_id: str) -> Path:
         root = (self.projects_root / project_id).resolve()
         try:
@@ -370,79 +368,19 @@ class UiServiceState:
         component: str | None,
         accepted_license_ids: tuple[str, ...],
     ) -> dict[str, Any]:
-        job_id = f"setup-{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:10]}"
-        job_root = self.setup_job_root / job_id
-        job_root.mkdir()
-        command = [str(self.workspace.root / "easydesign"), "setup"]
-        if minimal:
-            command.append("--minimal")
-        if component is not None:
-            command.extend(("--component", component))
-        for asset_id in accepted_license_ids:
-            command.extend(("--accept-license", asset_id))
-        stdout_path = self.workspace.runtime_root / "logs" / f"{job_id}.stdout.log"
-        stderr_path = self.workspace.runtime_root / "logs" / f"{job_id}.stderr.log"
-        stdout_path.parent.mkdir(parents=True, exist_ok=True)
-        with (
-            stdout_path.open("xb") as stdout,
-            stderr_path.open("xb") as stderr,
-        ):
-            process = subprocess.Popen(
-                command,
-                cwd=self.workspace.root,
-                env={**os.environ, **self.workspace.child_environment()},
-                stdin=subprocess.DEVNULL,
-                stdout=stdout,
-                stderr=stderr,
-                shell=False,
-                start_new_session=True,
-            )
-        request_path = job_root / "request.json"
-        with request_path.open("x", encoding="utf-8") as handle:
-            json.dump(
-                {
-                    "schema_version": "0.1",
-                    "job_id": job_id,
-                    "command": command,
-                    "minimal": minimal,
-                    "component": component,
-                    "accepted_license_ids": list(accepted_license_ids),
-                    "pid": process.pid,
-                    "started_at": datetime.now(tz=UTC).isoformat(),
-                    "stdout": stdout_path.relative_to(self.workspace.root).as_posix(),
-                    "stderr": stderr_path.relative_to(self.workspace.root).as_posix(),
-                },
-                handle,
-                ensure_ascii=False,
-                indent=2,
-            )
-            handle.write("\n")
-        self.setup_processes[job_id] = process
-        return {"job_id": job_id, "status": "running", "pid": process.pid}
+        job = launch_setup_job(
+            self.workspace,
+            minimal=minimal,
+            component=component,
+            accepted_license_ids=set(accepted_license_ids),
+        )
+        return job.model_dump(mode="json")
 
     def setup_jobs(self) -> list[dict[str, Any]]:
-        jobs: list[dict[str, Any]] = []
-        for request_path in sorted(self.setup_job_root.glob("*/request.json"), reverse=True):
-            payload = json.loads(request_path.read_text(encoding="utf-8"))
-            job_id = str(payload["job_id"])
-            process = self.setup_processes.get(job_id)
-            if process is not None:
-                return_code = process.poll()
-                status = (
-                    "running"
-                    if return_code is None
-                    else ("succeeded" if return_code == 0 else "incomplete")
-                )
-            else:
-                return_code = None
-                try:
-                    os.kill(int(payload["pid"]), 0)
-                except (OSError, ValueError):
-                    status = "finished-before-ui-restart"
-                else:
-                    status = "running"
-            jobs.append({**payload, "status": status, "return_code": return_code})
-        return jobs
+        return [
+            item.model_dump(mode="json")
+            for item in list_setup_jobs(self.workspace)
+        ]
 
 
 def _state(request: Request) -> UiServiceState:

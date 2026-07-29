@@ -162,6 +162,15 @@ Python API 和 console-script 声明源；core 在锁定依赖后以 `--no-deps`
 并校验后发布，因此磁盘峰值按“环境及其缓存 + 已发布资产 + 最大单资产 staging”计算，
 不再假设所有后端与所有资产同一时刻重复存在。完整安装与组件安装共用
 `setup_workspace()`，CLI 和 UI 不得维护第二套映射。
+长时安装由 `orchestration.setup_jobs` 提供唯一任务 API。CLI 的 `setup --detach` 和
+UI 安装中心都通过该 API 启动 `python -m easydesign.setup_worker`：无 shell、关闭
+stdin、独立进程 session，并将不可变 request/process/result 写到
+`runtime/state/setup-jobs/`。安装状态以终态 result 为事实来源；创建 UI 的进程退出后
+仍能恢复，不再把浏览器内存中的 `Popen` 当成状态事实来源。stdout/stderr 只作为诊断
+日志，不参与成功判定。
+默认 pip index 固定为官方 PyPI；部署者可对单次 setup 显式提供无凭据 HTTPS index。
+该 URL 进入 setup request，并只覆盖 worker 子进程的 `PIP_INDEX_URL`。EasyDesign 不
+修改全局 pip/代理配置，也不进行未记录的镜像 fallback。
 `environments/protenix-v2.yml` 固定 EasyDesign 1.0 当前结构预测后端的独立环境。
 `environments/pymol-pse.yml` 固定 PyMOL PSE 导入环境的 Python 3.11 和
 `pymol-open-source=3.1.0`。Core 不导入 PyMOL，也不扫描 Conda 或系统 Python；正式 CLI

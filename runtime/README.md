@@ -14,3 +14,7 @@ Git，也不得被脚本自动删除。
 
 EasyDesign 不会自动清理这里的任何内容。需要释放空间时，必须由用户针对精确路径
 另行批准。
+
+长时安装任务位于 `state/setup-jobs/<job-id>/`，日志位于 `logs/`。关闭 SSH 或 UI
+不会终止通过 `./easydesign setup --detach` 启动的 worker；状态由不可变 request、
+process 和 result 记录恢复，不依赖终端文本。

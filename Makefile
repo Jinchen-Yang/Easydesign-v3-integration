@@ -6,6 +6,15 @@ NPM ?= npm
 PNPM ?= pnpm
 WEB_DIR ?= web/target-viewer
 UI_WEB_DIR ?= web/workbench
+RUNTIME_ENV = HOME=$(CURDIR)/runtime/home \
+	TMPDIR=$(CURDIR)/runtime/tmp \
+	XDG_CACHE_HOME=$(CURDIR)/runtime/cache/xdg \
+	XDG_DATA_HOME=$(CURDIR)/runtime/state/xdg-data \
+	XDG_STATE_HOME=$(CURDIR)/runtime/state/xdg-state \
+	PIP_CACHE_DIR=$(CURDIR)/runtime/cache/pip \
+	NPM_CONFIG_CACHE=$(CURDIR)/runtime/cache/npm \
+	COREPACK_HOME=$(CURDIR)/runtime/cache/corepack \
+	PLAYWRIGHT_BROWSERS_PATH=$(CURDIR)/runtime/cache/playwright
 
 .PHONY: help env-create env-update check test build build-ui test-web
 
@@ -38,22 +47,32 @@ test:
 	PYTHONPATH=src TMPDIR=$(CURDIR)/runtime/tmp $(PYTHON) -m pytest --basetemp=runtime/tmp/pytest-$$(date +%s)-$$$$
 
 build: build-ui
-	@test ! -e dist/easydesign-0.1.0.dev22-py3-none-any.whl || \
+	@test ! -e dist/easydesign-0.1.0.dev23-py3-none-any.whl || \
 		{ echo "拒绝覆盖现有 wheel；请保留它并使用新的版本号"; exit 1; }
-	PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PYTHONNOUSERSITE=1 \
+	@mkdir -p runtime/cache/pip runtime/cache/xdg runtime/home runtime/tmp
+	$(RUNTIME_ENV) \
+		PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple \
+		PYTHONNOUSERSITE=1 \
 		$(PYTHON) -m pip wheel --no-deps --no-build-isolation --wheel-dir dist .
-	PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PYTHONNOUSERSITE=1 \
+	$(RUNTIME_ENV) \
+		PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple \
+		PYTHONNOUSERSITE=1 \
 		$(PYTHON) scripts/check_built_wheel.py
 
 build-ui:
-	cd $(UI_WEB_DIR) && $(PNPM) install --frozen-lockfile
+	@mkdir -p runtime/home runtime/tmp runtime/cache/npm runtime/cache/corepack \
+		runtime/cache/playwright runtime/cache/xdg runtime/state/xdg-data \
+		runtime/state/xdg-state
+	cd $(UI_WEB_DIR) && $(RUNTIME_ENV) $(PNPM) install --frozen-lockfile
 	@mkdir -p runtime/tmp
 	@set -eu; \
 		staging="runtime/tmp/ui-build-$$(date +%s)-$$$$"; \
 		test ! -e "$$staging"; \
-		cd $(UI_WEB_DIR) && EASYDESIGN_UI_OUT_DIR="$(CURDIR)/$$staging" $(PNPM) build; \
+		cd $(UI_WEB_DIR) && $(RUNTIME_ENV) \
+			EASYDESIGN_UI_OUT_DIR="$(CURDIR)/$$staging" $(PNPM) build; \
 		cd "$(CURDIR)" && $(PYTHON) scripts/publish_ui_build.py "$$staging"
 
 test-web: build-ui
-	cd $(WEB_DIR) && EASYDESIGN_CORE_PYTHON=$(PYTHON) $(NPM) test
-	cd $(UI_WEB_DIR) && EASYDESIGN_WEB_DEV_COMMAND="$(PNPM) dev" $(PNPM) test
+	cd $(WEB_DIR) && $(RUNTIME_ENV) EASYDESIGN_CORE_PYTHON=$(PYTHON) $(NPM) test
+	cd $(UI_WEB_DIR) && $(RUNTIME_ENV) \
+		EASYDESIGN_WEB_DEV_COMMAND="$(PNPM) dev" $(PNPM) test

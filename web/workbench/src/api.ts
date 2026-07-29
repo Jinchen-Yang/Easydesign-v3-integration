@@ -38,7 +38,7 @@ export const api = {
     component: string | undefined,
     acceptedLicenseIds: string[],
   ) =>
-    request<{ job_id: string; status: string; pid: number }>("/api/v1/install/setup", {
+    request<{ job_id: string; status: string; pid?: number }>("/api/v1/install/setup", {
       method: "POST",
       body: JSON.stringify({
         minimal,

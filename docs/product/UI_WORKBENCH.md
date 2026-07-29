@@ -411,7 +411,7 @@ revision 并执行下一阶段。`failed`、`cancelled`、前缀不连续或上�
 
 ## UI-016 / VAL-006：仓库内安装中心与真实后端逐步自检
 
-版本：`0.1.0.dev22`。
+版本：`0.1.0.dev23`。
 
 安装与环境页面直接读取仓库内 `runtime/` 的不可变环境/资产 revision，不读取
 `/root/.config/easydesign`，也不扫描系统 Conda。七个环境和模型分别显示：
@@ -426,6 +426,9 @@ revision 并执行下一阶段。`failed`、`cancelled`、前缀不连续或上�
   “可用”，不能因 Python package 已安装而提前解锁 Stage 04/06。
 - “完整安装”调用与 `./easydesign setup` 相同的 Python API；UI 只轮询结构化 setup
   记录，不解析终端输出。
+- 安装中心与 CLI 共用 `orchestration.setup_jobs`。安装 worker 脱离浏览器/SSH session
+  运行，UI 重启后通过 request/process/result 恢复真实状态；不再出现
+  `finished-before-ui-restart` 这种无法判断成功与否的模糊状态。
 - 安装中心同时提供 PyMOL/PSE、Protenix-v2、ScanNet、BoltzGen 和 TNP 的独立安装
   动作。每张组件卡片展示本组件当前增量峰值和磁盘门；许可确认仍精确绑定资产，单组件
   按钮不得扩大为其他后端的安装授权。

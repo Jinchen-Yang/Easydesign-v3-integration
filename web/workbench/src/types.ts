@@ -174,12 +174,16 @@ export interface RuntimeInstallItem {
 export interface SetupJob {
   job_id: string;
   status: string;
-  pid: number;
+  pid?: number;
   started_at: string;
+  completed_at?: string;
   minimal: boolean;
   component?: string;
   accepted_license_ids: string[];
   return_code?: number;
+  stdout_relative_path: string;
+  stderr_relative_path: string;
+  error?: string;
 }
 
 export interface InstallStatus {

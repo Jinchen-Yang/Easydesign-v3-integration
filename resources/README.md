@@ -27,7 +27,8 @@ inverse-fold、folding 和 affinity 五个 checkpoint。EasyDesign 只把校验�
 升级 registry 必须同时更新来源 commit、逐文件 hash、license、package-data 测试、
 Stage 03 backend 校验和资产登记。
 
-Stage 01 Target Viewer 是当前唯一随 Python wheel 分发的第三方前端资产：
+Stage 01 Target Viewer 与 Stage 01/02 浏览器 PyMOL 是当前随 Python wheel
+分发的第三方前端资产。Mol* 规则如下：
 
 - 固定 Mol* `5.11.0` 官方 npm tarball；
 - 只提取 `build/viewer/molstar.js`、`molstar.css` 和根 `LICENSE`，不提交
@@ -40,6 +41,21 @@ Stage 01 Target Viewer 是当前唯一随 Python wheel 分发的第三方前端�
 
 任何 Mol* 升级必须重新检查 npm integrity、bundle license notices、静态字节、wheel
 内容和浏览器测试，不得把“npm package 标记为 MIT”当成跳过 bundle 依赖审查的理由。
+
+浏览器 PyMOL 固定复用 ChatPyMol commit
+`43517d2dc0795357f35f93a2bde8cfc442f568c5` 已审计的离线运行资产：
+
+- Pyodide `0.22.1`，Apache-2.0；
+- NumPy `1.23.5` Emscripten wheel，BSD-3-Clause；
+- Open-Source PyMOL WASM `2.6.0a0`，Open-Source PyMOL license；
+- EasyDesign 只移植浏览器渲染能力，不移植 ChatPyMol 的 Node 文件库、MCP、
+  用户主目录写入或删除接口；
+- `scripts/check_browser_pymol_assets.py` 固定运行必需文件的大小和 SHA-256；
+- 所有资产只从 EasyDesign wheel/localhost 提供，页面不得访问 CDN。
+
+PyMOL 是 Schrödinger, LLC 的商标；EasyDesign 是独立项目，并非其官方产品，
+也未获其背书。升级任一浏览器资产必须重新审计许可证、逐文件 hash、wheel 内容、
+触摸交互和离线浏览器测试。
 
 Stage 07 的 TNP 仅作为独立 runtime 使用，不随 wheel 分发源码、模型或依赖：
 

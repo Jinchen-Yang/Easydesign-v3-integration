@@ -37,6 +37,7 @@ check:
 	$(PYTHON) scripts/sync_status_rollup.py --check
 	$(PYTHON) scripts/check_repository.py
 	PYTHONPATH=src $(PYTHON) scripts/check_target_viewer_assets.py
+	PYTHONPATH=src $(PYTHON) scripts/check_browser_pymol_assets.py
 	PYTHONPATH=src $(PYTHON) -c "import easydesign; print(easydesign.__version__)"
 	$(PYTHON) -m compileall -q src scripts tests
 	$(PYTHON) -m ruff check src scripts tests

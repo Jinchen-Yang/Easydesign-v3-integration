@@ -59,6 +59,9 @@ easydesign = [
   "resources/filter_profiles/*.yaml",
   "ui/static/*",
   "ui/static/assets/*",
+  "ui/vendor/browser_pymol/pyodide/*",
+  "ui/vendor/browser_pymol/pymol-wasm/*",
+  "ui/vendor/browser_pymol/licenses/*",
 ]
 
 [tool.pytest.ini_options]

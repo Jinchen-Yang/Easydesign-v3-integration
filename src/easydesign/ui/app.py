@@ -598,6 +598,27 @@ def create_ui_app(
             "science_source": "manifest-only",
         }
 
+    @app.get("/api/v1/browser-pymol/status")
+    def browser_pymol_status() -> dict[str, Any]:
+        root = Path(__file__).resolve().parent / "vendor" / "browser_pymol"
+        required = (
+            root / "pyodide" / "pyodide.js",
+            root / "pyodide" / "pyodide.asm.wasm",
+            root
+            / "pyodide"
+            / "numpy-1.23.5-cp310-cp310-emscripten_3_1_27_wasm32.whl",
+            root
+            / "pymol-wasm"
+            / "pymol-2.6.0a0-cp39-cp39-emscripten_3_1_46_wasm32.whl",
+        )
+        return {
+            "available": all(item.is_file() for item in required),
+            "renderer": "open-source-pymol-wasm",
+            "pymol_version": "2.6.0a0",
+            "pyodide_version": "0.22.1",
+            "offline_assets": True,
+        }
+
     @app.get("/api/v1/structure-assistant/providers")
     def assistant_provider_statuses(request: Request) -> dict[str, Any]:
         service = _state(request)
@@ -2196,7 +2217,20 @@ def create_ui_app(
         / "vendor"
         / "molstar"
     )
+    browser_pymol_root = (
+        Path(__file__).resolve().parent / "vendor" / "browser_pymol"
+    )
     app.mount("/molstar", StaticFiles(directory=molstar_root), name="molstar")
+    app.mount(
+        "/pyodide",
+        StaticFiles(directory=browser_pymol_root / "pyodide"),
+        name="browser-pyodide",
+    )
+    app.mount(
+        "/pymol-wasm",
+        StaticFiles(directory=browser_pymol_root / "pymol-wasm"),
+        name="browser-pymol-wasm",
+    )
     app.mount("/assets", StaticFiles(directory=ui_root / "assets"), name="ui-assets")
 
     @app.get("/{path:path}")

@@ -463,3 +463,31 @@ checksum 和真实逐步运行全部完成后，`VAL-006` 才能从 `implemented
 普通 `doctor` 允许 core/UI 工作区在科学后端尚未安装时启动；`doctor --full` 则把每个
 未达到第2项的科学后端记为失败并返回非零状态。界面不得把“已声明但未完整安装”翻译成
 “profile 文件不存在”。
+
+## REP-006 / UI-017：浏览器 PyMOL 与可收起结构助手
+
+版本：`0.1.0.dev24`。
+
+Stage 01/02 的统一结构工作区默认显示浏览器 PyMOL，Mol* 作为平级标签切换。两者读取
+同一份经过 checksum 验证的 `target.cif`，共享当前残基、A/B/C 图层和 label/auth
+编号；PSE 原始红/蓝/黄通过 `source-annotations.json` 重建，不把颜色写回 mmCIF。
+
+浏览器 PyMOL 提供对象/链/序列、cartoon/surface/stick、颜色、标签、居中、视角、安全
+PML 控制台与 PNG/PML/PSE 导出。鼠标旋转、触摸选择、双指缩放和平移均由画布接收；
+加载进度、Pyodide/WebGL 错误和内存释放必须有可见终态。所有坐标修改、对象删除、任意
+Python/PML 和对 Target Bundle 的覆盖都被拒绝。
+
+右侧助手栏可收起。设置页必须由用户显式选择 DeepSeek 或智谱 GLM、模型、HTTPS
+endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置时助手显示不可用，
+但结构查看、手工选区、SASA 和 ScanNet 继续工作。
+
+助手 proposal 的产品语义固定为：
+
+- 显示建议：确认后执行服务器编译的安全 PML；
+- 明确残基：确认后修改本次 Stage 02 编辑草稿；
+- 自动分析：只显示待确认的 SASA/ScanNet 计划；
+- 解释：没有可执行副作用。
+
+“寻找最佳区域”不得直接改变结构或选区。只有用户提交区域、通过 mapping/坐标/checksum
+校验并完成证据限制确认后，系统才建立新的 Stage 02 branch。助手会话本身不是科学结果，
+也不能作为下单依据。

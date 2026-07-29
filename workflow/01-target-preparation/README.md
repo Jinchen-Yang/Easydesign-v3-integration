@@ -423,6 +423,32 @@ python scripts/serve_target_viewer.py \
 服务启动前验证报告状态和全部 checksum，只绑定 `127.0.0.1`，根目录严格限制为单个
 report revision。远程服务器使用 SSH 端口转发，不开放 `0.0.0.0` 或公网访问。
 
+## 浏览器结构工作区
+
+产品工作台在便携 Mol* 报告之外提供 PyMOL/Mol* 双查看器。默认浏览器 PyMOL 使用
+Pyodide `0.22.1`、NumPy `1.23.5` 和 Open-Source PyMOL WASM `2.6.0a0` 的离线
+vendored 资产；Mol* 保持平级备用。两者必须通过受限 artifact token 读取同一份当前
+StageManifest 声明且校验通过的 `target.cif`，并共享 residue mapping、当前选中残基与
+PSE 来源颜色。
+
+Stage 01 中所有 PyMOL 操作都属于显示状态：
+
+- 允许 cartoon、surface、stick、颜色、标签、选择、居中、方向和视角；
+- PNG、PML、PSE 只能通过专用按钮导出，并标记为可视化文件；
+- 禁止改变原子、残基、对象或坐标，禁止覆盖 `target.cif`；
+- 任意交互前后 Target Bundle 和结构 SHA-256 必须保持不变。
+
+交互状态写入
+`projects/<project_id>/interactive-sessions/<session_id>/` 的
+`StructureInteractionSession 0.1` revision。它不是 Stage 01 artifact，不加入
+StageManifest，也不能成为 Stage 02 的隐式输入。PSE 仍由独立服务器 PyMOL 3.1.0
+worker 解析；浏览器 PyMOL 不替代 Stage 01 PSE adapter。
+
+可选结构助手支持 DeepSeek 和智谱 GLM 两个显式 provider。未配置 API 时只禁用助手；
+查看器和 Stage 01 正常运行。模型请求不包含坐标、MSA、完整序列、绝对路径或密钥，只
+发送用户文字、stage、对象/链、编号说明和当前选区摘要。Stage 01 助手只能生成经过
+Schema 校验的显示建议或解释，不能修改结构或判断 hotspot。
+
 ## 不变量
 
 - 残基身份和编号映射无歧义；预测 CIF 中的聚合物序列必须与规范输入逐位相同。

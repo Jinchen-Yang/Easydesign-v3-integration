@@ -511,6 +511,33 @@ structural-only 仍可人工批准，但审批文件必须显式设置
 `acknowledge_evidence_limitations: true`，且不能标记为科学验证。自动身份发现、天然复合物
 界面、文献/疾病突变、P2Rank/fpocket/PeSTo/GraphPPIS/MaSIF/DiscoTope 等仍在 TODO。
 
+## 双查看器与自然语言辅助边界
+
+Stage 02 与 Stage 01 共用默认浏览器 PyMOL、平级 Mol* 和同一份已校验
+`target.cif`。PSE 来源颜色、当前批准区域和本次可编辑区域仍是三个独立图层；查看器切换
+不能改变成员、编号或 approval 状态。
+
+DeepSeek/智谱 GLM 助手只接受四类类型化输出：
+
+1. `ViewerAction`：显示方式、颜色、标签、选择和视角；
+2. `RegionEditOperation`：把用户明确编号的残基加入、移出或移动到 A/B/C；
+3. `ScientificAnalysisPlan`：提出运行 SASA、ScanNet 或两者；
+4. `Explanation`：只解释，不执行。
+
+“把32、36加入A区”可以规范为明确的编辑操作；“寻找最佳区域”不能直接产生残基或
+hotspot，只能生成 `requires_confirmation=true` 的分析计划。用户确认后仍调用现有
+SASA/ScanNet 后端，两种方法保持独立，不融合分数。模型解析得到的区域仍属于
+`manual-residue-list` 用户先验，必须经过编号/坐标/checksum 校验和人工批准，随后创建
+新的不可变 Stage 02 branch；旧 run 不回写。
+
+模型不接收坐标、完整序列或 MSA。provider、模型、endpoint 和 API key 必须显式配置，
+不允许 DeepSeek/GLM 互相静默 fallback；密钥只写入仓库内 `runtime/secrets/` 的
+revision，科学 manifest 和普通日志不得包含密钥或完整请求。
+
+安全 PML 只允许显示、着色、标签、选择和视角命令；`load/fetch/save/remove/delete/
+alter/run/python/system/shell/reinitialize` 等命令明确拒绝。模型本身不能生成并直接
+执行任意 PML，必须先经过 `AssistantProposal` 和安全编译器。
+
 ## 失败与重试
 
 以下情况明确失败：

@@ -323,11 +323,11 @@ def main() -> int:
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
-    require(len(markdown) <= 42, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
+    require(len(markdown) <= 43, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev23", "项目版本异常", errors)
+    require(project["version"] == "0.1.0.dev24", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require(
         project.get("scripts") == {"easydesign": "easydesign.cli:main"},

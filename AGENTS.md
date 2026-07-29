@@ -215,6 +215,11 @@ Agent 必须自动完成以下收尾工作：
 30. BoltzGen 运行必须显式传入 registry 验证过的两个 design checkpoint、inverse-fold、
     folding、affinity checkpoint 和 molecule dataset 本地路径。禁止依赖上游默认
     Hugging Face 标识在运行阶段隐式下载。
+31. 浏览器结构助手不得成为 EasyDesign 1.0 的科学决策器。模型输出只能是类型化显示
+    动作、用户明确残基的编辑操作、待确认的 SASA/ScanNet 计划或解释；不得直接生成
+    hotspot、发布 Stage 02 或执行任意 PML。浏览器 PyMOL/Mol* 只读当前 manifest 声明的
+    结构，交互会话写入 `projects/` revision，API key 只写入 `runtime/secrets/`，坐标、
+    MSA、完整序列、密钥和绝对路径不得发送给模型。
 
 ## 4. 阻塞与询问
 

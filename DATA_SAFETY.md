@@ -161,3 +161,17 @@ EasyDesign 官方开发只允许一个 Git 分支：`main`。
    原样保留；“只允许 main”不构成删除这些目录或数据的授权。
 4. GitHub 只推送并核对 `main`。禁止为了传输提交而创建远端临时分支；确需跨机器传输
    时使用 bundle、format-patch 或其他不会创建开发分支的方式。
+
+## 11. 浏览器结构交互与模型密钥
+
+1. 浏览器 PyMOL、Mol* 和模型助手只能通过 manifest 派生 token 读取当前科学结构；
+   禁止把浏览器导出的 PML/PSE/PNG 自动提升为 Target Bundle 或覆盖原始科学 artifact。
+2. DeepSeek、智谱 GLM 等 provider 的 API key 只能保存到当前仓库
+   `runtime/secrets/` 的权限收紧 revision；不得写入项目配置、run、manifest、普通日志、
+   Git、浏览器 localStorage 或返回给前端。
+3. 模型请求禁止包含坐标、MSA、完整序列、外部输入绝对路径或密钥。请求内容只允许用户
+   文字、stage、对象/链、编号说明、当前区域摘要和允许动作 Schema。
+4. 不得提供交互会话删除接口。会话和 PML 每次修改发布新 revision；异常 revision、
+   provider 响应和失败证据按仓库安全写入制度保留，禁止自动清理。
+5. ChatPyMol 等参考项目只能复制经过来源和许可证审计的能力或静态资产；不得引入其删除
+   API、用户主目录写入、可变覆盖式索引或独立科学项目库。

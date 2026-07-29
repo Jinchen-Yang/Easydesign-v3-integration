@@ -926,6 +926,37 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 
 重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。
 
+## Stage 01/02 双查看器与结构交互会话
+
+Workbench 的结构交互保持产品状态、科学状态和第三方渲染运行时三层分离：
+
+```text
+StageManifest → verified target.cif / mapping / source annotations
+                      │
+                      ├─ browser PyMOL（默认，离线 WASM）
+                      └─ Mol*（平级切换）
+                              │
+projects/<project>/interactive-sessions/<session>/revision
+                              │
+             显示动作 / 明确残基草稿 / 待确认算法计划
+                              │
+             人工提交后才建立新的 Stage 02 branch
+```
+
+- 浏览器 PyMOL 和 Mol* 只通过 manifest 派生 artifact token 获取同一结构；不得扫描
+  run 目录或直接读取任意路径。
+- Pyodide/PyMOL WASM 由 Python wheel 离线提供，不访问 CDN。PSE 文件解析仍在独立
+  `pymol-pse` 环境完成，浏览器运行时不是科学输入 adapter。
+- `StructureInteractionSession 0.1` 保存于 `projects/`，采用新 revision 发布，不提供
+  删除或覆盖接口。它不加入 Run/StageManifest，不改变 Target Bundle。
+- 模型 provider 只接收最小语义上下文，并返回严格的 `AssistantProposal`。可执行显示
+  动作必须编译为 allow-listed PML；Stage 02 成员修改必须通过 canonical mapping；
+  SASA/ScanNet plan 只有人工确认后才调用既有 deterministic backend。
+- API key 只写入 `runtime/secrets/` 的权限收紧 revision；UI 只能看到掩码和配置状态。
+  provider 不可用时不 fallback，也不影响无模型的七阶段流程。
+- 首版不开放 MCP，不移植 ChatPyMol 的 Node 文件库、主目录写入、删除/分享接口或第二套
+  project system。
+
 ## 产品会话、项目目录与开发者自检
 
 `DesignSession 0.1` 是产品导航层，不是科学事实来源。它只记录设计模式、运行方式、当前

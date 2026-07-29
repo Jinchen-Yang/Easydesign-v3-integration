@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML 用户区域和 UI 交互式 A/B/C 重选共享同一交接；dev19 补齐人工提交的逐项校验、高亮聚焦、真实任务进度和成功跳转。 | 冻结交互式重选工程契约；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-28 |
+| `planned` | automatic、PSE/YAML、交互重选与自然语言明确残基操作共享同一人工批准交接；模糊请求只能生成待确认算法计划。 | 冻结 S02-010 助手安全边界；科学 benchmark 继续独立推进。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-29 |
 
 ## 当前结论
 
@@ -61,6 +61,9 @@
   `queued/running` 时显示进度，并在终态打开新分支。
 - 区域编辑器不再提供独立橡皮擦。Mol* 和序列均使用同一 toggle：同区再次点击取消，
   切换画笔后点击则移动到新区。
+- S02-010 允许 DeepSeek/智谱 GLM 把用户明确给出的编号解析为 A/B/C 编辑操作；操作仍
+  进入当前编辑草稿并需要人工批准。要求“寻找最佳区域”时，模型只能返回待确认的
+  SASA/ScanNet plan，不能直接输出区域或改变两种方法的排序。
 - 真实 APOE PSE 编辑器已显示结构与来源红/蓝/黄，并把 A/B/C `9/14/14` 规范成员保存到
   `runs/apoe-s02-006-pse/20260727-003-stage02-reselection-lineage`。新 run 的 Stage 01
   来自校验后的 continuation、Stage 02 attempt-0001 状态为等待人工确认；DesignSession
@@ -85,6 +88,7 @@
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
 | UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；dev19 增加缺失确认逐项反馈、问题字段聚焦、job 进度和成功跳转 |
+| 自然语言明确残基/分析计划 | `smoke-validated` | 类型化 proposal、无坐标最小请求、非法 JSON/429/5xx/timeout 无 fallback、安全 PML 与人工 branch 边界通过 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |

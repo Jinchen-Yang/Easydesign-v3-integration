@@ -819,3 +819,25 @@
   与 TNP。Playwright 浏览器属于开发验收资产，后续 setup 仍需把其显式状态与普通用户
   只需已构建静态 UI 的边界解释清楚。
 - 提交：以本记录所在提交和远端 `codex/workspace-runtime` 完整 SHA 为准。
+
+## 2026-07-29 — REP-006 / ENG-025 / DATA-006 / UI-017：安全结构工作区
+
+- 状态：`smoke-validated`
+- 完成时间：2026-07-29T23:03:56+08:00
+- 问题：ChatPyMol 已提供浏览器 PyMOL 与自然语言控制体验，但原 Node 文件库、主目录
+  写入、删除接口、任意 PML 和第二套项目事实源不符合 EasyDesign 的安全与科学边界。
+- 方案：只移植固定 commit 的浏览器渲染模式和经审计离线资产；Stage 01/02 默认
+  PyMOL、平级 Mol*，共同读取 verified CIF。模型只返回类型化显示动作、明确残基草稿、
+  待确认 SASA/ScanNet 计划或解释；PML 经 allowlist 编译，科学发布仍走人工 Stage 02
+  branch。
+- 验证：真实 APOE Stage 01/02 完成 138-aa 结构、PSE A/B/C `9/14/14`、PyMOL/Mol*
+  切换和结构 SHA 不变验收。32 项定向 Python 测试、ruff、mypy、TypeScript、Vite build
+  通过；非法 JSON、429/500、timeout 和危险 PML 均明确失败且不 fallback。
+- 安全：API key 只写入当前仓库 `runtime/secrets/` revision；模型请求不含坐标、MSA、
+  完整序列或绝对路径。没有删除、覆盖、清理、额外分支或 worktree，原 ChatPyMol 与
+  EasyDesign run 保持不动。
+- 遗留：服务器缺少可执行系统 Chromium，自动 Playwright 矩阵需在有 Chromium/Edge 的
+  受控环境补齐；真实 provider 连通等待用户自愿配置自己的 key，不阻塞确定性流程。
+- 提交：`5fb8cde6604ffb709b8f57d60e66e850ba7ca8c7`、
+  `8c34c66a2dc9610adefcff21f3db46ebb138db16`、
+  `8251b7a9fa8c3cc0d8482e0985c55002cd005dd9`。

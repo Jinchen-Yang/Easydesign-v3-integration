@@ -775,9 +775,10 @@
 - 真实验证：Proteindigger 的 `pymol-pse-cb7663df6a30` 已在仓库内重建并通过
   PyMOL 3.1.0 探针；BoltzGen 组件在约 88 GiB 可用数据盘上通过自己的约 34 GiB
   峰值门并进入锁定依赖安装。系统盘保持只读现状，安装 HOME、TMP 和 cache 全部位于
-  仓库 `runtime/`。Python 为 286 passed、8 个需要显式 runtime 解释器的集成测试
-  skipped；Workbench 为 47 passed、1 skipped，Target Viewer 为 3 passed、2 个
-  runtime-only 案例 skipped；dev22 wheel、console script 和 package data 校验通过。
+  仓库 `runtime/`。Python 默认矩阵为 286 passed、8 个需要显式 runtime 解释器的集成
+  测试 skipped；显式使用新 PyMOL 环境后 8/8 集成测试通过。Workbench 为 47 passed、
+  1 skipped，Target Viewer 为 3 passed、2 个 runtime-only 案例 skipped；dev22
+  wheel、console script 和 package data 校验通过。
 - 安全边界：没有删除 quarantine、旧环境、cache 或运行结果，没有修改系统代理、
   base Conda、Git 全局配置或 shell profile。模型与 checkpoint 仍必须由用户逐项确认
   对应许可；环境建成但必需资产未通过时，后端不得标记 available。

@@ -15,6 +15,7 @@ from easydesign.backends.target_sources import (
 )
 from easydesign.core import ExecutionStatus, RunManifest, StageManifest, load_model
 from easydesign.orchestration import execute_pse_import, initialize_pse_run
+from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation import (
     PseSourceAnnotations,
     ResidueMapping,
@@ -188,8 +189,9 @@ def test_synthetic_single_target_pse_publishes_complete_bundle_and_manifests(
     run = load_model(completed.run_manifest, RunManifest)
     assert run.revision == 2
     assert run.status == "succeeded"
-    assert prepared.workspace.latest_manifest_pointer.read_text() == (
-        "run-manifest.v0002.json\n"
+    assert (
+        read_last_text_line(prepared.workspace.latest_manifest_pointer)
+        == "run-manifest.v0002.json"
     )
     assert completed.target_viewer.status is ExecutionStatus.SUCCEEDED
     viewer_data = json.loads(

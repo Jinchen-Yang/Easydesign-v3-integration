@@ -387,6 +387,7 @@ class RegionEditorProjection(BaseModel):
     run_key: str
     target_id: str
     target_structure_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    residue_mapping_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     structure: ArtifactProjection
     source_annotation_status: str
     current_region_source: str | None = None

@@ -12,7 +12,7 @@ import webbrowser
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 import uvicorn
@@ -90,6 +90,15 @@ from .stage05 import (
     list_filter_candidates,
     list_filter_strategies,
     metric_catalog,
+)
+from .structure_interactions import (
+    AssistantProviderStore,
+    ProviderId,
+    RegionEditOperation,
+    StructureInteractionStore,
+    compile_viewer_actions,
+    normalize_regions,
+    request_assistant_proposal,
 )
 
 LOCAL_HOST = "127.0.0.1"
@@ -250,6 +259,41 @@ class HotspotApprovalRequest(BaseModel):
     confirmed: bool = False
 
 
+class AssistantProviderConfigRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1, max_length=256)
+    base_url: str = Field(min_length=1, max_length=2048)
+    api_key: str = Field(min_length=1, max_length=8192)
+    confirmed: bool = False
+
+
+class StructureSessionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage_number: Literal[1, 2]
+
+
+class AssistantMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: ProviderId
+    message: str = Field(min_length=1, max_length=20_000)
+
+
+class PmlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pml: str = Field(min_length=1, max_length=1_000_000)
+    source: Literal["viewer", "expert-console"] = "expert-console"
+
+
+class ProposalApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed: bool = False
+
+
 class UiServiceState:
     def __init__(
         self,
@@ -282,6 +326,10 @@ class UiServiceState:
         self.ui_state_root = self.workspace.runtime_root / "state" / "ui"
         self.ui_state_root.mkdir(parents=True, exist_ok=True)
         self.sessions = DesignSessionStore(self.ui_state_root / "design-sessions")
+        self.structure_sessions = StructureInteractionStore(self.projects_root)
+        self.assistant_providers = AssistantProviderStore(
+            self.workspace.runtime_root / "secrets" / "structure-assistant"
+        )
         self.self_tests = SelfTestStore(
             self.ui_state_root / "self-tests",
             self.registry.runs_root,
@@ -408,6 +456,91 @@ def _raise_http(error: Exception) -> None:
     raise error
 
 
+def _resolve_region_operation(
+    operation: RegionEditOperation,
+    residues: tuple[Any, ...],
+) -> tuple[int, ...]:
+    resolved: list[int] = []
+    for selector in operation.residues:
+        matches: list[int] = []
+        if operation.numbering == "label":
+            if selector.isdigit():
+                matches = [
+                    item.label_seq_id
+                    for item in residues
+                    if item.label_seq_id == int(selector)
+                ]
+        elif operation.numbering == "sequence":
+            if selector.isdigit():
+                matches = [
+                    item.label_seq_id
+                    for item in residues
+                    if item.sequence_index == int(selector)
+                ]
+        elif operation.numbering == "uniprot":
+            if selector.isdigit():
+                matches = [
+                    item.label_seq_id
+                    for item in residues
+                    if item.reference_position == int(selector)
+                ]
+        else:
+            selected_chain = operation.chain
+            matches = [
+                item.label_seq_id
+                for item in residues
+                if item.auth_residue_id == selector
+                and (
+                    selected_chain is None
+                    or item.auth_chain_id == selected_chain
+                )
+            ]
+        if len(matches) != 1:
+            raise ConfigurationError(
+                f"残基选择器无法唯一映射: numbering={operation.numbering}, "
+                f"selector={selector}"
+            )
+        resolved.append(matches[0])
+    return tuple(resolved)
+
+
+def _apply_region_operations(
+    current_regions: dict[str, tuple[int, ...]],
+    operations: tuple[RegionEditOperation, ...],
+    residues: tuple[Any, ...],
+) -> dict[str, tuple[int, ...]]:
+    values = {
+        region_id: set(current_regions.get(region_id, ()))
+        for region_id in ("A", "B", "C")
+    }
+    for operation in operations:
+        selected = set(_resolve_region_operation(operation, residues))
+        if operation.operation == "replace":
+            values[operation.region_id] = set(selected)
+            for other in ("A", "B", "C"):
+                if other != operation.region_id:
+                    values[other].difference_update(selected)
+            continue
+        for residue in selected:
+            if operation.operation == "remove":
+                values[operation.region_id].discard(residue)
+            elif (
+                operation.operation == "toggle"
+                and residue in values[operation.region_id]
+            ):
+                values[operation.region_id].discard(residue)
+            else:
+                for other in ("A", "B", "C"):
+                    values[other].discard(residue)
+                values[operation.region_id].add(residue)
+    return normalize_regions(
+        {
+            region_id: tuple(sorted(selected))
+            for region_id, selected in values.items()
+        }
+    )
+
+
 def create_ui_app(
     *,
     runs_root: Path,
@@ -464,6 +597,37 @@ def create_ui_app(
             "host_policy": "localhost-only",
             "science_source": "manifest-only",
         }
+
+    @app.get("/api/v1/structure-assistant/providers")
+    def assistant_provider_statuses(request: Request) -> dict[str, Any]:
+        service = _state(request)
+        return {
+            "providers": [
+                item.model_dump(mode="json")
+                for item in service.assistant_providers.statuses()
+            ],
+            "fallback_policy": "disabled",
+        }
+
+    @app.post("/api/v1/structure-assistant/providers/{provider}")
+    def configure_assistant_provider(
+        provider: ProviderId,
+        payload: AssistantProviderConfigRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("保存模型 API 配置必须明确 confirmed=true")
+            return service.assistant_providers.configure(
+                provider=provider,
+                model=payload.model,
+                base_url=payload.base_url,
+                api_key=payload.api_key,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
 
     @app.get("/api/v1/install/plan")
     def install_plan(
@@ -1216,6 +1380,206 @@ def create_ui_app(
                 registry=service.registry,
                 signer=service.signer,
             )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/runs/{run_key}/structure-sessions")
+    def create_structure_session(
+        run_key: str,
+        payload: StructureSessionCreateRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            root = service.registry.resolve(run_key)
+            run_projection = get_run_projection(
+                root,
+                registry=service.registry,
+                signer=service.signer,
+            )
+            region_projection = get_region_editor_projection(
+                root,
+                run_key=run_key,
+                signer=service.signer,
+            )
+            current_regions: dict[str, tuple[int, ...]] = {}
+            for region_id in ("A", "B", "C"):
+                current_regions[region_id] = tuple(
+                    item.label_seq_id
+                    for item in region_projection.residues
+                    if item.current_region == region_id
+                )
+            return service.structure_sessions.create(
+                project_id=run_projection.project_id,
+                run_key=run_key,
+                stage_number=payload.stage_number,
+                target_structure_sha256=(
+                    region_projection.target_structure_sha256
+                ),
+                residue_mapping_sha256=(
+                    region_projection.residue_mapping_sha256
+                ),
+                current_regions=current_regions,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/structure-sessions/{session_id}")
+    def structure_session(session_id: str, request: Request) -> Any:
+        service = _state(request)
+        try:
+            return service.structure_sessions.load(session_id)
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/structure-sessions/{session_id}/messages")
+    def structure_assistant_message(
+        session_id: str,
+        payload: AssistantMessageRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            session = service.structure_sessions.load(session_id)
+            root = service.registry.resolve(session.run_key)
+            region_projection = get_region_editor_projection(
+                root,
+                run_key=session.run_key,
+                signer=service.signer,
+            )
+            if (
+                region_projection.target_structure_sha256
+                != session.target_structure_sha256
+                or region_projection.residue_mapping_sha256
+                != session.residue_mapping_sha256
+            ):
+                raise ConfigurationError(
+                    "交互会话的结构或编号映射已与来源运行不一致"
+                )
+            secret = service.assistant_providers.load(payload.provider)
+            proposal, request_id = request_assistant_proposal(
+                secret=secret,
+                user_text=payload.message,
+                context={
+                    "stage_number": session.stage_number,
+                    "object_id": region_projection.target_id,
+                    "label_chain_id": "A",
+                    "numbering": ["label", "auth", "sequence", "uniprot"],
+                    "current_region_counts": {
+                        region_id: len(
+                            session.current_regions.get(region_id, ())
+                        )
+                        for region_id in ("A", "B", "C")
+                    },
+                    "allowed_analysis_methods": ["sasa", "scannet"],
+                },
+            )
+            return service.structure_sessions.append_exchange(
+                session_id,
+                user_text=payload.message,
+                proposal=proposal,
+                provider=payload.provider,
+                model=secret.model,
+                request_id=request_id,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/structure-sessions/{session_id}/pml")
+    def append_structure_pml(
+        session_id: str,
+        payload: PmlRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            return service.structure_sessions.append_pml(
+                session_id,
+                pml=payload.pml,
+                source=payload.source,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post(
+        "/api/v1/structure-sessions/{session_id}/proposals/"
+        "{proposal_id}/apply"
+    )
+    def apply_structure_proposal(
+        session_id: str,
+        proposal_id: str,
+        payload: ProposalApplyRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("应用助手建议必须明确 confirmed=true")
+            session = service.structure_sessions.load(session_id)
+            proposal = service.structure_sessions.proposal(
+                session_id,
+                proposal_id,
+            )
+            if proposal.kind == "viewer-actions":
+                updated = service.structure_sessions.apply_proposal(
+                    session_id,
+                    proposal_id=proposal_id,
+                    pml=compile_viewer_actions(proposal.viewer_actions),
+                    source="assistant",
+                )
+                return {
+                    "session": updated.model_dump(mode="json"),
+                    "result": "viewer-actions-applied",
+                }
+            if proposal.kind == "region-edit":
+                root = service.registry.resolve(session.run_key)
+                region_projection = get_region_editor_projection(
+                    root,
+                    run_key=session.run_key,
+                    signer=service.signer,
+                )
+                if (
+                    region_projection.target_structure_sha256
+                    != session.target_structure_sha256
+                    or region_projection.residue_mapping_sha256
+                    != session.residue_mapping_sha256
+                ):
+                    raise ConfigurationError(
+                        "应用区域建议前，结构或编号映射校验失败"
+                    )
+                updated_regions = _apply_region_operations(
+                    session.current_regions,
+                    proposal.region_operations,
+                    region_projection.residues,
+                )
+                updated = service.structure_sessions.apply_proposal(
+                    session_id,
+                    proposal_id=proposal_id,
+                    current_regions=updated_regions,
+                )
+                return {
+                    "session": updated.model_dump(mode="json"),
+                    "result": "region-edit-applied-to-draft",
+                }
+            if proposal.kind == "analysis-plan":
+                return {
+                    "session": session.model_dump(mode="json"),
+                    "result": "analysis-plan-confirmed",
+                    "analysis_plan": (
+                        None
+                        if proposal.analysis_plan is None
+                        else proposal.analysis_plan.model_dump(mode="json")
+                    ),
+                }
+            return {
+                "session": session.model_dump(mode="json"),
+                "result": "explanation-has-no-action",
+            }
         except Exception as error:
             _raise_http(error)
             raise

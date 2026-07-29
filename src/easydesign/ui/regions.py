@@ -145,6 +145,7 @@ def get_region_editor_projection(
         run_key=run_key,
         target_id=str(bundle.get("target_id") or "target"),
         target_structure_sha256=structure.sha256,
+        residue_mapping_sha256=mapping_ref.sha256,
         structure=ArtifactProjection(
             artifact_id=structure.artifact_id,
             role=structure.role,

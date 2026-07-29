@@ -146,3 +146,18 @@ archives/
 
 旧部署导入使用显式 `./easydesign workspace import-legacy ...`。导入只复制并校验证据；
 原 profile、环境、模型、cache 和 run 全部保留，旧 Conda 环境不得直接搬迁或删除。
+
+## 10. 单一 main Git 制度
+
+EasyDesign 官方开发只允许一个 Git 分支：`main`。
+
+1. 禁止创建 feature、release、hotfix、codex 或其他开发分支，禁止创建新的 Git
+   worktree。每个独立、通过质量门的变更直接形成 `main` 上的小型 Conventional
+   Commit。
+2. 未完成工作不得通过临时分支保存或推送；应留在 `main` 工作树并在 `TODO_NOW.md`
+   如实记录。不得因此使用 reset、checkout、clean、stash drop 等方式丢弃内容。
+3. 发现历史分支或 worktree 时，必须先证明其提交已经进入 `main`，再处理 Git 引用。
+   worktree 内的 runtime、环境、缓存、模型、run 或未提交文件均按本制度的数据保护规则
+   原样保留；“只允许 main”不构成删除这些目录或数据的授权。
+4. GitHub 只推送并核对 `main`。禁止为了传输提交而创建远端临时分支；确需跨机器传输
+   时使用 bundle、format-patch 或其他不会创建开发分支的方式。

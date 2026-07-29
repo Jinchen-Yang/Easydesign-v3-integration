@@ -27,6 +27,7 @@
 | M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
 | M13 项目与设计路线整理 | `smoke-validated` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA、PSE 新分支与浏览器验收均已完成。 |
 | M14 仓库内自包含运行工作区 | `implemented` | ENG-023 已将启动器、profile、环境/资产 registry、cache、setup 状态和 UI job 收敛到仓库内；Proteindigger 完整环境、许可资产和真实后端逐步自检仍在验收。 |
+| M15 单一 main 开发治理 | `implemented` | ENG-024 禁止开发分支和额外 Git worktree；已验证 ENG-023 提交链收敛到 `main`，历史 runtime 在无删除前提下保留。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -106,6 +107,7 @@
 | `ENG-022` | Core Engineering | `implemented` | 根级 `DATA_SAFETY.md` 已把默认禁止删除、逐次审批、非覆盖归档和非破坏性跨主机恢复定义为最高优先级制度；新 ProteinDigger 已通过独立 deploy key 克隆到数据盘新目录。 |
 | `VAL-005` | Scientific Validation | `implemented` | 快速确定性自检真实创建 Stage 01–07 manifest/attempt/artifact 链并隔离为 developer-smoke-run；真实后端微型自检当前只提供诚实的待运行记录，完整非 APOE Stage 01–05 与 Stage 06/07 probe 仍是下一验收。 |
 | `ENG-023` | Core Engineering | `implemented` | `WorkspaceContext`、仓库根标记、相对 profile、不可变 registry、安全写入边界和旧部署显式导入已实现；完整服务器验收进行中。 |
+| `ENG-024` | Core Engineering | `implemented` | Git 开发拓扑收敛为唯一 `main`；禁止创建开发分支和 worktree，旧 worktree 数据在提交收敛后继续原样保留。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |
 | `UI-016` | Product UI | `implemented` | 安装中心展示环境/资产状态、完整及逐后端安装计划；与 CLI 共用持久 setup job，UI 重启后仍能恢复结构化终态。 |

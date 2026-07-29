@@ -227,6 +227,16 @@ profile 声明的远程工作区。业务代码不得修改 `/etc/environment`�
 和关闭 user-site；这些变量不会写回父 shell。网络代理如由宿主显式提供，只对当前子进程
 只读继承，EasyDesign 不创建、修改或删除代理配置。
 
+### 5.2 稳定工作区与单一 main
+
+正式 runtime 必须依附于长期稳定的主仓库目录，不得安装在以任务 ID、临时分支或
+worktree 命名的开发目录中。Conda 环境包含绝对 prefix，仓库路径变化后必须在新路径按
+lock 重建；不得直接移动环境目录并宣称可用。
+
+EasyDesign 的 Git 拓扑固定为单一 `main`。不创建开发分支或额外 worktree；科学流程中的
+“branch run”仅表示不可变 run lineage 的科学分叉，与 Git branch 无关。GitHub 只同步
+`main`，runtime、projects、runs 和 archives 继续位于 Git 忽略边界。
+
 ## 6. 运行目录层级
 
 ```text

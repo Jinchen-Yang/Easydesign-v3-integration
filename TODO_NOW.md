@@ -18,6 +18,10 @@
 
 ## Now
 
+- `[ENG-024]` 将 ENG-023 已验证提交链收敛到唯一 `main`，禁止继续创建任何开发分支或
+  Git worktree。现有 `easydesign-eng023/runtime` 作为只读迁移来源完整保留；正式环境
+  与模型必须落在稳定的 `easydesign-clean/runtime`，不得直接移动带绝对 prefix 的
+  Conda 环境。
 - `[ENG-023/UX-006]` 在 Proteindigger 的全新 clone 验证仓库内
   `runtime/profile.yaml`、setup 恢复、doctor 和一条命令 UI。当前锁的 core/web 已从
   仓库内 lock 重建；dev22 增加 `--component` 逐后端计划与安装，PyMOL 3.1.0 已在

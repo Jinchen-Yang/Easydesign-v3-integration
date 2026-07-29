@@ -12,7 +12,10 @@
 
 ## 1. 开始任务前
 
-1. 确认当前仓库、分支和工作树状态；不得覆盖他人未提交修改。
+1. 确认当前仓库和工作树状态；不得覆盖他人未提交修改。EasyDesign 的官方开发仓库只
+   允许使用 `main`：发现当前分支不是 `main`、存在额外本地开发分支或额外 Git
+   worktree 时必须暂停写入，先只读审计并把已验证提交以 fast-forward 或普通提交方式
+   收敛到 `main`。禁止为任何任务创建 feature/codex/release 分支或新增 worktree。
    同时执行 `git fetch origin`，比较本地 `HEAD` 与 `origin/main`；网络或权限失败时必须
    明确记录，不能把未核对状态写成“已同步”。
 2. 阅读 `DATA_SAFETY.md`、`PROJECT_CHARTER.md`、`docs/ARCHITECTURE.md`、
@@ -124,9 +127,11 @@ Agent 必须自动完成以下收尾工作：
    history 和七阶段实时表。缺少时间戳或实时表不同步都属于质量门失败，不能以“只改了
    文档”为由跳过。
 10. 检查 `git diff --check`，创建一个目的清楚的 Conventional Commit；不得使用
-   `git add .` 盲目加入 run、权重、密钥、大文件或无关修改。
+    `git add .` 盲目加入 run、权重、密钥、大文件或无关修改。
 11. 对已经通过质量门的独立工作单元，必须 push 到已配置的 GitHub remote：
-    - `main` 只接收可验证提交；未完成工作只能推到短期分支；
+    - 唯一允许推送的开发分支是 `main`，远端不得创建其他开发分支；
+    - 未完成或未通过质量门的工作不得推送；它留在 `main` 工作树并在
+      `TODO_NOW.md` 如实记录，后续拆成小而可验证的提交；
     - push 后必须用远端引用再次核对 commit SHA；
     - 网络、权限或 remote 异常时，在 `TODO_NOW.md` 的 `Blocked` 记录未推送 commit
       SHA，并在交付中明确报告；

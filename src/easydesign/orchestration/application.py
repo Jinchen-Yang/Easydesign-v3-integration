@@ -286,7 +286,7 @@ def validate_run_configuration(
     profile = (
         load_runtime_profile(selected_profile_path).profile
         if selected_profile_path.is_file()
-        else RuntimeProfile(profile_id="unconfigured")
+        else RuntimeProfile(profile_id="workspace-local")
     )
     if not selected_profile_path.is_file() and (
         profile_path is not None or os.environ.get(PROFILE_ENVIRONMENT_VARIABLE) is not None

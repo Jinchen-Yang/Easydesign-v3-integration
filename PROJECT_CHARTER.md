@@ -107,7 +107,9 @@ filter，是有效的科学负结果，不代表软件失败，也不能包装�
 
 ## 6. 开发与评审流程
 
-- 采用 trunk-based 开发；`main` 保持可验证，工作使用短期分支和 Conventional Commits。
+- 采用严格单一 `main` 开发；禁止 feature/release/codex 等开发分支和额外 Git
+  worktree。`main` 只形成小而可验证的 Conventional Commits，未通过质量门的工作不得
+  推送。
 - 修改前阅读相关阶段 `README.md`、`TODO.md` 和 `TODO_NOW.md`。
 - 领域逻辑只放在 `src/easydesign/`；脚本只能调用 API。
 - 按风险补充 unit、adapter integration 和 end-to-end 测试。

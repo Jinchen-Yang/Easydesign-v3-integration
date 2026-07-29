@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -49,6 +50,57 @@ def test_repository_launcher_preserves_proxy_and_translates_ui_shortcut(
         "8765",
     ]
     assert child_environment()["HTTPS_PROXY"] == os.environ["HTTPS_PROXY"]
+
+
+def test_repository_launcher_plan_does_not_bootstrap_core(
+    tmp_path: Path,
+) -> None:
+    launcher = tmp_path / "easydesign"
+    shutil.copy2(ROOT / "easydesign", launcher)
+    locks = tmp_path / "environments" / "locks"
+    locks.mkdir(parents=True)
+    for source in (ROOT / "environments" / "locks").glob(
+        "*-linux-64.lock.json"
+    ):
+        shutil.copy2(source, locks / source.name)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(launcher),
+            "setup",
+            "--component",
+            "core-ui",
+            "--plan",
+            "--pip-index-url",
+            "https://pypi.tuna.tsinghua.edu.cn/simple",
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "easydesign-core" in completed.stdout
+    assert "reporting-web" in completed.stdout
+    assert "protenix-v2" not in completed.stdout
+    assert not (tmp_path / "runtime").exists()
+
+
+def test_repository_launcher_rejects_unsafe_pip_index() -> None:
+    namespace = runpy.run_path(
+        str(ROOT / "easydesign"),
+        run_name="easydesign_launcher_pip_index_test",
+    )
+    validate = namespace["_validated_pip_index_url"]
+
+    assert (
+        validate("https://pypi.tuna.tsinghua.edu.cn/simple")
+        == "https://pypi.tuna.tsinghua.edu.cn/simple"
+    )
+    with pytest.raises(SystemExit, match="完整 HTTPS URL"):
+        validate("http://example.invalid/simple")
 
 
 @pytest.mark.parametrize(

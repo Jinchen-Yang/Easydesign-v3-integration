@@ -255,6 +255,53 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname === "/api/v1/browser-pymol/status") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          available: false,
+          renderer: "open-source-pymol-wasm",
+          pymol_version: "2.6.0a0",
+          pyodide_version: "0.22.1",
+          offline_assets: true,
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/structure-assistant/providers") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          providers: [
+            { provider: "deepseek", configured: false },
+            { provider: "zhipu-glm", configured: false },
+          ],
+          fallback_policy: "disabled",
+        }),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/structure-sessions") && route.request().method() === "POST") {
+      const requestBody = route.request().postDataJSON() as { stage_number?: 1 | 2 };
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          schema_version: "0.1",
+          session_id: `structure-session-fixture-${requestBody.stage_number || 1}`,
+          project_id: "apoe",
+          run_key: run.run_key,
+          stage_number: requestBody.stage_number || 1,
+          target_structure_sha256: "a".repeat(64),
+          residue_mapping_sha256: "b".repeat(64),
+          messages: [],
+          pml_revisions: [],
+          current_regions: {},
+          created_at: "2026-07-29T00:00:00Z",
+          updated_at: "2026-07-29T00:00:00Z",
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/project-catalog") {
       await route.fulfill({
         contentType: "application/json",
@@ -351,6 +398,7 @@ async function mockApi(page: Page) {
           run_key: run.run_key,
           target_id: "apoe-1b68-pse",
           target_structure_sha256: "a".repeat(64),
+          residue_mapping_sha256: "b".repeat(64),
           structure: {
             artifact_id: "target-structure",
             role: "normalized-target-structure",

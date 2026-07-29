@@ -22,10 +22,14 @@ from easydesign.ui.structure_interactions import (
 
 def test_safe_pml_accepts_display_commands_and_rejects_mutation() -> None:
     canonical = validate_safe_pml(
-        "show cartoon, all\ncolor marine, chain A\nzoom chain A"
+        'show cartoon, all\ncolor marine, chain A\n'
+        'label (chain A and name CA), "%s%s" % (resn, resi)\n'
+        "zoom chain A"
     )
     assert canonical == (
-        "show cartoon, all\ncolor marine, chain A\nzoom chain A\n"
+        "show cartoon, all\ncolor marine, chain A\n"
+        'label (chain A and name CA), "%s%s" % (resn, resi)\n'
+        "zoom chain A\n"
     )
 
     for command in (
@@ -35,6 +39,7 @@ def test_safe_pml_accepts_display_commands_and_rejects_mutation() -> None:
         "run unsafe.py",
         "python print('unsafe')",
         "set internal_gui, 1",
+        'label all, __import__("os").system("id")',
     ):
         with pytest.raises(ConfigurationError):
             validate_safe_pml(command)
@@ -118,6 +123,48 @@ def test_structure_session_publishes_revision_only_snapshots(
     assert len(tuple(revision_root.glob("revision-*.json"))) == 1
 
 
+def test_structure_session_reuses_only_matching_latest_snapshot(
+    tmp_path: Path,
+) -> None:
+    store = StructureInteractionStore(tmp_path / "projects")
+    first = store.create(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=1,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+        created_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+    store.create(
+        project_id="demo",
+        run_key="demo/run-002",
+        stage_number=1,
+        target_structure_sha256="c" * 64,
+        residue_mapping_sha256="d" * 64,
+        created_at=datetime(2026, 7, 29, 1, tzinfo=UTC),
+    )
+
+    matched = store.latest_for(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=1,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+    )
+    assert matched is not None
+    assert matched.session_id == first.session_id
+    assert (
+        store.latest_for(
+            project_id="demo",
+            run_key="demo/run-001",
+            stage_number=2,
+            target_structure_sha256="a" * 64,
+            residue_mapping_sha256="b" * 64,
+        )
+        is None
+    )
+
+
 def test_assistant_request_uses_minimal_context_and_validates_json() -> None:
     captured: dict[str, object] = {}
 
@@ -188,6 +235,61 @@ def test_assistant_http_error_is_not_silently_fallback() -> None:
         )
     ) as client:
         with pytest.raises(ConfigurationError, match="HTTP 429"):
+            request_assistant_proposal(
+                secret=secret,
+                user_text="请解释当前结构",
+                context={"stage_number": 1},
+                client=client,
+            )
+
+
+@pytest.mark.parametrize(
+    "response",
+    (
+        httpx.Response(200, json={"choices": []}),
+        httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "{not-json"}}]},
+        ),
+        httpx.Response(500, json={"error": "upstream failure"}),
+    ),
+)
+def test_assistant_invalid_responses_fail_without_fallback(
+    response: httpx.Response,
+) -> None:
+    secret = AssistantProviderSecret(
+        provider="deepseek",
+        model="deepseek-chat",
+        base_url="https://api.deepseek.example/v1",
+        api_key="secret",
+        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: response)
+    ) as client:
+        with pytest.raises(ConfigurationError):
+            request_assistant_proposal(
+                secret=secret,
+                user_text="请解释当前结构",
+                context={"stage_number": 1},
+                client=client,
+            )
+
+
+def test_assistant_timeout_fails_without_fallback() -> None:
+    secret = AssistantProviderSecret(
+        provider="zhipu-glm",
+        model="glm-example",
+        base_url="https://glm.example/v4",
+        api_key="secret",
+        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+
+    def timeout_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timeout", request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(timeout_handler)) as client:
+        with pytest.raises(ConfigurationError, match="响应无法验证"):
             request_assistant_proposal(
                 secret=secret,
                 user_text="请解释当前结构",

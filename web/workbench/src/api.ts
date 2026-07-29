@@ -11,10 +11,13 @@ import type {
   RegionEditorProjection,
   Replay,
   Run,
+  AssistantProviderId,
+  AssistantProviderStatus,
   SelfTestRecord,
   Stage,
   StageFormDefinition,
   Strategy,
+  StructureInteractionSession,
   UiJobRecord,
 } from "./types";
 
@@ -293,6 +296,81 @@ export const api = {
     request<Record<string, unknown>>(`/api/v1/runs/${key}/draft-order-package`, {
       method: "POST",
     }),
+  browserPymolStatus: () =>
+    request<{
+      available: boolean;
+      renderer: string;
+      pymol_version: string;
+      pyodide_version: string;
+      offline_assets: boolean;
+    }>("/api/v1/browser-pymol/status"),
+  assistantProviders: () =>
+    request<{ providers: AssistantProviderStatus[]; fallback_policy: string }>(
+      "/api/v1/structure-assistant/providers",
+    ),
+  configureAssistantProvider: (
+    provider: AssistantProviderId,
+    body: { model: string; base_url: string; api_key: string },
+  ) =>
+    request<AssistantProviderStatus>(
+      `/api/v1/structure-assistant/providers/${provider}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ...body, confirmed: true }),
+      },
+    ),
+  createStructureSession: (key: string, stageNumber: 1 | 2) =>
+    request<StructureInteractionSession>(
+      `/api/v1/runs/${key}/structure-sessions`,
+      {
+        method: "POST",
+        body: JSON.stringify({ stage_number: stageNumber }),
+      },
+    ),
+  structureSession: (sessionId: string) =>
+    request<StructureInteractionSession>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  assistantMessage: (
+    sessionId: string,
+    provider: AssistantProviderId,
+    message: string,
+  ) =>
+    request<StructureInteractionSession>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify({ provider, message }),
+      },
+    ),
+  appendStructurePml: (
+    sessionId: string,
+    pml: string,
+    source: "viewer" | "expert-console" = "expert-console",
+  ) =>
+    request<StructureInteractionSession>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/pml`,
+      {
+        method: "POST",
+        body: JSON.stringify({ pml, source }),
+      },
+    ),
+  applyAssistantProposal: (sessionId: string, proposalId: string) =>
+    request<{
+      session: StructureInteractionSession;
+      result: string;
+      analysis_plan?: {
+        methods: Array<"sasa" | "scannet">;
+        requires_confirmation: true;
+        reason: string;
+      };
+    }>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirmed: true }),
+      },
+    ),
   upload: async (file: File) => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 120_000);

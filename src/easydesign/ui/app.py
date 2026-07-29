@@ -1431,6 +1431,19 @@ def create_ui_app(
                     for item in region_projection.residues
                     if item.current_region == region_id
                 )
+            existing = service.structure_sessions.latest_for(
+                project_id=run_projection.project_id,
+                run_key=run_key,
+                stage_number=payload.stage_number,
+                target_structure_sha256=(
+                    region_projection.target_structure_sha256
+                ),
+                residue_mapping_sha256=(
+                    region_projection.residue_mapping_sha256
+                ),
+            )
+            if existing is not None:
+                return existing
             return service.structure_sessions.create(
                 project_id=run_projection.project_id,
                 run_key=run_key,

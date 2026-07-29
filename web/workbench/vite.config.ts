@@ -12,7 +12,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     build: {
       outDir: outputDirectory,
-      emptyOutDir: true,
+      // Published UI assets are content-addressed. Keep prior hashes so a
+      // running server or an already-open page never loses its referenced
+      // bundle during a new build.
+      emptyOutDir: false,
       sourcemap: false,
     },
     server: {
@@ -22,6 +25,8 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": backend,
         "/molstar": backend,
+        "/pyodide": backend,
+        "/pymol-wasm": backend,
       },
     },
   };

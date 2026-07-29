@@ -36,6 +36,10 @@ ProposalKind = Literal[
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 _SAFE_COLOR = re.compile(r"^(?:[a-zA-Z][a-zA-Z0-9_-]{0,31}|#[0-9A-Fa-f]{6})$")
 _SAFE_SELECTION = re.compile(r"^[a-zA-Z0-9_().,+:\-\s]+$")
+_SAFE_LABEL_ARGUMENT = re.compile(
+    r'^(?:""|name|"%s%s"\s*%\s*\(resn,\s*resi\))$',
+    re.IGNORECASE,
+)
 _SAFE_SET_NAMES = frozenset(
     {
         "ambient",
@@ -53,6 +57,13 @@ _SAFE_SET_NAMES = frozenset(
         "reflect",
         "shininess",
         "specular",
+        "sphere_color",
+        "sphere_transparency",
+        "stick_ball",
+        "stick_ball_color",
+        "stick_ball_ratio",
+        "stick_color",
+        "stick_radius",
         "stick_transparency",
         "surface_transparency",
         "transparency",
@@ -365,6 +376,36 @@ class StructureInteractionStore:
         atomic_dump_runtime_model(value, root / "session.json")
         return value
 
+    def latest_for(
+        self,
+        *,
+        project_id: str,
+        run_key: str,
+        stage_number: int,
+        target_structure_sha256: str,
+        residue_mapping_sha256: str,
+    ) -> StructureInteractionSession | None:
+        roots = (
+            self._project_root(project_id) / "interactive-sessions"
+        ).glob("structure-session-*/session.json")
+        matches: list[StructureInteractionSession] = []
+        for path in roots:
+            try:
+                value = load_latest_runtime_model(
+                    path,
+                    StructureInteractionSession,
+                )
+            except (OSError, ValueError):
+                continue
+            if (
+                value.run_key == run_key
+                and value.stage_number == stage_number
+                and value.target_structure_sha256 == target_structure_sha256
+                and value.residue_mapping_sha256 == residue_mapping_sha256
+            ):
+                matches.append(value)
+        return max(matches, key=lambda item: item.updated_at) if matches else None
+
     def load(self, session_id: str) -> StructureInteractionSession:
         return load_latest_runtime_model(self._locate(session_id), StructureInteractionSession)
 
@@ -554,6 +595,12 @@ def validate_safe_pml(value: str) -> str:
             selection = command.split(",", maxsplit=1)[1]
             if not _SAFE_SELECTION.fullmatch(selection):
                 raise ConfigurationError("select 表达式包含不允许的字符")
+        if name == "label":
+            if "," not in command:
+                raise ConfigurationError("label 必须显式给出目标和安全标签模板")
+            argument = command.split(",", maxsplit=1)[1].strip()
+            if not _SAFE_LABEL_ARGUMENT.fullmatch(argument):
+                raise ConfigurationError("label 表达式不在安全模板列表中")
         canonical.append(command)
     return "\n".join(canonical) + "\n"
 

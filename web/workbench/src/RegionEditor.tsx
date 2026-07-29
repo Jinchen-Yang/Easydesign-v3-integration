@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { api } from "./api";
-import { MolViewer } from "./MolViewer";
+import { StructureWorkbench } from "./StructureWorkbench";
 import type { DesignSession, RegionEditorProjection, Run } from "./types";
 
 type RegionId = "A" | "B" | "C";
@@ -574,10 +574,30 @@ export function RegionEditor({
             {status && <div className="region-editor-feedback">{status}</div>}
           </aside>
           <div className="region-editor-structure">
-            <MolViewer
-              structureUrl={`/api/v1/artifacts/${projection.structure.token}`}
+            <StructureWorkbench
+              runKey={run.run_key}
+              stageNumber={2}
+              projection={projection}
               regions={displayRegions}
               onResidueClick={(label) => colorResidue(label)}
+              onRegionDraft={(regions) => {
+                const next = new Map<number, RegionId>();
+                for (const id of ["A", "B", "C"] as RegionId[]) {
+                  for (const label of regions[id] || []) next.set(label, id);
+                }
+                setSelection(next);
+                setStatus("助手建议已应用到本次可编辑层；旧运行与原始 PSE 标注保持不变。");
+              }}
+              onAnalysisPlan={(methods) => {
+                setSelectionMode(
+                  methods.length === 2
+                    ? "both"
+                    : methods[0] === "scannet"
+                      ? "scannet"
+                      : "sasa",
+                );
+                setStatus("分析计划已确认；请检查路线与运行方式，再点击启动第2步算法。");
+              }}
             />
           </div>
         </div>

@@ -133,10 +133,94 @@ export interface RegionEditorProjection {
   run_key: string;
   target_id: string;
   target_structure_sha256: string;
+  residue_mapping_sha256: string;
   structure: Artifact;
   source_annotation_status: string;
   current_region_source?: string;
   residues: RegionEditorResidue[];
+}
+
+export type AssistantProviderId = "deepseek" | "zhipu-glm";
+
+export interface AssistantProviderStatus {
+  provider: AssistantProviderId;
+  configured: boolean;
+  model?: string;
+  base_url?: string;
+  api_key_masked?: string;
+}
+
+export interface ViewerAction {
+  action:
+    | "representation"
+    | "color"
+    | "background"
+    | "focus"
+    | "orient"
+    | "center"
+    | "label"
+    | "unlabel"
+    | "select"
+    | "deselect";
+  target: string;
+  value?: string;
+}
+
+export interface RegionEditOperation {
+  operation: "add" | "remove" | "toggle" | "replace";
+  region_id: "A" | "B" | "C";
+  numbering: "label" | "auth" | "sequence" | "uniprot";
+  chain?: string;
+  residues: string[];
+}
+
+export interface ScientificAnalysisPlan {
+  methods: Array<"sasa" | "scannet">;
+  requires_confirmation: true;
+  reason: string;
+}
+
+export interface AssistantProposal {
+  proposal_id: string;
+  kind: "viewer-actions" | "region-edit" | "analysis-plan" | "explanation";
+  explanation: string;
+  viewer_actions: ViewerAction[];
+  region_operations: RegionEditOperation[];
+  analysis_plan?: ScientificAnalysisPlan;
+}
+
+export interface InteractionMessage {
+  message_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  provider?: AssistantProviderId;
+  model?: string;
+  request_id?: string;
+  proposal?: AssistantProposal;
+}
+
+export interface PmlRevision {
+  revision: number;
+  pml: string;
+  source: "viewer" | "assistant" | "expert-console";
+  created_at: string;
+}
+
+export interface StructureInteractionSession {
+  schema_version: "0.1";
+  session_id: string;
+  project_id: string;
+  run_key: string;
+  stage_number: 1 | 2;
+  target_structure_sha256: string;
+  residue_mapping_sha256: string;
+  selected_provider?: AssistantProviderId;
+  messages: InteractionMessage[];
+  pml_revisions: PmlRevision[];
+  current_regions: Partial<Record<"A" | "B" | "C", number[]>>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SelfTestRecord {

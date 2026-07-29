@@ -1,11 +1,13 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
-import { MolViewer } from "./MolViewer";
 import { artifactName, capabilityLabel, stageNames, stageShortNames, stateCopy } from "./product";
 import { RegionEditor } from "./RegionEditor";
 import { StageFive as FilterStageFive } from "./StageFive";
+import { StructureWorkbench } from "./StructureWorkbench";
 import type {
+  AssistantProviderId,
+  AssistantProviderStatus,
   Artifact,
   DesignSession,
   ExecutionProgress,
@@ -16,6 +18,7 @@ import type {
   RemoteExecutor,
   RemoteJob,
   Replay,
+  RegionEditorProjection,
   Run,
   SelfTestRecord,
   Stage,
@@ -379,15 +382,87 @@ function parseLabelRanges(value: unknown) {
   return [...new Set(selected)];
 }
 
+function projectionSourceRegions(projection: RegionEditorProjection) {
+  const sourceColors: Record<string, "A" | "B" | "C"> = {
+    "#FF0000": "A",
+    "#0000FF": "B",
+    "#FFFF00": "C",
+  };
+  const selected: Record<"A" | "B" | "C", number[]> = {
+    A: [],
+    B: [],
+    C: [],
+  };
+  for (const residue of projection.residues) {
+    const region = sourceColors[String(residue.source_color || "").toUpperCase()];
+    if (region) selected[region].push(residue.label_seq_id);
+  }
+  return (["A", "B", "C"] as const)
+    .map((id) => ({ id, label_seq_ids: selected[id] }))
+    .filter((region) => region.label_seq_ids.length > 0);
+}
+
+function RunStructureWorkbench({
+  run,
+  stageNumber,
+  regions,
+  useSourceColors = false,
+}: {
+  run: Run;
+  stageNumber: 1 | 2;
+  regions?: Array<{ id: string; label_seq_ids: number[] }>;
+  useSourceColors?: boolean;
+}) {
+  const [projection, setProjection] = useState<RegionEditorProjection>();
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let disposed = false;
+    setProjection(undefined);
+    setError("");
+    api.regionEditor(run.run_key)
+      .then((value) => {
+        if (!disposed) setProjection(value);
+      })
+      .catch((value: unknown) => {
+        if (!disposed) {
+          setError(value instanceof Error ? value.message : "无法读取结构与编号映射");
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [run.run_key]);
+
+  if (error) {
+    return <div className="structure-workbench-loading error"><strong>结构工作区不可用</strong><span>{error}</span></div>;
+  }
+  if (!projection) {
+    return <div className="structure-workbench-loading"><span /><strong>正在验证结构与编号映射…</strong></div>;
+  }
+  const displayedRegions = useSourceColors
+    ? projectionSourceRegions(projection)
+    : (regions || []);
+  return (
+    <StructureWorkbench
+      runKey={run.run_key}
+      stageNumber={stageNumber}
+      projection={projection}
+      regions={displayedRegions}
+    />
+  );
+}
+
 function StageOne({
   stage,
+  run,
   onConfigureNext,
 }: {
   stage: Stage;
+  run: Run;
   onConfigureNext: () => void;
 }) {
   const h = stage.highlights;
-  const structure = artifactUrl(stage.artifacts, "target-structure");
   return (
     <div className="structure-workspace">
       <aside className="structure-sidebar">
@@ -406,7 +481,7 @@ function StageOne({
         </section>
         <EvidenceList stage={stage} limit={8} />
       </aside>
-      <MolViewer structureUrl={structure} />
+      <RunStructureWorkbench run={run} stageNumber={1} useSourceColors />
     </div>
   );
 }
@@ -420,8 +495,6 @@ function StageTwo({
   run: Run;
   onReselect: () => void;
 }) {
-  const stageOne = run.stages[0];
-  const structure = artifactUrl(stageOne.artifacts, "target-structure");
   const regions = (stage.tables.regions || []).map((item) => ({
     id: String(item.id),
     label_seq_ids: parseLabelRanges(item.label_ranges),
@@ -463,7 +536,7 @@ function StageTwo({
         </section>
         <EvidenceList stage={stage} />
       </aside>
-      <MolViewer structureUrl={structure} regions={regions} />
+      <RunStructureWorkbench run={run} stageNumber={2} regions={regions} />
     </div>
   );
 }
@@ -736,7 +809,7 @@ function StageContent({
   ) => Promise<void>;
 }) {
   if (stage.stage_number === 1) {
-    return <StageOne stage={stage} onConfigureNext={onReselectRegions} />;
+    return <StageOne stage={stage} run={run} onConfigureNext={onReselectRegions} />;
   }
   if (stage.stage_number === 2) {
     if (stage.state === "not-reached" || editingRegions) {
@@ -2056,6 +2129,109 @@ function TasksPage({
   );
 }
 
+function AssistantProviderSettings() {
+  const [providers, setProviders] = useState<AssistantProviderStatus[]>([]);
+  const [provider, setProvider] = useState<AssistantProviderId>("deepseek");
+  const [model, setModel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function refresh() {
+    const response = await api.assistantProviders();
+    setProviders(response.providers);
+    return response.providers;
+  }
+
+  useEffect(() => {
+    refresh().catch(() => setProviders([]));
+  }, []);
+
+  useEffect(() => {
+    const current = providers.find((item) => item.provider === provider);
+    setModel(current?.model || "");
+    setBaseUrl(current?.base_url || "");
+    setApiKey("");
+  }, [provider, providers]);
+
+  async function save() {
+    if (!model.trim() || !baseUrl.trim() || !apiKey.trim()) {
+      setMessage("请明确填写模型 ID、HTTPS endpoint 和 API key；EasyDesign 不设置隐式默认值。");
+      return;
+    }
+    setBusy(true);
+    setMessage("正在把密钥写入当前仓库 runtime/secrets 的新 revision…");
+    try {
+      const status = await api.configureAssistantProvider(provider, {
+        model: model.trim(),
+        base_url: baseUrl.trim(),
+        api_key: apiKey,
+      });
+      setProviders((current) => [
+        ...current.filter((item) => item.provider !== provider),
+        status,
+      ]);
+      setApiKey("");
+      setMessage("配置已保存。密钥只显示掩码；两家提供方之间不会自动切换。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "模型 API 配置保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const selected = providers.find((item) => item.provider === provider);
+  return (
+    <section className="panel assistant-provider-settings">
+      <div className="panel-heading">
+        <div>
+          <p className="section-label">可选结构助手</p>
+          <h3>DeepSeek / 智谱 GLM</h3>
+        </div>
+        <span>{selected?.configured ? `已配置 · ${selected.api_key_masked}` : "未配置"}</span>
+      </div>
+      <p>
+        助手只接收文字、阶段、链和当前区域摘要，不上传坐标、MSA 或完整序列。
+        未配置时，PyMOL、Mol*、手工选区、SASA 与 ScanNet 仍可正常使用。
+      </p>
+      <div className="assistant-provider-form">
+        <label>
+          <span>提供方</span>
+          <select value={provider} onChange={(event) => setProvider(event.target.value as AssistantProviderId)}>
+            <option value="deepseek">DeepSeek</option>
+            <option value="zhipu-glm">智谱 GLM</option>
+          </select>
+        </label>
+        <label>
+          <span>模型 ID</span>
+          <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="必须显式填写" />
+        </label>
+        <label>
+          <span>HTTPS endpoint</span>
+          <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://…/v1" />
+        </label>
+        <label>
+          <span>API key</span>
+          <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={selected?.configured ? "填写新值会创建新 revision" : "只写入 runtime/secrets"} />
+        </label>
+        <button type="button" className="primary-button" disabled={busy} onClick={() => void save()}>
+          {busy ? "正在保存…" : "保存提供方配置"}
+        </button>
+      </div>
+      <div className="provider-status-row">
+        {providers.map((item) => (
+          <span key={item.provider} data-configured={item.configured}>
+            {item.provider === "deepseek" ? "DeepSeek" : "智谱 GLM"}：
+            {item.configured ? `${item.model} · ${item.api_key_masked}` : "未配置"}
+          </span>
+        ))}
+      </div>
+      {message && <div className="form-status">{message}</div>}
+    </section>
+  );
+}
+
 function OperationsPage({
   type,
   projects,
@@ -2307,6 +2483,7 @@ function OperationsPage({
         <div className="quarantine-summary">隔离区：{installStatus?.quarantine.entries || 0} 项。EasyDesign 不会自动清理；任何清理都需要对精确路径另行批准。</div>
       </section>
       <section className="panel utility-panel"><div className="two-field-row"><label><span>选择一个项目配置</span><select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}><option value="">请选择项目</option>{editableProjects.map((project) => <option key={project}>{project}</option>)}</select></label><button className="primary-button" onClick={diagnose} disabled={!selectedProject}>检查运行环境</button></div>{!editableProjects.length && <div className="notice"><strong>当前没有可编辑项目</strong><span>你仍可查看已有运行；新建项目后才能按配置检查环境。</span></div>}{message && <div className="form-status">{message}</div>}{diagnostic && <pre className="audit-json">{JSON.stringify(diagnostic, null, 2)}</pre>}</section>
+      <AssistantProviderSettings />
       <section className="panel settings-catalog">
         <div className="panel-heading"><div><p className="section-label">可恢复项目目录</p><h3>活跃项目与归档项目</h3></div><span>{activeEntries.length} 个活跃 · {archiveEntries.length} 个归档</span></div>
         {[...activeEntries, ...archiveEntries].map((entry) => <div className="catalog-row" key={`${entry.category}-${entry.project_id}`}><div><strong>{entry.project_id}</strong><small>{entry.run_count} 次运行 · {entry.category === "project-run" ? "我的项目中可见" : "已从默认列表隐藏"}</small></div><button type="button" onClick={() => void changeArchive(entry)}>{entry.category === "project-run" ? "归档" : "恢复"}</button></div>)}

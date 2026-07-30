@@ -613,6 +613,12 @@ chatpymol_safe_set("log_conformations", "on")
 chatpymol_safe_set("internal_feedback", 0)
 chatpymol_safe_set("internal_prompt", 0)
 chatpymol_safe_set("label_font_id", 10)
+# PyMOL-WASM 2.6 is backed by gl4es/OpenGL 2.1. Some browsers expose only
+# the WebGL 1 shader vocabulary here; PyMOL's eager volume shader then uses
+# sampler3D and aborts the first complete draw. The fixed-function gl4es path
+# renders the same Stage 01/02 representations without that incompatible
+# shader program.
+chatpymol_safe_set("use_shaders", 0)
 chatpymol_safe_set("render_as_cylinders", "off")
 chatpymol_safe_set("dash_as_cylinders", "on")
 chatpymol_safe_set("nonbonded_as_cylinders", "off")

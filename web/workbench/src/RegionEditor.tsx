@@ -303,7 +303,7 @@ export function RegionEditor({
     }
     setValidationField(undefined);
     setBusy(true);
-    setStatus("正在创建新的 Stage 02 分支…");
+    setStatus("正在发布第2步正式结果…");
     try {
       const sessions = await api.designSessions();
       let session: DesignSession | undefined = sessions.find(
@@ -427,15 +427,15 @@ export function RegionEditor({
       className={embedded ? "region-editor-embedded" : "region-editor-overlay"}
       role={embedded ? "region" : "dialog"}
       aria-modal={embedded ? undefined : true}
-      aria-label={stageTwoNotReached ? "选择结合区域" : "重新选择结合区域"}
+      aria-label="选择结合区域"
     >
       <section className="region-editor-shell">
         <header className="region-editor-header">
           <div>
             <p className="section-label">
-              {stageTwoNotReached ? "第2步 · 配置结合区域" : "第2步 · 建立新分支"}
+              第2步 · 配置结合区域
             </p>
-            <h2>{stageTwoNotReached ? "选择结合区域" : "重新选择结合区域"}</h2>
+            <h2>选择结合区域</h2>
             <p>
               {stageTwoNotReached
                 ? "完成本步后会继续到设计方案；来源颜色、自动方法和人工编辑始终保留各自证据。"
@@ -659,12 +659,12 @@ export function RegionEditor({
             </label>
             <button type="button" className="primary-button" disabled={busy} onClick={save}>
               {busy
-                ? "正在建立新分支…"
+                ? "正在发布第2步…"
                 : !approvedBy.trim()
                   ? "请先填写批准人"
                   : !acknowledge
                     ? "还需勾选确认"
-                    : "保存并建立新的第2步分支"}
+                    : "保存并完成第2步"}
             </button>
           </div>
           {busy && (

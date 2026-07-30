@@ -41,6 +41,19 @@ class StageCapability(BaseModel):
     summary: str
 
 
+class StageAccessProjection(BaseModel):
+    """服务端推导的阶段访问能力；前端不得自行猜测冻结状态。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    stage_number: int = Field(ge=1, le=7)
+    access: Literal["configure", "running", "view-only", "not-reached"]
+    locked_by_stage: int | None = Field(default=None, ge=1, le=7)
+    locked_at: datetime | None = None
+    reason: str
+    allowed_actions: tuple[str, ...] = ()
+
+
 class TaskExecutionProjection(BaseModel):
     """一个执行任务的产品投影；科学候选质量不在这里判断。"""
 
@@ -115,6 +128,7 @@ class StageProjection(BaseModel):
     capability: StageCapability
     summary: str
     evidence_status: str
+    access: StageAccessProjection
     selected_attempt_id: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -151,6 +165,64 @@ class ProjectProjection(BaseModel):
     runs: tuple[RunProjection, ...]
 
 
+class ProjectDraftProjection(BaseModel):
+    """已原子发布、尚未产生正式 run 的项目草稿。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_id: str
+    target_id: str
+    input_type: str
+    status: Literal["draft"] = "draft"
+    configured_through_stage: int = Field(ge=1, le=7)
+    updated_at: datetime
+    config_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    session_id: str | None = None
+
+
+class ProjectMetadata(BaseModel):
+    """Versioned product metadata for an atomically published project draft."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    project_id: str
+    target_id: str
+    input_type: str
+    design_mode: Literal["full-workflow", "stepwise", "developer-smoke"]
+    execution_mode: Literal["unattended", "review-gated"]
+    configured_through_stage: int = Field(ge=1, le=7)
+    config_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime
+    updated_at: datetime
+
+
+class UploadReceipt(BaseModel):
+    """持久化上传回执；文件位置只保存在服务端工作区相对路径中。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.2"] = "0.2"
+    upload_token: str
+    filename: str
+    size_bytes: int = Field(ge=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal[
+        "receiving",
+        "ready",
+        "publishing",
+        "published",
+        "failed",
+        "cleanup-suggested",
+    ]
+    relative_path: str
+    project_id: str | None = None
+    referenced: bool = False
+    created_at: datetime
+    updated_at: datetime
+    failure_reason: str | None = None
+
+
 class ReplayFrame(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -179,8 +251,11 @@ class UiJobRecord(BaseModel):
     operation: str
     status: str
     config_path: str | None = None
+    project_id: str | None = None
+    accepted_run_key: str | None = None
     run_key: str | None = None
     run_id: str | None = None
+    external_job_id: str | None = None
     session_id: str | None = None
     self_test_id: str | None = None
     stage_number: int | None = Field(default=None, ge=1, le=7)

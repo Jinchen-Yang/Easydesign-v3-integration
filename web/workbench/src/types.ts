@@ -28,6 +28,14 @@ export interface Stage {
   capability: { status: string; summary: string };
   summary: string;
   evidence_status: string;
+  access?: {
+    stage_number: number;
+    access: "configure" | "running" | "view-only" | "not-reached";
+    locked_by_stage?: number;
+    locked_at?: string;
+    reason: string;
+    allowed_actions: string[];
+  };
   selected_attempt_id?: string;
   started_at?: string;
   completed_at?: string;
@@ -60,8 +68,20 @@ export interface Project {
   runs: Run[];
 }
 
+export interface ProjectDraft {
+  project_id: string;
+  target_id: string;
+  input_type: string;
+  status: "draft";
+  configured_through_stage: number;
+  updated_at: string;
+  config_sha256: string;
+  session_id?: string;
+}
+
 export interface ProjectResponse {
   projects: Project[];
+  drafts: ProjectDraft[];
   editable_projects: string[];
 }
 
@@ -208,7 +228,7 @@ export interface PmlRevision {
 }
 
 export interface StructureInteractionSession {
-  schema_version: "0.1";
+  schema_version: "0.1" | "0.2";
   session_id: string;
   project_id: string;
   run_key: string;
@@ -218,6 +238,12 @@ export interface StructureInteractionSession {
   selected_provider?: AssistantProviderId;
   messages: InteractionMessage[];
   pml_revisions: PmlRevision[];
+  view_state_revisions?: Array<{
+    revision: number;
+    actions: ViewerAction[];
+    source: "viewer" | "assistant";
+    created_at: string;
+  }>;
   current_regions: Partial<Record<"A" | "B" | "C", number[]>>;
   created_at: string;
   updated_at: string;

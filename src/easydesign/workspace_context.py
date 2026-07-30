@@ -37,8 +37,12 @@ class WorkspaceDeclaration(BaseModel):
     projects_root: Path = Path("projects")
     runs_root: Path = Path("runs")
     archives_root: Path = Path("archives")
+    upload_warning_bytes: int = Field(default=1 * 1024**3, gt=0)
+    upload_blocking_bytes: int = Field(default=5 * 1024**3, gt=0)
 
     def model_post_init(self, __context: Any) -> None:
+        if self.upload_blocking_bytes <= self.upload_warning_bytes:
+            raise ValueError("上传阻断阈值必须大于警告阈值")
         for value in (
             self.runtime_root,
             self.projects_root,

@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev24`（包版本 `0.1.0.dev24`）
+- 当前版本：`0.1.0-dev25`（包版本 `0.1.0.dev25`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`

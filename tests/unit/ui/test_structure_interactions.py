@@ -165,6 +165,53 @@ def test_structure_session_reuses_only_matching_latest_snapshot(
     )
 
 
+def test_get_or_create_is_idempotent_and_view_state_is_viewer_neutral(
+    tmp_path: Path,
+) -> None:
+    store = StructureInteractionStore(tmp_path / "projects")
+    first = store.get_or_create(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=1,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+    )
+    second = store.get_or_create(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=1,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+    )
+    assert first.session_id == second.session_id
+
+    proposal = AssistantProposal(
+        kind="viewer-actions",
+        explanation="以表面显示并居中。",
+        viewer_actions=(
+            ViewerAction(action="representation", target="all", value="surface"),
+            ViewerAction(action="center", target="all"),
+        ),
+    )
+    exchanged = store.append_exchange(
+        first.session_id,
+        user_text="显示表面",
+        proposal=proposal,
+        provider="deepseek",
+        model="fixture-model",
+        request_id="request-001",
+    )
+    updated = store.apply_proposal(
+        first.session_id,
+        proposal_id=exchanged.messages[-1].proposal.proposal_id,
+        viewer_actions=proposal.viewer_actions,
+    )
+
+    assert updated.schema_version == "0.2"
+    assert updated.pml_revisions == ()
+    assert updated.view_state_revisions[0].actions == proposal.viewer_actions
+
+
 def test_assistant_request_uses_minimal_context_and_validates_json() -> None:
     captured: dict[str, object] = {}
 

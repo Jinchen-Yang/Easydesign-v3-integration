@@ -7,6 +7,7 @@ import type {
   AssistantProviderStatus,
   RegionEditorProjection,
   StructureInteractionSession,
+  ViewerAction,
 } from "./types";
 import "./StructureWorkbench.css";
 
@@ -88,8 +89,35 @@ function combinedPml(
 ): string {
   return [
     basePml(projection, regions).trimEnd(),
+    ...(
+      session?.view_state_revisions?.flatMap((item) => (
+        compileCommonViewerActions(item.actions)
+      )) || []
+    ),
     ...(session?.pml_revisions.map((item) => item.pml.trimEnd()) || []),
   ].filter(Boolean).join("\n");
+}
+
+function compileCommonViewerActions(actions: ViewerAction[]): string[] {
+  const lines: string[] = [];
+  for (const action of actions) {
+    const target = action.target || "all";
+    if (action.action === "representation") {
+      const representation = action.value === "stick" ? "sticks" : action.value;
+      lines.push(`hide everything, ${target}`, `show ${representation}, ${target}`);
+    } else if (action.action === "color") {
+      lines.push(`color ${action.value}, ${target}`);
+    } else if (action.action === "background") {
+      lines.push(`bg_color ${action.value}`);
+    } else if (action.action === "focus") {
+      lines.push(`zoom ${target}`);
+    } else if (action.action === "orient") {
+      lines.push(`orient ${target}`);
+    } else if (action.action === "center") {
+      lines.push(`center ${target}`);
+    }
+  }
+  return lines;
 }
 
 function downloadText(value: string, filename: string) {
@@ -140,10 +168,14 @@ export function StructureWorkbench({
     () => combinedPml(projection, regions, session),
     [projection, regions, session],
   );
+  const commonViewActions = useMemo(
+    () => session?.view_state_revisions?.flatMap((item) => item.actions) || [],
+    [session?.view_state_revisions],
+  );
   const nativeApi = useMemo(
     () => ({
-      structureBytes: async () => {
-        const response = await fetch(structureUrl, { cache: "no-store" });
+      structureBytes: async (_projectId?: string, _structure?: unknown, signal?: AbortSignal) => {
+        const response = await fetch(structureUrl, { cache: "no-store", signal });
         if (!response.ok) throw new Error("目标结构下载失败");
         return new Uint8Array(await response.arrayBuffer());
       },
@@ -193,6 +225,12 @@ export function StructureWorkbench({
       setSession(pendingPmlSession.current);
       pendingPmlSession.current = undefined;
     }
+  }, []);
+  const nativeFailure = useCallback((failure: string) => {
+    setStatus(failure);
+  }, []);
+  const switchToMolstar = useCallback(() => {
+    setViewer("molstar");
   }, []);
 
   const selectedAuthorResidue = useCallback((value: { chain: string; residueId: string }) => {
@@ -305,13 +343,18 @@ export function StructureWorkbench({
                 pml={scenePml}
                 structures={nativeStructures}
                 versionId="current"
-                revision={session?.pml_revisions.length || 0}
+                revision={
+                  (session?.pml_revisions.length || 0)
+                  + (session?.view_state_revisions?.length || 0)
+                }
                 exportName={`${projection.target_id}-visualization`}
                 readOnly={false}
                 language="zh"
                 onValidatePml={validatePml}
                 onNativeCommands={nativeCommandsApplied}
                 onResidueSelect={selectedAuthorResidue}
+                onFailure={nativeFailure}
+                onSwitchViewer={switchToMolstar}
                 onDownloadStructure={() => window.open(`${structureUrl}?download=true`, "_blank")}
                 onDownloadPml={() => downloadText(scenePml, `${projection.target_id}.pml`)}
               />
@@ -322,6 +365,7 @@ export function StructureWorkbench({
               regions={regions}
               compact={compact}
               onResidueClick={onResidueClick}
+              viewActions={commonViewActions}
             />
           )}
         </div>
@@ -331,7 +375,7 @@ export function StructureWorkbench({
           <header>
             <div>
               <strong>结构助手</strong>
-              <span>显示操作与明确残基指令</span>
+              <span>显示操作同步到 PyMOL 与 Mol*</span>
             </div>
             <span className="assistant-safety">不会判断最佳 hotspot</span>
           </header>

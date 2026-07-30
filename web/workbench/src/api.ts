@@ -29,7 +29,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(payload.detail || `HTTP ${response.status}`);
+    const detail = payload.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : detail && typeof detail === "object"
+        ? String(detail.reason || detail.message || detail.code || `HTTP ${response.status}`)
+        : `HTTP ${response.status}`;
+    throw new Error(message);
   }
   return response.json() as Promise<T>;
 }
@@ -51,6 +57,14 @@ export const api = {
       }),
     }),
   projects: () => request<ProjectResponse>("/api/v1/projects"),
+  projectPreflight: (projectId: string) =>
+    request<{
+      available: boolean;
+      project_id: string;
+      reason: string;
+      existing_project?: string;
+      suggested_project_id?: string;
+    }>(`/api/v1/project-preflight?project_id=${encodeURIComponent(projectId)}`),
   projectCatalog: () =>
     request<{ entries: ProjectCatalogEntry[] }>(
       "/api/v1/project-catalog?include_archived=true&include_developer_smoke=true",
@@ -372,11 +386,16 @@ export const api = {
       },
     ),
   upload: async (file: File) => {
+    const bytes = await file.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", bytes);
+    const sha256 = [...new Uint8Array(hash)]
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 120_000);
     try {
       const response = await fetch(
-        `/api/v1/uploads/raw?filename=${encodeURIComponent(file.name)}`,
+        `/api/v1/uploads/raw?filename=${encodeURIComponent(file.name)}&sha256=${sha256}`,
         {
           method: "POST",
           body: file,
@@ -390,10 +409,13 @@ export const api = {
         throw new Error(payload.detail || `HTTP ${response.status}`);
       }
       return await response.json() as {
+        schema_version: "0.2";
         upload_token: string;
         filename: string;
         size_bytes: number;
         sha256: string;
+        status: string;
+        relative_path: string;
       };
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {

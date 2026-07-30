@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import mimetypes
+import shutil
 import threading
 import webbrowser
 from collections.abc import AsyncIterator
@@ -31,7 +32,7 @@ from easydesign.core import (
     PathPolicyError,
     canonical_model_sha256,
 )
-from easydesign.core.hashing import sha256_bytes
+from easydesign.core.hashing import sha256_bytes, sha256_file
 from easydesign.orchestration import (
     approve_hotspots,
     archive_project,
@@ -65,16 +66,34 @@ from easydesign.orchestration.setup_jobs import (
     launch_setup_job,
     list_setup_jobs,
 )
+from easydesign.orchestration.task_tracking import (
+    atomic_dump_runtime_model,
+    load_latest_runtime_model,
+)
 from easydesign.safe_writes import quarantine_if_workspace_path, read_last_text_line
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
 from easydesign.workspace_context import WorkspaceContext
 
+from .access import (
+    StageLockedError,
+    assert_not_locked_by_downstream,
+    assert_stage_configurable,
+    highest_accepted_stage,
+)
+from .browser_pymol_assets import verify_browser_pymol_assets
 from .execution import get_execution_progress
-from .jobs import UiJobController, clone_run_configuration
-from .models import DesignSession, SelfTestRecord, UiJobRecord
+from .jobs import UiJobController
+from .models import (
+    DesignSession,
+    ProjectMetadata,
+    SelfTestRecord,
+    UiJobRecord,
+    UploadReceipt,
+)
 from .projections import (
     create_demo_replay,
     create_draft_order_package,
+    get_project_draft_projection,
     get_project_projection,
     get_run_projection,
     get_stage_projection,
@@ -96,10 +115,10 @@ from .structure_interactions import (
     ProviderId,
     RegionEditOperation,
     StructureInteractionStore,
-    compile_viewer_actions,
     normalize_regions,
     request_assistant_proposal,
 )
+from .uploads import UploadStore
 
 LOCAL_HOST = "127.0.0.1"
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -110,15 +129,6 @@ class UploadRequest(BaseModel):
 
     filename: str = Field(min_length=1, max_length=255)
     content_base64: str
-
-
-class UploadReceipt(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    upload_token: str
-    filename: str
-    size_bytes: int
-    sha256: str
 
 
 class ProjectCreateRequest(BaseModel):
@@ -336,11 +346,35 @@ class UiServiceState:
             workspace=self.workspace,
             profile_path=self.profile_path,
         )
-        self.upload_root = self.workspace.runtime_root / "tmp" / "ui-uploads"
-        self.upload_root.mkdir(parents=True, exist_ok=True)
+        self.upload_store = UploadStore(self.workspace)
+        self.upload_root = self.upload_store.file_root
         self.temporary_root = self.workspace.runtime_root / "tmp" / "ui"
         self.temporary_root.mkdir(parents=True, exist_ok=True)
-        self.uploads: dict[str, Path] = {}
+
+    def project_preflight(self, project_id: str) -> dict[str, Any]:
+        root = (self.projects_root / project_id).resolve()
+        try:
+            root.relative_to(self.projects_root)
+        except ValueError as error:
+            raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        if root.exists():
+            return {
+                "available": False,
+                "project_id": project_id,
+                "reason": "项目名称已存在，禁止覆盖",
+                "existing_project": project_id,
+                "suggested_project_id": (
+                    f"{project_id}-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M%S')}"
+                ),
+            }
+        return {
+            "available": True,
+            "project_id": project_id,
+            "reason": "项目名称可用",
+            "existing_project": None,
+            "suggested_project_id": None,
+        }
+
     def project_config(self, project_id: str) -> Path:
         root = (self.projects_root / project_id).resolve()
         try:
@@ -404,6 +438,121 @@ class UiServiceState:
                 values.append(root.name)
         return tuple(sorted(values))
 
+    def project_run_roots(self, project_id: str) -> tuple[Path, ...]:
+        return tuple(
+            item.path
+            for item in list_runs(self.registry.runs_root)
+            if item.integrity_status == "verified" and item.project_id == project_id
+        )
+
+    def accepted_job_for_run(
+        self,
+        run_key: str,
+    ) -> tuple[int | None, datetime | None, str | None]:
+        accepted = [
+            item
+            for item in self.jobs.list()
+            if item.accepted_run_key == run_key and item.stage_number is not None
+        ]
+        if not accepted:
+            return None, None, None
+        selected = max(
+            accepted,
+            key=lambda item: (int(item.stage_number or 0), item.created_at),
+        )
+        return selected.stage_number, selected.created_at, selected.status
+
+    def accepted_jobs_by_run(
+        self,
+    ) -> dict[str, tuple[int | None, datetime | None, str | None]]:
+        values: dict[
+            str,
+            tuple[int | None, datetime | None, str | None],
+        ] = {}
+        for item in self.jobs.list():
+            if item.accepted_run_key is None or item.stage_number is None:
+                continue
+            previous = values.get(item.accepted_run_key)
+            if previous is None or int(item.stage_number) >= int(previous[0] or 0):
+                values[item.accepted_run_key] = (
+                    item.stage_number,
+                    item.created_at,
+                    item.status,
+                )
+        return values
+
+    def accepted_job_for_project(
+        self,
+        project_id: str,
+    ) -> tuple[int | None, datetime | None]:
+        accepted = [
+            item
+            for item in self.jobs.list()
+            if item.project_id == project_id and item.stage_number is not None
+        ]
+        if not accepted:
+            return None, None
+        selected = max(
+            accepted,
+            key=lambda item: (int(item.stage_number or 0), item.created_at),
+        )
+        return selected.stage_number, selected.created_at
+
+    def assert_stage_configurable(self, run_key: str, stage_number: int) -> None:
+        accepted_stage, accepted_at, _ = self.accepted_job_for_run(run_key)
+        assert_stage_configurable(
+            self.registry.resolve(run_key),
+            stage_number,
+            accepted_job_stage=accepted_stage,
+            accepted_job_at=accepted_at,
+        )
+
+    def assert_not_locked_by_downstream(
+        self,
+        run_key: str,
+        stage_number: int,
+    ) -> None:
+        accepted_stage, accepted_at, _ = self.accepted_job_for_run(run_key)
+        assert_not_locked_by_downstream(
+            self.registry.resolve(run_key),
+            stage_number,
+            accepted_job_stage=accepted_stage,
+            accepted_job_at=accepted_at,
+        )
+
+    def assert_project_is_draft(self, project_id: str) -> None:
+        accepted_job_stage, accepted_job_at = self.accepted_job_for_project(
+            project_id
+        )
+        if accepted_job_stage is not None:
+            raise StageLockedError(
+                stage_number=accepted_job_stage,
+                locked_by_stage=accepted_job_stage,
+                locked_at=accepted_job_at,
+                reason=(
+                    f"项目 {project_id} 已经受理第{accepted_job_stage}步执行，"
+                    "原项目配置只读。如需改变输入，请从“新建设计”创建不同名称的"
+                    "独立项目。"
+                ),
+            )
+        roots = self.project_run_roots(project_id)
+        if not roots:
+            return
+        accepted = [
+            (highest_accepted_stage(root)[0], root)
+            for root in roots
+        ]
+        highest, _ = max(accepted, key=lambda item: item[0])
+        raise StageLockedError(
+            stage_number=max(1, highest),
+            locked_by_stage=max(1, highest),
+            locked_at=None,
+            reason=(
+                f"项目 {project_id} 已经产生正式运行记录，原项目配置只读。"
+                "如需改变输入或重新运行，请从“新建设计”创建不同名称的独立项目。"
+            ),
+        )
+
     def discover_runs(self) -> None:
         for summary in list_runs(self.registry.runs_root):
             if summary.integrity_status == "verified":
@@ -449,6 +598,8 @@ def _safe_filename(value: str) -> str:
 
 
 def _raise_http(error: Exception) -> None:
+    if isinstance(error, StageLockedError):
+        raise HTTPException(status_code=409, detail=error.detail()) from error
     if isinstance(error, PathPolicyError):
         raise HTTPException(status_code=403, detail=str(error)) from error
     if isinstance(error, (ConfigurationError, EasyDesignError, ValueError)):
@@ -601,18 +752,11 @@ def create_ui_app(
     @app.get("/api/v1/browser-pymol/status")
     def browser_pymol_status() -> dict[str, Any]:
         root = Path(__file__).resolve().parent / "vendor" / "browser_pymol"
-        required = (
-            root / "pyodide" / "pyodide.js",
-            root / "pyodide" / "pyodide.asm.wasm",
-            root
-            / "pyodide"
-            / "numpy-1.23.5-cp310-cp310-emscripten_3_1_27_wasm32.whl",
-            root
-            / "pymol-wasm"
-            / "pymol-2.6.0a0-cp39-cp39-emscripten_3_1_46_wasm32.whl",
-        )
+        errors = verify_browser_pymol_assets(root)
         return {
-            "available": all(item.is_file() for item in required),
+            "available": not errors,
+            "integrity_status": "verified" if not errors else "failed",
+            "integrity_errors": errors,
             "renderer": "open-source-pymol-wasm",
             "pymol_version": "2.6.0a0",
             "pyodide_version": "0.22.1",
@@ -723,6 +867,18 @@ def create_ui_app(
             service.discover_runs()
             summaries = list_runs(service.registry.runs_root)
             project_ids = sorted({item.project_id for item in summaries})
+            sessions_by_project: dict[str, DesignSession] = {}
+            for item in service.sessions.list():
+                if not item.config_revisions:
+                    continue
+                previous = sessions_by_project.get(item.project_id)
+                if previous is None or item.updated_at > previous.updated_at:
+                    sessions_by_project[item.project_id] = item
+            draft_ids = [
+                project_id
+                for project_id in service.projects()
+                if project_id not in project_ids
+            ]
             return {
                 "projects": [
                     _project_to_dict(
@@ -730,9 +886,26 @@ def create_ui_app(
                             project_id,
                             registry=service.registry,
                             signer=service.signer,
+                            accepted_jobs=service.accepted_jobs_by_run(),
                         )
                     )
                     for project_id in project_ids
+                ],
+                "drafts": [
+                    get_project_draft_projection(
+                        service.projects_root / project_id,
+                        session_id=(
+                            None
+                            if project_id not in sessions_by_project
+                            else sessions_by_project[project_id].session_id
+                        ),
+                        session_updated_at=(
+                            None
+                            if project_id not in sessions_by_project
+                            else sessions_by_project[project_id].updated_at
+                        ),
+                    ).model_dump(mode="json")
+                    for project_id in draft_ids
                 ],
                 "editable_projects": service.projects(),
             }
@@ -946,10 +1119,37 @@ def create_ui_app(
                 project_id,
                 registry=service.registry,
                 signer=service.signer,
+                accepted_jobs=service.accepted_jobs_by_run(),
             )
         except Exception as error:
             _raise_http(error)
             raise
+
+    @app.get("/api/v1/project-preflight")
+    def project_preflight(
+        request: Request,
+        project_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ) -> dict[str, Any]:
+        try:
+            return _state(request).project_preflight(project_id)
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/uploads")
+    def uploads(request: Request) -> dict[str, Any]:
+        service = _state(request)
+        return {
+            "receipts": [
+                item.model_dump(mode="json")
+                for item in service.upload_store.list()
+            ],
+            "capacity": service.upload_store.capacity(),
+            "cleanup_suggestions": [
+                item.upload_token
+                for item in service.upload_store.suggested_cleanup()
+            ],
+        }
 
     @app.post("/api/v1/uploads")
     def upload(payload: UploadRequest, request: Request) -> UploadReceipt:
@@ -963,24 +1163,42 @@ def create_ui_app(
             raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
         if not content:
             raise HTTPException(status_code=400, detail="不能上传空文件")
-        token = f"upload-{uuid4().hex}"
-        upload_directory = service.upload_root / token
-        upload_directory.mkdir()
-        target = upload_directory / filename
-        with target.open("xb") as handle:
-            handle.write(content)
-        service.uploads[token] = target
-        return UploadReceipt(
-            upload_token=token,
+        reusable = service.upload_store.find_reusable(
             filename=filename,
             size_bytes=len(content),
             sha256=sha256_bytes(content),
         )
+        if reusable is not None:
+            return reusable
+        receipt, target = service.upload_store.begin(
+            filename=filename,
+            size_bytes=len(content),
+            sha256=sha256_bytes(content),
+        )
+        try:
+            with target.open("xb") as handle:
+                handle.write(content)
+            return service.upload_store.ready(receipt.upload_token)
+        except BaseException as error:
+            moved = quarantine_if_workspace_path(
+                target.parent,
+                operation=receipt.upload_token,
+                reason="UI 文件接收未完成",
+            )
+            if moved is not None:
+                service.upload_store.relocate(
+                    receipt.upload_token,
+                    path=moved / filename,
+                    status="failed",
+                    failure_reason=str(error),
+                )
+            raise
 
     @app.post("/api/v1/uploads/raw")
     async def upload_raw(
         request: Request,
         filename: Annotated[str, Query(min_length=1, max_length=255)],
+        sha256: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")],
     ) -> UploadReceipt:
         """流式接收浏览器文件，避免先在浏览器生成完整 Base64 副本。"""
 
@@ -994,10 +1212,22 @@ def create_ui_app(
                 raise HTTPException(status_code=400, detail="Content-Length 非法") from error
             if declared_size > MAX_UPLOAD_BYTES:
                 raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
-        token = f"upload-{uuid4().hex}"
-        upload_directory = service.upload_root / token
-        upload_directory.mkdir()
-        target = upload_directory / safe_filename
+            if declared_size <= 0:
+                raise HTTPException(status_code=400, detail="不能上传空文件")
+        if content_length is None:
+            raise HTTPException(status_code=411, detail="上传必须提供 Content-Length")
+        reusable = service.upload_store.find_reusable(
+            filename=safe_filename,
+            size_bytes=declared_size,
+            sha256=sha256,
+        )
+        if reusable is not None:
+            return reusable
+        receipt, target = service.upload_store.begin(
+            filename=safe_filename,
+            size_bytes=declared_size,
+            sha256=sha256,
+        )
         size_bytes = 0
         digest = hashlib.sha256()
         try:
@@ -1013,19 +1243,34 @@ def create_ui_app(
             if size_bytes == 0:
                 raise HTTPException(status_code=400, detail="不能上传空文件")
         except BaseException:
-            quarantine_if_workspace_path(
-                upload_directory,
-                operation=token,
+            moved = quarantine_if_workspace_path(
+                target.parent,
+                operation=receipt.upload_token,
                 reason="UI 文件接收未完成",
             )
+            if moved is not None:
+                service.upload_store.relocate(
+                    receipt.upload_token,
+                    path=moved / safe_filename,
+                    status="failed",
+                    failure_reason="UI 文件接收未完成",
+                )
             raise
-        service.uploads[token] = target
-        return UploadReceipt(
-            upload_token=token,
-            filename=safe_filename,
-            size_bytes=size_bytes,
-            sha256=digest.hexdigest(),
-        )
+        if size_bytes != receipt.size_bytes or digest.hexdigest() != receipt.sha256:
+            moved = quarantine_if_workspace_path(
+                target.parent,
+                operation=receipt.upload_token,
+                reason="浏览器声明与服务端接收的大小或 SHA-256 不一致",
+            )
+            if moved is not None:
+                service.upload_store.relocate(
+                    receipt.upload_token,
+                    path=moved / safe_filename,
+                    status="failed",
+                    failure_reason="上传大小或 SHA-256 不一致",
+                )
+            raise HTTPException(status_code=400, detail="上传大小或 SHA-256 不一致")
+        return service.upload_store.ready(receipt.upload_token)
 
     @app.post("/api/v1/projects")
     def initialize(payload: ProjectCreateRequest, request: Request) -> dict[str, Any]:
@@ -1035,20 +1280,29 @@ def create_ui_app(
                 raise ConfigurationError("按步骤设计首次运行只能停止在 Stage 01")
             if payload.design_mode == "developer-smoke":
                 raise ConfigurationError("开发者自检必须使用专用自检接口")
-            session = (
-                service.sessions.create(
-                    project_id=payload.project_id,
-                    design_mode=payload.design_mode,
-                    execution_mode=payload.execution_mode,
+            project_preflight = service.project_preflight(payload.project_id)
+            if not project_preflight["available"]:
+                raise ConfigurationError(
+                    f"项目名称已存在，禁止覆盖: {payload.project_id}"
                 )
+            existing_session = (
+                None
                 if payload.session_id is None
                 else service.sessions.load(payload.session_id)
             )
-            if session.project_id != payload.project_id:
+            if (
+                existing_session is not None
+                and existing_session.project_id != payload.project_id
+            ):
                 raise ConfigurationError("产品会话与项目 ID 不一致")
             source_value = payload.source_value
+            staging_root = (
+                service.workspace.runtime_root
+                / "tmp"
+                / f"project-staging-{uuid4().hex}"
+            )
             kwargs: dict[str, Any] = {
-                "project_root": service.projects_root / payload.project_id,
+                "project_root": staging_root,
                 "project_id": payload.project_id,
                 "target_id": payload.target_id,
                 "execution_mode": payload.execution_mode,
@@ -1058,11 +1312,10 @@ def create_ui_app(
             }
             uploaded_source: Path | None = None
             if payload.source_type == "local-file":
-                try:
-                    uploaded_source = service.uploads[source_value]
-                    kwargs["target"] = uploaded_source
-                except KeyError as error:
-                    raise ConfigurationError("未知或已失效的 upload token") from error
+                uploaded_source = service.upload_store.resolve(source_value)
+                kwargs["target"] = uploaded_source
+                kwargs["source_transfer"] = "move"
+                kwargs["quarantine_on_error"] = False
             elif payload.source_type == "pdb-id":
                 kwargs["pdb_id"] = source_value
                 kwargs["chain"] = payload.chain
@@ -1090,22 +1343,83 @@ def create_ui_app(
                 kwargs["source_run_root"] = source_run_root
             else:
                 raise ConfigurationError(f"不支持的 source_type: {payload.source_type}")
-            outcome = initialize_project(**kwargs)
+            try:
+                outcome = initialize_project(**kwargs)
+                validated_plan = validate_run_configuration(
+                    outcome.config_path,
+                    profile_path=service.profile_path,
+                )
+                now = datetime.now(tz=UTC)
+                atomic_dump_runtime_model(
+                    ProjectMetadata(
+                        project_id=payload.project_id,
+                        target_id=validated_plan.target_id,
+                        input_type=payload.source_type,
+                        design_mode=payload.design_mode,
+                        execution_mode=payload.execution_mode,
+                        configured_through_stage=(
+                            1
+                            if payload.design_mode == "stepwise"
+                            else payload.stop_after_stage
+                        ),
+                        config_sha256=sha256_file(outcome.config_path),
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                    staging_root / "project-metadata.json",
+                )
+                destination = service.projects_root / payload.project_id
+                if destination.exists():
+                    raise ConfigurationError(
+                        f"项目名称在发布前已被占用，禁止覆盖: {payload.project_id}"
+                    )
+                shutil.move(str(staging_root), str(destination))
+            except Exception as error:
+                moved = quarantine_if_workspace_path(
+                    staging_root,
+                    operation=f"create-project-{payload.project_id}",
+                    reason="项目创建预检或原子发布失败",
+                )
+                if uploaded_source is not None:
+                    candidate = (
+                        uploaded_source
+                        if uploaded_source.exists()
+                        else (
+                            None
+                            if moved is None
+                            else moved / "inputs" / uploaded_source.name
+                        )
+                    )
+                    if candidate is not None and candidate.is_file():
+                        service.upload_store.relocate(
+                            source_value,
+                            path=candidate,
+                            status="failed",
+                            failure_reason=str(error),
+                        )
+                raise
+            published_config = destination / "easydesign.yaml"
+            session = existing_session or service.sessions.create(
+                project_id=payload.project_id,
+                design_mode=payload.design_mode,
+                execution_mode=payload.execution_mode,
+            )
             session = service.sessions.add_config_revision(
                 session.session_id,
                 stage_number=1 if payload.design_mode == "stepwise" else payload.stop_after_stage,
-                config_path=outcome.config_path,
+                config_path=published_config,
             )
             if uploaded_source is not None:
-                service.uploads.pop(source_value, None)
-                quarantine_if_workspace_path(
-                    uploaded_source.parent,
-                    operation=f"consumed-{source_value}",
-                    reason="上传输入已复制进项目，保留原接收证据",
+                published_input = destination / "inputs" / uploaded_source.name
+                service.upload_store.relocate(
+                    source_value,
+                    path=published_input,
+                    status="published",
+                    project_id=payload.project_id,
                 )
             return {
                 "project_id": payload.project_id,
-                "config": outcome.config_path.read_text(encoding="utf-8"),
+                "config": published_config.read_text(encoding="utf-8"),
                 "status": "draft",
                 "session": session.model_dump(mode="json"),
             }
@@ -1130,6 +1444,7 @@ def create_ui_app(
     ) -> dict[str, Any]:
         service = _state(request)
         try:
+            service.assert_project_is_draft(project_id)
             operation_id = f"config-validation-{uuid4().hex}"
             temporary = service.temporary_root / f"{operation_id}.yaml"
             with temporary.open("x", encoding="utf-8") as handle:
@@ -1146,6 +1461,19 @@ def create_ui_app(
                     reason="UI 配置校验 staging 已终止",
                 )
             published = service.publish_project_config(project_id, payload.yaml_text)
+            metadata_path = service.projects_root / project_id / "project-metadata.json"
+            if metadata_path.is_file():
+                metadata = load_latest_runtime_model(metadata_path, ProjectMetadata)
+                atomic_dump_runtime_model(
+                    metadata.model_copy(
+                        update={
+                            "configured_through_stage": plan.stop_after_stage,
+                            "config_sha256": sha256_file(published),
+                            "updated_at": datetime.now(tz=UTC),
+                        }
+                    ),
+                    metadata_path,
+                )
             return {
                 "status": "valid",
                 "config_path": published.relative_to(service.projects_root).as_posix(),
@@ -1194,6 +1522,7 @@ def create_ui_app(
     def launch(payload: LaunchRequest, request: Request) -> Any:
         service = _state(request)
         try:
+            service.assert_project_is_draft(payload.project_id)
             if (payload.session_id is None) != (payload.stage_number is None):
                 raise ConfigurationError(
                     "产品会话启动必须同时提供 session_id 和 stage_number"
@@ -1214,6 +1543,15 @@ def create_ui_app(
                     project_root=service.project_config(payload.project_id).parent,
                     profile_path=service.profile_path,
                 )
+                accepted = service.jobs.accept_external(
+                    operation="remote-run",
+                    project_id=payload.project_id,
+                    stage_number=payload.stage_number or 1,
+                    external_job_id=submission.job_id,
+                    run_id=submission.run_id,
+                    session_id=payload.session_id,
+                    status=submission.status,
+                )
                 return {
                     "kind": "remote",
                     "executor_id": submission.executor_id,
@@ -1222,6 +1560,7 @@ def create_ui_app(
                     "run_id": submission.run_id,
                     "submitted_at": submission.submitted_at.isoformat(),
                     "status": submission.status,
+                    "acceptance_job_id": accepted.job_id,
                 }
             return service.jobs.launch(
                 operation="run",
@@ -1229,11 +1568,12 @@ def create_ui_app(
                 profile_path=service.profile_path,
                 runs_root=service.registry.runs_root,
                 run_id=payload.run_id,
+                project_id=payload.project_id,
                 session_id=payload.session_id,
                 session_root=(
                     None if payload.session_id is None else service.sessions.root
                 ),
-                stage_number=payload.stage_number,
+                stage_number=payload.stage_number or 1,
                 confirmed=payload.confirmed,
             )
         except Exception as error:
@@ -1396,10 +1736,16 @@ def create_ui_app(
     def run(run_key: str, request: Request) -> Any:
         service = _state(request)
         try:
+            accepted_stage, accepted_at, accepted_status = (
+                service.accepted_job_for_run(run_key)
+            )
             return get_run_projection(
                 service.registry.resolve(run_key),
                 registry=service.registry,
                 signer=service.signer,
+                accepted_job_stage=accepted_stage,
+                accepted_job_at=accepted_at,
+                accepted_job_status=accepted_status,
             )
         except Exception as error:
             _raise_http(error)
@@ -1431,20 +1777,7 @@ def create_ui_app(
                     for item in region_projection.residues
                     if item.current_region == region_id
                 )
-            existing = service.structure_sessions.latest_for(
-                project_id=run_projection.project_id,
-                run_key=run_key,
-                stage_number=payload.stage_number,
-                target_structure_sha256=(
-                    region_projection.target_structure_sha256
-                ),
-                residue_mapping_sha256=(
-                    region_projection.residue_mapping_sha256
-                ),
-            )
-            if existing is not None:
-                return existing
-            return service.structure_sessions.create(
+            return service.structure_sessions.get_or_create(
                 project_id=run_projection.project_id,
                 run_key=run_key,
                 stage_number=payload.stage_number,
@@ -1563,7 +1896,7 @@ def create_ui_app(
                 updated = service.structure_sessions.apply_proposal(
                     session_id,
                     proposal_id=proposal_id,
-                    pml=compile_viewer_actions(proposal.viewer_actions),
+                    viewer_actions=proposal.viewer_actions,
                     source="assistant",
                 )
                 return {
@@ -1572,6 +1905,7 @@ def create_ui_app(
                 }
             if proposal.kind == "region-edit":
                 root = service.registry.resolve(session.run_key)
+                service.assert_stage_configurable(session.run_key, 2)
                 region_projection = get_region_editor_projection(
                     root,
                     run_key=session.run_key,
@@ -1601,6 +1935,7 @@ def create_ui_app(
                     "result": "region-edit-applied-to-draft",
                 }
             if proposal.kind == "analysis-plan":
+                service.assert_stage_configurable(session.run_key, 2)
                 return {
                     "session": session.model_dump(mode="json"),
                     "result": "analysis-plan-confirmed",
@@ -1626,11 +1961,17 @@ def create_ui_app(
     ) -> Any:
         service = _state(request)
         try:
+            accepted_stage, accepted_at, accepted_status = (
+                service.accepted_job_for_run(run_key)
+            )
             return get_stage_projection(
                 service.registry.resolve(run_key),
                 stage_number,
                 registry=service.registry,
                 signer=service.signer,
+                accepted_job_stage=accepted_stage,
+                accepted_job_at=accepted_at,
+                accepted_job_status=accepted_status,
             )
         except Exception as error:
             _raise_http(error)
@@ -1766,21 +2107,18 @@ def create_ui_app(
 
     @app.post("/api/v1/runs/{run_key}/clone")
     def clone(run_key: str, payload: CloneRunRequest, request: Request) -> dict[str, Any]:
-        service = _state(request)
-        try:
-            path = clone_run_configuration(
-                service.registry.resolve(run_key),
-                service.projects_root / payload.project_id,
-                project_id=payload.project_id,
-            )
-            return {
-                "project_id": payload.project_id,
-                "config": path.read_text(encoding="utf-8"),
-                "status": "draft",
-            }
-        except Exception as error:
-            _raise_http(error)
-            raise
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stage_locked",
+                "reason": (
+                    "正式运行不能在原运行工作区中复制、回写或快捷重跑。"
+                    "请从“新建设计”创建名称不同的独立项目。"
+                ),
+                "run_key": run_key,
+                "requested_project_id": payload.project_id,
+            },
+        )
 
     @app.get("/api/v1/runs/{run_key}/decision")
     def decision(run_key: str, request: Request) -> dict[str, Any]:
@@ -1807,6 +2145,8 @@ def create_ui_app(
                 raise ConfigurationError("人工审批必须明确 confirmed=true")
             root = service.registry.resolve(run_key)
             pending = show_decision(root)
+            pending_stage = int(pending.stage_id.split("-", maxsplit=1)[0])
+            service.assert_not_locked_by_downstream(run_key, pending_stage)
             approval = {
                 "schema_version": "0.1",
                 "decision_id": pending.decision_id,
@@ -1909,6 +2249,7 @@ def create_ui_app(
                 raise ConfigurationError("必须确认用户区域仍需生物学审阅")
             session = service.sessions.load(payload.session_id)
             source = service.registry.resolve(run_key)
+            service.assert_stage_configurable(run_key, 2)
             projection = get_region_editor_projection(
                 source,
                 run_key=run_key,
@@ -1965,6 +2306,8 @@ def create_ui_app(
                 runs_root=service.registry.runs_root,
                 run_id=selected_run_id,
                 continue_after_stage=1,
+                project_id=session.project_id,
+                accepted_run_key=run_key,
                 session_id=session.session_id,
                 session_root=service.sessions.root,
                 stage_number=2,
@@ -1993,6 +2336,7 @@ def create_ui_app(
         try:
             if not payload.confirmed:
                 raise ConfigurationError("Hotspot 审批必须明确 confirmed=true")
+            service.assert_not_locked_by_downstream(run_key, 2)
             approval_path = service.temporary_file(
                 prefix="hotspot-approval",
                 suffix=".yaml",
@@ -2034,6 +2378,7 @@ def create_ui_app(
                 raise ConfigurationError("URL stage 与请求 stage_number 不一致")
             session = service.sessions.load(payload.session_id)
             source = service.registry.resolve(run_key)
+            service.assert_stage_configurable(run_key, next_stage)
             project_root = (service.projects_root / session.project_id).resolve()
             try:
                 project_root.relative_to(service.projects_root)
@@ -2081,6 +2426,8 @@ def create_ui_app(
                         else payload.run_id
                     ),
                     continue_after_stage=continue_after_stage,
+                    project_id=session.project_id,
+                    accepted_run_key=run_key,
                     session_id=session.session_id,
                     session_root=service.sessions.root,
                     stage_number=next_stage,

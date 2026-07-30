@@ -7,6 +7,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import yaml  # type: ignore[import-untyped]
 
@@ -149,6 +150,8 @@ def initialize_project(
     scope_feature_name: str | None = None,
     precomputed_msa: Path | None = None,
     msa_cache_mode: str = "online",
+    source_transfer: Literal["copy", "move"] = "copy",
+    quarantine_on_error: bool = True,
 ) -> InitializedProject:
     """生成 schema 0.7；六类 Stage 01 入口全部有显式 init。"""
 
@@ -447,7 +450,10 @@ def initialize_project(
             input_directory.mkdir()
         if source is not None:
             target_path = input_directory / source.name
-            shutil.copyfile(source, target_path)
+            if source_transfer == "move":
+                shutil.move(str(source), str(target_path))
+            else:
+                shutil.copyfile(source, target_path)
         if msa_source is not None:
             msa_path = input_directory / msa_source.name
             if msa_path == target_path:
@@ -460,11 +466,12 @@ def initialize_project(
         if loaded.detected_format is not detected:
             raise ConfigurationError("生成项目的输入格式复核不一致")
     except Exception:
-        quarantine_if_workspace_path(
-            destination,
-            operation="initialize-project",
-            reason="项目初始化或回读校验失败",
-        )
+        if quarantine_on_error:
+            quarantine_if_workspace_path(
+                destination,
+                operation="initialize-project",
+                reason="项目初始化或回读校验失败",
+            )
         raise
     return InitializedProject(
         project_root=destination,

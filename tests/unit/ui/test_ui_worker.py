@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from easydesign.core import dump_model, load_model
 from easydesign.ui import worker
+from easydesign.ui.jobs import UiJobController
 from easydesign.ui.models import UiJobRecord
 from easydesign.ui.security import UiRunRegistry
 from easydesign.ui.sessions import DesignSessionStore
@@ -83,3 +84,23 @@ def test_worker_attaches_continuation_run_to_design_session(
     assert updated_session.run_lineage == (expected_key,)
     assert updated_session.current_stage == 2
     assert updated_session.status == "awaiting-human-approval"
+
+
+def test_external_submission_persists_stage_acceptance(tmp_path: Path) -> None:
+    controller = UiJobController(tmp_path / "jobs")
+
+    record = controller.accept_external(
+        operation="remote-run",
+        project_id="sample-project",
+        stage_number=4,
+        external_job_id="remote-job-0001",
+        run_id="remote-run-0001",
+        session_id="session-0001",
+        status="submitted",
+    )
+
+    restored = controller.load(record.job_id)
+    assert restored.project_id == "sample-project"
+    assert restored.stage_number == 4
+    assert restored.external_job_id == "remote-job-0001"
+    assert restored.status == "submitted"

@@ -4,3 +4,5 @@ runtime_root: runtime
 projects_root: projects
 runs_root: runs
 archives_root: archives
+upload_warning_bytes: 1073741824
+upload_blocking_bytes: 5368709120

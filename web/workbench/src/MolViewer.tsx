@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { MolstarViewer } from "./types";
+import type { MolstarViewer, ViewerAction } from "./types";
 
 interface Region {
   id: string;
@@ -11,6 +11,7 @@ interface Props {
   regions?: Region[];
   compact?: boolean;
   onResidueClick?: (labelSeqId: number) => void;
+  viewActions?: ViewerAction[];
 }
 
 const colors: Record<string, string> = {
@@ -21,6 +22,27 @@ const colors: Record<string, string> = {
 
 export const MOL_CANVAS_BACKGROUND = "#EEF1F6";
 const EMPTY_REGIONS: Region[] = [];
+const EMPTY_VIEW_ACTIONS: ViewerAction[] = [];
+const namedColors: Record<string, string> = {
+  black: "#000000",
+  blue: "#0000ff",
+  cyan: "#00ffff",
+  gray: "#808080",
+  gray70: "#b3b3b3",
+  green: "#00a650",
+  magenta: "#ff00ff",
+  orange: "#ff8c00",
+  red: "#ff0000",
+  white: "#ffffff",
+  yellow: "#ffff00",
+};
+
+function normalizedColor(value: string | undefined, fallback: string) {
+  if (!value) return fallback;
+  const lowered = value.toLowerCase();
+  if (namedColors[lowered]) return namedColors[lowered];
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
 
 function structureCount(instance: MolstarViewer) {
   const hierarchy = instance.plugin.managers.structure?.hierarchy?.current;
@@ -51,6 +73,7 @@ export function MolViewer({
   regions = EMPTY_REGIONS,
   compact = false,
   onResidueClick,
+  viewActions = EMPTY_VIEW_ACTIONS,
 }: Props) {
   const uid = useId().replaceAll(":", "");
   const elementId = `molstar-${uid}`;
@@ -63,6 +86,34 @@ export function MolViewer({
   const [status, setStatus] = useState("等待结构");
   const [regionTheme, setRegionTheme] = useState(regions.length > 0);
   const [representation, setRepresentation] = useState<"cartoon" | "surface" | "ball_and_stick">("cartoon");
+  const viewState = useMemo(() => {
+    let requestedRepresentation: "cartoon" | "surface" | "ball_and_stick" | undefined;
+    let structureColor = "#b3b3b3";
+    let background = MOL_CANVAS_BACKGROUND;
+    let resetCamera = false;
+    for (const action of viewActions) {
+      if (action.action === "representation") {
+        requestedRepresentation = action.value === "surface"
+          ? "surface"
+          : action.value === "stick" || action.value === "sticks"
+            ? "ball_and_stick"
+            : "cartoon";
+      } else if (action.action === "color") {
+        structureColor = normalizedColor(action.value, structureColor);
+      } else if (action.action === "background") {
+        background = normalizedColor(action.value, background);
+      } else if (["focus", "orient", "center"].includes(action.action)) {
+        resetCamera = true;
+      }
+    }
+    return {
+      representation: requestedRepresentation,
+      structureColor,
+      background,
+      resetCamera,
+    };
+  }, [viewActions]);
+  const effectiveRepresentation = viewState.representation || representation;
   const regionKey = JSON.stringify(
     regions.map((region) => ({
       id: region.id,
@@ -168,14 +219,15 @@ export function MolViewer({
         const mvs = window.molstar?.PluginExtensions.mvs;
         if (!mvs) throw new Error("Mol* MVS 资源没有正确载入");
         const builder = mvs.createBuilder();
-        builder.canvas({ background_color: MOL_CANVAS_BACKGROUND });
+        builder.canvas({ background_color: viewState.background });
         const structure = builder
           .download({ url: structureUrl })
           .parse({ format: "mmcif" })
           .modelStructure();
         const representationNode = structure
           .component({ selector: "polymer" })
-          .representation({ type: representation });
+          .representation({ type: effectiveRepresentation });
+        representationNode.color({ color: viewState.structureColor });
         if (regionTheme) {
           for (const region of normalizedRegions) {
             for (const residue of region.label_seq_ids) {
@@ -198,7 +250,7 @@ export function MolViewer({
         await waitForRenderableStructure(instance);
         if (generation.current !== currentGeneration || viewer.current !== instance) return;
         loadedStructureUrl.current = structureUrl;
-        if (!keepCamera) {
+        if (!keepCamera || viewState.resetCamera) {
           await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
           instance.plugin.managers.camera.reset();
         }
@@ -214,7 +266,8 @@ export function MolViewer({
     viewerRevision,
     regionTheme,
     normalizedRegions,
-    representation,
+    effectiveRepresentation,
+    viewState,
   ]);
 
   return (
@@ -223,9 +276,9 @@ export function MolViewer({
         <span className="live-dot" />
         <span>{status}</span>
         <div className="mol-actions">
-          <button type="button" className={representation === "cartoon" ? "active" : ""} onClick={() => setRepresentation("cartoon")}>Cartoon</button>
-          <button type="button" className={representation === "surface" ? "active" : ""} onClick={() => setRepresentation("surface")}>Surface</button>
-          <button type="button" className={representation === "ball_and_stick" ? "active" : ""} onClick={() => setRepresentation("ball_and_stick")}>Stick</button>
+          <button type="button" className={effectiveRepresentation === "cartoon" ? "active" : ""} onClick={() => setRepresentation("cartoon")}>Cartoon</button>
+          <button type="button" className={effectiveRepresentation === "surface" ? "active" : ""} onClick={() => setRepresentation("surface")}>Surface</button>
+          <button type="button" className={effectiveRepresentation === "ball_and_stick" ? "active" : ""} onClick={() => setRepresentation("ball_and_stick")}>Stick</button>
           {regions.length > 0 && (
             <button
               type="button"

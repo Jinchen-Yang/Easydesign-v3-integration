@@ -6,6 +6,7 @@ import json
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,6 +31,7 @@ from easydesign.orchestration import (
     select_project_primary_run,
     upsert_run_index_entries,
 )
+from easydesign.orchestration.task_tracking import load_latest_runtime_model
 from easydesign.safe_writes import read_last_text_line
 from easydesign.ui import (
     UiRunRegistry,
@@ -40,6 +42,7 @@ from easydesign.ui import (
     get_project_projection,
     get_run_projection,
 )
+from easydesign.ui.models import ProjectMetadata
 from easydesign.ui.security import ArtifactTokenSigner
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
@@ -817,6 +820,24 @@ def test_gateway_registers_verified_runs_before_first_project_request(
     assert response.json()["run_key"] == run_key
 
 
+def test_browser_pymol_status_requires_the_complete_verified_offline_runtime(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/browser-pymol/status")
+
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    assert response.json()["integrity_status"] == "verified"
+    assert response.json()["integrity_errors"] == []
+
+
 def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
     tmp_path: Path,
 ) -> None:
@@ -858,6 +879,18 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         assert (
             tmp_path / "projects" / "target-demo" / "inputs" / "target.fasta"
         ).read_bytes() == content
+        metadata = load_latest_runtime_model(
+            tmp_path / "projects" / "target-demo" / "project-metadata.json",
+            ProjectMetadata,
+        )
+        assert metadata.project_id == "target-demo"
+        assert metadata.input_type == "local-file"
+        assert metadata.configured_through_stage == 1
+        projects = client.get("/api/v1/projects")
+        assert projects.status_code == 200
+        assert projects.json()["projects"] == []
+        assert projects.json()["drafts"][0]["project_id"] == "target-demo"
+        assert projects.json()["drafts"][0]["status"] == "draft"
 
         reused = client.post(
             "/api/v1/projects",
@@ -879,6 +912,63 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         assert "空文件" in empty.json()["detail"]
 
 
+def test_failed_project_publication_keeps_only_retryable_upload_receipt(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    content = b"failed-project-input"
+    with TestClient(app, raise_server_exceptions=False) as client:
+        receipt = client.post(
+            "/api/v1/uploads",
+            json={
+                "filename": "target.pse",
+                "content_base64": base64.b64encode(content).decode("ascii"),
+            },
+        ).json()
+
+        import easydesign.ui.app as ui_app_module
+
+        def fail_initialize_project(**_kwargs: Any) -> Any:
+            raise RuntimeError("intentional transactional failure")
+
+        monkeypatch.setattr(
+            ui_app_module,
+            "initialize_project",
+            fail_initialize_project,
+        )
+        response = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "failed-project",
+                "source_type": "local-file",
+                "source_value": receipt["upload_token"],
+                "stop_after_stage": 1,
+                "design_mode": "stepwise",
+            },
+        )
+
+        uploads = client.get("/api/v1/uploads").json()["receipts"]
+        sessions = client.get("/api/v1/design-sessions").json()
+        projects = client.get("/api/v1/projects").json()
+
+    assert response.status_code == 500
+    assert not (tmp_path / "projects" / "failed-project").exists()
+    assert sessions == []
+    assert projects["drafts"] == []
+    failed = next(
+        item for item in uploads if item["upload_token"] == receipt["upload_token"]
+    )
+    assert failed["status"] == "failed"
+    assert (
+        tmp_path / failed["relative_path"]
+    ).read_bytes() == content
+
+
 def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
     tmp_path: Path,
 ) -> None:
@@ -892,7 +982,10 @@ def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/uploads/raw",
-            params={"filename": "target.pse"},
+            params={
+                "filename": "target.pse",
+                "sha256": hashlib.sha256(content).hexdigest(),
+            },
             content=content,
             headers={"Content-Type": "application/octet-stream"},
         )
@@ -921,7 +1014,10 @@ def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
 
         empty = client.post(
             "/api/v1/uploads/raw",
-            params={"filename": "empty.pse"},
+            params={
+                "filename": "empty.pse",
+                "sha256": hashlib.sha256(b"").hexdigest(),
+            },
             content=b"",
             headers={"Content-Type": "application/octet-stream"},
         )

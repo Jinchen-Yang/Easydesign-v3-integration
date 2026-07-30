@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -210,6 +211,18 @@ class PmlRevision(BaseModel):
     revision: int = Field(ge=1)
     pml: str = Field(max_length=1_000_000)
     source: Literal["viewer", "assistant", "expert-console"]
+    viewer_scope: Literal["pymol"] = "pymol"
+    created_at: datetime
+
+
+class ViewStateRevision(BaseModel):
+    """Viewer-neutral display state replayed by PyMOL and Mol* adapters."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    revision: int = Field(ge=1)
+    actions: tuple[ViewerAction, ...] = Field(min_length=1)
+    source: Literal["viewer", "assistant"]
     created_at: datetime
 
 
@@ -218,7 +231,7 @@ class StructureInteractionSession(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.1", "0.2"] = "0.2"
     session_id: str
     project_id: str
     run_key: str
@@ -228,6 +241,7 @@ class StructureInteractionSession(BaseModel):
     selected_provider: ProviderId | None = None
     messages: tuple[InteractionMessage, ...] = ()
     pml_revisions: tuple[PmlRevision, ...] = ()
+    view_state_revisions: tuple[ViewStateRevision, ...] = ()
     current_regions: dict[str, tuple[int, ...]] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -324,6 +338,7 @@ class StructureInteractionStore:
     def __init__(self, projects_root: Path) -> None:
         self.projects_root = projects_root.resolve()
         self.projects_root.mkdir(parents=True, exist_ok=True)
+        self._create_lock = threading.Lock()
 
     def _project_root(self, project_id: str) -> Path:
         if not _SAFE_ID.fullmatch(project_id):
@@ -406,6 +421,37 @@ class StructureInteractionStore:
                 matches.append(value)
         return max(matches, key=lambda item: item.updated_at) if matches else None
 
+    def get_or_create(
+        self,
+        *,
+        project_id: str,
+        run_key: str,
+        stage_number: int,
+        target_structure_sha256: str,
+        residue_mapping_sha256: str,
+        current_regions: dict[str, tuple[int, ...]] | None = None,
+    ) -> StructureInteractionSession:
+        """Idempotent within the service, including React StrictMode retries."""
+
+        with self._create_lock:
+            existing = self.latest_for(
+                project_id=project_id,
+                run_key=run_key,
+                stage_number=stage_number,
+                target_structure_sha256=target_structure_sha256,
+                residue_mapping_sha256=residue_mapping_sha256,
+            )
+            if existing is not None:
+                return existing
+            return self.create(
+                project_id=project_id,
+                run_key=run_key,
+                stage_number=stage_number,
+                target_structure_sha256=target_structure_sha256,
+                residue_mapping_sha256=residue_mapping_sha256,
+                current_regions=current_regions,
+            )
+
     def load(self, session_id: str) -> StructureInteractionSession:
         return load_latest_runtime_model(self._locate(session_id), StructureInteractionSession)
 
@@ -426,6 +472,8 @@ class StructureInteractionStore:
         return proposals[0]
 
     def _publish(self, value: StructureInteractionSession) -> StructureInteractionSession:
+        if value.schema_version != "0.2":
+            value = value.model_copy(update={"schema_version": "0.2"})
         path = self._session_root(value.project_id, value.session_id) / "session.json"
         atomic_dump_runtime_model(value, path)
         return value
@@ -478,6 +526,7 @@ class StructureInteractionStore:
         *,
         proposal_id: str,
         pml: str | None = None,
+        viewer_actions: tuple[ViewerAction, ...] | None = None,
         current_regions: dict[str, tuple[int, ...]] | None = None,
         source: Literal["viewer", "assistant", "expert-console"] = "assistant",
         updated_at: datetime | None = None,
@@ -486,6 +535,7 @@ class StructureInteractionStore:
         self.proposal(session_id, proposal_id)
         now = updated_at or datetime.now(tz=UTC)
         revisions = current.pml_revisions
+        view_revisions = current.view_state_revisions
         if pml is not None:
             validated = validate_safe_pml(pml)
             revisions = revisions + (
@@ -496,6 +546,16 @@ class StructureInteractionStore:
                     created_at=now,
                 ),
             )
+        if viewer_actions is not None:
+            validate_common_viewer_actions(viewer_actions)
+            view_revisions = view_revisions + (
+                ViewStateRevision(
+                    revision=len(view_revisions) + 1,
+                    actions=viewer_actions,
+                    source="assistant" if source == "assistant" else "viewer",
+                    created_at=now,
+                ),
+            )
         normalized_regions = current.current_regions
         if current_regions is not None:
             normalized_regions = normalize_regions(current_regions)
@@ -503,6 +563,7 @@ class StructureInteractionStore:
             current.model_copy(
                 update={
                     "pml_revisions": revisions,
+                    "view_state_revisions": view_revisions,
                     "current_regions": normalized_regions,
                     "updated_at": now,
                 }
@@ -653,13 +714,40 @@ def compile_viewer_actions(actions: tuple[ViewerAction, ...]) -> str:
     return validate_safe_pml("\n".join(commands))
 
 
+def validate_common_viewer_actions(
+    actions: tuple[ViewerAction, ...],
+) -> tuple[ViewerAction, ...]:
+    """Reject actions that cannot be replayed consistently in both viewers."""
+
+    supported = {
+        "representation",
+        "color",
+        "background",
+        "focus",
+        "orient",
+        "center",
+    }
+    for action in actions:
+        if action.action not in supported:
+            raise ConfigurationError(
+                f"公共助手动作 {action.action} 无法在 PyMOL 与 Mol* 中一致执行；"
+                "残基编辑请使用 region-edit，专家标签/选择请使用仅 PyMOL 控制台"
+            )
+        if action.target.strip().lower() != "all":
+            raise ConfigurationError(
+                "公共显示动作首版只支持 target=all；明确残基请使用 region-edit"
+            )
+    compile_viewer_actions(actions)
+    return actions
+
+
 def _assistant_schema_prompt() -> str:
     return """
 你是 EasyDesign 的结构显示助手。只输出一个 JSON object，禁止输出 Markdown。
 你不能判断真实 hotspot、binding site 或科学优劣，也不能修改坐标、对象或文件。
 允许的 kind:
-1. viewer-actions: viewer_actions 非空，只做 representation/color/background/focus/orient/
-   center/label/unlabel/select/deselect。
+1. viewer-actions: viewer_actions 非空，只做对两个查看器一致生效的
+   representation/color/background/focus/orient/center，target 必须为 all。
 2. region-edit: 用户明确给出残基编号并要求加入/移出 A/B/C 时使用。
 3. analysis-plan: 用户要求自动寻找、预测、比较或推荐区域时使用；methods 只能是
    sasa/scannet，requires_confirmation 必须为 true。

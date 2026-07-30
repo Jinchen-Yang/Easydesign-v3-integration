@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import statistics
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,13 +20,17 @@ from easydesign.core import (
     canonical_model_sha256,
     load_model,
 )
+from easydesign.core.hashing import sha256_file
 from easydesign.orchestration import RunIndex, list_runs
 from easydesign.orchestration.task_tracking import load_latest_runtime_model
 from easydesign.safe_writes import read_last_text_line
 
+from .access import project_stage_access
 from .models import (
     ArtifactProjection,
     DraftOrderOutcome,
+    ProjectDraftProjection,
+    ProjectMetadata,
     ProjectProjection,
     ReplayFrame,
     ReplayTimeline,
@@ -291,6 +295,9 @@ def get_run_projection(
     *,
     registry: UiRunRegistry,
     signer: ArtifactTokenSigner,
+    accepted_job_stage: int | None = None,
+    accepted_job_at: datetime | None = None,
+    accepted_job_status: str | None = None,
 ) -> RunProjection:
     """验证当前 manifest 链并生成不含绝对路径的 run 投影。"""
 
@@ -298,6 +305,13 @@ def get_run_projection(
     run_key = registry.register(root)
     run_manifest, _ = _latest_run_manifest(root)
     stage_by_id = {ref.producer_stage: ref for ref in run_manifest.stage_manifest_refs}
+    accepted_manifests = {
+        int(str(stage_id).split("-", maxsplit=1)[0]): load_model(
+            reference.verify(root),
+            StageManifest,
+        )
+        for stage_id, reference in stage_by_id.items()
+    }
     stages: list[StageProjection] = []
     highest = max(
         (int(str(stage_id).split("-", maxsplit=1)[0]) for stage_id in stage_by_id),
@@ -310,14 +324,24 @@ def get_run_projection(
         stage_ref = stage_by_id.get(stage_id)
         if stage_ref is None:
             state = UiStageState.NOT_REACHED
-            if (
+            if accepted_job_stage == index:
+                state = {
+                    "queued": UiStageState.QUEUED,
+                    "running": UiStageState.RUNNING,
+                    "scientific-stop": UiStageState.SCIENTIFIC_STOP,
+                    "operational-failed": UiStageState.OPERATIONAL_FAILED,
+                    "failed": UiStageState.OPERATIONAL_FAILED,
+                }.get(accepted_job_status or "", UiStageState.RUNNING)
+            elif (
                 index == highest + 1
                 and run_manifest.status is ExecutionStatus.RUNNING
                 and run_manifest.workflow_state is not None
             ):
                 state = UiStageState.AWAITING_HUMAN_APPROVAL
             summary = (
-                "等待当前人工决策完成"
+                "执行已受理，配置已经冻结"
+                if accepted_job_stage == index
+                else "等待当前人工决策完成"
                 if state is UiStageState.AWAITING_HUMAN_APPROVAL
                 else "当前 run 未到达本阶段"
             )
@@ -330,6 +354,13 @@ def get_run_projection(
                     capability=capability,
                     summary=summary,
                     evidence_status=str(run_manifest.evidence_status),
+                    access=project_stage_access(
+                        stage_number=index,
+                        state=state,
+                        stages=accepted_manifests,
+                        accepted_job_stage=accepted_job_stage,
+                        accepted_job_at=accepted_job_at,
+                    ),
                 )
             )
             continue
@@ -362,6 +393,13 @@ def get_run_projection(
                 capability=capability,
                 summary=summary,
                 evidence_status=str(run_manifest.evidence_status),
+                access=project_stage_access(
+                    stage_number=index,
+                    state=state,
+                    stages=accepted_manifests,
+                    accepted_job_stage=accepted_job_stage,
+                    accepted_job_at=accepted_job_at,
+                ),
                 selected_attempt_id=manifest.selected_attempt_id,
                 started_at=manifest.created_at,
                 completed_at=manifest.completed_at,
@@ -407,12 +445,20 @@ def get_stage_projection(
     *,
     registry: UiRunRegistry,
     signer: ArtifactTokenSigner,
+    accepted_job_stage: int | None = None,
+    accepted_job_at: datetime | None = None,
+    accepted_job_status: str | None = None,
 ) -> StageProjection:
     if stage_number < 1 or stage_number > 7:
         raise ValueError("stage_number 必须在 1–7")
-    return get_run_projection(run_root, registry=registry, signer=signer).stages[
-        stage_number - 1
-    ]
+    return get_run_projection(
+        run_root,
+        registry=registry,
+        signer=signer,
+        accepted_job_stage=accepted_job_stage,
+        accepted_job_at=accepted_job_at,
+        accepted_job_status=accepted_job_status,
+    ).stages[stage_number - 1]
 
 
 def get_project_projection(
@@ -420,12 +466,45 @@ def get_project_projection(
     *,
     registry: UiRunRegistry,
     signer: ArtifactTokenSigner,
+    accepted_jobs: Mapping[
+        str,
+        tuple[int | None, datetime | None, str | None],
+    ]
+    | None = None,
 ) -> ProjectProjection:
     summaries = [item for item in list_runs(registry.runs_root) if item.project_id == project_id]
     projections = tuple(
         sorted(
             (
-                get_run_projection(item.path, registry=registry, signer=signer)
+                get_run_projection(
+                    item.path,
+                    registry=registry,
+                    signer=signer,
+                    accepted_job_stage=(
+                        None
+                        if accepted_jobs is None
+                        else accepted_jobs.get(
+                            registry.register(item.path),
+                            (None, None, None),
+                        )[0]
+                    ),
+                    accepted_job_at=(
+                        None
+                        if accepted_jobs is None
+                        else accepted_jobs.get(
+                            registry.register(item.path),
+                            (None, None, None),
+                        )[1]
+                    ),
+                    accepted_job_status=(
+                        None
+                        if accepted_jobs is None
+                        else accepted_jobs.get(
+                            registry.register(item.path),
+                            (None, None, None),
+                        )[2]
+                    ),
+                )
                 for item in summaries
                 if item.integrity_status == "verified"
             ),
@@ -460,6 +539,76 @@ def get_project_projection(
         run_count=len(projections),
         latest_run=primary_projection,
         runs=projections,
+    )
+
+
+def get_project_draft_projection(
+    project_root: Path,
+    *,
+    session_id: str | None = None,
+    session_updated_at: datetime | None = None,
+) -> ProjectDraftProjection:
+    """Project config is visible only after atomic publication."""
+
+    root = project_root.resolve()
+    pointer = root / "CONFIG_CURRENT"
+    config_path = root / "easydesign.yaml"
+    if pointer.is_file():
+        relative = Path(read_last_text_line(pointer))
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ManifestStateError("项目 CONFIG_CURRENT 不是项目内相对路径")
+        config_path = (root / relative).resolve()
+        try:
+            config_path.relative_to(root)
+        except ValueError as error:
+            raise ManifestStateError("项目配置逃出项目目录") from error
+    try:
+        payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
+        raise ManifestStateError(f"无法读取项目草稿配置: {root.name}") from error
+    if not isinstance(payload, dict):
+        raise ManifestStateError("项目草稿配置不是 YAML object")
+    project_id = str(payload.get("project_id") or root.name)
+    stage01 = payload.get("stage01") or {}
+    target = stage01.get("target") or {}
+    source = target.get("source") or {}
+    input_type = str(source.get("type") or source.get("format") or "unknown")
+    configured = max(
+        (
+            number
+            for number in range(1, 8)
+            if payload.get(f"stage{number:02d}") is not None
+        ),
+        default=1,
+    )
+    modified_at = datetime.fromtimestamp(config_path.stat().st_mtime, tz=UTC)
+    metadata_path = root / "project-metadata.json"
+    if metadata_path.is_file():
+        try:
+            metadata = load_latest_runtime_model(metadata_path, ProjectMetadata)
+        except (OSError, ValueError) as error:
+            raise ManifestStateError(
+                f"项目元数据不可验证: {root.name}"
+            ) from error
+        if metadata.project_id != project_id:
+            raise ManifestStateError("项目元数据与配置 project_id 不一致")
+        if metadata.config_sha256 == sha256_file(config_path):
+            input_type = metadata.input_type
+            configured = metadata.configured_through_stage
+            modified_at = metadata.updated_at
+    updated_at = max(
+        value
+        for value in (modified_at, session_updated_at)
+        if value is not None
+    )
+    return ProjectDraftProjection(
+        project_id=project_id,
+        target_id=str(target.get("id") or "未命名目标"),
+        input_type=input_type,
+        configured_through_stage=configured,
+        updated_at=updated_at,
+        config_sha256=sha256_file(config_path),
+        session_id=session_id,
     )
 
 

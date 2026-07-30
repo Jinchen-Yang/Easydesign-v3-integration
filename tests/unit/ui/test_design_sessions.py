@@ -35,7 +35,13 @@ from easydesign.orchestration import (
 from easydesign.orchestration.config import LoadedPseRunConfig, load_run_config
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.ui import create_ui_app
-from easydesign.ui.models import UiJobRecord
+from easydesign.ui.access import (
+    StageLockedError,
+    assert_stage_configurable,
+    load_run_and_stages,
+    project_stage_access,
+)
+from easydesign.ui.models import UiJobRecord, UiStageState
 from easydesign.ui.sessions import DesignSessionStore
 
 
@@ -211,6 +217,11 @@ def test_ui_continuation_uses_completed_stage_prefix_after_stage03(
     import easydesign.ui.app as ui_app_module
 
     monkeypatch.setattr(service.registry, "resolve", lambda _run_key: source_run)
+    monkeypatch.setattr(
+        service,
+        "assert_stage_configurable",
+        lambda _run_key, _stage_number: None,
+    )
     monkeypatch.setattr(ui_app_module, "materialize_continuation_config", fake_materialize)
     monkeypatch.setattr(service.jobs, "launch", fake_launch)
 
@@ -410,6 +421,154 @@ def test_stage02_continuation_rebases_frozen_local_input(
     assert isinstance(loaded, LoadedPseRunConfig)
     assert loaded.source_path.read_bytes() == pse.read_bytes()
     assert loaded.source_path.is_relative_to(output.parent)
+
+
+def test_stage_access_freezes_accepted_prefix_and_exposes_only_unique_next_stage(
+    tmp_path: Path,
+) -> None:
+    pse = tmp_path / "source" / "target.pse"
+    pse.parent.mkdir()
+    pse.write_bytes(b"trusted-pse-fixture")
+    initialized = initialize_project(
+        project_root=tmp_path / "source-project",
+        target=pse,
+        stop_after_stage=1,
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev25",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev25",
+            source=CodeIdentitySource.INSTALLED_PACKAGE,
+            dirty=False,
+            content_sha256="e" * 64,
+        ),
+        run_id="stage01-source",
+    )
+    _publish_stage01_success(
+        prepared.workspace.run_root,
+        prepared.workspace.run_manifest,
+    )
+    _, stages = load_run_and_stages(prepared.workspace.run_root)
+
+    first = project_stage_access(
+        stage_number=1,
+        state=UiStageState.SUCCEEDED,
+        stages=stages,
+    )
+    second = project_stage_access(
+        stage_number=2,
+        state=UiStageState.NOT_REACHED,
+        stages=stages,
+    )
+
+    assert first.access == "view-only"
+    assert first.locked_by_stage == 1
+    assert second.access == "configure"
+    with pytest.raises(StageLockedError):
+        assert_stage_configurable(prepared.workspace.run_root, 1)
+    assert_stage_configurable(prepared.workspace.run_root, 2)
+
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    service = app.state.easydesign
+    run_key = service.registry.register(prepared.workspace.run_root)
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/runs/{run_key}/clone",
+            json={"project_id": "independent-copy"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "stage_locked"
+
+
+def test_persisted_execution_job_freezes_stage_before_result_manifest_exists(
+    tmp_path: Path,
+) -> None:
+    pse = tmp_path / "source" / "target.pse"
+    pse.parent.mkdir()
+    pse.write_bytes(b"trusted-pse-fixture")
+    initialized = initialize_project(
+        project_root=tmp_path / "source-project",
+        target=pse,
+        stop_after_stage=1,
+    )
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev25",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev25",
+            source=CodeIdentitySource.INSTALLED_PACKAGE,
+            dirty=False,
+            content_sha256="f" * 64,
+        ),
+        run_id="stage01-source",
+    )
+    _publish_stage01_success(
+        prepared.workspace.run_root,
+        prepared.workspace.run_manifest,
+    )
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    service = app.state.easydesign
+    run_key = service.registry.register(prepared.workspace.run_root)
+    session = service.sessions.create(
+        project_id="source-project",
+        design_mode="stepwise",
+        execution_mode="review-gated",
+    )
+    accepted_at = datetime(2026, 7, 30, 8, 0, tzinfo=UTC)
+    dump_model(
+        UiJobRecord(
+            job_id="job-accepted-stage02",
+            operation="run",
+            status="running",
+            project_id="source-project",
+            accepted_run_key=run_key,
+            run_id="stage01-source",
+            session_id="session-test",
+            stage_number=2,
+            created_at=accepted_at,
+            updated_at=accepted_at,
+        ),
+        service.jobs.state_root / "job-accepted-stage02.json",
+    )
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/v1/runs/{run_key}")
+        locked = client.post(
+            f"/api/v1/runs/{run_key}/continue/2",
+            json={
+                "session_id": session.session_id,
+                "stage_number": 2,
+                "execution_mode": "review-gated",
+                "options": {},
+                "confirmed": True,
+            },
+        )
+
+    assert response.status_code == 200
+    stages = response.json()["stages"]
+    assert stages[0]["access"]["access"] == "view-only"
+    assert stages[1]["state"] == "running"
+    assert stages[1]["access"]["access"] == "running"
+    assert stages[1]["access"]["locked_by_stage"] == 2
+    assert stages[2]["access"]["access"] == "not-reached"
+    assert locked.status_code == 409
+    assert locked.json()["detail"]["code"] == "stage_locked"
+    with pytest.raises(StageLockedError):
+        service.assert_stage_configurable(run_key, 1)
+    with pytest.raises(StageLockedError):
+        service.assert_stage_configurable(run_key, 2)
 
 
 def test_stage02_interactive_regions_reuse_design_intent_and_system_evidence(

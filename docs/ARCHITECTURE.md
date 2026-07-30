@@ -773,12 +773,20 @@ SSH 端口转发访问。Mol* 5.11.0 官方预构建 bundle 初始化需要动�
 测试，不进入 EasyDesign 科学运行时。远程服务器只能通过 SSH 端口转发访问。
 
 新建设计采用非线性五步向导：步骤切换只改变表单投影，不执行科学逻辑，也不以前序字段
-是否完整限制用户阅读后续配置；完整性只在创建项目草稿、preflight 和真实启动三个动作
-边界统一判断。浏览器选择本地文件后立即调用同源 `/api/v1/uploads`，服务把最多
-64 MiB 的内容原子写入受控 `.ui-uploads/<token>/`，返回不含机器路径的 token、原始
-basename、大小和 SHA-256。项目初始化只能消费当前服务签发的 token，成功复制到
-`PROJECT/inputs/` 后使 token 失效并尽力清理临时副本。前端文件名本身不代表上传成功；
-只有收到后端 receipt 才能将目标输入标记为就绪。
+是否完整限制用户阅读后续配置；完整性只在项目事务、preflight 和真实启动三个动作边界
+统一判断。项目名必须在浏览器传输文件前预检。浏览器计算 SHA-256 后调用同源
+`/api/v1/uploads/raw`，服务把最多 64 MiB 的内容写入
+`runtime/tmp/ui-uploads/<token>/`，并把 UploadReceipt 0.2 的不可变 revision 保存在
+`runtime/state/ui/upload-receipts/`。receipt 不含机器绝对路径，服务重启后仍可恢复。
+上传容量阈值来自仓库根 `easydesign-workspace.yaml`：
+`upload_warning_bytes/upload_blocking_bytes` 默认分别为 1 GiB 和 5 GiB；UI 与
+后端共享这一声明，不从用户主目录或环境变量猜测。
+
+项目发布先在全新的 runtime staging 中完成配置、输入和元数据验证，再原子移动到此前
+不存在的 `projects/<project_id>/`，最后创建 DesignSession。成功发布时输入本身移动到
+项目目录，receipt 改为 referenced；失败内容移入 quarantine 并保留失败 receipt，不得
+产生正式项目、空会话或首页卡片。7 天只触发建议，1/5 GiB 分别触发提醒/阻止；不存在
+自动删除定时器。
 
 浏览器读取的是服务端从当前 RunManifest → StageManifest → ArtifactRef 生成的安全
 projection。服务在投影和下载时重新校验 artifact 大小与 SHA-256；短期 HMAC token

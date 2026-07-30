@@ -440,14 +440,27 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname === "/api/v1/project-preflight") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          available: true,
+          project_id: url.searchParams.get("project_id") || "new-design",
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/uploads/raw" && route.request().method() === "POST") {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
+          schema_version: "0.2",
           upload_token: "upload-fixture",
           filename: "target.pse",
           size_bytes: 18,
           sha256: "a".repeat(64),
+          status: "received",
+          relative_path: "runtime/state/uploads/upload-fixture/target.pse",
         }),
       });
       return;
@@ -610,6 +623,7 @@ async function mockApi(page: Page) {
         contentType: "application/json",
         body: JSON.stringify({
           projects: [{ project_id: "apoe", run_count: 1, latest_run: run, runs: [run] }],
+          drafts: [],
           editable_projects: ["apoe-draft"],
         }),
       });
@@ -988,12 +1002,30 @@ test("developer smoke is separated from scientific projects", async ({ page }) =
   await expect(page.getByText("七阶段工程链路通过。")).toBeVisible();
 });
 
-test("stage two region editor keeps source layers and editable selection separate", async ({ page }) => {
+test("a stage-five run keeps all accepted upstream stages read-only", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "查看项目 →" }).click();
+  for (const stageIndex of [0, 1, 2, 3, 4]) {
+    await page.locator(".stage-node").nth(stageIndex).click();
+    await expect(page.getByText("本步骤仅供查看", { exact: false })).toBeVisible();
+  }
+  await page.locator(".stage-node").nth(0).click();
+  await expect(page.getByRole("button", { name: "配置下一步：选择结合区域" })).toHaveCount(0);
   await page.locator(".stage-node").nth(1).click();
-  await page.getByRole("button", { name: "重新选择结合区域" }).click();
-  await expect(page.getByRole("heading", { name: "重新选择结合区域" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新选择结合区域" })).toHaveCount(0);
+});
+
+test("stage two region editor keeps source layers and editable selection separate", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
+  await expect(page.getByRole("heading", { name: "选择结合区域", exact: true })).toBeVisible();
   await expect(page.getByLabel("显示 PSE 来源颜色")).toBeChecked();
   await expect(page.getByLabel("显示当前批准区域")).toBeChecked();
   await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 1 个残基");
@@ -1044,16 +1076,21 @@ test("stage two automatic branch shows real progress and opens the new run", asy
 
 test("explicit manual regions complete one approval and open a succeeded branch", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "查看项目 →" }).click();
-  await page.locator(".stage-node").nth(1).click();
-  await page.getByRole("button", { name: "重新选择结合区域" }).click();
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
   await page.getByLabel("批准人").fill("scientist-01");
   await expect(page.getByRole("button", { name: "还需勾选确认" })).toBeVisible();
   await page.getByRole("button", { name: "还需勾选确认" }).click();
   await expect(page.getByRole("alert")).toContainText("提交前还差 1 项");
   await expect(page.getByLabel(/我确认这些是用户提供的设计区域/)).toBeFocused();
   await page.getByText(/我确认这些是用户提供的设计区域/).click();
-  await page.getByRole("button", { name: "保存并建立新的第2步分支" }).click();
+  await page.getByRole("button", { name: "保存并完成第2步" }).click();
   await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "第3步：生成设计方案", exact: true }),
@@ -1065,12 +1102,17 @@ test("explicit manual regions complete one approval and open a succeeded branch"
 
 test("stage three continuation runs from Python defaults and advances to stage four", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "查看项目 →" }).click();
-  await page.locator(".stage-node").nth(1).click();
-  await page.getByRole("button", { name: "重新选择结合区域" }).click();
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
   await page.getByLabel("批准人").fill("scientist-01");
   await page.getByText(/我确认这些是用户提供的设计区域/).click();
-  await page.getByRole("button", { name: "保存并建立新的第2步分支" }).click();
+  await page.getByRole("button", { name: "保存并完成第2步" }).click();
   await expect(page.getByRole("heading", { name: "配置第3步：生成设计方案" })).toBeVisible();
 
   await page.getByRole("button", { name: "生成并验证设计方案" }).click();

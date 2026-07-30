@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口、Target Bundle 0.4、便携 Mol* 报告及 Workbench PyMOL/Mol* 双查看器均通过真实 APOE 工程验证。 | 冻结 Stage 01 科学边界；继续做跨平台结构交互验收。 | 无 Stage 01 1.0 工程阻塞；商业敏感序列仍等待自建 MSA 与条款审查。 | 2026-07-29 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；Workbench 浏览器 PyMOL 新增严格首帧状态机，等待 dev25 服务器复验后恢复组件 smoke。 | 冻结 Stage 01 科学边界；完成 REP-007 PyMOL 真实首帧复验。 | 无 Stage 01 1.0 工程阻塞；浏览器 PyMOL 组件当前为 implemented，Mol* 与便携报告仍可用。 | 2026-07-30 |
 
 ## 当前结论
 

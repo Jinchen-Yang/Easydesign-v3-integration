@@ -143,6 +143,12 @@ archives/
 8. BoltzGen、Protenix、ScanNet、TNP 等后端只有在环境 lock 与全部必需 asset 的当前
    revision、大小和 SHA-256 均通过后才可暴露给运行层。缺少任一 checkpoint 必须显示
    `awaiting-approval/not-installed`，禁止让后端自行联网补齐。
+9. UI 上传先形成持久 `UploadReceipt 0.2`，文件只允许位于
+   `runtime/tmp/ui-uploads/`、事务 staging、项目 `inputs/` 或 quarantine。失败创建
+   不得留下正式项目或空 DesignSession；成功项目不得保留重复输入副本。
+10. 7 天过期仅生成建议，不触发删除。上传暂存清理必须先展示精确相对路径、数量、大小
+    和引用状态；未获针对该清单的明确批准时只能隔离或阻止新上传。`projects/`、
+    `runs/`、环境、模型、cache 和普通 quarantine 永不属于上传清理接口。
 
 旧部署导入使用显式 `./easydesign workspace import-legacy ...`。导入只复制并校验证据；
 原 profile、环境、模型、cache 和 run 全部保留，旧 Conda 环境不得直接搬迁或删除。

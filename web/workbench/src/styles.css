@@ -164,6 +164,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .stage-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin: 0 0 18px; }
 .stage-title-row h2 { margin: 4px 0 4px; font-size: 28px; line-height: 1.25; letter-spacing: -.03em; }
 .stage-title-row p:not(.section-label) { margin: 0; color: var(--muted); font-size: 15px; }
+.stage-access-banner, .stage-lock-note { display: flex; align-items: center; gap: 12px; border: 1px solid #cfd8e7; border-radius: 12px; background: #f7f9fc; color: #536176; }
+.stage-access-banner { margin: 0 0 18px; padding: 14px 18px; }
+.stage-access-banner strong { color: #26364c; white-space: nowrap; }
+.stage-lock-note { margin: 16px 0 0; padding: 12px 14px; font-size: 14px; line-height: 1.55; }
 .stage-state-block { display: flex; align-items: center; gap: 10px; }
 .stage-state-block > span:last-child { color: var(--muted); font-size: 13px; }
 .stage-slide { min-width: 0; }

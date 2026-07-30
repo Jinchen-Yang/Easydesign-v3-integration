@@ -241,6 +241,8 @@ export function NativePyMOLViewer({
   onNativeCommands,
   onValidatePml,
   onResidueSelect,
+  onFailure,
+  onSwitchViewer,
   readOnly = false,
   language,
   t = identityTranslation
@@ -301,6 +303,36 @@ export function NativePyMOLViewer({
     queueRef.current = next.catch(() => {});
     return next;
   }, []);
+
+  const resizeNativeViewport = useCallback(() => {
+    const canvas = canvasRef.current;
+    const shell = shellRef.current;
+    if (!canvas || !shell) return Promise.resolve();
+    const changed = sizeCanvas(canvas, shell);
+    const runtime = runtimeRef.current;
+    if (!runtime || !changed) return Promise.resolve();
+    return enqueue(async () => {
+      const width = canvas.width;
+      const height = canvas.height;
+      const guiWidth = nativeGuiWidth(width);
+      setDimensions(runtime, width, height, guiWidth);
+      await runtime.runPythonAsync(`
+try:
+    _p.reshape(chatpymol_width, chatpymol_height, 1)
+except Exception:
+    pass
+_p._cmd.glViewport(0, 0, chatpymol_width, chatpymol_height)
+_p.cmd.viewport(max(1, chatpymol_width-chatpymol_gui_width), chatpymol_height)
+try:
+    _p.cmd.dirty()
+except Exception:
+    pass
+for _chatpymol_resize_draw_pass in range(2):
+    _p.idle()
+    _p.draw()
+`);
+    });
+  }, [enqueue]);
 
   const refreshObjects = useCallback(() => {
     if (!runtimeRef.current) return Promise.resolve([]);
@@ -441,6 +473,44 @@ for _chatpymol_chrome_draw_pass in range(2):
     [enqueue]
   );
 
+  const verifyNativeScene = useCallback(
+    async () => {
+      const encoded = await enqueue(async () => {
+        const runtime = runtimeRef.current;
+        if (!runtime) throw new Error("PyMOL 运行时尚未就绪");
+        return runtime.runPythonAsync(`
+chatpymol_object_names = [
+    name for name in _p.cmd.get_names("objects", enabled_only=1)
+    if _p.cmd.get_type(name) == "object:molecule"
+]
+chatpymol_atom_count = int(_p.cmd.count_atoms("all"))
+chatpymol_visible_atom_count = int(_p.cmd.count_atoms("visible"))
+json.dumps({
+    "objects": len(chatpymol_object_names),
+    "atoms": chatpymol_atom_count,
+    "visible_atoms": chatpymol_visible_atom_count
+})
+`);
+      });
+      const scene = JSON.parse(String(encoded || "{}"));
+      if (!scene.objects || !scene.atoms) {
+        throw new Error("结构文件已读取，但 PyMOL 没有建立分子对象或原子");
+      }
+      if (!scene.visible_atoms) {
+        throw new Error("PyMOL 已读取结构，但当前没有可显示的原子表示");
+      }
+      await new Promise((resolve) => window.requestAnimationFrame(() => (
+        window.requestAnimationFrame(resolve)
+      )));
+      const canvas = canvasRef.current;
+      if (!canvas || !canvasHasNonBackgroundPixels(canvas)) {
+        throw new Error("PyMOL 已读取结构，但首帧仍为空白；请重试或切换到 Mol*");
+      }
+      return scene;
+    },
+    [enqueue]
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -500,7 +570,6 @@ class ChatPyMOLSelfProxy:
 import contextlib
 import io
 import json
-import os
 import pymol
 import pymol2 as p2
 import pymol.util
@@ -577,6 +646,7 @@ except Exception:
                 ? `Native PyMOL failed to start: ${error.message}`
                 : `原生 PyMOL 启动失败：${error.message}`
           });
+          onFailure?.(error.message);
         }
       }
     }
@@ -585,7 +655,7 @@ except Exception:
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [language, onFailure, t]);
 
   useEffect(() => {
     if (!runtimeReady || !runtimeRef.current) return;
@@ -606,6 +676,7 @@ except Exception:
       return;
     }
     let cancelled = false;
+    const sceneAbortController = new AbortController();
     const requestId = ++sceneRequestRef.current;
     const nextSceneKey = sceneKeyFor(projectId, structures);
 
@@ -666,6 +737,13 @@ json.dumps(chatpymol_incremental_warnings)
         });
         await applyViewerChrome(sequenceVisibleRef.current);
         if (cancelled || requestId !== sceneRequestRef.current) return;
+        setState({
+          kind: "loading-scene",
+          progress: 99,
+          label: t("正在验证 PyMOL 首帧")
+        });
+        await verifyNativeScene();
+        if (cancelled || requestId !== sceneRequestRef.current) return;
         if (commandWarnings.length) {
           throw new Error(commandWarnings[0].error || "增量命令执行失败");
         }
@@ -704,7 +782,11 @@ json.dumps(chatpymol_incremental_warnings)
       try {
         const files = [];
         for (const structure of structures) {
-          const bytes = await api.structureBytes(projectId, structure);
+          const bytes = await api.structureBytes(
+            projectId,
+            structure,
+            sceneAbortController.signal
+          );
           if (cancelled || requestId !== sceneRequestRef.current) return;
           files.push({
             bytes,
@@ -790,11 +872,6 @@ except Exception:
 for _chatpymol_scene_draw_pass in range(2):
     _p.idle()
     _p.draw()
-try:
-    if os.path.exists("${NATIVE_LOG}"):
-        os.unlink("${NATIVE_LOG}")
-except Exception:
-    pass
 _p.cmd.log_open("${NATIVE_LOG}", "w")
 json.dumps(chatpymol_command_warnings)
 `);
@@ -806,6 +883,29 @@ json.dumps(chatpymol_command_warnings)
         // separate runtime turn is required here; drawing it inside the scene
         // replay call leaves only the reserved white strip until first input.
         await applyViewerChrome(sequenceVisibleRef.current);
+        if (cancelled || requestId !== sceneRequestRef.current) return;
+        await enqueue(async () => {
+          const runtime = runtimeRef.current;
+          if (!runtime || cancelled) return;
+          await runtime.runPythonAsync(`
+_p.cmd.center("all")
+_p.cmd.orient("all")
+_p.cmd.zoom("all", 5)
+try:
+    _p.cmd.dirty()
+except Exception:
+    pass
+for _chatpymol_camera_draw_pass in range(2):
+    _p.idle()
+    _p.draw()
+`);
+        });
+        setState({
+          kind: "loading-scene",
+          progress: 99,
+          label: t("正在验证 PyMOL 对象、表示与首帧")
+        });
+        await verifyNativeScene();
         if (cancelled || requestId !== sceneRequestRef.current) return;
         appliedPmlRef.current = pml;
         loadedSceneKeyRef.current = nextSceneKey;
@@ -828,12 +928,12 @@ json.dumps(chatpymol_command_warnings)
         console.error(error);
         sceneReadyRef.current = false;
         if (!cancelled) {
-          setRuntimeReady(false);
           setState({
             kind: "error",
             progress: 0,
             label: error.message
           });
+          onFailure?.(error.message);
         }
       }
     }
@@ -862,6 +962,7 @@ json.dumps(chatpymol_command_warnings)
     }
     return () => {
       cancelled = true;
+      sceneAbortController.abort();
     };
   }, [
     api,
@@ -874,7 +975,9 @@ json.dumps(chatpymol_command_warnings)
     structures,
     t,
     versionId,
-    runtimeReady
+    runtimeReady,
+    verifyNativeScene,
+    onFailure
   ]);
 
   useEffect(() => {
@@ -918,7 +1021,10 @@ json.dumps(chatpymol_command_warnings)
     const observer = new ResizeObserver(() => {
       window.cancelAnimationFrame(resizeFrame);
       resizeFrame = window.requestAnimationFrame(() => {
-        fitCanvasToShell(canvas, shell);
+        resizeNativeViewport().catch((error) => {
+          console.error(error);
+          onFailure?.(error instanceof Error ? error.message : "PyMOL 画布尺寸同步失败");
+        });
       });
     });
     observer.observe(shell);
@@ -926,7 +1032,7 @@ json.dumps(chatpymol_command_warnings)
       window.cancelAnimationFrame(resizeFrame);
       observer.disconnect();
     };
-  }, []);
+  }, [onFailure, resizeNativeViewport]);
 
   const pointerCoordinates = (event) => {
     const canvas = canvasRef.current;
@@ -1810,6 +1916,11 @@ _p.draw()
             <button type="button" onClick={() => window.location.reload()}>
               {t("重新加载")}
             </button>
+            {onSwitchViewer && (
+              <button type="button" onClick={onSwitchViewer}>
+                {t("切换到 Mol*")}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1876,11 +1987,14 @@ function loadScript(src) {
 
 function sizeCanvas(canvas, shell) {
   const rect = shell.getBoundingClientRect();
-  const width = Math.max(440, Math.floor(rect.width || 620));
-  const height = Math.max(360, Math.floor(rect.height || 600));
+  const pixelRatio = Math.min(1.5, Math.max(1, window.devicePixelRatio || 1));
+  const width = Math.max(440, Math.floor((rect.width || 620) * pixelRatio));
+  const height = Math.max(360, Math.floor((rect.height || 600) * pixelRatio));
+  const changed = canvas.width !== width || canvas.height !== height;
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
   fitCanvasToShell(canvas, shell);
+  return changed;
 }
 
 function fitCanvasToShell(canvas, shell) {
@@ -1902,6 +2016,40 @@ function fitCanvasToShell(canvas, shell) {
   shell.style.setProperty("--native-canvas-bottom", `${bottomOffset}px`);
   shell.style.setProperty("--native-canvas-height", `${displayHeight}px`);
   shell.style.setProperty("--native-panel-width", `${panelWidth}px`);
+}
+
+function canvasHasNonBackgroundPixels(canvas) {
+  const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+  if (!gl || !canvas.width || !canvas.height) return false;
+  const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+  try {
+    gl.readPixels(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      pixels
+    );
+  } catch {
+    return false;
+  }
+  const contentWidth = Math.max(1, canvas.width - nativeGuiWidth(canvas.width));
+  const stride = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) / 180));
+  let foreground = 0;
+  for (let y = 0; y < canvas.height; y += stride) {
+    for (let x = 0; x < contentWidth; x += stride) {
+      const offset = (y * canvas.width + x) * 4;
+      const difference =
+        Math.abs(pixels[offset] - 238)
+        + Math.abs(pixels[offset + 1] - 241)
+        + Math.abs(pixels[offset + 2] - 246);
+      if (pixels[offset + 3] > 0 && difference > 36) foreground += 1;
+      if (foreground >= 16) return true;
+    }
+  }
+  return false;
 }
 
 function nativeGuiWidth(width) {

@@ -13,6 +13,7 @@ import type {
   ExecutionProgress,
   InstallStatus,
   Project,
+  ProjectDraft,
   ProjectCatalogEntry,
   ProjectResponse,
   RemoteExecutor,
@@ -55,10 +56,13 @@ function humanBytes(value: number) {
 }
 
 type UploadReceipt = {
+  schema_version: "0.2";
   upload_token: string;
   filename: string;
   size_bytes: number;
   sha256: string;
+  status: string;
+  relative_path: string;
 };
 
 function wait(milliseconds: number) {
@@ -142,6 +146,37 @@ function completedPrefix(run: Run, stageNumber: number) {
   return run.stages
     .filter((item) => item.stage_number < stageNumber)
     .every((item) => item.state === "succeeded");
+}
+
+function stageAccess(stage?: Stage, run?: Run): NonNullable<Stage["access"]> {
+  if (stage?.access) return stage.access;
+  const reachedStages = run?.stages.filter((item) => item.state !== "not-reached") || [];
+  const highestReached = Math.max(
+    ...reachedStages.map((item) => item.stage_number),
+    0,
+  );
+  const reached = Boolean(stage && stage.stage_number <= highestReached);
+  const isNextConfigurable = Boolean(
+    run
+    && stage
+    && stage.stage_number === highestReached + 1
+    && completedPrefix(run, stage.stage_number),
+  );
+  return {
+    stage_number: stage?.stage_number || 0,
+    access: reached ? "view-only" : isNextConfigurable ? "configure" : "not-reached",
+    locked_by_stage: reached ? stage?.stage_number : undefined,
+    reason: reached
+      ? "此历史运行没有阶段访问记录，按只读方式安全展示。"
+      : isNextConfigurable
+        ? "上游步骤已完成，可以配置本步骤。"
+        : "本次运行尚未到达此步骤。",
+    allowed_actions: reached
+      ? ["view", "download"]
+      : isNextConfigurable
+        ? ["configure"]
+        : [],
+  };
 }
 
 function stageRegionCount(run: Run) {
@@ -463,6 +498,9 @@ function StageOne({
   onConfigureNext: () => void;
 }) {
   const h = stage.highlights;
+  const nextStage = run.stages[1];
+  const currentAccess = stageAccess(stage, run);
+  const canConfigureNext = stageAccess(nextStage, run).access === "configure";
   return (
     <div className="structure-workspace">
       <aside className="structure-sidebar">
@@ -475,9 +513,14 @@ function StageOne({
             <Metric label="结构模型数" value={formatNumber(h.model_count, 0)} />
             <Metric label="缺失的 CA 原子" value={formatNumber(h.missing_ca_count, 0)} />
           </div>
-          <button type="button" className="primary-button region-reselect-button" onClick={onConfigureNext}>
-            配置下一步：选择结合区域
-          </button>
+          {canConfigureNext && (
+            <button type="button" className="primary-button region-reselect-button" onClick={onConfigureNext}>
+              配置下一步：选择结合区域
+            </button>
+          )}
+          {!canConfigureNext && currentAccess.access === "view-only" && (
+            <p className="stage-lock-note">🔒 {currentAccess.reason}</p>
+          )}
         </section>
         <EvidenceList stage={stage} limit={8} />
       </aside>
@@ -489,16 +532,15 @@ function StageOne({
 function StageTwo({
   stage,
   run,
-  onReselect,
 }: {
   stage: Stage;
   run: Run;
-  onReselect: () => void;
 }) {
   const regions = (stage.tables.regions || []).map((item) => ({
     id: String(item.id),
     label_seq_ids: parseLabelRanges(item.label_ranges),
   }));
+  const access = stageAccess(stage, run);
   return (
     <div className="structure-workspace">
       <aside className="structure-sidebar">
@@ -529,10 +571,7 @@ function StageTwo({
             用户区域属于人工结构先验，不自动等同于经过能量学验证的结合热点；确认人：
             {String(stage.highlights.approved_by || "—")}。
           </p>
-          <button type="button" className="primary-button region-reselect-button" onClick={onReselect}>
-            重新选择结合区域
-          </button>
-          <p className="fine">可隐藏来源颜色、清空本次编辑层并重新涂选 A/B/C；保存会建立新分支，不会覆盖这次运行。</p>
+          <p className="stage-lock-note">🔒 {access.reason}</p>
         </section>
         <EvidenceList stage={stage} />
       </aside>
@@ -812,7 +851,10 @@ function StageContent({
     return <StageOne stage={stage} run={run} onConfigureNext={onReselectRegions} />;
   }
   if (stage.stage_number === 2) {
-    if (stage.state === "not-reached" || editingRegions) {
+    if (
+      (stage.state === "not-reached" || editingRegions)
+      && stageAccess(stage, run).access === "configure"
+    ) {
       return (
         <RegionEditor
           run={run}
@@ -822,9 +864,13 @@ function StageContent({
         />
       );
     }
-    return <StageTwo stage={stage} run={run} onReselect={onReselectRegions} />;
+    return <StageTwo stage={stage} run={run} />;
   }
-  if (stage.state === "not-reached" && completedPrefix(run, stage.stage_number)) {
+  if (
+    stage.state === "not-reached"
+    && completedPrefix(run, stage.stage_number)
+    && stageAccess(stage, run).access === "configure"
+  ) {
     return (
       <StageContinuationSetup
         stage={stage}
@@ -857,7 +903,6 @@ function StageContent({
 function RunWorkspace({
   run,
   onReplay,
-  onClone,
   onResume,
   onOpenRun,
   initialStage,
@@ -865,7 +910,6 @@ function RunWorkspace({
 }: {
   run: Run;
   onReplay: () => void;
-  onClone: () => Promise<void>;
   onResume: () => Promise<void>;
   onOpenRun: (runKey: string, destinationStage?: number) => Promise<void>;
   initialStage?: number;
@@ -881,6 +925,7 @@ function RunWorkspace({
   const [showTechnical, setShowTechnical] = useState(false);
   const [editingRegions, setEditingRegions] = useState(false);
   const stage = run.stages[selected - 1];
+  const access = stageAccess(stage, run);
 
   useEffect(() => {
     setSelected(initialStage || latestReachedStage);
@@ -893,15 +938,6 @@ function RunWorkspace({
     setEditingRegions(false);
   }
 
-  async function clone() {
-    setCloneStatus("正在复制配置与可用 runtime 输入…");
-    try {
-      await onClone();
-      setCloneStatus("已创建独立草稿；不会覆盖历史 run。");
-    } catch (value) {
-      setCloneStatus(value instanceof Error ? value.message : "创建草稿失败");
-    }
-  }
   return (
     <div className="workspace-page">
       {replay && <div className="replay-banner"><strong>演示回放</strong><span>正在回放已保存的真实结果；不会启动 GPU，也不会修改科学结果。</span><b>{replay.frames.length} 个时间点</b></div>}
@@ -915,7 +951,6 @@ function RunWorkspace({
           <button type="button" className="secondary-button" onClick={() => setShowTechnical((value) => !value)}>技术记录</button>
           <button type="button" className="secondary-button" onClick={onReplay}>▶ 演示回放</button>
           {run.stages.some((item) => item.state === "operational-failed") && <button type="button" className="secondary-button" onClick={onResume}>恢复未完成任务</button>}
-          <button type="button" className="primary-button" onClick={clone}>按相同配置重新运行</button>
         </div>
       </header>
       {cloneStatus && <div className="inline-notice"><span>{cloneStatus}</span></div>}
@@ -944,6 +979,12 @@ function RunWorkspace({
         <div><p className="section-label">设计流程</p><h2>{stageNames[stage.stage_number - 1]}</h2><p>{stateCopy[stage.state].description}</p></div>
         <div className="stage-state-block"><Status state={stage.state} /><span>{capabilityLabel(stage.capability.status)}</span></div>
       </div>
+      {access.access === "view-only" && (
+        <div className="stage-access-banner">
+          <strong>🔒 本步骤仅供查看</strong>
+          <span>{access.reason}</span>
+        </div>
+      )}
       <div
         className={`stage-slide stage-slide-${slideDirection}`}
         key={`${run.run_key}-${selected}-${editingRegions ? "edit" : "view"}`}
@@ -979,11 +1020,15 @@ function RunWorkspace({
 
 function Dashboard({
   projects,
+  drafts = [],
   onOpen,
+  onContinueDraft,
   onNew,
 }: {
   projects: Project[];
+  drafts: ProjectDraft[];
   onOpen: (run: Run) => void;
+  onContinueDraft: (draft: ProjectDraft) => void;
   onNew: () => void;
 }) {
   const latest = projects.flatMap((item) => item.runs).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
@@ -1029,7 +1074,33 @@ function Dashboard({
             </article>
           );
         })}
-        {projects.length === 0 && <div className="empty-state large"><strong>还没有设计项目</strong><span>点击“新建设计”，从目标结构或序列开始。</span><button className="primary-button" onClick={onNew}>创建第一个项目</button></div>}
+        {drafts.map((draft) => (
+          <article className="project-card project-draft-card" key={draft.project_id}>
+            <header>
+              <span className="project-mark">{draft.project_id.slice(0, 2).toUpperCase()}</span>
+              <div><h2>{draft.project_id}</h2><p>目标：{draft.target_id}</p></div>
+              <span className="status status-draft"><span className="status-mark" />草稿 · 尚未运行</span>
+            </header>
+            <div className="project-progress">
+              {Array.from({ length: 7 }, (_, index) => (
+                <span
+                  key={index}
+                  className={index < draft.configured_through_stage ? "state-ready" : "state-not-reached"}
+                />
+              ))}
+            </div>
+            <dl>
+              <div><dt>目标输入</dt><dd>{draft.input_type}</dd></div>
+              <div><dt>已配置到</dt><dd>第 {draft.configured_through_stage} 步</dd></div>
+              <div><dt>下一步建议</dt><dd>继续检查配置并启动首次运行</dd></div>
+            </dl>
+            <footer>
+              <span>更新于 {formatTime(draft.updated_at)}</span>
+              <button type="button" onClick={() => onContinueDraft(draft)}>继续设计 →</button>
+            </footer>
+          </article>
+        ))}
+        {projects.length === 0 && drafts.length === 0 && <div className="empty-state large"><strong>还没有设计项目</strong><span>点击“新建设计”，从目标结构或序列开始。</span><button className="primary-button" onClick={onNew}>创建第一个项目</button></div>}
       </div>
     </div>
   );
@@ -1323,10 +1394,12 @@ function DeveloperSmoke({ onBack }: { onBack: () => void }) {
 
 function NewDesign({
   projects,
+  initialDraft,
   onCreated,
   onRunReady,
 }: {
   projects: Project[];
+  initialDraft?: ProjectDraft;
   onCreated: (projectId: string) => Promise<void>;
   onRunReady: (runKey: string) => Promise<void>;
 }) {
@@ -1370,6 +1443,22 @@ function NewDesign({
       .then((value) => setExecutors(value.executors))
       .catch(() => setExecutors([]));
   }, []);
+  useEffect(() => {
+    if (!initialDraft) return;
+    setDesignMode("full-workflow");
+    setProjectId(initialDraft.project_id);
+    setCreatedProject(initialDraft.project_id);
+    setSessionId(initialDraft.session_id || "");
+    setStage(initialDraft.configured_through_stage);
+    setActiveStep(5);
+    setBrowsedStage(initialDraft.configured_through_stage);
+    setActionStatus("已恢复上次保存的项目草稿；可继续检查配置和运行环境。");
+    api.config(initialDraft.project_id)
+      .then((value) => setGeneratedYaml(value.yaml))
+      .catch((error: unknown) => {
+        setActionStatus(error instanceof Error ? error.message : "无法读取项目草稿配置");
+      });
+  }, [initialDraft]);
   const availableRuns = projects.flatMap((project) => project.runs);
   const isLocalSource = ["pse", "local-file", "sequence"].includes(source);
   const sourceReady = isLocalSource
@@ -1484,9 +1573,16 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
       return;
     }
     setUploadState("uploading");
-    setUploadMessage("正在安全接收文件…");
+    setUploadMessage("正在检查项目名称并计算文件 SHA-256…");
     let received = false;
     try {
+      const projectCheck = await api.projectPreflight(projectId.trim());
+      if (!projectCheck.available) {
+        throw new Error(
+          `${projectCheck.reason}。建议名称：${projectCheck.suggested_project_id || "请修改项目名称"}`,
+        );
+      }
+      setUploadMessage("项目名称可用，正在安全接收文件…");
       const receipt = await api.upload(file);
       if (uploadSequence.current !== requestSequence) return;
       received = true;
@@ -2500,11 +2596,12 @@ function OperationsPage({
 }
 
 function App() {
-  const [data, setData] = useState<ProjectResponse>({ projects: [], editable_projects: [] });
+  const [data, setData] = useState<ProjectResponse>({ projects: [], drafts: [], editable_projects: [] });
   const [page, setPage] = useState("projects");
   const [selectedRun, setSelectedRun] = useState<Run>();
   const [selectedRunStage, setSelectedRunStage] = useState<number>();
   const [replay, setReplay] = useState<Replay>();
+  const [draftToResume, setDraftToResume] = useState<ProjectDraft>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -2541,14 +2638,6 @@ function App() {
     setReplay(await api.replay(selectedRun.run_key));
   }
 
-  async function cloneSelectedRun() {
-    if (!selectedRun) return;
-    const suffix = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-    const projectId = `${selectedRun.project_id}-rerun-${suffix}`.toLowerCase();
-    await api.clone(selectedRun.run_key, projectId);
-    await refreshProjects();
-  }
-
   async function resumeSelectedRun() {
     if (!selectedRun) return;
     await api.resume(selectedRun.run_key);
@@ -2579,10 +2668,23 @@ function App() {
         </div>
         {error && <div className="api-error"><strong>本地 API 暂不可用</strong><span>{error}</span></div>}
         {loading ? <div className="loading-screen"><span /><strong>正在读取运行记录…</strong></div> :
-          page === "projects" ? <Dashboard projects={data.projects} onOpen={openRun} onNew={() => setPage("new")} /> :
+          page === "projects" ? <Dashboard
+            projects={data.projects}
+            drafts={data.drafts}
+            onOpen={openRun}
+            onContinueDraft={(draft) => {
+              setDraftToResume(draft);
+              setPage("new");
+            }}
+            onNew={() => {
+              setDraftToResume(undefined);
+              setPage("new");
+            }}
+          /> :
           page === "new" ? (
             <NewDesign
               projects={data.projects}
+              initialDraft={draftToResume}
               onCreated={refreshProjects}
               onRunReady={openCompletedRun}
             />
@@ -2594,7 +2696,6 @@ function App() {
               run={selectedRun}
               initialStage={selectedRunStage}
               onReplay={startReplay}
-              onClone={cloneSelectedRun}
               onResume={resumeSelectedRun}
               onOpenRun={openCompletedRun}
               replay={replay}

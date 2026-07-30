@@ -134,6 +134,8 @@ class UiJobController:
         run_id: str | None = None,
         continue_after_stage: int | None = None,
         decision_record: Path | None = None,
+        project_id: str | None = None,
+        accepted_run_key: str | None = None,
         session_id: str | None = None,
         session_root: Path | None = None,
         self_test_id: str | None = None,
@@ -201,6 +203,8 @@ class UiJobController:
             operation=operation,
             status="queued",
             config_path=None if config_path is None else str(config_path.resolve()),
+            project_id=project_id,
+            accepted_run_key=accepted_run_key,
             run_id=selected_run_id,
             session_id=session_id,
             self_test_id=self_test_id,
@@ -262,6 +266,46 @@ class UiJobController:
         )
         atomic_dump_runtime_model(running, record_path)
         return running
+
+    def accept_external(
+        self,
+        *,
+        operation: str,
+        project_id: str,
+        stage_number: int,
+        external_job_id: str,
+        run_id: str,
+        session_id: str | None = None,
+        status: str = "queued",
+        accepted_run_key: str | None = None,
+    ) -> UiJobRecord:
+        """Persist a successful remote submission before returning it to the UI.
+
+        The remote executor owns process execution, but the local product still
+        needs durable acceptance evidence so that the same stage-freeze contract
+        applies to local and SSH execution.
+        """
+
+        if stage_number < 1 or stage_number > 7:
+            raise ConfigurationError("外部任务阶段必须位于 1–7")
+        if not external_job_id.strip():
+            raise ConfigurationError("外部任务必须提供稳定 job ID")
+        now = datetime.now(tz=UTC)
+        record = UiJobRecord(
+            job_id=f"job-external-{uuid4().hex[:16]}",
+            operation=operation,
+            status=status,
+            project_id=project_id,
+            accepted_run_key=accepted_run_key,
+            run_id=run_id,
+            external_job_id=external_job_id,
+            session_id=session_id,
+            stage_number=stage_number,
+            created_at=now,
+            updated_at=now,
+        )
+        dump_model(record, self._path(record.job_id))
+        return record
 
     def request_drain(self, job_id: str) -> UiJobRecord:
         current = self.load(job_id)

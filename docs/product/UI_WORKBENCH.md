@@ -491,3 +491,47 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 “寻找最佳区域”不得直接改变结构或选区。只有用户提交区域、通过 mapping/坐标/checksum
 校验并完成证据限制确认后，系统才建立新的 Stage 02 branch。助手会话本身不是科学结果，
 也不能作为下单依据。
+
+## UI-018 / REP-007：可靠项目草稿、双查看器动作与递进冻结
+
+版本：`0.1.0.dev25`。
+
+“我的项目”同时投影正式运行和有效项目草稿。草稿必须已经原子发布
+`project-metadata.json`、canonical 配置和输入；空 DesignSession、失败上传及 staging
+不能形成项目卡片。同一项目存在正式运行时只显示正式项目卡，草稿可从“继续设计”恢复。
+
+项目创建采用事务边界：
+
+```text
+项目名预检
+→ 持久 UploadReceipt 0.2
+→ 配置与环境预检
+→ runtime/tmp 中的全新 staging
+→ 原子发布 projects/<project_id>
+→ 最后创建 DesignSession
+```
+
+项目名冲突在上传前返回建议名称。上传内容、回执及 SHA-256 在服务重启后仍可重试；
+相同待处理文件复用一份 receipt。成功发布时输入移动到项目目录，不保留第二份暂存副本。
+7 天以上只给出清理建议；1 GiB 提醒、5 GiB 阻止新上传。两个阈值由仓库根
+`easydesign-workspace.yaml` 的
+`upload_warning_bytes/upload_blocking_bytes` 声明。EasyDesign 不运行定时删除，
+也不把项目、运行、环境、模型或普通 quarantine 纳入上传清理范围。任何物理删除仍必须
+由使用者针对清单中的精确路径另行批准并留审计记录。
+
+浏览器 PyMOL 的 ready 状态必须依次通过静态资源、Pyodide、NumPy/PyMOL、WebGL、
+`target.cif`、对象/原子、表示、相机和非背景首帧检查。`ResizeObserver` 同步 CSS 尺寸、
+canvas backing size、PyMOL reshape 和 OpenGL viewport；generation token 与
+AbortController 阻止旧异步加载覆盖新实例。失败时显示具体环节并允许切到 Mol*，不能
+以“脚本已载入”伪装成结构可见。
+
+StructureInteractionSession 0.2 将普通助手动作保存为查看器中立 ViewState。Cartoon、
+Surface、Sticks、颜色、背景、聚焦、居中和方向分别由安全 PML adapter 与 Mol* state
+adapter执行；切换查看器时重放最新 revision。两边不能一致表达的动作明确拒绝。专家
+PML 仍只作用于 PyMOL，并在界面中明确标注范围。
+
+阶段访问权由持久 attempt、DesignSession lineage 和不可变 manifest 推导。Stage N
+真正进入 queued/running 后，当前运行链的 Stage 01–N 全部只读；失败和科学停止也不
+解锁。服务端所有修改 API 复用同一检查并返回 `409 stage_locked`。界面移除重新上传、
+重新选区、重新批准、重新生成和同项目快捷重跑，只保留查看、下载、纯显示操作及不改变
+配置的 resume。上游满足交接时，仅唯一下一阶段显示“配置下一步”。

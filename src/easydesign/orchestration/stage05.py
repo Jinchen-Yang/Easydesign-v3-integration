@@ -54,13 +54,17 @@ from easydesign.core import (
 from easydesign.filtering import (
     METRIC_DEFINITION_VERSION,
     PROFILE_SOURCE_SHA256,
+    PROFILE_SOURCE_SHA256_V1_6,
     InterfaceMetricValues,
+    build_advisory_validation_report,
     compute_full_target_structure_metrics,
     compute_interface_metrics,
     evaluate_expansion_candidates,
     evaluate_pilot_candidates,
+    evaluate_pilot_candidates_v1_6,
     extract_protenix_complex_confidence,
     parse_protein_chain,
+    promotion_records,
     select_scale_strategy,
 )
 from easydesign.filtering.structure_metrics import ParsedChain
@@ -72,14 +76,18 @@ from easydesign.stages.s04_pilot_generation import (
     PilotBundle,
 )
 from easydesign.stages.s05_pilot_filtering import (
+    AdvisoryValidationReport,
     ExpansionExecutionState,
     ExpansionValidationReport,
     FilterDecision,
     FullTargetExecutionState,
     FullTargetPredictionRecord,
+    PilotFilterReport,
+    PilotFilterReportV1_6,
     ScientificStop,
     ScientificStopCode,
     Stage05Bundle,
+    Stage05BundleV0_2,
 )
 
 from .boltzgen_tasks import (
@@ -92,7 +100,7 @@ from .complex_prediction_support import (
     read_fasta_sequence,
     run_checked_backend_invocation,
 )
-from .config import ResolvedProtenixMsaProviderConfig
+from .config import ResolvedProtenixMsaProviderConfig, Stage05Config
 from .stage04 import _atomic_text
 from .task_tracking import (
     TaskEventJournal,
@@ -121,6 +129,7 @@ class Stage05Execution(BaseModel):
     stage_manifest: Path
     stage05_bundle: Path
     selected_strategy_id: str | None = None
+    promoted_strategy_ids: tuple[str, ...] = ()
 
 
 class _StructureMetricCacheRecord(BaseModel):
@@ -134,6 +143,31 @@ class _StructureMetricCacheRecord(BaseModel):
     hotspot_residue_ids: tuple[int, ...]
     definition_version: str
     metrics: InterfaceMetricValues
+
+
+def _stage05_filter_profile(config: Stage05Config) -> str:
+    """Read the profile without coupling execution to one config schema."""
+
+    return str(config.filter_profile)
+
+
+def _diagnostic_expanded_total(config: Stage05Config) -> int:
+    value = getattr(config, "diagnostic_expanded_total_per_strategy", None)
+    if value is None:
+        value = getattr(config, "expanded_total_per_strategy", None)
+    if not isinstance(value, int):
+        raise ManifestStateError("Stage 05 缺少 diagnostic expansion 总数")
+    return value
+
+
+def _diagnostic_full_target_top_n(config: Stage05Config) -> int:
+    value = getattr(config, "diagnostic_full_target_refold_top_n", None)
+    if value is None:
+        strategy_selection = getattr(config, "strategy_selection", None)
+        value = getattr(strategy_selection, "full_target_refold_top_n", None)
+    if not isinstance(value, int):
+        raise ManifestStateError("Stage 05 缺少 full-target diagnostic 数量")
+    return value
 
 
 class _TargetMsaState(BaseModel):
@@ -312,9 +346,14 @@ def _publish_final_execution_evidence(
     )
 
 
-def _profile_bytes() -> bytes:
+def _profile_bytes(profile_id: str) -> bytes:
+    expected_hash = (
+        PROFILE_SOURCE_SHA256_V1_6
+        if profile_id == "nanobody-filter-standard-v1.6"
+        else PROFILE_SOURCE_SHA256
+    )
     source = resources.files("easydesign.resources").joinpath(
-        "filter_profiles/nanobody-filter-standard-v1.5.yaml"
+        f"filter_profiles/{profile_id}.yaml"
     )
     content = source.read_bytes()
     payload: Any = yaml.safe_load(content)
@@ -322,7 +361,7 @@ def _profile_bytes() -> bytes:
         source_hash = payload["source_document"]["sha256"]
     except (KeyError, TypeError) as error:
         raise ManifestStateError("filter profile 缺少 source document identity") from error
-    if source_hash != PROFILE_SOURCE_SHA256:
+    if source_hash != expected_hash:
         raise ManifestStateError("filter profile 内的 standard SHA-256 不一致")
     return content
 
@@ -1381,6 +1420,7 @@ def _publish_stage05(
     bundle_path: Path,
     warnings: tuple[str, ...],
     scientific_stop: bool,
+    filter_profile: str,
 ) -> Stage05Execution:
     completed_at = max(datetime.now(UTC), created_at + timedelta(microseconds=1))
     attempt = Attempt(
@@ -1390,7 +1430,7 @@ def _publish_stage05(
         started_at=created_at,
         ended_at=completed_at,
         backend_name="easydesign-filtering",
-        backend_version="nanobody-filter-standard-v1.5",
+        backend_version=filter_profile,
         executor_name="local-multi-gpu",
     )
     dump_model(
@@ -1399,7 +1439,11 @@ def _publish_stage05(
     )
     stage_manifest = StageManifest(
         stage_id=StageId.PILOT_FILTERING,
-        contract_version="0.1",
+        contract_version=(
+            "0.2"
+            if filter_profile == "nanobody-filter-standard-v1.6"
+            else "0.1"
+        ),
         status=ExecutionStatus.SUCCEEDED,
         created_at=created_at,
         completed_at=completed_at,
@@ -1442,7 +1486,18 @@ def _publish_stage05(
     run_manifest_path = root / "manifests" / f"run-manifest.v{next_run.revision:04d}.json"
     dump_model(next_run, run_manifest_path)
     _atomic_text(run_manifest_path.name + "\n", root / "manifests" / "LATEST")
-    bundle = load_model(bundle_path, Stage05Bundle)
+    use_v1_6 = filter_profile == "nanobody-filter-standard-v1.6"
+    bundle_status: str
+    if use_v1_6:
+        bundle_v1_6 = load_model(bundle_path, Stage05BundleV0_2)
+        bundle_status = bundle_v1_6.status
+        winner_strategy_id = None
+        promoted_strategy_ids = bundle_v1_6.promoted_strategy_ids
+    else:
+        bundle_v1_5 = load_model(bundle_path, Stage05Bundle)
+        bundle_status = bundle_v1_5.status
+        winner_strategy_id = bundle_v1_5.winner_strategy_id
+        promoted_strategy_ids = ()
     upsert_run_index_entries(
         root.parents[1],
         (
@@ -1453,18 +1508,19 @@ def _publish_stage05(
                 status="succeeded" if terminal else "running",
                 project_id=upstream.run.project_id,
                 run_id=upstream.run.run_id,
-                notes=(f"Stage 05 status={bundle.status}",),
+                notes=(f"Stage 05 status={bundle_status}",),
             ),
         ),
         generated_at=timestamp,
     )
     return Stage05Execution(
-        status=bundle.status,
+        status=bundle_status,
         run_root=root,
         run_manifest=run_manifest_path,
         stage_manifest=stage_manifest_path,
         stage05_bundle=bundle_path,
-        selected_strategy_id=bundle.winner_strategy_id,
+        selected_strategy_id=winner_strategy_id,
+        promoted_strategy_ids=promoted_strategy_ids,
     )
 
 
@@ -1492,6 +1548,8 @@ def execute_stage05(
     stage04_config = resolved.user_config.stage04
     if config is None or stage04_config is None:
         raise ManifestStateError("run config 缺少 Stage 04/05")
+    filter_profile = _stage05_filter_profile(config)
+    use_v1_6 = filter_profile == "nanobody-filter-standard-v1.6"
     now = datetime.now(UTC) if executed_at is None else executed_at
     attempt_root = root / str(StageId.PILOT_FILTERING) / "attempt-0001"
     artifacts = attempt_root / "artifacts"
@@ -1501,7 +1559,7 @@ def execute_stage05(
     runtime.mkdir(parents=True, exist_ok=True)
     profile_path = artifacts / "filter-profile.yaml"
     if not profile_path.exists():
-        profile_path.write_bytes(_profile_bytes())
+        profile_path.write_bytes(_profile_bytes(filter_profile))
     profile_ref = _artifact(
         root,
         profile_path,
@@ -1510,10 +1568,12 @@ def execute_stage05(
         file_format="yaml",
     )
     pilot_report_path = artifacts / "pilot-filter-report.json"
+    pilot_report: PilotFilterReport | PilotFilterReportV1_6
     if pilot_report_path.exists():
-        from easydesign.stages.s05_pilot_filtering import PilotFilterReport
-
-        pilot_report = load_model(pilot_report_path, PilotFilterReport)
+        if use_v1_6:
+            pilot_report = load_model(pilot_report_path, PilotFilterReportV1_6)
+        else:
+            pilot_report = load_model(pilot_report_path, PilotFilterReport)
     else:
         pilot_metrics = _batch_structure_metrics(
             root=root,
@@ -1523,14 +1583,23 @@ def execute_stage05(
             phase="pilot-structure-metrics",
             created_at=now,
         )
-        pilot_report = evaluate_pilot_candidates(
-            candidates=upstream.candidate_index.candidates,
-            structural_metrics=pilot_metrics,
-            profile_sha256=PROFILE_SOURCE_SHA256,
-            candidate_index_sha256=upstream.candidate_index_ref.sha256,
-            maximum_tier_a_strategies=config.maximum_tier_a_strategies,
-            generated_at=now,
-        )
+        if use_v1_6:
+            pilot_report = evaluate_pilot_candidates_v1_6(
+                candidates=upstream.candidate_index.candidates,
+                structural_metrics=pilot_metrics,
+                candidate_index_sha256=upstream.candidate_index_ref.sha256,
+                maximum_tier_a_strategies=config.maximum_tier_a_strategies,
+                generated_at=now,
+            )
+        else:
+            pilot_report = evaluate_pilot_candidates(
+                candidates=upstream.candidate_index.candidates,
+                structural_metrics=pilot_metrics,
+                profile_sha256=PROFILE_SOURCE_SHA256,
+                candidate_index_sha256=upstream.candidate_index_ref.sha256,
+                maximum_tier_a_strategies=config.maximum_tier_a_strategies,
+                generated_at=now,
+            )
         dump_model(pilot_report, pilot_report_path)
     pilot_report_ref = _artifact(
         root,
@@ -1545,7 +1614,9 @@ def execute_stage05(
             stage_id=str(StageId.PILOT_FILTERING),
             code=ScientificStopCode.NO_TIER_A,
             occurred_at=now,
-            message="No Tier A strategy satisfied Nanobody Filter Standard v1.5.",
+            message=(
+                f"No Tier A strategy satisfied {filter_profile}."
+            ),
             evidence_artifact_sha256=(pilot_report_ref.sha256,),
         )
         if stop_path.exists():
@@ -1573,28 +1644,48 @@ def execute_stage05(
             completed_at=datetime.now(UTC),
         )
         bundle_path = artifacts / "stage05-bundle.json"
-        bundle = Stage05Bundle(
-            generated_at=now,
-            pilot_bundle=upstream.pilot_bundle_ref,
-            strategy_bundle=upstream.strategy_bundle_ref,
-            filter_profile=profile_ref,
-            pilot_filter_report=pilot_report_ref,
-            progress_final=progress_ref,
-            task_events=events_ref,
-            scientific_stop=tier_stop_ref,
-            status="stopped-no-tier-a",
-        )
+        stop_bundle: Stage05Bundle | Stage05BundleV0_2
+        if use_v1_6:
+            stop_bundle = Stage05BundleV0_2(
+                generated_at=now,
+                pilot_bundle=upstream.pilot_bundle_ref,
+                strategy_bundle=upstream.strategy_bundle_ref,
+                filter_profile=profile_ref,
+                pilot_filter_report=pilot_report_ref,
+                progress_final=progress_ref,
+                task_events=events_ref,
+                scientific_stop=tier_stop_ref,
+                promoted_strategy_ids=(),
+                promotion_rank=(),
+                status="stopped-no-tier-a",
+            )
+        else:
+            stop_bundle = Stage05Bundle(
+                generated_at=now,
+                pilot_bundle=upstream.pilot_bundle_ref,
+                strategy_bundle=upstream.strategy_bundle_ref,
+                filter_profile=profile_ref,
+                pilot_filter_report=pilot_report_ref,
+                progress_final=progress_ref,
+                task_events=events_ref,
+                scientific_stop=tier_stop_ref,
+                status="stopped-no-tier-a",
+            )
         if bundle_path.exists():
-            observed_bundle = load_model(bundle_path, Stage05Bundle)
+            observed_bundle: Stage05Bundle | Stage05BundleV0_2
+            if use_v1_6:
+                observed_bundle = load_model(bundle_path, Stage05BundleV0_2)
+            else:
+                observed_bundle = load_model(bundle_path, Stage05Bundle)
             if (
-                observed_bundle.status != bundle.status
+                observed_bundle.status != stop_bundle.status
                 or observed_bundle.pilot_filter_report != pilot_report_ref
                 or observed_bundle.scientific_stop != tier_stop_ref
             ):
                 raise ManifestStateError("Stage 05 Bundle 与当前 scientific stop 不一致")
-            bundle = observed_bundle
+            stop_bundle = observed_bundle
         else:
-            dump_model(bundle, bundle_path)
+            dump_model(stop_bundle, bundle_path)
         bundle_ref = _artifact(
             root,
             bundle_path,
@@ -1622,6 +1713,7 @@ def execute_stage05(
                 "Software execution succeeded; no scale strategy was published.",
             ),
             scientific_stop=True,
+            filter_profile=filter_profile,
         )
 
     probe = NvidiaSmiProbe() if gpu_probe is None else gpu_probe
@@ -1632,13 +1724,21 @@ def execute_stage05(
         timeout_seconds=stage04_config.executor.resource_wait_timeout_seconds,
         poll_seconds=stage04_config.executor.resource_poll_seconds,
     )
+    if use_v1_6:
+        if not isinstance(pilot_report, PilotFilterReportV1_6):
+            raise ManifestStateError("v1.6 profile 必须引用 PilotFilterReportV1_6")
+        selected_strategy_ids = pilot_report.promoted_strategy_ids
+    else:
+        if not isinstance(pilot_report, PilotFilterReport):
+            raise ManifestStateError("v1.5 profile 必须引用 PilotFilterReport")
+        selected_strategy_ids = pilot_report.selected_strategy_ids
     expanded = _expand_candidates(
         root=root,
         attempt_root=attempt_root,
         runtime_root=runtime,
         upstream=upstream,
-        selected_strategy_ids=pilot_report.selected_strategy_ids,
-        total_per_strategy=config.expanded_total_per_strategy,
+        selected_strategy_ids=selected_strategy_ids,
+        total_per_strategy=_diagnostic_expanded_total(config),
         adapter=boltzgen_adapter,
         devices=stage04_config.executor.devices,
         maximum_attempts=stage04_config.executor.max_task_attempts,
@@ -1647,7 +1747,7 @@ def execute_stage05(
     expanded_index = CandidateIndex(
         generated_at=datetime.now(UTC),
         strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
-        required_per_strategy=config.expanded_total_per_strategy,
+        required_per_strategy=_diagnostic_expanded_total(config),
         candidates=tuple(
             sorted(
                 expanded,
@@ -1688,7 +1788,7 @@ def execute_stage05(
     scored = evaluate_expansion_candidates(
         candidates=expanded_index.candidates,
         structural_metrics=expansion_metrics,
-        full_target_top_n=config.strategy_selection.full_target_refold_top_n,
+        full_target_top_n=_diagnostic_full_target_top_n(config),
     )
     selected_ids = {item.candidate_id for item in scored if item.selected_for_full_target}
     prediction_records: tuple[FullTargetPredictionRecord, ...]
@@ -1713,19 +1813,48 @@ def execute_stage05(
         prediction_records = ()
         prediction_refs = ()
         msa_refs = ()
-    expansion_report = select_scale_strategy(
-        expanded_total_per_strategy=config.expanded_total_per_strategy,
-        full_target_top_n=config.strategy_selection.full_target_refold_top_n,
-        candidates=scored,
-        predictions=prediction_records,
-        generated_at=datetime.now(UTC),
-    )
-    expansion_report_path = artifacts / "expansion-validation-report.json"
-    if expansion_report_path.exists():
-        observed_report = load_model(
-            expansion_report_path,
-            ExpansionValidationReport,
+    if use_v1_6:
+        assert isinstance(pilot_report, PilotFilterReportV1_6)
+        promotions = promotion_records(pilot_report)
+    else:
+        assert isinstance(pilot_report, PilotFilterReport)
+        promotions = ()
+    expansion_report: AdvisoryValidationReport | ExpansionValidationReport
+    if use_v1_6:
+        expansion_report = build_advisory_validation_report(
+            promoted_strategies=promotions,
+            expanded_total_per_strategy=(
+                _diagnostic_expanded_total(config)
+            ),
+            full_target_top_n=_diagnostic_full_target_top_n(config),
+            candidates=scored,
+            predictions=prediction_records,
+            generated_at=datetime.now(UTC),
         )
+        expansion_report_path = artifacts / "advisory-validation-report.json"
+    else:
+        expansion_report = select_scale_strategy(
+            expanded_total_per_strategy=(
+                _diagnostic_expanded_total(config)
+            ),
+            full_target_top_n=_diagnostic_full_target_top_n(config),
+            candidates=scored,
+            predictions=prediction_records,
+            generated_at=datetime.now(UTC),
+        )
+        expansion_report_path = artifacts / "expansion-validation-report.json"
+    if expansion_report_path.exists():
+        observed_report: AdvisoryValidationReport | ExpansionValidationReport
+        if use_v1_6:
+            observed_report = load_model(
+                expansion_report_path,
+                AdvisoryValidationReport,
+            )
+        else:
+            observed_report = load_model(
+                expansion_report_path,
+                ExpansionValidationReport,
+            )
         if observed_report.model_dump(exclude={"generated_at"}) != (
             expansion_report.model_dump(exclude={"generated_at"})
         ):
@@ -1736,36 +1865,47 @@ def execute_stage05(
     expansion_report_ref = _artifact(
         root,
         expansion_report_path,
-        artifact_id="expansion-validation-report",
-        role="stage05-scale-strategy-evidence",
+        artifact_id=(
+            "advisory-validation-report"
+            if use_v1_6
+            else "expansion-validation-report"
+        ),
+        role=(
+            "stage05-advisory-evidence"
+            if use_v1_6
+            else "stage05-scale-strategy-evidence"
+        ),
         file_format="json",
     )
     scale_stop_ref: ArtifactRef | None = None
-    if expansion_report.status == "stopped-no-scale-winner":
-        stop_path = artifacts / "scientific-stop.json"
-        scale_stop = ScientificStop(
-            stage_id=str(StageId.PILOT_FILTERING),
-            code=ScientificStopCode.NO_SCALE_WINNER,
-            occurred_at=datetime.now(UTC),
-            message="No strategy passed full-target expansion validation.",
-            evidence_artifact_sha256=(expansion_report_ref.sha256,),
-        )
-        if stop_path.exists():
-            scale_stop = load_model(stop_path, ScientificStop)
-            if (
-                scale_stop.code is not ScientificStopCode.NO_SCALE_WINNER
-                or scale_stop.evidence_artifact_sha256 != (expansion_report_ref.sha256,)
-            ):
-                raise ManifestStateError("Stage 05 scale stop evidence 不一致")
-        else:
-            dump_model(scale_stop, stop_path)
-        scale_stop_ref = _artifact(
-            root,
-            stop_path,
-            artifact_id="stage05-scientific-stop",
-            role="scientific-negative-result",
-            file_format="json",
-        )
+    if not use_v1_6:
+        assert isinstance(expansion_report, ExpansionValidationReport)
+        if expansion_report.status == "stopped-no-scale-winner":
+            stop_path = artifacts / "scientific-stop.json"
+            scale_stop = ScientificStop(
+                stage_id=str(StageId.PILOT_FILTERING),
+                code=ScientificStopCode.NO_SCALE_WINNER,
+                occurred_at=datetime.now(UTC),
+                message="No strategy passed full-target expansion validation.",
+                evidence_artifact_sha256=(expansion_report_ref.sha256,),
+            )
+            if stop_path.exists():
+                scale_stop = load_model(stop_path, ScientificStop)
+                if (
+                    scale_stop.code is not ScientificStopCode.NO_SCALE_WINNER
+                    or scale_stop.evidence_artifact_sha256
+                    != (expansion_report_ref.sha256,)
+                ):
+                    raise ManifestStateError("Stage 05 scale stop evidence 不一致")
+            else:
+                dump_model(scale_stop, stop_path)
+            scale_stop_ref = _artifact(
+                root,
+                stop_path,
+                artifact_id="stage05-scientific-stop",
+                role="scientific-negative-result",
+                file_format="json",
+            )
     progress_ref, events_ref = _publish_final_execution_evidence(
         root=root,
         artifacts=artifacts,
@@ -1774,27 +1914,65 @@ def execute_stage05(
         completed_at=datetime.now(UTC),
     )
     bundle_path = artifacts / "stage05-bundle.json"
-    bundle = Stage05Bundle(
-        generated_at=datetime.now(UTC),
-        pilot_bundle=upstream.pilot_bundle_ref,
-        strategy_bundle=upstream.strategy_bundle_ref,
-        filter_profile=profile_ref,
-        pilot_filter_report=pilot_report_ref,
-        expansion_candidate_index=expanded_index_ref,
-        expansion_validation_report=expansion_report_ref,
-        progress_final=progress_ref,
-        task_events=events_ref,
-        scientific_stop=scale_stop_ref,
-        winner_strategy_id=expansion_report.winner_strategy_id,
-        status=expansion_report.status,
-    )
+    bundle: Stage05Bundle | Stage05BundleV0_2
+    if use_v1_6:
+        assert isinstance(expansion_report, AdvisoryValidationReport)
+        bundle = Stage05BundleV0_2(
+            generated_at=datetime.now(UTC),
+            pilot_bundle=upstream.pilot_bundle_ref,
+            strategy_bundle=upstream.strategy_bundle_ref,
+            filter_profile=profile_ref,
+            pilot_filter_report=pilot_report_ref,
+            expansion_candidate_index=expanded_index_ref,
+            advisory_validation_report=expansion_report_ref,
+            progress_final=progress_ref,
+            task_events=events_ref,
+            promoted_strategy_ids=tuple(
+                item.strategy_id for item in promotions
+            ),
+            promotion_rank=promotions,
+            warnings=expansion_report.warnings,
+            status="strategies-promoted",
+        )
+    else:
+        assert isinstance(expansion_report, ExpansionValidationReport)
+        bundle = Stage05Bundle(
+            generated_at=datetime.now(UTC),
+            pilot_bundle=upstream.pilot_bundle_ref,
+            strategy_bundle=upstream.strategy_bundle_ref,
+            filter_profile=profile_ref,
+            pilot_filter_report=pilot_report_ref,
+            expansion_candidate_index=expanded_index_ref,
+            expansion_validation_report=expansion_report_ref,
+            progress_final=progress_ref,
+            task_events=events_ref,
+            scientific_stop=scale_stop_ref,
+            winner_strategy_id=expansion_report.winner_strategy_id,
+            status=expansion_report.status,
+        )
     if bundle_path.exists():
-        bundle = load_model(bundle_path, Stage05Bundle)
-        if (
-            bundle.expansion_validation_report != expansion_report_ref
-            or bundle.status != expansion_report.status
-        ):
-            raise ManifestStateError("Stage 05 已存在 Bundle 与当前结果不一致")
+        if use_v1_6:
+            bundle_v1_6 = load_model(bundle_path, Stage05BundleV0_2)
+            assert isinstance(expansion_report, AdvisoryValidationReport)
+            if (
+                bundle_v1_6.advisory_validation_report != expansion_report_ref
+                or bundle_v1_6.status != "strategies-promoted"
+            ):
+                raise ManifestStateError(
+                    "Stage 05 已存在 v1.6 Bundle 与当前结果不一致"
+                )
+            bundle = bundle_v1_6
+        else:
+            bundle_v1_5 = load_model(bundle_path, Stage05Bundle)
+            assert isinstance(expansion_report, ExpansionValidationReport)
+            if (
+                bundle_v1_5.expansion_validation_report != expansion_report_ref
+                or bundle_v1_5.status != expansion_report.status
+            ):
+                raise ManifestStateError(
+                    "Stage 05 已存在 v1.5 Bundle 与当前结果不一致"
+                )
+            bundle = bundle_v1_5
     else:
         dump_model(bundle, bundle_path)
     bundle_ref = _artifact(
@@ -1816,17 +1994,23 @@ def execute_stage05(
         *((scale_stop_ref,) if scale_stop_ref is not None else ()),
         bundle_ref,
     )
-    warning = (
-        (
+    if use_v1_6:
+        assert isinstance(expansion_report, AdvisoryValidationReport)
+        warning = (
+            f"{len(promotions)} Tier A strategies promoted by F_YAML.",
+            *tuple(item.message for item in expansion_report.warnings),
+            "Diagnostic Protenix evidence does not revoke Tier A promotion.",
+        )
+    elif scale_stop_ref is not None:
+        warning = (
             "Scientific stop: stopped-no-scale-winner.",
             "Software execution succeeded; no scale strategy was published.",
         )
-        if scale_stop_ref is not None
-        else (
+    else:
+        warning = (
             "Exactly one deterministic scale strategy was selected.",
             "Protenix confidence is structural evidence, not binding affinity.",
         )
-    )
     return _publish_stage05(
         root=root,
         upstream=upstream,
@@ -1837,4 +2021,5 @@ def execute_stage05(
         bundle_path=bundle_path,
         warnings=warning,
         scientific_stop=scale_stop_ref is not None,
+        filter_profile=filter_profile,
     )

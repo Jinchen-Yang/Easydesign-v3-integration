@@ -2,9 +2,9 @@
 
 **状态：** `implemented`
 
-**契约版本：** `0.1`
+**契约版本：** `0.2`（继续读取 `0.1`）
 
-**实现任务：** `S07-001`、`DATA-003`
+**实现任务：** `S07-001`、`S07-002`、`DATA-003`
 
 ## 目的
 
@@ -18,20 +18,26 @@ TNP 可开发性证据和质量/多样性联合选择，最后发布供人审阅
 候选包不是订单。Stage 07 不调用供应商接口，不把软件 smoke 描述成生产下单包，也不把
 计算结果描述成实验验证。
 
+Stage 07 对 ScaleBundle 0.2 中全部晋级策略做全局竞争：使用完全相同的门槛、分数和
+多样性规则，不为不同 YAML 硬留名额。每个候选始终保留 `strategy_id`、
+promotion rank 与来源 allocation；最终包同时展示主备候选的 YAML 来源和来源分布。
+旧单策略 ScaleBundle 0.1 仍是合法历史输入。
+
 ## 输入与读取边界
 
 Stage 07 只读取当前 `RunManifest` 声明并逐一通过大小和 SHA-256 校验的：
 
 - Stage 01 `target.cif`、target sequence；
-- Stage 03 `StrategyBundle`，用于确认唯一胜出策略的 hotspot 成员；
-- Stage 05 `Stage05Bundle` 与 required target MSA；
-- Stage 06 `ScaleBundle` 和 `ScaleCandidateIndex`；
+- Stage 03 `StrategyBundle`，用于确认每个晋级策略的 hotspot 成员；
+- Stage 05 `Stage05Bundle` 0.1/0.2 与 required target MSA；
+- Stage 06 `ScaleBundle` / `ScaleBundleV0_2` 和对应 candidate index；
 - schema 0.7 的 Stage 04 executor / Stage 07 scientific profile；
 - runtime profile 显式声明的 Protenix-v2 与 TNP backend。
 
-Stage 05 必须是 `winner-selected`，Stage 06 必须完整发布，且 Stage 06 每个 candidate 都
-必须属于同一 winner、携带 design-mask identity，并拥有 checksum 正确的 original/refold
-结构。代码不能扫描目录补齐候选，也不能从文件名猜测 lineage。
+Stage 05 v1.6 必须是 `strategies-promoted`；旧 v1.5 可为 `winner-selected` 或经明确
+授权采用的历史单策略证据。Stage 06 必须完整发布，每个 candidate 都必须属于冻结的
+晋级集合、落在对应 allocation 内、携带 design-mask identity，并拥有 checksum 正确的
+original/refold 结构。代码不能扫描目录补齐候选，也不能从文件名猜测 lineage。
 
 ## 配置
 
@@ -65,6 +71,7 @@ stage07:
 ```text
 验证 Stage 01/03/05/06 manifest 与 artifact
 → 对全部 Stage 06 候选计算序列/结构预证据
+→ 验证 candidate strategy 集合、allocation 与 Stage 05 晋级完全一致
 → 序列合法性、liability、新生未配对 Cys、BoltzGen pass_filters、全序列去重
 → 按 S_refold 取最多 20,000
 → absolute gate 与 S_deep
@@ -76,6 +83,7 @@ stage07:
 → TNP required evidence
 → 90% quality + 10% diversity 的 lazy-greedy
 → 最多 20 primary + 20 backup
+→ 发布主备候选 YAML 来源分布
 ```
 
 ### 1. 序列与 refold 预筛
@@ -216,6 +224,8 @@ Stage 07 版本化并导出：
 - `SeedPairConsistency` / `MultiSeedConsensusRecord`：多 seed 单体与配对结论；
 - `TnpCandidateRecord` / `TnpReport`：TNP 指标、liability 和风险；
 - `FinalSelectionRecord` / `FinalCandidatePackage`：主备候选及人工审核状态；
+- `CandidateStrategyLineage` / `StrategySourceDistribution`：多策略来源与最终分布；
+- `FinalCandidatePackageV0_2` / `Stage07BundleV0_2`：全局竞争和来源完整交接；
 - `OperationalFailure`：必需工具、任务数、错误和可重试性；
 - `Stage07Bundle`：Stage 07 唯一下游/报告交接。
 

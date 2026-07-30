@@ -2,15 +2,15 @@
 
 **状态：** `implemented`
 
-**契约版本：** `0.1`
+**契约版本：** `0.2`（继续读取 `0.1`）
 
-**实现任务：** `S06-001`、`S06-002`、`S06-003`
+**实现任务：** `S06-001`、`S06-002`、`S06-003`、`S06-004`
 
 ## 目的
 
-Stage 06 只做一件事：把 Stage 05 唯一批准的策略，或负责人明确授权的已扩展 Tier A，
-按已授权预算生成一批全新的、完整且可追溯的 BoltzGen 候选，并把它们无缺口地交给
-Stage 07。
+Stage 06 只做一件事：把 Stage 05 v1.6 晋级的 1–3 个 Tier A 按已授权的全局预算生成
+一批全新的、完整且可追溯的 BoltzGen 候选，并把每组及全局都无缺口地交给 Stage 07。
+旧 Stage05Bundle 0.1 的唯一赢家或负责人明确授权的单一 Tier A 仍按历史契约读取。
 
 本阶段不会重新选择策略，也不会把 Stage 04/05 的候选计入 scale 数量。当前
 `smoke-1000` 必须新生成 1000 个候选；`production-50000` 是可规划、可恢复的正式规模
@@ -24,13 +24,15 @@ profile。APOE 于 2026-07-27 获得一次独立的人工作为探索性生成�
 
 Stage 06 只读取当前 `RunManifest` 声明且逐一通过大小与 SHA-256 校验的：
 
-- Stage 03 `StrategyBundle` 和唯一胜出策略的 `design.yaml`；
+- Stage 03 `StrategyBundle` 和每个晋级策略的 `design.yaml`；
 - Stage 04 `CandidateIndex`，仅用于冻结实测候选磁盘基线；
 - Stage 05 `Stage05Bundle`；
 - schema 0.7 的 `stage04.executor` 与 `stage06` 配置；
 - runtime profile 显式声明的 BoltzGen backend。
 
-默认要求 `winner-selected`。`stopped-no-scale-winner` 只有在配置提供双重确认的
+v1.6 默认要求 `strategies-promoted`。50,000 是所有晋级策略共享的总预算，不是每组
+各 50,000；按 `F_YAML` 晋级顺序等额分配，余数优先给排名靠前的策略。旧 v1.5
+`stopped-no-scale-winner` 只有在配置提供双重确认的
 `manual_strategy_authorization` 时才能选择 Stage 05 已经扩展过的 Tier A；Stage 05
 结论不被重写。`stopped-no-tier-a` 永远不得越过。代码不扫描上游目录猜策略，也不从
 文件名推断候选。
@@ -46,6 +48,15 @@ stage06:
 ```
 
 production profile：
+
+```yaml
+stage06:
+  scale_profile: production-50000
+  allocation_policy: equal-across-promoted-v1
+  preauthorized_candidate_limit: 50000
+```
+
+v1.5 历史人工 override 继续使用：
 
 ```yaml
 stage06:
@@ -67,6 +78,17 @@ profile 冻结以下布局：
 | `smoke-1000` | 1,000 | 2 | 500 | 是 |
 | `production-50000` | 50,000 | 20 | 2,500 | 必须逐 run 显式授权 |
 
+v1.6 的精确等额分配为：
+
+| 晋级 strategy 数 | strategy budget |
+| ---: | --- |
+| 1 | `50,000` |
+| 2 | `25,000 / 25,000` |
+| 3 | `16,667 / 16,667 / 16,666` |
+
+余数按 `F_YAML` promotion rank 分配。每组最后一个 shard 可以少于 2,500；恢复与合并
+必须使用同一冻结 allocation，不能因为任务完成先后重新分配。
+
 `preauthorized_candidate_limit` 小于 profile 规模时配置校验直接失败。50,000 不是代码中
 到处散落的常数，而是 `ScaleProfile` 的一个版本化能力。
 
@@ -79,14 +101,15 @@ Protenix 或具备实验成功概率。
 
 ```text
 验证 Stage 03/04/05 manifest 和 artifact
-→ 验证唯一 Stage 05 winner 与其 design.yaml identity
+→ 验证 1–3 个晋级策略及每份 design.yaml identity
 → 从 Stage 04 声明的 candidate artifact 计算磁盘基线
 → 检查执行后是否仍保留文件系统总容量的 25%
-→ 冻结 ScalePlan 和稳定 shard/task/ordinal identity
+→ 等额分配全局预算并冻结 ScalePlan 0.2
+→ 为每组建立独立 shard/task/strategy-local ordinal identity
 → 等待显式 GPU 空闲门
 → 每张 GPU 同时最多执行一个 shard
 → 严格收集完整候选并原子更新 progress/state
-→ 合并时检查 candidate identity、ordinal 无重复且无缺口
+→ 合并时分别检查每组及全局 identity、ordinal 无重复且无缺口
 → 发布精确 1000/50000 个“全新候选”的 ScaleBundle
 ```
 
@@ -182,7 +205,8 @@ Stage 06 版本化并导出：
 - `ScalePlan`：获得授权的完整执行计划；
 - `ScaleTaskTable` / `ScaleExecutionState`：终态与可恢复运行状态；
 - `ScaleCoverageReport`：无重复、无缺口的 merge 证明；
-- `ScaleBundle`：Stage 07 唯一交接。
+- `ScaleBundleV0_2`：全局预算、每组 allocation、coverage 和 Stage 07 唯一交接；
+- `ScaleBundle` 0.1：旧单策略运行的只读兼容交接。
 
 通用 `TaskRecord`、`CandidateRecord`、`ProgressSnapshot` 和事件类型与 Stage 04/05 共用。
 
@@ -218,7 +242,7 @@ StageManifest 声明的 `ScaleBundle`/`CandidateIndex` 消费结果。
 
 ## CLI
 
-统一入口会在 Stage 05 有唯一 winner 时继续：
+统一入口会在 Stage 05 v1.6 有晋级策略时继续；旧 v1.5 唯一 winner 仍兼容：
 
 ```bash
 easydesign run easydesign.yaml
@@ -273,7 +297,7 @@ Stage 07。
 - 资源门在任务创建前正确允许/拒绝；
 - 中断、部分输出、损坏、resume 和发布恢复测试通过；
 - 非 APOE fixture 精确生成 1000 个新候选并无重复/缺口；
-- 若 APOE Stage 05 有唯一赢家，真实运行完成新 1000 个候选；
+- 新 run 对 1/2/3 个晋级策略精确生成全局 50,000；旧 smoke-1000 继续兼容；
 - wheel 安装后的同一 `easydesign` API/CLI 可运行和恢复。
 
 APOE 若在 Stage 05 合法科学停止，不降低门槛；Stage 06 通用工程能力仍用冻结 fixture 与

@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import yaml
 import pytest
+import yaml
 
 from easydesign.core import ConfigurationError
 from easydesign.core.hashing import sha256_bytes

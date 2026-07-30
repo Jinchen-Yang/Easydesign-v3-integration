@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；Workbench 浏览器 PyMOL 新增严格首帧状态机，等待 dev25 服务器复验后恢复组件 smoke。 | 冻结 Stage 01 科学边界；完成 REP-007 PyMOL 真实首帧复验。 | 无 Stage 01 1.0 工程阻塞；浏览器 PyMOL 组件当前为 implemented，Mol* 与便携报告仍可用。 | 2026-07-30 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；Workbench 浏览器 PyMOL 严格首帧状态机已在 dev25 复验 138-aa 结构和 9/14/14 来源区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 |
 
 ## 当前结论
 

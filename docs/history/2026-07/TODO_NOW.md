@@ -844,8 +844,8 @@
 
 ## 2026-07-30 — UI-018 / ENG-026 / REP-007 / ENG-027 / UI-019：可靠草稿与递进冻结
 
-- 状态：`implemented`；本地契约与浏览器矩阵通过，等待 Proteindigger 真实
-  APOE PyMOL 首帧复验后升级为 `smoke-validated`。
+- 状态：`smoke-validated`；本地契约、浏览器矩阵和 Proteindigger 真实 APOE
+  PyMOL 首帧复验均通过。
 - 完成时间：2026-07-30T13:39:22+08:00
 - 问题：主页只投影正式 run，创建失败会遗留空项目或空会话；上传暂存不能跨服务恢复；
   浏览器 PyMOL 缺少 `pyodide_py.tar` 且 canvas backing size、viewport、相机与
@@ -857,12 +857,15 @@
   PyMOL/Mol* 重放。Stage access 由不可变 manifest 和持久 job 推导，所有修改 API
   在服务端统一拒绝冻结阶段并返回 `409 stage_locked`。
 - 验证：本地 Workbench 48 项交互测试与 2 项更新后的视觉基线通过，Firefox smoke
-  通过；TypeScript/Vite production build 通过。Python 定向测试已覆盖事务失败、
-  receipt 重启恢复、容量门、路径拒绝、阶段冻结、结构会话幂等和双查看器动作；
-  完整 Python、wheel 与真实 APOE 首帧将在 Proteindigger 的 dev25 环境复验。
+  通过；Proteindigger 功能矩阵 32 项通过，完整 Python 测试为 313 passed、8 skipped，
+  `make check`、production build 和 wheel 验证通过。真实 APOE 页面显示 138-aa 结构、
+  9/14/14 红蓝黄来源区域；主页显示有效 `new-design` 草稿，Stage 05 lineage 的
+  Stage 01–05 全部只读。服务器 Chrome 与本地视觉基线约有 1% 字体/栅格像素差异，
+  但交互、布局和科学数据投影均通过。
 - 安全：本轮没有执行删除、自动清理、覆盖、分支或 worktree。7 天过期只产生建议；
   1 GiB/5 GiB 默认容量门来自工作区声明。项目、运行、环境、模型、cache 和普通
   quarantine 永不进入上传清理范围。
 - 遗留：用户另行逐次批准的精确物理清理仍属于独立操作；本功能不把一般
-  `confirmed=true` 当作删除授权。提交 SHA 以本记录所在 `main` 提交及推送后远端核对
-  的完整 SHA 为准。
+  `confirmed=true` 当作删除授权。实现提交：
+  `19f560d689864b53d0278111b513755d155a18b9`、
+  `3711f61e9d2bf6f829a1f6e2ff05d253bdb5ca0d`。

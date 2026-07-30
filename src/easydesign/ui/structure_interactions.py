@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core import ConfigurationError

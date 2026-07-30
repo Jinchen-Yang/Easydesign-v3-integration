@@ -20,12 +20,24 @@ from .models import (
     TnpCandidateRecord,
     TnpReport,
 )
+from .multi_strategy import (
+    FinalCandidatePackageV0_2,
+    ScaleCandidateLineage,
+    Stage07BundleV0_2,
+    Stage07ScaleInput,
+    Stage07StrategyAllocation,
+    StrategySourceDistribution,
+    normalize_scale_bundle_for_stage07,
+    summarize_selected_sources,
+    validate_scale_candidate_lineage,
+)
 
 __all__ = [
     "DevelopabilityRisk",
     "DeepFilterRecord",
     "FinalCandidate",
     "FinalCandidatePackage",
+    "FinalCandidatePackageV0_2",
     "FinalFilterReport",
     "FinalPredictionRecord",
     "FinalSelectionRecord",
@@ -36,8 +48,16 @@ __all__ = [
     "SeedPairConsistency",
     "SequenceLiability",
     "SequencePrefilterRecord",
+    "ScaleCandidateLineage",
     "Stage07PredictionState",
     "Stage07Bundle",
+    "Stage07BundleV0_2",
+    "Stage07ScaleInput",
+    "Stage07StrategyAllocation",
+    "StrategySourceDistribution",
     "TnpCandidateRecord",
     "TnpReport",
+    "normalize_scale_bundle_for_stage07",
+    "summarize_selected_sources",
+    "validate_scale_candidate_lineage",
 ]

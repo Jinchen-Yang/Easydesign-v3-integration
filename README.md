@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev25`（包版本 `0.1.0.dev25`）
+- 当前版本：`0.1.0-dev26`（包版本 `0.1.0.dev26`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -221,10 +221,11 @@ SHA-256 摘要。
 
 Stage 01/02 的统一结构工作区默认使用离线浏览器 PyMOL，并可平级切换到 Mol*。两种
 查看器读取同一份经过 SHA-256 校验的 `target.cif`，共享当前残基、红/蓝/黄区域和
-label/auth 编号。可选的 DeepSeek/智谱 GLM 助手只能提出显示动作、解析用户明确给出的
-残基，或生成待确认的 SASA/ScanNet 执行计划；它不能判断“最佳 hotspot”，也不能修改
-坐标或直接发布 Stage 02 结果。未配置模型 API 时，结构查看、手工选区和自动算法仍可
-正常使用。
+label/auth 编号。EasyDesign 平台结构助手只能提出显示动作、解析用户明确给出的残基，
+或生成待确认的 SASA/ScanNet 执行计划；它不能判断“最佳 hotspot”，也不能修改坐标或
+直接发布 Stage 02 结果。普通使用者无需选择模型或填写 API key；部署者在仓库内
+`runtime/secrets/structure-assistant/platform-provider.yaml` 配置单一平台服务。平台
+服务未启用时，结构查看、手工选区和自动算法仍可正常使用。
 
 APOE 当前页面会把第5步标为“未达到继续条件”，并提供 840 个小规模候选、21 个策略、
 100 个扩展候选和 10 个 Protenix 复核候选的分页分析；第6/7步同时显示“软件能力已实现 /

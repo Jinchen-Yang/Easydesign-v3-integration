@@ -114,7 +114,6 @@ from .stage05 import (
 )
 from .structure_interactions import (
     AssistantProviderStore,
-    ProviderId,
     RegionEditOperation,
     StructureInteractionStore,
     normalize_regions,
@@ -278,15 +277,6 @@ class HotspotApprovalRequest(BaseModel):
     confirmed: bool = False
 
 
-class AssistantProviderConfigRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    model: str = Field(min_length=1, max_length=256)
-    base_url: str = Field(min_length=1, max_length=2048)
-    api_key: str = Field(min_length=1, max_length=8192)
-    confirmed: bool = False
-
-
 class StructureSessionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -296,7 +286,6 @@ class StructureSessionCreateRequest(BaseModel):
 class AssistantMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: ProviderId
     message: str = Field(min_length=1, max_length=20_000)
 
 
@@ -784,36 +773,10 @@ def create_ui_app(
             "offline_assets": True,
         }
 
-    @app.get("/api/v1/structure-assistant/providers")
-    def assistant_provider_statuses(request: Request) -> dict[str, Any]:
+    @app.get("/api/v1/structure-assistant/status")
+    def assistant_service_status(request: Request) -> dict[str, Any]:
         service = _state(request)
-        return {
-            "providers": [
-                item.model_dump(mode="json")
-                for item in service.assistant_providers.statuses()
-            ],
-            "fallback_policy": "disabled",
-        }
-
-    @app.post("/api/v1/structure-assistant/providers/{provider}")
-    def configure_assistant_provider(
-        provider: ProviderId,
-        payload: AssistantProviderConfigRequest,
-        request: Request,
-    ) -> Any:
-        service = _state(request)
-        try:
-            if not payload.confirmed:
-                raise ConfigurationError("保存模型 API 配置必须明确 confirmed=true")
-            return service.assistant_providers.configure(
-                provider=provider,
-                model=payload.model,
-                base_url=payload.base_url,
-                api_key=payload.api_key,
-            )
-        except Exception as error:
-            _raise_http(error)
-            raise
+        return service.assistant_providers.platform_status().model_dump(mode="json")
 
     @app.get("/api/v1/install/plan")
     def install_plan(
@@ -1847,7 +1810,7 @@ def create_ui_app(
                 raise ConfigurationError(
                     "交互会话的结构或编号映射已与来源运行不一致"
                 )
-            secret = service.assistant_providers.load(payload.provider)
+            secret = service.assistant_providers.load_platform()
             proposal, request_id = request_assistant_proposal(
                 secret=secret,
                 user_text=payload.message,
@@ -1869,7 +1832,7 @@ def create_ui_app(
                 session_id,
                 user_text=payload.message,
                 proposal=proposal,
-                provider=payload.provider,
+                provider=secret.provider,
                 model=secret.model,
                 request_id=request_id,
             )

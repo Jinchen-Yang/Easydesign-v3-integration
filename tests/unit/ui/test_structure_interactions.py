@@ -89,6 +89,65 @@ def test_provider_store_masks_key_and_keeps_revisions(tmp_path: Path) -> None:
     assert len(revisions) == 1
 
 
+def test_platform_assistant_config_is_owner_managed_and_public_status_is_generic(
+    tmp_path: Path,
+) -> None:
+    store = AssistantProviderStore(tmp_path / "secrets")
+    store.platform_path.write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "provider: deepseek",
+                "model: deepseek-chat",
+                "base_url: https://api.deepseek.com",
+                "api_key: owner-secret",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    store.platform_path.chmod(0o600)
+
+    secret = store.load_platform()
+    assert secret.provider == "deepseek"
+    assert secret.model == "deepseek-chat"
+    assert secret.api_key == "owner-secret"
+
+    status = store.platform_status()
+    assert status.available is True
+    assert status.service_name == "EasyDesign 结构助手"
+    public_payload = status.model_dump_json()
+    assert "deepseek" not in public_payload
+    assert "owner-secret" not in public_payload
+    assert "api.deepseek.com" not in public_payload
+
+
+def test_platform_assistant_rejects_missing_or_overbroad_secret(
+    tmp_path: Path,
+) -> None:
+    store = AssistantProviderStore(tmp_path / "secrets")
+    assert store.platform_status().available is False
+
+    store.platform_path.write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "provider: zhipu-glm",
+                "model: glm-4-plus",
+                "base_url: https://open.bigmodel.cn/api/paas/v4",
+                "api_key: owner-secret",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    store.platform_path.chmod(0o644)
+    if store.platform_path.stat().st_mode & 0o077:
+        with pytest.raises(ConfigurationError, match="权限过宽"):
+            store.load_platform()
+        assert store.platform_status().available is False
+
+
 def test_structure_session_publishes_revision_only_snapshots(
     tmp_path: Path,
 ) -> None:

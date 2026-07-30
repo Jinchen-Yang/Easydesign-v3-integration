@@ -872,3 +872,22 @@
   `confirmed=true` 当作删除授权。实现提交：
   `19f560d689864b53d0278111b513755d155a18b9`、
   `3711f61e9d2bf6f829a1f6e2ff05d253bdb5ca0d`。
+
+## 2026-07-30 — REP-008 / ENG-028 / UI-020：双查看器返回路径与平台 API
+
+- 状态：`smoke-validated`
+- 完成时间：2026-07-30T17:10:21+08:00
+- 问题：PyMOL 首次打开正常，但切到 Mol* 会卸载 PyMOL canvas；全局 WASM runtime
+  继续持有旧 canvas，切回后形成“原子已读取、首帧为空”。同时，原助手界面要求每位
+  使用者填写 provider、模型、endpoint 和 API key，不符合平台统一服务的产品定位。
+- 方案：PyMOL/Mol* 首次加载后持续挂载，切换只改变显隐；PyMOL 返回前台时强制执行
+  backing size、reshape、viewport 和 redraw。助手请求改成平台单一 provider，浏览器
+  不再提交 provider 或用户密钥，设置页只显示通用服务状态。
+- 验证：真实 APOE Stage 02 完成 `PyMOL → Mol* → PyMOL` 且结构/9/14/14 区域仍
+  可见；Python 定向测试 28 passed，TypeScript、production build 和设置页浏览器测试
+  通过。公开 API 返回中不含 provider、模型、endpoint 或密钥。
+- 安全：没有删除运行、项目、环境、模型或缓存；旧 UI 产物按既有发布协议进入仓库内
+  quarantine，历史静态资产保留。平台密钥只允许进入当前 clone 的 `runtime/secrets/`。
+- 遗留：部署者配置真实平台 key 后再验收 live provider、预算、限流和用量监控；没有
+  平台助手时确定性 Stage 01/02 仍完整可用。
+- 提交：以本记录所在 `main` 提交和推送后核对的远端完整 SHA 为准。

@@ -11,8 +11,7 @@ import type {
   RegionEditorProjection,
   Replay,
   Run,
-  AssistantProviderId,
-  AssistantProviderStatus,
+  AssistantServiceStatus,
   SelfTestRecord,
   Stage,
   StageFormDefinition,
@@ -318,21 +317,8 @@ export const api = {
       pyodide_version: string;
       offline_assets: boolean;
     }>("/api/v1/browser-pymol/status"),
-  assistantProviders: () =>
-    request<{ providers: AssistantProviderStatus[]; fallback_policy: string }>(
-      "/api/v1/structure-assistant/providers",
-    ),
-  configureAssistantProvider: (
-    provider: AssistantProviderId,
-    body: { model: string; base_url: string; api_key: string },
-  ) =>
-    request<AssistantProviderStatus>(
-      `/api/v1/structure-assistant/providers/${provider}`,
-      {
-        method: "POST",
-        body: JSON.stringify({ ...body, confirmed: true }),
-      },
-    ),
+  assistantStatus: () =>
+    request<AssistantServiceStatus>("/api/v1/structure-assistant/status"),
   createStructureSession: (key: string, stageNumber: 1 | 2) =>
     request<StructureInteractionSession>(
       `/api/v1/runs/${key}/structure-sessions`,
@@ -347,14 +333,13 @@ export const api = {
     ),
   assistantMessage: (
     sessionId: string,
-    provider: AssistantProviderId,
     message: string,
   ) =>
     request<StructureInteractionSession>(
       `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/messages`,
       {
         method: "POST",
-        body: JSON.stringify({ provider, message }),
+        body: JSON.stringify({ message }),
       },
     ),
   appendStructurePml: (

@@ -3,8 +3,7 @@ import { api } from "./api";
 import { NativePyMOLViewer } from "./chatpymol-port/NativePyMOLViewer";
 import { MolViewer } from "./MolViewer";
 import type {
-  AssistantProviderId,
-  AssistantProviderStatus,
+  AssistantServiceStatus,
   RegionEditorProjection,
   StructureInteractionSession,
   ViewerAction,
@@ -144,10 +143,10 @@ export function StructureWorkbench({
   compact = false,
 }: Props) {
   const [viewer, setViewer] = useState<"pymol" | "molstar">("pymol");
+  const [molstarMounted, setMolstarMounted] = useState(false);
   const [pymolAvailable, setPymolAvailable] = useState<boolean>();
   const [session, setSession] = useState<StructureInteractionSession>();
-  const [providers, setProviders] = useState<AssistantProviderStatus[]>([]);
-  const [provider, setProvider] = useState<AssistantProviderId | "">("");
+  const [assistantService, setAssistantService] = useState<AssistantServiceStatus>();
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -188,13 +187,16 @@ export function StructureWorkbench({
     Promise.all([
       api.browserPymolStatus(),
       api.createStructureSession(runKey, stageNumber),
-      api.assistantProviders(),
-    ]).then(([pymol, activeSession, providerResponse]) => {
+      api.assistantStatus(),
+    ]).then(([pymol, activeSession, serviceStatus]) => {
       if (disposed) return;
       setPymolAvailable(pymol.available);
-      if (!pymol.available) setViewer("molstar");
+      if (!pymol.available) {
+        setMolstarMounted(true);
+        setViewer("molstar");
+      }
       setSession(activeSession);
-      setProviders(providerResponse.providers);
+      setAssistantService(serviceStatus);
     }).catch((error: unknown) => {
       if (!disposed) {
         setPymolAvailable(false);
@@ -230,6 +232,7 @@ export function StructureWorkbench({
     setStatus(failure);
   }, []);
   const switchToMolstar = useCallback(() => {
+    setMolstarMounted(true);
     setViewer("molstar");
   }, []);
 
@@ -249,13 +252,12 @@ export function StructureWorkbench({
   }, [onResidueClick, projection.residues]);
 
   async function sendMessage() {
-    if (!session || !provider || !message.trim()) return;
+    if (!session || !assistantService?.available || !message.trim()) return;
     setBusy(true);
     setStatus("正在请求结构助手…");
     try {
       const updated = await api.assistantMessage(
         session.session_id,
-        provider,
         message.trim(),
       );
       setSession(updated);
@@ -295,7 +297,6 @@ export function StructureWorkbench({
     }
   }
 
-  const configuredProviders = providers.filter((item) => item.configured);
   return (
     <div className={`structure-workbench ${assistantOpen ? "" : "assistant-collapsed"}`}>
       <section className="structure-viewer-column">
@@ -316,7 +317,10 @@ export function StructureWorkbench({
               role="tab"
               aria-selected={viewer === "molstar"}
               className={viewer === "molstar" ? "selected" : ""}
-              onClick={() => setViewer("molstar")}
+              onClick={() => {
+                setMolstarMounted(true);
+                setViewer("molstar");
+              }}
             >
               Mol*
             </button>
@@ -335,38 +339,52 @@ export function StructureWorkbench({
           </button>
         </header>
         <div className="structure-viewer-surface">
-          {viewer === "pymol" && pymolAvailable !== false ? (
-            <div className="easydesign-pymol">
-              <NativePyMOLViewer
-                api={nativeApi}
-                projectId={projection.target_id}
-                pml={scenePml}
-                structures={nativeStructures}
-                versionId="current"
-                revision={
-                  (session?.pml_revisions.length || 0)
-                  + (session?.view_state_revisions?.length || 0)
-                }
-                exportName={`${projection.target_id}-visualization`}
-                readOnly={false}
-                language="zh"
-                onValidatePml={validatePml}
-                onNativeCommands={nativeCommandsApplied}
-                onResidueSelect={selectedAuthorResidue}
-                onFailure={nativeFailure}
-                onSwitchViewer={switchToMolstar}
-                onDownloadStructure={() => window.open(`${structureUrl}?download=true`, "_blank")}
-                onDownloadPml={() => downloadText(scenePml, `${projection.target_id}.pml`)}
+          {pymolAvailable === true && (
+            <div
+              className={`structure-viewer-pane ${viewer === "pymol" ? "active" : "inactive"}`}
+              aria-hidden={viewer !== "pymol"}
+              inert={viewer !== "pymol" ? true : undefined}
+            >
+              <div className="easydesign-pymol">
+                <NativePyMOLViewer
+                  api={nativeApi}
+                  projectId={projection.target_id}
+                  active={viewer === "pymol"}
+                  pml={scenePml}
+                  structures={nativeStructures}
+                  versionId="current"
+                  revision={
+                    (session?.pml_revisions.length || 0)
+                    + (session?.view_state_revisions?.length || 0)
+                  }
+                  exportName={`${projection.target_id}-visualization`}
+                  readOnly={false}
+                  language="zh"
+                  onValidatePml={validatePml}
+                  onNativeCommands={nativeCommandsApplied}
+                  onResidueSelect={selectedAuthorResidue}
+                  onFailure={nativeFailure}
+                  onSwitchViewer={switchToMolstar}
+                  onDownloadStructure={() => window.open(`${structureUrl}?download=true`, "_blank")}
+                  onDownloadPml={() => downloadText(scenePml, `${projection.target_id}.pml`)}
+                />
+              </div>
+            </div>
+          )}
+          {(molstarMounted || viewer === "molstar") && (
+            <div
+              className={`structure-viewer-pane ${viewer === "molstar" ? "active" : "inactive"}`}
+              aria-hidden={viewer !== "molstar"}
+              inert={viewer !== "molstar" ? true : undefined}
+            >
+              <MolViewer
+                structureUrl={structureUrl}
+                regions={regions}
+                compact={compact}
+                onResidueClick={onResidueClick}
+                viewActions={commonViewActions}
               />
             </div>
-          ) : (
-            <MolViewer
-              structureUrl={structureUrl}
-              regions={regions}
-              compact={compact}
-              onResidueClick={onResidueClick}
-              viewActions={commonViewActions}
-            />
           )}
         </div>
       </section>
@@ -379,27 +397,14 @@ export function StructureWorkbench({
             </div>
             <span className="assistant-safety">不会判断最佳 hotspot</span>
           </header>
-          <label>
-            <span>模型提供方</span>
-            <select
-              value={provider}
-              onChange={(event) => setProvider(event.target.value as AssistantProviderId | "")}
-            >
-              <option value="">请选择</option>
-              {configuredProviders.map((item) => (
-                <option value={item.provider} key={item.provider}>
-                  {item.provider === "deepseek" ? "DeepSeek" : "智谱 GLM"}
-                  {item.model ? ` · ${item.model}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!configuredProviders.length && (
-            <div className="assistant-empty">
-              尚未配置模型 API。结构查看、手工选区、SASA 与 ScanNet 不受影响；
-              可在“设置”中添加 DeepSeek 或智谱 GLM。
-            </div>
-          )}
+          <div
+            className={`assistant-service ${assistantService?.available ? "available" : "unavailable"}`}
+          >
+            <strong>{assistantService?.service_name || "EasyDesign 结构助手"}</strong>
+            <span>
+              {assistantService?.detail || "正在检查平台助手服务…"}
+            </span>
+          </div>
           <div className="assistant-messages" aria-live="polite">
             {!session?.messages.length && (
               <p>
@@ -430,11 +435,11 @@ export function StructureWorkbench({
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               placeholder="输入显示操作或明确的残基编号…"
-              disabled={!provider || busy}
+              disabled={!assistantService?.available || busy}
             />
             <button
               type="button"
-              disabled={!provider || !message.trim() || busy}
+              disabled={!assistantService?.available || !message.trim() || busy}
               onClick={sendMessage}
             >
               {busy ? "处理中…" : "发送"}

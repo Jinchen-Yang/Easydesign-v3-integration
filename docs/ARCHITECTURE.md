@@ -955,13 +955,19 @@ projects/<project>/interactive-sessions/<session>/revision
   run 目录或直接读取任意路径。
 - Pyodide/PyMOL WASM 由 Python wheel 离线提供，不访问 CDN。PSE 文件解析仍在独立
   `pymol-pse` 环境完成，浏览器运行时不是科学输入 adapter。
-- `StructureInteractionSession 0.1` 保存于 `projects/`，采用新 revision 发布，不提供
+- `StructureInteractionSession 0.2` 保存于 `projects/`，采用新 revision 发布，不提供
   删除或覆盖接口。它不加入 Run/StageManifest，不改变 Target Bundle。
 - 模型 provider 只接收最小语义上下文，并返回严格的 `AssistantProposal`。可执行显示
   动作必须编译为 allow-listed PML；Stage 02 成员修改必须通过 canonical mapping；
   SASA/ScanNet plan 只有人工确认后才调用既有 deterministic backend。
-- API key 只写入 `runtime/secrets/` 的权限收紧 revision；UI 只能看到掩码和配置状态。
-  provider 不可用时不 fallback，也不影响无模型的七阶段流程。
+- 部署者只在
+  `runtime/secrets/structure-assistant/platform-provider.yaml` 配置一个平台
+  provider。该文件拒绝符号链接并要求 POSIX `0600`；UI 只能读取通用服务状态，不能
+  获取或选择 provider、模型、endpoint 和密钥。provider 不可用时不 fallback，也不
+  影响无模型的七阶段流程。
+- PyMOL 与 Mol* 都采用 lazy-once/persistent 生命周期：首次加载后不因平级切换而卸载。
+  返回 PyMOL 时在两个 animation frame 后强制同步 canvas、reshape、GL viewport 和
+  redraw；这样 Pyodide/PyMOL 运行时不会指向已销毁的 WebGL canvas。
 - 首版不开放 MCP，不移植 ChatPyMol 的 Node 文件库、主目录写入、删除/分享接口或第二套
   project system。
 

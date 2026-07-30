@@ -268,15 +268,13 @@ async function mockApi(page: Page) {
       });
       return;
     }
-    if (url.pathname === "/api/v1/structure-assistant/providers") {
+    if (url.pathname === "/api/v1/structure-assistant/status") {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
-          providers: [
-            { provider: "deepseek", configured: false },
-            { provider: "zhipu-glm", configured: false },
-          ],
-          fallback_policy: "disabled",
+          available: false,
+          service_name: "EasyDesign 结构助手",
+          detail: "平台结构助手尚未由部署者启用",
         }),
       });
       return;
@@ -862,6 +860,16 @@ test("font floor and user-facing Chinese navigation meet the product baseline", 
   expect(Number.parseFloat(navSize)).toBeGreaterThanOrEqual(14);
   await expect(page.getByText("Scientific Workbench")).toHaveCount(0);
   await expect(page.getByText("证据审计")).toHaveCount(0);
+});
+
+test("ordinary users only see the platform assistant service status", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置" }).click();
+  await expect(page.getByRole("heading", { name: "EasyDesign 结构助手" })).toBeVisible();
+  await expect(page.getByText(/API 由 EasyDesign 部署者统一提供/)).toBeVisible();
+  await expect(page.getByLabel("API key")).toHaveCount(0);
+  await expect(page.getByLabel("模型 ID")).toHaveCount(0);
+  await expect(page.getByLabel("提供方")).toHaveCount(0);
 });
 
 test("all molecular workspaces use the portable viewer light canvas", async ({ page }) => {

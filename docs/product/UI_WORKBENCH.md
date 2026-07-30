@@ -494,7 +494,7 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 
 ## UI-018 / REP-007：可靠项目草稿、双查看器动作与递进冻结
 
-版本：`0.1.0.dev25`。
+版本：`0.1.0.dev26`。
 
 “我的项目”同时投影正式运行和有效项目草稿。草稿必须已经原子发布
 `project-metadata.json`、canonical 配置和输入；空 DesignSession、失败上传及 staging
@@ -520,6 +520,23 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 `upload_warning_bytes/upload_blocking_bytes` 声明。EasyDesign 不运行定时删除，
 也不把项目、运行、环境、模型或普通 quarantine 纳入上传清理范围。任何物理删除仍必须
 由使用者针对清单中的精确路径另行批准并留审计记录。
+
+## REP-008 / ENG-028 / UI-020：持久双查看器与平台结构助手
+
+PyMOL 与 Mol* 都采用“首次使用时加载一次，之后持续保留”的生命周期。切换查看器只
+调整显隐和交互焦点，不能卸载 PyMOL canvas。返回 PyMOL 时在布局稳定后的两个浏览器
+帧强制执行 canvas backing size、PyMOL reshape、OpenGL viewport 和 redraw；Stage
+01/02 必须覆盖 `PyMOL → Mol* → PyMOL` 的真实结构回归。
+
+结构助手是 EasyDesign 平台能力，不是用户自带密钥功能：
+
+- 普通界面只显示“EasyDesign 结构助手”和可用状态；
+- 不显示 provider、模型、endpoint、key 掩码或配置表单；
+- 部署者只在
+  `runtime/secrets/structure-assistant/platform-provider.yaml` 配置一个服务；
+- 服务端不在 DeepSeek 与智谱 GLM 之间静默 fallback；
+- 前端状态接口不得泄露 provider、模型、endpoint 或密钥；
+- 没有平台助手时，PyMOL、Mol*、手工选区、SASA 和 ScanNet 保持可用。
 
 浏览器 PyMOL 的 ready 状态必须依次通过静态资源、Pyodide、NumPy/PyMOL、WebGL、
 `target.cif`、对象/原子、表示、相机和非背景首帧检查。`ResizeObserver` 同步 CSS 尺寸、

@@ -172,9 +172,10 @@ EasyDesign 官方开发只允许一个 Git 分支：`main`。
 
 1. 浏览器 PyMOL、Mol* 和模型助手只能通过 manifest 派生 token 读取当前科学结构；
    禁止把浏览器导出的 PML/PSE/PNG 自动提升为 Target Bundle 或覆盖原始科学 artifact。
-2. DeepSeek、智谱 GLM 等 provider 的 API key 只能保存到当前仓库
-   `runtime/secrets/` 的权限收紧 revision；不得写入项目配置、run、manifest、普通日志、
-   Git、浏览器 localStorage 或返回给前端。
+2. DeepSeek、智谱 GLM 等 provider 的平台 API key 只能由部署者保存到当前仓库
+   `runtime/secrets/structure-assistant/platform-provider.yaml`。该文件禁止符号链接，
+   在 POSIX 系统必须为 `0600`；不得写入项目配置、run、manifest、普通日志、Git、
+   浏览器 localStorage 或返回给前端。普通使用者界面不得提供 provider 或 key 输入。
 3. 模型请求禁止包含坐标、MSA、完整序列、外部输入绝对路径或密钥。请求内容只允许用户
    文字、stage、对象/链、编号说明、当前区域摘要和允许动作 Schema。
 4. 不得提供交互会话删除接口。会话和 PML 每次修改发布新 revision；异常 revision、

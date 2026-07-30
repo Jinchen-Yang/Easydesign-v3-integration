@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core import ConfigurationError
@@ -268,6 +269,37 @@ class AssistantProviderStatus(BaseModel):
     api_key_masked: str | None = None
 
 
+class PlatformAssistantConfig(BaseModel):
+    """Deployment-owned provider configuration loaded only on the server."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    provider: ProviderId
+    model: str = Field(min_length=1, max_length=256)
+    base_url: str = Field(min_length=1, max_length=2_048)
+    api_key: str = Field(min_length=1, max_length=8_192)
+
+    @model_validator(mode="after")
+    def validate_endpoint(self) -> PlatformAssistantConfig:
+        parsed = urlparse(self.base_url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("模型 API endpoint 必须是完整 HTTPS URL")
+        if parsed.username or parsed.password:
+            raise ValueError("模型 API endpoint 不能内嵌凭据")
+        return self
+
+
+class PlatformAssistantStatus(BaseModel):
+    """Public status that never exposes provider or secret identity."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    available: bool
+    service_name: Literal["EasyDesign 结构助手"] = "EasyDesign 结构助手"
+    detail: str
+
+
 class AssistantProviderStore:
     """Revision-only repository-local secret storage."""
 
@@ -330,6 +362,46 @@ class AssistantProviderStore:
 
     def statuses(self) -> tuple[AssistantProviderStatus, ...]:
         return (self.status("deepseek"), self.status("zhipu-glm"))
+
+    @property
+    def platform_path(self) -> Path:
+        return self.root / "platform-provider.yaml"
+
+    def load_platform(self) -> AssistantProviderSecret:
+        """Load the single deployment-owned provider without client selection."""
+
+        path = self.platform_path
+        if path.is_symlink():
+            raise ConfigurationError("平台结构助手配置不能是符号链接")
+        if not path.is_file():
+            raise ConfigurationError("平台结构助手尚未由部署者启用")
+        if os.name == "posix" and path.stat().st_mode & 0o077:
+            raise ConfigurationError("平台结构助手配置权限过宽；请设置为 0600")
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+            config = PlatformAssistantConfig.model_validate(payload)
+        except (OSError, yaml.YAMLError, ValueError) as error:
+            raise ConfigurationError("平台结构助手配置无法验证") from error
+        return AssistantProviderSecret(
+            provider=config.provider,
+            model=config.model,
+            base_url=config.base_url.rstrip("/"),
+            api_key=config.api_key,
+            configured_at=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC),
+        )
+
+    def platform_status(self) -> PlatformAssistantStatus:
+        try:
+            self.load_platform()
+        except ConfigurationError as error:
+            return PlatformAssistantStatus(
+                available=False,
+                detail=str(error),
+            )
+        return PlatformAssistantStatus(
+            available=True,
+            detail="平台服务已就绪，使用者无需提供 API Key。",
+        )
 
 
 class StructureInteractionStore:

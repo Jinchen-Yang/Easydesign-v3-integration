@@ -80,6 +80,28 @@
   background: #eef1f6;
 }
 
+.structure-viewer-surface {
+  position: relative;
+}
+
+.structure-viewer-pane {
+  width: 100%;
+  min-height: 620px;
+  background: #eef1f6;
+}
+
+.structure-viewer-pane.inactive {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.structure-viewer-pane.active {
+  position: relative;
+  visibility: visible;
+}
+
 .easydesign-pymol .native-pymol {
   border: 0;
   border-radius: 0;
@@ -181,13 +203,6 @@
   text-align: center;
 }
 
-.structure-assistant > label {
-  display: grid;
-  gap: 6px;
-  padding: 14px 16px 8px;
-}
-
-.structure-assistant select,
 .structure-assistant textarea {
   width: 100%;
   border: 1px solid #ccd6e4;
@@ -198,20 +213,34 @@
   font-size: 14px;
 }
 
-.structure-assistant select {
-  min-height: 38px;
-  padding: 0 9px;
-}
-
-.assistant-empty {
+.assistant-service {
+  display: grid;
+  gap: 4px;
   margin: 8px 16px;
   padding: 11px 12px;
-  border: 1px solid #eadbbd;
+  border: 1px solid #c9d8ef;
   border-radius: 10px;
-  background: #fff9ec;
-  color: #745725;
+  background: #f4f8ff;
+  color: #385476;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.assistant-service.available {
+  border-color: #b7dfcf;
+  background: #edf9f4;
+  color: #167654;
+}
+
+.assistant-service.unavailable {
+  border-color: #eadbbd;
+  background: #fff9ec;
+  color: #745725;
+}
+
+.assistant-service strong,
+.assistant-service span {
+  display: block;
 }
 
 .assistant-messages {

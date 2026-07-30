@@ -120,6 +120,9 @@
 | `REP-007` | Reporting & Visualization | `smoke-validated` | PyMOL 状态机、canvas/viewport、相机和非背景首帧已由真实 APOE 验收；助手显示动作经中立 ViewState 同步 PyMOL/Mol*。 |
 | `ENG-027` | Core Engineering | `smoke-validated` | 持久 Stage attempt 受理后由服务端推导递进冻结；冻结修改 API 统一返回结构化 `409 stage_locked`。 |
 | `UI-019` | Product UI | `smoke-validated` | 冻结阶段显示只读摘要和锁定原因，移除上传、重选、重批和重生成入口，同时保留查看、下载和纯显示操作。 |
+| `REP-008` | Reporting & Visualization | `smoke-validated` | PyMOL 与 Mol* 首次加载后保持挂载；真实 APOE Stage 02 已通过 `PyMOL → Mol* → PyMOL` 回归，返回 PyMOL 后 reshape、viewport、redraw 和结构首帧均恢复。 |
+| `ENG-028` | Core Engineering | `smoke-validated` | 结构助手改为部署者拥有的单一平台配置；请求端不再提交 provider 或用户密钥，公开状态接口不泄露 provider、模型、endpoint 或 API key。 |
+| `UI-020` | Product UI | `smoke-validated` | 普通设置页和 Stage 01/02 助手栏不再提供模型、endpoint 或 API key 表单，只显示“EasyDesign 结构助手”的平台可用状态。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |
 | `UI-016` | Product UI | `implemented` | 安装中心展示环境/资产状态、完整及逐后端安装计划；与 CLI 共用持久 setup job，UI 重启后仍能恢复结构化终态。 |
@@ -146,8 +149,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；Workbench 浏览器 PyMOL 严格首帧状态机已在 dev25 复验 138-aa 结构和 9/14/14 来源区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；运行链递进冻结及查看器中立区域显示已通过真实 APOE 页面复验。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev26 已修复并真实复验 `PyMOL → Mol* → PyMOL` 返回路径，138-aa 结构与来源区域不会因切换丢失。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev26 已通过 APOE 双查看器返回回归并改为平台统一结构助手。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |

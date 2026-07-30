@@ -170,6 +170,12 @@ export interface AssistantProviderStatus {
   api_key_masked?: string;
 }
 
+export interface AssistantServiceStatus {
+  available: boolean;
+  service_name: "EasyDesign 结构助手";
+  detail: string;
+}
+
 export interface ViewerAction {
   action:
     | "representation"

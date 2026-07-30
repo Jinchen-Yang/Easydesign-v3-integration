@@ -140,12 +140,14 @@ class ProjectCreateRequest(BaseModel):
     source_value: str
     taxon_id: int | None = None
     chain: str | None = None
-    execution_mode: str = "review-gated"
+    execution_mode: Literal["unattended", "review-gated"] = "review-gated"
     design_intent: str = "exploratory"
     stop_after_stage: int = Field(default=1, ge=1, le=7)
     stage02_method: str | None = None
     source_run_key: str | None = None
-    design_mode: str = "full-workflow"
+    design_mode: Literal[
+        "full-workflow", "stepwise", "developer-smoke"
+    ] = "full-workflow"
     session_id: str | None = None
 
 
@@ -153,8 +155,8 @@ class DesignSessionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: str
-    design_mode: str
-    execution_mode: str = "review-gated"
+    design_mode: Literal["full-workflow", "stepwise", "developer-smoke"]
+    execution_mode: Literal["unattended", "review-gated"] = "review-gated"
 
 
 class ContinuationRequest(BaseModel):
@@ -162,7 +164,7 @@ class ContinuationRequest(BaseModel):
 
     session_id: str
     stage_number: int = Field(ge=2, le=7)
-    execution_mode: str = "review-gated"
+    execution_mode: Literal["unattended", "review-gated"] = "review-gated"
     options: dict[str, Any] = Field(default_factory=dict)
     run_id: str | None = None
     confirmed: bool = False

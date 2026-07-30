@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from easydesign.core import ConfigurationError, ExecutionStatus, ManifestStateError
 from easydesign.core.manifests import RunManifest, StageManifest
@@ -156,7 +157,7 @@ def project_stage_access(
         else accepted_job_at
     )
     if stage_number <= highest:
-        access = (
+        access: Literal["running", "view-only"] = (
             "running"
             if (
                 state in {UiStageState.QUEUED, UiStageState.RUNNING}

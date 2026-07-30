@@ -499,14 +499,28 @@ json.dumps({
       if (!scene.visible_atoms) {
         throw new Error("PyMOL 已读取结构，但当前没有可显示的原子表示");
       }
-      await new Promise((resolve) => window.requestAnimationFrame(() => (
-        window.requestAnimationFrame(resolve)
-      )));
       const canvas = canvasRef.current;
-      if (!canvas || !canvasHasNonBackgroundPixels(canvas)) {
-        throw new Error("PyMOL 已读取结构，但首帧仍为空白；请重试或切换到 Mol*");
+      if (!canvas) {
+        throw new Error("PyMOL 画布不存在；请重试或切换到 Mol*");
       }
-      return scene;
+      // Emscripten creates the WebGL context without preserveDrawingBuffer.
+      // Reading pixels after one or two animation frames therefore observes a
+      // cleared buffer even when the user saw a valid frame. Draw and inspect
+      // synchronously in the same browser turn, retrying only after the next
+      // frame has allowed PyMOL to finish lazy representation preparation.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await enqueue(async () => {
+          const runtime = runtimeRef.current;
+          if (!runtime) return;
+          await runtime.runPythonAsync(`
+_p.idle()
+_p.draw()
+`);
+        });
+        if (canvasHasNonBackgroundPixels(canvas)) return scene;
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      }
+      throw new Error("PyMOL 已读取结构，但首帧仍为空白；请重试或切换到 Mol*");
     },
     [enqueue]
   );

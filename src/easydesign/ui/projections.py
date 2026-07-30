@@ -186,7 +186,11 @@ def _stage_highlights(
         ]
     elif stage_number == 5:
         report = _optional_data(run_root, artifacts, "pilot-filter-report") or {}
-        expansion = _optional_data(run_root, artifacts, "expansion-validation-report") or {}
+        expansion = (
+            _optional_data(run_root, artifacts, "advisory-validation-report")
+            or _optional_data(run_root, artifacts, "expansion-validation-report")
+            or {}
+        )
         summaries = report.get("strategy_summaries") or []
         predictions = expansion.get("predictions") or []
         candidates = expansion.get("candidates") or []
@@ -219,12 +223,20 @@ def _stage_highlights(
             tier_counts[tier] = tier_counts.get(tier, 0) + 1
         highlights = {
             "pilot_candidate_count": len(report.get("candidate_records") or []),
-            "selected_strategy_count": len(report.get("selected_strategy_ids") or []),
+            "selected_strategy_count": len(
+                report.get("promoted_strategy_ids")
+                or report.get("selected_strategy_ids")
+                or []
+            ),
+            "diagnostic_warning_count": len(expansion.get("warnings") or []),
             "tier_counts": tier_counts,
             "expanded_candidate_count": len(candidates),
             "local_gate_pass_count": local_pass,
             "protenix_prediction_count": len(predictions),
-            "protenix_pass_count": sum(bool(item.get("passed")) for item in predictions),
+            "protenix_pass_count": sum(
+                bool(item.get("structure_gate_pass", item.get("passed")))
+                for item in predictions
+            ),
             "status": expansion.get("status") or report.get("status"),
             "winner_strategy_id": expansion.get("winner_strategy_id"),
             "boltzgen_filter_rmsd_design_range": _number_range(local_design_rmsd),
@@ -245,32 +257,73 @@ def _stage_highlights(
                 "minimum_interface_pae_angstrom": item.get(
                     "minimum_interface_pae_angstrom"
                 ),
-                "passed": item.get("passed"),
+                "passed": item.get("structure_gate_pass", item.get("passed")),
             }
             for item in predictions
         ]
     elif stage_number == 6:
         plan = _optional_data(run_root, artifacts, "scale-plan") or {}
         progress = _optional_data(run_root, artifacts, "scale-progress-final") or {}
+        strategy_allocations = plan.get("strategy_allocations") or []
         highlights = {
             "profile": plan.get("profile"),
-            "requested_candidates": plan.get("requested_candidate_count"),
+            "requested_candidates": (
+                plan.get("total_candidate_budget")
+                or plan.get("requested_candidate_count")
+            ),
+            "allocation_policy": plan.get("allocation_policy"),
+            "strategy_count": len(strategy_allocations) or 1,
             "shard_count": len(plan.get("shards") or []),
             "collected_candidates": progress.get("collected_candidates"),
             "elapsed_seconds": progress.get("elapsed_seconds"),
         }
+        tables["strategy_allocations"] = strategy_allocations
         tables["shards"] = plan.get("shards") or []
     elif stage_number == 7:
         package = _optional_data(run_root, artifacts, "final-candidate-package") or {}
         report = _optional_data(run_root, artifacts, "final-filter-report") or {}
-        primary = package.get("primary_candidates") or []
-        backup = package.get("backup_candidates") or []
+        primary = package.get("primary") or package.get("primary_candidates") or []
+        backup = package.get("backup") or package.get("backup_candidates") or []
+        sequence_prefilter = report.get("sequence_prefilter") or []
+        deep_filter = report.get("deep_filter") or []
+        predictions = report.get("predictions") or []
+        consensus = report.get("consensus") or []
         highlights = {
             "status": package.get("status") or report.get("status"),
             "primary_count": len(primary),
             "backup_count": len(backup),
-            "review_status": package.get("review_status"),
-            "tnp_status": package.get("tnp_status"),
+            "review_status": (
+                package.get("human_review_status")
+                or package.get("review_status")
+            ),
+            "tnp_status": (
+                "complete"
+                if primary or backup
+                else package.get("tnp_status")
+            ),
+            "selection_scope": package.get("selection_scope"),
+            "source_distribution": package.get("source_distribution") or [],
+            "funnel": {
+                "scale_candidates": len(sequence_prefilter),
+                "sequence_hard_pass": sum(
+                    bool(item.get("hard_pass")) for item in sequence_prefilter
+                ),
+                "deep_selected": len(deep_filter),
+                "deep_gate_pass": sum(
+                    bool(item.get("absolute_gate_pass")) for item in deep_filter
+                ),
+                "seed101_candidates": len(
+                    {
+                        item.get("candidate_id")
+                        for item in predictions
+                        if item.get("seed") == 101
+                    }
+                ),
+                "multi_seed_consensus": sum(
+                    bool(item.get("consensus_pass")) for item in consensus
+                ),
+                "selected_candidates": len(primary) + len(backup),
+            },
         }
         tables["primary_candidates"] = primary
         tables["backup_candidates"] = backup

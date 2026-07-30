@@ -513,6 +513,8 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 
 项目名冲突在上传前返回建议名称。上传内容、回执及 SHA-256 在服务重启后仍可重试；
 相同待处理文件复用一份 receipt。成功发布时输入移动到项目目录，不保留第二份暂存副本。
+项目 ID 在上传前同时校验规范格式：只允许小写字母、数字、点、下划线和连字符；例如
+`Test` 会在接收文件前提示使用 `test`，不会等到 YAML 发布时暴露底层校验错误。
 7 天以上只给出清理建议；1 GiB 提醒、5 GiB 阻止新上传。两个阈值由仓库根
 `easydesign-workspace.yaml` 的
 `upload_warning_bytes/upload_blocking_bytes` 声明。EasyDesign 不运行定时删除，

@@ -55,6 +55,17 @@ function humanBytes(value: number) {
   return `${(value / 1024 ** 2).toFixed(1)} MiB`;
 }
 
+const projectIdPattern = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+
+function suggestProjectId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+    .slice(0, 128) || "new-design";
+}
+
 type UploadReceipt = {
   schema_version: "0.2";
   upload_token: string;
@@ -1461,10 +1472,16 @@ function NewDesign({
   }, [initialDraft]);
   const availableRuns = projects.flatMap((project) => project.runs);
   const isLocalSource = ["pse", "local-file", "sequence"].includes(source);
+  const normalizedProjectId = projectId.trim();
+  const projectIdValid = projectIdPattern.test(normalizedProjectId);
+  const suggestedProjectId = suggestProjectId(projectId);
+  const projectIdGuidance = projectIdValid
+    ? ""
+    : `项目名称只能使用小写字母、数字、点、下划线和连字符。建议使用 ${suggestedProjectId}。`;
   const sourceReady = isLocalSource
     ? uploadState === "uploaded" && Boolean(uploadReceipt)
     : Boolean(sourceValue.trim());
-  const projectReady = Boolean(projectId.trim());
+  const projectReady = projectIdValid;
   const intentNames: Record<string, string> = {
     exploratory: "探索性设计",
     blocking: "阻断",
@@ -1567,6 +1584,11 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
       setUploadState("idle");
       return;
     }
+    if (!projectIdValid) {
+      setUploadState("failed");
+      setUploadMessage(projectIdGuidance);
+      return;
+    }
     if (file.size > 64 * 1024 * 1024) {
       setUploadState("failed");
       setUploadMessage("文件超过 64 MiB 上限，请选择更小的输入文件。");
@@ -1604,6 +1626,9 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
   }
 
   async function initializeDraft(receiptOverride?: UploadReceipt) {
+      if (!projectIdValid) {
+        throw new Error(projectIdGuidance);
+      }
       let selectedValue = sourceValue.trim();
       let sourceType = source;
       let sourceRunKey: string | undefined;
@@ -1628,7 +1653,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
         sourceType = "uniprot-search";
       }
       const result = await api.createProject({
-        project_id: projectId,
+        project_id: normalizedProjectId,
         source_type: sourceType,
         source_value: selectedValue,
         taxon_id: sourceType === "uniprot-search" ? Number(taxonId) : undefined,
@@ -1916,7 +1941,31 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               <p className="section-label">第一项 · 目标来源</p>
               <h2>你的目标蛋白从哪里来？</h2>
               <p>六种入口最终都会得到同一种规范目标结构包和 chain A 的 target.cif。</p>
-              <label className="wide-field"><span>项目名称</span><input value={projectId} disabled={Boolean(createdProject)} onChange={(event) => setProjectId(event.target.value)} /></label>
+              <label className="wide-field">
+                <span>项目名称</span>
+                <input
+                  value={projectId}
+                  disabled={Boolean(createdProject)}
+                  aria-invalid={!projectIdValid}
+                  aria-describedby="project-id-guidance"
+                  onChange={(event) => {
+                    setProjectId(event.target.value);
+                    setPreflightState("idle");
+                    setActionStatus("");
+                  }}
+                />
+                <small id="project-id-guidance">
+                  使用小写字母、数字、点、下划线或连字符；这是项目目录和运行记录的稳定标识。
+                </small>
+              </label>
+              {!projectIdValid && (
+                <div className="project-id-warning" role="alert">
+                  <span>{projectIdGuidance}</span>
+                  <button type="button" onClick={() => setProjectId(suggestedProjectId)}>
+                    使用 {suggestedProjectId}
+                  </button>
+                </div>
+              )}
               <div className="source-grid">
                 {[
                   ["pse", "PyMOL PSE", "读取单个目标和红、蓝、黄区域标注"],
@@ -1933,7 +1982,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                 <span>目标输入</span>
                 {isLocalSource ? (
                   <>
-                    <div><input type="text" readOnly value={inputFile?.name || ""} placeholder="尚未选择文件" /><label className={`file-button ${createdProject || busy ? "disabled" : ""}`}>浏览…<input aria-label="选择本地文件" type="file" disabled={Boolean(createdProject) || busy} onChange={(event) => void receiveInputFile(event.target.files?.[0])} /></label></div>
+                    <div><input type="text" readOnly value={inputFile?.name || ""} placeholder="尚未选择文件" /><label className={`file-button ${createdProject || busy || !projectIdValid ? "disabled" : ""}`}>浏览…<input aria-label="选择本地文件" type="file" disabled={Boolean(createdProject) || busy || !projectIdValid} onChange={(event) => void receiveInputFile(event.target.files?.[0])} /></label></div>
                     <div className={`upload-receipt upload-${uploadState}`} role="status">
                       <span className="upload-state-mark" />
                       <div>

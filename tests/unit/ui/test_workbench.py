@@ -912,6 +912,45 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         assert "空文件" in empty.json()["detail"]
 
 
+def test_project_preflight_rejects_noncanonical_id_before_upload(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    with TestClient(app) as client:
+        preflight = client.get(
+            "/api/v1/project-preflight",
+            params={"project_id": "Test"},
+        )
+        assert preflight.status_code == 200
+        assert preflight.json() == {
+            "available": False,
+            "project_id": "Test",
+            "reason": (
+                "项目名称只能使用小写字母、数字、点、下划线和连字符，"
+                "并且必须以小写字母或数字开头"
+            ),
+            "existing_project": None,
+            "suggested_project_id": "test",
+        }
+
+        direct_create = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "Test",
+                "source_type": "pdb-id",
+                "source_value": "1UBQ",
+                "stop_after_stage": 1,
+            },
+        )
+        assert direct_create.status_code == 400
+        assert "建议使用：test" in direct_create.json()["detail"]
+        assert not (tmp_path / "projects" / "Test").exists()
+
+
 def test_failed_project_publication_keeps_only_retryable_upload_receipt(
     tmp_path: Path,
     monkeypatch: Any,

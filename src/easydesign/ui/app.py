@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import mimetypes
+import re
 import shutil
 import threading
 import webbrowser
@@ -32,6 +33,7 @@ from easydesign.core import (
     PathPolicyError,
     canonical_model_sha256,
 )
+from easydesign.core.artifacts import ID_PATTERN
 from easydesign.core.hashing import sha256_bytes, sha256_file
 from easydesign.orchestration import (
     approve_hotspots,
@@ -122,6 +124,11 @@ from .uploads import UploadStore
 
 LOCAL_HOST = "127.0.0.1"
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+
+def _suggest_project_id(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9._-]+", "-", value.strip().lower()).strip("-._")
+    return normalized[:128] or "new-design"
 
 
 class UploadRequest(BaseModel):
@@ -354,6 +361,18 @@ class UiServiceState:
         self.temporary_root.mkdir(parents=True, exist_ok=True)
 
     def project_preflight(self, project_id: str) -> dict[str, Any]:
+        project_id = project_id.strip()
+        if re.fullmatch(ID_PATTERN, project_id) is None:
+            return {
+                "available": False,
+                "project_id": project_id,
+                "reason": (
+                    "项目名称只能使用小写字母、数字、点、下划线和连字符，"
+                    "并且必须以小写字母或数字开头"
+                ),
+                "existing_project": None,
+                "suggested_project_id": _suggest_project_id(project_id),
+            }
         root = (self.projects_root / project_id).resolve()
         try:
             root.relative_to(self.projects_root)
@@ -1284,9 +1303,9 @@ def create_ui_app(
                 raise ConfigurationError("开发者自检必须使用专用自检接口")
             project_preflight = service.project_preflight(payload.project_id)
             if not project_preflight["available"]:
-                raise ConfigurationError(
-                    f"项目名称已存在，禁止覆盖: {payload.project_id}"
-                )
+                suggestion = project_preflight.get("suggested_project_id")
+                suffix = f"；建议使用：{suggestion}" if suggestion else ""
+                raise ConfigurationError(f"{project_preflight['reason']}{suffix}")
             existing_session = (
                 None
                 if payload.session_id is None

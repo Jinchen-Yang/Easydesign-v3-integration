@@ -962,6 +962,23 @@ test("new design steps are freely browsable and file receipt unlocks final check
   await expect(launch).toBeEnabled();
 });
 
+test("project name is validated before a local file can be uploaded", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+
+  const projectName = page.getByLabel("项目名称");
+  await projectName.fill("Test");
+  await expect(projectName).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText(/建议使用 test/)).toBeVisible();
+  await expect(page.getByLabel("选择本地文件")).toBeDisabled();
+
+  await page.getByRole("button", { name: "使用 test" }).click();
+  await expect(projectName).toHaveValue("test");
+  await expect(projectName).toHaveAttribute("aria-invalid", "false");
+  await expect(page.getByLabel("选择本地文件")).toBeEnabled();
+});
+
 test("stepwise PSE upload runs stage one and opens structure review directly", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();

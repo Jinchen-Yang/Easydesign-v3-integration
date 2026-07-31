@@ -246,7 +246,7 @@ export function NativePyMOLViewer({
   readOnly = false,
   language,
   t = identityTranslation
-}) {
+}: any) {
   const shellRef = useRef(null);
   const canvasRef = useRef(null);
   const runtimeRef = useRef(null);

@@ -242,6 +242,7 @@ const candidateItems = Array.from({ length: 50 }, (_, index) => ({
 
 async function mockApi(page: Page) {
   const jobPolls = new Map<string, number>();
+  const archivedProjectIds = new Set<string>();
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/remote-executors") {
@@ -302,10 +303,29 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname.startsWith("/api/v1/project-catalog/") && url.pathname.endsWith("/archive") && route.request().method() === "POST") {
+      const encodedProjectId = url.pathname.split("/").at(-2) || "";
+      const projectId = decodeURIComponent(encodedProjectId);
+      archivedProjectIds.add(projectId);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          project_id: projectId,
+          category: "archived-project-run",
+          moved_paths: [[`${projectId}/${run.run_id}`, `_archive/${projectId}/${run.run_id}`]],
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/project-catalog") {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({ entries: [] }),
+        body: JSON.stringify({ entries: archivedProjectIds.has("apoe") ? [{
+          project_id: "apoe",
+          category: "archived-project-run",
+          run_count: 1,
+          paths: [`_archive/apoe/${run.run_id}`],
+        }] : [] }),
       });
       return;
     }
@@ -622,7 +642,9 @@ async function mockApi(page: Page) {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
-          projects: [{ project_id: "apoe", run_count: 1, latest_run: run, runs: [run] }],
+          projects: archivedProjectIds.has("apoe")
+            ? []
+            : [{ project_id: "apoe", run_count: 1, latest_run: run, runs: [run] }],
           drafts: [],
           editable_projects: ["apoe-draft"],
         }),
@@ -819,6 +841,20 @@ test("project-first navigation and scientific stop are explained in Chinese", as
   await expect(page.getByRole("heading", { name: "当前没有可进入规模化生成的设计策略" })).toBeVisible();
 });
 
+
+test("dashboard trash button archives a project after confirmation", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "我的项目" })).toBeVisible();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("runs/_archive/");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "删除项目 apoe" }).click();
+  await expect(page.getByText("项目 apoe 已移入可恢复归档。")).toBeVisible();
+  await expect(page.getByText("还没有设计项目")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "apoe" })).toHaveCount(0);
+});
+
 test("stage five exposes strategy, candidate and metric layers", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "查看项目 →" }).click();
@@ -908,6 +944,11 @@ test("new design exposes six entry classes and standard YAML", async ({ page }) 
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();
   await expect(page.getByRole("heading", { name: "选择设计路线" })).toBeVisible();
+  const routeCards = page.locator(".design-route-grid > button");
+  await expect(routeCards.nth(0)).toContainText("01");
+  await expect(routeCards.nth(0)).toContainText("按步骤设计");
+  await expect(routeCards.nth(1)).toContainText("02");
+  await expect(routeCards.nth(1)).toContainText("全流程设计");
   await page.getByRole("button", { name: /全流程设计/ }).click();
   await expect(page.getByRole("heading", { name: "全流程设计" })).toBeVisible();
   for (const source of ["PyMOL PSE", "PDB / mmCIF", "FASTA / 序列", "RCSB PDB ID", "UniProt", "目标结构包"]) {

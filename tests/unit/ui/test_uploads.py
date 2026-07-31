@@ -46,6 +46,9 @@ def test_upload_receipt_survives_restart_and_reuses_identical_pending_file(
     target.write_bytes(content)
     ready = store.ready(receipt.upload_token)
 
+    assert ready.relative_path == f"runtime/tmp/ui-uploads/{receipt.upload_token}/target.pse"
+    assert ready.path_ref == f"runtime://tmp/ui-uploads/{receipt.upload_token}/target.pse"
+
     restarted = UploadStore(workspace)
     reused = restarted.find_reusable(
         filename="target.pse",

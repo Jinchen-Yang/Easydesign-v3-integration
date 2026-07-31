@@ -272,10 +272,16 @@ def validate_run_configuration(
     *,
     profile_path: Path | None = None,
     runs_root: Path | None = None,
+    source_base_dir: Path | None = None,
 ) -> RunPlan:
     """验证用户 YAML 与本机 profile 关联，但不探测 backend、不创建 run。"""
 
-    loaded = load_run_config(config_path)
+    loaded = load_run_config(config_path, source_base_dir=source_base_dir)
+    runs_base_path = (
+        loaded.config_path
+        if source_base_dir is None
+        else source_base_dir.expanduser().resolve(strict=True) / loaded.config_path.name
+    )
     stop_after = loaded.config.workflow.stop_after_stage
     if stop_after > IMPLEMENTED_STAGE_MAX:
         raise ConfigurationError(
@@ -299,7 +305,7 @@ def validate_run_configuration(
         stop_after_stage=stop_after,
         required_backends=_required_backends(loaded),
         runs_root=_selected_runs_root(
-            config_path=loaded.config_path,
+            config_path=runs_base_path,
             profile=profile,
             explicit=runs_root,
         ),
@@ -313,8 +319,14 @@ def _context(
     profile_path: Path | None,
     runs_root: Path | None,
     start_stage: int = 1,
+    source_base_dir: Path | None = None,
 ) -> _RuntimeContext:
-    loaded = load_run_config(config_path)
+    loaded = load_run_config(config_path, source_base_dir=source_base_dir)
+    runs_base_path = (
+        loaded.config_path
+        if source_base_dir is None
+        else source_base_dir.expanduser().resolve(strict=True) / loaded.config_path.name
+    )
     stop_after = loaded.config.workflow.stop_after_stage
     if stop_after > IMPLEMENTED_STAGE_MAX:
         raise ConfigurationError(
@@ -329,7 +341,7 @@ def _context(
         stop_after_stage=stop_after,
         required_backends=_required_backends(loaded, start_stage=start_stage),
         runs_root=_selected_runs_root(
-            config_path=loaded.config_path,
+            config_path=runs_base_path,
             profile=profile.profile,
             explicit=runs_root,
         ),
@@ -493,13 +505,18 @@ def diagnose_runtime(
     profile_path: Path | None = None,
     config_path: Path | None = None,
     runs_root: Path | None = None,
+    source_base_dir: Path | None = None,
     start_stage: int = 1,
     full: bool = False,
 ) -> DiagnosticReport:
     """探测显式 profile；配置存在时只要求本次运行需要的 backend。"""
 
     loaded_profile = load_runtime_profile(profile_path)
-    loaded = load_run_config(config_path) if config_path is not None else None
+    loaded = (
+        load_run_config(config_path, source_base_dir=source_base_dir)
+        if config_path is not None
+        else None
+    )
     if loaded is not None and loaded.config.workflow.stop_after_stage > IMPLEMENTED_STAGE_MAX:
         raise ConfigurationError(
             f"Developer Preview 当前最高实现到 Stage {IMPLEMENTED_STAGE_MAX:02d}"

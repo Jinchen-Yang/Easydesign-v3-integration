@@ -116,6 +116,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .project-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 20px; }
 .project-card { padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: white; box-shadow: var(--shadow); }
 .project-card header { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 14px; }
+.project-card-actions { display: flex; align-items: center; gap: 10px; }
+.project-delete-button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #f0c6cc; border-radius: 10px; background: #fff6f7; color: var(--red); cursor: pointer; font-size: 15px; line-height: 1; }
+.project-delete-button:hover { border-color: var(--red); background: var(--red-soft); }
+.project-delete-button:disabled { cursor: progress; opacity: .65; }
+.project-archive-message { margin: -8px 0 18px; }
 .project-mark { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 11px; background: var(--blue-soft); color: var(--blue); font-size: 14px; font-weight: 800; }
 .project-card h2 { margin: 0; font-size: 22px; }
 .project-card header p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }

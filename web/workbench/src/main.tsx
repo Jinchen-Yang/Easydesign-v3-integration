@@ -6,8 +6,7 @@ import { RegionEditor } from "./RegionEditor";
 import { StageFive as FilterStageFive } from "./StageFive";
 import { StructureWorkbench } from "./StructureWorkbench";
 import type {
-  AssistantProviderId,
-  AssistantProviderStatus,
+  AssistantServiceStatus,
   Artifact,
   DesignSession,
   ExecutionProgress,
@@ -1034,15 +1033,18 @@ function Dashboard({
   drafts = [],
   onOpen,
   onContinueDraft,
+  onArchiveProject,
   onNew,
 }: {
   projects: Project[];
   drafts: ProjectDraft[];
   onOpen: (run: Run) => void;
   onContinueDraft: (draft: ProjectDraft) => void;
+  onArchiveProject: (projectId: string) => Promise<void>;
   onNew: () => void;
 }) {
-  const latest = projects.flatMap((item) => item.runs).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const [archivingProjectId, setArchivingProjectId] = useState("");
+  const [archiveMessage, setArchiveMessage] = useState("");
   function runState(run: Run): StageState {
     if (run.stages.some((stage) => stage.state === "operational-failed")) return "operational-failed";
     if (run.stages.some((stage) => stage.state === "awaiting-human-approval")) return "awaiting-human-approval";
@@ -1050,9 +1052,29 @@ function Dashboard({
     if (run.stages.some((stage) => stage.state === "scientific-stop")) return "scientific-stop";
     return "succeeded";
   }
+  async function requestArchiveProject(project: Project) {
+    const message = [
+      `确认从“我的项目”删除项目 ${project.project_id} 吗？`,
+      "",
+      "EasyDesign 会执行可恢复归档：运行目录会移到 runs/_archive/，并从默认项目列表隐藏；科学产物和校验值不会被改写。",
+      "之后可以在“设置 → 运行环境 → 可恢复项目目录”里恢复。",
+    ].join("\n");
+    if (!window.confirm(message)) return;
+    setArchivingProjectId(project.project_id);
+    setArchiveMessage(`正在归档项目 ${project.project_id}…`);
+    try {
+      await onArchiveProject(project.project_id);
+      setArchiveMessage(`项目 ${project.project_id} 已移入可恢复归档。`);
+    } catch (error) {
+      setArchiveMessage(error instanceof Error ? error.message : "项目归档失败");
+    } finally {
+      setArchivingProjectId("");
+    }
+  }
   return (
     <div className="dashboard-page">
       <header className="page-heading"><div><p className="section-label">EasyDesign 科研工作台</p><h1>我的项目</h1><p>查看每个设计项目当前得到的结论，以及下一步需要做什么。</p></div><button className="primary-button" onClick={onNew}>＋ 新建设计</button></header>
+      {archiveMessage && <div className="form-status project-archive-message">{archiveMessage}</div>}
       <div className="project-cards">
         {projects.map((project) => {
           const run = project.latest_run;
@@ -1071,7 +1093,19 @@ function Dashboard({
               <header>
                 <span className="project-mark">{project.project_id.slice(0, 2).toUpperCase()}</span>
                 <div><h2>{project.project_id}</h2><p>目标：{String(run.stages[0]?.highlights.target_id || project.project_id)}</p></div>
-                <Status state={state} />
+                <div className="project-card-actions">
+                  <Status state={state} />
+                  <button
+                    type="button"
+                    className="project-delete-button"
+                    disabled={archivingProjectId === project.project_id}
+                    aria-label={`删除项目 ${project.project_id}`}
+                    title="删除项目（移入可恢复归档）"
+                    onClick={() => void requestArchiveProject(project)}
+                  >
+                    {archivingProjectId === project.project_id ? "…" : "🗑"}
+                  </button>
+                </div>
               </header>
               <div className="project-progress">
                 {run.stages.map((stage) => <span key={stage.stage_number} className={`state-${stage.state}`} title={stageNames[stage.stage_number - 1]} />)}
@@ -1825,21 +1859,21 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
           </div>
         </header>
         <div className="design-route-grid">
-          <button type="button" onClick={() => selectDesignMode("full-workflow")}>
-            <span>01</span>
-            <div>
-              <h2>全流程设计</h2>
-              <p>开始前查看并配置第1–7步，然后选择连续运行，或在科学选择处暂停确认。</p>
-              <strong>适合：已经明确整体方案和预算</strong>
-            </div>
-            <b>进入 →</b>
-          </button>
           <button type="button" onClick={() => selectDesignMode("stepwise")}>
-            <span>02</span>
+            <span>01</span>
             <div>
               <h2>按步骤设计</h2>
               <p>现在只提交第1步。结构完成后直接查看 Mol* 结果，再配置第2步。</p>
               <strong>适合：边看结果边做科学决策</strong>
+            </div>
+            <b>进入 →</b>
+          </button>
+          <button type="button" onClick={() => selectDesignMode("full-workflow")}>
+            <span>02</span>
+            <div>
+              <h2>全流程设计</h2>
+              <p>开始前查看并配置第1–7步，然后选择连续运行，或在科学选择处暂停确认。</p>
+              <strong>适合：已经明确整体方案和预算</strong>
             </div>
             <b>进入 →</b>
           </button>
@@ -2274,108 +2308,37 @@ function TasksPage({
   );
 }
 
-function AssistantProviderSettings() {
-  const [providers, setProviders] = useState<AssistantProviderStatus[]>([]);
-  const [provider, setProvider] = useState<AssistantProviderId>("deepseek");
-  const [model, setModel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function refresh() {
-    const response = await api.assistantProviders();
-    setProviders(response.providers);
-    return response.providers;
-  }
+function AssistantServiceSettings() {
+  const [service, setService] = useState<AssistantServiceStatus>();
 
   useEffect(() => {
-    refresh().catch(() => setProviders([]));
+    api.assistantStatus().then(setService).catch(() => setService({
+      available: false,
+      service_name: "EasyDesign 结构助手",
+      detail: "平台助手状态暂时无法读取。",
+    }));
   }, []);
 
-  useEffect(() => {
-    const current = providers.find((item) => item.provider === provider);
-    setModel(current?.model || "");
-    setBaseUrl(current?.base_url || "");
-    setApiKey("");
-  }, [provider, providers]);
-
-  async function save() {
-    if (!model.trim() || !baseUrl.trim() || !apiKey.trim()) {
-      setMessage("请明确填写模型 ID、HTTPS endpoint 和 API key；EasyDesign 不设置隐式默认值。");
-      return;
-    }
-    setBusy(true);
-    setMessage("正在把密钥写入当前仓库 runtime/secrets 的新 revision…");
-    try {
-      const status = await api.configureAssistantProvider(provider, {
-        model: model.trim(),
-        base_url: baseUrl.trim(),
-        api_key: apiKey,
-      });
-      setProviders((current) => [
-        ...current.filter((item) => item.provider !== provider),
-        status,
-      ]);
-      setApiKey("");
-      setMessage("配置已保存。密钥只显示掩码；两家提供方之间不会自动切换。");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "模型 API 配置保存失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const selected = providers.find((item) => item.provider === provider);
   return (
     <section className="panel assistant-provider-settings">
       <div className="panel-heading">
         <div>
-          <p className="section-label">可选结构助手</p>
-          <h3>DeepSeek / 智谱 GLM</h3>
+          <p className="section-label">平台智能服务</p>
+          <h3>EasyDesign 结构助手</h3>
         </div>
-        <span>{selected?.configured ? `已配置 · ${selected.api_key_masked}` : "未配置"}</span>
+        <span>{service?.available ? "平台服务可用" : "平台服务未启用"}</span>
       </div>
       <p>
-        助手只接收文字、阶段、链和当前区域摘要，不上传坐标、MSA 或完整序列。
-        未配置时，PyMOL、Mol*、手工选区、SASA 与 ScanNet 仍可正常使用。
+        API 由 EasyDesign 部署者统一提供。普通使用者无需选择模型、填写 endpoint
+        或提供 API Key；助手仍只接收文字、阶段、链和当前区域摘要。
       </p>
-      <div className="assistant-provider-form">
-        <label>
-          <span>提供方</span>
-          <select value={provider} onChange={(event) => setProvider(event.target.value as AssistantProviderId)}>
-            <option value="deepseek">DeepSeek</option>
-            <option value="zhipu-glm">智谱 GLM</option>
-          </select>
-        </label>
-        <label>
-          <span>模型 ID</span>
-          <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="必须显式填写" />
-        </label>
-        <label>
-          <span>HTTPS endpoint</span>
-          <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://…/v1" />
-        </label>
-        <label>
-          <span>API key</span>
-          <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={selected?.configured ? "填写新值会创建新 revision" : "只写入 runtime/secrets"} />
-        </label>
-        <button type="button" className="primary-button" disabled={busy} onClick={() => void save()}>
-          {busy ? "正在保存…" : "保存提供方配置"}
-        </button>
+      <div className="form-status">
+        {service?.detail || "正在检查平台服务…"}
       </div>
-      <div className="provider-status-row">
-        {providers.map((item) => (
-          <span key={item.provider} data-configured={item.configured}>
-            {item.provider === "deepseek" ? "DeepSeek" : "智谱 GLM"}：
-            {item.configured ? `${item.model} · ${item.api_key_masked}` : "未配置"}
-          </span>
-        ))}
-      </div>
-      {message && <div className="form-status">{message}</div>}
     </section>
   );
 }
+
 
 function OperationsPage({
   type,
@@ -2628,7 +2591,7 @@ function OperationsPage({
         <div className="quarantine-summary">隔离区：{installStatus?.quarantine.entries || 0} 项。EasyDesign 不会自动清理；任何清理都需要对精确路径另行批准。</div>
       </section>
       <section className="panel utility-panel"><div className="two-field-row"><label><span>选择一个项目配置</span><select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}><option value="">请选择项目</option>{editableProjects.map((project) => <option key={project}>{project}</option>)}</select></label><button className="primary-button" onClick={diagnose} disabled={!selectedProject}>检查运行环境</button></div>{!editableProjects.length && <div className="notice"><strong>当前没有可编辑项目</strong><span>你仍可查看已有运行；新建项目后才能按配置检查环境。</span></div>}{message && <div className="form-status">{message}</div>}{diagnostic && <pre className="audit-json">{JSON.stringify(diagnostic, null, 2)}</pre>}</section>
-      <AssistantProviderSettings />
+      <AssistantServiceSettings />
       <section className="panel settings-catalog">
         <div className="panel-heading"><div><p className="section-label">可恢复项目目录</p><h3>活跃项目与归档项目</h3></div><span>{activeEntries.length} 个活跃 · {archiveEntries.length} 个归档</span></div>
         {[...activeEntries, ...archiveEntries].map((entry) => <div className="catalog-row" key={`${entry.category}-${entry.project_id}`}><div><strong>{entry.project_id}</strong><small>{entry.run_count} 次运行 · {entry.category === "project-run" ? "我的项目中可见" : "已从默认列表隐藏"}</small></div><button type="button" onClick={() => void changeArchive(entry)}>{entry.category === "project-run" ? "归档" : "恢复"}</button></div>)}
@@ -2654,21 +2617,53 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function refreshProjects() {
+  async function loadProjects() {
     try {
-      setData(await api.projects());
+      const nextData = await api.projects();
+      setData(nextData);
       setError("");
+      return nextData;
     } catch (value) {
       setError(value instanceof Error ? value.message : "无法连接本地 API");
+      return undefined;
     } finally {
       setLoading(false);
     }
   }
 
+  async function refreshProjects() {
+    await loadProjects();
+  }
+
+  async function archiveProjectFromDashboard(projectId: string) {
+    await api.archiveProject(projectId);
+    if (selectedRun?.project_id === projectId) {
+      setSelectedRun(undefined);
+      setSelectedRunStage(undefined);
+      setReplay(undefined);
+      setPage("projects");
+    }
+    await loadProjects();
+  }
+
   async function openCompletedRun(runKey: string, destinationStage?: number) {
+    const refreshed = await loadProjects();
+    const projectedRun = refreshed?.projects
+      .flatMap((project) => project.runs)
+      .find((item) => item.run_key === runKey);
+    if (projectedRun) {
+      openRun(projectedRun, destinationStage);
+      return;
+    }
+    const sameProjectLatest = selectedRun
+      ? refreshed?.projects.find((project) => project.project_id === selectedRun.project_id)?.latest_run
+      : undefined;
+    if (sameProjectLatest) {
+      openRun(sameProjectLatest, destinationStage);
+      return;
+    }
     const completedRun = await api.run(runKey);
     openRun(completedRun, destinationStage);
-    await refreshProjects();
   }
 
   useEffect(() => {
@@ -2725,6 +2720,7 @@ function App() {
               setDraftToResume(draft);
               setPage("new");
             }}
+            onArchiveProject={archiveProjectFromDashboard}
             onNew={() => {
               setDraftToResume(undefined);
               setPage("new");

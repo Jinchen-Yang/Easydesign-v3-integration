@@ -257,6 +257,8 @@ export function NativePyMOLViewer({
   const loadedSceneKeyRef = useRef("");
   const sceneReadyRef = useRef(false);
   const logOffsetRef = useRef(0);
+  const frameRecoveryCountRef = useRef(0);
+  const frameRecoveryTimerRef = useRef(0);
   const renderWarningsRef = useRef([]);
   const pointerRef = useRef(null);
   const touchPointersRef = useRef(new Map());
@@ -707,6 +709,8 @@ except Exception:
     let cancelled = false;
     const sceneAbortController = new AbortController();
     const requestId = ++sceneRequestRef.current;
+    window.clearTimeout(frameRecoveryTimerRef.current);
+    frameRecoveryCountRef.current = 0;
     const nextSceneKey = sceneKeyFor(projectId, structures);
 
     async function applyIncremental(commands) {
@@ -720,6 +724,11 @@ except Exception:
         await enqueue(async () => {
           const runtime = runtimeRef.current;
           if (!runtime || cancelled) return;
+          try {
+            await runtime.runPythonAsync("_p.cmd.log_close()");
+          } catch {
+            // The log may not be open yet.
+          }
           runtime.globals.set(
             "chatpymol_incremental_commands_json",
             JSON.stringify(commands)
@@ -766,6 +775,12 @@ json.dumps(chatpymol_incremental_warnings)
         });
         await applyViewerChrome(sequenceVisibleRef.current);
         if (cancelled || requestId !== sceneRequestRef.current) return;
+        await enqueue(async () => {
+          const runtime = runtimeRef.current;
+          if (!runtime || cancelled) return;
+          await runtime.runPythonAsync(`_p.cmd.log_open("${NATIVE_LOG}", "w")`);
+          logOffsetRef.current = 0;
+        });
         setState({
           kind: "loading-scene",
           progress: 99,
@@ -784,6 +799,14 @@ json.dumps(chatpymol_incremental_warnings)
           await refreshSelection();
         }
         if (!cancelled) {
+          if (verifiedScene.frameReady === false && frameRecoveryCountRef.current < 2) {
+            frameRecoveryCountRef.current += 1;
+            frameRecoveryTimerRef.current = window.setTimeout(() => {
+              if (!cancelled && requestId === sceneRequestRef.current) void applyIncremental(commands);
+            }, 450);
+          } else if (verifiedScene.frameReady !== false) {
+            frameRecoveryCountRef.current = 0;
+          }
           setState({
             kind: verifiedScene.frameReady === false ? "warning" : "ready",
             progress: 100,
@@ -904,7 +927,6 @@ except Exception:
 for _chatpymol_scene_draw_pass in range(2):
     _p.idle()
     _p.draw()
-_p.cmd.log_open("${NATIVE_LOG}", "w")
 json.dumps(chatpymol_command_warnings)
 `);
           commandWarnings = JSON.parse(String(encodedWarnings || "[]"));
@@ -930,7 +952,9 @@ except Exception:
 for _chatpymol_camera_draw_pass in range(2):
     _p.idle()
     _p.draw()
+_p.cmd.log_open("${NATIVE_LOG}", "w")
 `);
+          logOffsetRef.current = 0;
         });
         setState({
           kind: "loading-scene",
@@ -944,6 +968,14 @@ for _chatpymol_camera_draw_pass in range(2):
         sceneReadyRef.current = true;
         await refreshSelection();
         if (!cancelled) {
+          if (verifiedScene.frameReady === false && frameRecoveryCountRef.current < 2) {
+            frameRecoveryCountRef.current += 1;
+            frameRecoveryTimerRef.current = window.setTimeout(() => {
+              if (!cancelled && requestId === sceneRequestRef.current) void replayScene();
+            }, 450);
+          } else if (verifiedScene.frameReady !== false) {
+            frameRecoveryCountRef.current = 0;
+          }
           setState({
             kind: commandWarnings.length || verifiedScene.frameReady === false ? "warning" : "ready",
             progress: 100,
@@ -1179,6 +1211,7 @@ for _chatpymol_camera_draw_pass in range(2):
   useEffect(
     () => () => {
       window.clearTimeout(viewCaptureTimerRef.current);
+      window.clearTimeout(frameRecoveryTimerRef.current);
       window.clearTimeout(feedbackTimerRef.current);
     },
     []
@@ -2381,15 +2414,35 @@ function cleanNativeLog(value) {
   return String(value || "")
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
-    .filter(
-      (line) =>
-        line.trim() &&
-        !/^log_(open|close)\b/i.test(line.trim()) &&
-        !/^#/.test(line.trim()) &&
-        !/^_\s+/.test(line.trim())
-    )
+    .filter((line) => {
+      const trimmed = line.trim();
+      return (
+        trimmed &&
+        !/^log_(open|close)\b/i.test(trimmed) &&
+        !/^#/.test(trimmed) &&
+        !/^_\s+/.test(trimmed) &&
+        !isInternalNativeLogLine(trimmed)
+      );
+    })
     .join("\n")
     .trim();
+}
+
+function isInternalNativeLogLine(line) {
+  if (/^viewport\b/i.test(line)) return true;
+  if (/^center\s+all\s*$/i.test(line)) return true;
+  if (/^orient\s+all\s*$/i.test(line)) return true;
+  if (/^zoom\s+all\s*,\s*5\s*$/i.test(line)) return true;
+  const setMatch = line.match(/^set\s+([^,\s]+)/i);
+  if (!setMatch) return false;
+  return new Set([
+    "internal_gui",
+    "internal_gui_width",
+    "internal_gui_control_size",
+    "internal_gui_mode",
+    "seq_view",
+    "mouse_grid"
+  ]).has(setMatch[1].toLowerCase());
 }
 
 function downloadBytes(bytes, filename, type) {

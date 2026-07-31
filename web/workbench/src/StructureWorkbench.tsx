@@ -65,15 +65,11 @@ function authorSelector(
   return clauses.length ? clauses.join(" or ") : "none";
 }
 
-function basePml(
+function regionOverlayPml(
   projection: RegionEditorProjection,
   regions: Region[],
 ): string {
-  const lines = [
-    "hide everything, all",
-    "show cartoon, all",
-    "color gray70, all",
-  ];
+  const lines: string[] = [];
   for (const region of regions) {
     if (!(region.id in REGION_COLORS) || !region.label_seq_ids.length) continue;
     const regionId = region.id as keyof typeof REGION_COLORS;
@@ -81,10 +77,33 @@ function basePml(
     lines.push(
       `select ${selection}, ${authorSelector(projection, region.label_seq_ids)}`,
       `color ${REGION_COLORS[regionId]}, ${selection}`,
+      `show sticks, ${selection}`,
     );
   }
-  lines.push("deselect");
-  return `${lines.join("\n")}\n`;
+  return lines.length ? `${lines.join("\n")}\ndeselect\n` : "";
+}
+
+function basePml(
+  projection: RegionEditorProjection,
+  regions: Region[],
+): string {
+  return [
+    "hide everything, all",
+    "show cartoon, all",
+    "color gray70, all",
+    regionOverlayPml(projection, regions).trimEnd(),
+    "deselect",
+  ].filter(Boolean).join("\n") + "\n";
+}
+
+function withRegionOverlay(
+  pml: string,
+  projection: RegionEditorProjection,
+  regions: Region[],
+): string {
+  const overlay = regionOverlayPml(projection, regions).trim();
+  if (!overlay) return pml;
+  return `${pml.trimEnd()}\n\n# @easydesign live region overlay\n${overlay}\n`;
 }
 
 function combinedPml(
@@ -226,7 +245,10 @@ export function StructureWorkbench({
     () => combinedPml(projection, regions, session),
     [projection, regions, session],
   );
-  const scenePml = activeVersion?.pml || legacyScenePml;
+  const scenePml = useMemo(
+    () => withRegionOverlay(activeVersion?.pml || legacyScenePml, projection, regions),
+    [activeVersion?.pml, legacyScenePml, projection, regions],
+  );
   const sceneVersions = session?.scene_versions || [];
   const commonViewActions = useMemo(
     () => pmlToCommonViewerActions(scenePml),

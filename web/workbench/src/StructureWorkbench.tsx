@@ -29,6 +29,11 @@ interface Props {
   compact?: boolean;
 }
 
+type AssistantMessageView = StructureInteractionSession["messages"][number] & {
+  pending?: boolean;
+  failed?: boolean;
+};
+
 const REGION_COLORS = {
   A: "red",
   B: "blue",
@@ -187,8 +192,10 @@ export function StructureWorkbench({
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingMessages, setPendingMessages] = useState<AssistantMessageView[]>([]);
   const [status, setStatus] = useState("");
   const [pmlEditorOpen, setPmlEditorOpen] = useState(false);
+  const assistantMessagesRef = useRef<HTMLDivElement | null>(null);
   const [pmlDraft, setPmlDraft] = useState("");
   const [referenceBusy, setReferenceBusy] = useState(false);
   const [referenceRcsbId, setReferenceRcsbId] = useState("");
@@ -225,9 +232,21 @@ export function StructureWorkbench({
     () => pmlToCommonViewerActions(scenePml),
     [scenePml],
   );
+  const assistantMessages = useMemo<AssistantMessageView[]>(
+    () => [...(session?.messages || []), ...pendingMessages],
+    [pendingMessages, session?.messages],
+  );
   useEffect(() => {
     setPmlDraft(scenePml);
   }, [scenePml]);
+  useEffect(() => {
+    setPendingMessages([]);
+  }, [session?.session_id]);
+  useEffect(() => {
+    const element = assistantMessagesRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+  }, [assistantMessages.length, busy]);
 
   const nativeApi = useMemo(
     () => ({
@@ -336,18 +355,44 @@ export function StructureWorkbench({
 
   async function sendMessage() {
     if (!session || !assistantService?.available || !message.trim()) return;
+    const text = message.trim();
+    const createdAt = new Date().toISOString();
+    const optimisticUser: AssistantMessageView = {
+      message_id: `local-user-${Date.now()}`,
+      role: "user",
+      content: text,
+      created_at: createdAt,
+    };
+    const optimisticAssistant: AssistantMessageView = {
+      message_id: `local-assistant-${Date.now()}`,
+      role: "assistant",
+      content: "正在生成建议…",
+      created_at: createdAt,
+      pending: true,
+    };
+    setPendingMessages([optimisticUser, optimisticAssistant]);
+    setMessage("");
     setBusy(true);
     setStatus("正在请求结构助手…");
     try {
       const updated = await api.assistantMessage(
         session.session_id,
-        message.trim(),
+        text,
       );
+      setPendingMessages([]);
       setSession(updated);
-      setMessage("");
       const latest = updated.messages.at(-1);
       setStatus(latest?.version_id ? "助手已更新 PML 场景并保存版本。" : "助手已生成待确认建议。");
     } catch (error) {
+      setPendingMessages([
+        optimisticUser,
+        {
+          ...optimisticAssistant,
+          content: "请求失败，请查看下方状态后重试。",
+          pending: false,
+          failed: true,
+        },
+      ]);
       setStatus(error instanceof Error ? error.message : "结构助手请求失败");
     } finally {
       setBusy(false);
@@ -667,18 +712,22 @@ export function StructureWorkbench({
               {assistantService?.detail || "正在检查平台助手服务…"}
             </span>
           </div>
-          <div className="assistant-messages" aria-live="polite">
-            {!session?.messages.length && (
+          <div className="assistant-messages" aria-live="polite" aria-busy={busy} ref={assistantMessagesRef}>
+            {!assistantMessages.length && (
               <p>
                 例如：“将32、36加入A区”或“把结构显示为表面”。
                 “寻找最佳区域”只会产生待确认的算法计划。
               </p>
             )}
-            {session?.messages.map((item) => (
-              <article className={`assistant-message ${item.role}`} key={item.message_id}>
+            {assistantMessages.map((item) => (
+              <article
+                className={`assistant-message ${item.role}${item.pending ? " pending" : ""}${item.failed ? " failed" : ""}`}
+                key={item.message_id}
+              >
                 <span>{item.role === "user" ? "你" : "助手"}</span>
                 <p>{item.content}</p>
-                {item.proposal && item.proposal.kind !== "explanation" && (
+                {item.pending && <small className="assistant-thinking">等待平台模型返回</small>}
+                {item.proposal && !item.pending && !item.failed && item.proposal.kind !== "explanation" && (
                   <button
                     type="button"
                     disabled={busy}

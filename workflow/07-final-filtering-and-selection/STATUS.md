@@ -6,11 +6,15 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 |
+| `implemented` | S07-002 已支持 ScaleBundle 0.1/0.2、多策略全局竞争和最终 YAML 来源分布。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-07-31 |
 
 ## 当前结论
 
 - 阶段状态：`implemented`，不是 `smoke-validated`。
+- ScaleBundle 0.2 的 candidate strategy 集合、allocation、ordinal 和 Stage 05 晋级
+  identity 会在进入筛选前完整校验；旧单策略 Bundle 0.1 继续兼容。
+- 全部 strategy 共享同一门槛、分数和 lazy-greedy pool，不为 YAML 硬留名额；每个
+  primary/backup 保留 strategy lineage，候选包发布来源分布。
 - 通用实现已经覆盖全部 Stage 06 candidate 的逐级处置、seed-101 冻结归一化、Top 60
   additional seeds、TNP required evidence 和 20+20 上限。
 - 非 APOE 1000-candidate 集成 fixture 已产生非空 `smoke-review-package`，证明代码没有
@@ -18,8 +22,9 @@
 - TNP adapter 固定官方 commit、license、Python 3.10、原生库环境和文件协议；官方
   7EOW VHH 单候选真实 batch 已完成并由严格 parser 收集，DATA-003 达到
   `smoke-validated`。
-- APOE 如果 Stage 05 合法科学停止，Stage 07 不伪造结果；通用实现状态与 APOE 科学结果
-  分开。
+- APOE 的 v1.5 scientific stop 与后来人工授权完成的单策略 50k 必须并列保留；
+  Stage 07 只有在不可变采用记录和远端后端预检通过后才消费该历史 ScaleBundle，不能
+  以新 v1.6 语义改写旧运行。
 - 候选包始终 `awaiting-human-review/not-ordered`；实际下单不属于本阶段。
 
 ## 功能矩阵
@@ -35,25 +40,27 @@
 | 90/10 lazy-greedy 主备选择 | `implemented` | quality/diversity/tie 与不足 40 不补齐测试 |
 | 可恢复进度、事件与 operational failure | `implemented` | 原子 state、append-only 日志、非发布 failure 测试 |
 | 非 APOE 1000-candidate 完整集成 | `implemented` | Stage 03→07 fixture，三 seed、TNP、2 primary |
-| APOE Stage 07 真实运行 | `planned` | 本轮明确未运行：Stage 05 `stopped-no-scale-winner`，因此没有合法 Stage 06 ScaleBundle |
-| 真实 production-50000 候选包 | `planned` | 50k 本轮没有运行授权 |
+| 多策略 ScaleBundle 0.2 输入 | `implemented` | allocation/lineage/全局竞争与旧 Bundle 0.1 兼容测试 |
+| 最终 YAML 来源分布 | `implemented` | primary/backup 来源计数与 candidate lineage 契约 |
+| APOE Stage 07 真实运行 | `planned` | 历史 50k 已完成，等待 adoption record、Protenix/TNP 与空闲 GPU |
 
 ## Now
 
-- 无。Stage 07 通用实现与 TNP backend smoke 已冻结，本轮 APOE 未到达本阶段。
+- `[S07-002/VAL-007]` 在不复制 39 GB 的前提下消费经过采用记录授权的 Suzhou2
+  ScaleBundle 0.1；先完成后端和资源 probe，不能直接启动高成本任务。
 
 ## Next
 
-- 新的真实 target 只有在 Stage 05 发布唯一 winner 并完成 Stage 06 新 1000 后，才按
-  冻结 v1.5 规则产生真实非空或空
-  `smoke-review-package`，不修改门槛迎合结果。
+- 新的真实 target 在 Stage 05 v1.6 晋级 1–3 个 Tier A 并完成共享 Stage 06 population
+  后，按同一冻结规则产生真实非空或空 `smoke-review-package`。
 - 增加第二条独立真实 target、正式候选 review gate、湿实验反馈和阈值校准。
 
 ## Blocked
 
-- APOE 在 Stage 05 的 scientific stop 是终态，不列作 Stage 07 operational blocker；
-  本轮不允许绕过它。
-- production 50k 未授权，不能用当前 smoke 结果声称 production readiness。
+- Suzhou2 尚未登记 Protenix/TNP 环境；八张 GPU 当前均被其他任务占用。等待自然释放，
+  不终止外部任务。
+- APOE 历史 v1.5 stop 与 manual override 必须并列显示；新政策 continuation 不修改
+  任何旧 manifest。
 
 ## 验证证据
 
@@ -67,6 +74,11 @@
   按设计跳过。
 - `make build`：dev5 wheel 构建、21/21 固定资产和隔离 console-script smoke 通过；
   新增 `nanobody-final-v1.5.yaml` 已确认存在于 wheel。
+- dev27 集成前完整回归：不可变快照 `stage0507-validation-20260731-022` 中
+  `make check/test/build`、`341 passed, 8 skipped`、Ruff、142 个源文件的 strict
+  mypy 以及 wheel smoke 通过；快照
+  `stage0507-validation-20260731-021` 中 Workbench production build、Chromium
+  双尺寸 38 项非视觉测试和 2 项视觉回归通过。
 - Proteindigger1 安装 profile 已增加显式 TNP runtime；真实
   `easydesign doctor --config <stage07-config> --json` 同时通过 Protenix 2.0.0、
   PyMOL 3.1.0、BoltzGen 0.3.2 和 TNP fixed commit，profile SHA-256
@@ -80,8 +92,9 @@
   `04681aaa17bf0b7b50c8dc3da8068d61ea1893fc04388d3c45b4739d55006601`。
 - 上述 TNP 样本如实得到 high risk、3 amber、0 red 和 6 条 liability；这只验证
   backend/证据链，不代表最终 APOE 候选结论。
-- APOE real run：未创建；Stage 05
-  `20260726-004-stage05-pilot-filter` 已合法停止且没有 ScaleBundle。
+- APOE Stage 07 real run：未创建。Stage 05
+  `20260726-004-stage05-pilot-filter` 保持合法停止；独立历史 Stage 06 run 已在
+  Suzhou2 发布 ScaleBundle 0.1，当前等待采用记录和后端 probe。
 
 ## 工作日志
 

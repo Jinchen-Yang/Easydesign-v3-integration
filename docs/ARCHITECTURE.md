@@ -520,7 +520,8 @@ Stage 05 把筛选规则与执行恢复分成三层：
 ```text
 filtering/
   ├── interface-geometry-v1          结构与界面指标
-  ├── nanobody-filter-standard-v1.5 硬门、归一化、Tier 与排序
+  ├── nanobody-filter-standard-v1.5 历史唯一赢家策略
+  ├── nanobody-filter-standard-v1.6 多 Tier A 晋级与诊断 warning
   └── protenix confidence parser     真实跨链 PAE/iPTM
 
 orchestration/stage05.py
@@ -544,12 +545,16 @@ journal 冻结为 StageManifest artifact。
 Protenix complex request 是通用 `target+binder` 类型：target required MSA、binder
 query-only、template disabled，full confidence 为必需输出。Stage 01 和 Stage 05/07
 继续使用同一个 Protenix adapter；前者默认不需要 full-confidence matrix，后两者显式
-请求。`stopped-no-tier-a` 和 `stopped-no-scale-winner` 是成功执行得到的科学负结果，
-会终止 Run 但不会伪装成 operational failure。
+请求。v1.6 在 full-target 之前按 `F_YAML` 晋级最多三个 Tier A；100 条扩增和
+full-target 是诊断，不会因零结构通过撤销晋级。`stopped-no-tier-a` 仍是成功执行得到的
+科学负结果；旧 v1.5 的 `stopped-no-scale-winner` 继续按历史契约读取。后端、文件、
+数量或 checksum 故障在两个版本中都属于 operational failure。
 
 ### Stage 06 分片规模生成
 
-Stage 06 默认只在 Stage 05 发布唯一 winner 后运行。研究负责人也可以在
+Stage 06 v0.2 默认消费 Stage 05 v1.6 发布的 1–3 个晋级策略。50,000 是全局预算：
+1/2/3 组分别分配 `50000`、`25000/25000`、`16667/16667/16666`，余数按
+`F_YAML` promotion rank 分配。研究负责人也可以在旧 v1.5
 `stopped-no-scale-winner` 后显式授权放大一个已经由 Stage 05 扩展过的 Tier A；该例外
 不会改变 Stage 05 结论，并形成独立 `ScaleStrategyAuthorization`。没有 Tier A 时禁止
 越过。Stage 06 同时把 Stage 03 strategy YAML、Stage 05 bundle 和 Stage 04 candidate
@@ -558,16 +563,17 @@ index 声明为输入；后者仅用于从正式 ArtifactRef 测量候选磁盘�
 
 ```text
 ScaleResourceReport
-  → ScalePlan
-      ├── shard-0001 / stable ordinal range
-      └── shard-0002 / stable ordinal range
+  → ScalePlanV0_2 / equal-across-promoted-v1
+      ├── strategy A / independent shard + ordinal space
+      ├── strategy B / independent shard + ordinal space
+      └── strategy C / independent shard + ordinal space
   → shared BoltzGen task executor
-  → exact merge / ScaleCoverageReport
-  → ScaleBundle
+  → per-strategy + global exact merge / ScaleCoverageReportV0_2
+  → ScaleBundleV0_2
 ```
 
-`smoke-1000` 固定为两个 500-candidate shard；`production-50000` 固定为二十个
-2500-candidate shard。profile 只定义能力，实际执行还必须满足初始配置中的
+`smoke-1000` 继续兼容两个 500-candidate shard；`production-50000` 对每个 strategy
+按最多 2500 的 shard 切分，因此尾部分片可以更小。profile 只定义能力，实际执行还必须满足初始配置中的
 `preauthorized_candidate_limit`。当前资源门使用 Stage 04 声明 artifact 的每候选字节数
 乘 20 的保守容量代理，且要求执行后仍保留文件系统总容量的 25%；预检失败发生在创建
 task 前。
@@ -631,11 +637,17 @@ backends/
 
 orchestration/stage07.py
   ├── manifest-only upstream validation
+  ├── ScaleBundle 0.1/0.2 与 strategy allocation 验证
   ├── local metric cache
   ├── resumable (candidate, seed) tasks
   ├── TNP batch attempt
   └── FinalCandidatePackage publication
 ```
+
+ScaleBundle 0.2 的全部 strategy 使用相同门槛和评分进入一个全局候选池；不会按 YAML
+预留 primary/backup 名额。全局去重后仍保留每个 candidate 的 strategy lineage，
+FinalCandidatePackage 0.2 发布主备候选的来源和来源分布。旧单策略 ScaleBundle 0.1
+继续是合法输入。
 
 Stage 05/07 共同调用 `complex_prediction_support.py` 构建 target-required-MSA、
 binder-query-only、template-disabled 的 Protenix 请求；结构/界面原子选择和距离规则仍

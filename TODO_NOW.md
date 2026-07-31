@@ -11,13 +11,21 @@
 | Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev26 已通过 APOE 双查看器返回回归并改为平台统一结构助手。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
-| Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-003 已补齐远程 watch、心跳、恢复、manifest 同步和 UI 服务器选择；APOE 50k 继续运行。 | 跟踪 Suzhou2 20×2500，并用控制端只读镜像让合作者查看相同运行记录。 | 无代码阻塞；当前 dev11 worker 没有心跳字段，新提交/恢复的 dev12 任务才产生心跳。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
-| Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+| Stage 05 | `smoke-validated` | v1.5 APOE 证据保持冻结；v1.6 已实现最多 3 个 Tier A 晋级，100 条诊断只产生 warning。 | 发布 APOE policy reevaluation，并验证 v1.6 与冻结 pilot Tier/F_YAML 完全一致。 | 无代码 blocker；尚未发布 APOE v1.6 continuation。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `implemented` | S06-004 已实现 1–3 个晋级策略等额共享全局 50k；Suzhou2 历史单策略 50k 已完成并保持 v1.5 语义。 | 校验历史 50k 并发布不可变采用记录；不复制 39 GB。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `implemented` | S07-002 已支持 ScaleBundle 0.1/0.2、多策略全局竞争和最终 YAML 来源分布。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-07-31 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## Now
 
+- `[S05-002/S06-004/S07-002/ENG-029/UI-021]` 完成 Stage 05 v1.6 多策略晋级、
+  晋级策略共享 50,000、Stage 07 多来源全局筛选与精简科研界面的最终回归。旧 v1.5
+  bundle、manifest 和 `stopped-no-scale-winner` 结论保持不可变；新规则只通过新
+  contract、profile 和 continuation 生效。
+- `[VAL-007]` 已只读核对 Suzhou2 历史单策略 20×2500、50,000 候选、RunManifest、
+  ScaleBundle 和 candidate index 身份。下一步是在不复制 39 GB、不使用 symlink、
+  不改写历史 manifest 的前提下发布 policy reevaluation 与 scale evidence adoption；
+  Stage 07 真实运行需先完成远端 Protenix/TNP 及模型探针。
 - `[ENG-024]` 将 ENG-023 已验证提交链收敛到唯一 `main`，禁止继续创建任何开发分支或
   Git worktree。现有 `easydesign-eng023/runtime` 作为只读迁移来源完整保留；正式环境
   与模型必须落在稳定的 `easydesign-clean/runtime`，不得直接移动带绝对 prefix 的
@@ -39,10 +47,9 @@
 - `[UI-016/VAL-006]` 完成安装中心浏览器验收，并在许可资产和后端就绪后逐步真实运行
   固定非 APOE 1UBQ 自检。Stage 05 科学停止允许；后端失败和科学停止必须分开显示。
 
-- `[S06-002]` APOE 唯一已扩展 Tier A 已获探索性 `production-50000` 人工授权；保持
-  Stage 05 `stopped-no-scale-winner` 不变；Suzhou2 首批 8 个 2500-candidate shard
-  已在 8×A100 运行。`ENG-014/S06-003/UI-008` 已提供远程 watch、校验镜像、恢复与
-  UI 服务器选择；继续跟踪 20 个分片直到完成或形成可恢复的 operational failure 证据。
+- `[S06-002]` APOE 唯一已扩展 Tier A 的探索性 `production-50000` 已在 Suzhou2
+  完成 20 个 2500-candidate shard 和 50,000 候选。该运行仍属于 v1.5 科学停止后的
+  manual override；不得在 VAL-007 adoption 完成前把它改称 v1.6 正常晋级结果。
 
 ## Next
 
@@ -77,11 +84,10 @@
   冒充长任务交互 smoke。
 - `[VAL-001]` 选择第二条独立真实 target，复用 frozen 1.0 主线；APOE 的
   binder-pose gate 只能通过预注册 benchmark 和新版本 profile 研究，不能事后调参。
-- `[S06-001]` 通用 1000 smoke / 50000 production plan、25% 磁盘门、共享恢复和精确
-  merge 已实现；正常主线仍要求 Stage 05 winner，人工 override 只用于明确记录的探索性
-  运行。
-- `[S07-001]` 通用深度筛选、Protenix 三 seed、TNP 和多样性候选包已实现，固定 TNP
-  backend 单候选真实 smoke 已通过；APOE 因 Stage 05 科学停止而不会进入本轮 Stage 07。
+- `[S06-004]` 在第二条独立真实案例验证 2–3 个 Tier A 的共享总预算、尾部分片、恢复、
+  全局无重复和无缺口；50,000 是全部晋级策略共享总数，不能解释成每组 50,000。
+- `[S07-002]` 在 Suzhou2 完成 VAL-007 adoption 和远程后端 probe 后，原地消费历史
+  50,000 候选并运行全局 Stage 07；本地只同步 manifest、进度和最终候选证据。
 - `[S05/S06/S07]` 分别接入 pilot go/no-go、高成本预算和 Top N 候选包 gate；
   `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；
@@ -97,6 +103,9 @@
 
 ## Blocked
 
+- `[VAL-007]` Suzhou2 当前没有已登记可用的 Protenix/TNP 环境和模型资产，且 8 张 GPU
+  正被其他任务占用。Stage 07 真实运行必须等待资源自然释放并完成显式后端探针；禁止
+  终止非 EasyDesign 进程或把缺失环境报告为科学停止。
 - `[DATA-005/VAL-006]` Protenix、BoltzGen、ScanNet 和验证 fixture 的受控资产在
   用户逐项确认相应许可前保持 `awaiting-approval`；真实后端逐步自检不能在资产缺失时
   标记通过。完整全量 setup 仍可能因峰值与安全余量拒绝，但逐后端安装已经开始且

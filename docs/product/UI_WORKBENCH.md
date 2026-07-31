@@ -86,9 +86,13 @@ simulated-preview
 ## APOE 验收边界
 
 - Stage 01–04：显示真实完成产物。
-- Stage 05：显示 840 pilot、唯一 Tier A、扩展至 100、12 local-gate pass、Top 10
-  Protenix 和 `stopped-no-scale-winner`。
-- Stage 06/07：显示软件能力已实现、当前 APOE run 未到达。
+- Stage 05：旧 v1.5 run 显示 840 pilot、唯一 Tier A、扩展至 100、12 local-gate
+  pass、Top 10 Protenix 和 `stopped-no-scale-winner`；v1.6 continuation 另行显示
+  “1 组晋级＋full-target pose warning”，不能覆盖旧结论。
+- Stage 06：历史人工授权的单策略 50k 显示真实完成证据；原生 v1.6 页面同时支持一至
+  三个晋级 YAML 的共享预算与逐策略进度。
+- Stage 07：显示软件能力已实现；APOE 在采用历史 50k 并完成远端后端 probe 前仍为
+  `not-reached`。
 - “回放已验证案例”只重放已审计状态；“按相同配置重新运行”创建新 run，并在资源预检和
   用户确认后启动真实 backend。
 - APOE 完整 runtime、模型和后端中间目录不得提交 Git；自动测试使用小型通用 fixture。
@@ -494,7 +498,7 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 
 ## UI-018 / REP-007：可靠项目草稿、双查看器动作与递进冻结
 
-版本：`0.1.0.dev26`。
+版本：`0.1.0.dev27`。
 
 “我的项目”同时投影正式运行和有效项目草稿。草稿必须已经原子发布
 `project-metadata.json`、canonical 配置和输入；空 DesignSession、失败上传及 staging
@@ -563,3 +567,31 @@ PML 仍只作用于 PyMOL，并在界面中明确标注范围。
   `preserveDrawingBuffer=false` 时浏览器在下一帧前清空像素造成假失败。
 - 服务器 Chrome 与本地视觉基线存在约 1% 的字体/栅格像素差异；交互、布局和科学数据
   投影均通过，后续将为平台分别维护视觉基线。
+
+## UI-021：Stage 05–07 精简科研证据界面
+
+版本：`0.1.0.dev27`。
+
+Stage 05 的默认页面遵循“先结论、再展开证据”：
+
+```text
+设计方案总数
+Tier A/B/C/D 数量
+晋级 YAML 数量
+诊断 warning 数量
+```
+
+Tier 金字塔可点击。只有进入某个 Tier 后才列出 Region、scaffold、pilot 通过数、
+`F_YAML`、晋级状态和 warning；只有进入 Tier A 策略后才加载原始 40 条 pilot 中通过
+final gate 的候选结构。100 条诊断扩增默认折叠，只显示“扩增数 → local gate →
+full-target → 结构通过 → warning”，不会在首页加载大型扩增报告或默认渲染诊断结构。
+
+Stage 06 与 Stage 04 共用进度组件，但 v0.2 增加全局预算及逐 YAML 分配。页面先显示
+50k 总进度，再按需展开每个策略的预算、完成数、GPU、shard、重试、吞吐率和 ETA。
+一、二、三个晋级策略分别显示 `50000`、`25000/25000` 和
+`16667/16667/16666`，不得把每组误解为各自 50k。
+
+Stage 07 默认显示全局漏斗、主备数量、结论和 YAML 来源分布。所有策略使用同一筛选门
+和全局候选池，不按 YAML 预留名额；进入层级或候选详情后才加载完整指标、序列与结构。
+旧 ScaleBundle 0.1 的单策略历史继续显示其人工授权来源，新 ScaleBundle 0.2 则显示
+全部 promotion rank 和分配，二者不会被合并成一条伪造历史。

@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev26`（包版本 `0.1.0.dev26`）
+- 当前版本：`0.1.0-dev27`（包版本 `0.1.0.dev27`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -157,14 +157,16 @@ PSE 直接导入坐标。六类入口和 remote/cache/precomputed 三种 require
 独立 SASA/ScanNet 和用户区域。Stage 03 已实现基础 VHH 策略编译：每个批准区域与七个
 官方 scaffold 组合、只写 positive binding，并由 BoltzGen 0.3.2 官方校验。Stage 04
 Developer Preview 已提供严格候选收集、双 GPU 调度、原子进度与恢复；APOE 21×40 共
-840 个完整候选已通过真实工程 smoke。Stage 05 已实现 v1.5 pilot 硬门、逐规则审计、
-Tier A 扩展到总计 100、full-target Protenix 和唯一 scale strategy；APOE 有 12 个
-local-gate pass，但 Top 10 的 binder pose 均不稳定，因此合法发布
-`stopped-no-scale-winner`。Stage 06 已实现 2×500 smoke、20×2500 production plan、
-25% 磁盘门、分片恢复和精确 merge；APOE 真实 1000 必须等待 Stage 05 唯一 winner，
-本轮不会启动 50k。Stage 07 已实现 v1.5 深筛、Protenix seed 101/202/303、一致性门、
-TNP required evidence 和确定性 20+20 审核包；固定 TNP backend smoke 已通过，但
-APOE 因 Stage 05 科学停止而没有进入 Stage 06/07。
+840 个完整候选已通过真实工程 smoke。Stage 05 的新 v1.6 规则只按 pilot 的 Tier A 与
+`F_YAML` 晋级最多三组，100 条扩增及 full-target Protenix 作为诊断证据；零结构通过会
+产生 warning，但不会撤销 Tier A 晋级。旧 APOE v1.5 仍不可变地保留
+`stopped-no-scale-winner`：唯一 Tier A 扩展后有 12 个 local-gate pass，Top 10 的
+binder pose 均不稳定。Stage 06 v0.2 已实现晋级策略共享全局预算、每策略分片恢复和
+精确 coverage；一、二、三组分别分配 50,000、25,000/25,000、16,667/16,667/16,666。
+Suzhou2 上的历史 APOE 单策略 50k 已在旧人工授权契约下完成，不会被伪装成 v1.6 原生
+多策略运行。Stage 07 已支持旧/新 ScaleBundle、跨 YAML 全局竞争、Protenix 多 seed、
+TNP required evidence 和确定性 20+20 审核包；APOE Stage 07 仍需先完成历史 50k
+采用记录、远端后端探针与资源预检。
 
 ## 本地科研工作台
 
@@ -311,8 +313,9 @@ easydesign runs resume /absolute/path/to/downstream-stage04
 Stage 04 的 40 指每个策略 40 个“metric row + 原始 complex CIF + refold CIF”完整候选，
 不是 40 次启动，也不是 BoltzGen 最终 `budget=30` 目录中的数量。
 
-当配置执行到 Stage 05 时，同一命令会继续做 v1.5 pilot 筛选。只扩展 Tier A，最多三组；
-没有 Tier A 或没有唯一 scale winner 会形成可审计科学停止：
+当配置执行到 Stage 05 时，同一命令会继续做 v1.6 pilot 筛选。只晋级 Tier A，最多三组；
+没有 Tier A 会形成可审计科学停止。每个晋级策略的 100 条扩增和 full-target 复核必须
+完整运行；科学负结果形成 warning，后端、文件或校验错误仍是必须恢复的运行失败：
 
 ```bash
 easydesign run downstream/easydesign.yaml \
@@ -326,7 +329,8 @@ easydesign runs resume /absolute/path/to/downstream-stage05
 Stage 05 的 target 使用 required MSA，binder 使用 query-only；不得无 MSA 静默降级。
 筛选分数只用于结构工程排序，不表示实验亲和力或成功概率。
 
-Stage 06 有唯一 scale winner 并完成新 1000 后，Stage 07 使用同一个统一入口继续：
+Stage 06 将一至三个晋级策略共享的全局预算精确完成后，Stage 07 使用同一个统一入口
+做全局竞争；不会给不同 YAML 预留候选名额，但会保留完整来源：
 
 ```bash
 easydesign run downstream/easydesign.yaml \

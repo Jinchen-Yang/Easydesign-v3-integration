@@ -891,3 +891,31 @@
 - 遗留：部署者配置真实平台 key 后再验收 live provider、预算、限流和用量监控；没有
   平台助手时确定性 Stage 01/02 仍完整可用。
 - 提交：以本记录所在 `main` 提交和推送后核对的远端完整 SHA 为准。
+
+## 2026-07-31 — S05-002 / S06-004 / S07-002 / ENG-029 / UI-021 / VAL-007
+
+- 状态：核心契约和精简 UI 为 `implemented`；APOE 历史证据只读审计完成，真实
+  Stage 07 尚未启动。
+- 完成时间：2026-07-31T02:44:27+08:00
+- 问题：v1.5 用 full-target 复核选择唯一 winner，导致已经由 pilot 判为 Tier A 的
+  策略可能在诊断阶段被整体撤销；Stage 05 页面又把大量证据和最终停止混在首屏。
+  同时“最多三组”和“50k”容易被误解为每组各 50k。
+- 方案：v1.6 只按 `F_YAML` 晋级最多三个 Tier A，100 条诊断产生 warning 而不撤销；
+  ScaleBundle 0.2 将 50,000 固定为全局共享预算；Stage 07 全局竞争并保留来源。
+  UI 使用 Tier 金字塔、折叠诊断、共享预算进度和全局漏斗逐级展开。
+- 验证：Stage 05–07 聚焦回归在不可变快照
+  `stage0507-validation-20260731-011` 中 71 passed；最终不可变快照
+  `stage0507-validation-20260731-022` 的 `make check/test/build` 通过，
+  341 passed、8 skipped，Ruff、142 个源文件的 strict mypy、dev27 wheel 与
+  console script/package data 验证均通过。`stage0507-validation-20260731-021`
+  的 Workbench production build 通过，Chromium 双尺寸非视觉矩阵 38 passed、视觉
+  回归 2 passed。Suzhou2
+  历史 20×2500、50,000 候选的 RunManifest、ScaleBundle 和 candidate index 已只读
+  核对；没有复制 39 GB、没有 symlink、没有改写旧 manifest。
+- 协作：Stage 02 和结构工作区由协作者持续维护，本任务没有修改其模型、编排、README、
+  STATUS、history 或测试。原计划的 `ENG-028/UI-020` 已被平台结构助手占用，因此新
+  工作登记为 `ENG-029/UI-021`。
+- 安全：没有删除、覆盖、清理、分支或 worktree；验证只创建全新 runtime tmp snapshot。
+- 遗留：VAL-007 仍需发布 policy reevaluation 和 scale evidence adoption；Suzhou2
+  需恢复 Protenix/TNP/模型并等待 GPU 自然释放后才能运行 Stage 07。
+- 提交：以本记录所在 `main` 提交和推送后核对的远端完整 SHA 为准。

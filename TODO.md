@@ -21,7 +21,7 @@
 | M6 Stage 01 六入口与双运行模式 | `smoke-validated` | schema 0.5、六 source handler、Decision resume、remote/cache/precomputed MSA 与十条 live fixture 均通过；Stage 01 1.0 工程边界已冻结。 |
 | M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | M8 Stage 03 基础策略编译 | `smoke-validated` | schema 0.7、通用 region×official VHH7 策略、固定 scaffold 资产和 BoltzGen 0.3.2 官方校验已完成；APOE 21/21 通过。 |
-| M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 pilot/final filter、scale profiles、Protenix 三 seed、TNP 和主备候选包均已形成通用实现；APOE 已在 Stage 05 合法科学停止。 |
+| M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 历史筛选和 v1.6 多策略晋级、共享 50k、Stage 07 全局竞争均已形成通用实现；APOE 的 v1.5 科学停止保持冻结，独立 50k 证据等待 v1.6 adoption 后进入 Stage 07。 |
 | M10 产品级科研工作台 | `smoke-validated` | dev20 工作台已形成连续七阶段轨道、内嵌 Stage 02、Stage 03–07 配置/运行/终态前进；PSE 流式接收、结构审查和真实 Stage 03 配置投影通过验收。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
 | M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
@@ -30,6 +30,7 @@
 | M15 单一 main 开发治理 | `implemented` | ENG-024 禁止开发分支和额外 Git worktree；已验证 ENG-023 提交链收敛到 `main`，历史 runtime 在无删除前提下保留。 |
 | M16 双结构查看器与安全助手 | `smoke-validated` | REP-006/ENG-025/UI-017/REP-007 已接入离线浏览器 PyMOL、Mol* 和安全助手；APOE 138-aa 结构、9/14/14 来源区域及严格首帧检查已通过真实页面复验。 |
 | M17 可靠草稿与递进冻结 | `smoke-validated` | UI-018/ENG-026/ENG-027/UI-019 已通过：主页草稿、事务式创建、持久上传回执和运行链递进冻结均有契约及真实 APOE 页面证据。 |
+| M18 多策略规模筛选 | `implemented` | schema 0.8、Stage05Bundle/ScaleBundle 0.2、Tier A Top 3 晋级、诊断 warning、共享 50k 与 Stage 07 多来源 lineage 已实现；APOE 历史 50k 的采用和真实 Stage 07 仍待 VAL-007。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
 
 ## 长期工作板块索引
@@ -59,8 +60,11 @@
 | `S03-001` | Scientific Pipeline | `smoke-validated` | 基础 BoltzGen VHH strategy compiler 与 APOE 21/21 YAML 验收完成。 |
 | `S04-001` | Scientific Pipeline | `smoke-validated` | 双 GPU 可恢复 pilot generation 完成 APOE 21×40；840 个完整候选与 RunManifest 完整性验证通过。 |
 | `S05-001` | Scientific Pipeline | `smoke-validated` | APOE 840 个 pilot 完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target prediction 未保持 binder pose，合法停止。 |
+| `S05-002` | Scientific Pipeline | `implemented` | v1.6 只按 `F_YAML` 晋级最多三个 Tier A；100 条扩增与 full-target 复核只形成诊断支持或 warning，零结构通过不再撤销晋级。 |
 | `S06-001` | Scientific Pipeline | `implemented` | smoke-1000 与 production-50000 分片计划、25% 资源门、共享恢复和精确 merge 已通过通用测试；APOE 因 Stage 05 科学停止而未运行。 |
+| `S06-004` | Scientific Pipeline | `implemented` | ScaleBundle 0.2 将 50,000 作为晋级策略共享总预算，按 promotion rank 等额分配，并逐策略及全局校验 shard、候选连续性、数量和 lineage。 |
 | `S07-001` | Scientific Pipeline | `implemented` | 深度筛选、多 seed Protenix、TNP 与多样性候选包完成；APOE 没有合法 ScaleBundle，未运行本阶段。 |
+| `S07-002` | Scientific Pipeline | `implemented` | Stage 07 同时读取 ScaleBundle 0.1/0.2，对多策略候选执行全局去重和统一筛选，并在主备候选包保留 YAML 来源及来源分布。 |
 | `ENG-008` | Core Engineering | `smoke-validated` | 通用任务、原子进度、append-only 事件、多 GPU 调度和精确 deficit resume 已由 APOE 840-candidate 长任务验证。 |
 | `REP-002` | Reporting & Visualization | `planned` | SASA/ScanNet 独立 overlay 不改变科学输出。 |
 | `DATA-001` | Data & Assets | `planned` | 面向公开 release 的第三方 VHH 资产复审完成。 |
@@ -68,6 +72,7 @@
 | `DATA-003` | Data & Assets | `smoke-validated` | TNP fixed commit、Python 3.10 独立环境、完整显式依赖、许可证、严格 adapter 与官方 VHH 单候选真实 batch 已验证；模型仍保持 runtime-only。 |
 | `VAL-001` | Scientific Validation | `planned` | 选择第二条独立真实 target，复用冻结的 1.0 主线进行端到端工程与科学验收。 |
 | `VAL-002` | Scientific Validation | `smoke-validated` | APOE PSE 真实验收完成到 Stage 05：840 pilot、60 扩展和 10 full-target prediction 后如实记录 `stopped-no-scale-winner`；Stage 06/07 未伪运行。 |
+| `VAL-007` | Scientific Validation | `implemented` | 已只读核对 Suzhou2 历史单策略 20×2500、50,000 候选及关键 checksum；正式 policy reevaluation、ScaleEvidence adoption、远端 Protenix/TNP probe 和 Stage 07 真实运行尚未发布。 |
 | `VAL-003` | Scientific Validation | `planned` | 冻结 APOE 现有负结果，对相同候选和 MSA 比较 no-template、target-template、target-template+hotspot constraint 及已知 VHH–抗原正对照；任何默认策略变化必须形成新 profile/ADR。 |
 | `UI-001` | Product UI | `smoke-validated` | React/TypeScript 本地科研工作台、设计 token 与 project/run/stage 导航已通过真实 APOE 展示和 1440/1920 浏览器验收。 |
 | `ENG-009` | Core Engineering | `smoke-validated` | localhost gateway、manifest 投影、安全 artifact token、SSE、drain/resume job controller 已通过 Python 3.11 和真实服务器服务 smoke。 |
@@ -83,7 +88,7 @@
 | `DATA-004` | Data & Assets | `smoke-validated` | APOE Stage 05 已形成 65 MiB、307 文件的 manifest 完整 UI evidence bundle；约 970 MB backend 中间目录未提交。 |
 | `UX-005` | CLI & Developer Experience | `smoke-validated` | 合作者 clone `main` 后可用一条命令完成 SHA-256/manifest 校验并启动相同 APOE 工作台。 |
 | `ENG-013` | Core Engineering | `smoke-validated` | whole-run SSH executor、严格主机/版本探针、rsync staging、systemd worker、远端独立 manifest/progress/resume 和 CLI 已由 Suzhou2 8×A100 真实提交验证。 |
-| `S06-002` | Scientific Pipeline | `implemented` | 以源 Stage05Bundle SHA-256 和双重 acknowledgement 人工授权已扩展 Tier A 的探索性 50k；APOE Stage 05 科学停止保持不变，远端运行待完成。 |
+| `S06-002` | Scientific Pipeline | `implemented` | 以源 Stage05Bundle SHA-256 和双重 acknowledgement 人工授权的探索性单策略 50k 已在 Suzhou2 完成 20×2500、50,000 候选；APOE Stage 05 v1.5 科学停止保持不变。 |
 | `ENG-014` | Core Engineering | `smoke-validated` | SSH watch/resume、manifest 驱动 metadata/complete 同步和 BoltzGen task heartbeat 已通过真实 Suzhou2 运行只读验收。 |
 | `S06-003` | Scientific Pipeline | `implemented` | Stage 06 远程协作闭环完成；旧 worker 保持兼容，新 dev12 任务记录逐 shard heartbeat。 |
 | `UI-008` | Product UI | `smoke-validated` | 新建设计可显式选择本机或 profile 远端；运行任务页可刷新、同步和恢复远端任务，双尺寸 Chromium 验收通过。 |
@@ -123,6 +128,8 @@
 | `REP-008` | Reporting & Visualization | `smoke-validated` | PyMOL 与 Mol* 首次加载后保持挂载；真实 APOE Stage 02 已通过 `PyMOL → Mol* → PyMOL` 回归，返回 PyMOL 后 reshape、viewport、redraw 和结构首帧均恢复。 |
 | `ENG-028` | Core Engineering | `smoke-validated` | 结构助手改为部署者拥有的单一平台配置；请求端不再提交 provider 或用户密钥，公开状态接口不泄露 provider、模型、endpoint 或 API key。 |
 | `UI-020` | Product UI | `smoke-validated` | 普通设置页和 Stage 01/02 助手栏不再提供模型、endpoint 或 API key 表单，只显示“EasyDesign 结构助手”的平台可用状态。 |
+| `ENG-029` | Core Engineering | `implemented` | 新增 Stage05Bundle/ScaleBundle 0.2、多策略候选 identity、跨 run 不可变证据链接及旧 0.1 bundle 兼容读取；不复制 39 GB 历史结果。 |
+| `UI-021` | Product UI | `implemented` | Stage 05–07 采用渐进展开的精简科研界面：Tier 金字塔、晋级策略、折叠诊断、共享预算进度、全局漏斗和 YAML 来源分布。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |
 | `UI-016` | Product UI | `implemented` | 安装中心展示环境/资产状态、完整及逐后端安装计划；与 CLI 共用持久 setup job，UI 重启后仍能恢复结构化终态。 |
@@ -153,9 +160,9 @@
 | Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev26 已通过 APOE 双查看器返回回归并改为平台统一结构助手。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
-| Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-003 已补齐远程 watch、心跳、恢复、manifest 同步和 UI 服务器选择；APOE 50k 继续运行。 | 跟踪 Suzhou2 20×2500，并用控制端只读镜像让合作者查看相同运行记录。 | 无代码阻塞；当前 dev11 worker 没有心跳字段，新提交/恢复的 dev12 任务才产生心跳。 | 2026-07-27 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
-| Stage 07 | `implemented` | S07-001 已实现 v1.5 预筛、Protenix 三 seed、一致性、TNP 证据和确定性主备候选包，固定 TNP batch smoke 已通过。 | 保持通用能力冻结；APOE 在 Stage 05 科学停止，本轮不生成 Stage 07 候选包。 | 无代码阻塞；APOE 没有合法 Stage 06 ScaleBundle，50k 未授权。 | 2026-07-26 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+| Stage 05 | `smoke-validated` | v1.5 APOE 证据保持冻结；v1.6 已实现最多 3 个 Tier A 晋级，100 条诊断只产生 warning。 | 发布 APOE policy reevaluation，并验证 v1.6 与冻结 pilot Tier/F_YAML 完全一致。 | 无代码 blocker；尚未发布 APOE v1.6 continuation。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `implemented` | S06-004 已实现 1–3 个晋级策略等额共享全局 50k；Suzhou2 历史单策略 50k 已完成并保持 v1.5 语义。 | 校验历史 50k 并发布不可变采用记录；不复制 39 GB。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `implemented` | S07-002 已支持 ScaleBundle 0.1/0.2、多策略全局竞争和最终 YAML 来源分布。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-07-31 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## 中期目标：多 binder 与正式开发者产品

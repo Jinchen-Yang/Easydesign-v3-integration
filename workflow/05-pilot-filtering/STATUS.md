@@ -6,21 +6,27 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 |
+| `smoke-validated` | v1.5 APOE 证据保持冻结；v1.6 已实现最多 3 个 Tier A 晋级，100 条诊断只产生 warning。 | 发布 APOE policy reevaluation，并验证 v1.6 与冻结 pilot Tier/F_YAML 完全一致。 | 无代码 blocker；尚未发布 APOE v1.6 continuation。 | 2026-07-31 |
 
 ## 当前结论
 
 - 阶段状态：`smoke-validated`；通用实现和 APOE 真实 scientific-stop 路径均通过。
+- `S05-002` 已实现 Stage05Bundle 0.2：按 `F_YAML` 晋级最多三个 Tier A，不从
+  Tier B–D 补位；full-target 零通过形成 `advisory-warning`，不撤销晋级。
+- v1.6 后端、文件、数量与 checksum 错误仍是 operational failure，不会被 warning
+  规则吞掉。
 - 必需 pilot 硬门、逐候选证据、序列去重、strategy Tier、`S_screen` 和
   `F_YAML` 已实现。
 - Tier A 扩展复用 Stage 04 的 BoltzGen task/executor/collector，不存在第二套生成逻辑。
 - full-target Protenix 使用 target required MSA、binder query-only、无模板、seed 101。
-- 没有 Tier A 或没有 scale winner 会发布 succeeded StageManifest 与明确
-  `ScientificStop`，不会修改阈值迎合案例。
+- v1.6 只有没有 Tier A 才发布 `stopped-no-tier-a`；旧 v1.5 的 no-winner stop 继续
+  按原 Bundle 0.1 只读兼容，不会改写历史。
 - APOE 正式结论为 `stopped-no-scale-winner`，不是软件失败：21 个策略中
   region A × gontivimab 为唯一 Tier A，扩展后 12/100 通过 local gate，但 Top 10
   的 full-target Protenix 结构均未保持原 binder pose。
-- 本轮不得启动 APOE Stage 06/07，也不得把 binder pose RMSD 3 Å 门槛放宽来迎合案例。
+- 冻结 v1.5 run 本身仍不得自动进入 Stage 06/07，也不得把 binder pose RMSD 3 Å
+  门槛放宽来迎合案例。v1.6 continuation 只能通过独立 policy reevaluation 采用相同
+  pilot Tier/F_YAML；历史人工授权 50k 也必须与旧 scientific stop 并列展示。
 
 ## 功能矩阵
 
@@ -34,13 +40,15 @@
 | `S_screen`、Tier 与 `F_YAML` | `implemented` | 冻结 profile 与确定性排序测试 |
 | Tier A 扩展到配置总量 | `implemented` | 共用可恢复 BoltzGen executor；通用 fixture |
 | full-target Protenix seed 101 | `implemented` | complex input、full confidence 和真实 cross-chain PAE parser 测试 |
-| 唯一 scale winner / scientific stop | `implemented` | winner 与 no-tier 集成路径 |
+| v1.6 多 Tier A 晋级 / 诊断 warning | `implemented` | 0/1/2/3/4 Tier A、top3、禁止 B–D 补位和零结构通过测试 |
+| v1.5 唯一 scale winner / scientific stop | `smoke-validated` | 冻结 APOE Bundle 0.1 与旧 stop 兼容读取 |
 | 原子 progress、append-only event、resume | `implemented` | 结构指标 cache、expansion/full-target TaskRecord、通用 watch |
 | APOE 真实 Stage 05 | `smoke-validated` | 840 个 pilot、60 个新增扩展、10 个 full-target Protenix 全部完成；合法发布 `stopped-no-scale-winner` |
 
 ## Now
 
-- 无。S05-001 APOE 真实运行和负结果归档已经完成。
+- `[S05-002/VAL-007]` 用冻结 APOE pilot report 发布独立
+  `PolicyReevaluationRecord`；不得重写 v1.5 Stage05Bundle、manifest 或 stop。
 
 ## Next
 
@@ -52,12 +60,16 @@
   stop。
 - 通过预注册 benchmark 审视 full-target binder-pose gate；任何阈值或参考对齐方法变化
   必须形成新 profile/ADR，不能回写本次 APOE 结果。
+- 在第二条独立真实 target 上验证 2–3 个 Tier A 共享预算的运行路径。
 
 ## Blocked
 
 - 公共 ColabFold MSA 无 SLA；网络失败属于 operational failure，可恢复但不能无 MSA
   fallback。
-- APOE 没有 scale winner 是已完成的科学负结果，不列为 `Blocked`。
+- APOE 的旧 v1.5 no-winner 是已完成的科学负结果，不列为 `Blocked`；v1.6 明确把
+  同一 full-target 结果降为 advisory warning，但不得回写旧 Bundle。
+- Suzhou2 当前缺少已登记的 Protenix/TNP Stage 07 环境，且八张 GPU 正被其他任务使用；
+  不终止外部进程，等待资源和后端自然就绪。
 
 ## 验证证据
 
@@ -87,6 +99,11 @@
   `c9909a6a75f1786bb6ca293ea4944bc8fc40b25e27985e90642a498eb94bfdb7`。
 - 终态质量门：`make check` 通过（Ruff、strict mypy 104 个源码文件）；
   全仓 `230 passed, 8 skipped`；dev5 wheel、21/21 固定资产与 console script 验证通过。
+- dev27 集成前完整回归：不可变快照 `stage0507-validation-20260731-022` 中
+  `make check/test/build`、`341 passed, 8 skipped`、Ruff、142 个源文件的 strict
+  mypy 以及 wheel smoke 通过；快照
+  `stage0507-validation-20260731-021` 中 Workbench production build、Chromium
+  双尺寸 38 项非视觉测试和 2 项视觉回归通过。
 
 ## 工作日志
 

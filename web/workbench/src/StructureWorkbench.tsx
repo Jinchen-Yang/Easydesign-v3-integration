@@ -511,6 +511,7 @@ export function StructureWorkbench({
                 <NativePyMOLViewer
                   api={nativeApi}
                   projectId={projection.target_id}
+                  active={viewer === "pymol"}
                   pml={scenePml}
                   structures={nativeStructures}
                   versionId={activeVersion?.version_id || "current"}

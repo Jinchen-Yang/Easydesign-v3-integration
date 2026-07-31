@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；Workbench 浏览器 PyMOL 严格首帧状态机已在 dev25 复验 138-aa 结构和 9/14/14 来源区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev26 已修复并真实复验 `PyMOL → Mol* → PyMOL` 返回路径，138-aa 结构与来源区域不会因切换丢失。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 |
 
 ## 当前结论
 
@@ -20,6 +20,9 @@
 - Stage 01 Target Bundle → Workbench 浏览器 PyMOL 2.6.0a0 / Mol* 双查看器状态：
   `smoke-validated`。两个查看器读取同一份 checksum 正确的 `target.cif`；显示会话不进入
   StageManifest，也不改变 Target Bundle。
+- Workbench 不再在切换时卸载浏览器 PyMOL canvas。PyMOL 与 Mol* 首次使用后均保持
+  挂载；返回 PyMOL 时在两个浏览器帧后强制同步 backing size、reshape、OpenGL viewport
+  和 redraw。真实 APOE Stage 02 已完成 `PyMOL → Mol* → PyMOL` 可见结构回归。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -93,7 +96,7 @@
 | MSA-backed Target Bundle 发布 | `smoke-validated` | APOE 正式 run 发布 609-depth MSA、统一 mmCIF Bundle 和完整 manifest；Stage 02 真实读取器通过 |
 | 预计算 MSA 复用 | `smoke-validated` | 609-depth APOE A3M 经 query/hash/depth 校验后真实 `use_msa=true` 预测 |
 | 便携式 Mol* Target Viewer | `smoke-validated` | Mol* 5.11.0 本地资产、不可变报告 revision、localhost 服务、Chromium 与两条 APOE 报告 |
-| Workbench PyMOL/Mol* 双查看器 | `smoke-validated` | 离线 Pyodide/PyMOL WASM 资产、真实 APOE 138-aa/PSE 颜色、Mol* 切换及结构 SHA 不变 |
+| Workbench PyMOL/Mol* 双查看器 | `smoke-validated` | 离线 Pyodide/PyMOL WASM 资产、真实 APOE 138-aa/PSE 颜色、双向反复切换及结构 SHA 不变 |
 
 ## Now
 

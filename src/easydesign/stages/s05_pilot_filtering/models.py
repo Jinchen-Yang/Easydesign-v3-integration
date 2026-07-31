@@ -181,6 +181,51 @@ class PilotFilterReport(BaseModel):
         return self
 
 
+class PilotFilterReportV1_6(BaseModel):
+    """v1.6 pilot report; gates stay identical while promotion semantics change."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["0.2"] = "0.2"
+    generated_at: datetime
+    profile_id: Literal["nanobody-filter-standard-v1.6"] = (
+        "nanobody-filter-standard-v1.6"
+    )
+    profile_sha256: str = Field(pattern=SHA256_PATTERN)
+    candidate_index_sha256: str = Field(pattern=SHA256_PATTERN)
+    candidate_records: tuple[CandidateFilterRecord, ...] = Field(min_length=1)
+    strategy_summaries: tuple[StrategyFilterSummary, ...] = Field(min_length=1)
+    promoted_strategy_ids: tuple[str, ...] = Field(max_length=3)
+    status: Literal["strategies-promoted", "stopped-no-tier-a"]
+
+    @model_validator(mode="after")
+    def validate_report(self) -> Self:
+        candidate_ids = [record.candidate_id for record in self.candidate_records]
+        strategy_ids = [summary.strategy_id for summary in self.strategy_summaries]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("PilotFilterReportV1_6 candidate_id 不能重复")
+        if len(strategy_ids) != len(set(strategy_ids)):
+            raise ValueError("PilotFilterReportV1_6 strategy_id 不能重复")
+        selected = tuple(
+            summary.strategy_id
+            for summary in sorted(
+                (
+                    summary
+                    for summary in self.strategy_summaries
+                    if summary.selected_for_expansion
+                ),
+                key=lambda summary: (-summary.score_yaml, summary.strategy_id),
+            )
+        )
+        if self.promoted_strategy_ids != selected:
+            raise ValueError("promoted_strategy_ids 必须按 F_YAML 排名覆盖 Tier A")
+        if self.status == "stopped-no-tier-a" and selected:
+            raise ValueError("scientific stop 不得包含 promoted strategy")
+        if self.status == "strategies-promoted" and not selected:
+            raise ValueError("strategies-promoted 必须包含 Tier A strategy")
+        return self
+
+
 class ScientificStop(BaseModel):
     """成功执行得到的科学负结果，不是 operational failure。"""
 
@@ -369,6 +414,230 @@ class Stage05Bundle(BaseModel):
             raise ValueError(
                 "stopped-no-scale-winner 必须保留完整 expansion evidence 且不得有 winner"
             )
+        return self
+
+
+class Stage05Warning(BaseModel):
+    """A non-blocking scientific warning produced by v1.6 diagnostics."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    warning_id: str = Field(pattern=ID_PATTERN)
+    strategy_id: str = Field(pattern=ID_PATTERN)
+    code: Literal[
+        "full-target-structure-gate-zero-pass",
+        "full-target-confidence-low",
+    ]
+    message: str = Field(min_length=1, max_length=4096)
+    evidence_candidate_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_candidate_ids(self) -> Self:
+        if len(self.evidence_candidate_ids) != len(set(self.evidence_candidate_ids)):
+            raise ValueError("warning evidence candidate_id 不能重复")
+        for candidate_id in self.evidence_candidate_ids:
+            if not candidate_id:
+                raise ValueError("warning evidence candidate_id 不能为空")
+        return self
+
+
+class StrategyPromotionRecord(BaseModel):
+    """Tier A promotion fixed before the diagnostic 100-candidate expansion."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    strategy_id: str = Field(pattern=ID_PATTERN)
+    promotion_rank: int = Field(ge=1, le=3)
+    score_yaml: float = Field(ge=0, le=1)
+    pilot_candidate_count: int = Field(ge=1)
+    unique_sequence_count: int = Field(ge=1)
+    boltzgen_hard_pass_count: int = Field(ge=0)
+    final_gate_pass_count: int = Field(ge=2)
+    final_gate_pass_rate: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        if self.unique_sequence_count > self.pilot_candidate_count:
+            raise ValueError("promotion unique sequence 数不能超过 pilot candidate 数")
+        if self.boltzgen_hard_pass_count > self.unique_sequence_count:
+            raise ValueError("promotion hard-pass 数不能超过 unique sequence 数")
+        if self.final_gate_pass_count > self.unique_sequence_count:
+            raise ValueError("promotion final-gate 数不能超过 unique sequence 数")
+        expected_rate = self.final_gate_pass_count / self.pilot_candidate_count
+        if abs(self.final_gate_pass_rate - expected_rate) > 1e-12:
+            raise ValueError("promotion final-gate pass rate 与计数不一致")
+        return self
+
+
+class AdvisoryStrategySummary(BaseModel):
+    """Diagnostic expansion evidence that never revokes Tier A promotion."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    strategy_id: str = Field(pattern=ID_PATTERN)
+    promotion_rank: int = Field(ge=1, le=3)
+    score_yaml: float = Field(ge=0, le=1)
+    complete_candidate_count: int = Field(ge=1)
+    local_gate_pass_count: int = Field(ge=0)
+    selected_for_full_target_count: int = Field(ge=0)
+    full_target_prediction_count: int = Field(ge=0)
+    full_target_structure_pass_count: int = Field(ge=0)
+    full_target_structure_pass_rate: float = Field(ge=0, le=1)
+    minimum_binder_pose_rmsd_angstrom: float | None = Field(default=None, ge=0)
+    median_binder_pose_rmsd_angstrom: float | None = Field(default=None, ge=0)
+    mean_selected_score_expand_structure: float = Field(ge=0, le=1)
+    advisory_status: Literal["advisory-supported", "advisory-warning"]
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> Self:
+        if self.local_gate_pass_count > self.complete_candidate_count:
+            raise ValueError("advisory local-gate 数不能超过完整候选数")
+        if self.selected_for_full_target_count > self.local_gate_pass_count:
+            raise ValueError("advisory selected 数不能超过 local-gate 数")
+        if self.full_target_prediction_count != self.selected_for_full_target_count:
+            raise ValueError("diagnostic prediction 必须覆盖全部 selected candidate")
+        if self.full_target_structure_pass_count > self.full_target_prediction_count:
+            raise ValueError("advisory structure-pass 数不能超过 prediction 数")
+        expected_rate = (
+            self.full_target_structure_pass_count / self.full_target_prediction_count
+            if self.full_target_prediction_count
+            else 0.0
+        )
+        if abs(self.full_target_structure_pass_rate - expected_rate) > 1e-12:
+            raise ValueError("advisory structure-pass rate 与计数不一致")
+        expected_status = (
+            "advisory-supported"
+            if self.full_target_structure_pass_count > 0
+            else "advisory-warning"
+        )
+        if self.advisory_status != expected_status:
+            raise ValueError("advisory status 与 structure-pass 数不一致")
+        if self.full_target_prediction_count == 0:
+            if (
+                self.minimum_binder_pose_rmsd_angstrom is not None
+                or self.median_binder_pose_rmsd_angstrom is not None
+            ):
+                raise ValueError("无 prediction 时不能声明 binder pose RMSD")
+        elif (
+            self.minimum_binder_pose_rmsd_angstrom is None
+            or self.median_binder_pose_rmsd_angstrom is None
+        ):
+            raise ValueError("有 prediction 时必须声明 binder pose RMSD 摘要")
+        return self
+
+
+class AdvisoryValidationReport(BaseModel):
+    """Stage 05 v1.6 expansion evidence; scientific negatives are warnings."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["0.2"] = "0.2"
+    generated_at: datetime
+    profile_id: Literal["nanobody-filter-standard-v1.6"] = (
+        "nanobody-filter-standard-v1.6"
+    )
+    expanded_total_per_strategy: int = Field(ge=1)
+    full_target_refold_top_n: int = Field(ge=1)
+    promoted_strategies: tuple[StrategyPromotionRecord, ...] = Field(
+        min_length=1,
+        max_length=3,
+    )
+    candidates: tuple[ExpansionCandidateRecord, ...] = Field(min_length=1)
+    predictions: tuple[FullTargetPredictionRecord, ...]
+    strategies: tuple[AdvisoryStrategySummary, ...] = Field(
+        min_length=1,
+        max_length=3,
+    )
+    warnings: tuple[Stage05Warning, ...] = ()
+    status: Literal["diagnostics-complete"] = "diagnostics-complete"
+
+    @model_validator(mode="after")
+    def validate_report(self) -> Self:
+        promoted_ids = tuple(item.strategy_id for item in self.promoted_strategies)
+        summary_ids = tuple(item.strategy_id for item in self.strategies)
+        if len(promoted_ids) != len(set(promoted_ids)):
+            raise ValueError("promoted strategy_id 不能重复")
+        if len(summary_ids) != len(set(summary_ids)):
+            raise ValueError("advisory strategy_id 不能重复")
+        if set(promoted_ids) != set(summary_ids):
+            raise ValueError("advisory summary 必须精确覆盖 promoted strategy")
+        ranks = tuple(item.promotion_rank for item in self.promoted_strategies)
+        if ranks != tuple(range(1, len(ranks) + 1)):
+            raise ValueError("promotion rank 必须按 1..N 连续排序")
+        if tuple(item.strategy_id for item in self.promoted_strategies) != tuple(
+            item.strategy_id
+            for item in sorted(
+                self.promoted_strategies,
+                key=lambda item: item.promotion_rank,
+            )
+        ):
+            raise ValueError("promoted strategy 必须按 promotion rank 排列")
+        candidate_ids = [item.candidate_id for item in self.candidates]
+        prediction_ids = [item.candidate_id for item in self.predictions]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("advisory candidate_id 不能重复")
+        if len(prediction_ids) != len(set(prediction_ids)):
+            raise ValueError("advisory prediction candidate_id 不能重复")
+        if any(item.strategy_id not in promoted_ids for item in self.candidates):
+            raise ValueError("advisory candidate 来自未晋级 strategy")
+        if any(item.strategy_id not in promoted_ids for item in self.predictions):
+            raise ValueError("advisory prediction 来自未晋级 strategy")
+        warning_strategy_ids = {item.strategy_id for item in self.warnings}
+        if not warning_strategy_ids.issubset(set(promoted_ids)):
+            raise ValueError("warning 来自未晋级 strategy")
+        expected_warning_ids = {
+            item.strategy_id
+            for item in self.strategies
+            if item.advisory_status == "advisory-warning"
+        }
+        if not expected_warning_ids.issubset(warning_strategy_ids):
+            raise ValueError("advisory-warning strategy 必须有结构化 warning")
+        return self
+
+
+class Stage05BundleV0_2(BaseModel):
+    """v1.6 handoff: up to three Tier A strategies, never a single winner."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["0.2"] = "0.2"
+    generated_at: datetime
+    pilot_bundle: ArtifactRef
+    strategy_bundle: ArtifactRef
+    filter_profile: ArtifactRef
+    pilot_filter_report: ArtifactRef
+    expansion_candidate_index: ArtifactRef | None = None
+    advisory_validation_report: ArtifactRef | None = None
+    progress_final: ArtifactRef
+    task_events: ArtifactRef
+    scientific_stop: ArtifactRef | None = None
+    promoted_strategy_ids: tuple[str, ...] = Field(max_length=3)
+    promotion_rank: tuple[StrategyPromotionRecord, ...] = Field(max_length=3)
+    warnings: tuple[Stage05Warning, ...] = ()
+    status: Literal["strategies-promoted", "stopped-no-tier-a"]
+
+    @model_validator(mode="after")
+    def validate_status(self) -> Self:
+        promotion_ids = tuple(item.strategy_id for item in self.promotion_rank)
+        if self.promoted_strategy_ids != promotion_ids:
+            raise ValueError("promoted_strategy_ids 与 promotion rank 不一致")
+        if self.status == "strategies-promoted":
+            if (
+                not self.promoted_strategy_ids
+                or self.expansion_candidate_index is None
+                or self.advisory_validation_report is None
+                or self.scientific_stop is not None
+            ):
+                raise ValueError("strategies-promoted Stage05Bundle artifact 不完整")
+        elif (
+            self.promoted_strategy_ids
+            or self.promotion_rank
+            or self.expansion_candidate_index is not None
+            or self.advisory_validation_report is not None
+            or self.warnings
+            or self.scientific_stop is None
+        ):
+            raise ValueError("stopped-no-tier-a 不得伪造 promotion/diagnostic evidence")
         return self
 
 

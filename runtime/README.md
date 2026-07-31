@@ -42,3 +42,26 @@ Conda：
 长时安装任务位于 `state/setup-jobs/<job-id>/`，日志位于 `logs/`。关闭 SSH 或 UI
 不会终止通过 `./easydesign setup --detach` 启动的 worker；状态由不可变 request、
 process 和 result 记录恢复，不依赖终端文本。
+
+## 平台结构助手 API
+
+普通使用者不选择模型提供方，也不填写 API key。EasyDesign 部署者只需在当前 clone
+创建以下本机文件：
+
+```text
+runtime/secrets/structure-assistant/platform-provider.yaml
+```
+
+可以从
+`configs/assistant/platform-provider.example.yaml` 复制字段结构，当前支持
+`provider: deepseek` 或 `provider: zhipu-glm`。该文件不得提交 Git、不得使用符号
+链接，在 Linux/macOS 上必须设置为仅文件所有者可读写：
+
+```bash
+chmod 600 runtime/secrets/structure-assistant/platform-provider.yaml
+```
+
+服务端只加载这一份平台配置，不在 provider 之间静默 fallback。前端只能读取
+“EasyDesign 结构助手”是否可用，不能读取 provider、模型、endpoint 或密钥。模型请求
+仍只发送用户文字、阶段、链、编号体系和当前区域数量，不发送结构坐标、MSA 或完整
+序列。

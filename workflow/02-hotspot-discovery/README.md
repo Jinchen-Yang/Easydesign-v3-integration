@@ -530,9 +530,10 @@ SASA/ScanNet 后端，两种方法保持独立，不融合分数。模型解析�
 `manual-residue-list` 用户先验，必须经过编号/坐标/checksum 校验和人工批准，随后创建
 新的不可变 Stage 02 branch；旧 run 不回写。
 
-模型不接收坐标、完整序列或 MSA。provider、模型、endpoint 和 API key 必须显式配置，
-不允许 DeepSeek/GLM 互相静默 fallback；密钥只写入仓库内 `runtime/secrets/` 的
-revision，科学 manifest 和普通日志不得包含密钥或完整请求。
+模型不接收坐标、完整序列或 MSA。provider、模型、endpoint 和 API key 由部署者在
+`runtime/secrets/structure-assistant/platform-provider.yaml` 显式配置；普通使用者
+界面不提供 provider 或 key 输入。不允许 DeepSeek/GLM 互相静默 fallback；密钥不进入
+科学 manifest、普通日志、浏览器存储或任何 API 响应。
 
 安全 PML 只允许显示、着色、标签、选择和视角命令；`load/fetch/save/remove/delete/
 alter/run/python/system/shell/reinitialize` 等命令明确拒绝。模型本身不能生成并直接

@@ -70,22 +70,35 @@ from easydesign.stages.s05_pilot_filtering import (
     ScientificStop,
     ScientificStopCode,
     Stage05Bundle,
+    Stage05BundleV0_2,
 )
-from easydesign.stages.s06_scale_generation_and_refolding import ScaleBundle
+from easydesign.stages.s06_scale_generation_and_refolding import (
+    MultiStrategyCandidateIndex,
+    ScaleBundle,
+    ScaleBundleV0_2,
+    ScaleStrategyAuthorization,
+)
 from easydesign.stages.s07_final_filtering_and_selection import (
     FinalCandidate,
     FinalCandidatePackage,
+    FinalCandidatePackageV0_2,
     FinalFilterReport,
     FinalPredictionRecord,
     FinalSelectionRecord,
     MultiSeedConsensusRecord,
     OperationalFailure,
     RawFinalPrediction,
+    ScaleCandidateLineage,
     Seed101Normalization,
     SeedPairConsistency,
     Stage07Bundle,
+    Stage07BundleV0_2,
     Stage07PredictionState,
+    Stage07ScaleInput,
     TnpReport,
+    normalize_scale_bundle_for_stage07,
+    summarize_selected_sources,
+    validate_scale_candidate_lineage,
 )
 
 from .complex_prediction_support import (
@@ -167,13 +180,13 @@ class _Upstream:
     strategy_bundle_ref: ArtifactRef
     strategy_bundle: StrategyBundle
     stage05_bundle_ref: ArtifactRef
-    stage05_bundle: Stage05Bundle
+    stage05_bundle: Stage05Bundle | Stage05BundleV0_2
     scale_bundle_ref: ArtifactRef
-    scale_bundle: ScaleBundle
+    scale_bundle: ScaleBundle | ScaleBundleV0_2
     scale_candidate_index_ref: ArtifactRef
-    scale_candidate_index: CandidateIndex
-    winner_strategy_id: str
-    hotspot_residue_ids: tuple[int, ...]
+    scale_candidate_index: CandidateIndex | MultiStrategyCandidateIndex
+    scale_input: Stage07ScaleInput
+    hotspot_residue_ids_by_strategy: dict[str, tuple[int, ...]]
 
 
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
@@ -211,28 +224,84 @@ def _load_upstream(root: Path) -> _Upstream:
     strategy_ref = stage03.require_output("strategy-bundle")
     strategy = load_model(strategy_ref.verify(root), StrategyBundle)
     stage05_ref = stage05.require_output("stage05-bundle")
-    stage05_bundle = load_model(stage05_ref.verify(root), Stage05Bundle)
+    stage05_path = stage05_ref.verify(root)
+    stage05_schema = json.loads(stage05_path.read_text(encoding="utf-8")).get(
+        "schema_version"
+    )
+    stage05_bundle: Stage05Bundle | Stage05BundleV0_2
+    if stage05_schema == "0.2":
+        stage05_bundle = load_model(stage05_path, Stage05BundleV0_2)
+    else:
+        stage05_bundle = load_model(stage05_path, Stage05Bundle)
     scale_ref = stage06.require_output("scale-bundle")
-    scale = load_model(scale_ref.verify(root), ScaleBundle)
+    scale_path = scale_ref.verify(root)
+    scale_schema = json.loads(scale_path.read_text(encoding="utf-8")).get(
+        "schema_version"
+    )
+    scale: ScaleBundle | ScaleBundleV0_2
+    candidate_index: CandidateIndex | MultiStrategyCandidateIndex
+    if scale_schema == "0.2":
+        scale = load_model(scale_path, ScaleBundleV0_2)
+    else:
+        scale = load_model(scale_path, ScaleBundle)
     index_ref = stage06.require_output("scale-candidate-index")
-    candidate_index = load_model(index_ref.verify(root), CandidateIndex)
-    winner = stage05_bundle.winner_strategy_id
-    if stage05_bundle.status != "winner-selected" or winner is None:
-        raise ManifestStateError("Stage 07 只接受 Stage 05 唯一 winner")
-    if scale.stage05_bundle != stage05_ref or scale.strategy_id != winner:
-        raise ManifestStateError("ScaleBundle 与 Stage05 winner identity 不一致")
+    if scale_schema == "0.2":
+        candidate_index = load_model(
+            index_ref.verify(root),
+            MultiStrategyCandidateIndex,
+        )
+    else:
+        candidate_index = load_model(index_ref.verify(root), CandidateIndex)
+    if scale.stage05_bundle != stage05_ref:
+        raise ManifestStateError("ScaleBundle 与 Stage05Bundle identity 不一致")
     if scale.candidate_index != index_ref:
         raise ManifestStateError("ScaleBundle candidate index 与 StageManifest 不一致")
-    selected_strategy = next(
-        (item for item in strategy.strategies if item.strategy_id == winner),
-        None,
+    scale_input = normalize_scale_bundle_for_stage07(
+        scale_bundle=scale,
+        scale_bundle_sha256=scale_ref.sha256,
+        candidate_index_sha256=index_ref.sha256,
     )
-    if selected_strategy is None:
-        raise ManifestStateError("Stage 05 winner 不在 StrategyBundle")
-    if any(item.strategy_id != winner for item in candidate_index.candidates):
-        raise ManifestStateError("Stage 06 candidate index 混入非 winner strategy")
-    if len(candidate_index.candidates) != scale.requested_new_candidates:
-        raise ManifestStateError("Stage 06 candidate index 数量与 ScaleBundle 不一致")
+    authorized_strategy_ids = tuple(
+        item.strategy_id for item in scale_input.strategy_allocations
+    )
+    if isinstance(scale, ScaleBundleV0_2):
+        if not isinstance(stage05_bundle, Stage05BundleV0_2):
+            raise ManifestStateError("ScaleBundle 0.2 必须来自 Stage05Bundle 0.2")
+        if stage05_bundle.status != "strategies-promoted":
+            raise ManifestStateError("Stage 05 没有晋级策略；Stage 07 不允许继续")
+        if stage05_bundle.promoted_strategy_ids != authorized_strategy_ids:
+            raise ManifestStateError("Stage 05 晋级策略与 Stage 06 allocation 不一致")
+    else:
+        if not isinstance(stage05_bundle, Stage05Bundle):
+            raise ManifestStateError("ScaleBundle 0.1 必须来自 Stage05Bundle 0.1")
+        if stage05_bundle.status == "stopped-no-tier-a":
+            raise ManifestStateError("Stage 05 没有 Tier A；Stage 07 不允许继续")
+        if stage05_bundle.status == "winner-selected":
+            if stage05_bundle.winner_strategy_id != scale.strategy_id:
+                raise ManifestStateError("ScaleBundle 与 Stage 05 winner 不一致")
+        elif stage05_bundle.status == "stopped-no-scale-winner":
+            authority = load_model(
+                scale.strategy_authorization.verify(root),
+                ScaleStrategyAuthorization,
+            )
+            if (
+                authority.mode != "manual-stage05-stop-override"
+                or authority.strategy_id != scale.strategy_id
+            ):
+                raise ManifestStateError(
+                    "旧 scientific-stop 只有具备显式人工授权时才能进入 Stage 07"
+                )
+        else:
+            raise ManifestStateError("Stage 05 status 不支持 Stage 07")
+    strategy_by_id = {
+        item.strategy_id: item for item in strategy.strategies
+    }
+    if any(
+        strategy_id not in strategy_by_id
+        for strategy_id in authorized_strategy_ids
+    ):
+        raise ManifestStateError("Stage 06 strategy 不在 StrategyBundle")
+    lineage: list[ScaleCandidateLineage] = []
     for candidate in candidate_index.candidates:
         candidate.original_structure.verify(root)
         candidate.refolded_structure.verify(root)
@@ -241,6 +310,27 @@ def _load_upstream(root: Path) -> _Upstream:
                 f"candidate={candidate.candidate_id} 缺少 design-mask artifact"
             )
         candidate.design_mask_source.verify(root)
+        sequence = candidate.metrics.get("designed_chain_sequence")
+        if not isinstance(sequence, str) or not sequence.strip():
+            sequence = candidate.metrics.get("designed_sequence")
+        if not isinstance(sequence, str) or not sequence.strip():
+            raise ManifestStateError(
+                f"candidate={candidate.candidate_id} 缺少可审计序列"
+            )
+        lineage.append(
+            ScaleCandidateLineage(
+                candidate_id=candidate.candidate_id,
+                strategy_id=candidate.strategy_id,
+                strategy_ordinal=candidate.ordinal_within_strategy,
+                sequence_sha256=hashlib.sha256(
+                    sequence.strip().upper().encode("ascii")
+                ).hexdigest(),
+            )
+        )
+    validate_scale_candidate_lineage(
+        scale_input=scale_input,
+        candidates=tuple(lineage),
+    )
     for reference in (
         target_structure,
         target_sequence,
@@ -269,8 +359,11 @@ def _load_upstream(root: Path) -> _Upstream:
         scale_bundle=scale,
         scale_candidate_index_ref=index_ref,
         scale_candidate_index=candidate_index,
-        winner_strategy_id=winner,
-        hotspot_residue_ids=selected_strategy.binding_label_seq_ids,
+        scale_input=scale_input,
+        hotspot_residue_ids_by_strategy={
+            strategy_id: strategy_by_id[strategy_id].binding_label_seq_ids
+            for strategy_id in authorized_strategy_ids
+        },
     )
 
 
@@ -374,12 +467,15 @@ def _batch_local_metrics(
             missing.append(candidate)
             continue
         cached = load_model(cache_path, _LocalMetricCache)
+        hotspot_residue_ids = upstream.hotspot_residue_ids_by_strategy[
+            candidate.strategy_id
+        ]
         expected = {
             "candidate_id": candidate.candidate_id,
             "candidate_structure_sha256": candidate.refolded_structure.sha256,
             "target_structure_sha256": upstream.target_structure_ref.sha256,
             "design_mask_sha256": candidate.design_mask_source.sha256,
-            "hotspot_residue_ids": upstream.hotspot_residue_ids,
+            "hotspot_residue_ids": hotspot_residue_ids,
         }
         if cached.model_dump(include=set(expected)) != expected:
             raise ManifestStateError(
@@ -433,7 +529,9 @@ def _batch_local_metrics(
                     candidate=candidate,
                     structure_path=candidate.refolded_structure.verify(root),
                     reference_target=reference,
-                    hotspot_ids=upstream.hotspot_residue_ids,
+                    hotspot_ids=upstream.hotspot_residue_ids_by_strategy[
+                        candidate.strategy_id
+                    ],
                 ): candidate
                 for candidate in missing
             }
@@ -450,7 +548,9 @@ def _batch_local_metrics(
                     candidate_structure_sha256=candidate.refolded_structure.sha256,
                     target_structure_sha256=upstream.target_structure_ref.sha256,
                     design_mask_sha256=candidate.design_mask_source.sha256,
-                    hotspot_residue_ids=upstream.hotspot_residue_ids,
+                    hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
+                        candidate.strategy_id
+                    ],
                     unpaired_new_cysteines=cysteines,
                     interface=values,
                 )
@@ -821,7 +921,9 @@ def _execute_predictions(
                 interface = compute_interface_metrics(
                     candidate_structure=product.structure_path,
                     reference_target=reference_target,
-                    hotspot_residue_ids=upstream.hotspot_residue_ids,
+                    hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
+                        candidate.strategy_id
+                    ],
                     cdr_residue_ids=candidate.designed_binder_residue_ids,
                 )
                 if interface.interface_bsa_angstrom2 is None:
@@ -831,7 +933,9 @@ def _execute_predictions(
                     )
                 contacts = contacted_hotspot_residue_ids(
                     candidate_structure=product.structure_path,
-                    hotspot_residue_ids=upstream.hotspot_residue_ids,
+                    hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
+                        candidate.strategy_id
+                    ],
                 )
                 raw = RawFinalPrediction(
                     candidate_id=candidate.candidate_id,
@@ -1194,7 +1298,23 @@ def _publish(
     status: str,
 ) -> Stage07Execution:
     completed = max(datetime.now(UTC), created_at + timedelta(microseconds=1))
-    bundle = load_model(bundle_path, Stage07Bundle)
+    bundle_schema = json.loads(bundle_path.read_text(encoding="utf-8")).get(
+        "schema_version"
+    )
+    bundle: Stage07Bundle | Stage07BundleV0_2
+    package: FinalCandidatePackage | FinalCandidatePackageV0_2
+    if bundle_schema == "0.2":
+        bundle = load_model(bundle_path, Stage07BundleV0_2)
+        package = load_model(
+            bundle.final_candidate_package.verify(root),
+            FinalCandidatePackageV0_2,
+        )
+    else:
+        bundle = load_model(bundle_path, Stage07Bundle)
+        package = load_model(
+            bundle.final_candidate_package.verify(root),
+            FinalCandidatePackage,
+        )
     bundle_ref = _artifact(
         root,
         bundle_path,
@@ -1216,7 +1336,7 @@ def _publish(
     dump_model(attempt, artifacts.parent / "attempt-manifest.json")
     manifest = StageManifest(
         stage_id=StageId.FINAL_FILTERING_AND_SELECTION,
-        contract_version="0.1",
+        contract_version="0.2" if bundle_schema == "0.2" else "0.1",
         status=ExecutionStatus.SUCCEEDED,
         created_at=created_at,
         completed_at=completed,
@@ -1260,10 +1380,6 @@ def _publish(
     run_path = root / "manifests" / f"run-manifest.v{next_run.revision:04d}.json"
     dump_model(next_run, run_path)
     _atomic_text(run_path.name + "\n", root / "manifests" / "LATEST")
-    package = load_model(
-        bundle.final_candidate_package.verify(root),
-        FinalCandidatePackage,
-    )
     upsert_run_index_entries(
         root.parents[1],
         (
@@ -1339,6 +1455,22 @@ def _execute_stage07(
         role="versioned-final-filter-profile",
         file_format="yaml",
     )
+    multi_strategy = isinstance(upstream.scale_bundle, ScaleBundleV0_2)
+    scale_input_ref: ArtifactRef | None = None
+    if multi_strategy:
+        scale_input_path = artifacts / "stage07-scale-input.json"
+        _dump_or_verify(
+            upstream.scale_input,
+            scale_input_path,
+            Stage07ScaleInput,
+        )
+        scale_input_ref = _artifact(
+            root,
+            scale_input_path,
+            artifact_id="stage07-scale-input",
+            role="normalized-multi-strategy-scale-input",
+            file_format="json",
+        )
 
     unpaired, structural = _batch_local_metrics(
         root=root,
@@ -1363,7 +1495,9 @@ def _execute_stage07(
             },
             profile_sha256=FINAL_PROFILE_SOURCE_SHA256,
             candidate_index_sha256=upstream.scale_candidate_index_ref.sha256,
-            maximum_tier_a_strategies=1,
+            maximum_tier_a_strategies=len(
+                upstream.scale_input.strategy_allocations
+            ),
             generated_at=now,
         )
         deep_records = convert_deep_filter_records(
@@ -1613,28 +1747,61 @@ def _execute_stage07(
     biosafety_status: Literal["not-required", "pending"] = (
         "pending" if biosafety_pending else "not-required"
     )
-    package = FinalCandidatePackage(
-        generated_at=now,
-        package_type=package_type,
-        scale_profile=scale_profile,
-        primary=tuple(
-            candidate_package_item(item) for item in selections if item.selection_class == "primary"
-        ),
-        backup=tuple(
-            candidate_package_item(item) for item in selections if item.selection_class == "backup"
-        ),
-        requested_primary_count=config.primary_count,
-        requested_backup_count=config.backup_count,
-        biosafety_review_status=biosafety_status,
-        status=status,
+    primary_candidates = tuple(
+        candidate_package_item(item)
+        for item in selections
+        if item.selection_class == "primary"
     )
+    backup_candidates = tuple(
+        candidate_package_item(item)
+        for item in selections
+        if item.selection_class == "backup"
+    )
+    if multi_strategy:
+        package: FinalCandidatePackage | FinalCandidatePackageV0_2 = (
+            FinalCandidatePackageV0_2(
+                generated_at=now,
+                package_type=package_type,
+                scale_profile=scale_profile,
+                primary=primary_candidates,
+                backup=backup_candidates,
+                requested_primary_count=config.primary_count,
+                requested_backup_count=config.backup_count,
+                source_distribution=summarize_selected_sources(
+                    primary=primary_candidates,
+                    backup=backup_candidates,
+                ),
+                biosafety_review_status=biosafety_status,
+                status=status,
+            )
+        )
+    else:
+        package = FinalCandidatePackage(
+            generated_at=now,
+            package_type=package_type,
+            scale_profile=scale_profile,
+            primary=primary_candidates,
+            backup=backup_candidates,
+            requested_primary_count=config.primary_count,
+            requested_backup_count=config.backup_count,
+            biosafety_review_status=biosafety_status,
+            status=status,
+        )
     package_path = artifacts / "final-candidate-package.json"
-    package = _dump_or_verify(
-        package,
-        package_path,
-        FinalCandidatePackage,
-        ignore=frozenset({"generated_at"}),
-    )
+    if isinstance(package, FinalCandidatePackageV0_2):
+        package = _dump_or_verify(
+            package,
+            package_path,
+            FinalCandidatePackageV0_2,
+            ignore=frozenset({"generated_at"}),
+        )
+    else:
+        package = _dump_or_verify(
+            package,
+            package_path,
+            FinalCandidatePackage,
+            ignore=frozenset({"generated_at"}),
+        )
     package_ref = _artifact(
         root,
         package_path,
@@ -1734,33 +1901,57 @@ def _execute_stage07(
             file_format="jsonl",
         )
     bundle_path = artifacts / "stage07-bundle.json"
-    bundle = Stage07Bundle(
-        generated_at=now,
-        scale_bundle=upstream.scale_bundle_ref,
-        filter_profile=profile_ref,
-        final_filter_report=report_ref,
-        final_candidate_package=package_ref,
-        seed101_normalization=normalization_ref,
-        tnp_report=(
-            next(
-                (item for item in tnp_refs if item.artifact_id == "tnp-report"),
-                None,
-            )
-        ),
-        progress_final=progress_ref,
-        task_events=event_ref,
-        operational_failures=failure_ref,
-        scientific_stop=stop_ref,
-        status=status,
+    tnp_report_ref = next(
+        (item for item in tnp_refs if item.artifact_id == "tnp-report"),
+        None,
     )
-    bundle = _dump_or_verify(
-        bundle,
-        bundle_path,
-        Stage07Bundle,
-        ignore=frozenset({"generated_at"}),
-    )
+    if multi_strategy:
+        assert scale_input_ref is not None
+        bundle: Stage07Bundle | Stage07BundleV0_2 = Stage07BundleV0_2(
+            generated_at=now,
+            scale_bundle=upstream.scale_bundle_ref,
+            scale_input=scale_input_ref,
+            filter_profile=profile_ref,
+            final_filter_report=report_ref,
+            final_candidate_package=package_ref,
+            seed101_normalization=normalization_ref,
+            tnp_report=tnp_report_ref,
+            progress_final=progress_ref,
+            task_events=event_ref,
+            operational_failures=failure_ref,
+            scientific_stop=stop_ref,
+            status=status,
+        )
+        bundle = _dump_or_verify(
+            bundle,
+            bundle_path,
+            Stage07BundleV0_2,
+            ignore=frozenset({"generated_at"}),
+        )
+    else:
+        bundle = Stage07Bundle(
+            generated_at=now,
+            scale_bundle=upstream.scale_bundle_ref,
+            filter_profile=profile_ref,
+            final_filter_report=report_ref,
+            final_candidate_package=package_ref,
+            seed101_normalization=normalization_ref,
+            tnp_report=tnp_report_ref,
+            progress_final=progress_ref,
+            task_events=event_ref,
+            operational_failures=failure_ref,
+            scientific_stop=stop_ref,
+            status=status,
+        )
+        bundle = _dump_or_verify(
+            bundle,
+            bundle_path,
+            Stage07Bundle,
+            ignore=frozenset({"generated_at"}),
+        )
     base_output_refs = (
         profile_ref,
+        *((scale_input_ref,) if scale_input_ref is not None else ()),
         report_ref,
         package_ref,
         *((normalization_ref,) if normalization_ref is not None else ()),

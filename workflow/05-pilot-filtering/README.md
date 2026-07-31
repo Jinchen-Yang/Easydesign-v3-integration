@@ -2,19 +2,25 @@
 
 **状态：** `implemented`
 
-**契约版本：** `0.1`
+**契约版本：** `0.2`（继续读取 `0.1`）
 
-**实现任务：** `S05-001`
+**实现任务：** `S05-001`、`S05-002`
 
 ## 目的
 
-Stage 05 回答两个彼此独立的问题：
+Stage 05 回答三个彼此独立的问题：
 
 1. Stage 04 的每个候选是否满足冻结的 pilot 硬门？
-2. 哪一个 BoltzGen strategy 有足够证据进入 Stage 06 放大？
+2. 哪些 BoltzGen strategy 属于 Tier A，并按 `F_YAML` 排名前三？
+3. 这些晋级 strategy 的 100 条诊断性扩增揭示了哪些风险？
 
 本阶段不是“挑看起来最漂亮的结构”。它必须为每个候选保存指标、阈值、通过状态和
-原因；没有合格策略时发布可审计的科学负结果，而不是降低门槛或伪造成功。
+原因；没有 Tier A 时发布可审计的科学负结果，而不是降低门槛或伪造成功。
+
+从 `nanobody-filter-standard-v1.6` 开始，Tier A 和 `F_YAML` 在诊断前决定晋级资格。
+100 条扩增和 full-target 复核是诊断证据：零结构通过会产生 warning，但不会撤销已经
+形成的 Tier A 晋级。后端崩溃、文件缺失、任务数量不足或 checksum 错误仍是必须恢复的
+operational failure。历史 v1.5 的唯一赢家与 `stopped-no-scale-winner` 语义保持不变。
 
 ## 输入与读取边界
 
@@ -33,12 +39,11 @@ metrics。CDR/设计残基身份只能来自官方 `design_mask`，禁止根据 
 
 ```yaml
 stage05:
-  filter_profile: nanobody-filter-standard-v1.5
-  expanded_total_per_strategy: 100
+  filter_profile: nanobody-filter-standard-v1.6
   maximum_tier_a_strategies: 3
-  strategy_selection:
+  advisory_validation:
+    expanded_total_per_strategy: 100
     full_target_refold_top_n: 10
-    require_unique_winner: true
   full_target_prediction:
     backend: protenix-v2
     target_msa:
@@ -53,8 +58,9 @@ stage05:
 ```
 
 `expanded_total_per_strategy: 100` 表示 pilot 与新增候选合计 100；它不是再生成 100。
-只有 Tier A strategy 会扩展，最多三组。target 必须使用 required MSA，de novo binder
-固定使用 query-only A3M；不允许 no-MSA fallback。
+只有按 `F_YAML` 排名前三的 Tier A strategy 会扩展；不足三组时不得用 Tier B–D
+补足。target 必须使用 required MSA，de novo binder 固定使用 query-only A3M；
+不允许 no-MSA fallback。
 
 ## 执行流程
 
@@ -64,10 +70,12 @@ stage05:
 → pilot 硬门、去重与 S_screen
 → strategy Tier 与 F_YAML
 → 无 Tier A：stopped-no-tier-a
-→ 每个 Tier A 扩展到 100 个完整候选
+→ 按 F_YAML 晋级最多 3 个 Tier A
+→ 每个晋级 strategy 诊断性扩增到 100 个完整候选
 → local gate 与 S_expand_structure
 → 每组 top 10 做 full-target Protenix seed 101
-→ 唯一胜出策略或 stopped-no-scale-winner
+→ advisory-supported / advisory-warning
+→ 晋级 strategy 共享 Stage 06 全局预算
 ```
 
 ### 1. 结构指标
@@ -115,7 +123,7 @@ design mask 缺失均为 operational failure。
 BSA、残基接触密度、原子接触密度、氢键密度和盐桥密度在本次完整 pilot 候选总体内做
 1%–99% winsorize 后的确定性经验 midrank。其余指标按 profile 中冻结的 gate/ideal
 线性归一化并截断到 `[0,1]`。权重事实来源是随 wheel 分发的
-`nanobody-filter-standard-v1.5.yaml`，主要权重为：
+`nanobody-filter-standard-v1.6.yaml`，主要权重为：
 
 - interface BSA `0.25`；
 - residue-pair contact density `0.10`；
@@ -139,7 +147,7 @@ BSA、残基接触密度、原子接触密度、氢键密度和盐桥密度在�
 只保留 `F_YAML` 最高的最多三个 Tier A；禁止用 Tier B/C 补足名额。没有 Tier A 时发布
 `stopped-no-tier-a`，Stage 06 不运行。
 
-### 5. 小规模扩展
+### 5. 诊断性扩展
 
 每个选中的 Tier A 复用 Stage 04 的 BoltzGen adapter、TaskRecord、GPU 调度、严格
 collector 和恢复协议，扩展到总计 100 个完整候选。新增 candidate ordinal 接续 pilot，
@@ -149,7 +157,7 @@ collector 和恢复协议，扩展到总计 100 个完整候选。新增 candida
 `S_expand_structure`。每个 strategy 只把 local-pass 中最高的 top N 送入 full-target
 Protenix；失败候选不会为了凑数进入预测。
 
-### 6. Full-target Protenix 与唯一赢家
+### 6. Full-target Protenix 诊断
 
 Protenix 输入固定为：
 
@@ -161,19 +169,30 @@ Protenix 输入固定为：
 
 从真实 cross-chain PAE 矩阵与 chain-pair confidence 读取 pairwise iPTM、minimum
 interface PAE 和 binder pTM。结构门审计 target CA RMSD、target-aligned binder pose
-RMSD 以及 clash。每个 strategy 至少一个 full-target structure-gate pass 才有资格放大。
+RMSD 以及 clash。每个 strategy 的结果形成 `advisory-supported` 或
+`advisory-warning`。零通过只表示当前 full-target 模式没有复现稳定位姿，不会取消由
+pilot Tier A 和 `F_YAML` 形成的晋级资格。
 
-胜出排序依次比较：
+诊断报告仍按以下顺序排列证据，便于人工比较：
 
 1. full-target 通过数量；
 2. full-target 通过率；
 3. 通过候选的 median binder-pose RMSD；
 4. 被选候选 mean `S_expand_structure`；
-5. 若以上科学排序指标仍完全相同，则没有唯一赢家。
+5. strategy ID 只保证显示顺序稳定，不能被当成科学 tie-break。
 
-最终必须唯一发布一个 winner。无人通过或最佳策略在全部科学排序指标上并列时发布
-`stopped-no-scale-winner`；strategy ID 只保证输出顺序稳定，不能被当成科学
-tie-break。
+v1.6 发布 `promoted_strategy_ids` 与 `promotion_rank`，不发布
+`winner_strategy_id`，也不产生 `stopped-no-scale-winner`。唯一允许阻止 Stage 06 的
+科学停止是 `stopped-no-tier-a`。旧 v1.5 Bundle 0.1 继续按原唯一赢家契约读取，不能
+回写成新结论。
+
+### 7. v1.5 历史兼容
+
+旧配置继续使用 `expanded_total_per_strategy`、`strategy_selection` 和
+`require_unique_winner: true`。旧 run 的 `winner-selected`、
+`stopped-no-scale-winner`、Bundle 0.1、manifest 与科学停止结论全部不可变。若需要用
+新政策解释旧 pilot，只能发布新的 `PolicyReevaluationRecord`，其中明确冻结旧 Bundle
+SHA-256、相同 pilot 门、Tier 定义和 `F_YAML`。
 
 ## 恢复、进度与并发
 
@@ -198,10 +217,10 @@ tie-break。
 │   ├── filter-profile.yaml
 │   ├── pilot-filter-report.json
 │   ├── expansion-candidate-index.json       # 有 Tier A 时
-│   ├── expansion-validation-report.json     # 完成扩展时
+│   ├── advisory-validation-report.json      # v1.6 诊断完成时
 │   ├── target-msa.a3m                       # 发生 full-target 时
 │   ├── target-msa-evidence.json
-│   ├── scientific-stop.json                 # 科学负结果时
+│   ├── scientific-stop.json                 # 无 Tier A 时
 │   ├── progress-final.json
 │   ├── task-events.jsonl
 │   ├── stage05-bundle.json
@@ -235,14 +254,14 @@ easydesign runs show RUN_DIR
 - 每个 strategy 有去重计数、Tier 和排序证据；
 - expansion 精确达到配置总量并可恢复；
 - 每个 full-target 选择都有 seed 101 的 Protenix 结构与 confidence；
-- 发布唯一 winner，或合法的 `stopped-no-tier-a` /
-  `stopped-no-scale-winner`；
+- v1.6 发布 1–3 个晋级 Tier A，或合法的 `stopped-no-tier-a`；
+- full-target 零通过形成 warning，不取消晋级；后端/产物故障仍阻止发布；
 - 非 APOE fixture、自动测试和 APOE 真实 run 均有证据后，本阶段才可标
   `smoke-validated`。
 
 ## 非目标与后续提高款
 
-- 不为通过 APOE 而调整 v1.5 阈值；
+- 不为通过 APOE 而调整冻结阈值；
 - 不把结构分数称为亲和力或实验成功率；
 - 不在本阶段运行 1000/50,000 候选；
 - 不执行 Stage 07 多 seed、TNP 或多样性选样；

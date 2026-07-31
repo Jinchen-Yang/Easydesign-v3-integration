@@ -444,10 +444,17 @@ Stage 01 中所有 PyMOL 操作都属于显示状态：
 StageManifest，也不能成为 Stage 02 的隐式输入。PSE 仍由独立服务器 PyMOL 3.1.0
 worker 解析；浏览器 PyMOL 不替代 Stage 01 PSE adapter。
 
-可选结构助手支持 DeepSeek 和智谱 GLM 两个显式 provider。未配置 API 时只禁用助手；
-查看器和 Stage 01 正常运行。模型请求不包含坐标、MSA、完整序列、绝对路径或密钥，只
-发送用户文字、stage、对象/链、编号说明和当前选区摘要。Stage 01 助手只能生成经过
-Schema 校验的显示建议或解释，不能修改结构或判断 hotspot。
+平台结构助手由部署者在
+`runtime/secrets/structure-assistant/platform-provider.yaml` 选择 DeepSeek 或智谱
+GLM，并固定模型与 endpoint。普通使用者不选择 provider，也不填写 API key；前端只能
+看到“EasyDesign 结构助手”是否可用。平台服务未启用时只禁用助手，查看器和 Stage 01
+正常运行。模型请求不包含坐标、MSA、完整序列、绝对路径或密钥，只发送用户文字、
+stage、对象/链、编号说明和当前选区摘要。Stage 01 助手只能生成经过 Schema 校验的
+显示建议或解释，不能修改结构或判断 hotspot。
+
+PyMOL 与 Mol* 首次加载后在同一结构工作区持续保留实例。切换查看器只改变显隐，不卸载
+PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重绘，防止运行时仍
+绑定已销毁画布而出现“结构已读取但首帧空白”。
 
 ## 不变量
 

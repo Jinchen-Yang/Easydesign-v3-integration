@@ -494,7 +494,7 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 
 ## UI-018 / REP-007：可靠项目草稿、双查看器动作与递进冻结
 
-版本：`0.1.0.dev26`。
+版本：`0.1.0.dev28`。
 
 “我的项目”同时投影正式运行和有效项目草稿。草稿必须已经原子发布
 `project-metadata.json`、canonical 配置和输入；空 DesignSession、失败上传及 staging

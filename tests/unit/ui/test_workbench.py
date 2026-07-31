@@ -868,6 +868,62 @@ def test_browser_pymol_status_requires_the_complete_verified_offline_runtime(
     assert response.json()["integrity_errors"] == []
 
 
+
+def test_structure_assistant_exposes_only_platform_service_status(
+    tmp_path: Path,
+) -> None:
+    secret_path = (
+        tmp_path
+        / "runtime"
+        / "secrets"
+        / "structure-assistant"
+        / "platform-provider.yaml"
+    )
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    secret_path.write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "provider: deepseek",
+                "model: deepseek-chat",
+                "base_url: https://api.deepseek.com",
+                "api_key: owner-secret",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    secret_path.chmod(0o600)
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/structure-assistant/status")
+        legacy = client.get("/api/v1/structure-assistant/providers")
+        legacy_write = client.post(
+            "/api/v1/structure-assistant/providers/deepseek",
+            json={
+                "model": "other",
+                "base_url": "https://example.invalid",
+                "api_key": "user-key",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "available": True,
+        "service_name": "EasyDesign 结构助手",
+        "detail": "平台服务已就绪，使用者无需提供 API Key。",
+    }
+    assert "deepseek" not in response.text
+    assert "owner-secret" not in response.text
+    assert legacy.status_code == 404
+    assert legacy_write.status_code in {404, 405}
+
+
 def test_continuation_preflight_failure_does_not_advance_session(
     tmp_path: Path,
     monkeypatch: Any,

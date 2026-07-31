@@ -7,8 +7,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；Workbench 浏览器 PyMOL 严格首帧状态机已在 dev25 复验 138-aa 结构和 9/14/14 来源区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；运行链递进冻结及查看器中立区域显示已通过真实 APOE 页面复验。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev26 已修复并真实复验 `PyMOL → Mol* → PyMOL` 返回路径，138-aa 结构与来源区域不会因切换丢失。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev26 已通过 APOE 双查看器返回回归并改为平台统一结构助手。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | APOE 840 个 pilot 已完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target Protenix 因 binder pose 不稳定而合法停止。 | 冻结 `stopped-no-scale-winner` 负结果，不启动本轮 APOE Stage 06/07。 | 无 operational failure；APOE 本轮没有通过科学规模化门。 | 2026-07-26 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -86,9 +86,10 @@
   `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；
   可视化层不得融合 PSE、SASA 和 ScanNet。
-- `[REP-006/ENG-025/UI-017]` 离线浏览器 PyMOL、Mol* 和安全结构助手已通过真实 APOE
-  Stage 01/02 smoke；下一步在带本机 Chromium/Edge 的环境补齐自动双尺寸与触摸矩阵，
-  并在用户显式提供 API key 后分别验证 DeepSeek/智谱 GLM 连通。未配置模型不阻塞无
+- `[REP-006/REP-008/ENG-028/UI-017/UI-020]` 离线浏览器 PyMOL、Mol* 与平台结构助手
+  已通过真实 APOE Stage 01/02 smoke；`PyMOL → Mol* → PyMOL` 不再丢失 WASM 画布。
+  普通使用者不选择 provider 或填写 API key。下一步由部署者在仓库内平台配置启用单一
+  provider，并补充受控 live 连通、预算、限流和用量监控；平台助手未启用不阻塞无
   Agent 的 Stage 01/02 主线。
 - `[ENG-003]` 部署自建 ColabFold/MMseqs2，并建立 CI 平台矩阵；sequence-hash cache
   与 precomputed A3M 已由 S01-009 完成。

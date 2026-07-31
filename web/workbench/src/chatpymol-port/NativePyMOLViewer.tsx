@@ -224,6 +224,7 @@ const identityTranslation = (value) => value;
 export function NativePyMOLViewer({
   api,
   projectId,
+  active = true,
   pml,
   structures,
   versionId,
@@ -304,13 +305,13 @@ export function NativePyMOLViewer({
     return next;
   }, []);
 
-  const resizeNativeViewport = useCallback(() => {
+  const resizeNativeViewport = useCallback((force = false) => {
     const canvas = canvasRef.current;
     const shell = shellRef.current;
     if (!canvas || !shell) return Promise.resolve();
     const changed = sizeCanvas(canvas, shell);
     const runtime = runtimeRef.current;
-    if (!runtime || !changed) return Promise.resolve();
+    if (!runtime || (!changed && !force)) return Promise.resolve();
     return enqueue(async () => {
       const width = canvas.width;
       const height = canvas.height;
@@ -1053,6 +1054,28 @@ for _chatpymol_camera_draw_pass in range(2):
       observer.disconnect();
     };
   }, [onFailure, resizeNativeViewport]);
+
+  useEffect(() => {
+    if (!active || !runtimeReady) return;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        resizeNativeViewport(true).catch((error) => {
+          console.error(error);
+          onFailure?.(
+            error instanceof Error
+              ? error.message
+              : "PyMOL 返回前台后的画布恢复失败"
+          );
+        });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [active, onFailure, resizeNativeViewport, runtimeReady]);
 
   const pointerCoordinates = (event) => {
     const canvas = canvasRef.current;

@@ -40,17 +40,32 @@ from easydesign.core import (
 from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import CandidateIndex
-from easydesign.stages.s05_pilot_filtering import PilotFilterReport, Stage05Bundle
+from easydesign.stages.s05_pilot_filtering import (
+    PilotFilterReport,
+    PilotFilterReportV1_6,
+    Stage05Bundle,
+    Stage05BundleV0_2,
+    StrategyPromotionRecord,
+)
 from easydesign.stages.s06_scale_generation_and_refolding import (
+    MultiStrategyCandidateIndex,
+    MultiStrategyScaleAuthorization,
+    MultiStrategyScaleShard,
     ScaleBundle,
+    ScaleBundleV0_2,
     ScaleCoverageReport,
+    ScaleCoverageReportV0_2,
     ScaleExecutionState,
     ScalePlan,
+    ScalePlanV0_2,
     ScaleProfile,
     ScaleResourceReport,
     ScaleShard,
     ScaleStrategyAuthorization,
     ScaleTaskTable,
+    StrategyScaleCoverage,
+    allocate_equal_candidate_budget,
+    build_multi_strategy_shards,
 )
 
 from .boltzgen_tasks import (
@@ -93,8 +108,17 @@ class _Upstream:
     pilot_candidate_index_ref: ArtifactRef
     pilot_candidate_index: CandidateIndex
     stage05_bundle_ref: ArtifactRef
-    stage05_bundle: Stage05Bundle
-    pilot_filter_report: PilotFilterReport
+    stage05_bundle: Stage05Bundle | Stage05BundleV0_2
+    pilot_filter_report: PilotFilterReport | PilotFilterReportV1_6
+
+
+def _stage06_allocation_policy(config: Stage06Config) -> str | None:
+    """Read the v0.2 policy while remaining import-compatible with schema 0.7."""
+
+    value = getattr(config, "allocation_policy", None)
+    if value is not None and not isinstance(value, str):
+        raise ManifestStateError("Stage 06 allocation_policy 类型无效")
+    return value
 
 
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
@@ -134,14 +158,37 @@ def _load_upstream(root: Path) -> _Upstream:
     pilot_index_ref = stage04.require_output("candidate-index")
     pilot_index = load_model(pilot_index_ref.verify(root), CandidateIndex)
     stage05_ref = stage05.require_output("stage05-bundle")
-    stage05_bundle = load_model(stage05_ref.verify(root), Stage05Bundle)
+    stage05_path = stage05_ref.verify(root)
+    stage05_schema = json.loads(stage05_path.read_text(encoding="utf-8")).get(
+        "schema_version"
+    )
+    stage05_bundle: Stage05Bundle | Stage05BundleV0_2
+    pilot_filter_report: PilotFilterReport | PilotFilterReportV1_6
+    if stage05_schema == "0.2":
+        stage05_bundle = load_model(stage05_path, Stage05BundleV0_2)
+        pilot_filter_report = load_model(
+            stage05_bundle.pilot_filter_report.verify(root),
+            PilotFilterReportV1_6,
+        )
+    else:
+        stage05_bundle = load_model(stage05_path, Stage05Bundle)
+        pilot_filter_report = load_model(
+            stage05_bundle.pilot_filter_report.verify(root),
+            PilotFilterReport,
+        )
     if stage05_bundle.strategy_bundle != strategy_ref:
         raise ManifestStateError("Stage05Bundle 与 StrategyBundle identity 不一致")
-    pilot_filter_report = load_model(
-        stage05_bundle.pilot_filter_report.verify(root),
-        PilotFilterReport,
-    )
-    if stage05_bundle.winner_strategy_id is not None and not any(
+    if isinstance(stage05_bundle, Stage05BundleV0_2):
+        if stage05_bundle.status == "stopped-no-tier-a":
+            raise ManifestStateError("Stage 05 没有 Tier A；Stage 06 不允许继续")
+        available_strategy_ids = {
+            item.strategy_id for item in strategy.strategies
+        }
+        if not set(stage05_bundle.promoted_strategy_ids).issubset(
+            available_strategy_ids
+        ):
+            raise ManifestStateError("Stage05Bundle promoted strategy 不在 StrategyBundle")
+    elif stage05_bundle.winner_strategy_id is not None and not any(
         item.strategy_id == stage05_bundle.winner_strategy_id
         for item in strategy.strategies
     ):
@@ -175,6 +222,8 @@ def _resolve_strategy_authorization(
     authorized_at: datetime,
 ) -> ScaleStrategyAuthorization:
     bundle = upstream.stage05_bundle
+    if isinstance(bundle, Stage05BundleV0_2):
+        raise ManifestStateError("v0.2 Stage05Bundle 必须使用多策略授权")
     manual = config.manual_strategy_authorization
     if bundle.status == "winner-selected":
         if bundle.winner_strategy_id is None:
@@ -200,7 +249,10 @@ def _resolve_strategy_authorization(
         )
     if manual.source_stage05_bundle_sha256 != upstream.stage05_bundle_ref.sha256:
         raise ManifestStateError("manual strategy authorization 的 Stage05Bundle SHA-256 不一致")
-    if manual.strategy_id not in upstream.pilot_filter_report.selected_strategy_ids:
+    pilot_report = upstream.pilot_filter_report
+    if isinstance(pilot_report, PilotFilterReportV1_6):
+        raise ManifestStateError("旧 Stage05Bundle 必须引用旧 pilot filter report")
+    if manual.strategy_id not in pilot_report.selected_strategy_ids:
         raise ManifestStateError(
             "manual strategy authorization 只能选择 Stage 05 已扩展的 Tier A strategy"
         )
@@ -223,6 +275,43 @@ def _resolve_strategy_authorization(
         acknowledge_not_scientifically_eligible=(
             manual.acknowledge_not_scientifically_eligible
         ),
+    )
+
+
+def _resolve_multi_strategy_authorization(
+    *,
+    upstream: _Upstream,
+    profile: ScaleProfile,
+    config: Stage06Config,
+    authorized_at: datetime,
+) -> MultiStrategyScaleAuthorization:
+    bundle = upstream.stage05_bundle
+    if not isinstance(bundle, Stage05BundleV0_2):
+        raise ManifestStateError("旧 Stage05Bundle 必须使用单策略授权")
+    if bundle.status != "strategies-promoted":
+        raise ManifestStateError("Stage 05 没有 Tier A；Stage 06 不允许继续")
+    if config.manual_strategy_authorization is not None:
+        raise ManifestStateError("v1.6 晋级策略不得使用旧版单策略 manual override")
+    if _stage06_allocation_policy(config) != "equal-across-promoted-v1":
+        raise ManifestStateError(
+            "Stage 06 v0.2 必须显式声明 equal-across-promoted-v1"
+        )
+    promoted_ids = tuple(item.strategy_id for item in bundle.promotion_rank)
+    if promoted_ids != bundle.promoted_strategy_ids:
+        raise ManifestStateError("Stage05Bundle promoted strategy 顺序不一致")
+    if profile.requested_candidates > config.preauthorized_candidate_limit:
+        raise ManifestStateError("Stage 06 global budget 超过初始配置预授权上限")
+    return MultiStrategyScaleAuthorization(
+        authorized_at=authorized_at,
+        authorized_by="initial-run-config",
+        reason=(
+            "The canonical run configuration preauthorized one shared global "
+            "candidate budget for the Stage 05 v1.6 promoted strategies."
+        ),
+        source_stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
+        promoted_strategy_ids=promoted_ids,
+        total_candidate_budget=profile.requested_candidates,
+        acknowledge_high_cost_generation=True,
     )
 
 
@@ -383,6 +472,46 @@ def build_scale_plan(
     )
 
 
+def build_scale_plan_v0_2(
+    *,
+    profile: ScaleProfile,
+    promoted_strategies: tuple[StrategyPromotionRecord, ...],
+    strategy_bundle_sha256: str,
+    stage05_bundle_sha256: str,
+    design_specifications: tuple[ArtifactRef, ...],
+    resource_report: ArtifactRef,
+    devices: tuple[int, ...],
+    preauthorized_candidate_limit: int,
+    generated_at: datetime,
+    strategy_authorization: MultiStrategyScaleAuthorization,
+) -> ScalePlanV0_2:
+    """Build exact per-strategy allocations and resumable shards for one budget."""
+
+    allocations = allocate_equal_candidate_budget(
+        promoted_strategies=promoted_strategies,
+        total_candidate_budget=profile.requested_candidates,
+    )
+    shards = build_multi_strategy_shards(
+        strategy_allocations=allocations,
+        shard_size=profile.shard_size,
+    )
+    return ScalePlanV0_2(
+        generated_at=generated_at,
+        profile=profile,
+        total_candidate_budget=profile.requested_candidates,
+        preauthorized_candidate_limit=preauthorized_candidate_limit,
+        strategy_bundle_sha256=strategy_bundle_sha256,
+        stage05_bundle_sha256=stage05_bundle_sha256,
+        strategy_authorization=strategy_authorization,
+        strategy_allocations=allocations,
+        design_specifications=design_specifications,
+        devices=devices,
+        shards=shards,
+        resource_report=resource_report,
+        execution_authorized=True,
+    )
+
+
 def _snapshot(
     *,
     tasks: tuple[TaskRecord, ...],
@@ -456,19 +585,44 @@ def execute_stage06(
         raise ManifestStateError("Stage 06 缺少 stage04/stage06 config")
     now = datetime.now(UTC) if executed_at is None else executed_at
     profile = ScaleProfile(config.scale_profile)
-    authorization = _resolve_strategy_authorization(
-        upstream=upstream,
-        config=config,
-        authorized_at=now,
+    multi_strategy = isinstance(upstream.stage05_bundle, Stage05BundleV0_2)
+    strategy_by_id = {
+        item.strategy_id: item for item in upstream.strategy_bundle.strategies
+    }
+    if multi_strategy:
+        multi_authorization = _resolve_multi_strategy_authorization(
+            upstream=upstream,
+            profile=profile,
+            config=config,
+            authorized_at=now,
+        )
+        authorization: (
+            ScaleStrategyAuthorization | MultiStrategyScaleAuthorization
+        ) = multi_authorization
+        strategy_ids = multi_authorization.promoted_strategy_ids
+    else:
+        legacy_authorization = _resolve_strategy_authorization(
+            upstream=upstream,
+            config=config,
+            authorized_at=now,
+        )
+        authorization = legacy_authorization
+        strategy_ids = (legacy_authorization.strategy_id,)
+    specifications = tuple(
+        upstream.stage03.require_output(f"strategy-{strategy_id}")
+        for strategy_id in strategy_ids
     )
-    winner = authorization.strategy_id
-    strategy = next(
-        item for item in upstream.strategy_bundle.strategies if item.strategy_id == winner
-    )
-    specification = upstream.stage03.require_output(f"strategy-{winner}")
-    specification.verify(root)
-    if specification.sha256 != strategy.design_specification_sha256:
-        raise ManifestStateError("Stage 06 winner YAML identity 不一致")
+    specification_by_strategy = dict(zip(strategy_ids, specifications, strict=True))
+    for strategy_id, specification in specification_by_strategy.items():
+        specification.verify(root)
+        strategy = strategy_by_id.get(strategy_id)
+        if (
+            strategy is None
+            or specification.sha256 != strategy.design_specification_sha256
+        ):
+            raise ManifestStateError(
+                f"Stage 06 strategy={strategy_id} YAML identity 不一致"
+            )
 
     attempt_root = root / str(StageId.SCALE_GENERATION_AND_REFOLDING) / "attempt-0001"
     artifacts = attempt_root / "artifacts"
@@ -476,12 +630,22 @@ def execute_stage06(
     resource_path = artifacts / "resource-report.json"
     authorization_path = artifacts / "scale-strategy-authorization.json"
     plan_path = artifacts / "scale-plan.json"
-    authorization = _dump_or_verify_model(
-        authorization,
-        authorization_path,
-        ScaleStrategyAuthorization,
-        ignore_fields=frozenset({"authorized_at"}),
-    )
+    if multi_strategy:
+        assert isinstance(authorization, MultiStrategyScaleAuthorization)
+        authorization = _dump_or_verify_model(
+            authorization,
+            authorization_path,
+            MultiStrategyScaleAuthorization,
+            ignore_fields=frozenset({"authorized_at"}),
+        )
+    else:
+        assert isinstance(authorization, ScaleStrategyAuthorization)
+        authorization = _dump_or_verify_model(
+            authorization,
+            authorization_path,
+            ScaleStrategyAuthorization,
+            ignore_fields=frozenset({"authorized_at"}),
+        )
     authorization_ref = _artifact(
         root,
         authorization_path,
@@ -490,7 +654,11 @@ def execute_stage06(
         file_format="json",
     )
     if plan_path.exists():
-        plan = load_model(plan_path, ScalePlan)
+        plan: ScalePlan | ScalePlanV0_2
+        if multi_strategy:
+            plan = load_model(plan_path, ScalePlanV0_2)
+        else:
+            plan = load_model(plan_path, ScalePlan)
         report = load_model(resource_path, ScaleResourceReport)
         resource_ref = _artifact(
             root,
@@ -500,17 +668,33 @@ def execute_stage06(
             file_format="json",
         )
         plan.resource_report.verify(root)
-        if (
+        common_identity_mismatch = (
             plan.strategy_bundle_sha256 != upstream.strategy_bundle_ref.sha256
             or plan.stage05_bundle_sha256 != upstream.stage05_bundle_ref.sha256
-            or plan.strategy_id != winner
             or plan.profile is not profile
             or plan.strategy_authorization != authorization
-            or plan.design_specification != specification
             or plan.resource_report != resource_ref
             or plan.devices != stage04_config.executor.devices
-            or plan.preauthorized_candidate_limit != config.preauthorized_candidate_limit
-        ):
+            or plan.preauthorized_candidate_limit
+            != config.preauthorized_candidate_limit
+        )
+        if multi_strategy:
+            assert isinstance(plan, ScalePlanV0_2)
+            strategy_identity_mismatch = (
+                plan.design_specifications != specifications
+                or tuple(
+                    item.strategy_id for item in plan.strategy_allocations
+                )
+                != strategy_ids
+                or plan.allocation_policy != _stage06_allocation_policy(config)
+            )
+        else:
+            assert isinstance(plan, ScalePlan)
+            strategy_identity_mismatch = (
+                plan.strategy_id != strategy_ids[0]
+                or plan.design_specification != specifications[0]
+            )
+        if common_identity_mismatch or strategy_identity_mismatch:
             raise ManifestStateError("Stage 06 已有 ScalePlan identity 不一致")
     else:
         report = _resource_report(
@@ -530,18 +714,35 @@ def execute_stage06(
             role="scale-storage-preflight",
             file_format="json",
         )
-        plan = build_scale_plan(
-            profile=profile,
-            strategy_id=winner,
-            strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
-            stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
-            design_specification=specification,
-            resource_report=resource_ref,
-            devices=stage04_config.executor.devices,
-            preauthorized_candidate_limit=config.preauthorized_candidate_limit,
-            generated_at=now,
-            strategy_authorization=authorization,
-        )
+        if multi_strategy:
+            assert isinstance(upstream.stage05_bundle, Stage05BundleV0_2)
+            assert isinstance(authorization, MultiStrategyScaleAuthorization)
+            plan = build_scale_plan_v0_2(
+                profile=profile,
+                promoted_strategies=upstream.stage05_bundle.promotion_rank,
+                strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
+                stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
+                design_specifications=specifications,
+                resource_report=resource_ref,
+                devices=stage04_config.executor.devices,
+                preauthorized_candidate_limit=config.preauthorized_candidate_limit,
+                generated_at=now,
+                strategy_authorization=authorization,
+            )
+        else:
+            assert isinstance(authorization, ScaleStrategyAuthorization)
+            plan = build_scale_plan(
+                profile=profile,
+                strategy_id=strategy_ids[0],
+                strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
+                stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
+                design_specification=specifications[0],
+                resource_report=resource_ref,
+                devices=stage04_config.executor.devices,
+                preauthorized_candidate_limit=config.preauthorized_candidate_limit,
+                generated_at=now,
+                strategy_authorization=authorization,
+            )
         dump_model(plan, plan_path)
     if not report.passed or not plan.execution_authorized:
         raise ManifestStateError("Stage 06 ScalePlan 未获执行授权")
@@ -552,6 +753,19 @@ def execute_stage06(
         < int(current_disk.total * report.required_reserve_fraction)
     ):
         raise ManifestStateError("Stage 06 当前磁盘不再满足冻结 plan 的 25% reserve")
+
+    requested_candidates = (
+        plan.total_candidate_budget
+        if isinstance(plan, ScalePlanV0_2)
+        else plan.requested_new_candidates
+    )
+
+    def shard_ordinal_start(
+        shard: ScaleShard | MultiStrategyScaleShard,
+    ) -> int:
+        if isinstance(shard, MultiStrategyScaleShard):
+            return shard.strategy_ordinal_start
+        return shard.ordinal_start
 
     state_path = runtime / "scale-state.json"
     progress_path = runtime / "progress.json"
@@ -583,7 +797,7 @@ def execute_stage06(
         tasks = {
             shard.task_id: TaskRecord(
                 task_id=shard.task_id,
-                strategy_id=winner,
+                strategy_id=shard.strategy_id,
                 requested_candidates=shard.requested_candidates,
             )
             for shard in plan.shards
@@ -662,7 +876,7 @@ def execute_stage06(
             task=tasks[shard.task_id],
             stage_attempt_id="attempt-0001",
             producer_stage=str(StageId.SCALE_GENERATION_AND_REFOLDING),
-            ordinal_offset=shard.ordinal_start - 1,
+            ordinal_offset=shard_ordinal_start(shard) - 1,
         )
         if update is not None:
             transition(update)
@@ -684,11 +898,16 @@ def execute_stage06(
         poll_seconds=stage04_config.executor.resource_poll_seconds,
     )
 
-    def run_shard(shard: ScaleShard, device: int) -> TaskRecord:
+    def run_shard(
+        shard: ScaleShard | MultiStrategyScaleShard,
+        device: int,
+    ) -> TaskRecord:
         return execute_boltzgen_candidate_task(
             root=root,
             task=tasks[shard.task_id],
-            design_specification=specification.verify(root),
+            design_specification=specification_by_strategy[
+                shard.strategy_id
+            ].verify(root),
             task_root=attempt_root / "tasks" / shard.task_id,
             stage_attempt_id="attempt-0001",
             producer_stage=str(StageId.SCALE_GENERATION_AND_REFOLDING),
@@ -697,7 +916,7 @@ def execute_stage06(
             maximum_attempts_this_invocation=stage04_config.executor.max_task_attempts,
             on_transition=transition,
             on_heartbeat=heartbeat,
-            ordinal_offset=shard.ordinal_start - 1,
+            ordinal_offset=shard_ordinal_start(shard) - 1,
         )
 
     pending = tuple(
@@ -721,19 +940,43 @@ def execute_stage06(
             complete_candidate_count=len(candidates),
         )
 
-    ordered_candidates = tuple(sorted(candidates, key=lambda item: item.ordinal_within_strategy))
-    proposed_candidate_index = CandidateIndex(
-        generated_at=datetime.now(UTC),
-        strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
-        required_per_strategy=plan.requested_new_candidates,
-        candidates=ordered_candidates,
+    strategy_rank = {
+        strategy_id: rank
+        for rank, strategy_id in enumerate(strategy_ids, start=1)
+    }
+    ordered_candidates = tuple(
+        sorted(
+            candidates,
+            key=lambda item: (
+                strategy_rank[item.strategy_id],
+                item.ordinal_within_strategy,
+            ),
+        )
     )
-    if len(ordered_candidates) != plan.requested_new_candidates:
+    if len(ordered_candidates) != requested_candidates:
         raise ManifestStateError("Stage 06 merge candidate count 不一致")
-    if [item.ordinal_within_strategy for item in ordered_candidates] != list(
-        range(1, plan.requested_new_candidates + 1)
-    ):
-        raise ManifestStateError("Stage 06 merge 存在 candidate ordinal 缺口或重复")
+    if isinstance(plan, ScalePlanV0_2):
+        proposed_candidate_index: CandidateIndex | MultiStrategyCandidateIndex = (
+            MultiStrategyCandidateIndex(
+                generated_at=datetime.now(UTC),
+                strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
+                strategy_allocations=plan.strategy_allocations,
+                candidates=ordered_candidates,
+            )
+        )
+    else:
+        proposed_candidate_index = CandidateIndex(
+            generated_at=datetime.now(UTC),
+            strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
+            required_per_strategy=plan.requested_new_candidates,
+            candidates=ordered_candidates,
+        )
+        if [item.ordinal_within_strategy for item in ordered_candidates] != list(
+            range(1, plan.requested_new_candidates + 1)
+        ):
+            raise ManifestStateError(
+                "Stage 06 merge 存在 candidate ordinal 缺口或重复"
+            )
 
     candidate_index_path = artifacts / "scale-candidate-index.json"
     task_table_path = artifacts / "scale-task-table.json"
@@ -741,29 +984,90 @@ def execute_stage06(
     progress_final_path = artifacts / "progress-final.json"
     events_artifact = artifacts / "task-events.jsonl"
     backend_path = artifacts / "backend-environment.json"
-    _dump_or_verify_model(
-        proposed_candidate_index,
-        candidate_index_path,
-        CandidateIndex,
-        ignore_fields=frozenset({"generated_at"}),
-    )
+    if isinstance(proposed_candidate_index, MultiStrategyCandidateIndex):
+        _dump_or_verify_model(
+            proposed_candidate_index,
+            candidate_index_path,
+            MultiStrategyCandidateIndex,
+            ignore_fields=frozenset({"generated_at"}),
+        )
+    else:
+        _dump_or_verify_model(
+            proposed_candidate_index,
+            candidate_index_path,
+            CandidateIndex,
+            ignore_fields=frozenset({"generated_at"}),
+        )
     _dump_or_verify_model(
         ScaleTaskTable(generated_at=datetime.now(UTC), tasks=final_tasks),
         task_table_path,
         ScaleTaskTable,
         ignore_fields=frozenset({"generated_at"}),
     )
-    coverage = ScaleCoverageReport(
-        strategy_id=winner,
-        requested_new_candidates=plan.requested_new_candidates,
-        complete_new_candidates=len(ordered_candidates),
-        candidate_ids_unique=(
-            len({item.candidate_id for item in ordered_candidates}) == len(ordered_candidates)
-        ),
-        ordinal_min=ordered_candidates[0].ordinal_within_strategy,
-        ordinal_max=ordered_candidates[-1].ordinal_within_strategy,
-    )
-    _dump_or_verify_model(coverage, coverage_path, ScaleCoverageReport)
+    if isinstance(plan, ScalePlanV0_2):
+        per_strategy_coverage: list[StrategyScaleCoverage] = []
+        for allocation in plan.strategy_allocations:
+            strategy_candidates = tuple(
+                item
+                for item in ordered_candidates
+                if item.strategy_id == allocation.strategy_id
+            )
+            ordinals = tuple(
+                item.ordinal_within_strategy for item in strategy_candidates
+            )
+            per_strategy_coverage.append(
+                StrategyScaleCoverage(
+                    strategy_id=allocation.strategy_id,
+                    requested_candidates=allocation.requested_candidates,
+                    complete_candidates=len(strategy_candidates),
+                    candidate_ids_unique=(
+                        len(
+                            {
+                                item.candidate_id
+                                for item in strategy_candidates
+                            }
+                        )
+                        == len(strategy_candidates)
+                    ),
+                    ordinal_min=min(ordinals),
+                    ordinal_max=max(ordinals),
+                    ordinal_gaps=tuple(
+                        sorted(
+                            set(range(1, allocation.requested_candidates + 1))
+                            - set(ordinals)
+                        )
+                    ),
+                )
+            )
+        coverage: ScaleCoverageReport | ScaleCoverageReportV0_2 = (
+            ScaleCoverageReportV0_2(
+                total_requested_candidates=requested_candidates,
+                total_complete_candidates=len(ordered_candidates),
+                global_candidate_ids_unique=(
+                    len({item.candidate_id for item in ordered_candidates})
+                    == len(ordered_candidates)
+                ),
+                strategy_coverage=tuple(per_strategy_coverage),
+            )
+        )
+        _dump_or_verify_model(
+            coverage,
+            coverage_path,
+            ScaleCoverageReportV0_2,
+        )
+    else:
+        coverage = ScaleCoverageReport(
+            strategy_id=strategy_ids[0],
+            requested_new_candidates=plan.requested_new_candidates,
+            complete_new_candidates=len(ordered_candidates),
+            candidate_ids_unique=(
+                len({item.candidate_id for item in ordered_candidates})
+                == len(ordered_candidates)
+            ),
+            ordinal_min=ordered_candidates[0].ordinal_within_strategy,
+            ordinal_max=ordered_candidates[-1].ordinal_within_strategy,
+        )
+        _dump_or_verify_model(coverage, coverage_path, ScaleCoverageReport)
     final_progress = _snapshot(
         tasks=final_tasks,
         created_at=created_at,
@@ -778,8 +1082,8 @@ def execute_stage06(
             or frozen_progress.total_tasks != len(final_tasks)
             or frozen_progress.succeeded_tasks != len(final_tasks)
             or frozen_progress.failed_tasks != 0
-            or frozen_progress.planned_candidates != plan.requested_new_candidates
-            or frozen_progress.collected_candidates != plan.requested_new_candidates
+            or frozen_progress.planned_candidates != requested_candidates
+            or frozen_progress.collected_candidates != requested_candidates
         ):
             raise ManifestStateError("Stage 06 已有 terminal progress 与成功任务不一致")
         final_progress = frozen_progress
@@ -852,31 +1156,58 @@ def execute_stage06(
         ),
     )
     bundle_path = artifacts / "scale-bundle.json"
-    proposed_bundle = ScaleBundle(
-        generated_at=datetime.now(UTC),
-        stage05_bundle=upstream.stage05_bundle_ref,
-        strategy_bundle=upstream.strategy_bundle_ref,
-        scale_plan=output_refs[0],
-        resource_report=output_refs[1],
-        strategy_authorization=output_refs[2],
-        task_table=output_refs[3],
-        candidate_index=output_refs[4],
-        coverage_report=output_refs[5],
-        progress_final=output_refs[6],
-        task_events=output_refs[7],
-        backend_environment=output_refs[8],
-        profile=profile,
-        strategy_id=winner,
-        requested_new_candidates=plan.requested_new_candidates,
-        complete_new_candidates=len(ordered_candidates),
-        shard_count=len(plan.shards),
-    )
-    _dump_or_verify_model(
-        proposed_bundle,
-        bundle_path,
-        ScaleBundle,
-        ignore_fields=frozenset({"generated_at"}),
-    )
+    if isinstance(plan, ScalePlanV0_2):
+        proposed_bundle: ScaleBundle | ScaleBundleV0_2 = ScaleBundleV0_2(
+            generated_at=datetime.now(UTC),
+            stage05_bundle=upstream.stage05_bundle_ref,
+            strategy_bundle=upstream.strategy_bundle_ref,
+            scale_plan=output_refs[0],
+            resource_report=output_refs[1],
+            strategy_authorization=output_refs[2],
+            task_table=output_refs[3],
+            candidate_index=output_refs[4],
+            coverage_report=output_refs[5],
+            progress_final=output_refs[6],
+            task_events=output_refs[7],
+            backend_environment=output_refs[8],
+            profile=profile,
+            total_candidate_budget=plan.total_candidate_budget,
+            strategy_allocations=plan.strategy_allocations,
+            complete_new_candidates=len(ordered_candidates),
+            shard_count=len(plan.shards),
+        )
+        _dump_or_verify_model(
+            proposed_bundle,
+            bundle_path,
+            ScaleBundleV0_2,
+            ignore_fields=frozenset({"generated_at"}),
+        )
+    else:
+        proposed_bundle = ScaleBundle(
+            generated_at=datetime.now(UTC),
+            stage05_bundle=upstream.stage05_bundle_ref,
+            strategy_bundle=upstream.strategy_bundle_ref,
+            scale_plan=output_refs[0],
+            resource_report=output_refs[1],
+            strategy_authorization=output_refs[2],
+            task_table=output_refs[3],
+            candidate_index=output_refs[4],
+            coverage_report=output_refs[5],
+            progress_final=output_refs[6],
+            task_events=output_refs[7],
+            backend_environment=output_refs[8],
+            profile=profile,
+            strategy_id=plan.strategy_id,
+            requested_new_candidates=plan.requested_new_candidates,
+            complete_new_candidates=len(ordered_candidates),
+            shard_count=len(plan.shards),
+        )
+        _dump_or_verify_model(
+            proposed_bundle,
+            bundle_path,
+            ScaleBundle,
+            ignore_fields=frozenset({"generated_at"}),
+        )
     bundle_ref = _artifact(
         root,
         bundle_path,
@@ -934,7 +1265,7 @@ def execute_stage06(
     completed_at = attempt.ended_at
     proposed_stage_manifest = StageManifest(
         stage_id=StageId.SCALE_GENERATION_AND_REFOLDING,
-        contract_version="0.1",
+        contract_version="0.2" if multi_strategy else "0.1",
         status=ExecutionStatus.SUCCEEDED,
         created_at=created_at,
         completed_at=completed_at,
@@ -960,7 +1291,18 @@ def execute_stage06(
                         "Human override scaled a Stage 05 Tier A despite "
                         "stopped-no-scale-winner; scientific eligibility remains false.",
                     )
-                    if authorization.mode == "manual-stage05-stop-override"
+                    if isinstance(authorization, ScaleStrategyAuthorization)
+                    and authorization.mode == "manual-stage05-stop-override"
+                    else ()
+                ),
+                *(
+                    (
+                        "Stage 05 v1.6 full-target diagnostics are advisory; "
+                        "warnings were preserved without revoking Tier A promotion.",
+                        "The declared global candidate budget is shared equally "
+                        "across promoted strategies by F_YAML rank.",
+                    )
+                    if multi_strategy
                     else ()
                 ),
             )
@@ -1011,7 +1353,10 @@ def execute_stage06(
                 status="succeeded" if terminal else "running",
                 project_id=upstream.run.project_id,
                 run_id=upstream.run.run_id,
-                notes=(f"Stage 06 generated {len(ordered_candidates)} new candidates.",),
+                notes=(
+                    f"Stage 06 generated {len(ordered_candidates)} new candidates "
+                    f"across {len(strategy_ids)} strategy allocation(s).",
+                ),
             ),
         ),
         generated_at=timestamp,

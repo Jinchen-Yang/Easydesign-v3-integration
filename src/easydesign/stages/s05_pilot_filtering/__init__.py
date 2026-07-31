@@ -1,6 +1,8 @@
 """Stage 05 candidate metrics, gates, strategy tiers, and scale handoff."""
 
 from .models import (
+    AdvisoryStrategySummary,
+    AdvisoryValidationReport,
     CandidateFilterRecord,
     ExpansionCandidateRecord,
     ExpansionExecutionState,
@@ -10,15 +12,21 @@ from .models import (
     FullTargetExecutionState,
     FullTargetPredictionRecord,
     PilotFilterReport,
+    PilotFilterReportV1_6,
     ScientificStop,
     ScientificStopCode,
     Stage05Bundle,
+    Stage05BundleV0_2,
+    Stage05Warning,
     StrategyExpansionSummary,
     StrategyFilterSummary,
+    StrategyPromotionRecord,
     StrategyTier,
 )
 
 __all__ = [
+    "AdvisoryStrategySummary",
+    "AdvisoryValidationReport",
     "CandidateFilterRecord",
     "ExpansionCandidateRecord",
     "ExpansionExecutionState",
@@ -28,9 +36,13 @@ __all__ = [
     "FullTargetExecutionState",
     "FullTargetPredictionRecord",
     "PilotFilterReport",
+    "PilotFilterReportV1_6",
     "ScientificStop",
     "ScientificStopCode",
     "Stage05Bundle",
+    "Stage05BundleV0_2",
+    "Stage05Warning",
+    "StrategyPromotionRecord",
     "StrategyExpansionSummary",
     "StrategyFilterSummary",
     "StrategyTier",

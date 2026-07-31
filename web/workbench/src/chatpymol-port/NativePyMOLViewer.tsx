@@ -505,23 +505,31 @@ json.dumps({
         throw new Error("PyMOL 画布不存在；请重试或切换到 Mol*");
       }
       // Emscripten creates the WebGL context without preserveDrawingBuffer.
-      // Reading pixels after one or two animation frames therefore observes a
-      // cleared buffer even when the user saw a valid frame. Draw and inspect
-      // synchronously in the same browser turn, retrying only after the next
-      // frame has allowed PyMOL to finish lazy representation preparation.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      // When the viewer has just been hidden, resized, or brought back from
+      // Mol*, readPixels can observe a cleared buffer even though PyMOL has a
+      // valid molecule and will paint on the next explicit draw. Treat object /
+      // visible atom checks as strict, but make framebuffer inspection a
+      // recoverable signal so the React overlay does not permanently cover a
+      // usable PyMOL runtime.
+      for (let attempt = 0; attempt < 8; attempt += 1) {
         await enqueue(async () => {
           const runtime = runtimeRef.current;
           if (!runtime) return;
           await runtime.runPythonAsync(`
+try:
+    _p.cmd.dirty()
+except Exception:
+    pass
 _p.idle()
 _p.draw()
 `);
         });
-        if (canvasHasNonBackgroundPixels(canvas)) return scene;
+        if (canvasHasNonBackgroundPixels(canvas)) {
+          return { ...scene, frameReady: true };
+        }
         await new Promise((resolve) => window.requestAnimationFrame(resolve));
       }
-      throw new Error("PyMOL 已读取结构，但首帧仍为空白；请重试或切换到 Mol*");
+      return { ...scene, frameReady: false };
     },
     [enqueue]
   );
@@ -763,7 +771,7 @@ json.dumps(chatpymol_incremental_warnings)
           progress: 99,
           label: t("正在验证 PyMOL 首帧")
         });
-        await verifyNativeScene();
+        const verifiedScene = await verifyNativeScene();
         if (cancelled || requestId !== sceneRequestRef.current) return;
         if (commandWarnings.length) {
           throw new Error(commandWarnings[0].error || "增量命令执行失败");
@@ -777,10 +785,13 @@ json.dumps(chatpymol_incremental_warnings)
         }
         if (!cancelled) {
           setState({
-            kind: "ready",
+            kind: verifiedScene.frameReady === false ? "warning" : "ready",
             progress: 100,
-            label:
-              language === "en"
+            label: verifiedScene.frameReady === false
+              ? language === "en"
+                ? `Native PyMOL frame is recovering · ${versionLabel(versionId)}`
+                : `PyMOL 首帧正在恢复 · ${versionLabel(versionId)}`
+              : language === "en"
                 ? `Native PyMOL · ${versionLabel(versionId)}`
                 : `原生 PyMOL · ${versionLabel(versionId)}`
           });
@@ -926,7 +937,7 @@ for _chatpymol_camera_draw_pass in range(2):
           progress: 99,
           label: t("正在验证 PyMOL 对象、表示与首帧")
         });
-        await verifyNativeScene();
+        const verifiedScene = await verifyNativeScene();
         if (cancelled || requestId !== sceneRequestRef.current) return;
         appliedPmlRef.current = pml;
         loadedSceneKeyRef.current = nextSceneKey;
@@ -934,15 +945,19 @@ for _chatpymol_camera_draw_pass in range(2):
         await refreshSelection();
         if (!cancelled) {
           setState({
-            kind: commandWarnings.length ? "warning" : "ready",
+            kind: commandWarnings.length || verifiedScene.frameReady === false ? "warning" : "ready",
             progress: 100,
             label: commandWarnings.length
               ? language === "en"
                 ? `${commandWarnings.length} command(s) were not applied · ${versionLabel(versionId)}`
                 : `${commandWarnings.length} 条命令未执行 · ${versionLabel(versionId)}`
-              : language === "en"
-                ? `Native PyMOL · ${versionLabel(versionId)}`
-                : `原生 PyMOL · ${versionLabel(versionId)}`
+              : verifiedScene.frameReady === false
+                ? language === "en"
+                  ? `Native PyMOL frame is recovering · ${versionLabel(versionId)}`
+                  : `PyMOL 首帧正在恢复 · ${versionLabel(versionId)}`
+                : language === "en"
+                  ? `Native PyMOL · ${versionLabel(versionId)}`
+                  : `原生 PyMOL · ${versionLabel(versionId)}`
           });
         }
       } catch (error) {
@@ -1061,21 +1076,44 @@ for _chatpymol_camera_draw_pass in range(2):
     let secondFrame = 0;
     firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
-        resizeNativeViewport(true).catch((error) => {
-          console.error(error);
-          onFailure?.(
-            error instanceof Error
-              ? error.message
-              : "PyMOL 返回前台后的画布恢复失败"
-          );
-        });
+        resizeNativeViewport(true)
+          .then(() => verifyNativeScene())
+          .then((verifiedScene) => {
+            if (verifiedScene.frameReady === false) {
+              setState({
+                kind: "warning",
+                progress: 100,
+                label:
+                  language === "en"
+                    ? `Native PyMOL frame is recovering · ${versionLabel(versionId)}`
+                    : `PyMOL 首帧正在恢复 · ${versionLabel(versionId)}`
+              });
+            } else {
+              setState({
+                kind: "ready",
+                progress: 100,
+                label:
+                  language === "en"
+                    ? `Native PyMOL · ${versionLabel(versionId)}`
+                    : `原生 PyMOL · ${versionLabel(versionId)}`
+              });
+            }
+          })
+          .catch((error) => {
+            console.error(error);
+            onFailure?.(
+              error instanceof Error
+                ? error.message
+                : "PyMOL 返回前台后的画布恢复失败"
+            );
+          });
       });
     });
     return () => {
       window.cancelAnimationFrame(firstFrame);
       window.cancelAnimationFrame(secondFrame);
     };
-  }, [active, onFailure, resizeNativeViewport, runtimeReady]);
+  }, [active, language, onFailure, resizeNativeViewport, runtimeReady, verifyNativeScene, versionId]);
 
   const pointerCoordinates = (event) => {
     const canvas = canvasRef.current;

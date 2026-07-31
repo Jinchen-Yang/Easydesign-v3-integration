@@ -126,7 +126,7 @@
 | `ENG-027` | Core Engineering | `smoke-validated` | 持久 Stage attempt 受理后由服务端推导递进冻结；冻结修改 API 统一返回结构化 `409 stage_locked`。 |
 | `UI-019` | Product UI | `smoke-validated` | 冻结阶段显示只读摘要和锁定原因，移除上传、重选、重批和重生成入口，同时保留查看、下载和纯显示操作。 |
 | `REP-008` | Reporting & Visualization | `smoke-validated` | PyMOL 与 Mol* 首次加载后保持挂载；真实 APOE Stage 02 已通过 `PyMOL → Mol* → PyMOL` 回归，返回 PyMOL 后 reshape、viewport、redraw 和结构首帧均恢复。 |
-| `REP-009` | Reporting & Visualization | `implemented` | 新助手统一发送当前完整 PML、结构/场景 metadata、最近十轮对话和动态 Skills，并接收四字段完整 PML；SceneVersion 0.4、增量/完整重放、Mol* 兼容投影和 Stage 02 区域桥接已完成工程测试。 |
+| `REP-009` | Reporting & Visualization | `smoke-validated` | 新助手统一发送当前完整 PML、结构/场景 metadata、最近十轮对话和动态 Skills，并接收四字段完整 PML；dev31 已通过真实 APOE 的 label-first 区域编辑、9/14/14 配色、空闲稳定性及 PyMOL/Mol* 往返验收。 |
 | `ENG-028` | Core Engineering | `smoke-validated` | 结构助手改为部署者拥有的单一平台配置；请求端不再提交 provider 或用户密钥，公开状态接口不泄露 provider、模型、endpoint 或 API key。 |
 | `UI-020` | Product UI | `smoke-validated` | 普通设置页和 Stage 01/02 助手栏不再提供模型、endpoint 或 API key 表单，只显示“EasyDesign 结构助手”的平台可用状态。 |
 | `ENG-029` | Core Engineering | `smoke-validated` | Stage05Bundle/ScaleBundle 0.2、跨 run 不可变证据链接和旧 0.1 兼容已由 APOE policy/50k adoption 验证；没有复制 39 GB 或修改历史 manifest。 |

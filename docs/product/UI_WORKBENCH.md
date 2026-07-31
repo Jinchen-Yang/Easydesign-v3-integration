@@ -572,7 +572,7 @@ ViewState；该混合协议只保留旧记录读取能力，新会话由 REP-009
 
 ## REP-009：ChatPyMol 原生完整 PML 场景
 
-版本：`0.1.0.dev29`。
+版本：`0.1.0.dev31`。
 
 结构助手不再返回 `viewer-actions/view-control/region-edit` 多分支 proposal。每次请求
 统一包含：
@@ -611,6 +611,14 @@ PML 表达，服务端确定性映射到 `label_seq_id` 草稿；再次选择可
 修改不会改写历史 Stage 02，只有人工确认和证据限制确认完成后才发布
 `UserProvidedRegionSet` 与新 `hotspots.yaml`。科学问题仍只能形成待确认的
 SASA/ScanNet 计划。
+
+dev31 固定了编号交互和场景同步规则：助手中未限定的数字一律按序列格显示的
+规范 `label_seq_id` 解释，只有用户明确说原始/auth/author/PDB 编号时才切换到
+author 体系。序列格同时显示“规范”和“原始”编号。服务端先确定性生成期望
+A/B/C，再验证模型的完整 PML 映射结果必须一致；对话文字不再能与左栏、序列区或
+PyMOL 场景分离。区域 overlay 始终位于全局配色命令之后，保证 A/B/C 的红蓝黄不被
+`color gray70, target` 覆盖。重放期间不打开原生操作日志，不持久化瞬时 `deselect`
+或已存在的命令尾部，避免 SceneVersion 自增长和 PyMOL 闪烁。
 
 参考依据：
 

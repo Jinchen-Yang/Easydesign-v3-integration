@@ -21,8 +21,10 @@
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
   最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*
-  只作兼容投影，Stage 02 区域仍须确定性映射和人工批准。当前完成工程测试与构建，下一
-  门槛是真实平台 provider 连续对话、APOE 9/14/14、历史恢复及多次 PyMOL/Mol* 切换。
+  只作兼容投影，Stage 02 区域仍须确定性映射和人工批准。dev31 已修复未限定数字误按
+  author 解释、助手文字与草稿脱节、全局灰色覆盖 A/B/C 以及原生 `deselect` 循环创建版本。
+  真实平台 provider 已将规范编号 32–36 准确写入 A 区，APOE 9/14/14 恢复、空闲不增版本
+  及多次 PyMOL/Mol* 切换均通过；下一门槛是第二真实 target 和 Edge/触摸矩阵。
 - `[VAL-007/S07-002]` APOE v1.6 policy reevaluation 与 Suzhou2 50,000-candidate
   evidence adoption 已发布：旧 v1.5 bundle、manifest 和
   `stopped-no-scale-winner` 保持不可变；新投影显示 Stage 05 一组 Tier A 晋级与

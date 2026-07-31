@@ -528,10 +528,13 @@ DeepSeek/智谱 GLM 助手采用 ChatPyMol 原生完整 PML 主循环：
 `safe-pml` 始终注入，再按当前请求最多注入两个
 chain-coloring/interface-analysis/ligand-pocket/publication-figure/
 structure-alignment Skill。`ed_region_A/B/C` 是受管理 selection；只有用户明确给出
-残基时模型才可更新，服务端再把 author selector 唯一映射为 `label_seq_id` 草稿。同区
+残基时模型才可更新。用户未声明编号体系时，数字固定按序列区显示的
+`label_seq_id` 解释；只有明确写出原始/auth/author/PDB 编号时才按 author
+解释。服务端确定性解析用户意图，将 label 映射为 author selector 交给 PML，
+并反向校验模型返回的 A/B/C 必须与目标草稿完全一致。同区
 再次选择可取消，移入另一颜色会从旧区域移除。
 
-“把32、36加入A区”可以由完整 PML 表达；“寻找最佳区域”不能直接产生残基或 hotspot，
+“把32、36加入A区”指规范编号 32 和 36，可以由完整 PML 表达；“寻找最佳区域”不能直接产生残基或 hotspot，
 只能生成 `requires_confirmation=true` 的 SASA/ScanNet 分析计划。PML 场景变化本身不
 发布 Stage 02；用户确认后仍调用现有确定性后端，两种方法保持独立，不融合分数。用户
 区域仍属于 `manual-residue-list` 人工先验，必须经过编号/坐标/checksum 校验和人工

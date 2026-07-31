@@ -33,6 +33,9 @@
   `assistantMessage/summary/conversationTitle/pml` 四字段响应。安全追加增量执行，旧内容
   变化、历史恢复或增量失败时从已校验结构完整重放。Mol* 只投影支持的命令，不再限制
   PyMOL 原生场景；旧 typed proposal/ViewState 只读兼容。
+- dev31 修正了 live 会话暴露的场景同步回归：重放/验证命令不再进入原生日志，
+  瞬时 `deselect` 和重复命令不创建 SceneVersion，A/B/C overlay 放在全局配色之后。
+  真实 APOE 空闲稳定性、9/14/14 配色和三轮双查看器往返均已通过。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter

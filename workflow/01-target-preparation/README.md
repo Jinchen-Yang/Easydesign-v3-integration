@@ -457,9 +457,17 @@ GLM，并固定模型与 endpoint。普通使用者不选择 provider，也不�
 并形成不可变 SceneVersion。Stage 01 助手只能修改浏览器可视化场景，不能修改
 Target Bundle 或判断 hotspot。
 
+界面中未特别说明的残基数字一律按底部序列同步显示的规范
+`label_seq_id` 解释；只有用户明确写出“原始编号”、`auth`、`author` 或
+`PDB 编号` 时才使用 author 编号。界面同时展示规范和原始编号，服务端会先做
+确定性映射，再要求模型在 PML 中使用已校验的 author selector。
+
 PyMOL 与 Mol* 首次加载后在同一结构工作区持续保留实例。切换查看器只改变显隐，不卸载
 PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重绘，防止运行时仍
 绑定已销毁画布而出现“结构已读取但首帧空白”。
+重放、验证和 selection 刷新期间不记录原生 PyMOL 日志；只有场景就绪后的
+用户操作才能形成新 revision。瞬时 `deselect` 和与当前 PML 尾部完全相同的
+命令必须忽略，避免空闲页面不断增长 SceneVersion 并引起闪烁。
 
 ## 不变量
 

@@ -114,6 +114,16 @@ class SshRemoteSyncReport(BaseModel):
     completed_artifact_closure: bool
 
 
+class SshRemoteFileIdentity(BaseModel):
+    """Checksum and size observed in place without downloading a remote artifact."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    remote_path: str = Field(min_length=1)
+    size_bytes: int = Field(ge=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 @dataclass(frozen=True, slots=True)
 class SshRemoteConnection:
     executor_id: str
@@ -215,6 +225,29 @@ class SshRemoteExecutor:
                 f"SSH remote file probe exit={completed.returncode}: {detail}"
             )
         return completed.returncode == 0
+
+    def file_identity(self, remote_path: Path) -> SshRemoteFileIdentity:
+        """Read an immutable file identity in place; never copies or modifies it."""
+
+        if not remote_path.is_absolute():
+            raise BackendContractError("SSH remote identity 必须使用绝对路径")
+        digest_columns = self._run_remote(
+            ("sha256sum", "--", str(remote_path))
+        ).stdout.split()
+        if len(digest_columns) < 2:
+            raise BackendContractError("SSH remote sha256sum 输出不完整")
+        size_text = self._run_remote(
+            ("stat", "--format=%s", "--", str(remote_path))
+        ).stdout.strip()
+        try:
+            size_bytes = int(size_text)
+        except ValueError as error:
+            raise BackendContractError("SSH remote stat 输出不是整数") from error
+        return SshRemoteFileIdentity(
+            remote_path=remote_path.as_posix(),
+            size_bytes=size_bytes,
+            sha256=digest_columns[0],
+        )
 
     def _rsync(
         self,

@@ -41,6 +41,7 @@ from easydesign.orchestration.decisions import (
     export_decision,
     show_decision,
 )
+from easydesign.orchestration.evidence_adoption import adopt_remote_scale_evidence
 from easydesign.orchestration.hotspots import approve_hotspots, export_hotspot_review
 from easydesign.orchestration.profile import (
     default_runtime_profile_path,
@@ -372,6 +373,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     _add_profile(remote_sync)
     _add_json(remote_sync)
+    remote_adopt = remote_commands.add_parser(
+        "adopt-scale",
+        help="校验并引用远端 Stage 06 population，不复制候选文件",
+    )
+    remote_adopt.add_argument("executor_id")
+    remote_adopt.add_argument("--local-run", type=Path, required=True)
+    remote_adopt.add_argument("--remote-run-root", type=Path, required=True)
+    remote_adopt.add_argument("--continuation-id", required=True)
+    _add_profile(remote_adopt)
+    _add_json(remote_adopt)
 
     hotspots_parser = commands.add_parser(
         "hotspots",
@@ -1072,6 +1083,27 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 print(f"EasyDesign：{probe.easydesign_version}")
                 print(f"GPU：{probe.gpu_count}")
                 print(f"运行盘可用：{probe.filesystem_available_bytes / 1024**3:.1f} GiB")
+            return 0
+        if arguments.remote_command == "adopt-scale":
+            continuation = adopt_remote_scale_evidence(
+                local_run_root=arguments.local_run,
+                remote_run_root=arguments.remote_run_root,
+                executor_id=arguments.executor_id,
+                continuation_id=arguments.continuation_id,
+                profile_path=arguments.profile,
+            )
+            if arguments.json:
+                print(_json_text(continuation))
+            else:
+                print(
+                    "Stage 06 远端证据已采用："
+                    f"{continuation.execution.candidate_count:,} 个候选，"
+                    f"{continuation.execution.shard_count} 个分片"
+                )
+                print(
+                    "旧 Stage 05 scientific-stop 保持不变；"
+                    "Stage 07 需在远端后端探针通过后启动。"
+                )
             return 0
         if arguments.remote_command == "submit":
             submission = submit_remote_pipeline(

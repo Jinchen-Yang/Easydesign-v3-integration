@@ -49,6 +49,12 @@ from .continuation import (
     next_stage_number,
     stage_form_definition,
 )
+from .evidence_adoption import (
+    adopt_remote_scale_evidence,
+    load_project_scale_evidence,
+    load_verified_project_scale_evidence,
+    reevaluate_frozen_stage05,
+)
 from .hotspots import approve_hotspots, export_hotspot_review
 from .migration import (
     RunMigrationManifest,
@@ -94,6 +100,7 @@ from .remote_execution import (
     read_remote_job_record,
     read_remote_status,
     read_remote_submission,
+    resolve_remote_executor,
     resume_remote_pipeline,
     submit_remote_pipeline,
     sync_remote_pipeline,
@@ -215,6 +222,7 @@ __all__ = [
     "build_scale_plan",
     "export_hotspot_review",
     "approve_hotspots",
+    "adopt_remote_scale_evidence",
     "initialize_pse_run",
     "initialize_continuation_run",
     "initialize_project",
@@ -224,6 +232,8 @@ __all__ = [
     "load_resolved_run_config",
     "load_run_config",
     "load_runtime_profile",
+    "load_project_scale_evidence",
+    "load_verified_project_scale_evidence",
     "list_project_catalog",
     "prune_archived_project_shells",
     "list_runs",
@@ -238,6 +248,8 @@ __all__ = [
     "probe_remote_executor",
     "resolve_runtime_profile_path",
     "resume_remote_pipeline",
+    "resolve_remote_executor",
+    "reevaluate_frozen_stage05",
     "show_run",
     "archive_project",
     "restore_project",

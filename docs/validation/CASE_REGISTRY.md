@@ -7,7 +7,7 @@
 
 | 项目 | 输入与用途 | 当前边界 | 服务器路径 |
 | --- | --- | --- | --- |
-| `apoe-s02-006-pse` | 138 aa 单 Target PSE；包含红/蓝/黄用户区域，用于 Stage 01–05 和远程规模运行展示 | Stage 01–04 完成；Stage 05 合法科学停止；探索性 Stage 06 远程运行单独审计 | `runs/apoe-s02-006-pse/` |
+| `apoe-s02-006-pse` | 138 aa 单 Target PSE；包含红/蓝/黄用户区域，用于 Stage 01–06 和远程规模运行展示 | v1.5 Stage 05 科学停止保持冻结；v1.6 独立重评晋级唯一 Tier A，并通过采用记录接入 Suzhou2 20×2500、50,000 候选；Stage 07 尚未开始 | `runs/apoe-s02-006-pse/`；采用记录在 `projects/apoe-s02-006-pse/evidence-adoptions/` |
 | `apoe-fasta` | 冻结 143 aa FASTA + 609-depth 预计算 A3M；用于清晰的 sequence→Protenix Stage 01 与按步骤设计起点 | `20260727-002-stage01-protenix` 已真实调用 Protenix-v2，发布 143 aa Target Bundle 0.4 与 Viewer；首个失败 run 保留为修复前证据 | `runs/apoe-fasta/` |
 
 两个活跃项目目录现在均包含可再生 `PROJECT.json` 和 `PRIMARY`。PSE 项目主展示 run 固定为

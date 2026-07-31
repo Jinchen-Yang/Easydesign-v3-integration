@@ -6,11 +6,11 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S06-004 已实现 1–3 个晋级策略等额共享全局 50k；Suzhou2 历史单策略 50k 已完成并保持 v1.5 语义。 | 校验历史 50k 并发布不可变采用记录；不复制 39 GB。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 |
+| `smoke-validated` | APOE v1.6 已通过不可变采用记录接入 Suzhou2 单策略 50k：20/20 分片、50,000/50,000 候选及 8 GPU 历史均验证通过。 | 在第二真实案例验证 2–3 个晋级策略共享预算；为 Stage 07 恢复远程后端。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 |
 
 ## 当前结论
 
-- 阶段状态：`implemented`，不是 `smoke-validated`。
+- 阶段状态：`smoke-validated`；已真实验证单策略 50k 采用路径，多策略真实规模仍待第二案例。
 - `ScalePlanV0_2` / `ScaleBundleV0_2` 已实现 1/2/3 个 strategy 的精确等额分配、每组
   strategy-local ordinal、尾部分片和全局 coverage；4 个 Tier A 时只消费 F_YAML
   前三。
@@ -21,6 +21,9 @@
 - Stage 04/05 候选不计入 scale 数量；Stage 07 才执行 Protenix 深度筛选和 TNP。
 - 软件能力与 APOE 科学结果分别报告；人工授权生成不会修改 Stage 05 科学停止。
 - 远程科学事实仍由远端 run 发布；控制端镜像只是 checksum 验证后的只读副本。
+- 新 v1.6 continuation 通过 `RunEvidenceLink` 引用 Suzhou2 原始 39 GB 结果，没有复制
+  candidate 数据、没有 symlink、没有修改旧 Stage 05/06 manifest。Workbench 据采用记录
+  显示 Stage 06 已完成；Stage 07 仍为 `not-reached`。
 
 ## 功能矩阵
 
@@ -45,8 +48,8 @@
 
 ## Now
 
-- `[S06-004/VAL-007]` 验证历史 candidate index 的连续编号、唯一 identity 和引用
-  checksum，随后发布 `ScaleEvidenceAdoptionRecord`；源 39 GB 保持在 Suzhou2 原位。
+- `[S07-002/VAL-007]` 在 Suzhou2 恢复并登记 Protenix/TNP 与模型资产，完成真实 adapter
+  probe 后原地消费已采用的 50,000 候选；源 39 GB 保持在 Suzhou2 原位。
 
 ## Next
 
@@ -71,6 +74,11 @@
   `progress-final` 为 20/20 tasks、50,000/50,000 candidates、0 failure，run 总量约
   39 GB。RunManifest SHA-256 `54d90bb6…3505`，ScaleBundle SHA-256
   `dc63553e…bfea8`，candidate index SHA-256 `e75f809f…3334c`。
+- 2026-07-31：不可变采用记录发布在
+  `projects/apoe-s02-006-pse/evidence-adoptions/`
+  `apoe-v16-adopt-suzhou2-50k-20260731/record.json`。记录验证 50,000 个唯一连续
+  candidate、20 个成功 shard；GPU 0–3 各 7,500，GPU 4–7 各 5,000。UI 从该记录
+  投影 100% 完成状态，不扫描远端目录或复制 39 GB。
 - dev27 集成前完整回归：不可变快照 `stage0507-validation-20260731-022` 中
   `make check/test/build`、`341 passed, 8 skipped`、Ruff、142 个源文件的 strict
   mypy 以及 wheel smoke 通过；快照

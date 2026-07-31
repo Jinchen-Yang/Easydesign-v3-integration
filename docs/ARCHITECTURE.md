@@ -977,9 +977,11 @@ projects/<project>/interactive-sessions/<session>/revision
   provider。该文件拒绝符号链接并要求 POSIX `0600`；UI 只能读取通用服务状态，不能
   获取或选择 provider、模型、endpoint 和密钥。provider 不可用时不 fallback，也不
   影响无模型的七阶段流程。
-- PyMOL 与 Mol* 都采用 lazy-once/persistent 生命周期：首次加载后不因平级切换而卸载。
-  返回 PyMOL 时在两个 animation frame 后强制同步 canvas、reshape、GL viewport 和
-  redraw；这样 Pyodide/PyMOL 运行时不会指向已销毁的 WebGL canvas。
+- 同一结构工作区内的 PyMOL 与 Mol* pane 持续挂载；平级切换只调整显隐和交互焦点。
+  浏览器继续缓存约 22 MB 的静态 Pyodide/PyMOL 资产，但每次真正挂载
+  `NativePyMOLViewer` 时创建独立 Pyodide/PyMOL 运行时。Emscripten WebGL context 与
+  创建它的 canvas 绑定，禁止把旧运行时重新绑定到新 canvas。返回已挂载的 PyMOL pane
+  时在两个 animation frame 后同步 canvas、reshape、GL viewport 和 redraw。
 - 首版不开放 MCP，不移植 ChatPyMol 的 Node 文件库、主目录写入、删除/分享接口或第二套
   project system。
 

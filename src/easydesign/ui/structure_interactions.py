@@ -1135,7 +1135,10 @@ def validate_scene_pml(
         if missing:
             raise ConfigurationError("模型删除了受保护的 EasyDesign 结构管理行")
         if added:
-            raise ConfigurationError("模型不能伪造新的 EasyDesign 结构管理行；请通过上传/RCSB 接口添加参考结构")
+            raise ConfigurationError(
+                "模型不能伪造新的 EasyDesign 结构管理行；"
+                "请通过上传/RCSB 接口添加参考结构"
+            )
     commands = split_pml_commands(normalized)
     if not commands:
         raise ConfigurationError("PML 场景没有可执行的显示命令")
@@ -1173,7 +1176,7 @@ def validate_scene_pml(
 def derive_scene_summary(pml: str, object_names: tuple[str, ...] = ()) -> dict[str, Any]:
     """Small ChatPyMol-style scene summary for model context and diagnostics."""
 
-    objects = {
+    objects: dict[str, dict[str, Any]] = {
         name: {"name": name, "representations": [], "colors": []}
         for name in object_names
     }
@@ -1206,7 +1209,12 @@ def derive_scene_summary(pml: str, object_names: tuple[str, ...] = ()) -> dict[s
                     item["colors"].append({"color": color.strip(), "selection": selection})
         elif lower == "select":
             name_part, _, expression = rest.partition(",")
-            scene["selections"].append({"name": name_part.strip(), "expression": expression.strip()})
+            scene["selections"].append(
+                {
+                    "name": name_part.strip(),
+                    "expression": expression.strip(),
+                }
+            )
     for item in objects.values():
         item["representations"] = sorted(set(item["representations"]))
     return scene
@@ -1295,20 +1303,26 @@ EasyDesign 主流程不变：目标结构是上游科学产物；参考结构只
 你会收到当前完整 PML、scene 摘要、真实对象/链/残基 metadata、最近对话和 A/B/C 区域状态。
 
 允许的 kind:
-1. pml-edit: 用于显示、配色、标签、测距、视角、论文图、结构比对等可视化请求。必须返回 pml_edit，且 pml_edit.pml 是修改后的完整 PML。
-2. region-edit: 用于用户明确要求修改 EasyDesign A/B/C 区域。operation 只能是 add/remove/toggle/replace/clear；clear 可空 residues，replace 可空 residues。
-3. analysis-plan: 用户要求自动寻找/预测/比较/recommend hotspot 时使用；methods 只能是 sasa/scannet，requires_confirmation 必须为 true。
+1. pml-edit: 用于显示、配色、标签、测距、视角、论文图、结构比对等可视化请求。
+   必须返回 pml_edit，且 pml_edit.pml 是修改后的完整 PML。
+2. region-edit: 用于用户明确要求修改 EasyDesign A/B/C 区域。operation 只能是
+   add/remove/toggle/replace/clear；clear 可空 residues，replace 可空 residues。
+3. analysis-plan: 用户要求自动寻找/预测/比较/recommend hotspot 时使用；
+   methods 只能是 sasa/scannet，requires_confirmation 必须为 true。
 4. view-control: 兼容旧视图撤销；如果已有 scene_versions，优先用 pml-edit 恢复/调整完整 PML。
 5. explanation: 只解释，不执行。
 
 pml-edit JSON 形状：
-{"kind":"pml-edit","explanation":"中文说明","pml_edit":{"assistant_message":"中文说明","summary":"简短摘要","conversation_title":"短标题","pml":"完整 PML"}}
+{"kind":"pml-edit","explanation":"中文说明",
+ "pml_edit":{"assistant_message":"中文说明","summary":"简短摘要",
+ "conversation_title":"短标题","pml":"完整 PML"}}
 也可以返回 ChatPyMol 兼容顶层形状：
 {"assistantMessage":"中文说明","summary":"摘要","conversationTitle":"短标题","pml":"完整 PML"}
 
 PML 规则：
 - 保留所有以 # @easydesign 开头的管理行，不得新增、删除或修改。
-- 不得使用 load/fetch/save/png/mpng/run/system/shell/python/quit/reinitialize/delete/remove/alter/extract。
+- 不得使用 load/fetch/save/png/mpng/run/system/shell/python/quit/reinitialize/
+  delete/remove/alter/extract。
 - 只引用 scene_context.objects 中真实存在的对象名；只引用 metadata 中真实存在的链。
 - 不得编造不存在的残基、配体、binding site 或科学事实；几何邻近只能称为候选显示。
 - 指令有歧义时，采用最小有用视觉修改，并保留无关 PML。
@@ -1457,7 +1471,11 @@ def _coerce_known_assistant_shape(payload: dict[str, Any]) -> dict[str, Any]:
         if "conversationTitle" in mapped and "conversation_title" not in mapped:
             mapped["conversation_title"] = mapped.pop("conversationTitle")
         if "assistant_message" not in mapped:
-            mapped["assistant_message"] = repaired.get("explanation") or mapped.get("summary") or "已更新 PML 场景。"
+            mapped["assistant_message"] = (
+                repaired.get("explanation")
+                or mapped.get("summary")
+                or "已更新 PML 场景。"
+            )
         if "conversation_title" not in mapped:
             mapped["conversation_title"] = mapped.get("summary") or "PML 场景更新"
         repaired["pml_edit"] = mapped
@@ -1603,7 +1621,8 @@ def request_assistant_proposal(
                 if attempt == 0:
                     continue
                 raise ConfigurationError(
-                    f"{secret.provider} API 返回的结构化建议未通过 EasyDesign 安全校验；请换一种更明确的说法，或在 PML 编辑器中手动调整。"
+                    f"{secret.provider} API 返回的结构化建议未通过 EasyDesign 安全校验；"
+                    "请换一种更明确的说法，或在 PML 编辑器中手动调整。"
                 ) from error
         raise ConfigurationError(f"{secret.provider} API 响应无法验证")
     except httpx.HTTPStatusError as error:

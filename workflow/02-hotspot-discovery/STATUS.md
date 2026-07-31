@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev26 已通过 APOE 双查看器返回回归并改为平台统一结构助手。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 |
+| `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev28 修复双查看器协作回归后，APOE 9/14/14 区域通过多轮 PyMOL↔Mol* 往返。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 |
 
 ## 当前结论
 

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | v1.5 APOE 证据保持冻结；v1.6 已实现最多 3 个 Tier A 晋级，100 条诊断只产生 warning。 | 发布 APOE policy reevaluation，并验证 v1.6 与冻结 pilot Tier/F_YAML 完全一致。 | 无代码 blocker；尚未发布 APOE v1.6 continuation。 | 2026-07-31 |
+| `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 已从同一 pilot 证据晋级唯一 Tier A，100 条诊断的零结构通过只形成 warning。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | 无 Stage 05 工程阻塞；Stage 07 仍需 Suzhou2 的 Protenix/TNP 后端。 | 2026-07-31 |
 
 ## 当前结论
 
@@ -27,6 +27,10 @@
 - 冻结 v1.5 run 本身仍不得自动进入 Stage 06/07，也不得把 binder pose RMSD 3 Å
   门槛放宽来迎合案例。v1.6 continuation 只能通过独立 policy reevaluation 采用相同
   pilot Tier/F_YAML；历史人工授权 50k 也必须与旧 scientific stop 并列展示。
+- `2026-07-31T12:48:00+08:00` 已发布独立 policy reevaluation/adoption record：
+  v1.5 的 `stopped-no-scale-winner` 原样保留；v1.6 从冻结 pilot 证据晋级
+  `region-a-h-all-c-full-scaffold-gontivimab`，`F_YAML=0.39102687045`，并将
+  full-target 0/10 结构通过记录为诊断 warning。
 
 ## 功能矩阵
 
@@ -47,8 +51,8 @@
 
 ## Now
 
-- `[S05-002/VAL-007]` 用冻结 APOE pilot report 发布独立
-  `PolicyReevaluationRecord`；不得重写 v1.5 Stage05Bundle、manifest 或 stop。
+- `[VAL-003]` 对同一 APOE 候选、MSA 与 seeds 101/202/303 进行 target-template /
+  hotspot-constraint 受控比较；不得修改已发布 v1.5/v1.6 结论。
 
 ## Next
 
@@ -104,6 +108,10 @@
   mypy 以及 wheel smoke 通过；快照
   `stage0507-validation-20260731-021` 中 Workbench production build、Chromium
   双尺寸 38 项非视觉测试和 2 项视觉回归通过。
+- 2026-07-31：采用记录校验 Stage 05 RunManifest SHA-256
+  `d7c618…80e07`、Stage05Bundle SHA-256 `401259…9073`，重新计算得到唯一 Tier A、
+  `F_YAML=0.39102687045`；Workbench 默认显示 A/B/C/D=`1/1/5/14`、1 组晋级和
+  1 条诊断提醒。
 
 ## 工作日志
 

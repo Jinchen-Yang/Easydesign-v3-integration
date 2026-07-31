@@ -27,6 +27,16 @@ from easydesign.core import (
     dump_model,
     load_model,
 )
+from easydesign.core.evidence_links import (
+    AdoptedDeviceExecutionSummary,
+    AdoptedScaleExecutionSummary,
+    PolicyReevaluationRecord,
+    ProjectScaleEvidenceContinuation,
+    ReevaluatedStrategy,
+    RunEvidenceLink,
+    ScaleEvidenceAdoptionRecord,
+)
+from easydesign.core.hashing import sha256_file
 from easydesign.orchestration import (
     RunIndex,
     RunIndexEntry,
@@ -413,6 +423,170 @@ def test_projection_separates_scientific_stop_from_stage_capability(
     assert projection.stages[5].capability.status == "implemented"
     assert projection.stages[6].state == "not-reached"
     assert projection.stages[6].capability.status == "implemented"
+
+
+def _publish_scale_evidence_continuation(
+    tmp_path: Path,
+    run_root: Path,
+) -> ProjectScaleEvidenceContinuation:
+    run = load_model(run_root / "manifests" / "run-manifest-0001.json", RunManifest)
+    stage05_ref = next(
+        item
+        for item in run.stage_manifest_refs
+        if item.producer_stage == str(StageId.PILOT_FILTERING)
+    )
+    stage05 = load_model(stage05_ref.verify(run_root), StageManifest)
+    pilot_ref = stage05.require_output("pilot-filter-report")
+
+    def link(
+        *,
+        run_id: str,
+        executor_id: str,
+        run_sha256: str,
+    ) -> RunEvidenceLink:
+        return RunEvidenceLink(
+            source_project_id=run.project_id,
+            source_run_id=run_id,
+            source_run_manifest_sha256=run_sha256,
+            source_artifact=pilot_ref,
+            executor_id=executor_id,
+            artifact_sha256=pilot_ref.sha256,
+            artifact_size_bytes=pilot_ref.size_bytes,
+        )
+
+    local_sha = sha256_file(run_root / "manifests" / "run-manifest-0001.json")
+    local_link = link(
+        run_id=run.run_id,
+        executor_id="local",
+        run_sha256=local_sha,
+    )
+    policy = PolicyReevaluationRecord(
+        generated_at=NOW,
+        source_stage05_bundle=local_link,
+        source_stage05_status="stopped-no-scale-winner",
+        strategies=(
+            ReevaluatedStrategy(
+                strategy_id="patch-1__scaffold-x",
+                tier="tier-a",
+                score_yaml=0.8,
+                old_selected_for_expansion=True,
+                new_promoted=True,
+                promotion_rank=1,
+            ),
+        ),
+        promoted_strategy_ids=("patch-1__scaffold-x",),
+        status="strategies-promoted",
+    )
+    remote_link = link(
+        run_id="remote-scale-run",
+        executor_id="suzhou2",
+        run_sha256="f" * 64,
+    )
+    continuation = ProjectScaleEvidenceContinuation(
+        continuation_id="remote-scale-adoption",
+        generated_at=NOW,
+        project_id=run.project_id,
+        source_local_run_id=run.run_id,
+        source_local_run_manifest_sha256=local_sha,
+        policy_reevaluation=policy,
+        scale_evidence_adoption=ScaleEvidenceAdoptionRecord(
+            generated_at=NOW,
+            policy_reevaluation_sha256="e" * 64,
+            source_scale_bundle=remote_link,
+            strategy_ids=("patch-1__scaffold-x",),
+            shard_count=2,
+            candidate_count=50_000,
+            expected_candidate_count=50_000,
+        ),
+        source_stage06_manifest=remote_link,
+        source_scale_plan=remote_link,
+        source_scale_progress=remote_link,
+        source_candidate_index=remote_link,
+        execution=AdoptedScaleExecutionSummary(
+            executor_id="suzhou2",
+            strategy_ids=("patch-1__scaffold-x",),
+            strategy_candidate_counts={"patch-1__scaffold-x": 50_000},
+            strategy_shard_counts={"patch-1__scaffold-x": 2},
+            devices=(0, 1),
+            shard_count=2,
+            succeeded_task_count=2,
+            failed_task_count=0,
+            candidate_count=50_000,
+            elapsed_seconds=3_600,
+            completed_at=NOW,
+        ),
+        device_execution=(
+            AdoptedDeviceExecutionSummary(
+                device=0,
+                task_count=1,
+                attempt_count=1,
+                failed_attempt_count=0,
+                candidate_count=25_000,
+                busy_seconds=3_500,
+            ),
+            AdoptedDeviceExecutionSummary(
+                device=1,
+                task_count=1,
+                attempt_count=1,
+                failed_attempt_count=0,
+                candidate_count=25_000,
+                busy_seconds=3_500,
+            ),
+        ),
+    )
+    record_root = (
+        tmp_path
+        / "projects"
+        / run.project_id
+        / "evidence-adoptions"
+        / continuation.continuation_id
+    )
+    dump_model(continuation, record_root / "record.json")
+    (record_root.parent / "CURRENT").write_text(
+        f"{continuation.continuation_id}/record.json\n",
+        encoding="utf-8",
+    )
+    return continuation
+
+
+def test_remote_scale_adoption_unlocks_stage06_without_rewriting_history(
+    tmp_path: Path,
+) -> None:
+    run_root = _audited_run(tmp_path)
+    continuation = _publish_scale_evidence_continuation(tmp_path, run_root)
+    registry = UiRunRegistry(tmp_path / "runs")
+    projection = get_run_projection(
+        run_root,
+        registry=registry,
+        signer=ArtifactTokenSigner(b"test-secret"),
+        projects_root=tmp_path / "projects",
+    )
+    execution = get_execution_progress(
+        run_root,
+        6,
+        projects_root=tmp_path / "projects",
+    )
+    overview = get_filter_overview(
+        run_root,
+        registry=registry,
+        policy_reevaluation=continuation.policy_reevaluation,
+    )
+
+    assert projection.stages[4].state == "succeeded"
+    assert projection.stages[4].highlights["historical_policy_status"] == (
+        "scientific-stop"
+    )
+    assert projection.stages[5].state == "succeeded"
+    assert projection.stages[5].highlights["collected_candidates"] == 50_000
+    assert projection.stages[6].state == "not-reached"
+    assert execution.status == "succeeded"
+    assert execution.collected_candidates == 50_000
+    assert execution.total_tasks == 2
+    assert tuple(item.device for item in execution.devices) == (0, 1)
+    assert overview.advisory_validation is True
+    assert overview.state == "succeeded"
+    assert overview.counts["promoted_strategies"] == 1
+    assert overview.counts["diagnostic_warnings"] == 1
 
 
 def test_project_primary_run_is_explicit_and_does_not_follow_newest_branch(

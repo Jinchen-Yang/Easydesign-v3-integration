@@ -525,12 +525,31 @@ endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置
 也不把项目、运行、环境、模型或普通 quarantine 纳入上传清理范围。任何物理删除仍必须
 由使用者针对清单中的精确路径另行批准并留审计记录。
 
-## REP-008 / ENG-028 / UI-020：持久双查看器与平台结构助手
+## REP-008 / ENG-028 / UI-020：隔离式 PyMOL 生命周期与平台结构助手
 
-PyMOL 与 Mol* 都采用“首次使用时加载一次，之后持续保留”的生命周期。切换查看器只
-调整显隐和交互焦点，不能卸载 PyMOL canvas。返回 PyMOL 时在布局稳定后的两个浏览器
-帧强制执行 canvas backing size、PyMOL reshape、OpenGL viewport 和 redraw；Stage
-01/02 必须覆盖 `PyMOL → Mol* → PyMOL` 的真实结构回归。
+同一结构工作区内的 PyMOL 与 Mol* pane 持续挂载，切换查看器只调整显隐和交互焦点。
+浏览器可以复用已经下载的 Pyodide/PyMOL 静态资产，但不能跨
+`NativePyMOLViewer` 挂载复用 Pyodide/PyMOL 运行时：Emscripten 的 WebGL context 与
+首次创建它的 canvas 绑定，尝试把全局运行时改绑到新 canvas 会出现对象已经读取但画布
+空白、切回失败或绘制到已脱离 DOM 的旧 canvas。每个真实挂载因此创建独立运行时；
+返回同一已挂载 pane 时，在布局稳定后的两个浏览器帧执行 canvas backing size、PyMOL
+reshape、OpenGL viewport 和 redraw。Stage 01/02 必须覆盖
+`PyMOL → Mol* → PyMOL` 以及跨 Stage 往返的真实结构回归。
+
+dev28 的回归修复进一步固定：
+
+- 两个 viewer pane 始终挂载；非活动 pane 只使用 `opacity` 和 `pointer-events`，
+  禁止 `visibility:hidden` 触发 WASM/WebGL 画布失效。
+- 只缓存 `pyodide.js` 与 WASM/包资产；每个新 PyMOL canvas 创建独立运行时，禁止
+  全局 `pyodidePromise` 跨组件复用。
+- 结构 identity 与显示 revision 分开。切换 tab 或恢复显示版本不得删除对象、重复下载
+  `target.cif` 或重建 PyMOL runtime。
+- 场景只由基础显示、最新 ViewState 和最新专家 PML 组成，禁止把全部历史 revision
+  重新拼接执行。
+- PyMOL ready 必须有对象、原子和可见表示；无 `preserveDrawingBuffer` 时
+  `readPixels` 可能读到空帧，因此它只用于诊断和浏览器视觉测试，不作为唯一运行门。
+- Stage 01 不载入 Stage 02 辅助参考结构；Stage 02 的可选参考结构失败只形成 warning，
+  不能遮蔽已经成功载入的 target。
 
 结构助手是 EasyDesign 平台能力，不是用户自带密钥功能：
 
@@ -563,6 +582,9 @@ PML 仍只作用于 PyMOL，并在界面中明确标注范围。
 
 - Proteindigger 的系统 Chrome 已完成 Workbench 功能矩阵；真实 APOE 页面显示
   138-aa 结构、9/14/14 红蓝黄来源区域、有效未运行草稿和 Stage 01–05 递进只读状态。
+- Chromium 1440×900 与 1920×1080 的完整功能矩阵为 40/40 通过；按步骤任务完成后
+  必须按 job 返回的精确 `run_key` 打开新运行，即使项目索引尚未刷新，也不得退回同项目
+  的旧运行。
 - PyMOL 首帧检查在对象、原子与可见表示确认后立即主动绘制并读取 framebuffer，避免
   `preserveDrawingBuffer=false` 时浏览器在下一帧前清空像素造成假失败。
 - 服务器 Chrome 与本地视觉基线存在约 1% 的字体/栅格像素差异；交互、布局和科学数据

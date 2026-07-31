@@ -130,3 +130,128 @@ class ScaleEvidenceAdoptionRecord(BaseModel):
         if self.candidate_count != self.expected_candidate_count:
             raise ValueError("历史 scale evidence candidate 数量不完整")
         return self
+
+
+class AdoptedScaleExecutionSummary(BaseModel):
+    """Small, path-free projection of a verified remote Stage 06 execution."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["0.1"] = "0.1"
+    executor_id: str = Field(pattern=ID_PATTERN)
+    strategy_ids: tuple[str, ...] = Field(min_length=1, max_length=3)
+    strategy_candidate_counts: dict[str, int] = Field(min_length=1)
+    strategy_shard_counts: dict[str, int] = Field(min_length=1)
+    devices: tuple[int, ...] = Field(min_length=1)
+    shard_count: int = Field(ge=1)
+    succeeded_task_count: int = Field(ge=1)
+    failed_task_count: int = Field(ge=0)
+    candidate_count: int = Field(ge=1)
+    elapsed_seconds: float = Field(ge=0)
+    completed_at: datetime
+
+    @model_validator(mode="after")
+    def validate_summary(self) -> Self:
+        if len(self.strategy_ids) != len(set(self.strategy_ids)):
+            raise ValueError("remote scale summary strategy_id 不能重复")
+        if len(self.devices) != len(set(self.devices)):
+            raise ValueError("remote scale summary device 不能重复")
+        if set(self.strategy_candidate_counts) != set(self.strategy_ids):
+            raise ValueError("remote scale summary allocation 与 strategy 不一致")
+        if set(self.strategy_shard_counts) != set(self.strategy_ids):
+            raise ValueError("remote scale summary shard allocation 与 strategy 不一致")
+        if sum(self.strategy_candidate_counts.values()) != self.candidate_count:
+            raise ValueError("remote scale summary allocation 总数不一致")
+        if sum(self.strategy_shard_counts.values()) != self.shard_count:
+            raise ValueError("remote scale summary shard 总数不一致")
+        if self.succeeded_task_count != self.shard_count:
+            raise ValueError("remote scale summary 必须完成全部 shard")
+        if self.failed_task_count:
+            raise ValueError("adopted remote scale evidence 不得包含失败任务")
+        return self
+
+
+class AdoptedDeviceExecutionSummary(BaseModel):
+    """Compact historical GPU assignment evidence for one remote device."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    device: int = Field(ge=0)
+    task_count: int = Field(ge=1)
+    attempt_count: int = Field(ge=1)
+    failed_attempt_count: int = Field(ge=0)
+    candidate_count: int = Field(ge=1)
+    busy_seconds: float = Field(ge=0)
+
+
+class ProjectScaleEvidenceContinuation(BaseModel):
+    """Product-level continuation that preserves both immutable source runs."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["0.1"] = "0.1"
+    continuation_id: str = Field(pattern=ID_PATTERN)
+    generated_at: datetime
+    project_id: str = Field(pattern=ID_PATTERN)
+    source_local_run_id: str = Field(pattern=ID_PATTERN)
+    source_local_run_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+    policy_reevaluation: PolicyReevaluationRecord
+    scale_evidence_adoption: ScaleEvidenceAdoptionRecord
+    source_stage06_manifest: RunEvidenceLink
+    source_scale_plan: RunEvidenceLink
+    source_scale_progress: RunEvidenceLink
+    source_candidate_index: RunEvidenceLink
+    execution: AdoptedScaleExecutionSummary
+    device_execution: tuple[AdoptedDeviceExecutionSummary, ...] = Field(min_length=1)
+    stage07_readiness: Literal["remote-backends-required"] = (
+        "remote-backends-required"
+    )
+
+    @model_validator(mode="after")
+    def validate_continuation(self) -> Self:
+        policy = self.policy_reevaluation
+        adoption = self.scale_evidence_adoption
+        if policy.source_stage05_bundle.source_project_id != self.project_id:
+            raise ValueError("policy reevaluation project 与 continuation 不一致")
+        if policy.source_stage05_bundle.source_run_id != self.source_local_run_id:
+            raise ValueError("policy reevaluation local run 与 continuation 不一致")
+        if (
+            policy.source_stage05_bundle.source_run_manifest_sha256
+            != self.source_local_run_manifest_sha256
+        ):
+            raise ValueError("policy reevaluation local manifest identity 不一致")
+        if adoption.strategy_ids != policy.promoted_strategy_ids:
+            raise ValueError("scale adoption strategy 与 policy promotion 不一致")
+        if adoption.strategy_ids != self.execution.strategy_ids:
+            raise ValueError("scale adoption strategy 与 execution summary 不一致")
+        remote_links = (
+            adoption.source_scale_bundle,
+            self.source_stage06_manifest,
+            self.source_scale_plan,
+            self.source_scale_progress,
+            self.source_candidate_index,
+        )
+        remote_identity = {
+            (
+                item.source_project_id,
+                item.source_run_id,
+                item.source_run_manifest_sha256,
+                item.executor_id,
+            )
+            for item in remote_links
+        }
+        if len(remote_identity) != 1:
+            raise ValueError("remote scale evidence 必须来自同一不可变 run")
+        if adoption.candidate_count != self.execution.candidate_count:
+            raise ValueError("scale adoption candidate count 与 execution 不一致")
+        if adoption.shard_count != self.execution.shard_count:
+            raise ValueError("scale adoption shard count 与 execution 不一致")
+        if tuple(item.device for item in self.device_execution) != self.execution.devices:
+            raise ValueError("device execution 顺序与 remote execution device 不一致")
+        if sum(item.task_count for item in self.device_execution) != adoption.shard_count:
+            raise ValueError("device execution task 总数与 adoption 不一致")
+        if sum(item.candidate_count for item in self.device_execution) != (
+            adoption.candidate_count
+        ):
+            raise ValueError("device execution candidate 总数与 adoption 不一致")
+        return self

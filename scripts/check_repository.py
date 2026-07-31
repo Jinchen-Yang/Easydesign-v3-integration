@@ -34,6 +34,7 @@ ROOT_DOCS = {
     "PROJECT_CHARTER.md",
     "AGENTS.md",
     "DATA_SAFETY.md",
+    "NANOBODY_FILTER_STANDARD_V1.md",
     "TODO.md",
     "TODO_NOW.md",
 }
@@ -325,7 +326,10 @@ def main() -> int:
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
-    require(len(markdown) <= 44, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
+    # Stage 05 v1.6 intentionally adds the frozen uploaded v1.5 source and one
+    # governed methods document/ADR pair. Keep the bound explicit rather than
+    # silently accepting arbitrary new Markdown files.
+    require(len(markdown) <= 46, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]

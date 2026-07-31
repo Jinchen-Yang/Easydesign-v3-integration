@@ -13,7 +13,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from easydesign.core import ArtifactRef, ManifestStateError, RunManifest, StageManifest, load_model
+from easydesign.core import (
+    ArtifactRef,
+    ManifestStateError,
+    RunManifest,
+    StageManifest,
+    load_model,
+)
+from easydesign.core.evidence_links import PolicyReevaluationRecord
 
 from .models import (
     ArtifactProjection,
@@ -24,6 +31,7 @@ from .models import (
     MetricPresentation,
     StrategyMetricAggregate,
     StrategyProjection,
+    UiStageState,
 )
 from .projections import _latest_run_manifest, _state_for_manifest
 from .security import ArtifactTokenSigner, UiRunRegistry
@@ -541,6 +549,7 @@ def get_filter_overview(
     run_root: Path,
     *,
     registry: UiRunRegistry,
+    policy_reevaluation: PolicyReevaluationRecord | None = None,
 ) -> FilterOverviewProjection:
     root = run_root.resolve()
     run_key = registry.register(root)
@@ -564,13 +573,29 @@ def get_filter_overview(
         for rule in _failed(item.get("hard_gate_decisions") or []):
             failed_counts[rule] = failed_counts.get(rule, 0) + 1
     status = str(expansion.get("status") or report.get("status") or "completed")
-    scientific_stop = status.startswith("stopped-")
-    advisory = expansion.get("profile_id") == "nanobody-filter-standard-v1.6"
-    warning_count = len(expansion.get("warnings") or [])
+    advisory = (
+        expansion.get("profile_id") == "nanobody-filter-standard-v1.6"
+        or policy_reevaluation is not None
+    )
+    scientific_stop = status.startswith("stopped-") and policy_reevaluation is None
+    promoted_strategy_ids = (
+        policy_reevaluation.promoted_strategy_ids
+        if policy_reevaluation is not None
+        else tuple(
+            item.get("strategy_id")
+            for item in expansion.get("promoted_strategies") or []
+            if item.get("strategy_id")
+        )
+        or tuple(report.get("promoted_strategy_ids") or [])
+        or tuple(report.get("selected_strategy_ids") or [])
+    )
     local_pass = sum(bool(item.get("local_gate_pass")) for item in expanded)
     protenix_pass = sum(
         bool(item.get("structure_gate_pass", item.get("passed"))) for item in predictions
     )
+    warning_count = len(expansion.get("warnings") or [])
+    if policy_reevaluation is not None and not warning_count:
+        warning_count = int(bool(promoted_strategy_ids and not protenix_pass))
     counts = {
         "pilot": len(pilot),
         "strategies": len(strategies),
@@ -580,10 +605,7 @@ def get_filter_overview(
             or []
         ),
         "promoted_strategies": len(
-            expansion.get("promoted_strategies")
-            or report.get("promoted_strategy_ids")
-            or report.get("selected_strategy_ids")
-            or []
+            promoted_strategy_ids
         ),
         "diagnostic_warnings": warning_count,
         "expanded": len(expanded),
@@ -593,7 +615,11 @@ def get_filter_overview(
     }
     return FilterOverviewProjection(
         run_key=run_key,
-        state=_state_for_manifest(stage),
+        state=(
+            _state_for_manifest(stage)
+            if policy_reevaluation is None
+            else UiStageState.SUCCEEDED
+        ),
         advisory_validation=advisory,
         conclusion_title=(
             "当前没有可进入规模化生成的设计策略"
@@ -610,7 +636,7 @@ def get_filter_overview(
             else (
                 f"已晋级 {counts['promoted_strategies']} 组 Tier A；"
                 f"100条诊断产生 {warning_count} 条 warning，"
-                "所有晋级组仍共享后续全局候选预算。"
+                "旧 v1.5 结论保持不变，晋级组按 v1.6 继续共享后续全局候选预算。"
                 if advisory
                 else "筛选和完整目标复核已完成，并形成唯一可放大策略。"
             )
@@ -753,12 +779,17 @@ def list_filter_strategies(
     *,
     registry: UiRunRegistry,
     signer: ArtifactTokenSigner,
+    policy_reevaluation: PolicyReevaluationRecord | None = None,
 ) -> tuple[StrategyProjection, ...]:
     root = run_root.resolve()
     run, _, artifacts = _stage05_sources(root)
     run_key = registry.register(root)
     report = _required_json(root, artifacts, "pilot-filter-report")
-    advisory = _optional_json(root, artifacts, "advisory-validation-report") or {}
+    advisory = (
+        _optional_json(root, artifacts, "advisory-validation-report")
+        or _optional_json(root, artifacts, "expansion-validation-report")
+        or {}
+    )
     identities, yaml_artifacts = _strategy_identity_sources(root, run, artifacts)
     promotion_by_strategy = {
         str(item.get("strategy_id")): item
@@ -777,6 +808,48 @@ def list_filter_strategies(
             warning_count_by_strategy[strategy_id] = (
                 warning_count_by_strategy.get(strategy_id, 0) + 1
             )
+    if policy_reevaluation is not None:
+        promotion_by_strategy = {
+            item.strategy_id: {
+                "strategy_id": item.strategy_id,
+                "promotion_rank": item.promotion_rank,
+            }
+            for item in policy_reevaluation.strategies
+            if item.new_promoted
+        }
+        candidate_strategy = {
+            str(item.get("candidate_id")): str(item.get("strategy_id"))
+            for item in advisory.get("candidates") or []
+            if item.get("candidate_id") and item.get("strategy_id")
+        }
+        for promoted in policy_reevaluation.promoted_strategy_ids:
+            candidates = [
+                item
+                for item in advisory.get("candidates") or []
+                if item.get("strategy_id") == promoted
+            ]
+            predictions = [
+                item
+                for item in advisory.get("predictions") or []
+                if item.get("strategy_id") == promoted
+                or candidate_strategy.get(str(item.get("candidate_id"))) == promoted
+            ]
+            passed = sum(
+                bool(item.get("structure_gate_pass", item.get("passed")))
+                for item in predictions
+            )
+            diagnostic_by_strategy[promoted] = {
+                "advisory_status": (
+                    "advisory-supported" if passed else "advisory-warning"
+                ),
+                "complete_candidate_count": len(candidates),
+                "local_gate_pass_count": sum(
+                    bool(item.get("local_gate_pass")) for item in candidates
+                ),
+                "full_target_prediction_count": len(predictions),
+                "full_target_structure_pass_count": passed,
+            }
+            warning_count_by_strategy[promoted] = int(not passed)
     pilot_records = _all_phase_items(root, artifacts, "pilot")
     records_by_strategy: dict[str, list[dict[str, Any]]] = {}
     for record in pilot_records:

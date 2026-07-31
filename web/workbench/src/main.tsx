@@ -2801,13 +2801,6 @@ function App() {
       openRun(projectedRun, destinationStage);
       return;
     }
-    const sameProjectLatest = selectedRun
-      ? refreshed?.projects.find((project) => project.project_id === selectedRun.project_id)?.latest_run
-      : undefined;
-    if (sameProjectLatest) {
-      openRun(sameProjectLatest, destinationStage);
-      return;
-    }
     const completedRun = await api.run(runKey);
     openRun(completedRun, destinationStage);
   }

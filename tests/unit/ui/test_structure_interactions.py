@@ -22,6 +22,10 @@ from easydesign.ui.structure_interactions import (
     validate_scene_pml,
 )
 
+_MANAGED_TARGET_LINE = (
+    "# @easydesign target object=target sha256=" + "a" * 64 + "\n"
+)
+
 
 def test_safe_pml_accepts_display_commands_and_rejects_mutation() -> None:
     canonical = validate_safe_pml(
@@ -598,23 +602,24 @@ def test_assistant_timeout_fails_without_fallback() -> None:
 
 def test_chatpymol_style_top_level_pml_response_creates_pml_edit_after_repair() -> None:
     calls: list[dict[str, object]] = []
-    previous_pml = """# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show cartoon, target
-color gray70, target
-orient target
-"""
+    previous_pml = _MANAGED_TARGET_LINE + (
+        "hide everything, all\n"
+        "show cartoon, target\n"
+        "color gray70, target\n"
+        "orient target\n"
+    )
     response_payload = {
         "assistantMessage": "已把整个结构切换为 sticks 并居中。",
         "summary": "显示为 sticks 并居中",
         "conversationTitle": "Sticks view",
-        "pml": """# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show sticks, target
-color gray70, target
-center target
-orient target
-""",
+        "pml": _MANAGED_TARGET_LINE
+        + (
+            "hide everything, all\n"
+            "show sticks, target\n"
+            "color gray70, target\n"
+            "center target\n"
+            "orient target\n"
+        ),
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -651,10 +656,10 @@ orient target
 
 
 def test_scene_pml_validator_protects_managed_lines_and_blocks_unsafe_commands() -> None:
-    previous_pml = """# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show cartoon, target
-"""
+    previous_pml = _MANAGED_TARGET_LINE + (
+        "hide everything, all\n"
+        "show cartoon, target\n"
+    )
     valid = validate_scene_pml(
         previous_pml + "center target\n",
         previous_pml=previous_pml,
@@ -710,24 +715,26 @@ def test_scene_versions_restore_as_new_version_instead_of_overwriting(tmp_path: 
     )
     initial = store.ensure_scene(
         session.session_id,
-        pml="""# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show cartoon, target
-color gray70, target
-orient target
-""",
+        pml=_MANAGED_TARGET_LINE
+        + (
+            "hide everything, all\n"
+            "show cartoon, target\n"
+            "color gray70, target\n"
+            "orient target\n"
+        ),
         target_object=target,
         updated_at=datetime(2026, 7, 29, tzinfo=UTC),
     )
     updated, second = store.save_scene_version(
         session.session_id,
-        pml="""# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show sticks, target
-color gray70, target
-center target
-orient target
-""",
+        pml=_MANAGED_TARGET_LINE
+        + (
+            "hide everything, all\n"
+            "show sticks, target\n"
+            "color gray70, target\n"
+            "center target\n"
+            "orient target\n"
+        ),
         actor="ai",
         source="assistant-message",
         summary="显示为 sticks",
@@ -781,7 +788,9 @@ def test_region_operation_supports_clear_without_residues() -> None:
         )
 
 
-def test_scene_version_can_add_server_managed_reference_line_only_when_allowed(tmp_path: Path) -> None:
+def test_scene_version_can_add_server_managed_reference_line_only_when_allowed(
+    tmp_path: Path,
+) -> None:
     store = StructureInteractionStore(tmp_path / "projects")
     session = store.create(
         project_id="demo",
@@ -803,12 +812,13 @@ def test_scene_version_can_add_server_managed_reference_line_only_when_allowed(t
     )
     initialized = store.ensure_scene(
         session.session_id,
-        pml="""# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show cartoon, target
-color gray70, target
-orient target
-""",
+        pml=_MANAGED_TARGET_LINE
+        + (
+            "hide everything, all\n"
+            "show cartoon, target\n"
+            "color gray70, target\n"
+            "orient target\n"
+        ),
         target_object=target,
         updated_at=datetime(2026, 7, 29, tzinfo=UTC),
     )
@@ -822,8 +832,15 @@ orient target
         source="rcsb:1UBQ",
         created_at=datetime(2026, 7, 29, 1, tzinfo=UTC),
     )
-    managed = "# @easydesign reference object=ref_1ubq object_id=reference-000001 sha256=" + "c" * 64
-    next_pml = initialized.scene_versions[-1].pml + managed + "\nshow cartoon, ref_1ubq\ncolor marine, ref_1ubq\n"
+    managed = (
+        "# @easydesign reference object=ref_1ubq "
+        "object_id=reference-000001 sha256=" + "c" * 64
+    )
+    next_pml = (
+        initialized.scene_versions[-1].pml
+        + managed
+        + "\nshow cartoon, ref_1ubq\ncolor marine, ref_1ubq\n"
+    )
 
     with pytest.raises(ConfigurationError, match="伪造"):
         store.save_scene_version(
@@ -876,11 +893,12 @@ def test_scene_version_stale_base_raises_conflict(tmp_path: Path) -> None:
     )
     initialized = store.ensure_scene(
         session.session_id,
-        pml="""# @easydesign target object=target sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-hide everything, all
-show cartoon, target
-orient target
-""",
+        pml=_MANAGED_TARGET_LINE
+        + (
+            "hide everything, all\n"
+            "show cartoon, target\n"
+            "orient target\n"
+        ),
         target_object=target,
     )
     updated, _ = store.save_scene_version(

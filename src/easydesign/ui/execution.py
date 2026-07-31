@@ -17,6 +17,9 @@ from easydesign.core import (
     TaskStatus,
     load_model,
 )
+from easydesign.orchestration.evidence_adoption import (
+    load_verified_project_scale_evidence,
+)
 
 from .models import (
     DeviceExecutionProjection,
@@ -234,10 +237,92 @@ def get_execution_progress(
     stage_number: int,
     *,
     runtime_snapshot: ProgressSnapshot | None = None,
+    projects_root: Path | None = None,
 ) -> ExecutionProgressProjection:
     """读取 Stage 04/06 的终态证据，或显式 runtime snapshot 对应的活动记录。"""
 
     root = run_root.resolve()
+    run, _ = _latest_run_manifest(root)
+    has_stage_manifest = any(
+        item.producer_stage == _STAGE_CONTRACTS.get(stage_number, {}).get("stage_id")
+        for item in run.stage_manifest_refs
+    )
+    if (
+        stage_number == 6
+        and not has_stage_manifest
+        and runtime_snapshot is None
+        and projects_root is not None
+    ):
+        continuation = load_verified_project_scale_evidence(root, projects_root)
+        if continuation is not None:
+            execution = continuation.execution
+            return ExecutionProgressProjection(
+                stage_number=6,
+                stage_id="06-scale-generation-and-refolding",
+                status="succeeded",
+                updated_at=execution.completed_at,
+                total_tasks=execution.shard_count,
+                pending_tasks=0,
+                waiting_tasks=0,
+                running_tasks=0,
+                succeeded_tasks=execution.succeeded_task_count,
+                failed_tasks=execution.failed_task_count,
+                planned_candidates=execution.candidate_count,
+                collected_candidates=execution.candidate_count,
+                elapsed_seconds=execution.elapsed_seconds,
+                throughput_candidates_per_hour=(
+                    None
+                    if execution.elapsed_seconds == 0
+                    else execution.candidate_count
+                    / execution.elapsed_seconds
+                    * 3600
+                ),
+                estimated_remaining_seconds=0,
+                device_history_status="available",
+                devices=tuple(
+                    DeviceExecutionProjection(
+                        device=item.device,
+                        current_task_id=None,
+                        current_strategy_id=None,
+                        assigned_task_count=item.task_count,
+                        succeeded_task_count=item.task_count,
+                        attempt_count=item.attempt_count,
+                        failed_attempt_count=item.failed_attempt_count,
+                        collected_candidates=item.candidate_count,
+                        busy_seconds=item.busy_seconds,
+                        tasks=(),
+                    )
+                    for item in continuation.device_execution
+                ),
+                strategies=tuple(
+                    StrategyExecutionProjection(
+                        strategy_id=strategy_id,
+                        task_count=execution.strategy_shard_counts[strategy_id],
+                        succeeded_task_count=execution.strategy_shard_counts[
+                            strategy_id
+                        ],
+                        failed_task_count=0,
+                        requested_candidates=execution.strategy_candidate_counts[
+                            strategy_id
+                        ],
+                        collected_candidates=execution.strategy_candidate_counts[
+                            strategy_id
+                        ],
+                    )
+                    for strategy_id in execution.strategy_ids
+                ),
+                recent_events=(
+                    {
+                        "event_type": "remote-evidence-adopted",
+                        "occurred_at": continuation.generated_at.isoformat(),
+                        "message": (
+                            f"已验证并采用 {execution.executor_id} 上的"
+                            f" {execution.candidate_count:,} 个候选"
+                        ),
+                    },
+                ),
+                recent_errors=(),
+            )
     progress, tasks, events = _load_execution_sources(
         root,
         stage_number,

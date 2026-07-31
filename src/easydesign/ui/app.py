@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
-import uvicorn
 import httpx
+import uvicorn
 import yaml  # type: ignore[import-untyped]
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as ApiPath
@@ -46,6 +46,7 @@ from easydesign.orchestration import (
     list_remote_executor_ids,
     list_remote_job_records,
     list_runs,
+    load_verified_project_scale_evidence,
     materialize_continuation_config,
     observe_remote_pipeline,
     probe_remote_executor,
@@ -823,7 +824,10 @@ def _initial_stage2_pml(
         selection = f"ed_region_{region_id}"
         lines.extend(
             [
-                f"select {selection}, {_author_selector_from_labels(region_projection.residues, labels)}",
+                (
+                    f"select {selection}, "
+                    f"{_author_selector_from_labels(region_projection.residues, labels)}"
+                ),
                 f"color {colors[region_id]}, {selection}",
                 f"show sticks, {selection}",
             ]
@@ -929,13 +933,16 @@ def _safe_reference_object_name(
 
 
 def _reference_root(service: UiServiceState, session: Any) -> Path:
+    project_id = str(session.project_id)
+    session_id = str(session.session_id)
+    project_root = service.project_root(project_id)
     root = (
-        service.project_root(session.project_id)
+        project_root
         / "interactive-sessions"
-        / session.session_id
+        / session_id
         / "references"
     ).resolve()
-    root.relative_to(service.project_root(session.project_id))
+    root.relative_to(project_root)
     service.workspace.assert_write_path(root)
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -1195,6 +1202,7 @@ def create_ui_app(
                             registry=service.registry,
                             signer=service.signer,
                             accepted_jobs=service.accepted_jobs_by_run(),
+                            projects_root=service.projects_root,
                         )
                     )
                     for project_id in project_ids
@@ -1428,6 +1436,7 @@ def create_ui_app(
                 registry=service.registry,
                 signer=service.signer,
                 accepted_jobs=service.accepted_jobs_by_run(),
+                projects_root=service.projects_root,
             )
         except Exception as error:
             _raise_http(error)
@@ -2281,6 +2290,7 @@ def create_ui_app(
                 accepted_job_stage=accepted_stage,
                 accepted_job_at=accepted_at,
                 accepted_job_status=accepted_status,
+                projects_root=service.projects_root,
             )
         except Exception as error:
             _raise_http(error)
@@ -2299,6 +2309,7 @@ def create_ui_app(
                 root,
                 registry=service.registry,
                 signer=service.signer,
+                projects_root=service.projects_root,
             )
             region_projection = get_region_editor_projection(
                 root,
@@ -2700,7 +2711,10 @@ def create_ui_app(
                     "version": version.model_dump(mode="json"),
                 }
             if proposal.kind == "view-control" and proposal.view_control is not None:
-                if proposal.view_control.action == "undo-last-view-action" and len(session.scene_versions) >= 2:
+                if (
+                    proposal.view_control.action == "undo-last-view-action"
+                    and len(session.scene_versions) >= 2
+                ):
                     previous = session.scene_versions[-2]
                     updated, version = service.structure_sessions.restore_scene_version(
                         session_id,
@@ -2804,6 +2818,7 @@ def create_ui_app(
                 accepted_job_stage=accepted_stage,
                 accepted_job_at=accepted_at,
                 accepted_job_status=accepted_status,
+                projects_root=service.projects_root,
             )
         except Exception as error:
             _raise_http(error)
@@ -2836,6 +2851,7 @@ def create_ui_app(
                 root,
                 stage_number,
                 runtime_snapshot=runtime_snapshot,
+                projects_root=service.projects_root,
             )
         except Exception as error:
             _raise_http(error)
@@ -2845,9 +2861,19 @@ def create_ui_app(
     def stage05_overview(run_key: str, request: Request) -> Any:
         service = _state(request)
         try:
+            root = service.registry.resolve(run_key)
+            continuation = load_verified_project_scale_evidence(
+                root,
+                service.projects_root,
+            )
             return get_filter_overview(
-                service.registry.resolve(run_key),
+                root,
                 registry=service.registry,
+                policy_reevaluation=(
+                    None
+                    if continuation is None
+                    else continuation.policy_reevaluation
+                ),
             )
         except Exception as error:
             _raise_http(error)
@@ -2857,10 +2883,20 @@ def create_ui_app(
     def stage05_strategies(run_key: str, request: Request) -> Any:
         service = _state(request)
         try:
+            root = service.registry.resolve(run_key)
+            continuation = load_verified_project_scale_evidence(
+                root,
+                service.projects_root,
+            )
             return list_filter_strategies(
-                service.registry.resolve(run_key),
+                root,
                 registry=service.registry,
                 signer=service.signer,
+                policy_reevaluation=(
+                    None
+                    if continuation is None
+                    else continuation.policy_reevaluation
+                ),
             )
         except Exception as error:
             _raise_http(error)

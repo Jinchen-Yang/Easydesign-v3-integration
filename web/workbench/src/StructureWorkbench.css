@@ -82,24 +82,34 @@
 
 .structure-viewer-surface {
   position: relative;
+  min-height: 620px;
+  overflow: hidden;
 }
 
 .structure-viewer-pane {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   width: 100%;
   min-height: 620px;
   background: #eef1f6;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
 }
 
 .structure-viewer-pane.inactive {
-  position: absolute;
-  inset: 0;
-  visibility: hidden;
+  z-index: 1;
+  visibility: visible;
+  opacity: 0;
   pointer-events: none;
 }
 
 .structure-viewer-pane.active {
-  position: relative;
+  z-index: 2;
   visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .easydesign-pymol .native-pymol {
@@ -378,11 +388,43 @@
 }
 
 .scene-version-panel {
-  display: grid;
-  gap: 10px;
-  padding: 12px 14px;
   border-top: 1px solid #d8e0eb;
   background: #f8fafc;
+}
+
+.scene-version-panel > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  color: #40526b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.scene-version-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.scene-version-panel > summary span {
+  color: #7a8798;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.scene-version-panel[open] {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+
+.scene-version-panel[open] > :not(summary) {
+  margin-right: 14px;
+  margin-left: 14px;
 }
 
 .scene-version-toolbar {

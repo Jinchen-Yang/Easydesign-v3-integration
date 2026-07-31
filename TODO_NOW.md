@@ -7,25 +7,27 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev26 已修复并真实复验 `PyMOL → Mol* → PyMOL` 返回路径，138-aa 结构与来源区域不会因切换丢失。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev26 已通过 APOE 双查看器返回回归并改为平台统一结构助手。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-30 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev28 修复协作回归后，Stage 01/02 的 PyMOL↔Mol* 多轮往返保持 1 个对象、1172 个原子和 9/14/14 区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev28 修复双查看器协作回归后，APOE 9/14/14 区域通过多轮 PyMOL↔Mol* 往返。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
-| Stage 05 | `smoke-validated` | v1.5 APOE 证据保持冻结；v1.6 已实现最多 3 个 Tier A 晋级，100 条诊断只产生 warning。 | 发布 APOE policy reevaluation，并验证 v1.6 与冻结 pilot Tier/F_YAML 完全一致。 | 无代码 blocker；尚未发布 APOE v1.6 continuation。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `implemented` | S06-004 已实现 1–3 个晋级策略等额共享全局 50k；Suzhou2 历史单策略 50k 已完成并保持 v1.5 语义。 | 校验历史 50k 并发布不可变采用记录；不复制 39 GB。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 05 | `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 已从同一 pilot 证据晋级唯一 Tier A，100 条诊断的零结构通过只形成 warning。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | 无 Stage 05 工程阻塞；Stage 07 仍需 Suzhou2 的 Protenix/TNP 后端。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `smoke-validated` | APOE v1.6 已通过不可变采用记录接入 Suzhou2 单策略 50k：20/20 分片、50,000/50,000 候选及 8 GPU 历史均验证通过。 | 在第二真实案例验证 2–3 个晋级策略共享预算；为 Stage 07 恢复远程后端。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `implemented` | S07-002 已支持 ScaleBundle 0.1/0.2、多策略全局竞争和最终 YAML 来源分布。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-07-31 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## Now
 
-- `[S05-002/S06-004/S07-002/ENG-029/UI-021]` 完成 Stage 05 v1.6 多策略晋级、
-  晋级策略共享 50,000、Stage 07 多来源全局筛选与精简科研界面的最终回归。旧 v1.5
-  bundle、manifest 和 `stopped-no-scale-winner` 结论保持不可变；新规则只通过新
-  contract、profile 和 continuation 生效。
-- `[VAL-007]` 已只读核对 Suzhou2 历史单策略 20×2500、50,000 候选、RunManifest、
-  ScaleBundle 和 candidate index 身份。下一步是在不复制 39 GB、不使用 symlink、
-  不改写历史 manifest 的前提下发布 policy reevaluation 与 scale evidence adoption；
-  Stage 07 真实运行需先完成远端 Protenix/TNP 及模型探针。
+- `[VAL-007/S07-002]` APOE v1.6 policy reevaluation 与 Suzhou2 50,000-candidate
+  evidence adoption 已发布：旧 v1.5 bundle、manifest 和
+  `stopped-no-scale-winner` 保持不可变；新投影显示 Stage 05 一组 Tier A 晋级与
+  Stage 06 20/20 分片、50,000/50,000 完成。当前工作转为 Suzhou2 的
+  Protenix/TNP/模型探针和 Stage 07 原地运行。
+- `[REP-008]` 修复协作引入的浏览器 PyMOL 生命周期回归：同页 pane 持续挂载，但每个
+  新 PyMOL canvas 使用独立 Pyodide/PyMOL 运行时，禁止把绑定旧 Emscripten WebGL
+  context 的全局运行时改绑到新 canvas；显示 revision 不重建结构，framebuffer 只作
+  诊断。真实 APOE 已完成 Stage 01、Stage 02、`PyMOL → Mol* → PyMOL` 与跨 Stage
+  往返，结构和 9/14/14 区域均保持可见。
 - `[ENG-024]` 将 ENG-023 已验证提交链收敛到唯一 `main`，禁止继续创建任何开发分支或
   Git worktree。现有 `easydesign-eng023/runtime` 作为只读迁移来源完整保留；正式环境
   与模型必须落在稳定的 `easydesign-clean/runtime`，不得直接移动带绝对 prefix 的
@@ -48,8 +50,8 @@
   固定非 APOE 1UBQ 自检。Stage 05 科学停止允许；后端失败和科学停止必须分开显示。
 
 - `[S06-002]` APOE 唯一已扩展 Tier A 的探索性 `production-50000` 已在 Suzhou2
-  完成 20 个 2500-candidate shard 和 50,000 候选。该运行仍属于 v1.5 科学停止后的
-  manual override；不得在 VAL-007 adoption 完成前把它改称 v1.6 正常晋级结果。
+  完成 20 个 2500-candidate shard 和 50,000 候选。源运行仍属于 v1.5 科学停止后的
+  manual override；v1.6 只通过独立采用记录引用，未改写源运行。
 
 ## Next
 
@@ -86,14 +88,16 @@
   binder-pose gate 只能通过预注册 benchmark 和新版本 profile 研究，不能事后调参。
 - `[S06-004]` 在第二条独立真实案例验证 2–3 个 Tier A 的共享总预算、尾部分片、恢复、
   全局无重复和无缺口；50,000 是全部晋级策略共享总数，不能解释成每组 50,000。
-- `[S07-002]` 在 Suzhou2 完成 VAL-007 adoption 和远程后端 probe 后，原地消费历史
-  50,000 候选并运行全局 Stage 07；本地只同步 manifest、进度和最终候选证据。
+- `[S07-002]` 在 Suzhou2 完成远程 Protenix/TNP 与模型 probe 后，原地消费已经通过
+  VAL-007 采用记录授权的 50,000 候选并运行全局 Stage 07；本地只同步 manifest、
+  进度和最终候选证据。
 - `[S05/S06/S07]` 分别接入 pilot go/no-go、高成本预算和 Top N 候选包 gate；
   `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；
   可视化层不得融合 PSE、SASA 和 ScanNet。
 - `[REP-006/REP-008/ENG-028/UI-017/UI-020]` 离线浏览器 PyMOL、Mol* 与平台结构助手
-  已通过真实 APOE Stage 01/02 smoke；`PyMOL → Mol* → PyMOL` 不再丢失 WASM 画布。
+  已通过 dev28 真实 APOE Stage 01/02 多轮 smoke；`PyMOL → Mol* → PyMOL` 不再丢失
+  WASM 画布、累积历史 PML 或因空 framebuffer 误报失败。
   普通使用者不选择 provider 或填写 API key。下一步由部署者在仓库内平台配置启用单一
   provider，并补充受控 live 连通、预算、限流和用量监控；平台助手未启用不阻塞无
   Agent 的 Stage 01/02 主线。

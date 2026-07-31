@@ -92,6 +92,16 @@ def _executor(
     return SshRemoteExecutor(_connection(executor_id, _runtime(profile, executor_id)))
 
 
+def resolve_remote_executor(
+    *,
+    profile_path: Path | None,
+    executor_id: str,
+) -> SshRemoteExecutor:
+    """Resolve only an explicitly registered SSH executor; never scan SSH config."""
+
+    return _executor(profile_path=profile_path, executor_id=executor_id)
+
+
 def list_remote_executor_ids(
     *,
     profile_path: Path | None = None,

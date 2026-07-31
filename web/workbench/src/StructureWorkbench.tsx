@@ -111,14 +111,12 @@ function combinedPml(
   regions: Region[],
   session?: StructureInteractionSession,
 ): string {
+  const latestViewState = session?.view_state_revisions?.at(-1);
+  const latestPml = session?.pml_revisions?.at(-1);
   return [
     basePml(projection, regions).trimEnd(),
-    ...(
-      session?.view_state_revisions?.flatMap((item) => (
-        compileCommonViewerActions(item.actions)
-      )) || []
-    ),
-    ...(session?.pml_revisions.map((item) => item.pml.trimEnd()) || []),
+    ...(latestViewState ? compileCommonViewerActions(latestViewState.actions) : []),
+    latestPml?.pml.trimEnd() || "",
   ].filter(Boolean).join("\n");
 }
 
@@ -222,8 +220,10 @@ export function StructureWorkbench({
 
   const structureUrl = `/api/v1/artifacts/${projection.structure.token}`;
   const referenceStructures = useMemo(
-    () => session?.reference_structures?.filter((item) => item.role === "reference") || [],
-    [session?.reference_structures],
+    () => stageNumber === 2
+      ? (session?.reference_structures?.filter((item) => item.role === "reference") || [])
+      : [],
+    [session?.reference_structures, stageNumber],
   );
   const nativeStructures = useMemo(
     () => [{
@@ -231,11 +231,13 @@ export function StructureWorkbench({
       sha256: projection.structure.sha256,
       filename: "target.cif",
       objectName: "target",
+      required: true,
     }, ...referenceStructures.map((item) => ({
       id: item.object_id,
       sha256: item.sha256,
       filename: item.filename,
       objectName: item.object_name,
+      required: false,
       referenceUrl: `/api/v1/structure-sessions/${encodeURIComponent(session?.session_id || "")}/references/${encodeURIComponent(item.object_id)}/file`,
     }))],
     [projection.structure.sha256, referenceStructures, session?.session_id],
@@ -354,6 +356,9 @@ export function StructureWorkbench({
   }, [session]);
   const nativeFailure = useCallback((failure: string) => {
     setStatus(failure);
+  }, []);
+  const nativeReady = useCallback(() => {
+    setStatus("");
   }, []);
   const switchToMolstar = useCallback(() => {
     setMolstarMounted(true);
@@ -599,6 +604,7 @@ export function StructureWorkbench({
                   onNativeCommands={nativeCommandsApplied}
                   onResidueSelect={selectedAuthorResidue}
                   onFailure={nativeFailure}
+                  onReady={nativeReady}
                   onSwitchViewer={switchToMolstar}
                   onDownloadStructure={() => window.open(`${structureUrl}?download=true`, "_blank")}
                   onDownloadPml={() => downloadText(scenePml, `${projection.target_id}.pml`)}
@@ -622,7 +628,11 @@ export function StructureWorkbench({
             </div>
           )}
         </div>
-        <section className="scene-version-panel">
+        <details className="scene-version-panel">
+          <summary>
+            <span>专家显示设置</span>
+            <span>PML、参考结构与历史显示版本</span>
+          </summary>
           <div className="scene-version-toolbar">
             <div>
               <strong>PML 场景版本</strong>
@@ -632,55 +642,57 @@ export function StructureWorkbench({
               {pmlEditorOpen ? "收起 PML" : "编辑 PML"}
             </button>
           </div>
-          <div className="reference-controls">
-            <div>
-              <strong>参考结构</strong>
-              <span>仅用于 Stage 2 可视化/比对，不改变下游 target bundle。</span>
+          {stageNumber === 2 && (
+            <div className="reference-controls">
+              <div>
+                <strong>参考结构</strong>
+                <span>仅用于第2步可视化比对，不改变目标结构包。</span>
+              </div>
+              <label>
+                <span>上传 PDB/mmCIF</span>
+                <input
+                  type="file"
+                  accept=".cif,.mmcif,.pdb,.ent"
+                  disabled={!session || referenceBusy || busy}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    addReferenceFile(file);
+                  }}
+                />
+              </label>
+              <label>
+                <span>RCSB ID</span>
+                <input
+                  value={referenceRcsbId}
+                  placeholder="例如 1UBQ"
+                  maxLength={4}
+                  disabled={!session || referenceBusy || busy}
+                  onChange={(event) => setReferenceRcsbId(event.target.value.toUpperCase())}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") addRcsbReference();
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!session || referenceBusy || busy || !referenceRcsbId.trim()}
+                onClick={addRcsbReference}
+              >
+                加入 RCSB
+              </button>
+              {referenceStructures.length > 0 && (
+                <ul>
+                  {referenceStructures.map((item) => (
+                    <li key={item.object_id}>
+                      <code>{item.object_name}</code>
+                      <span>{item.filename}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            <label>
-              <span>上传 PDB/mmCIF</span>
-              <input
-                type="file"
-                accept=".cif,.mmcif,.pdb,.ent"
-                disabled={!session || referenceBusy || busy}
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  event.currentTarget.value = "";
-                  addReferenceFile(file);
-                }}
-              />
-            </label>
-            <label>
-              <span>RCSB ID</span>
-              <input
-                value={referenceRcsbId}
-                placeholder="例如 1UBQ"
-                maxLength={4}
-                disabled={!session || referenceBusy || busy}
-                onChange={(event) => setReferenceRcsbId(event.target.value.toUpperCase())}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") addRcsbReference();
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              disabled={!session || referenceBusy || busy || !referenceRcsbId.trim()}
-              onClick={addRcsbReference}
-            >
-              加入 RCSB
-            </button>
-            {referenceStructures.length > 0 && (
-              <ul>
-                {referenceStructures.map((item) => (
-                  <li key={item.object_id}>
-                    <code>{item.object_name}</code>
-                    <span>{item.filename}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          )}
           {pmlEditorOpen && (
             <div className="scene-pml-editor">
               <textarea
@@ -715,7 +727,7 @@ export function StructureWorkbench({
               ))}
             </div>
           )}
-        </section>
+        </details>
       </section>
       {assistantOpen && (
         <aside className="structure-assistant">

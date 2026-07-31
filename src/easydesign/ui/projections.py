@@ -22,6 +22,9 @@ from easydesign.core import (
 )
 from easydesign.core.hashing import sha256_file
 from easydesign.orchestration import RunIndex, list_runs
+from easydesign.orchestration.evidence_adoption import (
+    load_verified_project_scale_evidence,
+)
 from easydesign.orchestration.task_tracking import load_latest_runtime_model
 from easydesign.safe_writes import read_last_text_line
 
@@ -35,6 +38,7 @@ from .models import (
     ReplayFrame,
     ReplayTimeline,
     RunProjection,
+    StageAccessProjection,
     StageCapability,
     StageProjection,
     UiStageState,
@@ -351,6 +355,7 @@ def get_run_projection(
     accepted_job_stage: int | None = None,
     accepted_job_at: datetime | None = None,
     accepted_job_status: str | None = None,
+    projects_root: Path | None = None,
 ) -> RunProjection:
     """验证当前 manifest 链并生成不含绝对路径的 run 投影。"""
 
@@ -462,7 +467,7 @@ def get_run_projection(
             )
         )
     code_identity = run_manifest.code_identity
-    return RunProjection(
+    projection = RunProjection(
         run_key=run_key,
         project_id=run_manifest.project_id,
         run_id=run_manifest.run_id,
@@ -490,6 +495,112 @@ def get_run_projection(
         integrity_status="verified",
         stages=tuple(stages),
     )
+    if projects_root is None:
+        return projection
+    continuation = load_verified_project_scale_evidence(root, projects_root)
+    if continuation is None:
+        return projection
+    projected_stages = list(projection.stages)
+    stage05 = projected_stages[4]
+    projected_stages[4] = stage05.model_copy(
+        update={
+            "state": UiStageState.SUCCEEDED,
+            "summary": (
+                "历史 v1.5 科学停止保持不变；v1.6 重评已晋级 "
+                f"{len(continuation.policy_reevaluation.promoted_strategy_ids)} 个策略"
+            ),
+            "highlights": {
+                **stage05.highlights,
+                "historical_policy_status": str(stage05.state),
+                "policy_reevaluation_profile": "nanobody-filter-standard-v1.6",
+                "promoted_strategy_ids": list(
+                    continuation.policy_reevaluation.promoted_strategy_ids
+                ),
+                "promotion_count": len(
+                    continuation.policy_reevaluation.promoted_strategy_ids
+                ),
+                "diagnostic_warning_count": int(
+                    bool(continuation.policy_reevaluation.promoted_strategy_ids)
+                    and not stage05.highlights.get("protenix_pass_count")
+                ),
+                "status": continuation.policy_reevaluation.status,
+                "policy_reevaluation_status": (
+                    continuation.policy_reevaluation.status
+                ),
+            },
+        }
+    )
+    execution = continuation.execution
+    stage06 = projected_stages[5]
+    projected_stages[5] = stage06.model_copy(
+        update={
+            "state": UiStageState.SUCCEEDED,
+            "summary": (
+                f"远端已完成 {execution.candidate_count:,} 个候选；"
+                "通过不可变校验记录原地采用"
+            ),
+            "completed_at": execution.completed_at,
+            "highlights": {
+                "profile": "production-50000",
+                "requested_candidates": execution.candidate_count,
+                "collected_candidates": execution.candidate_count,
+                "strategy_count": len(execution.strategy_ids),
+                "shard_count": execution.shard_count,
+                "elapsed_seconds": execution.elapsed_seconds,
+                "executor_id": execution.executor_id,
+                "evidence_mode": "remote-in-place-adoption",
+            },
+            "tables": {
+                "strategy_allocations": [
+                    {
+                        "strategy_id": strategy_id,
+                        "requested_candidates": execution.strategy_candidate_counts[
+                            strategy_id
+                        ],
+                    }
+                    for strategy_id in execution.strategy_ids
+                ],
+                "devices": [
+                    item.model_dump(mode="json")
+                    for item in continuation.device_execution
+                ],
+            },
+            "access": StageAccessProjection(
+                stage_number=6,
+                access="view-only",
+                locked_by_stage=6,
+                locked_at=execution.completed_at,
+                reason="远端第6步已完成并由采用记录冻结",
+                allowed_actions=("view-results", "download-evidence"),
+            ),
+        }
+    )
+    stage07 = projected_stages[6]
+    projected_stages[6] = stage07.model_copy(
+        update={
+            "summary": "等待 Suzhou2 Protenix、TNP 与模型资产探针通过",
+            "highlights": {
+                **stage07.highlights,
+                "readiness": continuation.stage07_readiness,
+                "source_candidate_count": execution.candidate_count,
+                "executor_id": execution.executor_id,
+            },
+            "access": StageAccessProjection(
+                stage_number=7,
+                access="view-only",
+                locked_by_stage=6,
+                locked_at=execution.completed_at,
+                reason="第7步必须在远端后端探针通过后原地启动",
+                allowed_actions=("view-requirements", "download-evidence"),
+            ),
+        }
+    )
+    return projection.model_copy(
+        update={
+            "updated_at": max(projection.updated_at, continuation.generated_at),
+            "stages": tuple(projected_stages),
+        }
+    )
 
 
 def get_stage_projection(
@@ -501,6 +612,7 @@ def get_stage_projection(
     accepted_job_stage: int | None = None,
     accepted_job_at: datetime | None = None,
     accepted_job_status: str | None = None,
+    projects_root: Path | None = None,
 ) -> StageProjection:
     if stage_number < 1 or stage_number > 7:
         raise ValueError("stage_number 必须在 1–7")
@@ -511,6 +623,7 @@ def get_stage_projection(
         accepted_job_stage=accepted_job_stage,
         accepted_job_at=accepted_job_at,
         accepted_job_status=accepted_job_status,
+        projects_root=projects_root,
     ).stages[stage_number - 1]
 
 
@@ -524,6 +637,7 @@ def get_project_projection(
         tuple[int | None, datetime | None, str | None],
     ]
     | None = None,
+    projects_root: Path | None = None,
 ) -> ProjectProjection:
     summaries = [item for item in list_runs(registry.runs_root) if item.project_id == project_id]
     projections = tuple(
@@ -557,6 +671,7 @@ def get_project_projection(
                             (None, None, None),
                         )[2]
                     ),
+                    projects_root=projects_root,
                 )
                 for item in summaries
                 if item.integrity_status == "verified"

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev26 已修复并真实复验 `PyMOL → Mol* → PyMOL` 返回路径，138-aa 结构与来源区域不会因切换丢失。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-30 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev28 修复协作回归后，Stage 01/02 的 PyMOL↔Mol* 多轮往返保持 1 个对象、1172 个原子和 9/14/14 区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-31 |
 
 ## 当前结论
 
@@ -20,9 +20,14 @@
 - Stage 01 Target Bundle → Workbench 浏览器 PyMOL 2.6.0a0 / Mol* 双查看器状态：
   `smoke-validated`。两个查看器读取同一份 checksum 正确的 `target.cif`；显示会话不进入
   StageManifest，也不改变 Target Bundle。
-- Workbench 不再在切换时卸载浏览器 PyMOL canvas。PyMOL 与 Mol* 首次使用后均保持
-  挂载；返回 PyMOL 时在两个浏览器帧后强制同步 backing size、reshape、OpenGL viewport
-  和 redraw。真实 APOE Stage 02 已完成 `PyMOL → Mol* → PyMOL` 可见结构回归。
+- 同一 Workbench 结构页不再在切换时卸载浏览器 PyMOL canvas；返回 PyMOL 时在两个
+  浏览器帧后同步 backing size、reshape、OpenGL viewport 和 redraw。静态 Pyodide/
+  PyMOL 资产由浏览器缓存，但每个新挂载的 PyMOL canvas 使用独立运行时，禁止复用仍
+  绑定旧 Emscripten WebGL context 的全局运行时。真实 APOE Stage 01/02 已完成
+  `PyMOL → Mol* → PyMOL` 与跨 Stage 往返可见结构回归。
+- dev28 再次收紧生命周期：隐藏 pane 不再使用 `visibility:hidden`，显示 revision 只重放
+  最新 ViewState/PML，不累积全部历史命令；framebuffer `readPixels` 仅作诊断，不替代
+  PyMOL 对象、原子和可见表示的严格 ready 门。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter

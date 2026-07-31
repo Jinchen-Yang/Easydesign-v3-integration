@@ -218,7 +218,7 @@ const OBJECT_PANEL_SECTIONS = [
   }
 ];
 
-let pyodidePromise;
+let pyodideScriptPromise;
 const identityTranslation = (value) => value;
 
 export function NativePyMOLViewer({
@@ -243,6 +243,7 @@ export function NativePyMOLViewer({
   onValidatePml,
   onResidueSelect,
   onFailure,
+  onReady,
   onSwitchViewer,
   readOnly = false,
   language,
@@ -257,8 +258,6 @@ export function NativePyMOLViewer({
   const loadedSceneKeyRef = useRef("");
   const sceneReadyRef = useRef(false);
   const logOffsetRef = useRef(0);
-  const frameRecoveryCountRef = useRef(0);
-  const frameRecoveryTimerRef = useRef(0);
   const renderWarningsRef = useRef([]);
   const pointerRef = useRef(null);
   const touchPointersRef = useRef(new Map());
@@ -276,6 +275,7 @@ export function NativePyMOLViewer({
   );
   const [command, setCommand] = useState("");
   const [runtimeReady, setRuntimeReady] = useState(false);
+  const [sceneRetry, setSceneRetry] = useState(0);
   const [sequenceVisible, setSequenceVisible] = useState(
     sequenceVisibleRef.current
   );
@@ -288,6 +288,12 @@ export function NativePyMOLViewer({
   const [objectsLoading, setObjectsLoading] = useState(false);
   const [openObjectMenu, setOpenObjectMenu] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [sceneDiagnostics, setSceneDiagnostics] = useState({
+    objects: 0,
+    atoms: 0,
+    visibleAtoms: 0,
+    frameObserved: false
+  });
   const [state, setState] = useState({
     kind: "loading",
     progress: 5,
@@ -318,7 +324,7 @@ export function NativePyMOLViewer({
       const width = canvas.width;
       const height = canvas.height;
       const guiWidth = nativeGuiWidth(width);
-      setDimensions(runtime, width, height, guiWidth);
+      setDimensions(runtime, width, height, guiWidth, canvas);
       await runtime.runPythonAsync(`
 try:
     _p.reshape(chatpymol_width, chatpymol_height, 1)
@@ -506,18 +512,10 @@ json.dumps({
       if (!canvas) {
         throw new Error("PyMOL 画布不存在；请重试或切换到 Mol*");
       }
-      // Emscripten creates the WebGL context without preserveDrawingBuffer.
-      // When the viewer has just been hidden, resized, or brought back from
-      // Mol*, readPixels can observe a cleared buffer even though PyMOL has a
-      // valid molecule and will paint on the next explicit draw. Treat object /
-      // visible atom checks as strict, but make framebuffer inspection a
-      // recoverable signal so the React overlay does not permanently cover a
-      // usable PyMOL runtime.
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        await enqueue(async () => {
-          const runtime = runtimeRef.current;
-          if (!runtime) return;
-          await runtime.runPythonAsync(`
+      await enqueue(async () => {
+        const runtime = runtimeRef.current;
+        if (!runtime) return;
+        await runtime.runPythonAsync(`
 try:
     _p.cmd.dirty()
 except Exception:
@@ -525,13 +523,20 @@ except Exception:
 _p.idle()
 _p.draw()
 `);
-        });
-        if (canvasHasNonBackgroundPixels(canvas)) {
-          return { ...scene, frameReady: true };
-        }
-        await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      }
-      return { ...scene, frameReady: false };
+      });
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      const frameObserved = canvasHasNonBackgroundPixels(canvas);
+      setSceneDiagnostics({
+        objects: Number(scene.objects || 0),
+        atoms: Number(scene.atoms || 0),
+        visibleAtoms: Number(scene.visible_atoms || 0),
+        frameObserved
+      });
+      // WebGL readPixels is not a reliable in-app readiness gate when the
+      // context was created without preserveDrawingBuffer. Scientific scene
+      // readiness is therefore based on the actual PyMOL molecule, atom and
+      // representation state. Browser tests verify visible pixels separately.
+      return { ...scene, frameObserved };
     },
     [enqueue]
   );
@@ -563,12 +568,22 @@ _p.draw()
         await pyodide.loadPackage(PYMOL_WHEEL);
         if (cancelled) return;
 
+        // The asset files are browser-cached, but each mounted viewer receives
+        // an isolated Pyodide/PyMOL runtime. PyMOL-WASM creates a WebGL
+        // context that is permanently tied to the canvas used during
+        // initEmscriptenContext(). Reusing one global runtime after React has
+        // unmounted that canvas produces the characteristic regression where
+        // Python commands still work while the replacement canvas is blank.
+        // A fresh runtime is therefore a correctness boundary, not a cache
+        // miss: the 22 MB static assets are still fetched only once.
+        bindEmscriptenCanvas(pyodide, canvas);
         const guiWidth = nativeGuiWidth(canvas.width);
         setDimensions(
           pyodide,
           canvas.width,
           canvas.height,
-          guiWidth
+          guiWidth,
+          canvas
         );
         pyodide.globals.set(
           "chatpymol_sequence_visible",
@@ -709,8 +724,6 @@ except Exception:
     let cancelled = false;
     const sceneAbortController = new AbortController();
     const requestId = ++sceneRequestRef.current;
-    window.clearTimeout(frameRecoveryTimerRef.current);
-    frameRecoveryCountRef.current = 0;
     const nextSceneKey = sceneKeyFor(projectId, structures);
 
     async function applyIncremental(commands) {
@@ -799,36 +812,38 @@ json.dumps(chatpymol_incremental_warnings)
           await refreshSelection();
         }
         if (!cancelled) {
-          if (verifiedScene.frameReady === false && frameRecoveryCountRef.current < 2) {
-            frameRecoveryCountRef.current += 1;
-            frameRecoveryTimerRef.current = window.setTimeout(() => {
-              if (!cancelled && requestId === sceneRequestRef.current) void applyIncremental(commands);
-            }, 450);
-          } else if (verifiedScene.frameReady !== false) {
-            frameRecoveryCountRef.current = 0;
-          }
           setState({
-            kind: verifiedScene.frameReady === false ? "warning" : "ready",
+            kind: "ready",
             progress: 100,
-            label: verifiedScene.frameReady === false
-              ? language === "en"
-                ? `Native PyMOL frame is recovering · ${versionLabel(versionId)}`
-                : `PyMOL 首帧正在恢复 · ${versionLabel(versionId)}`
-              : language === "en"
+            label:
+              language === "en"
                 ? `Native PyMOL · ${versionLabel(versionId)}`
                 : `原生 PyMOL · ${versionLabel(versionId)}`
           });
+          onReady?.(verifiedScene);
         }
       } catch (error) {
         if (!cancelled && requestId === sceneRequestRef.current) {
-          sceneReadyRef.current = false;
-          await replayScene();
+          // A display-only command failure must not delete and reload a valid
+          // scientific structure. Keep the molecule visible and report the
+          // exact display failure for an explicit retry.
+          renderWarningsRef.current = [{
+            command: "display-state",
+            error: String(error?.message || error)
+          }];
+          setState({
+            kind: "warning",
+            progress: 100,
+            label: "部分显示设置未应用；结构仍可查看"
+          });
+          onFailure?.(`PyMOL 显示设置失败：${String(error?.message || error)}`);
         }
       }
     }
 
     async function replayScene() {
       sceneReadyRef.current = false;
+      let phase = "准备结构";
       setState({
         kind: "loading-scene",
         progress: 92,
@@ -836,12 +851,24 @@ json.dumps(chatpymol_incremental_warnings)
       });
       try {
         const files = [];
+        const structureWarnings = [];
+        phase = "下载经过校验的结构";
         for (const structure of structures) {
-          const bytes = await api.structureBytes(
-            projectId,
-            structure,
-            sceneAbortController.signal
-          );
+          let bytes;
+          try {
+            bytes = await api.structureBytes(
+              projectId,
+              structure,
+              sceneAbortController.signal
+            );
+          } catch (error) {
+            if (structure.required !== false) throw error;
+            structureWarnings.push({
+              command: `reference:${structure.objectName}`,
+              error: `辅助参考结构未载入：${String(error?.message || error)}`
+            });
+            continue;
+          }
           if (cancelled || requestId !== sceneRequestRef.current) return;
           files.push({
             bytes,
@@ -850,7 +877,8 @@ json.dumps(chatpymol_incremental_warnings)
           });
         }
 
-        let commandWarnings = [];
+        let commandWarnings = [...structureWarnings];
+        phase = "载入结构与应用显示";
         await enqueue(async () => {
           const runtime = runtimeRef.current;
           if (!runtime || cancelled) return;
@@ -929,7 +957,7 @@ for _chatpymol_scene_draw_pass in range(2):
     _p.draw()
 json.dumps(chatpymol_command_warnings)
 `);
-          commandWarnings = JSON.parse(String(encodedWarnings || "[]"));
+          commandWarnings.push(...JSON.parse(String(encodedWarnings || "[]")));
           renderWarningsRef.current = commandWarnings;
           logOffsetRef.current = 0;
         });
@@ -968,29 +996,18 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
         sceneReadyRef.current = true;
         await refreshSelection();
         if (!cancelled) {
-          if (verifiedScene.frameReady === false && frameRecoveryCountRef.current < 2) {
-            frameRecoveryCountRef.current += 1;
-            frameRecoveryTimerRef.current = window.setTimeout(() => {
-              if (!cancelled && requestId === sceneRequestRef.current) void replayScene();
-            }, 450);
-          } else if (verifiedScene.frameReady !== false) {
-            frameRecoveryCountRef.current = 0;
-          }
           setState({
-            kind: commandWarnings.length || verifiedScene.frameReady === false ? "warning" : "ready",
+            kind: commandWarnings.length ? "warning" : "ready",
             progress: 100,
             label: commandWarnings.length
               ? language === "en"
                 ? `${commandWarnings.length} command(s) were not applied · ${versionLabel(versionId)}`
                 : `${commandWarnings.length} 条命令未执行 · ${versionLabel(versionId)}`
-              : verifiedScene.frameReady === false
-                ? language === "en"
-                  ? `Native PyMOL frame is recovering · ${versionLabel(versionId)}`
-                  : `PyMOL 首帧正在恢复 · ${versionLabel(versionId)}`
-                : language === "en"
-                  ? `Native PyMOL · ${versionLabel(versionId)}`
-                  : `原生 PyMOL · ${versionLabel(versionId)}`
+              : language === "en"
+                ? `Native PyMOL · ${versionLabel(versionId)}`
+                : `原生 PyMOL · ${versionLabel(versionId)}`
           });
+          onReady?.(verifiedScene);
         }
       } catch (error) {
         console.error(error);
@@ -999,9 +1016,9 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
           setState({
             kind: "error",
             progress: 0,
-            label: error.message
+            label: `PyMOL ${phase}失败：${String(error?.message || error)}`
           });
-          onFailure?.(error.message);
+          onFailure?.(`PyMOL ${phase}失败：${String(error?.message || error)}`);
         }
       }
     }
@@ -1025,6 +1042,11 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
       deltaCommands.every(isIncrementalCommand)
     ) {
       applyIncremental(deltaCommands);
+    } else if (canReuseScene) {
+      // Restoring an older display revision is not a structure change. Reapply
+      // the safe display program in place instead of deleting all objects,
+      // downloading target.cif again and rebuilding the WebGL scene.
+      applyIncremental(renderableCommands(pml));
     } else {
       replayScene();
     }
@@ -1044,8 +1066,10 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
     t,
     versionId,
     runtimeReady,
+    sceneRetry,
     verifyNativeScene,
-    onFailure
+    onFailure,
+    onReady
   ]);
 
   useEffect(() => {
@@ -1111,25 +1135,15 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
         resizeNativeViewport(true)
           .then(() => verifyNativeScene())
           .then((verifiedScene) => {
-            if (verifiedScene.frameReady === false) {
-              setState({
-                kind: "warning",
-                progress: 100,
-                label:
-                  language === "en"
-                    ? `Native PyMOL frame is recovering · ${versionLabel(versionId)}`
-                    : `PyMOL 首帧正在恢复 · ${versionLabel(versionId)}`
-              });
-            } else {
-              setState({
-                kind: "ready",
-                progress: 100,
-                label:
-                  language === "en"
-                    ? `Native PyMOL · ${versionLabel(versionId)}`
-                    : `原生 PyMOL · ${versionLabel(versionId)}`
-              });
-            }
+            setState({
+              kind: "ready",
+              progress: 100,
+              label:
+                language === "en"
+                  ? `Native PyMOL · ${versionLabel(versionId)}`
+                  : `原生 PyMOL · ${versionLabel(versionId)}`
+            });
+            onReady?.(verifiedScene);
           })
           .catch((error) => {
             console.error(error);
@@ -1145,7 +1159,7 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
       window.cancelAnimationFrame(firstFrame);
       window.cancelAnimationFrame(secondFrame);
     };
-  }, [active, language, onFailure, resizeNativeViewport, runtimeReady, verifyNativeScene, versionId]);
+  }, [active, language, onFailure, onReady, resizeNativeViewport, runtimeReady, verifyNativeScene, versionId]);
 
   const pointerCoordinates = (event) => {
     const canvas = canvasRef.current;
@@ -1211,7 +1225,6 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
   useEffect(
     () => () => {
       window.clearTimeout(viewCaptureTimerRef.current);
-      window.clearTimeout(frameRecoveryTimerRef.current);
       window.clearTimeout(feedbackTimerRef.current);
     },
     []
@@ -1606,10 +1619,6 @@ _p.draw()
     }
   }
 
-  const visibleRevision =
-    Number.isFinite(Number(revision)) && Number(revision) > 0
-      ? Number(revision)
-      : Number(String(versionId || "").match(/^v(\d+)/)?.[1] || 0);
   const saveStatusLabel =
     autoSaveStatus === "saving"
       ? t("正在自动保存")
@@ -1622,14 +1631,18 @@ _p.draw()
             : "";
 
   return (
-    <div className="native-pymol">
+    <div
+      className="native-pymol"
+      data-pymol-state={state.kind}
+      data-pymol-objects={sceneDiagnostics.objects}
+      data-pymol-atoms={sceneDiagnostics.atoms}
+      data-pymol-visible-atoms={sceneDiagnostics.visibleAtoms}
+      data-pymol-frame-observed={sceneDiagnostics.frameObserved ? "true" : "false"}
+    >
       <div className="native-pymol-toolbar">
         <div>
           <i className={`native-status native-status-${state.kind}`} />
           <strong>PyMOL</strong>
-          {visibleRevision > 0 && (
-            <span className="native-pymol-version">v{visibleRevision}</span>
-          )}
           {saveStatusLabel && autoSaveStatus !== "error" && (
             <span
               className={`native-save-state native-save-state-${autoSaveStatus}`}
@@ -2027,7 +2040,18 @@ _p.draw()
             <TriangleAlert size={21} />
             <strong>{state.label}</strong>
             <span>{t("请使用最新版 Chrome/Edge；如果仍未启动，请重新加载。")}</span>
-            <button type="button" onClick={() => window.location.reload()}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!runtimeReady) {
+                  window.location.reload();
+                  return;
+                }
+                loadedSceneKeyRef.current = "";
+                sceneReadyRef.current = false;
+                setSceneRetry((value) => value + 1);
+              }}
+            >
               {t("重新加载")}
             </button>
             {onSwitchViewer && (
@@ -2064,13 +2088,12 @@ _p.draw()
   );
 }
 
-function getPyodide() {
-  if (!pyodidePromise) {
-    pyodidePromise = loadScript(`${PYODIDE_BASE}pyodide.js`).then(() =>
-      window.loadPyodide({ indexURL: PYODIDE_BASE })
-    );
+async function getPyodide() {
+  if (!pyodideScriptPromise) {
+    pyodideScriptPromise = loadScript(`${PYODIDE_BASE}pyodide.js`);
   }
-  return pyodidePromise;
+  await pyodideScriptPromise;
+  return window.loadPyodide({ indexURL: PYODIDE_BASE });
 }
 
 function loadScript(src) {
@@ -2170,12 +2193,20 @@ function nativeGuiWidth(width) {
   return Math.min(230, Math.max(178, Math.round(width * 0.34)));
 }
 
-function setDimensions(runtime, width, height, guiWidth) {
+function setDimensions(runtime, width, height, guiWidth, canvas) {
+  bindEmscriptenCanvas(runtime, canvas);
   runtime.globals.set("chatpymol_width", width);
   runtime.globals.set("chatpymol_height", height);
   runtime.globals.set("chatpymol_gui_width", guiWidth);
   runtime.globals.set("chatpymol_panel_visible", true);
   runtime.globals.set("chatpymol_reserved_width", guiWidth);
+}
+
+function bindEmscriptenCanvas(runtime, canvas) {
+  const module = runtime?._module || runtime?._api?.Module;
+  if (module && module.canvas !== canvas) {
+    module.canvas = canvas;
+  }
 }
 
 function modifierMask(event) {

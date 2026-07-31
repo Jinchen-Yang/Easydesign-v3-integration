@@ -178,6 +178,25 @@ systemd worker。
   保存在控制端 `SshRemoteJobRecord`，运行中的 worker 禁止重复恢复。
 - `remote sync --mode metadata` 拉取 Run/Stage manifest、顶层声明 artifact 与
   progress/state/events；`complete` 再递归拉取 JSON 中声明的候选 ArtifactRef。
+
+### 采用既有远程 50k 证据
+
+远程 50k 已经完成、且候选主体留在远程数据盘时，可以发布不可变证据采用记录：
+
+```bash
+easydesign remote adopt-scale SUZHOU2 \
+  --project-id PROJECT_ID \
+  --adoption-id ADOPTION_ID \
+  --local-stage05-run LOCAL_STAGE05_RUN \
+  --remote-stage06-run REMOTE_STAGE06_RUN
+```
+
+命令逐一验证本地 Stage 05 RunManifest、Stage05Bundle、远程 Stage 06 RunManifest、
+ScaleBundle、计划、任务、进度、覆盖报告和 candidate index 的大小与 SHA-256，并验证
+候选编号连续、无重复、分片与设备计数一致。成功后只在
+`projects/<project_id>/evidence-adoptions/` 发布新的记录；不复制约 39 GB 候选、不创建
+symlink，也不改写旧 v1.5 run。APOE 的采用证据验证了 20/20 shard 和
+50,000/50,000 候选，并让产品投影把 Stage 06 显示为已经完成。
   两种模式都逐一验证大小和 SHA-256，不扫描目录猜结果。
 
 ### 4. 恢复与不可变发布

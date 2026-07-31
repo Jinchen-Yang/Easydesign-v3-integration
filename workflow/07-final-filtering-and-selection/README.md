@@ -338,3 +338,14 @@ operational failure 不能转换为空科学成功。失败调用写入结构化
 
 后续需要第二个独立真实 target、湿实验反馈、阈值校准、可制造性扩展、正式 review gate、
 产品 UI 和经授权的 production 运行。
+
+## Suzhou2 原地筛选与同步边界
+
+当 Stage 06 在 Suzhou2 受管队列执行时，Stage 07 与它属于同一固定
+`6→7` job。Stage 07 直接验证并消费远端 ScaleBundle 和 candidate index，不先将
+50k 原始候选回传控制端。需要人工确认时，控制端接收 `review` 证据并发回
+不可变批准 handoff；未批准的远端任务不会自行越过科学决策点。
+
+控制端对 SSH 的轮询只是观察层。暂时断线不改变 Suzhou2 上的 queue/job/run 状态；
+恢复后按最后已知 revision 继续获取。最终候选包、科学停止和 operational failure
+仍只能由远端正式 StageManifest 与通过 checksum 的 artifact 宣告。

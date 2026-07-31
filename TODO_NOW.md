@@ -10,13 +10,17 @@
 | Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
-| Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
-| Stage 05 | `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 已从同一 pilot 证据晋级唯一 Tier A，100 条诊断的零结构通过只形成 warning。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | 无 Stage 05 工程阻塞；Stage 07 仍需 Suzhou2 的 Protenix/TNP 后端。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `smoke-validated` | APOE v1.6 已通过不可变采用记录接入 Suzhou2 单策略 50k：20/20 分片、50,000/50,000 候选及 8 GPU 历史均验证通过。 | 在第二真实案例验证 2–3 个晋级策略共享预算；为 Stage 07 恢复远程后端。 | Stage 07 后端尚未在 Suzhou2 登记，GPU 当前被其他任务占用。 | 2026-07-31 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
-| Stage 07 | `implemented` | S07-002 已支持 ScaleBundle 0.1/0.2、多策略全局竞争和最终 YAML 来源分布。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-07-31 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+| Stage 04 | `smoke-validated` | APOE 21×40 真实生成保持通过；dev32 已实现本机自动 GPU 租约与 Suzhou2 受管中央队列。 | 完成 VAL-008 的本机极小任务和 Suzhou2 极小 Stage 04 真实探针。 | 新受管执行尚未在 Suzhou2 完成真实 worker/GPU 验收；旧 APOE 证据不受影响。 | 2026-08-01 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 05 | `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 晋级与诊断 warning 保持不变，Stage 04→05 已支持 Suzhou2 原地连续。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | Suzhou2 新 worker 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `smoke-validated` | APOE 历史单策略 50k 证据保持；dev32 已实现本机自动 GPU 租约、Suzhou2 受管分片与 6→7 原地执行。 | 在 Suzhou2 完成 Stage 06 单 shard 真实探针和 Stage 07 adapter probe。 | 新 worker 真实探针尚未执行；旧 50k 不重跑。 | 2026-08-01 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `implemented` | S07-002 多策略筛选保持；dev32 已将受管 Stage 06→07 原地运行与 review 同步固化为执行契约。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-08-01 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## Now
+
+- `[VAL-008]` 在审核 Suzhou2 systemd unit 和专用 SSH 配对后，完成本机极小
+  Stage 04、Suzhou2 极小 Stage 04 及 Stage 06 单 shard 真实探针；Stage 04→05、
+  Stage 06→07 必须原地连续，不重跑或改写历史 APOE 50k。
 
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +

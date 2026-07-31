@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 已从同一 pilot 证据晋级唯一 Tier A，100 条诊断的零结构通过只形成 warning。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | 无 Stage 05 工程阻塞；Stage 07 仍需 Suzhou2 的 Protenix/TNP 后端。 | 2026-07-31 |
+| `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 晋级与诊断 warning 保持不变，Stage 04→05 已支持 Suzhou2 原地连续。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | Suzhou2 新 worker 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 |
 
 ## 当前结论
 
@@ -48,6 +48,7 @@
 | v1.5 唯一 scale winner / scientific stop | `smoke-validated` | 冻结 APOE Bundle 0.1 与旧 stop 兼容读取 |
 | 原子 progress、append-only event、resume | `implemented` | 结构指标 cache、expansion/full-target TaskRecord、通用 watch |
 | APOE 真实 Stage 05 | `smoke-validated` | 840 个 pilot、60 个新增扩展、10 个 full-target Protenix 全部完成；合法发布 `stopped-no-scale-winner` |
+| Suzhou2 原地 Stage 04→05 | `implemented` | 受管 job 固定 stage range 4→5，候选主体留在远端，控制端默认只获取 review 证据 |
 
 ## Now
 
@@ -124,3 +125,4 @@
 ## 历史索引
 
 - [2026-07 工程实现与 APOE scientific-stop 归档](history/2026-07.md)。
+- [2026-08 Suzhou2 原地 Stage 04→05 交接](history/2026-08.md)。

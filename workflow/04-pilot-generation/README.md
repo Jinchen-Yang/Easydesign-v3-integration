@@ -1,6 +1,6 @@
 # 04 — 小批量生成
 
-**状态：** `planned`
+**状态：** `smoke-validated`
 
 **契约版本：** `0.1`
 
@@ -13,7 +13,7 @@ Stage 04 消费 Stage 03 当前 manifest 声明的 `StrategyBundle`，为每个�
 ```text
 StrategyBundle
 → PilotPlan
-→ local-multi-gpu executor
+→ local-current-host 或 managed-ssh executor
 → BoltzGen full pipeline
 → candidate completeness collection
 → PilotBundle + CandidateIndex
@@ -60,13 +60,16 @@ stage04:
   backend: boltzgen-0.3.2
   executor:
     type: local-multi-gpu
-    devices: [0, 1]
     workers_per_device: 1
   required_complete_candidates_per_strategy: 40
 ```
 
 `workers_per_device` 在 1.0 固定为 `1`。它表示一个物理 GPU 同时运行一个独立 strategy，
 不是 BoltzGen DataLoader worker 数量。
+
+`devices` 可省略；此时在真正创建 attempt 前根据当前主机的 GPU 、显存、外部进程和
+EasyDesign 租约自动冻结可用设备。用户显式填写 `devices` 时仍只能使用通过资源检查的
+卡。“当前机器 / Suzhou2”是运行时 `ExecutionTarget`，不进入这份科学 YAML。
 
 ## 3. 固定科学参数
 
@@ -271,8 +274,47 @@ CLI 只调用 orchestration API；科学参数只能来自 canonical YAML。
 ## 12. 后续工作
 
 - Slurm/SMART executor。
-- 动态 GPU 池和更多设备类型。
+- 更多受管算力池和设备类型。
 - 后端可控 seed（需 BoltzGen 正式支持或经验证 patch）。
 - 更细的后端 step checkpoint/restart。
-- 公共网页进度 UI。
 - 多节点 artifact store。
+
+## 13. 双执行位置
+
+Stage 04 的 plan、TaskRecord、CandidateRecord、ProgressSnapshot 和 manifest 不因运行位置
+改变。产品层只在创建 attempt 前选择：
+
+```yaml
+execution_target:
+  type: local-current-host
+```
+
+或：
+
+```yaml
+execution_target:
+  type: managed-ssh
+  executor_id: suzhou2
+```
+
+这是非科学运行记录，不写入 canonical scientific config。
+
+### 当前机器
+
+- `nvidia-smi` 只读发现 GPU、显存、利用率和运行进程。
+- 默认使用全部符合门槛的 GPU；非科学运行选项可限制最大卡数。
+- 已被外部进程占用或已有 EasyDesign 租约的 GPU 不会被抢占；无空闲卡时进入
+  `waiting-for-resources`，不写成运行失败。
+- 租约 revision 记录 run、stage、task/job、PID、heartbeat 和时间；同一 GPU 不会同时
+  分配给两个 EasyDesign 任务。
+
+### Suzhou2 受管队列
+
+- 控制端只提交通过 schema、SHA-256、版本和资产校验的 `RemoteJobBundle`，
+  不提供任意 shell 字段。
+- worker 持久根固定为 `/data/easydesign/managed-worker`；`/root/Easydesign/Easycontrol`
+  和旧 `/data/easydesign` 运行均保持不动。
+- 队列状态和 GPU 租约使用 `flock` 与只追加 revision；服务重启后对账
+  queued/admitting/running 任务，不根据目录或终端文本猜测。
+- 远端 Stage 04 成功后直接在同一受管 run 执行 Stage 05。控制端运行中只同步
+  metadata，默认完成后同步 review 证据，不往返复制候选主体。

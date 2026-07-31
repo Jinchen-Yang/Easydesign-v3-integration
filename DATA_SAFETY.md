@@ -187,3 +187,23 @@ EasyDesign 官方开发只允许一个 Git 分支：`main`。
    provider 响应和失败证据按仓库安全写入制度保留，禁止自动清理。
 6. ChatPyMol 等参考项目只能复制经过来源和许可证审计的能力或静态资产；不得引入其删除
    API、用户主目录写入、可变覆盖式索引或独立科学项目库。
+
+## 12. Suzhou2 受管算力边界
+
+1. 新 worker 的唯一可写根是 `/data/easydesign/managed-worker`。旧
+   `/data/easydesign` 环境、历史 run、APOE 50k 和 `/root/Easydesign/Easycontrol`
+   均不得移动、覆盖、删除或当作新 worker staging。
+2. 控制端每个工作区生成独立 SSH key；私钥只能写入该工作区
+   `runtime/secrets/ssh/`，POSIX 权限必须为 `0600`。私钥不得上传 Suzhou2、
+   进入科学 YAML、manifest、普通日志或 Git。
+3. 首次配对必须显示并明确确认 SSH host fingerprint。fingerprint 变化时
+   禁止继续，不得自动接受新主机身份。
+4. 逻辑解绑不是删除授权：它只写入新 registry revision 来禁用提交、同步和
+   恢复。本地私钥、远端 `authorized_keys` 条目和历史证据全部保留。
+5. `RemoteJobBundle` 只能含固定 pipeline 阶段、预算、版本、校验和相对 artifact；
+   禁止任意 shell、未验证绝对路径和删除式同步。
+6. 运行中默认只回传 metadata，完成默认只回传 review 证据。`complete`
+   必须由用户显式请求；不得因为 UI 刷新、observer 重启或 SSH 恢复而隐式下载
+   50k 大型结果。
+7. worker 不杀死、抢占或重置非 EasyDesign GPU 进程。无可用 GPU 时任务继续排队，
+   不将外部占用转换为清理或杀进程授权。

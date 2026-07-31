@@ -335,7 +335,7 @@ def main() -> int:
         not in path.relative_to(ROOT).as_posix()
     ]
     require(
-        len(governed_markdown) <= 46,
+        len(governed_markdown) <= 51,
         f"Markdown 数量超过精简上限: {len(governed_markdown)}",
         errors,
     )

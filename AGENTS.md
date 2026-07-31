@@ -224,6 +224,17 @@ Agent 必须自动完成以下收尾工作：
     结构助手仍不得成为 EasyDesign 1.0 的科学决策器：用户明确的 `ed_region_A/B/C`
     selection 必须确定性映射为规范编号，只有人工批准才可发布 Stage 02；“最佳区域”等
     问题只能生成待确认的 SASA/ScanNet 计划。
+32. Stage 04/06 的执行位置是非科学 `ExecutionTarget`，不得把 host、用户、端口、
+    SSH key 或远程数据根写入 canonical scientific YAML。本机和 Suzhou2 必须复用
+    同一 Stage plan、TaskRecord、CandidateRecord、Progress 和 manifest 契约。
+33. Suzhou2 Managed Worker 只能写入 `/data/easydesign/managed-worker`，只能接收通过
+    schema/checksum/version/asset 校验的 `RemoteJobBundle`，不得提供任意 shell。
+    旧 `/data/easydesign`、APOE 50k、环境和 `/root/Easydesign/Easycontrol` 保持不动。
+34. 每个控制端必须使用独立 SSH key 和已确认 host fingerprint。逻辑解绑只禁用
+    后续操作，不自动删除私钥、远端公钥、队列或运行证据。
+35. 远端 Stage 04→05 和 Stage 06→07 必须就地连续。默认同步只限
+    metadata/review，`complete` 需用户明确请求。SSH 断线只是观察中断，不得改写
+    远端任务为失败，也不得因此在控制端重建大型候选。
 
 ## 4. 阻塞与询问
 

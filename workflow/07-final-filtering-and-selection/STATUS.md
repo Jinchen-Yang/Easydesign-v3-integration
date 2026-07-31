@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S07-002 已支持 ScaleBundle 0.1/0.2、多策略全局竞争和最终 YAML 来源分布。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-07-31 |
+| `implemented` | S07-002 多策略筛选保持；dev32 已将受管 Stage 06→07 原地运行与 review 同步固化为执行契约。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-08-01 |
 
 ## 当前结论
 
@@ -42,12 +42,15 @@
 | 非 APOE 1000-candidate 完整集成 | `implemented` | Stage 03→07 fixture，三 seed、TNP、2 primary |
 | 多策略 ScaleBundle 0.2 输入 | `implemented` | allocation/lineage/全局竞争与旧 Bundle 0.1 兼容测试 |
 | 最终 YAML 来源分布 | `implemented` | primary/backup 来源计数与 candidate lineage 契约 |
+| Suzhou2 原地 Stage 06→07 | `implemented` | 受管 stage range 6→7、managed-run manifest SHA-256 引用、review 同步和断线后继续观察 |
 | APOE Stage 07 真实运行 | `planned` | 历史 50k 已完成，等待 adoption record、Protenix/TNP 与空闲 GPU |
 
 ## Now
 
 - `[S07-002/VAL-007]` 在不复制 39 GB 的前提下消费经过采用记录授权的 Suzhou2
   ScaleBundle 0.1；先完成后端和资源 probe，不能直接启动高成本任务。
+- `[VAL-008]` 在新 Suzhou2 worker 完成单候选 Stage 07 adapter probe，验证原地输入、
+  review 同步和断线恢复；不触发真实 50k 筛选。
 
 ## Next
 
@@ -122,3 +125,4 @@
 ## 历史索引
 
 - [2026-07 工程实现、TNP backend smoke 与 APOE 未运行边界](history/2026-07.md)。
+- [2026-08 Stage 06→07 远程数据本地性](history/2026-08.md)。

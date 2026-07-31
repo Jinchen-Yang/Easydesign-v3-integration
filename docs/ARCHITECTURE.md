@@ -1068,3 +1068,58 @@ touch stream，页面本身不会在结构画布上抢占缩放。
 - 真实后端微型自检必须使用固定非 APOE fixture。当前 dev13 只建立诚实的
   `not-started` 记录和资源预检边界；在 Stage 01–05 coherent run 与 Stage 06/07
   adapter probe 真正执行前，不得报告为通过。
+
+## Stage 04/06 双执行目标
+
+`ExecutionTarget` 是运行时产品契约，不是科学配置。Host、用户、端口和 SSH key
+不进入 `easydesign.yaml`；相同 Stage03/05 交接在两种位置产生同一类 Task、
+Candidate、Progress 和 StageManifest：
+
+```text
+Stage 04 / Stage 06
+        │
+        ├─ local-current-host
+        │    NvidiaSmiProbe → eligible devices → GpuLeaseStore → shared executor
+        │
+        └─ managed-ssh/suzhou2
+             RemoteExecutorRegistry → RemoteJobBundle → ManagedQueue
+             → ManagedWorker → GpuLeaseStore → same pipeline API
+```
+
+本机执行在 attempt 创建前冻结设备计划。`NvidiaSmiProbe` 排除外部进程、显存不足
+和有效 EasyDesign 租约；`GpuLeaseStore` 用 append-only revision 和原子锁保证一卡一任务。
+无资源是 `waiting-for-resources`，不是 operational failure。已冻结的计划在 resume 时不因
+当前 GPU 枚举顺序而改变。
+
+Suzhou2 的新 worker 只写入：
+
+```text
+/data/easydesign/managed-worker/
+├─ service/
+├─ config/
+├─ runtime/{envs,models,state,logs,tmp,cache,quarantine}/
+├─ queue/
+├─ jobs/
+├─ runs/
+└─ archives/
+```
+
+`RemoteJobBundle` 只接受固定 stage range、candidate budget、manifest closure 和 checksum，
+没有任意 shell 字段。`ManagedQueue` 在 `flock` 临界区内完成预留和状态 revision；
+worker 在重启后对账 `admitting/running` 状态。服务 bootstrap 只在受管数据盘写配置和
+systemd unit 建议，不自动修改 `/etc`。
+
+SSH 配对由 `RemoteExecutorRegistry` 保存只追加 revision。每个控制端使用当前工作区
+`runtime/secrets/ssh/` 中的独立密钥和确认过的 host fingerprint。逻辑解绑只禁用后续
+远程操作，不删除私钥、远端公钥、队列或历史证据。
+
+数据本地性是 job 契约的一部分：远端 Stage 04 与 05 是 `4→5`，Stage 06 与 07
+是 `6→7`。若上一个受管 run 已在 Suzhou2，后续 job 只通过相对 managed-run
+路径和当前 RunManifest SHA-256 引用它，不重传大型闭包。控制端同步分为：
+
+- `metadata`：队列、进度、事件、错误和摘要；
+- `review`：上述内容加报告、指标、少量审阅结构和批准材料；
+- `complete`：只在用户明确请求时同步全部大型结果。
+
+观察器默认每 15 秒只读远端结构化 revision 并通过 SSE 投影到 UI。SSH 暂时中断
+不改写远端科学状态；恢复后从最后已知 revision 继续。

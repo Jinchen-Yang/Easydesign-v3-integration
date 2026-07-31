@@ -267,3 +267,14 @@ easydesign runs show RUN_DIR
 - 不执行 Stage 07 多 seed、TNP 或多样性选样；
 - 氢键完整供受体/角度模型、体系专属阈值校准、实验反馈学习和更丰富的聚类属于后续；
 - 1.0 不使用 LLM/Agent 做筛选判断。
+
+## 远端数据本地性
+
+当 Stage 04 选择 `managed-ssh/suzhou2` 时，受管 job 的固定阶段范围是 `4→5`。
+Stage 05 在 Suzhou2 的同一受管 run 中消费 Stage 04 manifest 闭包，不先将全部
+pilot candidate 下载到控制端。控制端只持续获取队列、进度、错误和摘要；
+完成后默认获取用于审阅的 report、指标、少量结构与批准材料。
+
+科学决定仍由 Stage 05 profile 与审批记录作出，不由远程 worker 或 SSH 连接状态
+改变。SSH 中断只会让控制端显示“远程连接暂时中断”，不将远端任务改写为
+operational failure。

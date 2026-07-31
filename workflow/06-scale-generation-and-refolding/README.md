@@ -336,3 +336,19 @@ APOE 若在 Stage 05 合法科学停止，不降低门槛；Stage 06 通用工�
 后续需要基于真实 1000 运行校准磁盘倍率，再增加 SMART/Slurm executor、配额审批和
 production-50000 预演。所有后续 executor 必须复用相同 ScalePlan、TaskRecord、
 CandidateRecord 和 manifest 契约。
+
+## 双执行位置与远端交接
+
+Stage 06 与 Stage 04 复用同一 GPU 发现、租约、TaskRecord、事件、进度和恢复
+执行器。“当前机器”按 shard 将任务分配到通过资源门的 GPU；“Suzhou2”将通过
+校验的 `RemoteJobBundle` 加入受管中央队列。运行位置不修改 ScalePlan 或候选
+identity。
+
+Suzhou2 上新运行的持久根是 `/data/easydesign/managed-worker`。默认不复用旧
+dev11/dev12 环境作为新 worker 正式环境，不移动、覆盖或改写旧 APOE 50k 产物。
+对于已在受管 worker 完成 Stage 05 的 run，Stage 06 通过远端 RunManifest SHA-256 和
+`runs/<project>/<run>` 相对引用就地继续，无需重传大型上游闭包。
+
+受管 Stage 06 job 的固定阶段范围是 `6→7`：50k 候选主体保留在 Suzhou2，
+Stage 07 原地消费。只有用户显式请求 `complete` 同步时才会回传全部大型结果；
+默认 `review` 仅同步审阅所需的 manifest、报告、指标和少量结构。

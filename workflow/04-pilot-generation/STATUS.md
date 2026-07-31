@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 |
+| `smoke-validated` | APOE 21×40 真实生成保持通过；dev32 已实现本机自动 GPU 租约与 Suzhou2 受管中央队列。 | 完成 VAL-008 的本机极小任务和 Suzhou2 极小 Stage 04 真实探针。 | 新受管执行尚未在 Suzhou2 完成真实 worker/GPU 验收；旧 APOE 证据不受影响。 | 2026-08-01 |
 
 ## 当前结论
 
@@ -26,12 +26,16 @@
 | --- | --- | --- |
 | BoltzGen backend | `smoke-validated` | 固定 0.3.2 完整 pipeline 完成 APOE 21×40；严格收集原始/refold CIF、官方 design mask 和指标 |
 | local executor | `smoke-validated` | 双 GPU、每 GPU 一个串行 strategy；7xl0 首次 39/40 后只补跑缺失的 1 个，最终 840/840 |
+| 本机自动 GPU 发现与租约 | `implemented` | `nvidia-smi`、外部进程/显存门、append-only lease、无卡等待与 resume 契约测试 |
+| Suzhou2 Managed Worker | `implemented` | `RemoteJobBundle`、`flock` 中央队列、8 GPU 租约、heartbeat/重启对账和 4→5 就地执行 |
+| SSH 配对与观察 | `implemented` | host fingerprint、工作区专用密钥、逻辑解绑、15 秒轮询和 metadata/review/complete 同步 |
 | Slurm/SMART executor | `planned` | 无 |
 | 任务终态和候选索引 | `smoke-validated` | 61 条 append-only 事件、840 个唯一 CandidateRecord、终态 ProgressSnapshot、PilotBundle 与 checksummed manifest-only handoff 均通过 |
 
 ## Now
 
-- 无。S04-001/ENG-008 的 APOE 真实门已经完成并归档。
+- `[VAL-008]` 安装并启用经审核的 Suzhou2 systemd worker，然后执行一个极小真实
+  Stage 04 任务；不重跑 APOE 21×40。
 
 ## Next
 
@@ -98,3 +102,4 @@
 ## 历史索引
 
 - [2026-07 工程实现与 APOE 真实验收归档](history/2026-07.md)。
+- [2026-08 双执行目标与 Suzhou2 受管队列](history/2026-08.md)。

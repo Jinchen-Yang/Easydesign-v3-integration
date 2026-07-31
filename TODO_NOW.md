@@ -118,6 +118,11 @@
 
 ## Blocked
 
+- `[ENG-031]` 本机 `main` 的受管算力实现提交
+  `bede8e13f161987d5ce77658c73121ba0aeac5b5` 与文档提交
+  `fe4c5ed` 尚未同步到配置的 `origin`。`Proteindigger1` 当前不可解析，既有 SSH
+  转发也报告本机 `127.0.0.1:7897` 连接关闭；不得为完成推送而修改用户代理、SSH
+  配置或远端地址。连接恢复后须推送 `main` 并重新读取远端 SHA。
 - `[VAL-007]` Suzhou2 当前没有已登记可用的 Protenix/TNP 环境和模型资产，且 8 张 GPU
   正被其他任务占用。Stage 07 真实运行必须等待资源自然释放并完成显式后端探针；禁止
   终止非 EasyDesign 进程或把缺失环境报告为科学停止。
@@ -140,6 +145,7 @@
 ## 历史索引
 
 - [2026-07 项目历史](docs/history/2026-07/TODO_NOW.md)
+- [2026-08 项目历史](docs/history/2026-08/TODO_NOW.md)
 
 阶段内部历史从对应 `workflow/<stage>/STATUS.md` 进入。历史不得改写；原记录有误时追加更正。
 任何事项从 `Now` 移出前，必须在对应 history 写入带 UTC offset 的 RFC 3339 秒级

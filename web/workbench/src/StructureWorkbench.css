@@ -112,6 +112,21 @@
   pointer-events: auto;
 }
 
+.molstar-compatibility-note {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 4;
+  max-width: 440px;
+  padding: 10px 14px;
+  border: 1px solid #d7c88b;
+  border-radius: 10px;
+  background: rgba(255, 250, 226, 0.96);
+  color: #675925;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .easydesign-pymol .native-pymol {
   border: 0;
   border-radius: 0;

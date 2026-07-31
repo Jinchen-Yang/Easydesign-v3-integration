@@ -247,6 +247,10 @@ export interface SceneVersion {
   base_version_id?: string;
   actor: "human" | "ai" | "viewer" | "system";
   source: string;
+  provider?: AssistantProviderId;
+  model?: string;
+  skill_ids?: string[];
+  conversation_title?: string;
   summary: string;
   pml: string;
   sha256: string;
@@ -272,7 +276,7 @@ export interface PmlRevision {
 }
 
 export interface StructureInteractionSession {
-  schema_version: "0.1" | "0.2" | "0.3";
+  schema_version: "0.1" | "0.2" | "0.3" | "0.4";
   session_id: string;
   project_id: string;
   run_key: string;

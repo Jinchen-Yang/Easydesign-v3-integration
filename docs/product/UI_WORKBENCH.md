@@ -481,16 +481,9 @@ PML 控制台与 PNG/PML/PSE 导出。鼠标旋转、触摸选择、双指缩放
 加载进度、Pyodide/WebGL 错误和内存释放必须有可见终态。所有坐标修改、对象删除、任意
 Python/PML 和对 Target Bundle 的覆盖都被拒绝。
 
-右侧助手栏可收起。设置页必须由用户显式选择 DeepSeek 或智谱 GLM、模型、HTTPS
-endpoint 和 API key；没有隐式默认模型或 provider fallback。未配置时助手显示不可用，
-但结构查看、手工选区、SASA 和 ScanNet 继续工作。
-
-助手 proposal 的产品语义固定为：
-
-- 显示建议：确认后执行服务器编译的安全 PML；
-- 明确残基：确认后修改本次 Stage 02 编辑草稿；
-- 自动分析：只显示待确认的 SASA/ScanNet 计划；
-- 解释：没有可执行副作用。
+右侧助手栏可收起。该段保留 REP-006 初始产品边界的历史背景；当前 provider 已由部署者
+在仓库内统一配置，普通使用者不填写 API key。初始的多分支 proposal 协议也已由
+REP-009 的完整 PML 四字段协议取代。
 
 “寻找最佳区域”不得直接改变结构或选区。只有用户提交区域、通过 mapping/坐标/checksum
 校验并完成证据限制确认后，系统才建立新的 Stage 02 branch。助手会话本身不是科学结果，
@@ -567,16 +560,63 @@ canvas backing size、PyMOL reshape 和 OpenGL viewport；generation token 与
 AbortController 阻止旧异步加载覆盖新实例。失败时显示具体环节并允许切到 Mol*，不能
 以“脚本已载入”伪装成结构可见。
 
-StructureInteractionSession 0.2 将普通助手动作保存为查看器中立 ViewState。Cartoon、
-Surface、Sticks、颜色、背景、聚焦、居中和方向分别由安全 PML adapter 与 Mol* state
-adapter执行；切换查看器时重放最新 revision。两边不能一致表达的动作明确拒绝。专家
-PML 仍只作用于 PyMOL，并在界面中明确标注范围。
+dev28 的 `StructureInteractionSession 0.2` 曾将普通助手动作保存为查看器中立
+ViewState；该混合协议只保留旧记录读取能力，新会话由 REP-009 的完整 PML 场景契约
+取代。
 
 阶段访问权由持久 attempt、DesignSession lineage 和不可变 manifest 推导。Stage N
 真正进入 queued/running 后，当前运行链的 Stage 01–N 全部只读；失败和科学停止也不
 解锁。服务端所有修改 API 复用同一检查并返回 `409 stage_locked`。界面移除重新上传、
 重新选区、重新批准、重新生成和同项目快捷重跑，只保留查看、下载、纯显示操作及不改变
 配置的 resume。上游满足交接时，仅唯一下一阶段显示“配置下一步”。
+
+## REP-009：ChatPyMol 原生完整 PML 场景
+
+版本：`0.1.0.dev29`。
+
+结构助手不再返回 `viewer-actions/view-control/region-edit` 多分支 proposal。每次请求
+统一包含：
+
+- 固定系统规则；
+- 始终存在的 `safe-pml` 和最多两个按关键词匹配的 PML Skill；
+- 当前完整 PML；
+- 场景摘要及对象、链、格式、SHA-256 metadata；
+- A/B/C 当前区域摘要；
+- 最近十轮对话；
+- 用户请求。
+
+模型只能返回恰好四个字段：
+
+```json
+{
+  "assistantMessage": "用户可读说明",
+  "summary": "版本摘要",
+  "conversationTitle": "对话标题",
+  "pml": "完整新 PML"
+}
+```
+
+完整 PML 是唯一可视化事实。每个 SceneVersion 保存完整文档、parent/base version、
+SHA-256、actor、provider/model、实际 Skill ID 和时间，并用 `baseVersionId` 做乐观并发
+检查。安全的末尾追加只在当前 PyMOL 场景执行增量；修改旧内容、恢复历史、增量失败或
+状态不确定时，从已校验结构重新构建并完整重放。禁止把整份 PML 重复执行在未知旧状态上
+冒充恢复。
+
+Mol* 是同一 active SceneVersion 的兼容投影：representation、颜色、选择、聚焦和背景等
+受支持命令会同步；不支持的 PyMOL 原生命令只显示兼容提示，不阻止保存，也不产生第二套
+Mol* 场景事实。切换查看器始终读取同一 active PML。
+
+Stage 02 保留 `ed_region_A/B/C` 三个受管理 selection。用户明确要求的残基编辑由完整
+PML 表达，服务端确定性映射到 `label_seq_id` 草稿；再次选择可取消，换区会移动。PML
+修改不会改写历史 Stage 02，只有人工确认和证据限制确认完成后才发布
+`UserProvidedRegionSet` 与新 `hotspots.yaml`。科学问题仍只能形成待确认的
+SASA/ScanNet 计划。
+
+参考依据：
+
+- ChatPyMol commit：`43517d2dc0795357f35f93a2bde8cfc442f568c5`；
+- 《ChatPyMOL 网页端架构与 PML Skill 机制完整记录》SHA-256：
+  `22567ed89e0aef96cdab56b114ee98ade20540bcf42876e97738712429b0fa8f`。
 
 ### 验收结论
 

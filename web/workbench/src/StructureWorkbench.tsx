@@ -21,6 +21,7 @@ interface Props {
   stageNumber: 1 | 2;
   projection: RegionEditorProjection;
   regions?: Region[];
+  editableRegions?: Region[];
   onResidueClick?: (labelSeqId: number) => void;
   onRegionDraft?: (
     regions: Partial<Record<"A" | "B" | "C", number[]>>,
@@ -70,17 +71,19 @@ function regionOverlayPml(
   regions: Region[],
 ): string {
   const lines: string[] = [];
-  for (const region of regions) {
-    if (!(region.id in REGION_COLORS) || !region.label_seq_ids.length) continue;
-    const regionId = region.id as keyof typeof REGION_COLORS;
+  const byRegion = new Map(
+    regions.map((region) => [region.id, region.label_seq_ids] as const),
+  );
+  for (const regionId of ["A", "B", "C"] as const) {
     const selection = `ed_region_${regionId}`;
+    const labels = byRegion.get(regionId) || [];
     lines.push(
-      `select ${selection}, ${authorSelector(projection, region.label_seq_ids)}`,
+      `select ${selection}, ${authorSelector(projection, labels)}`,
       `color ${REGION_COLORS[regionId]}, ${selection}`,
       `show sticks, ${selection}`,
     );
   }
-  return lines.length ? `${lines.join("\n")}\ndeselect\n` : "";
+  return `${lines.join("\n")}\ndeselect\n`;
 }
 
 function basePml(
@@ -104,6 +107,37 @@ function withRegionOverlay(
   const overlay = regionOverlayPml(projection, regions).trim();
   if (!overlay) return pml;
   return `${pml.trimEnd()}\n\n# @easydesign live region overlay\n${overlay}\n`;
+}
+
+function replaceManagedRegionSelections(
+  pml: string,
+  projection: RegionEditorProjection,
+  regions: Region[],
+): string {
+  const reserved = /^ed_region_[ABC]$/i;
+  const retained = pml.split(/\r?\n/).filter((rawLine) => {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) return true;
+    const [verb, ...parts] = line.split(/\s+/);
+    const rest = parts.join(" ");
+    if (verb.toLowerCase() === "select") {
+      return !reserved.test(rest.split(",", 1)[0]?.trim() || "");
+    }
+    if (["color", "show", "hide"].includes(verb.toLowerCase())) {
+      const target = rest.split(",", 2)[1]?.trim() || "";
+      return !reserved.test(target);
+    }
+    return true;
+  });
+  const managedLineIndex = retained.reduce(
+    (latest, line, index) => (
+      line.trim().startsWith("# @easydesign") ? index : latest
+    ),
+    -1,
+  );
+  const overlay = regionOverlayPml(projection, regions).trimEnd().split("\n");
+  retained.splice(managedLineIndex + 1, 0, ...overlay);
+  return `${retained.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }
 
 function combinedPml(
@@ -149,8 +183,12 @@ function activeSceneVersion(session?: StructureInteractionSession): SceneVersion
   ) || session.scene_versions.at(-1);
 }
 
-function pmlToCommonViewerActions(pml: string): ViewerAction[] {
+function pmlToMolstarProjection(pml: string): {
+  actions: ViewerAction[];
+  unsupported: string[];
+} {
   const actions: ViewerAction[] = [];
+  const unsupported: string[] = [];
   for (const rawLine of pml.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
@@ -173,9 +211,26 @@ function pmlToCommonViewerActions(pml: string): ViewerAction[] {
       actions.push({ action: "center", target: rest.trim() || "all" });
     } else if (lower === "orient") {
       actions.push({ action: "orient", target: rest.trim() || "all" });
+    } else if (lower === "hide") {
+      const [representation, target = "all"] = rest
+        .split(",", 2)
+        .map((item) => item.trim().toLowerCase());
+      if (!(representation === "everything" && ["all", "target"].includes(target))) {
+        unsupported.push(line);
+      }
+    } else if (lower === "select") {
+      const selectionName = rest.split(",", 1)[0]?.trim();
+      if (!["ed_region_A", "ed_region_B", "ed_region_C"].includes(selectionName)) {
+        unsupported.push(line);
+      }
+    } else if (lower !== "deselect") {
+      unsupported.push(line);
     }
   }
-  return actions.filter((item) => item.target === "all" || item.target === "target");
+  return {
+    actions: actions.filter((item) => item.target === "all" || item.target === "target"),
+    unsupported,
+  };
 }
 
 function downloadText(value: string, filename: string) {
@@ -196,6 +251,7 @@ export function StructureWorkbench({
   stageNumber,
   projection,
   regions = EMPTY_REGIONS,
+  editableRegions,
   onResidueClick,
   onRegionDraft,
   onAnalysisPlan,
@@ -217,6 +273,10 @@ export function StructureWorkbench({
   const [referenceBusy, setReferenceBusy] = useState(false);
   const [referenceRcsbId, setReferenceRcsbId] = useState("");
   const pendingPmlSession = useRef<StructureInteractionSession | undefined>(undefined);
+  const sessionRef = useRef<StructureInteractionSession | undefined>(undefined);
+  const desiredScenePml = useRef("");
+  const sceneSyncPromise = useRef<Promise<void> | null>(null);
+  const sceneSyncTimer = useRef<number | undefined>(undefined);
 
   const structureUrl = `/api/v1/artifacts/${projection.structure.token}`;
   const referenceStructures = useMemo(
@@ -247,13 +307,22 @@ export function StructureWorkbench({
     () => combinedPml(projection, regions, session),
     [projection, regions, session],
   );
-  const scenePml = useMemo(
-    () => withRegionOverlay(activeVersion?.pml || legacyScenePml, projection, regions),
+  const authoritativePml = useMemo(
+    () => activeVersion?.pml || withRegionOverlay(legacyScenePml, projection, regions),
     [activeVersion?.pml, legacyScenePml, projection, regions],
   );
+  const scenePml = useMemo(
+    () => (
+      stageNumber === 2 && editableRegions
+        ? replaceManagedRegionSelections(authoritativePml, projection, editableRegions)
+        : authoritativePml
+    ),
+    [authoritativePml, editableRegions, projection, stageNumber],
+  );
+  const sceneRegions = regions;
   const sceneVersions = session?.scene_versions || [];
-  const commonViewActions = useMemo(
-    () => pmlToCommonViewerActions(scenePml),
+  const molstarProjection = useMemo(
+    () => pmlToMolstarProjection(scenePml),
     [scenePml],
   );
   const assistantMessages = useMemo<AssistantMessageView[]>(
@@ -263,6 +332,9 @@ export function StructureWorkbench({
   useEffect(() => {
     setPmlDraft(scenePml);
   }, [scenePml]);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   useEffect(() => {
     setPendingMessages([]);
   }, [session?.session_id]);
@@ -324,6 +396,72 @@ export function StructureWorkbench({
       disposed = true;
     };
   }, [runKey, stageNumber]);
+
+  const flushSceneDraft = useCallback(async () => {
+    if (sceneSyncPromise.current) {
+      await sceneSyncPromise.current;
+      return;
+    }
+    const operation = (async () => {
+      while (true) {
+        const current = sessionRef.current;
+        const desired = desiredScenePml.current;
+        const active = activeSceneVersion(current);
+        if (!current || !desired || !active || desired === active.pml) break;
+        const response = await api.saveScenePml(
+          current.session_id,
+          desired,
+          "viewer",
+          active.version_id,
+        );
+        sessionRef.current = response.session;
+        setSession(response.session);
+      }
+    })();
+    sceneSyncPromise.current = operation;
+    try {
+      await operation;
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? `区域草稿的 PML 版本同步失败：${error.message}`
+          : "区域草稿的 PML 版本同步失败",
+      );
+      throw error;
+    } finally {
+      if (sceneSyncPromise.current === operation) {
+        sceneSyncPromise.current = null;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (stageNumber !== 2 || editableRegions === undefined || !session || !activeVersion) {
+      return;
+    }
+    desiredScenePml.current = scenePml;
+    if (scenePml === activeVersion.pml) return;
+    if (sceneSyncTimer.current !== undefined) {
+      window.clearTimeout(sceneSyncTimer.current);
+    }
+    sceneSyncTimer.current = window.setTimeout(() => {
+      sceneSyncTimer.current = undefined;
+      void flushSceneDraft().catch(() => undefined);
+    }, 350);
+    return () => {
+      if (sceneSyncTimer.current !== undefined) {
+        window.clearTimeout(sceneSyncTimer.current);
+        sceneSyncTimer.current = undefined;
+      }
+    };
+  }, [
+    activeVersion,
+    editableRegions,
+    flushSceneDraft,
+    scenePml,
+    session,
+    stageNumber,
+  ]);
 
   const validatePml = useCallback(async (pml: string) => {
     if (!session) throw new Error("交互会话尚未就绪");
@@ -402,12 +540,19 @@ export function StructureWorkbench({
     setBusy(true);
     setStatus("正在请求结构助手…");
     try {
+      desiredScenePml.current = scenePml;
+      await flushSceneDraft();
+      const currentSession = sessionRef.current || session;
       const updated = await api.assistantMessage(
-        session.session_id,
+        currentSession.session_id,
         text,
       );
       setPendingMessages([]);
       setSession(updated);
+      sessionRef.current = updated;
+      if (stageNumber === 2) {
+        onRegionDraft?.(updated.current_regions);
+      }
       const latest = updated.messages.at(-1);
       setStatus(latest?.version_id ? "助手已更新 PML 场景并保存版本。" : "助手已生成待确认建议。");
     } catch (error) {
@@ -434,8 +579,10 @@ export function StructureWorkbench({
         session.session_id,
         pmlDraft,
         "expert-console",
+        session.active_scene_version_id || undefined,
       );
       setSession(response.session);
+      sessionRef.current = response.session;
       setStatus(`PML 已保存为版本 ${response.version.revision}。`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "PML 保存失败");
@@ -620,11 +767,17 @@ export function StructureWorkbench({
             >
               <MolViewer
                 structureUrl={structureUrl}
-                regions={regions}
+                regions={sceneRegions}
                 compact={compact}
                 onResidueClick={onResidueClick}
-                viewActions={commonViewActions}
+                viewActions={molstarProjection.actions}
               />
+              {molstarProjection.unsupported.length > 0 && (
+                <div className="molstar-compatibility-note">
+                  当前场景有 {molstarProjection.unsupported.length} 条 PyMOL 专属命令；
+                  Mol* 仅显示可可靠投影的部分，完整场景仍保存在同一 PML 版本中。
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -723,6 +876,9 @@ export function StructureWorkbench({
                   <strong>v{version.revision}</strong>
                   <span>{version.summary}</span>
                   <small>{version.actor} · {version.source}</small>
+                  {!!version.skill_ids?.length && (
+                    <small>Skills：{version.skill_ids.join("、")}</small>
+                  )}
                 </button>
               ))}
             </div>
@@ -734,7 +890,7 @@ export function StructureWorkbench({
           <header>
             <div>
               <strong>结构助手</strong>
-              <span>显示操作同步到 PyMOL 与 Mol*</span>
+              <span>完整 PML 驱动 PyMOL；Mol* 显示兼容投影</span>
             </div>
             <span className="assistant-safety">不会判断最佳 hotspot</span>
           </header>

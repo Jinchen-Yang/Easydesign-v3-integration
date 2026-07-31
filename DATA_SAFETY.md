@@ -176,9 +176,14 @@ EasyDesign 官方开发只允许一个 Git 分支：`main`。
    `runtime/secrets/structure-assistant/platform-provider.yaml`。该文件禁止符号链接，
    在 POSIX 系统必须为 `0600`；不得写入项目配置、run、manifest、普通日志、Git、
    浏览器 localStorage 或返回给前端。普通使用者界面不得提供 provider 或 key 输入。
-3. 模型请求禁止包含坐标、MSA、完整序列、外部输入绝对路径或密钥。请求内容只允许用户
-   文字、stage、对象/链、编号说明、当前区域摘要和允许动作 Schema。
-4. 不得提供交互会话删除接口。会话和 PML 每次修改发布新 revision；异常 revision、
+3. 模型请求禁止包含坐标、MSA、完整序列、外部输入绝对路径或密钥。请求只允许当前
+   完整 PML、场景摘要、结构对象/链/格式/SHA-256 metadata、编号说明、当前区域摘要、
+   最近十轮对话、匹配的 PML Skills 和用户文字。完整 PML 只描述浏览器可视化场景，
+   不能含结构文件字节或机器路径。
+4. 模型返回的完整 PML 必须保留所有 `# @easydesign` 管理行，并通过对象、链、括号、
+   selection、占位符和系统/文件/网络边界校验。Mol* 仅投影其可靠支持的命令，不得因
+   无法投影而拒绝有效 PyMOL PML，也不得反向覆盖当前 PML。
+5. 不得提供交互会话删除接口。会话和 PML 每次修改发布新 revision；异常 revision、
    provider 响应和失败证据按仓库安全写入制度保留，禁止自动清理。
-5. ChatPyMol 等参考项目只能复制经过来源和许可证审计的能力或静态资产；不得引入其删除
+6. ChatPyMol 等参考项目只能复制经过来源和许可证审计的能力或静态资产；不得引入其删除
    API、用户主目录写入、可变覆盖式索引或独立科学项目库。

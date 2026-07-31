@@ -206,6 +206,16 @@ export function RegionEditor({
         .sort((left, right) => left - right),
     }));
   }, [projection, selection, showCurrent, showSource]);
+  const editableRegions = useMemo(
+    () => (["A", "B", "C"] as RegionId[]).map((id) => ({
+      id,
+      label_seq_ids: [...selection.entries()]
+        .filter(([, region]) => region === id)
+        .map(([label]) => label)
+        .sort((left, right) => left - right),
+    })),
+    [selection],
+  );
 
   function colorResidue(labelSeqId: number, shift = false) {
     if (!projection) return;
@@ -579,6 +589,7 @@ export function RegionEditor({
               stageNumber={2}
               projection={projection}
               regions={displayRegions}
+              editableRegions={editableRegions}
               onResidueClick={(label) => colorResidue(label)}
               onRegionDraft={(regions) => {
                 const next = new Map<number, RegionId>();

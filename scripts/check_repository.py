@@ -326,14 +326,23 @@ def main() -> int:
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
-    # Stage 05 v1.6 intentionally adds the frozen uploaded v1.5 source and one
-    # governed methods document/ADR pair. Keep the bound explicit rather than
-    # silently accepting arbitrary new Markdown files.
-    require(len(markdown) <= 46, f"Markdown 数量超过精简上限: {len(markdown)}", errors)
+    # Packaged PML Skill bodies are executable prompt assets with one required
+    # SKILL.md per Skill, not standalone project documentation.
+    governed_markdown = [
+        path
+        for path in markdown
+        if "src/easydesign/ui/pml_skill_library"
+        not in path.relative_to(ROOT).as_posix()
+    ]
+    require(
+        len(governed_markdown) <= 46,
+        f"Markdown 数量超过精简上限: {len(governed_markdown)}",
+        errors,
+    )
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev28", "项目版本异常", errors)
+    require(project["version"] == "0.1.0.dev29", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require(
         project.get("scripts") == {"easydesign": "easydesign.cli:main"},

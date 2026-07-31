@@ -223,9 +223,11 @@ SHA-256 摘要。
 
 Stage 01/02 的统一结构工作区默认使用离线浏览器 PyMOL，并可平级切换到 Mol*。两种
 查看器读取同一份经过 SHA-256 校验的 `target.cif`，共享当前残基、红/蓝/黄区域和
-label/auth 编号。EasyDesign 平台结构助手只能提出显示动作、解析用户明确给出的残基，
-或生成待确认的 SASA/ScanNet 执行计划；它不能判断“最佳 hotspot”，也不能修改坐标或
-直接发布 Stage 02 结果。普通使用者无需选择模型或填写 API key；部署者在仓库内
+label/auth 编号。EasyDesign 平台结构助手按照 ChatPyMol 原生机制读取当前完整 PML、
+结构 metadata、最近十轮对话和动态 PML Skills，并返回完整的新 PML 场景；PyMOL 执行
+原生场景，Mol* 只显示可可靠投影的部分。用户明确写入 `ed_region_A/B/C` 的残基仍须
+经过规范编号映射和人工批准；助手不能判断“最佳 hotspot”，这类请求只形成待确认的
+SASA/ScanNet 执行计划。普通使用者无需选择模型或填写 API key；部署者在仓库内
 `runtime/secrets/structure-assistant/platform-provider.yaml` 配置单一平台服务。平台
 服务未启用时，结构查看、手工选区和自动算法仍可正常使用。
 

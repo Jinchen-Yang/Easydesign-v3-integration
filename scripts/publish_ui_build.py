@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -24,6 +25,18 @@ def _tree_identity(root: Path) -> dict[str, str]:
     }
 
 
+def _preserve_existing_bytes(*, source: Path, staging: Path) -> None:
+    for path in sorted(source.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        destination = staging / relative
+        if destination.exists():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("staging", type=Path)
@@ -33,6 +46,9 @@ def main() -> int:
         raise SystemExit("UI staging 必须是 runtime/tmp 下的新目录")
     if not (staging / "index.html").is_file():
         raise SystemExit("UI staging 缺少 index.html")
+
+    if TARGET.exists():
+        _preserve_existing_bytes(source=TARGET, staging=staging)
 
     if TARGET.exists() and _tree_identity(TARGET) == _tree_identity(staging):
         print(f"UI 构建与已发布字节一致；staging 保留在 {staging.relative_to(ROOT)}")

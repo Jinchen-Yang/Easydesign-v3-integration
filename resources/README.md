@@ -48,8 +48,10 @@ Stage 01 Target Viewer 与 Stage 01/02 浏览器 PyMOL 是当前随 Python wheel
 - Pyodide `0.22.1`，Apache-2.0；
 - NumPy `1.23.5` Emscripten wheel，BSD-3-Clause；
 - Open-Source PyMOL WASM `2.6.0a0`，Open-Source PyMOL license；
-- EasyDesign 只移植浏览器渲染能力，不移植 ChatPyMol 的 Node 文件库、MCP、
-  用户主目录写入或删除接口；
+- EasyDesign 移植浏览器渲染、完整 PML 请求/响应循环、关键词 Skill 路由和
+  六份经审计的 PML Skill；参考说明文档 SHA-256 固定为
+  `22567ed89e0aef96cdab56b114ee98ade20540bcf42876e97738712429b0fa8f`；
+- 不移植 ChatPyMol 的 Node 文件库、第二套项目系统、MCP、用户主目录写入或删除接口；
 - `scripts/check_browser_pymol_assets.py` 固定运行必需文件的大小和 SHA-256；
 - 所有资产只从 EasyDesign wheel/localhost 提供，页面不得访问 CDN。
 

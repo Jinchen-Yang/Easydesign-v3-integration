@@ -215,11 +215,15 @@ Agent 必须自动完成以下收尾工作：
 30. BoltzGen 运行必须显式传入 registry 验证过的两个 design checkpoint、inverse-fold、
     folding、affinity checkpoint 和 molecule dataset 本地路径。禁止依赖上游默认
     Hugging Face 标识在运行阶段隐式下载。
-31. 浏览器结构助手不得成为 EasyDesign 1.0 的科学决策器。模型输出只能是类型化显示
-    动作、用户明确残基的编辑操作、待确认的 SASA/ScanNet 计划或解释；不得直接生成
-    hotspot、发布 Stage 02 或执行任意 PML。浏览器 PyMOL/Mol* 只读当前 manifest 声明的
-    结构，交互会话写入 `projects/` revision，API key 只写入 `runtime/secrets/`，坐标、
-    MSA、完整序列、密钥和绝对路径不得发送给模型。
+31. 浏览器结构助手采用 ChatPyMol 原生完整 PML 契约：模型必须返回包含
+    `assistantMessage/summary/conversationTitle/pml` 的完整场景文档，经过结构管理行、
+    对象/链、括号、占位符和系统/文件/网络边界校验后发布不可变 SceneVersion。PML 是
+    唯一可视化事实；Mol* 只是兼容投影，不得反向限制或覆盖 PyMOL 场景。浏览器
+    PyMOL/Mol* 只读当前 manifest 声明的结构，交互会话写入 `projects/` revision，API
+    key 只写入 `runtime/secrets/`，坐标、MSA、完整序列、密钥和绝对路径不得发送给模型。
+    结构助手仍不得成为 EasyDesign 1.0 的科学决策器：用户明确的 `ed_region_A/B/C`
+    selection 必须确定性映射为规范编号，只有人工批准才可发布 Stage 02；“最佳区域”等
+    问题只能生成待确认的 SASA/ScanNet 计划。
 
 ## 4. 阻塞与询问
 

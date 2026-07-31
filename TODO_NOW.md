@@ -7,8 +7,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev28 修复协作回归后，Stage 01/02 的 PyMOL↔Mol* 多轮往返保持 1 个对象、1172 个原子和 9/14/14 区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev28 修复双查看器协作回归后，APOE 9/14/14 区域通过多轮 PyMOL↔Mol* 往返。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 已从同一 pilot 证据晋级唯一 Tier A，100 条诊断的零结构通过只形成 warning。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | 无 Stage 05 工程阻塞；Stage 07 仍需 Suzhou2 的 Protenix/TNP 后端。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -18,6 +18,11 @@
 
 ## Now
 
+- `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
+  原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
+  最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*
+  只作兼容投影，Stage 02 区域仍须确定性映射和人工批准。当前完成工程测试与构建，下一
+  门槛是真实平台 provider 连续对话、APOE 9/14/14、历史恢复及多次 PyMOL/Mol* 切换。
 - `[VAL-007/S07-002]` APOE v1.6 policy reevaluation 与 Suzhou2 50,000-candidate
   evidence adoption 已发布：旧 v1.5 bundle、manifest 和
   `stopped-no-scale-winner` 保持不可变；新投影显示 Stage 05 一组 Tier A 晋级与
@@ -95,12 +100,12 @@
   `required_reviews: [biosafety]` 不能被 unattended 绕过，真实下单始终是人工动作。
 - `[REP-002]` 在不改变 Stage 02 科学输出的前提下增加 SASA/ScanNet 独立 overlay；
   可视化层不得融合 PSE、SASA 和 ScanNet。
-- `[REP-006/REP-008/ENG-028/UI-017/UI-020]` 离线浏览器 PyMOL、Mol* 与平台结构助手
+- `[REP-006/REP-008/REP-009/ENG-028/UI-017/UI-020]` 离线浏览器 PyMOL、Mol* 与平台结构助手
   已通过 dev28 真实 APOE Stage 01/02 多轮 smoke；`PyMOL → Mol* → PyMOL` 不再丢失
-  WASM 画布、累积历史 PML 或因空 framebuffer 误报失败。
-  普通使用者不选择 provider 或填写 API key。下一步由部署者在仓库内平台配置启用单一
-  provider，并补充受控 live 连通、预算、限流和用量监控；平台助手未启用不阻塞无
-  Agent 的 Stage 01/02 主线。
+  WASM 画布或因空 framebuffer 误报失败。REP-009 已把后续新会话迁移为完整 PML
+  SceneVersion，旧 typed/ViewState 记录只读兼容。普通使用者不选择 provider 或填写
+  API key；下一步由部署者补充受控 live 连通、连续多轮、预算、限流和用量监控，平台
+  助手未启用不阻塞无 Agent 的 Stage 01/02 主线。
 - `[ENG-003]` 部署自建 ColabFold/MMseqs2，并建立 CI 平台矩阵；sequence-hash cache
   与 precomputed A3M 已由 S01-009 完成。
 - `[S02]` 将 ScanNet GPU 兼容性和性能优化作为后续 benchmark，不改变 CPU 主线。

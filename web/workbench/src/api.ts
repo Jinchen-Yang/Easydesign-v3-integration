@@ -359,6 +359,7 @@ export const api = {
     sessionId: string,
     pml: string,
     source: "viewer" | "expert-console" = "expert-console",
+    baseVersionId?: string,
   ) =>
     request<{
       session: StructureInteractionSession;
@@ -368,7 +369,11 @@ export const api = {
       `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/scene-pml`,
       {
         method: "PUT",
-        body: JSON.stringify({ pml, source }),
+        body: JSON.stringify({
+          pml,
+          source,
+          base_version_id: baseVersionId,
+        }),
       },
     ),
   applyAssistantProposal: (sessionId: string, proposalId: string) =>

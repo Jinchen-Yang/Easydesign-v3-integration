@@ -919,3 +919,26 @@
 - 遗留：VAL-007 仍需发布 policy reevaluation 和 scale evidence adoption；Suzhou2
   需恢复 Protenix/TNP/模型并等待 GPU 自然释放后才能运行 Stage 07。
 - 提交：以本记录所在 `main` 提交和推送后核对的远端完整 SHA 为准。
+
+## 2026-07-31 — REP-009：ChatPyMol 原生完整 PML 主循环
+
+- 状态：`implemented`
+- 完成时间：2026-07-31T17:54:16+08:00
+- 问题：协作版本把 ChatPyMol 的完整 PML 机制拆成 typed proposal、ViewState 和
+  双查看器共同能力交集，既丢失动态 PML Skill，也让 Mol* 反向限制 PyMOL。
+- 方案：请求统一发送当前完整 PML、场景/结构 metadata、最近十轮对话、用户请求和
+  `safe-pml + 最多两个动态 Skill`；响应固定为
+  `assistantMessage/summary/conversationTitle/pml`。完整 PML 保存为不可变
+  SceneVersion，PyMOL 采用增量/完整重放，Mol* 仅作兼容投影。
+- Stage 02：`ed_region_A/B/C` 确定性映射至 `label_seq_id` 草稿；科学问题只生成待确认
+  SASA/ScanNet plan，人工批准前不发布 `hotspots.yaml`。
+- 验证：完整请求、四字段响应、Skill 路由、非法响应、危险命令、管理行、对象/链、
+  乐观并发、历史恢复、编号往返、Python UI 契约及 production UI build 均已覆盖。
+- 参考：文档 SHA-256
+  `22567ed89e0aef96cdab56b114ee98ade20540bcf42876e97738712429b0fa8f`；
+  ChatPyMol commit `43517d2dc0795357f35f93a2bde8cfc442f568c5`。
+- 安全：未删除、覆盖或清理历史 session、run、环境、模型或静态资产；未创建分支或
+  worktree。
+- 遗留：真实平台 provider 的连续 APOE 对话、9/14/14 区域编辑和多次双查看器切换通过
+  后再升级为 `smoke-validated`。
+- 提交：以本记录所在 `main` 提交和推送后核对的远端完整 SHA 为准。

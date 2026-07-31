@@ -958,7 +958,7 @@ StageManifest → verified target.cif / mapping / source annotations
                               │
 projects/<project>/interactive-sessions/<session>/revision
                               │
-             显示动作 / 明确残基草稿 / 待确认算法计划
+       完整 PML SceneVersion / 明确残基草稿 / 待确认算法计划
                               │
              人工提交后才建立新的 Stage 02 branch
 ```
@@ -967,11 +967,20 @@ projects/<project>/interactive-sessions/<session>/revision
   run 目录或直接读取任意路径。
 - Pyodide/PyMOL WASM 由 Python wheel 离线提供，不访问 CDN。PSE 文件解析仍在独立
   `pymol-pse` 环境完成，浏览器运行时不是科学输入 adapter。
-- `StructureInteractionSession 0.2` 保存于 `projects/`，采用新 revision 发布，不提供
-  删除或覆盖接口。它不加入 Run/StageManifest，不改变 Target Bundle。
-- 模型 provider 只接收最小语义上下文，并返回严格的 `AssistantProposal`。可执行显示
-  动作必须编译为 allow-listed PML；Stage 02 成员修改必须通过 canonical mapping；
-  SASA/ScanNet plan 只有人工确认后才调用既有 deterministic backend。
+- `StructureInteractionSession 0.4` 保存于 `projects/`，采用新 revision 发布，不提供
+  删除或覆盖接口。每个 SceneVersion 保存完整 PML、parent/base version、SHA-256、
+  actor、provider/model、Skill ID 和时间；它不加入 Run/StageManifest，也不改变
+  Target Bundle。
+- 模型 provider 接收固定系统规则、`safe-pml` 与最多两个关键词 Skill、当前完整 PML、
+  场景摘要、结构 metadata、当前区域、最近十轮对话和用户请求；固定返回
+  `assistantMessage/summary/conversationTitle/pml` 四字段 JSON。坐标、MSA、完整序列、
+  密钥和绝对路径不进入请求。
+- PML 是唯一可视化事实。安全追加时 PyMOL 只执行增量；旧内容变化、历史恢复、增量失败
+  或状态不确定时，重新构建结构场景并完整重放。Mol* 只投影 representation、颜色、
+  选择、聚焦和背景等可靠子集，不支持的命令标记为“仅 PyMOL”，但不能阻止保存。
+- `ed_region_A/B/C` 由完整 PML 桥接到 Stage 02 编辑草稿，并确定性映射为
+  `label_seq_id`。PML 修改不发布科学结果；SASA/ScanNet plan 只有人工确认后才调用既有
+  deterministic backend，区域也只有人工批准后才形成新 Stage 02 branch。
 - 部署者只在
   `runtime/secrets/structure-assistant/platform-provider.yaml` 配置一个平台
   provider。该文件拒绝符号链接并要求 POSIX `0600`；UI 只能读取通用服务状态，不能

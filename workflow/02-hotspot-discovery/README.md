@@ -517,27 +517,35 @@ Stage 02 与 Stage 01 共用默认浏览器 PyMOL、平级 Mol* 和同一份已�
 `target.cif`。PSE 来源颜色、当前批准区域和本次可编辑区域仍是三个独立图层；查看器切换
 不能改变成员、编号或 approval 状态。
 
-DeepSeek/智谱 GLM 助手只接受四类类型化输出：
+DeepSeek/智谱 GLM 助手采用 ChatPyMol 原生完整 PML 主循环：
 
-1. `ViewerAction`：显示方式、颜色、标签、选择和视角；
-2. `RegionEditOperation`：把用户明确编号的残基加入、移出或移动到 A/B/C；
-3. `ScientificAnalysisPlan`：提出运行 SASA、ScanNet 或两者；
-4. `Explanation`：只解释，不执行。
+```text
+当前完整 PML + 场景/结构 metadata + 最近十轮对话 + 动态 PML Skills + 用户请求
+→ assistantMessage / summary / conversationTitle / 完整新 PML
+→ 校验 → 不可变 SceneVersion → PyMOL 增量执行或完整重放
+```
 
-“把32、36加入A区”可以规范为明确的编辑操作；“寻找最佳区域”不能直接产生残基或
-hotspot，只能生成 `requires_confirmation=true` 的分析计划。用户确认后仍调用现有
-SASA/ScanNet 后端，两种方法保持独立，不融合分数。模型解析得到的区域仍属于
-`manual-residue-list` 用户先验，必须经过编号/坐标/checksum 校验和人工批准，随后创建
-新的不可变 Stage 02 branch；旧 run 不回写。
+`safe-pml` 始终注入，再按当前请求最多注入两个
+chain-coloring/interface-analysis/ligand-pocket/publication-figure/
+structure-alignment Skill。`ed_region_A/B/C` 是受管理 selection；只有用户明确给出
+残基时模型才可更新，服务端再把 author selector 唯一映射为 `label_seq_id` 草稿。同区
+再次选择可取消，移入另一颜色会从旧区域移除。
+
+“把32、36加入A区”可以由完整 PML 表达；“寻找最佳区域”不能直接产生残基或 hotspot，
+只能生成 `requires_confirmation=true` 的 SASA/ScanNet 分析计划。PML 场景变化本身不
+发布 Stage 02；用户确认后仍调用现有确定性后端，两种方法保持独立，不融合分数。用户
+区域仍属于 `manual-residue-list` 人工先验，必须经过编号/坐标/checksum 校验和人工
+批准，随后创建新的不可变 Stage 02 branch；旧 run 不回写。
 
 模型不接收坐标、完整序列或 MSA。provider、模型、endpoint 和 API key 由部署者在
 `runtime/secrets/structure-assistant/platform-provider.yaml` 显式配置；普通使用者
 界面不提供 provider 或 key 输入。不允许 DeepSeek/GLM 互相静默 fallback；密钥不进入
 科学 manifest、普通日志、浏览器存储或任何 API 响应。
 
-安全 PML 只允许显示、着色、标签、选择和视角命令；`load/fetch/save/remove/delete/
-alter/run/python/system/shell/reinitialize` 等命令明确拒绝。模型本身不能生成并直接
-执行任意 PML，必须先经过 `AssistantProposal` 和安全编译器。
+完整 PML 必须保留 EasyDesign 结构管理行；Python、系统命令、文件/网络操作、退出和
+重初始化明确拒绝，对象、链、selection、括号、占位符和比对对象必须有效。Mol* 只投影
+它可靠支持的 representation、颜色、选择、聚焦和背景；PyMOL 专属命令会标记兼容提示，
+但不会因为 Mol* 不支持而拒绝保存。
 
 ## 失败与重试
 

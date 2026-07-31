@@ -28,7 +28,7 @@
 | M13 项目与设计路线整理 | `smoke-validated` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA、PSE 新分支与浏览器验收均已完成。 |
 | M14 仓库内自包含运行工作区 | `implemented` | ENG-023 已将启动器、profile、环境/资产 registry、cache、setup 状态和 UI job 收敛到仓库内；Proteindigger 完整环境、许可资产和真实后端逐步自检仍在验收。 |
 | M15 单一 main 开发治理 | `implemented` | ENG-024 禁止开发分支和额外 Git worktree；已验证 ENG-023 提交链收敛到 `main`，历史 runtime 在无删除前提下保留。 |
-| M16 双结构查看器与安全助手 | `smoke-validated` | REP-006/ENG-025/UI-017/REP-007 已接入离线浏览器 PyMOL、Mol* 和安全助手；APOE 138-aa 结构、9/14/14 来源区域及严格首帧检查已通过真实页面复验。 |
+| M16 双结构查看器与安全助手 | `implemented` | REP-009 已把新结构助手切换为 ChatPyMol 原生完整 PML/Skill/SceneVersion 主循环；Mol* 降为兼容投影，历史 typed 记录继续只读。真实 provider 连续对话与完整 APOE 浏览器矩阵待复验。 |
 | M17 可靠草稿与递进冻结 | `smoke-validated` | UI-018/ENG-026/ENG-027/UI-019 已通过：主页草稿、事务式创建、持久上传回执和运行链递进冻结均有契约及真实 APOE 页面证据。 |
 | M18 多策略规模筛选 | `implemented` | schema 0.8、Stage05Bundle/ScaleBundle 0.2、Tier A Top 3 晋级、诊断 warning、共享 50k 与 Stage 07 多来源 lineage 已实现；APOE 历史 50k 的采用和真实 Stage 07 仍待 VAL-007。 |
 | EasyDesign 1.0 验收 | `planned` | VHH 七阶段、两条真实端到端基准和 Stage 01 六类入口测试通过。 |
@@ -44,7 +44,7 @@
 | `S01–S07` | Scientific Pipeline | `planned` | 七阶段科学主线按独立契约推进。 | 先完成 VHH 1.0 真实端到端。 | 下方七阶段实时摘要。 |
 | `ENG` | Core Engineering | `smoke-validated` | manifest、Decision Gate、跨主机执行与统一 run layout 已形成可审计工程底座；ENG-023 的自包含工作区正在真实重建验收。 | 保持一个 API、不可变证据、仓库内写边界与跨平台 core。 | 完成 Proteindigger 全后端 setup、资产许可和移动工作区验收；[运行目录规则](docs/architecture/RUN_LAYOUT.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–005 已提供可安装 CLI；UX-006 增加从 clone 到 setup/doctor/ui 的单一启动器。 | 让真实能力和可审计结果通过稳定、自包含入口使用。 | 验收 Linux 完整安装、minimal 安装和 macOS/Windows core/UI；[README](README.md)。 |
-| `REP` | Reporting & Visualization | `smoke-validated` | 自包含 Target Viewer、Workbench Mol* 与离线浏览器 PyMOL 共用已校验结构和编号；严格 PyMOL 首帧和查看器中立动作已通过真实 APOE 复验。 | 保持只读、便携、最小暴露，并扩展跨平台结构交互矩阵。 | REP-002：SASA/ScanNet 独立 overlay；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `REP` | Reporting & Visualization | `implemented` | 自包含 Viewer 和双查看器底座已 smoke；REP-009 已实现完整 PML 单一场景、动态 Skills、不可变版本及 Mol* 兼容投影，真实 provider 浏览器复验待完成。 | 保持只读、便携、最小暴露，并扩展跨平台结构交互矩阵。 | REP-009 真实 APOE/平台 provider smoke；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `UI` | Product UI | `smoke-validated` | 连续七阶段工作区、安装中心、有效草稿、事务式创建和递进只读冻结已形成统一产品入口。 | 继续在第二真实案例和长任务中验证产品流程。 | UI-002 长任务交互；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002/003 固定 VHH7 和 TNP；DATA-005 增加环境内容身份、安装后 inventory、模型 registry 与许可门。 | 确保 scaffold、模型、环境、fixture 和共享结果的来源、授权与边界可审计。 | 生成并验证 Linux 环境锁，完成逐资产许可与 checksum 验收。 |
@@ -126,6 +126,7 @@
 | `ENG-027` | Core Engineering | `smoke-validated` | 持久 Stage attempt 受理后由服务端推导递进冻结；冻结修改 API 统一返回结构化 `409 stage_locked`。 |
 | `UI-019` | Product UI | `smoke-validated` | 冻结阶段显示只读摘要和锁定原因，移除上传、重选、重批和重生成入口，同时保留查看、下载和纯显示操作。 |
 | `REP-008` | Reporting & Visualization | `smoke-validated` | PyMOL 与 Mol* 首次加载后保持挂载；真实 APOE Stage 02 已通过 `PyMOL → Mol* → PyMOL` 回归，返回 PyMOL 后 reshape、viewport、redraw 和结构首帧均恢复。 |
+| `REP-009` | Reporting & Visualization | `implemented` | 新助手统一发送当前完整 PML、结构/场景 metadata、最近十轮对话和动态 Skills，并接收四字段完整 PML；SceneVersion 0.4、增量/完整重放、Mol* 兼容投影和 Stage 02 区域桥接已完成工程测试。 |
 | `ENG-028` | Core Engineering | `smoke-validated` | 结构助手改为部署者拥有的单一平台配置；请求端不再提交 provider 或用户密钥，公开状态接口不泄露 provider、模型、endpoint 或 API key。 |
 | `UI-020` | Product UI | `smoke-validated` | 普通设置页和 Stage 01/02 助手栏不再提供模型、endpoint 或 API key 表单，只显示“EasyDesign 结构助手”的平台可用状态。 |
 | `ENG-029` | Core Engineering | `smoke-validated` | Stage05Bundle/ScaleBundle 0.2、跨 run 不可变证据链接和旧 0.1 兼容已由 APOE policy/50k adoption 验证；没有复制 39 GB 或修改历史 manifest。 |
@@ -156,8 +157,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev28 修复协作回归后，Stage 01/02 的 PyMOL↔Mol* 多轮往返保持 1 个对象、1172 个原子和 9/14/14 区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev28 修复双查看器协作回归后，APOE 9/14/14 区域通过多轮 PyMOL↔Mol* 往返。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 共 840 个完整候选已由双 GPU 可恢复执行器收集，RunManifest 与全部交接产物完整性验证通过。 | 冻结 Stage 04 交接，把 840 个候选交给 Stage 05 v1.5 逐规则筛选。 | 无 Stage 04 工程阻塞；科学通过率由 Stage 05 判定。 | 2026-07-26 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 已从同一 pilot 证据晋级唯一 Tier A，100 条诊断的零结构通过只形成 warning。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | 无 Stage 05 工程阻塞；Stage 07 仍需 Suzhou2 的 Protenix/TNP 后端。 | 2026-07-31 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |

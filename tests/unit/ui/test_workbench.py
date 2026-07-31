@@ -54,11 +54,81 @@ from easydesign.ui import (
     get_project_projection,
     get_run_projection,
 )
-from easydesign.ui.models import ProjectMetadata
+from easydesign.ui.app import _regions_from_scene_pml
+from easydesign.ui.models import (
+    ArtifactProjection,
+    ProjectMetadata,
+    RegionEditorProjection,
+    RegionEditorResidue,
+)
 from easydesign.ui.security import ArtifactTokenSigner
 from easydesign.ui.stage05 import get_filter_overview
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+
+
+def _region_projection_fixture() -> RegionEditorProjection:
+    return RegionEditorProjection(
+        run_key="demo/run-001",
+        target_id="demo-target",
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+        structure=ArtifactProjection(
+            artifact_id="target-structure",
+            role="target-structure",
+            file_format="mmcif",
+            size_bytes=1,
+            sha256="a" * 64,
+            token="token",
+        ),
+        source_annotation_status="not_applicable",
+        residues=(
+            RegionEditorResidue(
+                label_seq_id=1,
+                amino_acid="A",
+                sequence_index=1,
+                auth_chain_id="A",
+                auth_residue_id="23",
+            ),
+            RegionEditorResidue(
+                label_seq_id=2,
+                amino_acid="P",
+                sequence_index=2,
+                auth_chain_id="A",
+                auth_residue_id="24",
+            ),
+            RegionEditorResidue(
+                label_seq_id=3,
+                amino_acid="O",
+                sequence_index=3,
+                auth_chain_id="A",
+                auth_residue_id="25A",
+                insertion_code="A",
+            ),
+        ),
+    )
+
+
+def test_managed_pml_regions_round_trip_to_canonical_label_ids() -> None:
+    projection = _region_projection_fixture()
+    regions = _regions_from_scene_pml(
+        "\n".join(
+            (
+                "select ed_region_A, chain A and resi 23+25A",
+                "select ed_region_B, chain A and resi 24",
+                "select ed_region_C, none",
+                "",
+            )
+        ),
+        projection,
+    )
+    assert regions == {"A": (1, 3), "B": (2,)}
+
+    with pytest.raises(ConfigurationError, match="不能唯一映射"):
+        _regions_from_scene_pml(
+            "select ed_region_A, chain A and resi 999\n",
+            projection,
+        )
 
 
 @pytest.fixture(autouse=True)

@@ -8,28 +8,29 @@ import httpx
 import pytest
 
 from easydesign.core import ConfigurationError
+from easydesign.ui.pml_skills import select_pml_skills
 from easydesign.ui.structure_interactions import (
     AssistantProposal,
     AssistantProviderSecret,
     AssistantProviderStore,
+    ChatPyMolEdit,
+    InteractionMessage,
     ReferenceStructure,
     SceneVersionConflictError,
     StructureInteractionStore,
     ViewerAction,
     compile_viewer_actions,
-    request_assistant_proposal,
+    request_assistant_pml_edit,
     validate_safe_pml,
     validate_scene_pml,
 )
 
-_MANAGED_TARGET_LINE = (
-    "# @easydesign target object=target sha256=" + "a" * 64 + "\n"
-)
+_MANAGED_TARGET_LINE = "# @easydesign target object=target sha256=" + "a" * 64 + "\n"
 
 
 def test_safe_pml_accepts_display_commands_and_rejects_mutation() -> None:
     canonical = validate_safe_pml(
-        'show cartoon, all\ncolor marine, chain A\n'
+        "show cartoon, all\ncolor marine, chain A\n"
         'label (chain A and name CA), "%s%s" % (resn, resi)\n'
         "zoom chain A"
     )
@@ -89,9 +90,7 @@ def test_provider_store_masks_key_and_keeps_revisions(tmp_path: Path) -> None:
     )
     assert store.load("deepseek").api_key == "secret-second"
     revisions = tuple(
-        (tmp_path / "secrets" / "deepseek" / "provider.json.revisions").glob(
-            "revision-*.json"
-        )
+        (tmp_path / "secrets" / "deepseek" / "provider.json.revisions").glob("revision-*.json")
     )
     assert len(revisions) == 1
 
@@ -232,7 +231,6 @@ def test_viewer_pml_append_extends_active_scene_without_managed_line_conflict(
     assert "# @easydesign native-pymol" not in active.pml
 
 
-
 def test_structure_session_reuses_only_matching_latest_snapshot(
     tmp_path: Path,
 ) -> None:
@@ -317,296 +315,307 @@ def test_get_or_create_is_idempotent_and_view_state_is_viewer_neutral(
         viewer_actions=proposal.viewer_actions,
     )
 
-    assert updated.schema_version == "0.3"
+    assert updated.schema_version == "0.4"
     assert updated.pml_revisions == ()
     assert updated.view_state_revisions[0].actions == proposal.viewer_actions
 
 
-def test_assistant_request_uses_minimal_context_and_validates_json() -> None:
+def _assistant_secret(
+    *,
+    provider: str = "deepseek",
+    model: str = "deepseek-chat",
+    base_url: str = "https://api.deepseek.example/v1",
+) -> AssistantProviderSecret:
+    return AssistantProviderSecret(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        api_key="secret",
+        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+
+
+def _chatpymol_response(
+    pml: str,
+    *,
+    assistant_message: str = "已更新结构显示。",
+    summary: str = "更新结构显示",
+    title: str = "结构显示",
+) -> dict[str, object]:
+    return {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "assistantMessage": assistant_message,
+                            "summary": summary,
+                            "conversationTitle": title,
+                            "pml": pml,
+                        },
+                        ensure_ascii=False,
+                    )
+                }
+            }
+        ]
+    }
+
+
+def _message(index: int) -> InteractionMessage:
+    return InteractionMessage(
+        message_id=f"message-{index:02d}",
+        role="user" if index % 2 == 0 else "assistant",
+        content=f"历史消息 {index}",
+        created_at=datetime(2026, 7, 29, index % 24, tzinfo=UTC),
+    )
+
+
+def test_chatpymol_request_contains_complete_context_history_and_skills() -> None:
     captured: dict[str, object] = {}
+    previous_pml = _MANAGED_TARGET_LINE + (
+        "hide everything, all\nshow cartoon, target\ncolor gray70, target\norient target\n"
+    )
+    next_pml = previous_pml + (
+        "select ligand_nearby, target within 5 of resn LIG\n"
+        "show sticks, ligand_nearby\n"
+        "bg_color white\n"
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         captured.update(payload)
-        proposal = AssistantProposal(
-            kind="region-edit",
-            explanation="把明确给出的两个 label 编号加入 A 区。",
-            region_operations=(
-                {
-                    "operation": "add",
-                    "region_id": "A",
-                    "numbering": "label",
-                    "residues": ["32", "36"],
-                },
-            ),
-        )
         return httpx.Response(
             200,
             headers={"x-request-id": "request-001"},
-            json={
-                "choices": [
-                    {"message": {"content": proposal.model_dump_json()}}
-                ]
-            },
+            json=_chatpymol_response(next_pml),
         )
 
-    secret = AssistantProviderSecret(
-        provider="deepseek",
-        model="deepseek-chat",
-        base_url="https://api.deepseek.example/v1",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        proposal, request_id = request_assistant_proposal(
-            secret=secret,
-            user_text="把32、36加入A区",
+        edit, request_id, skill_ids = request_assistant_pml_edit(
+            secret=_assistant_secret(),
+            user_text="分析配体口袋并生成适合论文的白底图",
             context={
                 "stage_number": 2,
-                "object_id": "target",
-                "label_chain_id": "A",
-                "current_region_counts": {"A": 0, "B": 0, "C": 0},
-                "allowed_analysis_methods": ["sasa", "scannet"],
+                "currentPml": previous_pml,
+                "scene": {"objects": [{"name": "target"}]},
+                "structures": [
+                    {
+                        "objectName": "target",
+                        "format": "cif",
+                        "sha256": "a" * 64,
+                        "chains": ["A"],
+                    }
+                ],
+                "currentRegionCounts": {"A": 0, "B": 0, "C": 0},
             },
+            history=tuple(_message(index) for index in range(12)),
+            previous_pml=previous_pml,
+            known_object_names=("target",),
+            known_chain_ids=("A",),
             client=client,
         )
-    assert proposal.kind == "region-edit"
+    assert isinstance(edit, ChatPyMolEdit)
+    assert edit.pml == next_pml
     assert request_id == "request-001"
+    assert skill_ids == ("safe-pml", "ligand-pocket", "publication-figure")
+
+    messages = captured["messages"]
+    assert isinstance(messages, list)
+    assert len(messages) == 12
+    assert messages[1]["content"] == "历史消息 2"
+    assert messages[10]["content"] == "历史消息 11"
+    assert "当前完整 PML" in messages[0]["content"]
+    assert "### 技能：安全 PML（safe-pml）" in messages[0]["content"]
+    assert "### 技能：配体与口袋（ligand-pocket）" in messages[0]["content"]
+    assert "### 技能：视觉设计与论文构图（publication-figure）" in messages[0]["content"]
+    context_text = messages[-1]["content"].split("当前工作区：\n", 1)[1]
+    context_payload = json.loads(context_text.split("\n\n用户要求：", 1)[0])
+    assert context_payload["currentPml"] == previous_pml
+
     request_text = json.dumps(captured, ensure_ascii=False)
-    assert "target.cif" not in request_text
     assert "coordinates" not in request_text
     assert "msa" not in request_text.lower()
+    assert "/root/" not in request_text
+    assert "secret" not in request_text
+
+
+def test_chatpymol_skill_router_keeps_safe_skill_and_at_most_two_matches() -> None:
+    skills = select_pml_skills("请给链上色、分析界面、查看配体口袋、做论文图并结构比对")
+    assert tuple(skill.skill_id for skill in skills) == (
+        "safe-pml",
+        "ligand-pocket",
+        "publication-figure",
+    )
 
 
 def test_assistant_http_error_is_not_silently_fallback() -> None:
-    secret = AssistantProviderSecret(
-        provider="zhipu-glm",
-        model="glm-example",
-        base_url="https://glm.example/v4",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
     with httpx.Client(
         transport=httpx.MockTransport(
             lambda _request: httpx.Response(429, json={"error": "limited"})
         )
     ) as client:
         with pytest.raises(ConfigurationError, match="HTTP 429"):
-            request_assistant_proposal(
-                secret=secret,
+            request_assistant_pml_edit(
+                secret=_assistant_secret(
+                    provider="zhipu-glm",
+                    model="glm-example",
+                    base_url="https://glm.example/v4",
+                ),
                 user_text="请解释当前结构",
-                context={"stage_number": 1},
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
                 client=client,
             )
 
 
 @pytest.mark.parametrize(
-    "response",
+    "response_payload",
     (
-        httpx.Response(200, json={"choices": []}),
-        httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": "{not-json"}}]},
+        {"choices": []},
+        {"choices": [{"message": {"content": "{not-json"}}]},
+        _chatpymol_response(
+            _MANAGED_TARGET_LINE + "show cartoon, target\n",
+            assistant_message="",
         ),
-        httpx.Response(500, json={"error": "upstream failure"}),
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "assistantMessage": "完成",
+                                "summary": "完成",
+                                "conversationTitle": "完成",
+                                "pml": _MANAGED_TARGET_LINE + "show cartoon, target\n",
+                                "unexpected": True,
+                            }
+                        )
+                    }
+                }
+            ]
+        },
     ),
 )
 def test_assistant_unrecoverable_invalid_responses_fail_after_retry(
-    response: httpx.Response,
+    response_payload: dict[str, object],
 ) -> None:
-    secret = AssistantProviderSecret(
-        provider="deepseek",
-        model="deepseek-chat",
-        base_url="https://api.deepseek.example/v1",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
 
     def handler(_request: httpx.Request) -> httpx.Response:
-        return response
+        return httpx.Response(200, json=response_payload)
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(ConfigurationError):
-            request_assistant_proposal(
-                secret=secret,
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
                 user_text="请解释当前结构",
-                context={"stage_number": 1},
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
                 client=client,
             )
 
 
-def test_assistant_retries_once_and_repairs_common_json_shape() -> None:
+def test_assistant_retries_once_then_accepts_repaired_complete_pml() -> None:
     calls: list[dict[str, object]] = []
-    malformed_payload = {
-        "kind": "viewer-actions",
-        "explanation": "把背景改成白色。",
-        "viewer_actions": {
-            "action": "background",
-            "target": "all",
-            "value": "white",
-        },
-    }
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+    repaired_pml = previous_pml + "bg_color white\n"
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(json.loads(request.content))
+        if len(calls) == 1:
+            return httpx.Response(
+                200,
+                headers={"x-request-id": "request-001"},
+                json={"choices": [{"message": {"content": "{not-json"}}]},
+            )
         return httpx.Response(
             200,
             headers={"x-request-id": f"request-{len(calls):03d}"},
-            json={
-                "choices": [
-                    {"message": {"content": json.dumps(malformed_payload)}}
-                ]
-            },
+            json=_chatpymol_response(repaired_pml),
         )
 
-    secret = AssistantProviderSecret(
-        provider="deepseek",
-        model="deepseek-chat",
-        base_url="https://api.deepseek.example/v1",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        proposal, request_id = request_assistant_proposal(
-            secret=secret,
+        edit, request_id, _ = request_assistant_pml_edit(
+            secret=_assistant_secret(),
             user_text="把背景改成白色",
-            context={"stage_number": 1},
+            context={"stage_number": 1, "currentPml": previous_pml},
+            history=(),
+            previous_pml=previous_pml,
+            known_object_names=("target",),
+            known_chain_ids=("A",),
             client=client,
         )
 
     assert len(calls) == 2
-    assert "repair_instruction" in json.dumps(calls[1], ensure_ascii=False)
+    assert "上一次响应未通过" in json.dumps(calls[1], ensure_ascii=False)
     assert request_id == "request-002"
-    assert proposal.kind == "viewer-actions"
-    assert proposal.viewer_actions[0].action == "background"
+    assert edit.pml == repaired_pml
 
 
-def test_assistant_retries_semantically_invalid_viewer_action() -> None:
+def test_assistant_retries_semantically_unsafe_pml_then_fails_closed() -> None:
     calls: list[dict[str, object]] = []
-    responses = [
-        {
-            "kind": "viewer-actions",
-            "explanation": "把背景改成白色。",
-            "viewer_actions": [
-                {"action": "background", "target": "all", "value": None}
-            ],
-        },
-        {
-            "kind": "viewer-actions",
-            "explanation": "把背景改成白色。",
-            "viewer_actions": [
-                {"background": "white", "target": "all"}
-            ],
-        },
-    ]
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content))
-        payload = responses[min(len(calls) - 1, len(responses) - 1)]
-        return httpx.Response(
-            200,
-            headers={"x-request-id": f"request-{len(calls):03d}"},
-            json={
-                "choices": [
-                    {"message": {"content": json.dumps(payload)}}
-                ]
-            },
-        )
-
-    secret = AssistantProviderSecret(
-        provider="deepseek",
-        model="deepseek-chat",
-        base_url="https://api.deepseek.example/v1",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        proposal, request_id = request_assistant_proposal(
-            secret=secret,
-            user_text="把背景改成白色",
-            context={"stage_number": 1},
-            client=client,
-        )
-
-    assert len(calls) == 2
-    assert request_id == "request-002"
-    assert proposal.viewer_actions[0].value == "white"
-
-
-
-def test_assistant_repairs_common_viewer_action_aliases() -> None:
-    calls: list[dict[str, object]] = []
-    response_payload = {
-        "kind": "viewer-actions",
-        "explanation": "把结构显示为表面。",
-        "viewer_actions": [
-            {"action": "set_representation", "target": "all", "value": "surface"}
-        ],
-    }
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+    unsafe_pml = previous_pml + "fetch 1ubq\n"
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(json.loads(request.content))
         return httpx.Response(
             200,
             headers={"x-request-id": f"request-{len(calls):03d}"},
-            json={
-                "choices": [
-                    {"message": {"content": json.dumps(response_payload)}}
-                ]
-            },
+            json=_chatpymol_response(unsafe_pml),
         )
 
-    secret = AssistantProviderSecret(
-        provider="deepseek",
-        model="deepseek-chat",
-        base_url="https://api.deepseek.example/v1",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        proposal, request_id = request_assistant_proposal(
-            secret=secret,
-            user_text="把结构显示为表面",
-            context={"stage_number": 1},
-            client=client,
-        )
+        with pytest.raises(ConfigurationError, match="完整 PML 未通过"):
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
+                user_text="获取 1ubq",
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+                client=client,
+            )
 
     assert len(calls) == 2
-    assert request_id == "request-002"
-    assert proposal.viewer_actions[0].action == "representation"
-    assert proposal.viewer_actions[0].value == "surface"
-
 
 
 def test_assistant_timeout_fails_without_fallback() -> None:
-    secret = AssistantProviderSecret(
-        provider="zhipu-glm",
-        model="glm-example",
-        base_url="https://glm.example/v4",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
 
     def timeout_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("timeout", request=request)
 
     with httpx.Client(transport=httpx.MockTransport(timeout_handler)) as client:
         with pytest.raises(ConfigurationError, match="响应无法验证"):
-            request_assistant_proposal(
-                secret=secret,
+            request_assistant_pml_edit(
+                secret=_assistant_secret(
+                    provider="zhipu-glm",
+                    model="glm-example",
+                    base_url="https://glm.example/v4",
+                ),
                 user_text="请解释当前结构",
-                context={"stage_number": 1},
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
                 client=client,
             )
 
 
-def test_chatpymol_style_top_level_pml_response_creates_pml_edit_after_repair() -> None:
+def test_chatpymol_four_field_response_is_accepted_without_protocol_repair() -> None:
     calls: list[dict[str, object]] = []
     previous_pml = _MANAGED_TARGET_LINE + (
-        "hide everything, all\n"
-        "show cartoon, target\n"
-        "color gray70, target\n"
-        "orient target\n"
+        "hide everything, all\nshow cartoon, target\ncolor gray70, target\norient target\n"
     )
     response_payload = {
         "assistantMessage": "已把整个结构切换为 sticks 并居中。",
@@ -630,36 +639,82 @@ def test_chatpymol_style_top_level_pml_response_creates_pml_edit_after_repair() 
             json={"choices": [{"message": {"content": json.dumps(response_payload)}}]},
         )
 
-    secret = AssistantProviderSecret(
-        provider="deepseek",
-        model="deepseek-chat",
-        base_url="https://api.deepseek.example/v1",
-        api_key="secret",
-        configured_at=datetime(2026, 7, 29, tzinfo=UTC),
-    )
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        proposal, request_id = request_assistant_proposal(
-            secret=secret,
+        edit, request_id, skill_ids = request_assistant_pml_edit(
+            secret=_assistant_secret(),
             user_text="把整个结构显示为 sticks 并居中",
             context={"stage_number": 2, "currentPml": previous_pml},
+            history=(),
             previous_pml=previous_pml,
             known_object_names=("target",),
             known_chain_ids=("A",),
             client=client,
         )
 
-    assert len(calls) == 2
-    assert request_id == "request-002"
-    assert proposal.kind == "pml-edit"
-    assert proposal.pml_edit is not None
-    assert "show sticks, target" in proposal.pml_edit.pml
+    assert len(calls) == 1
+    assert request_id == "request-001"
+    assert skill_ids == ("safe-pml",)
+    assert "show sticks, target" in edit.pml
+
+
+def test_chatpymol_exchange_creates_immutable_scene_even_when_pml_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    store = StructureInteractionStore(tmp_path / "projects")
+    session = store.create(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=2,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+        created_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+    initial_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+    initialized = store.ensure_scene(
+        session.session_id,
+        pml=initial_pml,
+        target_object=ReferenceStructure(
+            object_id="target",
+            role="target",
+            object_name="target",
+            filename="target.cif",
+            file_format="cif",
+            sha256="a" * 64,
+            source="stage1-target-bundle",
+            created_at=datetime(2026, 7, 29, tzinfo=UTC),
+        ),
+    )
+    updated = store.append_chatpymol_exchange(
+        session.session_id,
+        user_text="解释当前结构",
+        edit=ChatPyMolEdit(
+            assistantMessage="当前保持 cartoon 显示。",
+            summary="保持当前场景",
+            conversationTitle="场景说明",
+            pml=initial_pml,
+        ),
+        provider="deepseek",
+        model="deepseek-chat",
+        request_id="request-001",
+        skill_ids=("safe-pml",),
+        known_object_names=("target",),
+        known_chain_ids=("A",),
+        updated_at=datetime(2026, 7, 29, 1, tzinfo=UTC),
+    )
+
+    assert initialized.active_scene_version_id != updated.active_scene_version_id
+    assert len(updated.scene_versions) == 2
+    version = updated.scene_versions[-1]
+    assert version.provider == "deepseek"
+    assert version.model == "deepseek-chat"
+    assert version.skill_ids == ("safe-pml",)
+    assert version.conversation_title == "场景说明"
+    assert version.parent_version_id == initialized.active_scene_version_id
+    assert updated.messages[-1].version_id == version.version_id
 
 
 def test_scene_pml_validator_protects_managed_lines_and_blocks_unsafe_commands() -> None:
-    previous_pml = _MANAGED_TARGET_LINE + (
-        "hide everything, all\n"
-        "show cartoon, target\n"
-    )
+    previous_pml = _MANAGED_TARGET_LINE + ("hide everything, all\nshow cartoon, target\n")
     valid = validate_scene_pml(
         previous_pml + "center target\n",
         previous_pml=previous_pml,
@@ -667,6 +722,20 @@ def test_scene_pml_validator_protects_managed_lines_and_blocks_unsafe_commands()
         known_chain_ids=("A",),
     )
     assert valid.endswith("center target\n")
+
+    pymol_native = validate_scene_pml(
+        previous_pml
+        + (
+            "select interface_atoms, target within 4.0 of target\n"
+            "distance interface_contacts, interface_atoms, target\n"
+            "create target_display_copy, target\n"
+        ),
+        previous_pml=previous_pml,
+        known_object_names=("target",),
+        known_chain_ids=("A",),
+    )
+    assert "distance interface_contacts" in pymol_native
+    assert "create target_display_copy" in pymol_native
 
     with pytest.raises(ConfigurationError, match="受保护"):
         validate_scene_pml(
@@ -676,7 +745,7 @@ def test_scene_pml_validator_protects_managed_lines_and_blocks_unsafe_commands()
             known_chain_ids=("A",),
         )
 
-    with pytest.raises(ConfigurationError, match="安全列表"):
+    with pytest.raises(ConfigurationError, match="系统、文件或网络边界"):
         validate_scene_pml(
             previous_pml + "fetch 1ubq\n",
             previous_pml=previous_pml,
@@ -684,9 +753,34 @@ def test_scene_pml_validator_protects_managed_lines_and_blocks_unsafe_commands()
             known_chain_ids=("A",),
         )
 
+    for destructive in ("delete target", "remove target", "system rm -rf /tmp/example"):
+        with pytest.raises(ConfigurationError, match="系统、文件或网络边界"):
+            validate_scene_pml(
+                previous_pml + destructive + "\n",
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+            )
+
     with pytest.raises(ConfigurationError, match="不存在的对象"):
         validate_scene_pml(
             previous_pml + "align reference_1ubq, target\n",
+            previous_pml=previous_pml,
+            known_object_names=("target",),
+            known_chain_ids=("A",),
+        )
+
+    with pytest.raises(ConfigurationError, match="不存在的对象或 selection"):
+        validate_scene_pml(
+            previous_pml + "show sticks, invented_object\n",
+            previous_pml=previous_pml,
+            known_object_names=("target",),
+            known_chain_ids=("A",),
+        )
+
+    with pytest.raises(ConfigurationError, match="不能用 create 覆盖"):
+        validate_scene_pml(
+            previous_pml + "create target, target\n",
             previous_pml=previous_pml,
             known_object_names=("target",),
             known_chain_ids=("A",),
@@ -716,12 +810,7 @@ def test_scene_versions_restore_as_new_version_instead_of_overwriting(tmp_path: 
     initial = store.ensure_scene(
         session.session_id,
         pml=_MANAGED_TARGET_LINE
-        + (
-            "hide everything, all\n"
-            "show cartoon, target\n"
-            "color gray70, target\n"
-            "orient target\n"
-        ),
+        + ("hide everything, all\nshow cartoon, target\ncolor gray70, target\norient target\n"),
         target_object=target,
         updated_at=datetime(2026, 7, 29, tzinfo=UTC),
     )
@@ -813,12 +902,7 @@ def test_scene_version_can_add_server_managed_reference_line_only_when_allowed(
     initialized = store.ensure_scene(
         session.session_id,
         pml=_MANAGED_TARGET_LINE
-        + (
-            "hide everything, all\n"
-            "show cartoon, target\n"
-            "color gray70, target\n"
-            "orient target\n"
-        ),
+        + ("hide everything, all\nshow cartoon, target\ncolor gray70, target\norient target\n"),
         target_object=target,
         updated_at=datetime(2026, 7, 29, tzinfo=UTC),
     )
@@ -833,8 +917,7 @@ def test_scene_version_can_add_server_managed_reference_line_only_when_allowed(
         created_at=datetime(2026, 7, 29, 1, tzinfo=UTC),
     )
     managed = (
-        "# @easydesign reference object=ref_1ubq "
-        "object_id=reference-000001 sha256=" + "c" * 64
+        "# @easydesign reference object=ref_1ubq object_id=reference-000001 sha256=" + "c" * 64
     )
     next_pml = (
         initialized.scene_versions[-1].pml
@@ -869,8 +952,6 @@ def test_scene_version_can_add_server_managed_reference_line_only_when_allowed(
     assert managed in updated.scene_versions[-1].pml
 
 
-
-
 def test_scene_version_stale_base_raises_conflict(tmp_path: Path) -> None:
     store = StructureInteractionStore(tmp_path / "projects")
     session = store.create(
@@ -893,12 +974,7 @@ def test_scene_version_stale_base_raises_conflict(tmp_path: Path) -> None:
     )
     initialized = store.ensure_scene(
         session.session_id,
-        pml=_MANAGED_TARGET_LINE
-        + (
-            "hide everything, all\n"
-            "show cartoon, target\n"
-            "orient target\n"
-        ),
+        pml=_MANAGED_TARGET_LINE + ("hide everything, all\nshow cartoon, target\norient target\n"),
         target_object=target,
     )
     updated, _ = store.save_scene_version(

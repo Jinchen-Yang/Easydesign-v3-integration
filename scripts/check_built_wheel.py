@@ -17,6 +17,7 @@ UI_PREFIX = "easydesign/ui/static"
 SCAFFOLD_PREFIX = (
     "easydesign/resources/scaffolds/vhh/official_boltzgen_0_3_2"
 )
+PML_SKILL_PREFIX = "easydesign/ui/pml_skill_library"
 EXPECTED_VIEWER = (
     "index.html",
     "easydesign-viewer.js",
@@ -42,6 +43,14 @@ EXPECTED_SCAFFOLDS = (
     "sonelokimab.cif",
     "BOLTZGEN_LICENSE.txt",
 )
+EXPECTED_PML_SKILLS = (
+    "safe-pml/SKILL.md",
+    "chain-coloring/SKILL.md",
+    "interface-analysis/SKILL.md",
+    "ligand-pocket/SKILL.md",
+    "publication-figure/SKILL.md",
+    "structure-alignment/SKILL.md",
+)
 
 
 def main() -> int:
@@ -54,8 +63,8 @@ def main() -> int:
         print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
         return 1
     wheel = wheels[0]
-    if "0.1.0.dev28" not in wheel.name:
-        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev28: {wheel.name}", file=sys.stderr)
+    if "0.1.0.dev29" not in wheel.name:
+        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev29: {wheel.name}", file=sys.stderr)
         return 1
     source_root = ROOT / "src" / PACKAGE_PREFIX
     try:
@@ -76,6 +85,16 @@ def main() -> int:
                 if archive.read(member) != source.read_bytes():
                     print(
                         f"ERROR: wheel scaffold 资产与源码字节不一致: {relative}",
+                        file=sys.stderr,
+                    )
+                    return 1
+            skill_source = ROOT / "src" / PML_SKILL_PREFIX
+            for relative in EXPECTED_PML_SKILLS:
+                member = f"{PML_SKILL_PREFIX}/{relative}"
+                source = skill_source / relative
+                if archive.read(member) != source.read_bytes():
+                    print(
+                        f"ERROR: wheel PML Skill 与源码字节不一致: {relative}",
                         file=sys.stderr,
                     )
                     return 1
@@ -152,7 +171,7 @@ def main() -> int:
                         for item in sys.path
                         if item
                         and "site-packages" in item
-                        and str(ROOT) not in item
+                        and Path(item).resolve() != (ROOT / "src").resolve()
                     ],
                 ]
             )
@@ -181,7 +200,7 @@ def main() -> int:
                 timeout=30,
                 env=dependency_environment,
             ).stdout.strip()
-            if version != "0.1.0.dev28":
+            if version != "0.1.0.dev29":
                 raise RuntimeError(f"console-script 版本异常: {version}")
             subprocess.run(
                 [str(python), "-m", "easydesign", "--help"],
@@ -204,7 +223,7 @@ def main() -> int:
         return 1
     print(
         f"wheel assets and console script verified: {wheel.name} "
-        "(Target Viewer、VHH7、Workbench resources)"
+        "(Target Viewer、VHH7、PML Skills、Workbench resources)"
     )
     return 0
 

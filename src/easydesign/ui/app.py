@@ -116,15 +116,18 @@ from .stage05 import (
     metric_catalog,
 )
 from .structure_interactions import (
+    AssistantProposal,
     AssistantProviderStore,
     ReferenceStructure,
     RegionEditOperation,
     SceneVersion,
     SceneVersionConflictError,
+    ScientificAnalysisPlan,
     StructureInteractionStore,
     derive_scene_summary,
     normalize_regions,
-    request_assistant_proposal,
+    request_assistant_pml_edit,
+    split_pml_commands,
 )
 from .uploads import UploadStore
 
@@ -299,8 +302,9 @@ class AssistantMessageRequest(BaseModel):
 class PmlRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    pml: str = Field(min_length=1, max_length=1_000_000)
+    pml: str = Field(min_length=1, max_length=2_000_000)
     source: Literal["viewer", "expert-console"] = "expert-console"
+    base_version_id: str | None = None
 
 
 class ProposalApplyRequest(BaseModel):
@@ -782,7 +786,10 @@ def _author_selector_from_labels(
         if residue.label_seq_id not in requested:
             continue
         chain = residue.auth_chain_id or "A"
-        value = f"{residue.auth_residue_id}{residue.insertion_code or ''}"
+        value = _author_residue_token(
+            residue.auth_residue_id,
+            residue.insertion_code,
+        )
         by_chain.setdefault(chain, []).append(value)
     clauses = [
         f"(chain {chain} and resi {'+'.join(sorted(set(values)))})"
@@ -790,6 +797,17 @@ def _author_selector_from_labels(
         if values
     ]
     return " or ".join(clauses) if clauses else "none"
+
+
+def _author_residue_token(
+    auth_residue_id: str,
+    insertion_code: str | None,
+) -> str:
+    value = str(auth_residue_id)
+    code = insertion_code or ""
+    if code and not value.upper().endswith(code.upper()):
+        value += code
+    return value
 
 
 def _target_reference(region_projection: Any) -> ReferenceStructure:
@@ -856,30 +874,57 @@ def _assistant_scene_context(
         region_id: list(session.current_regions.get(region_id, ()))
         for region_id in ("A", "B", "C")
     }
-    residue_rows = [
+    residue_numbering = [
         {
             "label_seq_id": item.label_seq_id,
-            "amino_acid": item.amino_acid,
             "auth_chain_id": item.auth_chain_id,
             "auth_residue_id": item.auth_residue_id,
             "insertion_code": item.insertion_code,
-            "current_region": item.current_region,
         }
         for item in region_projection.residues[:500]
     ]
+    chain_rows: dict[str, list[Any]] = {}
+    for item in region_projection.residues:
+        chain_rows.setdefault(item.auth_chain_id or "A", []).append(item)
     return {
         "stage_number": session.stage_number,
-        "object_id": region_projection.target_id,
-        "objects": [item.model_dump(mode="json") for item in session.reference_structures],
-        "label_chain_id": "A",
-        "known_chains": list(_known_chains(region_projection)),
-        "numbering": ["label", "auth", "sequence", "uniprot"],
+        "structure_metadata": {
+            "target_id": region_projection.target_id,
+            "target_structure_sha256": session.target_structure_sha256,
+            "residue_mapping_sha256": session.residue_mapping_sha256,
+            "objects": [
+                {
+                    "object_name": item.object_name,
+                    "role": item.role,
+                    "filename": item.filename,
+                    "format": item.file_format,
+                    "sha256": item.sha256,
+                }
+                for item in session.reference_structures
+            ],
+            "chains": [
+                {
+                    "id": chain_id,
+                    "residue_count": len(rows),
+                    "auth_start": rows[0].auth_residue_id,
+                    "auth_end": rows[-1].auth_residue_id,
+                }
+                for chain_id, rows in sorted(chain_rows.items())
+            ],
+            "label_chain_id": "A",
+        },
+        "numbering": {
+            "selection_rule": (
+                "ed_region_A/B/C 使用 author chain/residue selector；"
+                "EasyDesign 再确定性映射到 label_seq_id"
+            ),
+            "rows": residue_numbering,
+        },
         "current_region_counts": {
             region_id: len(values)
             for region_id, values in region_residues.items()
         },
         "current_regions": region_residues,
-        "residues": residue_rows,
         "scene_versions": [
             {
                 "version_id": item.version_id,
@@ -896,6 +941,128 @@ def _assistant_scene_context(
         "currentPml": pml,
         "allowed_analysis_methods": ["sasa", "scannet"],
     }
+
+
+_REGION_SELECTION_NAME = re.compile(r"^ed_region_([ABC])$", re.IGNORECASE)
+_REGION_CHAIN_RESI = re.compile(
+    r"(?:chain\s+([A-Za-z0-9_.-]+)\s+and\s+)?resi\s+([A-Za-z0-9+\\-]+)",
+    re.IGNORECASE,
+)
+
+
+def _reserved_region_commands(pml: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for command in split_pml_commands(pml):
+        name, _, remainder = command.partition(" ")
+        if name.lower() != "select":
+            continue
+        selection_name, separator, expression = remainder.partition(",")
+        if not separator:
+            continue
+        match = _REGION_SELECTION_NAME.fullmatch(selection_name.strip())
+        if match:
+            result[match.group(1).upper()] = expression.strip()
+    return result
+
+
+def _expand_residue_token(token: str) -> tuple[str, ...]:
+    if "-" not in token:
+        return (token,)
+    start, separator, end = token.partition("-")
+    if not separator or not start.isdigit() or not end.isdigit():
+        return (token,)
+    start_value = int(start)
+    end_value = int(end)
+    if start_value > end_value or end_value - start_value > 10_000:
+        raise ConfigurationError(f"无效的残基范围: {token}")
+    return tuple(str(value) for value in range(start_value, end_value + 1))
+
+
+def _regions_from_scene_pml(
+    pml: str,
+    region_projection: Any,
+) -> dict[str, tuple[int, ...]]:
+    expressions = _reserved_region_commands(pml)
+    known_chains = _known_chains(region_projection)
+    lookup: dict[tuple[str, str], int] = {}
+    for item in region_projection.residues:
+        chain = item.auth_chain_id or "A"
+        auth_value = _author_residue_token(
+            item.auth_residue_id,
+            item.insertion_code,
+        )
+        key = (chain, auth_value)
+        if key in lookup and lookup[key] != item.label_seq_id:
+            raise ConfigurationError(
+                f"author 编号 {chain}:{auth_value} 不能唯一映射到 label_seq_id"
+            )
+        lookup[key] = item.label_seq_id
+    result: dict[str, tuple[int, ...]] = {}
+    for region_id in ("A", "B", "C"):
+        expression = expressions.get(region_id)
+        if expression is None:
+            continue
+        if expression.strip().lower() in {"none", "(none)"}:
+            continue
+        matches = tuple(_REGION_CHAIN_RESI.finditer(expression))
+        if not matches:
+            raise ConfigurationError(
+                f"ed_region_{region_id} 必须使用明确的 chain/resi selector"
+            )
+        labels: set[int] = set()
+        for match in matches:
+            chain = match.group(1)
+            if chain is None:
+                if len(known_chains) != 1:
+                    raise ConfigurationError(
+                        f"ed_region_{region_id} 在多链结构中必须明确 chain"
+                    )
+                chain = known_chains[0]
+            if chain not in known_chains:
+                raise ConfigurationError(f"PML 引用了当前结构中不存在的链: {chain}")
+            for raw_token in match.group(2).split("+"):
+                for token in _expand_residue_token(raw_token):
+                    label = lookup.get((chain, token))
+                    if label is None:
+                        raise ConfigurationError(
+                            f"ed_region_{region_id} 残基 {chain}:{token} "
+                            "不能唯一映射到 Target Bundle"
+                        )
+                    labels.add(label)
+        if labels:
+            result[region_id] = tuple(sorted(labels))
+    return normalize_regions(result)
+
+
+def _is_explicit_region_edit(message: str) -> bool:
+    region = re.search(r"(?:区域\s*[ABC]|[ABC]\s*区)", message, re.IGNORECASE)
+    operation = re.search(
+        r"(?:加入|添加|移入|移到|移出|删除|取消|清空|替换|改为|标记|选择|add|remove|clear|replace|toggle)",
+        message,
+        re.IGNORECASE,
+    )
+    return region is not None and operation is not None
+
+
+def _scientific_analysis_methods(
+    message: str,
+) -> tuple[Literal["sasa", "scannet"], ...]:
+    if _is_explicit_region_edit(message):
+        return ()
+    scientific = re.search(
+        r"(?:最佳.*(?:区域|hotspot)|寻找.*(?:区域|hotspot)|预测.*(?:区域|hotspot)|"
+        r"自动选区|结合热点|binding\s*site|hotspot|sasa|scannet)",
+        message,
+        re.IGNORECASE,
+    )
+    if scientific is None:
+        return ()
+    methods: list[Literal["sasa", "scannet"]] = []
+    if re.search(r"sasa", message, re.IGNORECASE):
+        methods.append("sasa")
+    if re.search(r"scannet", message, re.IGNORECASE):
+        methods.append("scannet")
+    return tuple(methods or ["sasa", "scannet"])
 
 
 
@@ -2364,10 +2531,34 @@ def create_ui_app(
         try:
             if not payload.confirmed:
                 raise ConfigurationError("恢复 PML 场景版本必须明确 confirmed=true")
+            session = service.structure_sessions.load(session_id)
+            target_version = next(
+                (
+                    item
+                    for item in session.scene_versions
+                    if item.version_id == version_id
+                ),
+                None,
+            )
+            if target_version is None:
+                raise ConfigurationError("要恢复的 PML 场景版本不存在")
+            current_regions = session.current_regions
+            if session.stage_number == 2:
+                root = service.registry.resolve(session.run_key)
+                region_projection = get_region_editor_projection(
+                    root,
+                    run_key=session.run_key,
+                    signer=service.signer,
+                )
+                current_regions = _regions_from_scene_pml(
+                    target_version.pml,
+                    region_projection,
+                )
             updated, version = service.structure_sessions.restore_scene_version(
                 session_id,
                 version_id=version_id,
                 base_version_id=payload.base_version_id,
+                current_regions=current_regions,
             )
             return {
                 "session": updated.model_dump(mode="json"),
@@ -2411,32 +2602,68 @@ def create_ui_app(
             object_names = _scene_objects(session)
             chain_ids = _known_chains(region_projection)
             secret = service.assistant_providers.load_platform()
-            proposal, request_id = request_assistant_proposal(
+            edit, request_id, skill_ids = request_assistant_pml_edit(
                 secret=secret,
                 user_text=payload.message,
                 context=_assistant_scene_context(session, region_projection, active_version),
-                previous_pml=None if active_version is None else active_version.pml,
+                history=session.messages,
+                previous_pml="" if active_version is None else active_version.pml,
                 known_object_names=object_names,
                 known_chain_ids=chain_ids,
             )
-            if proposal.kind == "pml-edit":
-                return service.structure_sessions.append_pml_exchange(
+            previous_pml = "" if active_version is None else active_version.pml
+            analysis_methods = _scientific_analysis_methods(payload.message)
+            if analysis_methods:
+                if _reserved_region_commands(edit.pml) != _reserved_region_commands(previous_pml):
+                    raise ConfigurationError(
+                        "自动寻找区域只能生成 SASA/ScanNet 待确认计划，"
+                        "模型不能直接改写 A/B/C"
+                    )
+                proposal = AssistantProposal(
+                    kind="analysis-plan",
+                    explanation=edit.assistant_message,
+                    analysis_plan=ScientificAnalysisPlan(
+                        methods=analysis_methods,
+                        requires_confirmation=True,
+                        reason=edit.summary,
+                    ),
+                )
+                return service.structure_sessions.append_chatpymol_exchange(
                     session_id,
                     user_text=payload.message,
+                    edit=edit,
+                    skill_ids=skill_ids,
                     proposal=proposal,
                     provider=secret.provider,
                     model=secret.model,
                     request_id=request_id,
                     known_object_names=object_names,
                     known_chain_ids=chain_ids,
+                    current_regions=session.current_regions,
                 )
-            return service.structure_sessions.append_exchange(
+            explicit_region_edit = (
+                session.stage_number == 2 and _is_explicit_region_edit(payload.message)
+            )
+            previous_region_commands = _reserved_region_commands(previous_pml)
+            next_region_commands = _reserved_region_commands(edit.pml)
+            if not explicit_region_edit and next_region_commands != previous_region_commands:
+                raise ConfigurationError(
+                    "本次请求没有明确要求修改 A/B/C，模型不能改变受管理区域 selection"
+                )
+            next_regions = session.current_regions
+            if explicit_region_edit:
+                next_regions = _regions_from_scene_pml(edit.pml, region_projection)
+            return service.structure_sessions.append_chatpymol_exchange(
                 session_id,
                 user_text=payload.message,
-                proposal=proposal,
+                edit=edit,
                 provider=secret.provider,
                 model=secret.model,
                 request_id=request_id,
+                skill_ids=skill_ids,
+                known_object_names=object_names,
+                known_chain_ids=chain_ids,
+                current_regions=next_regions,
             )
         except Exception as error:
             _raise_http(error)
@@ -2457,15 +2684,29 @@ def create_ui_app(
                 run_key=session.run_key,
                 signer=service.signer,
             )
+            active = service.structure_sessions.active_scene_version(session_id)
+            current_regions = session.current_regions
+            if (
+                session.stage_number == 2
+                and active is not None
+                and _reserved_region_commands(payload.pml)
+                != _reserved_region_commands(active.pml)
+            ):
+                current_regions = _regions_from_scene_pml(payload.pml, region_projection)
             updated, version = service.structure_sessions.save_scene_version(
                 session_id,
                 pml=payload.pml,
                 actor="human" if payload.source == "expert-console" else "viewer",
                 source=f"pml-editor:{payload.source}",
                 summary="人工编辑完整 PML 场景",
-                base_version_id=session.active_scene_version_id,
+                base_version_id=(
+                    payload.base_version_id
+                    if payload.base_version_id is not None
+                    else session.active_scene_version_id
+                ),
                 known_object_names=_scene_objects(session),
                 known_chain_ids=_known_chains(region_projection),
+                current_regions=current_regions,
             )
             return {
                 "session": updated.model_dump(mode="json"),

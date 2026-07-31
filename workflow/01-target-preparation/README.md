@@ -440,17 +440,22 @@ Stage 01 中所有 PyMOL 操作都属于显示状态：
 
 交互状态写入
 `projects/<project_id>/interactive-sessions/<session_id>/` 的
-`StructureInteractionSession 0.1` revision。它不是 Stage 01 artifact，不加入
-StageManifest，也不能成为 Stage 02 的隐式输入。PSE 仍由独立服务器 PyMOL 3.1.0
-worker 解析；浏览器 PyMOL 不替代 Stage 01 PSE adapter。
+`StructureInteractionSession 0.4`。当前完整 PML 是唯一场景事实；每次更新发布新的
+SceneVersion，并记录 parent/base version、SHA-256、actor、provider/model 和实际使用的
+PML Skill。安全追加只增量执行；修改旧内容、恢复历史或增量失败时重新构建结构并完整
+重放。Mol* 只投影它可靠支持的 PML 子集，不能限制 PyMOL。交互会话不是 Stage 01
+artifact，不加入 StageManifest，也不能成为 Stage 02 的隐式输入。PSE 仍由独立服务器
+PyMOL 3.1.0 worker 解析；浏览器 PyMOL 不替代 Stage 01 PSE adapter。
 
 平台结构助手由部署者在
 `runtime/secrets/structure-assistant/platform-provider.yaml` 选择 DeepSeek 或智谱
 GLM，并固定模型与 endpoint。普通使用者不选择 provider，也不填写 API key；前端只能
 看到“EasyDesign 结构助手”是否可用。平台服务未启用时只禁用助手，查看器和 Stage 01
-正常运行。模型请求不包含坐标、MSA、完整序列、绝对路径或密钥，只发送用户文字、
-stage、对象/链、编号说明和当前选区摘要。Stage 01 助手只能生成经过 Schema 校验的
-显示建议或解释，不能修改结构或判断 hotspot。
+正常运行。模型请求不包含坐标、MSA、完整序列、绝对路径或密钥，只发送当前完整 PML、
+场景/结构 metadata、最近十轮对话、动态 PML Skills 和用户文字。模型必须返回
+`assistantMessage/summary/conversationTitle/pml` 四字段 JSON；完整 PML 经过安全校验
+并形成不可变 SceneVersion。Stage 01 助手只能修改浏览器可视化场景，不能修改
+Target Bundle 或判断 hotspot。
 
 PyMOL 与 Mol* 首次加载后在同一结构工作区持续保留实例。切换查看器只改变显隐，不卸载
 PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重绘，防止运行时仍

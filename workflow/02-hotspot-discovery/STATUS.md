@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML、交互选区与自然语言明确残基操作共享人工批准交接；dev28 修复双查看器协作回归后，APOE 9/14/14 区域通过多轮 PyMOL↔Mol* 往返。 | 推进区域科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 |
+| `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 |
 
 ## 当前结论
 
@@ -61,9 +61,10 @@
   `queued/running` 时显示进度，并在终态打开新分支。
 - 区域编辑器不再提供独立橡皮擦。Mol* 和序列均使用同一 toggle：同区再次点击取消，
   切换画笔后点击则移动到新区。
-- S02-010 允许 DeepSeek/智谱 GLM 把用户明确给出的编号解析为 A/B/C 编辑操作；操作仍
-  进入当前编辑草稿并需要人工批准。要求“寻找最佳区域”时，模型只能返回待确认的
-  SASA/ScanNet plan，不能直接输出区域或改变两种方法的排序。
+- REP-009 用完整 PML 替代 S02-010 的模型侧 typed 区域协议。用户明确给出的编号写入
+  `ed_region_A/B/C` selection，服务端再确定性映射为 `label_seq_id` 编辑草稿；场景
+  revision 本身不发布区域，仍需人工批准。要求“寻找最佳区域”时，服务端只形成待确认的
+  SASA/ScanNet plan，模型不能直接输出区域或改变两种方法的排序。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -91,7 +92,7 @@
 | 人工批准与 `hotspots.yaml` | `smoke-validated` | automatic/user region_source、revision/hash、完整区域、两类 acknowledgement 与 APOE 真实审批 |
 | detect/automatic 显式优先级 | `implemented` | detect 标准色命中或 automatic fallback；explicit automatic 不消费 annotation |
 | UI 交互式 A/B/C 重选 | `smoke-validated` | 真实 APOE PSE 可见结构、三图层与 9/14/14 新分支通过；dev19 增加缺失确认逐项反馈、问题字段聚焦、job 进度和成功跳转 |
-| 自然语言明确残基/分析计划 | `smoke-validated` | 平台统一 provider、类型化 proposal、无坐标最小请求、非法 JSON/429/5xx/timeout 无 fallback、安全 PML 与人工 branch 边界通过 |
+| 自然语言明确残基/分析计划 | `implemented` | 完整 PML 四字段响应、`ed_region_A/B/C` 到 label/auth 往返、无坐标请求和人工 branch 边界通过工程测试；真实 provider 连续区域编辑待复验 |
 | unattended 单方法 handoff | `implemented` | policy ID、完整 Top 2–3、structural-only 显式许可；无跨方法融合 |
 | SASA MAX_ASA 来源/归一化 benchmark | `planned` | 当前常数已落盘，但来源登记和替代表对照未完成 |
 | ScanNet PPBS/interface no-MSA | `planned` | 未安装、未测试 |

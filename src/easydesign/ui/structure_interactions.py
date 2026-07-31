@@ -1,8 +1,8 @@
-"""Safe, project-local structure interaction sessions and model adapters.
+"""Project-local full-PML structure sessions and model adapters.
 
-The browser may render a verified structure and the assistant may propose
-display or explicit region operations.  Neither component is allowed to
-mutate the scientific Target Bundle or publish a Stage 02 decision directly.
+The assistant follows ChatPyMol's complete-document loop.  PML is the
+visualization source of truth, while Stage 02 publication remains a separate,
+deterministic mapping and human-approval boundary.
 """
 
 from __future__ import annotations
@@ -27,12 +27,15 @@ from easydesign.orchestration.task_tracking import (
     atomic_dump_runtime_model,
     load_latest_runtime_model,
 )
+from easydesign.ui.pml_skills import PmlSkill, render_pml_skills, select_pml_skills
 
 ProviderId = Literal["deepseek", "zhipu-glm"]
 
 
 class SceneVersionConflictError(ConfigurationError):
     """Raised when a PML scene edit targets a stale base version."""
+
+
 ProposalKind = Literal[
     "pml-edit",
     "viewer-actions",
@@ -122,30 +125,37 @@ _BLOCKED_COMMANDS = frozenset(
         "system",
     }
 )
+_MODEL_BLOCKED_COMMANDS = _BLOCKED_COMMANDS - {"create"}
 
-_SCENE_SAFE_COMMANDS = _SAFE_COMMANDS | frozenset(
-    {
-        "align",
-        "cealign",
-        "clip",
-        "distance",
-        "dist",
-        "enable",
-        "disable",
-        "isomesh",
-        "isosurface",
-        "ray",
-        "rotate",
-        "super",
-        "translate",
-        "turn",
-        "util.cbc",
-        "viewport",
-    }
-)
 _MANAGED_LINE_PREFIX = "# @easydesign"
+_MANAGED_OBJECT_PATTERN = re.compile(r"\bobject=([A-Za-z_][A-Za-z0-9_.-]*)\b")
 _CHAIN_PATTERN = re.compile(r"\bchain\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 _ALIGN_PATTERN = re.compile(r"^(?:align|super|cealign)\s+([^,\s]+)\s*,\s*([^,\s]+)", re.IGNORECASE)
+_UNRESOLVED_PLACEHOLDER = re.compile(
+    r"[<\[](?:object|selection|chain|residue|name)[>\]]",
+    re.IGNORECASE,
+)
+_SIMPLE_SELECTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+_BUILTIN_SELECTION_NAMES = frozenset(
+    {
+        "all",
+        "none",
+        "enabled",
+        "visible",
+        "polymer",
+        "protein",
+        "nucleic",
+        "organic",
+        "inorganic",
+        "solvent",
+        "hydro",
+        "hetatm",
+        "metals",
+        "guide",
+        "backbone",
+        "sidechain",
+    }
+)
 
 
 def _sha256_text(value: str) -> str:
@@ -158,9 +168,15 @@ def _new_scene_version_id(revision: int) -> str:
 
 def _managed_lines(value: str) -> tuple[str, ...]:
     return tuple(
-        line.strip()
-        for line in value.splitlines()
-        if line.strip().startswith(_MANAGED_LINE_PREFIX)
+        line.strip() for line in value.splitlines() if line.strip().startswith(_MANAGED_LINE_PREFIX)
+    )
+
+
+def _managed_object_names(value: str) -> tuple[str, ...]:
+    return tuple(
+        match.group(1)
+        for line in _managed_lines(value)
+        if (match := _MANAGED_OBJECT_PATTERN.search(line)) is not None
     )
 
 
@@ -174,6 +190,39 @@ def _balanced(value: str) -> bool:
         if depth < 0:
             return False
     return depth == 0
+
+
+def _simple_selection_name(value: str) -> str | None:
+    candidate = value.strip()
+    while (
+        len(candidate) >= 2
+        and candidate.startswith("(")
+        and candidate.endswith(")")
+        and _balanced(candidate[1:-1])
+    ):
+        candidate = candidate[1:-1].strip()
+    return candidate if _SIMPLE_SELECTION_NAME.fullmatch(candidate) else None
+
+
+def _selection_arguments(command: str) -> tuple[str, ...]:
+    name, _, remainder = command.partition(" ")
+    lower = name.lower()
+    arguments = tuple(item.strip() for item in remainder.split(","))
+    if lower in {"show", "hide", "as", "color"}:
+        return arguments[1:2]
+    if lower in {"center", "orient", "origin", "zoom", "unlabel"}:
+        return arguments[:1]
+    if lower == "label":
+        return arguments[:1]
+    if lower == "distance":
+        return arguments[1:3]
+    if lower == "create":
+        return arguments[1:2]
+    if lower == "set" and len(arguments) >= 3:
+        return arguments[2:3]
+    if lower == "spectrum" and len(arguments) >= 3:
+        return arguments[2:3]
+    return ()
 
 
 class ViewerAction(BaseModel):
@@ -252,6 +301,25 @@ class PmlEditProposal(BaseModel):
     pml: str = Field(min_length=1, max_length=2_000_000)
 
 
+class ChatPyMolEdit(BaseModel):
+    """The sole response contract for new structure-assistant requests."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
+
+    assistant_message: str = Field(
+        alias="assistantMessage",
+        min_length=1,
+        max_length=8_000,
+    )
+    summary: str = Field(min_length=1, max_length=240)
+    conversation_title: str = Field(
+        alias="conversationTitle",
+        min_length=1,
+        max_length=80,
+    )
+    pml: str = Field(min_length=1, max_length=2_000_000)
+
+
 class ReferenceStructure(BaseModel):
     """A visual-only reference object available to the Stage 2 scene."""
 
@@ -278,6 +346,10 @@ class SceneVersion(BaseModel):
     base_version_id: str | None = None
     actor: Literal["human", "ai", "viewer", "system"] = "system"
     source: str = Field(min_length=1, max_length=120)
+    provider: ProviderId | None = None
+    model: str | None = None
+    skill_ids: tuple[str, ...] = ()
+    conversation_title: str | None = Field(default=None, max_length=80)
     summary: str = Field(min_length=1, max_length=240)
     pml: str = Field(min_length=1, max_length=2_000_000)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -285,7 +357,7 @@ class SceneVersion(BaseModel):
 
 
 class AssistantProposal(BaseModel):
-    """The only shape accepted from a remote language model."""
+    """Legacy typed proposal retained for old records and server-derived plans."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -366,7 +438,7 @@ class StructureInteractionSession(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1", "0.2", "0.3"] = "0.3"
+    schema_version: Literal["0.1", "0.2", "0.3", "0.4"] = "0.4"
     session_id: str
     project_id: str
     run_key: str
@@ -609,9 +681,9 @@ class StructureInteractionStore:
         target_structure_sha256: str,
         residue_mapping_sha256: str,
     ) -> StructureInteractionSession | None:
-        roots = (
-            self._project_root(project_id) / "interactive-sessions"
-        ).glob("structure-session-*/session.json")
+        roots = (self._project_root(project_id) / "interactive-sessions").glob(
+            "structure-session-*/session.json"
+        )
         matches: list[StructureInteractionSession] = []
         for path in roots:
             try:
@@ -673,16 +745,15 @@ class StructureInteractionStore:
         proposals = tuple(
             message.proposal
             for message in current.messages
-            if message.proposal is not None
-            and message.proposal.proposal_id == proposal_id
+            if message.proposal is not None and message.proposal.proposal_id == proposal_id
         )
         if len(proposals) != 1:
             raise ConfigurationError("待应用的助手 proposal 不存在或不唯一")
         return proposals[0]
 
     def _publish(self, value: StructureInteractionSession) -> StructureInteractionSession:
-        if value.schema_version != "0.3":
-            value = value.model_copy(update={"schema_version": "0.3"})
+        if value.schema_version != "0.4":
+            value = value.model_copy(update={"schema_version": "0.4"})
         path = self._session_root(value.project_id, value.session_id) / "session.json"
         atomic_dump_runtime_model(value, path)
         return value
@@ -750,10 +821,16 @@ class StructureInteractionStore:
         summary: str,
         base_version_id: str | None = None,
         parent_version_id: str | None = None,
+        provider: ProviderId | None = None,
+        model: str | None = None,
+        skill_ids: tuple[str, ...] = (),
+        conversation_title: str | None = None,
         known_object_names: tuple[str, ...] = (),
         known_chain_ids: tuple[str, ...] = (),
         allowed_new_managed_lines: tuple[str, ...] = (),
         reference_structures: tuple[ReferenceStructure, ...] | None = None,
+        current_regions: dict[str, tuple[int, ...]] | None = None,
+        force_new_version: bool = False,
         updated_at: datetime | None = None,
     ) -> tuple[StructureInteractionSession, SceneVersion]:
         current = self.load(session_id)
@@ -777,7 +854,7 @@ class StructureInteractionStore:
             known_chain_ids=known_chain_ids,
             allowed_new_managed_lines=allowed_new_managed_lines,
         )
-        if active is not None and normalized == active.pml:
+        if active is not None and normalized == active.pml and not force_new_version:
             return current, active
         now = updated_at or datetime.now(tz=UTC)
         revision = len(current.scene_versions) + 1
@@ -788,6 +865,12 @@ class StructureInteractionStore:
             base_version_id=base_version_id,
             actor=actor,
             source=source[:120] or "scene-edit",
+            provider=provider,
+            model=model,
+            skill_ids=tuple(skill_ids),
+            conversation_title=(
+                conversation_title[:80] if conversation_title is not None else None
+            ),
             summary=summary[:240] or "更新 PML 场景",
             pml=normalized,
             sha256=_sha256_text(normalized),
@@ -800,9 +883,9 @@ class StructureInteractionStore:
         }
         if reference_structures is not None:
             update_payload["reference_structures"] = reference_structures
-        updated = self._publish(
-            current.model_copy(update=update_payload)
-        )
+        if current_regions is not None:
+            update_payload["current_regions"] = normalize_regions(current_regions)
+        updated = self._publish(current.model_copy(update=update_payload))
         return updated, version
 
     def restore_scene_version(
@@ -811,6 +894,7 @@ class StructureInteractionStore:
         *,
         version_id: str,
         base_version_id: str | None = None,
+        current_regions: dict[str, tuple[int, ...]] | None = None,
         updated_at: datetime | None = None,
     ) -> tuple[StructureInteractionSession, SceneVersion]:
         current = self.load(session_id)
@@ -828,6 +912,7 @@ class StructureInteractionStore:
             summary=f"恢复到 PML 场景版本 {target.revision}",
             base_version_id=base_version_id,
             parent_version_id=target.version_id,
+            current_regions=current_regions,
             updated_at=updated_at,
         )
         now = updated_at or datetime.now(tz=UTC)
@@ -932,6 +1017,73 @@ class StructureInteractionStore:
             updated_at=updated_at,
         )
 
+    def append_chatpymol_exchange(
+        self,
+        session_id: str,
+        *,
+        user_text: str,
+        edit: ChatPyMolEdit,
+        provider: ProviderId,
+        model: str,
+        request_id: str | None,
+        skill_ids: tuple[str, ...],
+        proposal: AssistantProposal | None = None,
+        known_object_names: tuple[str, ...] = (),
+        known_chain_ids: tuple[str, ...] = (),
+        current_regions: dict[str, tuple[int, ...]] | None = None,
+        updated_at: datetime | None = None,
+    ) -> StructureInteractionSession:
+        """Publish one immutable full-PML version and its conversation exchange."""
+
+        current = self.load(session_id)
+        updated, version = self.save_scene_version(
+            session_id,
+            pml=edit.pml,
+            actor="ai",
+            source=f"assistant:{provider}",
+            provider=provider,
+            model=model,
+            skill_ids=skill_ids,
+            conversation_title=edit.conversation_title,
+            summary=edit.summary,
+            base_version_id=current.active_scene_version_id,
+            known_object_names=known_object_names,
+            known_chain_ids=known_chain_ids,
+            current_regions=current_regions,
+            force_new_version=True,
+            updated_at=updated_at,
+        )
+        now = updated_at or datetime.now(tz=UTC)
+        user_message = InteractionMessage(
+            message_id=f"message-{uuid4().hex[:16]}",
+            role="user",
+            content=user_text,
+            created_at=now,
+        )
+        assistant_message = InteractionMessage(
+            message_id=f"message-{uuid4().hex[:16]}",
+            role="assistant",
+            content=edit.assistant_message,
+            created_at=now,
+            provider=provider,
+            model=model,
+            request_id=request_id,
+            version_id=version.version_id,
+            proposal=(
+                proposal.model_copy(
+                    update={"proposal_id": (proposal.proposal_id or f"proposal-{uuid4().hex[:16]}")}
+                )
+                if proposal is not None
+                else None
+            ),
+        )
+        update_payload: dict[str, Any] = {
+            "selected_provider": provider,
+            "messages": updated.messages + (user_message, assistant_message),
+            "updated_at": now,
+        }
+        return self._publish(updated.model_copy(update=update_payload))
+
     def apply_proposal(
         self,
         session_id: str,
@@ -1001,13 +1153,6 @@ class StructureInteractionStore:
     ) -> StructureInteractionSession:
         current = self.load(session_id)
         now = updated_at or datetime.now(tz=UTC)
-        validated = validate_scene_pml(pml)
-        revision = PmlRevision(
-            revision=len(current.pml_revisions) + 1,
-            pml=validated,
-            source=source,
-            created_at=now,
-        )
         active = None
         if current.active_scene_version_id:
             active = next(
@@ -1018,11 +1163,19 @@ class StructureInteractionStore:
                 ),
                 None,
             )
+        validated = validate_scene_pml(
+            pml,
+            known_object_names=(() if active is None else _managed_object_names(active.pml)),
+        )
+        revision = PmlRevision(
+            revision=len(current.pml_revisions) + 1,
+            pml=validated,
+            source=source,
+            created_at=now,
+        )
         if active is not None:
             next_pml = (
-                f"{active.pml.rstrip()}\n\n"
-                f"# @chatpymol native-pymol source={source}\n"
-                f"{validated}"
+                f"{active.pml.rstrip()}\n\n# @chatpymol native-pymol source={source}\n{validated}"
             )
             updated, _version = self.save_scene_version(
                 session_id,
@@ -1121,7 +1274,7 @@ def validate_scene_pml(
     known_chain_ids: tuple[str, ...] = (),
     allowed_new_managed_lines: tuple[str, ...] = (),
 ) -> str:
-    """Validate ChatPyMol-style full-scene PML without allowing file/session mutation."""
+    """Validate a native full-PML scene using ChatPyMol's minimal safety boundary."""
 
     if len(value) > 2_000_000:
         raise ConfigurationError("PML 场景不能超过 2 MB")
@@ -1136,30 +1289,51 @@ def validate_scene_pml(
             raise ConfigurationError("模型删除了受保护的 EasyDesign 结构管理行")
         if added:
             raise ConfigurationError(
-                "模型不能伪造新的 EasyDesign 结构管理行；"
-                "请通过上传/RCSB 接口添加参考结构"
+                "模型不能伪造新的 EasyDesign 结构管理行；请通过上传/RCSB 接口添加参考结构"
             )
     commands = split_pml_commands(normalized)
     if not commands:
         raise ConfigurationError("PML 场景没有可执行的显示命令")
-    object_names = set(known_object_names)
+    object_names = set(known_object_names) | set(_managed_object_names(normalized))
     chain_ids = set(known_chain_ids)
     previous_commands = set(split_pml_commands(previous_pml or ""))
+    known_selection_names = set(_BUILTIN_SELECTION_NAMES) | object_names
     for command in commands:
         if not _balanced(command):
             raise ConfigurationError(f"PML 命令括号不匹配: {command[:160]}")
         name = command.split(maxsplit=1)[0].lower()
-        if name in _BLOCKED_COMMANDS or name not in _SCENE_SAFE_COMMANDS:
-            raise ConfigurationError(f"PML 命令不在 Stage 2 安全列表中: {name}")
-        if name in {"set", "unset"}:
-            remainder = command.split(maxsplit=1)[1] if " " in command else ""
-            setting = remainder.split(",", maxsplit=1)[0].strip().lower()
-            if setting not in _SAFE_SET_NAMES:
-                raise ConfigurationError(f"PyMOL set 参数不在显示安全列表中: {setting}")
+        if name in _MODEL_BLOCKED_COMMANDS and command not in previous_commands:
+            raise ConfigurationError(f"PML 命令触及系统、文件或网络边界: {name}")
+        if _UNRESOLVED_PLACEHOLDER.search(command):
+            raise ConfigurationError(f"PML 仍包含未替换占位符: {command[:160]}")
         if name == "select" and "," not in command:
             raise ConfigurationError("select 必须显式给出选择名称和表达式")
         if name == "label" and "," not in command:
             raise ConfigurationError("label 必须显式给出目标和标签表达式")
+        if name == "select":
+            selection_name = command.partition(" ")[2].partition(",")[0].strip()
+            if not _SIMPLE_SELECTION_NAME.fullmatch(selection_name):
+                raise ConfigurationError("select 名称不是有效的 PyMOL identifier")
+            expression = command.partition(",")[2]
+            simple_expression = _simple_selection_name(expression)
+            if simple_expression is not None and simple_expression not in known_selection_names:
+                raise ConfigurationError(
+                    f"PML 引用了当前场景中不存在的对象或 selection: {simple_expression}"
+                )
+            known_selection_names.add(selection_name)
+        if name == "create":
+            destination = command.partition(" ")[2].partition(",")[0].strip()
+            if not _SIMPLE_SELECTION_NAME.fullmatch(destination):
+                raise ConfigurationError("create 目标不是有效的 PyMOL object identifier")
+            if destination in object_names:
+                raise ConfigurationError(f"PML 不能用 create 覆盖受管理结构对象: {destination}")
+            known_selection_names.add(destination)
+        for argument in _selection_arguments(command):
+            simple_argument = _simple_selection_name(argument)
+            if simple_argument is not None and simple_argument not in known_selection_names:
+                raise ConfigurationError(
+                    f"PML 引用了当前场景中不存在的对象或 selection: {simple_argument}"
+                )
         if command not in previous_commands and chain_ids:
             for chain_id in _CHAIN_PATTERN.findall(command):
                 if chain_id not in chain_ids:
@@ -1177,8 +1351,7 @@ def derive_scene_summary(pml: str, object_names: tuple[str, ...] = ()) -> dict[s
     """Small ChatPyMol-style scene summary for model context and diagnostics."""
 
     objects: dict[str, dict[str, Any]] = {
-        name: {"name": name, "representations": [], "colors": []}
-        for name in object_names
+        name: {"name": name, "representations": [], "colors": []} for name in object_names
     }
     if not objects:
         objects["target"] = {"name": "target", "representations": [], "colors": []}
@@ -1295,57 +1468,59 @@ def validate_common_viewer_actions(
     return actions
 
 
-def _assistant_schema_prompt() -> str:
-    return """
-你是 EasyDesign Stage 2 的 ChatPyMol 级结构协作助手。只输出一个 JSON object，禁止 Markdown。
-EasyDesign 主流程不变：目标结构是上游科学产物；参考结构只用于可视化/比对，不进入下游设计输入。
+_CHATPYMOL_SYSTEM_PROMPT = """
+你是 EasyDesign 中的 ChatPyMol 原生分子可视化协作助手。
 
-你会收到当前完整 PML、scene 摘要、真实对象/链/残基 metadata、最近对话和 A/B/C 区域状态。
+你的任务：
+1. 根据用户指令修改当前完整 PML 文档。
+2. 保留无关的人工编辑，以及所有以 "# @easydesign" 开头的结构管理行。
+3. 返回简短中文说明、修改摘要、对话标题和修改后的完整 PML。
 
-允许的 kind:
-1. pml-edit: 用于显示、配色、标签、测距、视角、论文图、结构比对等可视化请求。
-   必须返回 pml_edit，且 pml_edit.pml 是修改后的完整 PML。
-2. region-edit: 用于用户明确要求修改 EasyDesign A/B/C 区域。operation 只能是
-   add/remove/toggle/replace/clear；clear 可空 residues，replace 可空 residues。
-3. analysis-plan: 用户要求自动寻找/预测/比较/recommend hotspot 时使用；
-   methods 只能是 sasa/scannet，requires_confirmation 必须为 true。
-4. view-control: 兼容旧视图撤销；如果已有 scene_versions，优先用 pml-edit 恢复/调整完整 PML。
-5. explanation: 只解释，不执行。
+规则：
+- 只使用原生 PyMOL 命令。
+- 优先使用可逆的显示、选择、颜色、标签、相机、测量和 set 命令。
+- 禁止 Python、run、system、shell、quit、reinitialize、文件写入和网络加载。
+- 不得编造上下文里不存在的对象名、链、残基、配体或科学事实。
+- structure metadata 是唯一允许引用的对象、链和编号清单；异质分组不等于已确认配体。
+- 如果用户要求不存在或不明确的链、残基或异质分子，说明限制并保持相关 PML 不变。
+- 指令有歧义时，采用最小且有用的视觉修改。
+- ed_region_A、ed_region_B、ed_region_C 是 EasyDesign 管理的可编辑区域 selection。
+  只有用户明确给出残基并要求修改 A/B/C 时才可更新；表达式必须使用 metadata
+  中真实的 author chain/residue 编号。
+- “最佳区域”“预测 hotspot”等请求不得直接改写 ed_region_A/B/C；保持完整 PML
+  不变并说明需要用户确认 SASA/ScanNet 计划。
+- PML 必须保持可人工编辑、可导出。
+- 只返回 JSON，不要使用 Markdown 代码块。
 
-pml-edit JSON 形状：
-{"kind":"pml-edit","explanation":"中文说明",
- "pml_edit":{"assistant_message":"中文说明","summary":"简短摘要",
- "conversation_title":"短标题","pml":"完整 PML"}}
-也可以返回 ChatPyMol 兼容顶层形状：
-{"assistantMessage":"中文说明","summary":"摘要","conversationTitle":"短标题","pml":"完整 PML"}
-
-PML 规则：
-- 保留所有以 # @easydesign 开头的管理行，不得新增、删除或修改。
-- 不得使用 load/fetch/save/png/mpng/run/system/shell/python/quit/reinitialize/
-  delete/remove/alter/extract。
-- 只引用 scene_context.objects 中真实存在的对象名；只引用 metadata 中真实存在的链。
-- 不得编造不存在的残基、配体、binding site 或科学事实；几何邻近只能称为候选显示。
-- 指令有歧义时，采用最小有用视觉修改，并保留无关 PML。
+JSON 格式必须恰好为：
+{"assistantMessage":"中文说明","summary":"简短中文摘要",
+ "conversationTitle":"不超过18个字的对话标题","pml":"完整 PML"}
 """.strip()
 
-def _assistant_messages(
+
+def _chatpymol_messages(
     *,
     user_text: str,
     context: dict[str, Any],
+    history: tuple[InteractionMessage, ...],
+    skills: tuple[PmlSkill, ...],
     previous_content: str | None = None,
     validation_error: str | None = None,
 ) -> list[dict[str, str]]:
-    messages = [
-        {"role": "system", "content": _assistant_schema_prompt()},
+    recent_history = [{"role": item.role, "content": item.content} for item in history[-10:]]
+    messages: list[dict[str, str]] = [
+        {
+            "role": "system",
+            "content": f"{_CHATPYMOL_SYSTEM_PROMPT}\n\n{render_pml_skills(skills)}",
+        },
+        *recent_history,
         {
             "role": "user",
-            "content": json.dumps(
-                {
-                    "request": user_text,
-                    "scene_context": context,
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
+            "content": (
+                "当前工作区：\n"
+                + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+                + "\n\n用户要求：\n"
+                + user_text
             ),
         },
     ]
@@ -1355,20 +1530,10 @@ def _assistant_messages(
                 {"role": "assistant", "content": previous_content[:20_000]},
                 {
                     "role": "user",
-                    "content": json.dumps(
-                        {
-                            "repair_instruction": (
-                                "上一次 JSON 未通过 EasyDesign schema 校验。"
-                                "请只返回一个修正后的 JSON object，不要解释；"
-                                "显示/配色/标签/测距/比对请求应使用 pml-edit 并返回完整 PML；"
-                                "region_operations 必须是数组；clear 区域操作允许 residues 为空；"
-                                "不得删除或伪造 # @easydesign 管理行；"
-                                "只返回修正后的 JSON object。"
-                            ),
-                            "schema_error": validation_error[:4_000],
-                        },
-                        ensure_ascii=False,
-                        separators=(",", ":"),
+                    "content": (
+                        "上一次响应未通过 EasyDesign 校验。"
+                        "请只返回四字段 JSON；保留完整 PML 和所有 # @easydesign 管理行。"
+                        f"\n校验错误：{validation_error[:4_000]}"
                     ),
                 },
             ]
@@ -1376,202 +1541,64 @@ def _assistant_messages(
     return messages
 
 
-def _assistant_request_payload(
+def _chatpymol_request_payload(
     *,
     model: str,
     user_text: str,
     context: dict[str, Any],
+    history: tuple[InteractionMessage, ...],
+    skills: tuple[PmlSkill, ...],
     previous_content: str | None = None,
     validation_error: str | None = None,
 ) -> dict[str, Any]:
     return {
         "model": model,
-        "messages": _assistant_messages(
+        "messages": _chatpymol_messages(
             user_text=user_text,
             context=context,
+            history=history,
+            skills=skills,
             previous_content=previous_content,
             validation_error=validation_error,
         ),
         "response_format": {"type": "json_object"},
-        "temperature": 0,
+        "temperature": 0.15,
     }
 
 
-def _coerce_viewer_action_shape(value: Any) -> Any:
-    if not isinstance(value, dict):
-        return value
-    raw_action = value.get("action")
-    if isinstance(raw_action, str):
-        action_aliases = {
-            "set_representation": "representation",
-            "show_representation": "representation",
-            "set_color": "color",
-            "set_background": "background",
-            "background_color": "background",
-            "zoom": "focus",
-        }
-        canonical_action = action_aliases.get(raw_action, raw_action)
-        if canonical_action != raw_action:
-            repaired = dict(value)
-            repaired["action"] = canonical_action
-            return repaired
-        return value
-    for action in ("background", "color", "representation"):
-        if action in value:
-            return {
-                "action": action,
-                "target": value.get("target", "all"),
-                "value": value[action],
-            }
-    for action in ("focus", "orient", "center"):
-        if action in value:
-            shorthand_target = value[action]
-            return {
-                "action": action,
-                "target": (
-                    shorthand_target
-                    if isinstance(shorthand_target, str) and shorthand_target.strip()
-                    else value.get("target", "all")
-                ),
-            }
-    return value
-
-
-def _coerce_known_assistant_shape(payload: dict[str, Any]) -> dict[str, Any]:
-    """Repair narrow JSON-shape mistakes without relaxing scientific validation."""
-
-    repaired = dict(payload)
-    if "pml" in repaired and "pml_edit" not in repaired:
-        assistant_message = str(
-            repaired.get("assistantMessage")
-            or repaired.get("assistant_message")
-            or repaired.get("explanation")
-            or "已更新 PML 场景。"
-        )
-        repaired = {
-            "kind": "pml-edit",
-            "explanation": assistant_message,
-            "pml_edit": {
-                "assistant_message": assistant_message,
-                "summary": str(repaired.get("summary") or "更新 PML 场景"),
-                "conversation_title": str(
-                    repaired.get("conversationTitle")
-                    or repaired.get("conversation_title")
-                    or repaired.get("summary")
-                    or "PML 场景更新"
-                )[:80],
-                "pml": repaired["pml"],
-            },
-        }
-    pml_edit = repaired.get("pml_edit")
-    if isinstance(pml_edit, dict):
-        mapped = dict(pml_edit)
-        if "assistantMessage" in mapped and "assistant_message" not in mapped:
-            mapped["assistant_message"] = mapped.pop("assistantMessage")
-        if "conversationTitle" in mapped and "conversation_title" not in mapped:
-            mapped["conversation_title"] = mapped.pop("conversationTitle")
-        if "assistant_message" not in mapped:
-            mapped["assistant_message"] = (
-                repaired.get("explanation")
-                or mapped.get("summary")
-                or "已更新 PML 场景。"
-            )
-        if "conversation_title" not in mapped:
-            mapped["conversation_title"] = mapped.get("summary") or "PML 场景更新"
-        repaired["pml_edit"] = mapped
-        repaired.setdefault("kind", "pml-edit")
-        repaired.setdefault("explanation", mapped.get("assistant_message", "已更新 PML 场景。"))
-    for key in ("viewer_actions", "region_operations"):
-        value = repaired.get(key)
-        if isinstance(value, dict):
-            repaired[key] = [value]
-    viewer_actions = repaired.get("viewer_actions")
-    if isinstance(viewer_actions, list):
-        repaired["viewer_actions"] = [
-            _coerce_viewer_action_shape(action) for action in viewer_actions
-        ]
-    view_control = repaired.get("view_control")
-    if isinstance(view_control, str):
-        view_aliases = {
-            "undo": "undo-last-view-action",
-            "undo-last": "undo-last-view-action",
-            "restore-previous": "undo-last-view-action",
-            "reset": "reset-default-view",
-            "default": "reset-default-view",
-        }
-        repaired["view_control"] = {"action": view_aliases.get(view_control, view_control)}
-    elif isinstance(view_control, dict) and isinstance(view_control.get("action"), str):
-        view_aliases = {
-            "undo": "undo-last-view-action",
-            "undo-last": "undo-last-view-action",
-            "restore-previous": "undo-last-view-action",
-            "reset": "reset-default-view",
-            "default": "reset-default-view",
-        }
-        action = view_control["action"]
-        if action in view_aliases:
-            repaired["view_control"] = {**view_control, "action": view_aliases[action]}
-    analysis_plan = repaired.get("analysis_plan")
-    if isinstance(analysis_plan, dict) and isinstance(analysis_plan.get("methods"), str):
-        repaired["analysis_plan"] = {
-            **analysis_plan,
-            "methods": [analysis_plan["methods"]],
-        }
-    return repaired
-
-
-def _validate_assistant_content(
+def _parse_chatpymol_edit(
     content: str,
     *,
-    allow_shape_coercion: bool = False,
-    previous_pml: str | None = None,
-    known_object_names: tuple[str, ...] = (),
-    known_chain_ids: tuple[str, ...] = (),
-) -> AssistantProposal:
-    try:
-        proposal = AssistantProposal.model_validate_json(content)
-    except ValueError:
-        if not allow_shape_coercion:
-            raise
-        payload = json.loads(content)
-        if not isinstance(payload, dict):
-            raise
-        proposal = AssistantProposal.model_validate(
-            _coerce_known_assistant_shape(payload)
-        )
-    if proposal.kind == "viewer-actions":
-        validate_common_viewer_actions(proposal.viewer_actions)
-    if proposal.kind == "pml-edit" and proposal.pml_edit is not None and previous_pml is not None:
-        validate_scene_pml(
-            proposal.pml_edit.pml,
-            previous_pml=previous_pml,
-            known_object_names=known_object_names,
-            known_chain_ids=known_chain_ids,
-        )
-    return proposal
-
-def _assistant_content_from_response(payload: dict[str, Any]) -> str:
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise ConfigurationError("模型 API 没有返回 choices")
-    content = choices[0].get("message", {}).get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise ConfigurationError("模型 API 返回了空内容")
-    return content
+    previous_pml: str,
+    known_object_names: tuple[str, ...],
+    known_chain_ids: tuple[str, ...],
+) -> ChatPyMolEdit:
+    cleaned = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    edit = ChatPyMolEdit.model_validate_json(cleaned)
+    normalized = validate_scene_pml(
+        edit.pml,
+        previous_pml=previous_pml,
+        known_object_names=known_object_names,
+        known_chain_ids=known_chain_ids,
+    )
+    return edit.model_copy(update={"pml": normalized})
 
 
-def request_assistant_proposal(
+def request_assistant_pml_edit(
     *,
     secret: AssistantProviderSecret,
     user_text: str,
     context: dict[str, Any],
+    history: tuple[InteractionMessage, ...],
     client: httpx.Client | None = None,
-    previous_pml: str | None = None,
+    previous_pml: str,
     known_object_names: tuple[str, ...] = (),
     known_chain_ids: tuple[str, ...] = (),
-) -> tuple[AssistantProposal, str | None]:
-    """Call the platform provider and validate its structured result."""
+) -> tuple[ChatPyMolEdit, str | None, tuple[str, ...]]:
+    """Call one provider using ChatPyMol's complete-PML request/response loop."""
 
+    skills = select_pml_skills(user_text)
     own_client = client is None
     selected_client = client or httpx.Client(
         timeout=httpx.Timeout(60.0, connect=10.0, read=45.0),
@@ -1586,43 +1613,44 @@ def request_assistant_proposal(
     }
     previous_content: str | None = None
     validation_error: str | None = None
-    last_request_id: str | None = None
+    request_id: str | None = None
     try:
         for attempt in range(2):
             response = selected_client.post(
                 endpoint,
                 headers=headers,
-                json=_assistant_request_payload(
+                json=_chatpymol_request_payload(
                     model=secret.model,
                     user_text=user_text,
                     context=context,
+                    history=history,
+                    skills=skills,
                     previous_content=previous_content,
                     validation_error=validation_error,
                 ),
             )
             response.raise_for_status()
             payload = response.json()
-            last_request_id = str(
-                response.headers.get("x-request-id") or payload.get("id") or ""
-            ) or None
+            request_id = (
+                str(response.headers.get("x-request-id") or payload.get("id") or "") or None
+            )
             content = _assistant_content_from_response(payload)
             try:
-                proposal = _validate_assistant_content(
+                edit = _parse_chatpymol_edit(
                     content,
-                    allow_shape_coercion=attempt > 0,
                     previous_pml=previous_pml,
                     known_object_names=known_object_names,
                     known_chain_ids=known_chain_ids,
                 )
-                return proposal, last_request_id
+                return edit, request_id, tuple(skill.skill_id for skill in skills)
             except (ConfigurationError, json.JSONDecodeError, ValueError) as error:
                 previous_content = content
                 validation_error = str(error)
                 if attempt == 0:
                     continue
                 raise ConfigurationError(
-                    f"{secret.provider} API 返回的结构化建议未通过 EasyDesign 安全校验；"
-                    "请换一种更明确的说法，或在 PML 编辑器中手动调整。"
+                    f"{secret.provider} API 返回的完整 PML 未通过 EasyDesign 安全校验；"
+                    "原场景未被修改。"
                 ) from error
         raise ConfigurationError(f"{secret.provider} API 响应无法验证")
     except httpx.HTTPStatusError as error:
@@ -1634,3 +1662,13 @@ def request_assistant_proposal(
     finally:
         if own_client:
             selected_client.close()
+
+
+def _assistant_content_from_response(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ConfigurationError("模型 API 没有返回 choices")
+    content = choices[0].get("message", {}).get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ConfigurationError("模型 API 返回了空内容")
+    return content

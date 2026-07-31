@@ -824,19 +824,11 @@ json.dumps(chatpymol_incremental_warnings)
         }
       } catch (error) {
         if (!cancelled && requestId === sceneRequestRef.current) {
-          // A display-only command failure must not delete and reload a valid
-          // scientific structure. Keep the molecule visible and report the
-          // exact display failure for an explicit retry.
-          renderWarningsRef.current = [{
-            command: "display-state",
-            error: String(error?.message || error)
-          }];
-          setState({
-            kind: "warning",
-            progress: 100,
-            label: "部分显示设置未应用；结构仍可查看"
-          });
-          onFailure?.(`PyMOL 显示设置失败：${String(error?.message || error)}`);
+          // ChatPyMol's scene contract is full-PML authoritative. If an
+          // append-only optimization fails, rebuild the verified structure
+          // and replay the complete active version instead of leaving a
+          // partially applied scene behind.
+          await replayScene();
         }
       }
     }
@@ -1043,10 +1035,10 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
     ) {
       applyIncremental(deltaCommands);
     } else if (canReuseScene) {
-      // Restoring an older display revision is not a structure change. Reapply
-      // the safe display program in place instead of deleting all objects,
-      // downloading target.cif again and rebuilding the WebGL scene.
-      applyIncremental(renderableCommands(pml));
+      // An edited prefix or restored historical version cannot be represented
+      // as a safe append. Rebuild from the verified target and replay the one
+      // authoritative full-PML scene.
+      replayScene();
     } else {
       replayScene();
     }

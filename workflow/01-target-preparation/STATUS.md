@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev28 修复协作回归后，Stage 01/02 的 PyMOL↔Mol* 多轮往返保持 1 个对象、1172 个原子和 9/14/14 区域。 | 冻结 Stage 01 科学边界；在第二真实案例继续验证双查看器。 | 无 Stage 01 1.0 工程阻塞；PyMOL、Mol* 与便携报告均可用。 | 2026-07-31 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 |
 
 ## 当前结论
 
@@ -28,6 +28,11 @@
 - dev28 再次收紧生命周期：隐藏 pane 不再使用 `visibility:hidden`，显示 revision 只重放
   最新 ViewState/PML，不累积全部历史命令；framebuffer `readPixels` 仅作诊断，不替代
   PyMOL 对象、原子和可见表示的严格 ready 门。
+- REP-009 将新助手会话升级为 `StructureInteractionSession 0.4`：当前完整 PML、结构/
+  场景 metadata、最近十轮对话和 `safe-pml + 最多两个动态 Skill` 进入模型；只接受
+  `assistantMessage/summary/conversationTitle/pml` 四字段响应。安全追加增量执行，旧内容
+  变化、历史恢复或增量失败时从已校验结构完整重放。Mol* 只投影支持的命令，不再限制
+  PyMOL 原生场景；旧 typed proposal/ViewState 只读兼容。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -102,11 +107,13 @@
 | 预计算 MSA 复用 | `smoke-validated` | 609-depth APOE A3M 经 query/hash/depth 校验后真实 `use_msa=true` 预测 |
 | 便携式 Mol* Target Viewer | `smoke-validated` | Mol* 5.11.0 本地资产、不可变报告 revision、localhost 服务、Chromium 与两条 APOE 报告 |
 | Workbench PyMOL/Mol* 双查看器 | `smoke-validated` | 离线 Pyodide/PyMOL WASM 资产、真实 APOE 138-aa/PSE 颜色、双向反复切换及结构 SHA 不变 |
+| ChatPyMol 完整 PML 结构助手 | `implemented` | 四字段响应、动态 Skill、最近十轮对话、SceneVersion 0.4、乐观并发、增量/完整重放和 Mol* 兼容投影工程测试通过；live provider/APOE 连续对话待复验 |
 
 ## Now
 
-- 暂无 Stage 01 实施任务；S01-009 已归档。1.0 边界冻结为 canonical UniProt、
-  单 Target/单 state PSE、单 seed/单 sample Protenix 和显式 required-MSA。
+- REP-009 工程实现已完成；下一门槛是以仓库平台 provider 对真实 APOE 连续执行完整 PML
+  编辑、历史恢复和 PyMOL/Mol* 多轮切换。Stage 01 科学边界仍冻结为 canonical
+  UniProt、单 Target/单 state PSE、单 seed/单 sample Protenix 和显式 required-MSA。
 
 ## Next
 

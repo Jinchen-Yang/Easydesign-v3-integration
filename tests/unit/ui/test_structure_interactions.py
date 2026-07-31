@@ -231,6 +231,43 @@ def test_viewer_pml_append_extends_active_scene_without_managed_line_conflict(
     assert "# @easydesign native-pymol" not in active.pml
 
 
+def test_viewer_transient_or_duplicate_commands_do_not_create_scene_versions(
+    tmp_path: Path,
+) -> None:
+    store = StructureInteractionStore(tmp_path / "projects")
+    session = store.create(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=2,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+        created_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+    initialized, _ = store.save_scene_version(
+        session.session_id,
+        pml=_MANAGED_TARGET_LINE + "show cartoon, target\ndeselect\n",
+        actor="system",
+        source="initial-scene",
+        summary="初始场景",
+    )
+
+    deselected = store.append_pml(
+        session.session_id,
+        pml="deselect\n",
+        source="viewer",
+    )
+    duplicated = store.append_pml(
+        session.session_id,
+        pml="show cartoon, target\n",
+        source="viewer",
+    )
+
+    assert deselected.active_scene_version_id == initialized.active_scene_version_id
+    assert duplicated.active_scene_version_id == initialized.active_scene_version_id
+    assert len(duplicated.scene_versions) == 1
+    assert duplicated.pml_revisions == ()
+
+
 def test_structure_session_reuses_only_matching_latest_snapshot(
     tmp_path: Path,
 ) -> None:
@@ -437,6 +474,42 @@ def test_chatpymol_request_contains_complete_context_history_and_skills() -> Non
     assert "msa" not in request_text.lower()
     assert "/root/" not in request_text
     assert "secret" not in request_text
+
+
+def test_chatpymol_semantic_validator_gets_one_repair_attempt() -> None:
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+    invalid_pml = previous_pml + "select ed_region_A, chain A and resi 32\n"
+    repaired_pml = previous_pml + "select ed_region_A, chain A and resi 54\n"
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json=_chatpymol_response(invalid_pml if calls == 1 else repaired_pml),
+        )
+
+    def validate(edit: ChatPyMolEdit) -> ChatPyMolEdit:
+        if "resi 54" not in edit.pml:
+            raise ConfigurationError("必须使用已经映射的 author selector")
+        return edit
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        edit, _, _ = request_assistant_pml_edit(
+            secret=_assistant_secret(),
+            user_text="将规范编号32加入A区",
+            context={"explicit_region_edit_intent": {"label_seq_ids": [32]}},
+            history=(),
+            previous_pml=previous_pml,
+            known_object_names=("target",),
+            known_chain_ids=("A",),
+            edit_validator=validate,
+            client=client,
+        )
+
+    assert calls == 2
+    assert "resi 54" in edit.pml
 
 
 def test_chatpymol_skill_router_keeps_safe_skill_and_at_most_two_matches() -> None:

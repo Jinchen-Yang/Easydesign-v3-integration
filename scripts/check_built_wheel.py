@@ -63,8 +63,8 @@ def main() -> int:
         print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
         return 1
     wheel = wheels[0]
-    if "0.1.0.dev29" not in wheel.name:
-        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev29: {wheel.name}", file=sys.stderr)
+    if "0.1.0.dev30" not in wheel.name:
+        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev30: {wheel.name}", file=sys.stderr)
         return 1
     source_root = ROOT / "src" / PACKAGE_PREFIX
     try:
@@ -200,7 +200,7 @@ def main() -> int:
                 timeout=30,
                 env=dependency_environment,
             ).stdout.strip()
-            if version != "0.1.0.dev29":
+            if version != "0.1.0.dev30":
                 raise RuntimeError(f"console-script 版本异常: {version}")
             subprocess.run(
                 [str(python), "-m", "easydesign", "--help"],

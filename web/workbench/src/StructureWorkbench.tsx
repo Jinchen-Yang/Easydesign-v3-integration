@@ -43,6 +43,23 @@ const REGION_COLORS = {
 
 const EMPTY_REGIONS: Region[] = [];
 
+function regionArrayKey(regions?: Region[]): string {
+  return (["A", "B", "C"] as const).map((regionId) => {
+    const values = regions
+      ?.find((region) => region.id === regionId)
+      ?.label_seq_ids || [];
+    return `${regionId}:${[...new Set(values)].sort((a, b) => a - b).join(",")}`;
+  }).join("|");
+}
+
+function regionRecordKey(
+  regions: Partial<Record<"A" | "B" | "C", number[]>>,
+): string {
+  return (["A", "B", "C"] as const).map((regionId) => (
+    `${regionId}:${[...new Set(regions[regionId] || [])].sort((a, b) => a - b).join(",")}`
+  )).join("|");
+}
+
 function authorSelector(
   projection: RegionEditorProjection,
   labels: number[],
@@ -117,9 +134,11 @@ function replaceManagedRegionSelections(
   const reserved = /^ed_region_[ABC]$/i;
   const retained = pml.split(/\r?\n/).filter((rawLine) => {
     const line = rawLine.trim();
+    if (line === "# @easydesign live region overlay") return false;
     if (!line || line.startsWith("#")) return true;
     const [verb, ...parts] = line.split(/\s+/);
     const rest = parts.join(" ");
+    if (verb.toLowerCase() === "deselect" && !rest) return false;
     if (verb.toLowerCase() === "select") {
       return !reserved.test(rest.split(",", 1)[0]?.trim() || "");
     }
@@ -129,15 +148,9 @@ function replaceManagedRegionSelections(
     }
     return true;
   });
-  const managedLineIndex = retained.reduce(
-    (latest, line, index) => (
-      line.trim().startsWith("# @easydesign") ? index : latest
-    ),
-    -1,
-  );
-  const overlay = regionOverlayPml(projection, regions).trimEnd().split("\n");
-  retained.splice(managedLineIndex + 1, 0, ...overlay);
-  return `${retained.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+  const overlay = regionOverlayPml(projection, regions).trimEnd();
+  return `${retained.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n\n`
+    + `# @easydesign live region overlay\n${overlay}\n`;
 }
 
 function combinedPml(
@@ -277,6 +290,7 @@ export function StructureWorkbench({
   const desiredScenePml = useRef("");
   const sceneSyncPromise = useRef<Promise<void> | null>(null);
   const sceneSyncTimer = useRef<number | undefined>(undefined);
+  const pendingAssistantRegionKey = useRef<string | undefined>(undefined);
 
   const structureUrl = `/api/v1/artifacts/${projection.structure.token}`;
   const referenceStructures = useMemo(
@@ -311,13 +325,30 @@ export function StructureWorkbench({
     () => activeVersion?.pml || withRegionOverlay(legacyScenePml, projection, regions),
     [activeVersion?.pml, legacyScenePml, projection, regions],
   );
+  const editableRegionKey = useMemo(
+    () => regionArrayKey(editableRegions),
+    [editableRegions],
+  );
+  const shouldApplyEditableRegions = (
+    !pendingAssistantRegionKey.current
+    || pendingAssistantRegionKey.current === editableRegionKey
+  );
+  const displayOverlayRegions = (
+    stageNumber === 2 && editableRegions
+      ? (shouldApplyEditableRegions ? editableRegions : undefined)
+      : (regions.length ? regions : undefined)
+  );
   const scenePml = useMemo(
     () => (
-      stageNumber === 2 && editableRegions
-        ? replaceManagedRegionSelections(authoritativePml, projection, editableRegions)
+      displayOverlayRegions
+        ? replaceManagedRegionSelections(authoritativePml, projection, displayOverlayRegions)
         : authoritativePml
     ),
-    [authoritativePml, editableRegions, projection, stageNumber],
+    [
+      authoritativePml,
+      displayOverlayRegions,
+      projection,
+    ],
   );
   const sceneRegions = regions;
   const sceneVersions = session?.scene_versions || [];
@@ -335,6 +366,11 @@ export function StructureWorkbench({
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+  useEffect(() => {
+    if (pendingAssistantRegionKey.current === editableRegionKey) {
+      pendingAssistantRegionKey.current = undefined;
+    }
+  }, [editableRegionKey]);
   useEffect(() => {
     setPendingMessages([]);
   }, [session?.session_id]);
@@ -478,20 +514,24 @@ export function StructureWorkbench({
 
   const nativeCommandsApplied = useCallback((commands?: string) => {
     if (pendingPmlSession.current) {
-      setSession(pendingPmlSession.current);
+      const updated = pendingPmlSession.current;
+      sessionRef.current = updated;
+      setSession(updated);
       pendingPmlSession.current = undefined;
       return;
     }
-    if (!commands?.trim() || !session) return;
-    api.appendStructurePml(session.session_id, commands, "viewer")
+    const current = sessionRef.current;
+    if (!commands?.trim() || !current) return;
+    api.appendStructurePml(current.session_id, commands, "viewer")
       .then((updated) => {
+        sessionRef.current = updated;
         setSession(updated);
         setStatus("原生 PyMOL 操作已保存为 PML 版本。");
       })
       .catch((error: unknown) => {
         setStatus(error instanceof Error ? error.message : "原生 PyMOL 操作保存失败");
       });
-  }, [session]);
+  }, []);
   const nativeFailure = useCallback((failure: string) => {
     setStatus(failure);
   }, []);
@@ -547,6 +587,14 @@ export function StructureWorkbench({
         currentSession.session_id,
         text,
       );
+      const updatedRegionKey = regionRecordKey(updated.current_regions);
+      pendingAssistantRegionKey.current = updatedRegionKey;
+      const updatedActive = activeSceneVersion(updated);
+      if (updatedActive) desiredScenePml.current = updatedActive.pml;
+      if (sceneSyncTimer.current !== undefined) {
+        window.clearTimeout(sceneSyncTimer.current);
+        sceneSyncTimer.current = undefined;
+      }
       setPendingMessages([]);
       setSession(updated);
       sessionRef.current = updated;

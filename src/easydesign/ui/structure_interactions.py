@@ -14,7 +14,7 @@ import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -1167,6 +1167,25 @@ class StructureInteractionStore:
             pml,
             known_object_names=(() if active is None else _managed_object_names(active.pml)),
         )
+        commands = tuple(
+            command
+            for command in split_pml_commands(validated)
+            if command.strip().lower() != "deselect"
+        )
+        if not commands:
+            return current
+        validated = "\n".join(commands) + "\n"
+        if active is not None:
+            active_commands = tuple(
+                command
+                for command in split_pml_commands(active.pml)
+                if command.strip().lower() != "deselect"
+            )
+            if (
+                len(active_commands) >= len(commands)
+                and active_commands[-len(commands) :] == commands
+            ):
+                return current
         revision = PmlRevision(
             revision=len(current.pml_revisions) + 1,
             pml=validated,
@@ -1487,6 +1506,10 @@ _CHATPYMOL_SYSTEM_PROMPT = """
 - ed_region_A、ed_region_B、ed_region_C 是 EasyDesign 管理的可编辑区域 selection。
   只有用户明确给出残基并要求修改 A/B/C 时才可更新；表达式必须使用 metadata
   中真实的 author chain/residue 编号。
+- 用户没有明确说“原始编号/auth/author/PDB 编号”时，用户输入的数字一律解释为
+  界面显示的 label_seq_id。EasyDesign 会在 explicit_region_edit_intent 中提供已经
+  校验的 label_seq_id 和对应 author selector；你必须逐字使用该 selector，不能自行
+  改用或猜测 author 编号。
 - “最佳区域”“预测 hotspot”等请求不得直接改写 ed_region_A/B/C；保持完整 PML
   不变并说明需要用户确认 SASA/ScanNet 计划。
 - PML 必须保持可人工编辑、可导出。
@@ -1595,6 +1618,7 @@ def request_assistant_pml_edit(
     previous_pml: str,
     known_object_names: tuple[str, ...] = (),
     known_chain_ids: tuple[str, ...] = (),
+    edit_validator: Callable[[ChatPyMolEdit], ChatPyMolEdit] | None = None,
 ) -> tuple[ChatPyMolEdit, str | None, tuple[str, ...]]:
     """Call one provider using ChatPyMol's complete-PML request/response loop."""
 
@@ -1642,6 +1666,8 @@ def request_assistant_pml_edit(
                     known_object_names=known_object_names,
                     known_chain_ids=known_chain_ids,
                 )
+                if edit_validator is not None:
+                    edit = edit_validator(edit)
                 return edit, request_id, tuple(skill.skill_id for skill in skills)
             except (ConfigurationError, json.JSONDecodeError, ValueError) as error:
                 previous_content = content

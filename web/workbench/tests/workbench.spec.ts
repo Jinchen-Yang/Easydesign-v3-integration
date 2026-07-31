@@ -1138,10 +1138,12 @@ test("stage two region editor keeps source layers and editable selection separat
   await expect(page.getByRole("heading", { name: "选择结合区域", exact: true })).toBeVisible();
   await expect(page.getByLabel("显示 PSE 来源颜色")).toBeChecked();
   await expect(page.getByLabel("显示当前批准区域")).toBeChecked();
+  const firstResidue = page.locator(".sequence-editor button").first();
+  await expect(firstResidue).toContainText("规范 1");
+  await expect(firstResidue).toContainText("原始 A:23");
   await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 1 个残基");
   await expect(page.getByRole("button", { name: /区域 B/ })).toContainText("本次可编辑 1 个残基");
   await page.getByRole("button", { name: /区域 B/ }).click();
-  const firstResidue = page.locator(".sequence-editor button").first();
   await firstResidue.click();
   await expect(firstResidue).toHaveClass(/region-b/);
   await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 0 个残基");

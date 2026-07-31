@@ -788,12 +788,6 @@ json.dumps(chatpymol_incremental_warnings)
         });
         await applyViewerChrome(sequenceVisibleRef.current);
         if (cancelled || requestId !== sceneRequestRef.current) return;
-        await enqueue(async () => {
-          const runtime = runtimeRef.current;
-          if (!runtime || cancelled) return;
-          await runtime.runPythonAsync(`_p.cmd.log_open("${NATIVE_LOG}", "w")`);
-          logOffsetRef.current = 0;
-        });
         setState({
           kind: "loading-scene",
           progress: 99,
@@ -811,6 +805,18 @@ json.dumps(chatpymol_incremental_warnings)
         if (commands.some(commandAffectsSelection)) {
           await refreshSelection();
         }
+        await enqueue(async () => {
+          const runtime = runtimeRef.current;
+          if (!runtime || cancelled) return;
+          await runtime.runPythonAsync(`
+try:
+    _p.cmd.log_close()
+except Exception:
+    pass
+_p.cmd.log_open("${NATIVE_LOG}", "w")
+`);
+          logOffsetRef.current = 0;
+        });
         if (!cancelled) {
           setState({
             kind: "ready",
@@ -972,9 +978,7 @@ except Exception:
 for _chatpymol_camera_draw_pass in range(2):
     _p.idle()
     _p.draw()
-_p.cmd.log_open("${NATIVE_LOG}", "w")
 `);
-          logOffsetRef.current = 0;
         });
         setState({
           kind: "loading-scene",
@@ -987,6 +991,18 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
         loadedSceneKeyRef.current = nextSceneKey;
         sceneReadyRef.current = true;
         await refreshSelection();
+        await enqueue(async () => {
+          const runtime = runtimeRef.current;
+          if (!runtime || cancelled) return;
+          await runtime.runPythonAsync(`
+try:
+    _p.cmd.log_close()
+except Exception:
+    pass
+_p.cmd.log_open("${NATIVE_LOG}", "w")
+`);
+          logOffsetRef.current = 0;
+        });
         if (!cancelled) {
           setState({
             kind: commandWarnings.length ? "warning" : "ready",
@@ -1076,7 +1092,10 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
           const addition = data.slice(logOffsetRef.current);
           logOffsetRef.current = data.length;
           const cleaned = cleanNativeLog(addition);
-          if (cleaned) {
+          if (
+            cleaned &&
+            !pmlAlreadyEndsWithCommands(appliedPmlRef.current, cleaned)
+          ) {
             appliedPmlRef.current = appendPmlCommands(
               appliedPmlRef.current,
               cleaned
@@ -2319,6 +2338,19 @@ function appendPmlCommands(pml, commands) {
   return `${String(pml || "").trimEnd()}\n\n${addition}\n`;
 }
 
+function pmlAlreadyEndsWithCommands(pml, commands) {
+  const current = interactiveCommands(pml);
+  const addition = interactiveCommands(commands);
+  return (
+    addition.length > 0 &&
+    current.length >= addition.length &&
+    addition.every(
+      (command, index) =>
+        current[current.length - addition.length + index] === command
+    )
+  );
+}
+
 function commandAffectsSelection(command) {
   return /^(?:select|deselect|delete\s+(?:sele|pk\d+)\b)\b/i.test(
     String(command || "").trim()
@@ -2444,6 +2476,7 @@ function cleanNativeLog(value) {
         !/^log_(open|close)\b/i.test(trimmed) &&
         !/^#/.test(trimmed) &&
         !/^_\s+/.test(trimmed) &&
+        !/^deselect\s*$/i.test(trimmed) &&
         !isInternalNativeLogLine(trimmed)
       );
     })

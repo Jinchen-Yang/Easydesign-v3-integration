@@ -684,10 +684,11 @@ textarea { padding: 10px; }
   55% { left: 48%; }
   100% { left: 100%; }
 }
-.sequence-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; margin: 0 16px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: white; }
-.sequence-editor button { min-height: 48px; display: grid; place-items: center; gap: 1px; padding: 4px; border: 1px solid #dbe1e9; border-radius: 6px; background: #fafbfc; color: #344158; cursor: pointer; }
+.sequence-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; margin: 0 16px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: white; }
+.sequence-editor button { min-height: 62px; display: grid; place-items: center; gap: 1px; padding: 4px; border: 1px solid #dbe1e9; border-radius: 6px; background: #fafbfc; color: #344158; cursor: pointer; }
 .sequence-editor button strong { font-size: 14px; }
-.sequence-editor button small { color: #7a8799; font-size: 10px; }
+.sequence-editor button small { color: #526177; font-size: 10px; font-weight: 720; }
+.sequence-editor .source-residue-number { color: #8a95a6; font-size: 9px; font-weight: 540; white-space: nowrap; }
 .sequence-editor button.selected { color: #172134; font-weight: 800; }
 .sequence-editor button.region-a { border-color: #f29398; background: #ffe6e7; }
 .sequence-editor button.region-b { border-color: #90aef3; background: #e9f0ff; }

@@ -596,8 +596,17 @@ export function RegionEditor({
                 for (const id of ["A", "B", "C"] as RegionId[]) {
                   for (const label of regions[id] || []) next.set(label, id);
                 }
+                const added = [...next].filter(
+                  ([label, regionId]) => selection.get(label) !== regionId,
+                ).length;
+                const removed = [...selection].filter(
+                  ([label, regionId]) => next.get(label) !== regionId,
+                ).length;
                 setSelection(next);
-                setStatus("助手建议已应用到本次可编辑层；旧运行与原始 PSE 标注保持不变。");
+                setStatus(
+                  `助手建议已应用到本次可编辑层：新增或移动 ${added} 个，移出 ${removed} 个。`
+                  + "旧运行与原始 PSE 标注保持不变。",
+                );
               }}
               onAnalysisPlan={(methods) => {
                 setSelectionMode(
@@ -624,7 +633,10 @@ export function RegionEditor({
                 onClick={(event) => colorResidue(residue.label_seq_id, event.shiftKey)}
               >
                 <strong>{residue.amino_acid}</strong>
-                <small>{residue.label_seq_id}</small>
+                <small>规范 {residue.label_seq_id}</small>
+                <span className="source-residue-number">
+                  原始 {residue.auth_chain_id}:{residue.auth_residue_id}{residue.insertion_code || ""}
+                </span>
               </button>
             );
           })}

@@ -54,7 +54,12 @@ from easydesign.ui import (
     get_project_projection,
     get_run_projection,
 )
-from easydesign.ui.app import _regions_from_scene_pml
+from easydesign.ui.app import (
+    _apply_region_operations,
+    _explicit_region_operation_from_message,
+    _region_edit_intent_context,
+    _regions_from_scene_pml,
+)
 from easydesign.ui.models import (
     ArtifactProjection,
     ProjectMetadata,
@@ -129,6 +134,34 @@ def test_managed_pml_regions_round_trip_to_canonical_label_ids() -> None:
             "select ed_region_A, chain A and resi 999\n",
             projection,
         )
+
+
+def test_unqualified_assistant_residue_numbers_use_visible_label_ids() -> None:
+    projection = _region_projection_fixture()
+    operation = _explicit_region_operation_from_message("将1到3号残基加入A区")
+    assert operation is not None
+    assert operation.numbering == "label"
+    assert operation.residues == ("1", "2", "3")
+
+    expected = _apply_region_operations(
+        {"B": (2,)},
+        (operation,),
+        projection.residues,
+    )
+    assert expected == {"A": (1, 2, 3)}
+    intent = _region_edit_intent_context(operation, projection, expected)
+    assert intent["label_seq_ids"] == [1, 2, 3]
+    assert intent["author_selector"] == "(chain A and resi 23+24+25A)"
+
+
+def test_assistant_uses_author_numbering_only_when_user_says_so() -> None:
+    operation = _explicit_region_operation_from_message(
+        "将原始编号 chain A 的23和24加入B区"
+    )
+    assert operation is not None
+    assert operation.numbering == "auth"
+    assert operation.chain == "A"
+    assert operation.residues == ("23", "24")
 
 
 @pytest.fixture(autouse=True)

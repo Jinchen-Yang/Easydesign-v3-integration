@@ -42,6 +42,8 @@ const REGION_COLORS = {
 } as const;
 
 const EMPTY_REGIONS: Region[] = [];
+const REGION_OVERLAY_COMMENT = "# EasyDesign live region overlay";
+const LEGACY_REGION_OVERLAY_COMMENT = "# @easydesign live region overlay";
 
 function regionArrayKey(regions?: Region[]): string {
   return (["A", "B", "C"] as const).map((regionId) => {
@@ -123,7 +125,7 @@ function withRegionOverlay(
 ): string {
   const overlay = regionOverlayPml(projection, regions).trim();
   if (!overlay) return pml;
-  return `${pml.trimEnd()}\n\n# @easydesign live region overlay\n${overlay}\n`;
+  return `${pml.trimEnd()}\n\n${REGION_OVERLAY_COMMENT}\n${overlay}\n`;
 }
 
 function replaceManagedRegionSelections(
@@ -134,7 +136,10 @@ function replaceManagedRegionSelections(
   const reserved = /^ed_region_[ABC]$/i;
   const retained = pml.split(/\r?\n/).filter((rawLine) => {
     const line = rawLine.trim();
-    if (line === "# @easydesign live region overlay") return false;
+    if (
+      line === REGION_OVERLAY_COMMENT
+      || line === LEGACY_REGION_OVERLAY_COMMENT
+    ) return false;
     if (!line || line.startsWith("#")) return true;
     const [verb, ...parts] = line.split(/\s+/);
     const rest = parts.join(" ");
@@ -150,7 +155,7 @@ function replaceManagedRegionSelections(
   });
   const overlay = regionOverlayPml(projection, regions).trimEnd();
   return `${retained.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n\n`
-    + `# @easydesign live region overlay\n${overlay}\n`;
+    + `${REGION_OVERLAY_COMMENT}\n${overlay}\n`;
 }
 
 function combinedPml(

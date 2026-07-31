@@ -12,9 +12,10 @@ import json
 import os
 import re
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -128,6 +129,7 @@ _BLOCKED_COMMANDS = frozenset(
 _MODEL_BLOCKED_COMMANDS = _BLOCKED_COMMANDS - {"create"}
 
 _MANAGED_LINE_PREFIX = "# @easydesign"
+_LEGACY_LIVE_REGION_OVERLAY = "# @easydesign live region overlay"
 _MANAGED_OBJECT_PATTERN = re.compile(r"\bobject=([A-Za-z_][A-Za-z0-9_.-]*)\b")
 _CHAIN_PATTERN = re.compile(r"\bchain\s+([A-Za-z0-9_.-]+)", re.IGNORECASE)
 _ALIGN_PATTERN = re.compile(r"^(?:align|super|cealign)\s+([^,\s]+)\s*,\s*([^,\s]+)", re.IGNORECASE)
@@ -168,7 +170,10 @@ def _new_scene_version_id(revision: int) -> str:
 
 def _managed_lines(value: str) -> tuple[str, ...]:
     return tuple(
-        line.strip() for line in value.splitlines() if line.strip().startswith(_MANAGED_LINE_PREFIX)
+        line.strip()
+        for line in value.splitlines()
+        if line.strip().startswith(_MANAGED_LINE_PREFIX)
+        and line.strip() != _LEGACY_LIVE_REGION_OVERLAY
     )
 
 

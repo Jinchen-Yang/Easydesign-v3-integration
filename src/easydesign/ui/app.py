@@ -1063,7 +1063,10 @@ def _explicit_region_operation_from_message(
     region_match = _USER_REGION_RE.search(message)
     if region_match is None:
         return None
-    region_id = cast(Literal["A", "B", "C"], (region_match.group(1) or region_match.group(2)).upper())
+    region_id = cast(
+        Literal["A", "B", "C"],
+        (region_match.group(1) or region_match.group(2)).upper(),
+    )
     if re.search(r"(?:清空|clear)", message, re.IGNORECASE):
         operation: Literal["add", "remove", "toggle", "replace", "clear"] = "clear"
     elif re.search(r"(?:替换|改为|replace)", message, re.IGNORECASE):

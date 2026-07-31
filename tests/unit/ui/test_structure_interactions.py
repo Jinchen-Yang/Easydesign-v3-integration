@@ -796,6 +796,22 @@ def test_scene_pml_validator_protects_managed_lines_and_blocks_unsafe_commands()
     )
     assert valid.endswith("center target\n")
 
+    legacy_overlay = "# @easydesign live region overlay\n"
+    with_legacy_overlay = validate_scene_pml(
+        previous_pml + legacy_overlay + "select ed_region_A, none\n",
+        previous_pml=previous_pml,
+        known_object_names=("target",),
+        known_chain_ids=("A",),
+    )
+    assert legacy_overlay in with_legacy_overlay
+    without_legacy_overlay = validate_scene_pml(
+        previous_pml + "select ed_region_A, none\n",
+        previous_pml=previous_pml + legacy_overlay,
+        known_object_names=("target",),
+        known_chain_ids=("A",),
+    )
+    assert legacy_overlay not in without_legacy_overlay
+
     pymol_native = validate_scene_pml(
         previous_pml
         + (

@@ -193,7 +193,7 @@ def test_initialize_stage04_project_materializes_pilot_executor(
 
     assert loaded.config.stage03 is not None
     assert loaded.config.stage04 is not None
-    assert loaded.config.stage04.executor.devices == (0, 1)
+    assert loaded.config.stage04.executor.devices is None
     assert loaded.config.stage04.executor.workers_per_device == 1
     assert loaded.config.stage04.required_complete_candidates_per_strategy == 40
 

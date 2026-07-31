@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 import easydesign
 from easydesign.backends.executors import (
+    ManagedJobRevision,
+    ManagedWorkerProbe,
+    RemoteJobBundle,
+    RemoteJobInput,
     SshRemoteConnection,
     SshRemoteExecutor,
     SshRemoteJobRecord,
@@ -27,6 +32,7 @@ from easydesign.core import (
     ConfigurationError,
     ExecutionStatus,
     ManifestStateError,
+    ProgressSnapshot,
     RunManifest,
     StageManifest,
     dump_model,
@@ -34,14 +40,73 @@ from easydesign.core import (
     sha256_file,
 )
 from easydesign.safe_writes import read_last_text_line
+from easydesign.stages.s03_boltzgen_configuration.models import StrategyBundle
 from easydesign.workspace_context import WorkspaceContext
 
 from .config import load_run_config
 from .profile import LoadedRuntimeProfile, SshRemoteRuntime, load_runtime_profile
+from .ssh_pairing import RemoteExecutorPairingRevision, RemoteExecutorRegistry
 from .task_tracking import atomic_dump_runtime_model
 from .workspace import RunIndexEntry, upsert_run_index_entries
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+_REVIEW_ARTIFACT_ROLES = frozenset(
+    {
+        "target",
+        "binder",
+        "stage05-full-target-prediction",
+        "protenix-summary-confidence",
+        "protenix-full-confidence",
+        "scientific-negative-result",
+        "stage07-protenix-structure",
+        "tnp-cdr-vernier-liability-evidence",
+        "required-developability-evidence",
+        "human-review-package",
+    }
+)
+_MAX_REVIEW_ARTIFACT_BYTES = 25 * 1024 * 1024
+
+
+class ManagedRemoteSubmission(BaseModel):
+    """Controller-side immutable identity for one managed queue submission."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.2"
+    revision: int = Field(default=1, ge=1)
+    executor_id: str
+    job_id: str
+    controller_id: str
+    project_id: str
+    run_id: str
+    submitted_at: datetime
+    stage_range: tuple[int, ...]
+    candidate_budget: int = Field(ge=1)
+    requested_sync_mode: str = Field(pattern=r"^(metadata|review|complete)$")
+    remote_job_root: str
+    remote_run_root: str
+    bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_run_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    config_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    queue_status: str
+    source_run_mode: str = Field(
+        default="uploaded-closure",
+        pattern=r"^(uploaded-closure|managed-run)$",
+    )
+    managed_source_run: str | None = None
+
+
+class ManagedRemoteObservation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    executor_id: str
+    job_id: str
+    checked_at: datetime
+    connection_state: str = "connected"
+    queue: ManagedJobRevision | None = None
+    progress: ProgressSnapshot | None = None
+    progress_error: str | None = None
 
 
 def _connection(
@@ -79,6 +144,8 @@ def _runtime(
 ) -> SshRemoteRuntime:
     runtime = profile.profile.remote_executors.get(executor_id)
     if runtime is None:
+        runtime = RemoteExecutorRegistry().active_runtimes().get(executor_id)
+    if runtime is None:
         raise ConfigurationError(f"runtime profile 未声明 remote executor: {executor_id}")
     return runtime
 
@@ -109,7 +176,8 @@ def list_remote_executor_ids(
     """列出 profile 明确声明的远端；不扫描 SSH config 或局域网。"""
 
     profile = load_runtime_profile(profile_path)
-    return tuple(sorted(profile.profile.remote_executors))
+    registered = RemoteExecutorRegistry().active_runtimes()
+    return tuple(sorted(set(profile.profile.remote_executors) | set(registered)))
 
 
 def probe_remote_executor(
@@ -127,6 +195,41 @@ def probe_remote_executor(
     return probe
 
 
+def probe_managed_executor(
+    *,
+    executor_id: str,
+    profile_path: Path | None = None,
+) -> ManagedWorkerProbe:
+    """Probe the fixed managed service rather than a generic remote shell."""
+
+    executor = _executor(profile_path=profile_path, executor_id=executor_id)
+    payload = executor.managed_worker_json("probe")
+    probe = ManagedWorkerProbe.model_validate(payload)
+    if probe.service_version != easydesign.__version__:
+        raise ConfigurationError(
+            "managed worker EasyDesign 版本不一致: "
+            f"expected={easydesign.__version__}, observed={probe.service_version}"
+        )
+    return probe
+
+
+def probe_pending_managed_executor(
+    pairing: RemoteExecutorPairingRevision,
+) -> ManagedWorkerProbe:
+    """Probe an awaiting pairing before publishing a ``paired`` revision."""
+
+    runtime = RemoteExecutorRegistry.runtime_for_record(pairing)
+    executor = SshRemoteExecutor(_connection(pairing.executor_id, runtime))
+    payload = executor.managed_worker_json("probe")
+    probe = ManagedWorkerProbe.model_validate(payload)
+    if probe.service_version != easydesign.__version__:
+        raise ConfigurationError(
+            "managed worker EasyDesign 版本不一致: "
+            f"expected={easydesign.__version__}, observed={probe.service_version}"
+        )
+    return probe
+
+
 def _latest_source_run(source_run: Path) -> tuple[RunManifest, Path]:
     root = source_run.expanduser().resolve()
     pointer = root / "manifests" / "LATEST"
@@ -140,6 +243,399 @@ def _latest_source_run(source_run: Path) -> tuple[RunManifest, Path]:
     for reference in manifest.stage_manifest_refs:
         reference.verify(root)
     return manifest, manifest_path
+
+
+def _local_manifest_closure(
+    source_run: Path,
+    manifest: RunManifest,
+    manifest_path: Path,
+) -> tuple[str, ...]:
+    """Return the verified, manifest-derived closure needed by a continuation."""
+
+    root = source_run.expanduser().resolve()
+    selected: set[str] = {
+        "manifests/LATEST",
+        manifest_path.relative_to(root).as_posix(),
+        _safe_relative(manifest.config_snapshot.relative_path),
+    }
+    stages: list[StageManifest] = []
+    for reference in manifest.stage_manifest_refs:
+        selected.add(_safe_relative(reference.relative_path))
+        stage = load_model(reference.verify(root), StageManifest)
+        stages.append(stage)
+        selected.update(
+            _safe_relative(item.relative_path) for item in _stage_artifacts(stage)
+        )
+    inspected: set[str] = set()
+    while True:
+        additions: set[str] = set()
+        for relative in sorted(selected - inspected):
+            inspected.add(relative)
+            path = root / relative
+            if not path.is_file():
+                raise ManifestStateError(f"managed submission 闭包缺失: {relative}")
+            if path.suffix.lower() != ".json":
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            for reference in _artifact_refs_in_json(payload):
+                safe = _safe_relative(reference.relative_path)
+                reference.verify(root)
+                if safe not in selected:
+                    additions.add(safe)
+        if not additions:
+            break
+        selected.update(additions)
+    _verify_local_manifest_closure(root, manifest, tuple(stages))
+    return tuple(sorted(selected))
+
+
+def _managed_stage_range(
+    *,
+    manifest: RunManifest,
+    stop_after_stage: int,
+) -> tuple[int, ...]:
+    stages = tuple(
+        int(reference.producer_stage.split("-", 1)[0])
+        for reference in manifest.stage_manifest_refs
+        if reference.producer_stage is not None
+    )
+    latest = max(stages, default=0)
+    if latest == 3:
+        return (4, 5) if stop_after_stage >= 5 else (4,)
+    if latest == 5:
+        return (6, 7) if stop_after_stage >= 7 else (6,)
+    raise ManifestStateError(
+        "managed SSH 只接受 Stage 03→04/05 或 Stage 05→06/07 continuation"
+    )
+
+
+def _managed_candidate_budget(
+    *,
+    source_run: Path,
+    manifest: RunManifest,
+    stage_range: tuple[int, ...],
+    config: Any,
+) -> int:
+    if stage_range[0] == 6:
+        assert config.stage06 is not None
+        return 1_000 if config.stage06.scale_profile == "smoke-1000" else 50_000
+    stage03_ref = next(
+        (
+            reference
+            for reference in manifest.stage_manifest_refs
+            if reference.producer_stage == "03-boltzgen-configuration"
+        ),
+        None,
+    )
+    if stage03_ref is None:
+        raise ManifestStateError("managed Stage 04 提交缺少 Stage 03 manifest")
+    stage03 = load_model(stage03_ref.verify(source_run), StageManifest)
+    strategy_ref = stage03.require_output("strategy-bundle")
+    bundle = load_model(strategy_ref.verify(source_run), StrategyBundle)
+    return sum(item.candidates_per_strategy for item in bundle.strategies)
+
+
+def _managed_record_root(executor_id: str, job_id: str) -> Path:
+    context = WorkspaceContext.discover()
+    return (
+        context.runtime_root
+        / "state"
+        / "managed-remote-jobs"
+        / executor_id
+        / job_id
+    )
+
+
+def list_managed_remote_submissions(
+    *,
+    executor_id: str | None = None,
+) -> tuple[ManagedRemoteSubmission, ...]:
+    context = WorkspaceContext.discover()
+    base = context.runtime_root / "state" / "managed-remote-jobs"
+    candidates = (
+        base.glob("*/*/revisions/revision-*.json")
+        if executor_id is None
+        else (base / executor_id).glob("*/revisions/revision-*.json")
+    )
+    latest: dict[tuple[str, str], Path] = {}
+    for path in sorted(candidates):
+        latest[(path.parents[2].name, path.parents[1].name)] = path
+    return tuple(
+        ManagedRemoteSubmission.model_validate_json(path.read_text(encoding="utf-8"))
+        for path in latest.values()
+    )
+
+
+def read_managed_remote_submission(
+    *, executor_id: str, job_id: str
+) -> ManagedRemoteSubmission:
+    record = next(
+        (
+            item
+            for item in list_managed_remote_submissions(executor_id=executor_id)
+            if item.job_id == job_id
+        ),
+        None,
+    )
+    if record is None:
+        raise ConfigurationError(f"managed remote job 不存在: {executor_id}/{job_id}")
+    return record
+
+
+def _matching_managed_source(
+    *,
+    executor: SshRemoteExecutor,
+    executor_id: str,
+    manifest: RunManifest,
+    manifest_path: Path,
+) -> tuple[ManagedRemoteSubmission, str] | None:
+    """Find the same reviewed run in managed storage by immutable identity."""
+
+    expected_remote = (
+        executor.connection.remote_runs_root / manifest.project_id / manifest.run_id
+    )
+    candidates = sorted(
+        (
+            item
+            for item in list_managed_remote_submissions(executor_id=executor_id)
+            if item.project_id == manifest.project_id
+            and item.run_id == manifest.run_id
+            and Path(item.remote_run_root) == expected_remote
+        ),
+        key=lambda item: (item.submitted_at, item.job_id),
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    remote_latest = executor.read_text(expected_remote / "manifests" / "LATEST").strip()
+    latest_name = Path(remote_latest)
+    if (
+        remote_latest in {"", "."}
+        or latest_name.is_absolute()
+        or ".." in latest_name.parts
+        or len(latest_name.parts) != 1
+    ):
+        raise ManifestStateError("Suzhou2 managed source 的 LATEST 内容不安全")
+    identity = executor.file_identity(
+        expected_remote / "manifests" / remote_latest
+    )
+    local_sha256 = sha256_file(manifest_path)
+    if identity.sha256 != local_sha256:
+        raise ManifestStateError(
+            "本地 review 镜像与 Suzhou2 managed source 的最新 manifest 不一致"
+        )
+    try:
+        relative = expected_remote.relative_to(executor.connection.remote_work_root)
+    except ValueError as error:
+        raise ManifestStateError("Suzhou2 managed runs_root 不在 worker 根目录内") from error
+    expected_relative = Path("runs") / manifest.project_id / manifest.run_id
+    if relative != expected_relative:
+        raise ManifestStateError(
+            "Suzhou2 managed source 必须位于 runs/<project>/<run>"
+        )
+    return candidates[0], relative.as_posix()
+
+
+def submit_managed_pipeline(
+    *,
+    executor_id: str,
+    controller_id: str,
+    job_id: str,
+    run_id: str,
+    config_path: Path,
+    source_run: Path,
+    profile_path: Path | None = None,
+    maximum_gpus: int | None = None,
+    sync_mode: str = "review",
+) -> ManagedRemoteSubmission:
+    """Stage and enqueue one manifest-closed continuation on a paired worker."""
+
+    for value, label in (
+        (executor_id, "executor_id"),
+        (controller_id, "controller_id"),
+        (job_id, "job_id"),
+        (run_id, "run_id"),
+    ):
+        if re.fullmatch(r"^[a-z0-9][a-z0-9._-]*$", value) is None:
+            raise ConfigurationError(f"{label} 不符合稳定 ID 规则: {value}")
+    pairing = RemoteExecutorRegistry().latest(executor_id)
+    if pairing is None or pairing.state != "paired":
+        raise ConfigurationError(f"managed executor 尚未完成配对: {executor_id}")
+    if pairing.controller_id != controller_id:
+        raise ConfigurationError("controller_id 与 SSH 配对记录不一致")
+    selected_source = source_run.expanduser().resolve()
+    manifest, manifest_path = _latest_source_run(selected_source)
+    selected_config = config_path.expanduser().resolve()
+    loaded = load_run_config(selected_config).config
+    if manifest.project_id != loaded.project_id:
+        raise ManifestStateError("managed config project_id 与 source run 不一致")
+    stage_range = _managed_stage_range(
+        manifest=manifest,
+        stop_after_stage=loaded.workflow.stop_after_stage,
+    )
+    budget = _managed_candidate_budget(
+        source_run=selected_source,
+        manifest=manifest,
+        stage_range=stage_range,
+        config=loaded,
+    )
+    local_record_root = _managed_record_root(executor_id, job_id)
+    if local_record_root.exists():
+        raise ConfigurationError(f"managed job 本地记录已存在: {job_id}")
+    probe_managed_executor(executor_id=executor_id, profile_path=profile_path)
+    executor = _executor(profile_path=profile_path, executor_id=executor_id)
+    matching_source = _matching_managed_source(
+        executor=executor,
+        executor_id=executor_id,
+        manifest=manifest,
+        manifest_path=manifest_path,
+    )
+    managed_source_run = None if matching_source is None else matching_source[1]
+    closure = (
+        _local_manifest_closure(selected_source, manifest, manifest_path)
+        if managed_source_run is None
+        else ()
+    )
+    job_root = executor.connection.remote_work_root / "jobs" / job_id
+    executor._run_remote(("test", "!", "-e", str(job_root)))
+    if closure:
+        executor._run_remote(
+            ("mkdir", "-p", str(job_root / "input" / "source-run"))
+        )
+        executor.push_files(
+            local_root=selected_source,
+            relative_paths=closure,
+            remote_root=job_root / "input" / "source-run",
+        )
+
+    staging = local_record_root / "submission-input"
+    staging.mkdir(parents=True, exist_ok=False)
+    frozen_config = staging / "easydesign.yaml"
+    with frozen_config.open("xb") as handle:
+        handle.write(selected_config.read_bytes())
+        handle.flush()
+        os.fsync(handle.fileno())
+    inputs = [
+        RemoteJobInput(
+            relative_path="easydesign.yaml",
+            size_bytes=frozen_config.stat().st_size,
+            sha256=sha256_file(frozen_config),
+            role="resolved-run-config",
+        )
+    ]
+    for relative in closure:
+        path = selected_source / relative
+        inputs.append(
+            RemoteJobInput(
+                relative_path=f"source-run/{relative}",
+                size_bytes=path.stat().st_size,
+                sha256=sha256_file(path),
+                role="manifest-closure",
+            )
+        )
+    bundle = RemoteJobBundle(
+        job_id=job_id,
+        controller_id=controller_id,
+        controller_key_fingerprint=pairing.public_key_fingerprint,
+        project_id=loaded.project_id,
+        run_id=run_id,
+        submitted_at=datetime.now(UTC),
+        stage_range=stage_range,  # type: ignore[arg-type]
+        candidate_budget=budget,
+        easydesign_version=easydesign.__version__,
+        config_sha256=sha256_file(frozen_config),
+        upstream_manifest_sha256=sha256_file(manifest_path),
+        inputs=tuple(inputs),
+        source_run_mode=(
+            "uploaded-closure" if managed_source_run is None else "managed-run"
+        ),
+        managed_source_run=managed_source_run,
+        maximum_gpus=maximum_gpus,
+        requested_sync_mode=sync_mode,  # type: ignore[arg-type]
+    )
+    bundle_path = staging / "remote-job-bundle.json"
+    with bundle_path.open("x", encoding="utf-8") as handle:
+        handle.write(bundle.model_dump_json(indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    executor.push_file(source=frozen_config, remote_path=job_root / "input/easydesign.yaml")
+    executor.push_file(
+        source=bundle_path,
+        remote_path=job_root / "input/remote-job-bundle.json",
+    )
+    queued = ManagedJobRevision.model_validate(
+        executor.managed_worker_json(
+            "enqueue",
+            str(job_root / "input/remote-job-bundle.json"),
+        )
+    )
+    submission = ManagedRemoteSubmission(
+        executor_id=executor_id,
+        job_id=job_id,
+        controller_id=controller_id,
+        project_id=loaded.project_id,
+        run_id=run_id,
+        submitted_at=bundle.submitted_at,
+        stage_range=stage_range,
+        candidate_budget=budget,
+        requested_sync_mode=sync_mode,
+        remote_job_root=str(job_root),
+        remote_run_root=str(executor.connection.remote_runs_root / loaded.project_id / run_id),
+        bundle_sha256=bundle.identity_sha256,
+        source_run_manifest_sha256=sha256_file(manifest_path),
+        config_sha256=sha256_file(frozen_config),
+        queue_status=queued.status,
+        source_run_mode=bundle.source_run_mode,
+        managed_source_run=managed_source_run,
+    )
+    revision_path = local_record_root / "revisions/revision-000001.json"
+    revision_path.parent.mkdir(parents=True, exist_ok=True)
+    with revision_path.open("x", encoding="utf-8") as handle:
+        handle.write(submission.model_dump_json(indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return submission
+
+
+def observe_managed_pipeline(
+    *,
+    executor_id: str,
+    job_id: str,
+    profile_path: Path | None = None,
+) -> ManagedRemoteObservation:
+    executor = _executor(profile_path=profile_path, executor_id=executor_id)
+    try:
+        payload = executor.managed_worker_json("status", job_id)
+        queue = ManagedJobRevision.model_validate(payload["queue"])
+        progress = None
+        progress_error = None
+        try:
+            # The controller record contains the canonical project/run path.
+            record = read_managed_remote_submission(
+                executor_id=executor_id, job_id=job_id
+            )
+            progress = executor.progress(Path(record.remote_run_root))
+        except Exception as error:
+            progress_error = str(error)[:4096] or type(error).__name__
+        return ManagedRemoteObservation(
+            executor_id=executor_id,
+            job_id=job_id,
+            checked_at=datetime.now(UTC),
+            queue=queue,
+            progress=progress,
+            progress_error=progress_error,
+        )
+    except Exception as error:
+        return ManagedRemoteObservation(
+            executor_id=executor_id,
+            job_id=job_id,
+            checked_at=datetime.now(UTC),
+            connection_state="temporarily-disconnected",
+            progress_error=str(error)[:4096] or type(error).__name__,
+        )
 
 
 def remote_job_record_path(executor_id: str, job_id: str) -> Path:
@@ -457,13 +953,25 @@ def sync_remote_pipeline(
     mode: str = "metadata",
     profile_path: Path | None = None,
 ) -> SshRemoteSyncReport:
-    """增量拉取 manifest 闭包；complete 额外拉取嵌套 candidate ArtifactRef。"""
+    """增量拉取 manifest 闭包。
 
-    if mode not in {"metadata", "complete"}:
-        raise ConfigurationError("remote sync mode 只允许 metadata 或 complete")
-    record = read_remote_job_record(executor_id=executor_id, job_id=job_id)
+    ``review`` 只跟随明确白名单中的小型审阅产物；``complete`` 才跟随
+    全部嵌套 ArtifactRef。两者都不通过扫描远程目录猜测结果。
+    """
+
+    if mode not in {"metadata", "review", "complete"}:
+        raise ConfigurationError(
+            "remote sync mode 只允许 metadata、review 或 complete"
+        )
+    try:
+        record = read_remote_job_record(executor_id=executor_id, job_id=job_id)
+        remote_root = Path(record.submission.remote_run_root)
+    except ConfigurationError:
+        managed = read_managed_remote_submission(
+            executor_id=executor_id, job_id=job_id
+        )
+        remote_root = Path(managed.remote_run_root)
     executor = _executor(profile_path=profile_path, executor_id=executor_id)
-    remote_root = Path(record.submission.remote_run_root)
     target = destination.expanduser().resolve()
     if target.is_symlink():
         raise ConfigurationError("remote sync destination 禁止 symlink")
@@ -478,7 +986,7 @@ def sync_remote_pipeline(
     )
     _verify_local_manifest_closure(target, manifest, stages)
 
-    if mode == "complete":
+    if mode in {"review", "complete"}:
         inspected: set[str] = set()
         while True:
             new_paths: set[str] = set()
@@ -492,6 +1000,11 @@ def sync_remote_pipeline(
                 except (OSError, json.JSONDecodeError):
                     continue
                 for reference in _artifact_refs_in_json(payload):
+                    if mode == "review" and (
+                        reference.role not in _REVIEW_ARTIFACT_ROLES
+                        or reference.size_bytes > _MAX_REVIEW_ARTIFACT_BYTES
+                    ):
+                        continue
                     safe = _safe_relative(reference.relative_path)
                     if safe not in paths:
                         new_paths.add(safe)
@@ -512,6 +1025,8 @@ def sync_remote_pipeline(
             except (OSError, json.JSONDecodeError):
                 continue
             for reference in _artifact_refs_in_json(payload):
+                if mode == "review" and reference.relative_path not in paths:
+                    continue
                 reference.verify(target)
 
     manifest_path = target / latest_relative

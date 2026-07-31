@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from easydesign.backends.boltzgen import BoltzGenGenerationAdapter
 from easydesign.backends.executors import (
+    DeviceResult,
     NvidiaSmiProbe,
     execute_on_devices,
     ui_drain_requested,
@@ -74,6 +75,15 @@ from .boltzgen_tasks import (
     recover_interrupted_boltzgen_task,
 )
 from .config import Stage06Config
+from .execution_targets import (
+    GpuInventory,
+    GpuLeaseRevision,
+    LocalCurrentHostTarget,
+    gpu_lease_store_for_run,
+    local_target_with_runtime_limit,
+    verify_managed_preallocation,
+    wait_for_eligible_gpus,
+)
 from .stage04 import _atomic_text
 from .task_tracking import TaskEventJournal, atomic_dump_runtime_model
 from .workspace import (
@@ -630,6 +640,65 @@ def execute_stage06(
     resource_path = artifacts / "resource-report.json"
     authorization_path = artifacts / "scale-strategy-authorization.json"
     plan_path = artifacts / "scale-plan.json"
+    probe = NvidiaSmiProbe() if gpu_probe is None else gpu_probe
+    lease_store = gpu_lease_store_for_run(root)
+    managed_devices = verify_managed_preallocation(
+        lease_store=lease_store,
+        stage_number=6,
+    )
+    inventory_path = runtime / "gpu-inventory.json"
+
+    def select_devices(
+        target: LocalCurrentHostTarget,
+        *,
+        require_all: bool,
+    ) -> tuple[int, ...]:
+        if managed_devices is not None:
+            if target.allowed_devices is not None and set(target.allowed_devices) != set(
+                managed_devices
+            ):
+                raise ManifestStateError(
+                    "Stage 06 frozen plan 与 managed worker GPU allocation 不一致"
+                )
+            return managed_devices
+        def record_wait(value: GpuInventory) -> None:
+            atomic_dump_runtime_model(value, inventory_path)
+
+        inventory = wait_for_eligible_gpus(
+            probe=probe,
+            lease_store=lease_store,
+            target=target,
+            max_memory_used_mib=stage04_config.executor.max_memory_used_mib,
+            max_utilization_percent=stage04_config.executor.max_utilization_percent,
+            timeout_seconds=stage04_config.executor.resource_wait_timeout_seconds,
+            poll_seconds=stage04_config.executor.resource_poll_seconds,
+            require_all_allowed=require_all,
+            on_wait=record_wait,
+        )
+        atomic_dump_runtime_model(inventory, inventory_path)
+        return inventory.selected_devices
+
+    if plan_path.exists():
+        frozen_plan: ScalePlanV0_2 | ScalePlan
+        if multi_strategy:
+            frozen_plan = load_model(plan_path, ScalePlanV0_2)
+        else:
+            frozen_plan = load_model(plan_path, ScalePlan)
+        execution_devices = select_devices(
+            LocalCurrentHostTarget(
+                allowed_devices=frozen_plan.devices,
+                maximum_devices=len(frozen_plan.devices),
+            ),
+            require_all=True,
+        )
+    else:
+        execution_devices = select_devices(
+            local_target_with_runtime_limit(
+                allowed_devices=stage04_config.executor.devices,
+                configured_maximum_devices=stage04_config.executor.maximum_devices,
+            ),
+            require_all=stage04_config.executor.devices is not None,
+        )
     if multi_strategy:
         assert isinstance(authorization, MultiStrategyScaleAuthorization)
         authorization = _dump_or_verify_model(
@@ -674,7 +743,10 @@ def execute_stage06(
             or plan.profile is not profile
             or plan.strategy_authorization != authorization
             or plan.resource_report != resource_ref
-            or plan.devices != stage04_config.executor.devices
+            or (
+                stage04_config.executor.devices is not None
+                and plan.devices != stage04_config.executor.devices
+            )
             or plan.preauthorized_candidate_limit
             != config.preauthorized_candidate_limit
         )
@@ -724,7 +796,7 @@ def execute_stage06(
                 stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
                 design_specifications=specifications,
                 resource_report=resource_ref,
-                devices=stage04_config.executor.devices,
+                devices=execution_devices,
                 preauthorized_candidate_limit=config.preauthorized_candidate_limit,
                 generated_at=now,
                 strategy_authorization=authorization,
@@ -738,7 +810,7 @@ def execute_stage06(
                 stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
                 design_specification=specifications[0],
                 resource_report=resource_ref,
-                devices=stage04_config.executor.devices,
+                devices=execution_devices,
                 preauthorized_candidate_limit=config.preauthorized_candidate_limit,
                 generated_at=now,
                 strategy_authorization=authorization,
@@ -889,13 +961,12 @@ def execute_stage06(
             tasks[shard.task_id] = task.model_copy(update={"status": TaskStatus.PENDING})
     persist("running")
 
-    probe = NvidiaSmiProbe() if gpu_probe is None else gpu_probe
-    probe.wait_until_idle(
-        plan.devices,
-        max_memory_used_mib=stage04_config.executor.max_memory_used_mib,
-        max_utilization_percent=stage04_config.executor.max_utilization_percent,
-        timeout_seconds=stage04_config.executor.resource_wait_timeout_seconds,
-        poll_seconds=stage04_config.executor.resource_poll_seconds,
+    select_devices(
+        LocalCurrentHostTarget(
+            allowed_devices=plan.devices,
+            maximum_devices=len(plan.devices),
+        ),
+        require_all=True,
     )
 
     def run_shard(
@@ -922,14 +993,61 @@ def execute_stage06(
     pending = tuple(
         item for item in plan.shards if tasks[item.task_id].status is not TaskStatus.SUCCEEDED
     )
-    results = execute_on_devices(
-        pending,
-        devices=plan.devices,
-        worker=run_shard,
-        should_stop=ui_drain_requested,
-    )
-    for result in results:
-        tasks[pending[result.input_index].task_id] = result.result
+    leases: tuple[GpuLeaseRevision, ...] = ()
+    results: tuple[DeviceResult[TaskRecord], ...] = ()
+    if pending:
+        leases = (
+            ()
+            if managed_devices is not None
+            else lease_store.acquire(
+                plan.devices,
+                owner_id="local-controller",
+                job_id=f"stage06-{upstream.run.run_id}"[:128],
+                run_id=upstream.run.run_id,
+                stage_number=6,
+            )
+        )
+        journal.append(
+            TaskEvent(
+                sequence=journal.next_sequence,
+                occurred_at=datetime.now(UTC),
+                event_type=(
+                    "managed-gpu-leases-verified"
+                    if managed_devices is not None
+                    else "gpu-leases-acquired"
+                ),
+                message=(
+                    f"central allocation devices={plan.devices}"
+                    if managed_devices is not None
+                    else ", ".join(
+                        f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
+                    )
+                ),
+            )
+        )
+        try:
+            results = execute_on_devices(
+                pending,
+                devices=plan.devices,
+                worker=run_shard,
+                should_stop=ui_drain_requested,
+            )
+        finally:
+            if leases:
+                released = lease_store.release(leases)
+                journal.append(
+                    TaskEvent(
+                        sequence=journal.next_sequence,
+                        occurred_at=datetime.now(UTC),
+                        event_type="gpu-leases-released",
+                        message=", ".join(
+                            f"gpu={item.device},lease={item.lease_id}"
+                            for item in released
+                        ),
+                    )
+                )
+    for device_result in results:
+        tasks[pending[device_result.input_index].task_id] = device_result.result
     final_tasks = ordered_tasks()
     if any(item.status is not TaskStatus.SUCCEEDED for item in final_tasks):
         persist("incomplete")

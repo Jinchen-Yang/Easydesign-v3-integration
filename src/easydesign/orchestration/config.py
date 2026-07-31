@@ -730,7 +730,8 @@ class LocalMultiGpuExecutorConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     type: Literal["local-multi-gpu"] = "local-multi-gpu"
-    devices: tuple[int, ...] = Field(default=(0, 1), min_length=1)
+    devices: tuple[int, ...] | None = None
+    maximum_devices: int | None = Field(default=None, ge=1)
     workers_per_device: Literal[1] = 1
     max_memory_used_mib: int = Field(default=1024, ge=0)
     max_utilization_percent: int = Field(default=10, ge=0, le=100)
@@ -740,6 +741,10 @@ class LocalMultiGpuExecutorConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_devices(self) -> Self:
+        if self.devices is None:
+            return self
+        if not self.devices:
+            raise ValueError("GPU devices 不能是空列表")
         if any(device < 0 for device in self.devices):
             raise ValueError("GPU device 必须是非负整数")
         if len(self.devices) != len(set(self.devices)):

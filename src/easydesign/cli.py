@@ -14,6 +14,12 @@ from typing import Any
 from pydantic import BaseModel
 
 import easydesign
+from easydesign.backends.executors import (
+    ManagedQueue,
+    ManagedWorkerLayout,
+    ManagedWorkerProbe,
+    RemoteJobBundle,
+)
 from easydesign.core import (
     ArtifactIntegrityError,
     ArtifactNotFoundError,
@@ -43,6 +49,14 @@ from easydesign.orchestration.decisions import (
 )
 from easydesign.orchestration.evidence_adoption import adopt_remote_scale_evidence
 from easydesign.orchestration.hotspots import approve_hotspots, export_hotspot_review
+from easydesign.orchestration.managed_worker_service import (
+    ManagedWorkerConfig,
+    ManagedWorkerService,
+    execute_managed_job,
+    load_managed_worker_config,
+    read_latest_execution_result,
+    write_managed_worker_bootstrap,
+)
 from easydesign.orchestration.profile import (
     default_runtime_profile_path,
     initialize_runtime_profile,
@@ -57,14 +71,18 @@ from easydesign.orchestration.project_catalog import (
     select_project_primary_run,
 )
 from easydesign.orchestration.remote_execution import (
+    list_managed_remote_submissions,
     list_remote_executor_ids,
     list_remote_job_records,
+    observe_managed_pipeline,
     observe_remote_pipeline,
+    probe_managed_executor,
     probe_remote_executor,
     read_remote_job_record,
     read_remote_status,
     read_remote_submission,
     resume_remote_pipeline,
+    submit_managed_pipeline,
     submit_remote_pipeline,
     sync_remote_pipeline,
 )
@@ -80,6 +98,11 @@ from easydesign.orchestration.setup_jobs import (
     launch_setup_job,
     list_setup_jobs,
     read_setup_job,
+)
+from easydesign.orchestration.ssh_pairing import (
+    RemoteExecutorRegistry,
+    public_key_install_command,
+    scan_host_identity,
 )
 from easydesign.orchestration.stage04 import Stage04Execution
 from easydesign.orchestration.stage05 import Stage05Execution
@@ -295,6 +318,51 @@ def _parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--dry-run", action="store_true")
     _add_json(run_parser)
 
+    worker_parser = commands.add_parser(
+        "managed-worker",
+        help="Suzhou2 受管 GPU 队列的固定服务入口",
+    )
+    worker_commands = worker_parser.add_subparsers(
+        dest="managed_worker_command",
+        required=True,
+    )
+    worker_bootstrap = worker_commands.add_parser(
+        "bootstrap",
+        help="在数据盘创建 worker 布局和 systemd unit 建议，不安装到 /etc",
+    )
+    worker_bootstrap.add_argument(
+        "--root", type=Path, default=Path("/data/easydesign/managed-worker")
+    )
+    worker_bootstrap.add_argument("--easydesign-executable", type=Path, required=True)
+    worker_bootstrap.add_argument("--profile", type=Path, required=True)
+    worker_bootstrap.add_argument("--nvidia-smi", type=Path, default=Path("/usr/bin/nvidia-smi"))
+    worker_bootstrap.add_argument("--expected-gpus", type=int, default=8)
+    _add_json(worker_bootstrap)
+    for command_name, command_help in (
+        ("probe", "读取 worker、GPU、队列和数据盘状态"),
+        ("once", "执行一次对账和任务调度"),
+        ("serve", "持15秒周期持续调度"),
+    ):
+        selected = worker_commands.add_parser(command_name, help=command_help)
+        selected.add_argument("--config", type=Path, required=True)
+        _add_json(selected)
+    worker_enqueue = worker_commands.add_parser(
+        "enqueue", help="校验并入队一个无任意 shell 字段的 RemoteJobBundle"
+    )
+    worker_enqueue.add_argument("bundle", type=Path)
+    worker_enqueue.add_argument("--config", type=Path, required=True)
+    _add_json(worker_enqueue)
+    worker_status = worker_commands.add_parser("status", help="读取单个受管任务状态")
+    worker_status.add_argument("job_id")
+    worker_status.add_argument("--config", type=Path, required=True)
+    _add_json(worker_status)
+    worker_execute = worker_commands.add_parser(
+        "execute", help="由 worker 内部启动的固定 pipeline 执行器"
+    )
+    worker_execute.add_argument("job_id")
+    worker_execute.add_argument("--config", type=Path, required=True)
+    _add_json(worker_execute)
+
     remote_parser = commands.add_parser(
         "remote",
         help="通过显式 SSH executor 探测、提交和查看整个 EasyDesign run",
@@ -330,6 +398,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     _add_profile(remote_submit)
     _add_json(remote_submit)
+    managed_submit = remote_commands.add_parser(
+        "submit-managed",
+        help="把 Stage 03 或 Stage 05 的 manifest 闭包提交到 Suzhou2 中央队列",
+    )
+    managed_submit.add_argument("executor_id")
+    managed_submit.add_argument("--controller-id", required=True)
+    managed_submit.add_argument("--job-id", required=True)
+    managed_submit.add_argument("--run-id", required=True)
+    managed_submit.add_argument("--config", type=Path, required=True)
+    managed_submit.add_argument("--from-run", type=Path, required=True)
+    managed_submit.add_argument("--maximum-gpus", type=int)
+    managed_submit.add_argument(
+        "--sync-mode", choices=("metadata", "review", "complete"), default="review"
+    )
+    _add_profile(managed_submit)
+    _add_json(managed_submit)
     remote_status = remote_commands.add_parser("status", help="查询远端 worker 状态")
     remote_status.add_argument("executor_id")
     remote_status.add_argument("job_id")
@@ -341,13 +425,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     remote_watch.add_argument("executor_id")
     remote_watch.add_argument("job_id")
-    remote_watch.add_argument("--interval", type=float, default=5.0)
+    remote_watch.add_argument("--interval", type=float, default=15.0)
     remote_watch.add_argument("--once", action="store_true")
     remote_watch.add_argument("--sync-to", type=Path)
     remote_watch.add_argument(
         "--sync-mode",
-        choices=("metadata", "complete"),
-        default="metadata",
+        choices=("metadata", "review", "complete"),
+        default="review",
     )
     _add_profile(remote_watch)
     _add_json(remote_watch)
@@ -368,8 +452,8 @@ def _parser() -> argparse.ArgumentParser:
     remote_sync.add_argument("--to", type=Path, required=True)
     remote_sync.add_argument(
         "--mode",
-        choices=("metadata", "complete"),
-        default="metadata",
+        choices=("metadata", "review", "complete"),
+        default="review",
     )
     _add_profile(remote_sync)
     _add_json(remote_sync)
@@ -383,6 +467,35 @@ def _parser() -> argparse.ArgumentParser:
     remote_adopt.add_argument("--continuation-id", required=True)
     _add_profile(remote_adopt)
     _add_json(remote_adopt)
+
+    remote_pair_scan = remote_commands.add_parser(
+        "pair-scan", help="读取 Suzhou2 host fingerprint，不保存配对"
+    )
+    remote_pair_scan.add_argument("--host", required=True)
+    remote_pair_scan.add_argument("--port", type=int, default=22)
+    _add_json(remote_pair_scan)
+    remote_pair_begin = remote_commands.add_parser(
+        "pair-begin", help="确认 host fingerprint 并创建当前工作区专用 SSH key"
+    )
+    remote_pair_begin.add_argument("executor_id")
+    remote_pair_begin.add_argument("--controller-id", required=True)
+    remote_pair_begin.add_argument("--host", required=True)
+    remote_pair_begin.add_argument("--port", type=int, default=22)
+    remote_pair_begin.add_argument("--user", default="root")
+    remote_pair_begin.add_argument("--confirm-fingerprint", required=True)
+    _add_json(remote_pair_begin)
+    remote_pair_confirm = remote_commands.add_parser(
+        "pair-confirm", help="在远端安装公钥后验证 worker 并完成配对"
+    )
+    remote_pair_confirm.add_argument("executor_id")
+    _add_profile(remote_pair_confirm)
+    _add_json(remote_pair_confirm)
+    remote_unpair = remote_commands.add_parser(
+        "unpair", help="逻辑解绑；保留私钥、远端公钥和历史证据"
+    )
+    remote_unpair.add_argument("executor_id")
+    remote_unpair.add_argument("--confirmed", action="store_true")
+    _add_json(remote_unpair)
 
     hotspots_parser = commands.add_parser(
         "hotspots",
@@ -1048,13 +1161,196 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             _print_execution(execution)
         return 0
 
+    if arguments.command == "managed-worker":
+        if arguments.managed_worker_command == "bootstrap":
+            config = ManagedWorkerConfig(
+                managed_root=arguments.root.expanduser().resolve(),
+                easydesign_executable=arguments.easydesign_executable.expanduser().resolve(),
+                runtime_profile=arguments.profile.expanduser().resolve(),
+                nvidia_smi_executable=arguments.nvidia_smi.expanduser().resolve(),
+                expected_gpu_count=arguments.expected_gpus,
+            )
+            config_path, unit_path = write_managed_worker_bootstrap(config=config)
+            payload = {
+                "status": "bootstrap-created",
+                "config": str(config_path),
+                "systemd_unit_proposal": str(unit_path),
+                "note": "未修改 /etc/systemd/system；请审核 unit 后再由有权限的人员安装。",
+            }
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else "\n".join(f"{key}: {value}" for key, value in payload.items())
+            )
+            print(rendered)
+            return 0
+        config = load_managed_worker_config(arguments.config)
+        service = ManagedWorkerService(config)
+        if arguments.managed_worker_command == "probe":
+            payload = service.probe_status()
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else json.dumps(payload, ensure_ascii=False, indent=2)
+            )
+            print(rendered)
+            return 0
+        if arguments.managed_worker_command == "serve":
+            service.run_forever()
+            return 0
+        if arguments.managed_worker_command == "once":
+            record = service.run_once()
+            payload = {"status": "idle"} if record is None else record.model_dump(mode="json")
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else json.dumps(payload, ensure_ascii=False, indent=2)
+            )
+            print(rendered)
+            return 0
+        layout = ManagedWorkerLayout(config.managed_root)
+        queue = ManagedQueue(layout)
+        if arguments.managed_worker_command == "enqueue":
+            bundle = RemoteJobBundle.model_validate_json(
+                arguments.bundle.read_text(encoding="utf-8")
+            )
+            expected = layout.jobs / bundle.job_id / "input" / "remote-job-bundle.json"
+            if arguments.bundle.expanduser().resolve() != expected.resolve():
+                raise ConfigurationError(
+                    "managed worker 只接受已 staging 到对应 job/input 的 bundle"
+                )
+            enqueue_revision = queue.enqueue(bundle)
+            print(
+                _json_text(enqueue_revision)
+                if arguments.json
+                else f"已入队：{enqueue_revision.job_id}"
+            )
+            return 0
+        if arguments.managed_worker_command == "status":
+            status_revision = queue.latest(arguments.job_id)
+            execution_result = read_latest_execution_result(layout, arguments.job_id)
+            payload = {
+                "queue": status_revision.model_dump(mode="json"),
+                "result": (
+                    None
+                    if execution_result is None
+                    else execution_result.model_dump(mode="json")
+                ),
+            }
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else json.dumps(payload, ensure_ascii=False, indent=2)
+            )
+            print(rendered)
+            return 0
+        if arguments.managed_worker_command == "execute":
+            execution_result = execute_managed_job(job_id=arguments.job_id, config=config)
+            print(
+                _json_text(execution_result)
+                if arguments.json
+                else f"任务完成：{execution_result.job_id}"
+            )
+            return 0
+
     if arguments.command == "remote":
+        if arguments.remote_command == "pair-scan":
+            identity = scan_host_identity(host=arguments.host, port=arguments.port)
+            rendered = (
+                _json_text(identity)
+                if arguments.json
+                else f"Host fingerprint: {identity.fingerprint}"
+            )
+            print(rendered)
+            return 0
+        if arguments.remote_command == "pair-begin":
+            pairing_record = RemoteExecutorRegistry().begin_pairing(
+                executor_id=arguments.executor_id,
+                controller_id=arguments.controller_id,
+                host=arguments.host,
+                port=arguments.port,
+                user=arguments.user,
+                confirmed_host_fingerprint=arguments.confirm_fingerprint,
+            )
+            payload = pairing_record.model_dump(mode="json")
+            payload["public_key_install_command"] = public_key_install_command(
+                pairing_record
+            )
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else json.dumps(payload, ensure_ascii=False, indent=2)
+            )
+            print(rendered)
+            return 0
+        if arguments.remote_command == "pair-confirm":
+            waiting = RemoteExecutorRegistry().latest(arguments.executor_id)
+            if waiting is None or waiting.state != "awaiting-public-key":
+                raise ConfigurationError("executor 不处于等待确认状态")
+            # Probe with the waiting record before publishing the paired revision.
+            # active_runtimes intentionally excludes waiting records, so use the
+            # same strict connection construction locally without persisting it.
+            import shutil
+
+            from easydesign.backends.executors import SshRemoteExecutor
+            from easydesign.orchestration.profile import SshRemoteRuntime
+            from easydesign.orchestration.remote_execution import _connection
+            managed_root = Path(waiting.managed_worker_root)
+            probe_executor = SshRemoteExecutor(
+                _connection(
+                    waiting.executor_id,
+                    SshRemoteRuntime(
+                        host=waiting.host,
+                        user=waiting.user,
+                        port=waiting.port,
+                        identity_file=waiting.identity_file,
+                        known_hosts_file=waiting.known_hosts_file,
+                        ssh_executable=Path(shutil.which("ssh") or "/usr/bin/ssh"),
+                        rsync_executable=Path(shutil.which("rsync") or "/usr/bin/rsync"),
+                        remote_work_root=managed_root,
+                        remote_runs_root=managed_root / "runs",
+                        remote_easydesign_executable=managed_root / "service/easydesign",
+                        remote_profile=managed_root / "config/profile.yaml",
+                    ),
+                )
+            )
+            managed_worker_probe = ManagedWorkerProbe.model_validate(
+                probe_executor.managed_worker_json("probe")
+            )
+            if managed_worker_probe.service_version != easydesign.__version__:
+                raise ConfigurationError("Suzhou2 worker 与当前 EasyDesign 版本不一致")
+            paired = RemoteExecutorRegistry().mark_paired(arguments.executor_id)
+            payload = {
+                "pairing": paired.model_dump(mode="json"),
+                "probe": managed_worker_probe.model_dump(mode="json"),
+            }
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else json.dumps(payload, ensure_ascii=False, indent=2)
+            )
+            print(rendered)
+            return 0
+        if arguments.remote_command == "unpair":
+            if not arguments.confirmed:
+                raise ConfigurationError("逻辑解绑需要 --confirmed")
+            unpaired_record = RemoteExecutorRegistry().unpair(arguments.executor_id)
+            print(
+                _json_text(unpaired_record)
+                if arguments.json
+                else f"已逻辑解绑：{unpaired_record.executor_id}"
+            )
+            return 0
         if arguments.remote_command == "list":
             executor_ids = list_remote_executor_ids(profile_path=arguments.profile)
             records = list_remote_job_records()
+            managed_records = list_managed_remote_submissions()
             remote_list_payload = {
                 "executors": list(executor_ids),
                 "jobs": [item.model_dump(mode="json") for item in records],
+                "managed_jobs": [
+                    item.model_dump(mode="json") for item in managed_records
+                ],
             }
             if arguments.json:
                 print(_json_text(remote_list_payload))
@@ -1063,26 +1359,52 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 for executor_id in executor_ids:
                     print(f"- {executor_id}")
                 print("已知任务：")
-                for record in records:
-                    submission = record.submission
+                for remote_job_record in records:
+                    remote_submission = remote_job_record.submission
                     print(
-                        f"- {submission.executor_id}/{submission.job_id}: "
-                        f"{submission.project_id}/{submission.run_id} "
-                        f"(resume={record.resume_count})"
+                        f"- {remote_submission.executor_id}/{remote_submission.job_id}: "
+                        f"{remote_submission.project_id}/{remote_submission.run_id} "
+                        f"(resume={remote_job_record.resume_count})"
+                    )
+                for managed_submission in managed_records:
+                    print(
+                        f"- {managed_submission.executor_id}/{managed_submission.job_id}: "
+                        f"{managed_submission.project_id}/{managed_submission.run_id} "
+                        f"(managed queue={managed_submission.queue_status})"
                     )
             return 0
         if arguments.remote_command == "probe":
-            probe = probe_remote_executor(
+            pairing = RemoteExecutorRegistry().latest(arguments.executor_id)
+            if pairing is not None and pairing.state == "paired":
+                managed_probe = probe_managed_executor(
+                    executor_id=arguments.executor_id,
+                    profile_path=arguments.profile,
+                )
+                if arguments.json:
+                    print(_json_text(managed_probe))
+                else:
+                    print(f"Managed worker：{managed_probe.service_version}")
+                    print(f"GPU：{managed_probe.gpu_count}")
+                    print(f"队列：{managed_probe.queue_depth}")
+                    print(
+                        f"数据盘可用："
+                        f"{managed_probe.filesystem_available_bytes / 1024**3:.1f} GiB"
+                    )
+                return 0
+            legacy_probe = probe_remote_executor(
                 executor_id=arguments.executor_id,
                 profile_path=arguments.profile,
             )
             if arguments.json:
-                print(_json_text(probe))
+                print(_json_text(legacy_probe))
             else:
-                print(f"远端主机：{probe.hostname}")
-                print(f"EasyDesign：{probe.easydesign_version}")
-                print(f"GPU：{probe.gpu_count}")
-                print(f"运行盘可用：{probe.filesystem_available_bytes / 1024**3:.1f} GiB")
+                print(f"远端主机：{legacy_probe.hostname}")
+                print(f"EasyDesign：{legacy_probe.easydesign_version}")
+                print(f"GPU：{legacy_probe.gpu_count}")
+                print(
+                    "运行盘可用："
+                    f"{legacy_probe.filesystem_available_bytes / 1024**3:.1f} GiB"
+                )
             return 0
         if arguments.remote_command == "adopt-scale":
             continuation = adopt_remote_scale_evidence(
@@ -1106,7 +1428,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 )
             return 0
         if arguments.remote_command == "submit":
-            submission = submit_remote_pipeline(
+            remote_submission = submit_remote_pipeline(
                 executor_id=arguments.executor_id,
                 job_id=arguments.job_id,
                 run_id=arguments.run_id,
@@ -1116,21 +1438,81 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 profile_path=arguments.profile,
             )
             if arguments.json:
-                print(_json_text(submission))
+                print(_json_text(remote_submission))
             else:
-                print(f"远端任务已提交：{submission.unit_name}")
-                print(f"远端 run：{submission.remote_run_root}")
+                print(f"远端任务已提交：{remote_submission.unit_name}")
+                print(f"远端 run：{remote_submission.remote_run_root}")
                 print(
                     "查看状态："
-                    f"easydesign remote status {submission.executor_id} "
-                    f"{submission.job_id}"
+                    f"easydesign remote status {remote_submission.executor_id} "
+                    f"{remote_submission.job_id}"
                 )
+            return 0
+        if arguments.remote_command == "submit-managed":
+            managed_submission = submit_managed_pipeline(
+                executor_id=arguments.executor_id,
+                controller_id=arguments.controller_id,
+                job_id=arguments.job_id,
+                run_id=arguments.run_id,
+                config_path=arguments.config,
+                source_run=arguments.from_run,
+                profile_path=arguments.profile,
+                maximum_gpus=arguments.maximum_gpus,
+                sync_mode=arguments.sync_mode,
+            )
+            if arguments.json:
+                print(_json_text(managed_submission))
+            else:
+                print(f"Suzhou2 任务已入队：{managed_submission.job_id}")
+                print(f"阶段：{managed_submission.stage_range}")
+                print(f"候选预算：{managed_submission.candidate_budget:,}")
             return 0
         if arguments.remote_command == "watch":
             if arguments.interval <= 0 or arguments.interval > 60:
                 raise ConfigurationError("--interval 必须在 0 到 60 秒之间")
             while True:
-                observation = observe_remote_pipeline(
+                watched_managed_submission = next(
+                    (
+                        item
+                        for item in list_managed_remote_submissions(
+                            executor_id=arguments.executor_id
+                        )
+                        if item.job_id == arguments.job_id
+                    ),
+                    None,
+                )
+                if watched_managed_submission is not None:
+                    managed_observation = observe_managed_pipeline(
+                        executor_id=arguments.executor_id,
+                        job_id=arguments.job_id,
+                        profile_path=arguments.profile,
+                    )
+                    if arguments.json:
+                        print(_json_text(managed_observation), flush=True)
+                    else:
+                        managed_queue_revision = managed_observation.queue
+                        print(
+                            f"[{managed_observation.checked_at.isoformat()}] "
+                            f"{arguments.executor_id}/{arguments.job_id} "
+                            + (
+                                "远程连接暂时中断"
+                                if managed_queue_revision is None
+                                else (
+                                    f"queue={managed_queue_revision.status} "
+                                    f"devices={managed_queue_revision.assigned_devices}"
+                                )
+                            ),
+                            flush=True,
+                        )
+                    terminal = (
+                        managed_observation.queue is not None
+                        and managed_observation.queue.status in {"succeeded", "failed"}
+                    )
+                    if arguments.once or terminal:
+                        return 0
+                    time.sleep(arguments.interval)
+                    continue
+                remote_observation = observe_remote_pipeline(
                     executor_id=arguments.executor_id,
                     job_id=arguments.job_id,
                     profile_path=arguments.profile,
@@ -1145,21 +1527,23 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                         profile_path=arguments.profile,
                     )
                 if arguments.json:
-                    observation_payload: dict[str, Any] = observation.model_dump(mode="json")
+                    observation_payload: dict[str, Any] = remote_observation.model_dump(
+                        mode="json"
+                    )
                     observation_payload["sync"] = (
                         None if sync_report is None else sync_report.model_dump(mode="json")
                     )
                     print(_json_text(observation_payload), flush=True)
                 else:
-                    worker = observation.worker
+                    worker = remote_observation.worker
                     print(
-                        f"[{observation.checked_at.isoformat()}] "
-                        f"{observation.executor_id}/{observation.job_id} "
+                        f"[{remote_observation.checked_at.isoformat()}] "
+                        f"{remote_observation.executor_id}/{remote_observation.job_id} "
                         f"worker={worker.active_state}/{worker.sub_state}",
                         flush=True,
                     )
-                    if observation.progress is not None:
-                        progress = observation.progress
+                    if remote_observation.progress is not None:
+                        progress = remote_observation.progress
                         print(
                             f"  {progress.stage_id}: tasks "
                             f"{progress.succeeded_tasks}/{progress.total_tasks}, "
@@ -1176,8 +1560,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                                 f"{heartbeat.elapsed_seconds / 60:.1f} min",
                                 flush=True,
                             )
-                    elif observation.progress_error is not None:
-                        print(f"  进度暂不可用：{observation.progress_error}", flush=True)
+                    elif remote_observation.progress_error is not None:
+                        print(
+                            f"  进度暂不可用：{remote_observation.progress_error}",
+                            flush=True,
+                        )
                     if sync_report is not None:
                         print(
                             f"  镜像已同步：{sync_report.destination} "
@@ -1185,11 +1572,11 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                             flush=True,
                         )
                 progress_terminal = (
-                    observation.progress is not None
-                    and observation.progress.status
+                    remote_observation.progress is not None
+                    and remote_observation.progress.status
                     in {"succeeded", "scientific-stop", "failed", "incomplete"}
                 )
-                worker_terminal = observation.worker.active_state in {
+                worker_terminal = remote_observation.worker.active_state in {
                     "failed",
                     "inactive",
                 }
@@ -1197,17 +1584,43 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     return 0
                 time.sleep(arguments.interval)
         if arguments.remote_command == "resume":
-            record = resume_remote_pipeline(
+            resumed_managed_submission = next(
+                (
+                    item
+                    for item in list_managed_remote_submissions(
+                        executor_id=arguments.executor_id
+                    )
+                    if item.job_id == arguments.job_id
+                ),
+                None,
+            )
+            if resumed_managed_submission is not None:
+                managed_resume_observation = observe_managed_pipeline(
+                    executor_id=arguments.executor_id,
+                    job_id=arguments.job_id,
+                    profile_path=arguments.profile,
+                )
+                if managed_resume_observation.queue is None:
+                    raise ConfigurationError("远程连接暂时中断；远程任务不标记失败")
+                if managed_resume_observation.queue.status == "failed":
+                    print(
+                        "受管 worker 会在 maximum_attempts 范围内自动重试，"
+                        "无需创建第二个 shell worker。"
+                    )
+                else:
+                    print(f"当前队列状态：{managed_resume_observation.queue.status}")
+                return 0
+            resumed_remote_record = resume_remote_pipeline(
                 executor_id=arguments.executor_id,
                 job_id=arguments.job_id,
                 profile_path=arguments.profile,
             )
             if arguments.json:
-                print(_json_text(record))
+                print(_json_text(resumed_remote_record))
             else:
-                print(f"远端恢复 worker 已提交：{record.active_unit_name}")
-                print(f"恢复次数：{record.resume_count}")
-                print(f"远端 run：{record.submission.remote_run_root}")
+                print(f"远端恢复 worker 已提交：{resumed_remote_record.active_unit_name}")
+                print(f"恢复次数：{resumed_remote_record.resume_count}")
+                print(f"远端 run：{resumed_remote_record.submission.remote_run_root}")
             return 0
         if arguments.remote_command == "sync":
             sync_result = sync_remote_pipeline(
@@ -1228,11 +1641,38 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     f"{'是' if sync_result.completed_artifact_closure else '否（元数据模式）'}"
                 )
             return 0
-        submission = read_remote_submission(
+        status_managed_submission = next(
+            (
+                item
+                for item in list_managed_remote_submissions(
+                    executor_id=arguments.executor_id
+                )
+                if item.job_id == arguments.job_id
+            ),
+            None,
+        )
+        if status_managed_submission is not None:
+            managed_status_observation = observe_managed_pipeline(
+                executor_id=arguments.executor_id,
+                job_id=arguments.job_id,
+                profile_path=arguments.profile,
+            )
+            payload = {
+                "submission": status_managed_submission.model_dump(mode="json"),
+                "observation": managed_status_observation.model_dump(mode="json"),
+            }
+            rendered = (
+                _json_text(payload)
+                if arguments.json
+                else json.dumps(payload, ensure_ascii=False, indent=2)
+            )
+            print(rendered)
+            return 0
+        remote_submission = read_remote_submission(
             executor_id=arguments.executor_id,
             job_id=arguments.job_id,
         )
-        record = read_remote_job_record(
+        remote_job_record = read_remote_job_record(
             executor_id=arguments.executor_id,
             job_id=arguments.job_id,
         )
@@ -1242,18 +1682,18 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             profile_path=arguments.profile,
         )
         status_payload: dict[str, Any] = {
-            "submission": submission.model_dump(mode="json"),
+            "submission": remote_submission.model_dump(mode="json"),
             "worker": status.model_dump(mode="json"),
         }
         if arguments.json:
             print(_json_text(status_payload))
         else:
-            print(f"远端任务：{submission.unit_name}")
-            if record.active_unit_name != submission.unit_name:
-                print(f"当前恢复 worker：{record.active_unit_name}")
+            print(f"远端任务：{remote_submission.unit_name}")
+            if remote_job_record.active_unit_name != remote_submission.unit_name:
+                print(f"当前恢复 worker：{remote_job_record.active_unit_name}")
             print(f"Worker：{status.active_state}/{status.sub_state}")
             print(f"退出码：{status.exec_main_status}")
-            print(f"远端 run：{submission.remote_run_root}")
+            print(f"远端 run：{remote_submission.remote_run_root}")
         return 0
 
     if arguments.command == "hotspots":

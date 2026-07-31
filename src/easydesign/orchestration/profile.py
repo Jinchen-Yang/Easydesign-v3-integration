@@ -160,6 +160,7 @@ class RuntimeBackends(BaseModel):
     protenix_v2: ProtenixV2Runtime | None = None
     pymol_pse: PyMOLPseRuntime | None = None
     scannet_epitope: ScanNetEpitopeRuntime | None = None
+    boltzgen_validation: BoltzGenRuntime | None = None
     boltzgen: BoltzGenRuntime | None = None
     tnp: TnpRuntime | None = None
 
@@ -498,6 +499,16 @@ def _resolve_workspace_profile(
     boltzgen_prefix = _available_prefix(context, bindings.boltzgen)
     boltzgen_root = _available_asset(context, "boltzgen-source-a3149cf")
     molecule_archive = _available_asset(context, "boltzgen-inference-molecule-dataset")
+    boltzgen_validation_assets_ready = _binding_assets_available(
+        context,
+        bindings.boltzgen,
+        required_asset_ids=frozenset(
+            {
+                "boltzgen-source-a3149cf",
+                "boltzgen-inference-molecule-dataset",
+            }
+        ),
+    )
     boltzgen_assets_ready = _binding_assets_available(
         context,
         bindings.boltzgen,
@@ -513,7 +524,7 @@ def _resolve_workspace_profile(
             }
         ),
     )
-    boltzgen = (
+    boltzgen_validation = (
         BoltzGenRuntime(
             executable=boltzgen_prefix / "bin" / "boltzgen",
             repository_root=boltzgen_root,
@@ -525,6 +536,14 @@ def _resolve_workspace_profile(
             boltzgen_prefix is not None
             and boltzgen_root is not None
             and molecule_archive is not None
+            and boltzgen_validation_assets_ready
+        )
+        else None
+    )
+    boltzgen = (
+        boltzgen_validation
+        if (
+            boltzgen_validation is not None
             and boltzgen_assets_ready
         )
         else None
@@ -554,6 +573,7 @@ def _resolve_workspace_profile(
             protenix_v2=protenix,
             pymol_pse=pymol,
             scannet_epitope=scannet,
+            boltzgen_validation=boltzgen_validation,
             boltzgen=boltzgen,
             tnp=tnp,
         ),

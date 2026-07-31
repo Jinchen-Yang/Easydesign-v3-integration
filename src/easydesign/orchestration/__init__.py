@@ -93,15 +93,20 @@ from .project_catalog import (
 )
 from .pse_import import CompletedPseRun, execute_pse_import
 from .remote_execution import (
+    list_managed_remote_submissions,
     list_remote_executor_ids,
     list_remote_job_records,
+    observe_managed_pipeline,
     observe_remote_pipeline,
+    probe_managed_executor,
+    probe_pending_managed_executor,
     probe_remote_executor,
     read_remote_job_record,
     read_remote_status,
     read_remote_submission,
     resolve_remote_executor,
     resume_remote_pipeline,
+    submit_managed_pipeline,
     submit_remote_pipeline,
     sync_remote_pipeline,
 )
@@ -109,6 +114,11 @@ from .sequence_prediction import (
     CompletedSequenceRun,
     SequencePredictionExecutionError,
     execute_sequence_prediction,
+)
+from .ssh_pairing import (
+    RemoteExecutorRegistry,
+    public_key_install_command,
+    scan_host_identity,
 )
 from .stage02 import CompletedStage02Run, execute_stage02, execute_stage02_comparison
 from .stage03 import (
@@ -170,6 +180,7 @@ __all__ = [
     "ProjectPrimaryRunOutcome",
     "PyMOLPseRuntime",
     "RegionProposalMode",
+    "RemoteExecutorRegistry",
     "ResolvedProtenixMsaProviderConfig",
     "ResolvedRunConfig",
     "RunIndex",
@@ -239,6 +250,8 @@ __all__ = [
     "list_runs",
     "list_remote_executor_ids",
     "list_remote_job_records",
+    "list_managed_remote_submissions",
+    "observe_managed_pipeline",
     "observe_remote_pipeline",
     "read_pipeline_progress",
     "read_remote_job_record",
@@ -246,6 +259,9 @@ __all__ = [
     "read_remote_submission",
     "migrate_run_directories",
     "probe_remote_executor",
+    "probe_managed_executor",
+    "probe_pending_managed_executor",
+    "public_key_install_command",
     "resolve_runtime_profile_path",
     "resume_remote_pipeline",
     "resolve_remote_executor",
@@ -254,7 +270,9 @@ __all__ = [
     "archive_project",
     "restore_project",
     "select_project_primary_run",
+    "scan_host_identity",
     "submit_remote_pipeline",
+    "submit_managed_pipeline",
     "sync_remote_pipeline",
     "upsert_run_index_entries",
     "replace_run_index_entries",

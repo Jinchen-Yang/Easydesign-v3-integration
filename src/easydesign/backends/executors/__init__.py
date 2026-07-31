@@ -7,6 +7,16 @@ from .local_multi_gpu import (
     execute_on_devices,
     ui_drain_requested,
 )
+from .managed_worker import (
+    MANAGED_WORKER_ROOT,
+    ManagedJobRevision,
+    ManagedQueue,
+    ManagedWorker,
+    ManagedWorkerLayout,
+    ManagedWorkerProbe,
+    RemoteJobBundle,
+    RemoteJobInput,
+)
 from .ssh_remote import (
     SshRemoteConnection,
     SshRemoteExecutor,
@@ -22,7 +32,15 @@ from .ssh_remote import (
 __all__ = [
     "DeviceResult",
     "GpuResourceSnapshot",
+    "MANAGED_WORKER_ROOT",
+    "ManagedJobRevision",
+    "ManagedQueue",
+    "ManagedWorker",
+    "ManagedWorkerLayout",
+    "ManagedWorkerProbe",
     "NvidiaSmiProbe",
+    "RemoteJobBundle",
+    "RemoteJobInput",
     "SshRemoteConnection",
     "SshRemoteExecutor",
     "SshRemoteFileIdentity",

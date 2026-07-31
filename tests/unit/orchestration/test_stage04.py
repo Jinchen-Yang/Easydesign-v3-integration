@@ -72,6 +72,9 @@ NOW = datetime(2026, 7, 26, 3, 0, tzinfo=UTC)
 
 
 class _FakeGpuProbe:
+    def snapshots(self) -> tuple[GpuResourceSnapshot, ...]:
+        return self.wait_until_idle((0, 1))
+
     def wait_until_idle(
         self,
         devices: tuple[int, ...],

@@ -1792,7 +1792,7 @@ def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
         assert "空文件" in empty.json()["detail"]
 
 
-def test_gateway_lists_only_profile_declared_remote_executor_ids(
+def test_gateway_lists_profile_and_first_class_managed_remote_executor_ids(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1810,11 +1810,19 @@ def test_gateway_lists_only_profile_declared_remote_executor_ids(
         response = client.get("/api/v1/remote-executors")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "executors": [
-            {
-                "executor_id": "suzhou2-a100x8",
-                "label": "suzhou2-a100x8",
-            }
-        ]
+    payload = response.json()
+    assert [item["executor_id"] for item in payload["executors"]] == [
+        "suzhou2",
+        "suzhou2-a100x8",
+    ]
+    assert payload["executors"][0] == {
+        "executor_id": "suzhou2",
+        "label": "Suzhou2 公共算力",
+        "type": "managed-ssh",
+        "pairing_state": "not-paired",
+        "controller_id": None,
+        "host": None,
+        "port": None,
+        "user": None,
+        "host_fingerprint": None,
     }

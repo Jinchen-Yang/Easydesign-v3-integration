@@ -8,6 +8,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import yaml  # type: ignore[import-untyped]
@@ -142,6 +143,8 @@ class UiJobController:
         self_test_root: Path | None = None,
         self_test_runs_root: Path | None = None,
         stage_number: int | None = None,
+        execution_target: Literal["local-current-host", "managed-ssh"] | None = None,
+        maximum_gpus: int | None = None,
         confirmed: bool,
     ) -> UiJobRecord:
         if not confirmed:
@@ -158,6 +161,12 @@ class UiJobController:
             raise ConfigurationError(
                 "开发者自检 job 必须同时提供 self-test root、runs root 和 stage"
             )
+        if execution_target not in {None, "local-current-host"}:
+            raise ConfigurationError(
+                "本地 UI worker 只接受 local-current-host 执行目标"
+            )
+        if maximum_gpus is not None and maximum_gpus < 1:
+            raise ConfigurationError("maximum_gpus 必须是正整数")
         if operation == "run":
             if config_path is None:
                 raise ConfigurationError("run job 必须提供 config_path")
@@ -209,6 +218,8 @@ class UiJobController:
             session_id=session_id,
             self_test_id=self_test_id,
             stage_number=stage_number,
+            execution_target=execution_target,
+            maximum_gpus=maximum_gpus,
             created_at=now,
             updated_at=now,
         )
@@ -249,6 +260,8 @@ class UiJobController:
             )
         environment = os.environ.copy()
         environment["EASYDESIGN_UI_DRAIN_FILE"] = str(drain_path)
+        if maximum_gpus is not None:
+            environment["EASYDESIGN_LOCAL_MAXIMUM_GPUS"] = str(maximum_gpus)
         process = subprocess.Popen(
             command,
             env=environment,

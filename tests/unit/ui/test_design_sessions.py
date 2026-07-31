@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -239,7 +240,110 @@ def test_ui_continuation_uses_completed_stage_prefix_after_stage03(
 
     assert response.status_code == 200
     assert observed["materialize"]["continue_after_stage"] == 3
+    assert observed["materialize"]["linked_stage_number"] is None
     assert observed["launch"]["continue_after_stage"] == 3
+
+
+def test_managed_stage04_continuation_keeps_stage05_on_remote_host(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime/state/ui/jobs",
+    )
+    service = app.state.easydesign
+    session = service.sessions.create(
+        project_id="managed-target",
+        design_mode="stepwise",
+        execution_mode="review-gated",
+    )
+    source_run = tmp_path / "runs/managed-target/run-001"
+    source_run.mkdir(parents=True)
+    observed: dict[str, Any] = {}
+
+    def fake_materialize(**kwargs: Any) -> Path:
+        observed["materialize"] = kwargs
+        destination = kwargs["destination"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text('schema_version: "0.8"\n', encoding="utf-8")
+        return destination
+
+    class FakeSubmission:
+        job_id = "managed-job-001"
+        run_id = "managed-run-001"
+        queue_status = "queued"
+
+        def model_dump(self, *, mode: str) -> dict[str, Any]:
+            assert mode == "json"
+            return {
+                "job_id": self.job_id,
+                "run_id": self.run_id,
+                "queue_status": self.queue_status,
+                "stage_range": [4, 5],
+            }
+
+    def fake_submit(**kwargs: Any) -> FakeSubmission:
+        observed["submit"] = kwargs
+        return FakeSubmission()
+
+    def fake_accept(**kwargs: Any) -> UiJobRecord:
+        observed["accept"] = kwargs
+        now = datetime.now(tz=UTC)
+        return UiJobRecord(
+            job_id="job-managed-stage04",
+            operation="managed-remote-run",
+            status="queued",
+            project_id=session.project_id,
+            session_id=session.session_id,
+            stage_number=4,
+            execution_target="managed-ssh",
+            external_job_id="managed-job-001",
+            created_at=now,
+            updated_at=now,
+        )
+
+    import easydesign.ui.app as ui_app_module
+
+    monkeypatch.setattr(service.registry, "resolve", lambda _run_key: source_run)
+    monkeypatch.setattr(
+        service,
+        "assert_stage_configurable",
+        lambda _run_key, _stage_number: None,
+    )
+    monkeypatch.setattr(ui_app_module, "materialize_continuation_config", fake_materialize)
+    monkeypatch.setattr(ui_app_module, "submit_managed_pipeline", fake_submit)
+    monkeypatch.setattr(service.jobs, "accept_external", fake_accept)
+    monkeypatch.setattr(
+        ui_app_module,
+        "RemoteExecutorRegistry",
+        lambda _workspace: SimpleNamespace(
+            latest=lambda _executor_id: SimpleNamespace(
+                state="paired",
+                controller_id="controller-a",
+            )
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs/source-run/continue/4",
+            json={
+                "session_id": session.session_id,
+                "stage_number": 4,
+                "execution_mode": "review-gated",
+                "executor_id": "suzhou2",
+                "controller_id": "controller-a",
+                "maximum_gpus": 8,
+                "confirmed": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert observed["materialize"]["linked_stage_number"] == 5
+    assert observed["submit"]["maximum_gpus"] == 8
+    assert response.json()["remote_job"]["stage_range"] == [4, 5]
 
 
 def test_deterministic_self_test_completes_seven_stages_and_stays_hidden(

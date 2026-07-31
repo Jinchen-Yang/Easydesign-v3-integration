@@ -107,6 +107,7 @@ class BoltzGenCheckAdapter:
     timeout_seconds: float = 300.0
     validation_workers: int = 4
     offline_mode: bool = True
+    require_generation_assets: bool = True
 
     def artifact_paths(self) -> BoltzGenArtifacts:
         model_root = (
@@ -164,9 +165,8 @@ class BoltzGenCheckAdapter:
                 f"BoltzGen cache_root 不存在: {self.cache_root}"
             )
         artifacts = self.artifact_paths()
-        artifact_hashes = {
-            path.name: _verify_artifact(path)
-            for path in (
+        required_artifacts = (
+            (
                 artifacts.design_diverse,
                 artifacts.design_adherence,
                 artifacts.inverse_fold,
@@ -174,6 +174,11 @@ class BoltzGenCheckAdapter:
                 artifacts.affinity,
                 artifacts.molecule_dataset,
             )
+            if self.require_generation_assets
+            else (artifacts.molecule_dataset,)
+        )
+        artifact_hashes = {
+            path.name: _verify_artifact(path) for path in required_artifacts
         }
         version = self._run([str(self.executable), "--version"])
         version_text = (version.stdout + "\n" + version.stderr).strip()
@@ -205,21 +210,34 @@ class BoltzGenCheckAdapter:
             raise BackendContractError(
                 "BoltzGen repository 必须是固定 commit 的干净 tracked tree"
             )
-        return {
+        result = {
             "backend": "boltzgen",
             "version": BOLTZGEN_VERSION,
             "commit": BOLTZGEN_COMMIT,
-            "design_diverse_sha256": artifact_hashes["boltzgen1_diverse.ckpt"],
-            "design_adherence_sha256": artifact_hashes[
-                "boltzgen1_adherence.ckpt"
-            ],
-            "inverse_fold_sha256": artifact_hashes["boltzgen1_ifold.ckpt"],
-            "folding_sha256": artifact_hashes["boltz2_conf_final.ckpt"],
-            "affinity_sha256": artifact_hashes["boltz2_aff.ckpt"],
             "molecule_dataset_sha256": artifact_hashes["mols.zip"],
             "offline_mode": str(self.offline_mode).lower(),
             "random_seed_status": "unsupported-by-boltzgen-0.3.2",
+            "capability": (
+                "generation" if self.require_generation_assets else "yaml-validation"
+            ),
         }
+        if self.require_generation_assets:
+            result.update(
+                {
+                    "design_diverse_sha256": artifact_hashes[
+                        "boltzgen1_diverse.ckpt"
+                    ],
+                    "design_adherence_sha256": artifact_hashes[
+                        "boltzgen1_adherence.ckpt"
+                    ],
+                    "inverse_fold_sha256": artifact_hashes[
+                        "boltzgen1_ifold.ckpt"
+                    ],
+                    "folding_sha256": artifact_hashes["boltz2_conf_final.ckpt"],
+                    "affinity_sha256": artifact_hashes["boltz2_aff.ckpt"],
+                }
+            )
+        return result
 
     def validate(
         self,

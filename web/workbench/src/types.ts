@@ -424,6 +424,13 @@ export interface DeviceExecution {
 export interface RemoteExecutor {
   executor_id: string;
   label: string;
+  type: "managed-ssh" | "legacy-ssh";
+  pairing_state: "not-paired" | "awaiting-public-key" | "paired" | "unpaired" | null;
+  controller_id?: string;
+  host?: string;
+  port?: number;
+  user?: string;
+  host_fingerprint?: string;
 }
 
 export interface RemoteJob {
@@ -432,8 +439,33 @@ export interface RemoteJob {
   project_id: string;
   run_id: string;
   submitted_at: string;
-  active_unit_name: string;
-  resume_count: number;
+  active_unit_name?: string;
+  resume_count?: number;
+  stage_range?: number[];
+  candidate_budget?: number;
+  queue_status?: string;
+  kind?: "managed-ssh";
+}
+
+export interface LocalExecutionTarget {
+  type: "local-current-host";
+  status: "available" | "waiting-resource" | "unavailable";
+  gpu_count: number;
+  eligible_gpu_count: number;
+  selected_devices: number[];
+  devices: Array<Record<string, unknown>>;
+  detail: string;
+}
+
+export interface ManagedExecutionTarget extends RemoteExecutor {
+  type: "managed-ssh";
+  managed_worker_root?: string;
+  updated_at?: string;
+}
+
+export interface ExecutionTargets {
+  local: LocalExecutionTarget;
+  managed: ManagedExecutionTarget[];
 }
 
 export interface ExecutionProgress {

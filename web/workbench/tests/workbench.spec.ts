@@ -262,6 +262,33 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname === "/api/v1/execution-targets") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          local: {
+            type: "local-current-host",
+            gpu_count: 2,
+            eligible_gpu_count: 2,
+            detail: "2 张 GPU 可用；启动前仍会重新预检。",
+          },
+          managed: [
+            {
+              type: "managed-ssh",
+              executor_id: "suzhou2",
+              controller_id: "fixture-controller",
+              pairing_state: "paired",
+              host: "suzhou2.example.invalid",
+              port: 22,
+              user: "root",
+              gpu_count: 8,
+              detail: "已配对，可进入 8 卡统一队列。",
+            },
+          ],
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/browser-pymol/status") {
       await route.fulfill({
         contentType: "application/json",
@@ -409,6 +436,29 @@ async function mockApi(page: Page) {
                 value: 40,
                 note: "在第4步执行小规模生成",
               },
+            ],
+          },
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/config/forms/4") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          schema_version: "0.1",
+          stage_number: 4,
+          title: "小规模生成",
+          defaults: {
+            backend: "boltzgen-0.3.2",
+            candidates_per_strategy: 40,
+          },
+          presentation: {
+            description: "按设计方案运行可恢复的小规模 BoltzGen 生成。",
+            action_label: "检查资源并开始小规模生成",
+            facts: [
+              { label: "生成后端", value: "boltzgen-0.3.2" },
+              { label: "每组候选", value: 40 },
             ],
           },
         }),
@@ -1229,7 +1279,12 @@ test("stage three continuation runs from Python defaults and advances to stage f
 
   await page.getByRole("button", { name: "生成并验证设计方案" }).click();
   await expect(page.getByRole("progressbar", { name: "第3步正在运行" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "第4步：小规模生成" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "第4步：小规模生成", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("选择计算位置")).toBeVisible();
+  await expect(page.getByRole("button", { name: /当前机器/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeVisible();
   await expect(page.locator(".stage-node").nth(3)).toHaveClass(/selected/);
   await page.locator(".stage-node").nth(2).click();
   await expect(page.getByText("21").first()).toBeVisible();

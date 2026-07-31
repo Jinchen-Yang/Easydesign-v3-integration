@@ -399,7 +399,8 @@ def initialize_project(
                 "backend": "boltzgen-0.3.2",
                 "executor": {
                     "type": "local-multi-gpu",
-                    "devices": [0, 1],
+                    "devices": None,
+                    "maximum_devices": None,
                     "workers_per_device": 1,
                 },
                 "required_complete_candidates_per_strategy": 40,

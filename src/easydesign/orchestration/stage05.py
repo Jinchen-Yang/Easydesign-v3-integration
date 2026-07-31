@@ -74,6 +74,7 @@ from easydesign.stages.s04_pilot_generation import (
     CandidateIndex,
     CandidateRecord,
     PilotBundle,
+    PilotPlan,
 )
 from easydesign.stages.s05_pilot_filtering import (
     AdvisoryValidationReport,
@@ -1716,9 +1717,11 @@ def execute_stage05(
             filter_profile=filter_profile,
         )
 
+    pilot_plan = load_model(upstream.pilot_bundle.pilot_plan.verify(root), PilotPlan)
+    execution_devices = pilot_plan.devices
     probe = NvidiaSmiProbe() if gpu_probe is None else gpu_probe
     probe.wait_until_idle(
-        stage04_config.executor.devices,
+        execution_devices,
         max_memory_used_mib=stage04_config.executor.max_memory_used_mib,
         max_utilization_percent=stage04_config.executor.max_utilization_percent,
         timeout_seconds=stage04_config.executor.resource_wait_timeout_seconds,
@@ -1740,7 +1743,7 @@ def execute_stage05(
         selected_strategy_ids=selected_strategy_ids,
         total_per_strategy=_diagnostic_expanded_total(config),
         adapter=boltzgen_adapter,
-        devices=stage04_config.executor.devices,
+        devices=execution_devices,
         maximum_attempts=stage04_config.executor.max_task_attempts,
         created_at=now,
     )
@@ -1805,7 +1808,7 @@ def execute_stage05(
             selected_ids=selected_ids,
             providers=config.full_target_prediction.target_msa.resolved_providers(),
             adapter_builder=protenix_adapter_builder,
-            devices=stage04_config.executor.devices,
+            devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
         )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -104,7 +105,7 @@ class SshRemoteSyncReport(BaseModel):
     schema_version: str = "0.1"
     executor_id: str = Field(pattern=ID_PATTERN)
     job_id: str = Field(pattern=ID_PATTERN)
-    mode: str = Field(pattern=r"^(metadata|complete)$")
+    mode: str = Field(pattern=r"^(metadata|review|complete)$")
     synced_at: datetime
     destination: Path
     remote_run_root: str
@@ -290,6 +291,105 @@ class SshRemoteExecutor:
             raise BackendContractError(
                 f"SSH rsync staging exit={completed.returncode}: {detail}"
             )
+
+    def push_files(
+        self,
+        *,
+        local_root: Path,
+        relative_paths: tuple[str, ...],
+        remote_root: Path,
+    ) -> None:
+        """Push an explicit immutable file list without scanning or deleting remotely."""
+
+        source_root = local_root.expanduser().resolve()
+        if not source_root.is_dir():
+            raise BackendContractError(f"SSH staging source 不存在: {source_root}")
+        if not remote_root.is_absolute():
+            raise BackendContractError("SSH staging remote root 必须是绝对路径")
+        selected = tuple(
+            dict.fromkeys(self._safe_relative_path(value) for value in relative_paths)
+        )
+        if not selected:
+            raise BackendContractError("SSH staging 文件清单不能为空")
+        for relative in selected:
+            source = (source_root / relative).resolve()
+            if not source.is_relative_to(source_root) or not source.is_file():
+                raise BackendContractError(f"SSH staging 本地文件不存在: {relative}")
+        context = WorkspaceContext.discover()
+        context.ensure_layout()
+        files_from = (
+            context.runtime_root
+            / "tmp"
+            / f"easydesign-remote-push-{uuid4().hex}.txt"
+        )
+        context.assert_write_path(files_from)
+        with files_from.open("x", encoding="utf-8") as handle:
+            handle.write("\n".join(selected) + "\n")
+        connection = self.connection
+        ssh_transport = shlex.join(self._ssh_prefix()[:-1])
+        self._run_remote(("mkdir", "-p", str(remote_root)))
+        command = (
+            str(connection.rsync_executable),
+            "--archive",
+            "--partial",
+            "--protect-args",
+            "--files-from",
+            str(files_from),
+            "--rsh",
+            ssh_transport,
+            f"{source_root.as_posix().rstrip('/')}/",
+            f"{self.destination}:{remote_root.as_posix().rstrip('/')}/",
+        )
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=86_400,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise BackendContractError(f"SSH manifest staging 失败: {error}") from error
+        if completed.returncode != 0:
+            detail = (completed.stderr.strip() or completed.stdout.strip())[:4096]
+            raise BackendContractError(
+                f"SSH manifest staging exit={completed.returncode}: {detail}"
+            )
+
+    def push_file(self, *, source: Path, remote_path: Path) -> None:
+        """Push one explicitly selected file to a new remote location."""
+
+        selected = source.expanduser().resolve()
+        if not selected.is_file() or not remote_path.is_absolute():
+            raise BackendContractError("SSH single-file staging 路径无效")
+        self._run_remote(("mkdir", "-p", str(remote_path.parent)))
+        self._rsync(selected, remote_path, destination_is_directory=False)
+
+    def managed_worker_json(
+        self,
+        *arguments: str,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, object]:
+        """Invoke only the fixed managed-worker CLI and parse its JSON response."""
+
+        completed = self._run_remote(
+            (
+                str(self.connection.remote_easydesign_executable),
+                "managed-worker",
+                *arguments,
+                "--config",
+                str(self.connection.remote_work_root / "config" / "worker.yaml"),
+                "--json",
+            ),
+            timeout_seconds=timeout_seconds,
+        )
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise BackendContractError("managed worker 返回了无效 JSON") from error
+        if not isinstance(payload, dict):
+            raise BackendContractError("managed worker 返回值必须是 object")
+        return payload
 
     def probe(self) -> SshRemoteProbe:
         hostname = self._run_remote(("hostname",)).stdout.strip()

@@ -76,6 +76,8 @@ from easydesign.stages.s06_scale_generation_and_refolding import (
     MultiStrategyCandidateIndex,
     ScaleBundle,
     ScaleBundleV0_2,
+    ScalePlan,
+    ScalePlanV0_2,
     ScaleStrategyAuthorization,
 )
 from easydesign.stages.s07_final_filtering_and_selection import (
@@ -1515,6 +1517,18 @@ def _execute_stage07(
     tnp_refs: tuple[ArtifactRef, ...] = ()
     normalization_ref: ArtifactRef | None = None
     selections: tuple[FinalSelectionRecord, ...] = ()
+    scale_plan: ScalePlanV0_2 | ScalePlan
+    if isinstance(upstream.scale_bundle, ScaleBundleV0_2):
+        scale_plan = load_model(
+            upstream.scale_bundle.scale_plan.verify(root),
+            ScalePlanV0_2,
+        )
+    else:
+        scale_plan = load_model(
+            upstream.scale_bundle.scale_plan.verify(root),
+            ScalePlan,
+        )
+    execution_devices = scale_plan.devices
 
     if seed101_candidates:
         seed101_raw = _execute_predictions(
@@ -1526,7 +1540,7 @@ def _execute_stage07(
             runtime=runtime,
             adapter_builder=protenix_adapter_builder,
             provider=providers[0],
-            devices=stage04_config.executor.devices,
+            devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
         )
@@ -1571,7 +1585,7 @@ def _execute_stage07(
                 runtime=runtime,
                 adapter_builder=protenix_adapter_builder,
                 provider=providers[0],
-                devices=stage04_config.executor.devices,
+                devices=execution_devices,
                 maximum_attempts=stage04_config.executor.max_task_attempts,
                 created_at=now,
             )

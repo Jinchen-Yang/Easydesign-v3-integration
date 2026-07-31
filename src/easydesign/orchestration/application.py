@@ -255,7 +255,9 @@ def _required_backends(
         assert stage02 is not None
         if Stage02Method.SCANNET in stage02.methods:
             backends.append("scannet-epitope")
-    if start_stage <= 6 and stop_after >= max(start_stage, 3):
+    if start_stage <= 3 <= stop_after:
+        backends.append("boltzgen-validation")
+    if start_stage <= 6 and stop_after >= max(start_stage, 4):
         backends.append("boltzgen")
     if (
         (start_stage <= 5 <= stop_after or start_stage <= 7 <= stop_after)
@@ -445,7 +447,11 @@ def _scannet_adapter(runtime: ScanNetEpitopeRuntime) -> ScanNetEpitopeAdapter:
     )
 
 
-def _boltzgen_adapter(runtime: BoltzGenRuntime) -> BoltzGenCheckAdapter:
+def _boltzgen_adapter(
+    runtime: BoltzGenRuntime,
+    *,
+    require_generation_assets: bool = True,
+) -> BoltzGenCheckAdapter:
     return BoltzGenCheckAdapter(
         executable=runtime.executable,
         repository_root=runtime.repository_root,
@@ -453,6 +459,7 @@ def _boltzgen_adapter(runtime: BoltzGenRuntime) -> BoltzGenCheckAdapter:
         timeout_seconds=runtime.timeout_seconds,
         validation_workers=runtime.validation_workers,
         offline_mode=runtime.offline_mode,
+        require_generation_assets=require_generation_assets,
     )
 
 
@@ -460,7 +467,7 @@ def _boltzgen_generation_adapter(
     runtime: BoltzGenRuntime,
 ) -> BoltzGenGenerationAdapter:
     return BoltzGenGenerationAdapter(
-        check_adapter=_boltzgen_adapter(runtime),
+        check_adapter=_boltzgen_adapter(runtime, require_generation_assets=True),
         generation_timeout_seconds=runtime.generation_timeout_seconds,
         data_loader_workers=runtime.data_loader_workers,
     )
@@ -525,7 +532,14 @@ def diagnose_runtime(
         set(_required_backends(loaded, start_stage=start_stage))
         if loaded is not None
         else (
-            {"protenix-v2", "pymol-pse", "scannet-epitope", "boltzgen", "tnp"}
+            {
+                "protenix-v2",
+                "pymol-pse",
+                "scannet-epitope",
+                "boltzgen-validation",
+                "boltzgen",
+                "tnp",
+            }
             if full
             else set()
         )
@@ -564,6 +578,10 @@ def diagnose_runtime(
         ("protenix-v2", backends.protenix_v2),
         ("pymol-pse", backends.pymol_pse),
         ("scannet-epitope", backends.scannet_epitope),
+        (
+            "boltzgen-validation",
+            backends.boltzgen_validation or backends.boltzgen,
+        ),
         ("boltzgen", backends.boltzgen),
         ("tnp", backends.tnp),
     ):
@@ -573,6 +591,7 @@ def diagnose_runtime(
                 "protenix-v2": "protenix_v2",
                 "pymol-pse": "pymol_pse",
                 "scannet-epitope": "scannet_epitope",
+                "boltzgen-validation": "boltzgen",
                 "boltzgen": "boltzgen",
                 "tnp": "tnp",
             }
@@ -642,9 +661,12 @@ def diagnose_runtime(
                 message = (
                     f"TensorFlow {probe.tensorflow_version}；device={probe.test_operation_device}"
                 )
-            elif name == "boltzgen":
+            elif name in {"boltzgen", "boltzgen-validation"}:
                 assert isinstance(runtime, BoltzGenRuntime)
-                boltz_probe = _boltzgen_adapter(runtime).probe()
+                boltz_probe = _boltzgen_adapter(
+                    runtime,
+                    require_generation_assets=name == "boltzgen",
+                ).probe()
                 message = f"BoltzGen {boltz_probe['version']}；commit={boltz_probe['commit']}"
             else:
                 assert isinstance(runtime, TnpRuntime)
@@ -966,11 +988,14 @@ def execute_pipeline(
         context.plan.stop_after_stage >= 3
         and str(StageId.BOLTZGEN_CONFIGURATION) not in completed_stage_ids
     ):
-        boltzgen_runtime = backends.boltzgen
+        boltzgen_runtime = backends.boltzgen_validation or backends.boltzgen
         assert boltzgen_runtime is not None
         completed_stage03 = execute_stage03(
             run_root=run_root,
-            adapter=_boltzgen_adapter(boltzgen_runtime),
+            adapter=_boltzgen_adapter(
+                boltzgen_runtime,
+                require_generation_assets=False,
+            ),
         )
         run_manifest = completed_stage03.run_manifest
         status = "succeeded"

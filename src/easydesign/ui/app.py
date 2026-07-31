@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 import easydesign
+from easydesign.backends.executors.local_multi_gpu import NvidiaSmiProbe
 from easydesign.core import (
     ArtifactRef,
     ConfigurationError,
@@ -37,28 +38,40 @@ from easydesign.core import (
 from easydesign.core.artifacts import ID_PATTERN
 from easydesign.core.hashing import sha256_bytes, sha256_file
 from easydesign.orchestration import (
+    RemoteExecutorRegistry,
     approve_hotspots,
     archive_project,
     diagnose_runtime,
     export_hotspot_review,
     initialize_project,
+    list_managed_remote_submissions,
     list_project_catalog,
     list_remote_executor_ids,
     list_remote_job_records,
     list_runs,
     load_verified_project_scale_evidence,
     materialize_continuation_config,
+    observe_managed_pipeline,
     observe_remote_pipeline,
+    probe_managed_executor,
+    probe_pending_managed_executor,
     probe_remote_executor,
+    public_key_install_command,
     read_pipeline_progress,
     restore_project,
     resume_remote_pipeline,
+    scan_host_identity,
     stage_form_definition,
+    submit_managed_pipeline,
     submit_remote_pipeline,
     sync_remote_pipeline,
     validate_run_configuration,
 )
 from easydesign.orchestration.decisions import approve_decision, show_decision
+from easydesign.orchestration.execution_targets import (
+    GpuLeaseStore,
+    LocalCurrentHostTarget,
+)
 from easydesign.orchestration.runtime_setup import (
     SETUP_COMPONENT_IDS,
     asset_status,
@@ -136,6 +149,26 @@ LOCAL_HOST = "127.0.0.1"
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 
 
+def _pairing_projection(record: Any, *, include_public_key: bool = False) -> dict[str, Any]:
+    """Expose pairing facts without leaking controller filesystem paths."""
+
+    projection = {
+        "executor_id": record.executor_id,
+        "controller_id": record.controller_id,
+        "state": record.state,
+        "host": record.host,
+        "port": record.port,
+        "user": record.user,
+        "host_fingerprint": record.host_identity.fingerprint,
+        "public_key_fingerprint": record.public_key_fingerprint,
+        "managed_worker_root": record.managed_worker_root,
+        "updated_at": record.updated_at.isoformat(),
+    }
+    if include_public_key:
+        projection["public_key"] = record.public_key
+    return projection
+
+
 def _suggest_project_id(value: str) -> str:
     normalized = re.sub(r"[^a-z0-9._-]+", "-", value.strip().lower()).strip("-._")
     return normalized[:128] or "new-design"
@@ -184,6 +217,10 @@ class ContinuationRequest(BaseModel):
     execution_mode: Literal["unattended", "review-gated"] = "review-gated"
     options: dict[str, Any] = Field(default_factory=dict)
     run_id: str | None = None
+    executor_id: str | None = None
+    controller_id: str | None = None
+    maximum_gpus: int | None = Field(default=None, ge=1, le=8)
+    sync_mode: Literal["metadata", "review", "complete"] = "review"
     confirmed: bool = False
 
 
@@ -268,7 +305,27 @@ class ConfirmedActionRequest(BaseModel):
 class RemoteSyncRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mode: str = Field(default="metadata", pattern=r"^(metadata|complete)$")
+    mode: str = Field(default="review", pattern=r"^(metadata|review|complete)$")
+    confirmed: bool = False
+
+
+class RemoteHostScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = Field(min_length=1)
+    port: int = Field(default=22, ge=1, le=65535)
+
+
+class RemotePairBeginRequest(RemoteHostScanRequest):
+    executor_id: str = Field(pattern=ID_PATTERN)
+    controller_id: str = Field(pattern=ID_PATTERN)
+    user: str = Field(default="root", min_length=1)
+    confirmed_host_fingerprint: str = Field(min_length=8)
+
+
+class RemotePairActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     confirmed: bool = False
 
 
@@ -2312,13 +2369,29 @@ def create_ui_app(
                     source_base_dir=project_root,
                 )
             else:
+                pairing = RemoteExecutorRegistry(service.workspace).latest(
+                    payload.executor_id
+                )
+                remote_probe = (
+                    probe_managed_executor(
+                        executor_id=payload.executor_id,
+                        profile_path=service.profile_path,
+                    )
+                    if pairing is not None and pairing.state == "paired"
+                    else probe_remote_executor(
+                        executor_id=payload.executor_id,
+                        profile_path=service.profile_path,
+                    )
+                )
                 diagnostic = {
                     "status": "remote-reachable",
                     "executor_id": payload.executor_id,
-                    "probe": probe_remote_executor(
-                        executor_id=payload.executor_id,
-                        profile_path=service.profile_path,
-                    ).model_dump(mode="json"),
+                    "execution_target": (
+                        "managed-ssh"
+                        if pairing is not None and pairing.state == "paired"
+                        else "legacy-ssh"
+                    ),
+                    "probe": remote_probe.model_dump(mode="json"),
                     "note": (
                         "远端提交前还会在冻结输入后执行配置校验和按需环境检查。"
                     ),
@@ -2351,6 +2424,14 @@ def create_ui_app(
             if payload.executor_id is not None:
                 if not payload.confirmed:
                     raise ConfigurationError("远程真实启动需要 confirmed=true")
+                pairing = RemoteExecutorRegistry(service.workspace).latest(
+                    payload.executor_id
+                )
+                if pairing is not None and pairing.state == "paired":
+                    raise ConfigurationError(
+                        "Suzhou2 受管队列只在 Stage 04/06 配置页接受"
+                        "已完成 Stage 03/05 的 continuation；Stage 01–03 在当前机器执行。"
+                    )
                 run_id = payload.run_id or f"remote-{uuid4().hex[:16]}"
                 config_path = service.project_config(payload.project_id)
                 project_root = service.project_root(payload.project_id)
@@ -2399,17 +2480,186 @@ def create_ui_app(
             _raise_http(error)
             raise
 
+    @app.get("/api/v1/execution-targets")
+    def execution_targets(request: Request) -> dict[str, Any]:
+        """Project local GPU readiness and registered managed destinations."""
+
+        service = _state(request)
+        local: dict[str, Any]
+        try:
+            snapshots = NvidiaSmiProbe().snapshots()
+            inventory = GpuLeaseStore(context=service.workspace).inventory(
+                snapshots,
+                target=LocalCurrentHostTarget(),
+                max_memory_used_mib=1024,
+                max_utilization_percent=10,
+            )
+            local = {
+                "type": "local-current-host",
+                "status": "available" if inventory.selected_devices else "waiting-resource",
+                "gpu_count": len(inventory.devices),
+                "eligible_gpu_count": len(inventory.selected_devices),
+                "selected_devices": list(inventory.selected_devices),
+                "devices": [item.model_dump(mode="json") for item in inventory.devices],
+                "detail": (
+                    "当前有可用 GPU"
+                    if inventory.selected_devices
+                    else "当前无符合条件的 GPU，提交后将等待资源"
+                ),
+            }
+        except Exception as error:
+            local = {
+                "type": "local-current-host",
+                "status": "unavailable",
+                "gpu_count": 0,
+                "eligible_gpu_count": 0,
+                "selected_devices": [],
+                "devices": [],
+                "detail": str(error)[:4096] or type(error).__name__,
+            }
+        pairings = RemoteExecutorRegistry(service.workspace).list_latest()
+        return {
+            "local": local,
+            "managed": [
+                {
+                    **_pairing_projection(record),
+                    "type": "managed-ssh",
+                    "label": (
+                        "Suzhou2 公共算力"
+                        if record.executor_id == "suzhou2"
+                        else record.executor_id
+                    ),
+                }
+                for record in pairings
+            ],
+        }
+
     @app.get("/api/v1/remote-executors")
     def remote_executors(request: Request) -> dict[str, Any]:
         service = _state(request)
         try:
+            registry = RemoteExecutorRegistry(service.workspace)
+            pairings = {
+                item.executor_id: item
+                for item in registry.list_latest()
+            }
+            executor_ids = set(
+                list_remote_executor_ids(profile_path=service.profile_path)
+            ) | set(pairings)
+            # Suzhou2 is a first-class managed destination even before the
+            # controller has started pairing it.
+            executor_ids.add("suzhou2")
             return {
                 "executors": [
-                    {"executor_id": executor_id, "label": executor_id}
-                    for executor_id in list_remote_executor_ids(
-                        profile_path=service.profile_path
-                    )
+                    {
+                        "executor_id": executor_id,
+                        "label": (
+                            "Suzhou2 公共算力"
+                            if executor_id == "suzhou2"
+                            else executor_id
+                        ),
+                        "type": (
+                            "managed-ssh"
+                            if executor_id == "suzhou2" or executor_id in pairings
+                            else "legacy-ssh"
+                        ),
+                        "pairing_state": (
+                            "not-paired"
+                            if executor_id not in pairings
+                            else pairings[executor_id].state
+                        ),
+                        "controller_id": (
+                            None
+                            if executor_id not in pairings
+                            else pairings[executor_id].controller_id
+                        ),
+                        "host": None if executor_id not in pairings else pairings[executor_id].host,
+                        "port": None if executor_id not in pairings else pairings[executor_id].port,
+                        "user": None if executor_id not in pairings else pairings[executor_id].user,
+                        "host_fingerprint": (
+                            None
+                            if executor_id not in pairings
+                            else pairings[executor_id].host_identity.fingerprint
+                        ),
+                    }
+                    for executor_id in sorted(executor_ids)
                 ]
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-executors/host-scan")
+    def remote_host_scan(payload: RemoteHostScanRequest) -> dict[str, Any]:
+        try:
+            return scan_host_identity(
+                host=payload.host, port=payload.port
+            ).model_dump(mode="json")
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-executors/pair-begin")
+    def remote_pair_begin(
+        payload: RemotePairBeginRequest, request: Request
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            record = RemoteExecutorRegistry(service.workspace).begin_pairing(
+                executor_id=payload.executor_id,
+                controller_id=payload.controller_id,
+                host=payload.host,
+                port=payload.port,
+                user=payload.user,
+                confirmed_host_fingerprint=payload.confirmed_host_fingerprint,
+            )
+            return {
+                "pairing": _pairing_projection(record, include_public_key=True),
+                "public_key_install_command": public_key_install_command(record),
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-executors/{executor_id}/pair-confirm")
+    def remote_pair_confirm(
+        executor_id: str,
+        payload: RemotePairActionRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("完成配对必须明确 confirmed=true")
+            registry = RemoteExecutorRegistry(service.workspace)
+            waiting = registry.latest(executor_id)
+            if waiting is None or waiting.state != "awaiting-public-key":
+                raise ConfigurationError("executor 不处于等待公钥安装状态")
+            probe = probe_pending_managed_executor(waiting)
+            paired = registry.mark_paired(executor_id)
+            return {
+                "pairing": _pairing_projection(paired),
+                "probe": probe.model_dump(mode="json"),
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-executors/{executor_id}/unpair")
+    def remote_unpair(
+        executor_id: str,
+        payload: RemotePairActionRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("逻辑解绑必须明确 confirmed=true")
+            record = RemoteExecutorRegistry(service.workspace).unpair(executor_id)
+            return {
+                "status": "unpaired",
+                "pairing": _pairing_projection(record),
+                "preserved": ["控制端私钥", "远端公钥", "历史运行证据"],
             }
         except Exception as error:
             _raise_http(error)
@@ -2417,8 +2667,7 @@ def create_ui_app(
 
     @app.get("/api/v1/remote-jobs")
     def remote_jobs() -> dict[str, Any]:
-        return {
-            "jobs": [
+        legacy_jobs = [
                 {
                     "executor_id": record.submission.executor_id,
                     "job_id": record.submission.job_id,
@@ -2429,13 +2678,37 @@ def create_ui_app(
                     "resume_count": record.resume_count,
                 }
                 for record in list_remote_job_records()
-            ]
-        }
+        ]
+        managed_jobs = [
+            {
+                "executor_id": record.executor_id,
+                "job_id": record.job_id,
+                "project_id": record.project_id,
+                "run_id": record.run_id,
+                "submitted_at": record.submitted_at.isoformat(),
+                "stage_range": list(record.stage_range),
+                "candidate_budget": record.candidate_budget,
+                "queue_status": record.queue_status,
+                "kind": "managed-ssh",
+            }
+            for record in list_managed_remote_submissions()
+        ]
+        return {"jobs": [*legacy_jobs, *managed_jobs]}
 
     @app.get("/api/v1/remote-jobs/{executor_id}/{job_id}")
     def remote_job(executor_id: str, job_id: str, request: Request) -> dict[str, Any]:
         service = _state(request)
         try:
+            if any(
+                item.job_id == job_id
+                for item in list_managed_remote_submissions(executor_id=executor_id)
+            ):
+                managed = observe_managed_pipeline(
+                    executor_id=executor_id,
+                    job_id=job_id,
+                    profile_path=service.profile_path,
+                )
+                return managed.model_dump(mode="json")
             observation = observe_remote_pipeline(
                 executor_id=executor_id,
                 job_id=job_id,
@@ -2468,6 +2741,28 @@ def create_ui_app(
         try:
             if not payload.confirmed:
                 raise ConfigurationError("远程恢复需要 confirmed=true")
+            if any(
+                item.job_id == job_id
+                for item in list_managed_remote_submissions(executor_id=executor_id)
+            ):
+                observation = observe_managed_pipeline(
+                    executor_id=executor_id,
+                    job_id=job_id,
+                    profile_path=service.profile_path,
+                )
+                return {
+                    "executor_id": executor_id,
+                    "job_id": job_id,
+                    "status": (
+                        "temporarily-disconnected"
+                        if observation.queue is None
+                        else observation.queue.status
+                    ),
+                    "message": (
+                        "受管 worker 依据队列 attempt 和 heartbeat 自动恢复；"
+                        "不创建额外 shell worker。"
+                    ),
+                }
             record = resume_remote_pipeline(
                 executor_id=executor_id,
                 job_id=job_id,
@@ -2503,12 +2798,32 @@ def create_ui_app(
                 ),
                 None,
             )
-            if record is None:
+            managed_record = next(
+                (
+                    item
+                    for item in list_managed_remote_submissions(
+                        executor_id=executor_id
+                    )
+                    if item.job_id == job_id
+                ),
+                None,
+            )
+            if record is None and managed_record is None:
                 raise ConfigurationError("远程任务记录不存在")
+            project_id = (
+                record.submission.project_id
+                if record is not None
+                else managed_record.project_id  # type: ignore[union-attr]
+            )
+            run_id = (
+                record.submission.run_id
+                if record is not None
+                else managed_record.run_id  # type: ignore[union-attr]
+            )
             destination = (
                 service.registry.runs_root
-                / record.submission.project_id
-                / record.submission.run_id
+                / project_id
+                / run_id
             )
             report = sync_remote_pipeline(
                 executor_id=executor_id,
@@ -2518,6 +2833,7 @@ def create_ui_app(
                 profile_path=service.profile_path,
             )
             service.discover_runs()
+            run_key = service.registry.register(destination)
             return {
                 "status": "synced",
                 "executor_id": executor_id,
@@ -2526,6 +2842,7 @@ def create_ui_app(
                 "file_count": report.file_count,
                 "size_bytes": report.size_bytes,
                 "run_manifest_sha256": report.run_manifest_sha256,
+                "run_key": run_key,
             }
         except Exception as error:
             _raise_http(error)
@@ -3671,6 +3988,13 @@ def create_ui_app(
             # stage.  Continuing therefore depends on the verified succeeded
             # Stage prefix, not on the whole RunManifest being terminal.
             continue_after_stage = next_stage - 1
+            linked_remote_stage = (
+                5
+                if payload.executor_id is not None and next_stage == 4
+                else 7
+                if payload.executor_id is not None and next_stage == 6
+                else None
+            )
             materialize_continuation_config(
                 source_run_root=source,
                 destination=generated,
@@ -3678,33 +4002,75 @@ def create_ui_app(
                 execution_mode=payload.execution_mode,
                 options=payload.options,
                 continue_after_stage=continue_after_stage,
+                linked_stage_number=linked_remote_stage,
             )
+            remote_job: dict[str, Any] | None = None
             try:
-                job = service.jobs.launch(
-                    operation="run",
-                    config_path=generated,
-                    run_root=source,
-                    profile_path=service.profile_path,
-                    runs_root=service.registry.runs_root,
-                    run_id=(
-                        payload.run_id
-                        or (
-                            datetime.now(tz=UTC)
-                            .strftime("%Y%m%dt%H%M%Sz")
-                            .lower()
-                            + "-stage02-selection"
+                if payload.executor_id is not None:
+                    if next_stage not in {4, 6}:
+                        raise ConfigurationError(
+                            "managed-ssh 执行位置只能用于 Stage 04 或 Stage 06"
                         )
-                        if next_stage == 2
-                        else payload.run_id
-                    ),
-                    continue_after_stage=continue_after_stage,
-                    project_id=session.project_id,
-                    accepted_run_key=run_key,
-                    session_id=session.session_id,
-                    session_root=service.sessions.root,
-                    stage_number=next_stage,
-                    confirmed=True,
-                )
+                    pairing = RemoteExecutorRegistry(service.workspace).latest(
+                        payload.executor_id
+                    )
+                    if pairing is None or pairing.state != "paired":
+                        raise ConfigurationError("Suzhou2 尚未完成 SSH 配对")
+                    if payload.controller_id != pairing.controller_id:
+                        raise ConfigurationError("controller_id 与配对记录不一致")
+                    selected_run_id = payload.run_id or (
+                        datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
+                        + f"-stage{next_stage:02d}-managed"
+                    )
+                    submission = submit_managed_pipeline(
+                        executor_id=payload.executor_id,
+                        controller_id=payload.controller_id,
+                        job_id=f"ui-{uuid4().hex[:16]}",
+                        run_id=selected_run_id,
+                        config_path=generated,
+                        source_run=source,
+                        profile_path=service.profile_path,
+                        maximum_gpus=payload.maximum_gpus,
+                        sync_mode=payload.sync_mode,
+                    )
+                    job = service.jobs.accept_external(
+                        operation="managed-remote-run",
+                        project_id=session.project_id,
+                        stage_number=next_stage,
+                        external_job_id=submission.job_id,
+                        run_id=submission.run_id,
+                        session_id=session.session_id,
+                        status=submission.queue_status,
+                    )
+                    remote_job = submission.model_dump(mode="json")
+                else:
+                    job = service.jobs.launch(
+                        operation="run",
+                        config_path=generated,
+                        run_root=source,
+                        profile_path=service.profile_path,
+                        runs_root=service.registry.runs_root,
+                        run_id=(
+                            payload.run_id
+                            or (
+                                datetime.now(tz=UTC)
+                                .strftime("%Y%m%dt%H%M%Sz")
+                                .lower()
+                                + "-stage02-selection"
+                            )
+                            if next_stage == 2
+                            else payload.run_id
+                        ),
+                        continue_after_stage=continue_after_stage,
+                        project_id=session.project_id,
+                        accepted_run_key=run_key,
+                        session_id=session.session_id,
+                        session_root=service.sessions.root,
+                        stage_number=next_stage,
+                        execution_target="local-current-host",
+                        maximum_gpus=payload.maximum_gpus,
+                        confirmed=True,
+                    )
             except Exception:
                 quarantine_if_workspace_path(
                     generated,
@@ -3726,6 +4092,12 @@ def create_ui_app(
             return {
                 "session": session.model_dump(mode="json"),
                 "job": job.model_dump(mode="json"),
+                "execution_target": (
+                    "local-current-host"
+                    if payload.executor_id is None
+                    else "managed-ssh"
+                ),
+                "remote_job": remote_job,
             }
         except Exception as error:
             _raise_http(error)

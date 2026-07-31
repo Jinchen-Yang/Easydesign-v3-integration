@@ -9,6 +9,7 @@ import type {
   AssistantServiceStatus,
   Artifact,
   DesignSession,
+  ExecutionTargets,
   ExecutionProgress,
   InstallStatus,
   Project,
@@ -222,6 +223,15 @@ function StageContinuationSetup({
   const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("");
   const [jobId, setJobId] = useState("");
+  const [remoteJob, setRemoteJob] = useState<{
+    executor_id: string;
+    job_id: string;
+  }>();
+  const [executionTargets, setExecutionTargets] = useState<ExecutionTargets>();
+  const [executionTarget, setExecutionTarget] = useState<
+    "local-current-host" | "managed-ssh"
+  >("local-current-host");
+  const [maximumGpus, setMaximumGpus] = useState<number>();
   const [resourceConfirmed, setResourceConfirmed] = useState(false);
   const expensive = stage.stage_number === 4 || stage.stage_number === 6;
 
@@ -242,6 +252,27 @@ function StageContinuationSetup({
         setLoadError(error instanceof Error ? error.message : "无法读取本步骤配置");
       });
   }, [stage.stage_number]);
+
+  useEffect(() => {
+    if (!expensive) return;
+    let disposed = false;
+    api.executionTargets()
+      .then((value) => {
+        if (disposed) return;
+        setExecutionTargets(value);
+        setMaximumGpus((current) => (
+          current ?? (value.local.eligible_gpu_count || undefined)
+        ));
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setStatus(error instanceof Error ? error.message : "无法读取计算资源");
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [expensive, stage.stage_number]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -295,8 +326,103 @@ function StageContinuationSetup({
     };
   }, [jobId, onCompleted, stage.stage_number]);
 
+  useEffect(() => {
+    if (!remoteJob) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const observation = await api.remoteJob(
+          remoteJob.executor_id,
+          remoteJob.job_id,
+        );
+        if (disposed) return;
+        if (observation.connection_state === "temporarily-disconnected") {
+          setStatus("与 Suzhou2 的连接暂时中断；远端任务不会被标记失败，正在等待恢复…");
+          timer = window.setTimeout(() => void poll(), 15_000);
+          return;
+        }
+        const queue = observation.queue as {
+          status?: string;
+          assigned_devices?: number[];
+          error?: string;
+        } | undefined;
+        const progress = observation.progress as {
+          collected_candidates?: number;
+          planned_candidates?: number;
+          estimated_remaining_seconds?: number;
+        } | undefined;
+        const queueStatus = queue?.status || "queued";
+        const activeStatuses = new Set([
+          "queued",
+          "waiting-resource",
+          "admitting",
+          "running",
+          "drain-requested",
+        ]);
+        if (activeStatuses.has(queueStatus)) {
+          const count = progress
+            ? ` · ${progress.collected_candidates || 0}/${progress.planned_candidates || 0} 个候选`
+            : "";
+          const devices = queue?.assigned_devices?.length
+            ? ` · GPU ${queue.assigned_devices.join(", ")}`
+            : "";
+          const queueCopy = queueStatus === "waiting-resource"
+            ? "正在 Suzhou2 队列等待可用 GPU"
+            : queueStatus === "running"
+              ? "Suzhou2 正在运行"
+              : queueStatus === "drain-requested"
+                ? "正在完成当前任务后停止调度"
+                : "已进入 Suzhou2 统一队列";
+          setStatus(`${queueCopy}${devices}${count}`);
+          timer = window.setTimeout(() => void poll(), 15_000);
+          return;
+        }
+        if (queueStatus === "succeeded") {
+          setStatus("远程计算已完成，正在同步审阅所需的运行记录和结果…");
+          const synced = await api.syncRemoteJob(
+            remoteJob.executor_id,
+            remoteJob.job_id,
+            "review",
+          );
+          const completedRunKey = String(synced.run_key || "");
+          setRemoteJob(undefined);
+          if (completedRunKey) {
+            await onCompleted(
+              completedRunKey,
+              Math.min(7, stage.stage_number + 1),
+            );
+          } else {
+            setStatus("远程结果已同步，但没有返回可打开的运行标识。");
+          }
+          return;
+        }
+        setRemoteJob(undefined);
+        setStatus(
+          queue?.error
+            ? `远程任务没有完成：${queue.error}`
+            : `远程任务状态：${queueStatus}`,
+        );
+      } catch (error) {
+        if (!disposed) {
+          setStatus(
+            error instanceof Error
+              ? `暂时无法读取 Suzhou2 状态：${error.message}`
+              : "暂时无法读取 Suzhou2 状态",
+          );
+          timer = window.setTimeout(() => void poll(), 15_000);
+        }
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [onCompleted, remoteJob, stage.stage_number]);
+
   async function start() {
-    if (!definition || jobId || (expensive && !resourceConfirmed)) return;
+    if (!definition || jobId || remoteJob || (expensive && !resourceConfirmed)) return;
     setStatus(`正在验证第${stage.stage_number}步配置和运行环境…`);
     try {
       const sessions = await api.designSessions();
@@ -308,13 +434,31 @@ function StageContinuationSetup({
           "review-gated",
         );
       }
+      const managed = executionTargets?.managed.find(
+        (item) => item.executor_id === "suzhou2",
+      );
+      if (expensive && executionTarget === "managed-ssh" && managed?.pairing_state !== "paired") {
+        throw new Error("Suzhou2 尚未配对；请先在“设置 → 运行环境”完成 SSH 配对。");
+      }
       const response = await api.continueRun(run.run_key, stage.stage_number, {
         session_id: session.session_id,
         execution_mode: session.execution_mode,
         options: definition.defaults,
+        executor_id: executionTarget === "managed-ssh" ? "suzhou2" : undefined,
+        controller_id: executionTarget === "managed-ssh" ? managed?.controller_id : undefined,
+        maximum_gpus: expensive ? maximumGpus : undefined,
+        sync_mode: "review",
       });
-      setJobId(response.job.job_id);
-      setStatus(`第${stage.stage_number}步任务已创建，正在读取真实运行状态…`);
+      if (response.execution_target === "managed-ssh" && response.remote_job) {
+        setRemoteJob({
+          executor_id: String(response.remote_job.executor_id),
+          job_id: String(response.remote_job.job_id),
+        });
+        setStatus(`第${stage.stage_number}步已提交到 Suzhou2 统一队列，正在读取队列状态…`);
+      } else {
+        setJobId(response.job.job_id);
+        setStatus(`第${stage.stage_number}步任务已创建，正在读取真实运行状态…`);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "无法启动本步骤");
     }
@@ -373,6 +517,72 @@ function StageContinuationSetup({
           <span>只把已批准区域写为正向结合约束；其他残基保持中性，并使用固定 BoltzGen 版本验证 YAML。</span>
         </div>
       )}
+      {expensive && executionTargets && (
+        <div className="execution-target-section">
+          <div className="execution-target-heading">
+            <div>
+              <strong>选择计算位置</strong>
+              <span>科学配置保持不变，只决定任务在哪台机器执行。</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                api.executionTargets()
+                  .then(setExecutionTargets)
+                  .catch((error: unknown) => setStatus(
+                    error instanceof Error ? error.message : "无法刷新计算资源",
+                  ));
+              }}
+            >
+              刷新资源
+            </button>
+          </div>
+          <div className="execution-target-cards">
+            <button
+              type="button"
+              className={executionTarget === "local-current-host" ? "selected" : ""}
+              onClick={() => setExecutionTarget("local-current-host")}
+            >
+              <span>当前机器</span>
+              <strong>{executionTargets.local.eligible_gpu_count} 张可用 GPU</strong>
+              <small>{executionTargets.local.detail}</small>
+            </button>
+            {(() => {
+              const managed = executionTargets.managed.find(
+                (item) => item.executor_id === "suzhou2",
+              );
+              const paired = managed?.pairing_state === "paired";
+              return (
+                <button
+                  type="button"
+                  className={executionTarget === "managed-ssh" ? "selected" : ""}
+                  disabled={!paired}
+                  onClick={() => setExecutionTarget("managed-ssh")}
+                >
+                  <span>Suzhou2 公共算力</span>
+                  <strong>{paired ? "已配对，可进入 8 卡统一队列" : "尚未配对"}</strong>
+                  <small>{paired ? "远端运行，默认只同步审阅结果" : "请在设置中完成专用 SSH 密钥配对"}</small>
+                </button>
+              );
+            })()}
+          </div>
+          <label className="execution-gpu-limit">
+            <span>最多使用 GPU 数量</span>
+            <input
+              type="number"
+              min="1"
+              max="8"
+              value={maximumGpus || ""}
+              placeholder="自动使用全部可用卡"
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setMaximumGpus(Number.isFinite(value) && value > 0 ? value : undefined);
+              }}
+            />
+            <small>留空表示使用目标机器上全部符合条件的 GPU；不会抢占外部进程。</small>
+          </label>
+        </div>
+      )}
       {expensive && (
         <label className="stage-resource-confirmation">
           <input
@@ -387,14 +597,16 @@ function StageContinuationSetup({
         <button
           type="button"
           className="primary-button"
-          disabled={Boolean(jobId) || (expensive && !resourceConfirmed)}
+          disabled={Boolean(jobId || remoteJob) || (expensive && !resourceConfirmed)}
           onClick={() => void start()}
         >
-          {jobId ? `第${stage.stage_number}步正在运行…` : definition.presentation.action_label}
+          {jobId || remoteJob
+            ? `第${stage.stage_number}步正在运行…`
+            : definition.presentation.action_label}
         </button>
         <span>配置来自 EasyDesign Python 契约；页面不会自行改写科学参数。</span>
       </div>
-      {jobId && (
+      {(jobId || remoteJob) && (
         <div className="stage-continuation-progress" role="progressbar" aria-label={`第${stage.stage_number}步正在运行`}>
           <span />
         </div>
@@ -1623,7 +1835,9 @@ function NewDesign({
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.remoteExecutors()
-      .then((value) => setExecutors(value.executors))
+      .then((value) => setExecutors(
+        value.executors.filter((item) => item.type !== "managed-ssh"),
+      ))
       .catch(() => setExecutors([]));
   }, []);
   useEffect(() => {
@@ -2373,21 +2587,62 @@ function TasksPage({
   }
   async function observeRemote(job: RemoteJob) {
     const value = await api.remoteJob(job.executor_id, job.job_id);
+    if (value.connection_state === "temporarily-disconnected") {
+      setRemoteStatus((current) => ({
+        ...current,
+        [remoteKey(job)]: "远程连接暂时中断；任务状态保持不变，等待自动恢复",
+      }));
+      return;
+    }
+    const queue = value.queue as {
+      status?: string;
+      assigned_devices?: number[];
+      attempt?: number;
+    } | undefined;
     const worker = value.worker as { active_state?: string; sub_state?: string };
     const progress = value.progress as { status?: string; collected_candidates?: number; planned_candidates?: number } | undefined;
+    const deviceCopy = queue?.assigned_devices?.length
+      ? ` · GPU ${queue.assigned_devices.join(", ")}`
+      : "";
     setRemoteStatus((current) => ({
       ...current,
-      [remoteKey(job)]: progress
+      [remoteKey(job)]: queue
+        ? `${queue.status || "排队中"}${deviceCopy}${progress ? ` · ${progress.collected_candidates || 0}/${progress.planned_candidates || 0}` : ""}`
+        : progress
         ? `${progress.status || "运行中"} · ${progress.collected_candidates || 0}/${progress.planned_candidates || 0}`
         : `${worker.active_state || "unknown"} / ${worker.sub_state || "unknown"}`,
     }));
   }
+  useEffect(() => {
+    if (!remoteJobs.length) return;
+    let disposed = false;
+    const refresh = async () => {
+      await Promise.all(remoteJobs.map(async (job) => {
+        if (!disposed) {
+          try {
+            await observeRemote(job);
+          } catch {
+            setRemoteStatus((current) => ({
+              ...current,
+              [remoteKey(job)]: "暂时无法读取远端状态，稍后自动重试",
+            }));
+          }
+        }
+      }));
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 15_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [remoteJobs]);
   async function syncRemote(job: RemoteJob) {
     setRemoteMessage(`正在从 ${job.executor_id} 同步运行记录…`);
     try {
-      await api.syncRemoteJob(job.executor_id, job.job_id, "metadata");
+      await api.syncRemoteJob(job.executor_id, job.job_id, "review");
       await onRefresh();
-      setRemoteMessage("运行记录已同步；页面现在可以查看远端 manifest 声明的进度与证据。");
+      setRemoteMessage("审阅结果已同步；大型原始候选仍保留在远端数据盘。");
     } catch (value) {
       setRemoteMessage(value instanceof Error ? value.message : "远程同步失败");
     }
@@ -2451,6 +2706,164 @@ function TasksPage({
         </section>
       )}
     </div>
+  );
+}
+
+function Suzhou2PairingSettings() {
+  const [executor, setExecutor] = useState<RemoteExecutor>();
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState(22);
+  const [user, setUser] = useState("root");
+  const [controllerId, setControllerId] = useState("controller-primary");
+  const [hostFingerprint, setHostFingerprint] = useState("");
+  const [fingerprintConfirmed, setFingerprintConfirmed] = useState(false);
+  const [publicKey, setPublicKey] = useState("");
+  const [installCommand, setInstallCommand] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function refresh() {
+    const value = await api.remoteExecutors();
+    const current = value.executors.find((item) => item.executor_id === "suzhou2");
+    setExecutor(current);
+    if (current?.host) setHost(current.host);
+    if (current?.port) setPort(current.port);
+    if (current?.user) setUser(current.user);
+    if (current?.controller_id) setControllerId(current.controller_id);
+    if (current?.host_fingerprint) setHostFingerprint(current.host_fingerprint);
+  }
+
+  useEffect(() => {
+    refresh().catch(() => setExecutor(undefined));
+  }, []);
+
+  async function scan() {
+    if (!host.trim()) return;
+    setBusy(true);
+    setMessage("正在读取 Suzhou2 的 SSH 主机指纹…");
+    try {
+      const identity = await api.scanRemoteHost(host.trim(), port);
+      setHostFingerprint(String(identity.fingerprint || ""));
+      setFingerprintConfirmed(false);
+      setMessage("请与服务器管理员核对下方指纹；确认无误后再生成专用密钥。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "无法读取服务器指纹");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function beginPairing() {
+    if (!hostFingerprint || !fingerprintConfirmed) return;
+    setBusy(true);
+    setMessage("正在当前 EasyDesign 工作区生成专用 SSH 密钥…");
+    try {
+      const result = await api.beginRemotePairing({
+        executor_id: "suzhou2",
+        controller_id: controllerId.trim(),
+        host: host.trim(),
+        port,
+        user: user.trim(),
+        confirmed_host_fingerprint: hostFingerprint,
+      });
+      const pairing = result.pairing as Record<string, unknown>;
+      setPublicKey(String(pairing.public_key || ""));
+      setInstallCommand(String(result.public_key_install_command || ""));
+      setMessage("专用公钥已生成。请在 Suzhou2 执行安装命令，然后点击“验证并完成配对”。");
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "无法开始 SSH 配对");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmPairing() {
+    setBusy(true);
+    setMessage("正在验证免密 SSH、受管 worker、GPU、磁盘、环境和版本…");
+    try {
+      const result = await api.confirmRemotePairing("suzhou2");
+      const probe = result.probe as Record<string, unknown>;
+      setMessage(
+        `Suzhou2 配对完成：${String(probe.gpu_count || 0)} 张 GPU，worker ${String(probe.service_version || "已验证")}。`,
+      );
+      setPublicKey("");
+      setInstallCommand("");
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Suzhou2 验证失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unpair() {
+    if (!window.confirm("确认逻辑解绑 Suzhou2？历史证据、控制端私钥和远端公钥都会保留。")) return;
+    setBusy(true);
+    try {
+      await api.unpairRemoteExecutor("suzhou2");
+      setMessage("已逻辑解绑：新的提交、同步和恢复已禁用；历史运行仍可查看。");
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "逻辑解绑失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const paired = executor?.pairing_state === "paired";
+  const awaiting = executor?.pairing_state === "awaiting-public-key";
+  return (
+    <section className="panel suzhou-pairing-settings">
+      <div className="panel-heading">
+        <div>
+          <p className="section-label">公共算力</p>
+          <h3>Suzhou2 SSH 配对</h3>
+        </div>
+        <span data-state={executor?.pairing_state || "not-paired"}>
+          {paired ? "已配对" : awaiting ? "等待安装公钥" : "尚未配对"}
+        </span>
+      </div>
+      <p className="pairing-explanation">
+        密码不会写入网页或配置。EasyDesign 会在当前工作区生成一把仅用于 Suzhou2 的专用密钥，私钥不会上传。
+      </p>
+      <div className="pairing-fields">
+        <label><span>服务器地址</span><input value={host} disabled={paired || busy} onChange={(event) => setHost(event.target.value)} placeholder="Suzhou2 主机名或 IP" /></label>
+        <label><span>SSH 端口</span><input type="number" min="1" max="65535" value={port} disabled={paired || busy} onChange={(event) => setPort(Number(event.target.value))} /></label>
+        <label><span>用户名</span><input value={user} disabled={paired || busy} onChange={(event) => setUser(event.target.value)} /></label>
+        <label><span>控制端名称</span><input value={controllerId} disabled={paired || busy} onChange={(event) => setControllerId(suggestProjectId(event.target.value))} /></label>
+      </div>
+      {!paired && (
+        <div className="pairing-actions">
+          <button type="button" disabled={busy || !host.trim()} onClick={() => void scan()}>1. 读取主机指纹</button>
+          <button type="button" disabled={busy || !hostFingerprint || !fingerprintConfirmed} onClick={() => void beginPairing()}>2. 生成专用密钥</button>
+          <button type="button" className="primary-button" disabled={busy || (!awaiting && !publicKey)} onClick={() => void confirmPairing()}>3. 验证并完成配对</button>
+        </div>
+      )}
+      {hostFingerprint && !paired && (
+        <label className="fingerprint-confirmation">
+          <input type="checkbox" checked={fingerprintConfirmed} onChange={(event) => setFingerprintConfirmed(event.target.checked)} />
+          <span><strong>我已通过可信渠道核对主机指纹</strong><code>{hostFingerprint}</code></span>
+        </label>
+      )}
+      {(publicKey || installCommand) && (
+        <div className="pairing-key-box">
+          <strong>在 Suzhou2 安装这把公钥</strong>
+          {publicKey && <textarea readOnly value={publicKey} aria-label="Suzhou2 专用 SSH 公钥" />}
+          {installCommand && <pre>{installCommand}</pre>}
+          <small>只复制公钥或安装命令；不要上传本机私钥。</small>
+        </div>
+      )}
+      {paired && (
+        <div className="paired-summary">
+          <div><span>服务器</span><strong>{executor?.user}@{executor?.host}:{executor?.port}</strong></div>
+          <div><span>控制端</span><strong>{executor?.controller_id}</strong></div>
+          <div><span>主机指纹</span><code>{executor?.host_fingerprint}</code></div>
+          <button type="button" disabled={busy} onClick={() => void unpair()}>取消连接配对</button>
+        </div>
+      )}
+      {message && <div className="form-status">{message}</div>}
+    </section>
   );
 }
 
@@ -2737,6 +3150,7 @@ function OperationsPage({
         <div className="quarantine-summary">隔离区：{installStatus?.quarantine.entries || 0} 项。EasyDesign 不会自动清理；任何清理都需要对精确路径另行批准。</div>
       </section>
       <section className="panel utility-panel"><div className="two-field-row"><label><span>选择一个项目配置</span><select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}><option value="">请选择项目</option>{editableProjects.map((project) => <option key={project}>{project}</option>)}</select></label><button className="primary-button" onClick={diagnose} disabled={!selectedProject}>检查运行环境</button></div>{!editableProjects.length && <div className="notice"><strong>当前没有可编辑项目</strong><span>你仍可查看已有运行；新建项目后才能按配置检查环境。</span></div>}{message && <div className="form-status">{message}</div>}{diagnostic && <pre className="audit-json">{JSON.stringify(diagnostic, null, 2)}</pre>}</section>
+      <Suzhou2PairingSettings />
       <AssistantServiceSettings />
       <section className="panel settings-catalog">
         <div className="panel-heading"><div><p className="section-label">可恢复项目目录</p><h3>活跃项目与归档项目</h3></div><span>{activeEntries.length} 个活跃 · {archiveEntries.length} 个归档</span></div>

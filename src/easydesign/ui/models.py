@@ -275,6 +275,8 @@ class UiJobRecord(BaseModel):
     session_id: str | None = None
     self_test_id: str | None = None
     stage_number: int | None = Field(default=None, ge=1, le=7)
+    execution_target: Literal["local-current-host", "managed-ssh"] | None = None
+    maximum_gpus: int | None = Field(default=None, ge=1)
     process_id: int | None = None
     drain_requested: bool = False
     created_at: datetime

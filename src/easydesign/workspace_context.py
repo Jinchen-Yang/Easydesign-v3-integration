@@ -98,6 +98,14 @@ class WorkspaceContext:
         return self.runtime_root / "state" / "remote-jobs"
 
     @property
+    def gpu_lease_root(self) -> Path:
+        return self.runtime_root / "state" / "gpu-leases"
+
+    @property
+    def remote_executor_registry_root(self) -> Path:
+        return self.runtime_root / "state" / "remote-executors"
+
+    @property
     def msa_cache_root(self) -> Path:
         return self.runtime_root / "cache" / "msa-v1"
 

@@ -210,9 +210,18 @@ export const api = {
       session_id: string;
       execution_mode: "unattended" | "review-gated";
       options?: Record<string, unknown>;
+      executor_id?: string;
+      controller_id?: string;
+      maximum_gpus?: number;
+      sync_mode?: "metadata" | "review" | "complete";
     },
   ) =>
-    request<{ job: UiJobRecord; session: DesignSession }>(
+    request<{
+      job: UiJobRecord;
+      session: DesignSession;
+      execution_target: "local-current-host" | "managed-ssh";
+      remote_job?: Record<string, unknown>;
+    }>(
       `/api/v1/runs/${key}/continue/${stage}`,
       {
         method: "POST",
@@ -272,9 +281,37 @@ export const api = {
       }),
     }),
   remoteExecutors: () =>
-    request<{ executors: Array<{ executor_id: string; label: string }> }>(
+    request<{ executors: import("./types").RemoteExecutor[] }>(
       "/api/v1/remote-executors",
     ),
+  executionTargets: () =>
+    request<import("./types").ExecutionTargets>("/api/v1/execution-targets"),
+  scanRemoteHost: (host: string, port: number) =>
+    request<Record<string, unknown>>("/api/v1/remote-executors/host-scan", {
+      method: "POST",
+      body: JSON.stringify({ host, port }),
+    }),
+  beginRemotePairing: (body: {
+    executor_id: string;
+    controller_id: string;
+    host: string;
+    port: number;
+    user: string;
+    confirmed_host_fingerprint: string;
+  }) => request<Record<string, unknown>>("/api/v1/remote-executors/pair-begin", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
+  confirmRemotePairing: (executorId: string) =>
+    request<Record<string, unknown>>(`/api/v1/remote-executors/${executorId}/pair-confirm`, {
+      method: "POST",
+      body: JSON.stringify({ confirmed: true }),
+    }),
+  unpairRemoteExecutor: (executorId: string) =>
+    request<Record<string, unknown>>(`/api/v1/remote-executors/${executorId}/unpair`, {
+      method: "POST",
+      body: JSON.stringify({ confirmed: true }),
+    }),
   remoteJobs: () =>
     request<{ jobs: Array<Record<string, unknown>> }>("/api/v1/remote-jobs"),
   remoteJob: (executorId: string, jobId: string) =>
@@ -284,7 +321,7 @@ export const api = {
   syncRemoteJob: (
     executorId: string,
     jobId: string,
-    mode: "metadata" | "complete" = "metadata",
+    mode: "metadata" | "review" | "complete" = "review",
   ) =>
     request<Record<string, unknown>>(
       `/api/v1/remote-jobs/${executorId}/${jobId}/sync`,

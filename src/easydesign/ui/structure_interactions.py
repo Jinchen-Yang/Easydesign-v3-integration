@@ -1021,7 +1021,7 @@ class StructureInteractionStore:
         if active is not None:
             next_pml = (
                 f"{active.pml.rstrip()}\n\n"
-                f"# @easydesign native-pymol source={source}\n"
+                f"# @chatpymol native-pymol source={source}\n"
                 f"{validated}"
             )
             updated, _version = self.save_scene_version(

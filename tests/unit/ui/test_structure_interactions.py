@@ -185,6 +185,50 @@ def test_structure_session_publishes_revision_only_snapshots(
     assert len(tuple(revision_root.glob("revision-*.json"))) == 1
 
 
+def test_viewer_pml_append_extends_active_scene_without_managed_line_conflict(
+    tmp_path: Path,
+) -> None:
+    store = StructureInteractionStore(tmp_path / "projects")
+    session = store.create(
+        project_id="demo",
+        run_key="demo/run-001",
+        stage_number=2,
+        target_structure_sha256="a" * 64,
+        residue_mapping_sha256="b" * 64,
+        created_at=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+    initial_pml = (
+        f"# @easydesign target object=target sha256={'a' * 64}\n"
+        "hide everything, all\n"
+        "show cartoon, target\n"
+    )
+    store.save_scene_version(
+        session.session_id,
+        pml=initial_pml,
+        actor="system",
+        source="initial-scene",
+        summary="初始场景",
+        updated_at=datetime(2026, 7, 29, 1, tzinfo=UTC),
+    )
+
+    updated = store.append_pml(
+        session.session_id,
+        pml="center target\nzoom target, 5\n",
+        source="viewer",
+        updated_at=datetime(2026, 7, 29, 2, tzinfo=UTC),
+    )
+
+    active = next(
+        item
+        for item in updated.scene_versions
+        if item.version_id == updated.active_scene_version_id
+    )
+    assert len(updated.scene_versions) == 2
+    assert "# @chatpymol native-pymol source=viewer" in active.pml
+    assert "# @easydesign native-pymol" not in active.pml
+
+
+
 def test_structure_session_reuses_only_matching_latest_snapshot(
     tmp_path: Path,
 ) -> None:

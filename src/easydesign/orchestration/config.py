@@ -762,6 +762,23 @@ class Stage05StrategySelectionConfig(BaseModel):
     require_unique_winner: Literal[True] = True
 
 
+class Stage05AdvisoryValidationConfig(BaseModel):
+    """v1.6 diagnostic expansion; scientific negatives are warnings."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    expanded_total_per_strategy: int = Field(default=100, ge=1)
+    full_target_refold_top_n: int = Field(default=10, ge=1)
+
+    @model_validator(mode="after")
+    def validate_top_n(self) -> Self:
+        if self.full_target_refold_top_n > self.expanded_total_per_strategy:
+            raise ValueError(
+                "full_target_refold_top_n 不能超过 diagnostic expansion 总数"
+            )
+        return self
+
+
 class ComplexPredictionConfig(BaseModel):
     """Stage 05/07 full-target Protenix policy; binder MSA stays query-only."""
 
@@ -780,11 +797,68 @@ class ComplexPredictionConfig(BaseModel):
 class Stage05Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    filter_profile: Literal["nanobody-filter-standard-v1.5"] = "nanobody-filter-standard-v1.5"
-    expanded_total_per_strategy: int = Field(default=100, ge=1)
-    maximum_tier_a_strategies: int = Field(default=3, ge=1)
-    strategy_selection: Stage05StrategySelectionConfig = Stage05StrategySelectionConfig()
+    filter_profile: Literal[
+        "nanobody-filter-standard-v1.5",
+        "nanobody-filter-standard-v1.6",
+    ] = "nanobody-filter-standard-v1.6"
+    maximum_tier_a_strategies: int = Field(default=3, ge=1, le=3)
+    advisory_validation: Stage05AdvisoryValidationConfig | None = None
+    expanded_total_per_strategy: int | None = Field(default=None, ge=1)
+    strategy_selection: Stage05StrategySelectionConfig | None = None
     full_target_prediction: ComplexPredictionConfig = ComplexPredictionConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_profile_defaults(cls, value: Any) -> Any:
+        """Apply defaults without leaking v1.6 fields into legacy v1.5 configs."""
+
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        profile = payload.get(
+            "filter_profile",
+            "nanobody-filter-standard-v1.6",
+        )
+        if profile == "nanobody-filter-standard-v1.6":
+            payload.setdefault("advisory_validation", {})
+        elif profile == "nanobody-filter-standard-v1.5":
+            payload.setdefault("expanded_total_per_strategy", 100)
+            payload.setdefault("strategy_selection", {})
+        return payload
+
+    @model_validator(mode="after")
+    def validate_profile_shape(self) -> Self:
+        if self.filter_profile == "nanobody-filter-standard-v1.6":
+            if self.advisory_validation is None:
+                raise ValueError("v1.6 必须声明 advisory_validation")
+            if (
+                self.expanded_total_per_strategy is not None
+                or self.strategy_selection is not None
+            ):
+                raise ValueError("v1.6 不接受旧版 expansion/strategy_selection 字段")
+        else:
+            if (
+                self.expanded_total_per_strategy is None
+                or self.strategy_selection is None
+            ):
+                raise ValueError("v1.5 必须声明旧版 expansion/strategy_selection 字段")
+            if self.advisory_validation is not None:
+                raise ValueError("v1.5 不接受 advisory_validation")
+        return self
+
+    @property
+    def diagnostic_expanded_total_per_strategy(self) -> int:
+        if self.advisory_validation is not None:
+            return self.advisory_validation.expanded_total_per_strategy
+        assert self.expanded_total_per_strategy is not None
+        return self.expanded_total_per_strategy
+
+    @property
+    def diagnostic_full_target_refold_top_n(self) -> int:
+        if self.advisory_validation is not None:
+            return self.advisory_validation.full_target_refold_top_n
+        assert self.strategy_selection is not None
+        return self.strategy_selection.full_target_refold_top_n
 
 
 class Stage06ManualStrategyAuthorizationConfig(BaseModel):
@@ -808,6 +882,7 @@ class Stage06Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     scale_profile: Literal["smoke-1000", "production-50000"] = "smoke-1000"
+    allocation_policy: Literal["equal-across-promoted-v1"] | None = None
     preauthorized_candidate_limit: int = Field(default=1000, ge=1)
     manual_strategy_authorization: Stage06ManualStrategyAuthorizationConfig | None = None
 
@@ -843,7 +918,7 @@ class EasyDesignRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.7", pattern=r"^0\.7$")
+    schema_version: str = Field(default="0.8", pattern=r"^0\.8$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
     stage01: Stage01Config
@@ -893,7 +968,25 @@ class EasyDesignRunConfig(BaseModel):
                         "scope": {"type": "full-sequence"},
                     }
             migrated["stage01"] = stage01
-        migrated["schema_version"] = "0.7"
+        source_schema = migrated.get("schema_version")
+        stage05 = migrated.get("stage05")
+        if (
+            source_schema != "0.8"
+            and isinstance(stage05, dict)
+            and stage05.get("filter_profile") is None
+        ):
+            stage05 = dict(stage05)
+            stage05["filter_profile"] = "nanobody-filter-standard-v1.5"
+            stage05.setdefault("expanded_total_per_strategy", 100)
+            stage05.setdefault(
+                "strategy_selection",
+                {
+                    "full_target_refold_top_n": 10,
+                    "require_unique_winner": True,
+                },
+            )
+            migrated["stage05"] = stage05
+        migrated["schema_version"] = "0.8"
         return migrated
 
     @model_validator(mode="after")
@@ -935,18 +1028,32 @@ class EasyDesignRunConfig(BaseModel):
             )
         if self.stage04 is not None and self.stage05 is not None:
             if (
-                self.stage05.expanded_total_per_strategy
+                self.stage05.diagnostic_expanded_total_per_strategy
                 <= self.stage04.required_complete_candidates_per_strategy
             ):
                 raise ValueError(
                     "Stage 05 expanded_total_per_strategy 必须大于 Stage 04 pilot 数"
                 )
             if (
-                self.stage05.strategy_selection.full_target_refold_top_n
-                > self.stage05.expanded_total_per_strategy
+                self.stage05.diagnostic_full_target_refold_top_n
+                > self.stage05.diagnostic_expanded_total_per_strategy
             ):
                 raise ValueError(
                     "Stage 05 full_target_refold_top_n 不能超过 expansion 总数"
+                )
+        if (
+            self.stage05 is not None
+            and self.stage05.filter_profile == "nanobody-filter-standard-v1.6"
+            and self.stage06 is not None
+        ):
+            if self.stage06.allocation_policy != "equal-across-promoted-v1":
+                raise ValueError(
+                    "Stage 05 v1.6 进入 Stage 06 时必须声明 "
+                    "allocation_policy=equal-across-promoted-v1"
+                )
+            if self.stage06.manual_strategy_authorization is not None:
+                raise ValueError(
+                    "Stage 05 v1.6 不接受旧版单策略 manual authorization"
                 )
         source = self.stage01.target.source
         is_predictable = (

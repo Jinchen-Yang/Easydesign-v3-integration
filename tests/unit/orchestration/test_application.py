@@ -232,6 +232,7 @@ def test_stage06_continuation_only_requires_boltzgen_backend(tmp_path: Path) -> 
     payload["stage06"] = {
         "scale_profile": "smoke-1000",
         "preauthorized_candidate_limit": 1000,
+        "allocation_policy": "equal-across-promoted-v1",
     }
     initialized.config_path.write_text(
         yaml.safe_dump(payload, sort_keys=False),

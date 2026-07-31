@@ -32,7 +32,7 @@ def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Pa
     assert loaded.config.stage02.automatic is not None
     assert loaded.config.stage02.automatic.patch.target_member_count == 12
     config_text = initialized.config_path.read_text(encoding="utf-8")
-    assert config_text.startswith("schema_version: '0.7'")
+    assert config_text.startswith("schema_version: '0.8'")
     assert "execution_mode: review-gated" in config_text
     assert "type: local-file" in config_text
     assert all(f"stage0{number}:" in config_text for number in range(1, 8))
@@ -217,8 +217,13 @@ def test_initialize_stage07_project_materializes_all_late_stage_profiles(
     assert loaded.config.stage05 is not None
     assert loaded.config.stage06 is not None
     assert loaded.config.stage07 is not None
-    assert loaded.config.stage06.scale_profile == "smoke-1000"
-    assert loaded.config.stage06.preauthorized_candidate_limit == 1000
+    assert loaded.config.stage05.filter_profile == "nanobody-filter-standard-v1.6"
+    assert loaded.config.stage05.advisory_validation is not None
+    assert loaded.config.stage05.advisory_validation.expanded_total_per_strategy == 100
+    assert loaded.config.stage05.advisory_validation.full_target_refold_top_n == 10
+    assert loaded.config.stage06.scale_profile == "production-50000"
+    assert loaded.config.stage06.allocation_policy == "equal-across-promoted-v1"
+    assert loaded.config.stage06.preauthorized_candidate_limit == 50_000
     assert loaded.config.stage07.primary_count == 20
     assert loaded.config.stage07.backup_count == 20
     assert loaded.config.stage07.tnp_required is True

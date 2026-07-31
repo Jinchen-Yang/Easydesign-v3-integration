@@ -190,8 +190,27 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
                 ],
             }
         elif stage_number == 5:
+            advisory = defaults["filter_profile"] == (
+                "nanobody-filter-standard-v1.6"
+            )
+            if advisory:
+                expansion_total = defaults["advisory_validation"][
+                    "expanded_total_per_strategy"
+                ]
+                full_target_top_n = defaults["advisory_validation"][
+                    "full_target_refold_top_n"
+                ]
+            else:
+                expansion_total = defaults["expanded_total_per_strategy"]
+                full_target_top_n = defaults["strategy_selection"][
+                    "full_target_refold_top_n"
+                ]
             presentation = {
-                "description": "逐规则筛选小规模候选并选择是否进入规模化生成。",
+                "description": (
+                    "逐规则筛选小规模候选，晋级 Tier A，并完成诊断性扩增。"
+                    if advisory
+                    else "逐规则筛选小规模候选并选择是否进入规模化生成。"
+                ),
                 "action_label": "开始筛选与验证",
                 "facts": [
                     {
@@ -201,15 +220,17 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
                     },
                     {
                         "label": "扩展总数",
-                        "value": defaults["expanded_total_per_strategy"],
-                        "note": "每个入选策略",
+                        "value": expansion_total,
+                        "note": "每个晋级策略的诊断性扩增",
                     },
                     {
                         "label": "完整目标复核",
-                        "value": defaults["strategy_selection"][
-                            "full_target_refold_top_n"
-                        ],
-                        "note": "每个扩展策略的候选数",
+                        "value": full_target_top_n,
+                        "note": (
+                            "只形成支持证据或 warning，不取消 Tier A 晋级"
+                            if advisory
+                            else "每个扩展策略的候选数"
+                        ),
                     },
                 ],
             }

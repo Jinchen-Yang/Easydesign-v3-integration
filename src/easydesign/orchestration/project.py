@@ -338,7 +338,7 @@ def initialize_project(
             "逐区域理由和证据局限确认；请先用 review-gated 初始化后显式编辑配置"
         )
     payload: dict[str, object] = {
-        "schema_version": "0.7",
+        "schema_version": "0.8",
         "project_id": selected_project_id,
         "design": {
             "binder_profile": "vhh",
@@ -409,12 +409,11 @@ def initialize_project(
         ),
         "stage05": (
             {
-                "filter_profile": "nanobody-filter-standard-v1.5",
-                "expanded_total_per_strategy": 100,
+                "filter_profile": "nanobody-filter-standard-v1.6",
                 "maximum_tier_a_strategies": 3,
-                "strategy_selection": {
+                "advisory_validation": {
+                    "expanded_total_per_strategy": 100,
                     "full_target_refold_top_n": 10,
-                    "require_unique_winner": True,
                 },
             }
             if stop_after_stage >= 5
@@ -422,8 +421,9 @@ def initialize_project(
         ),
         "stage06": (
             {
-                "scale_profile": "smoke-1000",
-                "preauthorized_candidate_limit": 1000,
+                "scale_profile": "production-50000",
+                "allocation_policy": "equal-across-promoted-v1",
+                "preauthorized_candidate_limit": 50_000,
             }
             if stop_after_stage >= 6
             else None

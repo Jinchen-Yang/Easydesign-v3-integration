@@ -18,6 +18,7 @@ from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 import uvicorn
+import httpx
 import yaml  # type: ignore[import-untyped]
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as ApiPath
@@ -82,6 +83,7 @@ from .access import (
     assert_stage_configurable,
     highest_accepted_stage,
 )
+from .audit import UiAuditLogger
 from .browser_pymol_assets import verify_browser_pymol_assets
 from .execution import get_execution_progress
 from .jobs import UiJobController
@@ -114,8 +116,12 @@ from .stage05 import (
 )
 from .structure_interactions import (
     AssistantProviderStore,
+    ReferenceStructure,
     RegionEditOperation,
+    SceneVersion,
+    SceneVersionConflictError,
     StructureInteractionStore,
+    derive_scene_summary,
     normalize_regions,
     request_assistant_proposal,
 )
@@ -302,6 +308,29 @@ class ProposalApplyRequest(BaseModel):
     confirmed: bool = False
 
 
+class SceneVersionRestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_version_id: str | None = None
+    confirmed: bool = False
+
+
+class ReferenceUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upload_token: str = Field(min_length=1, max_length=256)
+    object_name: str | None = Field(default=None, min_length=1, max_length=64)
+    confirmed: bool = False
+
+
+class ReferenceRcsbRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rcsb_id: str = Field(pattern=r"^[0-9A-Za-z]{4}$")
+    object_name: str | None = Field(default=None, min_length=1, max_length=64)
+    confirmed: bool = False
+
+
 class UiServiceState:
     def __init__(
         self,
@@ -316,7 +345,11 @@ class UiServiceState:
         self.registry = UiRunRegistry(
             self.workspace.require_write_path(runs_root, purpose="UI runs root")
         )
-        self.signer = ArtifactTokenSigner()
+        self.ui_state_root = self.workspace.runtime_root / "state" / "ui"
+        self.ui_state_root.mkdir(parents=True, exist_ok=True)
+        self.signer = ArtifactTokenSigner.from_file(
+            self.ui_state_root / "artifact-token-secret.bin"
+        )
         self.projects_root = self.workspace.require_write_path(
             projects_root,
             purpose="UI projects root",
@@ -331,8 +364,6 @@ class UiServiceState:
         self.jobs = UiJobController(
             self.workspace.require_write_path(selected_jobs, purpose="UI job root")
         )
-        self.ui_state_root = self.workspace.runtime_root / "state" / "ui"
-        self.ui_state_root.mkdir(parents=True, exist_ok=True)
         self.sessions = DesignSessionStore(self.ui_state_root / "design-sessions")
         self.structure_sessions = StructureInteractionStore(self.projects_root)
         self.assistant_providers = AssistantProviderStore(
@@ -344,10 +375,21 @@ class UiServiceState:
             workspace=self.workspace,
             profile_path=self.profile_path,
         )
+        self.audit = UiAuditLogger(self.workspace)
         self.upload_store = UploadStore(self.workspace)
         self.upload_root = self.upload_store.file_root
         self.temporary_root = self.workspace.runtime_root / "tmp" / "ui"
         self.temporary_root.mkdir(parents=True, exist_ok=True)
+
+    def project_root(self, project_id: str, *, require_exists: bool = True) -> Path:
+        root = (self.projects_root / project_id).resolve()
+        try:
+            root.relative_to(self.projects_root)
+        except ValueError as error:
+            raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        if require_exists and not root.is_dir():
+            raise ConfigurationError(f"项目目录不存在: {project_id}")
+        return root
 
     def project_preflight(self, project_id: str) -> dict[str, Any]:
         project_id = project_id.strip()
@@ -362,11 +404,7 @@ class UiServiceState:
                 "existing_project": None,
                 "suggested_project_id": _suggest_project_id(project_id),
             }
-        root = (self.projects_root / project_id).resolve()
-        try:
-            root.relative_to(self.projects_root)
-        except ValueError as error:
-            raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        root = self.project_root(project_id, require_exists=False)
         if root.exists():
             return {
                 "available": False,
@@ -386,11 +424,7 @@ class UiServiceState:
         }
 
     def project_config(self, project_id: str) -> Path:
-        root = (self.projects_root / project_id).resolve()
-        try:
-            root.relative_to(self.projects_root)
-        except ValueError as error:
-            raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        root = self.project_root(project_id)
         pointer = root / "CONFIG_CURRENT"
         path = root / "easydesign.yaml"
         if pointer.is_file():
@@ -407,13 +441,16 @@ class UiServiceState:
         return path
 
     def publish_project_config(self, project_id: str, yaml_text: str) -> Path:
-        root = (self.projects_root / project_id).resolve()
-        try:
-            root.relative_to(self.projects_root)
-        except ValueError as error:
-            raise PathPolicyError("Project ID 逃出 UI projects root") from error
+        root = self.project_root(project_id)
         revisions = root / "config-revisions"
         revisions.mkdir(parents=True, exist_ok=True)
+        self.audit.event(
+            "dir.created",
+            operation_id=f"config-publish-{project_id}",
+            project_id=project_id,
+            path=revisions,
+            message="project config revisions directory ensured",
+        )
         existing = sorted(revisions.glob("easydesign.rev-*.yaml"))
         revision = len(existing) + 1
         destination = revisions / f"easydesign.rev-{revision:06d}.yaml"
@@ -421,11 +458,18 @@ class UiServiceState:
             handle.write(yaml_text)
             if not yaml_text.endswith("\n"):
                 handle.write("\n")
+        self.audit.event(
+            "config.revision.created",
+            operation_id=f"config-publish-{project_id}",
+            project_id=project_id,
+            path=destination,
+            status="created",
+        )
         self.activate_project_config(project_id, destination)
         return destination
 
     def activate_project_config(self, project_id: str, config_path: Path) -> None:
-        root = (self.projects_root / project_id).resolve()
+        root = self.project_root(project_id)
         selected = config_path.resolve()
         try:
             relative = selected.relative_to(root)
@@ -435,6 +479,13 @@ class UiServiceState:
             raise ConfigurationError("准备激活的项目配置不存在")
         with (root / "CONFIG_CURRENT").open("a", encoding="utf-8") as handle:
             handle.write(f"{relative.as_posix()}\n")
+        self.audit.event(
+            "config.activated",
+            operation_id=f"config-activate-{project_id}",
+            project_id=project_id,
+            path=selected,
+            status="active",
+        )
 
     def temporary_file(self, *, prefix: str, suffix: str) -> Path:
         return self.temporary_root / f"{prefix}-{uuid4().hex}{suffix}"
@@ -515,6 +566,19 @@ class UiServiceState:
             stage_number,
             accepted_job_stage=accepted_stage,
             accepted_job_at=accepted_at,
+        )
+
+    def assert_session_uses_latest_run(
+        self,
+        session: DesignSession,
+        run_key: str,
+    ) -> None:
+        latest = session.run_lineage[-1] if session.run_lineage else None
+        if latest is None or latest == run_key:
+            return
+        raise ConfigurationError(
+            "当前页面不是这个产品会话的最新运行；请打开最新运行后再继续。"
+            "如需重新配置已经完成的阶段，请从新建设计显式创建独立版本。"
         )
 
     def assert_not_locked_by_downstream(
@@ -610,6 +674,8 @@ def _safe_filename(value: str) -> str:
 def _raise_http(error: Exception) -> None:
     if isinstance(error, StageLockedError):
         raise HTTPException(status_code=409, detail=error.detail()) from error
+    if isinstance(error, SceneVersionConflictError):
+        raise HTTPException(status_code=409, detail=str(error)) from error
     if isinstance(error, PathPolicyError):
         raise HTTPException(status_code=403, detail=str(error)) from error
     if isinstance(error, (ConfigurationError, EasyDesignError, ValueError)):
@@ -676,6 +742,9 @@ def _apply_region_operations(
     }
     for operation in operations:
         selected = set(_resolve_region_operation(operation, residues))
+        if operation.operation == "clear":
+            values[operation.region_id] = set()
+            continue
         if operation.operation == "replace":
             values[operation.region_id] = set(selected)
             for other in ("A", "B", "C"):
@@ -701,6 +770,261 @@ def _apply_region_operations(
         }
     )
 
+
+def _author_selector_from_labels(
+    residues: tuple[Any, ...],
+    labels: tuple[int, ...],
+) -> str:
+    requested = set(labels)
+    by_chain: dict[str, list[str]] = {}
+    for residue in residues:
+        if residue.label_seq_id not in requested:
+            continue
+        chain = residue.auth_chain_id or "A"
+        value = f"{residue.auth_residue_id}{residue.insertion_code or ''}"
+        by_chain.setdefault(chain, []).append(value)
+    clauses = [
+        f"(chain {chain} and resi {'+'.join(sorted(set(values)))})"
+        for chain, values in sorted(by_chain.items())
+        if values
+    ]
+    return " or ".join(clauses) if clauses else "none"
+
+
+def _target_reference(region_projection: Any) -> ReferenceStructure:
+    return ReferenceStructure(
+        object_id="target",
+        role="target",
+        object_name="target",
+        filename="target.cif",
+        file_format=region_projection.structure.file_format or "mmcif",
+        sha256=region_projection.target_structure_sha256,
+        source="stage01-target-bundle",
+        created_at=datetime.now(tz=UTC),
+    )
+
+
+def _initial_stage2_pml(
+    region_projection: Any,
+    current_regions: dict[str, tuple[int, ...]],
+) -> str:
+    colors = {"A": "red", "B": "blue", "C": "yellow"}
+    lines = [
+        "# EasyDesign Stage 2 scene",
+        f"# @easydesign target object=target sha256={region_projection.target_structure_sha256}",
+        "hide everything, all",
+        "show cartoon, target",
+        "color gray70, target",
+    ]
+    for region_id in ("A", "B", "C"):
+        labels = tuple(current_regions.get(region_id, ()))
+        if not labels:
+            continue
+        selection = f"ed_region_{region_id}"
+        lines.extend(
+            [
+                f"select {selection}, {_author_selector_from_labels(region_projection.residues, labels)}",
+                f"color {colors[region_id]}, {selection}",
+                f"show sticks, {selection}",
+            ]
+        )
+    lines.extend(["orient target", "deselect"])
+    return "\n".join(lines) + "\n"
+
+
+def _scene_objects(session: Any) -> tuple[str, ...]:
+    objects = tuple(item.object_name for item in session.reference_structures)
+    return objects or ("target",)
+
+
+def _known_chains(region_projection: Any) -> tuple[str, ...]:
+    return tuple(sorted({item.auth_chain_id or "A" for item in region_projection.residues}))
+
+
+def _assistant_scene_context(
+    session: Any,
+    region_projection: Any,
+    active_version: SceneVersion | None,
+) -> dict[str, Any]:
+    object_names = _scene_objects(session)
+    pml = active_version.pml if active_version is not None else ""
+    region_residues = {
+        region_id: list(session.current_regions.get(region_id, ()))
+        for region_id in ("A", "B", "C")
+    }
+    residue_rows = [
+        {
+            "label_seq_id": item.label_seq_id,
+            "amino_acid": item.amino_acid,
+            "auth_chain_id": item.auth_chain_id,
+            "auth_residue_id": item.auth_residue_id,
+            "insertion_code": item.insertion_code,
+            "current_region": item.current_region,
+        }
+        for item in region_projection.residues[:500]
+    ]
+    return {
+        "stage_number": session.stage_number,
+        "object_id": region_projection.target_id,
+        "objects": [item.model_dump(mode="json") for item in session.reference_structures],
+        "label_chain_id": "A",
+        "known_chains": list(_known_chains(region_projection)),
+        "numbering": ["label", "auth", "sequence", "uniprot"],
+        "current_region_counts": {
+            region_id: len(values)
+            for region_id, values in region_residues.items()
+        },
+        "current_regions": region_residues,
+        "residues": residue_rows,
+        "scene_versions": [
+            {
+                "version_id": item.version_id,
+                "revision": item.revision,
+                "actor": item.actor,
+                "source": item.source,
+                "summary": item.summary,
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in session.scene_versions[-12:]
+        ],
+        "active_scene_version_id": session.active_scene_version_id,
+        "scene": derive_scene_summary(pml, object_names),
+        "currentPml": pml,
+        "allowed_analysis_methods": ["sasa", "scannet"],
+    }
+
+
+
+_OBJECT_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+_REFERENCE_EXTENSIONS = {".cif": "mmcif", ".mmcif": "mmcif", ".pdb": "pdb", ".ent": "pdb"}
+
+
+def _safe_reference_format(filename: str) -> str:
+    extension = Path(filename).suffix.lower()
+    if extension not in _REFERENCE_EXTENSIONS:
+        raise ConfigurationError("参考结构只支持 .cif/.mmcif/.pdb/.ent 文件")
+    return _REFERENCE_EXTENSIONS[extension]
+
+
+def _safe_reference_object_name(
+    session: Any,
+    requested: str | None,
+    *,
+    fallback: str,
+) -> str:
+    raw = (requested or fallback).strip()
+    raw = re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_")
+    if not raw or not raw[0].isalpha():
+        raw = f"ref_{raw}" if raw else "ref_structure"
+    raw = raw[:58]
+    if not _OBJECT_NAME_RE.fullmatch(raw):
+        raise ConfigurationError("PyMOL 对象名只能包含英文字母、数字和下划线，且必须以字母开头")
+    existing = {item.object_name for item in session.reference_structures}
+    candidate = raw
+    suffix = 2
+    while candidate in existing:
+        candidate = f"{raw[:55]}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _reference_root(service: UiServiceState, session: Any) -> Path:
+    root = (
+        service.project_root(session.project_id)
+        / "interactive-sessions"
+        / session.session_id
+        / "references"
+    ).resolve()
+    root.relative_to(service.project_root(session.project_id))
+    service.workspace.assert_write_path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _reference_file_path(
+    service: UiServiceState,
+    session: Any,
+    reference: ReferenceStructure,
+) -> Path:
+    path = (
+        _reference_root(service, session)
+        / reference.object_id
+        / reference.filename
+    ).resolve()
+    path.relative_to(service.project_root(session.project_id))
+    service.workspace.assert_write_path(path)
+    return path
+
+
+def _reference_managed_line(reference: ReferenceStructure) -> str:
+    return (
+        "# @easydesign reference "
+        f"object={reference.object_name} object_id={reference.object_id} "
+        f"sha256={reference.sha256}"
+    )
+
+
+def _pml_with_reference(
+    active_version: SceneVersion,
+    reference: ReferenceStructure,
+) -> tuple[str, str]:
+    managed = _reference_managed_line(reference)
+    addition = "\n".join(
+        (
+            managed,
+            f"show cartoon, {reference.object_name}",
+            f"color marine, {reference.object_name}",
+            f"orient {reference.object_name}",
+        )
+    )
+    return f"{active_version.pml.rstrip()}\n{addition}\n", managed
+
+
+def _add_reference_to_scene(
+    service: UiServiceState,
+    session_id: str,
+    *,
+    reference: ReferenceStructure,
+    source: str,
+) -> dict[str, Any]:
+    session = service.structure_sessions.load(session_id)
+    root = service.registry.resolve(session.run_key)
+    region_projection = get_region_editor_projection(
+        root,
+        run_key=session.run_key,
+        signer=service.signer,
+    )
+    session = service.structure_sessions.ensure_scene(
+        session.session_id,
+        pml=_initial_stage2_pml(region_projection, session.current_regions),
+        target_object=_target_reference(region_projection),
+    )
+    active = service.structure_sessions.active_scene_version(session.session_id)
+    if active is None:
+        raise ConfigurationError("结构场景尚未初始化")
+    next_pml, managed = _pml_with_reference(active, reference)
+    references = tuple(
+        item for item in session.reference_structures if item.object_id != reference.object_id
+    ) + (reference,)
+    known_objects = tuple(sorted(set(_scene_objects(session) + (reference.object_name,))))
+    updated, version = service.structure_sessions.save_scene_version(
+        session.session_id,
+        pml=next_pml,
+        actor="system",
+        source=source,
+        summary=f"添加参考结构 {reference.object_name}",
+        base_version_id=session.active_scene_version_id,
+        known_object_names=known_objects,
+        known_chain_ids=_known_chains(region_projection),
+        allowed_new_managed_lines=(managed,),
+        reference_structures=references,
+    )
+    return {
+        "session": updated.model_dump(mode="json"),
+        "reference": reference.model_dump(mode="json"),
+        "version": version.model_dump(mode="json"),
+        "result": "reference-added",
+    }
 
 def create_ui_app(
     *,
@@ -1147,22 +1471,56 @@ def create_ui_app(
             raise HTTPException(status_code=413, detail="单文件上限为 64 MiB")
         if not content:
             raise HTTPException(status_code=400, detail="不能上传空文件")
+        digest = sha256_bytes(content)
         reusable = service.upload_store.find_reusable(
             filename=filename,
             size_bytes=len(content),
-            sha256=sha256_bytes(content),
+            sha256=digest,
         )
         if reusable is not None:
+            service.audit.event(
+                "upload.reused",
+                operation_id=reusable.upload_token,
+                upload_token=reusable.upload_token,
+                filename=reusable.filename,
+                size_bytes=reusable.size_bytes,
+                sha256=reusable.sha256,
+                status=reusable.status,
+                path=service.workspace.root / reusable.relative_path,
+                message="reusing verified pending upload",
+            )
             return reusable
         receipt, target = service.upload_store.begin(
             filename=filename,
             size_bytes=len(content),
-            sha256=sha256_bytes(content),
+            sha256=digest,
+        )
+        service.audit.event(
+            "dir.created",
+            operation_id=receipt.upload_token,
+            upload_token=receipt.upload_token,
+            filename=filename,
+            size_bytes=len(content),
+            sha256=digest,
+            path=target.parent,
+            message="upload staging directory created",
         )
         try:
             with target.open("xb") as handle:
                 handle.write(content)
-            return service.upload_store.ready(receipt.upload_token)
+            ready = service.upload_store.ready(receipt.upload_token)
+            service.audit.event(
+                "upload.received",
+                operation_id=ready.upload_token,
+                upload_token=ready.upload_token,
+                filename=ready.filename,
+                size_bytes=ready.size_bytes,
+                sha256=ready.sha256,
+                status=ready.status,
+                path=target,
+                message="browser upload received and verified",
+            )
+            return ready
         except BaseException as error:
             moved = quarantine_if_workspace_path(
                 target.parent,
@@ -1170,11 +1528,30 @@ def create_ui_app(
                 reason="UI 文件接收未完成",
             )
             if moved is not None:
-                service.upload_store.relocate(
-                    receipt.upload_token,
-                    path=moved / filename,
-                    status="failed",
+                service.audit.event(
+                    "quarantine.move.done",
+                    operation_id=receipt.upload_token,
+                    upload_token=receipt.upload_token,
+                    filename=filename,
+                    from_path=target.parent,
+                    to_path=moved,
+                    message="UI 文件接收未完成",
                     failure_reason=str(error),
+                )
+                updated = service.upload_store.relocate(
+                    receipt.upload_token,
+                    path=moved / target.parent.name / filename,
+                    status="failed-quarantined",
+                    failure_reason=str(error),
+                )
+                service.audit.event(
+                    "receipt.state.changed",
+                    operation_id=updated.upload_token,
+                    upload_token=updated.upload_token,
+                    filename=updated.filename,
+                    status=updated.status,
+                    path=service.workspace.root / updated.relative_path,
+                    failure_reason=updated.failure_reason,
                 )
             raise
 
@@ -1206,11 +1583,32 @@ def create_ui_app(
             sha256=sha256,
         )
         if reusable is not None:
+            service.audit.event(
+                "upload.reused",
+                operation_id=reusable.upload_token,
+                upload_token=reusable.upload_token,
+                filename=reusable.filename,
+                size_bytes=reusable.size_bytes,
+                sha256=reusable.sha256,
+                status=reusable.status,
+                path=service.workspace.root / reusable.relative_path,
+                message="reusing verified pending upload",
+            )
             return reusable
         receipt, target = service.upload_store.begin(
             filename=safe_filename,
             size_bytes=declared_size,
             sha256=sha256,
+        )
+        service.audit.event(
+            "dir.created",
+            operation_id=receipt.upload_token,
+            upload_token=receipt.upload_token,
+            filename=safe_filename,
+            size_bytes=declared_size,
+            sha256=sha256,
+            path=target.parent,
+            message="upload staging directory created",
         )
         size_bytes = 0
         digest = hashlib.sha256()
@@ -1226,18 +1624,37 @@ def create_ui_app(
                     digest.update(chunk)
             if size_bytes == 0:
                 raise HTTPException(status_code=400, detail="不能上传空文件")
-        except BaseException:
+        except BaseException as error:
             moved = quarantine_if_workspace_path(
                 target.parent,
                 operation=receipt.upload_token,
                 reason="UI 文件接收未完成",
             )
             if moved is not None:
-                service.upload_store.relocate(
+                service.audit.event(
+                    "quarantine.move.done",
+                    operation_id=receipt.upload_token,
+                    upload_token=receipt.upload_token,
+                    filename=safe_filename,
+                    from_path=target.parent,
+                    to_path=moved,
+                    message="UI 文件接收未完成",
+                    failure_reason=str(error),
+                )
+                updated = service.upload_store.relocate(
                     receipt.upload_token,
-                    path=moved / safe_filename,
-                    status="failed",
+                    path=moved / target.parent.name / safe_filename,
+                    status="failed-quarantined",
                     failure_reason="UI 文件接收未完成",
+                )
+                service.audit.event(
+                    "receipt.state.changed",
+                    operation_id=updated.upload_token,
+                    upload_token=updated.upload_token,
+                    filename=updated.filename,
+                    status=updated.status,
+                    path=service.workspace.root / updated.relative_path,
+                    failure_reason=updated.failure_reason,
                 )
             raise
         if size_bytes != receipt.size_bytes or digest.hexdigest() != receipt.sha256:
@@ -1247,14 +1664,45 @@ def create_ui_app(
                 reason="浏览器声明与服务端接收的大小或 SHA-256 不一致",
             )
             if moved is not None:
-                service.upload_store.relocate(
-                    receipt.upload_token,
-                    path=moved / safe_filename,
-                    status="failed",
+                service.audit.event(
+                    "quarantine.move.done",
+                    operation_id=receipt.upload_token,
+                    upload_token=receipt.upload_token,
+                    filename=safe_filename,
+                    from_path=target.parent,
+                    to_path=moved,
+                    message="浏览器声明与服务端接收的大小或 SHA-256 不一致",
                     failure_reason="上传大小或 SHA-256 不一致",
                 )
+                updated = service.upload_store.relocate(
+                    receipt.upload_token,
+                    path=moved / target.parent.name / safe_filename,
+                    status="failed-quarantined",
+                    failure_reason="上传大小或 SHA-256 不一致",
+                )
+                service.audit.event(
+                    "receipt.state.changed",
+                    operation_id=updated.upload_token,
+                    upload_token=updated.upload_token,
+                    filename=updated.filename,
+                    status=updated.status,
+                    path=service.workspace.root / updated.relative_path,
+                    failure_reason=updated.failure_reason,
+                )
             raise HTTPException(status_code=400, detail="上传大小或 SHA-256 不一致")
-        return service.upload_store.ready(receipt.upload_token)
+        ready = service.upload_store.ready(receipt.upload_token)
+        service.audit.event(
+            "upload.received",
+            operation_id=ready.upload_token,
+            upload_token=ready.upload_token,
+            filename=ready.filename,
+            size_bytes=ready.size_bytes,
+            sha256=ready.sha256,
+            status=ready.status,
+            path=target,
+            message="browser raw upload received and verified",
+        )
+        return ready
 
     @app.post("/api/v1/projects")
     def initialize(payload: ProjectCreateRequest, request: Request) -> dict[str, Any]:
@@ -1280,6 +1728,7 @@ def create_ui_app(
             ):
                 raise ConfigurationError("产品会话与项目 ID 不一致")
             source_value = payload.source_value
+            operation_id = f"create-project-{payload.project_id}"
             staging_root = (
                 service.workspace.runtime_root
                 / "tmp"
@@ -1297,6 +1746,15 @@ def create_ui_app(
             uploaded_source: Path | None = None
             if payload.source_type == "local-file":
                 uploaded_source = service.upload_store.resolve(source_value)
+                service.audit.event(
+                    "upload.consume.start",
+                    operation_id=operation_id,
+                    project_id=payload.project_id,
+                    upload_token=source_value,
+                    filename=uploaded_source.name,
+                    path=uploaded_source,
+                    message="project creation will move upload into staging inputs",
+                )
                 kwargs["target"] = uploaded_source
                 kwargs["source_transfer"] = "move"
                 kwargs["quarantine_on_error"] = False
@@ -1329,9 +1787,28 @@ def create_ui_app(
                 raise ConfigurationError(f"不支持的 source_type: {payload.source_type}")
             try:
                 outcome = initialize_project(**kwargs)
+                service.audit.event(
+                    "dir.created",
+                    operation_id=operation_id,
+                    project_id=payload.project_id,
+                    path=staging_root,
+                    message="project staging directory created",
+                )
+                if uploaded_source is not None and outcome.target_path is not None:
+                    service.audit.event(
+                        "file.move.done",
+                        operation_id=operation_id,
+                        project_id=payload.project_id,
+                        upload_token=source_value,
+                        filename=uploaded_source.name,
+                        from_path=uploaded_source,
+                        to_path=outcome.target_path,
+                        message="uploaded target moved into project staging inputs",
+                    )
                 validated_plan = validate_run_configuration(
                     outcome.config_path,
                     profile_path=service.profile_path,
+                    source_base_dir=staging_root,
                 )
                 now = datetime.now(tz=UTC)
                 atomic_dump_runtime_model(
@@ -1357,29 +1834,65 @@ def create_ui_app(
                     raise ConfigurationError(
                         f"项目名称在发布前已被占用，禁止覆盖: {payload.project_id}"
                     )
+                service.audit.event(
+                    "file.move.start",
+                    operation_id=operation_id,
+                    project_id=payload.project_id,
+                    from_path=staging_root,
+                    to_path=destination,
+                    message="publishing project staging directory",
+                )
                 shutil.move(str(staging_root), str(destination))
+                service.audit.event(
+                    "project.publish.done",
+                    operation_id=operation_id,
+                    project_id=payload.project_id,
+                    from_path=staging_root,
+                    to_path=destination,
+                    status="published",
+                )
             except Exception as error:
                 moved = quarantine_if_workspace_path(
                     staging_root,
-                    operation=f"create-project-{payload.project_id}",
+                    operation=operation_id,
                     reason="项目创建预检或原子发布失败",
                 )
-                if uploaded_source is not None:
-                    candidate = (
-                        uploaded_source
-                        if uploaded_source.exists()
-                        else (
-                            None
-                            if moved is None
-                            else moved / "inputs" / uploaded_source.name
-                        )
+                if moved is not None:
+                    service.audit.event(
+                        "quarantine.move.done",
+                        operation_id=operation_id,
+                        project_id=payload.project_id,
+                        from_path=staging_root,
+                        to_path=moved,
+                        message="项目创建预检或原子发布失败",
+                        failure_reason=str(error),
                     )
+                if uploaded_source is not None:
+                    candidate = uploaded_source if uploaded_source.exists() else None
+                    status = "failed"
+                    if moved is not None:
+                        staged_candidate = (
+                            moved / staging_root.name / "inputs" / uploaded_source.name
+                        )
+                        if staged_candidate.is_file():
+                            candidate = staged_candidate
+                            status = "failed-quarantined"
                     if candidate is not None and candidate.is_file():
-                        service.upload_store.relocate(
+                        updated = service.upload_store.relocate(
                             source_value,
                             path=candidate,
-                            status="failed",
+                            status=status,
                             failure_reason=str(error),
+                        )
+                        service.audit.event(
+                            "receipt.state.changed",
+                            operation_id=operation_id,
+                            project_id=payload.project_id,
+                            upload_token=source_value,
+                            filename=updated.filename,
+                            status=updated.status,
+                            path=service.workspace.root / updated.relative_path,
+                            failure_reason=updated.failure_reason,
                         )
                 raise
             published_config = destination / "easydesign.yaml"
@@ -1395,11 +1908,20 @@ def create_ui_app(
             )
             if uploaded_source is not None:
                 published_input = destination / "inputs" / uploaded_source.name
-                service.upload_store.relocate(
+                updated = service.upload_store.relocate(
                     source_value,
                     path=published_input,
                     status="published",
                     project_id=payload.project_id,
+                )
+                service.audit.event(
+                    "receipt.state.changed",
+                    operation_id=operation_id,
+                    project_id=payload.project_id,
+                    upload_token=source_value,
+                    filename=updated.filename,
+                    status=updated.status,
+                    path=published_input,
                 )
             return {
                 "project_id": payload.project_id,
@@ -1429,21 +1951,40 @@ def create_ui_app(
         service = _state(request)
         try:
             service.assert_project_is_draft(project_id)
+            project_root = service.project_root(project_id)
             operation_id = f"config-validation-{uuid4().hex}"
             temporary = service.temporary_root / f"{operation_id}.yaml"
             with temporary.open("x", encoding="utf-8") as handle:
                 handle.write(payload.yaml_text)
+            service.audit.event(
+                "config.validation.staged",
+                operation_id=operation_id,
+                project_id=project_id,
+                path=temporary,
+                message="temporary config staged for validation",
+            )
             try:
                 plan = validate_run_configuration(
                     temporary,
                     profile_path=service.profile_path,
+                    runs_root=service.registry.runs_root,
+                    source_base_dir=project_root,
                 )
             finally:
-                quarantine_if_workspace_path(
+                moved = quarantine_if_workspace_path(
                     temporary,
                     operation=operation_id,
                     reason="UI 配置校验 staging 已终止",
                 )
+                if moved is not None:
+                    service.audit.event(
+                        "quarantine.move.done",
+                        operation_id=operation_id,
+                        project_id=project_id,
+                        from_path=temporary,
+                        to_path=moved,
+                        message="UI 配置校验 staging 已终止",
+                    )
             published = service.publish_project_config(project_id, payload.yaml_text)
             metadata_path = service.projects_root / project_id / "project-metadata.json"
             if metadata_path.is_file():
@@ -1472,11 +2013,19 @@ def create_ui_app(
         service = _state(request)
         try:
             config = service.project_config(payload.project_id)
-            plan = validate_run_configuration(config, profile_path=service.profile_path)
+            project_root = service.project_root(payload.project_id)
+            plan = validate_run_configuration(
+                config,
+                profile_path=service.profile_path,
+                runs_root=service.registry.runs_root,
+                source_base_dir=project_root,
+            )
             if payload.executor_id is None:
                 diagnostic: Any = diagnose_runtime(
                     profile_path=service.profile_path,
                     config_path=config,
+                    runs_root=service.registry.runs_root,
+                    source_base_dir=project_root,
                 )
             else:
                 diagnostic = {
@@ -1519,12 +2068,14 @@ def create_ui_app(
                 if not payload.confirmed:
                     raise ConfigurationError("远程真实启动需要 confirmed=true")
                 run_id = payload.run_id or f"remote-{uuid4().hex[:16]}"
+                config_path = service.project_config(payload.project_id)
+                project_root = service.project_root(payload.project_id)
                 submission = submit_remote_pipeline(
                     executor_id=payload.executor_id,
                     job_id=f"ui-{uuid4().hex[:16]}",
                     run_id=run_id,
-                    config_path=service.project_config(payload.project_id),
-                    project_root=service.project_config(payload.project_id).parent,
+                    config_path=config_path,
+                    project_root=project_root,
                     profile_path=service.profile_path,
                 )
                 accepted = service.jobs.accept_external(
@@ -1761,7 +2312,7 @@ def create_ui_app(
                     for item in region_projection.residues
                     if item.current_region == region_id
                 )
-            return service.structure_sessions.get_or_create(
+            session = service.structure_sessions.get_or_create(
                 project_id=run_projection.project_id,
                 run_key=run_key,
                 stage_number=payload.stage_number,
@@ -1773,6 +2324,11 @@ def create_ui_app(
                 ),
                 current_regions=current_regions,
             )
+            return service.structure_sessions.ensure_scene(
+                session.session_id,
+                pml=_initial_stage2_pml(region_projection, current_regions),
+                target_object=_target_reference(region_projection),
+            )
         except Exception as error:
             _raise_http(error)
             raise
@@ -1782,6 +2338,31 @@ def create_ui_app(
         service = _state(request)
         try:
             return service.structure_sessions.load(session_id)
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/structure-sessions/{session_id}/scene-versions/{version_id}/restore")
+    def restore_structure_scene_version(
+        session_id: str,
+        version_id: str,
+        payload: SceneVersionRestoreRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("恢复 PML 场景版本必须明确 confirmed=true")
+            updated, version = service.structure_sessions.restore_scene_version(
+                session_id,
+                version_id=version_id,
+                base_version_id=payload.base_version_id,
+            )
+            return {
+                "session": updated.model_dump(mode="json"),
+                "version": version.model_dump(mode="json"),
+                "result": "scene-version-restored",
+            }
         except Exception as error:
             _raise_http(error)
             raise
@@ -1810,24 +2391,34 @@ def create_ui_app(
                 raise ConfigurationError(
                     "交互会话的结构或编号映射已与来源运行不一致"
                 )
+            session = service.structure_sessions.ensure_scene(
+                session.session_id,
+                pml=_initial_stage2_pml(region_projection, session.current_regions),
+                target_object=_target_reference(region_projection),
+            )
+            active_version = service.structure_sessions.active_scene_version(session_id)
+            object_names = _scene_objects(session)
+            chain_ids = _known_chains(region_projection)
             secret = service.assistant_providers.load_platform()
             proposal, request_id = request_assistant_proposal(
                 secret=secret,
                 user_text=payload.message,
-                context={
-                    "stage_number": session.stage_number,
-                    "object_id": region_projection.target_id,
-                    "label_chain_id": "A",
-                    "numbering": ["label", "auth", "sequence", "uniprot"],
-                    "current_region_counts": {
-                        region_id: len(
-                            session.current_regions.get(region_id, ())
-                        )
-                        for region_id in ("A", "B", "C")
-                    },
-                    "allowed_analysis_methods": ["sasa", "scannet"],
-                },
+                context=_assistant_scene_context(session, region_projection, active_version),
+                previous_pml=None if active_version is None else active_version.pml,
+                known_object_names=object_names,
+                known_chain_ids=chain_ids,
             )
+            if proposal.kind == "pml-edit":
+                return service.structure_sessions.append_pml_exchange(
+                    session_id,
+                    user_text=payload.message,
+                    proposal=proposal,
+                    provider=secret.provider,
+                    model=secret.model,
+                    request_id=request_id,
+                    known_object_names=object_names,
+                    known_chain_ids=chain_ids,
+                )
             return service.structure_sessions.append_exchange(
                 session_id,
                 user_text=payload.message,
@@ -1835,6 +2426,216 @@ def create_ui_app(
                 provider=secret.provider,
                 model=secret.model,
                 request_id=request_id,
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.put("/api/v1/structure-sessions/{session_id}/scene-pml")
+    def save_structure_scene_pml(
+        session_id: str,
+        payload: PmlRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            session = service.structure_sessions.load(session_id)
+            root = service.registry.resolve(session.run_key)
+            region_projection = get_region_editor_projection(
+                root,
+                run_key=session.run_key,
+                signer=service.signer,
+            )
+            updated, version = service.structure_sessions.save_scene_version(
+                session_id,
+                pml=payload.pml,
+                actor="human" if payload.source == "expert-console" else "viewer",
+                source=f"pml-editor:{payload.source}",
+                summary="人工编辑完整 PML 场景",
+                base_version_id=session.active_scene_version_id,
+                known_object_names=_scene_objects(session),
+                known_chain_ids=_known_chains(region_projection),
+            )
+            return {
+                "session": updated.model_dump(mode="json"),
+                "version": version.model_dump(mode="json"),
+                "result": "scene-pml-saved",
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+
+
+    @app.post("/api/v1/structure-sessions/{session_id}/references/uploads")
+    def add_uploaded_structure_reference(
+        session_id: str,
+        payload: ReferenceUploadRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("添加参考结构必须明确 confirmed=true")
+            session = service.structure_sessions.load(session_id)
+            source = service.upload_store.resolve(payload.upload_token)
+            filename = _safe_filename(source.name)
+            file_format = _safe_reference_format(filename)
+            object_name = _safe_reference_object_name(
+                session,
+                payload.object_name,
+                fallback=f"ref_{Path(filename).stem}",
+            )
+            object_id = f"reference-{uuid4().hex[:12]}"
+            destination_dir = _reference_root(service, session) / object_id
+            destination_dir.mkdir(parents=True, exist_ok=False)
+            destination = destination_dir / filename
+            service.audit.event(
+                "dir.created",
+                operation_id=object_id,
+                project_id=session.project_id,
+                path=destination_dir,
+                message="structure reference directory created",
+            )
+            shutil.move(str(source), str(destination))
+            digest = sha256_file(destination)
+            receipt = service.upload_store.load(payload.upload_token)
+            if digest != receipt.sha256:
+                raise ConfigurationError("参考结构上传文件 SHA-256 复核失败")
+            service.upload_store.relocate(
+                payload.upload_token,
+                path=destination,
+                status="published",
+                project_id=session.project_id,
+            )
+            service.audit.event(
+                "reference.upload.published",
+                operation_id=object_id,
+                upload_token=payload.upload_token,
+                project_id=session.project_id,
+                filename=filename,
+                sha256=digest,
+                from_path=source,
+                to_path=destination,
+                status="published",
+            )
+            reference = ReferenceStructure(
+                object_id=object_id,
+                role="reference",
+                object_name=object_name,
+                filename=filename,
+                file_format=file_format,
+                sha256=digest,
+                source=f"upload:{payload.upload_token}",
+                created_at=datetime.now(tz=UTC),
+            )
+            return _add_reference_to_scene(
+                service,
+                session_id,
+                reference=reference,
+                source="reference-upload",
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/structure-sessions/{session_id}/references/rcsb")
+    def add_rcsb_structure_reference(
+        session_id: str,
+        payload: ReferenceRcsbRequest,
+        request: Request,
+    ) -> Any:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("拉取 RCSB 参考结构必须明确 confirmed=true")
+            session = service.structure_sessions.load(session_id)
+            rcsb_id = payload.rcsb_id.upper()
+            filename = f"{rcsb_id}.cif"
+            object_name = _safe_reference_object_name(
+                session,
+                payload.object_name,
+                fallback=f"ref_{rcsb_id.lower()}",
+            )
+            object_id = f"reference-{uuid4().hex[:12]}"
+            destination_dir = _reference_root(service, session) / object_id
+            destination_dir.mkdir(parents=True, exist_ok=False)
+            destination = destination_dir / filename
+            url = f"https://files.rcsb.org/download/{rcsb_id}.cif"
+            with httpx.Client(
+                timeout=httpx.Timeout(60.0, connect=10.0, read=45.0),
+                trust_env=False,
+            ) as client:
+                response = client.get(url)
+                if response.status_code == 404:
+                    raise ConfigurationError(f"RCSB 没有找到结构 {rcsb_id}")
+                response.raise_for_status()
+                content = response.content
+            if not content:
+                raise ConfigurationError("RCSB 返回了空结构文件")
+            if len(content) > MAX_UPLOAD_BYTES:
+                raise ConfigurationError("RCSB 参考结构超过 64 MiB 上限")
+            destination.write_bytes(content)
+            digest = sha256_bytes(content)
+            service.audit.event(
+                "reference.rcsb.downloaded",
+                operation_id=object_id,
+                project_id=session.project_id,
+                filename=filename,
+                sha256=digest,
+                to_path=destination,
+                source_url=url,
+                status="published",
+            )
+            reference = ReferenceStructure(
+                object_id=object_id,
+                role="reference",
+                object_name=object_name,
+                filename=filename,
+                file_format="mmcif",
+                sha256=digest,
+                source=f"rcsb:{rcsb_id}",
+                created_at=datetime.now(tz=UTC),
+            )
+            return _add_reference_to_scene(
+                service,
+                session_id,
+                reference=reference,
+                source="reference-rcsb",
+            )
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.get("/api/v1/structure-sessions/{session_id}/references/{object_id}/file")
+    def structure_reference_file(
+        session_id: str,
+        object_id: str,
+        request: Request,
+        download: bool = False,
+    ) -> FileResponse:
+        service = _state(request)
+        try:
+            session = service.structure_sessions.load(session_id)
+            reference = next(
+                (
+                    item for item in session.reference_structures
+                    if item.object_id == object_id and item.role == "reference"
+                ),
+                None,
+            )
+            if reference is None:
+                raise ConfigurationError("参考结构不存在")
+            path = _reference_file_path(service, session, reference)
+            if not path.is_file():
+                raise ConfigurationError("参考结构文件不存在")
+            if sha256_file(path) != reference.sha256:
+                raise ConfigurationError("参考结构文件 SHA-256 与记录不一致")
+            media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            return FileResponse(
+                path,
+                media_type=media_type,
+                filename=reference.filename if download else None,
             )
         except Exception as error:
             _raise_http(error)
@@ -1876,6 +2677,53 @@ def create_ui_app(
                 session_id,
                 proposal_id,
             )
+            if proposal.kind == "pml-edit" and proposal.pml_edit is not None:
+                root = service.registry.resolve(session.run_key)
+                region_projection = get_region_editor_projection(
+                    root,
+                    run_key=session.run_key,
+                    signer=service.signer,
+                )
+                updated, version = service.structure_sessions.save_scene_version(
+                    session_id,
+                    pml=proposal.pml_edit.pml,
+                    actor="ai",
+                    source="assistant-proposal",
+                    summary=proposal.pml_edit.summary,
+                    base_version_id=session.active_scene_version_id,
+                    known_object_names=_scene_objects(session),
+                    known_chain_ids=_known_chains(region_projection),
+                )
+                return {
+                    "session": updated.model_dump(mode="json"),
+                    "result": "pml-edit-applied",
+                    "version": version.model_dump(mode="json"),
+                }
+            if proposal.kind == "view-control" and proposal.view_control is not None:
+                if proposal.view_control.action == "undo-last-view-action" and len(session.scene_versions) >= 2:
+                    previous = session.scene_versions[-2]
+                    updated, version = service.structure_sessions.restore_scene_version(
+                        session_id,
+                        version_id=previous.version_id,
+                        base_version_id=session.active_scene_version_id,
+                    )
+                    return {
+                        "session": updated.model_dump(mode="json"),
+                        "result": "scene-version-restored",
+                        "version": version.model_dump(mode="json"),
+                    }
+                if proposal.view_control.action == "reset-default-view" and session.scene_versions:
+                    first = session.scene_versions[0]
+                    updated, version = service.structure_sessions.restore_scene_version(
+                        session_id,
+                        version_id=first.version_id,
+                        base_version_id=session.active_scene_version_id,
+                    )
+                    return {
+                        "session": updated.model_dump(mode="json"),
+                        "result": "scene-version-restored",
+                        "version": version.model_dump(mode="json"),
+                    }
             if proposal.kind == "viewer-actions":
                 updated = service.structure_sessions.apply_proposal(
                     session_id,
@@ -2232,6 +3080,7 @@ def create_ui_app(
             if not payload.acknowledge_evidence_limitations:
                 raise ConfigurationError("必须确认用户区域仍需生物学审阅")
             session = service.sessions.load(payload.session_id)
+            service.assert_session_uses_latest_run(session, run_key)
             source = service.registry.resolve(run_key)
             service.assert_stage_configurable(run_key, 2)
             projection = get_region_editor_projection(
@@ -2272,31 +3121,39 @@ def create_ui_app(
                     "acknowledge_evidence_limitations": True,
                 },
             )
+            selected_run_id = payload.run_id or (
+                datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
+                + "-stage02-regions"
+            )
+            try:
+                job = service.jobs.launch(
+                    operation="run",
+                    config_path=generated,
+                    run_root=source,
+                    profile_path=service.profile_path,
+                    runs_root=service.registry.runs_root,
+                    run_id=selected_run_id,
+                    continue_after_stage=1,
+                    project_id=session.project_id,
+                    accepted_run_key=run_key,
+                    session_id=session.session_id,
+                    session_root=service.sessions.root,
+                    stage_number=2,
+                    confirmed=True,
+                )
+            except Exception:
+                quarantine_if_workspace_path(
+                    generated,
+                    operation="ui-stage02-region-revision",
+                    reason="UI region revision 未能启动",
+                )
+                raise
             session = service.sessions.add_config_revision(
                 session.session_id,
                 stage_number=2,
                 config_path=generated,
             )
             service.activate_project_config(session.project_id, generated)
-            selected_run_id = payload.run_id or (
-                datetime.now(tz=UTC).strftime("%Y%m%dt%H%M%Sz").lower()
-                + "-stage02-regions"
-            )
-            job = service.jobs.launch(
-                operation="run",
-                config_path=generated,
-                run_root=source,
-                profile_path=service.profile_path,
-                runs_root=service.registry.runs_root,
-                run_id=selected_run_id,
-                continue_after_stage=1,
-                project_id=session.project_id,
-                accepted_run_key=run_key,
-                session_id=session.session_id,
-                session_root=service.sessions.root,
-                stage_number=2,
-                confirmed=True,
-            )
             session = service.sessions.update_status(
                 session.session_id,
                 status="running",
@@ -2361,6 +3218,7 @@ def create_ui_app(
             if payload.stage_number != next_stage:
                 raise ConfigurationError("URL stage 与请求 stage_number 不一致")
             session = service.sessions.load(payload.session_id)
+            service.assert_session_uses_latest_run(session, run_key)
             source = service.registry.resolve(run_key)
             service.assert_stage_configurable(run_key, next_stage)
             project_root = (service.projects_root / session.project_id).resolve()
@@ -2386,12 +3244,6 @@ def create_ui_app(
                 continue_after_stage=continue_after_stage,
             )
             try:
-                session = service.sessions.add_config_revision(
-                    session.session_id,
-                    stage_number=next_stage,
-                    config_path=generated,
-                )
-                service.activate_project_config(session.project_id, generated)
                 job = service.jobs.launch(
                     operation="run",
                     config_path=generated,
@@ -2417,11 +3269,6 @@ def create_ui_app(
                     stage_number=next_stage,
                     confirmed=True,
                 )
-                session = service.sessions.update_status(
-                    session.session_id,
-                    status="running",
-                    current_stage=next_stage,
-                )
             except Exception:
                 quarantine_if_workspace_path(
                     generated,
@@ -2429,6 +3276,17 @@ def create_ui_app(
                     reason="UI continuation 未能启动",
                 )
                 raise
+            session = service.sessions.add_config_revision(
+                session.session_id,
+                stage_number=next_stage,
+                config_path=generated,
+            )
+            service.activate_project_config(session.project_id, generated)
+            session = service.sessions.update_status(
+                session.session_id,
+                status="running",
+                current_stage=next_stage,
+            )
             return {
                 "session": session.model_dump(mode="json"),
                 "job": job.model_dump(mode="json"),
@@ -2592,7 +3450,7 @@ def serve_ui(
     projects_root: Path | None = None,
     profile_path: Path | None = None,
     job_root: Path | None = None,
-    port: int = 8765,
+    port: int = 18769,
     open_browser: bool = False,
 ) -> None:
     if port < 1 or port > 65535:

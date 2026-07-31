@@ -64,6 +64,22 @@ def _validated_pip_index_url(value: str | None) -> str:
     return selected
 
 
+def _merge_no_proxy(environment: dict[str, str], hosts: tuple[str, ...]) -> None:
+    existing: list[str] = []
+    for key in ("NO_PROXY", "no_proxy"):
+        value = environment.get(key, "")
+        existing.extend(item.strip() for item in value.split(",") if item.strip())
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in (*hosts, *existing):
+        if item not in seen:
+            merged.append(item)
+            seen.add(item)
+    value = ",".join(merged)
+    environment["NO_PROXY"] = value
+    environment["no_proxy"] = value
+
+
 def _child_environment(*, pip_index_url: str | None = None) -> dict[str, str]:
     _runtime_dirs()
     environment = dict(os.environ)
@@ -88,6 +104,7 @@ def _child_environment(*, pip_index_url: str | None = None) -> dict[str, str]:
             "EASYDESIGN_WORKSPACE": str(ROOT),
         }
     )
+    _merge_no_proxy(environment, ("127.0.0.1", "localhost", "::1"))
     system_ca = Path("/etc/ssl/certs/ca-certificates.crt")
     if system_ca.is_file():
         environment["REQUESTS_CA_BUNDLE"] = str(system_ca)
@@ -350,8 +367,13 @@ def main() -> int:
     child_environment = _child_environment(pip_index_url=pip_index_url)
     if resolved_conda is not None:
         child_environment["EASYDESIGN_CONDA"] = resolved_conda
-    completed = subprocess.run(command, cwd=ROOT, env=child_environment, check=False)
-    return completed.returncode
+    os.chdir(ROOT)
+    os.execvpe(
+        os.fspath(command[0]),
+        [os.fspath(part) for part in command],
+        child_environment,
+    )
+    raise SystemExit(127)
 
 
 if __name__ == "__main__":

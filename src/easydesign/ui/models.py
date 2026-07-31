@@ -227,9 +227,11 @@ class UploadReceipt(BaseModel):
         "publishing",
         "published",
         "failed",
+        "failed-quarantined",
         "cleanup-suggested",
     ]
     relative_path: str
+    path_ref: str | None = None
     project_id: str | None = None
     referenced: bool = False
     created_at: datetime

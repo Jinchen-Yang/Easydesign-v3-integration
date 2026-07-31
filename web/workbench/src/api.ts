@@ -8,6 +8,7 @@ import type {
   MetricPresentation,
   ProjectResponse,
   ProjectCatalogEntry,
+  ReferenceStructure,
   RegionEditorProjection,
   Replay,
   Run,
@@ -354,6 +355,22 @@ export const api = {
         body: JSON.stringify({ pml, source }),
       },
     ),
+  saveScenePml: (
+    sessionId: string,
+    pml: string,
+    source: "viewer" | "expert-console" = "expert-console",
+  ) =>
+    request<{
+      session: StructureInteractionSession;
+      result: string;
+      version: { version_id: string; revision: number; pml: string };
+    }>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/scene-pml`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ pml, source }),
+      },
+    ),
   applyAssistantProposal: (sessionId: string, proposalId: string) =>
     request<{
       session: StructureInteractionSession;
@@ -363,11 +380,63 @@ export const api = {
         requires_confirmation: true;
         reason: string;
       };
+      version?: {
+        version_id: string;
+        revision: number;
+        pml: string;
+      };
     }>(
       `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
       {
         method: "POST",
         body: JSON.stringify({ confirmed: true }),
+      },
+    ),
+  restoreSceneVersion: (sessionId: string, versionId: string, baseVersionId?: string) =>
+    request<{
+      session: StructureInteractionSession;
+      result: string;
+      version: { version_id: string; revision: number; pml: string };
+    }>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/scene-versions/${encodeURIComponent(versionId)}/restore`,
+      {
+        method: "POST",
+        body: JSON.stringify({ base_version_id: baseVersionId, confirmed: true }),
+      },
+    ),
+
+  addUploadedStructureReference: (
+    sessionId: string,
+    uploadToken: string,
+    objectName?: string,
+  ) =>
+    request<{
+      session: StructureInteractionSession;
+      result: string;
+      reference: ReferenceStructure;
+      version: { version_id: string; revision: number; pml: string };
+    }>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/references/uploads`,
+      {
+        method: "POST",
+        body: JSON.stringify({ upload_token: uploadToken, object_name: objectName, confirmed: true }),
+      },
+    ),
+  addRcsbStructureReference: (
+    sessionId: string,
+    rcsbId: string,
+    objectName?: string,
+  ) =>
+    request<{
+      session: StructureInteractionSession;
+      result: string;
+      reference: ReferenceStructure;
+      version: { version_id: string; revision: number; pml: string };
+    }>(
+      `/api/v1/structure-sessions/${encodeURIComponent(sessionId)}/references/rcsb`,
+      {
+        method: "POST",
+        body: JSON.stringify({ rcsb_id: rcsbId, object_name: objectName, confirmed: true }),
       },
     ),
   upload: async (file: File) => {

@@ -504,7 +504,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(ui_serve)
     ui_serve.add_argument("--runs-root", type=Path)
     ui_serve.add_argument("--projects-root", type=Path)
-    ui_serve.add_argument("--port", type=int, default=8765)
+    ui_serve.add_argument("--port", type=int, default=18769)
     ui_serve.add_argument("--open", action="store_true", dest="open_browser")
     return parser
 

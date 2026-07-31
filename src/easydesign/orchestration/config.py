@@ -1243,8 +1243,33 @@ def detect_target_input_format(path: Path) -> TargetInputFormat:
     )
 
 
-def _resolve_source_path(config_path: Path, source: Path) -> Path:
-    candidate = source if source.is_absolute() else config_path.parent / source
+def _default_source_base_dir(config_path: Path) -> Path:
+    """Choose the directory used for relative user-declared source paths."""
+
+    parent = config_path.parent
+    if parent.name == "config-revisions":
+        candidate = parent.parent
+        if (candidate / "easydesign.yaml").is_file() or (
+            candidate / "CONFIG_CURRENT"
+        ).is_file():
+            return candidate
+    return parent
+
+
+def _source_base_dir(config_path: Path, source_base_dir: Path | None) -> Path:
+    if source_base_dir is None:
+        return _default_source_base_dir(config_path)
+    return source_base_dir.expanduser().resolve(strict=True)
+
+
+def _resolve_source_path(
+    config_path: Path,
+    source: Path,
+    *,
+    source_base_dir: Path | None = None,
+) -> Path:
+    base_dir = _source_base_dir(config_path, source_base_dir)
+    candidate = source if source.is_absolute() else base_dir / source
     try:
         resolved = candidate.resolve(strict=True)
     except OSError as error:
@@ -1259,14 +1284,20 @@ def _resolve_source_path(config_path: Path, source: Path) -> Path:
 def _resolve_precomputed_msa_path(
     config_path: Path,
     config: EasyDesignRunConfig,
+    *,
+    source_base_dir: Path | None = None,
 ) -> Path | None:
     prediction = config.structure_prediction
     if prediction is None or not isinstance(prediction.msa, PrecomputedProtenixMsaConfig):
         return None
-    return _resolve_source_path(config_path, prediction.msa.path)
+    return _resolve_source_path(
+        config_path,
+        prediction.msa.path,
+        source_base_dir=source_base_dir,
+    )
 
 
-def load_run_config(path: Path) -> LoadedRunConfig:
+def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> LoadedRunConfig:
     """读取用户 YAML，并返回与已识别 target 类型匹配的排他配置分支。"""
 
     try:
@@ -1295,7 +1326,11 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             config=config,
             source_path=None,
             detected_format=TargetInputFormat.UNIPROT,
-            precomputed_msa_path=_resolve_precomputed_msa_path(config_path, config),
+            precomputed_msa_path=_resolve_precomputed_msa_path(
+                config_path,
+                config,
+                source_base_dir=source_base_dir,
+            ),
         )
     if isinstance(source, UniProtSearchSourceConfig):
         return LoadedRemoteRunConfig(
@@ -1303,14 +1338,23 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             config=config,
             source_path=None,
             detected_format=TargetInputFormat.UNIPROT_SEARCH,
-            precomputed_msa_path=_resolve_precomputed_msa_path(config_path, config),
+            precomputed_msa_path=_resolve_precomputed_msa_path(
+                config_path,
+                config,
+                source_base_dir=source_base_dir,
+            ),
         )
     if isinstance(source, TargetBundleSourceConfig):
-        source_path = _resolve_source_path(config_path, source.path)
+        source_path = _resolve_source_path(
+            config_path,
+            source.path,
+            source_base_dir=source_base_dir,
+        )
+        base_dir = _source_base_dir(config_path, source_base_dir)
         run_root = (
             source.source_run_root
             if source.source_run_root.is_absolute()
-            else config_path.parent / source.source_run_root
+            else base_dir / source.source_run_root
         )
         try:
             resolved_run_root = run_root.resolve(strict=True)
@@ -1323,7 +1367,11 @@ def load_run_config(path: Path) -> LoadedRunConfig:
             source_run_root=resolved_run_root,
         )
     assert isinstance(source, LocalFileSourceConfig)
-    source_path = _resolve_source_path(config_path, source.path)
+    source_path = _resolve_source_path(
+        config_path,
+        source.path,
+        source_base_dir=source_base_dir,
+    )
     detected = (
         detect_target_input_format(source_path)
         if source.format is TargetInputFormat.AUTO
@@ -1389,7 +1437,11 @@ def load_run_config(path: Path) -> LoadedRunConfig:
         )
     except ValidationError as error:
         raise ConfigurationError(f"结构预测配置不符合通用请求契约: {error}") from error
-    precomputed_msa_path = _resolve_precomputed_msa_path(config_path, config)
+    precomputed_msa_path = _resolve_precomputed_msa_path(
+        config_path,
+        config,
+        source_base_dir=source_base_dir,
+    )
     return LoadedSequenceRunConfig(
         config_path=config_path,
         config=config,

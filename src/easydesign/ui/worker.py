@@ -8,7 +8,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from easydesign.core import load_model
-from easydesign.orchestration import execute_pipeline
+from easydesign.orchestration import (
+    RunIndexEntry,
+    execute_pipeline,
+    select_project_primary_run,
+    upsert_run_index_entries,
+)
 from easydesign.orchestration.application import (
     continue_pipeline_after_decision,
     resume_pipeline,
@@ -40,6 +45,68 @@ def _parser() -> argparse.ArgumentParser:
 
 def _run_key(run_root: Path) -> str:
     return hashlib.sha256(str(run_root.resolve()).encode("utf-8")).hexdigest()[:24]
+
+
+def _status_text(status: object) -> str:
+    return str(getattr(status, "value", status))
+
+
+def _publish_product_run_navigation(
+    *,
+    record: UiJobRecord,
+    run_root: Path | None,
+    runs_root: Path | None,
+    project_id: str | None,
+    status: object,
+) -> str | None:
+    """Make a completed UI continuation the project-visible current run.
+
+    Run manifests remain the scientific source of truth; run-index and
+    PROJECT.json are mutable navigation projections.  A stale projection should
+    not make the UI fall back to the source run after the worker has already
+    produced a verified continuation.
+    """
+
+    if record.operation != "run" or run_root is None or runs_root is None:
+        return None
+    selected_project = project_id or record.project_id
+    if not selected_project:
+        return "缺少 project_id，无法更新项目导航"
+    try:
+        root = runs_root.resolve()
+        resolved_run = run_root.resolve()
+        relative = resolved_run.relative_to(root).as_posix()
+        run_id = resolved_run.name
+        now = datetime.now(tz=UTC)
+        stage_note = (
+            f"UI job completed Stage {record.stage_number}; project navigation selected this run."
+            if record.stage_number is not None
+            else "UI job completed; project navigation selected this run."
+        )
+        upsert_run_index_entries(
+            root,
+            (
+                RunIndexEntry(
+                    category="project-run",
+                    path=relative,
+                    layout_version="1",
+                    status=_status_text(status),
+                    project_id=selected_project,
+                    run_id=run_id,
+                    notes=(stage_note,),
+                ),
+            ),
+            generated_at=now,
+        )
+        select_project_primary_run(
+            root,
+            project_id=selected_project,
+            run_id=run_id,
+            changed_at=now,
+        )
+    except Exception as error:  # navigation is diagnostic; do not rewrite science status
+        return str(error)[:4096] or error.__class__.__name__
+    return None
 
 
 def main() -> int:
@@ -78,6 +145,18 @@ def main() -> int:
             status = continued.status
             run_key = None
             run_id = arguments.run_root.name
+        status_text = _status_text(status)
+        navigation_error = _publish_product_run_navigation(
+            record=record,
+            run_root=outcome.run_root if arguments.operation == "run" else arguments.run_root,
+            runs_root=arguments.runs_root,
+            project_id=(
+                getattr(outcome.plan, "project_id", None)
+                if arguments.operation == "run"
+                else record.project_id
+            ),
+            status=status_text,
+        )
         if (
             record.session_id is not None
             and record.stage_number is not None
@@ -87,7 +166,7 @@ def main() -> int:
             DesignSessionStore(arguments.session_root).attach_run(
                 record.session_id,
                 run_key=run_key,
-                status=str(getattr(status, "value", status)),
+                status=status_text,
                 stage_number=record.stage_number,
             )
         if (
@@ -109,10 +188,11 @@ def main() -> int:
             )
         updated = record.model_copy(
             update={
-                "status": status,
+                "status": status_text,
                 "run_key": run_key,
                 "run_id": run_id,
                 "updated_at": datetime.now(tz=UTC),
+                "error": navigation_error,
             }
         )
         atomic_dump_runtime_model(updated, arguments.job_record)

@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
 from pathlib import Path
@@ -39,6 +40,35 @@ class ArtifactTokenSigner:
     def __init__(self, secret: bytes | None = None, *, lifetime_seconds: int = 3600) -> None:
         self._secret = secret if secret is not None else secrets.token_bytes(32)
         self._lifetime_seconds = lifetime_seconds
+
+    @classmethod
+    def from_file(
+        cls,
+        path: Path,
+        *,
+        lifetime_seconds: int = 3600,
+    ) -> ArtifactTokenSigner:
+        """Load or create a restart-stable local artifact token secret."""
+
+        secret_path = path.expanduser().resolve()
+        secret_path.parent.mkdir(parents=True, exist_ok=True)
+        if secret_path.exists():
+            secret = secret_path.read_bytes()
+        else:
+            secret = secrets.token_bytes(32)
+            try:
+                with secret_path.open("xb") as handle:
+                    handle.write(secret)
+            except FileExistsError:
+                secret = secret_path.read_bytes()
+        if len(secret) < 32:
+            raise PathPolicyError("Artifact token secret 文件内容非法")
+        if os.name == "posix":
+            try:
+                os.chmod(secret_path, 0o600)
+            except OSError as error:
+                raise PathPolicyError("无法收紧 artifact token secret 文件权限") from error
+        return cls(secret, lifetime_seconds=lifetime_seconds)
 
     def sign(self, run_key: str, artifact: ArtifactRef, *, now: int | None = None) -> str:
         issued = int(time.time()) if now is None else now

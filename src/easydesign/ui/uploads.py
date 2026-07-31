@@ -15,7 +15,15 @@ from easydesign.orchestration.task_tracking import (
 from easydesign.workspace_context import WorkspaceContext
 
 from .models import UploadReceipt
+from .path_refs import path_ref_for, workspace_relative_path
 
+_PENDING_UPLOAD_STATUSES = {"receiving", "ready", "cleanup-suggested"}
+_CLEANUP_SUGGESTION_STATUSES = {
+    "ready",
+    "failed",
+    "failed-quarantined",
+    "cleanup-suggested",
+}
 
 class UploadStore:
     """Keep receipts across UI restarts without auto-deleting any bytes."""
@@ -69,13 +77,7 @@ class UploadStore:
         return sum(
             item.size_bytes
             for item in self.list()
-            if item.status in {
-                "receiving",
-                "ready",
-                "failed",
-                "cleanup-suggested",
-            }
-            and not item.referenced
+            if item.status in _PENDING_UPLOAD_STATUSES and not item.referenced
         )
 
     def find_reusable(
@@ -143,7 +145,8 @@ class UploadStore:
             size_bytes=size_bytes,
             sha256=sha256,
             status="receiving",
-            relative_path=target.relative_to(self.workspace.root).as_posix(),
+            relative_path=workspace_relative_path(self.workspace, target),
+            path_ref=path_ref_for(self.workspace, target),
             created_at=now,
             updated_at=now,
         )
@@ -158,7 +161,7 @@ class UploadStore:
 
     def resolve(self, token: str, *, require_ready: bool = True) -> Path:
         receipt = self.load(token)
-        if require_ready and receipt.status not in {"ready", "failed"}:
+        if require_ready and receipt.status != "ready":
             raise ConfigurationError(
                 f"上传已失效或当前不可用于创建项目: {receipt.status}"
             )
@@ -179,6 +182,7 @@ class UploadStore:
             current.model_copy(
                 update={
                     "status": "ready",
+                    "path_ref": path_ref_for(self.workspace, path),
                     "updated_at": updated_at or datetime.now(tz=UTC),
                 }
             )
@@ -200,7 +204,8 @@ class UploadStore:
             current.model_copy(
                 update={
                     "status": status,
-                    "relative_path": resolved.relative_to(self.workspace.root).as_posix(),
+                    "relative_path": workspace_relative_path(self.workspace, resolved),
+                    "path_ref": path_ref_for(self.workspace, resolved),
                     "project_id": project_id,
                     "referenced": status == "published",
                     "failure_reason": failure_reason,
@@ -216,5 +221,5 @@ class UploadStore:
             for item in self.list()
             if not item.referenced
             and item.updated_at < cutoff
-            and item.status in {"ready", "failed", "cleanup-suggested"}
+            and item.status in _CLEANUP_SUGGESTION_STATUSES
         )

@@ -193,7 +193,7 @@ export interface ViewerAction {
 }
 
 export interface RegionEditOperation {
-  operation: "add" | "remove" | "toggle" | "replace";
+  operation: "add" | "remove" | "toggle" | "replace" | "clear";
   region_id: "A" | "B" | "C";
   numbering: "label" | "auth" | "sequence" | "uniprot";
   chain?: string;
@@ -206,13 +206,26 @@ export interface ScientificAnalysisPlan {
   reason: string;
 }
 
+export interface PmlEditProposal {
+  assistant_message: string;
+  summary: string;
+  conversation_title: string;
+  pml: string;
+}
+
+export interface ViewControlOperation {
+  action: "undo-last-view-action" | "reset-default-view";
+}
+
 export interface AssistantProposal {
   proposal_id: string;
-  kind: "viewer-actions" | "region-edit" | "analysis-plan" | "explanation";
+  kind: "pml-edit" | "viewer-actions" | "region-edit" | "analysis-plan" | "view-control" | "explanation";
   explanation: string;
+  pml_edit?: PmlEditProposal;
   viewer_actions: ViewerAction[];
   region_operations: RegionEditOperation[];
   analysis_plan?: ScientificAnalysisPlan;
+  view_control?: ViewControlOperation;
 }
 
 export interface InteractionMessage {
@@ -223,7 +236,32 @@ export interface InteractionMessage {
   provider?: AssistantProviderId;
   model?: string;
   request_id?: string;
+  version_id?: string;
   proposal?: AssistantProposal;
+}
+
+export interface SceneVersion {
+  version_id: string;
+  revision: number;
+  parent_version_id?: string;
+  base_version_id?: string;
+  actor: "human" | "ai" | "viewer" | "system";
+  source: string;
+  summary: string;
+  pml: string;
+  sha256: string;
+  created_at: string;
+}
+
+export interface ReferenceStructure {
+  object_id: string;
+  role: "target" | "reference";
+  object_name: string;
+  filename: string;
+  file_format: string;
+  sha256: string;
+  source: string;
+  created_at: string;
 }
 
 export interface PmlRevision {
@@ -234,7 +272,7 @@ export interface PmlRevision {
 }
 
 export interface StructureInteractionSession {
-  schema_version: "0.1" | "0.2";
+  schema_version: "0.1" | "0.2" | "0.3";
   session_id: string;
   project_id: string;
   run_key: string;
@@ -250,6 +288,9 @@ export interface StructureInteractionSession {
     source: "viewer" | "assistant";
     created_at: string;
   }>;
+  scene_versions?: SceneVersion[];
+  active_scene_version_id?: string;
+  reference_structures?: ReferenceStructure[];
   current_regions: Partial<Record<"A" | "B" | "C", number[]>>;
   created_at: string;
   updated_at: string;

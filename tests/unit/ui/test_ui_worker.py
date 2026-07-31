@@ -5,12 +5,59 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from easydesign.core import dump_model, load_model
+from easydesign.core import (
+    ArtifactRef,
+    EvidenceStatus,
+    ExecutionStatus,
+    RunManifest,
+    dump_model,
+    load_model,
+)
+from easydesign.orchestration import ProjectNavigation, RunIndex
 from easydesign.ui import worker
 from easydesign.ui.jobs import UiJobController
 from easydesign.ui.models import UiJobRecord
 from easydesign.ui.security import UiRunRegistry
 from easydesign.ui.sessions import DesignSessionStore
+
+
+def _minimal_run(
+    run_root: Path,
+    *,
+    project_id: str,
+    run_id: str,
+    created_at: datetime,
+) -> None:
+    config_path = run_root / "config-snapshot" / "resolved-config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text('{"schema_version": "0.7"}\n', encoding="utf-8")
+    config = ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path="config-snapshot/resolved-config.json",
+        artifact_id="resolved-config",
+        role="resolved-config",
+        file_format="json",
+    )
+    manifest = RunManifest(
+        schema_version="1.0",
+        revision=1,
+        project_id=project_id,
+        run_id=run_id,
+        easydesign_version="0.1.0.test",
+        code_commit="a" * 40,
+        status=ExecutionStatus.SUCCEEDED,
+        evidence_status=EvidenceStatus.IMPLEMENTED,
+        created_at=created_at,
+        updated_at=created_at,
+        completed_at=created_at,
+        config_snapshot=config,
+    )
+    manifest_path = run_root / "manifests" / "run-manifest-0001.json"
+    dump_model(manifest, manifest_path)
+    (run_root / "manifests" / "LATEST").write_text(
+        "run-manifest-0001.json\n",
+        encoding="utf-8",
+    )
 
 
 def test_worker_attaches_continuation_run_to_design_session(
@@ -24,10 +71,15 @@ def test_worker_attaches_continuation_run_to_design_session(
         execution_mode="review-gated",
     )
     run_root = tmp_path / "runs" / "sample-project" / "stage02-run"
-    run_root.mkdir(parents=True)
     config = tmp_path / "stage02.yaml"
     config.write_text("schema_version: '0.7'\n", encoding="utf-8")
     now = datetime.now(tz=UTC)
+    _minimal_run(
+        run_root,
+        project_id="sample-project",
+        run_id=run_root.name,
+        created_at=now,
+    )
     record_path = tmp_path / "job.json"
     dump_model(
         UiJobRecord(
@@ -84,6 +136,18 @@ def test_worker_attaches_continuation_run_to_design_session(
     assert updated_session.run_lineage == (expected_key,)
     assert updated_session.current_stage == 2
     assert updated_session.status == "awaiting-human-approval"
+    assert updated_job.error is None
+    index = load_model(tmp_path / "runs" / "run-index.json", RunIndex)
+    entry = next(item for item in index.entries if item.project_id == "sample-project")
+    assert entry.run_id == "stage02-run"
+    assert entry.status == "awaiting-human-approval"
+    assert entry.is_project_primary is True
+    navigation = load_model(
+        tmp_path / "runs" / "sample-project" / "PROJECT.json",
+        ProjectNavigation,
+    )
+    assert navigation.primary_run_id == "stage02-run"
+    assert navigation.runs[0].relative_path == "sample-project/stage02-run"
 
 
 def test_external_submission_persists_stage_acceptance(tmp_path: Path) -> None:

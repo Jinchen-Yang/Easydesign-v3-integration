@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from easydesign.core import (
     ArtifactRef,
     Attempt,
+    ConfigurationError,
     EvidenceStatus,
     ExecutionStatus,
     PathPolicyError,
@@ -582,6 +584,34 @@ def test_artifact_token_is_signed_and_expires(tmp_path: Path) -> None:
         signer.verify(f"{payload}.{changed}", now=5)
 
 
+def test_artifact_token_secret_persists_across_ui_restarts(tmp_path: Path) -> None:
+    run_root = _audited_run(tmp_path)
+    registry = UiRunRegistry(tmp_path / "runs")
+    run_key = registry.register(run_root)
+    artifact = ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=(
+            "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
+        ),
+        artifact_id="target-bundle",
+        role="target-bundle",
+        file_format="json",
+        producer_stage=str(StageId.TARGET_PREPARATION),
+        producer_attempt="attempt-0001",
+    )
+    secret_path = tmp_path / "runtime" / "state" / "ui" / "artifact-token-secret.bin"
+
+    first = ArtifactTokenSigner.from_file(secret_path, lifetime_seconds=10)
+    token = first.sign(run_key, artifact, now=0)
+    second = ArtifactTokenSigner.from_file(secret_path, lifetime_seconds=10)
+
+    assert second.verify(token, now=5).run_key == run_key
+    assert secret_path.read_bytes()
+    if os.name == "posix":
+        assert secret_path.stat().st_mode & 0o077 == 0
+
+
+
 def test_live_execution_projection_uses_structured_runtime_state(
     tmp_path: Path,
 ) -> None:
@@ -948,6 +978,7 @@ def test_browser_pymol_status_requires_the_complete_verified_offline_runtime(
     assert response.json()["integrity_errors"] == []
 
 
+
 def test_structure_assistant_exposes_only_platform_service_status(
     tmp_path: Path,
 ) -> None:
@@ -1003,6 +1034,135 @@ def test_structure_assistant_exposes_only_platform_service_status(
     assert legacy_write.status_code in {404, 405}
 
 
+def test_continuation_preflight_failure_does_not_advance_session(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    run_root = _audited_run(tmp_path)
+    latest_name = read_last_text_line(run_root / "manifests" / "LATEST")
+    manifest = load_model(run_root / "manifests" / latest_name, RunManifest)
+    stage02_manifest = manifest.model_copy(
+        update={
+            "stage_manifest_refs": manifest.stage_manifest_refs[:2],
+            "updated_at": NOW + timedelta(minutes=1),
+            "completed_at": NOW + timedelta(minutes=1),
+        }
+    )
+    dump_model(stage02_manifest, run_root / "manifests" / "run-manifest-stage02.json")
+    (run_root / "manifests" / "LATEST").write_text(
+        "run-manifest-stage02.json\n",
+        encoding="utf-8",
+    )
+    upsert_run_index_entries(
+        tmp_path / "runs",
+        (
+            RunIndexEntry(
+                category="project-run",
+                path=run_root.relative_to(tmp_path / "runs").as_posix(),
+                layout_version="1",
+                status="succeeded",
+                project_id="target-alpha",
+                run_id="run-scientific-stop",
+            ),
+        ),
+        generated_at=NOW,
+    )
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    service = app.state.easydesign
+    run_key = service.registry.register(run_root)
+    session = service.sessions.create(
+        project_id="target-alpha",
+        design_mode="stepwise",
+        execution_mode="review-gated",
+    )
+    service.sessions.attach_run(
+        session.session_id,
+        run_key=run_key,
+        status="succeeded",
+        stage_number=2,
+    )
+
+    def fail_launch(**_kwargs: Any) -> Any:
+        raise ConfigurationError("synthetic preflight failure")
+
+    monkeypatch.setattr(service.jobs, "launch", fail_launch)
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/runs/{run_key}/continue/3",
+            json={
+                "session_id": session.session_id,
+                "stage_number": 3,
+                "execution_mode": "review-gated",
+                "options": {
+                    "profile": "boltzgen-vhh-basic-v1",
+                    "scaffold_registry": "official-vhh7-v1",
+                    "scaffold_ids": None,
+                    "candidates_per_strategy": 40,
+                },
+                "confirmed": True,
+            },
+        )
+
+    assert response.status_code == 400
+    restored = service.sessions.load(session.session_id)
+    assert [item.stage_number for item in restored.config_revisions] == []
+    assert restored.current_stage == 2
+    assert not list(
+        (service.sessions.root / session.session_id / "config-revisions").glob(
+            "stage03-*.yaml"
+        )
+    )
+    assert not (tmp_path / "projects" / "target-alpha" / "easydesign.stage03.rev0001.yaml").exists()
+
+
+def test_region_revision_rejects_stale_session_run_key(tmp_path: Path) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    service = app.state.easydesign
+    session = service.sessions.create(
+        project_id="target-alpha",
+        design_mode="stepwise",
+        execution_mode="review-gated",
+    )
+    service.sessions.attach_run(
+        session.session_id,
+        run_key="old-stage01-run-key",
+        status="succeeded",
+        stage_number=1,
+    )
+    service.sessions.attach_run(
+        session.session_id,
+        run_key="new-stage02-run-key",
+        status="succeeded",
+        stage_number=2,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs/old-stage01-run-key/regions/revise",
+            json={
+                "session_id": session.session_id,
+                "execution_mode": "review-gated",
+                "regions": [{"id": "A", "label_seq_ids": [1, 2, 3]}],
+                "approved_by": "tester",
+                "acknowledge_user_provided_regions": True,
+                "acknowledge_evidence_limitations": True,
+                "confirmed": True,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "最新运行" in response.json()["detail"]
+
+
 def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
     tmp_path: Path,
 ) -> None:
@@ -1044,6 +1204,31 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         assert (
             tmp_path / "projects" / "target-demo" / "inputs" / "target.fasta"
         ).read_bytes() == content
+        published_uploads = client.get("/api/v1/uploads").json()["receipts"]
+        published_receipt = next(
+            item
+            for item in published_uploads
+            if item["upload_token"] == receipt["upload_token"]
+        )
+        assert published_receipt["status"] == "published"
+        assert published_receipt["path_ref"] == "project://target-demo/inputs/target.fasta"
+        audit_events = [
+            json.loads(line)
+            for log_path in sorted((tmp_path / "runtime" / "logs").glob("ui-operations-*.jsonl"))
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        assert any(
+            event["event"] == "upload.received"
+            and event["path_ref"].startswith("runtime://tmp/ui-uploads/")
+            and event["resolved_path"].startswith(str(tmp_path))
+            for event in audit_events
+        )
+        assert any(
+            event["event"] == "project.publish.done"
+            and event["to_path_ref"] == "project://target-demo"
+            and event["to_resolved_path"] == str(tmp_path / "projects" / "target-demo")
+            for event in audit_events
+        )
         metadata = load_latest_runtime_model(
             tmp_path / "projects" / "target-demo" / "project-metadata.json",
             ProjectMetadata,
@@ -1171,6 +1356,107 @@ def test_failed_project_publication_keeps_only_retryable_upload_receipt(
     assert (
         tmp_path / failed["relative_path"]
     ).read_bytes() == content
+
+
+def test_project_publication_failure_after_input_move_quarantines_receipt(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    content = b"failed-after-input-move"
+    with TestClient(app, raise_server_exceptions=False) as client:
+        receipt = client.post(
+            "/api/v1/uploads",
+            json={
+                "filename": "target.pse",
+                "content_base64": base64.b64encode(content).decode("ascii"),
+            },
+        ).json()
+
+        import easydesign.ui.app as ui_app_module
+
+        def fail_validate_after_move(*_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("intentional validation failure after input move")
+
+        monkeypatch.setattr(
+            ui_app_module,
+            "validate_run_configuration",
+            fail_validate_after_move,
+        )
+        response = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "failed-after-move",
+                "source_type": "local-file",
+                "source_value": receipt["upload_token"],
+                "stop_after_stage": 1,
+                "design_mode": "stepwise",
+            },
+        )
+        uploads = client.get("/api/v1/uploads").json()["receipts"]
+
+    assert response.status_code == 500
+    assert not (tmp_path / "projects" / "failed-after-move").exists()
+    failed = next(
+        item for item in uploads if item["upload_token"] == receipt["upload_token"]
+    )
+    assert failed["status"] == "failed-quarantined"
+    assert failed["path_ref"].startswith("quarantine://")
+    quarantined = tmp_path / failed["relative_path"]
+    assert quarantined.read_bytes() == content
+    assert "/root/autodl-tmp" not in failed["relative_path"]
+    assert "/root/autodl-tmp" not in failed["path_ref"]
+
+
+def test_update_config_validates_project_relative_inputs_from_ui_temp(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    content = b"pse-config-update-fixture"
+    with TestClient(app) as client:
+        receipt = client.post(
+            "/api/v1/uploads",
+            json={
+                "filename": "target.pse",
+                "content_base64": base64.b64encode(content).decode("ascii"),
+            },
+        ).json()
+        project = client.post(
+            "/api/v1/projects",
+            json={
+                "project_id": "pse-config-demo",
+                "source_type": "local-file",
+                "source_value": receipt["upload_token"],
+                "execution_mode": "review-gated",
+                "design_intent": "exploratory",
+                "stop_after_stage": 1,
+                "design_mode": "stepwise",
+            },
+        )
+        assert project.status_code == 200
+        yaml_text = project.json()["config"]
+        assert "path: inputs/target.pse" in yaml_text
+
+        update = client.put(
+            "/api/v1/projects/pse-config-demo/config",
+            json={"yaml_text": yaml_text},
+        )
+
+    assert update.status_code == 200
+    assert update.json()["config_path"] == (
+        "pse-config-demo/config-revisions/easydesign.rev-000001.yaml"
+    )
+    assert read_last_text_line(
+        tmp_path / "projects" / "pse-config-demo" / "CONFIG_CURRENT"
+    ) == "config-revisions/easydesign.rev-000001.yaml"
 
 
 def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(

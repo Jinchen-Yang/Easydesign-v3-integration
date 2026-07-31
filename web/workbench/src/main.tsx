@@ -1171,15 +1171,18 @@ function Dashboard({
   drafts = [],
   onOpen,
   onContinueDraft,
+  onArchiveProject,
   onNew,
 }: {
   projects: Project[];
   drafts: ProjectDraft[];
   onOpen: (run: Run) => void;
   onContinueDraft: (draft: ProjectDraft) => void;
+  onArchiveProject: (projectId: string) => Promise<void>;
   onNew: () => void;
 }) {
-  const latest = projects.flatMap((item) => item.runs).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const [archivingProjectId, setArchivingProjectId] = useState("");
+  const [archiveMessage, setArchiveMessage] = useState("");
   function runState(run: Run): StageState {
     if (run.stages.some((stage) => stage.state === "operational-failed")) return "operational-failed";
     if (run.stages.some((stage) => stage.state === "awaiting-human-approval")) return "awaiting-human-approval";
@@ -1187,9 +1190,29 @@ function Dashboard({
     if (run.stages.some((stage) => stage.state === "scientific-stop")) return "scientific-stop";
     return "succeeded";
   }
+  async function requestArchiveProject(project: Project) {
+    const message = [
+      `确认从“我的项目”删除项目 ${project.project_id} 吗？`,
+      "",
+      "EasyDesign 会执行可恢复归档：运行目录会移到 runs/_archive/，并从默认项目列表隐藏；科学产物和校验值不会被改写。",
+      "之后可以在“设置 → 运行环境 → 可恢复项目目录”里恢复。",
+    ].join("\n");
+    if (!window.confirm(message)) return;
+    setArchivingProjectId(project.project_id);
+    setArchiveMessage(`正在归档项目 ${project.project_id}…`);
+    try {
+      await onArchiveProject(project.project_id);
+      setArchiveMessage(`项目 ${project.project_id} 已移入可恢复归档。`);
+    } catch (error) {
+      setArchiveMessage(error instanceof Error ? error.message : "项目归档失败");
+    } finally {
+      setArchivingProjectId("");
+    }
+  }
   return (
     <div className="dashboard-page">
       <header className="page-heading"><div><p className="section-label">EasyDesign 科研工作台</p><h1>我的项目</h1><p>查看每个设计项目当前得到的结论，以及下一步需要做什么。</p></div><button className="primary-button" onClick={onNew}>＋ 新建设计</button></header>
+      {archiveMessage && <div className="form-status project-archive-message">{archiveMessage}</div>}
       <div className="project-cards">
         {projects.map((project) => {
           const run = project.latest_run;
@@ -1208,7 +1231,19 @@ function Dashboard({
               <header>
                 <span className="project-mark">{project.project_id.slice(0, 2).toUpperCase()}</span>
                 <div><h2>{project.project_id}</h2><p>目标：{String(run.stages[0]?.highlights.target_id || project.project_id)}</p></div>
-                <Status state={state} />
+                <div className="project-card-actions">
+                  <Status state={state} />
+                  <button
+                    type="button"
+                    className="project-delete-button"
+                    disabled={archivingProjectId === project.project_id}
+                    aria-label={`删除项目 ${project.project_id}`}
+                    title="删除项目（移入可恢复归档）"
+                    onClick={() => void requestArchiveProject(project)}
+                  >
+                    {archivingProjectId === project.project_id ? "…" : "🗑"}
+                  </button>
+                </div>
               </header>
               <div className="project-progress">
                 {run.stages.map((stage) => <span key={stage.stage_number} className={`state-${stage.state}`} title={stageNames[stage.stage_number - 1]} />)}
@@ -1970,21 +2005,21 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
           </div>
         </header>
         <div className="design-route-grid">
-          <button type="button" onClick={() => selectDesignMode("full-workflow")}>
-            <span>01</span>
-            <div>
-              <h2>全流程设计</h2>
-              <p>开始前查看并配置第1–7步，然后选择连续运行，或在科学选择处暂停确认。</p>
-              <strong>适合：已经明确整体方案和预算</strong>
-            </div>
-            <b>进入 →</b>
-          </button>
           <button type="button" onClick={() => selectDesignMode("stepwise")}>
-            <span>02</span>
+            <span>01</span>
             <div>
               <h2>按步骤设计</h2>
               <p>现在只提交第1步。结构完成后直接查看 Mol* 结果，再配置第2步。</p>
               <strong>适合：边看结果边做科学决策</strong>
+            </div>
+            <b>进入 →</b>
+          </button>
+          <button type="button" onClick={() => selectDesignMode("full-workflow")}>
+            <span>02</span>
+            <div>
+              <h2>全流程设计</h2>
+              <p>开始前查看并配置第1–7步，然后选择连续运行，或在科学选择处暂停确认。</p>
+              <strong>适合：已经明确整体方案和预算</strong>
             </div>
             <b>进入 →</b>
           </button>
@@ -2450,6 +2485,7 @@ function AssistantServiceSettings() {
   );
 }
 
+
 function OperationsPage({
   type,
   projects,
@@ -2727,21 +2763,53 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function refreshProjects() {
+  async function loadProjects() {
     try {
-      setData(await api.projects());
+      const nextData = await api.projects();
+      setData(nextData);
       setError("");
+      return nextData;
     } catch (value) {
       setError(value instanceof Error ? value.message : "无法连接本地 API");
+      return undefined;
     } finally {
       setLoading(false);
     }
   }
 
+  async function refreshProjects() {
+    await loadProjects();
+  }
+
+  async function archiveProjectFromDashboard(projectId: string) {
+    await api.archiveProject(projectId);
+    if (selectedRun?.project_id === projectId) {
+      setSelectedRun(undefined);
+      setSelectedRunStage(undefined);
+      setReplay(undefined);
+      setPage("projects");
+    }
+    await loadProjects();
+  }
+
   async function openCompletedRun(runKey: string, destinationStage?: number) {
+    const refreshed = await loadProjects();
+    const projectedRun = refreshed?.projects
+      .flatMap((project) => project.runs)
+      .find((item) => item.run_key === runKey);
+    if (projectedRun) {
+      openRun(projectedRun, destinationStage);
+      return;
+    }
+    const sameProjectLatest = selectedRun
+      ? refreshed?.projects.find((project) => project.project_id === selectedRun.project_id)?.latest_run
+      : undefined;
+    if (sameProjectLatest) {
+      openRun(sameProjectLatest, destinationStage);
+      return;
+    }
     const completedRun = await api.run(runKey);
     openRun(completedRun, destinationStage);
-    await refreshProjects();
   }
 
   useEffect(() => {
@@ -2798,6 +2866,7 @@ function App() {
               setDraftToResume(draft);
               setPage("new");
             }}
+            onArchiveProject={archiveProjectFromDashboard}
             onNew={() => {
               setDraftToResume(undefined);
               setPage("new");

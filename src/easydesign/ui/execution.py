@@ -21,6 +21,7 @@ from easydesign.core import (
 from .models import (
     DeviceExecutionProjection,
     ExecutionProgressProjection,
+    StrategyExecutionProjection,
     TaskExecutionProjection,
 )
 from .projections import _latest_run_manifest
@@ -243,6 +244,24 @@ def get_execution_progress(
         runtime_snapshot=runtime_snapshot,
     )
     devices = _device_projections(tasks, progress)
+    strategy_tasks: dict[str, list[TaskRecord]] = defaultdict(list)
+    for task in tasks:
+        strategy_tasks[task.strategy_id].append(task)
+    strategies = tuple(
+        StrategyExecutionProjection(
+            strategy_id=strategy_id,
+            task_count=len(rows),
+            succeeded_task_count=sum(
+                item.status is TaskStatus.SUCCEEDED for item in rows
+            ),
+            failed_task_count=sum(
+                item.status is TaskStatus.FAILED for item in rows
+            ),
+            requested_candidates=sum(item.requested_candidates for item in rows),
+            collected_candidates=sum(item.collected_candidates for item in rows),
+        )
+        for strategy_id, rows in sorted(strategy_tasks.items())
+    )
     return ExecutionProgressProjection(
         stage_number=stage_number,
         stage_id=progress.stage_id,
@@ -261,6 +280,7 @@ def get_execution_progress(
         estimated_remaining_seconds=progress.estimated_remaining_seconds,
         device_history_status="available" if devices else "not-recorded",
         devices=devices,
+        strategies=strategies,
         recent_events=tuple(
             {
                 "sequence": event.sequence,

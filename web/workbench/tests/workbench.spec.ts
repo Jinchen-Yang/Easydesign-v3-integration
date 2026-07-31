@@ -170,13 +170,19 @@ const strategies = Array.from({ length: 21 }, (_, index) => ({
   scaffold_id: `scaffold-${index % 7 + 1}`,
   candidate_count: 40,
   unique_sequence_count: 40,
-  hard_pass_count: index === 0 ? 4 : 1,
-  final_gate_pass_count: index === 0 ? 2 : 0,
-  final_gate_pass_rate: index === 0 ? .05 : 0,
-  tier: index === 0 ? "tier-a" : "tier-d",
+  hard_pass_count: index === 0 ? 5 : index >= 2 && index <= 6 ? 2 : 1,
+  final_gate_pass_count: index === 0 ? 5 : index === 1 ? 1 : 0,
+  final_gate_pass_rate: index === 0 ? .125 : index === 1 ? .025 : 0,
+  tier: index === 0
+    ? "tier-a"
+    : index === 1
+      ? "tier-b"
+      : index <= 6
+        ? "tier-c"
+        : "tier-d",
   score_screen: .5,
   score_screen_top_quartile_mean: .7,
-  score_yaml: .6,
+  score_yaml: index === 0 ? .391 : Math.max(0, .35 - index / 100),
   selected_for_expansion: index === 0,
   configuration: {
     hotspot_strategy: "H_all",
@@ -710,6 +716,11 @@ async function mockApi(page: Page) {
     }
     if (url.pathname.endsWith("/stages/5/candidates")) {
       const phase = url.searchParams.get("phase") || "pilot";
+      const strategyId = url.searchParams.get("strategy_id");
+      const gateStatus = url.searchParams.get("gate_status");
+      const focusedPilot = phase === "pilot"
+        && strategyId === "A__scaffold-1"
+        && gateStatus === "通过";
       const items = phase === "full-target"
         ? candidateItems.slice(0, 10).map((item, index) => ({
           ...item,
@@ -729,15 +740,23 @@ async function mockApi(page: Page) {
             gate_status: "通过",
             score: 1 - index / 20,
           }))
-          : candidateItems;
+          : focusedPilot
+            ? candidateItems.slice(0, 5)
+            : candidateItems;
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
           phase,
           page: 1,
           page_size: 50,
-          total: phase === "full-target" ? 10 : phase === "expansion" ? 12 : 840,
-          total_pages: phase === "pilot" ? 17 : 1,
+          total: phase === "full-target"
+            ? 10
+            : phase === "expansion"
+              ? 12
+              : focusedPilot
+                ? 5
+                : 840,
+          total_pages: phase === "pilot" && !focusedPilot ? 17 : 1,
           items,
         }),
       });
@@ -812,9 +831,33 @@ test("project-first navigation and scientific stop are explained in Chinese", as
   await expect(page.getByRole("button", { name: "待审批" })).toHaveCount(0);
   await page.getByRole("button", { name: "查看项目 →" }).click();
   await expect(page.getByRole("heading", { name: "第5步：筛选与验证" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "筛选工作已经完成，已有多层结构证据可供审阅" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "12 个候选值得查看结构" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "当前没有可进入规模化生成的设计策略" })).toBeVisible();
+  await expect(page.getByText("这是按 v1.5 规则完成的历史运行")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "点击等级查看设计方案" })).toBeVisible();
+});
+
+test("v1.6 promotes tier-a strategies even when diagnostics warn", async ({ page }) => {
+  await page.route("**/api/v1/runs/apoe-run-key/stages/5/overview", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...overview,
+        state: "succeeded",
+        advisory_validation: true,
+        conclusion_title: "1 组 Tier A 晋级，完整目标复核产生提醒",
+        conclusion: "诊断提醒不会撤销 Tier A 晋级。",
+        counts: {
+          ...overview.counts,
+          promoted_strategies: 1,
+          diagnostic_warnings: 1,
+        },
+      }),
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await expect(page.getByRole("heading", { name: "1 组 Tier A 进入规模化生成" })).toBeVisible();
+  await expect(page.getByText("科学负结果显示为提醒")).toBeVisible();
 });
 
 test("stage five exposes strategy, candidate and metric layers", async ({ page }) => {
@@ -835,6 +878,7 @@ test("completed gpu history and staged candidate evidence remain visible", async
   await page.goto("/");
   await page.getByRole("button", { name: "查看项目 →" }).click();
   await expect(page.getByText("等级 A").first()).toBeVisible();
+  await page.getByRole("button", { name: "诊断证据" }).click();
   await expect(page.getByText("已做 Protenix 复核").first()).toBeVisible();
   await expect(page.getByText("当前观测到的最低结合位姿 RMSD")).toBeVisible();
   await page.locator(".stage-node").nth(3).click();
@@ -922,7 +966,7 @@ test("new design exposes six entry classes and standard YAML", async ({ page }) 
     await expect(page.getByRole("button", { name: new RegExp(source) })).toBeVisible();
   }
   await expect(page.getByText("标准 YAML 配置预览")).toBeVisible();
-  await expect(page.getByText('schema_version: "0.7"')).toBeVisible();
+  await expect(page.getByText('schema_version: "0.8"')).toBeVisible();
 });
 
 test("new design steps are freely browsable and file receipt unlocks final checks", async ({ page }) => {

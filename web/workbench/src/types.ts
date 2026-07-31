@@ -409,6 +409,14 @@ export interface ExecutionProgress {
   estimated_remaining_seconds?: number;
   device_history_status: string;
   devices: DeviceExecution[];
+  strategies?: Array<{
+    strategy_id: string;
+    task_count: number;
+    succeeded_task_count: number;
+    failed_task_count: number;
+    requested_candidates: number;
+    collected_candidates: number;
+  }>;
   recent_events: Array<Record<string, unknown>>;
   recent_errors: string[];
 }
@@ -416,6 +424,7 @@ export interface ExecutionProgress {
 export interface FilterOverview {
   run_key: string;
   state: StageState;
+  advisory_validation: boolean;
   conclusion_title: string;
   conclusion: string;
   next_actions: string[];
@@ -439,6 +448,13 @@ export interface Strategy {
   score_screen_top_quartile_mean: number;
   score_yaml: number;
   selected_for_expansion: boolean;
+  promotion_rank?: number;
+  advisory_status?: "advisory-supported" | "advisory-warning";
+  diagnostic_warning_count: number;
+  diagnostic_candidate_count?: number;
+  diagnostic_local_gate_pass_count?: number;
+  diagnostic_full_target_count?: number;
+  diagnostic_full_target_pass_count?: number;
   configuration: Record<string, unknown>;
   metric_aggregates: Array<{
     metric_id: string;

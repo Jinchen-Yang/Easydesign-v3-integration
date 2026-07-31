@@ -455,6 +455,10 @@ function EvidenceOverview({
     .filter((item) => item.tier === "tier-a" || item.tier === "tier-b");
   const protenixIds = new Set((fullTarget?.items || []).map((item) => item.candidate_id));
   const bestPrediction = fullTarget?.items[0];
+  const promotedCount = overview.counts.promoted_strategies
+    ?? overview.counts.selected_strategies
+    ?? 0;
+  const advisoryMode = overview.advisory_validation;
 
   return (
     <div className="filter-section evidence-first">
@@ -464,12 +468,19 @@ function EvidenceOverview({
           <h3>筛选工作已经完成，已有多层结构证据可供审阅</h3>
           <p>
             本次运行完成了 {overview.counts.pilot} 个小规模候选、{overview.counts.expanded} 个扩展候选和
-            {" "}{overview.counts.full_target} 个 Protenix 复核。最终停止只表示没有候选达到第6步门槛。
+            {" "}{overview.counts.full_target} 个 Protenix 复核。
+            {advisoryMode
+              ? ` 其中 ${promotedCount} 组 Tier A 已晋级；诊断提醒不会撤销晋级。`
+              : " 最终停止只表示没有候选达到第6步门槛。"}
           </p>
         </div>
         <div className="evidence-stop-summary">
-          <strong>第6步未解锁</strong>
-          <span>程序正常完成 · 科学门槛未通过</span>
+          <strong>{advisoryMode ? `${promotedCount} 组进入共享规模化` : "第6步未解锁"}</strong>
+          <span>
+            {advisoryMode
+              ? `${overview.counts.diagnostic_warnings ?? 0} 条诊断提醒 · 不作为硬门`
+              : "程序正常完成 · 科学门槛未通过"}
+          </span>
         </div>
       </section>
 
@@ -604,7 +615,7 @@ function EvidenceOverview({
 
       <section className="compact-science-stop">
         <div>
-          <p className="section-label">进入第6步的判断</p>
+          <p className="section-label">{advisoryMode ? "诊断结论" : "进入第6步的判断"}</p>
           <h3>{overview.conclusion_title}</h3>
           <p>{overview.conclusion} 上述策略、指标和结构证据仍然保留并可下载。</p>
         </div>
@@ -621,6 +632,212 @@ function EvidenceOverview({
           onClose={() => setDetail(undefined)}
         />
       )}
+    </div>
+  );
+}
+
+function CompactStageFive({
+  run,
+  overview,
+  strategies,
+  metrics,
+  onOpenExpert,
+}: {
+  run: Run;
+  overview: FilterOverview;
+  strategies: Strategy[];
+  metrics: MetricPresentation[];
+  onOpenExpert: () => void;
+}) {
+  const tiers = ["tier-a", "tier-b", "tier-c", "tier-d"];
+  const initialTier = tiers.find((tier) => (overview.tier_counts[tier] || 0) > 0) || "tier-a";
+  const [selectedTier, setSelectedTier] = useState(initialTier);
+  const tierStrategies = useMemo(
+    () => strategies
+      .filter((item) => item.tier === selectedTier)
+      .sort((left, right) => right.score_yaml - left.score_yaml),
+    [selectedTier, strategies],
+  );
+  const [selectedStrategyId, setSelectedStrategyId] = useState("");
+  const selectedStrategy = strategies.find((item) => item.strategy_id === selectedStrategyId);
+  const [pilotPass, setPilotPass] = useState<CandidatePage>();
+  const [detail, setDetail] = useState<CandidateDetail>();
+  const [candidateError, setCandidateError] = useState("");
+
+  useEffect(() => {
+    if (!tierStrategies.some((item) => item.strategy_id === selectedStrategyId)) {
+      setSelectedStrategyId(tierStrategies[0]?.strategy_id || "");
+    }
+  }, [selectedStrategyId, tierStrategies]);
+
+  useEffect(() => {
+    if (!selectedStrategyId || selectedTier !== "tier-a") {
+      setPilotPass(undefined);
+      setCandidateError("");
+      return;
+    }
+    setCandidateError("");
+    api.filterCandidates(run.run_key, {
+      phase: "pilot",
+      strategyId: selectedStrategyId,
+      gateStatus: "通过",
+      pageSize: 100,
+      sortKey: "score",
+      sortOrder: "desc",
+    }).then(setPilotPass).catch((value) => {
+      setCandidateError(value instanceof Error ? value.message : "无法读取 pilot 通过候选");
+    });
+  }, [run.run_key, selectedStrategyId, selectedTier]);
+
+  async function openPilotCandidate(candidateId: string) {
+    setDetail(await api.filterCandidate(run.run_key, candidateId, "pilot"));
+  }
+
+  const advisoryMode = overview.advisory_validation;
+  const promotedCount = advisoryMode
+    ? overview.counts.promoted_strategies
+      ?? overview.counts.selected_strategies
+      ?? strategies.filter((item) => item.selected_for_expansion).length
+    : 0;
+  const warningCount = advisoryMode
+    ? overview.counts.diagnostic_warnings ?? 0
+    : 0;
+  return (
+    <div className="compact-stage05">
+      <section className="compact-stage05-summary">
+        <div>
+          <p className="section-label">第5步已完成</p>
+          <h3>{promotedCount > 0 ? `${promotedCount} 组 Tier A 进入规模化生成` : overview.conclusion_title}</h3>
+          <p>
+            {advisoryMode
+              ? "Tier 由 40 条小规模候选决定。100 条扩增只提供诊断证据；科学负结果显示为提醒，不会撤销 Tier A 晋级。"
+              : "这是按 v1.5 规则完成的历史运行；完整目标复核曾作为硬门，原科学停止结论保持不变。"}
+          </p>
+        </div>
+        <button type="button" onClick={onOpenExpert}>查看全部指标</button>
+      </section>
+
+      <section className="compact-stage05-facts" aria-label="筛选摘要">
+        <article><span>设计方案</span><strong>{strategies.length}</strong></article>
+        <article><span>Tier 分布</span><strong>{tiers.map((tier) => overview.tier_counts[tier] || 0).join(" / ")}</strong><small>A / B / C / D</small></article>
+        <article><span>晋级 YAML</span><strong>{promotedCount}</strong></article>
+        <article><span>诊断提醒</span><strong>{warningCount}</strong></article>
+      </section>
+
+      <section className="panel compact-tier-panel">
+        <div className="panel-heading">
+          <div><p className="section-label">策略分层</p><h3>点击等级查看设计方案</h3></div>
+          <span>
+            {advisoryMode
+              ? "Tier A 最多晋级 3 组，不从 B–D 补位"
+              : "历史 Tier 与 F_YAML 按原 v1.5 记录展示"}
+          </span>
+        </div>
+        <div className="tier-pyramid" role="tablist" aria-label="Tier 策略等级">
+          {tiers.map((tier, index) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedTier === tier}
+              className={selectedTier === tier ? "active" : ""}
+              style={{ "--tier-inset": `${index * 7}%` } as React.CSSProperties}
+              onClick={() => setSelectedTier(tier)}
+              key={tier}
+            >
+              <span>{tierName(tier)}</span>
+              <strong>{overview.tier_counts[tier] || 0} 组</strong>
+            </button>
+          ))}
+        </div>
+        <div className="compact-strategy-list">
+          {tierStrategies.map((strategy) => (
+            <button
+              type="button"
+              className={selectedStrategyId === strategy.strategy_id ? "active" : ""}
+              onClick={() => setSelectedStrategyId(strategy.strategy_id)}
+              key={strategy.strategy_id}
+            >
+              <span>区域 {strategy.region_id} × {strategy.scaffold_id}</span>
+              <strong>{strategy.final_gate_pass_count}/{strategy.candidate_count} 通过</strong>
+              <small>F_YAML {number(strategy.score_yaml, 4)}</small>
+              {strategy.promotion_rank && <i>晋级第 {strategy.promotion_rank} 名</i>}
+            </button>
+          ))}
+          {!tierStrategies.length && <p className="empty-copy">这个等级没有设计方案。</p>}
+        </div>
+      </section>
+
+      {selectedStrategy && (
+        <section className="panel compact-strategy-detail">
+          <header>
+            <div>
+              <p className="section-label">所选设计方案</p>
+              <h3>区域 {selectedStrategy.region_id} × {selectedStrategy.scaffold_id}</h3>
+            </div>
+            <span className={`tier tier-${selectedStrategy.tier.at(-1)?.toLowerCase()}`}>
+              {tierName(selectedStrategy.tier)}
+            </span>
+          </header>
+          <div className="compact-strategy-metrics">
+            <div><span>pilot 候选</span><strong>{selectedStrategy.candidate_count}</strong></div>
+            <div><span>最终门通过</span><strong>{selectedStrategy.final_gate_pass_count}</strong></div>
+            <div><span>通过率</span><strong>{number(selectedStrategy.final_gate_pass_rate * 100, 1)}%</strong></div>
+            <div><span>F_YAML</span><strong>{number(selectedStrategy.score_yaml, 4)}</strong></div>
+          </div>
+          {selectedStrategy.tier === "tier-a" && (
+            <>
+              <div className="pilot-structure-heading">
+                <div>
+                  <h4>原始 40 条中通过 final gate 的候选</h4>
+                  <p>这里只呈现 pilot 通过结构；100 条诊断结构默认不加载。</p>
+                </div>
+                <span>{pilotPass?.total ?? selectedStrategy.final_gate_pass_count} 个</span>
+              </div>
+              {candidateError && <div className="notice error"><span>{candidateError}</span></div>}
+              <div className="pilot-candidate-strip">
+                {(pilotPass?.items || []).map((candidate) => (
+                  <button type="button" onClick={() => openPilotCandidate(candidate.candidate_id)} key={candidate.candidate_id}>
+                    <strong>{candidate.candidate_id}</strong>
+                    <span>筛选得分 {number(candidate.score, 3)}</span>
+                    <small>查看结构与规则 →</small>
+                  </button>
+                ))}
+              </div>
+              <details className="diagnostic-fold">
+                <summary>
+                  <span>100 条诊断性扩增</span>
+                  <strong>
+                    {selectedStrategy.advisory_status === "advisory-warning"
+                      ? "存在提醒"
+                      : selectedStrategy.advisory_status === "advisory-supported"
+                        ? "获得结构支持"
+                        : "查看历史诊断"}
+                  </strong>
+                </summary>
+                <div>
+                  <span>完整候选 <b>{selectedStrategy.diagnostic_candidate_count ?? overview.counts.expanded ?? "—"}</b></span>
+                  <span>local gate <b>{selectedStrategy.diagnostic_local_gate_pass_count ?? overview.counts.local_gate_pass ?? "—"}</b></span>
+                  <span>full-target 复核 <b>{selectedStrategy.diagnostic_full_target_count ?? overview.counts.full_target ?? "—"}</b></span>
+                  <span>结构通过 <b>{selectedStrategy.diagnostic_full_target_pass_count ?? overview.counts.full_target_pass ?? "—"}</b></span>
+                  <span>提醒 <b>{selectedStrategy.diagnostic_warning_count ?? 0}</b></span>
+                </div>
+                <p>
+                  {advisoryMode
+                    ? "诊断证据不会取消已经由 Tier A 与 F_YAML 决定的晋级资格。"
+                    : "本段属于旧 v1.5 硬门证据，不会按 v1.6 规则追溯改写。"}
+                </p>
+              </details>
+            </>
+          )}
+          {selectedStrategy.yaml_artifact && (
+            <a className="text-link compact-yaml-link" href={`/api/v1/artifacts/${selectedStrategy.yaml_artifact.token}?download=true`}>
+              下载此方案的 BoltzGen YAML
+            </a>
+          )}
+        </section>
+      )}
+
+      {detail && <CandidateDrawer detail={detail} metrics={metrics} onClose={() => setDetail(undefined)} />}
     </div>
   );
 }
@@ -653,7 +870,7 @@ function Glossary({ metrics }: { metrics: MetricPresentation[] }) {
 }
 
 export function StageFive({ stage, run }: { stage: Stage; run: Run }) {
-  const [tab, setTab] = useState("evidence");
+  const [tab, setTab] = useState("overview");
   const [overview, setOverview] = useState<FilterOverview>();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [metrics, setMetrics] = useState<MetricPresentation[]>([]);
@@ -677,15 +894,23 @@ export function StageFive({ stage, run }: { stage: Stage; run: Run }) {
     <div className="stage-five">
       <nav className="analysis-tabs" aria-label="筛选分析视图">
         {[
-          ["evidence", "筛选证据"],
+          ["overview", "筛选结果"],
           ["strategies", "策略比较"],
           ["candidates", "候选筛选"],
           ["metrics", "指标说明"],
-          ["conclusion", "结论与原因"],
+          ["evidence", "诊断证据"],
         ].map(([id, label]) => <button type="button" className={tab === id ? "active" : ""} onClick={() => setTab(id)} key={id}>{label}</button>)}
       </nav>
+      {tab === "overview" && (
+        <CompactStageFive
+          run={run}
+          overview={overview}
+          strategies={strategies}
+          metrics={metrics}
+          onOpenExpert={() => setTab("candidates")}
+        />
+      )}
       {tab === "evidence" && <EvidenceOverview run={run} overview={overview} strategies={strategies} metrics={metrics} />}
-      {tab === "conclusion" && <Conclusion overview={overview} onSelect={setTab} />}
       {tab === "strategies" && <Strategies strategies={strategies} />}
       {tab === "candidates" && <Candidates run={run} metrics={metrics} />}
       {tab === "metrics" && <Glossary metrics={metrics} />}

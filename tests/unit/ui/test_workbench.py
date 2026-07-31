@@ -44,6 +44,7 @@ from easydesign.ui import (
 )
 from easydesign.ui.models import ProjectMetadata
 from easydesign.ui.security import ArtifactTokenSigner
+from easydesign.ui.stage05 import get_filter_overview
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
 
@@ -78,9 +79,10 @@ def _artifact(
     stage: StageId,
     artifact_id: str,
     value: object,
+    attempt_number: int = 1,
 ) -> ArtifactRef:
     relative = (
-        f"{stage}/attempt-0001/artifacts/{artifact_id}.json"
+        f"{stage}/attempt-{attempt_number:04d}/artifacts/{artifact_id}.json"
     )
     _write_json(root, relative, value)
     return ArtifactRef.from_file(
@@ -90,7 +92,7 @@ def _artifact(
         role=artifact_id,
         file_format="json",
         producer_stage=str(stage),
-        producer_attempt="attempt-0001",
+        producer_attempt=f"attempt-{attempt_number:04d}",
     )
 
 
@@ -99,9 +101,13 @@ def _stage(
     *,
     stage: StageId,
     outputs: tuple[ArtifactRef, ...],
+    attempt_number: int = 1,
+    contract_version: str = "0.1",
+    manifest_name: str | None = None,
 ) -> ArtifactRef:
+    attempt_id = f"attempt-{attempt_number:04d}"
     attempt = Attempt(
-        attempt_id="attempt-0001",
+        attempt_id=attempt_id,
         status=ExecutionStatus.SUCCEEDED,
         created_at=NOW,
         started_at=NOW,
@@ -112,15 +118,15 @@ def _stage(
     )
     manifest = StageManifest(
         stage_id=stage,
-        contract_version="0.1",
+        contract_version=contract_version,
         status=ExecutionStatus.SUCCEEDED,
         created_at=NOW,
         completed_at=NOW,
         output_artifacts=outputs,
         attempts=(attempt,),
-        selected_attempt_id=attempt.attempt_id,
+        selected_attempt_id=attempt_id,
     )
-    relative = f"manifests/{stage}.json"
+    relative = manifest_name or f"manifests/{stage}.json"
     dump_model(manifest, root / relative)
     return ArtifactRef.from_file(
         run_root=root,
@@ -129,7 +135,7 @@ def _stage(
         role="stage-manifest",
         file_format="json",
         producer_stage=str(stage),
-        producer_attempt="attempt-0001",
+        producer_attempt=attempt_id,
     )
 
 
@@ -677,6 +683,98 @@ def test_live_execution_projection_uses_structured_runtime_state(
     assert projection.devices[0].tasks[0].latest_heartbeat_at == NOW
 
 
+def test_stage05_overview_distinguishes_v16_advisory_from_v15_stop(
+    tmp_path: Path,
+) -> None:
+    run_root = _audited_run(tmp_path)
+    stage05 = _stage(
+        run_root,
+        stage=StageId.PILOT_FILTERING,
+        attempt_number=2,
+        contract_version="0.2",
+        manifest_name="manifests/05-pilot-filtering-v0.2.json",
+        outputs=(
+            _artifact(
+                run_root,
+                stage=StageId.PILOT_FILTERING,
+                artifact_id="pilot-filter-report",
+                attempt_number=2,
+                value={
+                    "status": "strategies-promoted",
+                    "candidate_records": [],
+                    "strategy_summaries": [
+                        {
+                            "strategy_id": "patch-1__scaffold-x",
+                            "candidate_count": 40,
+                            "unique_sequence_count": 40,
+                            "boltzgen_hard_pass_count": 6,
+                            "final_gate_pass_count": 5,
+                            "final_gate_pass_rate": 0.125,
+                            "tier": "tier-a",
+                            "score_screen_all_median": 0.3,
+                            "score_screen_top_quartile_mean": 0.4,
+                            "score_yaml": 0.39,
+                            "selected_for_expansion": True,
+                        }
+                    ],
+                    "promoted_strategy_ids": ["patch-1__scaffold-x"],
+                },
+            ),
+            _artifact(
+                run_root,
+                stage=StageId.PILOT_FILTERING,
+                artifact_id="advisory-validation-report",
+                attempt_number=2,
+                value={
+                    "profile_id": "nanobody-filter-standard-v1.6",
+                    "status": "completed-with-warnings",
+                    "promoted_strategies": [
+                        {
+                            "strategy_id": "patch-1__scaffold-x",
+                            "promotion_rank": 1,
+                            "advisory_status": "advisory-warning",
+                        }
+                    ],
+                    "warnings": [{"code": "full-target-no-structure-pass"}],
+                    "candidates": [],
+                    "predictions": [],
+                },
+            ),
+        ),
+    )
+    manifest_path = run_root / "manifests" / "run-manifest-0001.json"
+    manifest = load_model(manifest_path, RunManifest)
+    revision_path = run_root / "manifests" / "run-manifest-0002.json"
+    dump_model(
+        manifest.model_copy(
+            update={
+                "stage_manifest_refs": (*manifest.stage_manifest_refs[:-1], stage05),
+                    "revision": 2,
+                    "previous_manifest_sha256": hashlib.sha256(
+                        manifest_path.read_bytes()
+                    ).hexdigest(),
+                    "updated_at": NOW + timedelta(seconds=1),
+                "completed_at": NOW + timedelta(seconds=1),
+            }
+        ),
+        revision_path,
+    )
+    (run_root / "manifests" / "LATEST").write_text(
+        f"{revision_path.name}\n",
+        encoding="utf-8",
+    )
+
+    overview = get_filter_overview(
+        run_root,
+        registry=UiRunRegistry(tmp_path / "runs"),
+    )
+
+    assert overview.advisory_validation is True
+    assert overview.counts["promoted_strategies"] == 1
+    assert overview.counts["diagnostic_warnings"] == 1
+    assert "不会取消晋级" in overview.conclusion_title
+
+
 def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> None:
     run_root = _audited_run(tmp_path)
     app = create_ui_app(
@@ -706,6 +804,7 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
             f"/api/v1/runs/{projection.run_key}/stages/5/overview"
         )
         assert overview.status_code == 200
+        assert overview.json()["advisory_validation"] is False
         assert overview.json()["counts"]["expanded"] == 1
         assert overview.json()["conclusion_title"] == "当前没有可进入规模化生成的设计策略"
         candidates = client.get(
@@ -755,6 +854,17 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         assert device["collected_candidates"] == 4
         assert device["busy_seconds"] == 0
         assert device["tasks"][0]["retry_count"] == 0
+        strategy_execution = execution.json()["strategies"]
+        assert strategy_execution == [
+            {
+                "strategy_id": "patch-1-scaffold-x",
+                "task_count": 1,
+                "succeeded_task_count": 1,
+                "failed_task_count": 0,
+                "requested_candidates": 4,
+                "collected_candidates": 4,
+            }
+        ]
         invalid_sort = client.get(
             f"/api/v1/runs/{projection.run_key}/stages/5/candidates",
             params={"phase": "pilot", "sort_key": "absolute_path"},

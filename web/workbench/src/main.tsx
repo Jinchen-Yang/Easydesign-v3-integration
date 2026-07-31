@@ -704,6 +704,37 @@ function ExecutionStage({ stage, run }: { stage: Stage; run: Run }) {
         <Metric label="运行时长" value={`${formatNumber((execution?.elapsed_seconds ?? Number(h.elapsed_seconds || 0)) / 3600, 2)} h`} />
         <Metric label="生成速度" value={formatNumber(execution?.throughput_candidates_per_hour ?? h.throughput_candidates_per_hour, 1)} note="候选 / 小时" />
       </div>
+      {isScale && Boolean(execution?.strategies?.length) && (
+        <section className="panel strategy-scale-progress">
+          <div className="panel-header">
+            <div>
+              <p className="section-label">共享候选预算</p>
+              <h3>各晋级 YAML 的生成进度</h3>
+            </div>
+            <span>{execution?.strategies?.length} 组策略</span>
+          </div>
+          <div className="strategy-scale-grid">
+            {execution?.strategies?.map((strategy) => {
+              const ratio = strategy.requested_candidates
+                ? Math.min(100, strategy.collected_candidates / strategy.requested_candidates * 100)
+                : 0;
+              return (
+                <article key={strategy.strategy_id}>
+                  <header>
+                    <strong>{strategy.strategy_id}</strong>
+                    <span>{ratio.toFixed(0)}%</span>
+                  </header>
+                  <div><i style={{ width: `${ratio}%` }} /></div>
+                  <p>
+                    {formatNumber(strategy.collected_candidates, 0)} / {formatNumber(strategy.requested_candidates, 0)} 个候选
+                    · {strategy.succeeded_task_count}/{strategy.task_count} 个分片完成
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
       <section className="panel gpu-panel">
         <div className="panel-header"><div><p className="section-label">运行进度</p><h3>每张 GPU 的任务分配</h3></div><Status state={stage.state} /></div>
         {executionError && <div className="inline-notice execution-warning"><span>{executionError}</span></div>}
@@ -763,6 +794,110 @@ function ExecutionStage({ stage, run }: { stage: Stage; run: Run }) {
 function shortCandidate(value: string) {
   const match = value.match(/candidate-(\d+)$/);
   return match ? `candidate-${match[1]}` : value;
+}
+
+function FinalStage({ stage }: { stage: Stage }) {
+  const highlights = stage.highlights;
+  const funnel = (highlights.funnel || {}) as Record<string, number>;
+  const sourceDistribution = (highlights.source_distribution || []) as Array<Record<string, unknown>>;
+  const primary = stage.tables.primary_candidates || [];
+  const backup = stage.tables.backup_candidates || [];
+  const [selected, setSelected] = useState<Record<string, unknown> | undefined>(
+    primary[0] || backup[0],
+  );
+  const steps = [
+    ["scale_candidates", "规模候选"],
+    ["sequence_hard_pass", "序列合法与去重"],
+    ["deep_gate_pass", "深度结构门控"],
+    ["seed101_candidates", "Protenix 初轮"],
+    ["multi_seed_consensus", "多 seed 一致"],
+    ["selected_candidates", "主候选与备选"],
+  ] as const;
+  return (
+    <div className="content-stack final-stage-compact">
+      <section className="panel final-result-summary">
+        <div>
+          <p className="section-label">第7步结果</p>
+          <h3>
+            {primary.length + backup.length > 0
+              ? `得到 ${primary.length} 个主候选和 ${backup.length} 个备选`
+              : "本次运行没有形成最终候选"}
+          </h3>
+          <p>所有晋级 YAML 在同一门槛下全局竞争；候选不会因来源策略获得保留名额。</p>
+        </div>
+        <Status state={stage.state} />
+      </section>
+      <section className="panel final-funnel-panel">
+        <div className="panel-header">
+          <div><p className="section-label">全局筛选</p><h3>候选如何逐层收敛</h3></div>
+          <span>{String(highlights.selection_scope || "单策略历史输入")}</span>
+        </div>
+        <div className="final-funnel">
+          {steps.map(([key, label], index) => (
+            <article key={key}>
+              <span>{label}</span>
+              <strong>{formatNumber(funnel[key], 0)}</strong>
+              {index < steps.length - 1 && <i>→</i>}
+            </article>
+          ))}
+        </div>
+      </section>
+      {sourceDistribution.length > 0 && (
+        <section className="panel final-source-panel">
+          <div className="panel-header">
+            <div><p className="section-label">YAML 来源</p><h3>最终候选来源分布</h3></div>
+            <span>仅作来源说明，不是配额</span>
+          </div>
+          <div className="final-source-grid">
+            {sourceDistribution.map((item) => (
+              <article key={String(item.strategy_id)}>
+                <strong>{String(item.strategy_id)}</strong>
+                <span>主候选 {String(item.primary_count || 0)} · 备选 {String(item.backup_count || 0)}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="panel final-candidate-panel">
+        <div className="panel-header">
+          <div><p className="section-label">候选审阅</p><h3>主候选与备选</h3></div>
+          <span>点击候选查看关键证据</span>
+        </div>
+        <div className="final-candidate-layout">
+          <div className="final-candidate-list">
+            {[...primary, ...backup].map((candidate) => (
+              <button
+                type="button"
+                className={selected?.candidate_id === candidate.candidate_id ? "active" : ""}
+                onClick={() => setSelected(candidate)}
+                key={String(candidate.candidate_id)}
+              >
+                <strong>{shortCandidate(String(candidate.candidate_id))}</strong>
+                <span>{String(candidate.strategy_id || "来源未记录")}</span>
+                <small>{primary.includes(candidate) ? "主候选" : "备选"}</small>
+              </button>
+            ))}
+          </div>
+          {selected ? (
+            <div className="final-candidate-evidence">
+              <header><strong>{String(selected.candidate_id)}</strong><span>{String(selected.strategy_id)}</span></header>
+              <div>
+                <span>最终得分 <b>{formatNumber(selected.score_final, 3)}</b></span>
+                <span>深度结构得分 <b>{formatNumber(selected.score_deep, 3)}</b></span>
+                <span>BoltzGen 得分 <b>{formatNumber(selected.score_refold, 3)}</b></span>
+                <span>多 seed 通过 <b>{String((selected.consensus as Record<string, unknown> | undefined)?.consensus_pass ?? "—")}</b></span>
+              </div>
+              <code>{String(selected.sequence || "当前候选未提供序列")}</code>
+              <p>结构文件和全部原始指标保留在正式候选包中；打开结构前仍会验证文件完整性。</p>
+            </div>
+          ) : (
+            <div className="empty-state"><strong>没有可审阅候选</strong></div>
+          )}
+        </div>
+      </section>
+      <EvidenceList stage={stage} />
+    </div>
+  );
 }
 
 function FutureStage({ stage, run }: { stage: Stage; run: Run }) {
@@ -906,6 +1041,9 @@ function StageContent({
   }
   if (stage.stage_number === 6 && stage.state !== "not-reached") {
     return <ExecutionStage stage={stage} run={run} />;
+  }
+  if (stage.stage_number === 7 && stage.state !== "not-reached") {
+    return <FinalStage stage={stage} />;
   }
   return <FutureStage stage={stage} run={run} />;
 }
@@ -1508,7 +1646,7 @@ function NewDesign({
         ? "等待检查"
         : "等待生成草稿",
   ];
-  const previewYaml = useMemo(() => `schema_version: "0.7"
+  const previewYaml = useMemo(() => `schema_version: "0.8"
 project_id: ${projectId || "new-design"}
 design:
   binder_profile: vhh
@@ -1528,8 +1666,16 @@ stage02: ${stage < 2 ? "null" : `
   methods: [${stage02Method === "both" ? "sasa, scannet" : stage02Method}]`}
 stage03: ${stage >= 3 ? "{profile: boltzgen-vhh-basic-v1}" : "null"}
 stage04: ${stage >= 4 ? "{backend: boltzgen-0.3.2}" : "null"}
-stage05: ${stage >= 5 ? "{filter_profile: nanobody-filter-standard-v1.5}" : "null"}
-stage06: ${stage >= 6 ? "{scale_profile: smoke-1000}" : "null"}
+stage05: ${stage >= 5 ? `
+  filter_profile: nanobody-filter-standard-v1.6
+  maximum_tier_a_strategies: 3
+  advisory_validation:
+    expanded_total_per_strategy: 100
+    full_target_refold_top_n: 10` : "null"}
+stage06: ${stage >= 6 ? `
+  scale_profile: production-50000
+  allocation_policy: equal-across-promoted-v1
+  preauthorized_candidate_limit: 50000` : "null"}
 stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
 `, [
     designIntent,
@@ -2087,8 +2233,8 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                   <p>
                     {browsedStage === 3 && "把已批准结合区域编译为 BoltzGen 基础方案；非结合区域保持中性。"}
                     {browsedStage === 4 && "对每个设计方案进行小规模、多 GPU、可恢复生成。"}
-                    {browsedStage === 5 && "按版本化门槛筛选，并决定是否存在可放大的唯一策略。"}
-                    {browsedStage === 6 && "对胜出策略执行分片式规模化生成；高成本预算需要明确授权。"}
+                    {browsedStage === 5 && "按版本化门槛选出最多 3 组 Tier A；100 条扩增用于诊断，warning 不撤销晋级。"}
+                    {browsedStage === 6 && "晋级策略等额共享 50,000 条候选预算；高成本预算需要明确授权。"}
                     {browsedStage === 7 && "深度复核、聚类和多样性选择，输出主候选与备选草案。"}
                   </p>
                   {browsedStage > stage && (
@@ -2121,7 +2267,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               <div className="budget-summary">
                 <article><span>第3步基础方案</span><strong>区域 × 7 个 VHH scaffold</strong><small>每个策略 40 个小规模候选</small></article>
                 <article><span>第4步小规模生成</span><strong>双 GPU 可恢复运行</strong><small>实际任务量由区域数量决定</small></article>
-                <article><span>第6步规模化</span><strong>smoke-1000</strong><small>只有第5步选出唯一策略后才会到达</small></article>
+                <article><span>第6步规模化</span><strong>Tier A 共享预算</strong><small>第5步最多晋级 3 组，按 F_YAML 排名等额分配总预算</small></article>
               </div>
               <div className="notice"><strong>本次范围</strong><span>运行到第 {stage} 步：{stageNames[stage - 1]}</span></div>
             </>

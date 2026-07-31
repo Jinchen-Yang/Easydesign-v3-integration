@@ -92,6 +92,19 @@ class DeviceExecutionProjection(BaseModel):
     tasks: tuple[TaskExecutionProjection, ...] = ()
 
 
+class StrategyExecutionProjection(BaseModel):
+    """Stage 04/06 任务按 strategy 汇总，不依赖目录命名推测。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    strategy_id: str
+    task_count: int = Field(ge=0)
+    succeeded_task_count: int = Field(ge=0)
+    failed_task_count: int = Field(ge=0)
+    requested_candidates: int = Field(ge=0)
+    collected_candidates: int = Field(ge=0)
+
+
 class ExecutionProgressProjection(BaseModel):
     """Stage 04/06 共用的实时与历史执行投影。"""
 
@@ -114,6 +127,7 @@ class ExecutionProgressProjection(BaseModel):
     estimated_remaining_seconds: float | None = Field(default=None, ge=0)
     device_history_status: str
     devices: tuple[DeviceExecutionProjection, ...] = ()
+    strategies: tuple[StrategyExecutionProjection, ...] = ()
     recent_events: tuple[dict[str, Any], ...] = ()
     recent_errors: tuple[str, ...] = ()
 
@@ -360,6 +374,7 @@ class FilterOverviewProjection(BaseModel):
 
     run_key: str
     state: UiStageState
+    advisory_validation: bool = False
     conclusion_title: str
     conclusion: str
     next_actions: tuple[str, ...]
@@ -397,6 +412,16 @@ class StrategyProjection(BaseModel):
     score_screen_top_quartile_mean: float
     score_yaml: float
     selected_for_expansion: bool
+    promotion_rank: int | None = Field(default=None, ge=1, le=3)
+    advisory_status: Literal[
+        "advisory-supported",
+        "advisory-warning",
+    ] | None = None
+    diagnostic_warning_count: int = Field(default=0, ge=0)
+    diagnostic_candidate_count: int | None = Field(default=None, ge=0)
+    diagnostic_local_gate_pass_count: int | None = Field(default=None, ge=0)
+    diagnostic_full_target_count: int | None = Field(default=None, ge=0)
+    diagnostic_full_target_pass_count: int | None = Field(default=None, ge=0)
     configuration: dict[str, Any] = Field(default_factory=dict)
     metric_aggregates: tuple[StrategyMetricAggregate, ...] = ()
     yaml_artifact: ArtifactProjection | None = None

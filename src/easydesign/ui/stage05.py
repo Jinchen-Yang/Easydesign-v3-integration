@@ -518,7 +518,17 @@ def _all_phase_items(
     pilot_index = _index_map(_optional_json(run_root, artifacts, "candidate-index"))
     if phase == "pilot":
         return _pilot_items(report, pilot_index)
-    expansion = _required_json(run_root, artifacts, "expansion-validation-report")
+    expansion = _optional_json(
+        run_root,
+        artifacts,
+        "advisory-validation-report",
+    )
+    if expansion is None:
+        expansion = _required_json(
+            run_root,
+            artifacts,
+            "expansion-validation-report",
+        )
     expansion_index = _index_map(
         _optional_json(run_root, artifacts, "expansion-candidate-index")
     )
@@ -536,7 +546,11 @@ def get_filter_overview(
     run_key = registry.register(root)
     _, stage, artifacts = _stage05_sources(root)
     report = _required_json(root, artifacts, "pilot-filter-report")
-    expansion = _optional_json(root, artifacts, "expansion-validation-report") or {}
+    expansion = (
+        _optional_json(root, artifacts, "advisory-validation-report")
+        or _optional_json(root, artifacts, "expansion-validation-report")
+        or {}
+    )
     pilot = report.get("candidate_records") or []
     strategies = report.get("strategy_summaries") or []
     expanded = expansion.get("candidates") or []
@@ -551,6 +565,8 @@ def get_filter_overview(
             failed_counts[rule] = failed_counts.get(rule, 0) + 1
     status = str(expansion.get("status") or report.get("status") or "completed")
     scientific_stop = status.startswith("stopped-")
+    advisory = expansion.get("profile_id") == "nanobody-filter-standard-v1.6"
+    warning_count = len(expansion.get("warnings") or [])
     local_pass = sum(bool(item.get("local_gate_pass")) for item in expanded)
     protenix_pass = sum(
         bool(item.get("structure_gate_pass", item.get("passed"))) for item in predictions
@@ -558,7 +574,18 @@ def get_filter_overview(
     counts = {
         "pilot": len(pilot),
         "strategies": len(strategies),
-        "selected_strategies": len(report.get("selected_strategy_ids") or []),
+        "selected_strategies": len(
+            report.get("promoted_strategy_ids")
+            or report.get("selected_strategy_ids")
+            or []
+        ),
+        "promoted_strategies": len(
+            expansion.get("promoted_strategies")
+            or report.get("promoted_strategy_ids")
+            or report.get("selected_strategy_ids")
+            or []
+        ),
+        "diagnostic_warnings": warning_count,
         "expanded": len(expanded),
         "local_gate_pass": local_pass,
         "full_target": len(predictions),
@@ -567,15 +594,26 @@ def get_filter_overview(
     return FilterOverviewProjection(
         run_key=run_key,
         state=_state_for_manifest(stage),
+        advisory_validation=advisory,
         conclusion_title=(
             "当前没有可进入规模化生成的设计策略"
             if scientific_stop
-            else "已选出可进入规模化生成的设计策略"
+            else (
+                "Tier A 策略已晋级，诊断结果不会取消晋级"
+                if advisory
+                else "已选出可进入规模化生成的设计策略"
+            )
         ),
         conclusion=(
             "程序已正常完成，但当前结果没有达到进入下一步的科学门槛。"
             if scientific_stop
-            else "筛选和完整目标复核已完成，并形成唯一可放大策略。"
+            else (
+                f"已晋级 {counts['promoted_strategies']} 组 Tier A；"
+                f"100条诊断产生 {warning_count} 条 warning，"
+                "所有晋级组仍共享后续全局候选预算。"
+                if advisory
+                else "筛选和完整目标复核已完成，并形成唯一可放大策略。"
+            )
         ),
         next_actions=(
             (
@@ -584,7 +622,11 @@ def get_filter_overview(
                 "保留本次结论，不自动放宽门槛",
             )
             if scientific_stop
-            else ("审阅胜出策略", "确认规模化预算")
+            else (
+                ("审阅晋级策略", "确认共享规模化预算")
+                if advisory
+                else ("审阅胜出策略", "确认规模化预算")
+            )
         ),
         counts=counts,
         tier_counts=tier_counts,
@@ -597,11 +639,33 @@ def get_filter_overview(
                     bool(item.get("eligible_unique_pass")) for item in pilot
                 ),
             },
-            {"id": "strategies", "label": "进入扩展的策略", "count": counts["selected_strategies"]},
-            {"id": "expansion", "label": "扩展候选", "count": len(expanded)},
-            {"id": "local-gate", "label": "通过初步结构筛选", "count": local_pass},
-            {"id": "full-target", "label": "进入 Protenix 完整目标复核", "count": len(predictions)},
-            {"id": "winner", "label": "满足结合位姿稳定性", "count": protenix_pass},
+            {
+                "id": "strategies",
+                "label": "Tier A 晋级策略" if advisory else "进入扩展的策略",
+                "count": counts["promoted_strategies"],
+            },
+            {
+                "id": "expansion",
+                "label": "诊断性扩增候选" if advisory else "扩展候选",
+                "count": len(expanded),
+            },
+            {
+                "id": "local-gate",
+                "label": "诊断 local gate 通过" if advisory else "通过初步结构筛选",
+                "count": local_pass,
+            },
+            {
+                "id": "full-target",
+                "label": "完整目标诊断复核" if advisory else "进入 Protenix 完整目标复核",
+                "count": len(predictions),
+            },
+            {
+                "id": "winner",
+                "label": "结构支持证据（不作晋级硬门）"
+                if advisory
+                else "满足结合位姿稳定性",
+                "count": protenix_pass,
+            },
         ),
         failed_rule_counts=failed_counts,
     )
@@ -694,7 +758,25 @@ def list_filter_strategies(
     run, _, artifacts = _stage05_sources(root)
     run_key = registry.register(root)
     report = _required_json(root, artifacts, "pilot-filter-report")
+    advisory = _optional_json(root, artifacts, "advisory-validation-report") or {}
     identities, yaml_artifacts = _strategy_identity_sources(root, run, artifacts)
+    promotion_by_strategy = {
+        str(item.get("strategy_id")): item
+        for item in advisory.get("promoted_strategies") or []
+        if item.get("strategy_id")
+    }
+    diagnostic_by_strategy = {
+        str(item.get("strategy_id")): item
+        for item in advisory.get("strategies") or []
+        if item.get("strategy_id")
+    }
+    warning_count_by_strategy: dict[str, int] = {}
+    for warning in advisory.get("warnings") or []:
+        strategy_id = str(warning.get("strategy_id") or "")
+        if strategy_id:
+            warning_count_by_strategy[strategy_id] = (
+                warning_count_by_strategy.get(strategy_id, 0) + 1
+            )
     pilot_records = _all_phase_items(root, artifacts, "pilot")
     records_by_strategy: dict[str, list[dict[str, Any]]] = {}
     for record in pilot_records:
@@ -720,6 +802,8 @@ def list_filter_strategies(
                 token=signer.sign(run_key, yaml_ref),
             )
         )
+        promotion = promotion_by_strategy.get(strategy_id) or {}
+        diagnostic = diagnostic_by_strategy.get(strategy_id) or {}
         rows.append(
             StrategyProjection(
                 strategy_id=strategy_id,
@@ -741,6 +825,28 @@ def list_filter_strategies(
                 ),
                 score_yaml=float(item.get("score_yaml") or 0),
                 selected_for_expansion=bool(item.get("selected_for_expansion")),
+                promotion_rank=(
+                    None
+                    if promotion.get("promotion_rank") is None
+                    else int(promotion["promotion_rank"])
+                ),
+                advisory_status=diagnostic.get("advisory_status"),
+                diagnostic_warning_count=warning_count_by_strategy.get(
+                    strategy_id,
+                    0,
+                ),
+                diagnostic_candidate_count=diagnostic.get(
+                    "complete_candidate_count"
+                ),
+                diagnostic_local_gate_pass_count=diagnostic.get(
+                    "local_gate_pass_count"
+                ),
+                diagnostic_full_target_count=diagnostic.get(
+                    "full_target_prediction_count"
+                ),
+                diagnostic_full_target_pass_count=diagnostic.get(
+                    "full_target_structure_pass_count"
+                ),
                 configuration={
                     "hotspot_strategy": identity.get("hotspot_strategy"),
                     "crop_strategy": identity.get("crop_strategy"),

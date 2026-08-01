@@ -938,20 +938,18 @@ def _remote_manifest_closure(
     executor: SshRemoteExecutor,
     remote_root: Path,
 ) -> tuple[RunManifest, str, tuple[StageManifest, ...], set[str]]:
-    remote_pointer_lines = [
-        line.strip()
-        for line in executor.read_text(remote_root / "manifests" / "LATEST").splitlines()
-        if line.strip()
-    ]
-    if not remote_pointer_lines:
-        raise ManifestStateError("远端 run LATEST 没有有效 revision")
-    latest_name = remote_pointer_lines[-1]
+    latest_name, pointer_evidence = executor.read_versioned_pointer(
+        remote_root / "manifests" / "LATEST"
+    )
     if Path(latest_name).name != latest_name or not latest_name.endswith(".json"):
         raise ManifestStateError("远端 LATEST 指针无效")
     latest_relative = f"manifests/{latest_name}"
     manifest = _remote_model(executor, remote_root, latest_relative, RunManifest)
     paths = {
-        "manifests/LATEST",
+        *(
+            _safe_relative(path.relative_to(remote_root).as_posix())
+            for path in pointer_evidence
+        ),
         latest_relative,
         _safe_relative(manifest.config_snapshot.relative_path),
     }

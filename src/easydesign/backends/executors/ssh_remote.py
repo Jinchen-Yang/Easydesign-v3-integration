@@ -235,6 +235,30 @@ class SshRemoteExecutor:
             )
         return completed.returncode == 0
 
+    def read_versioned_pointer(self, remote_path: Path) -> tuple[str, tuple[Path, ...]]:
+        """Read the newest append-only pointer revision and return its evidence paths."""
+
+        if not remote_path.is_absolute():
+            raise BackendContractError("SSH remote pointer 必须使用绝对路径")
+        evidence = [remote_path]
+        revision_root = remote_path.with_name(f"{remote_path.name}.revisions")
+        for revision in range(1, 100_001):
+            candidate = revision_root / f"revision-{revision:06d}.txt"
+            if not self.is_file(candidate):
+                break
+            evidence.append(candidate)
+        else:  # pragma: no cover - defensive bound for corrupt remote state
+            raise BackendContractError("SSH remote pointer revision 数量异常")
+        selected = evidence[-1]
+        lines = [
+            line.strip()
+            for line in self.read_text(selected).splitlines()
+            if line.strip()
+        ]
+        if not lines:
+            raise BackendContractError(f"SSH remote pointer 没有有效 revision: {selected}")
+        return lines[-1], tuple(evidence)
+
     def file_identity(self, remote_path: Path) -> SshRemoteFileIdentity:
         """Read an immutable file identity in place; never copies or modifies it."""
 

@@ -180,3 +180,32 @@ def test_ssh_progress_resume_and_manifest_file_pull_are_explicit(
     assert "--files-from" in pull
     assert pull[-2].endswith(":/data/easydesign/runs/project/run/")
     assert any("runs resume" in item[-1] for item in commands)
+
+
+def test_ssh_versioned_pointer_prefers_latest_immutable_revision(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    pointer = Path("/data/easydesign/runs/project/run/manifests/LATEST")
+    revision_root = pointer.with_name("LATEST.revisions")
+    contents = {
+        pointer: "run-manifest.v0001.json\n",
+        revision_root / "revision-000001.txt": "run-manifest.v0002.json\n",
+        revision_root / "revision-000002.txt": "run-manifest.v0004.json\n",
+    }
+
+    monkeypatch.setattr(
+        SshRemoteExecutor,
+        "is_file",
+        lambda _self, path: path in contents,
+    )
+    monkeypatch.setattr(
+        SshRemoteExecutor,
+        "read_text",
+        lambda _self, path: contents[path],
+    )
+
+    value, evidence = _executor(tmp_path).read_versioned_pointer(pointer)
+
+    assert value == "run-manifest.v0004.json"
+    assert evidence == tuple(contents)

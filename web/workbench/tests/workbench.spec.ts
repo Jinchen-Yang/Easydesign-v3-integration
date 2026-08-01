@@ -1067,6 +1067,9 @@ test("settings separates local readiness, public compute and archives", async ({
   await page.getByRole("tab", { name: /公共算力/ }).click();
   await expect(page.getByRole("heading", { name: "Suzhou2 尚未连接" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Suzhou2", exact: true })).toBeVisible();
+  await expect(page.getByText(/不会读取、替换或修改 ~\/.ssh/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "1. 核对服务器身份" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "2. 生成工作区登录密钥" })).toBeVisible();
 
   await page.getByRole("tab", { name: /项目存档/ }).click();
   await expect(page.getByRole("heading", { name: "项目存档", exact: true })).toBeVisible();

@@ -81,14 +81,21 @@ def _write_new(path: Path, payload: str, *, mode: int | None = None) -> None:
         os.fsync(handle.fileno())
 
 
-def scan_host_identity(
+_HOST_KEY_PREFERENCE = {
+    "ssh-ed25519": 0,
+    "ecdsa-sha2-nistp256": 1,
+    "ssh-rsa": 2,
+}
+
+
+def scan_host_identities(
     *,
     host: str,
     port: int,
     ssh_keyscan_executable: Path | None = None,
     timeout_seconds: float = 15.0,
     observed_at: datetime | None = None,
-) -> SshHostIdentity:
+) -> tuple[SshHostIdentity, ...]:
     executable = (
         Path(shutil.which("ssh-keyscan") or "")
         if ssh_keyscan_executable is None
@@ -114,22 +121,61 @@ def scan_host_identity(
     if result.returncode != 0 or not lines:
         detail = (result.stderr.strip() or result.stdout.strip())[:2048]
         raise BackendContractError(f"SSH host identity 探针失败: {detail}")
-    columns = lines[0].split()
-    if len(columns) != 3:
-        raise BackendContractError("ssh-keyscan 返回的 host key 格式无效")
-    try:
-        key_bytes = base64.b64decode(columns[2], validate=True)
-    except ValueError as error:
-        raise BackendContractError("ssh-keyscan host key 不是有效 Base64") from error
-    fingerprint = base64.b64encode(hashlib.sha256(key_bytes).digest()).decode().rstrip("=")
-    return SshHostIdentity(
+    timestamp = datetime.now(UTC) if observed_at is None else observed_at
+    identities: dict[tuple[str, str], SshHostIdentity] = {}
+    for line in lines:
+        columns = line.split()
+        if len(columns) != 3:
+            raise BackendContractError("ssh-keyscan 返回的 host key 格式无效")
+        try:
+            key_bytes = base64.b64decode(columns[2], validate=True)
+        except ValueError as error:
+            raise BackendContractError("ssh-keyscan host key 不是有效 Base64") from error
+        fingerprint = (
+            "SHA256:"
+            + base64.b64encode(hashlib.sha256(key_bytes).digest()).decode().rstrip("=")
+        )
+        identity = SshHostIdentity(
+            host=host,
+            port=port,
+            key_type=columns[1],
+            fingerprint=fingerprint,
+            known_hosts_line=line,
+            observed_at=timestamp,
+        )
+        identities[(identity.key_type, identity.fingerprint)] = identity
+    if not identities:
+        raise BackendContractError("ssh-keyscan 未返回可用的 host key")
+    return tuple(
+        sorted(
+            identities.values(),
+            key=lambda item: (
+                _HOST_KEY_PREFERENCE.get(item.key_type, 100),
+                item.key_type,
+                item.fingerprint,
+                item.known_hosts_line,
+            ),
+        )
+    )
+
+
+def scan_host_identity(
+    *,
+    host: str,
+    port: int,
+    ssh_keyscan_executable: Path | None = None,
+    timeout_seconds: float = 15.0,
+    observed_at: datetime | None = None,
+) -> SshHostIdentity:
+    """Return the deterministic preferred identity for display compatibility."""
+
+    return scan_host_identities(
         host=host,
         port=port,
-        key_type=columns[1],
-        fingerprint=f"SHA256:{fingerprint}",
-        known_hosts_line=lines[0],
-        observed_at=datetime.now(UTC) if observed_at is None else observed_at,
-    )
+        ssh_keyscan_executable=ssh_keyscan_executable,
+        timeout_seconds=timeout_seconds,
+        observed_at=observed_at,
+    )[0]
 
 
 class RemoteExecutorRegistry:
@@ -185,13 +231,21 @@ class RemoteExecutorRegistry:
         now: datetime | None = None,
     ) -> RemoteExecutorPairingRevision:
         timestamp = datetime.now(UTC) if now is None else now
-        host_identity = scan_host_identity(
+        host_identities = scan_host_identities(
             host=host,
             port=port,
             ssh_keyscan_executable=ssh_keyscan_executable,
             observed_at=timestamp,
         )
-        if host_identity.fingerprint != confirmed_host_fingerprint:
+        host_identity = next(
+            (
+                identity
+                for identity in host_identities
+                if identity.fingerprint == confirmed_host_fingerprint
+            ),
+            None,
+        )
+        if host_identity is None:
             raise BackendContractError(
                 "SSH host fingerprint 与用户确认值不一致；拒绝继续配对"
             )

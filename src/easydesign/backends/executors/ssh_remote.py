@@ -162,6 +162,8 @@ class SshRemoteExecutor:
             "-o",
             "BatchMode=yes",
             "-o",
+            "IdentitiesOnly=yes",
+            "-o",
             "StrictHostKeyChecking=yes",
             "-o",
             f"UserKnownHostsFile={connection.known_hosts_file}",

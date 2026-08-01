@@ -60,6 +60,7 @@ def test_ssh_probe_requires_strict_host_identity_and_reports_resources(
     assert probe.gpu_count == 8
     assert probe.filesystem_available_bytes == 6_500_000_000_000
     assert all("BatchMode=yes" in item for item in commands)
+    assert all("IdentitiesOnly=yes" in item for item in commands)
     assert all("StrictHostKeyChecking=yes" in item for item in commands)
     assert all(
         any(argument.startswith("UserKnownHostsFile=") for argument in item)

@@ -12,6 +12,7 @@ from easydesign.core import BackendContractError
 from easydesign.orchestration.ssh_pairing import (
     RemoteExecutorRegistry,
     public_key_install_command,
+    scan_host_identities,
     scan_host_identity,
 )
 from easydesign.workspace_context import WorkspaceContext
@@ -39,6 +40,12 @@ def _host_key_line() -> tuple[str, str]:
     return f"[suzhou2]:22 ssh-ed25519 {key}", f"SHA256:{fingerprint}"
 
 
+def _typed_host_key_line(key_type: str, payload: bytes) -> tuple[str, str]:
+    key = base64.b64encode(payload).decode()
+    fingerprint = base64.b64encode(hashlib.sha256(payload).digest()).decode().rstrip("=")
+    return f"[suzhou2]:22 {key_type} {key}", f"SHA256:{fingerprint}"
+
+
 def test_host_fingerprint_requires_explicit_matching_confirmation(
     tmp_path: Path,
 ) -> None:
@@ -50,6 +57,77 @@ def test_host_fingerprint_requires_explicit_matching_confirmation(
         ssh_keyscan_executable=keyscan,
     )
     assert observed.fingerprint == fingerprint
+
+
+def test_host_identity_preference_is_stable_when_keyscan_order_changes(
+    tmp_path: Path,
+) -> None:
+    rsa, _rsa_fingerprint = _typed_host_key_line("ssh-rsa", b"rsa-key")
+    ed25519, ed25519_fingerprint = _typed_host_key_line(
+        "ssh-ed25519", b"ed25519-key"
+    )
+    ecdsa, _ecdsa_fingerprint = _typed_host_key_line(
+        "ecdsa-sha2-nistp256", b"ecdsa-key"
+    )
+    keyscan = _executable(
+        tmp_path / "ssh-keyscan",
+        f"printf '%s\\n' '{rsa}' '{ecdsa}' '{ed25519}'\n",
+    )
+
+    identities = scan_host_identities(
+        host="suzhou2",
+        port=22,
+        ssh_keyscan_executable=keyscan,
+    )
+
+    assert [item.key_type for item in identities] == [
+        "ssh-ed25519",
+        "ecdsa-sha2-nistp256",
+        "ssh-rsa",
+    ]
+    assert scan_host_identity(
+        host="suzhou2",
+        port=22,
+        ssh_keyscan_executable=keyscan,
+    ).fingerprint == ed25519_fingerprint
+
+
+def test_pairing_accepts_confirmed_identity_from_complete_host_key_set(
+    tmp_path: Path,
+) -> None:
+    ed25519, _ed25519_fingerprint = _typed_host_key_line(
+        "ssh-ed25519", b"ed25519-key"
+    )
+    rsa, rsa_fingerprint = _typed_host_key_line("ssh-rsa", b"rsa-key")
+    keyscan = _executable(
+        tmp_path / "ssh-keyscan",
+        f"printf '%s\\n' '{ed25519}' '{rsa}'\n",
+    )
+    public_key = base64.b64encode(b"controller-key").decode()
+    keygen = _executable(
+        tmp_path / "ssh-keygen",
+        f'''\nwhile [ "$1" != "-f" ]; do shift; done
+shift
+printf '%s\\n' 'PRIVATE' > "$1"
+printf '%s\\n' 'ssh-ed25519 {public_key} easydesign-test' > "$1.pub"
+''',
+    )
+
+    waiting = RemoteExecutorRegistry(_context(tmp_path)).begin_pairing(
+        executor_id="suzhou2",
+        controller_id="controller-a",
+        host="suzhou2",
+        port=22,
+        user="root",
+        confirmed_host_fingerprint=rsa_fingerprint,
+        ssh_keyscan_executable=keyscan,
+        ssh_keygen_executable=keygen,
+        now=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+
+    assert waiting.host_identity.key_type == "ssh-rsa"
+    assert waiting.host_identity.fingerprint == rsa_fingerprint
+    assert waiting.known_hosts_file.read_text(encoding="utf-8").strip() == rsa
 
 
 def test_pairing_keeps_key_on_logical_unpair(tmp_path: Path) -> None:

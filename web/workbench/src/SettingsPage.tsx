@@ -156,7 +156,7 @@ function Suzhou2Settings() {
       const identity = await api.scanRemoteHost(host.trim(), port);
       setHostFingerprint(String(identity.fingerprint || ""));
       setFingerprintConfirmed(false);
-      setMessage("请通过可信渠道核对主机指纹，确认后再生成专用密钥。");
+      setMessage("请通过 Suzhou2 控制台或管理员核对服务器身份指纹，确认后再生成当前工作区的登录密钥。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法读取服务器指纹");
     } finally {
@@ -242,7 +242,7 @@ function Suzhou2Settings() {
           <div><p className="section-label">连接设置</p><h3>Suzhou2</h3></div>
           <span data-state={executor?.pairing_state || "not-paired"}>{paired ? "已配对" : awaiting ? "等待安装公钥" : "尚未配对"}</span>
         </div>
-        <p className="pairing-explanation">密码不会写入网页或配置。专用私钥只保存在当前 EasyDesign 工作区。</p>
+        <p className="pairing-explanation">先核对服务器身份，再生成当前 EasyDesign 工作区专用的登录密钥。不会读取、替换或修改 ~/.ssh 中已有的个人密钥。</p>
         {!paired && <>
           <div className="pairing-fields">
             <label><span>服务器地址</span><input value={host} disabled={busy} onChange={(event) => setHost(event.target.value)} placeholder="Suzhou2 主机名或 IP" /></label>
@@ -251,17 +251,17 @@ function Suzhou2Settings() {
             <label><span>控制端名称</span><input value={controllerId} disabled={busy} onChange={(event) => setControllerId(event.target.value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-"))} /></label>
           </div>
           <div className="pairing-actions">
-            <button type="button" disabled={busy || !host.trim()} onClick={() => void scan()}>1. 核对服务器</button>
-            <button type="button" disabled={busy || !hostFingerprint || !fingerprintConfirmed} onClick={() => void beginPairing()}>2. 生成专用密钥</button>
-            <button type="button" className="primary-button" disabled={busy || (!awaiting && !publicKey)} onClick={() => void confirmPairing()}>3. 完成连接</button>
+            <button type="button" disabled={busy || !host.trim()} onClick={() => void scan()}>1. 核对服务器身份</button>
+            <button type="button" disabled={busy || !hostFingerprint || !fingerprintConfirmed} onClick={() => void beginPairing()}>2. 生成工作区登录密钥</button>
+            <button type="button" className="primary-button" disabled={busy || (!awaiting && !publicKey)} onClick={() => void confirmPairing()}>3. 验证并连接</button>
           </div>
         </>}
         {hostFingerprint && !paired && <label className="fingerprint-confirmation">
           <input type="checkbox" checked={fingerprintConfirmed} onChange={(event) => setFingerprintConfirmed(event.target.checked)} />
-          <span><strong>我已通过可信渠道核对主机指纹</strong><code>{hostFingerprint}</code></span>
+          <span><strong>我已通过 Suzhou2 控制台或管理员核对服务器身份指纹</strong><code>{hostFingerprint}</code></span>
         </label>}
         {(publicKey || installCommand) && <div className="pairing-key-box">
-          <strong>在 Suzhou2 安装这把公钥</strong>
+          <strong>在 Suzhou2 安装这把 EasyDesign 登录公钥</strong>
           {publicKey && <textarea readOnly value={publicKey} aria-label="Suzhou2 专用 SSH 公钥" />}
           {installCommand && <pre>{installCommand}</pre>}
           <small>只复制公钥或安装命令；不要上传本机私钥。</small>

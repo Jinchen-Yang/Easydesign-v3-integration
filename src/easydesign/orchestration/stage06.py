@@ -81,6 +81,7 @@ from .execution_targets import (
     LocalCurrentHostTarget,
     gpu_lease_store_for_run,
     local_target_with_runtime_limit,
+    resolve_managed_execution_devices,
     verify_managed_preallocation,
     wait_for_eligible_gpus,
 )
@@ -652,15 +653,17 @@ def execute_stage06(
         target: LocalCurrentHostTarget,
         *,
         require_all: bool,
+        frozen_plan: bool,
     ) -> tuple[int, ...]:
-        if managed_devices is not None:
-            if target.allowed_devices is not None and set(target.allowed_devices) != set(
-                managed_devices
-            ):
-                raise ManifestStateError(
-                    "Stage 06 frozen plan 与 managed worker GPU allocation 不一致"
-                )
-            return managed_devices
+        resolved_managed_devices = resolve_managed_execution_devices(
+            managed_devices=managed_devices,
+            requested_devices=target.allowed_devices,
+            frozen_plan=frozen_plan,
+            stage_number=6,
+        )
+        if resolved_managed_devices is not None:
+            return resolved_managed_devices
+
         def record_wait(value: GpuInventory) -> None:
             atomic_dump_runtime_model(value, inventory_path)
 
@@ -690,6 +693,7 @@ def execute_stage06(
                 maximum_devices=len(frozen_plan.devices),
             ),
             require_all=True,
+            frozen_plan=True,
         )
     else:
         execution_devices = select_devices(
@@ -698,6 +702,7 @@ def execute_stage06(
                 configured_maximum_devices=stage04_config.executor.maximum_devices,
             ),
             require_all=stage04_config.executor.devices is not None,
+            frozen_plan=False,
         )
     if multi_strategy:
         assert isinstance(authorization, MultiStrategyScaleAuthorization)
@@ -744,7 +749,8 @@ def execute_stage06(
             or plan.strategy_authorization != authorization
             or plan.resource_report != resource_ref
             or (
-                stage04_config.executor.devices is not None
+                managed_devices is None
+                and stage04_config.executor.devices is not None
                 and plan.devices != stage04_config.executor.devices
             )
             or plan.preauthorized_candidate_limit
@@ -967,6 +973,7 @@ def execute_stage06(
             maximum_devices=len(plan.devices),
         ),
         require_all=True,
+        frozen_plan=True,
     )
 
     def run_shard(

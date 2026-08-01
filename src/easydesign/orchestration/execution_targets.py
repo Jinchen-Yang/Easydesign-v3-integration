@@ -23,7 +23,11 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from easydesign.backends.executors.local_multi_gpu import GpuResourceSnapshot
-from easydesign.core import BackendContractError, ConfigurationError
+from easydesign.core import (
+    BackendContractError,
+    ConfigurationError,
+    ManifestStateError,
+)
 from easydesign.core.artifacts import ID_PATTERN
 from easydesign.workspace_context import WorkspaceContext
 
@@ -617,6 +621,35 @@ def verify_managed_preallocation(
     if any(item.stage_number != stage_number for item in leases):
         raise BackendContractError("managed worker GPU lease 的 Stage identity 不一致")
     return devices
+
+
+def resolve_managed_execution_devices(
+    *,
+    managed_devices: tuple[int, ...] | None,
+    requested_devices: tuple[int, ...] | None,
+    frozen_plan: bool,
+    stage_number: Literal[4, 6],
+) -> tuple[int, ...] | None:
+    """Resolve physical devices after a central Manager allocation.
+
+    Scientific configuration may name devices for direct execution on the
+    current host.  Those physical indices are not portable to a managed host,
+    so a new managed plan records the Manager allocation instead.  Once a plan
+    exists, however, its recorded devices are immutable and must exactly match
+    the allocation used to resume it.
+    """
+
+    if managed_devices is None:
+        return None
+    if (
+        frozen_plan
+        and requested_devices is not None
+        and requested_devices != managed_devices
+    ):
+        raise ManifestStateError(
+            f"Stage {stage_number:02d} frozen plan 与 managed worker GPU allocation 不一致"
+        )
+    return managed_devices
 
 
 def gpu_lease_store_for_run(run_root: Path) -> GpuLeaseStore:

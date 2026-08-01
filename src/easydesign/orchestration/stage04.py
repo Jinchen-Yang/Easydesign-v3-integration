@@ -61,6 +61,7 @@ from .execution_targets import (
     LocalCurrentHostTarget,
     gpu_lease_store_for_run,
     local_target_with_runtime_limit,
+    resolve_managed_execution_devices,
     verify_managed_preallocation,
     wait_for_eligible_gpus,
 )
@@ -364,15 +365,17 @@ def execute_stage04(
         target: LocalCurrentHostTarget,
         *,
         require_all: bool,
+        frozen_plan: bool,
     ) -> tuple[int, ...]:
-        if managed_devices is not None:
-            if target.allowed_devices is not None and set(target.allowed_devices) != set(
-                managed_devices
-            ):
-                raise ManifestStateError(
-                    "Stage 04 frozen plan 与 managed worker GPU allocation 不一致"
-                )
-            return managed_devices
+        resolved_managed_devices = resolve_managed_execution_devices(
+            managed_devices=managed_devices,
+            requested_devices=target.allowed_devices,
+            frozen_plan=frozen_plan,
+            stage_number=4,
+        )
+        if resolved_managed_devices is not None:
+            return resolved_managed_devices
+
         def record_wait(value: GpuInventory) -> None:
             atomic_dump_runtime_model(value, inventory_path)
 
@@ -400,6 +403,7 @@ def execute_stage04(
                 maximum_devices=len(plan.devices),
             ),
             require_all=True,
+            frozen_plan=True,
         )
     else:
         execution_devices = select_devices(
@@ -408,6 +412,7 @@ def execute_stage04(
                 configured_maximum_devices=config.executor.maximum_devices,
             ),
             require_all=config.executor.devices is not None,
+            frozen_plan=False,
         )
         plan = _build_plan(
             root=root,

@@ -6,12 +6,13 @@ from pathlib import Path
 import pytest
 
 from easydesign.backends.executors import GpuResourceSnapshot
-from easydesign.core import BackendContractError
+from easydesign.core import BackendContractError, ManifestStateError
 from easydesign.orchestration.execution_targets import (
     GpuLeaseStore,
     LocalCurrentHostTarget,
     ManagedSshTarget,
     local_target_with_runtime_limit,
+    resolve_managed_execution_devices,
 )
 from easydesign.workspace_context import WorkspaceContext
 
@@ -57,6 +58,37 @@ def test_local_runtime_gpu_limit_is_applied_without_changing_scientific_config(
     )
     assert target.maximum_devices == 2
     assert target.allowed_devices is None
+
+
+def test_new_managed_plan_uses_central_devices_not_controller_indices() -> None:
+    assert resolve_managed_execution_devices(
+        managed_devices=(6,),
+        requested_devices=(0,),
+        frozen_plan=False,
+        stage_number=4,
+    ) == (6,)
+
+
+def test_managed_resume_rejects_a_different_frozen_device_allocation() -> None:
+    with pytest.raises(ManifestStateError, match="frozen plan"):
+        resolve_managed_execution_devices(
+            managed_devices=(6,),
+            requested_devices=(7,),
+            frozen_plan=True,
+            stage_number=6,
+        )
+
+
+def test_local_execution_does_not_override_requested_devices() -> None:
+    assert (
+        resolve_managed_execution_devices(
+            managed_devices=None,
+            requested_devices=(0,),
+            frozen_plan=False,
+            stage_number=4,
+        )
+        is None
+    )
 
 
 def test_inventory_excludes_external_processes_and_honours_limit(

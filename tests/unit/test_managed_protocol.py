@@ -24,6 +24,7 @@ FIXTURES = Path(__file__).parents[1] / "fixtures" / "managed_protocol"
     ("name", "model_type"),
     (
         ("bundle-v0.2.json", RemoteJobBundle),
+        ("bundle-stage06-user-count-v0.2.json", RemoteJobBundle),
         ("probe-v0.2.json", ManagedWorkerProbe),
         ("revision-v0.1.json", ManagedJobRevision),
     ),
@@ -58,6 +59,19 @@ def test_managed_bundle_accepts_manifest_closed_empty_file() -> None:
         "e3b0c44298fc1c149afbf4c8996fb924"
         "27ae41e4649b934ca495991b7852b855"
     )
+
+
+def test_managed_stage06_bundle_preserves_exact_user_count() -> None:
+    payload = json.loads(
+        (FIXTURES / "bundle-stage06-user-count-v0.2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    bundle = RemoteJobBundle.model_validate(payload)
+
+    assert bundle.stage_range == (6, 7)
+    assert bundle.candidate_budget == 37
 
 
 def test_managed_manifest_closure_includes_pointer_revisions(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | v1.5/v1.6 APOE 结论保持冻结；dev35 强制远程 Stage 04→05 为一个原地连续 bundle。 | 在第二真实案例验证 2–3 个 Tier A，并验收 Manager 非 APOE 极小连续链。 | Suzhou2 Manager 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 |
+| `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -48,7 +48,7 @@
 | v1.5 唯一 scale winner / scientific stop | `smoke-validated` | 冻结 APOE Bundle 0.1 与旧 stop 兼容读取 |
 | 原子 progress、append-only event、resume | `implemented` | 结构指标 cache、expansion/full-target TaskRecord、通用 watch |
 | APOE 真实 Stage 05 | `smoke-validated` | 840 个 pilot、60 个新增扩展、10 个 full-target Protenix 全部完成；合法发布 `stopped-no-scale-winner` |
-| Suzhou2 原地 Stage 04→05 | `implemented` | bundle 0.2 只接受完整 `(4,5)`，ProteinDigger 不根据 stop-after 缩成单 Stage；控制端默认只获取 review 证据 |
+| Suzhou2 原地 Stage 04→05 | `smoke-validated` | 固定 1UBQ 40-candidate 真实链 40/40、0 operational failure，并如实发布 `stopped-no-tier-a` |
 
 ## Now
 
@@ -73,8 +73,8 @@
   fallback。
 - APOE 的旧 v1.5 no-winner 是已完成的科学负结果，不列为 `Blocked`；v1.6 明确把
   同一 full-target 结果降为 advisory warning，但不得回写旧 Bundle。
-- Suzhou2 当前缺少已登记的 Protenix/TNP Stage 07 环境，且八张 GPU 正被其他任务使用；
-  不终止外部进程，等待资源和后端自然就绪。
+- Suzhou2 三后端与 8 GPU probe 已 ready；固定 1UBQ 真实任务没有合法 Tier A。Stage
+  06→07 验收必须换 fixture，不能降低 iPTM/PAE 等正式门槛或伪造赢家。
 
 ## 验证证据
 
@@ -113,6 +113,9 @@
   `d7c618…80e07`、Stage05Bundle SHA-256 `401259…9073`，重新计算得到唯一 Tier A、
   `F_YAML=0.39102687045`；Workbench 默认显示 A/B/C/D=`1/1/5/14`、1 组晋级和
   1 条诊断提醒。
+- 2026-08-02：Suzhou2 固定 1UBQ 40-candidate Stage 05 在 0 operational failure 下发布
+  `stopped-no-tier-a`；失败计数为 iPTM 40、interface PAE 31、BoltzGen pass-filter 32、
+  severe clash 5、hotspot coverage 4，证明 Manager 能区分平台成功与科学停止。
 
 ## 工作日志
 

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S07-002 多策略筛选保持；dev35 将完整 `(6,7)`、精确版本和三后端 ready 固化为远程契约。 | 完成 Suzhou2 Manager 后端 probe 和单 shard Stage 06→07 验收。 | 锁定环境/模型副本与 Manager 服务尚未发布。 | 2026-08-01 |
+| `implemented` | Suzhou2 Manager revision 8 已通过 Protenix-v2/TNP/BoltzGen、8 GPU 与 `(6,7)` probe；精确 dev35 wheel 已激活。 | 用合法 Tier A 的小预算单 shard 完成真实 Stage 06→07 原地验收。 | 当前 1UBQ 40-candidate Stage 05 无 Tier A；不得调低门槛强行进入 Stage 07。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -42,7 +42,7 @@
 | 非 APOE 1000-candidate 完整集成 | `implemented` | Stage 03→07 fixture，三 seed、TNP、2 primary |
 | 多策略 ScaleBundle 0.2 输入 | `implemented` | allocation/lineage/全局竞争与旧 Bundle 0.1 兼容测试 |
 | 最终 YAML 来源分布 | `implemented` | primary/backup 来源计数与 candidate lineage 契约 |
-| Suzhou2 原地 Stage 06→07 | `implemented` | bundle 0.2 只接受完整 `(6,7)`，Manager probe 0.2 要求 Protenix-v2/TNP/BoltzGen 全部 ready；review 同步和断线观察保持 |
+| Suzhou2 原地 Stage 06→07 | `implemented` | Manager revision 8 的 Protenix-v2/TNP/BoltzGen、8 GPU、精确版本与 `(6,7)` 均 ready；待合法 Tier A live run |
 | APOE Stage 07 真实运行 | `planned` | 历史 50k 已完成，等待 adoption record、Protenix/TNP 与空闲 GPU |
 
 ## Now
@@ -60,8 +60,8 @@
 
 ## Blocked
 
-- Suzhou2 尚未登记 Protenix/TNP 环境；八张 GPU 当前均被其他任务占用。等待自然释放，
-  不终止外部任务。
+- Suzhou2 锁定 Protenix/TNP/BoltzGen 与模型已登记且 probe ready；当前阻塞是固定 1UBQ
+  上游没有合法 Tier A。外部 GPU 任务仍不终止，资源繁忙时自然等待。
 - APOE 历史 v1.5 stop 与 manual override 必须并列显示；新政策 continuation 不修改
   任何旧 manifest。
 
@@ -98,6 +98,9 @@
 - APOE Stage 07 real run：未创建。Stage 05
   `20260726-004-stage05-pilot-filter` 保持合法停止；独立历史 Stage 06 run 已在
   Suzhou2 发布 ScaleBundle 0.1，当前等待采用记录和后端 probe。
+- 2026-08-02 Manager revision 8 probe：EasyDesign `0.1.0.dev35`、Manager dev1、8 GPU、
+  三后端 ready、可用磁盘约 6.85 TB、支持 `[(4,5),(6,7)]`；尚未将 probe 冒充
+  Stage 07 科学 smoke。
 
 ## 工作日志
 

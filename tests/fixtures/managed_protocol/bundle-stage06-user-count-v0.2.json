@@ -1,0 +1,28 @@
+{
+  "schema_version": "0.2",
+  "job_id": "job-golden-stage06-user-37",
+  "controller_id": "controller-primary",
+  "controller_key_fingerprint": "SHA256:controller-primary-test-key",
+  "project_id": "golden-project",
+  "run_id": "golden-stage05-run",
+  "submitted_at": "2026-08-02T00:00:00Z",
+  "stage_range": [6, 7],
+  "candidate_budget": 37,
+  "backend_id": "boltzgen-0.3.2",
+  "easydesign_version": "0.1.0.dev35",
+  "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "upstream_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "inputs": [
+    {
+      "relative_path": "easydesign.yaml",
+      "size_bytes": 512,
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "role": "resolved-run-config"
+    }
+  ],
+  "source_run_mode": "managed-run",
+  "managed_source_run": "runs/golden-project/golden-stage05-run",
+  "maximum_gpus": 1,
+  "requested_sync_mode": "review",
+  "maximum_attempts": 3
+}

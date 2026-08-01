@@ -10,19 +10,19 @@
 | Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
-| Stage 04 | `smoke-validated` | APOE 21×40 真实生成保持通过；dev35 本机仍直接执行，Suzhou2 队列已分离到独立 Manager 仓库。 | 完成 Manager 锁定环境/模型和审核后的非 APOE 极小 Stage 04→05 真实探针。 | 新 Manager 尚未启动和真实 GPU 验收；旧 APOE 证据不受影响。 | 2026-08-01 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
-| Stage 05 | `smoke-validated` | v1.5/v1.6 APOE 结论保持冻结；dev35 强制远程 Stage 04→05 为一个原地连续 bundle。 | 在第二真实案例验证 2–3 个 Tier A，并验收 Manager 非 APOE 极小连续链。 | Suzhou2 Manager 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `smoke-validated` | dev35 已把 Stage 06 改为用户可调精确总数，默认推荐 50k；Python、UI 与浏览器全量门已通过。 | 构建精确 wheel、升级 Manager，再用合法 Tier A 小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 验证正常完成但 40/40 均未通过 iPTM 门，没有合法 Tier A；旧 50k 不重跑。 | 2026-08-02 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
-| Stage 07 | `implemented` | S07-002 多策略筛选保持；dev35 将完整 `(6,7)`、精确版本和三后端 ready 固化为远程契约。 | 完成 Suzhou2 Manager 后端 probe 和单 shard Stage 06→07 验收。 | 锁定环境/模型副本与 Manager 服务尚未发布。 | 2026-08-01 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
+| Stage 04 | `smoke-validated` | dev35 Manager 已在 Suzhou2 真实完成固定非 APOE 40-candidate Stage 04→05，队列、GPU 租约与落盘无 operational failure。 | 复用同一受管路径寻找能合法产生 Tier A 的第二真实 fixture。 | 当前 1UBQ 40/40 未通过 Stage 05 iPTM 门，不能进入 Stage 06；旧 APOE 证据不受影响。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
+| Stage 06 | `smoke-validated` | dev35 精确数量已通过全量门并部署到 Suzhou2 Manager revision 8；默认推荐 50k，最终严格采用用户输入。 | 找到合法 Tier A fixture 后以小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 任务平台成功但 40/40 未通过 iPTM 门；Manager 私有 remote 另缺推送权限。 | 2026-08-02 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 07 | `implemented` | Suzhou2 Manager revision 8 已通过 Protenix-v2/TNP/BoltzGen、8 GPU 与 `(6,7)` probe；精确 dev35 wheel 已激活。 | 用合法 Tier A 的小预算单 shard 完成真实 Stage 06→07 原地验收。 | 当前 1UBQ 40-candidate Stage 05 无 Tier A；不得调低门槛强行进入 Stage 07。 | 2026-08-02 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
 ## Now
 
 - `[VAL-008/ENG-032]` dev35 将跨仓协议冻结为 bundle 0.2/probe 0.2，本机继续直跑；
   Suzhou2 独立 `Knitua/easydesign-managed-worker` dev1 负责中央队列、GPU 仲裁和恢复。
-  当前顺序是完成精确 wheel/环境/模型校验，审核 systemd unit 后再启动；验收必须
-  使用固定非 APOE 极小 Stage 04→05 和 Stage 06→07 单 shard，不重跑或改写历史
-  APOE 50k。
+  revision 8 已使用精确 dev35 wheel 激活，8 GPU/三后端 probe ready；固定非 APOE
+  1UBQ Stage 04→05 平台成功但科学停止。下一步必须换用合法 Tier A fixture 完成
+  Stage 06→07 单 shard，不重跑或改写历史 APOE 50k。
 
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
@@ -120,9 +120,10 @@
 
 ## Blocked
 
-- `[VAL-007]` Suzhou2 新 Manager 的锁定环境、模型副本和运行 profile 尚未完成发布；外部 GPU
-  任务占用的卡只能等待自然释放。Stage 07 真实运行必须先通过显式后端探针；禁止
-  终止非 EasyDesign 进程或把缺失环境报告为科学停止。
+- `[VAL-007/VAL-008]` Suzhou2 Manager revision 8、锁定环境、模型和三后端 probe 已
+  ready；当前 1UBQ 40/40 未通过 iPTM 门，没有合法 Tier A 可进入 06→07。必须更换
+  fixture，禁止降低门槛、伪造赢家或终止非 EasyDesign 进程。Manager 私有 GitHub
+  remote 另缺可用 deploy key/host 权限，提交 `09ffcc2…9016` 暂只在 Suzhou2 `main`。
 - `[DATA-005/VAL-006]` Protenix、BoltzGen、ScanNet 和验证 fixture 的受控资产在
   用户逐项确认相应许可前保持 `awaiting-approval`；真实后端逐步自检不能在资产缺失时
   标记通过。完整全量 setup 仍可能因峰值与安全余量拒绝，但逐后端安装已经开始且

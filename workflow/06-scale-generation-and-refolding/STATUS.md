@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | dev35 已把 Stage 06 改为用户可调精确总数，默认推荐 50k；Python、UI 与浏览器全量门已通过。 | 构建精确 wheel、升级 Manager，再用合法 Tier A 小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 验证正常完成但 40/40 均未通过 iPTM 门，没有合法 Tier A；旧 50k 不重跑。 | 2026-08-02 |
+| `smoke-validated` | dev35 精确数量已通过全量门并部署到 Suzhou2 Manager revision 8；默认推荐 50k，最终严格采用用户输入。 | 找到合法 Tier A fixture 后以小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 任务平台成功但 40/40 未通过 iPTM 门；Manager 私有 remote 另缺推送权限。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -47,7 +47,7 @@
 | 长任务结构化 heartbeat | `implemented` | BoltzGen adapter → TaskHeartbeat → 原子 ProgressSnapshot → CLI/UI；旧 dev11 运行不追写伪心跳 |
 | UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | 本机自动 GPU 发现与租约 | `implemented` | 省略 devices 时自动冻结符合门槛的 GPU，支持最大卡数限制和无资源等待 |
-| Suzhou2 Managed Worker 多 shard | `smoke-validated` | 独立 Manager dev1 已激活，8 GPU/三后端 probe ready；固定非 APOE 40-candidate 任务队列/租约/落盘成功并科学停止 |
+| Suzhou2 Managed Worker 多 shard | `smoke-validated` | revision 8 使用 wheel `8d4a3c…d69d`；8 GPU/三后端 ready，精确 bundle/YAML budget 不一致会 fail closed |
 | Suzhou2 配对引导 | `implemented` | 工作区 key pair 检测/复用、一次性密码公钥安装、严格 known-host 与免密 worker 探测 |
 | 6→7 远程数据本地性 | `implemented` | Scale 候选留在 Suzhou2，Stage 07 原地消费；默认仅 review 同步 |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
@@ -55,9 +55,9 @@
 
 ## Now
 
-- `[S06-005]` 完成用户可调 `total_candidate_count` 的全量质量门、dev35 wheel 和 Manager
-  精确版本升级；随后用小预算运行固定非 APOE Stage 06→07，确认 UI 输入、bundle 预算、
-  尾分片和 Stage 07 原地消费一致。
+- `[S06-005]` 用户可调 `total_candidate_count`、全量质量门、dev35 wheel 和 Manager
+  revision 8 精确版本升级已完成；剩余真实门是用合法 Tier A 小预算运行 Stage 06→07，
+  确认 UI 输入、bundle 预算、尾分片和 Stage 07 原地消费一致。
 - `[S07-002/VAL-007]` 在 Suzhou2 恢复并登记 Protenix/TNP 与模型资产，完成真实 adapter
   probe 后原地消费已采用的 50,000 候选；源 39 GB 保持在 Suzhou2 原位。
 - `[VAL-008]` 在审核并启动的 Suzhou2 Manager 上运行一个 Stage 06→07 单 shard 探针；
@@ -77,6 +77,8 @@
   连通验收须换用合法 Tier A fixture；不得降低门槛或伪造赢家。外部 GPU 任务继续等待
   自然释放，禁止终止非 EasyDesign 进程。
 - APOE 的旧 `stopped-no-scale-winner` 仍是冻结科学结果；历史人工授权只批准生成预算。
+- Manager 提交 `09ffcc2c3d80b160e98a0540991c272175c39016` 已在 Suzhou2 干净 `main`
+  并激活，但 GitHub deploy key/host 权限不可用，暂不能核对或推送私有 `origin/main`。
 
 ## 验证证据
 
@@ -89,6 +91,9 @@
   `val008-1ubq-region8-tier-a-20260801t1631z`：Manager queue revision 104、40/40 收集、
   0 operational failure；Stage 05 为 `stopped-no-tier-a`。失败分布为 iPTM 40、interface
   PAE 31、BoltzGen pass-filter 32、severe clash 5、hotspot coverage 4，属于可审计科学停止。
+- Suzhou2 activation revision 8：Manager commit `09ffcc2…9016`，EasyDesign wheel
+  SHA-256 `8d4a3ca5…d69d`，Manager wheel SHA-256 `407e2e74…16a6`；probe 为 8 GPU、
+  三后端 ready、`[(4,5),(6,7)]`、queue 0/running 0。升级前后六个受保护路径完全一致。
 - 模型与计划测试：1000/50000 profile、连续 shard、预授权拒绝、coverage 失败。
 - 集成 fixture：非 APOE target 精确生成 1000 个新候选；发布恢复复用同一 bundle
   SHA-256；磁盘门失败时没有创建 task。

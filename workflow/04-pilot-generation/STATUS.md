@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | APOE 21×40 真实生成保持通过；dev35 本机仍直接执行，Suzhou2 队列已分离到独立 Manager 仓库。 | 完成 Manager 锁定环境/模型和审核后的非 APOE 极小 Stage 04→05 真实探针。 | 新 Manager 尚未启动和真实 GPU 验收；旧 APOE 证据不受影响。 | 2026-08-01 |
+| `smoke-validated` | dev35 Manager 已在 Suzhou2 真实完成固定非 APOE 40-candidate Stage 04→05，队列、GPU 租约与落盘无 operational failure。 | 复用同一受管路径寻找能合法产生 Tier A 的第二真实 fixture。 | 当前 1UBQ 40/40 未通过 Stage 05 iPTM 门，不能进入 Stage 06；旧 APOE 证据不受影响。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -27,15 +27,15 @@
 | BoltzGen backend | `smoke-validated` | 固定 0.3.2 完整 pipeline 完成 APOE 21×40；严格收集原始/refold CIF、官方 design mask 和指标 |
 | local executor | `smoke-validated` | 双 GPU、每 GPU 一个串行 strategy；7xl0 首次 39/40 后只补跑缺失的 1 个，最终 840/840 |
 | 本机自动 GPU 发现与租约 | `implemented` | `nvidia-smi`、外部进程/显存门、append-only lease、无卡等待与 resume 契约测试 |
-| Suzhou2 Managed Worker | `implemented` | 主仓 bundle/probe 0.2 与独立 Manager dev1 golden JSON 兼容；中央队列/GPU lease/恢复已迁出主仓，待真实部署验收 |
+| Suzhou2 Managed Worker | `smoke-validated` | activation revision 8；固定 1UBQ 40-candidate 真实任务完成 40/40、queue revision 104、0 operational failure |
 | SSH 配对与观察 | `implemented` | host fingerprint、已有 key pair 复用、一次性密码幂等安装公钥、逻辑解绑、15 秒轮询和分层同步 |
 | Slurm/SMART executor | `planned` | 无 |
 | 任务终态和候选索引 | `smoke-validated` | 61 条 append-only 事件、840 个唯一 CandidateRecord、终态 ProgressSnapshot、PilotBundle 与 checksummed manifest-only handoff 均通过 |
 
 ## Now
 
-- `[VAL-008]` 审核独立 Manager release 的 systemd unit 后，执行固定非 APOE 极小
-  Stage 04→05；不重跑 APOE 21×40。
+- `[VAL-008]` 固定非 APOE 1UBQ 极小 Stage 04→05 已完成并科学停止；下一步更换合法
+  Tier A fixture 验收 Stage 06→07，不重跑 APOE 21×40。
 
 ## Next
 
@@ -54,6 +54,9 @@
   `20260726-002-stage03-basic-vhh`，StrategyBundle 21 个 strategy，SHA-256
   `a8451f5f7f7d09e69fbf7cf966c04b70aef01a3863132671b756aa4fe64b87`。
 - 当前服务器审计：两张 RTX 4080 可见；实际启动前仍须重新检查占用。
+- Suzhou2 Manager 真实任务
+  `val008-1ubq-region8-tier-a-20260801t1631z`：40/40 candidate 收集、0 failed task、
+  Manager queue revision 104；Stage 04 backend、GPU lease 和 immutable run 发布均成功。
 - 自动检查：199 passed、8 skipped；Ruff、mypy、wheel build 和 wheel asset
   21/21 均通过。
 - 最小真实 backend smoke：

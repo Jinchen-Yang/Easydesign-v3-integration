@@ -8,6 +8,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Thread
 from typing import Literal
 from uuid import uuid4
 
@@ -113,6 +114,18 @@ class UiJobController:
             return False
         except PermissionError:
             return True
+        if sys.platform.startswith("linux"):
+            try:
+                process_state = (
+                    Path(f"/proc/{process_id}/stat")
+                    .read_text(encoding="utf-8")
+                    .rpartition(") ")[2]
+                    .split(maxsplit=1)[0]
+                )
+            except (OSError, IndexError):
+                process_state = ""
+            if process_state == "Z":
+                return False
         return True
 
     def _reconcile(self, record: UiJobRecord) -> UiJobRecord:
@@ -290,6 +303,11 @@ class UiJobController:
             stderr=subprocess.DEVNULL,
             start_new_session=(os.name != "nt"),
         )
+        Thread(
+            target=process.wait,
+            name=f"easydesign-ui-worker-reaper-{process.pid}",
+            daemon=True,
+        ).start()
         running = record.model_copy(
             update={
                 "status": "running",

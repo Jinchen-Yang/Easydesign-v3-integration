@@ -48,7 +48,7 @@ class RemoteJobInput(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     relative_path: str = Field(min_length=1)
-    size_bytes: int = Field(ge=1)
+    size_bytes: int = Field(ge=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     role: str = Field(min_length=1)
 

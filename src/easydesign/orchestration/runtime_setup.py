@@ -345,6 +345,31 @@ def _probe_executable(prefix: Path, executable: str) -> str:
     return str(direct)
 
 
+def _normalized_environment_inventory(payload: dict[str, Any]) -> dict[str, Any]:
+    """Hide only the mutable commit of this workspace's editable package.
+
+    The dependency environment is lock-addressed, while EasyDesign itself is
+    intentionally installed editable for controller development. ``pip
+    freeze`` therefore embeds the current Git commit in its VCS URL even when
+    every locked third-party package is unchanged. Code identity is recorded
+    by run/release manifests, so inventory comparison normalizes that one
+    workspace-owned line and keeps every other package strict.
+    """
+
+    normalized = dict(payload)
+    freeze = payload.get("pip_freeze")
+    if isinstance(freeze, (list, tuple)):
+        normalized["pip_freeze"] = [
+            "-e workspace://easydesign#egg=easydesign"
+            if isinstance(line, str)
+            and line.startswith("-e ")
+            and line.casefold().endswith("#egg=easydesign")
+            else line
+            for line in freeze
+        ]
+    return normalized
+
+
 def _environment_inventory(
     context: WorkspaceContext,
     *,
@@ -408,7 +433,14 @@ def _environment_inventory(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     )
     if path.exists():
-        if path.read_text(encoding="utf-8") != encoded:
+        try:
+            existing_payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ConfigurationError(f"环境 inventory 损坏: {path}") from error
+        if not isinstance(existing_payload, dict) or (
+            _normalized_environment_inventory(existing_payload)
+            != _normalized_environment_inventory(payload)
+        ):
             raise ConfigurationError(
                 f"环境 inventory 已存在但内容变化，拒绝覆盖: {path}"
             )
@@ -722,16 +754,42 @@ def _checkout_git(
     context.assert_write_path(staging)
     environment = {**os.environ, **context.child_environment()}
     try:
-        clone = subprocess.run(
-            ["git", "clone", "--no-checkout", asset.source, str(staging)],
+        initialize = subprocess.run(
+            ["git", "init", "--quiet", str(staging)],
             cwd=context.root,
             env=environment,
             check=False,
         )
-        if clone.returncode != 0:
-            raise ConfigurationError(f"Git 资产 clone 失败: {asset.asset_id}")
+        if initialize.returncode != 0:
+            raise ConfigurationError(f"Git 资产 init 失败: {asset.asset_id}")
+        remote = subprocess.run(
+            ["git", "-C", str(staging), "remote", "add", "origin", asset.source],
+            cwd=context.root,
+            env=environment,
+            check=False,
+        )
+        if remote.returncode != 0:
+            raise ConfigurationError(f"Git 资产 remote 失败: {asset.asset_id}")
+        fetch = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(staging),
+                "fetch",
+                "--depth",
+                "1",
+                "--no-tags",
+                "origin",
+                asset.revision,
+            ],
+            cwd=context.root,
+            env=environment,
+            check=False,
+        )
+        if fetch.returncode != 0:
+            raise ConfigurationError(f"Git 资产 fetch 失败: {asset.asset_id}")
         checkout = subprocess.run(
-            ["git", "-C", str(staging), "checkout", "--detach", asset.revision],
+            ["git", "-C", str(staging), "checkout", "--detach", "FETCH_HEAD"],
             env=environment,
             check=False,
         )

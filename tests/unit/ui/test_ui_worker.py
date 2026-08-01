@@ -14,7 +14,7 @@ from easydesign.core import (
     load_model,
 )
 from easydesign.orchestration import ProjectNavigation, RunIndex
-from easydesign.ui import worker
+from easydesign.ui import jobs, worker
 from easydesign.ui.jobs import UiJobController
 from easydesign.ui.models import UiJobRecord
 from easydesign.ui.security import UiRunRegistry
@@ -150,6 +150,41 @@ def test_worker_attaches_continuation_run_to_design_session(
     assert navigation.runs[0].relative_path == "sample-project/stage02-run"
 
 
+def test_self_test_run_skips_product_project_navigation(tmp_path: Path) -> None:
+    now = datetime.now(tz=UTC)
+    run_root = tmp_path / "runs" / "_selftests" / "fixture" / "stage01"
+    _minimal_run(
+        run_root,
+        project_id="developer-backend-selftest",
+        run_id="stage01",
+        created_at=now,
+    )
+    record = UiJobRecord(
+        job_id="job-self-test-stage01",
+        operation="run",
+        status="running",
+        run_id="stage01",
+        self_test_id="selftest-20260801t000000z-fixture",
+        stage_number=1,
+        created_at=now,
+        updated_at=now,
+    )
+
+    error = worker._publish_product_run_navigation(
+        record=record,
+        run_root=run_root,
+        runs_root=tmp_path / "runs",
+        project_id="developer-backend-selftest",
+        status="succeeded",
+    )
+
+    assert error is None
+    assert not (tmp_path / "runs" / "run-index.json").exists()
+    assert not (
+        tmp_path / "runs" / "developer-backend-selftest" / "PROJECT.json"
+    ).exists()
+
+
 def test_external_submission_persists_stage_acceptance(tmp_path: Path) -> None:
     controller = UiJobController(tmp_path / "jobs")
 
@@ -207,6 +242,18 @@ def test_local_job_reconciliation_marks_missing_pid_operational_failed(
         )
         == 1
     )
+
+
+def test_linux_zombie_pid_is_not_running(monkeypatch) -> None:
+    monkeypatch.setattr(jobs.os, "kill", lambda _pid, _signal: None)
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda _path, **_kwargs: "424242 (python worker) Z 1 1 1 0",
+    )
+    monkeypatch.setattr(jobs.sys, "platform", "linux")
+
+    assert UiJobController._pid_exists(424242) is False
 
 
 def test_local_job_reconciliation_never_reconciles_external_job(

@@ -47,6 +47,18 @@ def test_managed_bundle_rejects_single_stage_or_shell_field() -> None:
         RemoteJobBundle.model_validate(payload)
 
 
+def test_managed_bundle_accepts_manifest_closed_empty_file() -> None:
+    payload = json.loads((FIXTURES / "bundle-v0.2.json").read_text(encoding="utf-8"))
+
+    bundle = RemoteJobBundle.model_validate(payload)
+
+    empty = next(item for item in bundle.inputs if item.size_bytes == 0)
+    assert empty.sha256 == (
+        "e3b0c44298fc1c149afbf4c8996fb924"
+        "27ae41e4649b934ca495991b7852b855"
+    )
+
+
 def test_managed_probe_ready_requires_both_chains_and_every_backend() -> None:
     payload = json.loads((FIXTURES / "probe-v0.2.json").read_text(encoding="utf-8"))
     assert ManagedWorkerProbe.model_validate(payload).ready is True

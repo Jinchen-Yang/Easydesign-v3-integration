@@ -67,7 +67,12 @@ def _publish_product_run_navigation(
     produced a verified continuation.
     """
 
-    if record.operation != "run" or run_root is None or runs_root is None:
+    if (
+        record.operation != "run"
+        or record.self_test_id is not None
+        or run_root is None
+        or runs_root is None
+    ):
         return None
     selected_project = project_id or record.project_id
     if not selected_project:

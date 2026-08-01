@@ -12,6 +12,7 @@ from easydesign.managed_protocol import (
     ManagedWorkerProbe,
     RemoteJobBundle,
 )
+from easydesign.orchestration import remote_execution
 from easydesign.orchestration.remote_execution import (
     require_managed_probe_compatible,
 )
@@ -56,6 +57,25 @@ def test_managed_bundle_accepts_manifest_closed_empty_file() -> None:
     assert empty.sha256 == (
         "e3b0c44298fc1c149afbf4c8996fb924"
         "27ae41e4649b934ca495991b7852b855"
+    )
+
+
+def test_managed_manifest_closure_includes_pointer_revisions(tmp_path: Path) -> None:
+    pointer = tmp_path / "manifests" / "LATEST"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text("run-manifest.v0001.json\n", encoding="utf-8")
+    revisions = pointer.with_name("LATEST.revisions")
+    revisions.mkdir()
+    (revisions / "revision-000001.txt").write_text(
+        "run-manifest.v0002.json\n",
+        encoding="utf-8",
+    )
+
+    closure = remote_execution._pointer_revision_closure(tmp_path, pointer)
+
+    assert closure == (
+        "manifests/LATEST",
+        "manifests/LATEST.revisions/revision-000001.txt",
     )
 
 

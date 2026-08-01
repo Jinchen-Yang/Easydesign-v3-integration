@@ -285,10 +285,12 @@ def _local_manifest_closure(
 
     root = source_run.expanduser().resolve()
     selected: set[str] = {
-        "manifests/LATEST",
         manifest_path.relative_to(root).as_posix(),
         _safe_relative(manifest.config_snapshot.relative_path),
     }
+    selected.update(
+        _pointer_revision_closure(root, root / "manifests" / "LATEST")
+    )
     stages: list[StageManifest] = []
     for reference in manifest.stage_manifest_refs:
         selected.add(_safe_relative(reference.relative_path))
@@ -319,6 +321,23 @@ def _local_manifest_closure(
         selected.update(additions)
     _verify_local_manifest_closure(root, manifest, tuple(stages))
     return tuple(sorted(selected))
+
+
+def _pointer_revision_closure(root: Path, pointer: Path) -> tuple[str, ...]:
+    """Return the immutable base pointer and every published revision."""
+
+    resolved_root = root.expanduser().resolve()
+    candidates = [
+        pointer,
+        *sorted(pointer.with_name(f"{pointer.name}.revisions").glob("revision-*.txt")),
+    ]
+    selected: list[str] = []
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if not resolved.is_relative_to(resolved_root) or not resolved.is_file():
+            raise ManifestStateError(f"managed submission pointer 不安全: {candidate}")
+        selected.append(_safe_relative(candidate.relative_to(resolved_root).as_posix()))
+    return tuple(selected)
 
 
 def _managed_stage_range(
@@ -427,19 +446,11 @@ def _matching_managed_source(
     )
     if not candidates:
         return None
-    remote_latest = executor.read_text(expected_remote / "manifests" / "LATEST").strip()
-    latest_name = Path(remote_latest)
-    if (
-        remote_latest in {"", "."}
-        or latest_name.is_absolute()
-        or ".." in latest_name.parts
-        or len(latest_name.parts) != 1
-    ):
-        raise ManifestStateError("Suzhou2 managed source 的 LATEST 内容不安全")
-    identity = executor.file_identity(expected_remote / "manifests" / remote_latest)
+    manifest_name = manifest_path.name
+    identity = executor.file_identity(expected_remote / "manifests" / manifest_name)
     local_sha256 = sha256_file(manifest_path)
     if identity.sha256 != local_sha256:
-        raise ManifestStateError("本地 review 镜像与 Suzhou2 managed source 的最新 manifest 不一致")
+        raise ManifestStateError("本地 review 镜像与 Suzhou2 managed source manifest 不一致")
     try:
         relative = expected_remote.relative_to(executor.connection.remote_work_root)
     except ValueError as error:

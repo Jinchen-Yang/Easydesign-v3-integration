@@ -59,6 +59,44 @@ _LIABILITY_NAMES = {
 }
 
 
+def _verified_tnp_source_snapshot(repository_root: Path) -> str | None:
+    """Verify the tracked files of an immutable exported TNP source tree."""
+
+    marker = repository_root / ".easydesign-source.json"
+    if not marker.is_file():
+        return None
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BackendContractError("TNP source snapshot marker 无法读取") from error
+    tree = payload.get("tree")
+    if (
+        payload.get("schema_version") != "0.1"
+        or payload.get("backend_id") != "tnp"
+        or payload.get("commit") != TNP_COMMIT
+        or not isinstance(tree, dict)
+        or not tree
+    ):
+        raise BackendContractError("TNP source snapshot identity 不匹配")
+    root = repository_root.resolve()
+    for raw_relative, raw_identity in tree.items():
+        if not isinstance(raw_relative, str) or not isinstance(raw_identity, dict):
+            raise BackendContractError("TNP source snapshot tree 无效")
+        relative = Path(raw_relative)
+        path = (root / relative).resolve()
+        expected_sha256 = raw_identity.get("sha256")
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or not path.is_relative_to(root)
+            or not path.is_file()
+            or not isinstance(expected_sha256, str)
+            or sha256_file(path) != expected_sha256
+        ):
+            raise BackendContractError(f"TNP source snapshot 文件漂移: {raw_relative}")
+    return TNP_COMMIT
+
+
 @dataclass(frozen=True, slots=True)
 class TnpBatchRequest:
     sequences: tuple[tuple[str, str], ...]
@@ -160,37 +198,40 @@ class TnpAdapter:
             raise BackendContractError(f"TNP executable 不存在: {self.executable}")
         if not self.repository_root.is_dir():
             raise BackendContractError(f"TNP repository 不存在: {self.repository_root}")
-        git = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(self.repository_root),
-                "status",
-                "--porcelain=v1",
-                "--branch",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if git.returncode != 0:
-            raise BackendContractError(f"TNP git probe 失败: {git.stderr.strip()}")
-        head = subprocess.run(
-            ["git", "-C", str(self.repository_root), "rev-parse", "HEAD"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if head.returncode != 0 or head.stdout.strip() != TNP_COMMIT:
-            raise BackendContractError(
-                "TNP commit 不匹配: "
-                f"expected={TNP_COMMIT}, actual={head.stdout.strip() or 'unknown'}"
+        source_commit = _verified_tnp_source_snapshot(self.repository_root)
+        if source_commit is None:
+            git = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.repository_root),
+                    "status",
+                    "--porcelain=v1",
+                    "--branch",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
-        dirty_lines = [line for line in git.stdout.splitlines()[1:] if line.strip()]
-        if dirty_lines:
-            raise BackendContractError("TNP repository 必须处于 clean fixed commit")
+            if git.returncode != 0:
+                raise BackendContractError(f"TNP git probe 失败: {git.stderr.strip()}")
+            head = subprocess.run(
+                ["git", "-C", str(self.repository_root), "rev-parse", "HEAD"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            source_commit = head.stdout.strip()
+            if head.returncode != 0 or source_commit != TNP_COMMIT:
+                raise BackendContractError(
+                    "TNP commit 不匹配: "
+                    f"expected={TNP_COMMIT}, actual={source_commit or 'unknown'}"
+                )
+            dirty_lines = [line for line in git.stdout.splitlines()[1:] if line.strip()]
+            if dirty_lines:
+                raise BackendContractError("TNP repository 必须处于 clean fixed commit")
         license_path = self.repository_root / "LICENCE"
         source_executable = self.repository_root / "bin" / "TNP"
         if not license_path.is_file() or sha256_file(license_path) != TNP_LICENSE_SHA256:
@@ -274,7 +315,7 @@ class TnpAdapter:
             raise BackendContractError("TNP CLI help probe 失败或不支持 batch FASTA")
         return {
             "backend": "tnp",
-            "commit": TNP_COMMIT,
+            "commit": source_commit,
             "license": TNP_LICENSE,
             "license_sha256": TNP_LICENSE_SHA256,
             "source_executable_sha256": TNP_EXECUTABLE_SOURCE_SHA256,

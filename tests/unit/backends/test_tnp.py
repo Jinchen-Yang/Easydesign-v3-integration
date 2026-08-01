@@ -6,8 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from easydesign.backends.tnp import TnpAdapter, TnpBatchRequest, TnpBatchResult
-from easydesign.core import ManifestStateError
+from easydesign.backends.tnp import (
+    TNP_COMMIT,
+    TnpAdapter,
+    TnpBatchRequest,
+    TnpBatchResult,
+    _verified_tnp_source_snapshot,
+)
+from easydesign.core import BackendContractError, ManifestStateError, sha256_file
 from easydesign.stages.s07_final_filtering_and_selection import DevelopabilityRisk
 
 NOW = datetime(2026, 7, 26, 8, 0, tzinfo=UTC)
@@ -29,6 +35,28 @@ def _request(tmp_path: Path) -> TnpBatchRequest:
         stdout_path=tmp_path / "stdout.log",
         stderr_path=tmp_path / "stderr.log",
     )
+
+
+def test_exported_tnp_source_snapshot_is_verified_without_git(tmp_path: Path) -> None:
+    source = tmp_path / "bin" / "TNP"
+    source.parent.mkdir()
+    source.write_text("#!/bin/sh\n", encoding="utf-8")
+    marker = {
+        "schema_version": "0.1",
+        "backend_id": "tnp",
+        "commit": TNP_COMMIT,
+        "tree": {"bin/TNP": {"sha256": sha256_file(source), "mode": "0o755"}},
+    }
+    (tmp_path / ".easydesign-source.json").write_text(
+        json.dumps(marker),
+        encoding="utf-8",
+    )
+
+    assert _verified_tnp_source_snapshot(tmp_path) == TNP_COMMIT
+
+    source.write_text("drift\n", encoding="utf-8")
+    with pytest.raises(BackendContractError, match="文件漂移"):
+        _verified_tnp_source_snapshot(tmp_path)
 
 
 def _write_result(request: TnpBatchRequest, *, identity: str = "candidate-one") -> Path:

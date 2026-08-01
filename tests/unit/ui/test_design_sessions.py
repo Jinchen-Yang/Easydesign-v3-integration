@@ -170,6 +170,15 @@ def test_stage_forms_expose_all_seven_stages_without_stage01_input() -> None:
         "value": 7,
         "note": "official-vhh7-v1",
     }
+    assert definitions[5]["defaults"]["scale_profile"] == "user-defined-v1"
+    assert definitions[5]["defaults"]["total_candidate_count"] == 50_000
+    assert definitions[5]["presentation"]["facts"] == [
+        {
+            "label": "总生成条数",
+            "value": 50_000,
+            "note": "推荐 50,000；以提交时输入值为准",
+        }
+    ]
     assert definitions[6]["defaults"]["final_filter_profile"] == (
         "nanobody-final-v1.5"
     )

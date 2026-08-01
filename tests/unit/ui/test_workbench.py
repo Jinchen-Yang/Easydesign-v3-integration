@@ -61,6 +61,7 @@ from easydesign.ui import (
     get_run_projection,
 )
 from easydesign.ui.app import (
+    ProjectCreateRequest,
     _apply_region_operations,
     _explicit_region_operation_from_message,
     _region_edit_intent_context,
@@ -76,6 +77,18 @@ from easydesign.ui.security import ArtifactTokenSigner
 from easydesign.ui.stage05 import get_filter_overview
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+
+
+def test_project_create_request_accepts_exact_stage06_candidate_count() -> None:
+    request = ProjectCreateRequest(
+        project_id="adjustable-scale",
+        source_type="pdb-id",
+        source_value="1UBQ",
+        stop_after_stage=7,
+        stage06_candidate_count=37,
+    )
+
+    assert request.stage06_candidate_count == 37
 
 
 def _region_projection_fixture() -> RegionEditorProjection:

@@ -310,7 +310,7 @@ def _resolve_multi_strategy_authorization(
     promoted_ids = tuple(item.strategy_id for item in bundle.promotion_rank)
     if promoted_ids != bundle.promoted_strategy_ids:
         raise ManifestStateError("Stage05Bundle promoted strategy 顺序不一致")
-    if profile.requested_candidates > config.preauthorized_candidate_limit:
+    if config.total_candidate_count > config.authorized_candidate_limit:
         raise ManifestStateError("Stage 06 global budget 超过初始配置预授权上限")
     return MultiStrategyScaleAuthorization(
         authorized_at=authorized_at,
@@ -321,7 +321,7 @@ def _resolve_multi_strategy_authorization(
         ),
         source_stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
         promoted_strategy_ids=promoted_ids,
-        total_candidate_budget=profile.requested_candidates,
+        total_candidate_budget=config.total_candidate_count,
         acknowledge_high_cost_generation=True,
     )
 
@@ -432,6 +432,7 @@ def _resource_report(
 def build_scale_plan(
     *,
     profile: ScaleProfile,
+    total_candidate_count: int,
     strategy_id: str,
     strategy_bundle_sha256: str,
     stage05_bundle_sha256: str,
@@ -442,21 +443,26 @@ def build_scale_plan(
     generated_at: datetime,
     strategy_authorization: ScaleStrategyAuthorization | None = None,
 ) -> ScalePlan:
-    """Build the deterministic 2×500 or 20×2500 shard layout."""
+    """Build contiguous resumable shards for the exact authorized count."""
 
-    requested = profile.requested_candidates
+    requested = total_candidate_count
     shard_size = profile.shard_size
-    shards = tuple(
-        ScaleShard(
-            shard_id=f"shard-{index + 1:04d}",
-            task_id=f"scale-shard-{index + 1:04d}",
-            strategy_id=strategy_id,
-            ordinal_start=index * shard_size + 1,
-            ordinal_end=(index + 1) * shard_size,
-            requested_candidates=shard_size,
+    shards: list[ScaleShard] = []
+    ordinal_start = 1
+    while ordinal_start <= requested:
+        ordinal_end = min(ordinal_start + shard_size - 1, requested)
+        index = len(shards) + 1
+        shards.append(
+            ScaleShard(
+                shard_id=f"shard-{index:04d}",
+                task_id=f"scale-shard-{index:04d}",
+                strategy_id=strategy_id,
+                ordinal_start=ordinal_start,
+                ordinal_end=ordinal_end,
+                requested_candidates=ordinal_end - ordinal_start + 1,
+            )
         )
-        for index in range(requested // shard_size)
-    )
+        ordinal_start = ordinal_end + 1
     authorization = strategy_authorization or ScaleStrategyAuthorization(
         mode="stage05-winner",
         strategy_id=strategy_id,
@@ -477,7 +483,7 @@ def build_scale_plan(
         requested_new_candidates=requested,
         preauthorized_candidate_limit=preauthorized_candidate_limit,
         devices=devices,
-        shards=shards,
+        shards=tuple(shards),
         resource_report=resource_report,
         execution_authorized=True,
     )
@@ -486,6 +492,7 @@ def build_scale_plan(
 def build_scale_plan_v0_2(
     *,
     profile: ScaleProfile,
+    total_candidate_count: int,
     promoted_strategies: tuple[StrategyPromotionRecord, ...],
     strategy_bundle_sha256: str,
     stage05_bundle_sha256: str,
@@ -500,7 +507,7 @@ def build_scale_plan_v0_2(
 
     allocations = allocate_equal_candidate_budget(
         promoted_strategies=promoted_strategies,
-        total_candidate_budget=profile.requested_candidates,
+        total_candidate_budget=total_candidate_count,
     )
     shards = build_multi_strategy_shards(
         strategy_allocations=allocations,
@@ -509,7 +516,7 @@ def build_scale_plan_v0_2(
     return ScalePlanV0_2(
         generated_at=generated_at,
         profile=profile,
-        total_candidate_budget=profile.requested_candidates,
+        total_candidate_budget=total_candidate_count,
         preauthorized_candidate_limit=preauthorized_candidate_limit,
         strategy_bundle_sha256=strategy_bundle_sha256,
         stage05_bundle_sha256=stage05_bundle_sha256,
@@ -596,6 +603,7 @@ def execute_stage06(
         raise ManifestStateError("Stage 06 缺少 stage04/stage06 config")
     now = datetime.now(UTC) if executed_at is None else executed_at
     profile = ScaleProfile(config.scale_profile)
+    requested_candidate_count = config.total_candidate_count
     multi_strategy = isinstance(upstream.stage05_bundle, Stage05BundleV0_2)
     strategy_by_id = {
         item.strategy_id: item for item in upstream.strategy_bundle.strategies
@@ -754,7 +762,13 @@ def execute_stage06(
                 and plan.devices != stage04_config.executor.devices
             )
             or plan.preauthorized_candidate_limit
-            != config.preauthorized_candidate_limit
+            != config.authorized_candidate_limit
+            or (
+                plan.total_candidate_budget
+                if isinstance(plan, ScalePlanV0_2)
+                else plan.requested_new_candidates
+            )
+            != requested_candidate_count
         )
         if multi_strategy:
             assert isinstance(plan, ScalePlanV0_2)
@@ -778,7 +792,7 @@ def execute_stage06(
         report = _resource_report(
             root=root,
             upstream=upstream,
-            requested_candidates=profile.requested_candidates,
+            requested_candidates=requested_candidate_count,
             measured_at=now,
         )
         atomic_dump_runtime_model(report, runtime / "resource-preflight.json")
@@ -797,13 +811,14 @@ def execute_stage06(
             assert isinstance(authorization, MultiStrategyScaleAuthorization)
             plan = build_scale_plan_v0_2(
                 profile=profile,
+                total_candidate_count=requested_candidate_count,
                 promoted_strategies=upstream.stage05_bundle.promotion_rank,
                 strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
                 stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
                 design_specifications=specifications,
                 resource_report=resource_ref,
                 devices=execution_devices,
-                preauthorized_candidate_limit=config.preauthorized_candidate_limit,
+                preauthorized_candidate_limit=config.authorized_candidate_limit,
                 generated_at=now,
                 strategy_authorization=authorization,
             )
@@ -811,13 +826,14 @@ def execute_stage06(
             assert isinstance(authorization, ScaleStrategyAuthorization)
             plan = build_scale_plan(
                 profile=profile,
+                total_candidate_count=requested_candidate_count,
                 strategy_id=strategy_ids[0],
                 strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
                 stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
                 design_specification=specifications[0],
                 resource_report=resource_ref,
                 devices=execution_devices,
-                preauthorized_candidate_limit=config.preauthorized_candidate_limit,
+                preauthorized_candidate_limit=config.authorized_candidate_limit,
                 generated_at=now,
                 strategy_authorization=authorization,
             )
@@ -1406,10 +1422,9 @@ def execute_stage06(
             (
                 "Stage 06 generated new candidates only; Stage 04/05 candidates are not counted.",
                 (
-                    "production-50000 is a generated candidate population, not a "
-                    "scientifically validated order package."
-                    if profile is ScaleProfile.PRODUCTION_50000
-                    else "smoke-1000 is an engineering smoke, not a production order package."
+                    f"Stage 06 generated the user-authorized population of "
+                    f"{requested_candidates} candidates; it is not a scientifically "
+                    "validated order package."
                 ),
                 *(
                     (

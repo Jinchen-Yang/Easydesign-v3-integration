@@ -52,3 +52,19 @@ def test_managed_stage04_budget_uses_continuation_config(
     )
 
     assert budget == 40
+
+
+def test_managed_stage06_budget_uses_exact_user_count(tmp_path: Path) -> None:
+    config = SimpleNamespace(
+        stage03=None,
+        stage06=SimpleNamespace(total_candidate_count=37),
+    )
+
+    budget = remote_execution._managed_candidate_budget(
+        source_run=tmp_path,
+        manifest=SimpleNamespace(stage_manifest_refs=()),
+        stage_range=(6, 7),
+        config=config,
+    )
+
+    assert budget == 37

@@ -552,9 +552,11 @@ full-target 是诊断，不会因零结构通过撤销晋级。`stopped-no-tier-
 
 ### Stage 06 分片规模生成
 
-Stage 06 v0.2 默认消费 Stage 05 v1.6 发布的 1–3 个晋级策略。50,000 是全局预算：
-1/2/3 组分别分配 `50000`、`25000/25000`、`16667/16667/16666`，余数按
-`F_YAML` promotion rank 分配。研究负责人也可以在旧 v1.5
+Stage 06 v0.2 默认消费 Stage 05 v1.6 发布的 1–3 个晋级策略。用户配置的
+`total_candidate_count` 是唯一全局预算，产品推荐并默认 50,000，但最终执行严格采用
+用户提交的正整数。预算在晋级策略间等额分配，余数按 `F_YAML` promotion rank 分配；
+50,000 条对应 1/2/3 组时分别为 `50000`、`25000/25000`、
+`16667/16667/16666`。研究负责人也可以在旧 v1.5
 `stopped-no-scale-winner` 后显式授权放大一个已经由 Stage 05 扩展过的 Tier A；该例外
 不会改变 Stage 05 结论，并形成独立 `ScaleStrategyAuthorization`。没有 Tier A 时禁止
 越过。Stage 06 同时把 Stage 03 strategy YAML、Stage 05 bundle 和 Stage 04 candidate
@@ -572,9 +574,10 @@ ScaleResourceReport
   → ScaleBundleV0_2
 ```
 
-`smoke-1000` 继续兼容两个 500-candidate shard；`production-50000` 对每个 strategy
-按最多 2500 的 shard 切分，因此尾部分片可以更小。profile 只定义能力，实际执行还必须满足初始配置中的
-`preauthorized_candidate_limit`。当前资源门使用 Stage 04 声明 artifact 的每候选字节数
+新任务使用 `user-defined-v1` profile，按每个 strategy 最多 2,500 条切分，尾部分片可以
+更小；用户输入的总数同时形成不可变的预算授权。`smoke-1000` 与
+`production-50000` 仅用于兼容和恢复 dev34 已冻结配置，仍严格对应 1,000/50,000。
+当前资源门使用 Stage 04 声明 artifact 的每候选字节数
 乘 20 的保守容量代理，且要求执行后仍保留文件系统总容量的 25%；预检失败发生在创建
 task 前。
 

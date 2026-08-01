@@ -886,20 +886,54 @@ class Stage06ManualStrategyAuthorizationConfig(BaseModel):
 class Stage06Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    scale_profile: Literal["smoke-1000", "production-50000"] = "smoke-1000"
+    scale_profile: Literal[
+        "user-defined-v1",
+        "smoke-1000",
+        "production-50000",
+    ] = "user-defined-v1"
+    total_candidate_count: int = Field(default=50_000, ge=1)
     allocation_policy: Literal["equal-across-promoted-v1"] | None = None
-    preauthorized_candidate_limit: int = Field(default=1000, ge=1)
+    preauthorized_candidate_limit: int | None = Field(default=None, ge=1)
     manual_strategy_authorization: Stage06ManualStrategyAuthorizationConfig | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_fixed_scale_profiles(cls, value: Any) -> Any:
+        """Read dev34 fixed profiles without changing their frozen budget."""
+
+        if not isinstance(value, dict) or "total_candidate_count" in value:
+            return value
+        migrated = dict(value)
+        profile = migrated.get("scale_profile")
+        if profile == "smoke-1000":
+            migrated["total_candidate_count"] = 1_000
+        elif profile == "production-50000":
+            migrated["total_candidate_count"] = 50_000
+        return migrated
 
     @model_validator(mode="after")
     def validate_authorized_limit(self) -> Self:
-        requested = 1000 if self.scale_profile == "smoke-1000" else 50_000
-        if requested > self.preauthorized_candidate_limit:
+        fixed_count = {
+            "smoke-1000": 1_000,
+            "production-50000": 50_000,
+        }.get(self.scale_profile)
+        if fixed_count is not None and self.total_candidate_count != fixed_count:
+            raise ValueError("旧版 scale profile 的候选数不可改写")
+        if (
+            self.preauthorized_candidate_limit is not None
+            and self.total_candidate_count > self.preauthorized_candidate_limit
+        ):
             raise ValueError(
-                "scale profile 超过 preauthorized_candidate_limit；"
+                "total_candidate_count 超过 preauthorized_candidate_limit；"
                 "高成本运行必须在初始配置中获得显式授权"
             )
         return self
+
+    @property
+    def authorized_candidate_limit(self) -> int:
+        """Return the immutable authorization recorded in the scale plan."""
+
+        return self.preauthorized_candidate_limit or self.total_candidate_count
 
 
 class Stage07Config(BaseModel):

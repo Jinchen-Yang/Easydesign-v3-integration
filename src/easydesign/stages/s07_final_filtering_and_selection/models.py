@@ -424,7 +424,11 @@ class FinalCandidatePackage(BaseModel):
         "draft-order-package",
         "empty-review-package",
     ]
-    scale_profile: Literal["smoke-1000", "production-50000"]
+    scale_profile: Literal[
+        "user-defined-v1",
+        "smoke-1000",
+        "production-50000",
+    ]
     primary: tuple[FinalCandidate, ...] = ()
     backup: tuple[FinalCandidate, ...] = ()
     requested_primary_count: int = Field(ge=0)

@@ -234,6 +234,7 @@ function StageContinuationSetup({
   >("local-current-host");
   const [maximumGpus, setMaximumGpus] = useState<number>();
   const [resourceConfirmed, setResourceConfirmed] = useState(false);
+  const [stage06CandidateCount, setStage06CandidateCount] = useState("50000");
   const expensive = stage.stage_number === 4 || stage.stage_number === 6;
 
   useEffect(() => {
@@ -248,6 +249,9 @@ function StageContinuationSetup({
           );
         }
         setDefinition(value);
+        if (requestedStage === 6) {
+          setStage06CandidateCount(String(value.defaults.total_candidate_count || 50000));
+        }
       })
       .catch((error: unknown) => {
         setLoadError(error instanceof Error ? error.message : "无法读取本步骤配置");
@@ -424,6 +428,14 @@ function StageContinuationSetup({
 
   async function start() {
     if (!definition || jobId || remoteJob || (expensive && !resourceConfirmed)) return;
+    const candidateCount = Number(stage06CandidateCount);
+    if (
+      stage.stage_number === 6
+      && (!Number.isSafeInteger(candidateCount) || candidateCount < 1)
+    ) {
+      setStatus("Stage 06 总生成条数必须是正整数。");
+      return;
+    }
     setStatus(`正在验证第${stage.stage_number}步配置和运行环境…`);
     try {
       const sessions = await api.designSessions();
@@ -444,7 +456,14 @@ function StageContinuationSetup({
       const response = await api.continueRun(run.run_key, stage.stage_number, {
         session_id: session.session_id,
         execution_mode: session.execution_mode,
-        options: definition.defaults,
+        options: stage.stage_number === 6
+          ? {
+            ...definition.defaults,
+            scale_profile: "user-defined-v1",
+            total_candidate_count: candidateCount,
+            preauthorized_candidate_limit: null,
+          }
+          : definition.defaults,
         executor_id: executionTarget === "managed-ssh" ? "suzhou2" : undefined,
         controller_id: executionTarget === "managed-ssh" ? managed?.controller_id : undefined,
         maximum_gpus: expensive ? maximumGpus : undefined,
@@ -472,7 +491,14 @@ function StageContinuationSetup({
     return <div className="loading-block">正在读取第{stage.stage_number}步的版本化配置…</div>;
   }
 
-  const facts = [...definition.presentation.facts];
+  const facts = definition.presentation.facts.map((fact) => ({ ...fact }));
+  const stage06CandidateCountNumber = Number(stage06CandidateCount);
+  const stage06CandidateCountValid = Number.isSafeInteger(stage06CandidateCountNumber)
+    && stage06CandidateCountNumber >= 1;
+  if (stage.stage_number === 6) {
+    const total = facts.find((item) => item.label === "总生成条数");
+    if (total) total.value = stage06CandidateCountValid ? stage06CandidateCountNumber : "待填写";
+  }
   if (stage.stage_number === 3) {
     const regionCount = stageRegionCount(run);
     const scaffoldCount = Number(
@@ -517,6 +543,24 @@ function StageContinuationSetup({
           <strong>本步不会启动候选生成</strong>
           <span>只把已批准区域写为正向结合约束；其他残基保持中性，并使用固定 BoltzGen 版本验证 YAML。</span>
         </div>
+      )}
+      {stage.stage_number === 6 && (
+        <label className="stage-candidate-count">
+          <span>Stage 06 总生成条数</span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={stage06CandidateCount}
+            aria-invalid={!stage06CandidateCountValid}
+            onChange={(event) => {
+              setStage06CandidateCount(event.target.value);
+              setResourceConfirmed(false);
+              setStatus("");
+            }}
+          />
+          <small>推荐 50,000 条；可以输入更小数量做连通验证，最终计划、分片和远程预算都严格采用这里的整数。</small>
+        </label>
       )}
       {expensive && executionTargets && (
         <div className="execution-target-section">
@@ -598,7 +642,9 @@ function StageContinuationSetup({
         <button
           type="button"
           className="primary-button"
-          disabled={Boolean(jobId || remoteJob) || (expensive && !resourceConfirmed)}
+          disabled={Boolean(jobId || remoteJob)
+            || (expensive && !resourceConfirmed)
+            || (stage.stage_number === 6 && !stage06CandidateCountValid)}
           onClick={() => void start()}
         >
           {jobId || remoteJob
@@ -1821,6 +1867,7 @@ function NewDesign({
   const [executionMode, setExecutionMode] = useState("review-gated");
   const [designIntent, setDesignIntent] = useState("exploratory");
   const [stage02Method, setStage02Method] = useState("both");
+  const [stage06CandidateCount, setStage06CandidateCount] = useState("50000");
   const [executors, setExecutors] = useState<RemoteExecutor[]>([]);
   const [executorId, setExecutorId] = useState("local");
   const [generatedYaml, setGeneratedYaml] = useState("");
@@ -1869,6 +1916,9 @@ function NewDesign({
     ? uploadState === "uploaded" && Boolean(uploadReceipt)
     : Boolean(sourceValue.trim());
   const projectReady = projectIdValid;
+  const stage06CandidateCountNumber = Number(stage06CandidateCount);
+  const stage06CandidateCountValid = Number.isSafeInteger(stage06CandidateCountNumber)
+    && stage06CandidateCountNumber >= 1;
   const intentNames: Record<string, string> = {
     exploratory: "探索性设计",
     blocking: "阻断",
@@ -1923,9 +1973,10 @@ stage05: ${stage >= 5 ? `
     expanded_total_per_strategy: 100
     full_target_refold_top_n: 10` : "null"}
 stage06: ${stage >= 6 ? `
-  scale_profile: production-50000
+  scale_profile: user-defined-v1
+  total_candidate_count: ${stage06CandidateCount || "请填写正整数"}
   allocation_policy: equal-across-promoted-v1
-  preauthorized_candidate_limit: 50000` : "null"}
+  preauthorized_candidate_limit: null` : "null"}
 stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
 `, [
     designIntent,
@@ -1937,6 +1988,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     sourceValue,
     stage,
     stage02Method,
+    stage06CandidateCount,
   ]);
   const yaml = generatedYaml || previewYaml;
 
@@ -2055,6 +2107,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
         execution_mode: executionMode,
         design_intent: designIntent,
         stop_after_stage: stage,
+        stage06_candidate_count: stage06CandidateCountNumber,
         stage02_method: stage02Method,
         source_run_key: sourceRunKey,
         design_mode: designMode || "full-workflow",
@@ -2484,7 +2537,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                     {browsedStage === 3 && "把已批准结合区域编译为 BoltzGen 基础方案；非结合区域保持中性。"}
                     {browsedStage === 4 && "对每个设计方案进行小规模、多 GPU、可恢复生成。"}
                     {browsedStage === 5 && "按版本化门槛选出最多 3 组 Tier A；100 条扩增用于诊断，warning 不撤销晋级。"}
-                    {browsedStage === 6 && "晋级策略等额共享 50,000 条候选预算；高成本预算需要明确授权。"}
+                    {browsedStage === 6 && `晋级策略等额共享用户指定的候选预算；推荐 50,000 条，当前为 ${stage06CandidateCountValid ? stage06CandidateCountNumber.toLocaleString("zh-CN") : "待填写"} 条。`}
                     {browsedStage === 7 && "深度复核、聚类和多样性选择，输出主候选与备选草案。"}
                   </p>
                   {browsedStage > stage && (
@@ -2495,6 +2548,24 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                 </div>
               )}
               <div className="stage-budget"><span>运行到第几步</span>{[1,2,3,4,5,6,7].map((value) => <button className={stage === value ? "active" : ""} disabled={Boolean(createdProject)} type="button" onClick={() => setStage(value)} key={value}>{value}</button>)}</div>
+              {browsedStage === 6 && (
+                <label className="stage-candidate-count">
+                  <span>Stage 06 总生成条数</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    disabled={Boolean(createdProject)}
+                    value={stage06CandidateCount}
+                    aria-invalid={!stage06CandidateCountValid}
+                    onChange={(event) => {
+                      setStage06CandidateCount(event.target.value);
+                      setPreflightState("idle");
+                    }}
+                  />
+                  <small>推荐 50,000 条；最终以这里输入的正整数为准。较小数量可用于 Stage 05→06→07 连通验证。</small>
+                </label>
+              )}
               <label className="executor-selector">
                 <span>在哪里运行</span>
                 <select
@@ -2517,7 +2588,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
               <div className="budget-summary">
                 <article><span>第3步基础方案</span><strong>区域 × 7 个 VHH scaffold</strong><small>每个策略 40 个小规模候选</small></article>
                 <article><span>第4步小规模生成</span><strong>双 GPU 可恢复运行</strong><small>实际任务量由区域数量决定</small></article>
-                <article><span>第6步规模化</span><strong>Tier A 共享预算</strong><small>第5步最多晋级 3 组，按 F_YAML 排名等额分配总预算</small></article>
+                <article><span>第6步规模化</span><strong>{stage06CandidateCountValid ? `${stage06CandidateCountNumber.toLocaleString("zh-CN")} 条` : "待填写"}</strong><small>第5步最多晋级 3 组，按 F_YAML 排名等额分配用户预算</small></article>
               </div>
               <div className="notice"><strong>本次范围</strong><span>运行到第 {stage} 步：{stageNames[stage - 1]}</span></div>
             </>
@@ -2531,12 +2602,12 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
                 <div className={sourceReady && projectReady ? "ready" : "missing"}><span>{sourceReady && projectReady ? "✓" : "!"}</span><div><strong>目标输入</strong><small>{sourceReady ? (uploadReceipt?.filename || sourceValue || "来源运行已选择") : "尚未形成可用输入"}{!projectReady ? "；项目名称为空" : ""}</small></div><button type="button" onClick={() => setActiveStep(1)}>查看</button></div>
                 <div className="ready"><span>✓</span><div><strong>设计意图</strong><small>VHH · {intentNames[designIntent]} · {executionMode === "review-gated" ? "等待确认模式" : "连续运行模式"}</small></div><button type="button" onClick={() => setActiveStep(2)}>查看</button></div>
                 <div className={executionMode === "unattended" && stage02Method === "both" ? "missing" : "ready"}><span>{executionMode === "unattended" && stage02Method === "both" ? "!" : "✓"}</span><div><strong>区域策略</strong><small>{methodNames[stage02Method]}</small></div><button type="button" onClick={() => setActiveStep(3)}>查看</button></div>
-                <div className="ready"><span>✓</span><div><strong>运行范围</strong><small>运行到第 {stage} 步 · {executorId === "local" ? "当前服务器" : executorId}</small></div><button type="button" onClick={() => setActiveStep(4)}>查看</button></div>
+                <div className={stage >= 6 && !stage06CandidateCountValid ? "missing" : "ready"}><span>{stage >= 6 && !stage06CandidateCountValid ? "!" : "✓"}</span><div><strong>运行范围</strong><small>运行到第 {stage} 步 · {executorId === "local" ? "当前服务器" : executorId}{stage >= 6 ? ` · Stage 06 ${stage06CandidateCountValid ? stage06CandidateCountNumber.toLocaleString("zh-CN") : "数量无效"} 条` : ""}</small></div><button type="button" onClick={() => { setBrowsedStage(stage >= 6 ? 6 : stage); setActiveStep(4); }}>查看</button></div>
               </div>
               {createdProject && <div className="notice"><strong>项目草稿已创建</strong><span>{createdProject}。目标输入已复制到项目，若要更换目标请新建另一个设计。</span></div>}
               {actionStatus && <div className={`form-status ${preflightState === "failed" || preflightState === "blocked" ? "error" : ""}`}>{actionStatus}</div>}
               <div className="launch-actions">
-                <button className="secondary-button" onClick={createDraft} disabled={busy || Boolean(createdProject) || !sourceReady || !projectReady || (stage >= 2 && executionMode === "unattended" && stage02Method === "both")}>{busy && !createdProject ? "正在生成…" : "1. 生成项目草稿"}</button>
+                <button className="secondary-button" onClick={createDraft} disabled={busy || Boolean(createdProject) || !sourceReady || !projectReady || (stage >= 6 && !stage06CandidateCountValid) || (stage >= 2 && executionMode === "unattended" && stage02Method === "both")}>{busy && !createdProject ? "正在生成…" : "1. 生成项目草稿"}</button>
                 <button className="secondary-button" onClick={validateDraft} disabled={busy || !createdProject}>{preflightState === "checking" ? "正在检查…" : "2. 检查配置与环境"}</button>
                 <button className="primary-button" onClick={launch} disabled={busy || !createdProject || preflightState !== "passed"}>3. 确认并真实启动 →</button>
               </div>

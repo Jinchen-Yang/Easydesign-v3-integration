@@ -14,12 +14,17 @@ from easydesign.stages.s04_pilot_generation import CandidateRecord
 
 
 class ScaleProfile(StrEnum):
+    USER_DEFINED_V1 = "user-defined-v1"
     SMOKE_1000 = "smoke-1000"
     PRODUCTION_50000 = "production-50000"
 
     @property
-    def requested_candidates(self) -> int:
-        return 1_000 if self is self.SMOKE_1000 else 50_000
+    def fixed_candidate_count(self) -> int | None:
+        if self is self.SMOKE_1000:
+            return 1_000
+        if self is self.PRODUCTION_50000:
+            return 50_000
+        return None
 
     @property
     def shard_size(self) -> int:
@@ -151,7 +156,8 @@ class ScalePlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self) -> Self:
-        if self.requested_new_candidates != self.profile.requested_candidates:
+        fixed_count = self.profile.fixed_candidate_count
+        if fixed_count is not None and self.requested_new_candidates != fixed_count:
             raise ValueError("ScalePlan count 与 profile 不一致")
         if self.requested_new_candidates > self.preauthorized_candidate_limit:
             raise ValueError("ScalePlan 超过预授权 candidate limit")
@@ -256,7 +262,8 @@ class ScaleBundle(BaseModel):
 
     @model_validator(mode="after")
     def validate_counts(self) -> Self:
-        if self.requested_new_candidates != self.profile.requested_candidates:
+        fixed_count = self.profile.fixed_candidate_count
+        if fixed_count is not None and self.requested_new_candidates != fixed_count:
             raise ValueError("ScaleBundle profile count 不一致")
         if self.complete_new_candidates != self.requested_new_candidates:
             raise ValueError("ScaleBundle 必须精确完成 requested new candidates")

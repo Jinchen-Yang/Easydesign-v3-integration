@@ -240,18 +240,13 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
             }
         elif stage_number == 6:
             presentation = {
-                "description": "对唯一入选策略进行分片、可恢复的规模化生成。",
+                "description": "对 Stage 05 晋级策略按用户预算进行分片、可恢复的规模化生成。",
                 "action_label": "检查预算并开始规模化生成",
                 "facts": [
                     {
-                        "label": "规模方案",
-                        "value": defaults["scale_profile"],
-                        "note": "高成本运行必须明确授权",
-                    },
-                    {
-                        "label": "预授权上限",
-                        "value": defaults["preauthorized_candidate_limit"],
-                        "note": "完整候选",
+                        "label": "总生成条数",
+                        "value": defaults["total_candidate_count"],
+                        "note": "推荐 50,000；以提交时输入值为准",
                     },
                 ],
             }

@@ -397,7 +397,7 @@ def _managed_candidate_budget(
 ) -> int:
     if stage_range[0] == 6:
         assert config.stage06 is not None
-        return 1_000 if config.stage06.scale_profile == "smoke-1000" else 50_000
+        return int(config.stage06.total_candidate_count)
     stage03_ref = next(
         (
             reference

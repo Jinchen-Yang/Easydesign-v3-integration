@@ -49,6 +49,7 @@ def test_scale_profiles_build_contiguous_authorized_shards(
 ) -> None:
     plan = build_scale_plan(
         profile=profile,
+        total_candidate_count=limit,
         strategy_id="strategy-one",
         strategy_bundle_sha256=SHA256,
         stage05_bundle_sha256=SHA256,
@@ -69,6 +70,7 @@ def test_scale_plan_rejects_candidate_budget_above_authorization() -> None:
     with pytest.raises(ValidationError, match="预授权"):
         build_scale_plan(
             profile=ScaleProfile.PRODUCTION_50000,
+            total_candidate_count=50_000,
             strategy_id="strategy-one",
             strategy_bundle_sha256=SHA256,
             stage05_bundle_sha256=SHA256,
@@ -78,6 +80,45 @@ def test_scale_plan_rejects_candidate_budget_above_authorization() -> None:
             preauthorized_candidate_limit=1_000,
             generated_at=NOW,
         )
+
+
+def test_user_defined_scale_count_builds_final_remainder_shard() -> None:
+    plan = build_scale_plan(
+        profile=ScaleProfile.USER_DEFINED_V1,
+        total_candidate_count=5_001,
+        strategy_id="strategy-one",
+        strategy_bundle_sha256=SHA256,
+        stage05_bundle_sha256=SHA256,
+        design_specification=_artifact("design-specification"),
+        resource_report=_artifact("resource-report"),
+        devices=(0, 1),
+        preauthorized_candidate_limit=5_001,
+        generated_at=NOW,
+    )
+
+    assert [item.requested_candidates for item in plan.shards] == [2_500, 2_500, 1]
+    assert plan.shards[-1].ordinal_end == 5_001
+
+
+def test_stage06_config_defaults_to_recommended_user_budget_and_reads_dev34() -> None:
+    current = Stage06Config()
+    assert current.scale_profile == "user-defined-v1"
+    assert current.total_candidate_count == 50_000
+    assert current.authorized_candidate_limit == 50_000
+
+    legacy = Stage06Config.model_validate(
+        {"scale_profile": "smoke-1000", "preauthorized_candidate_limit": 1_000}
+    )
+    assert legacy.total_candidate_count == 1_000
+    assert legacy.authorized_candidate_limit == 1_000
+
+
+def test_stage06_config_accepts_arbitrary_positive_user_count() -> None:
+    config = Stage06Config.model_validate(
+        {"scale_profile": "user-defined-v1", "total_candidate_count": 37}
+    )
+    assert config.total_candidate_count == 37
+    assert config.authorized_candidate_limit == 37
 
 
 def test_manual_scale_authorization_requires_two_explicit_acknowledgements() -> None:

@@ -12,7 +12,7 @@
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | APOE 21×40 真实生成保持通过；dev35 本机仍直接执行，Suzhou2 队列已分离到独立 Manager 仓库。 | 完成 Manager 锁定环境/模型和审核后的非 APOE 极小 Stage 04→05 真实探针。 | 新 Manager 尚未启动和真实 GPU 验收；旧 APOE 证据不受影响。 | 2026-08-01 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | v1.5/v1.6 APOE 结论保持冻结；dev35 强制远程 Stage 04→05 为一个原地连续 bundle。 | 在第二真实案例验证 2–3 个 Tier A，并验收 Manager 非 APOE 极小连续链。 | Suzhou2 Manager 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `smoke-validated` | APOE 历史单策略 50k 证据保持；dev35 本机直跑不变，Suzhou2 6→7 交给独立 Manager。 | 完成 Manager 单 shard Stage 06→07 真实探针和断线/恢复验收。 | 新 Manager 尚未启动；旧 50k 不重跑。 | 2026-08-01 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `smoke-validated` | dev35 已把 Stage 06 改为用户可调精确总数，默认推荐 50k；Python、UI 与浏览器全量门已通过。 | 构建精确 wheel、升级 Manager，再用合法 Tier A 小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 验证正常完成但 40/40 均未通过 iPTM 门，没有合法 Tier A；旧 50k 不重跑。 | 2026-08-02 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `implemented` | S07-002 多策略筛选保持；dev35 将完整 `(6,7)`、精确版本和三后端 ready 固化为远程契约。 | 完成 Suzhou2 Manager 后端 probe 和单 shard Stage 06→07 验收。 | 锁定环境/模型副本与 Manager 服务尚未发布。 | 2026-08-01 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 

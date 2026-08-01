@@ -12,10 +12,11 @@ Stage 06 只做一件事：把 Stage 05 v1.6 晋级的 1–3 个 Tier A 按已�
 一批全新的、完整且可追溯的 BoltzGen 候选，并把每组及全局都无缺口地交给 Stage 07。
 旧 Stage05Bundle 0.1 的唯一赢家或负责人明确授权的单一 Tier A 仍按历史契约读取。
 
-本阶段不会重新选择策略，也不会把 Stage 04/05 的候选计入 scale 数量。当前
-`smoke-1000` 必须新生成 1000 个候选；`production-50000` 是可规划、可恢复的正式规模
-profile。APOE 于 2026-07-27 获得一次独立的人工作为探索性生成的真实 50k 授权；该授权
-不改变 Stage 05 科学停止。
+本阶段不会重新选择策略，也不会把 Stage 04/05 的候选计入 scale 数量。新任务使用
+`user-defined-v1`，由用户通过 `total_candidate_count` 决定精确总数；产品推荐并默认
+50,000，但较小正整数可以用于真实 Stage 05→06→07 连通验证。`smoke-1000` 和
+`production-50000` 继续只读兼容 dev34 已冻结运行。APOE 于 2026-07-27 获得一次独立的
+人工探索性 50k 授权；该授权不改变 Stage 05 科学停止。
 
 这里的“复折叠”指固定 BoltzGen 0.3.2 pipeline 内的 folding/refolding/analysis 产物。
 多 seed Protenix 深度复合物预测属于 Stage 07，不能混入 Stage 06。
@@ -30,8 +31,9 @@ Stage 06 只读取当前 `RunManifest` 声明且逐一通过大小与 SHA-256 �
 - schema 0.7 的 `stage04.executor` 与 `stage06` 配置；
 - runtime profile 显式声明的 BoltzGen backend。
 
-v1.6 默认要求 `strategies-promoted`。50,000 是所有晋级策略共享的总预算，不是每组
-各 50,000；按 `F_YAML` 晋级顺序等额分配，余数优先给排名靠前的策略。旧 v1.5
+v1.6 默认要求 `strategies-promoted`。`total_candidate_count` 是所有晋级策略共享的
+总预算，不是每组各生成该数量；按 `F_YAML` 晋级顺序等额分配，余数优先给排名靠前的
+策略。旧 v1.5
 `stopped-no-scale-winner` 只有在配置提供双重确认的
 `manual_strategy_authorization` 时才能选择 Stage 05 已经扩展过的 Tier A；Stage 05
 结论不被重写。`stopped-no-tier-a` 永远不得越过。代码不扫描上游目录猜策略，也不从
@@ -39,21 +41,22 @@ v1.6 默认要求 `strategies-promoted`。50,000 是所有晋级策略共享的�
 
 ## 配置
 
-当前真实 smoke：
+新任务的规范配置：
 
 ```yaml
 stage06:
-  scale_profile: smoke-1000
-  preauthorized_candidate_limit: 1000
+  scale_profile: user-defined-v1
+  total_candidate_count: 50000  # 推荐值；最终以用户输入为准
+  allocation_policy: equal-across-promoted-v1
 ```
 
-production profile：
+开发者真实连通检查可以显式缩小总数，例如：
 
 ```yaml
 stage06:
-  scale_profile: production-50000
+  scale_profile: user-defined-v1
+  total_candidate_count: 37
   allocation_policy: equal-across-promoted-v1
-  preauthorized_candidate_limit: 50000
 ```
 
 v1.5 历史人工 override 继续使用：
@@ -71,12 +74,13 @@ stage06:
     acknowledge_not_scientifically_eligible: true
 ```
 
-profile 冻结以下布局：
+新 profile 冻结精确用户预算并按每组最多 2,500 条切分；旧 profile 只用于兼容：
 
-| Profile | 新候选总数 | Shard 数 | 每 shard 数 | 本轮真实授权 |
-| --- | ---: | ---: | ---: | --- |
-| `smoke-1000` | 1,000 | 2 | 500 | 是 |
-| `production-50000` | 50,000 | 20 | 2,500 | 必须逐 run 显式授权 |
+| Profile | 新候选总数 | Shard 布局 | 适用范围 |
+| --- | ---: | --- | --- |
+| `user-defined-v1` | 用户正整数；推荐 50,000 | 每组最多 2,500，尾片可更小 | 所有新任务 |
+| `smoke-1000` | 1,000 | 历史 2×500 | dev34 兼容恢复 |
+| `production-50000` | 50,000 | 历史 20×2,500 | dev34 兼容恢复 |
 
 v1.6 的精确等额分配为：
 
@@ -89,8 +93,9 @@ v1.6 的精确等额分配为：
 余数按 `F_YAML` promotion rank 分配。每组最后一个 shard 可以少于 2,500；恢复与合并
 必须使用同一冻结 allocation，不能因为任务完成先后重新分配。
 
-`preauthorized_candidate_limit` 小于 profile 规模时配置校验直接失败。50,000 不是代码中
-到处散落的常数，而是 `ScaleProfile` 的一个版本化能力。
+`total_candidate_count` 本身就是本次不可变生成授权，计划、资源预检、远程 bundle、分片
+和 coverage 必须使用同一个值。旧配置中的 `preauthorized_candidate_limit` 继续校验，
+但新 UI 不要求用户维护第二个容易与总数冲突的字段。
 
 人工 override 不是补写 `winner_strategy_id`：系统会发布
 `scale-strategy-authorization.json`，保存授权人、理由、Stage05Bundle SHA-256、
@@ -110,7 +115,7 @@ Protenix 或具备实验成功概率。
 → 每张 GPU 同时最多执行一个 shard
 → 严格收集完整候选并原子更新 progress/state
 → 合并时分别检查每组及全局 identity、ordinal 无重复且无缺口
-→ 发布精确 1000/50000 个“全新候选”的 ScaleBundle
+→ 发布精确等于 total_candidate_count 的“全新候选” ScaleBundle
 ```
 
 ### 1. 资源预检
@@ -138,9 +143,9 @@ refolded structure 和 design mask 的实际字节数计算每候选基线。当
 - 冻结的资源报告 identity。
 - 正常 Stage 05 winner 或人工探索性 override 的完整授权 identity。
 
-`smoke-1000` 的两个 shard 固定覆盖 `1–500` 与 `501–1000`；
-`production-50000` 的二十个 shard 连续覆盖 `1–50000`。ordinal 断裂、重叠、重复 task
-或超出授权都会在执行前失败。
+`user-defined-v1` 从 ordinal 1 连续切到用户总数，每片最多 2,500，最后一片可以更小。
+历史 `smoke-1000` / `production-50000` 仍严格验证原 1,000/50,000 identity。ordinal
+断裂、重叠、重复 task 或超出授权都会在执行前失败。
 
 ### 3. BoltzGen 与多 GPU
 
@@ -218,7 +223,7 @@ merge 只接受候选 ordinal `1..N` 连续、candidate ID 唯一、backend line
 
 Stage 06 版本化并导出：
 
-- `ScaleProfile`：1000/50000 profile；
+- `ScaleProfile`：用户定义 profile 与 dev34 固定 profile 兼容身份；
 - `ScaleShard`：稳定分片与 ordinal 范围；
 - `ScaleResourceReport`：容量测量、估算和 25% 门；
 - `ScalePlan`：获得授权的完整执行计划；
@@ -316,7 +321,7 @@ Stage 07。
 - 资源门在任务创建前正确允许/拒绝；
 - 中断、部分输出、损坏、resume 和发布恢复测试通过；
 - 非 APOE fixture 精确生成 1000 个新候选并无重复/缺口；
-- 新 run 对 1/2/3 个晋级策略精确生成全局 50,000；旧 smoke-1000 继续兼容；
+- 新 run 对 1/2/3 个晋级策略精确生成用户指定的全局总数；旧固定 profile 继续兼容；
 - wheel 安装后的同一 `easydesign` API/CLI 可运行和恢复。
 
 APOE 若在 Stage 05 合法科学停止，不降低门槛；Stage 06 通用工程能力仍用冻结 fixture 与
@@ -334,7 +339,7 @@ APOE 若在 Stage 05 合法科学停止，不降低门槛；Stage 06 通用工�
 - 供应商下单或公网运行服务。
 
 后续需要基于真实 1000 运行校准磁盘倍率，再增加 SMART/Slurm executor、配额审批和
-production-50000 预演。所有后续 executor 必须复用相同 ScalePlan、TaskRecord、
+50,000 推荐预算预演。所有后续 executor 必须复用相同 ScalePlan、TaskRecord、
 CandidateRecord 和 manifest 契约。
 
 ## 双执行位置与远端交接

@@ -1202,6 +1202,23 @@ test("new design exposes six entry classes and standard YAML", async ({ page }) 
   await expect(page.getByText('schema_version: "0.8"')).toBeVisible();
 });
 
+test("stage six uses the exact user-entered candidate count", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /全流程设计/ }).click();
+  await page.locator(".scientific-stage-browser").getByRole("button", { name: /规模化/ }).click();
+  await page.getByRole("button", { name: "将本次运行范围扩展到第 6 步" }).click();
+
+  const candidateCount = page.getByLabel("Stage 06 总生成条数");
+  await expect(candidateCount).toHaveValue("50000");
+  await candidateCount.fill("37");
+  await expect(page.getByText("total_candidate_count: 37")).toBeVisible();
+  await expect(page.getByText(/当前为 37 条/)).toBeVisible();
+
+  await candidateCount.fill("0");
+  await expect(candidateCount).toHaveAttribute("aria-invalid", "true");
+});
+
 test("new design steps are freely browsable and file receipt unlocks final checks", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();

@@ -108,7 +108,8 @@ class ScalePlanV0_2(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self) -> Self:
-        if self.total_candidate_budget != self.profile.requested_candidates:
+        fixed_count = self.profile.fixed_candidate_count
+        if fixed_count is not None and self.total_candidate_budget != fixed_count:
             raise ValueError("ScalePlanV0_2 total 与 profile 不一致")
         if self.total_candidate_budget > self.preauthorized_candidate_limit:
             raise ValueError("ScalePlanV0_2 超过预授权 candidate limit")
@@ -315,7 +316,8 @@ class ScaleBundleV0_2(BaseModel):
 
     @model_validator(mode="after")
     def validate_counts(self) -> Self:
-        if self.total_candidate_budget != self.profile.requested_candidates:
+        fixed_count = self.profile.fixed_candidate_count
+        if fixed_count is not None and self.total_candidate_budget != fixed_count:
             raise ValueError("ScaleBundleV0_2 profile count 不一致")
         if self.complete_new_candidates != self.total_candidate_budget:
             raise ValueError("ScaleBundleV0_2 必须精确完成 global budget")

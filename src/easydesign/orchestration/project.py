@@ -142,6 +142,7 @@ def initialize_project(
     project_id: str | None = None,
     target_id: str | None = None,
     stop_after_stage: int = 1,
+    stage06_candidate_count: int = 50_000,
     stage02_method: str | None = None,
     execution_mode: str = "review-gated",
     design_intent: str = "exploratory",
@@ -157,6 +158,8 @@ def initialize_project(
 
     if stop_after_stage not in {1, 2, 3, 4, 5, 6, 7}:
         raise ConfigurationError("Developer Preview init 只支持 --stop-after 1 到 7")
+    if stage06_candidate_count < 1:
+        raise ConfigurationError("Stage 06 总生成条数必须是正整数")
     if execution_mode not in {"review-gated", "unattended"}:
         raise ConfigurationError("--execution-mode 必须是 review-gated 或 unattended")
     if design_intent not in {
@@ -422,9 +425,9 @@ def initialize_project(
         ),
         "stage06": (
             {
-                "scale_profile": "production-50000",
+                "scale_profile": "user-defined-v1",
+                "total_candidate_count": stage06_candidate_count,
                 "allocation_policy": "equal-across-promoted-v1",
-                "preauthorized_candidate_limit": 50_000,
             }
             if stop_after_stage >= 6
             else None

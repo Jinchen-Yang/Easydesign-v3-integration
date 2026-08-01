@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | APOE 历史单策略 50k 证据保持；dev35 本机直跑不变，Suzhou2 6→7 交给独立 Manager。 | 完成 Manager 单 shard Stage 06→07 真实探针和断线/恢复验收。 | 新 Manager 尚未启动；旧 50k 不重跑。 | 2026-08-01 |
+| `smoke-validated` | dev35 已把 Stage 06 改为用户可调精确总数，默认推荐 50k；Python、UI 与浏览器全量门已通过。 | 构建精确 wheel、升级 Manager，再用合法 Tier A 小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 验证正常完成但 40/40 均未通过 iPTM 门，没有合法 Tier A；旧 50k 不重跑。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -14,6 +14,8 @@
 - `ScalePlanV0_2` / `ScaleBundleV0_2` 已实现 1/2/3 个 strategy 的精确等额分配、每组
   strategy-local ordinal、尾部分片和全局 coverage；4 个 Tier A 时只消费 F_YAML
   前三。
+- 新任务使用 `user-defined-v1` 和唯一 `total_candidate_count`；默认/推荐 50,000，用户
+  输入的任意合法总数会原样进入本机计划或远程 bundle、授权、分片和 coverage。
 - `smoke-1000` 表示全新 1000 个候选，固定为两个 500-candidate shard。
 - 历史 APOE 单策略 `production-50000` 已完成 20×2500、50,000/50,000；它仍是
   ScaleBundle 0.1 人工 override 证据，不伪装成原生 v1.6 多策略 run。
@@ -29,6 +31,7 @@
 
 | 能力 | 状态 | 当前证据 |
 | --- | --- | --- |
+| 用户可调精确总数 | `implemented` | 默认 50,000；37/5,001 等任意正整数、尾部分片、旧配置迁移和 managed bundle 单元测试 |
 | `smoke-1000` 2×500 计划 | `implemented` | `ScaleProfile`/`ScalePlan` 类型与单元测试 |
 | `production-50000` 20×2500 旧单策略路径 | `smoke-validated` | Suzhou2 历史运行已真实完成 20×2500；v1.6 多策略尾部分片另由契约测试覆盖 |
 | 多策略全局 50k allocation | `implemented` | 1/2/3 strategy 精确 50000、25000/25000、16667/16667/16666 |
@@ -44,7 +47,7 @@
 | 长任务结构化 heartbeat | `implemented` | BoltzGen adapter → TaskHeartbeat → 原子 ProgressSnapshot → CLI/UI；旧 dev11 运行不追写伪心跳 |
 | UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | 本机自动 GPU 发现与租约 | `implemented` | 省略 devices 时自动冻结符合门槛的 GPU，支持最大卡数限制和无资源等待 |
-| Suzhou2 Managed Worker 多 shard | `implemented` | 独立 Manager dev1 拥有中央队列、8 GPU 租约、尾分片、heartbeat/恢复和 managed-run SHA-256；待部署 smoke |
+| Suzhou2 Managed Worker 多 shard | `smoke-validated` | 独立 Manager dev1 已激活，8 GPU/三后端 probe ready；固定非 APOE 40-candidate 任务队列/租约/落盘成功并科学停止 |
 | Suzhou2 配对引导 | `implemented` | 工作区 key pair 检测/复用、一次性密码公钥安装、严格 known-host 与免密 worker 探测 |
 | 6→7 远程数据本地性 | `implemented` | Scale 候选留在 Suzhou2，Stage 07 原地消费；默认仅 review 同步 |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
@@ -52,6 +55,9 @@
 
 ## Now
 
+- `[S06-005]` 完成用户可调 `total_candidate_count` 的全量质量门、dev35 wheel 和 Manager
+  精确版本升级；随后用小预算运行固定非 APOE Stage 06→07，确认 UI 输入、bundle 预算、
+  尾分片和 Stage 07 原地消费一致。
 - `[S07-002/VAL-007]` 在 Suzhou2 恢复并登记 Protenix/TNP 与模型资产，完成真实 adapter
   probe 后原地消费已采用的 50,000 候选；源 39 GB 保持在 Suzhou2 原位。
 - `[VAL-008]` 在审核并启动的 Suzhou2 Manager 上运行一个 Stage 06→07 单 shard 探针；
@@ -65,12 +71,24 @@
 
 ## Blocked
 
-- Suzhou2 当前没有通过新 Stage 07 profile 登记的 Protenix/TNP 后端，八张 GPU 在
-  2026-07-31 审计时均被其他任务使用。等待自然释放，禁止终止非 EasyDesign 进程。
+- Suzhou2 Manager、BoltzGen、Protenix-v2 与 TNP 已通过 probe；固定 1UBQ 40-candidate
+  Stage 04→05 已在队列 revision 104 正常完成，但 40/40 均未达到 `iPTM >= 0.5`，其中
+  31 条还未达到 interface PAE 门，因此没有合法 Tier A 可进入 Stage 06。真实 06→07
+  连通验收须换用合法 Tier A fixture；不得降低门槛或伪造赢家。外部 GPU 任务继续等待
+  自然释放，禁止终止非 EasyDesign 进程。
 - APOE 的旧 `stopped-no-scale-winner` 仍是冻结科学结果；历史人工授权只批准生成预算。
 
 ## 验证证据
 
+- dev35 可调预算定向门：任意 37/5,001 条、末尾不足 2,500 的分片、dev34 fixed profile
+  迁移、远程 bundle 精确预算、UI request 与 production build 均通过。
+- dev35 全量工程门：`make check`、413 passed/8 skipped 的 Python 回归、Target Viewer
+  3 passed/2 skipped、Workbench Chromium 双尺寸与 Firefox 71 passed/1 skipped；新增浏览器
+  用例验证默认 50,000、输入 37 后 YAML 与提交均严格为 37、非正整数被拒绝。
+- Suzhou2 固定 1UBQ 40-candidate 真实任务
+  `val008-1ubq-region8-tier-a-20260801t1631z`：Manager queue revision 104、40/40 收集、
+  0 operational failure；Stage 05 为 `stopped-no-tier-a`。失败分布为 iPTM 40、interface
+  PAE 31、BoltzGen pass-filter 32、severe clash 5、hotspot coverage 4，属于可审计科学停止。
 - 模型与计划测试：1000/50000 profile、连续 shard、预授权拒绝、coverage 失败。
 - 集成 fixture：非 APOE target 精确生成 1000 个新候选；发布恢复复用同一 bundle
   SHA-256；磁盘门失败时没有创建 task。
@@ -133,6 +151,16 @@
 - 增加远程 watch/sync/resume、Stage 06 `scale-state.json` UI 读取、长任务 heartbeat
   和 Workbench executor 选择。当前运行由 dev11 启动，因此保持空 heartbeat，而不是
   事后伪造；后续 dev12 新任务或合法 resume 自动开始记录。
+
+### 2026-08-02
+
+- 将 canonical Stage 06 预算改为 `total_candidate_count`；默认/推荐 50,000，最终严格
+  采用用户输入值，任意正整数均可形成连续尾部分片。旧 `smoke-1000` 与
+  `production-50000` 只作为 dev34 固定配置兼容入口。
+- 新建设计与 Stage continuation 都显示同一个精确数量字段；本机执行、远程 bundle、
+  授权、计划、coverage 和 Stage 07 package 分类消费同一数值。
+- 固定 1UBQ 40-candidate 真实任务自然结束；队列、租约、后端和落盘无 operational
+  failure，但 40 条均未达到 iPTM 门。保留科学停止，不通过调低阈值换取连通结果。
 
 ## 历史索引
 

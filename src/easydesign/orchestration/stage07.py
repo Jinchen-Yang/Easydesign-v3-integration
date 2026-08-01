@@ -1744,6 +1744,11 @@ def _execute_stage07(
         )
 
     biosafety_pending = "biosafety" in resolved.user_config.design.required_reviews
+    scale_candidate_count = (
+        upstream.scale_bundle.total_candidate_budget
+        if isinstance(upstream.scale_bundle, ScaleBundleV0_2)
+        else upstream.scale_bundle.requested_new_candidates
+    )
     package_type: Literal[
         "smoke-review-package",
         "draft-order-package",
@@ -1753,11 +1758,15 @@ def _execute_stage07(
         if not selections
         else (
             "draft-order-package"
-            if biosafety_pending or upstream.scale_bundle.profile.value == "production-50000"
+            if biosafety_pending or scale_candidate_count >= 50_000
             else "smoke-review-package"
         )
     )
-    scale_profile: Literal["smoke-1000", "production-50000"] = upstream.scale_bundle.profile.value
+    scale_profile: Literal[
+        "user-defined-v1",
+        "smoke-1000",
+        "production-50000",
+    ] = upstream.scale_bundle.profile.value
     biosafety_status: Literal["not-required", "pending"] = (
         "pending" if biosafety_pending else "not-required"
     )

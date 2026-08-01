@@ -194,6 +194,7 @@ class ProjectCreateRequest(BaseModel):
     execution_mode: Literal["unattended", "review-gated"] = "review-gated"
     design_intent: str = "exploratory"
     stop_after_stage: int = Field(default=1, ge=1, le=7)
+    stage06_candidate_count: int = Field(default=50_000, ge=1)
     stage02_method: str | None = None
     source_run_key: str | None = None
     design_mode: Literal[
@@ -2090,6 +2091,7 @@ def create_ui_app(
                 "execution_mode": payload.execution_mode,
                 "design_intent": payload.design_intent,
                 "stop_after_stage": payload.stop_after_stage,
+                "stage06_candidate_count": payload.stage06_candidate_count,
                 "stage02_method": payload.stage02_method,
             }
             uploaded_source: Path | None = None

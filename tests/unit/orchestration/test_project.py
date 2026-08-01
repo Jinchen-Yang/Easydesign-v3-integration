@@ -209,6 +209,7 @@ def test_initialize_stage07_project_materializes_all_late_stage_profiles(
         target=fasta,
         stop_after_stage=7,
         execution_mode="unattended",
+        stage06_candidate_count=37,
     )
     loaded = load_run_config(initialized.config_path)
 
@@ -221,9 +222,10 @@ def test_initialize_stage07_project_materializes_all_late_stage_profiles(
     assert loaded.config.stage05.advisory_validation is not None
     assert loaded.config.stage05.advisory_validation.expanded_total_per_strategy == 100
     assert loaded.config.stage05.advisory_validation.full_target_refold_top_n == 10
-    assert loaded.config.stage06.scale_profile == "production-50000"
+    assert loaded.config.stage06.scale_profile == "user-defined-v1"
+    assert loaded.config.stage06.total_candidate_count == 37
     assert loaded.config.stage06.allocation_policy == "equal-across-promoted-v1"
-    assert loaded.config.stage06.preauthorized_candidate_limit == 50_000
+    assert loaded.config.stage06.preauthorized_candidate_limit is None
     assert loaded.config.stage07.primary_count == 20
     assert loaded.config.stage07.backup_count == 20
     assert loaded.config.stage07.tnp_required is True

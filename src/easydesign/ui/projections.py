@@ -541,7 +541,7 @@ def get_run_projection(
             ),
             "completed_at": execution.completed_at,
             "highlights": {
-                "profile": "production-50000",
+                "profile": "user-defined-v1",
                 "requested_candidates": execution.candidate_count,
                 "collected_candidates": execution.candidate_count,
                 "strategy_count": len(execution.strategy_ids),

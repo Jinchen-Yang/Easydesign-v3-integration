@@ -134,7 +134,7 @@
 | `UI-021` | Product UI | `smoke-validated` | 真实 APOE 页面已显示 Tier A/B/C/D=1/1/5/14、1 组晋级、1 条诊断 warning，以及 Stage 06 50,000/50,000 与 8 GPU 历史。 |
 | `ENG-030` | Core Engineering | `implemented` | Stage 04/06 执行位置已从科学 YAML 分离；本机支持 GPU 自动发现、资源门、最大卡数、append-only 租约、heartbeat 和恢复。 |
 | `ENG-031` | Core Engineering | `implemented` | `/data/easydesign/managed-worker` 布局、RemoteJobBundle、`flock` 中央队列、8 GPU 租约、重启对账与 4→5/6→7 就地执行已实现；安装 systemd 仍由运维审核。 |
-| `UX-008` | CLI & Developer Experience | `implemented` | 已实现 host fingerprint 确认、工作区专用 SSH key、免密 worker 探针和可恢复逻辑解绑；不在网页保存密码或自动撤销公钥。 |
+| `UX-008` | CLI & Developer Experience | `implemented` | 已实现全量 host key 稳定扫描与 fingerprint 确认、工作区专用 SSH key、免密 worker 探针和可恢复逻辑解绑；远程连接只提交该工作区密钥，不读取或修改个人 `~/.ssh`。 |
 | `UI-022` | Product UI | `implemented` | Stage 04/06 已提供“当前机器 / Suzhou2”执行卡片、配对向导、队列/GPU/ETA 状态、15 秒观察和 metadata/review/complete 同步。 |
 | `UI-023` | Product UI | `smoke-validated` | 设置已收敛为“当前设备 / 公共算力 / 项目存档”三页；环境自动检查、缺失组件按需安装和折叠技术详情已通过双尺寸 Chromium 视觉验收。 |
 | `VAL-008` | Scientific Validation | `planned` | 用本机最小任务、Suzhou2 极小 Stage 04 任务及 Stage 06 单 shard 探针验证同一生成契约；不得重跑 50k。 |

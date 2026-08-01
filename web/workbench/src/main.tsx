@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { api } from "./api";
 import { artifactName, capabilityLabel, stageNames, stageShortNames, stateCopy } from "./product";
 import { RegionEditor } from "./RegionEditor";
+import { SettingsPage } from "./SettingsPage";
 import { StageFive as FilterStageFive } from "./StageFive";
 import { StructureWorkbench } from "./StructureWorkbench";
 import type {
@@ -3299,7 +3300,7 @@ function App() {
               replay={replay}
             />
           ) :
-          page === "settings" ? <OperationsPage type="environment" projects={data.projects} editableProjects={data.editable_projects} selectedRun={selectedRun} /> :
+          page === "settings" ? <SettingsPage /> :
           <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} />}
       </main>
     </div>

@@ -251,6 +251,55 @@ async function mockApi(page: Page) {
   const archivedProjectIds = new Set<string>();
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/install/status") {
+      const environments = [
+        "easydesign-core",
+        "reporting-web",
+        "pymol-pse",
+        "protenix-v2",
+        "scannet-epitope",
+        "boltzgen",
+        "tnp",
+      ].map((environment_id) => ({ environment_id, status: "available" }));
+      const componentEnvironments: Record<string, string[]> = {
+        "core-ui": ["easydesign-core", "reporting-web"],
+        "pymol-pse": ["pymol-pse"],
+        "protenix-v2": ["protenix-v2"],
+        "scannet-epitope": ["scannet-epitope"],
+        boltzgen: ["boltzgen"],
+        tnp: ["tnp"],
+      };
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          workspace: "/fixture/easydesign",
+          plan: {
+            disk: {
+              free_bytes: 80 * 1024 ** 3,
+              incremental_peak_bytes: 0,
+              reserve_bytes: 10 * 1024 ** 3,
+              sufficient: true,
+            },
+          },
+          component_plans: Object.fromEntries(Object.entries(componentEnvironments).map(([component, ids]) => [component, {
+            component,
+            environments: ids.map((environment_id) => ({ environment_id, already_present: true, estimated_install_bytes: 0 })),
+            assets: [],
+            disk: {
+              free_bytes: 80 * 1024 ** 3,
+              incremental_peak_bytes: 0,
+              reserve_bytes: 10 * 1024 ** 3,
+              sufficient: true,
+            },
+          }])),
+          environments,
+          assets: [],
+          jobs: [],
+          quarantine: { path: "runtime/quarantine", entries: 0 },
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/remote-executors") {
       await route.fulfill({
         contentType: "application/json",
@@ -995,11 +1044,34 @@ test("font floor and user-facing Chinese navigation meet the product baseline", 
 test("ordinary users only see the platform assistant service status", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "设置" }).click();
-  await expect(page.getByRole("heading", { name: "EasyDesign 结构助手" })).toBeVisible();
+  await page.getByText("技术详情", { exact: true }).click();
+  await expect(page.getByText("EasyDesign 结构助手", { exact: true })).toBeVisible();
   await expect(page.getByText(/API 由 EasyDesign 部署者统一提供/)).toBeVisible();
   await expect(page.getByLabel("API key")).toHaveCount(0);
   await expect(page.getByLabel("模型 ID")).toHaveCount(0);
   await expect(page.getByLabel("提供方")).toHaveCount(0);
+});
+
+test("settings separates local readiness, public compute and archives", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置" }).click();
+
+  await expect(page.getByRole("heading", { name: "工作区设置" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /当前设备/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "基础环境已就绪" })).toBeVisible();
+  await expect(page.getByText("EasyDesign 基础环境", { exact: true })).toBeVisible();
+  await expect(page.getByText("BoltzGen", { exact: true })).toBeVisible();
+  await expect(page.getByText("/fixture/easydesign", { exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "刷新状态" })).toHaveCount(0);
+
+  await page.getByRole("tab", { name: /公共算力/ }).click();
+  await expect(page.getByRole("heading", { name: "Suzhou2 尚未连接" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Suzhou2", exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: /项目存档/ }).click();
+  await expect(page.getByRole("heading", { name: "项目存档", exact: true })).toBeVisible();
+  await expect(page.getByText("还没有存档项目")).toBeVisible();
+  await expect(page.getByText("自检历史")).toHaveCount(0);
 });
 
 test("all molecular workspaces use the portable viewer light canvas", async ({ page }) => {
@@ -1020,7 +1092,7 @@ test("all molecular workspaces use the portable viewer light canvas", async ({ p
   expect(touchAction).toBe("none");
 });
 
-test("project and stage-five workspaces keep the approved visual hierarchy", async ({ page, browserName }) => {
+test("project, filtering and settings pages keep the approved visual hierarchy", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "视觉基线固定在 Chromium；Firefox 执行交互 smoke");
   await page.goto("/");
   await expect(page).toHaveScreenshot("projects.png", {
@@ -1029,6 +1101,12 @@ test("project and stage-five workspaces keep the approved visual hierarchy", asy
   });
   await page.getByRole("button", { name: "查看项目 →" }).click();
   await expect(page).toHaveScreenshot("stage-five-conclusion.png", {
+    animations: "disabled",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "设置" }).click();
+  await expect(page.getByRole("heading", { name: "工作区设置" })).toBeVisible();
+  await expect(page).toHaveScreenshot("settings-current-device.png", {
     animations: "disabled",
     fullPage: true,
   });

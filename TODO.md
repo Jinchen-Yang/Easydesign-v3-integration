@@ -22,7 +22,7 @@
 | M7 Stage 02 用户区域交接 | `smoke-validated` | schema 0.6 将 PSE 固定红/蓝/黄和 YAML 四编号统一为 UserProvidedRegionSet；APOE 两条来源得到相同 9/14/14 成员并发布带不同 provenance 的 hotspots.yaml 0.3。 |
 | M8 Stage 03 基础策略编译 | `smoke-validated` | schema 0.7、通用 region×official VHH7 策略、固定 scaffold 资产和 BoltzGen 0.3.2 官方校验已完成；APOE 21/21 通过。 |
 | M9 Stage 04–07 通用后半流程 | `implemented` | 可恢复 BoltzGen generation、v1.5 历史筛选和 v1.6 多策略晋级、共享 50k、Stage 07 全局竞争均已形成通用实现；APOE 的 v1.5 科学停止保持冻结，独立 50k 证据等待 v1.6 adoption 后进入 Stage 07。 |
-| M10 产品级科研工作台 | `smoke-validated` | dev20 工作台已形成连续七阶段轨道、内嵌 Stage 02、Stage 03–07 配置/运行/终态前进；PSE 流式接收、结构审查和真实 Stage 03 配置投影通过验收。 |
+| M10 产品级科研工作台 | `smoke-validated` | dev33 工作台已形成连续七阶段轨道、结构审查、真实运行投影和“当前设备 / 公共算力 / 项目存档”三页精简设置。 |
 | M11 合作者共享证据 | `smoke-validated` | dev10 在 `main` 提供 65 MiB APOE 只读证据包、完整性校验与一条命令启动；21/840/100/12/10 结果及双 GPU 历史通过真实 API 复验。 |
 | M12 跨服务器执行 | `smoke-validated` | dev11 已在 Suzhou2 真实提交 persistent run；8×A100 同时运行首批分片，远端独立 manifest/progress/resume 生效。 |
 | M13 项目与设计路线整理 | `smoke-validated` | dev13 已建立可恢复项目归档、全流程/按步骤/开发者自检三条产品路线、通用 continuation、Mol* 生命周期修复和 Stage 02 交互式重选区；真实 APOE FASTA、PSE 新分支与浏览器验收均已完成。 |
@@ -46,7 +46,7 @@
 | `ENG` | Core Engineering | `smoke-validated` | manifest、Decision Gate、跨主机执行与统一 run layout 已形成可审计工程底座；ENG-023 的自包含工作区正在真实重建验收。 | 保持一个 API、不可变证据、仓库内写边界与跨平台 core。 | 完成 Proteindigger 全后端 setup、资产许可和移动工作区验收；[运行目录规则](docs/architecture/RUN_LAYOUT.md)。 |
 | `UX` | CLI & Developer Experience | `smoke-validated` | UX-001–005 已提供可安装 CLI；UX-006 增加从 clone 到 setup/doctor/ui 的单一启动器。 | 让真实能力和可审计结果通过稳定、自包含入口使用。 | 验收 Linux 完整安装、minimal 安装和 macOS/Windows core/UI；[README](README.md)。 |
 | `REP` | Reporting & Visualization | `implemented` | 自包含 Viewer 和双查看器底座已 smoke；REP-009 已实现完整 PML 单一场景、动态 Skills、不可变版本及 Mol* 兼容投影，真实 provider 浏览器复验待完成。 | 保持只读、便携、最小暴露，并扩展跨平台结构交互矩阵。 | REP-009 真实 APOE/平台 provider smoke；[产品规范](docs/product/UI_WORKBENCH.md)。 |
-| `UI` | Product UI | `smoke-validated` | 连续七阶段工作区、安装中心、有效草稿、事务式创建和递进只读冻结已形成统一产品入口。 | 继续在第二真实案例和长任务中验证产品流程。 | UI-002 长任务交互；[产品规范](docs/product/UI_WORKBENCH.md)。 |
+| `UI` | Product UI | `smoke-validated` | 连续七阶段工作区、可靠结构审查、递进只读冻结和三页精简设置已形成统一产品入口。 | 继续在第二真实案例和长任务中验证产品流程。 | UI-002 长任务；[产品规范](docs/product/UI_WORKBENCH.md)。 |
 | `VAL` | Scientific Validation | `planned` | 当前只有工程 smoke，没有 binder 准确率结论；APOE Stage 05 负结果等待受控解释。 | 建立预注册 benchmark、负结果和实验反馈链。 | VAL-003：Protenix target-template / hotspot-constraint 受控对照。 |
 | `DATA` | Data & Assets | `smoke-validated` | DATA-002/003 固定 VHH7 和 TNP；DATA-005 增加环境内容身份、安装后 inventory、模型 registry 与许可门。 | 确保 scaffold、模型、环境、fixture 和共享结果的来源、授权与边界可审计。 | 生成并验证 Linux 环境锁，完成逐资产许可与 checksum 验收。 |
 | `REL` | Release & Operations | `planned` | 当前只支持私有源码和本地 wheel。 | 建立 CI、版本兼容、安全和公开发布门槛。 | REL-001：等待 IP/LICENSE 决策后定义公开 release。 |
@@ -136,6 +136,7 @@
 | `ENG-031` | Core Engineering | `implemented` | `/data/easydesign/managed-worker` 布局、RemoteJobBundle、`flock` 中央队列、8 GPU 租约、重启对账与 4→5/6→7 就地执行已实现；安装 systemd 仍由运维审核。 |
 | `UX-008` | CLI & Developer Experience | `implemented` | 已实现 host fingerprint 确认、工作区专用 SSH key、免密 worker 探针和可恢复逻辑解绑；不在网页保存密码或自动撤销公钥。 |
 | `UI-022` | Product UI | `implemented` | Stage 04/06 已提供“当前机器 / Suzhou2”执行卡片、配对向导、队列/GPU/ETA 状态、15 秒观察和 metadata/review/complete 同步。 |
+| `UI-023` | Product UI | `smoke-validated` | 设置已收敛为“当前设备 / 公共算力 / 项目存档”三页；环境自动检查、缺失组件按需安装和折叠技术详情已通过双尺寸 Chromium 视觉验收。 |
 | `VAL-008` | Scientific Validation | `planned` | 用本机最小任务、Suzhou2 极小 Stage 04 任务及 Stage 06 单 shard 探针验证同一生成契约；不得重跑 50k。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |

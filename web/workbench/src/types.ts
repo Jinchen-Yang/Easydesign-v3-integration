@@ -359,6 +359,18 @@ export interface InstallStatus {
   };
   component_plans: Record<string, {
     component?: string;
+    environments: Array<{
+      environment_id: string;
+      already_present: boolean;
+      estimated_install_bytes: number;
+    }>;
+    assets: Array<{
+      asset_id: string;
+      already_present: boolean;
+      estimated_install_bytes: number;
+      license?: string;
+      license_confirmation_required?: boolean;
+    }>;
     disk: {
       free_bytes: number;
       incremental_peak_bytes: number;

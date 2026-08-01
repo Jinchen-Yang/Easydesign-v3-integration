@@ -832,6 +832,14 @@ candidate、metric projection；内部 ID、代码身份、hash 和原始文件�
 “技术记录”。React 只负责中文呈现、分页和交互，不能复制 filter threshold 或重新判断
 候选是否通过。
 
+设置页也不建立第二套环境状态。UI-023 将其分成“当前设备 / 公共算力 /
+项目存档”三个产品上下文：当前设备只投影 `setup_plan()`、environment registry、
+asset registry 和 setup job；公共算力只投影 `RemoteExecutorRegistry` 与
+`ExecutionTargets`；项目存档只读取 `run-index.json` 中的 `archived-project-run`。
+环境检查在设置页进入、window focus、visibility 恢复和 setup job 运行期间自动刷新；
+React 不扫描 Conda、模型目录或 GPU 输出。工作区路径、注册表 ID、安装任务和隔离区
+只在默认折叠的技术详情中显示。
+
 Stage 05 的 840 个 pilot、100 个 expansion 和 10 个 full-target prediction 通过以下
 分页接口访问，而不是把 7–9 MiB 报告整体发送给浏览器：
 

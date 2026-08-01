@@ -683,14 +683,16 @@ def observe_managed_pipeline(
     try:
         payload = executor.managed_worker_json("status", job_id)
         queue = ManagedJobRevision.model_validate(payload["queue"])
-        progress = None
-        progress_error = None
-        try:
-            # The controller record contains the canonical project/run path.
-            record = read_managed_remote_submission(executor_id=executor_id, job_id=job_id)
-            progress = executor.progress(Path(record.remote_run_root))
-        except Exception as error:
-            progress_error = str(error)[:4096] or type(error).__name__
+        raw_progress = payload.get("progress")
+        progress = (
+            None
+            if raw_progress is None
+            else ProgressSnapshot.model_validate(raw_progress)
+        )
+        raw_progress_error = payload.get("progress_error")
+        if raw_progress_error is not None and not isinstance(raw_progress_error, str):
+            raise ConfigurationError("managed worker progress_error 必须是 string 或 null")
+        progress_error = raw_progress_error
         return ManagedRemoteObservation(
             executor_id=executor_id,
             job_id=job_id,

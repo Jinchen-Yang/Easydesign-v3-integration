@@ -102,6 +102,58 @@ def test_managed_config_input_closure_preserves_safe_relative_paths(
         remote_execution._managed_config_input_closure(config, (outside,))
 
 
+def test_managed_observation_uses_allow_listed_status_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = json.loads((FIXTURES / "revision-v0.1.json").read_text(encoding="utf-8"))
+    progress = {
+        "schema_version": "0.1",
+        "stage_id": "04-pilot-generation",
+        "phase": "running",
+        "updated_at": "2026-08-01T14:00:00Z",
+        "status": "running",
+        "total_tasks": 1,
+        "pending_tasks": 0,
+        "waiting_tasks": 0,
+        "running_tasks": 1,
+        "succeeded_tasks": 0,
+        "failed_tasks": 0,
+        "planned_candidates": 1,
+        "collected_candidates": 0,
+        "per_device": {"0": "task-1"},
+        "elapsed_seconds": 10.0,
+        "throughput_candidates_per_hour": None,
+        "estimated_remaining_seconds": None,
+        "task_heartbeats": [],
+        "recent_errors": [],
+    }
+
+    class FakeExecutor:
+        def managed_worker_json(self, *arguments: str) -> dict[str, object]:
+            assert arguments == ("status", "job-stage04")
+            return {
+                "queue": queue,
+                "result": None,
+                "progress": progress,
+                "progress_error": None,
+            }
+
+    monkeypatch.setattr(
+        remote_execution,
+        "_executor",
+        lambda **_kwargs: FakeExecutor(),
+    )
+
+    observed = remote_execution.observe_managed_pipeline(
+        executor_id="suzhou2",
+        job_id="job-stage04",
+    )
+
+    assert observed.progress is not None
+    assert observed.progress.stage_id == "04-pilot-generation"
+    assert observed.progress_error is None
+
+
 def test_managed_probe_ready_requires_both_chains_and_every_backend() -> None:
     payload = json.loads((FIXTURES / "probe-v0.2.json").read_text(encoding="utf-8"))
     assert ManagedWorkerProbe.model_validate(payload).ready is True

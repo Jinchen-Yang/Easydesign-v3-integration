@@ -39,6 +39,12 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
+from easydesign.managed_protocol import (
+    MINIMUM_MANAGED_AVAILABLE_BYTES,
+    REQUIRED_MANAGED_BACKENDS,
+    REQUIRED_MANAGED_GPU_COUNT,
+    REQUIRED_MANAGED_STAGE_RANGES,
+)
 from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s03_boltzgen_configuration.models import StrategyBundle
 from easydesign.workspace_context import WorkspaceContext
@@ -205,12 +211,41 @@ def probe_managed_executor(
     executor = _executor(profile_path=profile_path, executor_id=executor_id)
     payload = executor.managed_worker_json("probe")
     probe = ManagedWorkerProbe.model_validate(payload)
-    if probe.service_version != easydesign.__version__:
+    require_managed_probe_compatible(probe)
+    return probe
+
+
+def require_managed_probe_compatible(probe: ManagedWorkerProbe) -> None:
+    """Fail closed unless the Manager can execute both linked stage chains."""
+
+    if probe.easydesign_version != easydesign.__version__:
         raise ConfigurationError(
             "managed worker EasyDesign 版本不一致: "
-            f"expected={easydesign.__version__}, observed={probe.service_version}"
+            f"expected={easydesign.__version__}, observed={probe.easydesign_version}"
         )
-    return probe
+    ranges = {tuple(item) for item in probe.supported_stage_ranges}
+    missing_ranges = set(REQUIRED_MANAGED_STAGE_RANGES) - ranges
+    backend_states: dict[str, bool] = {
+        item.backend_id: item.ready for item in probe.backends
+    }
+    missing_backends = tuple(
+        backend_id
+        for backend_id in REQUIRED_MANAGED_BACKENDS
+        if not backend_states.get(backend_id, False)
+    )
+    if (
+        missing_ranges
+        or missing_backends
+        or probe.gpu_count != REQUIRED_MANAGED_GPU_COUNT
+        or probe.filesystem_available_bytes < MINIMUM_MANAGED_AVAILABLE_BYTES
+    ):
+        raise ConfigurationError(
+            "managed worker 未就绪: "
+            f"missing_stage_ranges={sorted(missing_ranges)}, "
+            f"unready_backends={list(missing_backends)}, "
+            f"gpu_count={probe.gpu_count}, "
+            f"filesystem_available_bytes={probe.filesystem_available_bytes}"
+        )
 
 
 def probe_pending_managed_executor(
@@ -222,11 +257,7 @@ def probe_pending_managed_executor(
     executor = SshRemoteExecutor(_connection(pairing.executor_id, runtime))
     payload = executor.managed_worker_json("probe")
     probe = ManagedWorkerProbe.model_validate(payload)
-    if probe.service_version != easydesign.__version__:
-        raise ConfigurationError(
-            "managed worker EasyDesign 版本不一致: "
-            f"expected={easydesign.__version__}, observed={probe.service_version}"
-        )
+    require_managed_probe_compatible(probe)
     return probe
 
 
@@ -263,9 +294,7 @@ def _local_manifest_closure(
         selected.add(_safe_relative(reference.relative_path))
         stage = load_model(reference.verify(root), StageManifest)
         stages.append(stage)
-        selected.update(
-            _safe_relative(item.relative_path) for item in _stage_artifacts(stage)
-        )
+        selected.update(_safe_relative(item.relative_path) for item in _stage_artifacts(stage))
     inspected: set[str] = set()
     while True:
         additions: set[str] = set()
@@ -307,9 +336,7 @@ def _managed_stage_range(
         return (4, 5) if stop_after_stage >= 5 else (4,)
     if latest == 5:
         return (6, 7) if stop_after_stage >= 7 else (6,)
-    raise ManifestStateError(
-        "managed SSH 只接受 Stage 03→04/05 或 Stage 05→06/07 continuation"
-    )
+    raise ManifestStateError("managed SSH 只接受 Stage 03→04/05 或 Stage 05→06/07 continuation")
 
 
 def _managed_candidate_budget(
@@ -340,13 +367,7 @@ def _managed_candidate_budget(
 
 def _managed_record_root(executor_id: str, job_id: str) -> Path:
     context = WorkspaceContext.discover()
-    return (
-        context.runtime_root
-        / "state"
-        / "managed-remote-jobs"
-        / executor_id
-        / job_id
-    )
+    return context.runtime_root / "state" / "managed-remote-jobs" / executor_id / job_id
 
 
 def list_managed_remote_submissions(
@@ -369,9 +390,7 @@ def list_managed_remote_submissions(
     )
 
 
-def read_managed_remote_submission(
-    *, executor_id: str, job_id: str
-) -> ManagedRemoteSubmission:
+def read_managed_remote_submission(*, executor_id: str, job_id: str) -> ManagedRemoteSubmission:
     record = next(
         (
             item
@@ -394,9 +413,7 @@ def _matching_managed_source(
 ) -> tuple[ManagedRemoteSubmission, str] | None:
     """Find the same reviewed run in managed storage by immutable identity."""
 
-    expected_remote = (
-        executor.connection.remote_runs_root / manifest.project_id / manifest.run_id
-    )
+    expected_remote = executor.connection.remote_runs_root / manifest.project_id / manifest.run_id
     candidates = sorted(
         (
             item
@@ -419,23 +436,17 @@ def _matching_managed_source(
         or len(latest_name.parts) != 1
     ):
         raise ManifestStateError("Suzhou2 managed source 的 LATEST 内容不安全")
-    identity = executor.file_identity(
-        expected_remote / "manifests" / remote_latest
-    )
+    identity = executor.file_identity(expected_remote / "manifests" / remote_latest)
     local_sha256 = sha256_file(manifest_path)
     if identity.sha256 != local_sha256:
-        raise ManifestStateError(
-            "本地 review 镜像与 Suzhou2 managed source 的最新 manifest 不一致"
-        )
+        raise ManifestStateError("本地 review 镜像与 Suzhou2 managed source 的最新 manifest 不一致")
     try:
         relative = expected_remote.relative_to(executor.connection.remote_work_root)
     except ValueError as error:
         raise ManifestStateError("Suzhou2 managed runs_root 不在 worker 根目录内") from error
     expected_relative = Path("runs") / manifest.project_id / manifest.run_id
     if relative != expected_relative:
-        raise ManifestStateError(
-            "Suzhou2 managed source 必须位于 runs/<project>/<run>"
-        )
+        raise ManifestStateError("Suzhou2 managed source 必须位于 runs/<project>/<run>")
     return candidates[0], relative.as_posix()
 
 
@@ -502,9 +513,7 @@ def submit_managed_pipeline(
     job_root = executor.connection.remote_work_root / "jobs" / job_id
     executor._run_remote(("test", "!", "-e", str(job_root)))
     if closure:
-        executor._run_remote(
-            ("mkdir", "-p", str(job_root / "input" / "source-run"))
-        )
+        executor._run_remote(("mkdir", "-p", str(job_root / "input" / "source-run")))
         executor.push_files(
             local_root=selected_source,
             relative_paths=closure,
@@ -549,9 +558,7 @@ def submit_managed_pipeline(
         config_sha256=sha256_file(frozen_config),
         upstream_manifest_sha256=sha256_file(manifest_path),
         inputs=tuple(inputs),
-        source_run_mode=(
-            "uploaded-closure" if managed_source_run is None else "managed-run"
-        ),
+        source_run_mode=("uploaded-closure" if managed_source_run is None else "managed-run"),
         managed_source_run=managed_source_run,
         maximum_gpus=maximum_gpus,
         requested_sync_mode=sync_mode,  # type: ignore[arg-type]
@@ -614,9 +621,7 @@ def observe_managed_pipeline(
         progress_error = None
         try:
             # The controller record contains the canonical project/run path.
-            record = read_managed_remote_submission(
-                executor_id=executor_id, job_id=job_id
-            )
+            record = read_managed_remote_submission(executor_id=executor_id, job_id=job_id)
             progress = executor.progress(Path(record.remote_run_root))
         except Exception as error:
             progress_error = str(error)[:4096] or type(error).__name__
@@ -639,11 +644,7 @@ def observe_managed_pipeline(
 
 
 def remote_job_record_path(executor_id: str, job_id: str) -> Path:
-    return (
-        WorkspaceContext.discover().remote_job_root
-        / executor_id
-        / f"{job_id}.json"
-    )
+    return WorkspaceContext.discover().remote_job_root / executor_id / f"{job_id}.json"
 
 
 def _new_job_record(submission: SshRemoteSubmission) -> SshRemoteJobRecord:
@@ -680,9 +681,7 @@ def list_remote_job_records(
     if not root.is_dir():
         return ()
     candidates = (
-        root.glob("*/*.json")
-        if executor_id is None
-        else (root / executor_id).glob("*.json")
+        root.glob("*/*.json") if executor_id is None else (root / executor_id).glob("*.json")
     )
     records: list[SshRemoteJobRecord] = []
     for path in sorted(candidates):
@@ -864,9 +863,7 @@ def _remote_model(
             executor.read_text(remote_root / _safe_relative(relative_path))
         )
     except ValueError as error:
-        raise ManifestStateError(
-            f"远端模型无效: {relative_path}: {error}"
-        ) from error
+        raise ManifestStateError(f"远端模型无效: {relative_path}: {error}") from error
 
 
 def _remote_manifest_closure(
@@ -960,16 +957,12 @@ def sync_remote_pipeline(
     """
 
     if mode not in {"metadata", "review", "complete"}:
-        raise ConfigurationError(
-            "remote sync mode 只允许 metadata、review 或 complete"
-        )
+        raise ConfigurationError("remote sync mode 只允许 metadata、review 或 complete")
     try:
         record = read_remote_job_record(executor_id=executor_id, job_id=job_id)
         remote_root = Path(record.submission.remote_run_root)
     except ConfigurationError:
-        managed = read_managed_remote_submission(
-            executor_id=executor_id, job_id=job_id
-        )
+        managed = read_managed_remote_submission(executor_id=executor_id, job_id=job_id)
         remote_root = Path(managed.remote_run_root)
     executor = _executor(profile_path=profile_path, executor_id=executor_id)
     target = destination.expanduser().resolve()
@@ -1058,8 +1051,7 @@ def sync_remote_pipeline(
                     project_id=manifest.project_id,
                     run_id=manifest.run_id,
                     notes=(
-                        f"Read-only remote mirror from {executor_id}/{job_id}; "
-                        f"sync mode={mode}.",
+                        f"Read-only remote mirror from {executor_id}/{job_id}; sync mode={mode}.",
                     ),
                 ),
             ),

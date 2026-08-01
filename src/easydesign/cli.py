@@ -14,12 +14,7 @@ from typing import Any
 from pydantic import BaseModel
 
 import easydesign
-from easydesign.backends.executors import (
-    ManagedQueue,
-    ManagedWorkerLayout,
-    ManagedWorkerProbe,
-    RemoteJobBundle,
-)
+from easydesign.backends.executors import ManagedWorkerProbe
 from easydesign.core import (
     ArtifactIntegrityError,
     ArtifactNotFoundError,
@@ -49,14 +44,6 @@ from easydesign.orchestration.decisions import (
 )
 from easydesign.orchestration.evidence_adoption import adopt_remote_scale_evidence
 from easydesign.orchestration.hotspots import approve_hotspots, export_hotspot_review
-from easydesign.orchestration.managed_worker_service import (
-    ManagedWorkerConfig,
-    ManagedWorkerService,
-    execute_managed_job,
-    load_managed_worker_config,
-    read_latest_execution_result,
-    write_managed_worker_bootstrap,
-)
 from easydesign.orchestration.profile import (
     default_runtime_profile_path,
     initialize_runtime_profile,
@@ -81,6 +68,7 @@ from easydesign.orchestration.remote_execution import (
     read_remote_job_record,
     read_remote_status,
     read_remote_submission,
+    require_managed_probe_compatible,
     resume_remote_pipeline,
     submit_managed_pipeline,
     submit_remote_pipeline,
@@ -317,51 +305,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--dry-run", action="store_true")
     _add_json(run_parser)
-
-    worker_parser = commands.add_parser(
-        "managed-worker",
-        help="Suzhou2 受管 GPU 队列的固定服务入口",
-    )
-    worker_commands = worker_parser.add_subparsers(
-        dest="managed_worker_command",
-        required=True,
-    )
-    worker_bootstrap = worker_commands.add_parser(
-        "bootstrap",
-        help="在数据盘创建 worker 布局和 systemd unit 建议，不安装到 /etc",
-    )
-    worker_bootstrap.add_argument(
-        "--root", type=Path, default=Path("/data/easydesign/managed-worker")
-    )
-    worker_bootstrap.add_argument("--easydesign-executable", type=Path, required=True)
-    worker_bootstrap.add_argument("--profile", type=Path, required=True)
-    worker_bootstrap.add_argument("--nvidia-smi", type=Path, default=Path("/usr/bin/nvidia-smi"))
-    worker_bootstrap.add_argument("--expected-gpus", type=int, default=8)
-    _add_json(worker_bootstrap)
-    for command_name, command_help in (
-        ("probe", "读取 worker、GPU、队列和数据盘状态"),
-        ("once", "执行一次对账和任务调度"),
-        ("serve", "持15秒周期持续调度"),
-    ):
-        selected = worker_commands.add_parser(command_name, help=command_help)
-        selected.add_argument("--config", type=Path, required=True)
-        _add_json(selected)
-    worker_enqueue = worker_commands.add_parser(
-        "enqueue", help="校验并入队一个无任意 shell 字段的 RemoteJobBundle"
-    )
-    worker_enqueue.add_argument("bundle", type=Path)
-    worker_enqueue.add_argument("--config", type=Path, required=True)
-    _add_json(worker_enqueue)
-    worker_status = worker_commands.add_parser("status", help="读取单个受管任务状态")
-    worker_status.add_argument("job_id")
-    worker_status.add_argument("--config", type=Path, required=True)
-    _add_json(worker_status)
-    worker_execute = worker_commands.add_parser(
-        "execute", help="由 worker 内部启动的固定 pipeline 执行器"
-    )
-    worker_execute.add_argument("job_id")
-    worker_execute.add_argument("--config", type=Path, required=True)
-    _add_json(worker_execute)
 
     remote_parser = commands.add_parser(
         "remote",
@@ -709,11 +652,7 @@ def _format_setup_plan(payload: dict[str, Any]) -> str:
     if assets:
         lines.append("运行资产：")
         for asset in assets:
-            approval = (
-                "需要许可确认"
-                if asset["license_confirmation_required"]
-                else "无需额外确认"
-            )
+            approval = "需要许可确认" if asset["license_confirmation_required"] else "无需额外确认"
             lines.append(
                 f"- {asset['asset_id']}（{asset['license']}；{approval}；"
                 f"约 {human_bytes(asset['estimated_install_bytes'])}）"
@@ -744,16 +683,17 @@ def _confirmed_setup_licenses(
     pending = [
         asset
         for asset in payload["assets"]
-        if asset["license_confirmation_required"]
-        and asset["asset_id"] not in accepted
+        if asset["license_confirmation_required"] and asset["asset_id"] not in accepted
     ]
     if not pending or not allow_prompt:
         return accepted
     print("以下运行资产需要在下载前逐项确认许可：")
     for asset in pending:
-        answer = input(
-            f"- {asset['asset_id']}（{asset['license']}），确认下载并用于本机运行？[y/N] "
-        ).strip().lower()
+        answer = (
+            input(f"- {asset['asset_id']}（{asset['license']}），确认下载并用于本机运行？[y/N] ")
+            .strip()
+            .lower()
+        )
         if answer in {"y", "yes"}:
             accepted.add(str(asset["asset_id"]))
     return accepted
@@ -774,14 +714,9 @@ def _print_setup_summary(summary: BaseModel) -> None:
         for asset_id in payload["awaiting_approval"]:
             print(f"- {asset_id}")
         component_option = (
-            f" --component {payload['component']}"
-            if payload.get("component")
-            else ""
+            f" --component {payload['component']}" if payload.get("component") else ""
         )
-        print(
-            "确认后重新运行："
-            f"./easydesign setup{component_option} --accept-license ASSET_ID"
-        )
+        print(f"确认后重新运行：./easydesign setup{component_option} --accept-license ASSET_ID")
     print("安装完成。" if payload["ok"] else "安装尚未完整完成；详情已记录，可安全重试。")
 
 
@@ -842,9 +777,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     or arguments.conda is not None
                     or arguments.pip_index_url != "https://pypi.org/simple"
                 ):
-                    raise ConfigurationError(
-                        "--status 不能与安装范围、许可或 Conda 参数同时使用"
-                    )
+                    raise ConfigurationError("--status 不能与安装范围、许可或 Conda 参数同时使用")
                 jobs = (
                     (read_setup_job(context, arguments.job_id),)
                     if arguments.job_id
@@ -874,11 +807,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             accepted_license_ids = _confirmed_setup_licenses(
                 payload,
                 accepted=set(arguments.accept_license),
-                allow_prompt=(
-                    not arguments.minimal
-                    and not arguments.json
-                    and sys.stdin.isatty()
-                ),
+                allow_prompt=(not arguments.minimal and not arguments.json and sys.stdin.isatty()),
             )
             if arguments.detach:
                 job = launch_setup_job(
@@ -938,9 +867,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 if arguments.projects_root is None
                 else arguments.projects_root
             ),
-            profile_path=(
-                context.profile_path if arguments.profile is None else arguments.profile
-            ),
+            profile_path=(context.profile_path if arguments.profile is None else arguments.profile),
             job_root=context.ui_job_root,
             port=arguments.port,
             open_browser=arguments.open_browser,
@@ -1043,9 +970,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     )
                 )
             else:
-                print(
-                    f"项目首页已改为展示：{selected.project_id}/{selected.run_id}"
-                )
+                print(f"项目首页已改为展示：{selected.project_id}/{selected.run_id}")
             return 0
         if arguments.projects_command == "prune-empty":
             removed = prune_archived_project_shells(root)
@@ -1161,98 +1086,6 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             _print_execution(execution)
         return 0
 
-    if arguments.command == "managed-worker":
-        if arguments.managed_worker_command == "bootstrap":
-            config = ManagedWorkerConfig(
-                managed_root=arguments.root.expanduser().resolve(),
-                easydesign_executable=arguments.easydesign_executable.expanduser().resolve(),
-                runtime_profile=arguments.profile.expanduser().resolve(),
-                nvidia_smi_executable=arguments.nvidia_smi.expanduser().resolve(),
-                expected_gpu_count=arguments.expected_gpus,
-            )
-            config_path, unit_path = write_managed_worker_bootstrap(config=config)
-            payload = {
-                "status": "bootstrap-created",
-                "config": str(config_path),
-                "systemd_unit_proposal": str(unit_path),
-                "note": "未修改 /etc/systemd/system；请审核 unit 后再由有权限的人员安装。",
-            }
-            rendered = (
-                _json_text(payload)
-                if arguments.json
-                else "\n".join(f"{key}: {value}" for key, value in payload.items())
-            )
-            print(rendered)
-            return 0
-        config = load_managed_worker_config(arguments.config)
-        service = ManagedWorkerService(config)
-        if arguments.managed_worker_command == "probe":
-            payload = service.probe_status()
-            rendered = (
-                _json_text(payload)
-                if arguments.json
-                else json.dumps(payload, ensure_ascii=False, indent=2)
-            )
-            print(rendered)
-            return 0
-        if arguments.managed_worker_command == "serve":
-            service.run_forever()
-            return 0
-        if arguments.managed_worker_command == "once":
-            record = service.run_once()
-            payload = {"status": "idle"} if record is None else record.model_dump(mode="json")
-            rendered = (
-                _json_text(payload)
-                if arguments.json
-                else json.dumps(payload, ensure_ascii=False, indent=2)
-            )
-            print(rendered)
-            return 0
-        layout = ManagedWorkerLayout(config.managed_root)
-        queue = ManagedQueue(layout)
-        if arguments.managed_worker_command == "enqueue":
-            bundle = RemoteJobBundle.model_validate_json(
-                arguments.bundle.read_text(encoding="utf-8")
-            )
-            expected = layout.jobs / bundle.job_id / "input" / "remote-job-bundle.json"
-            if arguments.bundle.expanduser().resolve() != expected.resolve():
-                raise ConfigurationError(
-                    "managed worker 只接受已 staging 到对应 job/input 的 bundle"
-                )
-            enqueue_revision = queue.enqueue(bundle)
-            print(
-                _json_text(enqueue_revision)
-                if arguments.json
-                else f"已入队：{enqueue_revision.job_id}"
-            )
-            return 0
-        if arguments.managed_worker_command == "status":
-            status_revision = queue.latest(arguments.job_id)
-            execution_result = read_latest_execution_result(layout, arguments.job_id)
-            payload = {
-                "queue": status_revision.model_dump(mode="json"),
-                "result": (
-                    None
-                    if execution_result is None
-                    else execution_result.model_dump(mode="json")
-                ),
-            }
-            rendered = (
-                _json_text(payload)
-                if arguments.json
-                else json.dumps(payload, ensure_ascii=False, indent=2)
-            )
-            print(rendered)
-            return 0
-        if arguments.managed_worker_command == "execute":
-            execution_result = execute_managed_job(job_id=arguments.job_id, config=config)
-            print(
-                _json_text(execution_result)
-                if arguments.json
-                else f"任务完成：{execution_result.job_id}"
-            )
-            return 0
-
     if arguments.command == "remote":
         if arguments.remote_command == "pair-scan":
             identity = scan_host_identity(host=arguments.host, port=arguments.port)
@@ -1273,9 +1106,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 confirmed_host_fingerprint=arguments.confirm_fingerprint,
             )
             payload = pairing_record.model_dump(mode="json")
-            payload["public_key_install_command"] = public_key_install_command(
-                pairing_record
-            )
+            payload["public_key_install_command"] = public_key_install_command(pairing_record)
             rendered = (
                 _json_text(payload)
                 if arguments.json
@@ -1295,6 +1126,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             from easydesign.backends.executors import SshRemoteExecutor
             from easydesign.orchestration.profile import SshRemoteRuntime
             from easydesign.orchestration.remote_execution import _connection
+
             managed_root = Path(waiting.managed_worker_root)
             probe_executor = SshRemoteExecutor(
                 _connection(
@@ -1317,8 +1149,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             managed_worker_probe = ManagedWorkerProbe.model_validate(
                 probe_executor.managed_worker_json("probe")
             )
-            if managed_worker_probe.service_version != easydesign.__version__:
-                raise ConfigurationError("Suzhou2 worker 与当前 EasyDesign 版本不一致")
+            require_managed_probe_compatible(managed_worker_probe)
             paired = RemoteExecutorRegistry().mark_paired(arguments.executor_id)
             payload = {
                 "pairing": paired.model_dump(mode="json"),
@@ -1348,9 +1179,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             remote_list_payload = {
                 "executors": list(executor_ids),
                 "jobs": [item.model_dump(mode="json") for item in records],
-                "managed_jobs": [
-                    item.model_dump(mode="json") for item in managed_records
-                ],
+                "managed_jobs": [item.model_dump(mode="json") for item in managed_records],
             }
             if arguments.json:
                 print(_json_text(remote_list_payload))
@@ -1383,12 +1212,12 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 if arguments.json:
                     print(_json_text(managed_probe))
                 else:
-                    print(f"Managed worker：{managed_probe.service_version}")
+                    print(f"Manager：{managed_probe.manager_version}")
+                    print(f"EasyDesign：{managed_probe.easydesign_version}")
                     print(f"GPU：{managed_probe.gpu_count}")
                     print(f"队列：{managed_probe.queue_depth}")
                     print(
-                        f"数据盘可用："
-                        f"{managed_probe.filesystem_available_bytes / 1024**3:.1f} GiB"
+                        f"数据盘可用：{managed_probe.filesystem_available_bytes / 1024**3:.1f} GiB"
                     )
                 return 0
             legacy_probe = probe_remote_executor(
@@ -1401,10 +1230,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 print(f"远端主机：{legacy_probe.hostname}")
                 print(f"EasyDesign：{legacy_probe.easydesign_version}")
                 print(f"GPU：{legacy_probe.gpu_count}")
-                print(
-                    "运行盘可用："
-                    f"{legacy_probe.filesystem_available_bytes / 1024**3:.1f} GiB"
-                )
+                print(f"运行盘可用：{legacy_probe.filesystem_available_bytes / 1024**3:.1f} GiB")
             return 0
         if arguments.remote_command == "adopt-scale":
             continuation = adopt_remote_scale_evidence(
@@ -1422,10 +1248,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     f"{continuation.execution.candidate_count:,} 个候选，"
                     f"{continuation.execution.shard_count} 个分片"
                 )
-                print(
-                    "旧 Stage 05 scientific-stop 保持不变；"
-                    "Stage 07 需在远端后端探针通过后启动。"
-                )
+                print("旧 Stage 05 scientific-stop 保持不变；Stage 07 需在远端后端探针通过后启动。")
             return 0
         if arguments.remote_command == "submit":
             remote_submission = submit_remote_pipeline(
@@ -1527,9 +1350,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                         profile_path=arguments.profile,
                     )
                 if arguments.json:
-                    observation_payload: dict[str, Any] = remote_observation.model_dump(
-                        mode="json"
-                    )
+                    observation_payload: dict[str, Any] = remote_observation.model_dump(mode="json")
                     observation_payload["sync"] = (
                         None if sync_report is None else sync_report.model_dump(mode="json")
                     )
@@ -1587,9 +1408,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             resumed_managed_submission = next(
                 (
                     item
-                    for item in list_managed_remote_submissions(
-                        executor_id=arguments.executor_id
-                    )
+                    for item in list_managed_remote_submissions(executor_id=arguments.executor_id)
                     if item.job_id == arguments.job_id
                 ),
                 None,
@@ -1644,9 +1463,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         status_managed_submission = next(
             (
                 item
-                for item in list_managed_remote_submissions(
-                    executor_id=arguments.executor_id
-                )
+                for item in list_managed_remote_submissions(executor_id=arguments.executor_id)
                 if item.job_id == arguments.job_id
             ),
             None,

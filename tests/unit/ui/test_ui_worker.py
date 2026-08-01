@@ -168,3 +168,63 @@ def test_external_submission_persists_stage_acceptance(tmp_path: Path) -> None:
     assert restored.stage_number == 4
     assert restored.external_job_id == "remote-job-0001"
     assert restored.status == "submitted"
+
+
+def test_local_job_reconciliation_marks_missing_pid_operational_failed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    controller = UiJobController(tmp_path / "jobs")
+    now = datetime.now(tz=UTC)
+    original = UiJobRecord(
+        job_id="job-dead-local-worker",
+        operation="run",
+        status="running",
+        project_id="sample-project",
+        run_id="sample-run",
+        stage_number=4,
+        execution_target="local-current-host",
+        process_id=424242,
+        created_at=now,
+        updated_at=now,
+    )
+    dump_model(original, controller._path(original.job_id))
+    monkeypatch.setattr(controller, "_pid_exists", lambda process_id: False)
+
+    reconciled = controller.load(original.job_id)
+
+    assert reconciled.status == "operational-failed"
+    assert reconciled.error == "local-ui-worker-exited-without-terminal-record"
+    assert reconciled.stage_number == 4
+    assert reconciled.process_id == 424242
+    assert (
+        len(
+            tuple(
+                (
+                    controller._path(original.job_id).with_name(f"{original.job_id}.json.revisions")
+                ).glob("revision-*.json")
+            )
+        )
+        == 1
+    )
+
+
+def test_local_job_reconciliation_never_reconciles_external_job(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    controller = UiJobController(tmp_path / "jobs")
+    now = datetime.now(tz=UTC)
+    external = UiJobRecord(
+        job_id="job-external-running",
+        operation="remote-run",
+        status="running",
+        external_job_id="managed-job-0001",
+        process_id=424242,
+        created_at=now,
+        updated_at=now,
+    )
+    dump_model(external, controller._path(external.job_id))
+    monkeypatch.setattr(controller, "_pid_exists", lambda process_id: False)
+
+    assert controller.load(external.job_id).status == "running"

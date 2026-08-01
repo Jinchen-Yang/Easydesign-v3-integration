@@ -98,25 +98,51 @@ class UiJobController:
     """将同步 pipeline 放入独立进程，并以原子 job record 留下操作证据。"""
 
     def __init__(self, state_root: Path | None = None) -> None:
-        selected = (
-            WorkspaceContext.discover().ui_job_root
-            if state_root is None
-            else state_root
-        )
+        selected = WorkspaceContext.discover().ui_job_root if state_root is None else state_root
         self.state_root = Path(selected).expanduser().resolve()
         self.state_root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, job_id: str) -> Path:
         return self.state_root / f"{job_id}.json"
 
+    @staticmethod
+    def _pid_exists(process_id: int) -> bool:
+        try:
+            os.kill(process_id, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def _reconcile(self, record: UiJobRecord) -> UiJobRecord:
+        """Close a lost local worker without altering stage or GPU evidence."""
+
+        if (
+            record.external_job_id is not None
+            or record.status not in {"queued", "running"}
+            or record.process_id is None
+            or self._pid_exists(record.process_id)
+        ):
+            return record
+        failed = record.model_copy(
+            update={
+                "status": "operational-failed",
+                "error": "local-ui-worker-exited-without-terminal-record",
+                "updated_at": datetime.now(tz=UTC),
+            }
+        )
+        atomic_dump_runtime_model(failed, self._path(record.job_id))
+        return failed
+
     def load(self, job_id: str) -> UiJobRecord:
-        return load_latest_runtime_model(self._path(job_id), UiJobRecord)
+        return self._reconcile(load_latest_runtime_model(self._path(job_id), UiJobRecord))
 
     def list(self) -> tuple[UiJobRecord, ...]:
         return tuple(
             sorted(
                 (
-                    load_latest_runtime_model(path, UiJobRecord)
+                    self._reconcile(load_latest_runtime_model(path, UiJobRecord))
                     for path in self.state_root.glob("job-*.json")
                 ),
                 key=lambda item: item.updated_at,
@@ -154,17 +180,13 @@ class UiJobController:
         if session_id is not None and (session_root is None or stage_number is None):
             raise ConfigurationError("产品会话 job 必须同时提供 session root 和 stage")
         if self_test_id is not None and (
-            self_test_root is None
-            or self_test_runs_root is None
-            or stage_number is None
+            self_test_root is None or self_test_runs_root is None or stage_number is None
         ):
             raise ConfigurationError(
                 "开发者自检 job 必须同时提供 self-test root、runs root 和 stage"
             )
         if execution_target not in {None, "local-current-host"}:
-            raise ConfigurationError(
-                "本地 UI worker 只接受 local-current-host 执行目标"
-            )
+            raise ConfigurationError("本地 UI worker 只接受 local-current-host 执行目标")
         if maximum_gpus is not None and maximum_gpus < 1:
             raise ConfigurationError("maximum_gpus 必须是正整数")
         if operation == "run":
@@ -255,9 +277,7 @@ class UiJobController:
         if self_test_root is not None:
             command.extend(["--self-test-root", str(self_test_root.resolve())])
         if self_test_runs_root is not None:
-            command.extend(
-                ["--self-test-runs-root", str(self_test_runs_root.resolve())]
-            )
+            command.extend(["--self-test-runs-root", str(self_test_runs_root.resolve())])
         environment = os.environ.copy()
         environment["EASYDESIGN_UI_DRAIN_FILE"] = str(drain_path)
         if maximum_gpus is not None:

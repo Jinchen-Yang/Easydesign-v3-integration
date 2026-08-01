@@ -1,21 +1,20 @@
 """Local and scheduler execution adapters."""
 
+from easydesign.managed_protocol import (
+    MANAGED_WORKER_ROOT,
+    ManagedBackendReadiness,
+    ManagedJobRevision,
+    ManagedWorkerProbe,
+    RemoteJobBundle,
+    RemoteJobInput,
+)
+
 from .local_multi_gpu import (
     DeviceResult,
     GpuResourceSnapshot,
     NvidiaSmiProbe,
     execute_on_devices,
     ui_drain_requested,
-)
-from .managed_worker import (
-    MANAGED_WORKER_ROOT,
-    ManagedJobRevision,
-    ManagedQueue,
-    ManagedWorker,
-    ManagedWorkerLayout,
-    ManagedWorkerProbe,
-    RemoteJobBundle,
-    RemoteJobInput,
 )
 from .ssh_remote import (
     SshRemoteConnection,
@@ -33,10 +32,8 @@ __all__ = [
     "DeviceResult",
     "GpuResourceSnapshot",
     "MANAGED_WORKER_ROOT",
+    "ManagedBackendReadiness",
     "ManagedJobRevision",
-    "ManagedQueue",
-    "ManagedWorker",
-    "ManagedWorkerLayout",
     "ManagedWorkerProbe",
     "NvidiaSmiProbe",
     "RemoteJobBundle",

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | v1.5 APOE 结论保持冻结；v1.6 晋级与诊断 warning 保持不变，Stage 04→05 已支持 Suzhou2 原地连续。 | 在第二真实案例验证 2–3 个 Tier A 晋级；启动 VAL-003 受控 full-target benchmark。 | Suzhou2 新 worker 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 |
+| `smoke-validated` | v1.5/v1.6 APOE 结论保持冻结；dev35 强制远程 Stage 04→05 为一个原地连续 bundle。 | 在第二真实案例验证 2–3 个 Tier A，并验收 Manager 非 APOE 极小连续链。 | Suzhou2 Manager 真实 Stage 04→05 极小任务待 VAL-008。 | 2026-08-01 |
 
 ## 当前结论
 
@@ -48,7 +48,7 @@
 | v1.5 唯一 scale winner / scientific stop | `smoke-validated` | 冻结 APOE Bundle 0.1 与旧 stop 兼容读取 |
 | 原子 progress、append-only event、resume | `implemented` | 结构指标 cache、expansion/full-target TaskRecord、通用 watch |
 | APOE 真实 Stage 05 | `smoke-validated` | 840 个 pilot、60 个新增扩展、10 个 full-target Protenix 全部完成；合法发布 `stopped-no-scale-winner` |
-| Suzhou2 原地 Stage 04→05 | `implemented` | 受管 job 固定 stage range 4→5，候选主体留在远端，控制端默认只获取 review 证据 |
+| Suzhou2 原地 Stage 04→05 | `implemented` | bundle 0.2 只接受完整 `(4,5)`，ProteinDigger 不根据 stop-after 缩成单 Stage；控制端默认只获取 review 证据 |
 
 ## Now
 

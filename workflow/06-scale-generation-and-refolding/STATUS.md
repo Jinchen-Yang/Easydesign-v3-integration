@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | APOE 历史单策略 50k 证据保持；dev32 已实现本机自动 GPU 租约、Suzhou2 受管分片与 6→7 原地执行。 | 在 Suzhou2 完成 Stage 06 单 shard 真实探针和 Stage 07 adapter probe。 | 新 worker 真实探针尚未执行；旧 50k 不重跑。 | 2026-08-01 |
+| `smoke-validated` | APOE 历史单策略 50k 证据保持；dev35 本机直跑不变，Suzhou2 6→7 交给独立 Manager。 | 完成 Manager 单 shard Stage 06→07 真实探针和断线/恢复验收。 | 新 Manager 尚未启动；旧 50k 不重跑。 | 2026-08-01 |
 
 ## 当前结论
 
@@ -44,7 +44,7 @@
 | 长任务结构化 heartbeat | `implemented` | BoltzGen adapter → TaskHeartbeat → 原子 ProgressSnapshot → CLI/UI；旧 dev11 运行不追写伪心跳 |
 | UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | 本机自动 GPU 发现与租约 | `implemented` | 省略 devices 时自动冻结符合门槛的 GPU，支持最大卡数限制和无资源等待 |
-| Suzhou2 Managed Worker 多 shard | `implemented` | 中央队列、8 GPU 租约、尾分片、heartbeat/恢复、managed-run SHA-256 原地引用 |
+| Suzhou2 Managed Worker 多 shard | `implemented` | 独立 Manager dev1 拥有中央队列、8 GPU 租约、尾分片、heartbeat/恢复和 managed-run SHA-256；待部署 smoke |
 | Suzhou2 配对引导 | `implemented` | 工作区 key pair 检测/复用、一次性密码公钥安装、严格 known-host 与免密 worker 探测 |
 | 6→7 远程数据本地性 | `implemented` | Scale 候选留在 Suzhou2，Stage 07 原地消费；默认仅 review 同步 |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
@@ -54,8 +54,8 @@
 
 - `[S07-002/VAL-007]` 在 Suzhou2 恢复并登记 Protenix/TNP 与模型资产，完成真实 adapter
   probe 后原地消费已采用的 50,000 候选；源 39 GB 保持在 Suzhou2 原位。
-- `[VAL-008]` 在新 Suzhou2 worker 上运行一个 Stage 06 单 shard 探针，再执行
-  Stage 07 adapter probe；不改写或重跑历史 50k。
+- `[VAL-008]` 在审核并启动的 Suzhou2 Manager 上运行一个 Stage 06→07 单 shard 探针；
+  不改写或重跑历史 50k。
 
 ## Next
 

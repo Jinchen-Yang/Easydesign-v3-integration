@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | S07-002 多策略筛选保持；dev32 已将受管 Stage 06→07 原地运行与 review 同步固化为执行契约。 | 完成 Suzhou2 Stage 07 后端 probe，再对已验证历史 50k 原地运行。 | Suzhou2 缺少 Protenix/TNP 登记，GPU 当前全部繁忙。 | 2026-08-01 |
+| `implemented` | S07-002 多策略筛选保持；dev35 将完整 `(6,7)`、精确版本和三后端 ready 固化为远程契约。 | 完成 Suzhou2 Manager 后端 probe 和单 shard Stage 06→07 验收。 | 锁定环境/模型副本与 Manager 服务尚未发布。 | 2026-08-01 |
 
 ## 当前结论
 
@@ -42,7 +42,7 @@
 | 非 APOE 1000-candidate 完整集成 | `implemented` | Stage 03→07 fixture，三 seed、TNP、2 primary |
 | 多策略 ScaleBundle 0.2 输入 | `implemented` | allocation/lineage/全局竞争与旧 Bundle 0.1 兼容测试 |
 | 最终 YAML 来源分布 | `implemented` | primary/backup 来源计数与 candidate lineage 契约 |
-| Suzhou2 原地 Stage 06→07 | `implemented` | 受管 stage range 6→7、managed-run manifest SHA-256 引用、review 同步和断线后继续观察 |
+| Suzhou2 原地 Stage 06→07 | `implemented` | bundle 0.2 只接受完整 `(6,7)`，Manager probe 0.2 要求 Protenix-v2/TNP/BoltzGen 全部 ready；review 同步和断线观察保持 |
 | APOE Stage 07 真实运行 | `planned` | 历史 50k 已完成，等待 adoption record、Protenix/TNP 与空闲 GPU |
 
 ## Now

@@ -161,9 +161,7 @@ def test_unqualified_assistant_residue_numbers_use_visible_label_ids() -> None:
 
 
 def test_assistant_uses_author_numbering_only_when_user_says_so() -> None:
-    operation = _explicit_region_operation_from_message(
-        "将原始编号 chain A 的23和24加入B区"
-    )
+    operation = _explicit_region_operation_from_message("将原始编号 chain A 的23和24加入B区")
     assert operation is not None
     assert operation.numbering == "auth"
     assert operation.chain == "A"
@@ -202,9 +200,7 @@ def _artifact(
     value: object,
     attempt_number: int = 1,
 ) -> ArtifactRef:
-    relative = (
-        f"{stage}/attempt-{attempt_number:04d}/artifacts/{artifact_id}.json"
-    )
+    relative = f"{stage}/attempt-{attempt_number:04d}/artifacts/{artifact_id}.json"
     _write_json(root, relative, value)
     return ArtifactRef.from_file(
         run_root=root,
@@ -469,9 +465,7 @@ def _audited_run(tmp_path: Path) -> Path:
                 artifact_id="expansion-validation-report",
                 value={
                     "status": "stopped-no-scale-winner",
-                    "candidates": [
-                        {"candidate_id": "candidate-1", "local_gate_pass": True}
-                    ],
+                    "candidates": [{"candidate_id": "candidate-1", "local_gate_pass": True}],
                     "predictions": [
                         {
                             "candidate_id": "candidate-1",
@@ -644,11 +638,7 @@ def _publish_scale_evidence_continuation(
         ),
     )
     record_root = (
-        tmp_path
-        / "projects"
-        / run.project_id
-        / "evidence-adoptions"
-        / continuation.continuation_id
+        tmp_path / "projects" / run.project_id / "evidence-adoptions" / continuation.continuation_id
     )
     dump_model(continuation, record_root / "record.json")
     (record_root.parent / "CURRENT").write_text(
@@ -682,9 +672,7 @@ def test_remote_scale_adoption_unlocks_stage06_without_rewriting_history(
     )
 
     assert projection.stages[4].state == "succeeded"
-    assert projection.stages[4].highlights["historical_policy_status"] == (
-        "scientific-stop"
-    )
+    assert projection.stages[4].highlights["historical_policy_status"] == ("scientific-stop")
     assert projection.stages[5].state == "succeeded"
     assert projection.stages[5].highlights["collected_candidates"] == 50_000
     assert projection.stages[6].state == "not-reached"
@@ -788,9 +776,7 @@ def test_project_primary_run_is_explicit_and_does_not_follow_newest_branch(
     assert after.latest_run.run_id == "run-scientific-stop"
     assert after.runs[0].run_id == "run-newer-stage02"
     assert {
-        (entry.project_id, entry.run_id)
-        for entry in index.entries
-        if entry.is_project_primary
+        (entry.project_id, entry.run_id) for entry in index.entries if entry.is_project_primary
     } == {
         ("target-alpha", "run-scientific-stop"),
         ("other-target", "run-primary"),
@@ -815,8 +801,7 @@ def test_project_primary_run_is_explicit_and_does_not_follow_newest_branch(
     selected_entry = next(
         entry
         for entry in preserved.entries
-        if entry.project_id == "target-alpha"
-        and entry.run_id == "run-scientific-stop"
+        if entry.project_id == "target-alpha" and entry.run_id == "run-scientific-stop"
     )
     assert selected_entry.is_project_primary is True
 
@@ -847,9 +832,7 @@ def test_artifact_token_is_signed_and_expires(tmp_path: Path) -> None:
     signer = ArtifactTokenSigner(b"test-secret", lifetime_seconds=10)
     artifact = ArtifactRef.from_file(
         run_root=run_root,
-        relative_path=(
-            "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
-        ),
+        relative_path=("01-target-preparation/attempt-0001/artifacts/target-bundle.json"),
         artifact_id="target-bundle",
         role="target-bundle",
         file_format="json",
@@ -873,9 +856,7 @@ def test_artifact_token_secret_persists_across_ui_restarts(tmp_path: Path) -> No
     run_key = registry.register(run_root)
     artifact = ArtifactRef.from_file(
         run_root=run_root,
-        relative_path=(
-            "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
-        ),
+        relative_path=("01-target-preparation/attempt-0001/artifacts/target-bundle.json"),
         artifact_id="target-bundle",
         role="target-bundle",
         file_format="json",
@@ -894,15 +875,12 @@ def test_artifact_token_secret_persists_across_ui_restarts(tmp_path: Path) -> No
         assert secret_path.stat().st_mode & 0o077 == 0
 
 
-
 def test_live_execution_projection_uses_structured_runtime_state(
     tmp_path: Path,
 ) -> None:
     run_root = _audited_run(tmp_path)
     historical = RunManifest.model_validate_json(
-        (run_root / "manifests" / "run-manifest-0001.json").read_text(
-            encoding="utf-8"
-        )
+        (run_root / "manifests" / "run-manifest-0001.json").read_text(encoding="utf-8")
     )
     active = historical.model_copy(
         update={
@@ -1062,11 +1040,9 @@ def test_stage05_overview_distinguishes_v16_advisory_from_v15_stop(
         manifest.model_copy(
             update={
                 "stage_manifest_refs": (*manifest.stage_manifest_refs[:-1], stage05),
-                    "revision": 2,
-                    "previous_manifest_sha256": hashlib.sha256(
-                        manifest_path.read_bytes()
-                    ).hexdigest(),
-                    "updated_at": NOW + timedelta(seconds=1),
+                "revision": 2,
+                "previous_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                "updated_at": NOW + timedelta(seconds=1),
                 "completed_at": NOW + timedelta(seconds=1),
             }
         ),
@@ -1107,15 +1083,11 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         health = client.get("/api/v1/health")
         assert health.status_code == 200
         assert health.headers["content-security-policy"].startswith("default-src")
-        assert "connect-src 'self' data: blob:" in health.headers[
-            "content-security-policy"
-        ]
+        assert "connect-src 'self' data: blob:" in health.headers["content-security-policy"]
         assert client.get("/api/v1/health", headers={"host": "example.com"}).status_code == 403
         response = client.get(f"/api/v1/artifacts/{token}")
         assert response.status_code == 200
-        overview = client.get(
-            f"/api/v1/runs/{projection.run_key}/stages/5/overview"
-        )
+        overview = client.get(f"/api/v1/runs/{projection.run_key}/stages/5/overview")
         assert overview.status_code == 200
         assert overview.json()["advisory_validation"] is False
         assert overview.json()["counts"]["expanded"] == 1
@@ -1127,22 +1099,15 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         assert candidates.status_code == 200
         assert candidates.json()["total"] == 1
         detail = client.get(
-            (
-                f"/api/v1/runs/{projection.run_key}/stages/5/candidates/"
-                "candidate-1"
-            ),
+            (f"/api/v1/runs/{projection.run_key}/stages/5/candidates/candidate-1"),
             params={"phase": "expansion"},
         )
         assert detail.status_code == 200
         assert detail.json()["candidate_id"] == "candidate-1"
-        catalog = client.get(
-            f"/api/v1/runs/{projection.run_key}/stages/5/metrics"
-        )
+        catalog = client.get(f"/api/v1/runs/{projection.run_key}/stages/5/metrics")
         assert catalog.status_code == 200
         assert len(catalog.json()) >= 20
-        strategies = client.get(
-            f"/api/v1/runs/{projection.run_key}/stages/5/strategies"
-        )
+        strategies = client.get(f"/api/v1/runs/{projection.run_key}/stages/5/strategies")
         assert strategies.status_code == 200
         assert strategies.json()[0]["region_id"] == "patch-1"
         assert strategies.json()[0]["scaffold_id"] == "scaffold-x"
@@ -1154,9 +1119,7 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         assert aggregate["observed_count"] == 1
         assert aggregate["missing_count"] == 0
         assert aggregate["mean"] == 0.5
-        execution = client.get(
-            f"/api/v1/runs/{projection.run_key}/stages/4/execution"
-        )
+        execution = client.get(f"/api/v1/runs/{projection.run_key}/stages/4/execution")
         assert execution.status_code == 200
         device = execution.json()["devices"][0]
         assert device["device"] == 0
@@ -1194,11 +1157,7 @@ def test_gateway_only_serves_verified_registered_artifacts(tmp_path: Path) -> No
         assert unconfirmed.status_code == 400
 
     artifact_path = (
-        run_root
-        / "01-target-preparation"
-        / "attempt-0001"
-        / "artifacts"
-        / "target-bundle.json"
+        run_root / "01-target-preparation" / "attempt-0001" / "artifacts" / "target-bundle.json"
     )
     artifact_path.write_text("tampered", encoding="utf-8")
     with TestClient(app) as client:
@@ -1261,16 +1220,11 @@ def test_browser_pymol_status_requires_the_complete_verified_offline_runtime(
     assert response.json()["integrity_errors"] == []
 
 
-
 def test_structure_assistant_exposes_only_platform_service_status(
     tmp_path: Path,
 ) -> None:
     secret_path = (
-        tmp_path
-        / "runtime"
-        / "secrets"
-        / "structure-assistant"
-        / "platform-provider.yaml"
+        tmp_path / "runtime" / "secrets" / "structure-assistant" / "platform-provider.yaml"
     )
     secret_path.parent.mkdir(parents=True, exist_ok=True)
     secret_path.write_text(
@@ -1396,9 +1350,7 @@ def test_continuation_preflight_failure_does_not_advance_session(
     assert [item.stage_number for item in restored.config_revisions] == []
     assert restored.current_stage == 2
     assert not list(
-        (service.sessions.root / session.session_id / "config-revisions").glob(
-            "stage03-*.yaml"
-        )
+        (service.sessions.root / session.session_id / "config-revisions").glob("stage03-*.yaml")
     )
     assert not (tmp_path / "projects" / "target-alpha" / "easydesign.stage03.rev0001.yaml").exists()
 
@@ -1489,9 +1441,7 @@ def test_uploaded_target_has_identity_and_is_consumed_by_project_draft(
         ).read_bytes() == content
         published_uploads = client.get("/api/v1/uploads").json()["receipts"]
         published_receipt = next(
-            item
-            for item in published_uploads
-            if item["upload_token"] == receipt["upload_token"]
+            item for item in published_uploads if item["upload_token"] == receipt["upload_token"]
         )
         assert published_receipt["status"] == "published"
         assert published_receipt["path_ref"] == "project://target-demo/inputs/target.fasta"
@@ -1563,8 +1513,7 @@ def test_project_preflight_rejects_noncanonical_id_before_upload(
             "available": False,
             "project_id": "Test",
             "reason": (
-                "项目名称只能使用小写字母、数字、点、下划线和连字符，"
-                "并且必须以小写字母或数字开头"
+                "项目名称只能使用小写字母、数字、点、下划线和连字符，并且必须以小写字母或数字开头"
             ),
             "existing_project": None,
             "suggested_project_id": "test",
@@ -1632,13 +1581,9 @@ def test_failed_project_publication_keeps_only_retryable_upload_receipt(
     assert not (tmp_path / "projects" / "failed-project").exists()
     assert sessions == []
     assert projects["drafts"] == []
-    failed = next(
-        item for item in uploads if item["upload_token"] == receipt["upload_token"]
-    )
+    failed = next(item for item in uploads if item["upload_token"] == receipt["upload_token"])
     assert failed["status"] == "failed"
-    assert (
-        tmp_path / failed["relative_path"]
-    ).read_bytes() == content
+    assert (tmp_path / failed["relative_path"]).read_bytes() == content
 
 
 def test_project_publication_failure_after_input_move_quarantines_receipt(
@@ -1684,9 +1629,7 @@ def test_project_publication_failure_after_input_move_quarantines_receipt(
 
     assert response.status_code == 500
     assert not (tmp_path / "projects" / "failed-after-move").exists()
-    failed = next(
-        item for item in uploads if item["upload_token"] == receipt["upload_token"]
-    )
+    failed = next(item for item in uploads if item["upload_token"] == receipt["upload_token"])
     assert failed["status"] == "failed-quarantined"
     assert failed["path_ref"].startswith("quarantine://")
     quarantined = tmp_path / failed["relative_path"]
@@ -1737,9 +1680,10 @@ def test_update_config_validates_project_relative_inputs_from_ui_temp(
     assert update.json()["config_path"] == (
         "pse-config-demo/config-revisions/easydesign.rev-000001.yaml"
     )
-    assert read_last_text_line(
-        tmp_path / "projects" / "pse-config-demo" / "CONFIG_CURRENT"
-    ) == "config-revisions/easydesign.rev-000001.yaml"
+    assert (
+        read_last_text_line(tmp_path / "projects" / "pse-config-demo" / "CONFIG_CURRENT")
+        == "config-revisions/easydesign.rev-000001.yaml"
+    )
 
 
 def test_raw_upload_stream_has_terminal_receipt_and_preserves_bytes(
@@ -1833,13 +1777,13 @@ def test_gateway_lists_profile_and_first_class_managed_remote_executor_ids(
         "host_fingerprint": None,
         "key_pair_available": False,
     }
+
+
 def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    private_key = (
-        tmp_path / "runtime" / "secrets" / "ssh" / "suzhou2" / "id_ed25519"
-    )
+    private_key = tmp_path / "runtime" / "secrets" / "ssh" / "suzhou2" / "id_ed25519"
     host_identity = SshHostIdentity(
         host="suzhou2.example",
         port=22,
@@ -1900,7 +1844,14 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
 
     probe = ManagedWorkerProbe(
         observed_at=NOW,
-        service_version="0.1.0.dev34",
+        manager_version="0.1.0.dev1",
+        easydesign_version="0.1.0.dev35",
+        supported_stage_ranges=((4, 5), (6, 7)),
+        backends=(
+            {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
+            {"backend_id": "protenix-v2", "ready": True, "detail": "ready"},
+            {"backend_id": "tnp", "ready": True, "detail": "ready"},
+        ),
         managed_root="/data/easydesign/managed-worker",
         gpu_count=8,
         queue_depth=0,
@@ -1909,12 +1860,8 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
         filesystem_available_bytes=1,
     )
     monkeypatch.setattr("easydesign.ui.app.RemoteExecutorRegistry", FakeRegistry)
-    monkeypatch.setattr(
-        "easydesign.ui.app.install_public_key_with_password", fake_install
-    )
-    monkeypatch.setattr(
-        "easydesign.ui.app.probe_pending_managed_executor", lambda _: probe
-    )
+    monkeypatch.setattr("easydesign.ui.app.install_public_key_with_password", fake_install)
+    monkeypatch.setattr("easydesign.ui.app.probe_pending_managed_executor", lambda _: probe)
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",

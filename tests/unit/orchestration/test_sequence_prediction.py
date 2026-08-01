@@ -106,8 +106,8 @@ def successful_fake_run(
     timeout: int | None,
 ) -> subprocess.CompletedProcess[str]:
     del check, capture_output, text, timeout
-    if args[1] == "--version":
-        return subprocess.CompletedProcess(args, 0, "protenix, version 2.0.0\n", "")
+    if args[1] == "-c":
+        return subprocess.CompletedProcess(args, 0, "2.0.0\n", "")
     input_path = Path(option(args, "--input"))
     payload = json.loads(input_path.read_text(encoding="utf-8"))
     job_name = payload[0]["name"]
@@ -396,7 +396,7 @@ def test_execute_sequence_prediction_consumes_validated_precomputed_a3m(
         model_checkpoint_sha256="8" * 64,
     )
 
-    assert operations == ["--version", "pred"]
+    assert operations == ["-c", "pred"]
     assert completed.msa_artifact.verify(prepared.workspace.run_root).read_text(
         encoding="utf-8"
     ).startswith(">query\n")

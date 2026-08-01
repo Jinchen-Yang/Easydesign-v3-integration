@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -207,7 +208,13 @@ class ProtenixV2Adapter:
         return path
 
     def _environment(self) -> tuple[tuple[str, str], ...]:
-        values = [("PROTENIX_ROOT_DIR", str(self.model_root))]
+        values = [
+            ("PROTENIX_ROOT_DIR", str(self.model_root)),
+            (
+                "PATH",
+                f"{self.executable.parent}:{os.environ.get('PATH', os.defpath)}",
+            ),
+        ]
         if self.cuda_visible_devices is not None:
             values.append(("CUDA_VISIBLE_DEVICES", self.cuda_visible_devices))
         values.extend(self.extra_environment)
@@ -220,7 +227,7 @@ class ProtenixV2Adapter:
 
     def validate_version_output(self, output: str) -> None:
         expected = f"protenix, version {self.backend_version}"
-        if expected not in output.strip():
+        if output.strip() not in {self.backend_version, expected}:
             raise BackendContractError(
                 f"Protenix 版本不匹配: expected={expected!r}, actual={output.strip()!r}"
             )
@@ -229,7 +236,14 @@ class ProtenixV2Adapter:
         return BackendInvocation(
             backend_name=self.backend_name,
             backend_version=self.backend_version,
-            argv=(str(self.executable), "--version"),
+            argv=(
+                str(self.executable.parent / "python"),
+                "-c",
+                (
+                    "from importlib.metadata import version; "
+                    "print(version('protenix'))"
+                ),
+            ),
             environment=self._environment(),
             timeout_seconds=30,
         )

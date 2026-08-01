@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -99,6 +100,46 @@ def _verify_artifact(path: Path) -> str:
     return actual_sha256
 
 
+def _verified_source_snapshot(repository_root: Path) -> str | None:
+    """Verify an immutable exported tree when no Git metadata was deployed."""
+
+    marker = repository_root / ".easydesign-source.json"
+    if not marker.is_file():
+        return None
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BackendContractError("BoltzGen source snapshot marker 无法读取") from error
+    tree = payload.get("tree")
+    if (
+        payload.get("schema_version") != "0.1"
+        or payload.get("backend_id") != "boltzgen"
+        or payload.get("commit") != BOLTZGEN_COMMIT
+        or not isinstance(tree, dict)
+        or not tree
+    ):
+        raise BackendContractError("BoltzGen source snapshot identity 不匹配")
+    root = repository_root.resolve()
+    for raw_relative, raw_identity in tree.items():
+        if not isinstance(raw_relative, str) or not isinstance(raw_identity, dict):
+            raise BackendContractError("BoltzGen source snapshot tree 无效")
+        relative = Path(raw_relative)
+        path = (root / relative).resolve()
+        expected_sha256 = raw_identity.get("sha256")
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or not path.is_relative_to(root)
+            or not path.is_file()
+            or not isinstance(expected_sha256, str)
+            or sha256_file(path) != expected_sha256
+        ):
+            raise BackendContractError(
+                f"BoltzGen source snapshot 文件漂移: {raw_relative}"
+            )
+    return BOLTZGEN_COMMIT
+
+
 @dataclass(frozen=True, slots=True)
 class BoltzGenCheckAdapter:
     executable: Path
@@ -187,29 +228,32 @@ class BoltzGenCheckAdapter:
                 "BoltzGen 版本探针失败或版本不匹配: "
                 f"expected={BOLTZGEN_VERSION}, output={version_text[:1024]}"
             )
-        commit = self._run(
-            ["git", "-C", str(self.repository_root), "rev-parse", "HEAD"]
-        )
-        actual_commit = commit.stdout.strip()
-        if commit.returncode != 0 or actual_commit != BOLTZGEN_COMMIT:
-            raise BackendContractError(
-                "BoltzGen commit 不匹配: "
-                f"expected={BOLTZGEN_COMMIT}, actual={actual_commit or commit.stderr.strip()}"
+        actual_commit = _verified_source_snapshot(self.repository_root)
+        if actual_commit is None:
+            commit = self._run(
+                ["git", "-C", str(self.repository_root), "rev-parse", "HEAD"]
             )
-        dirty = self._run(
-            [
-                "git",
-                "-C",
-                str(self.repository_root),
-                "status",
-                "--porcelain",
-                "--untracked-files=no",
-            ]
-        )
-        if dirty.returncode != 0 or dirty.stdout.strip():
-            raise BackendContractError(
-                "BoltzGen repository 必须是固定 commit 的干净 tracked tree"
+            actual_commit = commit.stdout.strip()
+            if commit.returncode != 0 or actual_commit != BOLTZGEN_COMMIT:
+                raise BackendContractError(
+                    "BoltzGen commit 不匹配: "
+                    f"expected={BOLTZGEN_COMMIT}, "
+                    f"actual={actual_commit or commit.stderr.strip()}"
+                )
+            dirty = self._run(
+                [
+                    "git",
+                    "-C",
+                    str(self.repository_root),
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=no",
+                ]
             )
+            if dirty.returncode != 0 or dirty.stdout.strip():
+                raise BackendContractError(
+                    "BoltzGen repository 必须是固定 commit 的干净 tracked tree"
+                )
         result = {
             "backend": "boltzgen",
             "version": BOLTZGEN_VERSION,

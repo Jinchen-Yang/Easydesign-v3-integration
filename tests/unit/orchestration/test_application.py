@@ -136,6 +136,26 @@ def test_full_doctor_fails_when_declared_workspace_backends_are_not_installed(
     assert all("已声明" in check.message for check in unavailable.values())
 
 
+def test_targeted_runtime_probe_checks_only_requested_backends(tmp_path: Path) -> None:
+    profile = initialize_runtime_profile(
+        tmp_path / "runtime" / "profile.yaml",
+        runs_root=(tmp_path / "runs").resolve(),
+    )
+
+    report = diagnose_runtime(
+        profile_path=profile,
+        backend_ids=("boltzgen", "tnp"),
+    )
+
+    failed_backends = {
+        check.name
+        for check in report.checks
+        if check.status is DiagnosticStatus.FAILED
+    }
+    assert failed_backends == {"boltzgen", "tnp"}
+    assert not report.ok
+
+
 def test_dry_run_preflight_does_not_create_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

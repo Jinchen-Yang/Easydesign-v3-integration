@@ -515,6 +515,7 @@ def diagnose_runtime(
     source_base_dir: Path | None = None,
     start_stage: int = 1,
     full: bool = False,
+    backend_ids: tuple[str, ...] | None = None,
 ) -> DiagnosticReport:
     """探测显式 profile；配置存在时只要求本次运行需要的 backend。"""
 
@@ -528,22 +529,27 @@ def diagnose_runtime(
         raise ConfigurationError(
             f"Developer Preview 当前最高实现到 Stage {IMPLEMENTED_STAGE_MAX:02d}"
         )
-    required = (
-        set(_required_backends(loaded, start_stage=start_stage))
-        if loaded is not None
-        else (
-            {
-                "protenix-v2",
-                "pymol-pse",
-                "scannet-epitope",
-                "boltzgen-validation",
-                "boltzgen",
-                "tnp",
-            }
-            if full
-            else set()
-        )
-    )
+    known_backends = {
+        "protenix-v2",
+        "pymol-pse",
+        "scannet-epitope",
+        "boltzgen-validation",
+        "boltzgen",
+        "tnp",
+    }
+    if backend_ids is not None:
+        if loaded is not None or full:
+            raise ConfigurationError(
+                "backend_ids 不能与 config_path 或 full runtime probe 同时使用"
+            )
+        unknown = set(backend_ids) - known_backends
+        if unknown:
+            raise ConfigurationError(f"未知 runtime backend: {sorted(unknown)}")
+        required = set(backend_ids)
+    elif loaded is not None:
+        required = set(_required_backends(loaded, start_stage=start_stage))
+    else:
+        required = known_backends if full else set()
     checks: list[DiagnosticCheck] = []
     python_ok = (3, 11) <= sys.version_info[:2] < (3, 13)
     checks.append(

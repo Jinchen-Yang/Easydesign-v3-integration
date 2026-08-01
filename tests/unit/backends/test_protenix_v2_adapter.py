@@ -132,6 +132,14 @@ def test_input_write_is_exclusive(tmp_path) -> None:
 
 
 def test_version_probe_requires_exact_pinned_version() -> None:
+    invocation = adapter().version_invocation()
+
+    assert invocation.argv[:2] == (
+        "/opt/conda/envs/protenix-v2/bin/python",
+        "-c",
+    )
+    assert invocation.environment[1][0] == "PATH"
+    adapter().validate_version_output("2.0.0\n")
     adapter().validate_version_output("protenix, version 2.0.0\n")
     with pytest.raises(BackendContractError, match="版本不匹配"):
         adapter().validate_version_output("protenix, version 2.1.0\n")
@@ -154,10 +162,12 @@ def test_no_msa_smoke_invocation_is_explicit() -> None:
     assert option_value(invocation.argv, "--cycle") == "1"
     assert option_value(invocation.argv, "--step") == "5"
     assert invocation.timeout_seconds == 7200
-    assert dict(invocation.environment) == {
-        "PROTENIX_ROOT_DIR": "/data/models/protenix",
-        "CUDA_VISIBLE_DEVICES": "0",
-    }
+    environment = dict(invocation.environment)
+    assert environment["PROTENIX_ROOT_DIR"] == "/data/models/protenix"
+    assert environment["CUDA_VISIBLE_DEVICES"] == "0"
+    assert environment["PATH"].split(":", maxsplit=1)[0] == (
+        "/opt/conda/envs/protenix-v2/bin"
+    )
 
 
 def test_remote_msa_and_default_prediction_are_separate_invocations() -> None:

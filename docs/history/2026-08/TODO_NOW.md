@@ -37,3 +37,24 @@
 - 安全边界：未修改个人 SSH、系统代理、shell 或 Git 全局配置；未删除、移动或覆盖环境、模型、run 或历史证据。
 - 遗留边界：完成真实免密 worker 探针及极小 Stage 04/06 任务后，由 `VAL-008` 决定是否升级为 `smoke-validated`。
 - 实现提交：`2bae835678a72a574d40377901966970744fcaef`。
+
+## 2026-08-01 — UX-008 / UI-022：一次性密码配对与工作区密钥复用
+
+- 状态：`implemented`；真实 Suzhou2 worker/GPU 验收继续由 `VAL-008` 承担。
+- 完成时间：2026-08-01T14:25:41+08:00
+- 问题：配对向导只能展示手动 `authorized_keys` 命令，而且重复进入时没有在列表阶段明确
+  告知工作区密钥已经存在；使用者容易误以为每次都要重新生成密钥。
+- 方案：配对前检查 `runtime/secrets/ssh/<executor>/id_ed25519{,.pub}`，完整时复用，
+  只有一半时拒绝覆盖。第三步新增一次性密码输入，通过严格 known-host 的 OpenSSH PTY
+  幂等安装公钥，再立即使用工作区专用私钥探测 managed worker；手动安装继续保留。
+- 安全边界：密码使用 `SecretStr` 接收，只写入单次 PTY，不进入 argv、环境、配置、
+  registry、日志、异常文本或磁盘；失败输出会执行密码脱敏。没有读取或修改个人
+  `~/.ssh`，没有删除、覆盖或清理历史 key、run、环境和模型。
+- 验证：Ruff 通过，157 个源文件 mypy 通过；密码/脱敏/密钥复用/API 定向测试 9/9；
+  Python 全量 390 passed、8 skipped，唯一失败来自既有 repository history/Markdown
+  治理检查；Workbench 使用系统 Chrome 完成 1440/1920 非视觉 44/44。dev34 wheel
+  SHA-256 为 `34f6bdd8035948995d7d66e4085f6ca7aebeeef77a49e28a7afa4654e2b08525`。
+- 遗留问题：Playwright 官方浏览器下载被服务器自签名代理证书链阻止；未关闭 TLS 校验，
+  Firefox 本轮未重装。真实 Suzhou2 一次性密码和 worker 探针需由有凭据的使用者在 UI
+  中完成，密码不得交给日志或自动化记录。
+- 实现提交：`7617022cc5b804408af3be9166eefeef47b34148`。

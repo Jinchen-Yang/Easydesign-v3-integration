@@ -411,7 +411,10 @@ def _managed_candidate_budget(
     stage03 = load_model(stage03_ref.verify(source_run), StageManifest)
     strategy_ref = stage03.require_output("strategy-bundle")
     bundle = load_model(strategy_ref.verify(source_run), StrategyBundle)
-    return sum(item.candidates_per_strategy for item in bundle.strategies)
+    stage03_config = config.stage03
+    if stage03_config is None:
+        raise ManifestStateError("managed Stage 04 提交缺少 Stage 03 config")
+    return len(bundle.strategies) * int(stage03_config.candidates_per_strategy)
 
 
 def _managed_record_root(executor_id: str, job_id: str) -> Path:

@@ -169,6 +169,12 @@ class SshRemoteExecutor:
             f"UserKnownHostsFile={connection.known_hosts_file}",
             "-o",
             f"ConnectTimeout={connection.connect_timeout_seconds}",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPersist=120",
+            "-o",
+            f"ControlPath=/tmp/easydesign-ssh-{connection.executor_id}-%C",
             self.destination,
         )
 

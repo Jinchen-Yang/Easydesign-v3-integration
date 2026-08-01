@@ -62,6 +62,12 @@ def test_ssh_probe_requires_strict_host_identity_and_reports_resources(
     assert all("BatchMode=yes" in item for item in commands)
     assert all("IdentitiesOnly=yes" in item for item in commands)
     assert all("StrictHostKeyChecking=yes" in item for item in commands)
+    assert all("ControlMaster=auto" in item for item in commands)
+    assert all("ControlPersist=120" in item for item in commands)
+    assert all(
+        "ControlPath=/tmp/easydesign-ssh-suzhou2-a100x8-%C" in item
+        for item in commands
+    )
     assert all(
         any(argument.startswith("UserKnownHostsFile=") for argument in item)
         for item in commands

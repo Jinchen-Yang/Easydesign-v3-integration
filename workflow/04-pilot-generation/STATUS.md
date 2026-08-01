@@ -28,7 +28,7 @@
 | local executor | `smoke-validated` | 双 GPU、每 GPU 一个串行 strategy；7xl0 首次 39/40 后只补跑缺失的 1 个，最终 840/840 |
 | 本机自动 GPU 发现与租约 | `implemented` | `nvidia-smi`、外部进程/显存门、append-only lease、无卡等待与 resume 契约测试 |
 | Suzhou2 Managed Worker | `implemented` | `RemoteJobBundle`、`flock` 中央队列、8 GPU 租约、heartbeat/重启对账和 4→5 就地执行 |
-| SSH 配对与观察 | `implemented` | host fingerprint、工作区专用密钥、逻辑解绑、15 秒轮询和 metadata/review/complete 同步 |
+| SSH 配对与观察 | `implemented` | host fingerprint、已有 key pair 复用、一次性密码幂等安装公钥、逻辑解绑、15 秒轮询和分层同步 |
 | Slurm/SMART executor | `planned` | 无 |
 | 任务终态和候选索引 | `smoke-validated` | 61 条 append-only 事件、840 个唯一 CandidateRecord、终态 ProgressSnapshot、PilotBundle 与 checksummed manifest-only handoff 均通过 |
 

@@ -117,6 +117,7 @@ from .sequence_prediction import (
 )
 from .ssh_pairing import (
     RemoteExecutorRegistry,
+    install_public_key_with_password,
     public_key_install_command,
     scan_host_identity,
 )
@@ -261,6 +262,7 @@ __all__ = [
     "probe_remote_executor",
     "probe_managed_executor",
     "probe_pending_managed_executor",
+    "install_public_key_with_password",
     "public_key_install_command",
     "resolve_runtime_profile_path",
     "resume_remote_pipeline",

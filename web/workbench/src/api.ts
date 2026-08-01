@@ -307,6 +307,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ confirmed: true }),
     }),
+  bootstrapRemotePairing: (executorId: string, password: string) =>
+    request<Record<string, unknown>>(`/api/v1/remote-executors/${executorId}/pair-password-bootstrap`, {
+      method: "POST",
+      body: JSON.stringify({ password, confirmed: true }),
+    }),
   unpairRemoteExecutor: (executorId: string) =>
     request<Record<string, unknown>>(`/api/v1/remote-executors/${executorId}/unpair`, {
       method: "POST",

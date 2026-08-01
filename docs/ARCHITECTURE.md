@@ -1121,6 +1121,11 @@ SSH 配对由 `RemoteExecutorRegistry` 保存只追加 revision。每个控制�
 `runtime/secrets/ssh/` 中的独立密钥和确认过的 host fingerprint。逻辑解绑只禁用后续
 远程操作，不删除私钥、远端公钥、队列或历史证据。
 
+`begin_pairing` 在生成密钥前先检查工作区 key pair：完整时直接复用，只有一半时拒绝
+覆盖。设置页的第三步可将一次性登录密码写入受控 OpenSSH PTY，执行幂等
+`authorized_keys` 安装后立即改用工作区私钥探测 worker；密码不进入参数、环境、日志、
+registry 或磁盘。手动复制公钥并执行免密探测仍是等价回退流程。
+
 数据本地性是 job 契约的一部分：远端 Stage 04 与 05 是 `4→5`，Stage 06 与 07
 是 `6→7`。若上一个受管 run 已在 Suzhou2，后续 job 只通过相对 managed-run
 路径和当前 RunManifest SHA-256 引用它，不重传大型闭包。控制端同步分为：

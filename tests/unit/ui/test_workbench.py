@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from easydesign.backends.executors import ManagedWorkerProbe
 from easydesign.core import (
     ArtifactRef,
     Attempt,
@@ -42,6 +43,11 @@ from easydesign.orchestration import (
     RunIndexEntry,
     select_project_primary_run,
     upsert_run_index_entries,
+)
+from easydesign.orchestration.ssh_pairing import (
+    RemoteExecutorPairingRevision,
+    SshHostIdentity,
+    SshPublicKeyInstallResult,
 )
 from easydesign.orchestration.task_tracking import load_latest_runtime_model
 from easydesign.safe_writes import read_last_text_line
@@ -1825,4 +1831,105 @@ def test_gateway_lists_profile_and_first_class_managed_remote_executor_ids(
         "port": None,
         "user": None,
         "host_fingerprint": None,
+        "key_pair_available": False,
     }
+def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key = (
+        tmp_path / "runtime" / "secrets" / "ssh" / "suzhou2" / "id_ed25519"
+    )
+    host_identity = SshHostIdentity(
+        host="suzhou2.example",
+        port=22,
+        key_type="ssh-ed25519",
+        fingerprint="SHA256:hostfingerprint",
+        known_hosts_line="suzhou2.example ssh-ed25519 AAAATEST",
+        observed_at=NOW,
+    )
+    waiting = RemoteExecutorPairingRevision(
+        revision=1,
+        executor_id="suzhou2",
+        controller_id="controller-test",
+        state="awaiting-public-key",
+        host="suzhou2.example",
+        port=22,
+        user="root",
+        host_identity=host_identity,
+        identity_file=private_key,
+        public_key_file=private_key.with_suffix(".pub"),
+        known_hosts_file=private_key.parent / "known_hosts",
+        public_key_fingerprint="SHA256:controllerfingerprint",
+        public_key="ssh-ed25519 AAAACONTROLLER easydesign:test",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    paired = waiting.model_copy(
+        update={
+            "revision": 2,
+            "state": "paired",
+            "updated_at": NOW + timedelta(seconds=1),
+        }
+    )
+
+    class FakeRegistry:
+        def __init__(self, _workspace: object) -> None:
+            pass
+
+        def latest(self, executor_id: str) -> RemoteExecutorPairingRevision | None:
+            assert executor_id == "suzhou2"
+            return waiting
+
+        def mark_paired(self, executor_id: str) -> RemoteExecutorPairingRevision:
+            assert executor_id == "suzhou2"
+            return paired
+
+    captured: dict[str, str] = {}
+
+    def fake_install(
+        record: RemoteExecutorPairingRevision,
+        password: str,
+    ) -> SshPublicKeyInstallResult:
+        assert record == waiting
+        captured["password"] = password
+        return SshPublicKeyInstallResult(
+            status="installed",
+            public_key_fingerprint=record.public_key_fingerprint,
+        )
+
+    probe = ManagedWorkerProbe(
+        observed_at=NOW,
+        service_version="0.1.0.dev34",
+        managed_root="/data/easydesign/managed-worker",
+        gpu_count=8,
+        queue_depth=0,
+        running_jobs=0,
+        filesystem_total_bytes=1,
+        filesystem_available_bytes=1,
+    )
+    monkeypatch.setattr("easydesign.ui.app.RemoteExecutorRegistry", FakeRegistry)
+    monkeypatch.setattr(
+        "easydesign.ui.app.install_public_key_with_password", fake_install
+    )
+    monkeypatch.setattr(
+        "easydesign.ui.app.probe_pending_managed_executor", lambda _: probe
+    )
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+
+    secret = "one-use-only-secret"
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/remote-executors/suzhou2/pair-password-bootstrap",
+            json={"password": secret, "confirmed": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "paired"
+    assert response.json()["probe"]["gpu_count"] == 8
+    assert captured == {"password": secret}
+    assert secret not in response.text

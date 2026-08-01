@@ -196,14 +196,19 @@ EasyDesign 官方开发只允许一个 Git 分支：`main`。
 2. 控制端每个工作区生成独立 SSH key；私钥只能写入该工作区
    `runtime/secrets/ssh/`，POSIX 权限必须为 `0600`。私钥不得上传 Suzhou2、
    进入科学 YAML、manifest、普通日志或 Git。
+   已有完整 key pair 必须复用；检测到只存在私钥或公钥的一半时必须停止，禁止覆盖式
+   重建。
 3. 首次配对必须显示并明确确认 SSH host fingerprint。fingerprint 变化时
    禁止继续，不得自动接受新主机身份。
-4. 逻辑解绑不是删除授权：它只写入新 registry revision 来禁用提交、同步和
+4. UI 可以接受一次性 Suzhou2 登录密码来安装工作区公钥，但密码只能从 localhost
+   请求写入单次 OpenSSH PTY；不得持久化、进入 argv、环境变量、日志、异常文本、
+   registry 或浏览器存储。公钥安装必须幂等，手动安装继续作为回退路径。
+5. 逻辑解绑不是删除授权：它只写入新 registry revision 来禁用提交、同步和
    恢复。本地私钥、远端 `authorized_keys` 条目和历史证据全部保留。
-5. `RemoteJobBundle` 只能含固定 pipeline 阶段、预算、版本、校验和相对 artifact；
+6. `RemoteJobBundle` 只能含固定 pipeline 阶段、预算、版本、校验和相对 artifact；
    禁止任意 shell、未验证绝对路径和删除式同步。
-6. 运行中默认只回传 metadata，完成默认只回传 review 证据。`complete`
+7. 运行中默认只回传 metadata，完成默认只回传 review 证据。`complete`
    必须由用户显式请求；不得因为 UI 刷新、observer 重启或 SSH 恢复而隐式下载
    50k 大型结果。
-7. worker 不杀死、抢占或重置非 EasyDesign GPU 进程。无可用 GPU 时任务继续排队，
+8. worker 不杀死、抢占或重置非 EasyDesign GPU 进程。无可用 GPU 时任务继续排队，
    不将外部占用转换为清理或杀进程授权。

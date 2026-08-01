@@ -3,14 +3,16 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from easydesign.core import BackendContractError
 from easydesign.orchestration.ssh_pairing import (
+    RemoteExecutorPairingRevision,
     RemoteExecutorRegistry,
+    install_public_key_with_password,
     public_key_install_command,
     scan_host_identities,
     scan_host_identity,
@@ -184,6 +186,133 @@ def test_pairing_rejects_changed_host_fingerprint(tmp_path: Path) -> None:
             ssh_keyscan_executable=keyscan,
             ssh_keygen_executable=tmp_path / "unused",
         )
+
+
+def _waiting_pairing(
+    tmp_path: Path,
+) -> tuple[RemoteExecutorRegistry, RemoteExecutorPairingRevision]:
+    line, fingerprint = _host_key_line()
+    keyscan = _executable(
+        tmp_path / "ssh-keyscan",
+        f"""printf "%s\\n" "{line}"
+""",
+    )
+    public_key = base64.b64encode(b"controller-key").decode()
+    keygen = _executable(
+        tmp_path / "ssh-keygen",
+        f"""
+while [ "$1" != "-f" ]; do shift; done
+shift
+printf "%s\n" "PRIVATE" > "$1"
+printf "%s\n" "ssh-ed25519 {public_key} easydesign-test" > "$1.pub"
+""",
+    )
+    registry = RemoteExecutorRegistry(_context(tmp_path))
+    waiting = registry.begin_pairing(
+        executor_id="suzhou2",
+        controller_id="controller-a",
+        host="suzhou2",
+        port=22,
+        user="root",
+        confirmed_host_fingerprint=fingerprint,
+        ssh_keyscan_executable=keyscan,
+        ssh_keygen_executable=keygen,
+        now=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    return registry, waiting
+
+
+@pytest.mark.skipif(os.name != "posix", reason="OpenSSH password bootstrap uses a PTY")
+def test_password_bootstrap_is_memory_only_and_redacts_echoed_secret(
+    tmp_path: Path,
+) -> None:
+    _registry, waiting = _waiting_pairing(tmp_path)
+    fake_ssh = _executable(
+        tmp_path / "ssh",
+        """
+printf "root@suzhou2 password:"
+stty -echo
+IFS= read -r provided
+stty echo
+printf "\n"
+if [ "$provided" = "one-time-secret" ]; then
+  printf "%s\n" "EASYDESIGN_PUBLIC_KEY_INSTALLED"
+  exit 0
+fi
+printf "denied:%s\n" "$provided" >&2
+exit 255
+""",
+    )
+
+    installed = install_public_key_with_password(
+        waiting,
+        "one-time-secret",
+        ssh_executable=fake_ssh,
+        timeout_seconds=5,
+    )
+    assert installed.status == "installed"
+
+    exposed_secret = "must-never-leak"
+    with pytest.raises(BackendContractError) as captured:
+        install_public_key_with_password(
+            waiting,
+            exposed_secret,
+            ssh_executable=fake_ssh,
+            timeout_seconds=5,
+        )
+    assert exposed_secret not in str(captured.value)
+    assert "[REDACTED]" in str(captured.value)
+
+
+def test_pairing_reuses_complete_workspace_key_pair(tmp_path: Path) -> None:
+    line, fingerprint = _host_key_line()
+    keyscan = _executable(
+        tmp_path / "ssh-keyscan",
+        f"""printf "%s\\n" "{line}"
+""",
+    )
+    public_key = base64.b64encode(b"controller-key").decode()
+    invocation_log = tmp_path / "keygen-invocations"
+    keygen = _executable(
+        tmp_path / "ssh-keygen",
+        f"""
+printf "x" >> "{invocation_log}"
+while [ "$1" != "-f" ]; do shift; done
+shift
+printf "%s\n" "PRIVATE" > "$1"
+printf "%s\n" "ssh-ed25519 {public_key} easydesign-test" > "$1.pub"
+""",
+    )
+    registry = RemoteExecutorRegistry(_context(tmp_path))
+    first = registry.begin_pairing(
+        executor_id="suzhou2",
+        controller_id="controller-a",
+        host="suzhou2",
+        port=22,
+        user="root",
+        confirmed_host_fingerprint=fingerprint,
+        ssh_keyscan_executable=keyscan,
+        ssh_keygen_executable=keygen,
+        now=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    second = registry.begin_pairing(
+        executor_id="suzhou2",
+        controller_id="controller-a",
+        host="suzhou2",
+        port=22,
+        user="root",
+        confirmed_host_fingerprint=fingerprint,
+        ssh_keyscan_executable=keyscan,
+        ssh_keygen_executable=tmp_path / "must-not-run",
+        now=datetime(2026, 8, 1, tzinfo=UTC) + timedelta(minutes=1),
+    )
+
+    assert registry.key_pair_available("suzhou2")
+    assert first.public_key_fingerprint == second.public_key_fingerprint
+    assert invocation_log.read_text(encoding="utf-8") == "x"
+    command = public_key_install_command(second)
+    assert "grep -qxF" in command
+    assert "EASYDESIGN_PUBLIC_KEY_ALREADY_PRESENT" in command
 
 
 def test_private_key_is_not_in_install_command(tmp_path: Path) -> None:

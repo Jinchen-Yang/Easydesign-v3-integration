@@ -346,6 +346,8 @@ identity。
 
 Suzhou2 上新运行的持久根是 `/data/easydesign/managed-worker`。默认不复用旧
 dev11/dev12 环境作为新 worker 正式环境，不移动、覆盖或改写旧 APOE 50k 产物。
+控制端配对复用工作区完整 SSH key pair；首次公钥授权可由 localhost UI 通过一次性
+密码完成，密码不会进入配置、日志、参数、环境或磁盘，授权完成后只使用专用私钥。
 对于已在受管 worker 完成 Stage 05 的 run，Stage 06 通过远端 RunManifest SHA-256 和
 `runs/<project>/<run>` 相对引用就地继续，无需重传大型上游闭包。
 

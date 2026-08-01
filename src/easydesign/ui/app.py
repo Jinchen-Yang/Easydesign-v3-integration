@@ -24,7 +24,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as ApiPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 import easydesign
 from easydesign.backends.executors.local_multi_gpu import NvidiaSmiProbe
@@ -44,6 +44,7 @@ from easydesign.orchestration import (
     diagnose_runtime,
     export_hotspot_review,
     initialize_project,
+    install_public_key_with_password,
     list_managed_remote_submissions,
     list_project_catalog,
     list_remote_executor_ids,
@@ -326,6 +327,13 @@ class RemotePairBeginRequest(RemoteHostScanRequest):
 class RemotePairActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    confirmed: bool = False
+
+
+class RemotePairPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password: SecretStr
     confirmed: bool = False
 
 
@@ -2581,6 +2589,7 @@ def create_ui_app(
                             if executor_id not in pairings
                             else pairings[executor_id].host_identity.fingerprint
                         ),
+                        "key_pair_available": registry.key_pair_available(executor_id),
                     }
                     for executor_id in sorted(executor_ids)
                 ]
@@ -2605,7 +2614,9 @@ def create_ui_app(
     ) -> dict[str, Any]:
         service = _state(request)
         try:
-            record = RemoteExecutorRegistry(service.workspace).begin_pairing(
+            registry = RemoteExecutorRegistry(service.workspace)
+            key_pair_reused = registry.key_pair_available(payload.executor_id)
+            record = registry.begin_pairing(
                 executor_id=payload.executor_id,
                 controller_id=payload.controller_id,
                 host=payload.host,
@@ -2616,6 +2627,45 @@ def create_ui_app(
             return {
                 "pairing": _pairing_projection(record, include_public_key=True),
                 "public_key_install_command": public_key_install_command(record),
+                "key_pair_reused": key_pair_reused,
+            }
+        except Exception as error:
+            _raise_http(error)
+            raise
+
+    @app.post("/api/v1/remote-executors/{executor_id}/pair-password-bootstrap")
+    def remote_pair_password_bootstrap(
+        executor_id: str,
+        payload: RemotePairPasswordRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        service = _state(request)
+        try:
+            if not payload.confirmed:
+                raise ConfigurationError("一次性密码安装必须明确 confirmed=true")
+            registry = RemoteExecutorRegistry(service.workspace)
+            waiting = registry.latest(executor_id)
+            if waiting is None or waiting.state != "awaiting-public-key":
+                raise ConfigurationError("executor 不处于等待公钥安装状态")
+            installation = install_public_key_with_password(
+                waiting,
+                payload.password.get_secret_value(),
+            )
+            try:
+                probe = probe_pending_managed_executor(waiting)
+            except Exception as probe_error:
+                return {
+                    "status": "key-installed-worker-not-ready",
+                    "pairing": _pairing_projection(waiting),
+                    "installation": installation.model_dump(mode="json"),
+                    "probe_error": str(probe_error),
+                }
+            paired = registry.mark_paired(executor_id)
+            return {
+                "status": "paired",
+                "pairing": _pairing_projection(paired),
+                "installation": installation.model_dump(mode="json"),
+                "probe": probe.model_dump(mode="json"),
             }
         except Exception as error:
             _raise_http(error)

@@ -1,17 +1,23 @@
 """Dedicated SSH pairing with append-only logical unpairing.
 
-Passwords are never accepted or persisted.  The controller creates a dedicated
-key inside the EasyDesign workspace, shows the public key to the operator, and
-only marks an executor paired after strict host identity and worker probes pass.
+The controller creates or reuses a dedicated key inside the EasyDesign
+workspace. A password may be accepted for one bootstrap request only: it is
+written directly to an OpenSSH pseudo-terminal and is never persisted, logged,
+placed in argv, or exported through the environment.
 """
 
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import os
+import select
+import shlex
 import shutil
+import signal
 import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -60,6 +66,16 @@ class RemoteExecutorPairingRevision(BaseModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+
+
+class SshPublicKeyInstallResult(BaseModel):
+    """Result of the bounded one-time password bootstrap."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = "0.1"
+    status: Literal["installed", "already-present"]
+    public_key_fingerprint: str = Field(min_length=8)
 
 
 def _sha256(path: Path) -> str:
@@ -183,6 +199,16 @@ class RemoteExecutorRegistry:
         self.context = WorkspaceContext.discover() if context is None else context
         self.root = self.context.remote_executor_registry_root
         self.context.assert_write_path(self.root)
+
+    def key_pair_available(self, executor_id: str) -> bool:
+        """Return true only when the complete workspace key pair already exists."""
+
+        secret_root = self.context.runtime_root / "secrets" / "ssh" / executor_id
+        identity = secret_root / "id_ed25519"
+        public = secret_root / "id_ed25519.pub"
+        if identity.exists() != public.exists():
+            raise ConfigurationError("专用 SSH key pair 不完整，拒绝覆盖或重建")
+        return identity.is_file() and public.is_file()
 
     def _revision_paths(self, executor_id: str) -> tuple[Path, ...]:
         return tuple(sorted((self.root / executor_id / "revisions").glob("*.json")))
@@ -400,13 +426,160 @@ class RemoteExecutorRegistry:
 
 
 def public_key_install_command(record: RemoteExecutorPairingRevision) -> str:
-    """Human-executed append command; no password or private key is embedded."""
-
-    import shlex
+    """Idempotent remote command; no password or private key is embedded."""
 
     quoted = shlex.quote(record.public_key)
     return (
-        "install -d -m 700 ~/.ssh && "
-        f"printf '%s\\n' {quoted} >> ~/.ssh/authorized_keys && "
-        "chmod 600 ~/.ssh/authorized_keys"
+        "umask 077 && install -d -m 700 ~/.ssh && touch ~/.ssh/authorized_keys && "
+        "chmod 600 ~/.ssh/authorized_keys && "
+        f"if grep -qxF {quoted} ~/.ssh/authorized_keys; then "
+        "printf \"%s\\n\" EASYDESIGN_PUBLIC_KEY_ALREADY_PRESENT; "
+        "else "
+        f"printf '\\n%s\\n' {quoted} >> ~/.ssh/authorized_keys && "
+        "printf \"%s\\n\" EASYDESIGN_PUBLIC_KEY_INSTALLED; fi"
+    )
+
+
+def _redact_password(value: str, password: str) -> str:
+    """Keep a misbehaving SSH client or test double from echoing a secret."""
+
+    return value.replace(password, "[REDACTED]") if password else value
+
+
+def install_public_key_with_password(
+    record: RemoteExecutorPairingRevision,
+    password: str,
+    *,
+    ssh_executable: Path | None = None,
+    timeout_seconds: float = 45.0,
+) -> SshPublicKeyInstallResult:
+    """Install the workspace key through one password-authenticated SSH call."""
+
+    if record.state != "awaiting-public-key":
+        raise ConfigurationError("executor 不处于等待安装公钥状态")
+    if os.name != "posix":
+        raise ConfigurationError(
+            "当前控制端不支持网页内一次性密码安装；请使用页面提供的手动公钥命令"
+        )
+    if not password or len(password) > 1024 or any(
+        char in password for char in "\r\n\0"
+    ):
+        raise ConfigurationError("一次性 SSH 密码格式无效")
+    if (
+        record.host.startswith("-")
+        or any(char in record.host for char in "\r\n\0")
+        or record.user.startswith("-")
+        or "@" in record.user
+        or any(char in record.user for char in "\r\n\0")
+    ):
+        raise ConfigurationError("SSH host 或用户名格式无效")
+    executable = (
+        Path(shutil.which("ssh") or "")
+        if ssh_executable is None
+        else ssh_executable
+    )
+    if not executable.is_file():
+        raise ConfigurationError("ssh 不可用")
+    if not record.known_hosts_file.is_file():
+        raise ConfigurationError("已确认的 SSH host key 记录不存在")
+
+    import pty
+
+    arguments = (
+        str(executable),
+        "-F",
+        "/dev/null",
+        "-p",
+        str(record.port),
+        "-o",
+        "BatchMode=no",
+        "-o",
+        "PubkeyAuthentication=no",
+        "-o",
+        "PreferredAuthentications=password,keyboard-interactive",
+        "-o",
+        "PasswordAuthentication=yes",
+        "-o",
+        "KbdInteractiveAuthentication=yes",
+        "-o",
+        "NumberOfPasswordPrompts=1",
+        "-o",
+        f"UserKnownHostsFile={record.known_hosts_file}",
+        "-o",
+        "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        f"ConnectTimeout={max(1, int(timeout_seconds))}",
+        f"{record.user}@{record.host}",
+        public_key_install_command(record),
+    )
+    child_pid, master_fd = pty.fork()
+    if child_pid == 0:  # pragma: no cover - subprocess integration boundary
+        environment = os.environ.copy()
+        environment.update({"LC_ALL": "C", "LANG": "C"})
+        os.execve(str(executable), arguments, environment)
+
+    output = bytearray()
+    password_sent = False
+    deadline = time.monotonic() + timeout_seconds
+    wait_status: int | None = None
+    try:
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([master_fd], [], [], 0.2)
+            if ready:
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except OSError as error:
+                    if error.errno != errno.EIO:
+                        raise
+                    chunk = b""
+                if chunk:
+                    output.extend(chunk)
+                    if len(output) > 65536:
+                        del output[:-65536]
+                    if not password_sent and b"password:" in bytes(output).lower():
+                        os.write(master_fd, password.encode("utf-8") + b"\n")
+                        password_sent = True
+                else:
+                    _, wait_status = os.waitpid(child_pid, 0)
+                    break
+            finished, child_status = os.waitpid(child_pid, os.WNOHANG)
+            if finished == child_pid:
+                wait_status = child_status
+                break
+        if wait_status is None:
+            finished, child_status = os.waitpid(child_pid, os.WNOHANG)
+            if finished == child_pid:
+                wait_status = child_status
+        if wait_status is None:
+            os.kill(child_pid, signal.SIGTERM)
+            _, wait_status = os.waitpid(child_pid, 0)
+            detail = _redact_password(
+                output.decode("utf-8", errors="replace"), password
+            )[-2048:]
+            timeout_detail = detail or "远端未响应"
+            raise BackendContractError(
+                f"一次性 SSH 公钥安装超时: {timeout_detail}"
+            )
+    finally:
+        os.close(master_fd)
+
+    rendered = _redact_password(output.decode("utf-8", errors="replace"), password)
+    exit_code = os.waitstatus_to_exitcode(wait_status)
+    if exit_code != 0:
+        detail = rendered[-2048:].strip()
+        failure_detail = detail or "认证失败"
+        raise BackendContractError(
+            f"一次性 SSH 公钥安装失败（exit={exit_code}）: {failure_detail}"
+        )
+    if "EASYDESIGN_PUBLIC_KEY_INSTALLED" in rendered:
+        installation_status: Literal["installed", "already-present"] = "installed"
+    elif "EASYDESIGN_PUBLIC_KEY_ALREADY_PRESENT" in rendered:
+        installation_status = "already-present"
+    else:
+        raise BackendContractError("远端未返回 EasyDesign 公钥安装确认")
+    return SshPublicKeyInstallResult(
+        status=installation_status,
+        public_key_fingerprint=record.public_key_fingerprint,
     )

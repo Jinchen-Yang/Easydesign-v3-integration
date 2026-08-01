@@ -124,6 +124,7 @@ function Suzhou2Settings() {
   const [fingerprintConfirmed, setFingerprintConfirmed] = useState(false);
   const [publicKey, setPublicKey] = useState("");
   const [installCommand, setInstallCommand] = useState("");
+  const [bootstrapPassword, setBootstrapPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -180,11 +181,34 @@ function Suzhou2Settings() {
       const pairing = result.pairing as Record<string, unknown>;
       setPublicKey(String(pairing.public_key || ""));
       setInstallCommand(String(result.public_key_install_command || ""));
-      setMessage("专用公钥已生成。请在 Suzhou2 安装公钥，然后验证连接。");
+      setMessage(result.key_pair_reused ? "已检测并复用当前工作区的专用 SSH 密钥。" : "已在当前工作区生成专用 SSH 密钥。");
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法开始 SSH 配对");
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function bootstrapPairing() {
+    if (!bootstrapPassword) return;
+    setBusy(true);
+    setMessage("正在使用一次性密码安装公钥并验证 Suzhou2…");
+    try {
+      const result = await api.bootstrapRemotePairing("suzhou2", bootstrapPassword);
+      if (result.status === "paired") {
+        const probe = result.probe as Record<string, unknown>;
+        setMessage(`Suzhou2 已连接：${String(probe.gpu_count || 0)} 张 GPU 可被统一队列管理。`);
+        setPublicKey("");
+        setInstallCommand("");
+      } else {
+        setMessage(`公钥已经安装，但远端 EasyDesign worker 尚未就绪：${String(result.probe_error || "请部署 worker 后重新验证连接")}`);
+      }
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "一次性密码安装失败");
+    } finally {
+      setBootstrapPassword("");
       setBusy(false);
     }
   }
@@ -240,9 +264,9 @@ function Suzhou2Settings() {
       <section className="panel suzhou-pairing-settings">
         <div className="panel-heading">
           <div><p className="section-label">连接设置</p><h3>Suzhou2</h3></div>
-          <span data-state={executor?.pairing_state || "not-paired"}>{paired ? "已配对" : awaiting ? "等待安装公钥" : "尚未配对"}</span>
+          <span data-state={executor?.pairing_state || "not-paired"}>{paired ? "已配对" : awaiting ? "等待一次性密码" : "尚未配对"}</span>
         </div>
-        <p className="pairing-explanation">先核对服务器身份，再生成当前 EasyDesign 工作区专用的登录密钥。不会读取、替换或修改 ~/.ssh 中已有的个人密钥。</p>
+        <p className="pairing-explanation">先核对服务器身份，再检测或生成当前工作区专用密钥，最后用一次性登录密码安装公钥。已有完整密钥会自动复用，不会读取、替换或修改 ~/.ssh 中的个人密钥。</p>
         {!paired && <>
           <div className="pairing-fields">
             <label><span>服务器地址</span><input value={host} disabled={busy} onChange={(event) => setHost(event.target.value)} placeholder="Suzhou2 主机名或 IP" /></label>
@@ -252,14 +276,30 @@ function Suzhou2Settings() {
           </div>
           <div className="pairing-actions">
             <button type="button" disabled={busy || !host.trim()} onClick={() => void scan()}>1. 核对服务器身份</button>
-            <button type="button" disabled={busy || !hostFingerprint || !fingerprintConfirmed} onClick={() => void beginPairing()}>2. 生成工作区登录密钥</button>
-            <button type="button" className="primary-button" disabled={busy || (!awaiting && !publicKey)} onClick={() => void confirmPairing()}>3. 验证并连接</button>
+            <button type="button" disabled={busy || awaiting || !hostFingerprint || !fingerprintConfirmed} onClick={() => void beginPairing()}>{awaiting ? "2. 工作区密钥已就绪" : "2. 检测或生成工作区密钥"}</button>
+            <button type="button" className="primary-button" disabled={busy || !awaiting || !bootstrapPassword} onClick={() => void bootstrapPairing()}>3. 用一次性密码安装并连接</button>
           </div>
         </>}
         {hostFingerprint && !paired && <label className="fingerprint-confirmation">
           <input type="checkbox" checked={fingerprintConfirmed} onChange={(event) => setFingerprintConfirmed(event.target.checked)} />
           <span><strong>我已通过 Suzhou2 控制台或管理员核对服务器身份指纹</strong><code>{hostFingerprint}</code></span>
         </label>}
+        {awaiting && <div className="pairing-password-box">
+          <label>
+            <span>Suzhou2 一次性登录密码</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={bootstrapPassword}
+              disabled={busy}
+              onChange={(event) => setBootstrapPassword(event.target.value)}
+              aria-label="Suzhou2 一次性登录密码"
+            />
+          </label>
+          <small>密码只发送到本机 127.0.0.1 的 EasyDesign 服务，并仅用于本次 SSH 认证；不会保存、写入日志、命令参数或环境变量。</small>
+          {executor?.key_pair_available && <strong>已检测到完整的工作区专用密钥，本次会直接复用，不会重新生成。</strong>}
+          <button type="button" disabled={busy} onClick={() => void confirmPairing()}>公钥已手动安装，直接验证</button>
+        </div>}
         {(publicKey || installCommand) && <div className="pairing-key-box">
           <strong>在 Suzhou2 安装这把 EasyDesign 登录公钥</strong>
           {publicKey && <textarea readOnly value={publicKey} aria-label="Suzhou2 专用 SSH 公钥" />}

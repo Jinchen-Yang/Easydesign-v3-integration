@@ -45,6 +45,7 @@
 | UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | 本机自动 GPU 发现与租约 | `implemented` | 省略 devices 时自动冻结符合门槛的 GPU，支持最大卡数限制和无资源等待 |
 | Suzhou2 Managed Worker 多 shard | `implemented` | 中央队列、8 GPU 租约、尾分片、heartbeat/恢复、managed-run SHA-256 原地引用 |
+| Suzhou2 配对引导 | `implemented` | 工作区 key pair 检测/复用、一次性密码公钥安装、严格 known-host 与免密 worker 探测 |
 | 6→7 远程数据本地性 | `implemented` | Scale 候选留在 Suzhou2，Stage 07 原地消费；默认仅 review 同步 |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
 | APOE 历史真实 50,000 | `succeeded` | Suzhou2 20×2500、50,000 candidates；ScaleBundle SHA-256 `dc63553e…bfea8` |

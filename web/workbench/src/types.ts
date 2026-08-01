@@ -443,6 +443,7 @@ export interface RemoteExecutor {
   port?: number;
   user?: string;
   host_fingerprint?: string;
+  key_pair_available?: boolean;
 }
 
 export interface RemoteJob {

@@ -1069,12 +1069,73 @@ test("settings separates local readiness, public compute and archives", async ({
   await expect(page.getByRole("heading", { name: "Suzhou2", exact: true })).toBeVisible();
   await expect(page.getByText(/不会读取、替换或修改 ~\/.ssh/)).toBeVisible();
   await expect(page.getByRole("button", { name: "1. 核对服务器身份" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "2. 生成工作区登录密钥" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "2. 检测或生成工作区密钥" })).toBeVisible();
 
   await page.getByRole("tab", { name: /项目存档/ }).click();
   await expect(page.getByRole("heading", { name: "项目存档", exact: true })).toBeVisible();
   await expect(page.getByText("还没有存档项目")).toBeVisible();
   await expect(page.getByText("自检历史")).toHaveCount(0);
+});
+
+test("Suzhou2 pairing reuses an existing workspace key and accepts one password once", async ({ page }) => {
+  let paired = false;
+  let submittedPassword = "";
+  await page.route("**/api/v1/remote-executors**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST" && pathname.endsWith("/pair-password-bootstrap")) {
+      const payload = request.postDataJSON() as { password: string; confirmed: boolean };
+      submittedPassword = payload.password;
+      paired = true;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "paired",
+          pairing: { pairing_state: "paired" },
+          installation: { status: "installed" },
+          probe: { gpu_count: 8 },
+        }),
+      });
+      return;
+    }
+    if (request.method() === "GET" && pathname === "/api/v1/remote-executors") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          executors: [{
+            executor_id: "suzhou2",
+            label: "Suzhou2 公共算力",
+            type: "managed-ssh",
+            pairing_state: paired ? "paired" : "awaiting-public-key",
+            controller_id: "controller-primary",
+            host: "36.212.4.47",
+            port: 22,
+            user: "root",
+            host_fingerprint: "SHA256:verified",
+            key_pair_available: true,
+          }],
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置" }).click();
+  await page.getByRole("tab", { name: /公共算力/ }).click();
+
+  await expect(page.getByText(/已检测到完整的工作区专用密钥/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "2. 工作区密钥已就绪" })).toBeDisabled();
+  const connect = page.getByRole("button", { name: "3. 用一次性密码安装并连接" });
+  await expect(connect).toBeDisabled();
+  await page.getByLabel("Suzhou2 一次性登录密码").fill("temporary-password");
+  await expect(connect).toBeEnabled();
+  await connect.click();
+
+  await expect(page.getByRole("heading", { name: "Suzhou2 已连接" })).toBeVisible();
+  expect(submittedPassword).toBe("temporary-password");
+  await expect(page.getByLabel("Suzhou2 一次性登录密码")).toHaveCount(0);
 });
 
 test("all molecular workspaces use the portable viewer light canvas", async ({ page }) => {

@@ -18,7 +18,8 @@
 
 ## Now
 
-- `[VAL-008]` 在审核 Suzhou2 systemd unit 和专用 SSH 配对后，完成本机极小
+- `[VAL-008]` 在审核 Suzhou2 systemd unit，并用 dev34 的密钥复用与一次性密码流程完成
+  专用 SSH 配对后，完成本机极小
   Stage 04、Suzhou2 极小 Stage 04 及 Stage 06 单 shard 真实探针；Stage 04→05、
   Stage 06→07 必须原地连续，不重跑或改写历史 APOE 50k。
 

@@ -310,6 +310,9 @@ execution_target:
 
 ### Suzhou2 受管队列
 
+- 配对前先核对 host fingerprint；控制端复用当前工作区已有的完整 SSH key pair。
+  初次授权可在 localhost UI 中输入一次性 Suzhou2 密码，受控 SSH 会话幂等安装公钥后
+  立即切换为专用密钥探测；密码不持久化，手动安装公钥仍可回退。
 - 控制端只提交通过 schema、SHA-256、版本和资产校验的 `RemoteJobBundle`，
   不提供任意 shell 字段。
 - worker 持久根固定为 `/data/easydesign/managed-worker`；`/root/Easydesign/Easycontrol`

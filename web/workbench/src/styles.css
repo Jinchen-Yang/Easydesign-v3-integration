@@ -625,6 +625,11 @@ textarea { padding: 10px; }
 .fingerprint-confirmation strong, .fingerprint-confirmation code { display: block; }
 .fingerprint-confirmation strong { color: #67450f; font-size: 14px; }
 .fingerprint-confirmation code { margin-top: 4px; color: #79561d; font-size: 13px; overflow-wrap: anywhere; }
+.pairing-password-box { display: grid; grid-template-columns: minmax(260px, 420px) 1fr auto; align-items: end; gap: 12px; margin-top: 16px; padding: 15px; border: 1px solid #b8d8ca; border-radius: 10px; background: #f0faf6; }
+.pairing-password-box label { display: grid; gap: 6px; color: #24483a; font-size: 13px; font-weight: 750; }
+.pairing-password-box input { min-width: 0; }
+.pairing-password-box small { color: #557064; font-size: 12px; line-height: 1.55; }
+.pairing-password-box strong { color: #167350; font-size: 12px; line-height: 1.5; }
 .pairing-key-box { margin-top: 16px; padding: 15px; border: 1px solid #c8d8f5; border-radius: 10px; background: #f3f7fe; }
 .pairing-key-box strong, .pairing-key-box small { display: block; }
 .pairing-key-box textarea, .pairing-key-box pre { width: 100%; margin: 10px 0 0; padding: 11px; border: 1px solid #c5d2e7; border-radius: 7px; background: white; color: #29364a; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

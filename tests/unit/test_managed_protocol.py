@@ -79,6 +79,29 @@ def test_managed_manifest_closure_includes_pointer_revisions(tmp_path: Path) -> 
     )
 
 
+def test_managed_config_input_closure_preserves_safe_relative_paths(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "config" / "stage04.yaml"
+    config.parent.mkdir()
+    config.write_text("schema_version: '0.7'\n", encoding="utf-8")
+    source = config.parent / "inputs" / "continuation" / "target.pse"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"frozen-pse")
+
+    closure = remote_execution._managed_config_input_closure(
+        config,
+        (source, None),
+    )
+
+    assert closure == (("inputs/continuation/target.pse", source.resolve()),)
+
+    outside = tmp_path / "outside.pse"
+    outside.write_bytes(b"outside")
+    with pytest.raises(ConfigurationError, match="配置目录内"):
+        remote_execution._managed_config_input_closure(config, (outside,))
+
+
 def test_managed_probe_ready_requires_both_chains_and_every_backend() -> None:
     payload = json.loads((FIXTURES / "probe-v0.2.json").read_text(encoding="utf-8"))
     assert ManagedWorkerProbe.model_validate(payload).ready is True

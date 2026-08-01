@@ -340,6 +340,36 @@ def _pointer_revision_closure(root: Path, pointer: Path) -> tuple[str, ...]:
     return tuple(selected)
 
 
+def _managed_config_input_closure(
+    config_path: Path,
+    candidates: Iterable[Path | None],
+) -> tuple[tuple[str, Path], ...]:
+    """Freeze config-relative local inputs without permitting path escape."""
+
+    base = config_path.expanduser().resolve().parent
+    selected: dict[str, Path] = {}
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        resolved = candidate.expanduser().resolve(strict=True)
+        if not resolved.is_file() or not resolved.is_relative_to(base):
+            raise ConfigurationError(
+                f"managed config 本地输入必须位于配置目录内: {resolved}"
+            )
+        relative = _safe_relative(resolved.relative_to(base).as_posix())
+        selected[relative] = resolved
+    return tuple(sorted(selected.items()))
+
+
+def _copy_new_file(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with source.open("rb") as reader, destination.open("xb") as writer:
+        for chunk in iter(lambda: reader.read(1024 * 1024), b""):
+            writer.write(chunk)
+        writer.flush()
+        os.fsync(writer.fileno())
+
+
 def _managed_stage_range(
     *,
     manifest: RunManifest,
@@ -491,7 +521,8 @@ def submit_managed_pipeline(
     selected_source = source_run.expanduser().resolve()
     manifest, manifest_path = _latest_source_run(selected_source)
     selected_config = config_path.expanduser().resolve()
-    loaded = load_run_config(selected_config).config
+    loaded_config = load_run_config(selected_config)
+    loaded = loaded_config.config
     if manifest.project_id != loaded.project_id:
         raise ManifestStateError("managed config project_id 与 source run 不一致")
     stage_range = _managed_stage_range(
@@ -503,6 +534,13 @@ def submit_managed_pipeline(
         manifest=manifest,
         stage_range=stage_range,
         config=loaded,
+    )
+    config_inputs = _managed_config_input_closure(
+        selected_config,
+        (
+            getattr(loaded_config, "source_path", None),
+            getattr(loaded_config, "precomputed_msa_path", None),
+        ),
     )
     local_record_root = _managed_record_root(executor_id, job_id)
     if local_record_root.exists():
@@ -546,6 +584,17 @@ def submit_managed_pipeline(
             role="resolved-run-config",
         )
     ]
+    for relative, source_path in config_inputs:
+        frozen_input = staging / relative
+        _copy_new_file(source_path, frozen_input)
+        inputs.append(
+            RemoteJobInput(
+                relative_path=relative,
+                size_bytes=frozen_input.stat().st_size,
+                sha256=sha256_file(frozen_input),
+                role="resolved-config-input",
+            )
+        )
     for relative in closure:
         path = selected_source / relative
         inputs.append(
@@ -579,6 +628,12 @@ def submit_managed_pipeline(
         handle.write(bundle.model_dump_json(indent=2) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+    if config_inputs:
+        executor.push_files(
+            local_root=staging,
+            relative_paths=tuple(relative for relative, _ in config_inputs),
+            remote_root=job_root / "input",
+        )
     executor.push_file(source=frozen_config, remote_path=job_root / "input/easydesign.yaml")
     executor.push_file(
         source=bundle_path,

@@ -459,8 +459,10 @@ Target Bundle 或判断 hotspot。
 
 界面中未特别说明的残基数字一律按底部序列同步显示的规范
 `label_seq_id` 解释；只有用户明确写出“原始编号”、`auth`、`author` 或
-`PDB 编号` 时才使用 author 编号。界面同时展示规范和原始编号，服务端会先做
-确定性映射，再要求模型在 PML 中使用已校验的 author selector。
+`PDB 编号` 时才使用 author 编号。界面同时展示规范和原始编号；模型直接理解一次请求
+中对一个或多个 A/B/C 区域的自然语言修改，依据编号表把规范编号写成 author selector，
+并返回最终完整 PML。服务端不再先把文字压缩成单个 typed 操作，而是从通过安全与结构
+校验的完整 PML 反向得到规范区域草稿。
 
 PyMOL 与 Mol* 首次加载后在同一结构工作区持续保留实例。切换查看器只改变显隐，不卸载
 PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重绘，防止运行时仍

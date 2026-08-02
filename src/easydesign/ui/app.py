@@ -1106,127 +1106,30 @@ def _regions_from_scene_pml(
     return normalize_regions(result)
 
 
-def _is_explicit_region_edit(message: str) -> bool:
-    region = re.search(r"(?:区域\s*[ABC]|[ABC]\s*区)", message, re.IGNORECASE)
-    operation = re.search(
-        r"(?:加入|添加|移入|移到|移出|删除|取消|清空|替换|改为|标记|选择|add|remove|clear|replace|toggle)",
-        message,
-        re.IGNORECASE,
-    )
-    return region is not None and operation is not None
-
-
-_USER_REGION_RE = re.compile(r"(?:区域\s*([ABC])|([ABC])\s*区)", re.IGNORECASE)
-_USER_RESIDUE_RANGE_RE = re.compile(
-    r"(?<![A-Za-z0-9])(\d+)\s*(?:到|至|\.\.|[-–—~])\s*(\d+)(?![A-Za-z0-9])"
-)
-_USER_RESIDUE_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(\d+[A-Za-z]?)(?![A-Za-z0-9])")
-
-
-def _explicit_region_operation_from_message(
-    message: str,
-) -> RegionEditOperation | None:
-    """Parse only a user-explicit A/B/C edit; bare numbers mean label IDs."""
-
-    if not _is_explicit_region_edit(message):
-        return None
-    region_match = _USER_REGION_RE.search(message)
-    if region_match is None:
-        return None
-    region_id = cast(
-        Literal["A", "B", "C"],
-        (region_match.group(1) or region_match.group(2)).upper(),
-    )
-    if re.search(r"(?:清空|clear)", message, re.IGNORECASE):
-        operation: Literal["add", "remove", "toggle", "replace", "clear"] = "clear"
-    elif re.search(r"(?:替换|改为|replace)", message, re.IGNORECASE):
-        operation = "replace"
-    elif re.search(r"(?:移出|移除|删除|取消|remove)", message, re.IGNORECASE):
-        operation = "remove"
-    elif re.search(r"(?:切换|toggle)", message, re.IGNORECASE):
-        operation = "toggle"
-    else:
-        operation = "add"
-
-    explicit_auth = re.search(
-        r"(?:原始编号|auth(?:or)?\s*(?:numbering|编号)?|PDB\s*编号)",
-        message,
-        re.IGNORECASE,
-    )
-    numbering: Literal["label", "auth"] = "auth" if explicit_auth else "label"
-    chain_match = re.search(
-        r"(?:chain|链)\s*[:：]?\s*([A-Za-z0-9_.-]+)",
-        message,
-        re.IGNORECASE,
-    )
-    chain = chain_match.group(1) if numbering == "auth" and chain_match else None
-    if operation == "clear":
-        return RegionEditOperation(
-            operation=operation,
-            region_id=region_id,
-            numbering=numbering,
-            chain=chain,
-        )
-
-    tokens: list[str] = []
-    remainder = list(message)
-    for match in _USER_RESIDUE_RANGE_RE.finditer(message):
-        start = int(match.group(1))
-        end = int(match.group(2))
-        if start > end or end - start > 10_000:
-            raise ConfigurationError(f"无效的残基范围: {start}..{end}")
-        tokens.extend(str(value) for value in range(start, end + 1))
-        remainder[match.start() : match.end()] = " " * (match.end() - match.start())
-    tokens.extend(match.group(1) for match in _USER_RESIDUE_TOKEN_RE.finditer("".join(remainder)))
-    unique_tokens = tuple(dict.fromkeys(tokens))
-    if not unique_tokens:
-        raise ConfigurationError("修改 A/B/C 时请给出明确的界面规范残基编号")
-    if numbering == "label" and any(not token.isdigit() for token in unique_tokens):
-        raise ConfigurationError("带 insertion code 的残基必须明确声明为原始/auth 编号")
-    return RegionEditOperation(
-        operation=operation,
-        region_id=region_id,
-        numbering=numbering,
-        chain=chain,
-        residues=unique_tokens,
-    )
-
-
-def _region_edit_intent_context(
-    operation: RegionEditOperation,
+def _validate_assistant_region_scene(
+    pml: str,
     region_projection: Any,
-    expected_regions: dict[str, tuple[int, ...]],
-) -> dict[str, Any]:
-    labels = (
-        ()
-        if operation.operation == "clear"
-        else _resolve_region_operation(operation, region_projection.residues)
-    )
-    return {
-        "operation": operation.operation,
-        "region_id": operation.region_id,
-        "input_numbering": operation.numbering,
-        "label_seq_ids": list(labels),
-        "author_selector": _author_selector_from_labels(
-            region_projection.residues,
-            labels,
-        ),
-        "expected_regions": {
-            region_id: list(expected_regions.get(region_id, ()))
-            for region_id in ("A", "B", "C")
-        },
-        "instruction": (
-            "这是 EasyDesign 根据用户文字确定性解析并校验后的唯一目标。"
-            "PML 必须保留其他区域，并使 ed_region_A/B/C 映射结果与 expected_regions 完全一致。"
-        ),
-    }
+    *,
+    current_regions: dict[str, tuple[int, ...]],
+    allow_region_changes: bool,
+) -> dict[str, tuple[int, ...]]:
+    """Derive canonical A/B/C state from the model's complete PML."""
+
+    actual_regions = _regions_from_scene_pml(pml, region_projection)
+    if (
+        not allow_region_changes
+        and actual_regions != normalize_regions(current_regions)
+    ):
+        raise ConfigurationError(
+            "自动寻找区域只能生成 SASA/ScanNet 待确认计划，"
+            "模型不能直接改写 A/B/C"
+        )
+    return actual_regions
 
 
 def _scientific_analysis_methods(
     message: str,
 ) -> tuple[Literal["sasa", "scannet"], ...]:
-    if _is_explicit_region_edit(message):
-        return ()
     scientific = re.search(
         r"(?:最佳.*(?:区域|hotspot)|寻找.*(?:区域|hotspot)|预测.*(?:区域|hotspot)|"
         r"自动选区|结合热点|binding\s*site|hotspot|sasa|scannet)",
@@ -3133,57 +3036,34 @@ def create_ui_app(
             object_names = _scene_objects(session)
             chain_ids = _known_chains(region_projection)
             secret = service.assistant_providers.load_platform()
-            region_operation = (
-                _explicit_region_operation_from_message(payload.message)
+            analysis_methods = (
+                _scientific_analysis_methods(payload.message)
                 if session.stage_number == 2
-                else None
+                else ()
             )
-            expected_regions = session.current_regions
             scene_context = _assistant_scene_context(
                 session,
                 region_projection,
                 active_version,
             )
-            if region_operation is not None:
-                expected_regions = _apply_region_operations(
-                    session.current_regions,
-                    (region_operation,),
-                    region_projection.residues,
-                )
-                scene_context["explicit_region_edit_intent"] = _region_edit_intent_context(
-                    region_operation,
-                    region_projection,
-                    expected_regions,
-                )
+            if analysis_methods:
+                scene_context["scientific_analysis_request"] = {
+                    "methods": list(analysis_methods),
+                    "requires_confirmation": True,
+                }
+            next_regions = session.current_regions
 
-            def validate_explicit_region_edit(edit: ChatPyMolEdit) -> ChatPyMolEdit:
-                if region_operation is None:
+            def validate_stage2_scene(edit: ChatPyMolEdit) -> ChatPyMolEdit:
+                nonlocal next_regions
+                if session.stage_number != 2:
                     return edit
-                actual_regions = _regions_from_scene_pml(edit.pml, region_projection)
-                if actual_regions != expected_regions:
-                    raise ConfigurationError(
-                        "模型返回的 A/B/C 与用户按界面规范编号提出的修改不一致；"
-                        "必须逐字采用 explicit_region_edit_intent"
-                    )
-                labels = _resolve_region_operation(
-                    region_operation,
-                    region_projection.residues,
+                next_regions = _validate_assistant_region_scene(
+                    edit.pml,
+                    region_projection,
+                    current_regions=session.current_regions,
+                    allow_region_changes=not bool(analysis_methods),
                 )
-                action = {
-                    "add": "加入",
-                    "remove": "移出",
-                    "toggle": "切换",
-                    "replace": "替换",
-                    "clear": "清空",
-                }[region_operation.operation]
-                if region_operation.operation == "clear":
-                    confirmation = f"已清空区域 {region_operation.region_id}。"
-                else:
-                    confirmation = (
-                        f"已按界面规范编号将 {','.join(str(value) for value in labels)} "
-                        f"{action}区域 {region_operation.region_id}。"
-                    )
-                return edit.model_copy(update={"assistant_message": confirmation})
+                return edit
 
             edit, request_id, skill_ids = request_assistant_pml_edit(
                 secret=secret,
@@ -3193,16 +3073,9 @@ def create_ui_app(
                 previous_pml="" if active_version is None else active_version.pml,
                 known_object_names=object_names,
                 known_chain_ids=chain_ids,
-                edit_validator=validate_explicit_region_edit,
+                edit_validator=validate_stage2_scene,
             )
-            previous_pml = "" if active_version is None else active_version.pml
-            analysis_methods = _scientific_analysis_methods(payload.message)
             if analysis_methods:
-                if _reserved_region_commands(edit.pml) != _reserved_region_commands(previous_pml):
-                    raise ConfigurationError(
-                        "自动寻找区域只能生成 SASA/ScanNet 待确认计划，"
-                        "模型不能直接改写 A/B/C"
-                    )
                 proposal = AssistantProposal(
                     kind="analysis-plan",
                     explanation=edit.assistant_message,
@@ -3225,16 +3098,6 @@ def create_ui_app(
                     known_chain_ids=chain_ids,
                     current_regions=session.current_regions,
                 )
-            explicit_region_edit = region_operation is not None
-            previous_region_commands = _reserved_region_commands(previous_pml)
-            next_region_commands = _reserved_region_commands(edit.pml)
-            if not explicit_region_edit and next_region_commands != previous_region_commands:
-                raise ConfigurationError(
-                    "本次请求没有明确要求修改 A/B/C，模型不能改变受管理区域 selection"
-                )
-            next_regions = session.current_regions
-            if explicit_region_edit:
-                next_regions = expected_regions
             return service.structure_sessions.append_chatpymol_exchange(
                 session_id,
                 user_text=payload.message,

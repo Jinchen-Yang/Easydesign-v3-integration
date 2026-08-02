@@ -989,9 +989,10 @@ projects/<project>/interactive-sessions/<session>/revision
 - PML 是唯一可视化事实。安全追加时 PyMOL 只执行增量；旧内容变化、历史恢复、增量失败
   或状态不确定时，重新构建结构场景并完整重放。Mol* 只投影 representation、颜色、
   选择、聚焦和背景等可靠子集，不支持的命令标记为“仅 PyMOL”，但不能阻止保存。
-- `ed_region_A/B/C` 由完整 PML 桥接到 Stage 02 编辑草稿，并确定性映射为
-  `label_seq_id`。PML 修改不发布科学结果；SASA/ScanNet plan 只有人工确认后才调用既有
-  deterministic backend，区域也只有人工批准后才形成新 Stage 02 branch。
+- `ed_region_A/B/C` 由完整 PML 桥接到 Stage 02 编辑草稿。模型直接解释多区域自然语言
+  修改并依据编号表生成 author selector；服务端不预解析用户文字，只从通过校验的最终
+  PML 确定性反映射为 `label_seq_id`。PML 修改不发布科学结果；SASA/ScanNet plan 只有
+  人工确认后才调用既有 deterministic backend，区域也只有人工批准后才形成新 Stage 02 branch。
 - 部署者只在
   `runtime/secrets/structure-assistant/platform-provider.yaml` 配置一个平台
   provider。该文件拒绝符号链接并要求 POSIX `0600`；UI 只能读取通用服务状态，不能

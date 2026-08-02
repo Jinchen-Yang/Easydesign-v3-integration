@@ -609,16 +609,17 @@ export function StructureWorkbench({
       const latest = updated.messages.at(-1);
       setStatus(latest?.version_id ? "助手已更新 PML 场景并保存版本。" : "助手已生成待确认建议。");
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "结构助手请求失败";
       setPendingMessages([
         optimisticUser,
         {
           ...optimisticAssistant,
-          content: "请求失败，请查看下方状态后重试。",
+          content: `请求失败：${errorMessage}`,
           pending: false,
           failed: true,
         },
       ]);
-      setStatus(error instanceof Error ? error.message : "结构助手请求失败");
+      setStatus(errorMessage);
     } finally {
       setBusy(false);
     }

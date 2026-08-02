@@ -63,11 +63,10 @@ from easydesign.ui import (
 )
 from easydesign.ui.app import (
     ProjectCreateRequest,
-    _apply_region_operations,
-    _explicit_region_operation_from_message,
     _pairing_projection,
-    _region_edit_intent_context,
     _regions_from_scene_pml,
+    _scientific_analysis_methods,
+    _validate_assistant_region_scene,
 )
 from easydesign.ui.models import (
     ArtifactProjection,
@@ -134,7 +133,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev36",
+        easydesign_version="0.1.0.dev37",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -283,30 +282,58 @@ def test_managed_pml_regions_round_trip_to_canonical_label_ids() -> None:
         )
 
 
-def test_unqualified_assistant_residue_numbers_use_visible_label_ids() -> None:
+def test_assistant_complete_pml_can_clear_multiple_regions() -> None:
     projection = _region_projection_fixture()
-    operation = _explicit_region_operation_from_message("将1到3号残基加入A区")
-    assert operation is not None
-    assert operation.numbering == "label"
-    assert operation.residues == ("1", "2", "3")
-
-    expected = _apply_region_operations(
-        {"B": (2,)},
-        (operation,),
-        projection.residues,
+    actual = _validate_assistant_region_scene(
+        "\n".join(
+            (
+                "select ed_region_A, chain A and resi 23",
+                "select ed_region_B, none",
+                "select ed_region_C, none",
+                "",
+            )
+        ),
+        projection,
+        current_regions={"A": (1,), "B": (2,), "C": (3,)},
+        allow_region_changes=True,
     )
-    assert expected == {"A": (1, 2, 3)}
-    intent = _region_edit_intent_context(operation, projection, expected)
-    assert intent["label_seq_ids"] == [1, 2, 3]
-    assert intent["author_selector"] == "(chain A and resi 23+24+25A)"
+    assert actual == {"A": (1,)}
 
 
-def test_assistant_uses_author_numbering_only_when_user_says_so() -> None:
-    operation = _explicit_region_operation_from_message("将原始编号 chain A 的23和24加入B区")
-    assert operation is not None
-    assert operation.numbering == "auth"
-    assert operation.chain == "A"
-    assert operation.residues == ("23", "24")
+def test_assistant_complete_pml_maps_model_selectors_to_label_ids() -> None:
+    projection = _region_projection_fixture()
+    actual = _validate_assistant_region_scene(
+        "select ed_region_B, chain A and resi 23+25A\n",
+        projection,
+        current_regions={},
+        allow_region_changes=True,
+    )
+    assert actual == {"B": (1, 3)}
+
+
+def test_scientific_analysis_assistant_cannot_mutate_regions() -> None:
+    projection = _region_projection_fixture()
+    with pytest.raises(ConfigurationError, match="待确认计划"):
+        _validate_assistant_region_scene(
+            "select ed_region_A, chain A and resi 23+24\n",
+            projection,
+            current_regions={"A": (1,)},
+            allow_region_changes=False,
+        )
+    assert _validate_assistant_region_scene(
+        "select ed_region_A, chain A and resi 23\n",
+        projection,
+        current_regions={"A": (1,)},
+        allow_region_changes=False,
+    ) == {"A": (1,)}
+
+
+def test_only_scientific_discovery_requests_create_analysis_plans() -> None:
+    assert _scientific_analysis_methods("清空区域 B 和区域 C，只保留区域 A") == ()
+    assert _scientific_analysis_methods("寻找最佳 hotspot 区域") == (
+        "sasa",
+        "scannet",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -1986,7 +2013,7 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev36",
+        easydesign_version="0.1.0.dev37",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},

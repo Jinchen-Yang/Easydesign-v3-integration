@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 |
+| `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev37 支持模型用完整 PML 一次修改多个 `ed_region_A/B/C`。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -61,14 +61,16 @@
   `queued/running` 时显示进度，并在终态打开新分支。
 - 区域编辑器不再提供独立橡皮擦。Mol* 和序列均使用同一 toggle：同区再次点击取消，
   切换画笔后点击则移动到新区。
-- REP-009 用完整 PML 替代 S02-010 的模型侧 typed 区域协议。用户明确给出的编号写入
-  `ed_region_A/B/C` selection，服务端再确定性映射为 `label_seq_id` 编辑草稿；场景
+- REP-009 用完整 PML 替代 S02-010 的模型侧 typed 区域协议。模型直接理解一次请求中
+  对一个或多个区域的修改，把最终 `ed_region_A/B/C` selection 写入完整 PML；服务端
+  不再预解析单个操作，只把通过校验的 PML 确定性反映射为 `label_seq_id` 编辑草稿；场景
   revision 本身不发布区域，仍需人工批准。要求“寻找最佳区域”时，服务端只形成待确认的
   SASA/ScanNet plan，模型不能直接输出区域或改变两种方法的排序。
-- dev31 将助手中未限定的残基数字固定为界面规范 `label_seq_id`；只有显式
-  声明原始/auth/author/PDB 时才使用 author 编号。服务端先解析期望区域，再校验模型
-  PML 反向映射必须完全一致，防止“文字说已修改，左栏和序列仍未改”。真实平台请求
-  已验证规范编号 32–36 精确形成 A 区 5 个残基，并同步左栏、序列与两个查看器。
+- dev31 将助手中未限定的残基数字固定为界面规范 `label_seq_id`；只有显式声明
+  原始/auth/author/PDB 时才使用 author 编号。dev37 进一步删除服务端单区域文字解析器：
+  编号表、当前区域和完整 PML直接提供给模型，返回 PML 再验证并反映射。真实平台请求
+  已验证规范编号 32–36 精确形成 A 区 5 个残基；多区域清空已通过工程回归，live provider
+  复验仍是下一门槛。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -234,6 +236,15 @@
   坐标存在、用户来源审批和旧 automatic 审批回归；全量测试门禁见本次 history。
 
 ## 工作日志
+
+### 2026-08-02
+
+- REP-009 删除 `explicit_region_edit_intent` 及单区域正则 parser，允许模型以完整 PML
+  表达“清空 B、C，只保留 A”等多区域意图，返回状态直接同步左栏、序列和两个查看器。
+- PML 中未知对象/链/残基、不可映射编号、区域重叠和危险命令继续 fail closed；自动
+  hotspot/SASA/ScanNet 仍只能生成待确认计划，不能直接改变 A/B/C。
+- 多区域清空、author/label 反向映射、科学计划不可改区和一次模型修复已进入全量
+  `422 passed / 8 skipped` 后端门禁；Workbench `77 passed / 1 skipped`。
 
 ### 2026-07-24
 

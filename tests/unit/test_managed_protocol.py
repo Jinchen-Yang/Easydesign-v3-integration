@@ -200,7 +200,7 @@ def test_controller_fails_closed_for_version_or_capability_mismatch() -> None:
     with pytest.raises(ConfigurationError, match="版本不一致"):
         require_managed_probe_compatible(ManagedWorkerProbe.model_validate(payload))
 
-    payload["easydesign_version"] = "0.1.0.dev36"
+    payload["easydesign_version"] = "0.1.0.dev37"
     payload["supported_stage_ranges"] = [[4, 5]]
     with pytest.raises(ConfigurationError, match="missing_stage_ranges"):
         require_managed_probe_compatible(ManagedWorkerProbe.model_validate(payload))

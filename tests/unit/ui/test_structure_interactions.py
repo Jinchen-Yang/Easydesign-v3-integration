@@ -462,6 +462,8 @@ def test_chatpymol_request_contains_complete_context_history_and_skills() -> Non
     assert messages[1]["content"] == "历史消息 2"
     assert messages[10]["content"] == "历史消息 11"
     assert "当前完整 PML" in messages[0]["content"]
+    assert "一个或多个区域" in messages[0]["content"]
+    assert "explicit_region_edit_intent" not in messages[0]["content"]
     assert "### 技能：安全 PML（safe-pml）" in messages[0]["content"]
     assert "### 技能：配体与口袋（ligand-pocket）" in messages[0]["content"]
     assert "### 技能：视觉设计与论文构图（publication-figure）" in messages[0]["content"]
@@ -499,7 +501,11 @@ def test_chatpymol_semantic_validator_gets_one_repair_attempt() -> None:
         edit, _, _ = request_assistant_pml_edit(
             secret=_assistant_secret(),
             user_text="将规范编号32加入A区",
-            context={"explicit_region_edit_intent": {"label_seq_ids": [32]}},
+            context={
+                "numbering": {
+                    "rows": [{"label_seq_id": 32, "auth_residue_id": "54"}]
+                }
+            },
             history=(),
             previous_pml=previous_pml,
             known_object_names=("target",),

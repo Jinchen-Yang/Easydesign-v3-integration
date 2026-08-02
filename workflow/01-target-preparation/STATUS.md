@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev37 结构助手改为模型直接生成完整 PML，移除单区域文字预解析。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -36,6 +36,10 @@
 - dev31 修正了 live 会话暴露的场景同步回归：重放/验证命令不再进入原生日志，
   瞬时 `deselect` 和重复命令不创建 SceneVersion，A/B/C overlay 放在全局配色之后。
   真实 APOE 空闲稳定性、9/14/14 配色和三轮双查看器往返均已通过。
+- dev37 移除助手调用前的单区域正则/typed intent 解析。Stage 01/02 的自然语言请求直接
+  进入平台模型，模型返回最终完整 PML；服务端只保留完整 PML、管理行、危险命令、对象、
+  链、残基映射和场景结构校验，失败时给模型一次修复机会。前端对话气泡显示真实错误，
+  不再用统一“请求失败”占位文案。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -343,6 +347,15 @@
 - 结论：旧 MSA 复用路径仍为**未通过**，目前不能执行用户提出的预计算 MSA 测试。
 
 ## 工作日志
+
+### 2026-08-02
+
+- REP-009 改为 model-first complete-PML：删除单区域文字预解析和 expected-region 精确
+  对比，支持一次请求同时修改或清空多个区域；PML 安全边界和科学人工批准边界保持不变。
+- 增加多区域清空、author selector 反向映射、自动 hotspot 禁止直接改区和模型修复测试。
+- dev37 门禁：`make check` 通过；Python `422 passed / 8 skipped`；Workbench
+  `77 passed / 1 skipped`；Target Viewer `3 passed / 2 skipped`。wheel
+  SHA-256 为 `42a851ea5d250e282b33382fcebece4e6701214a7ea6f3be2cea78cd5d2f9d75`。
 
 ### 2026-07-24
 

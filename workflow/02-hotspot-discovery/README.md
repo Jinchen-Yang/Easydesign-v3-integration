@@ -527,12 +527,12 @@ DeepSeek/智谱 GLM 助手采用 ChatPyMol 原生完整 PML 主循环：
 
 `safe-pml` 始终注入，再按当前请求最多注入两个
 chain-coloring/interface-analysis/ligand-pocket/publication-figure/
-structure-alignment Skill。`ed_region_A/B/C` 是受管理 selection；只有用户明确给出
-残基时模型才可更新。用户未声明编号体系时，数字固定按序列区显示的
-`label_seq_id` 解释；只有明确写出原始/auth/author/PDB 编号时才按 author
-解释。服务端确定性解析用户意图，将 label 映射为 author selector 交给 PML，
-并反向校验模型返回的 A/B/C 必须与目标草稿完全一致。同区
-再次选择可取消，移入另一颜色会从旧区域移除。
+structure-alignment Skill。`ed_region_A/B/C` 是受管理 selection；模型直接理解用户
+对一个或多个区域的自然语言修改，包括加入、移除、替换和整区清空，并返回表示最终状态
+的完整 PML。用户未声明编号体系时，数字固定按序列区显示的 `label_seq_id` 解释；
+只有明确写出原始/auth/author/PDB 编号时才按 author 解释。模型依据请求中的编号表把
+label 映射为 author selector；服务端不再预解析单个区域操作，而是从返回 PML 反向映射
+A/B/C 草稿并验证对象、链、残基和互斥性。同区再次选择可取消，移入另一颜色会从旧区域移除。
 
 “把32、36加入A区”指规范编号 32 和 36，可以由完整 PML 表达；“寻找最佳区域”不能直接产生残基或 hotspot，
 只能生成 `requires_confirmation=true` 的 SASA/ScanNet 分析计划。PML 场景变化本身不

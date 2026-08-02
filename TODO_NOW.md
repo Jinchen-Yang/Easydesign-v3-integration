@@ -7,8 +7,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev37 结构助手改为模型直接生成完整 PML，移除单区域文字预解析。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev37 支持模型用完整 PML 一次修改多个 `ed_region_A/B/C`。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；Stage 04 未开始页已强制显式选择本机或 Suzhou2，资源探针失败不再默认本机。 | 在保留旧环境和运行的前提下，为新 lock 环境取得足够数据盘安全余量；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 新环境计划需 24.0 GiB 增量峰值并保留 30.0 GiB，而当前仅余 43.0 GiB，setup 按安全门拒绝；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -21,8 +21,10 @@
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
   最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*
-  只作兼容投影，Stage 02 区域仍须确定性映射和人工批准。dev31 已修复未限定数字误按
-  author 解释、助手文字与草稿脱节、全局灰色覆盖 A/B/C 以及原生 `deselect` 循环创建版本。
+  只作兼容投影，Stage 02 区域仍须确定性映射和人工批准。dev37 删除服务端单区域文字
+  parser 和 expected-region 精确对比，由模型直接生成最终完整 PML，支持一次修改或清空
+  多个 A/B/C 区域；危险命令、对象/链/残基映射和 hotspot 人工确认门仍 fail closed。
+  dev31 已修复未限定数字误按 author 解释、全局灰色覆盖 A/B/C 和原生 `deselect` 循环创建版本。
   真实平台 provider 已将规范编号 32–36 准确写入 A 区，APOE 9/14/14 恢复、空闲不增版本
   及多次 PyMOL/Mol* 切换均通过；下一门槛是第二真实 target 和 Edge/触摸矩阵。
 - `[REP-008]` 修复协作引入的浏览器 PyMOL 生命周期回归：同页 pane 持续挂载，但每个

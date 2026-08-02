@@ -18,10 +18,6 @@
 
 ## Now
 
-- `[UI-025]` 完成 Stage 04/06 GPU 资源与连续阶段运行视图：本机探针和 Suzhou2
-  `ManagedWorkerProbe 0.3` 只读返回逐卡显存、利用率、进程数量、租约与 eligibility；
-  页面先显示空闲/总卡数，按需弹窗查看八卡状态。受管任务按真实 `ProgressSnapshot`
-  展示 `4→5` 或 `6→7` 阶段轨道、完成量、比例与 ETA，禁止基于时间伪造进度。
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
   最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*

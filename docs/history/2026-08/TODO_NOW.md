@@ -98,3 +98,27 @@
   完成 6/6 定向回归；Workbench Chromium/Firefox 非视觉矩阵 72/72 通过，设置页新返回
   按钮另完成 1440×900、1920×1080 视觉基线审阅。
 - 实现提交：以本记录所在 `main` 提交为准。
+
+## 2026-08-02 — UI-025：逐卡资源弹窗与连续阶段真实进度
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-02T13:09:25+08:00
+- 问题：Stage 04/06 只在执行卡片上显示总 GPU 文案，用户选择卡数前看不到真实空闲数或
+  逐卡占用原因；运行后只有单调的无语义横条，无法区分受管 `4→5`、`6→7` 的阶段交接，
+  也没有把已有结构化候选/任务进度投影出来。
+- 方案：`ManagedWorkerProbe` 升至 schema 0.3，按与 admission 相同的阈值发布 8 张卡的
+  型号、显存、利用率、compute process 数量、eligibility 原因与 lease 状态。Workbench
+  在卡数输入前显示“空闲/总数”，逐卡信息只在按需弹窗打开；受管任务用真实
+  `ProgressSnapshot.stage_id`、task/candidate 计数与 ETA 驱动两段阶段轨道和阶段内进度。
+- 安全边界：probe 不返回 PID，不接受 shell 字段，也不把瞬时空闲数当作资源预留。
+  Suzhou2 activation revision 9 只追加 Manager dev2/EasyDesign dev36 release；检测到既有
+  `ui-9bce0dcb8bd94826` 正在 GPU 6/7 运行后，没有重启 systemd、终止子进程或触碰外部
+  GPU 作业。daemon 仍以 dev1 进程自然服务当前作业，待队列空闲后再无中断重启。
+- 验证：ProteinDigger `make check`、418 passed/8 skipped、dev36 wheel/package-data
+  校验通过；Manager 28/28 与跨仓 golden JSON 通过。Workbench 去除既有设置页字体栅格
+  基线项后的 Chromium 1440、Chromium 1920、Firefox 矩阵为 75/75；设置页原基线仅有
+  约 1% 平台字体栅格差异，布局与内容一致且未重写基线。真实 18769 已报告 dev36，
+  `/execution-targets` 返回本机 2/2、Suzhou2 0/8、8 条逐卡记录和 1 条运行中队列记录；
+  0/8 与当时外部进程及有效租约一致。EasyDesign wheel SHA-256 为
+  `d8ba14d59350d61fb5459ed4da27859633ca617627535f80a8ab3a2934593cbf`。
+- 实现提交：`6a41546bf8e03b6d2a2e2ab907ab949c2189d1d2`；本记录提交为后续状态归档。

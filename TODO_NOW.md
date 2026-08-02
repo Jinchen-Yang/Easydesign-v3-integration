@@ -10,7 +10,7 @@
 | Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev38 完成 model-first PML 和具体失败原因回传。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev38 支持多区域完整 PML 并回传具体失败原因。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
-| Stage 04 | `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；Stage 04 未开始页已强制显式选择本机或 Suzhou2，资源探针失败不再默认本机。 | 在保留旧环境和运行的前提下，为新 lock 环境取得足够数据盘安全余量；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 新环境计划需 24.0 GiB 增量峰值并保留 30.0 GiB，而当前仅余 43.0 GiB，setup 按安全门拒绝；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 04 | `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；setup 按部署者要求固定保留 10 GiB，当前磁盘已满足新环境发布门。 | 使用 append-only setup 发布并探测 `boltzgen-b9a8a41b3512`；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 环境安装与 probe 尚待完成；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
 | Stage 06 | `smoke-validated` | dev35 已在 Suzhou2 Manager 真实完成 APOE 8-candidate Stage 06→07；计划、分片、coverage 与终态均精确为 8。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；本次 8/8 均未通过 BoltzGen `pass_filters`，未进入 Protenix/TNP。 | 2026-08-02 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `smoke-validated` | dev35 已在 Suzhou2 Manager 原地消费 APOE 8/8 ScaleBundle，并发布可审计空 review package。 | 在第二真实 target 验证进入 Protenix 多 seed 与 TNP 的非空深筛路径。 | 本次 8/8 均未通过 BoltzGen `pass_filters`，因此没有调用 Protenix/TNP；Manager 私有 remote 另缺推送权限。 | 2026-08-02 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
@@ -41,9 +41,9 @@
   `runtime/profile.yaml`、setup 恢复、doctor 和一条命令 UI。当前锁的 core/web 已从
   仓库内 lock 重建；dev22 增加 `--component` 逐后端计划与安装，PyMOL 3.1.0 已在
   `runtime/envs/` 真实重建并通过探针。BoltzGen 0.3.2 的四个 cuequivariance 包已在
-  当前 lock 统一为 0.10.0；新环境目标为 `boltzgen-b9a8a41b3512`，但安装计划因
-  43.0 GiB 可用空间不足以满足 24.0 GiB 峰值和 30.0 GiB 安全保留而暂停。Protenix
-  当前 lock 正在按独立计划恢复。
+  当前 lock 统一为 0.10.0；新环境目标为 `boltzgen-b9a8a41b3512`。部署者明确采用固定
+  10 GiB 安全保留后已满足 24.0 GiB 增量峰值门，现按 append-only setup 发布。
+  Protenix 当前 lock 正在按独立计划恢复。
   dev23 将远程长时安装统一为 `setup --detach` 持久任务；CLI 与 UI 共享不可变
   request/process/result，SSH 或浏览器断开不再中断安装或丢失终态。网络异常时允许
   为单个任务显式指定经过审计的 HTTPS pip 源，并把选择写入请求；禁止修改全局代理或
@@ -117,9 +117,6 @@
 
 ## Blocked
 
-- `[S04-002/DATA-005]` Proteindigger BoltzGen 新 lock 环境发布被磁盘安全门拒绝：当前
-  43.0 GiB、计划峰值 24.0 GiB、要求安装后保留 30.0 GiB。需要至少 11 GiB 额外可用
-  空间；不得删除旧环境、运行或缓存绕过。
 - `[ENG-032]` Suzhou2 Manager revision 8 的锁定环境、模型、三后端 probe、4→5 和
   6→7 小链均已真实运行；当前运行路径无阻塞。Manager 私有 GitHub remote 仍缺可用
   deploy key/host 权限，提交 `09ffcc2…9016` 暂只在 Suzhou2 `main`，但不影响已激活

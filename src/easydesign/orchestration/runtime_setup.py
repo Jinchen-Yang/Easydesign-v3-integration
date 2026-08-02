@@ -64,7 +64,7 @@ SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
 }
 SETUP_COMPONENT_IDS = tuple(SETUP_COMPONENT_ENVIRONMENTS)
 GIB = 1024**3
-MINIMUM_FREE_RESERVE_BYTES = 5 * GIB
+SETUP_FREE_RESERVE_BYTES = 10 * GIB
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
 SetupMode = Literal["minimal", "full", "component"]
@@ -1191,10 +1191,10 @@ def setup_plan(
         asset_phase_bytes,
     )
     disk_usage = shutil.disk_usage(context.root)
-    reserve_bytes = max(
-        MINIMUM_FREE_RESERVE_BYTES,
-        int(disk_usage.total * 0.10),
-    )
+    # Deployment policy: keep a fixed post-install reserve. A percentage of
+    # total disk made the same component require progressively more unrelated
+    # free space as the data volume grew.
+    reserve_bytes = SETUP_FREE_RESERVE_BYTES
     sufficient = disk_usage.free >= incremental_peak_bytes + reserve_bytes
     return {
         "workspace": str(context.root),

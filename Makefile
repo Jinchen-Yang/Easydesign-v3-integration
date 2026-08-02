@@ -48,7 +48,7 @@ test:
 	PYTHONPATH=src TMPDIR=$(CURDIR)/runtime/tmp $(PYTHON) -m pytest --basetemp=runtime/tmp/pytest-$$(date +%s)-$$$$
 
 build: build-ui
-	@test ! -e dist/easydesign-0.1.0.dev38-py3-none-any.whl || \
+	@test ! -e dist/easydesign-0.1.0.dev39-py3-none-any.whl || \
 		{ echo "拒绝覆盖现有 wheel；请保留它并使用新的版本号"; exit 1; }
 	@mkdir -p runtime/cache/pip runtime/cache/xdg runtime/home runtime/tmp
 	$(RUNTIME_ENV) \

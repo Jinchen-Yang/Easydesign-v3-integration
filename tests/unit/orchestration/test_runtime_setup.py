@@ -52,6 +52,27 @@ def test_setup_plan_keeps_every_target_inside_workspace() -> None:
         assert Path(asset["target"]).parts[:2] == ("runtime", "models")
 
 
+def test_setup_plan_uses_fixed_ten_gib_free_space_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = Path(__file__).resolve().parents[3]
+    context = WorkspaceContext.from_root(repository)
+    disk_usage = SimpleNamespace(
+        total=300 * runtime_setup.GIB,
+        used=250 * runtime_setup.GIB,
+        free=50 * runtime_setup.GIB,
+    )
+    monkeypatch.setattr(runtime_setup.shutil, "disk_usage", lambda _path: disk_usage)
+
+    plan = setup_plan(context, minimal=False, component="boltzgen")
+
+    assert plan["disk"]["reserve_bytes"] == 10 * runtime_setup.GIB
+    assert plan["disk"]["sufficient"] is (
+        disk_usage.free
+        >= plan["disk"]["incremental_peak_bytes"] + 10 * runtime_setup.GIB
+    )
+
+
 def test_boltzgen_cuequivariance_family_is_version_aligned() -> None:
     repository = Path(__file__).resolve().parents[3]
     lock = (

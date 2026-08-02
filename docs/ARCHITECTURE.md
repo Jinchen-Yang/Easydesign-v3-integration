@@ -161,7 +161,8 @@ Python API 和 console-script 声明源；core 在锁定依赖后以 `--no-deps`
 为稳定 ID，同时选择恰好对应的环境 lock 与必需资产集合。环境先构建，资产逐个 staging
 并校验后发布，因此磁盘峰值按“环境及其缓存 + 已发布资产 + 最大单资产 staging”计算，
 不再假设所有后端与所有资产同一时刻重复存在。完整安装与组件安装共用
-`setup_workspace()`，CLI 和 UI 不得维护第二套映射。
+`setup_workspace()`，CLI 和 UI 不得维护第二套映射。部署策略要求安装完成后固定保留
+10 GiB 可用空间；该保留量不随数据盘总容量按比例增长，也不得由单次 CLI/UI 请求绕过。
 长时安装由 `orchestration.setup_jobs` 提供唯一任务 API。CLI 的 `setup --detach` 和
 UI 安装中心都通过该 API 启动 `python -m easydesign.setup_worker`：无 shell、关闭
 stdin、独立进程 session，并将不可变 request/process/result 写到

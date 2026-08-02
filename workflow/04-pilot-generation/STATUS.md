@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；Stage 04 未开始页已强制显式选择本机或 Suzhou2，资源探针失败不再默认本机。 | 在保留旧环境和运行的前提下，为新 lock 环境取得足够数据盘安全余量；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 新环境计划需 24.0 GiB 增量峰值并保留 30.0 GiB，而当前仅余 43.0 GiB，setup 按安全门拒绝；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 |
+| `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；setup 按部署者要求固定保留 10 GiB，当前磁盘已满足新环境发布门。 | 使用 append-only setup 发布并探测 `boltzgen-b9a8a41b3512`；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 环境安装与 probe 尚待完成；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -38,7 +38,7 @@
 ## Now
 
 - `[S04-002/DATA-005]` 四个 cuequivariance 包与 sidecar 已固定为同一 0.10.0 family，
-  锁回归通过；待数据盘满足安全余量后，使用 setup API 将新环境发布为
+  锁回归通过；setup 固定保留 10 GiB 后当前磁盘计划通过，使用 setup API 将新环境发布为
   `runtime/envs/boltzgen-b9a8a41b3512`，再执行最小真实 probe。旧混装环境和历史运行
   保留，不删除或覆盖。
 - `[VAL-008]` 固定非 APOE 1UBQ 极小 Stage 04→05 已完成并科学停止；下一步更换合法
@@ -51,9 +51,6 @@
 
 ## Blocked
 
-- `[S04-002/DATA-005]` Proteindigger 当前可用 43.0 GiB；BoltzGen 组件计划的增量峰值
-  为 24.0 GiB，并要求安装后保留 30.0 GiB，因此 setup 正确拒绝新环境发布。不得通过
-  删除旧环境、缓存、运行或降低安全余量规避；取得至少 11 GiB 额外可用空间后重跑计划。
 - 不终止服务器上的非 EasyDesign GPU 任务；资源繁忙时等待或明确失败。
 
 ## 验证证据
@@ -127,6 +124,9 @@
   选择后才展示逐卡资源与确认门。新环境因数据盘安全余量合法暂停，旧环境和运行未动。
 - 2026-08-02：发现 Suzhou2 满载时受管 probe 的三后端活性检查真实需 35.58 秒；将
   上界校准为 60 秒，并区分“读取中”和“已失败”，已打开的逐卡弹窗会自动更新为 8 卡。
+- 2026-08-02：按部署者明确要求将 setup 安装后可用空间保留策略从数据盘容量的 10%
+  改为固定 10 GiB；BoltzGen 新锁环境的 24 GiB 增量峰值在当前磁盘上通过计划门。旧环境、
+  模型、缓存、项目和运行均保持不动，新环境继续走 append-only 发布。
 
 ## 历史索引
 

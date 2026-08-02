@@ -77,6 +77,9 @@
   隔离 staging wheel 安装与新 UI 资产字节校验通过，SHA-256
   `f4200ceee4b2b8597eed5ba1980da603b62cfbb17e95ee0ab091cf7df1c73bb5`；正式 `make build`
   按不可变门拒绝覆盖已有 dev36 wheel，因此该同版本 staging wheel 未发布到 `dist/`。
+- UI-027：补齐逐卡弹窗的独立加载态，并将受管探针上界校准为 60 秒。真实 Suzhou2
+  满载探针用时 35.58 秒，返回 8/8 条 A100 快照、0/8 可立即使用和 1 条运行中任务；
+  真实 18769 弹窗先显示“正在读取逐卡状态”，随后原地更新为 8 张卡，不再误报不可用。
 - 最小真实 backend smoke：
   `/root/autodl-tmp/Protein_design/boltzgen_work/`
   `easydesign_stage04_backend_smoke_20260726_01/backend-output`。固定
@@ -122,6 +125,8 @@
 - 2026-08-02：统一 Proteindigger BoltzGen cuequivariance 0.10.0 family；Stage 04/06
   资源请求改为 8 秒上界，位置卡先渲染且初始不选中，删除 Stage 04 三张重复事实卡，
   选择后才展示逐卡资源与确认门。新环境因数据盘安全余量合法暂停，旧环境和运行未动。
+- 2026-08-02：发现 Suzhou2 满载时受管 probe 的三后端活性检查真实需 35.58 秒；将
+  上界校准为 60 秒，并区分“读取中”和“已失败”，已打开的逐卡弹窗会自动更新为 8 卡。
 
 ## 历史索引
 

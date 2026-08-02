@@ -272,11 +272,15 @@ function GpuResourceDialog({
   label,
   devices,
   observedAt,
+  loading,
+  error,
   onClose,
 }: {
   label: string;
   devices: DisplayGpuResource[];
   observedAt?: string;
+  loading: boolean;
+  error?: string;
   onClose: () => void;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -303,9 +307,13 @@ function GpuResourceDialog({
             <p className="section-label">实时计算资源</p>
             <h3 id="gpu-resource-dialog-title">{label} GPU 状态</h3>
             <span>
-              {devices.length
-                ? `${eligible}/${devices.length} 张当前符合启动条件`
-                : "暂时没有可展示的逐卡状态"}
+              {loading
+                ? devices.length
+                  ? "正在刷新逐卡状态；当前先显示上一次快照"
+                  : "正在读取逐卡状态"
+                : devices.length
+                  ? `${eligible}/${devices.length} 张当前符合启动条件`
+                  : "暂时没有可展示的逐卡状态"}
               {observedAt ? ` · 更新于 ${formatTime(observedAt)}` : ""}
             </span>
           </div>
@@ -340,10 +348,16 @@ function GpuResourceDialog({
               </article>
             );
           })}
-          {!devices.length && (
+          {!devices.length && loading && (
+            <div className="empty-state">
+              <strong>正在读取逐卡状态</strong>
+              <span>探针正在检查 GPU、队列和租约；结果返回后会自动显示。</span>
+            </div>
+          )}
+          {!devices.length && !loading && (
             <div className="empty-state">
               <strong>逐卡探针暂时不可用</strong>
-              <span>配对状态不会因此改变；刷新资源后可以重新读取。</span>
+              <span>{error || "配对状态不会因此改变；刷新资源后可以重新读取。"}</span>
             </div>
           )}
         </div>
@@ -474,6 +488,7 @@ function StageContinuationSetup({
   }>();
   const [executionTargets, setExecutionTargets] = useState<ExecutionTargets>();
   const [resourceLoadError, setResourceLoadError] = useState("");
+  const [resourceLoading, setResourceLoading] = useState(true);
   const [executionTarget, setExecutionTarget] = useState<
     "local-current-host" | "managed-ssh" | undefined
   >();
@@ -507,12 +522,16 @@ function StageContinuationSetup({
   }, [stage.stage_number]);
 
   useEffect(() => {
-    if (!expensive) return;
+    if (!expensive) {
+      setResourceLoading(false);
+      return;
+    }
     let disposed = false;
+    setResourceLoading(true);
+    setResourceLoadError("");
     api.executionTargets()
       .then((value) => {
         if (disposed) return;
-        setResourceLoadError("");
         setExecutionTargets(value);
       })
       .catch((error: unknown) => {
@@ -520,6 +539,11 @@ function StageContinuationSetup({
           setResourceLoadError(
             error instanceof Error ? error.message : "无法读取计算资源",
           );
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setResourceLoading(false);
         }
       });
     return () => {
@@ -872,17 +896,19 @@ function StageContinuationSetup({
             <button
               type="button"
               onClick={() => {
+                setResourceLoading(true);
+                setResourceLoadError("");
                 api.executionTargets()
                   .then((value) => {
-                    setResourceLoadError("");
                     setExecutionTargets(value);
                   })
                   .catch((error: unknown) => setResourceLoadError(
                     error instanceof Error ? error.message : "无法刷新计算资源",
-                  ));
+                  ))
+                  .finally(() => setResourceLoading(false));
               }}
             >
-              刷新资源
+              {resourceLoading ? "正在读取…" : "刷新资源"}
             </button>
           </div>
           <div className="execution-target-cards">
@@ -1015,6 +1041,8 @@ function StageContinuationSetup({
           label={selectedResourceLabel}
           devices={selectedDevices}
           observedAt={executionTarget === "managed-ssh" ? managedTarget?.resource_observed_at : undefined}
+          loading={resourceLoading}
+          error={resourceLoadError}
           onClose={() => setResourceDialogOpen(false)}
         />
       )}

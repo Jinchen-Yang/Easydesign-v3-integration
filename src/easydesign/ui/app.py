@@ -2556,7 +2556,11 @@ def create_ui_app(
                     probe = probe_managed_executor(
                         executor_id=record.executor_id,
                         profile_path=service.profile_path,
-                        timeout_seconds=8.0,
+                        # A managed probe also verifies the fixed scientific
+                        # backends. Under an active 8-GPU run this takes about
+                        # 35 seconds; the UI keeps selection usable while it
+                        # loads, so allow the truthful snapshot to complete.
+                        timeout_seconds=60.0,
                     )
                 except Exception:
                     projection["detail"] = (

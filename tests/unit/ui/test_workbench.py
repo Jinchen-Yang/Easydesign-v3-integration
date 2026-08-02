@@ -201,7 +201,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     assert managed["eligible_gpu_count"] == 6
     assert managed["queue_depth"] == 2
     assert len(managed["devices"]) == 8
-    assert probe_arguments["timeout_seconds"] == 8.0
+    assert probe_arguments["timeout_seconds"] == 60.0
 
     def failing_probe(**_kwargs: object) -> ManagedWorkerProbe:
         raise RuntimeError("secret /root/workspace/id_ed25519")

@@ -989,6 +989,9 @@ projects/<project>/interactive-sessions/<session>/revision
   场景摘要、结构 metadata、当前区域、最近十轮对话和用户请求；固定返回
   `assistantMessage/summary/conversationTitle/pml` 四字段 JSON。坐标、MSA、完整序列、
   密钥和绝对路径不进入请求。
+- provider 连接上限为 10 秒、响应读取上限为 60 秒。读取/连接超时、连接失败、协议中断、
+  HTTP 状态、非 JSON、响应 envelope 缺失和完整 PML 校验失败分别形成可公开的错误类别；
+  前端原样显示类别与安全重试提示，失败请求不发布 SceneVersion 或区域草稿。
 - PML 是唯一可视化事实。安全追加时 PyMOL 只执行增量；旧内容变化、历史恢复、增量失败
   或状态不确定时，重新构建结构场景并完整重放。Mol* 只投影 representation、颜色、
   选择、聚焦和背景等可靠子集，不支持的命令标记为“仅 PyMOL”，但不能阻止保存。

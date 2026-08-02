@@ -1373,6 +1373,45 @@ test("stepwise PSE upload runs stage one and opens structure review directly", a
   ).toBeVisible();
 });
 
+test("structure assistant shows the real upstream error type", async ({ page }) => {
+  await page.route("**/api/v1/structure-assistant/status", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        available: true,
+        service_name: "EasyDesign 结构助手",
+        detail: "平台服务已就绪",
+      }),
+    });
+  });
+  await page.route("**/api/v1/structure-sessions/*/messages", async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "deepseek API 响应超时（ReadTimeout，等待上限 60 秒）；当前场景未修改，请稍后重试",
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
+  await page.getByPlaceholder("输入显示操作或明确的残基编号…").fill("仅保留区域 A");
+  await page.getByRole("button", { name: "发送" }).click();
+
+  await expect(
+    page.getByText(/请求失败：deepseek API 响应超时（ReadTimeout，等待上限 60 秒）/),
+  ).toBeVisible();
+  await expect(page.getByText(/当前场景未修改，请稍后重试/).first()).toBeVisible();
+});
+
 test("developer smoke is separated from scientific projects", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();

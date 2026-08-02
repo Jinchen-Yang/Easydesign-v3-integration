@@ -457,6 +457,10 @@ GLM，并固定模型与 endpoint。普通使用者不选择 provider，也不�
 并形成不可变 SceneVersion。Stage 01 助手只能修改浏览器可视化场景，不能修改
 Target Bundle 或判断 hotspot。
 
+provider 连接最多等待 10 秒，完整响应读取最多等待 60 秒。UI 必须区分读取/连接超时、
+连接失败、协议中断、HTTP 状态、非 JSON、响应字段缺失和 PML 校验失败；任何失败都保留
+当前 SceneVersion，不得以含糊的“响应无法验证”掩盖真实错误类型。
+
 界面中未特别说明的残基数字一律按底部序列同步显示的规范
 `label_seq_id` 解释；只有用户明确写出“原始编号”、`auth`、`author` 或
 `PDB 编号` 时才使用 author 编号。界面同时展示规范和原始编号；模型直接理解一次请求

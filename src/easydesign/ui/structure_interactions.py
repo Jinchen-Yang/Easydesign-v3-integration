@@ -32,6 +32,17 @@ from easydesign.ui.pml_skills import PmlSkill, render_pml_skills, select_pml_ski
 
 ProviderId = Literal["deepseek", "zhipu-glm"]
 
+_ASSISTANT_CONNECT_TIMEOUT_SECONDS = 10.0
+_ASSISTANT_READ_TIMEOUT_SECONDS = 60.0
+
+
+def _assistant_http_timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        _ASSISTANT_READ_TIMEOUT_SECONDS,
+        connect=_ASSISTANT_CONNECT_TIMEOUT_SECONDS,
+        read=_ASSISTANT_READ_TIMEOUT_SECONDS,
+    )
+
 
 class SceneVersionConflictError(ConfigurationError):
     """Raised when a PML scene edit targets a stale base version."""
@@ -1633,7 +1644,7 @@ def request_assistant_pml_edit(
     skills = select_pml_skills(user_text)
     own_client = client is None
     selected_client = client or httpx.Client(
-        timeout=httpx.Timeout(60.0, connect=10.0, read=45.0),
+        timeout=_assistant_http_timeout(),
         trust_env=False,
     )
     endpoint = secret.base_url
@@ -1690,23 +1701,85 @@ def request_assistant_pml_edit(
                     "EasyDesign 校验；原场景未被修改。具体原因："
                     f"{public_detail[:1_000]}"
                 ) from error
-        raise ConfigurationError(f"{secret.provider} API 响应无法验证")
-    except httpx.HTTPStatusError as error:
         raise ConfigurationError(
-            f"{secret.provider} API 返回 HTTP {error.response.status_code}"
+            f"{secret.provider} API 重试流程未产生结果（AssistantRetryExhausted）；"
+            "当前场景未修改"
+        )
+    except httpx.ReadTimeout as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 响应超时（ReadTimeout，等待上限 "
+            f"{_ASSISTANT_READ_TIMEOUT_SECONDS:g} 秒）；当前场景未修改，请稍后重试"
         ) from error
-    except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
-        raise ConfigurationError(f"{secret.provider} API 响应无法验证") from error
+    except httpx.ConnectTimeout as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 连接超时（ConnectTimeout，连接上限 "
+            f"{_ASSISTANT_CONNECT_TIMEOUT_SECONDS:g} 秒）；当前场景未修改，请稍后重试"
+        ) from error
+    except httpx.ConnectError as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 连接失败（ConnectError）；"
+            "当前场景未修改，请检查网络后重试"
+        ) from error
+    except httpx.RemoteProtocolError as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 响应传输中断（RemoteProtocolError）；"
+            "当前场景未修改，请稍后重试"
+        ) from error
+    except httpx.HTTPStatusError as error:
+        status_code = error.response.status_code
+        status_reason = {
+            400: "上游拒绝了请求格式",
+            401: "上游鉴权失败",
+            403: "上游拒绝访问",
+            404: "上游端点或模型不存在",
+            408: "上游请求超时",
+            409: "上游请求发生冲突",
+            422: "上游无法处理请求内容",
+            429: "上游请求频率或额度受限",
+            500: "上游服务内部错误",
+            502: "上游网关错误",
+            503: "上游服务暂不可用",
+            504: "上游网关超时",
+        }.get(status_code, "上游返回非成功状态")
+        raise ConfigurationError(
+            f"{secret.provider} API 返回 HTTP {status_code}（{status_reason}）；"
+            "当前场景未修改"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 返回非 JSON 响应（JSONDecodeError）；"
+            "当前场景未修改，请稍后重试"
+        ) from error
+    except ConfigurationError:
+        raise
+    except httpx.HTTPError as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 通信失败（{error.__class__.__name__}）；"
+            "当前场景未修改，请稍后重试"
+        ) from error
+    except ValueError as error:
+        raise ConfigurationError(
+            f"{secret.provider} API 响应内容无法解析（{error.__class__.__name__}）；"
+            "当前场景未修改"
+        ) from error
     finally:
         if own_client:
             selected_client.close()
 
 
-def _assistant_content_from_response(payload: dict[str, Any]) -> str:
+def _assistant_content_from_response(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        raise ConfigurationError("模型 API 返回的 JSON 顶层不是对象")
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         raise ConfigurationError("模型 API 没有返回 choices")
-    content = choices[0].get("message", {}).get("content")
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise ConfigurationError("模型 API 返回的 choice 不是对象")
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        raise ConfigurationError("模型 API 返回的 choice 缺少 message")
+    content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         raise ConfigurationError("模型 API 返回了空内容")
     return content

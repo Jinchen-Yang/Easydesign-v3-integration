@@ -227,7 +227,9 @@ Agent 必须自动完成以下收尾工作：
     key 只写入 `runtime/secrets/`，坐标、MSA、完整序列、密钥和绝对路径不得发送给模型。
     结构助手仍不得成为 EasyDesign 1.0 的科学决策器：用户明确的 `ed_region_A/B/C`
     selection 必须确定性映射为规范编号，只有人工批准才可发布 Stage 02；“最佳区域”等
-    问题只能生成待确认的 SASA/ScanNet 计划。
+    问题只能生成待确认的 SASA/ScanNet 计划。平台 provider 的读取等待上限固定为 60 秒；
+    read/connect/protocol/HTTP/JSON envelope/PML 校验失败必须向 UI 返回各自真实错误类型，
+    不得合并成无法诊断的通用失败，也不得因此修改当前 SceneVersion。
 32. Stage 04/06 的执行位置是非科学 `ExecutionTarget`，不得把 host、用户、端口、
     SSH key 或远程数据根写入 canonical scientific YAML。本机和 Suzhou2 必须复用
     同一 Stage plan、TaskRecord、CandidateRecord、Progress 和 manifest 契约。

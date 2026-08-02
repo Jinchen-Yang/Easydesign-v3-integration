@@ -550,6 +550,10 @@ A/B/C 草稿并验证对象、链、残基和互斥性。同区再次选择可�
 界面不提供 provider 或 key 输入。不允许 DeepSeek/GLM 互相静默 fallback；密钥不进入
 科学 manifest、普通日志、浏览器存储或任何 API 响应。
 
+provider 连接最多等待 10 秒，完整响应读取最多等待 60 秒。UI 分别显示读取/连接超时、
+连接失败、协议中断、HTTP 状态、非 JSON、响应字段缺失或 PML 校验失败；失败不会发布
+SceneVersion，也不会改变 A/B/C 编辑草稿。
+
 完整 PML 必须保留 EasyDesign 结构管理行；Python、系统命令、文件/网络操作、退出和
 重初始化明确拒绝，对象、链、selection、括号、占位符和比对对象必须有效。Mol* 只投影
 它可靠支持的 representation、颜色、选择、聚焦和背景；PyMOL 专属命令会标记兼容提示，

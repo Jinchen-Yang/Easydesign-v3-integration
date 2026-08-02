@@ -19,6 +19,7 @@ from easydesign.ui.structure_interactions import (
     SceneVersionConflictError,
     StructureInteractionStore,
     ViewerAction,
+    _assistant_http_timeout,
     compile_viewer_actions,
     request_assistant_pml_edit,
     validate_safe_pml,
@@ -26,6 +27,13 @@ from easydesign.ui.structure_interactions import (
 )
 
 _MANAGED_TARGET_LINE = "# @easydesign target object=target sha256=" + "a" * 64 + "\n"
+
+
+def test_assistant_http_timeout_contract_is_sixty_seconds() -> None:
+    timeout = _assistant_http_timeout()
+
+    assert timeout.connect == 10.0
+    assert timeout.read == 60.0
 
 
 def test_safe_pml_accepts_display_commands_and_rejects_mutation() -> None:
@@ -705,14 +713,14 @@ def test_assistant_retries_semantically_unsafe_pml_then_fails_closed() -> None:
     )
 
 
-def test_assistant_timeout_fails_without_fallback() -> None:
+def test_assistant_read_timeout_reports_real_error_type_and_limit() -> None:
     previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
 
     def timeout_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("timeout", request=request)
 
     with httpx.Client(transport=httpx.MockTransport(timeout_handler)) as client:
-        with pytest.raises(ConfigurationError, match="响应无法验证"):
+        with pytest.raises(ConfigurationError) as captured:
             request_assistant_pml_edit(
                 secret=_assistant_secret(
                     provider="zhipu-glm",
@@ -720,6 +728,109 @@ def test_assistant_timeout_fails_without_fallback() -> None:
                     base_url="https://glm.example/v4",
                 ),
                 user_text="请解释当前结构",
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+                client=client,
+            )
+
+    message = str(captured.value)
+    assert "ReadTimeout" in message
+    assert "60 秒" in message
+    assert "当前场景未修改" in message
+    assert "响应无法验证" not in message
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    (
+        (httpx.ConnectTimeout("connect timeout"), "ConnectTimeout"),
+        (httpx.ConnectError("connection failed"), "ConnectError"),
+        (httpx.RemoteProtocolError("truncated response"), "RemoteProtocolError"),
+    ),
+)
+def test_assistant_transport_failures_report_real_error_type(
+    raised: httpx.HTTPError,
+    expected: str,
+) -> None:
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raised.request = request
+        raise raised
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ConfigurationError) as captured:
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
+                user_text="解释当前结构",
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+                client=client,
+            )
+
+    assert expected in str(captured.value)
+    assert "当前场景未修改" in str(captured.value)
+
+
+def test_assistant_http_status_reports_status_and_reason() -> None:
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, request=request, json={"error": {"message": "busy"}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ConfigurationError) as captured:
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
+                user_text="解释当前结构",
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+                client=client,
+            )
+
+    assert "HTTP 429" in str(captured.value)
+    assert "请求频率或额度受限" in str(captured.value)
+
+
+def test_assistant_non_json_and_missing_envelope_report_specific_errors() -> None:
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+    responses = iter(
+        (
+            httpx.Response(200, text="temporarily unavailable"),
+            httpx.Response(200, json={"id": "request-without-choices"}),
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = next(responses)
+        response.request = request
+        return response
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ConfigurationError, match="JSONDecodeError"):
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
+                user_text="解释当前结构",
+                context={"stage_number": 1, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+                client=client,
+            )
+        with pytest.raises(ConfigurationError, match="没有返回 choices"):
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
+                user_text="解释当前结构",
                 context={"stage_number": 1, "currentPml": previous_pml},
                 history=(),
                 previous_pml=previous_pml,

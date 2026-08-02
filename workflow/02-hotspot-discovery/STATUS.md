@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | dev40 将逐步骤交互选区收敛为单次人工提交并固定本步后暂停；归档项目不再重现为草稿。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
+| `planned` | dev41 固定结构助手 60 秒读取上限并显示真实上游错误类型；逐步骤区域提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -74,6 +74,9 @@
   复验仍是下一门槛。
 - dev38 在模型连续两次返回非法 PML 时，把最后一次具体危险命令或残基映射原因回传到
   对话气泡，同时保持当前 SceneVersion 和 A/B/C 草稿不变。
+- dev41 将 provider read timeout 固定为 60 秒，并把连接/读取超时、连接失败、协议中断、
+  HTTP 状态、非 JSON、响应 envelope 缺失和 PML 校验错误分别显示在对话气泡；错误不
+  发布 SceneVersion，也不改变 A/B/C 草稿。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -250,6 +253,10 @@
   `422 passed / 8 skipped` 后端门禁；Workbench `77 passed / 1 skipped`。
 - dev38 增加连续两次 `fetch` 和不可映射 `ed_region_A` 的 fail-closed 错误回传回归；
   全量 Python 门禁为 `423 passed / 8 skipped`。
+- dev41 增加 60 秒 read timeout、传输/HTTP/JSON envelope 分类及浏览器原样显示回归；
+  `make check` 通过，Python `432 passed / 8 skipped`，Workbench Chromium 1440/1920
+  与 Firefox `78/78` 通过。wheel SHA-256 为
+  `288034ec3faa4c9af2150f9069d6817f5a614bb4f13c2e365c1448d1e2739919`。
 
 ### 2026-07-24
 

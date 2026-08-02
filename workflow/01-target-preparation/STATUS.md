@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev38 完成 model-first PML 和具体失败原因回传。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev41 固定结构助手 60 秒读取上限并显示真实上游错误类型。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -42,6 +42,8 @@
   不再用统一“请求失败”占位文案。
 - dev38 补齐最终错误链：第二次修复仍失败时返回最后一次具体命令或映射原因，限长为
   1000 字符，并明确原场景未修改；不再把已知校验原因覆盖成通用“安全校验失败”。
+- dev41 将 provider 读取上限由 45 秒调整为 60 秒，并把 read/connect/protocol/HTTP/
+  JSON envelope/PML 校验错误分别回传到对话气泡；所有失败继续保持原 SceneVersion。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -361,6 +363,10 @@
 - dev38 增加危险命令与 A/B/C 映射错误的最终原因回传测试；`make check` 通过，
   Python `423 passed / 8 skipped`。wheel SHA-256 为
   `cc45fe3bfc67257bf82718340ed500de51b1d39f8d9b74b1a48081a9670f2d8c`。
+- dev41 固定结构助手 60 秒 read timeout，增加传输、HTTP、JSON envelope 和浏览器错误
+  文案回归；`make check` 通过，Python `432 passed / 8 skipped`，Workbench Chromium
+  1440/1920 与 Firefox `78/78` 通过。wheel SHA-256 为
+  `288034ec3faa4c9af2150f9069d6817f5a614bb4f13c2e365c1448d1e2739919`。
 
 ### 2026-07-24
 

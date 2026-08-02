@@ -2,7 +2,7 @@
   "schema_version": "0.3",
   "observed_at": "2026-08-02T04:00:00Z",
   "manager_version": "0.1.0.dev2",
-  "easydesign_version": "0.1.0.dev40",
+  "easydesign_version": "0.1.0.dev41",
   "supported_stage_ranges": [[4, 5], [6, 7]],
   "backends": [
     {"backend_id": "boltzgen", "ready": true, "detail": "locked runtime ready"},

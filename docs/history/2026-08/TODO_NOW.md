@@ -79,3 +79,22 @@
 - 遗留边界：本次证明受管小链和科学空结果，不证明非空 Protenix/TNP 深筛，更不授权
   历史 APOE 50k 的 Stage 07。下一步用第二真实目标验证非空深筛路径。
 - 实现提交：以本记录所在 `main` 提交为准。
+
+## 2026-08-02 — UI-024：公共算力解锁、重新配置与设置返回
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-02T11:40:36+08:00
+- 问题：设置页从 `/remote-executors` 正确显示 Suzhou2 已配对，但 Stage 04/06 从
+  `/execution-targets` 读取不存在的 `pairing_state`，因此同一真实配对在项目页被误投影为
+  “尚未配对”；设置入口也没有保留来源页面，逻辑解绑按钮的重新配置语义不够明确。
+- 方案：所有配对投影同时发布兼容 `state` 和统一 `pairing_state`；Stage 04/06 继续只在
+  `paired` 时解锁。设置页把动作明确为“解除绑定并重新配置”，解绑后立即回到主机指纹、
+  工作区密钥和一次性密码向导；应用记住进入设置前的项目/页面并提供直接返回按钮。
+- 安全边界：解绑继续追加 `unpaired` revision，不删除或覆盖工作区专用私钥、远端
+  `authorized_keys` 公钥、known-host 和历史运行证据；重新连接会复用完整密钥对，半套
+  密钥仍 fail closed。本任务没有修改 Suzhou2 Manager、队列、GPU 作业、模型或旧 run。
+- 验证：`make check` 与 416 passed/8 skipped 的 Python 全量门通过；双尺寸 Chromium
+  对“项目返回”、“配对→解绑→重新配置”和“Stage 03→04 后 Suzhou2 卡片已配对且可点击”
+  完成 6/6 定向回归；Workbench Chromium/Firefox 非视觉矩阵 72/72 通过，设置页新返回
+  按钮另完成 1440×900、1920×1080 视觉基线审阅。
+- 实现提交：以本记录所在 `main` 提交为准。

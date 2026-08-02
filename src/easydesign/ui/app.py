@@ -157,6 +157,10 @@ def _pairing_projection(record: Any, *, include_public_key: bool = False) -> dic
         "executor_id": record.executor_id,
         "controller_id": record.controller_id,
         "state": record.state,
+        # All public executor projections use pairing_state.  Keep state for
+        # compatibility with the pairing action responses, but do not make
+        # Stage 04/06 consumers translate between the two endpoint shapes.
+        "pairing_state": record.state,
         "host": record.host,
         "port": record.port,
         "user": record.user,

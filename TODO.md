@@ -139,6 +139,7 @@
 | `UX-008` | CLI & Developer Experience | `implemented` | 已实现稳定 host fingerprint 确认、工作区 key pair 检测/复用、一次性密码公钥安装、免密 worker 探针和可恢复逻辑解绑；不读取或修改个人 `~/.ssh`。 |
 | `UI-022` | Product UI | `implemented` | Stage 04/06 已提供“当前机器 / Suzhou2”执行卡片；配对向导可复用已有密钥并用一次性密码完成公钥安装，随后展示队列/GPU/ETA 与同步状态。 |
 | `UI-023` | Product UI | `smoke-validated` | 设置已收敛为“当前设备 / 公共算力 / 项目存档”三页；环境自动检查、缺失组件按需安装和折叠技术详情已通过双尺寸 Chromium 视觉验收。 |
+| `UI-024` | Product UI | `smoke-validated` | Stage 04/06 与设置页统一使用真实 `pairing_state`，已配对 Suzhou2 可立即选择；设置支持安全逻辑解绑后重新配置，并可一键返回进入设置前的项目或页面。 |
 | `VAL-008` | Scientific Validation | `smoke-validated` | dev35 已完成 Suzhou2 固定非 APOE 40 条 Stage 04→05 与 APOE 精确 8 条、1 GPU、单 shard Stage 06→07；两次均保持科学停止与历史 50k 不变。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |

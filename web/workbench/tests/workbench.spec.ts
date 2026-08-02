@@ -1077,8 +1077,21 @@ test("settings separates local readiness, public compute and archives", async ({
   await expect(page.getByText("自检历史")).toHaveCount(0);
 });
 
+test("settings returns directly to the project that opened it", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "查看项目 →" }).click();
+  await expect(page.getByRole("heading", { name: "第5步：筛选与验证", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const back = page.getByRole("button", { name: "返回项目 apoe" });
+  await expect(back).toBeVisible();
+  await back.click();
+
+  await expect(page.getByRole("heading", { name: "第5步：筛选与验证", exact: true })).toBeVisible();
+});
+
 test("Suzhou2 pairing reuses an existing workspace key and accepts one password once", async ({ page }) => {
-  let paired = false;
+  let pairingState = "awaiting-public-key";
   let submittedPassword = "";
   await page.route("**/api/v1/remote-executors**", async (route) => {
     const request = route.request();
@@ -1086,7 +1099,7 @@ test("Suzhou2 pairing reuses an existing workspace key and accepts one password 
     if (request.method() === "POST" && pathname.endsWith("/pair-password-bootstrap")) {
       const payload = request.postDataJSON() as { password: string; confirmed: boolean };
       submittedPassword = payload.password;
-      paired = true;
+      pairingState = "paired";
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -1098,6 +1111,14 @@ test("Suzhou2 pairing reuses an existing workspace key and accepts one password 
       });
       return;
     }
+    if (request.method() === "POST" && pathname.endsWith("/unpair")) {
+      pairingState = "unpaired";
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ status: "unpaired", pairing: { pairing_state: "unpaired" } }),
+      });
+      return;
+    }
     if (request.method() === "GET" && pathname === "/api/v1/remote-executors") {
       await route.fulfill({
         contentType: "application/json",
@@ -1106,7 +1127,7 @@ test("Suzhou2 pairing reuses an existing workspace key and accepts one password 
             executor_id: "suzhou2",
             label: "Suzhou2 公共算力",
             type: "managed-ssh",
-            pairing_state: paired ? "paired" : "awaiting-public-key",
+            pairing_state: pairingState,
             controller_id: "controller-primary",
             host: "36.212.4.47",
             port: 22,
@@ -1136,6 +1157,12 @@ test("Suzhou2 pairing reuses an existing workspace key and accepts one password 
   await expect(page.getByRole("heading", { name: "Suzhou2 已连接" })).toBeVisible();
   expect(submittedPassword).toBe("temporary-password");
   await expect(page.getByLabel("Suzhou2 一次性登录密码")).toHaveCount(0);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "解除绑定并重新配置" }).click();
+  await expect(page.getByRole("heading", { name: "Suzhou2 尚未连接" })).toBeVisible();
+  await expect(page.getByText(/已解除绑定，可以重新核对服务器并配置连接/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "1. 核对服务器身份" })).toBeVisible();
 });
 
 test("all molecular workspaces use the portable viewer light canvas", async ({ page }) => {
@@ -1444,6 +1471,8 @@ test("stage three continuation runs from Python defaults and advances to stage f
   await expect(page.getByText("选择计算位置")).toBeVisible();
   await expect(page.getByRole("button", { name: /当前机器/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toContainText("已配对");
   await expect(page.locator(".stage-node").nth(3)).toHaveClass(/selected/);
   await page.locator(".stage-node").nth(2).click();
   await expect(page.getByText("21").first()).toBeVisible();

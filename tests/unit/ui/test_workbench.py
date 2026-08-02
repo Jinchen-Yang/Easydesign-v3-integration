@@ -7,6 +7,7 @@ import os
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -64,6 +65,7 @@ from easydesign.ui.app import (
     ProjectCreateRequest,
     _apply_region_operations,
     _explicit_region_operation_from_message,
+    _pairing_projection,
     _region_edit_intent_context,
     _regions_from_scene_pml,
 )
@@ -89,6 +91,27 @@ def test_project_create_request_accepts_exact_stage06_candidate_count() -> None:
     )
 
     assert request.stage06_candidate_count == 37
+
+
+def test_pairing_projection_uses_the_same_state_contract_as_execution_targets() -> None:
+    record = SimpleNamespace(
+        executor_id="suzhou2",
+        controller_id="controller-primary",
+        state="paired",
+        host="suzhou2.example",
+        port=22,
+        user="root",
+        host_identity=SimpleNamespace(fingerprint="SHA256:verified"),
+        public_key_fingerprint="SHA256:controller-key",
+        managed_worker_root="/data/easydesign/managed-worker",
+        updated_at=NOW,
+        public_key="ssh-ed25519 AAAATEST",
+    )
+
+    projection = _pairing_projection(record)
+
+    assert projection["state"] == "paired"
+    assert projection["pairing_state"] == "paired"
 
 
 def _region_projection_fixture() -> RegionEditorProjection:

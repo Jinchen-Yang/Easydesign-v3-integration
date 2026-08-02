@@ -231,11 +231,16 @@ function Suzhou2Settings() {
   }
 
   async function unpair() {
-    if (!window.confirm("确认取消 Suzhou2 连接？历史运行记录会继续保留。")) return;
+    if (!window.confirm(
+      "确认解除 Suzhou2 绑定并返回重新配置？历史运行记录、工作区专用密钥和远端公钥都会保留；重新连接时会安全复用。",
+    )) return;
     setBusy(true);
     try {
       await api.unpairRemoteExecutor("suzhou2");
-      setMessage("已取消连接；历史证据、本地私钥和远端公钥均未删除。");
+      setFingerprintConfirmed(false);
+      setPublicKey("");
+      setInstallCommand("");
+      setMessage("已解除绑定，可以重新核对服务器并配置连接；历史证据和专用密钥均未删除。");
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "取消连接失败");
@@ -310,7 +315,7 @@ function Suzhou2Settings() {
           <div><span>服务器</span><strong>{executor?.user}@{executor?.host}:{executor?.port}</strong></div>
           <div><span>控制端</span><strong>{executor?.controller_id}</strong></div>
           <div><span>主机指纹</span><code>{executor?.host_fingerprint}</code></div>
-          <button type="button" disabled={busy} onClick={() => void unpair()}>取消连接</button>
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => void unpair()}>解除绑定并重新配置</button>
         </div>}
         {message && <div className="form-status">{message}</div>}
       </section>
@@ -430,7 +435,13 @@ function AssistantServiceCompact() {
   return <div className="assistant-service-compact"><span><strong>EasyDesign 结构助手</strong><small>API 由 EasyDesign 部署者统一提供，普通使用者无需填写 API Key。</small></span><b data-status={status?.available ? "available" : "not-installed"}>{status?.available ? "可用" : "未启用"}</b><p>{status?.detail || "正在检查…"}</p></div>;
 }
 
-export function SettingsPage() {
+export function SettingsPage({
+  onBack,
+  backLabel,
+}: {
+  onBack: () => void;
+  backLabel: string;
+}) {
   const [section, setSection] = useState<SettingsSection>("local");
   const [installStatus, setInstallStatus] = useState<InstallStatus>();
   const [catalog, setCatalog] = useState<ProjectCatalogEntry[]>([]);
@@ -496,7 +507,10 @@ export function SettingsPage() {
   ), [archiveQuery, catalog]);
 
   return <div className="utility-page settings-page">
-    <header className="page-heading compact"><div><p className="section-label">设置</p><h1>工作区设置</h1><p>查看当前设备、连接公共算力，或恢复已存档项目。</p></div></header>
+    <header className="page-heading compact">
+      <div><p className="section-label">设置</p><h1>工作区设置</h1><p>查看当前设备、连接公共算力，或恢复已存档项目。</p></div>
+      <button type="button" className="secondary-button" onClick={onBack}>← {backLabel}</button>
+    </header>
     <nav className="settings-tabs" role="tablist" aria-label="设置页面">
       {([
         ["local", "当前设备", "自动检测环境与模型"],

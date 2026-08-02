@@ -3242,6 +3242,7 @@ function OperationsPage({
 function App() {
   const [data, setData] = useState<ProjectResponse>({ projects: [], drafts: [], editable_projects: [] });
   const [page, setPage] = useState("projects");
+  const [settingsReturnPage, setSettingsReturnPage] = useState("projects");
   const [selectedRun, setSelectedRun] = useState<Run>();
   const [selectedRunStage, setSelectedRunStage] = useState<number>();
   const [replay, setReplay] = useState<Replay>();
@@ -3311,6 +3312,22 @@ function App() {
     if (!selectedRun) return;
     await api.resume(selectedRun.run_key);
   }
+  function openSettings() {
+    if (page !== "settings") setSettingsReturnPage(page);
+    setPage("settings");
+  }
+
+  function closeSettings() {
+    setPage(settingsReturnPage === "run" && !selectedRun ? "projects" : settingsReturnPage);
+  }
+
+  const settingsBackLabel = settingsReturnPage === "run" && selectedRun
+    ? `返回项目 ${selectedRun.project_id}`
+    : settingsReturnPage === "new"
+      ? "返回新建设计"
+      : settingsReturnPage === "tasks"
+        ? "返回运行任务"
+        : "返回我的项目";
   const pendingCount = data.projects
     .flatMap((project) => project.runs)
     .flatMap((run) => run.stages)
@@ -3332,7 +3349,7 @@ function App() {
           <div className="search"><span>⌕</span><input aria-label="搜索项目和运行" placeholder="搜索项目、运行或候选…" /><kbd>⌘ K</kbd></div>
           <div className="top-status">
             <button type="button" className="notification-button" onClick={() => setPage("tasks")}>待确认 {pendingCount > 0 && <b>{pendingCount}</b>}</button>
-            <button type="button" onClick={() => setPage("settings")}>设置</button>
+            <button type="button" onClick={openSettings}>设置</button>
           </div>
         </div>
         {error && <div className="api-error"><strong>本地 API 暂不可用</strong><span>{error}</span></div>}
@@ -3371,7 +3388,7 @@ function App() {
               replay={replay}
             />
           ) :
-          page === "settings" ? <SettingsPage /> :
+          page === "settings" ? <SettingsPage onBack={closeSettings} backLabel={settingsBackLabel} /> :
           <TasksPage projects={data.projects} onOpen={openRun} onRefresh={refreshProjects} />}
       </main>
     </div>

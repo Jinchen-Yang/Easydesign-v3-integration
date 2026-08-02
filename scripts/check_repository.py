@@ -335,14 +335,14 @@ def main() -> int:
         not in path.relative_to(ROOT).as_posix()
     ]
     require(
-        len(governed_markdown) <= 52,
+        len(governed_markdown) <= 53,
         f"Markdown 数量超过精简上限: {len(governed_markdown)}",
         errors,
     )
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev39", "项目版本异常", errors)
+    require(project["version"] == "0.1.0.dev40", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require(
         project.get("scripts") == {"easydesign": "easydesign.cli:main"},

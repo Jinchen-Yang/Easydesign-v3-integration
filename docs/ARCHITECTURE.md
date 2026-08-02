@@ -432,12 +432,14 @@ annotation 中存在固定红/蓝/黄时走用户区域，否则进入显式 aut
 automatic unattended 仍是 deterministic-policy。用户区域 unattended 必须由初始配置
 提供真实审批人、逐区理由和 acknowledgement，输出明确记录
 `approval_authority=human` 与 `approval_source=initial-run-config`，不能伪装成算法批准。
-Workbench 的交互式重选不重复询问三套理由：产品请求只提交规范区域、真实批准人和两个
-acknowledgement；orchestration 从 canonical `design.intent` 生成 design goal，并将
-生物学/结构说明限制为“用户选择、无独立生物学证据”和“编号/坐标已验证、未自动结构
-优选”。生成后的 typed approval 仍进入 resolved config 和审计链，React 不生成科学
-依据。该显式用户提交本身就是 human approval，无论后续运行方式是否为 review-gated，
-都不再制造一次内容相同的第二审批。automatic review-gated 的候选选择仍保留独立门。
+Workbench 的逐步骤交互式重选只提交规范区域；“保存并完成第2步”这一点击就是本次明确
+的人工提交，不再收集未认证的批准人文本、重复 acknowledgement 或后续运行方式。
+orchestration 将该路径固定为 `review-gated`，以 `human:local-workbench` 记录真实
+交互渠道而不是伪造人员身份，并从 canonical `design.intent` 生成 design goal；生物学/
+结构说明限制为“用户选择、无独立生物学证据”和“编号/坐标已验证、未自动结构优选”。
+生成后的 typed record 仍进入 resolved config 和审计链，React 不生成科学依据或宣称实验
+验证。初始 YAML、CLI 和非交互 unattended 用户区域继续要求真实审批人、逐区理由和两类
+acknowledgement；automatic review-gated 的候选选择仍保留独立门。
 
 重新选择 Stage 02 时，continuation 显式声明 `continue_after_stage=1`。core 逐一验证
 Stage 01 的 StageManifest 状态和 ArtifactRef checksum，再建立新 run；它不要求来源
@@ -1053,7 +1055,8 @@ ArtifactRef 仍分别承担产品导航、科学状态和产物身份，不因�
 项目目录只读取 `run-index.json` 的 category：
 
 - `project-run`：显示在普通项目和运行任务。
-- `archived-project-run`：移动到 `runs/_archive/`，只在设置中显示，可恢复。
+- `archived-project-run`：移动到 `runs/_archive/`，只在设置中显示，可恢复；即使
+  `projects/<id>/` 仍保留配置，也不得重新投影成主页草稿。
 - `developer-smoke-run`：只在开发者自检历史中显示，禁止作为科学输入。
 
 项目首页展示哪一次运行也由 `run-index.json` 显式声明。每个活跃项目最多一个

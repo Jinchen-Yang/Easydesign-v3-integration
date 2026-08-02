@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev38 支持多区域完整 PML 并回传具体失败原因。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
+| `planned` | dev40 将逐步骤交互选区收敛为单次人工提交并固定本步后暂停；归档项目不再重现为草稿。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -53,8 +53,9 @@
   规范化为 `label_seq_id` 的 `manual-residue-list`，并创建新的 continuation run，
   不追溯修改旧 Stage 02–07。
 - UI-013 不再逐区询问设计目的和两类理由；设计目的继承 canonical `design.intent`，
-  orchestration 只生成关于用户选择和已验证编号/坐标的保守说明。真实批准人和证据限制
-  acknowledgement 仍为必填。
+  orchestration 只生成关于用户选择和已验证编号/坐标的保守说明。UI-027 进一步将逐步骤
+  工作台收敛为单次人工提交：不收集未认证身份或重复 acknowledgement，固定
+  `review-gated` 并记录 `human:local-workbench`；外部非交互输入的完整批准契约不变。
 - UI-014/ENG-020 修复了重新运行 Stage 02 的状态边界：只验证并复制 Stage 01 成功
   前缀，不要求来源整条 run 已终态；显式人工选区提交一次即发布 human approval。
   automatic review-gated 仍在候选生成后等待科学选择。工作台只在 job
@@ -282,5 +283,6 @@
 
 ## 历史索引
 
-已完成部分见 [`history/2026-07.md`](history/2026-07.md)；当前未关闭项是 S02-008
-科学 benchmark，不阻塞 Stage 03 工程开发。
+已完成部分见 [`history/2026-07.md`](history/2026-07.md) 和
+[`history/2026-08.md`](history/2026-08.md)；当前未关闭项是 S02-008 科学 benchmark，
+不阻塞 Stage 03 工程开发。

@@ -109,7 +109,7 @@
 | `REP-004` | Reporting & Visualization | `smoke-validated` | Mol* 单实例、过期加载防护、表示/相机就绪门已通过真实 143 aa APOE FASTA 与 PSE 红蓝黄页面的可见结构和非背景像素验收。 |
 | `REP-005` | Reporting & Visualization | `smoke-validated` | Workbench 与便携 Stage 01 Viewer 的 Mol* 宿主、canvas 和运行时画布层均固定 `touch-action: none`，双指手势由 Mol* 接收。 |
 | `S02-009` | Scientific Pipeline | `smoke-validated` | APOE PSE 三层编辑器已将 A/B/C 9/14/14 保存为新的 `manual-residue-list` Stage 02 分支，并停在人工确认门；旧运行保持不变。 |
-| `UI-013` | Product UI | `smoke-validated` | Stage 02 不再重复询问 A/B/C 的设计目的和两类理由；设计意图继承 canonical 配置，保守说明由 orchestration 生成，批准人与证据限制确认保留。 |
+| `UI-013` | Product UI | `smoke-validated` | Stage 02 不再重复询问 A/B/C 的设计目的和两类理由；设计意图继承 canonical 配置，保守说明由 orchestration 生成；逐步骤提交表单由 UI-027 继续收敛。 |
 | `UI-014` | Product UI | `smoke-validated` | Stage 02 显示真实 job 进度并在终态打开新分支；dev19 补充提交前逐项校验、问题字段聚焦和明确按钮状态。 |
 | `ENG-020` | Core Engineering | `smoke-validated` | Stage 02 continuation 只复制并验证成功的 Stage 01 前缀；显式人工区域提交一次完成 human approval，不要求来源整条 run 终态。 |
 | `UI-015` | Product UI | `smoke-validated` | 七阶段轨道支持点击和完成后平滑前进；Stage 02 已内嵌，Stage 03 从真实 `3×7` 配置启动并在成功后定位 Stage 04。 |
@@ -144,6 +144,7 @@
 | `UI-024` | Product UI | `smoke-validated` | Stage 04/06 与设置页统一使用真实 `pairing_state`，已配对 Suzhou2 可立即选择；设置支持安全逻辑解绑后重新配置，并可一键返回进入设置前的项目或页面。 |
 | `UI-025` | Product UI | `smoke-validated` | dev36 在选择 GPU 数量前显示目标机空闲/总卡数，并用按需弹窗展示逐卡快照；受管 4→5/6→7 运行视图使用结构化阶段轨道和真实任务进度，真实 Suzhou2 probe 与三浏览器矩阵已通过。 |
 | `UI-026` | Product UI | `smoke-validated` | Stage 04 移除三张重复事实卡，Stage 04/06 初始不默认本机；真实浏览器和三浏览器关键链验证两卡先显示、选择后才展开资源，schema 0.3 仍投影完整 8 GPU。 |
+| `UI-027` | Product UI | `implemented` | 仅有归档运行的项目不再因残留配置重现为草稿；逐步骤 Stage 02 移除批准人、重复证据勾选和后续运行方式，固定为单次交互式人工提交并在本步后暂停。 |
 | `VAL-008` | Scientific Validation | `smoke-validated` | dev35 已完成 Suzhou2 固定非 APOE 40 条 Stage 04→05 与 APOE 精确 8 条、1 GPU、单 shard Stage 06→07；两次均保持科学停止与历史 50k 不变。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen cuequivariance family 已统一为 0.10.0，五个 checkpoint 独立登记并强制离线显式注入。新 Proteindigger 环境受磁盘安全余量门阻止，许可资产仍待逐项确认。 |
@@ -172,7 +173,7 @@
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev38 完成 model-first PML 和具体失败原因回传。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev38 支持多区域完整 PML 并回传具体失败原因。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 02 | `planned` | dev40 将逐步骤交互选区收敛为单次人工提交并固定本步后暂停；归档项目不再重现为草稿。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；setup 按部署者要求固定保留 10 GiB，当前磁盘已满足新环境发布门。 | 使用 append-only setup 发布并探测 `boltzgen-b9a8a41b3512`；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 环境安装与 probe 尚待完成；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |

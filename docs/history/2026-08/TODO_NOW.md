@@ -122,3 +122,19 @@
   0/8 与当时外部进程及有效租约一致。EasyDesign wheel SHA-256 为
   `d8ba14d59350d61fb5459ed4da27859633ca617627535f80a8ab3a2934593cbf`。
 - 实现提交：`6a41546bf8e03b6d2a2e2ab907ab949c2189d1d2`；本记录提交为后续状态归档。
+
+## 2026-08-02 — UI-027：归档隐藏与逐步骤 Stage 02 单次提交
+
+- 状态：`implemented`。
+- 完成时间：2026-08-02T20:41:37+08:00
+- 问题：归档只移动 run，保留的项目配置随后被默认项目页错误解释成“草稿·尚未运行”；
+  逐步骤 Stage 02 又要求填写未认证批准人、重复勾选证据限制并选择后续运行方式。
+- 方案：默认项目投影同时读取 active/archive index category，过滤只有归档运行的配置，
+  恢复后重新显示。逐步骤 Stage 02 以保存按钮点击作为明确人工提交，固定
+  `review-gated`；只记录真实交互渠道，不伪造人员身份或已验证结合位点。
+- 验证：`make check`、426 passed/8 skipped、Workbench 三浏览器 75/75、Target Viewer
+  3 passed/2 skipped、dev40 wheel/package-data 检查均通过。wheel SHA-256：
+  `ccd715fab5405c1df12e0087948752fc8cf1aaec3a0a11f9fc3bf6e440e39cf4`。
+- 安全边界：没有移动、删除或修改真实项目、归档、运行、环境、模型或 Suzhou2 Manager；
+  初始 YAML/CLI 和非交互 unattended 的完整人工批准契约保持不变。
+- 实现提交：以本记录所在 `main` 提交为准。

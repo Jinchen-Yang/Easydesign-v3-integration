@@ -449,6 +449,59 @@ def test_project_archive_and_restore_move_index_paths_without_changing_run(
     ) == before_latest
 
 
+def test_archived_project_config_is_not_reprojected_as_a_draft(
+    tmp_path: Path,
+) -> None:
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/self-tests",
+            json={"mode": "deterministic-seven-stage", "confirmed": True},
+        )
+    assert response.status_code == 200
+    runs_root = tmp_path / "runs"
+    index = load_model(runs_root / "run-index.json", RunIndex)
+    project_entry = index.entries[0].model_copy(update={"category": "project-run"})
+    replace_run_index_entries(
+        runs_root,
+        (project_entry,),
+        generated_at=datetime(2026, 7, 27, 9, 0, tzinfo=UTC),
+    )
+    project_root = tmp_path / "projects" / "developer-self-test"
+    project_root.mkdir(parents=True)
+    (project_root / "easydesign.yaml").write_text(
+        "schema_version: '0.8'\nproject_id: developer-self-test\n",
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        archived = client.post(
+            "/api/v1/project-catalog/developer-self-test/archive",
+            json={"confirmed": True},
+        )
+        hidden = client.get("/api/v1/projects")
+        restored = client.post(
+            "/api/v1/project-catalog/developer-self-test/restore",
+            json={"confirmed": True},
+        )
+        visible = client.get("/api/v1/projects")
+
+    assert archived.status_code == 200
+    assert hidden.status_code == 200
+    assert hidden.json()["projects"] == []
+    assert hidden.json()["drafts"] == []
+    assert "developer-self-test" not in hidden.json()["editable_projects"]
+    assert restored.status_code == 200
+    assert [project["project_id"] for project in visible.json()["projects"]] == [
+        "developer-self-test"
+    ]
+    assert "developer-self-test" in visible.json()["editable_projects"]
+
+
 def test_project_archive_preserves_legacy_layout_without_manifest(
     tmp_path: Path,
 ) -> None:

@@ -80,20 +80,12 @@ export function RegionEditor({
   const [showSource, setShowSource] = useState(true);
   const [showCurrent, setShowCurrent] = useState(true);
   const [pasteValue, setPasteValue] = useState("");
-  const [approvedBy, setApprovedBy] = useState("");
-  const [executionMode, setExecutionMode] = useState<"review-gated" | "unattended">("review-gated");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("manual");
   const [allowStructuralOnly, setAllowStructuralOnly] = useState(false);
-  const [acknowledge, setAcknowledge] = useState(false);
   const [status, setStatus] = useState("");
-  const [validationField, setValidationField] = useState<
-    "approved-by" | "acknowledgement" | undefined
-  >();
   const [busy, setBusy] = useState(false);
   const [activeJobId, setActiveJobId] = useState("");
   const lastSelected = useRef<number | undefined>(undefined);
-  const approvedByInput = useRef<HTMLInputElement>(null);
-  const acknowledgementInput = useRef<HTMLInputElement>(null);
   const completionMessage = useRef("");
   const submittedCallback = useRef(onSubmitted);
 
@@ -299,31 +291,20 @@ export function RegionEditor({
       setStatus("请至少为 A、B、C 中的一个区域选择残基。");
       return;
     }
-    if (!approvedBy.trim()) {
-      setValidationField("approved-by");
-      setStatus("提交前还差 1 项：请填写批准人。用户选区必须保留明确的人类责任记录。");
-      approvedByInput.current?.focus();
-      return;
-    }
-    if (!acknowledge) {
-      setValidationField("acknowledgement");
-      setStatus("提交前还差 1 项：请勾选确认框。用户标注区域不等同于已经验证的真实结合位点。");
-      acknowledgementInput.current?.focus();
-      return;
-    }
-    setValidationField(undefined);
     setBusy(true);
     setStatus("正在发布第2步正式结果…");
     try {
       const sessions = await api.designSessions();
       let session: DesignSession | undefined = sessions.find(
-        (item) => item.project_id === run.project_id && item.design_mode === "stepwise",
+        (item) => item.project_id === run.project_id
+          && item.design_mode === "stepwise"
+          && item.execution_mode === "review-gated",
       );
       if (!session) {
         session = await api.createDesignSession(
           run.project_id,
           "stepwise",
-          executionMode,
+          "review-gated",
         );
       }
       const regions = populated.map(({ id }) => ({
@@ -335,11 +316,7 @@ export function RegionEditor({
       }));
       const response = await api.reviseRegions(run.run_key, {
         session_id: session.session_id,
-        execution_mode: executionMode,
         regions,
-        approved_by: approvedBy.trim(),
-        acknowledge_user_provided_regions: true,
-        acknowledge_evidence_limitations: true,
       });
       const jobId = String(response.job.job_id || "");
       if (!jobId) throw new Error("第2步任务没有返回可跟踪的 job_id");
@@ -356,27 +333,25 @@ export function RegionEditor({
 
   async function startAutomaticSelection() {
     if (selectionMode === "manual") return;
-    if (executionMode === "unattended" && selectionMode === "both") {
-      setStatus("连续运行时必须选择 SASA 或 ScanNet 中的一种；两种方法比较需要人工确认。");
-      return;
-    }
     setBusy(true);
     setStatus("正在建立自动选区的第2步运行…");
     try {
       const sessions = await api.designSessions();
       let session: DesignSession | undefined = sessions.find(
-        (item) => item.project_id === run.project_id && item.design_mode === "stepwise",
+        (item) => item.project_id === run.project_id
+          && item.design_mode === "stepwise"
+          && item.execution_mode === "review-gated",
       );
       if (!session) {
         session = await api.createDesignSession(
           run.project_id,
           "stepwise",
-          executionMode,
+          "review-gated",
         );
       }
       const response = await api.continueRun(run.run_key, 2, {
         session_id: session.session_id,
-        execution_mode: executionMode,
+        execution_mode: "review-gated",
         options: {
           method: selectionMode,
           allow_structural_only: allowStructuralOnly,
@@ -386,9 +361,7 @@ export function RegionEditor({
       if (!jobId) throw new Error("第2步任务没有返回可跟踪的 job_id");
       completionMessage.current = selectionMode === "both"
         ? "SASA 与 ScanNet 已分别完成，等待你比较并确认区域。"
-        : executionMode === "unattended"
-          ? `第2步已使用 ${selectionMode === "sasa" ? "SASA" : "ScanNet"} 完成并自动批准，可以配置下一阶段。`
-          : `第2步已使用 ${selectionMode === "sasa" ? "SASA" : "ScanNet"} 生成候选，等待你确认区域。`;
+        : `第2步已使用 ${selectionMode === "sasa" ? "SASA" : "ScanNet"} 生成候选，等待你确认区域。`;
       setActiveJobId(jobId);
       setStatus("第2步任务已创建，正在读取运行进度…");
     } catch (error) {
@@ -500,13 +473,6 @@ export function RegionEditor({
               </p>
             </div>
             <div className="automatic-region-form">
-              <label>
-                <span>后续运行方式</span>
-                <select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}>
-                  <option value="review-gated">遇到科学选择时暂停确认</option>
-                  <option value="unattended">连续运行</option>
-                </select>
-              </label>
               <label className="acknowledgement">
                 <input
                   type="checkbox"
@@ -518,14 +484,11 @@ export function RegionEditor({
               <button
                 type="button"
                 className="primary-button"
-                disabled={busy || (executionMode === "unattended" && selectionMode === "both")}
+                disabled={busy}
                 onClick={startAutomaticSelection}
               >
                 {busy ? "正在建立运行…" : "启动第2步"}
               </button>
-              {executionMode === "unattended" && selectionMode === "both" && (
-                <p className="field-error">连续运行不能替你决定两种方法的赢家，请改为单一方法或暂停确认。</p>
-              )}
               {busy && (
                 <div className="region-editor-job-progress" role="progressbar" aria-label="第2步正在运行">
                   <span />
@@ -644,50 +607,13 @@ export function RegionEditor({
         <div className="region-editor-approval">
           <p className="approval-summary">
             EasyDesign 会沿用本项目的设计意图，并记录已完成的编号映射与坐标验证；
-            无需为 A、B、C 分别重复填写目的和理由。
+            无需为 A、B、C 分别重复填写目的和理由。本次区域是你的设计输入，
+            不会被表述为已经实验验证的真实结合位点。保存后会完成第2步并暂停，
+            由你继续配置下一步。
           </p>
           <div className="approval-footer">
-            <label className={validationField === "approved-by" ? "field-attention" : ""}>
-              <span>批准人</span>
-              <input
-                ref={approvedByInput}
-                value={approvedBy}
-                aria-invalid={validationField === "approved-by"}
-                onChange={(event) => {
-                  setApprovedBy(event.target.value);
-                  if (event.target.value.trim() && validationField === "approved-by") {
-                    setValidationField(undefined);
-                    setStatus("");
-                  }
-                }}
-                placeholder="真实姓名或稳定 ID"
-              />
-            </label>
-            <label><span>后续运行方式</span><select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}><option value="review-gated">本步确认后暂停，由我配置下一步</option><option value="unattended">本步确认后按已配置流程继续</option></select></label>
-            <label className={`acknowledgement ${validationField === "acknowledgement" ? "field-attention" : ""}`}>
-              <input
-                ref={acknowledgementInput}
-                type="checkbox"
-                checked={acknowledge}
-                aria-invalid={validationField === "acknowledgement"}
-                onChange={(event) => {
-                  setAcknowledge(event.target.checked);
-                  if (event.target.checked && validationField === "acknowledgement") {
-                    setValidationField(undefined);
-                    setStatus("");
-                  }
-                }}
-              />
-              <span>我确认这些是用户提供的设计区域，并不代表已经验证的真实结合位点。</span>
-            </label>
             <button type="button" className="primary-button" disabled={busy} onClick={save}>
-              {busy
-                ? "正在发布第2步…"
-                : !approvedBy.trim()
-                  ? "请先填写批准人"
-                  : !acknowledge
-                    ? "还需勾选确认"
-                    : "保存并完成第2步"}
+              {busy ? "正在发布第2步…" : "保存并完成第2步"}
             </button>
           </div>
           {busy && (
@@ -696,7 +622,7 @@ export function RegionEditor({
             </div>
           )}
           {status && (
-            <div className={`form-status ${validationField ? "error" : ""}`} role={validationField ? "alert" : undefined}>
+            <div className="form-status">
               {status}
             </div>
           )}

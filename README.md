@@ -8,7 +8,7 @@ EasyDesign 的长期范围不局限于 VHH，计划通过可替换的 binder pro
 规则支持 VHH/nanobody、蛋白 binder、肽 binder 以及后续经过验证的其他分子类型。不同
 binder 的科学约束不会被强行混成一种算法。
 
-- 当前版本：`0.1.0-dev39`（包版本 `0.1.0.dev39`）
+- 当前版本：`0.1.0-dev40`（包版本 `0.1.0.dev40`）
 - 仓库基础架构：`implemented`
 - 统一运行契约：`implemented`
 - EasyDesign 1.0 整体状态：`planned`；各子能力状态见阶段 `STATUS.md`
@@ -217,9 +217,11 @@ easydesign remote resume suzhou2-a100x8 demo-remote-001
 PDB/mmCIF 或 FASTA 后，页面会立即显示“正在接收 / 文件已接收 / 接收失败”和文件大小、
 SHA-256 摘要。
 
-普通项目页只读取 `run-index.json` 中的 `project-run`。归档项目可以恢复，开发者自检只在
-设置中显示。Stage 02 结构页可隐藏 PSE 来源颜色、清空本次编辑层，并用 A/B/C 三色重新
-选择区域；保存永远创建新分支，不修改历史 Stage 02–07。
+普通项目页只读取 `run-index.json` 中的 `project-run`；只有
+`archived-project-run` 的项目即使仍保留项目配置，也不会重新显示成草稿。归档项目可以
+恢复，开发者自检只在设置中显示。Stage 02 结构页可隐藏 PSE 来源颜色、清空本次编辑层，
+并用 A/B/C 三色重新选择区域；逐步骤保存固定在本步后暂停，并永远创建新分支，不修改
+历史 Stage 02–07。
 
 Stage 01/02 的统一结构工作区默认使用离线浏览器 PyMOL，并可平级切换到 Mol*。两种
 查看器读取同一份经过 SHA-256 校验的 `target.cif`，共享当前残基、红/蓝/黄区域和

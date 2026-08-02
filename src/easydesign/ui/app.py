@@ -148,6 +148,7 @@ from .uploads import UploadStore
 
 LOCAL_HOST = "127.0.0.1"
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+INTERACTIVE_STAGE02_SUBMITTER = "human:local-workbench"
 
 
 def _pairing_projection(record: Any, *, include_public_key: bool = False) -> dict[str, Any]:
@@ -240,11 +241,7 @@ class RegionRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
-    execution_mode: str = "review-gated"
     regions: list[dict[str, Any]] = Field(min_length=1, max_length=3)
-    approved_by: str = Field(min_length=1, max_length=256)
-    acknowledge_user_provided_regions: bool = False
-    acknowledge_evidence_limitations: bool = False
     run_id: str | None = None
     confirmed: bool = False
 
@@ -1430,6 +1427,32 @@ def create_ui_app(
             service.discover_runs()
             summaries = list_runs(service.registry.runs_root)
             project_ids = sorted({item.project_id for item in summaries})
+            index_path = service.registry.runs_root / "run-index.json"
+            catalog = (
+                list_project_catalog(
+                    service.registry.runs_root,
+                    include_archived=True,
+                    include_developer_smoke=True,
+                )
+                if index_path.is_file()
+                else ()
+            )
+            active_catalog_ids = {
+                item.project_id
+                for item in catalog
+                if item.category == "project-run"
+            }
+            archived_catalog_ids = {
+                item.project_id
+                for item in catalog
+                if item.category == "archived-project-run"
+            }
+            archived_only_ids = archived_catalog_ids - active_catalog_ids
+            editable_projects = tuple(
+                project_id
+                for project_id in service.projects()
+                if project_id not in archived_only_ids
+            )
             sessions_by_project: dict[str, DesignSession] = {}
             for item in service.sessions.list():
                 if not item.config_revisions:
@@ -1439,7 +1462,7 @@ def create_ui_app(
                     sessions_by_project[item.project_id] = item
             draft_ids = [
                 project_id
-                for project_id in service.projects()
+                for project_id in editable_projects
                 if project_id not in project_ids
             ]
             return {
@@ -1471,7 +1494,7 @@ def create_ui_app(
                     ).model_dump(mode="json")
                     for project_id in draft_ids
                 ],
-                "editable_projects": service.projects(),
+                "editable_projects": editable_projects,
             }
         except Exception as error:
             _raise_http(error)
@@ -3797,11 +3820,9 @@ def create_ui_app(
         try:
             if not payload.confirmed:
                 raise ConfigurationError("重新选择区域必须明确 confirmed=true")
-            if not payload.acknowledge_user_provided_regions:
-                raise ConfigurationError("必须确认这些区域来自用户选择")
-            if not payload.acknowledge_evidence_limitations:
-                raise ConfigurationError("必须确认用户区域仍需生物学审阅")
             session = service.sessions.load(payload.session_id)
+            if session.design_mode != "stepwise":
+                raise ConfigurationError("交互式区域提交只适用于逐步骤设计会话")
             service.assert_session_uses_latest_run(session, run_key)
             source = service.registry.resolve(run_key)
             service.assert_stage_configurable(run_key, 2)
@@ -3833,12 +3854,14 @@ def create_ui_app(
                 source_run_root=source,
                 destination=generated,
                 stage_number=2,
-                execution_mode=payload.execution_mode,
+                execution_mode="review-gated",
                 continue_after_stage=1,
                 options={
                     "mode": "user-provided",
                     "regions": payload.regions,
-                    "approved_by": payload.approved_by,
+                    # The localhost workbench has no identity provider.  Record
+                    # the real interaction channel, never an invented person.
+                    "approved_by": INTERACTIVE_STAGE02_SUBMITTER,
                     "acknowledge_user_provided_regions": True,
                     "acknowledge_evidence_limitations": True,
                 },

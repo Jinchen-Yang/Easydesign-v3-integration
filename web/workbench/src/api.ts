@@ -189,11 +189,7 @@ export const api = {
     key: string,
     body: {
       session_id: string;
-      execution_mode: "unattended" | "review-gated";
       regions: Array<{ id: string; label_seq_ids: number[] }>;
-      approved_by: string;
-      acknowledge_user_provided_regions: boolean;
-      acknowledge_evidence_limitations: boolean;
     },
   ) =>
     request<{ job: Record<string, unknown>; session: DesignSession }>(

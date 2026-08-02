@@ -699,7 +699,7 @@ textarea { padding: 10px; }
 .editor-actions-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .editor-actions-row button, .paste-residues button { padding: 9px; border: 1px solid var(--line-strong); border-radius: 7px; background: #f8fafc; color: #344158; cursor: pointer; font-size: 13px; font-weight: 720; }
 .paste-residues { display: grid; gap: 7px; padding-top: 13px; border-top: 1px solid var(--line); }
-.paste-residues label, .approval-footer > label:not(.acknowledgement) { display: grid; gap: 5px; color: #3d495e; font-size: 13px; font-weight: 720; }
+.paste-residues label { display: grid; gap: 5px; color: #3d495e; font-size: 13px; font-weight: 720; }
 .paste-residues textarea { min-height: 64px; resize: vertical; }
 .region-editor-structure { min-width: 0; }
 .region-editor-structure > .structure-workbench { min-height: 625px; }
@@ -725,19 +725,7 @@ textarea { padding: 10px; }
 .sequence-editor button.region-c { border-color: #dcc254; background: #fff7c9; }
 .region-editor-approval { margin: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .approval-summary { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.approval-footer { display: grid; grid-template-columns: minmax(190px, .7fr) minmax(250px, 1fr) minmax(320px, 1.5fr) auto; align-items: end; gap: 12px; }
-.approval-footer .acknowledgement { align-self: center; }
-.approval-footer .field-attention {
-  color: var(--red);
-  background: var(--red-soft);
-  border: 1px solid #e9bec5;
-  border-radius: 8px;
-  padding: 10px;
-}
-.approval-footer label.field-attention input {
-  border-color: var(--red);
-  outline: 2px solid #b33a4a24;
-}
+.approval-footer { display: flex; justify-content: flex-end; }
 .stage-setup { padding: 28px; overflow: hidden; }
 .stage-setup-copy { max-width: 780px; }
 .stage-setup-copy h3 { margin: 6px 0 8px; font-size: 26px; }
@@ -1097,7 +1085,6 @@ textarea { padding: 10px; }
   .final-funnel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .final-candidate-layout { grid-template-columns: 270px minmax(0, 1fr); }
   .region-editor-workspace { grid-template-columns: 310px minmax(0, 1fr); }
-  .approval-footer { grid-template-columns: 1fr 1fr; }
   .pairing-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .paired-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .environment-summary, .compute-summary { align-items: flex-start; }

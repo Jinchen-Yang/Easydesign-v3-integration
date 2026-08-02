@@ -2390,6 +2390,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
     setPreflightState("idle");
     setStepwisePhase("idle");
     if (selected === "stepwise") {
+      setExecutionMode("review-gated");
       setStage(1);
       setActiveStep(1);
       setBrowsedStage(1);
@@ -2491,7 +2492,7 @@ stage07: ${stage >= 7 ? "{final_filter_profile: nanobody-final-v1.5}" : "null"}
         source_type: sourceType,
         source_value: selectedValue,
         taxon_id: sourceType === "uniprot-search" ? Number(taxonId) : undefined,
-        execution_mode: executionMode,
+        execution_mode: designMode === "stepwise" ? "review-gated" : executionMode,
         design_intent: designIntent,
         stop_after_stage: stage,
         stage06_candidate_count: stage06CandidateCountNumber,

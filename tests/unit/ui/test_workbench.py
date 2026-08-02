@@ -63,6 +63,7 @@ from easydesign.ui import (
 )
 from easydesign.ui.app import (
     ProjectCreateRequest,
+    RegionRevisionRequest,
     _pairing_projection,
     _regions_from_scene_pml,
     _scientific_analysis_methods,
@@ -90,6 +91,21 @@ def test_project_create_request_accepts_exact_stage06_candidate_count() -> None:
     )
 
     assert request.stage06_candidate_count == 37
+
+
+def test_interactive_region_revision_needs_only_regions_and_explicit_submit() -> None:
+    request = RegionRevisionRequest(
+        session_id="session-stepwise",
+        regions=[{"id": "A", "label_seq_ids": [1, 2, 3]}],
+        confirmed=True,
+    )
+
+    assert request.model_dump() == {
+        "session_id": "session-stepwise",
+        "regions": [{"id": "A", "label_seq_ids": [1, 2, 3]}],
+        "run_id": None,
+        "confirmed": True,
+    }
 
 
 def test_pairing_projection_uses_the_same_state_contract_as_execution_targets() -> None:
@@ -133,7 +149,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev39",
+        easydesign_version="0.1.0.dev40",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -1553,11 +1569,7 @@ def test_region_revision_rejects_stale_session_run_key(tmp_path: Path) -> None:
             "/api/v1/runs/old-stage01-run-key/regions/revise",
             json={
                 "session_id": session.session_id,
-                "execution_mode": "review-gated",
                 "regions": [{"id": "A", "label_seq_ids": [1, 2, 3]}],
-                "approved_by": "tester",
-                "acknowledge_user_provided_regions": True,
-                "acknowledge_evidence_limitations": True,
                 "confirmed": True,
             },
         )
@@ -2013,7 +2025,7 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev39",
+        easydesign_version="0.1.0.dev40",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},

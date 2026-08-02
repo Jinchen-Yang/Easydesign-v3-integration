@@ -715,6 +715,12 @@ async function mockApi(page: Page) {
       return;
     }
     if (url.pathname.endsWith("/regions/revise") && route.request().method() === "POST") {
+      const requestBody = route.request().postDataJSON() as Record<string, unknown>;
+      expect(requestBody.confirmed).toBe(true);
+      expect(requestBody).not.toHaveProperty("approved_by");
+      expect(requestBody).not.toHaveProperty("execution_mode");
+      expect(requestBody).not.toHaveProperty("acknowledge_user_provided_regions");
+      expect(requestBody).not.toHaveProperty("acknowledge_evidence_limitations");
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -1444,6 +1450,7 @@ test("stage two automatic branch shows real progress and opens the new run", asy
   });
   await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
   await page.getByRole("button", { name: /^SASA/ }).click();
+  await expect(page.getByText("后续运行方式", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "启动第2步" }).click();
   await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "第2步：选择结合区域" })).toBeVisible();
@@ -1460,12 +1467,9 @@ test("explicit manual regions complete one approval and open a succeeded branch"
     buffer: Buffer.from("fixture-pse-content"),
   });
   await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
-  await page.getByLabel("批准人").fill("scientist-01");
-  await expect(page.getByRole("button", { name: "还需勾选确认" })).toBeVisible();
-  await page.getByRole("button", { name: "还需勾选确认" }).click();
-  await expect(page.getByRole("alert")).toContainText("提交前还差 1 项");
-  await expect(page.getByLabel(/我确认这些是用户提供的设计区域/)).toBeFocused();
-  await page.getByText(/我确认这些是用户提供的设计区域/).click();
+  await expect(page.getByLabel("批准人")).toHaveCount(0);
+  await expect(page.getByText(/我确认这些是用户提供的设计区域/)).toHaveCount(0);
+  await expect(page.getByText("后续运行方式", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "保存并完成第2步" }).click();
   await expect(page.getByRole("progressbar", { name: "第2步正在运行" })).toBeVisible();
   await expect(
@@ -1494,8 +1498,6 @@ test("stage three continuation runs from Python defaults and advances to stage f
     buffer: Buffer.from("fixture-pse-content"),
   });
   await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
-  await page.getByLabel("批准人").fill("scientist-01");
-  await page.getByText(/我确认这些是用户提供的设计区域/).click();
   await page.getByRole("button", { name: "保存并完成第2步" }).click();
   await expect(page.getByRole("heading", { name: "配置第3步：生成设计方案" })).toBeVisible();
 
@@ -1579,8 +1581,6 @@ test("managed stage run shows the linked stage rail and real structured progress
     buffer: Buffer.from("fixture-pse-content"),
   });
   await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
-  await page.getByLabel("批准人").fill("scientist-01");
-  await page.getByText(/我确认这些是用户提供的设计区域/).click();
   await page.getByRole("button", { name: "保存并完成第2步" }).click();
   await page.getByRole("button", { name: "生成并验证设计方案" }).click();
   await expect(page.getByRole("heading", { name: "配置第4步：小规模生成" })).toBeVisible();

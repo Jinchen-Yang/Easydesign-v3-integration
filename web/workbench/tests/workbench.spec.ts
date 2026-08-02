@@ -1478,6 +1478,81 @@ test("stage two region editor keeps source layers and editable selection separat
   await expect(page.getByText(/无需为 A、B、C 分别重复填写目的和理由/)).toBeVisible();
 });
 
+test("stage two reload restores the persisted assistant region draft before scene sync", async ({ page }) => {
+  let sceneWrites = 0;
+  await page.route("**/api/v1/runs/*/structure-sessions", async (route) => {
+    const requestBody = route.request().postDataJSON() as { stage_number?: 1 | 2 };
+    const stageNumber = requestBody.stage_number || 1;
+    const existingScene = {
+      version_id: "scene-v000002-fixture",
+      revision: 2,
+      parent_version_id: "scene-v000001-fixture",
+      actor: "ai",
+      source: "assistant",
+      summary: "仅保留区域 A",
+      pml: [
+        "select ed_region_A, target and chain A and resi 23",
+        "select ed_region_B, none",
+        "select ed_region_C, none",
+        "color red, ed_region_A",
+      ].join("\n"),
+      sha256: "c".repeat(64),
+      created_at: "2026-08-03T00:00:00Z",
+    };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        schema_version: "0.4",
+        session_id: `structure-session-reload-${stageNumber}`,
+        project_id: "apoe",
+        run_key: run.run_key,
+        stage_number: stageNumber,
+        target_structure_sha256: "a".repeat(64),
+        residue_mapping_sha256: "b".repeat(64),
+        messages: stageNumber === 2 ? [{
+          message_id: "message-reload-fixture",
+          role: "assistant",
+          content: "已清空 B、C 区域。",
+          created_at: "2026-08-03T00:00:00Z",
+        }] : [],
+        pml_revisions: [],
+        scene_versions: stageNumber === 2 ? [
+          { ...existingScene, version_id: "scene-v000001-fixture", revision: 1 },
+          existingScene,
+        ] : [],
+        active_scene_version_id: stageNumber === 2
+          ? "scene-v000002-fixture"
+          : undefined,
+        current_regions: stageNumber === 2 ? { A: [1] } : {},
+        created_at: "2026-08-03T00:00:00Z",
+        updated_at: "2026-08-03T00:00:00Z",
+      }),
+    });
+  });
+  await page.route("**/api/v1/structure-sessions/*/scene-pml", async (route) => {
+    sceneWrites += 1;
+    await route.fulfill({ status: 500, body: "unexpected scene write" });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
+  await expect(page.getByRole("button", { name: /区域 A/ })).toContainText("本次可编辑 1 个残基");
+  await expect(page.getByRole("button", { name: /区域 B/ })).toContainText("本次可编辑 0 个残基");
+  await expect(page.getByRole("button", { name: /区域 C/ })).toContainText("本次可编辑 0 个残基");
+  await expect(page.locator(".region-editor-feedback")).toHaveText(
+    "已恢复结构助手会话中的 1 个区域残基；来源颜色和正式结果未被修改。",
+  );
+  await page.waitForTimeout(500);
+  expect(sceneWrites).toBe(0);
+});
+
 test("stage two automatic branch shows real progress and opens the new run", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();

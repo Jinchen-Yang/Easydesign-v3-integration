@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | dev42 统一 PyMOL/Mol* 区域显示层并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 |
+| `planned` | dev43 统一 PyMOL/Mol*、编辑层和会话恢复，并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -79,6 +79,8 @@
   发布 SceneVersion，也不改变 A/B/C 草稿。
 - dev42 将来源/已批准区域设为默认关闭的临时对照层，并让 PyMOL/Mol* 同时读取；对照层
   不写回 `ed_region_A/B/C`。PyMOL 鼠标相机不再追加 PML，重放后恢复当前自由取向。
+- dev43 修复刷新时的会话水合顺序：已有结构助手草稿先恢复到左侧编辑层，水合完成前
+  禁止场景同步，因此上游 9/14/14 不会再覆盖助手已经清空的 B/C。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -264,6 +266,10 @@
   `432 passed / 8 skipped`，Workbench Chromium 1440/1920 与 Firefox `78/78` 通过。
   wheel SHA-256 为
   `a11d987600ca6bdd2b4b65db9be89e06dc5d80758d9509cde51ad595a8137f32`。
+- dev43 增加刷新恢复回归：已有会话 A=1/B=0/C=0 会先恢复到左侧，500 ms 内没有场景
+  PUT；来源/批准对照仍默认关闭。`make check` 通过，Python `432 passed / 8 skipped`；
+  Workbench Chromium 1440/1920 与 Firefox 为 `83 passed / 1 skipped`。wheel SHA-256 为
+  `db14d2770004525dc87074b28084dfe8b1e28bbe0673debaee89f9c76bb07263`。
 
 ### 2026-07-24
 

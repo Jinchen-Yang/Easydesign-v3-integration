@@ -7,8 +7,8 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev42 统一双查看器显示层并修复 PyMOL 相机回弹。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 | [STATUS](workflow/01-target-preparation/STATUS.md) |
-| Stage 02 | `planned` | dev42 统一 PyMOL/Mol* 区域显示层并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev43 统一双查看器/编辑层恢复并修复 PyMOL 相机回弹。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 02 | `planned` | dev43 统一 PyMOL/Mol*、编辑层和会话恢复，并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；setup 按部署者要求固定保留 10 GiB，当前磁盘已满足新环境发布门。 | 使用 append-only setup 发布并探测 `boltzgen-b9a8a41b3512`；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 环境安装与 probe 尚待完成；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
@@ -27,8 +27,9 @@
   dev38 在一次自动修复后仍失败时显示最后一次具体命令或映射原因，并保持原场景不变。
   dev41 将平台 provider 的响应读取上限定为 60 秒，并在 UI 区分 read/connect/protocol/
   HTTP/JSON envelope/PML 校验错误；失败不修改当前 SceneVersion 或区域草稿。
-  dev42 统一 PyMOL/Mol* 临时区域显示层，来源和已批准图层改为默认关闭且不写回科学草稿；
-  PyMOL 鼠标相机不再创建 SceneVersion，完整重放会恢复当前自由取向。
+  dev43 统一 PyMOL/Mol* 临时区域显示层，来源和已批准图层默认关闭且不写回科学草稿；
+  PyMOL 鼠标相机不再创建 SceneVersion，重放会恢复当前取向；已有助手会话先恢复左侧
+  A/B/C，再开放新的场景同步，避免刷新时被上游初始化区域覆盖。
   dev31 已修复未限定数字误按 author 解释、全局灰色覆盖 A/B/C 和原生 `deselect` 循环创建版本。
   真实平台 provider 已将规范编号 32–36 准确写入 A 区，APOE 9/14/14 恢复、空闲不增版本
   及多次 PyMOL/Mol* 切换均通过；下一门槛是第二真实 target 和 Edge/触摸矩阵。

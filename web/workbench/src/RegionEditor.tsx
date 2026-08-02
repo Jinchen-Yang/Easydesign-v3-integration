@@ -571,6 +571,17 @@ export function RegionEditor({
                   + "旧运行与原始 PSE 标注保持不变。",
                 );
               }}
+              onSessionRegionsLoaded={(regions) => {
+                const restored = new Map<number, RegionId>();
+                for (const id of ["A", "B", "C"] as RegionId[]) {
+                  for (const label of regions[id] || []) restored.set(label, id);
+                }
+                setSelection(restored);
+                setStatus(
+                  `已恢复结构助手会话中的 ${restored.size} 个区域残基；`
+                  + "来源颜色和正式结果未被修改。",
+                );
+              }}
               onAnalysisPlan={(methods) => {
                 setSelectionMode(
                   methods.length === 2

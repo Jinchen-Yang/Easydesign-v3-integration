@@ -998,7 +998,9 @@ projects/<project>/interactive-sessions/<session>/revision
 - Stage 02 的 canonical PML 只保存当前 `ed_region_A/B/C`；PSE 来源和已批准区域是默认
   关闭的 viewer-neutral 临时对照层，同时投影到 PyMOL/Mol*，不得写回科学草稿。鼠标
   旋转/缩放只改变浏览器内相机，不创建 SceneVersion；因样式变化完整重放时先保存并恢复
-  当前相机。只有用户显式写入 PML 的 `set_view` 才属于可复现场景。
+  当前相机。只有用户显式写入 PML 的 `set_view` 才属于可复现场景。重新打开已有 Stage 02
+  会话时，编辑层先从 `current_regions` 水合并阻止场景同步，待左栏与会话一致后才允许新的
+  用户编辑写入 revision；上游默认区域不得覆盖已有助手草稿。
 - `ed_region_A/B/C` 由完整 PML 桥接到 Stage 02 编辑草稿。模型直接解释多区域自然语言
   修改并依据编号表生成 author selector；服务端不预解析用户文字，只从通过校验的最终
   PML 确定性反映射为 `label_seq_id`。PML 修改不发布科学结果；SASA/ScanNet plan 只有

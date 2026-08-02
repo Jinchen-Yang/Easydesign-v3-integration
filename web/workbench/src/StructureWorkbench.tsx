@@ -26,6 +26,9 @@ interface Props {
   onRegionDraft?: (
     regions: Partial<Record<"A" | "B" | "C", number[]>>,
   ) => void;
+  onSessionRegionsLoaded?: (
+    regions: Partial<Record<"A" | "B" | "C", number[]>>,
+  ) => void;
   onAnalysisPlan?: (methods: Array<"sasa" | "scannet">) => void;
   compact?: boolean;
 }
@@ -272,6 +275,7 @@ export function StructureWorkbench({
   editableRegions,
   onResidueClick,
   onRegionDraft,
+  onSessionRegionsLoaded,
   onAnalysisPlan,
   compact = false,
 }: Props) {
@@ -296,6 +300,13 @@ export function StructureWorkbench({
   const sceneSyncPromise = useRef<Promise<void> | null>(null);
   const sceneSyncTimer = useRef<number | undefined>(undefined);
   const pendingAssistantRegionKey = useRef<string | undefined>(undefined);
+  const initialRegionHydrationKey = useRef<string | undefined>(undefined);
+  const hydratedSessionRegionKey = useRef<string | undefined>(undefined);
+  const onSessionRegionsLoadedRef = useRef(onSessionRegionsLoaded);
+
+  useEffect(() => {
+    onSessionRegionsLoadedRef.current = onSessionRegionsLoaded;
+  }, [onSessionRegionsLoaded]);
 
   const structureUrl = `/api/v1/artifacts/${projection.structure.token}`;
   const referenceStructures = useMemo(
@@ -337,6 +348,17 @@ export function StructureWorkbench({
   const shouldApplyEditableRegions = (
     !pendingAssistantRegionKey.current
     || pendingAssistantRegionKey.current === editableRegionKey
+  ) && (
+    initialRegionHydrationKey.current === undefined
+    || initialRegionHydrationKey.current === editableRegionKey
+  );
+  const awaitingInitialRegionHydration = (
+    initialRegionHydrationKey.current !== undefined
+    && initialRegionHydrationKey.current !== editableRegionKey
+  );
+  const hasUnmodifiedHydratedSession = (
+    hydratedSessionRegionKey.current !== undefined
+    && hydratedSessionRegionKey.current === editableRegionKey
   );
   const displayOverlayRegions = (
     stageNumber === 2 && editableRegions
@@ -360,11 +382,11 @@ export function StructureWorkbench({
     // overlays are transient and must look identical in both viewers without
     // being written back to ed_region_A/B/C.
     () => (
-      stageNumber === 2
+      stageNumber === 2 && !awaitingInitialRegionHydration
         ? replaceManagedRegionSelections(scenePml, projection, regions)
         : scenePml
     ),
-    [projection, regions, scenePml, stageNumber],
+    [awaitingInitialRegionHydration, projection, regions, scenePml, stageNumber],
   );
   const sceneRegions = regions;
   const sceneVersions = session?.scene_versions || [];
@@ -385,6 +407,11 @@ export function StructureWorkbench({
   useEffect(() => {
     if (pendingAssistantRegionKey.current === editableRegionKey) {
       pendingAssistantRegionKey.current = undefined;
+    }
+  }, [editableRegionKey]);
+  useEffect(() => {
+    if (initialRegionHydrationKey.current === editableRegionKey) {
+      initialRegionHydrationKey.current = undefined;
     }
   }, [editableRegionKey]);
   useEffect(() => {
@@ -434,6 +461,21 @@ export function StructureWorkbench({
       if (!pymol.available) {
         setMolstarMounted(true);
         setViewer("molstar");
+      }
+      const restoredRegionKey = regionRecordKey(activeSession.current_regions);
+      const hasPersistedRegionDraft = (
+        stageNumber === 2
+        && (
+          restoredRegionKey !== "A:|B:|C:"
+          || (activeSession.scene_versions?.length || 0) > 1
+          || activeSession.messages.length > 0
+          || activeSession.pml_revisions.length > 0
+        )
+      );
+      if (hasPersistedRegionDraft && onSessionRegionsLoadedRef.current) {
+        initialRegionHydrationKey.current = restoredRegionKey;
+        hydratedSessionRegionKey.current = restoredRegionKey;
+        onSessionRegionsLoadedRef.current(activeSession.current_regions);
       }
       setSession(activeSession);
       setAssistantService(serviceStatus);
@@ -488,7 +530,14 @@ export function StructureWorkbench({
   }, []);
 
   useEffect(() => {
-    if (stageNumber !== 2 || editableRegions === undefined || !session || !activeVersion) {
+    if (
+      stageNumber !== 2
+      || editableRegions === undefined
+      || !session
+      || !activeVersion
+      || awaitingInitialRegionHydration
+      || hasUnmodifiedHydratedSession
+    ) {
       return;
     }
     desiredScenePml.current = scenePml;
@@ -508,8 +557,10 @@ export function StructureWorkbench({
     };
   }, [
     activeVersion,
+    awaitingInitialRegionHydration,
     editableRegions,
     flushSceneDraft,
+    hasUnmodifiedHydratedSession,
     scenePml,
     session,
     stageNumber,

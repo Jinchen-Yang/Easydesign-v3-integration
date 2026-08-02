@@ -58,3 +58,24 @@
   Firefox 本轮未重装。真实 Suzhou2 一次性密码和 worker 探针需由有凭据的使用者在 UI
   中完成，密码不得交给日志或自动化记录。
 - 实现提交：`7617022cc5b804408af3be9166eefeef47b34148`。
+
+## 2026-08-02 — VAL-008 / S06-005 / S07-002：APOE 8 条受管 Stage 06→07 smoke
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-02T10:31:17+08:00
+- 问题：dev35 的精确 Stage 06 数量和 Suzhou2 `(6,7)` 受管链已实现，但仍缺少真实
+  APOE 极小单 GPU 作业证明源闭包、中央租约、原地交接和 review-only 回传能够连续完成。
+- 方案：复用冻结 APOE Stage 05 的唯一 Tier A 策略，以用户明确授权的精确 8 条预算、
+  1 GPU、单 shard 和 `(6,7)` 连续范围提交 Manager。旧 run 缺失的 manifest 闭包只从
+  Suzhou2 历史只读来源复制到全新 staging assembly，完成 SHA/闭包校验后再入队。
+- 验证：作业 `val008-apoe-0607-smoke-20260802t0214z` 在 GPU 6 生成 8/8、无缺口且
+  ID 唯一；Manager 队列终态 `succeeded` 并释放 lease。Stage 07 将 8/8 候选正常处置，
+  全部因 BoltzGen `pass_filters` 为 false 发布 `stopped-no-final-candidate` 和空 review
+  package；本作业没有调用 Protenix/TNP。最终 RunManifest SHA-256 为
+  `bb54dd54592907bd43edcf1af156cf36ccd2878f955dd24a6e9528f5f7c90747`。
+- 安全边界：旧 `easydesign-core`、`easydesign-core-dev12`、APOE 50k run 和
+  `/root/Easydesign/Easycontrol` 的 inode、mtime、字节数和文件数在运行前后完全一致；
+  没有移动、覆盖、删除历史数据，也没有终止外部 GPU 进程。
+- 遗留边界：本次证明受管小链和科学空结果，不证明非空 Protenix/TNP 深筛，更不授权
+  历史 APOE 50k 的 Stage 07。下一步用第二真实目标验证非空深筛路径。
+- 实现提交：以本记录所在 `main` 提交为准。

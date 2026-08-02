@@ -6,16 +6,20 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | dev35 精确数量已通过全量门并部署到 Suzhou2 Manager revision 8；默认推荐 50k，最终严格采用用户输入。 | 找到合法 Tier A fixture 后以小预算完成 Stage 05→06→07 真实连通验收。 | 1UBQ 40-candidate 任务平台成功但 40/40 未通过 iPTM 门；Manager 私有 remote 另缺推送权限。 | 2026-08-02 |
+| `smoke-validated` | dev35 已在 Suzhou2 Manager 真实完成 APOE 8-candidate Stage 06→07；计划、分片、coverage 与终态均精确为 8。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；本次 8/8 均未通过 BoltzGen `pass_filters`，未进入 Protenix/TNP。 | 2026-08-02 |
 
 ## 当前结论
 
-- 阶段状态：`smoke-validated`；已真实验证单策略 50k 采用路径，多策略真实规模仍待第二案例。
+- 阶段状态：`smoke-validated`；已真实验证单策略 50k 采用路径和 dev35 用户输入 8 的
+  Managed Worker 新生成路径，多策略真实规模仍待第二案例。
 - `ScalePlanV0_2` / `ScaleBundleV0_2` 已实现 1/2/3 个 strategy 的精确等额分配、每组
   strategy-local ordinal、尾部分片和全局 coverage；4 个 Tier A 时只消费 F_YAML
   前三。
 - 新任务使用 `user-defined-v1` 和唯一 `total_candidate_count`；默认/推荐 50,000，用户
   输入的任意合法总数会原样进入本机计划或远程 bundle、授权、分片和 coverage。
+- `val008-apoe-0607-smoke-20260802t0214z` 已将用户输入 8 冻结为一个 1–8 的 shard，
+  在 GPU 6 完成 8/8 新候选、零缺口、零重复、零 operational failure，并原地进入
+  Stage 07；这是一条工程 smoke，不改变旧 APOE Stage 05 科学停止。
 - `smoke-1000` 表示全新 1000 个候选，固定为两个 500-candidate shard。
 - 历史 APOE 单策略 `production-50000` 已完成 20×2500、50,000/50,000；它仍是
   ScaleBundle 0.1 人工 override 证据，不伪装成原生 v1.6 多策略 run。
@@ -47,21 +51,16 @@
 | 长任务结构化 heartbeat | `implemented` | BoltzGen adapter → TaskHeartbeat → 原子 ProgressSnapshot → CLI/UI；旧 dev11 运行不追写伪心跳 |
 | UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | 本机自动 GPU 发现与租约 | `implemented` | 省略 devices 时自动冻结符合门槛的 GPU，支持最大卡数限制和无资源等待 |
-| Suzhou2 Managed Worker 多 shard | `smoke-validated` | revision 8 使用 wheel `8d4a3c…d69d`；8 GPU/三后端 ready，精确 bundle/YAML budget 不一致会 fail closed |
+| Suzhou2 Managed Worker 分片 | `smoke-validated` | revision 8 使用 wheel `8d4a3c…d69d`；真实 APOE dev35 job 以 1 GPU/1 shard 精确生成 8/8，bundle/YAML budget 不一致会 fail closed |
 | Suzhou2 配对引导 | `implemented` | 工作区 key pair 检测/复用、一次性密码公钥安装、严格 known-host 与免密 worker 探测 |
-| 6→7 远程数据本地性 | `implemented` | Scale 候选留在 Suzhou2，Stage 07 原地消费；默认仅 review 同步 |
+| 6→7 远程数据本地性 | `smoke-validated` | APOE 8-candidate run 已在 Suzhou2 原地完成 Stage 07，并只同步 270 个 review 文件、59,440,065 bytes |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
 | APOE 历史真实 50,000 | `succeeded` | Suzhou2 20×2500、50,000 candidates；ScaleBundle SHA-256 `dc63553e…bfea8` |
 
 ## Now
 
-- `[S06-005]` 用户可调 `total_candidate_count`、全量质量门、dev35 wheel 和 Manager
-  revision 8 精确版本升级已完成；剩余真实门是用合法 Tier A 小预算运行 Stage 06→07，
-  确认 UI 输入、bundle 预算、尾分片和 Stage 07 原地消费一致。
-- `[S07-002/VAL-007]` 在 Suzhou2 恢复并登记 Protenix/TNP 与模型资产，完成真实 adapter
-  probe 后原地消费已采用的 50,000 候选；源 39 GB 保持在 Suzhou2 原位。
-- `[VAL-008]` 在审核并启动的 Suzhou2 Manager 上运行一个 Stage 06→07 单 shard 探针；
-  不改写或重跑历史 50k。
+- `[S06-004]` 在第二条独立真实 target 上验证两组或三组 Tier A 的共享预算、尾分片、
+  恢复和全局 coverage；不能把 50,000 解释成每组各 50,000。
 
 ## Next
 
@@ -71,17 +70,27 @@
 
 ## Blocked
 
-- Suzhou2 Manager、BoltzGen、Protenix-v2 与 TNP 已通过 probe；固定 1UBQ 40-candidate
-  Stage 04→05 已在队列 revision 104 正常完成，但 40/40 均未达到 `iPTM >= 0.5`，其中
-  31 条还未达到 interface PAE 门，因此没有合法 Tier A 可进入 Stage 06。真实 06→07
-  连通验收须换用合法 Tier A fixture；不得降低门槛或伪造赢家。外部 GPU 任务继续等待
-  自然释放，禁止终止非 EasyDesign 进程。
+- Suzhou2 6→7 单 shard 工程连通已无运行阻塞；第二真实 target 的 2–3 组 Tier A
+  科学输入尚未产生，不得降低门槛或伪造赢家。外部 GPU 任务继续等待自然释放，禁止
+  终止非 EasyDesign 进程。
 - APOE 的旧 `stopped-no-scale-winner` 仍是冻结科学结果；历史人工授权只批准生成预算。
 - Manager 提交 `09ffcc2c3d80b160e98a0540991c272175c39016` 已在 Suzhou2 干净 `main`
   并激活，但 GitHub deploy key/host 权限不可用，暂不能核对或推送私有 `origin/main`。
 
 ## 验证证据
 
+- Suzhou2 APOE dev35 受管任务 `val008-apoe-0607-smoke-20260802t0214z`：bundle
+  `a49743a8…eff3`，queue revision 36、attempt 1、GPU 6；Stage 06 一个 shard 精确
+  8/8，coverage ordinal `1..8`、无 gap、candidate ID 唯一、0 operational failure。
+  ScaleBundle SHA-256 `75997585…3b73`，Stage 06 manifest SHA-256
+  `77828970…06c1`。
+- ProteinDigger 的历史 Stage 05 控制端镜像缺少 2,676 个 manifest 引用文件，提交前按
+  设计 fail closed。只读从 Suzhou2 历史 run 复制到全新 staging 后，逐一验证 2,943
+  个文件、393,519,306 bytes 和 RunManifest SHA-256 `d7c618b5…0e07`；没有修补或
+  改写历史 run。
+- review 同步验证 270 个文件、59,440,065 bytes，终态 RunManifest SHA-256
+  `bb54dd54…0747`。运行前后旧 APOE 50k 保持 413,147 个文件、40,303,410,564 bytes，
+  inode/mtime 及两个旧环境和 `Easycontrol` 均完全一致。
 - dev35 可调预算定向门：任意 37/5,001 条、末尾不足 2,500 的分片、dev34 fixed profile
   迁移、远程 bundle 精确预算、UI request 与 production build 均通过。
 - dev35 全量工程门：`make check`、413 passed/8 skipped 的 Python 回归、Target Viewer
@@ -166,6 +175,10 @@
   授权、计划、coverage 和 Stage 07 package 分类消费同一数值。
 - 固定 1UBQ 40-candidate 真实任务自然结束；队列、租约、后端和落盘无 operational
   failure，但 40 条均未达到 iPTM 门。保留科学停止，不通过调低阈值换取连通结果。
+- APOE 8-candidate 工程 smoke 使用源 Stage05Bundle `40125962…9073`、负责人 Knitua、
+  双重 scientific-stop acknowledgement 和 `user-defined-v1`；Manager 只租赁 GPU 6，
+  448.66 秒后发布精确 8/8 ScaleBundle，再原地进入 Stage 07。旧 50k 和旧 Stage 05
+  manifest 全程保持不变。
 
 ## 历史索引
 

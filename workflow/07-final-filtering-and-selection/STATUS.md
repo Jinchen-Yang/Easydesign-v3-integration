@@ -6,11 +6,12 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `implemented` | Suzhou2 Manager revision 8 已通过 Protenix-v2/TNP/BoltzGen、8 GPU 与 `(6,7)` probe；精确 dev35 wheel 已激活。 | 用合法 Tier A 的小预算单 shard 完成真实 Stage 06→07 原地验收。 | 当前 1UBQ 40-candidate Stage 05 无 Tier A；不得调低门槛强行进入 Stage 07。 | 2026-08-02 |
+| `smoke-validated` | dev35 已在 Suzhou2 Manager 原地消费 APOE 8/8 ScaleBundle，并发布可审计空 review package。 | 在第二真实 target 验证进入 Protenix 多 seed 与 TNP 的非空深筛路径。 | 本次 8/8 均未通过 BoltzGen `pass_filters`，因此没有调用 Protenix/TNP；Manager 私有 remote 另缺推送权限。 | 2026-08-02 |
 
 ## 当前结论
 
-- 阶段状态：`implemented`，不是 `smoke-validated`。
+- 阶段状态：`smoke-validated`；真实 Suzhou2 `(6,7)` job 已原地发布 Stage 07 manifest、
+  完整候选处置、科学停止和空 review package，但没有产生 binder 科学成功结论。
 - ScaleBundle 0.2 的 candidate strategy 集合、allocation、ordinal 和 Stage 05 晋级
   identity 会在进入筛选前完整校验；旧单策略 Bundle 0.1 继续兼容。
 - 全部 strategy 共享同一门槛、分数和 lazy-greedy pool，不为 YAML 硬留名额；每个
@@ -26,6 +27,9 @@
   Stage 07 只有在不可变采用记录和远端后端预检通过后才消费该历史 ScaleBundle，不能
   以新 v1.6 语义改写旧运行。
 - 候选包始终 `awaiting-human-review/not-ordered`；实际下单不属于本阶段。
+- 本次 APOE 8-candidate smoke 的 8 条候选全部因官方 BoltzGen `pass_filters=false` 在
+  sequence prefilter 合法停止；因此 Protenix 多 seed 和 TNP 没有被这条 run 调用，
+  它们的 ready probe、既有真实 TNP batch 和非 APOE 集成证据仍与本次运行边界分开报告。
 
 ## 功能矩阵
 
@@ -42,15 +46,14 @@
 | 非 APOE 1000-candidate 完整集成 | `implemented` | Stage 03→07 fixture，三 seed、TNP、2 primary |
 | 多策略 ScaleBundle 0.2 输入 | `implemented` | allocation/lineage/全局竞争与旧 Bundle 0.1 兼容测试 |
 | 最终 YAML 来源分布 | `implemented` | primary/backup 来源计数与 candidate lineage 契约 |
-| Suzhou2 原地 Stage 06→07 | `implemented` | Manager revision 8 的 Protenix-v2/TNP/BoltzGen、8 GPU、精确版本与 `(6,7)` 均 ready；待合法 Tier A live run |
-| APOE Stage 07 真实运行 | `planned` | 历史 50k 已完成，等待 adoption record、Protenix/TNP 与空闲 GPU |
+| Suzhou2 原地 Stage 06→07 | `smoke-validated` | Manager revision 8 在同一 job 原地消费 8/8 ScaleBundle，发布 Stage 07 科学停止并释放 GPU 租约 |
+| APOE Stage 07 真实运行 | `smoke-validated` | 新 8-candidate 工程 run 发布空 review package；历史 50k 仍未启动 Stage 07 |
 
 ## Now
 
 - `[S07-002/VAL-007]` 在不复制 39 GB 的前提下消费经过采用记录授权的 Suzhou2
-  ScaleBundle 0.1；先完成后端和资源 probe，不能直接启动高成本任务。
-- `[VAL-008]` 在新 Suzhou2 worker 完成单候选 Stage 07 adapter probe，验证原地输入、
-  review 同步和断线恢复；不触发真实 50k 筛选。
+  ScaleBundle 0.1；小预算 6→7、后端和资源 probe 已完成，真实 50k Stage 07 仍须
+  单独授权高成本运行。
 
 ## Next
 
@@ -60,13 +63,24 @@
 
 ## Blocked
 
-- Suzhou2 锁定 Protenix/TNP/BoltzGen 与模型已登记且 probe ready；当前阻塞是固定 1UBQ
-  上游没有合法 Tier A。外部 GPU 任务仍不终止，资源繁忙时自然等待。
+- Suzhou2 小预算 6→7 工程路径已无运行阻塞；新的非空深筛证据仍依赖第二真实 target
+  产生能越过 Stage 07 prefilter 的候选。外部 GPU 任务仍不终止，资源繁忙时自然等待。
 - APOE 历史 v1.5 stop 与 manual override 必须并列显示；新政策 continuation 不修改
   任何旧 manifest。
 
 ## 验证证据
 
+- Suzhou2 `val008-apoe-0607-smoke-20260802t0214z`：Manager queue revision 36
+  `succeeded`、租约已释放；Stage 07 manifest SHA-256 `35ebb4fa…7b80`，RunManifest
+  SHA-256 `bb54dd54…0747`。8 个 candidate disposition 全部 operational success，
+  0 failed task、0 recent error。
+- 8/8 均因 `require-boltzgen-pass-filters` 未通过，deep filter、Protenix prediction、
+  consensus 和 TNP pool 均为空；Stage 07 如实发布 `stopped-no-final-candidate`、
+  `empty-review-package`、`not-ordered`，未用失败候选凑数。FinalFilterReport SHA-256
+  `e185ef89…be3e`，Stage07Bundle SHA-256 `c0d5fc04…e6d1`。
+- `review` 同步仅拉取 270 个 manifest-derived 文件、59,440,065 bytes，没有请求
+  `complete` 大型镜像。运行后 Manager probe 为 queue 0/running 0，8 GPU 与三后端
+  仍 ready。
 - 单元测试：sequence prefilter、归一化、multi-seed、TNP strict parser、风险和多样性。
 - 集成测试：非 APOE、单 region、单 scaffold、1000 scale candidate；只有两个唯一序列，
   最终如实输出两个 primary、零 backup，不凑足 40。
@@ -95,12 +109,11 @@
   `04681aaa17bf0b7b50c8dc3da8068d61ea1893fc04388d3c45b4739d55006601`。
 - 上述 TNP 样本如实得到 high risk、3 amber、0 red 和 6 条 liability；这只验证
   backend/证据链，不代表最终 APOE 候选结论。
-- APOE Stage 07 real run：未创建。Stage 05
-  `20260726-004-stage05-pilot-filter` 保持合法停止；独立历史 Stage 06 run 已在
-  Suzhou2 发布 ScaleBundle 0.1，当前等待采用记录和后端 probe。
+- APOE Stage 07 新工程 run 已创建并完成；它只消费本次新生成的 8 条，不消费或重写
+  历史 50k。旧 Stage 05 `20260726-004-stage05-pilot-filter` 继续保持合法停止。
 - 2026-08-02 Manager revision 8 probe：EasyDesign `0.1.0.dev35`、Manager dev1、8 GPU、
-  三后端 ready、可用磁盘约 6.85 TB、支持 `[(4,5),(6,7)]`；尚未将 probe 冒充
-  Stage 07 科学 smoke。
+  三后端 ready、可用磁盘约 6.85 TB、支持 `[(4,5),(6,7)]`；probe 与真实空结果分别
+  作为能力证据和运行证据报告。
 
 ## 工作日志
 
@@ -124,6 +137,15 @@
 - APOE Stage 04 继续独立运行，本次 Stage 07 开发未终止或抢占现有 GPU 任务。
 - APOE Stage 05 于 `2026-07-26T09:13:48+08:00` 发布
   `stopped-no-scale-winner`；按契约未创建 Stage 06/07 APOE 任务或候选包。
+
+### 2026-08-02
+
+- 新 APOE 8-candidate 工程 run 在 Suzhou2 Manager 内从 Stage 06 原地进入 Stage 07；
+  8 个候选全部完成确定性处置，没有 operational failure 或 SSH 断线误判。
+- 全部候选的官方 BoltzGen `pass_filters` 为 false，因此依法停在 sequence prefilter，
+  没有调用 Protenix/TNP，也没有生成或补齐任何主备候选。
+- 发布 `stopped-no-final-candidate` 与 `empty-review-package`，并只把 review 白名单证据
+  同步到 ProteinDigger；历史 50k、旧环境和旧 Stage 05/06 证据保持不变。
 
 ## 历史索引
 

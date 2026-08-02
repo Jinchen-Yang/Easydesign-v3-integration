@@ -1682,9 +1682,13 @@ def request_assistant_pml_edit(
                 validation_error = str(error)
                 if attempt == 0:
                     continue
+                public_detail = " ".join(validation_error.split())
+                if not public_detail:
+                    public_detail = error.__class__.__name__
                 raise ConfigurationError(
-                    f"{secret.provider} API 返回的完整 PML 未通过 EasyDesign 安全校验；"
-                    "原场景未被修改。"
+                    f"{secret.provider} API 返回的完整 PML 连续两次未通过 "
+                    "EasyDesign 校验；原场景未被修改。具体原因："
+                    f"{public_detail[:1_000]}"
                 ) from error
         raise ConfigurationError(f"{secret.provider} API 响应无法验证")
     except httpx.HTTPStatusError as error:

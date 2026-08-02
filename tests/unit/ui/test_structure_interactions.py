@@ -518,6 +518,40 @@ def test_chatpymol_semantic_validator_gets_one_repair_attempt() -> None:
     assert "resi 54" in edit.pml
 
 
+def test_chatpymol_final_semantic_failure_reports_specific_reason() -> None:
+    previous_pml = _MANAGED_TARGET_LINE + "show cartoon, target\n"
+    invalid_pml = previous_pml + "select ed_region_A, chain A and resi 999\n"
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=_chatpymol_response(invalid_pml))
+
+    def validate(_edit: ChatPyMolEdit) -> ChatPyMolEdit:
+        raise ConfigurationError(
+            "ed_region_A 残基 A:999 不能唯一映射到 Target Bundle"
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ConfigurationError) as captured:
+            request_assistant_pml_edit(
+                secret=_assistant_secret(),
+                user_text="把不存在的残基加入 A 区",
+                context={"stage_number": 2, "currentPml": previous_pml},
+                history=(),
+                previous_pml=previous_pml,
+                known_object_names=("target",),
+                known_chain_ids=("A",),
+                edit_validator=validate,
+                client=client,
+            )
+
+    assert calls == 2
+    assert "原场景未被修改" in str(captured.value)
+    assert "具体原因：ed_region_A 残基 A:999 不能唯一映射" in str(captured.value)
+
+
 def test_chatpymol_skill_router_keeps_safe_skill_and_at_most_two_matches() -> None:
     skills = select_pml_skills("请给链上色、分析界面、查看配体口袋、做论文图并结构比对")
     assert tuple(skill.skill_id for skill in skills) == (
@@ -652,7 +686,7 @@ def test_assistant_retries_semantically_unsafe_pml_then_fails_closed() -> None:
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(ConfigurationError, match="完整 PML 未通过"):
+        with pytest.raises(ConfigurationError) as captured:
             request_assistant_pml_edit(
                 secret=_assistant_secret(),
                 user_text="获取 1ubq",
@@ -665,6 +699,10 @@ def test_assistant_retries_semantically_unsafe_pml_then_fails_closed() -> None:
             )
 
     assert len(calls) == 2
+    assert "原场景未被修改" in str(captured.value)
+    assert "具体原因：PML 命令触及系统、文件或网络边界: fetch" in str(
+        captured.value
+    )
 
 
 def test_assistant_timeout_fails_without_fallback() -> None:

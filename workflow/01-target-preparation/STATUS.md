@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev37 结构助手改为模型直接生成完整 PML，移除单区域文字预解析。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev38 完成 model-first PML 和具体失败原因回传。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -40,6 +40,8 @@
   进入平台模型，模型返回最终完整 PML；服务端只保留完整 PML、管理行、危险命令、对象、
   链、残基映射和场景结构校验，失败时给模型一次修复机会。前端对话气泡显示真实错误，
   不再用统一“请求失败”占位文案。
+- dev38 补齐最终错误链：第二次修复仍失败时返回最后一次具体命令或映射原因，限长为
+  1000 字符，并明确原场景未修改；不再把已知校验原因覆盖成通用“安全校验失败”。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -356,6 +358,9 @@
 - dev37 门禁：`make check` 通过；Python `422 passed / 8 skipped`；Workbench
   `77 passed / 1 skipped`；Target Viewer `3 passed / 2 skipped`。wheel
   SHA-256 为 `42a851ea5d250e282b33382fcebece4e6701214a7ea6f3be2cea78cd5d2f9d75`。
+- dev38 增加危险命令与 A/B/C 映射错误的最终原因回传测试；`make check` 通过，
+  Python `423 passed / 8 skipped`。wheel SHA-256 为
+  `cc45fe3bfc67257bf82718340ed500de51b1d39f8d9b74b1a48081a9670f2d8c`。
 
 ### 2026-07-24
 

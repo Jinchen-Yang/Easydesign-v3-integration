@@ -133,7 +133,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev37",
+        easydesign_version="0.1.0.dev38",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -2013,7 +2013,7 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev37",
+        easydesign_version="0.1.0.dev38",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},

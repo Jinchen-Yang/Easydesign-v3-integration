@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev37 支持模型用完整 PML 一次修改多个 `ed_region_A/B/C`。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
+| `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；dev38 支持多区域完整 PML 并回传具体失败原因。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -71,6 +71,8 @@
   编号表、当前区域和完整 PML直接提供给模型，返回 PML 再验证并反映射。真实平台请求
   已验证规范编号 32–36 精确形成 A 区 5 个残基；多区域清空已通过工程回归，live provider
   复验仍是下一门槛。
+- dev38 在模型连续两次返回非法 PML 时，把最后一次具体危险命令或残基映射原因回传到
+  对话气泡，同时保持当前 SceneVersion 和 A/B/C 草稿不变。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -245,6 +247,8 @@
   hotspot/SASA/ScanNet 仍只能生成待确认计划，不能直接改变 A/B/C。
 - 多区域清空、author/label 反向映射、科学计划不可改区和一次模型修复已进入全量
   `422 passed / 8 skipped` 后端门禁；Workbench `77 passed / 1 skipped`。
+- dev38 增加连续两次 `fetch` 和不可映射 `ed_region_A` 的 fail-closed 错误回传回归；
+  全量 Python 门禁为 `423 passed / 8 skipped`。
 
 ### 2026-07-24
 

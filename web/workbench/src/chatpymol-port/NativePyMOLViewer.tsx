@@ -34,9 +34,6 @@ const PYMOL_WHEEL =
 const NATIVE_GUI_CONTROL_SIZE = 20;
 const NATIVE_LOG = "/chatpymol-native-actions.pml";
 const SEQUENCE_PREFERENCE_VERSION = "2";
-const MANAGED_VIEW_RE =
-  /\n*# @chatpymol view-begin[\s\S]*?# @chatpymol view-end\n?/g;
-
 const SELECTION_MODES = [
   { value: 0, label: "原子" },
   { value: 1, label: "残基" },
@@ -264,7 +261,6 @@ export function NativePyMOLViewer({
   const pinchDistanceRef = useRef(0);
   const dragFrameRef = useRef(0);
   const pendingDragRef = useRef(null);
-  const viewCaptureTimerRef = useRef(0);
   const feedbackTimerRef = useRef(0);
   const commandInputRef = useRef(null);
   const sequenceVisibleRef = useRef(readInitialSequencePreference());
@@ -840,6 +836,27 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
     }
 
     async function replayScene() {
+      // Rebuilding representations must not behave like a camera command.
+      // Preserve the live browser view whenever the underlying structure is
+      // unchanged; an explicit set_view in PML still controls the first load.
+      const shouldPreserveCamera = (
+        sceneReadyRef.current && loadedSceneKeyRef.current === nextSceneKey
+      );
+      let preservedCamera = null;
+      if (shouldPreserveCamera) {
+        try {
+          preservedCamera = await enqueue(async () => {
+            const runtime = runtimeRef.current;
+            if (!runtime || cancelled) return null;
+            const encoded = await runtime.runPythonAsync(
+              "json.dumps(list(_p.cmd.get_view()))"
+            );
+            return JSON.parse(String(encoded));
+          });
+        } catch {
+          preservedCamera = null;
+        }
+      }
       sceneReadyRef.current = false;
       let phase = "准备结构";
       setState({
@@ -967,10 +984,21 @@ json.dumps(chatpymol_command_warnings)
         await enqueue(async () => {
           const runtime = runtimeRef.current;
           if (!runtime || cancelled) return;
+          runtime.globals.set(
+            "chatpymol_preserved_view_json",
+            preservedCamera ? JSON.stringify(preservedCamera) : ""
+          );
+          runtime.globals.set(
+            "chatpymol_pml_has_explicit_view",
+            renderableCommands(pml).some((command) => /^set_view\b/i.test(command))
+          );
           await runtime.runPythonAsync(`
-_p.cmd.center("all")
-_p.cmd.orient("all")
-_p.cmd.zoom("all", 5)
+if chatpymol_preserved_view_json:
+    _p.cmd.set_view(json.loads(chatpymol_preserved_view_json))
+elif not chatpymol_pml_has_explicit_view:
+    _p.cmd.center("all")
+    _p.cmd.orient("all")
+    _p.cmd.zoom("all", 5)
 try:
     _p.cmd.dirty()
 except Exception:
@@ -1202,40 +1230,8 @@ _p.cmd.log_open("${NATIVE_LOG}", "w")
     [enqueue]
   );
 
-  const captureNativeView = useCallback(
-    () =>
-      enqueue(async () => {
-        const runtime = runtimeRef.current;
-        if (!runtime) return;
-        const encoded = await runtime.runPythonAsync(
-          "json.dumps(list(_p.cmd.get_view()))"
-        );
-        const values = JSON.parse(encoded).map((value) =>
-          Number(value).toFixed(8)
-        );
-        const managedView = `# @chatpymol view-begin\nset_view (${values.join(", ")})\n# @chatpymol view-end`;
-        appliedPmlRef.current = `${appliedPmlRef.current
-          .replace(MANAGED_VIEW_RE, "")
-          .trimEnd()}\n\n${managedView}\n`;
-        onNativeCommands?.(managedView);
-      }),
-    [enqueue, onNativeCommands]
-  );
-
-  const scheduleViewCapture = useCallback(
-    (delay = 120) => {
-      window.clearTimeout(viewCaptureTimerRef.current);
-      viewCaptureTimerRef.current = window.setTimeout(
-        () => captureNativeView(),
-        delay
-      );
-    },
-    [captureNativeView]
-  );
-
   useEffect(
     () => () => {
-      window.clearTimeout(viewCaptureTimerRef.current);
       window.clearTimeout(feedbackTimerRef.current);
     },
     []
@@ -1344,7 +1340,6 @@ _p.draw()`,
       }
       if (wasPinching) {
         pointerRef.current = null;
-        scheduleViewCapture(0);
         return;
       }
     }
@@ -1381,8 +1376,6 @@ _p.draw()`,
     ).then(() => {
       if (pointer.button === 0 && !pointer.moved) {
         refreshSelection(true);
-      } else {
-        scheduleViewCapture(0);
       }
     });
   }
@@ -1400,7 +1393,7 @@ _p.draw()`,
       coordinates,
       button,
       modifiers
-    ).then(() => scheduleViewCapture(180));
+    );
   }
 
   function handleKeyDown(event) {
@@ -2486,6 +2479,9 @@ function cleanNativeLog(value) {
 
 function isInternalNativeLogLine(line) {
   if (/^viewport\b/i.test(line)) return true;
+  // Mouse camera motion is transient viewer state. Explicit set_view entered
+  // through the expert PML editor is still retained by the canonical scene.
+  if (/^set_view\b/i.test(line)) return true;
   if (/^center\s+all\s*$/i.test(line)) return true;
   if (/^orient\s+all\s*$/i.test(line)) return true;
   if (/^zoom\s+all\s*,\s*5\s*$/i.test(line)) return true;

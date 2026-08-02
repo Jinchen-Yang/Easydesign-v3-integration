@@ -355,11 +355,22 @@ export function StructureWorkbench({
       projection,
     ],
   );
+  const viewerPml = useMemo(
+    // Canonical scenePml remains the assistant/synchronization truth. Evidence
+    // overlays are transient and must look identical in both viewers without
+    // being written back to ed_region_A/B/C.
+    () => (
+      stageNumber === 2
+        ? replaceManagedRegionSelections(scenePml, projection, regions)
+        : scenePml
+    ),
+    [projection, regions, scenePml, stageNumber],
+  );
   const sceneRegions = regions;
   const sceneVersions = session?.scene_versions || [];
   const molstarProjection = useMemo(
-    () => pmlToMolstarProjection(scenePml),
-    [scenePml],
+    () => pmlToMolstarProjection(viewerPml),
+    [viewerPml],
   );
   const assistantMessages = useMemo<AssistantMessageView[]>(
     () => [...(session?.messages || []), ...pendingMessages],
@@ -785,7 +796,7 @@ export function StructureWorkbench({
                   api={nativeApi}
                   projectId={projection.target_id}
                   active={viewer === "pymol"}
-                  pml={scenePml}
+                  pml={viewerPml}
                   structures={nativeStructures}
                   versionId={activeVersion?.version_id || "current"}
                   revision={activeVersion?.revision || (

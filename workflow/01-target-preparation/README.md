@@ -474,6 +474,9 @@ PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重
 重放、验证和 selection 刷新期间不记录原生 PyMOL 日志；只有场景就绪后的
 用户操作才能形成新 revision。瞬时 `deselect` 和与当前 PML 尾部完全相同的
 命令必须忽略，避免空闲页面不断增长 SceneVersion 并引起闪烁。
+鼠标旋转、平移和缩放是浏览器内瞬时相机状态，不写入 SceneVersion；显示样式变化需要
+完整重放时必须先保存并恢复当前相机。只有用户在专家 PML 中显式写入 `set_view` 才作为
+可复现显示事实保存，重放也不得再用无条件 `orient` 覆盖它。
 
 ## 不变量
 

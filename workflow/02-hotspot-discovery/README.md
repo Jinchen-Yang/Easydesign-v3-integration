@@ -520,7 +520,9 @@ structural-only 仍可人工批准，但审批文件必须显式设置
 
 Stage 02 与 Stage 01 共用默认浏览器 PyMOL、平级 Mol* 和同一份已校验
 `target.cif`。PSE 来源颜色、当前批准区域和本次可编辑区域仍是三个独立图层；查看器切换
-不能改变成员、编号或 approval 状态。
+不能改变成员、编号或 approval 状态。来源颜色和已批准区域默认不叠加；用户主动查看时，
+同一临时显示层必须同时传给 PyMOL 与 Mol*，且不能写回当前 `ed_region_A/B/C` 草稿。
+鼠标相机操作只保留在浏览器内，不能创建 SceneVersion；场景重放必须恢复用户当前取向。
 
 DeepSeek/智谱 GLM 助手采用 ChatPyMol 原生完整 PML 主循环：
 

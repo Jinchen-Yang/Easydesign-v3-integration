@@ -1445,8 +1445,8 @@ test("stage two region editor keeps source layers and editable selection separat
   });
   await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
   await expect(page.getByRole("heading", { name: "选择结合区域", exact: true })).toBeVisible();
-  await expect(page.getByLabel("显示 PSE 来源颜色")).toBeChecked();
-  await expect(page.getByLabel("显示当前批准区域")).toBeChecked();
+  await expect(page.getByLabel("显示 PSE 来源颜色")).not.toBeChecked();
+  await expect(page.getByLabel("显示当前批准区域")).not.toBeChecked();
   const firstResidue = page.locator(".sequence-editor button").first();
   await expect(firstResidue).toContainText("规范 1");
   await expect(firstResidue).toContainText("原始 A:23");

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | dev41 固定结构助手 60 秒读取上限并显示真实上游错误类型；逐步骤区域提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-02 |
+| `planned` | dev42 统一 PyMOL/Mol* 区域显示层并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -77,6 +77,8 @@
 - dev41 将 provider read timeout 固定为 60 秒，并把连接/读取超时、连接失败、协议中断、
   HTTP 状态、非 JSON、响应 envelope 缺失和 PML 校验错误分别显示在对话气泡；错误不
   发布 SceneVersion，也不改变 A/B/C 草稿。
+- dev42 将来源/已批准区域设为默认关闭的临时对照层，并让 PyMOL/Mol* 同时读取；对照层
+  不写回 `ed_region_A/B/C`。PyMOL 鼠标相机不再追加 PML，重放后恢复当前自由取向。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -257,6 +259,11 @@
   `make check` 通过，Python `432 passed / 8 skipped`，Workbench Chromium 1440/1920
   与 Firefox `78/78` 通过。wheel SHA-256 为
   `288034ec3faa4c9af2150f9069d6817f5a614bb4f13c2e365c1448d1e2739919`。
+- dev42 统一 PyMOL/Mol* 的当前区域与临时对照投影，默认不再叠加 PSE 来源/已批准区域；
+  相机旋转、平移和缩放不写入科学场景，重放后保持用户取向。`make check` 通过，Python
+  `432 passed / 8 skipped`，Workbench Chromium 1440/1920 与 Firefox `78/78` 通过。
+  wheel SHA-256 为
+  `a11d987600ca6bdd2b4b65db9be89e06dc5d80758d9509cde51ad595a8137f32`。
 
 ### 2026-07-24
 

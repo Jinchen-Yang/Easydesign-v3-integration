@@ -77,8 +77,8 @@ export function RegionEditor({
   const [loadingError, setLoadingError] = useState("");
   const [selection, setSelection] = useState<Map<number, RegionId>>(new Map());
   const [tool, setTool] = useState<RegionId>("A");
-  const [showSource, setShowSource] = useState(true);
-  const [showCurrent, setShowCurrent] = useState(true);
+  const [showSource, setShowSource] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
   const [pasteValue, setPasteValue] = useState("");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("manual");
   const [allowStructuralOnly, setAllowStructuralOnly] = useState(false);
@@ -244,8 +244,8 @@ export function RegionEditor({
     if (!projection) return;
     const restored = upstreamSelection(projection);
     setSelection(restored);
-    setShowSource(true);
-    setShowCurrent(true);
+    setShowSource(false);
+    setShowCurrent(false);
     setStatus(
       restored.size > 0
         ? `已恢复上游的 ${restored.size} 个区域残基；原始运行没有被修改。`

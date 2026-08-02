@@ -995,6 +995,10 @@ projects/<project>/interactive-sessions/<session>/revision
 - PML 是唯一可视化事实。安全追加时 PyMOL 只执行增量；旧内容变化、历史恢复、增量失败
   或状态不确定时，重新构建结构场景并完整重放。Mol* 只投影 representation、颜色、
   选择、聚焦和背景等可靠子集，不支持的命令标记为“仅 PyMOL”，但不能阻止保存。
+- Stage 02 的 canonical PML 只保存当前 `ed_region_A/B/C`；PSE 来源和已批准区域是默认
+  关闭的 viewer-neutral 临时对照层，同时投影到 PyMOL/Mol*，不得写回科学草稿。鼠标
+  旋转/缩放只改变浏览器内相机，不创建 SceneVersion；因样式变化完整重放时先保存并恢复
+  当前相机。只有用户显式写入 PML 的 `set_view` 才属于可复现场景。
 - `ed_region_A/B/C` 由完整 PML 桥接到 Stage 02 编辑草稿。模型直接解释多区域自然语言
   修改并依据编号表生成 author selector；服务端不预解析用户文字，只从通过校验的最终
   PML 确定性反映射为 `label_seq_id`。PML 修改不发布科学结果；SASA/ScanNet plan 只有

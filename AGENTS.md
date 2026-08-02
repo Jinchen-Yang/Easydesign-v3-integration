@@ -229,7 +229,10 @@ Agent 必须自动完成以下收尾工作：
     selection 必须确定性映射为规范编号，只有人工批准才可发布 Stage 02；“最佳区域”等
     问题只能生成待确认的 SASA/ScanNet 计划。平台 provider 的读取等待上限固定为 60 秒；
     read/connect/protocol/HTTP/JSON envelope/PML 校验失败必须向 UI 返回各自真实错误类型，
-    不得合并成无法诊断的通用失败，也不得因此修改当前 SceneVersion。
+    不得合并成无法诊断的通用失败，也不得因此修改当前 SceneVersion。PyMOL 与 Mol*
+    必须读取同一份显式显示层；PSE 来源/已批准区域只能作为默认关闭的临时对照层，不能
+    写回 `ed_region_A/B/C`。鼠标相机操作不得创建 SceneVersion；场景重放必须恢复当前
+    相机，不能用无条件 `orient` 把用户拉回默认取向。
 32. Stage 04/06 的执行位置是非科学 `ExecutionTarget`，不得把 host、用户、端口、
     SSH key 或远程数据根写入 canonical scientific YAML。本机和 Suzhou2 必须复用
     同一 Stage plan、TaskRecord、CandidateRecord、Progress 和 manifest 契约。

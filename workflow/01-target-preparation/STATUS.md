@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev41 固定结构助手 60 秒读取上限并显示真实上游错误类型。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-02 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev42 统一双查看器显示层并修复 PyMOL 相机回弹。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -44,6 +44,8 @@
   1000 字符，并明确原场景未修改；不再把已知校验原因覆盖成通用“安全校验失败”。
 - dev41 将 provider 读取上限由 45 秒调整为 60 秒，并把 read/connect/protocol/HTTP/
   JSON envelope/PML 校验错误分别回传到对话气泡；所有失败继续保持原 SceneVersion。
+- dev42 让 PyMOL/Mol* 使用同一临时区域显示层；来源/已批准对照默认关闭且不写回科学
+  PML。鼠标旋转、平移和缩放不再创建 SceneVersion，完整重放会恢复当前相机。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -367,6 +369,11 @@
   文案回归；`make check` 通过，Python `432 passed / 8 skipped`，Workbench Chromium
   1440/1920 与 Firefox `78/78` 通过。wheel SHA-256 为
   `288034ec3faa4c9af2150f9069d6817f5a614bb4f13c2e365c1448d1e2739919`。
+- dev42 让 PyMOL 与 Mol* 同时读取显式显示层，来源/已批准区域默认关闭且只作为临时
+  对照；PyMOL 鼠标相机不再产生 SceneVersion，完整重放会恢复用户当前取向。
+  `make check` 通过，Python `432 passed / 8 skipped`，Workbench Chromium 1440/1920
+  与 Firefox `78/78` 通过。wheel SHA-256 为
+  `a11d987600ca6bdd2b4b65db9be89e06dc5d80758d9509cde51ad595a8137f32`。
 
 ### 2026-07-24
 

@@ -466,12 +466,48 @@ export interface LocalExecutionTarget {
   gpu_count: number;
   eligible_gpu_count: number;
   selected_devices: number[];
-  devices: Array<Record<string, unknown>>;
+  devices: LocalGpuResource[];
   detail: string;
+}
+
+export interface GpuResourceSnapshot {
+  device: number;
+  name: string;
+  memory_total_mib: number;
+  memory_used_mib: number;
+  utilization_percent: number;
+  compute_process_pids: number[];
+}
+
+export interface LocalGpuResource {
+  snapshot: GpuResourceSnapshot;
+  eligible: boolean;
+  reasons: string[];
+  active_lease_id?: string;
+}
+
+export interface ManagedGpuResource {
+  device: number;
+  name: string;
+  memory_total_mib: number;
+  memory_used_mib: number;
+  utilization_percent: number;
+  compute_process_count: number;
+  eligible: boolean;
+  reasons: string[];
+  active_lease: boolean;
 }
 
 export interface ManagedExecutionTarget extends RemoteExecutor {
   type: "managed-ssh";
+  status: "available" | "waiting-resource" | "unavailable";
+  gpu_count: number;
+  eligible_gpu_count: number;
+  devices: ManagedGpuResource[];
+  queue_depth: number;
+  running_jobs: number;
+  resource_observed_at?: string;
+  detail: string;
   managed_worker_root?: string;
   updated_at?: string;
 }

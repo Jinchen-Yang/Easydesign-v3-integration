@@ -317,8 +317,23 @@ async function mockApi(page: Page) {
         body: JSON.stringify({
           local: {
             type: "local-current-host",
+            status: "available",
             gpu_count: 2,
             eligible_gpu_count: 2,
+            selected_devices: [0, 1],
+            devices: [0, 1].map((device) => ({
+              snapshot: {
+                device,
+                name: "NVIDIA RTX 4080 SUPER",
+                memory_total_mib: 32768,
+                memory_used_mib: 512,
+                utilization_percent: 0,
+                compute_process_pids: [],
+              },
+              eligible: true,
+              reasons: [],
+              active_lease_id: null,
+            })),
             detail: "2 张 GPU 可用；启动前仍会重新预检。",
           },
           managed: [
@@ -330,8 +345,24 @@ async function mockApi(page: Page) {
               host: "suzhou2.example.invalid",
               port: 22,
               user: "root",
+              status: "available",
               gpu_count: 8,
-              detail: "已配对，可进入 8 卡统一队列。",
+              eligible_gpu_count: 6,
+              devices: Array.from({ length: 8 }, (_, device) => ({
+                device,
+                name: "NVIDIA A100-PCIE-40GB",
+                memory_total_mib: 40960,
+                memory_used_mib: device < 6 ? 1024 : 18432,
+                utilization_percent: device < 6 ? 0 : 96,
+                compute_process_count: device < 6 ? 0 : 1,
+                eligible: device < 6,
+                reasons: device < 6 ? [] : ["external-compute-process"],
+                active_lease: false,
+              })),
+              queue_depth: 1,
+              running_jobs: 1,
+              resource_observed_at: run.updated_at,
+              detail: "当前 6/8 张 GPU 符合启动条件",
             },
           ],
         }),
@@ -1464,7 +1495,7 @@ test("stage three continuation runs from Python defaults and advances to stage f
   await expect(page.getByRole("heading", { name: "配置第3步：生成设计方案" })).toBeVisible();
 
   await page.getByRole("button", { name: "生成并验证设计方案" }).click();
-  await expect(page.getByRole("progressbar", { name: "第3步正在运行" })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "第3步真实进度" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "第4步：小规模生成", exact: true }),
   ).toBeVisible();
@@ -1473,8 +1504,82 @@ test("stage three continuation runs from Python defaults and advances to stage f
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeEnabled();
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toContainText("已配对");
+  await page.getByRole("button", { name: /Suzhou2 公共算力/ }).click();
+  await expect(page.getByText("6/8 张 GPU 符合启动条件", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "查看 GPU 状态" }).click();
+  const gpuDialog = page.getByRole("dialog", { name: "Suzhou2 公共算力 GPU 状态" });
+  await expect(gpuDialog).toBeVisible();
+  await expect(gpuDialog.locator(".gpu-resource-grid > article")).toHaveCount(8);
+  await expect(gpuDialog.getByText("GPU 0", { exact: true })).toBeVisible();
+  await expect(gpuDialog.getByText("空闲", { exact: true }).first()).toBeVisible();
+  await expect(gpuDialog.getByText("占用", { exact: true }).first()).toBeVisible();
+  await gpuDialog.getByRole("button", { name: "关闭 GPU 状态" }).click();
+  await expect(gpuDialog).toBeHidden();
   await expect(page.locator(".stage-node").nth(3)).toHaveClass(/selected/);
   await page.locator(".stage-node").nth(2).click();
   await expect(page.getByText("21").first()).toBeVisible();
   await expect(page.getByText("结合区域 × VHH 骨架设计矩阵")).toBeVisible();
+});
+
+test("managed stage run shows the linked stage rail and real structured progress", async ({ page }) => {
+  await page.route("**/api/v1/runs/*/continue/4", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        session: {},
+        job: { job_id: "job-stage04-managed", status: "queued" },
+        execution_target: "managed-ssh",
+        remote_job: { executor_id: "suzhou2", job_id: "job-stage04-managed" },
+      }),
+    });
+  });
+  await page.route("**/api/v1/remote-jobs/suzhou2/job-stage04-managed", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        executor_id: "suzhou2",
+        job_id: "job-stage04-managed",
+        connection_state: "connected",
+        queue: { status: "running", assigned_devices: [2, 3] },
+        progress: {
+          stage_id: "05-pilot-filtering",
+          phase: "pilot-structure-metrics",
+          status: "running",
+          total_tasks: 8,
+          running_tasks: 2,
+          succeeded_tasks: 4,
+          failed_tasks: 0,
+          planned_candidates: 8,
+          collected_candidates: 4,
+          estimated_remaining_seconds: 600,
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建设计" }).first().click();
+  await page.getByRole("button", { name: /按步骤设计/ }).click();
+  await page.getByLabel("选择本地文件").setInputFiles({
+    name: "target.pse",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture-pse-content"),
+  });
+  await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
+  await page.getByLabel("批准人").fill("scientist-01");
+  await page.getByText(/我确认这些是用户提供的设计区域/).click();
+  await page.getByRole("button", { name: "保存并完成第2步" }).click();
+  await page.getByRole("button", { name: "生成并验证设计方案" }).click();
+  await expect(page.getByRole("heading", { name: "配置第4步：小规模生成" })).toBeVisible();
+  await page.getByRole("button", { name: /Suzhou2 公共算力/ }).click();
+  await page.getByText(/我确认本步骤会调用真实计算后端/).click();
+  await page.getByRole("button", { name: "检查资源并开始小规模生成" }).click();
+
+  await expect(page.getByRole("heading", { name: "第4步 → 第5步" })).toBeVisible();
+  const rail = page.locator(".linked-stage-rail");
+  await expect(rail.locator("article").nth(0)).toHaveClass(/complete/);
+  await expect(rail.locator("article").nth(1)).toHaveClass(/active/);
+  await expect(page.getByText("正在计算小规模候选结构指标")).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "第5步真实进度" })).toHaveAttribute("aria-valuenow", "50");
+  await expect(page.getByText("4 / 8 个候选")).toBeVisible();
 });

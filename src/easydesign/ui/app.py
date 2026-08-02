@@ -2532,20 +2532,65 @@ def create_ui_app(
                 "detail": str(error)[:4096] or type(error).__name__,
             }
         pairings = RemoteExecutorRegistry(service.workspace).list_latest()
+        managed: list[dict[str, Any]] = []
+        for record in pairings:
+            projection: dict[str, Any] = {
+                **_pairing_projection(record),
+                "type": "managed-ssh",
+                "label": (
+                    "Suzhou2 公共算力"
+                    if record.executor_id == "suzhou2"
+                    else record.executor_id
+                ),
+                "status": "unavailable",
+                "gpu_count": 0,
+                "eligible_gpu_count": 0,
+                "devices": [],
+                "queue_depth": 0,
+                "running_jobs": 0,
+                "resource_observed_at": None,
+                "detail": "完成配对后可读取受管 GPU 状态",
+            }
+            if record.state == "paired":
+                try:
+                    probe = probe_managed_executor(
+                        executor_id=record.executor_id,
+                        profile_path=service.profile_path,
+                    )
+                except Exception as error:
+                    projection["detail"] = (
+                        "已配对，但暂时无法读取受管 GPU 状态："
+                        + (str(error)[:512] or type(error).__name__)
+                    )
+                else:
+                    projection.update(
+                        {
+                            "status": (
+                                "available"
+                                if probe.eligible_gpu_count
+                                else "waiting-resource"
+                            ),
+                            "gpu_count": probe.gpu_count,
+                            "eligible_gpu_count": probe.eligible_gpu_count,
+                            "devices": [
+                                item.model_dump(mode="json")
+                                for item in probe.gpu_devices
+                            ],
+                            "queue_depth": probe.queue_depth,
+                            "running_jobs": probe.running_jobs,
+                            "resource_observed_at": probe.observed_at.isoformat(),
+                            "detail": (
+                                f"当前 {probe.eligible_gpu_count}/{probe.gpu_count} "
+                                "张 GPU 符合启动条件"
+                                if probe.eligible_gpu_count
+                                else "当前没有空闲 GPU；任务仍可进入统一队列等待"
+                            ),
+                        }
+                    )
+            managed.append(projection)
         return {
             "local": local,
-            "managed": [
-                {
-                    **_pairing_projection(record),
-                    "type": "managed-ssh",
-                    "label": (
-                        "Suzhou2 公共算力"
-                        if record.executor_id == "suzhou2"
-                        else record.executor_id
-                    ),
-                }
-                for record in pairings
-            ],
+            "managed": managed,
         }
 
     @app.get("/api/v1/remote-executors")

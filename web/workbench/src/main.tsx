@@ -1,4 +1,5 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
 import { artifactName, capabilityLabel, stageNames, stageShortNames, stateCopy } from "./product";
@@ -211,6 +212,249 @@ function chooseContinuationSession(
   );
 }
 
+type DisplayGpuResource = {
+  device: number;
+  name: string;
+  memoryTotalMib: number;
+  memoryUsedMib: number;
+  utilizationPercent: number;
+  processCount: number;
+  eligible: boolean;
+  reasons: string[];
+  leased: boolean;
+};
+
+type LivePipelineProgress = {
+  stage_id: string;
+  phase?: string;
+  status: string;
+  total_tasks: number;
+  running_tasks: number;
+  succeeded_tasks: number;
+  failed_tasks: number;
+  planned_candidates: number;
+  collected_candidates: number;
+  estimated_remaining_seconds?: number;
+};
+
+function displayGpuResources(
+  targets: ExecutionTargets,
+  selected: "local-current-host" | "managed-ssh",
+) {
+  if (selected === "local-current-host") {
+    return targets.local.devices.map((item): DisplayGpuResource => ({
+      device: item.snapshot.device,
+      name: item.snapshot.name,
+      memoryTotalMib: item.snapshot.memory_total_mib,
+      memoryUsedMib: item.snapshot.memory_used_mib,
+      utilizationPercent: item.snapshot.utilization_percent,
+      processCount: item.snapshot.compute_process_pids.length,
+      eligible: item.eligible,
+      reasons: item.reasons,
+      leased: Boolean(item.active_lease_id),
+    }));
+  }
+  const managed = targets.managed.find((item) => item.executor_id === "suzhou2");
+  return (managed?.devices || []).map((item): DisplayGpuResource => ({
+    device: item.device,
+    name: item.name,
+    memoryTotalMib: item.memory_total_mib,
+    memoryUsedMib: item.memory_used_mib,
+    utilizationPercent: item.utilization_percent,
+    processCount: item.compute_process_count,
+    eligible: item.eligible,
+    reasons: item.reasons,
+    leased: item.active_lease,
+  }));
+}
+
+function GpuResourceDialog({
+  label,
+  devices,
+  observedAt,
+  onClose,
+}: {
+  label: string;
+  devices: DisplayGpuResource[];
+  observedAt?: string;
+  onClose: () => void;
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const eligible = devices.filter((item) => item.eligible).length;
+  useEffect(() => {
+    closeButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+  return createPortal(
+    <div className="gpu-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="gpu-resource-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="gpu-resource-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <p className="section-label">实时计算资源</p>
+            <h3 id="gpu-resource-dialog-title">{label} GPU 状态</h3>
+            <span>
+              {devices.length
+                ? `${eligible}/${devices.length} 张当前符合启动条件`
+                : "暂时没有可展示的逐卡状态"}
+              {observedAt ? ` · 更新于 ${formatTime(observedAt)}` : ""}
+            </span>
+          </div>
+          <button ref={closeButton} type="button" aria-label="关闭 GPU 状态" onClick={onClose}>×</button>
+        </header>
+        <div className="gpu-resource-grid">
+          {devices.map((device) => {
+            const memoryRatio = device.memoryTotalMib
+              ? Math.min(100, device.memoryUsedMib / device.memoryTotalMib * 100)
+              : 0;
+            const reason = device.eligible
+              ? "可立即租赁"
+              : device.leased
+                ? "已被 EasyDesign 任务租赁"
+                : device.processCount
+                  ? "检测到外部计算进程"
+                  : device.reasons[0] || "当前不符合启动门槛";
+            return (
+              <article className={device.eligible ? "available" : "busy"} key={device.device}>
+                <div className="gpu-resource-title">
+                  <strong>GPU {device.device}</strong>
+                  <span>{device.eligible ? "空闲" : "占用"}</span>
+                </div>
+                <small title={device.name}>{device.name}</small>
+                <dl>
+                  <div><dt>利用率</dt><dd>{device.utilizationPercent}%</dd></div>
+                  <div className="gpu-mini-track"><i style={{ width: `${device.utilizationPercent}%` }} /></div>
+                  <div><dt>显存</dt><dd>{formatNumber(device.memoryUsedMib / 1024, 1)} / {formatNumber(device.memoryTotalMib / 1024, 1)} GB</dd></div>
+                  <div className="gpu-mini-track memory"><i style={{ width: `${memoryRatio}%` }} /></div>
+                </dl>
+                <p>{reason}</p>
+              </article>
+            );
+          })}
+          {!devices.length && (
+            <div className="empty-state">
+              <strong>逐卡探针暂时不可用</strong>
+              <span>配对状态不会因此改变；刷新资源后可以重新读取。</span>
+            </div>
+          )}
+        </div>
+        <footer>
+          <span>空闲状态是瞬时快照；正式启动前仍会再次检查外部进程、显存、利用率和租约。</span>
+          <button type="button" className="secondary-button" onClick={onClose}>关闭</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+const livePhaseCopy: Record<string, string> = {
+  "pilot-structure-metrics": "正在计算小规模候选结构指标",
+  "expansion-generation": "正在生成诊断扩增候选",
+  "expansion-structure-metrics": "正在复核扩增候选",
+  "full-target-prediction": "正在执行完整目标结构复核",
+  "stage05-complete": "筛选验证已完成",
+  "scale-generation": "正在分片生成规模化候选",
+  "local-deep-metrics": "正在执行序列与结构预筛",
+  "final-selection": "正在汇总最终候选",
+  "stage07-complete": "最终筛选已完成",
+};
+
+function LinkedStageProgress({
+  startStage,
+  managed,
+  queueStatus,
+  progress,
+}: {
+  startStage: number;
+  managed: boolean;
+  queueStatus?: string;
+  progress?: LivePipelineProgress;
+}) {
+  const stages = managed ? [startStage, startStage + 1] : [startStage];
+  const observedStage = Number(progress?.stage_id.slice(0, 2));
+  const activeStage = stages.includes(observedStage) ? observedStage : startStage;
+  const terminal = queueStatus === "succeeded";
+  const planned = progress?.planned_candidates || 0;
+  const taskTotal = progress?.total_tasks || 0;
+  const completed = planned
+    ? progress?.collected_candidates || 0
+    : progress?.succeeded_tasks || 0;
+  const denominator = planned || taskTotal;
+  const stagePercent = denominator ? Math.min(100, completed / denominator * 100) : undefined;
+  const activeIndex = Math.max(0, stages.indexOf(activeStage));
+  const journeyPercent = terminal
+    ? 100
+    : stages.length === 1
+      ? stagePercent || 0
+      : (activeIndex + (stagePercent || 0) / 100) / stages.length * 100;
+  const phaseLabel = progress?.phase
+    ? livePhaseCopy[progress.phase] || "正在执行当前阶段"
+    : queueStatus === "waiting-resource"
+      ? "正在等待符合条件的 GPU"
+      : queueStatus === "queued" || queueStatus === "admitting"
+        ? "已进入统一队列"
+        : "正在准备真实计算环境";
+  return (
+    <section className="linked-stage-progress" aria-label="连续阶段运行进度">
+      <div className="linked-stage-progress-head">
+        <div>
+          <p className="section-label">{managed ? "Suzhou2 连续任务" : "当前机器任务"}</p>
+          <h4>{stages.map((item) => `第${item}步`).join(" → ")}</h4>
+        </div>
+        <span>{phaseLabel}</span>
+      </div>
+      <div className="linked-stage-rail">
+        <div className="linked-stage-rail-line"><i style={{ width: `${journeyPercent}%` }} /></div>
+        {stages.map((item, index) => {
+          const complete = terminal || index < activeIndex;
+          const active = !terminal && index === activeIndex;
+          return (
+            <article className={complete ? "complete" : active ? "active" : "pending"} key={item}>
+              <b>{complete ? "✓" : String(item).padStart(2, "0")}</b>
+              <div>
+                <strong>{stageShortNames[item - 1]}</strong>
+                <small>{complete ? "已完成" : active ? "正在运行" : "等待上一阶段"}</small>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <div
+        className={`linked-stage-meter ${stagePercent == null ? "indeterminate" : ""}`}
+        role="progressbar"
+        aria-label={`第${activeStage}步真实进度`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={stagePercent == null ? undefined : Math.round(stagePercent)}
+      >
+        <span style={stagePercent == null ? undefined : { width: `${stagePercent}%` }} />
+      </div>
+      <div className="linked-stage-progress-foot">
+        <span>
+          {planned
+            ? `${formatNumber(progress?.collected_candidates || 0, 0)} / ${formatNumber(planned, 0)} 个候选`
+            : taskTotal
+              ? `${formatNumber(progress?.succeeded_tasks || 0, 0)} / ${formatNumber(taskTotal, 0)} 个任务完成`
+              : "正在等待第一条结构化进度记录"}
+        </span>
+        {progress?.estimated_remaining_seconds != null && (
+          <span>预计剩余 {formatNumber(progress.estimated_remaining_seconds / 60, 0)} 分钟</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function StageContinuationSetup({
   stage,
   run,
@@ -235,6 +479,9 @@ function StageContinuationSetup({
   const [maximumGpus, setMaximumGpus] = useState<number>();
   const [resourceConfirmed, setResourceConfirmed] = useState(false);
   const [stage06CandidateCount, setStage06CandidateCount] = useState("50000");
+  const [resourceDialogOpen, setResourceDialogOpen] = useState(false);
+  const [liveProgress, setLiveProgress] = useState<LivePipelineProgress>();
+  const [liveQueueStatus, setLiveQueueStatus] = useState<string>();
   const expensive = stage.stage_number === 4 || stage.stage_number === 6;
 
   useEffect(() => {
@@ -288,6 +535,7 @@ function StageContinuationSetup({
         const record = await api.job(jobId);
         if (disposed) return;
         if (record.status === "queued" || record.status === "running") {
+          setLiveQueueStatus(record.status);
           setStatus(
             record.status === "queued"
               ? `第${stage.stage_number}步已排队，正在等待运行资源…`
@@ -298,6 +546,7 @@ function StageContinuationSetup({
         }
         setJobId("");
         if (record.status === "succeeded") {
+          setLiveQueueStatus("succeeded");
           setStatus(`第${stage.stage_number}步已完成，正在打开下一步…`);
           if (record.run_key) {
             await onCompleted(
@@ -353,11 +602,33 @@ function StageContinuationSetup({
           error?: string;
         } | undefined;
         const progress = observation.progress as {
+          stage_id?: string;
+          phase?: string;
+          status?: string;
+          total_tasks?: number;
+          running_tasks?: number;
+          succeeded_tasks?: number;
+          failed_tasks?: number;
           collected_candidates?: number;
           planned_candidates?: number;
           estimated_remaining_seconds?: number;
         } | undefined;
         const queueStatus = queue?.status || "queued";
+        setLiveQueueStatus(queueStatus);
+        if (progress?.stage_id) {
+          setLiveProgress({
+            stage_id: progress.stage_id,
+            phase: progress.phase,
+            status: progress.status || queueStatus,
+            total_tasks: progress.total_tasks || 0,
+            running_tasks: progress.running_tasks || 0,
+            succeeded_tasks: progress.succeeded_tasks || 0,
+            failed_tasks: progress.failed_tasks || 0,
+            planned_candidates: progress.planned_candidates || 0,
+            collected_candidates: progress.collected_candidates || 0,
+            estimated_remaining_seconds: progress.estimated_remaining_seconds,
+          });
+        }
         const activeStatuses = new Set([
           "queued",
           "waiting-resource",
@@ -437,6 +708,8 @@ function StageContinuationSetup({
       return;
     }
     setStatus(`正在验证第${stage.stage_number}步配置和运行环境…`);
+    setLiveProgress(undefined);
+    setLiveQueueStatus("queued");
     try {
       const sessions = await api.designSessions();
       let session = chooseContinuationSession(sessions, run);
@@ -521,6 +794,18 @@ function StageContinuationSetup({
       note: "第3步只生成和验证设计文件",
     });
   }
+  const managedTarget = executionTargets?.managed.find(
+    (item) => item.executor_id === "suzhou2",
+  );
+  const selectedResource = executionTarget === "local-current-host"
+    ? executionTargets?.local
+    : managedTarget;
+  const selectedDevices = executionTargets
+    ? displayGpuResources(executionTargets, executionTarget)
+    : [];
+  const selectedResourceLabel = executionTarget === "local-current-host"
+    ? "当前机器"
+    : "Suzhou2 公共算力";
 
   return (
     <section className="stage-setup panel">
@@ -586,37 +871,68 @@ function StageContinuationSetup({
             <button
               type="button"
               className={executionTarget === "local-current-host" ? "selected" : ""}
-              onClick={() => setExecutionTarget("local-current-host")}
+              onClick={() => {
+                setExecutionTarget("local-current-host");
+                setMaximumGpus(undefined);
+                setResourceConfirmed(false);
+              }}
             >
               <span>当前机器</span>
-              <strong>{executionTargets.local.eligible_gpu_count} 张可用 GPU</strong>
+              <strong>
+                {executionTargets.local.eligible_gpu_count}/{executionTargets.local.gpu_count} 张 GPU 当前空闲
+              </strong>
               <small>{executionTargets.local.detail}</small>
             </button>
             {(() => {
-              const managed = executionTargets.managed.find(
-                (item) => item.executor_id === "suzhou2",
-              );
-              const paired = managed?.pairing_state === "paired";
+              const paired = managedTarget?.pairing_state === "paired";
               return (
                 <button
                   type="button"
                   className={executionTarget === "managed-ssh" ? "selected" : ""}
                   disabled={!paired}
-                  onClick={() => setExecutionTarget("managed-ssh")}
+                  onClick={() => {
+                    setExecutionTarget("managed-ssh");
+                    setMaximumGpus(undefined);
+                    setResourceConfirmed(false);
+                  }}
                 >
                   <span>Suzhou2 公共算力</span>
-                  <strong>{paired ? "已配对，可进入 8 卡统一队列" : "尚未配对"}</strong>
-                  <small>{paired ? "远端运行，默认只同步审阅结果" : "请在设置中完成专用 SSH 密钥配对"}</small>
+                  <strong>
+                    {paired
+                      ? managedTarget?.status === "unavailable"
+                        ? "已配对，资源状态暂不可用"
+                        : `已配对 · ${managedTarget?.eligible_gpu_count || 0}/${managedTarget?.gpu_count || 8} 张 GPU 当前空闲`
+                      : "尚未配对"}
+                  </strong>
+                  <small>
+                    {paired
+                      ? `${managedTarget?.detail || "可进入统一队列"} · 队列 ${managedTarget?.queue_depth || 0}`
+                      : "请在设置中完成专用 SSH 密钥配对"}
+                  </small>
                 </button>
               );
             })()}
+          </div>
+          <div className="execution-resource-summary">
+            <div>
+              <span>当前选择 · {selectedResourceLabel}</span>
+              <strong>
+                {selectedResource
+                  ? `${selectedResource.eligible_gpu_count}/${selectedResource.gpu_count} 张 GPU 符合启动条件`
+                  : "正在读取 GPU 状态"}
+              </strong>
+              <small>这是选择卡数前的实时快照；入队或启动时会重新检查。</small>
+            </div>
+            <button type="button" onClick={() => setResourceDialogOpen(true)}>
+              查看 GPU 状态
+            </button>
           </div>
           <label className="execution-gpu-limit">
             <span>最多使用 GPU 数量</span>
             <input
               type="number"
               min="1"
-              max="8"
+              max={selectedResource?.gpu_count || 8}
               value={maximumGpus || ""}
               placeholder="自动使用全部可用卡"
               onChange={(event) => {
@@ -654,11 +970,22 @@ function StageContinuationSetup({
         <span>配置来自 EasyDesign Python 契约；页面不会自行改写科学参数。</span>
       </div>
       {(jobId || remoteJob) && (
-        <div className="stage-continuation-progress" role="progressbar" aria-label={`第${stage.stage_number}步正在运行`}>
-          <span />
-        </div>
+        <LinkedStageProgress
+          startStage={stage.stage_number}
+          managed={Boolean(remoteJob)}
+          queueStatus={liveQueueStatus}
+          progress={liveProgress}
+        />
       )}
       {status && <div className="form-status">{status}</div>}
+      {resourceDialogOpen && (
+        <GpuResourceDialog
+          label={selectedResourceLabel}
+          devices={selectedDevices}
+          observedAt={executionTarget === "managed-ssh" ? managedTarget?.resource_observed_at : undefined}
+          onClose={() => setResourceDialogOpen(false)}
+        />
+      )}
     </section>
   );
 }

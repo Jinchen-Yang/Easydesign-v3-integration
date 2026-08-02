@@ -1139,3 +1139,9 @@ registry 或磁盘。手动复制公钥并执行免密探测仍是等价回退�
 
 观察器默认每 15 秒只读远端结构化 revision 并通过 SSE 投影到 UI。SSH 暂时中断
 不改写远端科学状态；恢复后从最后已知 revision 继续。
+
+`ManagedWorkerProbe 0.3` 同时返回与调度 admission 使用相同阈值计算的逐卡只读快照：
+设备编号与型号、显存、利用率、compute process 数量、eligibility 原因和 EasyDesign
+lease 是否存在。它不返回 PID，也不增加任意远端命令入口。控制端验证 `gpu_count`、
+`eligible_gpu_count` 与设备列表严格一致后才投影到 UI；旧 probe schema、版本不一致或
+摘要矛盾均 fail closed。空闲数是观察时刻的资源快照，不是对未来 admission 的预留。

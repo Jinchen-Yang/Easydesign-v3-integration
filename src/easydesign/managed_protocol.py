@@ -19,7 +19,7 @@ from easydesign.core.artifacts import ID_PATTERN
 
 MANAGED_WORKER_ROOT = Path("/data/easydesign/managed-worker")
 MANAGED_BUNDLE_SCHEMA_VERSION = "0.2"
-MANAGED_PROBE_SCHEMA_VERSION = "0.2"
+MANAGED_PROBE_SCHEMA_VERSION = "0.3"
 REQUIRED_MANAGED_STAGE_RANGES: tuple[tuple[int, ...], ...] = ((4, 5), (6, 7))
 REQUIRED_MANAGED_BACKENDS: tuple[str, ...] = (
     "boltzgen",
@@ -159,10 +159,32 @@ class ManagedBackendReadiness(BaseModel):
     detail: str = Field(min_length=1, max_length=4096)
 
 
+class ManagedGpuDevice(BaseModel):
+    """Privacy-preserving point-in-time GPU state published by the Manager."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device: int = Field(ge=0)
+    name: str = Field(min_length=1, max_length=256)
+    memory_total_mib: int = Field(ge=0)
+    memory_used_mib: int = Field(ge=0)
+    utilization_percent: int = Field(ge=0, le=100)
+    compute_process_count: int = Field(ge=0)
+    eligible: bool
+    reasons: tuple[str, ...] = ()
+    active_lease: bool = False
+
+    @model_validator(mode="after")
+    def validate_memory(self) -> Self:
+        if self.memory_used_mib > self.memory_total_mib:
+            raise ValueError("managed GPU 已用显存不能大于总显存")
+        return self
+
+
 class ManagedWorkerProbe(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.2"] = "0.2"
+    schema_version: Literal["0.3"] = "0.3"
     observed_at: datetime
     manager_version: str = Field(min_length=1)
     easydesign_version: str = Field(min_length=1)
@@ -170,6 +192,8 @@ class ManagedWorkerProbe(BaseModel):
     backends: tuple[ManagedBackendReadiness, ...]
     managed_root: str
     gpu_count: int = Field(ge=0)
+    eligible_gpu_count: int = Field(ge=0)
+    gpu_devices: tuple[ManagedGpuDevice, ...]
     queue_depth: int = Field(ge=0)
     running_jobs: int = Field(ge=0)
     filesystem_total_bytes: int = Field(ge=1)
@@ -183,6 +207,13 @@ class ManagedWorkerProbe(BaseModel):
         backend_ids = tuple(item.backend_id for item in self.backends)
         if len(backend_ids) != len(set(backend_ids)):
             raise ValueError("backends 不能重复")
+        device_ids = tuple(item.device for item in self.gpu_devices)
+        if len(device_ids) != len(set(device_ids)):
+            raise ValueError("managed GPU device 不能重复")
+        if self.gpu_count != len(self.gpu_devices):
+            raise ValueError("managed gpu_count 与逐卡状态数量不一致")
+        if self.eligible_gpu_count != sum(item.eligible for item in self.gpu_devices):
+            raise ValueError("managed eligible_gpu_count 与逐卡状态不一致")
         return self
 
     @property
@@ -206,6 +237,7 @@ __all__ = [
     "MANAGED_WORKER_ROOT",
     "MINIMUM_MANAGED_AVAILABLE_BYTES",
     "ManagedBackendReadiness",
+    "ManagedGpuDevice",
     "ManagedJobRevision",
     "ManagedJobStatus",
     "ManagedWorkerProbe",

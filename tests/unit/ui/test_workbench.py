@@ -114,6 +114,89 @@ def test_pairing_projection_uses_the_same_state_contract_as_execution_targets() 
     assert projection["pairing_state"] == "paired"
 
 
+def test_execution_targets_projects_managed_idle_gpu_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = SimpleNamespace(
+        executor_id="suzhou2",
+        controller_id="controller-primary",
+        state="paired",
+        host="suzhou2.example",
+        port=22,
+        user="root",
+        host_identity=SimpleNamespace(fingerprint="SHA256:verified"),
+        public_key_fingerprint="SHA256:controller-key",
+        managed_worker_root="/data/easydesign/managed-worker",
+        updated_at=NOW,
+        public_key="ssh-ed25519 AAAATEST",
+    )
+    probe = ManagedWorkerProbe(
+        observed_at=NOW,
+        manager_version="0.1.0.dev2",
+        easydesign_version="0.1.0.dev36",
+        supported_stage_ranges=((4, 5), (6, 7)),
+        backends=(
+            {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
+            {"backend_id": "protenix-v2", "ready": True, "detail": "ready"},
+            {"backend_id": "tnp", "ready": True, "detail": "ready"},
+        ),
+        managed_root="/data/easydesign/managed-worker",
+        gpu_count=8,
+        eligible_gpu_count=6,
+        gpu_devices=tuple(
+            {
+                "device": device,
+                "name": "NVIDIA A100-PCIE-40GB",
+                "memory_total_mib": 40960,
+                "memory_used_mib": 1024 if device < 6 else 8192,
+                "utilization_percent": 0 if device < 6 else 95,
+                "compute_process_count": 0 if device < 6 else 1,
+                "eligible": device < 6,
+                "reasons": () if device < 6 else ("external-compute-process",),
+                "active_lease": False,
+            }
+            for device in range(8)
+        ),
+        queue_depth=2,
+        running_jobs=1,
+        filesystem_total_bytes=10 * 1024**3,
+        filesystem_available_bytes=9 * 1024**3,
+    )
+
+    class FakeRegistry:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def list_latest(self) -> tuple[SimpleNamespace, ...]:
+            return (record,)
+
+    class FailingLocalProbe:
+        def snapshots(self) -> tuple[object, ...]:
+            raise RuntimeError("local probe intentionally unavailable")
+
+    monkeypatch.setattr("easydesign.ui.app.RemoteExecutorRegistry", FakeRegistry)
+    monkeypatch.setattr("easydesign.ui.app.NvidiaSmiProbe", FailingLocalProbe)
+    monkeypatch.setattr("easydesign.ui.app.probe_managed_executor", lambda **_: probe)
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/execution-targets")
+
+    assert response.status_code == 200
+    managed = response.json()["managed"][0]
+    assert managed["pairing_state"] == "paired"
+    assert managed["status"] == "available"
+    assert managed["gpu_count"] == 8
+    assert managed["eligible_gpu_count"] == 6
+    assert managed["queue_depth"] == 2
+    assert len(managed["devices"]) == 8
+
+
 def _region_projection_fixture() -> RegionEditorProjection:
     return RegionEditorProjection(
         run_key="demo/run-001",
@@ -1880,8 +1963,8 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
 
     probe = ManagedWorkerProbe(
         observed_at=NOW,
-        manager_version="0.1.0.dev1",
-        easydesign_version="0.1.0.dev35",
+        manager_version="0.1.0.dev2",
+        easydesign_version="0.1.0.dev36",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -1890,6 +1973,19 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
         ),
         managed_root="/data/easydesign/managed-worker",
         gpu_count=8,
+        eligible_gpu_count=8,
+        gpu_devices=tuple(
+            {
+                "device": device,
+                "name": "NVIDIA A100-PCIE-40GB",
+                "memory_total_mib": 40960,
+                "memory_used_mib": 0,
+                "utilization_percent": 0,
+                "compute_process_count": 0,
+                "eligible": True,
+            }
+            for device in range(8)
+        ),
         queue_depth=0,
         running_jobs=0,
         filesystem_total_bytes=1,

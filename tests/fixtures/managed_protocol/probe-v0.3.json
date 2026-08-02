@@ -1,0 +1,29 @@
+{
+  "schema_version": "0.3",
+  "observed_at": "2026-08-02T04:00:00Z",
+  "manager_version": "0.1.0.dev2",
+  "easydesign_version": "0.1.0.dev36",
+  "supported_stage_ranges": [[4, 5], [6, 7]],
+  "backends": [
+    {"backend_id": "boltzgen", "ready": true, "detail": "locked runtime ready"},
+    {"backend_id": "protenix-v2", "ready": true, "detail": "locked runtime ready"},
+    {"backend_id": "tnp", "ready": true, "detail": "locked runtime ready"}
+  ],
+  "managed_root": "/data/easydesign/managed-worker",
+  "gpu_count": 8,
+  "eligible_gpu_count": 6,
+  "gpu_devices": [
+    {"device": 0, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 1024, "utilization_percent": 0, "compute_process_count": 0, "eligible": true, "reasons": [], "active_lease": false},
+    {"device": 1, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 1024, "utilization_percent": 0, "compute_process_count": 0, "eligible": true, "reasons": [], "active_lease": false},
+    {"device": 2, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 1024, "utilization_percent": 0, "compute_process_count": 0, "eligible": true, "reasons": [], "active_lease": false},
+    {"device": 3, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 1024, "utilization_percent": 0, "compute_process_count": 0, "eligible": true, "reasons": [], "active_lease": false},
+    {"device": 4, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 1024, "utilization_percent": 0, "compute_process_count": 0, "eligible": true, "reasons": [], "active_lease": false},
+    {"device": 5, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 1024, "utilization_percent": 0, "compute_process_count": 0, "eligible": true, "reasons": [], "active_lease": false},
+    {"device": 6, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 18432, "utilization_percent": 96, "compute_process_count": 1, "eligible": false, "reasons": ["external-compute-process"], "active_lease": false},
+    {"device": 7, "name": "NVIDIA A100-PCIE-40GB", "memory_total_mib": 40960, "memory_used_mib": 8192, "utilization_percent": 94, "compute_process_count": 0, "eligible": false, "reasons": ["active-easydesign-lease"], "active_lease": true}
+  ],
+  "queue_depth": 1,
+  "running_jobs": 1,
+  "filesystem_total_bytes": 1000000000000,
+  "filesystem_available_bytes": 900000000000
+}

@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | dev35 Manager 已在 Suzhou2 真实完成固定非 APOE 40-candidate Stage 04→05，队列、GPU 租约与落盘无 operational failure。 | 复用同一受管路径寻找能合法产生 Tier A 的第二真实 fixture。 | 当前 1UBQ 40/40 未通过 Stage 05 iPTM 门，不能进入 Stage 06；旧 APOE 证据不受影响。 | 2026-08-02 |
+| `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；Stage 04 未开始页已强制显式选择本机或 Suzhou2，资源探针失败不再默认本机。 | 在保留旧环境和运行的前提下，为新 lock 环境取得足够数据盘安全余量；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 新环境计划需 24.0 GiB 增量峰值并保留 30.0 GiB，而当前仅余 43.0 GiB，setup 按安全门拒绝；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 |
 
 ## 当前结论
 
@@ -19,6 +19,9 @@
   `budget=30` 不是 Stage 04 候选预算。
 - Stage 04 不按官方 `pass_filters` 选择策略；840 个候选中该字段为 true 的 28 个、
   false 的 812 个，全部如实交给 Stage 05。
+- 新任务的 Stage 04 配置页不再显示三张重复事实卡，也不预选当前机器；执行位置卡与
+  远端资源请求解耦，用户选择后才出现逐卡状态、最大卡数和确认门。探针失败不暴露
+  SSH 命令或工作区路径。
 
 ## 功能矩阵
 
@@ -34,6 +37,10 @@
 
 ## Now
 
+- `[S04-002/DATA-005]` 四个 cuequivariance 包与 sidecar 已固定为同一 0.10.0 family，
+  锁回归通过；待数据盘满足安全余量后，使用 setup API 将新环境发布为
+  `runtime/envs/boltzgen-b9a8a41b3512`，再执行最小真实 probe。旧混装环境和历史运行
+  保留，不删除或覆盖。
 - `[VAL-008]` 固定非 APOE 1UBQ 极小 Stage 04→05 已完成并科学停止；下一步更换合法
   Tier A fixture 验收 Stage 06→07，不重跑 APOE 21×40。
 
@@ -44,7 +51,9 @@
 
 ## Blocked
 
-- 无当前实现阻塞。
+- `[S04-002/DATA-005]` Proteindigger 当前可用 43.0 GiB；BoltzGen 组件计划的增量峰值
+  为 24.0 GiB，并要求安装后保留 30.0 GiB，因此 setup 正确拒绝新环境发布。不得通过
+  删除旧环境、缓存、运行或降低安全余量规避；取得至少 11 GiB 额外可用空间后重跑计划。
 - 不终止服务器上的非 EasyDesign GPU 任务；资源繁忙时等待或明确失败。
 
 ## 验证证据
@@ -59,6 +68,15 @@
   Manager queue revision 104；Stage 04 backend、GPU lease 和 immutable run 发布均成功。
 - 自动检查：199 passed、8 skipped；Ruff、mypy、wheel build 和 wheel asset
   21/21 均通过。
+- S04-002/ENG-033/UI-026：lock family 精确集合测试、8 秒探针参数传递、Stage 04
+  表单与 8 GPU 投影测试通过；全量 Python 420 passed、8 skipped，Ruff、mypy、静态
+  资产检查均通过。Workbench 关键 Stage 04/受管链在 Chromium 1440/1920 与 Firefox
+  6/6 通过；全矩阵 75 passed、1 skipped，仅设置页两张既有视觉基线因平台字体栅格
+  约 1% 差异失败，人工对比布局和内容一致，未重写基线。真实 18792 浏览器验证了
+  加载中两卡可见、无默认目标、选择门、8 秒失败态与简洁文案，console 0 error。
+  隔离 staging wheel 安装与新 UI 资产字节校验通过，SHA-256
+  `f4200ceee4b2b8597eed5ba1980da603b62cfbb17e95ee0ab091cf7df1c73bb5`；正式 `make build`
+  按不可变门拒绝覆盖已有 dev36 wheel，因此该同版本 staging wheel 未发布到 `dist/`。
 - 最小真实 backend smoke：
   `/root/autodl-tmp/Protein_design/boltzgen_work/`
   `easydesign_stage04_backend_smoke_20260726_01/backend-output`。固定
@@ -101,6 +119,9 @@
 - 2026-07-26：APOE 21×40 正式完成；7xl0 首次只产生 39 个完整候选，resume 仅补齐
   1 个缺口。最终 21 个策略均为 40 个、840 个 candidate ID 唯一、0 个终态失败，
   状态提升为 `smoke-validated` 并移交 Stage 05。
+- 2026-08-02：统一 Proteindigger BoltzGen cuequivariance 0.10.0 family；Stage 04/06
+  资源请求改为 8 秒上界，位置卡先渲染且初始不选中，删除 Stage 04 三张重复事实卡，
+  选择后才展示逐卡资源与确认门。新环境因数据盘安全余量合法暂停，旧环境和运行未动。
 
 ## 历史索引
 

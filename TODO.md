@@ -60,6 +60,7 @@
 | `ENG-003` | Core Engineering | `planned` | 自建 MSA 服务与 CI 平台矩阵完成。 |
 | `S03-001` | Scientific Pipeline | `smoke-validated` | 基础 BoltzGen VHH strategy compiler 与 APOE 21/21 YAML 验收完成。 |
 | `S04-001` | Scientific Pipeline | `smoke-validated` | 双 GPU 可恢复 pilot generation 完成 APOE 21×40；840 个完整候选与 RunManifest 完整性验证通过。 |
+| `S04-002` | Scientific Pipeline | `implemented` | BoltzGen lock 的四个 cuequivariance 包统一为 0.10.0 并更新 sidecar SHA-256；Proteindigger 新环境发布受 30 GiB 安全余量门阻止，旧环境和运行未删除。 |
 | `S05-001` | Scientific Pipeline | `smoke-validated` | APOE 840 个 pilot 完成 v1.5 审计；唯一 Tier A 扩展到 100 后，10/10 full-target prediction 未保持 binder pose，合法停止。 |
 | `S05-002` | Scientific Pipeline | `smoke-validated` | v1.6 只按 `F_YAML` 晋级最多三个 Tier A；APOE 冻结 pilot 已独立重评为 1 组晋级、1 条诊断 warning，旧 v1.5 停止结论未改写。 |
 | `S06-001` | Scientific Pipeline | `implemented` | smoke-1000 与 production-50000 分片计划、25% 资源门、共享恢复和精确 merge 已通过通用测试；APOE 因 Stage 05 科学停止而未运行。 |
@@ -136,14 +137,16 @@
 | `ENG-030` | Core Engineering | `implemented` | Stage 04/06 执行位置已从科学 YAML 分离；本机支持 GPU 自动发现、资源门、最大卡数、append-only 租约、heartbeat 和恢复。 |
 | `ENG-031` | Core Engineering | `implemented` | `/data/easydesign/managed-worker` 布局、RemoteJobBundle、`flock` 中央队列、8 GPU 租约、重启对账与 4→5/6→7 就地执行已实现；安装 systemd 仍由运维审核。 |
 | `ENG-032` | Core Engineering | `smoke-validated` | Suzhou2 Manager dev1 revision 8 已用精确 dev35 wheel 激活，三后端/8 GPU probe 和真实 4→5、6→7 小链通过；私有远端推送权限仍是独立运维事项。 |
+| `ENG-033` | Core Engineering | `smoke-validated` | Workbench 资源投影使用 8 秒受管探针上界；真实浏览器验证加载/失败不阻塞执行位置选择、不回退本机且不暴露 SSH 命令。 |
 | `UX-008` | CLI & Developer Experience | `implemented` | 已实现稳定 host fingerprint 确认、工作区 key pair 检测/复用、一次性密码公钥安装、免密 worker 探针和可恢复逻辑解绑；不读取或修改个人 `~/.ssh`。 |
 | `UI-022` | Product UI | `implemented` | Stage 04/06 已提供“当前机器 / Suzhou2”执行卡片；配对向导可复用已有密钥并用一次性密码完成公钥安装，随后展示队列/GPU/ETA 与同步状态。 |
 | `UI-023` | Product UI | `smoke-validated` | 设置已收敛为“当前设备 / 公共算力 / 项目存档”三页；环境自动检查、缺失组件按需安装和折叠技术详情已通过双尺寸 Chromium 视觉验收。 |
 | `UI-024` | Product UI | `smoke-validated` | Stage 04/06 与设置页统一使用真实 `pairing_state`，已配对 Suzhou2 可立即选择；设置支持安全逻辑解绑后重新配置，并可一键返回进入设置前的项目或页面。 |
 | `UI-025` | Product UI | `smoke-validated` | dev36 在选择 GPU 数量前显示目标机空闲/总卡数，并用按需弹窗展示逐卡快照；受管 4→5/6→7 运行视图使用结构化阶段轨道和真实任务进度，真实 Suzhou2 probe 与三浏览器矩阵已通过。 |
+| `UI-026` | Product UI | `smoke-validated` | Stage 04 移除三张重复事实卡，Stage 04/06 初始不默认本机；真实浏览器和三浏览器关键链验证两卡先显示、选择后才展开资源，schema 0.3 仍投影完整 8 GPU。 |
 | `VAL-008` | Scientific Validation | `smoke-validated` | dev35 已完成 Suzhou2 固定非 APOE 40 条 Stage 04→05 与 APOE 精确 8 条、1 GPU、单 shard Stage 06→07；两次均保持科学停止与历史 50k 不变。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
-| `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen 五个 checkpoint 已独立登记并强制离线显式注入。全部许可资产下载验收仍待用户逐项确认。 |
+| `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen cuequivariance family 已统一为 0.10.0，五个 checkpoint 独立登记并强制离线显式注入。新 Proteindigger 环境受磁盘安全余量门阻止，许可资产仍待逐项确认。 |
 | `UI-016` | Product UI | `implemented` | 安装中心展示环境/资产状态、完整及逐后端安装计划；与 CLI 共用持久 setup job，UI 重启后仍能恢复结构化终态。 |
 | `VAL-006` | Scientific Validation | `implemented` | 固定 1UBQ fixture 的真实 Stage 01–05 逐步执行器与 Stage 06/07 adapter probe 已实现；只有实际全后端运行完成后才升级 smoke。 |
 | `REL-001` | Release & Operations | `planned` | IP/LICENSE 决策后冻结公开 release 门槛。 |
@@ -171,7 +174,7 @@
 | Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；REP-009 已把结构助手重构为完整 PML/Skill/SceneVersion 主循环，历史 typed 记录只读兼容。 | 冻结 Stage 01 科学边界；复验真实 provider 连续对话和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-07-31 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | automatic、PSE/YAML、交互选区共享人工批准交接；REP-009 已用完整 PML `ed_region_A/B/C` 桥接替代模型 typed 区域协议。 | 复验完整 PML 区域往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-07-31 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
-| Stage 04 | `smoke-validated` | dev35 Manager 已在 Suzhou2 真实完成固定非 APOE 40-candidate Stage 04→05，队列、GPU 租约与落盘无 operational failure。 | 复用同一受管路径寻找能合法产生 Tier A 的第二真实 fixture。 | 当前 1UBQ 40/40 未通过 Stage 05 iPTM 门，不能进入 Stage 06；旧 APOE 证据不受影响。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 04 | `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；Stage 04 未开始页已强制显式选择本机或 Suzhou2，资源探针失败不再默认本机。 | 在保留旧环境和运行的前提下，为新 lock 环境取得足够数据盘安全余量；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 新环境计划需 24.0 GiB 增量峰值并保留 30.0 GiB，而当前仅余 43.0 GiB，setup 按安全门拒绝；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
 | Stage 06 | `smoke-validated` | dev35 已在 Suzhou2 Manager 真实完成 APOE 8-candidate Stage 06→07；计划、分片、coverage 与终态均精确为 8。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；本次 8/8 均未通过 BoltzGen `pass_filters`，未进入 Protenix/TNP。 | 2026-08-02 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `smoke-validated` | dev35 已在 Suzhou2 Manager 原地消费 APOE 8/8 ScaleBundle，并发布可审计空 review package。 | 在第二真实 target 验证进入 Protenix 多 seed 与 TNP 的非空深筛路径。 | 本次 8/8 均未通过 BoltzGen `pass_filters`，因此没有调用 Protenix/TNP；Manager 私有 remote 另缺推送权限。 | 2026-08-02 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |

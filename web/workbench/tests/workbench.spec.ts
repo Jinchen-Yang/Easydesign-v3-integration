@@ -535,11 +535,8 @@ async function mockApi(page: Page) {
           },
           presentation: {
             description: "按设计方案运行可恢复的小规模 BoltzGen 生成。",
-            action_label: "检查资源并开始小规模生成",
-            facts: [
-              { label: "生成后端", value: "boltzgen-0.3.2" },
-              { label: "每组候选", value: 40 },
-            ],
+            action_label: "开始小规模生成",
+            facts: [],
           },
         }),
       });
@@ -1480,6 +1477,14 @@ test("explicit manual regions complete one approval and open a succeeded branch"
 });
 
 test("stage three continuation runs from Python defaults and advances to stage four", async ({ page }) => {
+  let releaseResources: () => void = () => {};
+  const resourcesReady = new Promise<void>((resolve) => {
+    releaseResources = resolve;
+  });
+  await page.route("**/api/v1/execution-targets", async (route) => {
+    await resourcesReady;
+    await route.fallback();
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "新建设计" }).first().click();
   await page.getByRole("button", { name: /按步骤设计/ }).click();
@@ -1500,8 +1505,13 @@ test("stage three continuation runs from Python defaults and advances to stage f
     page.getByRole("heading", { name: "第4步：小规模生成", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("选择计算位置")).toBeVisible();
+  await expect(page.getByText("生成后端", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("目标候选数", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("默认设备数", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /当前机器/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始小规模生成" })).toBeDisabled();
+  releaseResources();
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toBeEnabled();
   await expect(page.getByRole("button", { name: /Suzhou2 公共算力/ })).toContainText("已配对");
   await page.getByRole("button", { name: /Suzhou2 公共算力/ }).click();
@@ -1573,7 +1583,7 @@ test("managed stage run shows the linked stage rail and real structured progress
   await expect(page.getByRole("heading", { name: "配置第4步：小规模生成" })).toBeVisible();
   await page.getByRole("button", { name: /Suzhou2 公共算力/ }).click();
   await page.getByText(/我确认本步骤会调用真实计算后端/).click();
-  await page.getByRole("button", { name: "检查资源并开始小规模生成" }).click();
+  await page.getByRole("button", { name: "开始小规模生成" }).click();
 
   await expect(page.getByRole("heading", { name: "第4步 → 第5步" })).toBeVisible();
   const rail = page.locator(".linked-stage-rail");

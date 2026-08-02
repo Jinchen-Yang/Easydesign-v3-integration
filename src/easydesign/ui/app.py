@@ -2556,11 +2556,12 @@ def create_ui_app(
                     probe = probe_managed_executor(
                         executor_id=record.executor_id,
                         profile_path=service.profile_path,
+                        timeout_seconds=8.0,
                     )
-                except Exception as error:
+                except Exception:
                     projection["detail"] = (
-                        "已配对，但暂时无法读取受管 GPU 状态："
-                        + (str(error)[:512] or type(error).__name__)
+                        "已配对，但暂时无法读取受管 GPU 状态；"
+                        "可稍后刷新，或先选择当前机器"
                     )
                 else:
                     projection.update(

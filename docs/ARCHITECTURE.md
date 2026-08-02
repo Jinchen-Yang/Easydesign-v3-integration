@@ -1097,6 +1097,13 @@ Stage 04 / Stage 06
              → ManagedWorker → GpuLeaseStore → same pipeline API
 ```
 
+Workbench 不从探针结果推导默认目标。Stage 04/06 配置组件先同步呈现两个显式选择，
+再异步读取 `/api/v1/execution-targets` 补充资源；未选择时不能确认或启动。UI 投影使用
+8 秒受管探针上界，使不可达的 Suzhou2 不再阻塞本机选择。探针失败保留两张卡和错误
+状态，绝不回退成已选本机。选择 Suzhou2 后，资源弹窗逐项呈现
+`ManagedWorkerProbe.gpu_devices`（当前固定 8 卡）；真正提交时仍按受管协议重新验证
+配对、版本、资产与 admission。
+
 本机执行在 attempt 创建前冻结设备计划。`NvidiaSmiProbe` 排除外部进程、显存不足
 和有效 EasyDesign 租约；`GpuLeaseStore` 用 append-only revision 和原子锁保证一卡一任务。
 无资源是 `waiting-for-resources`，不是 operational failure。已冻结的计划在 resume 时不因

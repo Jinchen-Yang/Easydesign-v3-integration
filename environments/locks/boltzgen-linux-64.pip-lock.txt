@@ -20,8 +20,8 @@ cuda-pathfinder==1.6.0
 cuda-toolkit==13.0.3.0
 cuequivariance-ops-cu12==0.10.0
 cuequivariance-ops-torch-cu12==0.10.0
-cuequivariance-torch==0.11.0
-cuequivariance==0.11.0
+cuequivariance-torch==0.10.0
+cuequivariance==0.10.0
 cycler==0.12.1
 edit-distance==1.0.9
 einops==0.8.2

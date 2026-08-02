@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 from pytest import MonkeyPatch
 
 from easydesign.core import StageManifest
+from easydesign.managed_protocol import ManagedWorkerProbe
 from easydesign.orchestration import remote_execution
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 
@@ -68,3 +70,31 @@ def test_managed_stage06_budget_uses_exact_user_count(tmp_path: Path) -> None:
     )
 
     assert budget == 37
+
+
+def test_managed_probe_forwards_bounded_timeout(monkeypatch: MonkeyPatch) -> None:
+    payload = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "fixtures"
+            / "managed_protocol"
+            / "probe-v0.3.json"
+        ).read_text(encoding="utf-8")
+    )
+    calls: list[tuple[tuple[str, ...], float | None]] = []
+
+    class FakeExecutor:
+        def managed_worker_json(
+            self, *arguments: str, timeout_seconds: float | None = None
+        ) -> dict[str, object]:
+            calls.append((arguments, timeout_seconds))
+            return payload
+
+    monkeypatch.setattr(remote_execution, "_executor", lambda **_kwargs: FakeExecutor())
+
+    result = remote_execution.probe_managed_executor(
+        executor_id="suzhou2", timeout_seconds=8.0
+    )
+
+    assert isinstance(result, ManagedWorkerProbe)
+    assert calls == [(('probe',), 8.0)]

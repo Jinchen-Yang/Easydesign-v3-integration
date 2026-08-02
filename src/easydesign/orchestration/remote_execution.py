@@ -205,11 +205,12 @@ def probe_managed_executor(
     *,
     executor_id: str,
     profile_path: Path | None = None,
+    timeout_seconds: float | None = None,
 ) -> ManagedWorkerProbe:
     """Probe the fixed managed service rather than a generic remote shell."""
 
     executor = _executor(profile_path=profile_path, executor_id=executor_id)
-    payload = executor.managed_worker_json("probe")
+    payload = executor.managed_worker_json("probe", timeout_seconds=timeout_seconds)
     probe = ManagedWorkerProbe.model_validate(payload)
     require_managed_probe_compatible(probe)
     return probe

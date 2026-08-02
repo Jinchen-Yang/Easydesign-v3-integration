@@ -168,30 +168,8 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
         elif stage_number == 4:
             presentation = {
                 "description": "按设计方案运行可恢复的小规模 BoltzGen 生成。",
-                "action_label": "检查资源并开始小规模生成",
-                "facts": [
-                    {
-                        "label": "生成后端",
-                        "value": defaults["backend"],
-                        "note": "使用结构化任务与进度记录",
-                    },
-                    {
-                        "label": "目标候选数",
-                        "value": defaults[
-                            "required_complete_candidates_per_strategy"
-                        ],
-                        "note": "每套设计方案",
-                    },
-                    {
-                        "label": "默认设备数",
-                        "value": (
-                            "自动检测"
-                            if defaults["executor"]["devices"] is None
-                            else len(defaults["executor"]["devices"])
-                        ),
-                        "note": "默认使用全部符合条件的 GPU；启动前再次确认",
-                    },
-                ],
+                "action_label": "开始小规模生成",
+                "facts": [],
             }
         elif stage_number == 5:
             advisory = defaults["filter_profile"] == (

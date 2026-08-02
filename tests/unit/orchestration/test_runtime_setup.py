@@ -52,6 +52,24 @@ def test_setup_plan_keeps_every_target_inside_workspace() -> None:
         assert Path(asset["target"]).parts[:2] == ("runtime", "models")
 
 
+def test_boltzgen_cuequivariance_family_is_version_aligned() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    lock = (
+        repository / "environments" / "locks" / "boltzgen-linux-64.pip-lock.txt"
+    ).read_text(encoding="utf-8")
+
+    assert {
+        line
+        for line in lock.splitlines()
+        if line.startswith("cuequivariance")
+    } == {
+        "cuequivariance-ops-cu12==0.10.0",
+        "cuequivariance-ops-torch-cu12==0.10.0",
+        "cuequivariance-torch==0.10.0",
+        "cuequivariance==0.10.0",
+    }
+
+
 @pytest.mark.parametrize(
     ("component", "environment_id", "asset_ids"),
     (

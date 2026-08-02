@@ -473,9 +473,10 @@ function StageContinuationSetup({
     job_id: string;
   }>();
   const [executionTargets, setExecutionTargets] = useState<ExecutionTargets>();
+  const [resourceLoadError, setResourceLoadError] = useState("");
   const [executionTarget, setExecutionTarget] = useState<
-    "local-current-host" | "managed-ssh"
-  >("local-current-host");
+    "local-current-host" | "managed-ssh" | undefined
+  >();
   const [maximumGpus, setMaximumGpus] = useState<number>();
   const [resourceConfirmed, setResourceConfirmed] = useState(false);
   const [stage06CandidateCount, setStage06CandidateCount] = useState("50000");
@@ -511,14 +512,14 @@ function StageContinuationSetup({
     api.executionTargets()
       .then((value) => {
         if (disposed) return;
+        setResourceLoadError("");
         setExecutionTargets(value);
-        setMaximumGpus((current) => (
-          current ?? (value.local.eligible_gpu_count || undefined)
-        ));
       })
       .catch((error: unknown) => {
         if (!disposed) {
-          setStatus(error instanceof Error ? error.message : "无法读取计算资源");
+          setResourceLoadError(
+            error instanceof Error ? error.message : "无法读取计算资源",
+          );
         }
       });
     return () => {
@@ -698,7 +699,14 @@ function StageContinuationSetup({
   }, [onCompleted, remoteJob, stage.stage_number]);
 
   async function start() {
-    if (!definition || jobId || remoteJob || (expensive && !resourceConfirmed)) return;
+    if (
+      !definition
+      || jobId
+      || remoteJob
+      || (expensive && (!executionTarget || !resourceConfirmed))
+    ) {
+      return;
+    }
     const candidateCount = Number(stage06CandidateCount);
     if (
       stage.stage_number === 6
@@ -797,15 +805,20 @@ function StageContinuationSetup({
   const managedTarget = executionTargets?.managed.find(
     (item) => item.executor_id === "suzhou2",
   );
+  const managedPaired = managedTarget?.pairing_state === "paired";
   const selectedResource = executionTarget === "local-current-host"
     ? executionTargets?.local
-    : managedTarget;
-  const selectedDevices = executionTargets
+    : executionTarget === "managed-ssh"
+      ? managedTarget
+      : undefined;
+  const selectedDevices = executionTargets && executionTarget
     ? displayGpuResources(executionTargets, executionTarget)
     : [];
   const selectedResourceLabel = executionTarget === "local-current-host"
     ? "当前机器"
-    : "Suzhou2 公共算力";
+    : executionTarget === "managed-ssh"
+      ? "Suzhou2 公共算力"
+      : "尚未选择";
 
   return (
     <section className="stage-setup panel">
@@ -814,15 +827,17 @@ function StageContinuationSetup({
         <h3>配置第{stage.stage_number}步：{definition.title}</h3>
         <p>{definition.presentation.description}</p>
       </div>
-      <div className="stage-setup-facts">
-        {facts.map((fact) => (
-          <article key={`${fact.label}-${String(fact.value)}`}>
-            <span>{fact.label}</span>
-            <strong>{String(fact.value)}</strong>
-            {fact.note && <small>{fact.note}</small>}
-          </article>
-        ))}
-      </div>
+      {facts.length > 0 && (
+        <div className="stage-setup-facts">
+          {facts.map((fact) => (
+            <article key={`${fact.label}-${String(fact.value)}`}>
+              <span>{fact.label}</span>
+              <strong>{String(fact.value)}</strong>
+              {fact.note && <small>{fact.note}</small>}
+            </article>
+          ))}
+        </div>
+      )}
       {stage.stage_number === 3 && (
         <div className="stage-setup-note">
           <strong>本步不会启动候选生成</strong>
@@ -847,7 +862,7 @@ function StageContinuationSetup({
           <small>推荐 50,000 条；可以输入更小数量做连通验证，最终计划、分片和远程预算都严格采用这里的整数。</small>
         </label>
       )}
-      {expensive && executionTargets && (
+      {expensive && (
         <div className="execution-target-section">
           <div className="execution-target-heading">
             <div>
@@ -858,8 +873,11 @@ function StageContinuationSetup({
               type="button"
               onClick={() => {
                 api.executionTargets()
-                  .then(setExecutionTargets)
-                  .catch((error: unknown) => setStatus(
+                  .then((value) => {
+                    setResourceLoadError("");
+                    setExecutionTargets(value);
+                  })
+                  .catch((error: unknown) => setResourceLoadError(
                     error instanceof Error ? error.message : "无法刷新计算资源",
                   ));
               }}
@@ -878,18 +896,21 @@ function StageContinuationSetup({
               }}
             >
               <span>当前机器</span>
-              <strong>
-                {executionTargets.local.eligible_gpu_count}/{executionTargets.local.gpu_count} 张 GPU 当前空闲
-              </strong>
-              <small>{executionTargets.local.detail}</small>
+              <strong>{executionTargets
+                ? `${executionTargets.local.eligible_gpu_count}/${executionTargets.local.gpu_count} 张 GPU 当前空闲`
+                : "选择后将在启动前检查 GPU"}</strong>
+              <small>{executionTargets?.local.detail || (
+                resourceLoadError
+                  ? "资源状态暂时不可用；仍可选择当前机器"
+                  : "正在读取本机 GPU 状态"
+              )}</small>
             </button>
             {(() => {
-              const paired = managedTarget?.pairing_state === "paired";
               return (
                 <button
                   type="button"
                   className={executionTarget === "managed-ssh" ? "selected" : ""}
-                  disabled={!paired}
+                  disabled={Boolean(executionTargets && !managedPaired)}
                   onClick={() => {
                     setExecutionTarget("managed-ssh");
                     setMaximumGpus(undefined);
@@ -898,50 +919,59 @@ function StageContinuationSetup({
                 >
                   <span>Suzhou2 公共算力</span>
                   <strong>
-                    {paired
-                      ? managedTarget?.status === "unavailable"
-                        ? "已配对，资源状态暂不可用"
-                        : `已配对 · ${managedTarget?.eligible_gpu_count || 0}/${managedTarget?.gpu_count || 8} 张 GPU 当前空闲`
-                      : "尚未配对"}
+                    {!executionTargets
+                      ? "选择后读取 8 张 GPU 状态"
+                      : managedPaired
+                        ? managedTarget?.status === "unavailable"
+                          ? "已配对，资源状态暂不可用"
+                          : `已配对 · ${managedTarget?.eligible_gpu_count || 0}/${managedTarget?.gpu_count || 8} 张 GPU 当前空闲`
+                        : "尚未配对"}
                   </strong>
                   <small>
-                    {paired
-                      ? `${managedTarget?.detail || "可进入统一队列"} · 队列 ${managedTarget?.queue_depth || 0}`
-                      : "请在设置中完成专用 SSH 密钥配对"}
+                    {!executionTargets
+                      ? "正在读取配对、队列和逐卡资源"
+                      : managedPaired
+                        ? `${managedTarget?.detail || "可进入统一队列"} · 队列 ${managedTarget?.queue_depth || 0}`
+                        : "请在设置中完成专用 SSH 密钥配对"}
                   </small>
                 </button>
               );
             })()}
           </div>
-          <div className="execution-resource-summary">
-            <div>
-              <span>当前选择 · {selectedResourceLabel}</span>
-              <strong>
-                {selectedResource
-                  ? `${selectedResource.eligible_gpu_count}/${selectedResource.gpu_count} 张 GPU 符合启动条件`
-                  : "正在读取 GPU 状态"}
-              </strong>
-              <small>这是选择卡数前的实时快照；入队或启动时会重新检查。</small>
-            </div>
-            <button type="button" onClick={() => setResourceDialogOpen(true)}>
-              查看 GPU 状态
-            </button>
-          </div>
-          <label className="execution-gpu-limit">
-            <span>最多使用 GPU 数量</span>
-            <input
-              type="number"
-              min="1"
-              max={selectedResource?.gpu_count || 8}
-              value={maximumGpus || ""}
-              placeholder="自动使用全部可用卡"
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setMaximumGpus(Number.isFinite(value) && value > 0 ? value : undefined);
-              }}
-            />
-            <small>留空表示使用目标机器上全部符合条件的 GPU；不会抢占外部进程。</small>
-          </label>
+          {executionTarget && (
+            <>
+              <div className="execution-resource-summary">
+                <div>
+                  <span>当前选择 · {selectedResourceLabel}</span>
+                  <strong>
+                    {selectedResource
+                      ? `${selectedResource.eligible_gpu_count}/${selectedResource.gpu_count} 张 GPU 符合启动条件`
+                      : "正在读取 GPU 状态"}
+                  </strong>
+                  <small>这是选择卡数前的实时快照；入队或启动时会重新检查。</small>
+                </div>
+                <button type="button" onClick={() => setResourceDialogOpen(true)}>
+                  查看 GPU 状态
+                </button>
+              </div>
+              <label className="execution-gpu-limit">
+                <span>最多使用 GPU 数量</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedResource?.gpu_count || 8}
+                  value={maximumGpus || ""}
+                  placeholder="自动使用全部可用卡"
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setMaximumGpus(Number.isFinite(value) && value > 0 ? value : undefined);
+                  }}
+                />
+                <small>留空表示使用目标机器上全部符合条件的 GPU；不会抢占外部进程。</small>
+              </label>
+            </>
+          )}
+          {resourceLoadError && <div className="inline-notice execution-warning"><span>{resourceLoadError}</span></div>}
         </div>
       )}
       {expensive && (
@@ -949,6 +979,7 @@ function StageContinuationSetup({
           <input
             type="checkbox"
             checked={resourceConfirmed}
+            disabled={!executionTarget}
             onChange={(event) => setResourceConfirmed(event.target.checked)}
           />
           <span>我确认本步骤会调用真实计算后端；EasyDesign 将先检查 GPU、磁盘和运行环境。</span>
@@ -959,7 +990,8 @@ function StageContinuationSetup({
           type="button"
           className="primary-button"
           disabled={Boolean(jobId || remoteJob)
-            || (expensive && !resourceConfirmed)
+            || (expensive && (!executionTarget || !resourceConfirmed))
+            || (executionTarget === "managed-ssh" && !managedPaired)
             || (stage.stage_number === 6 && !stage06CandidateCountValid)}
           onClick={() => void start()}
         >

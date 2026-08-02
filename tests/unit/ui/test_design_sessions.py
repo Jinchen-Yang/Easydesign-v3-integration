@@ -170,6 +170,8 @@ def test_stage_forms_expose_all_seven_stages_without_stage01_input() -> None:
         "value": 7,
         "note": "official-vhh7-v1",
     }
+    assert definitions[3]["presentation"]["action_label"] == "开始小规模生成"
+    assert definitions[3]["presentation"]["facts"] == []
     assert definitions[5]["defaults"]["scale_profile"] == "user-defined-v1"
     assert definitions[5]["defaults"]["total_candidate_count"] == 50_000
     assert definitions[5]["presentation"]["facts"] == [

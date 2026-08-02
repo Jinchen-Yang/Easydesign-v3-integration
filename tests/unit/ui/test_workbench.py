@@ -177,7 +177,13 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
 
     monkeypatch.setattr("easydesign.ui.app.RemoteExecutorRegistry", FakeRegistry)
     monkeypatch.setattr("easydesign.ui.app.NvidiaSmiProbe", FailingLocalProbe)
-    monkeypatch.setattr("easydesign.ui.app.probe_managed_executor", lambda **_: probe)
+    probe_arguments: dict[str, object] = {}
+
+    def fake_probe(**kwargs: object) -> ManagedWorkerProbe:
+        probe_arguments.update(kwargs)
+        return probe
+
+    monkeypatch.setattr("easydesign.ui.app.probe_managed_executor", fake_probe)
     app = create_ui_app(
         runs_root=tmp_path / "runs",
         projects_root=tmp_path / "projects",
@@ -195,6 +201,22 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     assert managed["eligible_gpu_count"] == 6
     assert managed["queue_depth"] == 2
     assert len(managed["devices"]) == 8
+    assert probe_arguments["timeout_seconds"] == 8.0
+
+    def failing_probe(**_kwargs: object) -> ManagedWorkerProbe:
+        raise RuntimeError("secret /root/workspace/id_ed25519")
+
+    monkeypatch.setattr("easydesign.ui.app.probe_managed_executor", failing_probe)
+    with TestClient(app) as client:
+        unavailable_response = client.get("/api/v1/execution-targets")
+
+    unavailable = unavailable_response.json()["managed"][0]
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["detail"] == (
+        "已配对，但暂时无法读取受管 GPU 状态；"
+        "可稍后刷新，或先选择当前机器"
+    )
+    assert "/root/" not in unavailable["detail"]
 
 
 def _region_projection_fixture() -> RegionEditorProjection:

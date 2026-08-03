@@ -146,6 +146,7 @@
 | `UI-026` | Product UI | `smoke-validated` | Stage 04 移除三张重复事实卡，Stage 04/06 初始不默认本机；真实浏览器和三浏览器关键链验证两卡先显示、选择后才展开资源，schema 0.3 仍投影完整 8 GPU。 |
 | `UI-027` | Product UI | `implemented` | 仅有归档运行的项目不再因残留配置重现为草稿；逐步骤 Stage 02 移除批准人、重复证据勾选和后续运行方式，固定为单次交互式人工提交并在本步后暂停。 |
 | `UI-028` | Product UI | `smoke-validated` | Stage 02/03/04/06 continuation 按 run/project/stage 从持久 job 恢复；刷新或重新进入可继续 Suzhou2/本机观察，服务端以原子复查和 `409 stage_locked` 阻止重复入队。 |
+| `UI-029` | Product UI | `smoke-validated` | Stage 01 左栏只保留序列长度；PSE 来源区域在 PyMOL 中只着色 cartoon，不再强制显示 stick，Stage 02 与 Mol* 契约保持不变。 |
 | `VAL-008` | Scientific Validation | `smoke-validated` | dev35 已完成 Suzhou2 固定非 APOE 40 条 Stage 04→05 与 APOE 精确 8 条、1 GPU、单 shard Stage 06→07；两次均保持科学停止与历史 50k 不变。 |
 | `UX-006` | CLI & Developer Experience | `implemented` | 根 `./easydesign` 提供 setup/doctor/ui/env/assets/workspace 命令；dev23 增加独立组件安装、显式可信 HTTPS pip 源与 SSH 断开后仍可恢复状态的 `setup --detach/--status`。完整后端矩阵仍待许可资产验收。 |
 | `DATA-005` | Data & Assets | `implemented` | 七个环境已提交解析后的 linux-64 Conda/pip package set、安装后 inventory 与十五项资产 catalog；BoltzGen cuequivariance family 已统一为 0.10.0，五个 checkpoint 独立登记并强制离线显式注入。新 Proteindigger 环境受磁盘安全余量门阻止，许可资产仍待逐项确认。 |

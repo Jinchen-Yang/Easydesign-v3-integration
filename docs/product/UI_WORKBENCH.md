@@ -769,3 +769,16 @@ run/project/stage 恢复已有非终态 job；Suzhou2 任务同时恢复 managed
 对重复或并发请求返回结构化 `409 stage_locked`，因此刷新、后退、多页签或
 重试都不会创建第二个远程任务。旧版受理记录会在同项目/同阶段的活跃
 匹配上追加 run binding，不改写历史 revision。
+
+## UI-029：Stage 01 结构摘要与只读区域显示
+
+版本：`0.1.0.dev45`。
+
+Stage 01 的左侧只读摘要只保留序列长度，不再重复显示 target ID、来源、结构模型数和
+缺失 CA 数；结果文件仍在独立证据区完整提供。序列长度使用单行对齐的轻量摘要，继续
+保留进入 Stage 02 的动作或冻结原因。
+
+PSE 来源 A/B/C 在 Stage 01 只通过 cartoon 颜色显示，不再强制追加 stick。后端为新建
+Stage 01 场景生成无区域 stick 的 PML，前端对旧 SceneVersion 只移除 EasyDesign 管理的
+`show sticks, ed_region_A/B/C` 显示命令；用户显式创建的其他 stick、完整 PML 历史、
+Stage 02 可编辑区域 stick 和 Mol* 兼容投影都保持不变。

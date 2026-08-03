@@ -1206,14 +1206,12 @@ function StageOne({
   return (
     <div className="structure-workspace">
       <aside className="structure-sidebar">
-        <section className="panel">
-          <p className="section-label">目标结构</p>
-          <h3>{String(h.target_id || "未命名目标")}</h3>
-          <div className="compact-metrics">
-            <Metric label="序列长度" value={`${formatNumber(h.sequence_length, 0)} aa`} />
-            <Metric label="来源" value={String(h.origin || "—")} />
-            <Metric label="结构模型数" value={formatNumber(h.model_count, 0)} />
-            <Metric label="缺失的 CA 原子" value={formatNumber(h.missing_ca_count, 0)} />
+        <section className="panel stage-one-summary-card">
+          <div className="stage-one-sequence-summary">
+            <span>序列长度</span>
+            <strong>
+              {formatNumber(h.sequence_length, 0)} <small>aa</small>
+            </strong>
           </div>
           {canConfigureNext && (
             <button type="button" className="primary-button region-reselect-button" onClick={onConfigureNext}>

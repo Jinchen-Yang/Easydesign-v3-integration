@@ -987,13 +987,15 @@ def _target_reference(region_projection: Any) -> ReferenceStructure:
     )
 
 
-def _initial_stage2_pml(
+def _initial_structure_pml(
     region_projection: Any,
     current_regions: dict[str, tuple[int, ...]],
+    *,
+    stage_number: int,
 ) -> str:
     colors = {"A": "red", "B": "blue", "C": "yellow"}
     lines = [
-        "# EasyDesign Stage 2 scene",
+        f"# EasyDesign Stage {stage_number} scene",
         f"# @easydesign target object=target sha256={region_projection.target_structure_sha256}",
         "hide everything, all",
         "show cartoon, target",
@@ -1011,9 +1013,10 @@ def _initial_stage2_pml(
                     f"{_author_selector_from_labels(region_projection.residues, labels)}"
                 ),
                 f"color {colors[region_id]}, {selection}",
-                f"show sticks, {selection}",
             ]
         )
+        if stage_number == 2:
+            lines.append(f"show sticks, {selection}")
     lines.extend(["orient target", "deselect"])
     return "\n".join(lines) + "\n"
 
@@ -1344,7 +1347,11 @@ def _add_reference_to_scene(
     )
     session = service.structure_sessions.ensure_scene(
         session.session_id,
-        pml=_initial_stage2_pml(region_projection, session.current_regions),
+        pml=_initial_structure_pml(
+            region_projection,
+            session.current_regions,
+            stage_number=session.stage_number,
+        ),
         target_object=_target_reference(region_projection),
     )
     active = service.structure_sessions.active_scene_version(session.session_id)
@@ -3072,7 +3079,11 @@ def create_ui_app(
             )
             return service.structure_sessions.ensure_scene(
                 session.session_id,
-                pml=_initial_stage2_pml(region_projection, current_regions),
+                pml=_initial_structure_pml(
+                    region_projection,
+                    current_regions,
+                    stage_number=payload.stage_number,
+                ),
                 target_object=_target_reference(region_projection),
             )
         except Exception as error:
@@ -3163,7 +3174,11 @@ def create_ui_app(
                 )
             session = service.structure_sessions.ensure_scene(
                 session.session_id,
-                pml=_initial_stage2_pml(region_projection, session.current_regions),
+                pml=_initial_structure_pml(
+                    region_projection,
+                    session.current_regions,
+                    stage_number=session.stage_number,
+                ),
                 target_object=_target_reference(region_projection),
             )
             active_version = service.structure_sessions.active_scene_version(session_id)

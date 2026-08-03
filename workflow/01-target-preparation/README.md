@@ -438,6 +438,10 @@ Stage 01 中所有 PyMOL 操作都属于显示状态：
 - 禁止改变原子、残基、对象或坐标，禁止覆盖 `target.cif`；
 - 任意交互前后 Target Bundle 和结构 SHA-256 必须保持不变。
 
+Stage 01 只读结构摘要只显示规范序列长度；来源、模型数、缺失 CA 和 target ID 仍保留在
+正式 artifact 与证据中，不在左栏重复展示。PSE 来源 A/B/C 在 Stage 01 以 cartoon 颜色
+呈现，不强制显示区域 stick；Stage 02 的区域编辑显示契约不受影响。
+
 交互状态写入
 `projects/<project_id>/interactive-sessions/<session_id>/` 的
 `StructureInteractionSession 0.4`。当前完整 PML 是唯一场景事实；每次更新发布新的

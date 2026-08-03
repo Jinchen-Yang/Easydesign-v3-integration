@@ -47,6 +47,7 @@ const REGION_COLORS = {
 const EMPTY_REGIONS: Region[] = [];
 const REGION_OVERLAY_COMMENT = "# EasyDesign live region overlay";
 const LEGACY_REGION_OVERLAY_COMMENT = "# @easydesign live region overlay";
+const MANAGED_REGION_STICK_COMMAND = /^\s*show\s+sticks?\s*,\s*ed_region_[ABC]\s*$/i;
 
 function regionArrayKey(regions?: Region[]): string {
   return (["A", "B", "C"] as const).map((regionId) => {
@@ -254,6 +255,14 @@ function pmlToMolstarProjection(pml: string): {
   };
 }
 
+function pymolDisplayPml(pml: string, stageNumber: 1 | 2): string {
+  if (stageNumber !== 1) return pml;
+  return pml
+    .split(/\r?\n/)
+    .filter((line) => !MANAGED_REGION_STICK_COMMAND.test(line))
+    .join("\n");
+}
+
 function downloadText(value: string, filename: string) {
   const href = URL.createObjectURL(
     new Blob([value], { type: "text/plain;charset=utf-8" }),
@@ -387,6 +396,10 @@ export function StructureWorkbench({
         : scenePml
     ),
     [awaitingInitialRegionHydration, projection, regions, scenePml, stageNumber],
+  );
+  const nativeViewerPml = useMemo(
+    () => pymolDisplayPml(viewerPml, stageNumber),
+    [stageNumber, viewerPml],
   );
   const sceneRegions = regions;
   const sceneVersions = session?.scene_versions || [];
@@ -847,7 +860,7 @@ export function StructureWorkbench({
                   api={nativeApi}
                   projectId={projection.target_id}
                   active={viewer === "pymol"}
-                  pml={viewerPml}
+                  pml={nativeViewerPml}
                   structures={nativeStructures}
                   versionId={activeVersion?.version_id || "current"}
                   revision={activeVersion?.revision || (

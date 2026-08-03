@@ -18,6 +18,10 @@
 
 ## Now
 
+- `[UI-029]` 收紧 Stage 01 只读结构工作区：左栏只保留序列长度，移除重复目标、来源、
+  模型数和缺失 CA 指标；PyMOL 不再把来源 A/B/C 区域强制显示为 stick，同时保持
+  Stage 02 可编辑区域和 Mol* 投影不变。完成门槛是 React/Python 回归、真实页面双查看器
+  复验、dev45 wheel 构建及同 SHA Manager 激活。
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
   最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*

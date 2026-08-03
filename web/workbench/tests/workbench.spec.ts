@@ -1367,8 +1367,13 @@ test("stepwise PSE upload runs stage one and opens structure review directly", a
   });
 
   await expect(page.getByRole("heading", { name: "第1步：准备目标结构" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "new-design" })).toBeVisible();
-  await expect(page.getByText("138 aa")).toBeVisible();
+  const stageOneSidebar = page.locator(".structure-sidebar");
+  await expect(stageOneSidebar.getByText("序列长度", { exact: true })).toBeVisible();
+  await expect(stageOneSidebar.getByText("138 aa", { exact: true })).toBeVisible();
+  await expect(stageOneSidebar.getByText("目标结构", { exact: true })).toHaveCount(0);
+  await expect(stageOneSidebar.getByText("来源", { exact: true })).toHaveCount(0);
+  await expect(stageOneSidebar.getByText("结构模型数", { exact: true })).toHaveCount(0);
+  await expect(stageOneSidebar.getByText("缺失的 CA 原子", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "配置下一步：选择结合区域" })).toBeVisible();
   await page.getByRole("button", { name: "配置下一步：选择结合区域" }).click();
   await expect(page.getByRole("heading", { name: "第2步：选择结合区域" })).toBeVisible();

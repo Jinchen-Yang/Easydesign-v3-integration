@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev43 统一双查看器/编辑层恢复并修复 PyMOL 相机回弹。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev45 精简只读摘要并移除 Stage 01 PyMOL 强制区域 stick。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -48,6 +48,9 @@
   PML。鼠标旋转、平移和缩放不再创建 SceneVersion，完整重放会恢复当前相机。
 - dev43 在重新打开 Stage 02 时先恢复已有结构会话的区域草稿，禁止上游初始化副本反向
   覆盖已有 `current_regions`；PyMOL/Mol* 因而在刷新后仍与左侧 A/B/C 一致。
+- dev45 将 Stage 01 左侧结构摘要收敛为单行序列长度，删除重复的目标名、来源、模型数和
+  缺失 CA 指标；Stage 01 默认 PML 及旧会话兼容投影不再强制显示 A/B/C stick，只保留
+  cartoon 着色。Stage 02 编辑态 stick 与 Mol* 投影均保持原契约。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -355,6 +358,19 @@
 - 结论：旧 MSA 复用路径仍为**未通过**，目前不能执行用户提出的预计算 MSA 测试。
 
 ## 工作日志
+
+### 2026-08-03
+
+- UI-029 将 Stage 01 只读结构摘要精简为单行序列长度，并同时覆盖新建与旧会话的
+  PyMOL 投影：来源 A/B/C 只为 cartoon 着色，不再出现强制 stick；Stage 02 与 Mol*
+  保持不变。真实 `apoe-s02-006-pse` 已在现有浏览器逐页复验 138 aa、Stage 01
+  cartoon-only、Mol* 正常以及 Stage 02 stick 保留。
+- dev45 门禁：`make check`、Python `436 passed / 8 skipped`、Workbench Chromium
+  1440/1920 与 Firefox `83 passed / 1 skipped`、`make build` 全部通过。wheel
+  SHA-256 为 `35c3cddadf24ed15251da3679804cde64d542eb12355b9f0f65d8f561e519e75`。
+- Suzhou2 在 Manager queue/running 均为 0 时追加 dev45 immutable release 和 activation
+  revision 15；Manager 保持 dev2，三后端与 `[(4,5),(6,7)]` probe 均 ready。8 张 GPU
+  的外部计算进程完整保留，未重装环境、复制模型或终止任务。
 
 ### 2026-08-02
 

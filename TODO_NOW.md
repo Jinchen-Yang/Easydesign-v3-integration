@@ -7,7 +7,7 @@
 <!-- BEGIN AUTO-GENERATED STAGE ROLLUP -->
 | Stage | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新 | 详情 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev43 统一双查看器/编辑层恢复并修复 PyMOL 相机回弹。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 | [STATUS](workflow/01-target-preparation/STATUS.md) |
+| Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev45 精简只读摘要并移除 Stage 01 PyMOL 强制区域 stick。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | dev43 统一 PyMOL/Mol*、编辑层和会话恢复，并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
 | Stage 04 | `smoke-validated` | dev44 已在真实 `lyjsmoke1` 上验证刷新恢复、同 job 去重、280/280 终态同步和 Stage 05 科学停止；Suzhou2 已激活同 SHA wheel。 | 寻找能合法产生 Tier A 的第二真实 fixture，并保持控制端/Manager wheel 同步。 | 1UBQ 和本次 APOE 局部区域均科学停止于 Stage 05；尚缺合法产生 Tier A 的第二真实输入。 | 2026-08-03 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
@@ -18,10 +18,6 @@
 
 ## Now
 
-- `[UI-029]` 收紧 Stage 01 只读结构工作区：左栏只保留序列长度，移除重复目标、来源、
-  模型数和缺失 CA 指标；PyMOL 不再把来源 A/B/C 区域强制显示为 stick，同时保持
-  Stage 02 可编辑区域和 Mol* 投影不变。完成门槛是 React/Python 回归、真实页面双查看器
-  复验、dev45 wheel 构建及同 SHA Manager 激活。
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
   最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*
@@ -126,7 +122,7 @@
 
 ## Blocked
 
-- `[ENG-032/REL-002]` Suzhou2 Manager activation revision 12 已精确同步 dev44 wheel；
+- `[ENG-032/REL-002]` Suzhou2 Manager activation revision 15 已精确同步 dev45 wheel；
   锁定环境、模型、三后端 probe、4→5 和 6→7 小链均有真实证据，当前运行路径无阻塞。
   Manager 私有 GitHub remote 仍缺可用 deploy key/host 权限；同步规则文档提交
   `880b52d…158e` 暂只在 Suzhou2 干净 `main`，但不影响已激活 release 的受管任务。

@@ -176,3 +176,29 @@
 - 安全边界：未重装 BoltzGen/Protenix/TNP 环境，未复制模型，未覆盖旧 release/revision，
   未修改历史 run、队列或外部 GPU 进程。
 - 实现提交：以本记录所在 `main` 提交为准。
+
+## 2026-08-03 — UI-029：Stage 01 紧凑摘要与 PyMOL cartoon-only
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-03T23:33:19+08:00
+- 问题：Stage 01 左栏重复展示目标名、来源、结构模型数和缺失 CA，单个序列事实被拆成
+  四张未对齐卡片；默认 PyMOL PML 又把来源 A/B/C 区域强制显示为 stick，形成 Mol*
+  没有的突出侧链，容易被误解为结构异常。
+- 方案：只读 Stage 01 左栏改为单行“序列长度”，保留结果文件和后续配置动作；新建
+  Stage 01 PML 不再生成区域 stick，前端对旧 Stage 01 会话也只过滤三条受管
+  `show sticks, ed_region_A/B/C`，不修改 canonical PML。Stage 02 编辑态 stick、助手
+  SceneVersion 和 Mol* 投影保持不变。
+- 验证：`make check`、Python `436 passed / 8 skipped`、Workbench Chromium
+  1440/1920 与 Firefox `83 passed / 1 skipped`、`make build` 全部通过。真实
+  `apoe-s02-006-pse` 页面确认 Stage 01 只显示 `138 aa`、PyMOL 无突出 stick、Mol*
+  正常，切换 Stage 02 后 stick 仍存在。dev45 wheel SHA-256 为
+  `35c3cddadf24ed15251da3679804cde64d542eb12355b9f0f65d8f561e519e75`。
+- Manager 同步：Suzhou2 Manager 保持 `0.1.0.dev2`。初次 activation revision 13
+  暴露 release-local `worker.yaml` 仍声明 dev44，服务按精确版本门拒绝启动；随即追加
+  revision 14 回退旧 release，再以修正后的全新 immutable release 追加 revision 15。
+  最终 systemd `active/running`、`NRestarts=0`，固定入口和 ProteinDigger 控制端均探测
+  dev45、三后端 ready、`[(4,5),(6,7)]`、queue/running 0。失败 release 与回退记录均
+  保留为不可变证据，没有覆盖历史。
+- 安全边界：没有重装 BoltzGen/Protenix/TNP 环境、复制模型、修改科学结果或终止外部
+  GPU 进程；8 张 GPU 当时均有外部任务，因此控制端如实显示 `waiting-resource`。
+- 实现提交：以本记录所在 `main` 提交为准。

@@ -228,6 +228,12 @@ export const api = {
         }),
       },
     ),
+  continuationJob: (key: string, stage: number) =>
+    request<{
+      job: UiJobRecord | null;
+      execution_target?: "local-current-host" | "managed-ssh";
+      remote_job?: { executor_id: string; job_id: string } | null;
+    }>(`/api/v1/runs/${key}/continuation-job/${stage}`),
   resume: (key: string) =>
     request<Record<string, unknown>>(`/api/v1/runs/${key}/resume`, {
       method: "POST",

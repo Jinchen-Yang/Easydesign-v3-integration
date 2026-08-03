@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | Proteindigger BoltzGen lock 已统一 cuequivariance 0.10.0；setup 按部署者要求固定保留 10 GiB，当前磁盘已满足新环境发布门。 | 使用 append-only setup 发布并探测 `boltzgen-b9a8a41b3512`；同时寻找能合法产生 Tier A 的第二真实 fixture。 | 环境安装与 probe 尚待完成；1UBQ 仍科学停止于 Stage 05。 | 2026-08-02 |
+| `smoke-validated` | dev44 已在真实 `lyjsmoke1` 上验证刷新恢复、同 job 去重、280/280 终态同步和 Stage 05 科学停止。 | 寻找能合法产生 Tier A 的第二真实 fixture；空闲窗口再追加 Manager dev44 activation。 | 1UBQ 和本次 APOE 局部区域均科学停止于 Stage 05；Manager 尚未激活 dev44 wheel。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -22,6 +22,9 @@
 - 新任务的 Stage 04 配置页不再显示三张重复事实卡，也不预选当前机器；执行位置卡与
   远端资源请求解耦，用户选择后才出现逐卡状态、最大卡数和确认门。探针失败不暴露
   SSH 命令或工作区路径。
+- Stage 04 受理记录持久绑定 run/project/stage；刷新或重新进入时优先
+  恢复 Suzhou2 managed observer 和 4→5 进度。恢复不确定时启动门 fail closed，
+  服务端同时拒绝重复提交。
 
 ## 功能矩阵
 
@@ -127,6 +130,8 @@
 - 2026-08-02：按部署者明确要求将 setup 安装后可用空间保留策略从数据盘容量的 10%
   改为固定 10 GiB；BoltzGen 新锁环境的 24 GiB 增量峰值在当前磁盘上通过计划门。旧环境、
   模型、缓存、项目和运行均保持不动，新环境继续走 append-only 发布。
+- 2026-08-03：dev44 将 continuation job 恢复下沉到服务端；真实 `lyjsmoke1`
+  运行在不停止 Suzhou2 worker 的情况下恢复绑定，React 刷新不再重新开放提交。
 
 ## 历史索引
 

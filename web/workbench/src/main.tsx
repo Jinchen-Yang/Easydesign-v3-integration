@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
@@ -473,10 +473,12 @@ function StageContinuationSetup({
   stage,
   run,
   onCompleted,
+  onActive,
 }: {
   stage: Stage;
   run: Run;
   onCompleted: (runKey: string, destinationStage: number) => Promise<void>;
+  onActive: (stageNumber: number) => void;
 }) {
   const [definition, setDefinition] = useState<StageFormDefinition>();
   const [loadError, setLoadError] = useState("");
@@ -498,7 +500,40 @@ function StageContinuationSetup({
   const [resourceDialogOpen, setResourceDialogOpen] = useState(false);
   const [liveProgress, setLiveProgress] = useState<LivePipelineProgress>();
   const [liveQueueStatus, setLiveQueueStatus] = useState<string>();
+  const [recoveryLoading, setRecoveryLoading] = useState(true);
+  const [recoveryError, setRecoveryError] = useState("");
   const expensive = stage.stage_number === 4 || stage.stage_number === 6;
+
+  useEffect(() => {
+    let disposed = false;
+    setRecoveryLoading(true);
+    setRecoveryError("");
+    api.continuationJob(run.run_key, stage.stage_number)
+      .then((value) => {
+        if (disposed || !value.job) return;
+        onActive(stage.stage_number);
+        if (value.execution_target === "managed-ssh" && value.remote_job) {
+          setExecutionTarget("managed-ssh");
+          setRemoteJob(value.remote_job);
+          setStatus(`已恢复第${stage.stage_number}步的 Suzhou2 任务，正在读取实时状态…`);
+          return;
+        }
+        setExecutionTarget("local-current-host");
+        setJobId(value.job.job_id);
+        setStatus(`已恢复第${stage.stage_number}步的当前机器任务，正在读取实时状态…`);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setRecoveryError(
+            error instanceof Error ? error.message : "无法确认本步骤是否已有任务",
+          );
+        }
+      })
+      .finally(() => {
+        if (!disposed) setRecoveryLoading(false);
+      });
+    return () => { disposed = true; };
+  }, [onActive, run.run_key, stage.stage_number]);
 
   useEffect(() => {
     const requestedStage = stage.stage_number;
@@ -775,12 +810,14 @@ function StageContinuationSetup({
         sync_mode: "review",
       });
       if (response.execution_target === "managed-ssh" && response.remote_job) {
+        onActive(stage.stage_number);
         setRemoteJob({
           executor_id: String(response.remote_job.executor_id),
           job_id: String(response.remote_job.job_id),
         });
         setStatus(`第${stage.stage_number}步已提交到 Suzhou2 统一队列，正在读取队列状态…`);
       } else {
+        onActive(stage.stage_number);
         setJobId(response.job.job_id);
         setStatus(`第${stage.stage_number}步任务已创建，正在读取真实运行状态…`);
       }
@@ -886,7 +923,7 @@ function StageContinuationSetup({
           <small>推荐 50,000 条；可以输入更小数量做连通验证，最终计划、分片和远程预算都严格采用这里的整数。</small>
         </label>
       )}
-      {expensive && (
+      {expensive && !jobId && !remoteJob && (
         <div className="execution-target-section">
           <div className="execution-target-heading">
             <div>
@@ -1000,7 +1037,7 @@ function StageContinuationSetup({
           {resourceLoadError && <div className="inline-notice execution-warning"><span>{resourceLoadError}</span></div>}
         </div>
       )}
-      {expensive && (
+      {expensive && !jobId && !remoteJob && (
         <label className="stage-resource-confirmation">
           <input
             type="checkbox"
@@ -1015,13 +1052,17 @@ function StageContinuationSetup({
         <button
           type="button"
           className="primary-button"
-          disabled={Boolean(jobId || remoteJob)
+          disabled={recoveryLoading
+            || Boolean(recoveryError)
+            || Boolean(jobId || remoteJob)
             || (expensive && (!executionTarget || !resourceConfirmed))
             || (executionTarget === "managed-ssh" && !managedPaired)
             || (stage.stage_number === 6 && !stage06CandidateCountValid)}
           onClick={() => void start()}
         >
-          {jobId || remoteJob
+          {recoveryLoading
+            ? "正在恢复任务状态…"
+            : jobId || remoteJob
             ? `第${stage.stage_number}步正在运行…`
             : definition.presentation.action_label}
         </button>
@@ -1036,6 +1077,11 @@ function StageContinuationSetup({
         />
       )}
       {status && <div className="form-status">{status}</div>}
+      {recoveryError && (
+        <div className="form-status">
+          无法确认是否已有任务，已禁止重复提交：{recoveryError}
+        </div>
+      )}
       {resourceDialogOpen && (
         <GpuResourceDialog
           label={selectedResourceLabel}
@@ -1622,6 +1668,7 @@ function StageContent({
   onCancelRegionEditing,
   onRegionSubmitted,
   onContinuationCompleted,
+  onContinuationActive,
 }: {
   stage: Stage;
   run: Run;
@@ -1637,6 +1684,7 @@ function StageContent({
     runKey: string,
     destinationStage: number,
   ) => Promise<void>;
+  onContinuationActive: (stageNumber: number) => void;
 }) {
   if (stage.stage_number === 1) {
     return <StageOne stage={stage} run={run} onConfigureNext={onReselectRegions} />;
@@ -1657,16 +1705,24 @@ function StageContent({
     }
     return <StageTwo stage={stage} run={run} />;
   }
+  const acceptedContinuation = (
+    (stage.state === "queued" || stage.state === "running")
+    && stage.summary === "执行已受理，配置已经冻结"
+  );
   if (
-    stage.state === "not-reached"
-    && completedPrefix(run, stage.stage_number)
-    && stageAccess(stage, run).access === "configure"
+    (
+      stage.state === "not-reached"
+      && completedPrefix(run, stage.stage_number)
+      && stageAccess(stage, run).access === "configure"
+    )
+    || acceptedContinuation
   ) {
     return (
       <StageContinuationSetup
         stage={stage}
         run={run}
         onCompleted={onContinuationCompleted}
+        onActive={onContinuationActive}
       />
     );
   }
@@ -1718,12 +1774,27 @@ function RunWorkspace({
   const [cloneStatus, setCloneStatus] = useState("");
   const [showTechnical, setShowTechnical] = useState(false);
   const [editingRegions, setEditingRegions] = useState(false);
+  const [activeContinuationStage, setActiveContinuationStage] = useState<number>();
+  const presentedStages = useMemo(() => run.stages.map((item) => (
+    item.stage_number === activeContinuationStage && item.state === "not-reached"
+      ? {
+        ...item,
+        state: "running" as const,
+        summary: "执行已受理，配置已经冻结",
+      }
+      : item
+  )), [activeContinuationStage, run.stages]);
   const stage = run.stages[selected - 1];
+  const presentedStage = presentedStages[selected - 1];
   const access = stageAccess(stage, run);
+  const markContinuationActive = useCallback((stageNumber: number) => {
+    setActiveContinuationStage(stageNumber);
+  }, []);
 
   useEffect(() => {
     setSelected(initialStage || latestReachedStage);
     setEditingRegions(false);
+    setActiveContinuationStage(undefined);
   }, [initialStage, latestReachedStage, run.run_key]);
 
   function selectStage(next: number) {
@@ -1768,10 +1839,10 @@ function RunWorkspace({
           </div>
         </section>
       )}
-      <StageRail stages={run.stages} selected={selected} onSelect={selectStage} />
+      <StageRail stages={presentedStages} selected={selected} onSelect={selectStage} />
       <div className="stage-title-row">
-        <div><p className="section-label">设计流程</p><h2>{stageNames[stage.stage_number - 1]}</h2><p>{stateCopy[stage.state].description}</p></div>
-        <div className="stage-state-block"><Status state={stage.state} /><span>{capabilityLabel(stage.capability.status)}</span></div>
+        <div><p className="section-label">设计流程</p><h2>{stageNames[stage.stage_number - 1]}</h2><p>{stateCopy[presentedStage.state].description}</p></div>
+        <div className="stage-state-block"><Status state={presentedStage.state} /><span>{capabilityLabel(stage.capability.status)}</span></div>
       </div>
       {access.access === "view-only" && (
         <div className="stage-access-banner">
@@ -1806,6 +1877,7 @@ function RunWorkspace({
             }
           }}
           onContinuationCompleted={onOpenRun}
+          onContinuationActive={markContinuationActive}
         />
       </div>
     </div>

@@ -5,8 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from easydesign.core import (
     ArtifactRef,
+    ConfigurationError,
     EvidenceStatus,
     ExecutionStatus,
     RunManifest,
@@ -203,6 +206,78 @@ def test_external_submission_persists_stage_acceptance(tmp_path: Path) -> None:
     assert restored.stage_number == 4
     assert restored.external_job_id == "remote-job-0001"
     assert restored.status == "submitted"
+
+
+def test_legacy_external_continuation_is_rebound_to_source_run(tmp_path: Path) -> None:
+    controller = UiJobController(tmp_path / "jobs")
+    record = controller.accept_external(
+        operation="managed-remote-run",
+        project_id="sample-project",
+        stage_number=4,
+        external_job_id="managed-job-legacy",
+        run_id="managed-run-legacy",
+        status="running",
+    )
+
+    recovered = controller.latest_continuation(
+        run_key="source-run-key",
+        project_id="sample-project",
+        stage_number=4,
+    )
+    assert recovered is not None
+    assert recovered.job_id == record.job_id
+
+    rebound = controller.bind_continuation(
+        recovered.job_id,
+        accepted_run_key="source-run-key",
+        status="running",
+        execution_target="managed-ssh",
+    )
+    assert rebound.accepted_run_key == "source-run-key"
+    assert rebound.execution_target == "managed-ssh"
+    assert controller.latest_continuation(
+        run_key="source-run-key",
+        project_id="sample-project",
+        stage_number=4,
+    ).job_id == record.job_id
+
+
+def test_terminal_legacy_job_is_not_attached_to_new_run(tmp_path: Path) -> None:
+    controller = UiJobController(tmp_path / "jobs")
+    controller.accept_external(
+        operation="managed-remote-run",
+        project_id="sample-project",
+        stage_number=4,
+        external_job_id="managed-job-old",
+        run_id="managed-run-old",
+        status="succeeded",
+    )
+
+    assert controller.latest_continuation(
+        run_key="new-source-run",
+        project_id="sample-project",
+        stage_number=4,
+    ) is None
+
+
+def test_ambiguous_active_legacy_jobs_fail_closed(tmp_path: Path) -> None:
+    controller = UiJobController(tmp_path / "jobs")
+    for suffix in ("first", "second"):
+        controller.accept_external(
+            operation="managed-remote-run",
+            project_id="sample-project",
+            stage_number=4,
+            external_job_id=f"managed-job-{suffix}",
+            run_id=f"managed-run-{suffix}",
+            status="running",
+        )
+
+    with pytest.raises(ConfigurationError, match="多个未绑定的活动任务"):
+        controller.latest_continuation(
+            run_key="source-run-key",
+            project_id="sample-project",
+            stage_number=4,
+        )
 
 
 def test_local_job_reconciliation_marks_missing_pid_operational_failed(

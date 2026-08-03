@@ -138,3 +138,23 @@
 - 安全边界：没有移动、删除或修改真实项目、归档、运行、环境、模型或 Suzhou2 Manager；
   初始 YAML/CLI 和非交互 unattended 的完整人工批准契约保持不变。
 - 实现提交：以本记录所在 `main` 提交为准。
+
+## 2026-08-03 — UI-028：刷新后恢复 continuation 并防止重复入队
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-03T14:39:50+08:00
+- 问题：Stage 04 远程任务已在 Suzhou2 运行，但接受记录缺少
+  `accepted_run_key`，前端又只在 React 内存保存 managed job 指针；刷新后页面
+  误显示“尚未开始”并重新开放提交。
+- 方案：新增按 run/project/stage 的持久 continuation 查询，恢复本机 job ID 或
+  Suzhou2 managed pointer 后继续轮询。旧活跃记录以 append-only revision 补写
+  binding；终态旧记录不会误绑新 run。continuation POST 在服务端锁内二次
+  查重，重复请求返回 `409 stage_locked`。
+- 验证：`make check`、435 passed/8 skipped 的 Python 全量回归、Workbench
+  83 passed/1 skipped、Target Viewer 3 passed/2 skipped 和 dev44 wheel/package-data 检查
+  全部通过。wheel SHA-256 为 `41e55267cc5522de86c56a7e5f2d8c6d157600aaa32065dbd6ce20667817954d`。
+  真实 18769 刷新后先恢复同一 `ui-5360583208ee4bdf`，页面无新启动按钮；
+  随后同步 280/280 终态并进入 Stage 05 `scientific-stop`，控制台 0 error。
+- 安全边界：未停止或重启 Suzhou2 Manager；`lyjsmoke1` 4→5 job 是在
+  验收期间自然完成的。未移动、删除或覆盖 run、环境、模型和队列证据。
+- 实现提交：以本记录所在 `main` 提交为准。

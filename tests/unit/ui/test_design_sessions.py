@@ -354,6 +354,8 @@ def test_managed_stage04_continuation_keeps_stage05_on_remote_host(
     assert response.status_code == 200
     assert observed["materialize"]["linked_stage_number"] == 5
     assert observed["submit"]["maximum_gpus"] == 8
+    assert observed["accept"]["accepted_run_key"] == "source-run"
+    assert observed["accept"]["execution_target"] == "managed-ssh"
     assert response.json()["remote_job"]["stage_range"] == [4, 5]
 
 
@@ -713,6 +715,9 @@ def test_persisted_execution_job_freezes_stage_before_result_manifest_exists(
 
     with TestClient(app) as client:
         response = client.get(f"/api/v1/runs/{run_key}")
+        recovered = client.get(
+            f"/api/v1/runs/{run_key}/continuation-job/2"
+        )
         locked = client.post(
             f"/api/v1/runs/{run_key}/continue/2",
             json={
@@ -731,6 +736,9 @@ def test_persisted_execution_job_freezes_stage_before_result_manifest_exists(
     assert stages[1]["access"]["access"] == "running"
     assert stages[1]["access"]["locked_by_stage"] == 2
     assert stages[2]["access"]["access"] == "not-reached"
+    assert recovered.status_code == 200
+    assert recovered.json()["job"]["job_id"] == "job-accepted-stage02"
+    assert recovered.json()["execution_target"] == "local-current-host"
     assert locked.status_code == 409
     assert locked.json()["detail"]["code"] == "stage_locked"
     with pytest.raises(StageLockedError):

@@ -1056,6 +1056,15 @@ not-reached + 连续成功上游
 → 完成后定位下一 Stage
 ```
 
+`UiJobRecord` 是 continuation 受理与执行位置的持久事实，不得只存在
+React 状态。工作区打开、刷新或重新进入 Stage 02/03/04/06 时，必须先调用
+`GET /runs/{run}/continuation-job/{stage}` 按 run/project/stage 恢复最新非终态
+job，再恢复本机 job 或 Suzhou2 managed observer 轮询。旧记录缺少
+`accepted_run_key` 时只能在同项目、同阶段且非终态的匹配上追加 binding
+revision；终态旧记录不得绑到新 run。恢复尚未完成或失败时启动门
+fail closed；POST 端在同一原子锁内复查已有 job，并以
+`409 stage_locked` 阻止重复入队。
+
 Stage 02 的结构选区编辑器作为工作区内嵌内容存在，不再拥有独立的全屏导航语义。
 Stage 03–07 的表单默认值由 orchestration 类型生成；React 不复制 profile、预算、
 scaffold registry 或筛选参数。配置 revision、run lineage、StageManifest 和

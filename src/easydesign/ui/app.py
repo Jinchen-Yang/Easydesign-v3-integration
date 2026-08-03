@@ -437,6 +437,7 @@ class UiServiceState:
         self.jobs = UiJobController(
             self.workspace.require_write_path(selected_jobs, purpose="UI job root")
         )
+        self.continuation_lock = threading.Lock()
         self.sessions = DesignSessionStore(self.ui_state_root / "design-sessions")
         self.structure_sessions = StructureInteractionStore(self.projects_root)
         self.assistant_providers = AssistantProviderStore(
@@ -595,6 +596,101 @@ class UiServiceState:
             key=lambda item: (int(item.stage_number or 0), item.created_at),
         )
         return selected.stage_number, selected.created_at, selected.status
+
+    def continuation_job(
+        self,
+        run_key: str,
+        stage_number: int,
+        *,
+        project_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Recover the durable local/managed job for a run continuation."""
+
+        if project_id is None:
+            source_projection = get_run_projection(
+                self.registry.resolve(run_key),
+                registry=self.registry,
+                signer=self.signer,
+                projects_root=self.projects_root,
+            )
+            project_id = source_projection.project_id
+        record = self.jobs.latest_continuation(
+            run_key=run_key,
+            project_id=project_id,
+            stage_number=stage_number,
+        )
+        if record is None:
+            return None
+        remote_job: dict[str, str] | None = None
+        execution_target = record.execution_target
+        if record.external_job_id is not None:
+            managed_submission = next(
+                (
+                    item
+                    for item in list_managed_remote_submissions()
+                    if item.job_id == record.external_job_id
+                ),
+                None,
+            )
+            if managed_submission is not None:
+                execution_target = "managed-ssh"
+                remote_job = {
+                    "executor_id": managed_submission.executor_id,
+                    "job_id": managed_submission.job_id,
+                }
+                observed_status: str | None = None
+                try:
+                    observation = observe_managed_pipeline(
+                        executor_id=managed_submission.executor_id,
+                        job_id=managed_submission.job_id,
+                        profile_path=self.profile_path,
+                    )
+                    if observation.queue is not None:
+                        observed_status = str(observation.queue.status)
+                except Exception:
+                    # Discovery is fail-closed: a temporary SSH failure must not
+                    # make an already accepted remote job submit-able again.
+                    observed_status = None
+                record = self.jobs.bind_continuation(
+                    record.job_id,
+                    accepted_run_key=run_key,
+                    status=observed_status,
+                    execution_target="managed-ssh",
+                )
+            else:
+                legacy_submission = next(
+                    (
+                        item
+                        for item in list_remote_job_records()
+                        if item.submission.job_id == record.external_job_id
+                    ),
+                    None,
+                )
+                if legacy_submission is not None:
+                    remote_job = {
+                        "executor_id": legacy_submission.submission.executor_id,
+                        "job_id": legacy_submission.submission.job_id,
+                    }
+                else:
+                    raise ConfigurationError(
+                        "已受理的外部任务缺少可验证的远程提交记录，拒绝重新提交"
+                    )
+                record = self.jobs.bind_continuation(
+                    record.job_id,
+                    accepted_run_key=run_key,
+                    execution_target=execution_target,
+                )
+        elif record.accepted_run_key != run_key:
+            record = self.jobs.bind_continuation(
+                record.job_id,
+                accepted_run_key=run_key,
+                execution_target=execution_target,
+            )
+        return {
+            "job": record.model_dump(mode="json"),
+            "execution_target": execution_target or "local-current-host",
+            "remote_job": remote_job,
+        }
 
     def accepted_jobs_by_run(
         self,
@@ -2892,6 +2988,21 @@ def create_ui_app(
             _raise_http(error)
             raise
 
+    @app.get("/api/v1/runs/{run_key}/continuation-job/{stage_number}")
+    def continuation_job(
+        run_key: str,
+        stage_number: int,
+        request: Request,
+    ) -> dict[str, Any]:
+        try:
+            if stage_number not in {2, 3, 4, 6}:
+                raise ConfigurationError("仅可恢复 Stage 02/03/04/06 continuation job")
+            recovered = _state(request).continuation_job(run_key, stage_number)
+            return {"job": None} if recovered is None else recovered
+        except Exception as error:
+            _raise_http(error)
+            raise
+
     @app.post("/api/v1/jobs/{job_id}/drain")
     def drain(job_id: str, request: Request) -> UiJobRecord:
         try:
@@ -3957,6 +4068,7 @@ def create_ui_app(
         request: Request,
     ) -> dict[str, Any]:
         service = _state(request)
+        service.continuation_lock.acquire()
         try:
             if not payload.confirmed:
                 raise ConfigurationError("继续下一阶段必须明确 confirmed=true")
@@ -3964,6 +4076,22 @@ def create_ui_app(
                 raise ConfigurationError("URL stage 与请求 stage_number 不一致")
             session = service.sessions.load(payload.session_id)
             service.assert_session_uses_latest_run(session, run_key)
+            existing = service.continuation_job(
+                run_key,
+                next_stage,
+                project_id=session.project_id,
+            )
+            if existing is not None:
+                existing_job = existing["job"]
+                raise StageLockedError(
+                    stage_number=next_stage,
+                    locked_by_stage=next_stage,
+                    locked_at=datetime.fromisoformat(str(existing_job["created_at"])),
+                    reason=(
+                        f"第{next_stage}步任务已经受理（{existing_job['job_id']}）；"
+                        "页面应恢复现有任务，禁止重复提交。"
+                    ),
+                )
             source = service.registry.resolve(run_key)
             service.assert_stage_configurable(run_key, next_stage)
             project_root = (service.projects_root / session.project_id).resolve()
@@ -4033,6 +4161,8 @@ def create_ui_app(
                         run_id=submission.run_id,
                         session_id=session.session_id,
                         status=submission.queue_status,
+                        accepted_run_key=run_key,
+                        execution_target="managed-ssh",
                     )
                     remote_job = submission.model_dump(mode="json")
                 else:
@@ -4094,6 +4224,8 @@ def create_ui_app(
         except Exception as error:
             _raise_http(error)
             raise
+        finally:
+            service.continuation_lock.release()
 
     @app.post("/api/v1/runs/{run_key}/resume")
     def resume(

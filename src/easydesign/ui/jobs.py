@@ -163,6 +163,85 @@ class UiJobController:
             )
         )
 
+    def latest_continuation(
+        self,
+        *,
+        run_key: str,
+        project_id: str,
+        stage_number: int,
+    ) -> UiJobRecord | None:
+        """Return the durable job that owns a run continuation.
+
+        Records created before the run binding was added did not persist
+        ``accepted_run_key`` for managed submissions.  Those records are only
+        considered while they still carry an active status, and are scoped by
+        the same project and stage so a historical terminal job cannot attach
+        itself to a newer run.
+        """
+
+        records = self.list()
+        exact = [
+            item
+            for item in records
+            if item.accepted_run_key == run_key
+            and item.stage_number == stage_number
+        ]
+        if exact:
+            return max(exact, key=lambda item: item.created_at)
+        active_statuses = {
+            "queued",
+            "waiting-resource",
+            "admitting",
+            "running",
+            "drain-requested",
+            "submitted",
+        }
+        legacy = [
+            item
+            for item in records
+            if item.accepted_run_key is None
+            and item.project_id == project_id
+            and item.stage_number == stage_number
+            and item.status in active_statuses
+        ]
+        if len(legacy) > 1:
+            raise ConfigurationError(
+                "同项目和阶段存在多个未绑定的活动任务，拒绝自动选择"
+            )
+        return legacy[0] if legacy else None
+
+    def bind_continuation(
+        self,
+        job_id: str,
+        *,
+        accepted_run_key: str,
+        status: str | None = None,
+        execution_target: Literal["local-current-host", "managed-ssh"] | None = None,
+    ) -> UiJobRecord:
+        """Append a corrected controller revision for a persisted UI job."""
+
+        current = self.load(job_id)
+        updates: dict[str, object] = {
+            "accepted_run_key": accepted_run_key,
+            "updated_at": datetime.now(tz=UTC),
+        }
+        if status is not None:
+            updates["status"] = status
+        if execution_target is not None:
+            updates["execution_target"] = execution_target
+        if (
+            current.accepted_run_key == accepted_run_key
+            and (status is None or current.status == status)
+            and (
+                execution_target is None
+                or current.execution_target == execution_target
+            )
+        ):
+            return current
+        updated = current.model_copy(update=updates)
+        atomic_dump_runtime_model(updated, self._path(job_id))
+        return updated
+
     def launch(
         self,
         *,
@@ -329,6 +408,7 @@ class UiJobController:
         session_id: str | None = None,
         status: str = "queued",
         accepted_run_key: str | None = None,
+        execution_target: Literal["local-current-host", "managed-ssh"] | None = None,
     ) -> UiJobRecord:
         """Persist a successful remote submission before returning it to the UI.
 
@@ -352,6 +432,7 @@ class UiJobController:
             external_job_id=external_job_id,
             session_id=session_id,
             stage_number=stage_number,
+            execution_target=execution_target,
             created_at=now,
             updated_at=now,
         )

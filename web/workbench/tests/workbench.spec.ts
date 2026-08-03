@@ -591,6 +591,13 @@ async function mockApi(page: Page) {
       });
       return;
     }
+    if (url.pathname.includes("/continuation-job/")) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ job: null }),
+      });
+      return;
+    }
     if (url.pathname === "/api/v1/project-preflight") {
       await route.fulfill({
         contentType: "application/json",
@@ -1651,7 +1658,9 @@ test("stage three continuation runs from Python defaults and advances to stage f
 });
 
 test("managed stage run shows the linked stage rail and real structured progress", async ({ page }) => {
+  let continuationRequests = 0;
   await page.route("**/api/v1/runs/*/continue/4", async (route) => {
+    continuationRequests += 1;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -1660,6 +1669,22 @@ test("managed stage run shows the linked stage rail and real structured progress
         execution_target: "managed-ssh",
         remote_job: { executor_id: "suzhou2", job_id: "job-stage04-managed" },
       }),
+    });
+  });
+  await page.route("**/api/v1/runs/*/continuation-job/4", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(continuationRequests === 0
+        ? { job: null }
+        : {
+          job: {
+            job_id: "job-acceptance-stage04-managed",
+            status: "running",
+            stage_number: 4,
+          },
+          execution_target: "managed-ssh",
+          remote_job: { executor_id: "suzhou2", job_id: "job-stage04-managed" },
+        }),
     });
   });
   await page.route("**/api/v1/remote-jobs/suzhou2/job-stage04-managed", async (route) => {
@@ -1709,4 +1734,14 @@ test("managed stage run shows the linked stage rail and real structured progress
   await expect(page.getByText("正在计算小规模候选结构指标")).toBeVisible();
   await expect(page.getByRole("progressbar", { name: "第5步真实进度" })).toHaveAttribute("aria-valuenow", "50");
   await expect(page.getByText("4 / 8 个候选")).toBeVisible();
+
+  // Leaving and re-entering the stage destroys component memory just like a
+  // refreshed workbench.  The durable continuation endpoint must restore the
+  // existing manager job instead of presenting a second submit action.
+  await page.locator(".stage-node").nth(2).click();
+  await page.locator(".stage-node").nth(3).click();
+  await expect(page.getByRole("heading", { name: "第4步 → 第5步" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "第4步正在运行…" })).toBeDisabled();
+  await expect(page.getByText("Suzhou2 正在运行", { exact: false })).toBeVisible();
+  expect(continuationRequests).toBe(1);
 });

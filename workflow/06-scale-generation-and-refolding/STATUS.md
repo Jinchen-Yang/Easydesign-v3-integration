@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | dev35 已在 Suzhou2 Manager 真实完成 APOE 8-candidate Stage 06→07；计划、分片、coverage 与终态均精确为 8。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；本次 8/8 均未通过 BoltzGen `pass_filters`，未进入 Protenix/TNP。 | 2026-08-02 |
+| `smoke-validated` | dev44 已为 Stage 06 共用持久 continuation 恢复和服务端去重；既有 APOE 8-candidate 6→7 证据不变。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；dev44 wheel activation 尚未执行。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -27,6 +27,8 @@
 - Stage 04/05 候选不计入 scale 数量；Stage 07 才执行 Protenix 深度筛选和 TNP。
 - 软件能力与 APOE 科学结果分别报告；人工授权生成不会修改 Stage 05 科学停止。
 - 远程科学事实仍由远端 run 发布；控制端镜像只是 checksum 验证后的只读副本。
+- Stage 06 与 Stage 04 共用持久 continuation 绑定。页面刷新后先恢复已有
+  Suzhou2 job 和 6→7 观察，不用浏览器内存决定是否再次入队。
 - 新 v1.6 continuation 通过 `RunEvidenceLink` 引用 Suzhou2 原始 39 GB 结果，没有复制
   candidate 数据、没有 symlink、没有修改旧 Stage 05/06 manifest。Workbench 据采用记录
   显示 Stage 06 已完成；Stage 07 仍为 `not-reached`。

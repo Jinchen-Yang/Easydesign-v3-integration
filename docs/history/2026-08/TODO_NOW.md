@@ -158,3 +158,21 @@
 - 安全边界：未停止或重启 Suzhou2 Manager；`lyjsmoke1` 4→5 job 是在
   验收期间自然完成的。未移动、删除或覆盖 run、环境、模型和队列证据。
 - 实现提交：以本记录所在 `main` 提交为准。
+
+## 2026-08-03 — REL-002：dev44 Manager 同步与强制版本门
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-03T16:12:29+08:00
+- 完成：在 Suzhou2 队列 0/running 0 的窗口，将 ProteinDigger 构建的 dev44 wheel
+  `41e55267cc5522de86c56a7e5f2d8c6d157600aaa32065dbd6ce20667817954d`
+  安装到全新 immutable release，追加 activation revision 12，并只重启
+  `easydesign-managed-worker.service`。Manager 自身保持 `0.1.0.dev2`。
+- 验证：新 release 激活前 probe、激活后固定入口 probe、ProteinDigger 控制端兼容 probe
+  和真实 18769 execution-target API 均通过；报告 EasyDesign dev44、8/8 GPU、三后端
+  ready、`[(4,5),(6,7)]`、队列 0，systemd `NRestarts=0`。
+- 规则：根 `AGENTS.md` 和架构契约现在要求任何改变本地 EasyDesign 版本或 wheel identity
+  的更新，都必须在交付前把同一 SHA wheel 以新 release/activation 同步到所有已配对
+  Manager；失败时 fail closed，不得显示为可用。
+- 安全边界：未重装 BoltzGen/Protenix/TNP 环境，未复制模型，未覆盖旧 release/revision，
+  未修改历史 run、队列或外部 GPU 进程。
+- 实现提交：以本记录所在 `main` 提交为准。

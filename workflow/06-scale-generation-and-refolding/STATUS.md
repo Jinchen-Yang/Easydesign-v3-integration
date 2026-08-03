@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | dev44 已为 Stage 06 共用持久 continuation 恢复和服务端去重；既有 APOE 8-candidate 6→7 证据不变。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；dev44 wheel activation 尚未执行。 | 2026-08-03 |
+| `smoke-validated` | dev44 已为 Stage 06 共用持久 continuation 恢复和服务端去重；Suzhou2 activation revision 12 已同步同 SHA wheel。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；尚缺第二真实 target 的 Tier A 科学输入。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -53,7 +53,7 @@
 | 长任务结构化 heartbeat | `implemented` | BoltzGen adapter → TaskHeartbeat → 原子 ProgressSnapshot → CLI/UI；旧 dev11 运行不追写伪心跳 |
 | UI 可选执行位置 | `smoke-validated` | 新建设计可选当前/远程 executor；运行任务页提供状态、metadata 同步和显式 resume；1440/1920 Chromium 通过 |
 | 本机自动 GPU 发现与租约 | `implemented` | 省略 devices 时自动冻结符合门槛的 GPU，支持最大卡数限制和无资源等待 |
-| Suzhou2 Managed Worker 分片 | `smoke-validated` | revision 8 使用 wheel `8d4a3c…d69d`；真实 APOE dev35 job 以 1 GPU/1 shard 精确生成 8/8，bundle/YAML budget 不一致会 fail closed |
+| Suzhou2 Managed Worker 分片 | `smoke-validated` | activation revision 12 使用 dev44 wheel `41e55267…7954d`；真实 APOE dev35 job 以 1 GPU/1 shard 精确生成 8/8，bundle/YAML budget 不一致会 fail closed |
 | Suzhou2 配对引导 | `implemented` | 工作区 key pair 检测/复用、一次性密码公钥安装、严格 known-host 与免密 worker 探测 |
 | 6→7 远程数据本地性 | `smoke-validated` | APOE 8-candidate run 已在 Suzhou2 原地完成 Stage 07，并只同步 270 个 review 文件、59,440,065 bytes |
 | APOE 新 1000 候选 | `not_applicable` | 本次负责人直接授权独立的 50,000 profile，不把旧 100/840 计入 |
@@ -76,8 +76,10 @@
   科学输入尚未产生，不得降低门槛或伪造赢家。外部 GPU 任务继续等待自然释放，禁止
   终止非 EasyDesign 进程。
 - APOE 的旧 `stopped-no-scale-winner` 仍是冻结科学结果；历史人工授权只批准生成预算。
-- Manager 提交 `09ffcc2c3d80b160e98a0540991c272175c39016` 已在 Suzhou2 干净 `main`
-  并激活，但 GitHub deploy key/host 权限不可用，暂不能核对或推送私有 `origin/main`。
+- Manager 运行代码提交 `8de504767fe901759db6ade7bfd36022337a8fbb` 与 dev44 activation
+  revision 12 已在 Suzhou2 生效；同步规则文档提交
+  `880b52d2966d78d08f77a3554cdba4163cfd158e` 也在干净本地 `main`。GitHub deploy
+  key/host 权限仍不可用，暂不能核对或推送私有 `origin/main`。
 
 ## 验证证据
 

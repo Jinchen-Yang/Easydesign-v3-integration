@@ -245,6 +245,13 @@ Agent 必须自动完成以下收尾工作：
 35. 远端 Stage 04→05 和 Stage 06→07 必须就地连续。默认同步只限
     metadata/review，`complete` 需用户明确请求。SSH 断线只是观察中断，不得改写
     远端任务为失败，也不得因此在控制端重建大型候选。
+36. 任何会改变 ProteinDigger `easydesign.__version__` 或 wheel identity 的本地版本
+    更新，都必须在该版本交付完成前把同一份、SHA-256 已验证的 EasyDesign wheel 同步到
+    每个已配对 Managed Worker。同步必须新建 immutable release 并追加 activation
+    revision；不得覆盖旧 release、重装 BoltzGen/Protenix/TNP 环境、复制模型或修改历史
+    运行。激活前必须确认 Manager 队列没有运行任务，激活后必须验证 systemd 稳定、版本
+    精确一致、两条连续阶段链、全部后端及逐卡探针。无法完成同步时必须 fail closed，
+    在状态/TODO 中记录阻塞，并且不得把该 Managed Worker 投影为可用。
 
 ## 4. 阻塞与询问
 

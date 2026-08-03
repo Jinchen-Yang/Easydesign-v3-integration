@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | dev44 已在真实 `lyjsmoke1` 上验证刷新恢复、同 job 去重、280/280 终态同步和 Stage 05 科学停止。 | 寻找能合法产生 Tier A 的第二真实 fixture；空闲窗口再追加 Manager dev44 activation。 | 1UBQ 和本次 APOE 局部区域均科学停止于 Stage 05；Manager 尚未激活 dev44 wheel。 | 2026-08-03 |
+| `smoke-validated` | dev44 已在真实 `lyjsmoke1` 上验证刷新恢复、同 job 去重、280/280 终态同步和 Stage 05 科学停止；Suzhou2 已激活同 SHA wheel。 | 寻找能合法产生 Tier A 的第二真实 fixture，并保持控制端/Manager wheel 同步。 | 1UBQ 和本次 APOE 局部区域均科学停止于 Stage 05；尚缺合法产生 Tier A 的第二真实输入。 | 2026-08-03 |
 
 ## 当前结论
 
@@ -33,7 +33,7 @@
 | BoltzGen backend | `smoke-validated` | 固定 0.3.2 完整 pipeline 完成 APOE 21×40；严格收集原始/refold CIF、官方 design mask 和指标 |
 | local executor | `smoke-validated` | 双 GPU、每 GPU 一个串行 strategy；7xl0 首次 39/40 后只补跑缺失的 1 个，最终 840/840 |
 | 本机自动 GPU 发现与租约 | `implemented` | `nvidia-smi`、外部进程/显存门、append-only lease、无卡等待与 resume 契约测试 |
-| Suzhou2 Managed Worker | `smoke-validated` | activation revision 8；固定 1UBQ 40-candidate 真实任务完成 40/40、queue revision 104、0 operational failure |
+| Suzhou2 Managed Worker | `smoke-validated` | activation revision 12 为 Manager dev2/EasyDesign dev44；固定 1UBQ 40-candidate 真实任务完成 40/40、queue revision 104、0 operational failure |
 | SSH 配对与观察 | `implemented` | host fingerprint、已有 key pair 复用、一次性密码幂等安装公钥、逻辑解绑、15 秒轮询和分层同步 |
 | Slurm/SMART executor | `planned` | 无 |
 | 任务终态和候选索引 | `smoke-validated` | 61 条 append-only 事件、840 个唯一 CandidateRecord、终态 ProgressSnapshot、PilotBundle 与 checksummed manifest-only handoff 均通过 |

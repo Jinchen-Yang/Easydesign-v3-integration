@@ -1175,3 +1175,11 @@ registry 或磁盘。手动复制公钥并执行免密探测仍是等价回退�
 lease 是否存在。它不返回 PID，也不增加任意远端命令入口。控制端验证 `gpu_count`、
 `eligible_gpu_count` 与设备列表严格一致后才投影到 UI；旧 probe schema、版本不一致或
 摘要矛盾均 fail closed。空闲数是观察时刻的资源快照，不是对未来 admission 的预留。
+
+ProteinDigger 与已配对 Manager 使用严格的 wheel identity 部署契约。任何改变
+`easydesign.__version__` 或构建 wheel identity 的本地发布，都必须在交付完成前把同一
+wheel 按 SHA-256 校验后安装到新的 Manager immutable release，并追加 activation
+revision；Manager 自身版本可以保持不变。激活只允许在受管队列没有运行任务时进行，
+随后重启固定 systemd 服务并从控制端验证精确版本、`[(4,5),(6,7)]`、后端 readiness、
+磁盘和逐卡状态。该同步不重装后端环境、不复制模型、不覆盖旧 release 或历史证据；任一
+门失败时，控制端继续 fail closed，不得把不匹配的 Manager 投影为可用。

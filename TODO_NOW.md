@@ -10,9 +10,9 @@
 | Stage 01 | `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev43 统一双查看器/编辑层恢复并修复 PyMOL 相机回弹。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 | [STATUS](workflow/01-target-preparation/STATUS.md) |
 | Stage 02 | `planned` | dev43 统一 PyMOL/Mol*、编辑层和会话恢复，并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 | [STATUS](workflow/02-hotspot-discovery/STATUS.md) |
 | Stage 03 | `smoke-validated` | S03-001 已完成通用基础编译器；APOE 3×7 共 21 个 YAML 全部通过固定 BoltzGen 0.3.2 官方校验。 | 冻结 1.0 基础模板，把开发重心移交 Stage 04 可恢复 pilot generation。 | 无 Stage 03 工程阻塞。 | 2026-07-26 | [STATUS](workflow/03-boltzgen-configuration/STATUS.md) |
-| Stage 04 | `smoke-validated` | dev44 已在真实 `lyjsmoke1` 上验证刷新恢复、同 job 去重、280/280 终态同步和 Stage 05 科学停止。 | 寻找能合法产生 Tier A 的第二真实 fixture；空闲窗口再追加 Manager dev44 activation。 | 1UBQ 和本次 APOE 局部区域均科学停止于 Stage 05；Manager 尚未激活 dev44 wheel。 | 2026-08-03 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
+| Stage 04 | `smoke-validated` | dev44 已在真实 `lyjsmoke1` 上验证刷新恢复、同 job 去重、280/280 终态同步和 Stage 05 科学停止；Suzhou2 已激活同 SHA wheel。 | 寻找能合法产生 Tier A 的第二真实 fixture，并保持控制端/Manager wheel 同步。 | 1UBQ 和本次 APOE 局部区域均科学停止于 Stage 05；尚缺合法产生 Tier A 的第二真实输入。 | 2026-08-03 | [STATUS](workflow/04-pilot-generation/STATUS.md) |
 | Stage 05 | `smoke-validated` | Suzhou2 已真实完成 dev35 原地 Stage 04→05 连续链；40 条 1UBQ 候选均被科学门正常处置。 | 在第二真实案例验证合法 Tier A 和 2–3 组晋级，同时保持正式门槛冻结。 | 1UBQ 40/40 均未达到 iPTM 0.5，合法发布 `stopped-no-tier-a`，不能用于 06→07 连通。 | 2026-08-02 | [STATUS](workflow/05-pilot-filtering/STATUS.md) |
-| Stage 06 | `smoke-validated` | dev44 已为 Stage 06 共用持久 continuation 恢复和服务端去重；既有 APOE 8-candidate 6→7 证据不变。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；dev44 wheel activation 尚未执行。 | 2026-08-03 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
+| Stage 06 | `smoke-validated` | dev44 已为 Stage 06 共用持久 continuation 恢复和服务端去重；Suzhou2 activation revision 12 已同步同 SHA wheel。 | 在第二真实 target 验证 2–3 组 Tier A 的共享预算和深筛非空路径。 | Manager 私有 remote 仍缺推送权限；尚缺第二真实 target 的 Tier A 科学输入。 | 2026-08-03 | [STATUS](workflow/06-scale-generation-and-refolding/STATUS.md) |
 | Stage 07 | `smoke-validated` | dev35 已在 Suzhou2 Manager 原地消费 APOE 8/8 ScaleBundle，并发布可审计空 review package。 | 在第二真实 target 验证进入 Protenix 多 seed 与 TNP 的非空深筛路径。 | 本次 8/8 均未通过 BoltzGen `pass_filters`，因此没有调用 Protenix/TNP；Manager 私有 remote 另缺推送权限。 | 2026-08-02 | [STATUS](workflow/07-final-filtering-and-selection/STATUS.md) |
 <!-- END AUTO-GENERATED STAGE ROLLUP -->
 
@@ -122,10 +122,10 @@
 
 ## Blocked
 
-- `[ENG-032]` Suzhou2 Manager revision 8 的锁定环境、模型、三后端 probe、4→5 和
-  6→7 小链均已真实运行；当前运行路径无阻塞。Manager 私有 GitHub remote 仍缺可用
-  deploy key/host 权限，提交 `09ffcc2…9016` 暂只在 Suzhou2 `main`，但不影响已激活
-  release 的受管任务。
+- `[ENG-032/REL-002]` Suzhou2 Manager activation revision 12 已精确同步 dev44 wheel；
+  锁定环境、模型、三后端 probe、4→5 和 6→7 小链均有真实证据，当前运行路径无阻塞。
+  Manager 私有 GitHub remote 仍缺可用 deploy key/host 权限；同步规则文档提交
+  `880b52d…158e` 暂只在 Suzhou2 干净 `main`，但不影响已激活 release 的受管任务。
 - `[DATA-005/VAL-006]` Protenix、BoltzGen、ScanNet 和验证 fixture 的受控资产在
   用户逐项确认相应许可前保持 `awaiting-approval`；真实后端逐步自检不能在资产缺失时
   标记通过。完整全量 setup 仍可能因峰值与安全余量拒绝，但逐后端安装已经开始且

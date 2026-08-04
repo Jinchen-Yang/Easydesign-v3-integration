@@ -269,15 +269,15 @@ structured GPU, disk, environment, model, and license preflight before submissio
   policies.
 - A public license, PyPI release, and formal multi-user security boundary remain separate decisions.
 
-See [TODO_NOW.md](../TODO_NOW.md) for current work, [TODO.md](../TODO.md) for the complete task registry,
-and the [Case Registry](validation/CASE_REGISTRY.md) for scientific evidence.
+See [the roadmap](ROADMAP.md) for current work and the complete task registry, and the
+[Case Registry](CASE_REGISTRY.md) for scientific evidence.
 
 ## Documentation
 
 - [Environment installation and recovery](../environments/README.md)
 - [Development, testing, and uv lock](../DEVELOPMENT.md)
 - [Architecture and cross-repository synchronization](ARCHITECTURE.md)
-- [Seven-stage contracts](../workflow/README.md)
-- [UI workbench](product/UI_WORKBENCH.md)
+- [Seven-stage contracts](workflow/README.md)
+- [UI workbench](UI_WORKBENCH.md)
 - [Data safety](../DATA_SAFETY.md)
-- [Project charter](../PROJECT_CHARTER.md)
+- [Project charter](CHARTER.md)

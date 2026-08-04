@@ -263,7 +263,7 @@ def test_missing_diagnostic_candidate_is_operational_failure() -> None:
 def test_v1_6_profile_records_exact_method_document_hash() -> None:
     repository_root = Path(__file__).parents[3]
     method_path = (
-        repository_root / "docs/methods/NANOBODY_FILTER_STANDARD_V1.6.md"
+        repository_root / "docs/NANOBODY_FILTER_STANDARD_V1.6.md"
     )
     assert hashlib.sha256(method_path.read_bytes()).hexdigest() == (
         PROFILE_SOURCE_SHA256_V1_6

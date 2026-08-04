@@ -255,15 +255,15 @@ preflight。
 - 外部模型、数据库、权重和服务继续受各自许可证、条款与数据政策约束。
 - 公开许可证、PyPI 和正式多用户安全边界仍待独立决策。
 
-动态进展见 [TODO_NOW.md](TODO_NOW.md)，完整任务见 [TODO.md](TODO.md)，科学案例见
-[Case Registry](docs/validation/CASE_REGISTRY.md)。
+动态进展和完整任务见 [路线图](docs/ROADMAP.md)，科学案例见
+[Case Registry](docs/CASE_REGISTRY.md)。
 
 ## 文档索引
 
 - [环境安装与恢复](environments/README.md)
 - [开发、测试与 uv lock](DEVELOPMENT.md)
 - [架构与跨仓同步](docs/ARCHITECTURE.md)
-- [七阶段命令与契约](workflow/README.md)
-- [UI 工作台](docs/product/UI_WORKBENCH.md)
+- [七阶段命令与契约](docs/workflow/README.md)
+- [UI 工作台](docs/UI_WORKBENCH.md)
 - [数据安全](DATA_SAFETY.md)
-- [项目章程](PROJECT_CHARTER.md)
+- [项目章程](docs/CHARTER.md)

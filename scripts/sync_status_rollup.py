@@ -1,4 +1,4 @@
-"""从七个 Stage STATUS 生成顶层实时摘要，并在 CI 中检查是否同步。"""
+"""从七个 Stage status 生成统一路线图摘要，并在 CI 中检查是否同步。"""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def _table_cells(line: str) -> list[str]:
 
 
 def _read_rollup(stage: str) -> StageRollup:
-    path = ROOT / "workflow" / stage / "STATUS.md"
+    path = ROOT / "docs" / "workflow" / f"{stage}-status.md"
     text = path.read_text(encoding="utf-8")
     heading = "## 顶层摘要"
     if heading not in text:
@@ -101,7 +101,7 @@ def _render(rows: list[StageRollup]) -> str:
     ]
     for row in rows:
         label = f"Stage {row.stage[:2]}"
-        link = f"workflow/{row.stage}/STATUS.md"
+        link = f"workflow/{row.stage}-status.md"
         lines.append(
             f"| {label} | {row.overall_status} | {row.summary} | {row.focus} | "
             f"{row.blocker} | {row.updated} | [STATUS]({link}) |"
@@ -120,18 +120,16 @@ def _replace_generated_block(text: str, generated: str, path: Path) -> str:
     return text[:start] + generated + text[end:]
 
 
-def _validate_workstream_index(todo: str, todo_now: str) -> None:
+def _validate_workstream_index(roadmap: str) -> None:
     for prefix in sorted(WORKSTREAM_PREFIXES):
-        if f"| `{prefix}` |" not in todo:
-            raise ValueError(f"TODO.md 缺少工作板块索引: {prefix}")
-    for task_id in ACTIVE_ID_PATTERN.findall(todo_now):
+        if f"| `{prefix}` |" not in roadmap:
+            raise ValueError(f"docs/ROADMAP.md 缺少工作板块索引: {prefix}")
+    for task_id in ACTIVE_ID_PATTERN.findall(roadmap):
         if task_id.startswith("S0"):
             continue
         prefix = task_id.split("-", maxsplit=1)[0]
         if prefix not in WORKSTREAM_PREFIXES:
-            raise ValueError(f"TODO_NOW 使用未登记的板块前缀: {task_id}")
-        if task_id not in todo:
-            raise ValueError(f"TODO_NOW 活跃任务未在 TODO 登记: {task_id}")
+            raise ValueError(f"ROADMAP 使用未登记的板块前缀: {task_id}")
 
 
 def main() -> int:
@@ -139,46 +137,30 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="只检查顶层摘要是否与 Stage STATUS 一致，不写文件。",
+        help="只检查 ROADMAP 摘要是否与 Stage status 一致，不写文件。",
     )
     args = parser.parse_args()
     try:
         rows = [_read_rollup(stage) for stage in STAGES]
         generated = _render(rows)
-        stale: list[Path] = []
-        updates: list[tuple[Path, str]] = []
-        for filename in ("TODO.md", "TODO_NOW.md"):
-            path = ROOT / filename
-            current = path.read_text(encoding="utf-8")
-            expected = _replace_generated_block(current, generated, path)
-            if current != expected:
-                stale.append(path)
-                updates.append((path, expected))
-        todo = next(
-            expected for path, expected in updates if path.name == "TODO.md"
-        ) if any(path.name == "TODO.md" for path, _ in updates) else (
-            ROOT / "TODO.md"
-        ).read_text(encoding="utf-8")
-        todo_now = next(
-            expected for path, expected in updates if path.name == "TODO_NOW.md"
-        ) if any(path.name == "TODO_NOW.md" for path, _ in updates) else (
-            ROOT / "TODO_NOW.md"
-        ).read_text(encoding="utf-8")
-        _validate_workstream_index(todo, todo_now)
+        path = ROOT / "docs" / "ROADMAP.md"
+        current = path.read_text(encoding="utf-8")
+        expected = _replace_generated_block(current, generated, path)
+        stale = current != expected
+        _validate_workstream_index(expected)
         if args.check:
             if stale:
-                names = ", ".join(path.name for path in stale)
                 print(
-                    "ERROR: 顶层 Stage 摘要过期；运行 "
-                    f"`python scripts/sync_status_rollup.py`: {names}",
+                    "ERROR: ROADMAP Stage 摘要过期；运行 "
+                    "`python scripts/sync_status_rollup.py`",
                     file=sys.stderr,
                 )
                 return 1
-            print("顶层 Stage 摘要与七个 STATUS 一致。")
+            print("ROADMAP 摘要与七个 Stage status 一致。")
             return 0
-        for path, expected in updates:
+        if stale:
             path.write_text(expected, encoding="utf-8")
-        print(f"已同步 {len(updates)} 个顶层状态文档。")
+        print(f"已同步 {1 if stale else 0} 个路线图状态文档。")
         return 0
     except (OSError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

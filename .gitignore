@@ -39,12 +39,8 @@ runtime/*
 
 # Runtime artifacts and model assets
 runs/*
-!runs/.gitkeep
 projects/*
-models/*
-!models/.gitkeep
 archives/*
-!archives/.gitkeep
 *.ckpt
 *.safetensors
 *.pt

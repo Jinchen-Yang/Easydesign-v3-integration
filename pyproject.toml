@@ -68,10 +68,12 @@ easydesign = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+cache_dir = "runtime/cache/dev/pytest"
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+cache-dir = "runtime/cache/dev/ruff"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -80,3 +82,4 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 packages = ["easydesign"]
+cache_dir = "runtime/cache/dev/mypy"

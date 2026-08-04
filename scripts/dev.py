@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
-POLICY_PATH = ROOT / "configs" / "development-policy.json"
+POLICY_PATH = ROOT / "config" / "development-policy.json"
 AGENTS_PATH = ROOT / "AGENTS.md"
 MODE_ORDER = {"inspect": 0, "dev-local": 1, "integration": 2, "release": 3}
 
@@ -88,7 +88,7 @@ def selected_guides(mode: str, paths: Sequence[str]) -> tuple[str, ...]:
 
 def policy_bundle_id(guides: Sequence[str]) -> str:
     digest = hashlib.sha256()
-    for relative in ("AGENTS.md", "configs/development-policy.json", *sorted(guides)):
+    for relative in ("AGENTS.md", "config/development-policy.json", *sorted(guides)):
         path = ROOT / relative
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
@@ -225,14 +225,24 @@ class CommandResult:
     duration_seconds: float
 
 
+def _developer_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["PYTHONPYCACHEPREFIX"] = str(ROOT / "runtime/cache/dev/pycache")
+    environment["RUFF_CACHE_DIR"] = str(ROOT / "runtime/cache/dev/ruff")
+    return environment
+
+
 def _run(command: Sequence[str], *, environment: dict[str, str] | None = None) -> CommandResult:
     print(f"+ {' '.join(command)}", flush=True)
     started = time.monotonic()
+    selected_environment = _developer_environment()
+    if environment is not None:
+        selected_environment.update(environment)
     completed = subprocess.run(
         list(command),
         cwd=ROOT,
         check=False,
-        env=environment,
+        env=selected_environment,
     )
     result = CommandResult(
         command=tuple(command),

@@ -9,6 +9,8 @@ WEB_DIR ?= web/target-viewer
 UI_WEB_DIR ?= web/workbench
 RUNTIME_ENV = HOME="$(CURDIR)/runtime/home" \
 	TMPDIR="$(CURDIR)/runtime/tmp" \
+	PYTHONPYCACHEPREFIX="$(CURDIR)/runtime/cache/dev/pycache" \
+	RUFF_CACHE_DIR="$(CURDIR)/runtime/cache/dev/ruff" \
 	XDG_CACHE_HOME="$(CURDIR)/runtime/cache/xdg" \
 	XDG_DATA_HOME="$(CURDIR)/runtime/state/xdg-data" \
 	XDG_STATE_HOME="$(CURDIR)/runtime/state/xdg-state" \
@@ -43,18 +45,19 @@ env-update:
 	./easydesign setup --minimal
 
 check: ensure-venv
-	$(PYTHON) scripts/sync_status_rollup.py --check
-	$(PYTHON) scripts/check_repository.py
-	PYTHONPATH=src $(PYTHON) scripts/check_target_viewer_assets.py
-	PYTHONPATH=src $(PYTHON) scripts/check_browser_pymol_assets.py
-	PYTHONPATH=src $(PYTHON) -c "import easydesign; print(easydesign.__version__)"
-	$(PYTHON) -m compileall -q src scripts tests
-	$(PYTHON) -m ruff check src scripts tests
-	$(PYTHON) -m mypy
+	@mkdir -p runtime/tmp runtime/cache/dev/pycache runtime/cache/dev/ruff
+	$(RUNTIME_ENV) $(PYTHON) scripts/sync_status_rollup.py --check
+	$(RUNTIME_ENV) $(PYTHON) scripts/check_repository.py
+	$(RUNTIME_ENV) PYTHONPATH=src $(PYTHON) scripts/check_target_viewer_assets.py
+	$(RUNTIME_ENV) PYTHONPATH=src $(PYTHON) scripts/check_browser_pymol_assets.py
+	$(RUNTIME_ENV) PYTHONPATH=src $(PYTHON) -c "import easydesign; print(easydesign.__version__)"
+	$(RUNTIME_ENV) $(PYTHON) -m compileall -q src scripts tests
+	$(RUNTIME_ENV) $(PYTHON) -m ruff check src scripts tests
+	$(RUNTIME_ENV) $(PYTHON) -m mypy
 
 test: ensure-venv
-	@mkdir -p runtime/tmp
-	PYTHONPATH=src TMPDIR=$(CURDIR)/runtime/tmp $(PYTHON) -m pytest --basetemp=runtime/tmp/pytest-$$(date +%s)-$$$$
+	@mkdir -p runtime/tmp runtime/cache/dev/pycache
+	$(RUNTIME_ENV) PYTHONPATH=src $(PYTHON) -m pytest --basetemp=runtime/tmp/pytest-$$(date +%s)-$$$$
 
 verify-fast: ensure-venv
 	$(PYTHON) scripts/dev.py verify --mode dev-local

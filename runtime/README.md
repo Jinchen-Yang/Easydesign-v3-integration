@@ -53,7 +53,7 @@ runtime/secrets/structure-assistant/platform-provider.yaml
 ```
 
 可以从
-`configs/assistant/platform-provider.example.yaml` 复制字段结构，当前支持
+`config/assistant-provider.example.yaml` 复制字段结构，当前支持
 `provider: deepseek` 或 `provider: zhipu-glm`。该文件不得提交 Git、不得使用符号
 链接，在 Linux/macOS 上必须设置为仅文件所有者可读写：
 

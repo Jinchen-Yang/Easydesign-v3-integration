@@ -33,12 +33,8 @@ PYTHON_STAGES = (
 ROOT_DOCS = {
     "DEVELOPMENT.md",
     "README.md",
-    "PROJECT_CHARTER.md",
     "AGENTS.md",
     "DATA_SAFETY.md",
-    "NANOBODY_FILTER_STANDARD_V1.md",
-    "TODO.md",
-    "TODO_NOW.md",
 }
 AGENT_GUIDES = {
     "RELEASE_AND_REMOTE.md",
@@ -121,7 +117,7 @@ FORBIDDEN_DELETE_METHODS = {"unlink", "rmdir"}
 
 
 def destructive_write_calls() -> list[str]:
-    """Find deletion primitives that bypass the quarantine-only write policy."""
+    """Find deletion primitives that bypass the governed data-safety layer."""
 
     violations: list[str] = []
     source_root = ROOT / "src" / "easydesign"
@@ -246,10 +242,10 @@ def main() -> int:
         errors,
     )
 
+    workflow_root = ROOT / "docs/workflow"
     actual_workflow = tuple(
-        path.name
-        for path in sorted((ROOT / "workflow").iterdir())
-        if path.is_dir() and path.name[:1].isdigit()
+        path.name.removesuffix("-status.md")
+        for path in sorted(workflow_root.glob("*-status.md"))
     )
     require(actual_workflow == WORKFLOW_STAGES, "workflow 阶段集合或顺序不一致", errors)
 
@@ -282,9 +278,8 @@ def main() -> int:
     )
 
     for stage in WORKFLOW_STAGES:
-        base = ROOT / "workflow" / stage
-        readme = base / "README.md"
-        status = base / "STATUS.md"
+        readme = workflow_root / f"{stage}.md"
+        status = workflow_root / f"{stage}-status.md"
         require(readme.is_file(), f"缺少 {readme.relative_to(ROOT)}", errors)
         if readme.is_file():
             require(readme.stat().st_size > 1_000, f"阶段文档内容不足: {stage}", errors)
@@ -300,60 +295,71 @@ def main() -> int:
                 "## 验证证据",
             ):
                 require(heading in status_text, f"{stage}/STATUS 缺少区块: {heading}", errors)
-        history_dir = base / "history"
-        require(history_dir.is_dir(), f"缺少 {stage}/history", errors)
-        if history_dir.is_dir():
-            for history in sorted(history_dir.glob("*.md")):
-                require(
-                    re.fullmatch(r"\d{4}-\d{2}\.md", history.name) is not None,
-                    f"Stage 历史文件名必须是 YYYY-MM.md: {history.relative_to(ROOT)}",
-                    errors,
+        histories = sorted(workflow_root.glob(f"{stage}-????-??.md"))
+        require(bool(histories), f"缺少 {stage} 历史", errors)
+        for history in histories:
+            require(
+                re.fullmatch(
+                    rf"{re.escape(stage)}-\d{{4}}-\d{{2}}\.md",
+                    history.name,
                 )
-                history_text = history.read_text(encoding="utf-8")
-                records = re.split(r"(?m)^## ", history_text)[1:]
-                require(
-                    bool(records),
-                    f"Stage 历史没有工作项记录: {history.relative_to(ROOT)}",
-                    errors,
-                )
-                for record_number, record in enumerate(records, start=1):
-                    for section in STAGE_HISTORY_SECTIONS:
-                        require(
-                            section in record,
-                            (
-                                f"{history.relative_to(ROOT)} 第 {record_number} 条记录"
-                                f"缺少: {section}"
-                            ),
-                            errors,
-                        )
-                    require_completion_timestamp(
-                        record,
-                        (f"{history.relative_to(ROOT)} 第 {record_number} 条记录"),
-                        errors,
-                    )
-                if status.is_file():
+                is not None,
+                f"Stage 历史文件名异常: {history.relative_to(ROOT)}",
+                errors,
+            )
+            history_text = history.read_text(encoding="utf-8")
+            records = re.split(r"(?m)^## ", history_text)[1:]
+            require(
+                bool(records),
+                f"Stage 历史没有工作项记录: {history.relative_to(ROOT)}",
+                errors,
+            )
+            for record_number, record in enumerate(records, start=1):
+                for section in STAGE_HISTORY_SECTIONS:
                     require(
-                        f"history/{history.name}" in status_text,
-                        f"{stage}/STATUS 历史索引未链接 {history.name}",
+                        section in record,
+                        (
+                            f"{history.relative_to(ROOT)} 第 {record_number} 条记录"
+                            f"缺少: {section}"
+                        ),
                         errors,
                     )
-        require((base / "examples/.gitkeep").is_file(), f"缺少 {stage}/examples 占位", errors)
-        require(not (base / "CONTRACT.md").exists(), f"{stage} 不应再有独立 CONTRACT", errors)
+                require_completion_timestamp(
+                    record,
+                    (f"{history.relative_to(ROOT)} 第 {record_number} 条记录"),
+                    errors,
+                )
+            if status.is_file():
+                require(
+                    history.name in status_text,
+                    f"{stage} status 历史索引未链接 {history.name}",
+                    errors,
+                )
 
     expected_docs = {
         "DEVELOPMENT.md",
         "docs/README.en.md",
         "docs/ARCHITECTURE.md",
+        "docs/ASSET_REGISTER.tsv",
+        "docs/ASSETS.md",
+        "docs/BASELINE.md",
+        "docs/CASE_REGISTRY.md",
+        "docs/CHARTER.md",
+        "docs/NANOBODY_FILTER_STANDARD_V1.md",
+        "docs/NANOBODY_FILTER_STANDARD_V1.6.md",
+        "docs/ROADMAP.md",
+        "docs/ROADMAP_HISTORY_2026-07.md",
+        "docs/ROADMAP_HISTORY_2026-08.md",
+        "docs/RUN_LAYOUT.md",
+        "docs/UI_WORKBENCH.md",
         "docs/agent/RELEASE_AND_REMOTE.md",
         "docs/agent/RUNTIME_AND_DATA.md",
         "docs/agent/SCIENTIFIC_PIPELINE.md",
         "docs/agent/UI_AND_REPORTING.md",
-        "docs/legacy/BASELINE.md",
-        "configs/README.md",
+        "config/README.md",
         "examples/README.md",
-        "resources/README.md",
         "runtime/README.md",
-        "workflow/README.md",
+        "docs/workflow/README.md",
     }
     for relative in expected_docs:
         require((ROOT / relative).is_file(), f"缺少 {relative}", errors)
@@ -376,8 +382,8 @@ def main() -> int:
         "缺少 immutable local UI release 回归测试",
         errors,
     )
-    development_policy = ROOT / "configs/development-policy.json"
-    require(development_policy.is_file(), "缺少 configs/development-policy.json", errors)
+    development_policy = ROOT / "config/development-policy.json"
+    require(development_policy.is_file(), "缺少 config/development-policy.json", errors)
     if development_policy.is_file():
         policy = json.loads(development_policy.read_text(encoding="utf-8"))
         configured_guides = {
@@ -389,8 +395,53 @@ def main() -> int:
             errors,
         )
 
-    # Allow the seven Stage directories to keep one monthly history file each
-    # while still preventing ungoverned one-off documents from accumulating.
+    obsolete_paths = (
+        "TODO.md",
+        "TODO_NOW.md",
+        "PROJECT_CHARTER.md",
+        "NANOBODY_FILTER_STANDARD_V1.md",
+        "environment.yml",
+        "configs",
+        "resources",
+        "workflow",
+        "models",
+        "tests/e2e",
+        "docs/architecture",
+        "docs/history",
+        "docs/legacy",
+        "docs/methods",
+        "docs/paper",
+        "docs/product",
+        "docs/validation",
+    )
+    for relative in obsolete_paths:
+        require(not (ROOT / relative).exists(), f"旧结构仍存在: {relative}", errors)
+    placeholders = [
+        path
+        for base in (ROOT / "config", ROOT / "docs", ROOT / "tests")
+        if base.exists()
+        for path in base.rglob(".gitkeep")
+    ]
+    require(not placeholders, f"仍存在无意义 .gitkeep: {placeholders}", errors)
+    misplaced_caches = [
+        path.relative_to(ROOT)
+        for path in (
+            ROOT / ".mypy_cache",
+            ROOT / ".pytest_cache",
+            ROOT / ".ruff_cache",
+            ROOT / "__pycache__",
+            ROOT / "build",
+        )
+        if path.exists()
+    ]
+    require(
+        not misplaced_caches,
+        f"可再生开发产物必须写入 runtime/cache 或 runtime/builds: {misplaced_caches}",
+        errors,
+    )
+
+    # Keep the four Agent guides, ADR collection and flat workflow documents
+    # governed while preventing one-file category directories from returning.
     # Packaged PML Skill bodies are executable prompt assets with one required
     # SKILL.md per Skill, not standalone project documentation.
     governed_markdown = [
@@ -435,8 +486,8 @@ def main() -> int:
         errors,
     )
 
-    environment = ROOT / "environment.yml"
-    require(environment.is_file(), "缺少 environment.yml", errors)
+    environment = ROOT / "environments/legacy-easydesign-core.yml"
+    require(environment.is_file(), "缺少 environments/legacy-easydesign-core.yml", errors)
     if environment.is_file():
         environment_text = environment.read_text(encoding="utf-8")
         require("name: easydesign-core" in environment_text, "Conda 环境名异常", errors)
@@ -498,7 +549,7 @@ def main() -> int:
     for heading in ("安全内核", "任务模式", "按需读取", "实现与验证", "阻塞"):
         require(heading in agent_text, f"AGENTS 缺少工作协议: {heading}", errors)
 
-    todo_now = (ROOT / "TODO_NOW.md").read_text(encoding="utf-8")
+    roadmap = (ROOT / "docs/ROADMAP.md").read_text(encoding="utf-8")
     for heading in (
         "## 七阶段实时摘要",
         "## Now",
@@ -506,17 +557,16 @@ def main() -> int:
         "## Blocked",
         "## 历史索引",
     ):
-        require(heading in todo_now, f"TODO_NOW 缺少区块: {heading}", errors)
+        require(heading in roadmap, f"ROADMAP 缺少区块: {heading}", errors)
 
-    shared_history_root = ROOT / "docs/history"
-    for history in sorted(shared_history_root.glob("????-??/TODO_NOW.md")):
+    for history in sorted((ROOT / "docs").glob("ROADMAP_HISTORY_????-??.md")):
         records = re.split(
             r"(?m)^## ",
             history.read_text(encoding="utf-8"),
         )[1:]
         require(
             bool(records),
-            f"顶层 TODO_NOW 历史没有完成记录: {history.relative_to(ROOT)}",
+            f"路线图历史没有完成记录: {history.relative_to(ROOT)}",
             errors,
         )
         for record_number, record in enumerate(records, start=1):
@@ -553,11 +603,11 @@ def main() -> int:
     )
 
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    for pattern in ("runs/*", "projects/*", "models/*", "*.safetensors", ".env"):
+    for pattern in ("runs/*", "projects/*", "*.safetensors", ".env"):
         require(pattern in ignore, f"缺少 ignore 规则: {pattern}", errors)
 
     require(not (ROOT / "LICENSE").exists(), "IP 决策前不得添加 LICENSE", errors)
-    register = ROOT / "resources/provenance/ASSET_REGISTER.tsv"
+    register = ROOT / "docs/ASSET_REGISTER.tsv"
     expected_asset_header = [
         "asset_id",
         "path",
@@ -599,8 +649,17 @@ def main() -> int:
     registered_asset_ids = {
         row[0] for row in asset_rows[1:] if len(row) == len(expected_asset_header)
     }
-    runtime_catalog_text = (ROOT / "configs/runtime-assets.yaml").read_text(
+    runtime_catalog_text = (ROOT / "config/runtime-assets.yaml").read_text(
         encoding="utf-8"
+    )
+    runtime_setup_text = (
+        ROOT / "src/easydesign/orchestration/runtime_setup.py"
+    ).read_text(encoding="utf-8")
+    require(
+        'context.root / "config" / "runtime-assets.yaml"' in runtime_setup_text
+        and 'context.root / "configs"' not in runtime_setup_text,
+        "runtime setup 必须只读取平铺后的 config/runtime-assets.yaml",
+        errors,
     )
     runtime_asset_ids = set(
         re.findall(r"(?m)^  - asset_id: ([a-z0-9][a-z0-9-]+)$", runtime_catalog_text)

@@ -5,12 +5,12 @@
 
 ## 1. 安全内核
 
-1. 默认禁止删除、覆盖、清空、重置、删除式同步和终止既有科学任务。需要这些操作时先
-   完整阅读 `DATA_SAFETY.md`，并取得用户对精确目标的本次批准。
+1. 用户输入、科学 run/manifest、activation release、唯一证据、环境和模型禁止擅自
+   删除或覆盖；先完整阅读 `DATA_SAFETY.md`，并取得用户对精确目标的本次批准。
 2. 保留用户和其他 Agent 的修改。开始写入前检查工作树；发现重叠修改时停止，非重叠
    修改可以继续但必须精确提交本任务文件。
-3. 科学 run、manifest、终态 attempt、模型、环境、资产、cache、quarantine 和历史证据
-   不可覆盖或自动清理。任何远程操作只能使用已配置 executor，禁止扫描 SSH config。
+3. 可再生开发 cache、bytecode、空占位和无引用 build 经精确检查后直接删除，不归档；
+   业务运行时不得自动清理。远程操作只使用已配置 executor，禁止扫描 SSH config。
 4. 官方开发保持唯一 `main`。已锁定且提交已进入 `main` 的历史 worktree/branch 只警告；
    未合并 branch、未锁定额外 worktree 或未知修改会阻止写入。
 5. 相邻问题不阻塞当前验收时只在交付中报告；不得自动扩大范围、升版、部署或另开任务。
@@ -43,14 +43,14 @@
 
 | 路径或动作 | 必读指南 |
 | --- | --- |
-| `src/easydesign/core|stages|backends|filtering|orchestration/stage*`、`workflow/` | `docs/agent/SCIENTIFIC_PIPELINE.md` |
+| `src/easydesign/core|stages|backends|filtering|orchestration/stage*`、`docs/workflow/` | `docs/agent/SCIENTIFIC_PIPELINE.md` |
 | `src/easydesign/ui|reporting/`、`web/` | `docs/agent/UI_AND_REPORTING.md` |
 | workspace、setup、registry、环境、资产、run、迁移、归档 | `docs/agent/RUNTIME_AND_DATA.md` |
 | 版本、依赖、package data、wheel、18769、remote、Manager、systemd | `docs/agent/RELEASE_AND_REMOTE.md` |
 
-`PROJECT_CHARTER.md` 只在产品范围变化时读；`docs/ARCHITECTURE.md` 只在稳定接口或依赖
-方向变化时读；`TODO.md`/`TODO_NOW.md` 只在路线图状态变化时读。Stage 任务只读相关
-Stage 的 `README.md`/`STATUS.md`，不读其余六个 Stage。
+`docs/CHARTER.md` 只在产品范围变化时读；`docs/ARCHITECTURE.md` 只在稳定接口或依赖
+方向变化时读；`docs/ROADMAP.md` 只在路线图状态变化时读。Stage 任务只读
+`docs/workflow/` 中该 Stage 的主文档和 status，不读其余六个 Stage。
 
 ## 4. 实现与验证
 
@@ -67,7 +67,7 @@ Stage 的 `README.md`/`STATUS.md`，不读其余六个 Stage。
 UI 静态资产或访问远端；`release` 才运行完整 build 和 activation 门。
 
 普通修复只通过 commit 和测试记录。仅当 Stage 契约、路线图状态、验证等级或 Blocked
-实际变化时更新 README/STATUS/TODO/history；完成的跟踪事项才写带 RFC 3339 时间的历史。
+实际变化时更新 Stage 文档或 ROADMAP；完成的跟踪事项才写带 RFC 3339 时间的历史。
 
 提交前确认 scoped diff 和 `git diff --check`，使用 Conventional Commit。推送前再
 `git fetch origin` 并核对 ahead/behind；推送后核对 `HEAD == origin/main`。CI 可读取时

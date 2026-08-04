@@ -1,6 +1,7 @@
 # Agent 指南：科学流水线
 
-仅在修改 `core/`、`stages/`、科学 backend/filter、Stage orchestration 或 `workflow/` 时读取。
+仅在修改 `core/`、`stages/`、科学 backend/filter、Stage orchestration 或
+`docs/workflow/` 时读取。
 
 ## 边界
 
@@ -14,7 +15,7 @@
 
 ## Stage 规则
 
-- 只读取本次涉及 Stage 的 `workflow/<stage>/README.md` 与 `STATUS.md`。
+- 只读取本次涉及 Stage 的 `docs/workflow/<stage>.md` 与 `<stage>-status.md`。
 - Stage 02 自动结果不等于人工批准；Stage 03 只消费正式 `hotspots.yaml`。
 - review-gated/unattended 共享科学实现；LLM/PML 不是 1.0 科学事实来源。
 - 多模型结构保持 ensemble 身份；不支持时显式拒绝，不得静默选 model 1。

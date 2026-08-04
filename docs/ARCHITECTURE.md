@@ -8,31 +8,26 @@
 ```text
 easydesign-clean/
 ├── README.md                 # 项目入口与当前状态
-├── docs/README.en.md         # 与中文入口结构一致的英文独立译本
 ├── DEVELOPMENT.md            # uv lock、测试、构建与跨仓开发门禁
-├── PROJECT_CHARTER.md        # 战略、1.0 边界与工程规则
+├── DATA_SAFETY.md            # 数据安全与精确删除制度
 ├── AGENTS.md                 # Agent 自动工作协议
-├── TODO.md                   # 宏观里程碑和七阶段状态索引
-├── TODO_NOW.md               # 跨阶段当前重点、阻塞和历史索引
 ├── easydesign                # 从自身位置发现工作区的唯一启动器
 ├── easydesign-workspace.yaml # 可移植工作区声明
 ├── .python-version           # uv 首选 Python 3.11
 ├── uv.lock                   # core/UI/dev 跨平台精确依赖解析
-├── environment.yml           # 旧部署与离线恢复的 core Conda 兼容入口
 ├── environments/             # 环境配方与 linux-64 内容身份锁
 ├── pyproject.toml            # Python 包、运行依赖和开发依赖
 ├── Makefile                  # 环境、检查、测试和构建入口
-├── workflow/                 # 七阶段契约、动态状态和阶段历史
 ├── src/easydesign/           # 唯一 Python 实现
-├── configs/                  # 默认值、backend、filter 和执行 profile
-├── tests/                    # unit、integration、e2e 和 fixture
-├── resources/                # 已审查小型资产与来源登记
+├── config/                   # 开发策略、backend 与运行资产配置
+├── tests/                    # unit、integration 和 fixture
 ├── examples/                 # 最小可复现示例
 ├── scripts/                  # 仅调用 API 的开发脚本
+├── docs/                     # 平铺文档、Agent 指南、ADR 与工作流
 ├── runtime/                  # 本机环境、模型、缓存、状态与隔离区，Git 忽略
 ├── projects/                 # 用户输入和 canonical 配置，Git 忽略
 ├── runs/                     # 不可变科学运行与可再生索引，Git 忽略
-└── archives/                 # 只移动、不删除的可恢复归档，Git 忽略
+└── archives/                 # 有独立保留价值的可恢复归档，Git 忽略
 ```
 
 ## 2. Python 源码层级
@@ -108,19 +103,17 @@ backend adapters ─→ 外部可执行程序或服务
 
 ## 4. Workflow 文档层级
 
-每个 Stage 的稳定契约、动态状态和历史必须分开：
+每个 Stage 的稳定契约、动态状态和历史以文件名区分，统一平铺在同一目录：
 
 ```text
-workflow/<NN-stage-name>/
-├── README.md                 # 稳定职责、输入输出、不变量和完成门槛
-├── STATUS.md                 # 功能矩阵、Now/Next/Blocked、验证和近期日志
-├── history/
-│   └── YYYY-MM.md            # 已结束的阶段日志，只追加
-└── examples/
+docs/workflow/
+├── <NN-stage-name>.md              # 稳定职责、输入输出、不变量和完成门槛
+├── <NN-stage-name>-status.md       # 功能矩阵、Now/Next/Blocked 与验证
+└── <NN-stage-name>-YYYY-MM.md      # 已结束的阶段日志，只追加
 ```
 
-各 Stage `STATUS.md` 的“顶层摘要”是状态事实来源。`scripts/sync_status_rollup.py`
-从七个摘要生成 `TODO.md` 和 `TODO_NOW.md` 的实时表，`make check` 拒绝任何不同步。
+各 Stage `-status.md` 的“顶层摘要”是状态事实来源。`scripts/sync_status_rollup.py`
+从七个摘要生成 `docs/ROADMAP.md` 的实时表，`make check` 拒绝任何不同步。
 顶层人工维护内容只保留宏观路线和跨阶段 Now/Next/Blocked；阶段证据仍留在对应 STATUS
 与 history，避免复制详情。
 
@@ -132,7 +125,7 @@ Stage 工作项与顶层跨阶段工作项在完成后统一使用以下时间�
 
 它表示完成门槛实际满足、工作即将从 `Now` 移出的时间，而不是月度文件创建时间或
 Agent 开始工作的时间。秒级时间和显式 UTC offset 都是必需项；仓库检查会遍历所有
-`workflow/*/history/YYYY-MM.md` 和 `docs/history/YYYY-MM/TODO_NOW.md`，拒绝缺失、
+`docs/workflow/<stage>-YYYY-MM.md` 和 `docs/ROADMAP_HISTORY_YYYY-MM.md`，拒绝缺失、
 重复、无时区或仅含日期的完成记录。
 
 ## 5. 环境拓扑
@@ -155,7 +148,7 @@ dev46 起使用两层环境：uv 管理 EasyDesign core、CLI、UI 和开发工�
 新用户运行 `uv sync --frozen --extra ui`，在仓库根创建 `.venv` 并 editable 安装源码。
 `pyproject.toml` 声明允许范围，`uv.lock` 固定精确版本、来源和平台条件；`--frozen`
 禁止重新求解。`.venv` 不包含 PyMOL、BoltzGen、Protenix、ScanNet 或 TNP。
-`environment.yml` 和 `core-ui` component 只作为旧部署与离线恢复入口。根
+`environments/legacy-easydesign-core.yml` 和 `core-ui` component 只作为旧部署与离线恢复入口。根
 `./easydesign` 仍是兼容入口，但运行时选择固定为仓库 `.venv` 优先；只有 `.venv` 不存在
 时才回退到旧 Conda core。完成 uv 迁移后，旧 core 通过 append-only environment registry
 revision 标记为 `retired`，目录、inventory、探针和历史记录均继续保留。
@@ -287,7 +280,7 @@ runs/
 
 正常的“配置下一步”在同一 run 中保存新的 config/RunManifest revision；只有改变
 target、已完成 Stage 参数、上游科学决定或重新选区时才创建分支 run。完整稳定规则见
-[`RUN_LAYOUT.md`](architecture/RUN_LAYOUT.md)。
+[`RUN_LAYOUT.md`](RUN_LAYOUT.md)。
 
 早期运行可以整体迁移，但不得改写内部文件。迁移前后必须验证目录 fingerprint 和所有
 manifest artifact 引用，并在 `_archive/migrations/` 保存旧路径、新路径、文件数、字节数
@@ -923,8 +916,8 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
   继续独立环境；基础契约使用 Pydantic、规范 JSON、相对路径和 SHA-256。
 - 2026-07-24：M1 基础运行契约完成工程验证；这只证明契约实现可用，不代表任一科学
   Stage 已实现或通过科学验证。
-- 2026-07-24：阶段治理下沉到每个 workflow 的 `STATUS.md` 与 `history/`；顶层
-  TODO/TODO_NOW 只做宏观汇总和索引，避免重复维护七套项目级任务。
+- 2026-07-24：阶段治理拆分为稳定契约、动态状态与月度历史；顶层路线图只做宏观汇总
+  和索引，避免重复维护七套项目级任务。
 - 2026-07-24：Stage 01 首个机器切片采用 sequence/FASTA → 通用结构预测接口 →
   Protenix-v2 2.0.0 → Target Bundle；重型环境只通过显式 executable、环境变量和文件
   协议访问，remote MSA 与 no-MSA 不得静默互换。
@@ -940,8 +933,8 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
 - 2026-07-24：后续验证证明同一固定 ScanNet commit/权重可在 CPU 完成官方 1BRS 与
   APOE；Stage 02 改为显式 CPU 默认、GPU 可选且无设备 fallback。GPU 兼容性转为性能
   待办，不再阻塞 1.0 主线；上一条保留为最初 GPU-only 决策的历史事实。
-- 2026-07-24：七个 Stage STATUS 的顶层摘要成为状态事实来源，由同步脚本生成顶层
-  TODO/TODO_NOW 实时表，并由 `make check` 阻止摘要漂移。
+- 2026-07-24：七个 Stage status 的顶层摘要成为状态事实来源，由同步脚本生成统一
+  路线图实时表，并由 `make check` 阻止摘要漂移。
 - 2026-07-24：EasyDesign 的长期产品边界是多 binder 类型平台；VHH 是 1.0 reference
   profile，不是永久边界。蛋白、肽和后续类型必须通过 profile/adapter 复用同一七阶段
   orchestration、manifest、恢复和报告机制。

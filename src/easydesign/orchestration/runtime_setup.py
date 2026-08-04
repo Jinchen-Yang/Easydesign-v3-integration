@@ -277,7 +277,7 @@ def _verified_lock_input(
 
 
 def _load_assets(context: WorkspaceContext) -> AssetCatalog:
-    path = context.root / "configs" / "runtime-assets.yaml"
+    path = context.root / "config" / "runtime-assets.yaml"
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         return AssetCatalog.model_validate(raw)
@@ -1058,7 +1058,7 @@ def initialize_workspace_metadata(context: WorkspaceContext) -> None:
                 json.dumps(
                 {
                     "schema_version": "0.1",
-                    "catalog": "../configs/runtime-assets.yaml",
+                    "catalog": "../config/runtime-assets.yaml",
                     "record_directory": "state/registries/assets",
                     "selection": "highest-valid-revision-per-asset-id",
                 },

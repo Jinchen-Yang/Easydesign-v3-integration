@@ -1250,11 +1250,6 @@ function StageTwo({
               <p className="section-label">已确认的结合区域</p>
               <h3>{formatNumber(stage.highlights.region_count, 0)} 个区域</h3>
             </div>
-            <span className="evidence-chip">
-              {stage.highlights.region_source === "pse-color-annotation"
-                ? "来自 PSE 染色"
-                : String(stage.highlights.region_source || "—")}
-            </span>
           </div>
           <div className="region-list">
             {(stage.tables.regions || []).map((region) => (
@@ -1262,14 +1257,12 @@ function StageTwo({
                 <strong>{String(region.id)}</strong>
                 <div>
                   <span>{formatNumber(region.member_count, 0)} 个残基</span>
-                  <small>规范编号 {String(region.label_ranges)}</small>
                 </div>
               </div>
             ))}
           </div>
           <p className="fine">
-            用户区域属于人工结构先验，不自动等同于经过能量学验证的结合热点；确认人：
-            {String(stage.highlights.approved_by || "—")}。
+            这些区域是用户确认的设计输入，不代表实验验证的结合位点。
           </p>
           <p className="stage-lock-note">🔒 {access.reason}</p>
         </section>
@@ -1825,6 +1818,13 @@ function RunWorkspace({
             <div><dt>EasyDesign 版本</dt><dd>{run.code_version}</dd></div>
             <div><dt>源代码提交</dt><dd><code>{run.code_commit?.slice(0, 12) || "来自已安装的软件包"}</code></dd></div>
             <div><dt>运行配置</dt><dd>{run.profile_id || "未记录"}</dd></div>
+            {run.stages[1]?.state !== "not-reached" && (
+              <>
+                <div><dt>第2步区域来源</dt><dd><code>{String(run.stages[1]?.highlights.region_source || "未记录")}</code></dd></div>
+                <div><dt>第2步提交渠道</dt><dd><code>{String(run.stages[1]?.highlights.approval_source || "保存在正式 artifact")}</code></dd></div>
+                <div><dt>第2步批准记录</dt><dd><code>{String(run.stages[1]?.highlights.approved_by || run.stages[1]?.highlights.approval_authority || "保存在正式 artifact")}</code></dd></div>
+              </>
+            )}
           </dl>
           <div className="audit-chain">
             {run.stages.map((item) => (

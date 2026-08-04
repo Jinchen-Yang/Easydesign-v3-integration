@@ -8,13 +8,17 @@
 ```text
 easydesign-clean/
 ├── README.md                 # 项目入口与当前状态
+├── README.en.md              # 与中文入口结构一致的英文独立译本
+├── DEVELOPMENT.md            # uv lock、测试、构建与跨仓开发门禁
 ├── PROJECT_CHARTER.md        # 战略、1.0 边界与工程规则
 ├── AGENTS.md                 # Agent 自动工作协议
 ├── TODO.md                   # 宏观里程碑和七阶段状态索引
 ├── TODO_NOW.md               # 跨阶段当前重点、阻塞和历史索引
 ├── easydesign                # 从自身位置发现工作区的唯一启动器
 ├── easydesign-workspace.yaml # 可移植工作区声明
-├── environment.yml           # easydesign-core Conda 环境入口
+├── .python-version           # uv 首选 Python 3.11
+├── uv.lock                   # core/UI/dev 跨平台精确依赖解析
+├── environment.yml           # 旧部署与离线恢复的 core Conda 兼容入口
 ├── environments/             # 环境配方与 linux-64 内容身份锁
 ├── pyproject.toml            # Python 包、运行依赖和开发依赖
 ├── Makefile                  # 环境、检查、测试和构建入口
@@ -133,11 +137,12 @@ Agent 开始工作的时间。秒级时间和显式 UTC offset 都是必需项�
 
 ## 5. 环境拓扑
 
-当前统一使用 Conda 管理环境，但每个重型工具仍保持隔离。所有本机可变状态收敛在当前
-仓库的 `runtime/`，不再要求用户拼接分散在 home、系统盘和数据盘的路径：
+dev46 起使用两层环境：uv 管理 EasyDesign core、CLI、UI 和开发工具；五个重型科学
+后端继续使用独立的精确 Conda lock。所有科学可变状态收敛在当前仓库的 `runtime/`，
+不要求用户拼接分散在 home、系统盘和数据盘的路径：
 
 ```text
-easydesign-core (Python 3.11)
+.venv / EasyDesign core (uv，Python 3.11；兼容 3.12)
 ├── pipeline、manifest、配置、轻量生信、测试和报告
 ├── subprocess/JSON+PDB → pymol-pse 环境
 ├── subprocess/PDB+CSV  → scannet-epitope 隔离环境（CPU 默认，GPU 可选）
@@ -147,18 +152,22 @@ easydesign-core (Python 3.11)
 └── executor adapter     → local/Slurm/SMART
 ```
 
-根启动器按 lock 身份安装到 `runtime/envs/<environment-id>-<lock-sha>/`。lock 变化时
+新用户运行 `uv sync --frozen --extra ui`，在仓库根创建 `.venv` 并 editable 安装源码。
+`pyproject.toml` 声明允许范围，`uv.lock` 固定精确版本、来源和平台条件；`--frozen`
+禁止重新求解。`.venv` 不包含 PyMOL、BoltzGen、Protenix、ScanNet 或 TNP。
+`environment.yml`、`core-ui` component 和根 `./easydesign` 启动器只作为旧部署、离线恢复
+和兼容入口，不再是新用户主路径。
+
+科学环境按 lock 身份安装到 `runtime/envs/<environment-id>-<lock-sha>/`。lock 变化时
 建立新目录并切换 append-only 注册记录，旧环境保留；失败 staging 移入
 `runtime/quarantine/`，不会递归删除。提交到 Git 的
 `environments/locks/*-linux-64.conda-lock.txt` 是 Conda explicit package set；
 需要 pip 的环境另有精确 `pip-lock.txt`，schema 0.2 JSON 同时冻结 sidecar SHA-256、
-Python 版本、探针和安装预算。`environment.yml` 与 `environments/*.yml` 只作为人类
-可读配方，不参与正式 setup 的依赖重新解析。`pyproject.toml` 仍是 EasyDesign 自身
-Python API 和 console-script 声明源；core 在锁定依赖后以 `--no-deps`、
-`--no-build-isolation` editable 安装当前源码。
-安装选择分为完整、最小和单组件三种投影。单组件以
+Python 版本、探针和安装预算。`environments/*.yml` 只作为人类可读配方，不参与正式
+科学 setup 的依赖重新解析。单组件以
 `core-ui`、`pymol-pse`、`protenix-v2`、`scannet-epitope`、`boltzgen` 或 `tnp`
-为稳定 ID，同时选择恰好对应的环境 lock 与必需资产集合。环境先构建，资产逐个 staging
+为稳定兼容 ID；新 uv 部署只逐项调用后五个科学 component，避免重复创建 core 环境。
+每个 component 同时选择恰好对应的环境 lock 与必需资产集合。环境先构建，资产逐个 staging
 并校验后发布，因此磁盘峰值按“环境及其缓存 + 已发布资产 + 最大单资产 staging”计算，
 不再假设所有后端与所有资产同一时刻重复存在。完整安装与组件安装共用
 `setup_workspace()`，CLI 和 UI 不得维护第二套映射。部署策略要求安装完成后固定保留
@@ -957,6 +966,10 @@ BoltzGen、Protenix-v2/AFO/AF3 以及 local/Slurm/SMART 可以替换而不改阶
   共享实现，通用 DecisionRecord 批准后在同一 run 建立新 attempt，真实下单永不自动化。
   完整取舍见
   [`ADR-0002`](decisions/ADR-0002-developer-preview-cli-and-code-identity.md)。
+- 2026-08-04：dev46 将 core/CLI/UI/dev 从兼容 Conda core 迁移到提交的跨平台 `uv.lock`；
+  五个科学后端、模型 registry 和 append-only setup 保持独立 Conda/资产契约。新用户只在
+  首次同步依赖时使用 uv，激活 `.venv` 后统一运行 `easydesign ...`。wheel identity 变化
+  仍必须在交付前以相同 SHA 同步 Suzhou2 Manager，不重装后端或复制模型。
 
 重大决策同时在本节建立索引；涉及稳定接口和分发边界时新增独立 ADR。
 

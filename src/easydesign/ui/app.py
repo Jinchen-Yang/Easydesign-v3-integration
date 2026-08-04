@@ -1015,8 +1015,6 @@ def _initial_structure_pml(
                 f"color {colors[region_id]}, {selection}",
             ]
         )
-        if stage_number == 2:
-            lines.append(f"show sticks, {selection}")
     lines.extend(["orient target", "deselect"])
     return "\n".join(lines) + "\n"
 
@@ -4397,9 +4395,12 @@ def serve_ui(
     projects_root: Path | None = None,
     profile_path: Path | None = None,
     job_root: Path | None = None,
+    host: str = LOCAL_HOST,
     port: int = 18769,
     open_browser: bool = False,
 ) -> None:
+    if host != LOCAL_HOST:
+        raise ConfigurationError("UI host 仅允许 127.0.0.1")
     if port < 1 or port > 65535:
         raise ConfigurationError("UI port 必须在 1–65535")
     application = create_ui_app(
@@ -4408,9 +4409,9 @@ def serve_ui(
         profile_path=profile_path,
         job_root=job_root,
     )
-    url = f"http://{LOCAL_HOST}:{port}"
+    url = f"http://{host}:{port}"
     print(f"EasyDesign 科研工作台：{url}")
     print(f"远程服务器请使用：ssh -L {port}:127.0.0.1:{port} USER@SERVER")
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-    uvicorn.run(application, host=LOCAL_HOST, port=port, log_level="info")
+    uvicorn.run(application, host=host, port=port, log_level="info")

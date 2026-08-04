@@ -1,0 +1,53 @@
+name: uv core and UI smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-ui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - name: Sync the frozen core and UI environment
+        run: uv sync --frozen --extra ui --extra dev
+      - name: Verify lock and product entry points
+        run: |
+          uv lock --check
+          uv run easydesign --version
+          uv run easydesign --help
+          uv run easydesign setup --help
+          uv run easydesign ui serve --help
+      - name: Run focused core and UI tests
+        run: |
+          uv run python -m pytest \
+            tests/unit/core \
+            tests/unit/test_workspace_context.py \
+            tests/unit/ui/test_workbench.py \
+            -k "health or stage_one_and_two_structure_pml"
+      - name: Start localhost UI and check health
+        shell: bash
+        run: |
+          mkdir -p runtime/tmp
+          uv run easydesign ui serve --host 127.0.0.1 --port 18769 \
+            >runtime/tmp/uv-smoke-ui.log 2>&1 &
+          ui_pid=$!
+          trap 'kill "$ui_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18769/api/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat runtime/tmp/uv-smoke-ui.log
+          exit 1

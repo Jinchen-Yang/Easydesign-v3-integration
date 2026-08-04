@@ -9,8 +9,10 @@ from types import SimpleNamespace
 import gemmi
 import numpy as np
 import yaml
-from pytest import MonkeyPatch, raises
+from pytest import MonkeyPatch, fixture, raises
 
+import easydesign.orchestration.stage04 as stage04_module
+import easydesign.orchestration.stage06 as stage06_module
 from easydesign.backends.boltzgen import (
     BoltzGenGenerationRequest,
     BoltzGenGenerationResult,
@@ -40,6 +42,7 @@ from easydesign.core import (
 )
 from easydesign.filtering.structure_metrics import InterfaceMetricValues
 from easydesign.orchestration import read_pipeline_progress
+from easydesign.orchestration.execution_targets import GpuLeaseStore
 from easydesign.orchestration.stage04 import execute_stage04
 from easydesign.orchestration.stage05 import execute_stage05
 from easydesign.orchestration.stage06 import execute_stage06
@@ -69,6 +72,29 @@ from easydesign.stages.s07_final_filtering_and_selection import (
 )
 
 NOW = datetime(2026, 7, 26, 3, 0, tzinfo=UTC)
+
+
+@fixture(autouse=True)
+def _isolated_gpu_lease_store(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Keep unit tests away from append-only leases in the real workspace."""
+
+    lease_store = GpuLeaseStore(
+        lease_root=(tmp_path / "gpu-leases").resolve(),
+        host="unit-test-host",
+    )
+    monkeypatch.setattr(
+        stage04_module,
+        "gpu_lease_store_for_run",
+        lambda _run_root: lease_store,
+    )
+    monkeypatch.setattr(
+        stage06_module,
+        "gpu_lease_store_for_run",
+        lambda _run_root: lease_store,
+    )
 
 
 class _FakeGpuProbe:

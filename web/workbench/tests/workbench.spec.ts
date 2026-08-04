@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { pymolDisplayPml } from "../src/pymolDisplay";
 
 const states = [
   "succeeded",
@@ -98,10 +99,22 @@ const manualStageTwoRun = {
     state: index < 2 ? "succeeded" : "not-reached",
     summary: index === 1 ? "人工区域已批准并发布" : item.summary,
     highlights: index === 1
-      ? { region_count: 3, region_source: "manual-residue-list" }
+      ? {
+        region_count: 3,
+        region_source: "manual-residue-list",
+        approved_by: "human:local-workbench",
+        approval_authority: "human",
+        approval_source: "explicit-review",
+      }
       : item.highlights,
     tables: index === 1
-      ? { regions: [{ id: "A" }, { id: "B" }, { id: "C" }] }
+      ? {
+        regions: [
+          { id: "A", member_count: 9, label_ranges: "10,14,17,24,28,33,37,41,44" },
+          { id: "B", member_count: 14, label_ranges: "36,39,43,47,50,54,67,71,78,81,85,89,92,96" },
+          { id: "C", member_count: 14, label_ranges: "75,79,82,86,90,93,97,112,116,119,123,126,130,133" },
+        ],
+      }
       : item.tables,
   })),
 };
@@ -985,6 +998,23 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
+test("legacy managed region sticks are hidden without affecting custom sticks", () => {
+  const pml = [
+    "show sticks, ed_region_A",
+    "show stick, ed_region_B",
+    "show sticks, ligand_focus",
+    "show sticks, target and resi 23",
+  ].join("\n");
+
+  for (const stageNumber of [1, 2] as const) {
+    const display = pymolDisplayPml(pml, stageNumber);
+    expect(display).not.toContain("show sticks, ed_region_A");
+    expect(display).not.toContain("show stick, ed_region_B");
+    expect(display).toContain("show sticks, ligand_focus");
+    expect(display).toContain("show sticks, target and resi 23");
+  }
+});
+
 test("project-first navigation and scientific stop are explained in Chinese", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "我的项目" })).toBeVisible();
@@ -1604,6 +1634,16 @@ test("explicit manual regions complete one approval and open a succeeded branch"
   await expect(page.getByRole("heading", { name: "配置第3步：生成设计方案" })).toBeVisible();
   await expect(page.getByText("3 个区域 × 7 个骨架")).toBeVisible();
   await expect(page.getByText("已完成", { exact: true }).first()).toBeVisible();
+  await page.locator(".stage-node").nth(1).click();
+  await expect(page.getByText("9 个残基", { exact: true })).toBeVisible();
+  await expect(page.getByText("14 个残基", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("这些区域是用户确认的设计输入，不代表实验验证的结合位点。")).toBeVisible();
+  await expect(page.getByText(/规范编号 10/)).toHaveCount(0);
+  await expect(page.getByText("manual-residue-list", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("human:local-workbench", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "技术记录" }).click();
+  await expect(page.getByText("manual-residue-list", { exact: true })).toBeVisible();
+  await expect(page.getByText("explicit-review", { exact: true })).toBeVisible();
 });
 
 test("stage three continuation runs from Python defaults and advances to stage four", async ({ page }) => {

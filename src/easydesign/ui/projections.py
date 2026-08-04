@@ -140,6 +140,8 @@ def _stage_highlights(
             "region_count": len(regions),
             "region_source": (hotspots.get("region_source") or {}).get("type"),
             "approved_by": hotspots.get("approved_by"),
+            "approval_authority": hotspots.get("approval_authority"),
+            "approval_source": hotspots.get("approval_source"),
             "selection_basis": hotspots.get("selection_basis"),
             "ready_for_stage03": hotspots.get("ready_for_stage03"),
         }

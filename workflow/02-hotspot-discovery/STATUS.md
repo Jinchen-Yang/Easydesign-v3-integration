@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `planned` | dev43 统一 PyMOL/Mol*、编辑层和会话恢复，并修复 PyMOL 自由旋转回弹；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-03 |
+| `planned` | dev46 保留 A/B/C 科学成员，同时移除自动 sticks 和左栏内部编号/来源；逐步骤提交仍固定本步后暂停。 | 复验真实 provider 多区域 PML 往返，同时推进科学 benchmark 和 REP-002 独立 overlay。 | Stage 03 handoff 无工程阻塞；GPU、外部证据和 VHH–抗原科学验证仍是后续工作。 | 2026-08-04 |
 
 ## 当前结论
 
@@ -81,6 +81,10 @@
   不写回 `ed_region_A/B/C`。PyMOL 鼠标相机不再追加 PML，重放后恢复当前自由取向。
 - dev43 修复刷新时的会话水合顺序：已有结构助手草稿先恢复到左侧编辑层，水合完成前
   禁止场景同步，因此上游 9/14/14 不会再覆盖助手已经清空的 B/C。
+- dev46 的新场景不再为 `ed_region_A/B/C` 自动生成 sticks；旧 SceneVersion 仅在 PyMOL
+  显示兼容层过滤精确匹配的历史自动命令，用户自定义 selection sticks 不受影响。编辑态
+  和只读态左栏只显示 A/B/C、成员数和证据限制提示；编号、来源与批准记录仍保存在正式
+  artifact/技术记录，Stage 03 获得的区域成员完全不变。
 - 结构助手改为部署者统一提供的平台能力：浏览器请求不再包含 provider 或用户 API key，
   设置页不再提供密钥表单；公开状态只报告“EasyDesign 结构助手”是否可用。部署者选择
   的实际 provider/model 仅留在服务端审计记录，平台不可用不影响手工或自动选区。
@@ -118,6 +122,18 @@
 | VHH–抗原真实 benchmark | `planned` | 无科学验证 |
 
 ## Now
+
+### REP-010/UI-028：Stage 02 兼容显示与左栏收敛
+
+- 状态：`smoke-validated`；只调整显示兼容层和产品摘要，不修改科学 artifact 或下游契约。
+- 新场景不再为 `ed_region_A/B/C` 自动生成 sticks；旧不可变 SceneVersion 中精确匹配的
+  历史自动命令只在 PyMOL 显示前过滤，其他用户或助手自定义 selection sticks 保持可用。
+- 编辑态和只读态左栏只显示 A/B/C 与成员数，并保留“用户确认输入不等于实验验证位点”
+  提示；单残基交互仍显示规范编号，来源、渠道和批准记录继续进入正式 artifact 与技术记录。
+- 完成证据：`make check`、Python `439 passed / 8 skipped`、Target Viewer
+  `3 passed / 2 skipped`、Workbench `86 passed / 1 skipped`、localhost UI health 和
+  dev46 wheel 隔离校验均通过；wheel SHA-256 为
+  `11f2e1d558b1b7141027f9ee9339df08e33aa818d4cbabe43f757feb4f7b109d`。
 
 ### S02-008：用户区域与 automatic 科学 benchmark
 
@@ -246,6 +262,15 @@
   坐标存在、用户来源审批和旧 automatic 审批回归；全量测试门禁见本次 history。
 
 ## 工作日志
+
+### 2026-08-04
+
+- REP-010/UI-028 完成：A/B/C 继续以红/蓝/黄 cartoon 显示并保留 selection，但新 PML
+  不再生成自动 sticks；旧 managed stick 命令只在查看器投影中隐藏，不改写 SceneVersion。
+- Stage 02 左栏已删除整串规范编号、`manual-residue-list`、`human:local-workbench` 和批准人；
+  技术记录与正式 artifact 继续保留来源/渠道/审批证据，单残基编辑反馈仍显示规范编号。
+- dev46 门禁为 Python `439 passed / 8 skipped`、Target Viewer `3 passed / 2 skipped`、
+  Workbench `86 passed / 1 skipped`；Mol*、保存/重开和 Stage 03 成员投影均无回归。
 
 ### 2026-08-02
 

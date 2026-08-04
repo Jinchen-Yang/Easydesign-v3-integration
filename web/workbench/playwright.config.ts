@@ -53,7 +53,7 @@ export default defineConfig({
       : []),
   ],
   webServer: {
-    command: process.env.EASYDESIGN_WEB_DEV_COMMAND || "pnpm dev",
+    command: process.env.EASYDESIGN_WEB_DEV_COMMAND || "pnpm preview",
     url: "http://127.0.0.1:4174",
     reuseExistingServer: process.env.EASYDESIGN_REUSE_WEB_SERVER === "1",
     timeout: 30_000,

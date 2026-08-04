@@ -6,7 +6,7 @@
 
 | 总体状态 | 一句话进展 | 当前重心 | 主要阻塞 | 更新时间 |
 | --- | --- | --- | --- | --- |
-| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev45 精简只读摘要并移除 Stage 01 PyMOL 强制区域 stick。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-03 |
+| `smoke-validated` | 六类入口与 Target Bundle 0.4 已通过真实 APOE；dev46 冻结 uv core/UI，并让 Stage 01/02 新旧场景统一为区域 cartoon-only。 | 复验真实 provider 多区域连续编辑和双查看器投影。 | 无 Stage 01 1.0 工程阻塞；REP-009 的 live provider 浏览器矩阵待完成。 | 2026-08-04 |
 
 ## 当前结论
 
@@ -51,6 +51,9 @@
 - dev45 将 Stage 01 左侧结构摘要收敛为单行序列长度，删除重复的目标名、来源、模型数和
   缺失 CA 指标；Stage 01 默认 PML 及旧会话兼容投影不再强制显示 A/B/C stick，只保留
   cartoon 着色。Stage 02 编辑态 stick 与 Mol* 投影均保持原契约。
+- dev46 将 managed-region stick 兼容规则扩展到 Stage 02：只过滤精确匹配
+  `ed_region_A/B/C` 的历史自动命令，用户或助手自定义 selection stick 保持可用；core/UI
+  以提交的 `uv.lock` 冻结，五个科学后端仍由独立 Conda lock 管理。
 - 通用 Target Bundle schema `0.4` 已声明 coordinate model count/IDs、代表 model、共享
   label identity 和 identity/scope/candidate/context evidence；兼容读取 0.1–0.3。
   PSE 与 Protenix 当前仍各发布单模型，这是 adapter
@@ -358,6 +361,15 @@
 - 结论：旧 MSA 复用路径仍为**未通过**，目前不能执行用户提出的预计算 MSA 测试。
 
 ## 工作日志
+
+### 2026-08-04
+
+- dev46 提交 Python 3.11 `.python-version` 和 uv frozen core/UI/dev 解析；Stage 01/02
+  managed regions 均保持 selection 与 cartoon 色彩，但不再自动显示侧链 sticks。
+- 最终门禁：`make check`、Python `439 passed / 8 skipped`、Target Viewer
+  `3 passed / 2 skipped`、Workbench `86 passed / 1 skipped` 和 localhost dev46 health
+  全部通过；最终 wheel SHA-256 为
+  `11f2e1d558b1b7141027f9ee9339df08e33aa818d4cbabe43f757feb4f7b109d`。
 
 ### 2026-08-03
 

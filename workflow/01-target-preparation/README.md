@@ -440,7 +440,8 @@ Stage 01 中所有 PyMOL 操作都属于显示状态：
 
 Stage 01 只读结构摘要只显示规范序列长度；来源、模型数、缺失 CA 和 target ID 仍保留在
 正式 artifact 与证据中，不在左栏重复展示。PSE 来源 A/B/C 在 Stage 01 以 cartoon 颜色
-呈现，不强制显示区域 stick；Stage 02 的区域编辑显示契约不受影响。
+呈现，不强制显示区域 stick；Stage 02 同样保留 selection/cartoon 而不自动显示侧链
+sticks，区域成员和下游科学契约不受影响。
 
 交互状态写入
 `projects/<project_id>/interactive-sessions/<session_id>/` 的

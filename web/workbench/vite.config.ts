@@ -8,6 +8,12 @@ export default defineConfig(({ mode }) => {
   const outputDirectory =
     environment.EASYDESIGN_UI_OUT_DIR ||
     "../../src/easydesign/ui/static";
+  const proxy = {
+    "/api": backend,
+    "/molstar": backend,
+    "/pyodide": backend,
+    "/pymol-wasm": backend,
+  };
   return {
     plugins: [react()],
     build: {
@@ -22,12 +28,13 @@ export default defineConfig(({ mode }) => {
       host: "127.0.0.1",
       port: 4174,
       strictPort: true,
-      proxy: {
-        "/api": backend,
-        "/molstar": backend,
-        "/pyodide": backend,
-        "/pymol-wasm": backend,
-      },
+      proxy,
+    },
+    preview: {
+      host: "127.0.0.1",
+      port: 4174,
+      strictPort: true,
+      proxy,
     },
   };
 });

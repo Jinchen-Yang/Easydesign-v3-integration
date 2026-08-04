@@ -299,7 +299,7 @@ class WorkspaceContext:
                 if marker.is_file():
                     return cls.from_root(parent)
         raise ConfigurationError(
-            f"未找到 {WORKSPACE_MARKER}；请从 EasyDesign 仓库内运行 ./easydesign"
+            f"未找到 {WORKSPACE_MARKER}；请从 EasyDesign 仓库内运行 easydesign"
         )
 
     @classmethod

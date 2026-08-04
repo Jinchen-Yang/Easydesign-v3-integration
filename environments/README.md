@@ -6,19 +6,18 @@ shell profile、Git 全局配置或系统代理。
 
 ## 推荐流程
 
-在 Linux 数据盘克隆仓库后，从仓库根目录运行：
+先按根 README 使用 uv 创建并激活 core/UI `.venv`。在 Linux 数据盘的仓库根目录运行：
 
 ```bash
-./easydesign setup --component pymol-pse --plan
-./easydesign setup --component pymol-pse --detach
-./easydesign setup --status
+easydesign setup --component pymol-pse --plan
+easydesign setup --component pymol-pse --detach
+easydesign setup --status
 ```
 
 逐后端重复上述流程，推荐顺序为：
 
 ```text
-core-ui
-→ pymol-pse
+pymol-pse
 → boltzgen
 → protenix-v2
 → scannet-epitope
@@ -26,8 +25,8 @@ core-ui
 ```
 
 顺序不是科学依赖，只是便于先验证核心、PSE 和生成主线，并在每次大下载后复核空间。
-不带 `--component` 的 setup 表示全量安装；空间有限或远程 SSH 不稳定时不推荐作为首次
-部署方式。
+core/UI 已由 uv 管理，因此新部署不使用无 `--component` 的全量 setup，也不重复创建
+core/UI Conda 环境。
 
 安装目标始终由当前 clone 决定。例如仓库位于数据盘：
 
@@ -50,8 +49,8 @@ runtime/tmp/
 pwd
 df -h . runtime
 du -sh runtime/envs runtime/models runtime/cache runtime/tmp runtime/quarantine
-./easydesign env status
-./easydesign assets status
+easydesign env status
+easydesign assets status
 ```
 
 输出路径若不位于当前仓库，安装器必须拒绝，而不是改写 `~/.config`、`~/.cache` 或系统盘。
@@ -61,7 +60,7 @@ du -sh runtime/envs runtime/models runtime/cache runtime/tmp runtime/quarantine
 可信 HTTPS 镜像：
 
 ```bash
-./easydesign setup --component boltzgen \
+easydesign setup --component boltzgen \
   --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
   --detach
 ```
@@ -94,8 +93,8 @@ EasyDesign 不自动猜测地区或切换镜像；任何镜像都应由部署者
 查询所有任务或一个任务：
 
 ```bash
-./easydesign setup --status
-./easydesign setup --status --job-id setup-YYYYMMDDTHHMMSSZ-XXXXXXXXXX
+easydesign setup --status
+easydesign setup --status --job-id setup-YYYYMMDDTHHMMSSZ-XXXXXXXXXX
 ```
 
 任务目录：
@@ -122,14 +121,14 @@ runtime/state/setup-jobs/<job-id>/
 先查看资产和许可：
 
 ```bash
-./easydesign assets status
-./easydesign setup --component boltzgen --plan
+easydesign assets status
+easydesign setup --component boltzgen --plan
 ```
 
 确认精确资产后再启动：
 
 ```bash
-./easydesign setup --component boltzgen \
+easydesign setup --component boltzgen \
   --accept-license ASSET_ID \
   --detach
 ```
@@ -147,16 +146,27 @@ staging 峰值；setup 还要求保留至少 10% 文件系统容量或 5 GiB。�
 安装任务成功不等于全产品已经可用。依次运行：
 
 ```bash
-./easydesign setup --status --job-id JOB_ID
-./easydesign env status
-./easydesign assets status
-./easydesign doctor --full
+easydesign setup --status --job-id JOB_ID
+easydesign env status
+easydesign assets status
+easydesign doctor --full
 ```
 
 `doctor --full` 只有在当前锁定环境、必需模型/权重、版本探针和设备检查均通过时才返回
 成功。UI 的“安装与环境”页面读取同一批结构化记录，不维护第二套安装状态。
 
 ## 故障处理原则
+
+正常主路径要求 `conda --version` 成功，不需要指定路径。只有 Conda executable 不在
+`PATH` 时才显式提供；该参数不是环境安装目录：
+
+```bash
+easydesign setup --component pymol-pse \
+  --conda /root/miniconda3/bin/conda \
+  --plan
+```
+
+环境仍发布到当前仓库的 `runtime/envs/`。
 
 - 网络中断：查看任务的 stdout/stderr，再以同一 component 重新运行；缓存会被复用。
 - 许可未确认：精确确认缺失的 asset ID 后重新运行。

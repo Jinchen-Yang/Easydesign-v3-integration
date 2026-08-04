@@ -82,7 +82,7 @@ from easydesign.ui.stage05 import get_filter_overview
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
 
 
-def test_stage_one_structure_pml_colors_regions_without_forcing_sticks() -> None:
+def test_stage_one_and_two_structure_pml_color_regions_without_forcing_sticks() -> None:
     projection = SimpleNamespace(
         target_structure_sha256="a" * 64,
         residues=(
@@ -100,8 +100,9 @@ def test_stage_one_structure_pml_colors_regions_without_forcing_sticks() -> None
     stage_two = _initial_structure_pml(projection, regions, stage_number=2)
 
     assert "color red, ed_region_A" in stage_one
+    assert "color red, ed_region_A" in stage_two
     assert "show sticks, ed_region_A" not in stage_one
-    assert "show sticks, ed_region_A" in stage_two
+    assert "show sticks, ed_region_A" not in stage_two
 
 
 def test_project_create_request_accepts_exact_stage06_candidate_count() -> None:
@@ -172,7 +173,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev45",
+        easydesign_version="0.1.0.dev46",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -2048,7 +2049,7 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev45",
+        easydesign_version="0.1.0.dev46",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},

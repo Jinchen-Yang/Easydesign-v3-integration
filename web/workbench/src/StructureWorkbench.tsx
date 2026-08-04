@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { NativePyMOLViewer } from "./chatpymol-port/NativePyMOLViewer";
 import { MolViewer } from "./MolViewer";
+import { pymolDisplayPml } from "./pymolDisplay";
 import type {
   AssistantServiceStatus,
   RegionEditorProjection,
@@ -47,7 +48,6 @@ const REGION_COLORS = {
 const EMPTY_REGIONS: Region[] = [];
 const REGION_OVERLAY_COMMENT = "# EasyDesign live region overlay";
 const LEGACY_REGION_OVERLAY_COMMENT = "# @easydesign live region overlay";
-const MANAGED_REGION_STICK_COMMAND = /^\s*show\s+sticks?\s*,\s*ed_region_[ABC]\s*$/i;
 
 function regionArrayKey(regions?: Region[]): string {
   return (["A", "B", "C"] as const).map((regionId) => {
@@ -103,7 +103,6 @@ function regionOverlayPml(
     lines.push(
       `select ${selection}, ${authorSelector(projection, labels)}`,
       `color ${REGION_COLORS[regionId]}, ${selection}`,
-      `show sticks, ${selection}`,
     );
   }
   return `${lines.join("\n")}\ndeselect\n`;
@@ -253,14 +252,6 @@ function pmlToMolstarProjection(pml: string): {
     actions: actions.filter((item) => item.target === "all" || item.target === "target"),
     unsupported,
   };
-}
-
-function pymolDisplayPml(pml: string, stageNumber: 1 | 2): string {
-  if (stageNumber !== 1) return pml;
-  return pml
-    .split(/\r?\n/)
-    .filter((line) => !MANAGED_REGION_STICK_COMMAND.test(line))
-    .join("\n");
 }
 
 function downloadText(value: string, filename: string) {

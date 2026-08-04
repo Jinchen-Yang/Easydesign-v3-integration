@@ -30,7 +30,9 @@ PYTHON_STAGES = (
     "s07_final_filtering_and_selection",
 )
 ROOT_DOCS = {
+    "DEVELOPMENT.md",
     "README.md",
+    "README.en.md",
     "PROJECT_CHARTER.md",
     "AGENTS.md",
     "DATA_SAFETY.md",
@@ -214,7 +216,7 @@ def main() -> int:
     markdown = project_markdown()
     require(
         not [path for path in markdown if path.name.endswith(".zh-CN.md")],
-        "开发期不得保留独立英文/中文配对文档",
+        "中文主文固定使用 README.md，不保留旧 .zh-CN.md 命名",
         errors,
     )
 
@@ -313,6 +315,8 @@ def main() -> int:
         require(not (base / "CONTRACT.md").exists(), f"{stage} 不应再有独立 CONTRACT", errors)
 
     expected_docs = {
+        "DEVELOPMENT.md",
+        "README.en.md",
         "docs/ARCHITECTURE.md",
         "docs/legacy/BASELINE.md",
         "configs/README.md",
@@ -323,6 +327,15 @@ def main() -> int:
     }
     for relative in expected_docs:
         require((ROOT / relative).is_file(), f"缺少 {relative}", errors)
+    python_version_file = ROOT / ".python-version"
+    require(python_version_file.is_file(), "缺少 .python-version", errors)
+    if python_version_file.is_file():
+        require(
+            python_version_file.read_text(encoding="utf-8") == "3.11\n",
+            ".python-version 必须固定首选 Python 3.11",
+            errors,
+        )
+    require((ROOT / "uv.lock").is_file(), "缺少 uv.lock", errors)
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
@@ -335,14 +348,14 @@ def main() -> int:
         not in path.relative_to(ROOT).as_posix()
     ]
     require(
-        len(governed_markdown) <= 53,
+        len(governed_markdown) <= 55,
         f"Markdown 数量超过精简上限: {len(governed_markdown)}",
         errors,
     )
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev45", "项目版本异常", errors)
+    require(project["version"] == "0.1.0.dev46", "项目版本异常", errors)
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require(
         project.get("scripts") == {"easydesign": "easydesign.cli:main"},

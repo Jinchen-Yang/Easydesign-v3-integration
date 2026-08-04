@@ -526,6 +526,12 @@ Stage 02 与 Stage 01 共用默认浏览器 PyMOL、平级 Mol* 和同一份已�
 重新打开已有结构助手会话时，左侧 A/B/C 必须先恢复该会话的 `current_regions`；只有全新
 会话才从上游区域初始化，加载过程不得把上游副本重新写回已有会话。
 
+A/B/C 默认只以红、蓝、黄 cartoon 着色并保留受管理 selection，不自动显示侧链 sticks。
+兼容旧项目时只在 PyMOL 显示前过滤精确匹配的历史 `show stick(s), ed_region_A/B/C`；
+不重写不可变 PML，也不影响用户或助手创建的其他 selection sticks。Stage 02 主左栏只显示
+三个区域及成员数；完整编号、来源和批准记录保留在正式 artifact 与技术记录，单残基编辑
+反馈仍显示规范编号。
+
 DeepSeek/智谱 GLM 助手采用 ChatPyMol 原生完整 PML 主循环：
 
 ```text

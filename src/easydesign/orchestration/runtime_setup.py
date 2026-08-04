@@ -1330,7 +1330,7 @@ def import_legacy_deployment(
         "legacy_environment_root": str(source_environments),
         "environments": environments,
         "source_preservation": "unchanged",
-        "next_action": "run ./easydesign setup to rebuild lock-addressed environments",
+        "next_action": "run easydesign setup to rebuild lock-addressed environments",
     }
     report_path = destination / "migration-report.json"
     with report_path.open("x", encoding="utf-8") as handle:

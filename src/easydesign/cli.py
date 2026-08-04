@@ -571,6 +571,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_profile(ui_serve)
     ui_serve.add_argument("--runs-root", type=Path)
     ui_serve.add_argument("--projects-root", type=Path)
+    ui_serve.add_argument("--host", choices=("127.0.0.1",), default="127.0.0.1")
     ui_serve.add_argument("--port", type=int, default=18769)
     ui_serve.add_argument("--open", action="store_true", dest="open_browser")
     return parser
@@ -716,7 +717,7 @@ def _print_setup_summary(summary: BaseModel) -> None:
         component_option = (
             f" --component {payload['component']}" if payload.get("component") else ""
         )
-        print(f"确认后重新运行：./easydesign setup{component_option} --accept-license ASSET_ID")
+        print(f"确认后重新运行：easydesign setup{component_option} --accept-license ASSET_ID")
     print("安装完成。" if payload["ok"] else "安装尚未完整完成；详情已记录，可安全重试。")
 
 
@@ -824,7 +825,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                     print(_format_setup_job(job))
                     print(
                         "\n可安全关闭当前 SSH；稍后运行 "
-                        f"./easydesign setup --status --job-id {job.job_id}"
+                        f"easydesign setup --status --job-id {job.job_id}"
                     )
                 return 0
             summary = setup_workspace(
@@ -869,6 +870,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             ),
             profile_path=(context.profile_path if arguments.profile is None else arguments.profile),
             job_root=context.ui_job_root,
+            host=arguments.host,
             port=arguments.port,
             open_browser=arguments.open_browser,
         )

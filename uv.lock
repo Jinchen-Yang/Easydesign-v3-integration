@@ -148,7 +148,7 @@ wheels = [
 
 [[package]]
 name = "easydesign"
-version = "0.1.0.dev46"
+version = "0.1.0.dev47"
 source = { editable = "." }
 dependencies = [
     { name = "biopython" },

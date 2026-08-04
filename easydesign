@@ -126,6 +126,17 @@ def _core_python() -> Path:
     return _core_prefix() / "bin" / "python"
 
 
+def _venv_python() -> Path:
+    return ROOT / ".venv" / "bin" / "python"
+
+
+def _preferred_python() -> Path:
+    """Prefer the uv workspace runtime while retaining the legacy fallback."""
+
+    python = _venv_python()
+    return python if python.is_file() else _core_python()
+
+
 def _verified_core_lock_input(relative: str, expected_sha256: str) -> Path:
     path = (ROOT / relative).resolve(strict=True)
     try:
@@ -338,7 +349,7 @@ def main() -> int:
     if (
         arguments[:1] == ["setup"]
         and "--plan" in arguments
-        and not _core_python().is_file()
+        and not _preferred_python().is_file()
     ):
         return _show_plan(arguments)
     conda_executable = None
@@ -358,12 +369,13 @@ def main() -> int:
         if index + 1 >= len(arguments):
             raise SystemExit("--pip-index-url 必须提供 HTTPS URL")
         pip_index_url = _validated_pip_index_url(arguments[index + 1])
-    _bootstrap_core(
-        conda_executable=resolved_conda,
-        pip_index_url=pip_index_url,
-    )
+    if not _venv_python().is_file():
+        _bootstrap_core(
+            conda_executable=resolved_conda,
+            pip_index_url=pip_index_url,
+        )
     translated = _translate_arguments(arguments)
-    command = [_core_python(), "-m", "easydesign", *translated]
+    command = [_preferred_python(), "-m", "easydesign", *translated]
     child_environment = _child_environment(pip_index_url=pip_index_url)
     if resolved_conda is not None:
         child_environment["EASYDESIGN_CONDA"] = resolved_conda

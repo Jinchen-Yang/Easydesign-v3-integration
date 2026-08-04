@@ -10,7 +10,10 @@ from easydesign.core import ConfigurationError
 from easydesign.orchestration import runtime_setup
 from easydesign.orchestration.runtime_setup import (
     AssetDefinition,
+    EnvironmentRecord,
     ensure_asset,
+    latest_environment_records,
+    retire_environment,
     setup_plan,
     setup_workspace,
     validate_pip_index_url,
@@ -33,6 +36,64 @@ def _workspace(tmp_path: Path) -> WorkspaceContext:
         encoding="utf-8",
     )
     return WorkspaceContext.from_root(tmp_path)
+
+
+def test_retire_environment_appends_record_without_changing_prefix(
+    tmp_path: Path,
+) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    prefix = Path("runtime/envs/easydesign-core-test")
+    available = EnvironmentRecord(
+        environment_id="easydesign-core",
+        lock_sha256="a" * 64,
+        relative_prefix=prefix,
+        status="available",
+        probe_command=("python", "-V"),
+        recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
+    )
+    first = runtime_setup._append_record(context.environment_registry_root, available)
+
+    retired = retire_environment(
+        context,
+        "easydesign-core",
+        reason="uv .venv is the primary core runtime",
+    )
+
+    revisions = sorted(context.environment_registry_root.glob("revision-*.json"))
+    assert first == revisions[0]
+    assert len(revisions) == 2
+    assert EnvironmentRecord.model_validate_json(first.read_text()).status == "available"
+    assert retired.status == "retired"
+    assert retired.relative_prefix == prefix
+    assert retired.message == "uv .venv is the primary core runtime"
+    assert latest_environment_records(context)["easydesign-core"] == retired
+
+
+def test_retire_environment_is_idempotent(tmp_path: Path) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    runtime_setup._append_record(
+        context.environment_registry_root,
+        EnvironmentRecord(
+            environment_id="easydesign-core",
+            lock_sha256="b" * 64,
+            relative_prefix=Path("runtime/envs/easydesign-core-test"),
+            status="retired",
+            probe_command=("python", "-V"),
+            recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
+            message="already retired",
+        ),
+    )
+
+    retired = retire_environment(
+        context,
+        "easydesign-core",
+        reason="duplicate request",
+    )
+
+    assert retired.message == "already retired"
+    assert len(tuple(context.environment_registry_root.glob("revision-*.json"))) == 1
 
 
 def test_setup_plan_keeps_every_target_inside_workspace() -> None:

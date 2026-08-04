@@ -155,8 +155,10 @@ dev46 起使用两层环境：uv 管理 EasyDesign core、CLI、UI 和开发工�
 新用户运行 `uv sync --frozen --extra ui`，在仓库根创建 `.venv` 并 editable 安装源码。
 `pyproject.toml` 声明允许范围，`uv.lock` 固定精确版本、来源和平台条件；`--frozen`
 禁止重新求解。`.venv` 不包含 PyMOL、BoltzGen、Protenix、ScanNet 或 TNP。
-`environment.yml`、`core-ui` component 和根 `./easydesign` 启动器只作为旧部署、离线恢复
-和兼容入口，不再是新用户主路径。
+`environment.yml` 和 `core-ui` component 只作为旧部署与离线恢复入口。根
+`./easydesign` 仍是兼容入口，但运行时选择固定为仓库 `.venv` 优先；只有 `.venv` 不存在
+时才回退到旧 Conda core。完成 uv 迁移后，旧 core 通过 append-only environment registry
+revision 标记为 `retired`，目录、inventory、探针和历史记录均继续保留。
 
 科学环境按 lock 身份安装到 `runtime/envs/<environment-id>-<lock-sha>/`。lock 变化时
 建立新目录并切换 append-only 注册记录，旧环境保留；失败 staging 移入

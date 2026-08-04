@@ -5,7 +5,7 @@
 EasyDesign is a contract-first, evidence-preserving, recoverable workbench for a seven-stage
 protein-binder design workflow.
 
-Current version: `0.1.0.dev46`. This repository remains a Developer Preview: it is not published
+Current version: `0.1.0.dev47`. This repository remains a Developer Preview: it is not published
 to PyPI, does not add a new open-source license, and retains the `Private :: Do Not Upload`
 classifier. Review intellectual-property, license, and data permissions before using it outside
 the authorized repository context.

@@ -30,7 +30,7 @@ from easydesign.orchestration.application import diagnose_runtime
 from easydesign.orchestration.continuation import materialize_continuation_config
 from easydesign.orchestration.profile import load_runtime_profile
 from easydesign.orchestration.runtime_setup import (
-    ENVIRONMENT_IDS,
+    SCIENCE_ENVIRONMENT_IDS,
     latest_asset_records,
     latest_environment_records,
 )
@@ -339,7 +339,7 @@ class SelfTestStore:
         asset_records = latest_asset_records(self.workspace)
         unavailable_environments = [
             environment_id
-            for environment_id in ENVIRONMENT_IDS
+            for environment_id in SCIENCE_ENVIRONMENT_IDS
             if environment_records.get(environment_id) is None
             or environment_records[environment_id].status != "available"
         ]

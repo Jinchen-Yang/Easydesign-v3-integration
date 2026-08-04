@@ -9,7 +9,7 @@
   "stage_range": [6, 7],
   "candidate_budget": 37,
   "backend_id": "boltzgen-0.3.2",
-  "easydesign_version": "0.1.0.dev46",
+  "easydesign_version": "0.1.0.dev47",
   "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "upstream_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "inputs": [

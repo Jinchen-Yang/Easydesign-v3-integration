@@ -31,6 +31,13 @@ ENVIRONMENT_IDS = (
     "boltzgen",
     "tnp",
 )
+SCIENCE_ENVIRONMENT_IDS = (
+    "pymol-pse",
+    "protenix-v2",
+    "scannet-epitope",
+    "boltzgen",
+    "tnp",
+)
 MINIMAL_ENVIRONMENT_IDS = ("easydesign-core", "reporting-web")
 SETUP_COMPONENT_ENVIRONMENTS: dict[str, tuple[str, ...]] = {
     "core-ui": MINIMAL_ENVIRONMENT_IDS,
@@ -94,7 +101,7 @@ class EnvironmentRecord(BaseModel):
     environment_id: str
     lock_sha256: str
     relative_prefix: Path
-    status: Literal["available", "failed", "unsupported-platform"]
+    status: Literal["available", "failed", "unsupported-platform", "retired"]
     python_version: str | None = None
     probe_command: tuple[str, ...]
     probe_returncode: int | None = None
@@ -103,6 +110,7 @@ class EnvironmentRecord(BaseModel):
     package_inventory: Path | None = None
     package_inventory_sha256: str | None = None
     recorded_at: datetime
+    message: str | None = None
 
 
 class AssetDefinition(BaseModel):
@@ -305,6 +313,35 @@ def latest_environment_records(context: WorkspaceContext) -> dict[str, Environme
         record = EnvironmentRecord.model_validate_json(path.read_text(encoding="utf-8"))
         records[record.environment_id] = record
     return records
+
+
+def retire_environment(
+    context: WorkspaceContext,
+    environment_id: str,
+    *,
+    reason: str,
+) -> EnvironmentRecord:
+    """Append a retirement record without changing the environment directory."""
+
+    if environment_id not in ENVIRONMENT_IDS:
+        raise ConfigurationError(f"未知环境 ID: {environment_id}")
+    normalized_reason = reason.strip()
+    if not normalized_reason:
+        raise ConfigurationError("环境 retirement reason 不能为空")
+    current = latest_environment_records(context).get(environment_id)
+    if current is None:
+        raise ConfigurationError(f"环境没有可 retirement 的 registry 记录: {environment_id}")
+    if current.status == "retired":
+        return current
+    retired = current.model_copy(
+        update={
+            "status": "retired",
+            "recorded_at": datetime.now(tz=UTC),
+            "message": normalized_reason,
+        }
+    )
+    _append_record(context.environment_registry_root, retired)
+    return retired
 
 
 def latest_asset_records(context: WorkspaceContext) -> dict[str, AssetRecord]:

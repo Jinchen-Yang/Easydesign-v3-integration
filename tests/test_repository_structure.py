@@ -52,6 +52,31 @@ def test_repository_launcher_preserves_proxy_and_translates_ui_shortcut(
     assert child_environment()["HTTPS_PROXY"] == os.environ["HTTPS_PROXY"]
 
 
+def test_repository_launcher_prefers_uv_venv_and_keeps_legacy_fallback(
+    tmp_path: Path,
+) -> None:
+    launcher = tmp_path / "easydesign"
+    shutil.copy2(ROOT / "easydesign", launcher)
+    lock_root = tmp_path / "environments" / "locks"
+    lock_root.mkdir(parents=True)
+    shutil.copy2(
+        ROOT / "environments" / "locks" / "easydesign-core-linux-64.lock.json",
+        lock_root,
+    )
+    namespace = runpy.run_path(
+        str(launcher),
+        run_name="easydesign_launcher_runtime_test",
+    )
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.touch()
+
+    assert namespace["_preferred_python"]() == venv_python
+
+    venv_python.unlink()
+    assert namespace["_preferred_python"]() == namespace["_core_python"]()
+
+
 def test_repository_launcher_plan_does_not_bootstrap_core(
     tmp_path: Path,
 ) -> None:

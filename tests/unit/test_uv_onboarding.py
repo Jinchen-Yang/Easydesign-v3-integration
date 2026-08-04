@@ -29,7 +29,7 @@ def test_uv_files_and_python_contract_are_committed() -> None:
 
 
 def test_readmes_match_the_real_setup_and_remote_cli_contract() -> None:
-    for filename in ("README.md", "README.en.md"):
+    for filename in ("README.md", "docs/README.en.md"):
         markdown = (ROOT / filename).read_text(encoding="utf-8")
         shell = _shell_blocks(markdown)
         assert "uv sync --frozen --extra ui" in shell

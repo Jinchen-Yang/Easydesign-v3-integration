@@ -1,6 +1,6 @@
 # EasyDesign
 
-[中文](README.md) · [English](README.en.md)
+[中文](README.md) · [English](docs/README.en.md)
 
 EasyDesign 是一个以契约、证据和可恢复执行为核心的蛋白结合分子七阶段设计工作台。
 

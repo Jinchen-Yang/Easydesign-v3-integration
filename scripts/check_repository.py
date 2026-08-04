@@ -33,7 +33,6 @@ PYTHON_STAGES = (
 ROOT_DOCS = {
     "DEVELOPMENT.md",
     "README.md",
-    "README.en.md",
     "PROJECT_CHARTER.md",
     "AGENTS.md",
     "DATA_SAFETY.md",
@@ -343,7 +342,7 @@ def main() -> int:
 
     expected_docs = {
         "DEVELOPMENT.md",
-        "README.en.md",
+        "docs/README.en.md",
         "docs/ARCHITECTURE.md",
         "docs/agent/RELEASE_AND_REMOTE.md",
         "docs/agent/RUNTIME_AND_DATA.md",

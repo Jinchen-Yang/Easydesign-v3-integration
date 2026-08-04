@@ -8,7 +8,7 @@
 ```text
 easydesign-clean/
 ├── README.md                 # 项目入口与当前状态
-├── README.en.md              # 与中文入口结构一致的英文独立译本
+├── docs/README.en.md         # 与中文入口结构一致的英文独立译本
 ├── DEVELOPMENT.md            # uv lock、测试、构建与跨仓开发门禁
 ├── PROJECT_CHARTER.md        # 战略、1.0 边界与工程规则
 ├── AGENTS.md                 # Agent 自动工作协议

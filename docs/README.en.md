@@ -1,6 +1,6 @@
 # EasyDesign
 
-[中文](README.md) · [English](README.en.md)
+[中文](../README.md) · [English](README.en.md)
 
 EasyDesign is a contract-first, evidence-preserving, recoverable workbench for a seven-stage
 protein-binder design workflow.
@@ -177,7 +177,7 @@ easydesign doctor --full
 ```
 
 Only a successful `doctor --full` means the complete local scientific workbench is ready. See the
-[environment manual](environments/README.md) for disk peaks, mirrors, caches, and safe recovery.
+[environment manual](../environments/README.md) for disk peaks, mirrors, caches, and safe recovery.
 
 Platform boundaries:
 
@@ -269,15 +269,15 @@ structured GPU, disk, environment, model, and license preflight before submissio
   policies.
 - A public license, PyPI release, and formal multi-user security boundary remain separate decisions.
 
-See [TODO_NOW.md](TODO_NOW.md) for current work, [TODO.md](TODO.md) for the complete task registry,
-and the [Case Registry](docs/validation/CASE_REGISTRY.md) for scientific evidence.
+See [TODO_NOW.md](../TODO_NOW.md) for current work, [TODO.md](../TODO.md) for the complete task registry,
+and the [Case Registry](validation/CASE_REGISTRY.md) for scientific evidence.
 
 ## Documentation
 
-- [Environment installation and recovery](environments/README.md)
-- [Development, testing, and uv lock](DEVELOPMENT.md)
-- [Architecture and cross-repository synchronization](docs/ARCHITECTURE.md)
-- [Seven-stage contracts](workflow/README.md)
-- [UI workbench](docs/product/UI_WORKBENCH.md)
-- [Data safety](DATA_SAFETY.md)
-- [Project charter](PROJECT_CHARTER.md)
+- [Environment installation and recovery](../environments/README.md)
+- [Development, testing, and uv lock](../DEVELOPMENT.md)
+- [Architecture and cross-repository synchronization](ARCHITECTURE.md)
+- [Seven-stage contracts](../workflow/README.md)
+- [UI workbench](product/UI_WORKBENCH.md)
+- [Data safety](../DATA_SAFETY.md)
+- [Project charter](../PROJECT_CHARTER.md)

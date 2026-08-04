@@ -202,3 +202,32 @@
 - 安全边界：没有重装 BoltzGen/Protenix/TNP 环境、复制模型、修改科学结果或终止外部
   GPU 进程；8 张 GPU 当时均有外部任务，因此控制端如实显示 `waiting-resource`。
 - 实现提交：以本记录所在 `main` 提交为准。
+
+## 2026-08-04 — ENG-033 / REL-003 / REP-010 / UI-028：dev46 可复现安装与 Stage 02 收敛
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-04T10:57:24+08:00
+- 问题：core/UI 缺少提交级依赖锁和紧凑的新用户安装路径；Stage 02 又会自动突出显示
+  A/B/C 侧链并在主界面暴露整串规范编号和内部来源，既干扰结构阅读，也混淆设计输入与
+  实验验证位点。
+- 方案：提交 Python 3.11 与 `uv.lock`，由 uv 只管理 editable core/UI/dev `.venv`，五个
+  科学后端继续使用独立 Conda lock 和资产许可门；重构中英文 README、环境文档、开发
+  文档和轻量 CI。Stage 02 新场景不再生成 managed-region sticks，旧场景只在 PyMOL
+  投影时过滤三条精确历史自动命令；左栏仅保留 A/B/C、成员数和证据限制提示，正式
+  artifact、区域成员、schema、`hotspots.yaml` 与 Stage 03 输入保持不变。
+- 验证：`make check`、`make test`（439 passed/8 skipped）、`make test-web`（Target
+  Viewer 3 passed/2 skipped；Workbench 86 passed/1 skipped）与 `make build` 全部通过；
+  官方 uv 0.12.1 的 frozen ui/dev 同步、干净 clone README smoke、wheel 隔离安装、CLI
+  help、localhost-only UI health 和 Git diff 检查均通过。最终 wheel SHA-256 为
+  `11f2e1d558b1b7141027f9ee9339df08e33aa818d4cbabe43f757feb4f7b109d`。
+- Manager 同步：只在 queue/running 均为 0 后，以相同 SHA wheel 创建全新 immutable
+  release，追加 activation revision 16 并重启 Manager 服务；Manager 保持
+  `0.1.0.dev2`，固定入口和 ProteinDigger 控制端均报告 EasyDesign dev46、8 张 GPU、
+  三后端 ready、`[(4,5),(6,7)]` 和 queue/running 0。registry 仍为 `paired`。
+- 安全边界：没有重装科学环境、复制或移动模型、改写历史 run/release/revision，也没有
+  终止外部 GPU 进程。部署前后审计 `audit-20260804T023716Z-0007.json` 与
+  `audit-20260804T025724Z-0008.json` 证明六个受保护路径记录完全一致，前后均观察到
+  8 个外部 GPU 进程。
+- 遗留边界：Suzhou2 Manager 源码仓库保持干净 `main`，但私有 GitHub remote 仍缺可用
+  deploy key，无法在 Suzhou2 上 fetch/push；该权限问题不影响已激活的不可变 release。
+- 实现提交：`30f9e7e6589c974a91487ac9b2ef6ef8f9f859f2`；本记录提交负责最终状态归档。

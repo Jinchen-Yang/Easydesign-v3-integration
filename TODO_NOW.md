@@ -18,14 +18,6 @@
 
 ## Now
 
-- `[ENG-033/REL-003]` 将 core、CLI、UI 与开发工具冻结到提交的 `uv.lock`，保留五个
-  科学后端的独立 Conda lock；重构中英文安装文档和轻量 CI，并在 dev46 wheel 通过
-  完整门禁后按相同 SHA 同步 Suzhou2 Manager activation。不得重建科学环境、复制模型
-  或在队列运行时重启服务。
-- `[REP-010/UI-028]` Stage 02 新旧场景均停止自动显示 `ed_region_A/B/C` sticks，左栏
-  只保留 A/B/C 和成员数；完整编号、来源和批准证据继续保存在正式 artifact 与技术记录，
-  不改变成员、schema、`hotspots.yaml` 或 Stage 03 输入。
-
 - `[REP-009]` 已将 Stage 01/02 新结构助手从 typed proposal 混合协议重构为 ChatPyMol
   原生完整 PML 主循环：`safe-pml + 最多两个动态 Skill + 当前完整 PML + metadata +
   最近十轮对话` 进入平台模型，四字段完整 PML 返回后形成不可变 SceneVersion；Mol*
@@ -130,7 +122,7 @@
 
 ## Blocked
 
-- `[ENG-032/REL-002]` Suzhou2 Manager activation revision 15 已精确同步 dev45 wheel；
+- `[ENG-032/REL-003]` Suzhou2 Manager activation revision 16 已精确同步 dev46 wheel；
   锁定环境、模型、三后端 probe、4→5 和 6→7 小链均有真实证据，当前运行路径无阻塞。
   Manager 私有 GitHub remote 仍缺可用 deploy key/host 权限；同步规则文档提交
   `880b52d…158e` 暂只在 Suzhou2 干净 `main`，但不影响已激活 release 的受管任务。

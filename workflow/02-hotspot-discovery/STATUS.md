@@ -123,18 +123,6 @@
 
 ## Now
 
-### REP-010/UI-028：Stage 02 兼容显示与左栏收敛
-
-- 状态：`smoke-validated`；只调整显示兼容层和产品摘要，不修改科学 artifact 或下游契约。
-- 新场景不再为 `ed_region_A/B/C` 自动生成 sticks；旧不可变 SceneVersion 中精确匹配的
-  历史自动命令只在 PyMOL 显示前过滤，其他用户或助手自定义 selection sticks 保持可用。
-- 编辑态和只读态左栏只显示 A/B/C 与成员数，并保留“用户确认输入不等于实验验证位点”
-  提示；单残基交互仍显示规范编号，来源、渠道和批准记录继续进入正式 artifact 与技术记录。
-- 完成证据：`make check`、Python `439 passed / 8 skipped`、Target Viewer
-  `3 passed / 2 skipped`、Workbench `86 passed / 1 skipped`、localhost UI health 和
-  dev46 wheel 隔离校验均通过；wheel SHA-256 为
-  `11f2e1d558b1b7141027f9ee9339df08e33aa818d4cbabe43f757feb4f7b109d`。
-
 ### S02-008：用户区域与 automatic 科学 benchmark
 
 - 状态：`planned`；不阻塞 Stage 03 工程开发。

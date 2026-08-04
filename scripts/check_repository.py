@@ -367,6 +367,16 @@ def main() -> int:
             errors,
         )
     require((ROOT / "uv.lock").is_file(), "缺少 uv.lock", errors)
+    require(
+        (ROOT / "scripts/local_ui_release.py").is_file(),
+        "缺少 immutable local UI release 工具",
+        errors,
+    )
+    require(
+        (ROOT / "tests/unit/test_local_ui_release.py").is_file(),
+        "缺少 immutable local UI release 回归测试",
+        errors,
+    )
     development_policy = ROOT / "configs/development-policy.json"
     require(development_policy.is_file(), "缺少 configs/development-policy.json", errors)
     if development_policy.is_file():

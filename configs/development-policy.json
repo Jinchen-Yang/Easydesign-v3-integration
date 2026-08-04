@@ -41,6 +41,7 @@
         "Makefile",
         ".github/**",
         "scripts/check_built_wheel.py",
+        "scripts/local_ui_release.py",
         "src/easydesign/managed_protocol.py",
         "src/easydesign/orchestration/remote*.py",
         "src/easydesign/backends/executors/ssh*.py"
@@ -55,11 +56,17 @@
     "src/easydesign/managed_protocol.py",
     "src/easydesign/orchestration/stage*.py",
     "src/easydesign/orchestration/remote*.py",
+    "scripts/local_ui_release.py",
+    "tests/unit/test_local_ui_release.py",
     "tests/fixtures/managed_protocol/**",
     "easydesign-workspace.yaml",
     "environments/**"
   ],
   "test_routes": [
+    {
+      "patterns": ["scripts/local_ui_release.py"],
+      "tests": ["tests/unit/test_local_ui_release.py"]
+    },
     {
       "patterns": ["scripts/dev.py", "configs/development-policy.json"],
       "tests": ["tests/unit/test_dev_workflow.py"]

@@ -81,6 +81,9 @@ def test_task_paths_select_only_relevant_guides() -> None:
         "dev-local", ["src/easydesign/ui/app.py"]
     ) == ("docs/agent/UI_AND_REPORTING.md",)
     assert dev.selected_guides("dev-local", ["easydesign"]) == ()
+    assert dev.selected_guides("integration", ["scripts/local_ui_release.py"]) == (
+        "docs/agent/RELEASE_AND_REMOTE.md",
+    )
     assert dev.selected_guides("release", ["src/easydesign/ui/app.py"]) == (
         "docs/agent/RELEASE_AND_REMOTE.md",
         "docs/agent/UI_AND_REPORTING.md",
@@ -91,6 +94,7 @@ def test_risk_classification_keeps_local_work_local() -> None:
     assert dev.minimum_mode(["README.md"]) == "dev-local"
     assert dev.minimum_mode(["easydesign"]) == "dev-local"
     assert dev.minimum_mode(["src/easydesign/ui/app.py"]) == "dev-local"
+    assert dev.minimum_mode(["scripts/local_ui_release.py"]) == "integration"
     assert dev.minimum_mode(["src/easydesign/managed_protocol.py"]) == "integration"
     assert dev.minimum_mode(["src/easydesign/core/manifests.py"]) == "integration"
 

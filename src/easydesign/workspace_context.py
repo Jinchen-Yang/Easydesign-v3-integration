@@ -178,6 +178,7 @@ class WorkspaceContext:
             "TMPDIR": str(self.runtime_root / "tmp"),
             "CONDA_PKGS_DIRS": str(cache / "conda"),
             "PIP_CACHE_DIR": str(cache / "pip"),
+            "UV_CACHE_DIR": str(cache / "uv"),
             "PIP_CONFIG_FILE": os.devnull,
             "PIP_INDEX_URL": "https://pypi.org/simple",
             "PIP_DISABLE_PIP_VERSION_CHECK": "1",

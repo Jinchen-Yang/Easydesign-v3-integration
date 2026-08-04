@@ -96,3 +96,19 @@ fetch 并检查 ahead/behind，推送后确认 `HEAD == origin/main`。
 
 CI 在 Ubuntu/Python 3.11 跑完整 Python 回归，macOS 与 Python 3.11/3.12 矩阵保留 focused
 smoke。CI 状态可读取时等待终态；不可读取时明确报告 commit 和 pending 状态。
+
+## Immutable 正式 UI release
+
+以下命令只属于用户明确授权的 `release`/`ops`，普通开发禁止调用：
+
+```bash
+.venv/bin/python scripts/local_ui_release.py prepare --wheel dist/FILE.whl --confirmed
+.venv/bin/python scripts/local_ui_release.py activate --release-id VERSION-SHA256 --confirmed
+.venv/bin/python scripts/local_ui_release.py status
+.venv/bin/python scripts/local_ui_release.py manager-wheel
+```
+
+prepare 在 `runtime/releases/local-ui/` 发布由版本与 wheel SHA-256 命名的全新非 editable
+venv。activate 在新 release 真实 health 成功后才追加 revision；失败保持原 activation 并
+恢复旧 UI。rollback 使用同一事务追加指向旧 release 的 revision。固定 18769 服务应执行
+`local_ui_release.py serve-active`，Manager 只消费 `manager-wheel` 报告的同一 wheel。

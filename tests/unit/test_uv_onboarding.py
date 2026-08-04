@@ -23,7 +23,7 @@ def test_uv_files_and_python_contract_are_committed() -> None:
     assert (ROOT / "uv.lock").is_file()
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    assert project["version"] == "0.1.0.dev47"
+    assert project["version"] == "0.1.0.dev48"
     assert project["requires-python"] == ">=3.11,<3.13"
     assert project["classifiers"][-1] == "Private :: Do Not Upload"
 

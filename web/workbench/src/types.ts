@@ -349,6 +349,11 @@ export interface SetupJob {
 
 export interface InstallStatus {
   workspace: string;
+  core_runtime: {
+    status: "available" | "compatibility-fallback";
+    manager: "uv-venv" | "external-python";
+    version: string;
+  };
   plan: {
     disk: {
       free_bytes: number;

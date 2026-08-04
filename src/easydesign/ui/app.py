@@ -9,6 +9,7 @@ import json
 import mimetypes
 import re
 import shutil
+import sys
 import threading
 import webbrowser
 from collections.abc import AsyncIterator
@@ -1471,8 +1472,16 @@ def create_ui_app(
     @app.get("/api/v1/install/status")
     def install_status(request: Request) -> dict[str, Any]:
         service = _state(request)
+        workspace_venv = (service.workspace.root / ".venv").resolve()
+        active_prefix = Path(sys.prefix).resolve()
+        uv_managed_core = active_prefix == workspace_venv
         return {
             "workspace": str(service.workspace.root),
+            "core_runtime": {
+                "status": "available" if uv_managed_core else "compatibility-fallback",
+                "manager": "uv-venv" if uv_managed_core else "external-python",
+                "version": easydesign.__version__,
+            },
             "plan": setup_plan(service.workspace, minimal=False),
             "component_plans": {
                 component: setup_plan(

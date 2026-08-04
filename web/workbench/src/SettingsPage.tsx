@@ -84,6 +84,9 @@ function deriveComponentState(
   acceptedLicenses: string[],
 ): { state: ComponentState; approvals: RuntimeInstallItem[] } {
   if (!status) return { state: "missing", approvals: [] };
+  if (componentId === "core-ui" && status.core_runtime.status === "available") {
+    return { state: "available", approvals: [] };
+  }
   const plan = status.component_plans[componentId];
   if (!plan) return { state: "unsupported", approvals: [] };
   const environmentById = new Map(
@@ -415,6 +418,7 @@ function LocalEnvironmentSettings({
       <summary><span><strong>技术详情</strong><small>环境 ID、模型资产、安装任务和隔离区</small></span><b>展开</b></summary>
       <div className="technical-detail-body">
         <div className="technical-workspace"><span>工作区</span><code>{installStatus?.workspace || "正在读取"}</code></div>
+        {installStatus?.core_runtime && <div className="technical-workspace"><span>当前 core</span><code>{installStatus.core_runtime.manager} · {installStatus.core_runtime.version} · {installStatus.core_runtime.status}</code></div>}
         <div className="install-grid">
           <div><h4>环境记录</h4>{(installStatus?.environments || []).map((item) => <div className="install-row" key={item.environment_id}><strong>{item.environment_id}</strong><span data-status={item.status}>{item.status}</span></div>)}</div>
           <div><h4>资产记录</h4>{(installStatus?.assets || []).map((item) => <div className="install-row" key={item.asset_id}><span><strong>{item.asset_id}</strong><small>{item.license}</small></span><span data-status={item.status}>{item.status}</span></div>)}</div>

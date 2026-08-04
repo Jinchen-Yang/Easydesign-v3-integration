@@ -173,7 +173,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev47",
+        easydesign_version="0.1.0.dev48",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -398,6 +398,49 @@ def _write_json(root: Path, relative: str, value: object) -> None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+def test_install_status_identifies_workspace_venv_as_active_core(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("easydesign.ui.app.sys.prefix", str(tmp_path / ".venv"))
+    monkeypatch.setattr(
+        "easydesign.ui.app.setup_plan",
+        lambda *_args, **_kwargs: {
+            "disk": {
+                "free_bytes": 1,
+                "incremental_peak_bytes": 0,
+                "reserve_bytes": 0,
+                "sufficient": True,
+            },
+            "environments": [],
+            "assets": [],
+        },
+    )
+    monkeypatch.setattr(
+        "easydesign.ui.app.environment_status",
+        lambda *_args, **_kwargs: {"environments": []},
+    )
+    monkeypatch.setattr(
+        "easydesign.ui.app.asset_status",
+        lambda *_args, **_kwargs: {"assets": []},
+    )
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/install/status")
+
+    assert response.status_code == 200
+    assert response.json()["core_runtime"] == {
+        "status": "available",
+        "manager": "uv-venv",
+        "version": "0.1.0.dev48",
+    }
 
 
 def _artifact(
@@ -2049,7 +2092,7 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev47",
+        easydesign_version="0.1.0.dev48",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},

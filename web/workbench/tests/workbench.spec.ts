@@ -273,7 +273,10 @@ async function mockApi(page: Page) {
         "scannet-epitope",
         "boltzgen",
         "tnp",
-      ].map((environment_id) => ({ environment_id, status: "available" }));
+      ].map((environment_id) => ({
+        environment_id,
+        status: environment_id === "easydesign-core" ? "retired" : "available",
+      }));
       const componentEnvironments: Record<string, string[]> = {
         "core-ui": ["easydesign-core", "reporting-web"],
         "pymol-pse": ["pymol-pse"],
@@ -286,6 +289,11 @@ async function mockApi(page: Page) {
         contentType: "application/json",
         body: JSON.stringify({
           workspace: "/fixture/easydesign",
+          core_runtime: {
+            status: "available",
+            manager: "uv-venv",
+            version: "0.1.0.dev48",
+          },
           plan: {
             disk: {
               free_bytes: 80 * 1024 ** 3,
@@ -1133,6 +1141,9 @@ test("settings separates local readiness, public compute and archives", async ({
   await expect(page.getByText("EasyDesign 基础环境", { exact: true })).toBeVisible();
   await expect(page.getByText("BoltzGen", { exact: true })).toBeVisible();
   await expect(page.getByText("/fixture/easydesign", { exact: true })).toBeHidden();
+  await page.getByText("技术详情", { exact: true }).click();
+  await expect(page.getByText("uv-venv · 0.1.0.dev48 · available", { exact: true })).toBeVisible();
+  await expect(page.getByText("retired", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新状态" })).toHaveCount(0);
 
   await page.getByRole("tab", { name: /公共算力/ }).click();

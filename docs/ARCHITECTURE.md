@@ -19,6 +19,7 @@ easydesign-clean/
 ├── pyproject.toml            # Python 包、运行依赖和开发依赖
 ├── Makefile                  # 环境、检查、测试和构建入口
 ├── src/easydesign/           # 唯一 Python 实现
+├── web/                      # 两个前端的源码、测试和构建声明
 ├── config/                   # 开发策略、backend 与运行资产配置
 ├── tests/                    # unit、integration 和 fixture
 ├── examples/                 # 最小可复现示例

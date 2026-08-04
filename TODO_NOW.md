@@ -122,7 +122,7 @@
 
 ## Blocked
 
-- `[ENG-032/REL-003]` Suzhou2 Manager activation revision 17 已精确同步 dev47 wheel；
+- `[ENG-032/REL-003]` Suzhou2 Manager activation revision 18 已精确同步 dev48 wheel；
   锁定环境、模型、三后端 probe、4→5 和 6→7 小链均有真实证据，当前运行路径无阻塞。
   Manager 私有 GitHub remote 仍缺可用 deploy key/host 权限；同步规则文档提交
   `880b52d…158e` 暂只在 Suzhou2 干净 `main`，但不影响已激活 release 的受管任务。

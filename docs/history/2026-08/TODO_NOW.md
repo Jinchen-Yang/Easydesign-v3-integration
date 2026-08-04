@@ -259,3 +259,27 @@
   process record 完全一致。Manager 私有 remote 仍缺 `origin/main` fetch 权限，但源码
   仓库保持干净 `main`，不影响当前 immutable release。
 - 实现提交：`0a0f0654d1da0f040519ac157a63f2460ffca590`；本记录提交负责最终状态归档。
+
+## 2026-08-04 — ENG-034 / UX-009：dev48 uv core readiness 投影更正
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-04T12:58:28+08:00
+- 更正：dev47 已让启动器和 registry 正确收口，但设置页仍从旧 `core-ui` Conda 安装计划
+  推导基础环境状态，因此会把已退役的旧 core 误报为待处理。dev48 新增独立
+  `core_runtime` 投影：只有当前 UI 服务实际运行于仓库 `.venv` 时才报告
+  `uv-venv/available`；技术详情仍显示旧 `easydesign-core=retired`，没有把 `retired`
+  全局解释成可用。
+- ProteinDigger 验证：`make check`、Python `443 passed / 8 skipped`、Target Viewer
+  `3 passed / 2 skipped`、Workbench `86 passed / 1 skipped` 与 `make build` 全部通过；
+  focused 浏览器测试明确使用 core=`retired` 与 runtime=`uv-venv/available`。CLI 两个
+  入口均报告 `0.1.0.dev48`，`env status` 保留 core=`retired`，`doctor --full` 全部通过；
+  18769 UI 由 `.venv` 进程运行，health、首页和 install-status 均为 HTTP 200。dev48
+  wheel SHA-256 为 `9db554584a6613006be35f1004dc3c616d873647f4459eb2ce49288d515e73bc`。
+- Manager 同步：Manager 源码保持 `0.1.0.dev2` 和干净 `main`，28 项测试通过；只在
+  queue/running 均为 0 后创建新的 immutable dev48 release，追加 activation revision 18
+  并重启 systemd。固定入口与 ProteinDigger 控制端均报告 dev48、8 GPU、三后端 ready、
+  `[(4,5),(6,7)]`，服务 `active/running`、`NRestarts=0`。
+- 安全边界：没有重装科学环境、复制模型、覆盖旧 release/revision 或终止外部任务。
+  部署前后审计 0011/0012 的六个受保护路径和 8 条外部 GPU process record 完全一致；
+  由于这些外部任务仍占用 8 张卡，可租赁数如实为 0。
+- 实现提交：`d6d535d40d5ce2a5884595097d1a212973204748`；本记录提交负责最终状态归档。

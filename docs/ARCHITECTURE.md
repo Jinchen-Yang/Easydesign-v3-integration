@@ -1202,3 +1202,8 @@ revision；Manager 自身版本可以保持不变。激活只允许在受管队�
 dev47 完成 uv 主运行时收口：根 `./easydesign` 先选择 `.venv/bin/python`，缺失时才使用
 旧 Conda core；environment registry 用合法 `retired` 终态保留旧 core 的路径、探针与
 inventory，同时不再把它计入真实后端自检的科学环境集合。
+
+dev48 将“当前 core runtime”和“历史 environment registry”分离投影。UI 安装状态接口
+只有在服务实际运行于工作区 `.venv` 时才报告 `core_runtime=uv-venv/available`；设置页以
+该记录判断基础环境就绪，同时在技术详情继续原样显示旧 Conda core=`retired`。因此退役
+记录不会被全局误当成可用环境，uv 主运行时也不会被旧安装计划误报为缺失。

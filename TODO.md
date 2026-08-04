@@ -138,9 +138,9 @@
 | `ENG-031` | Core Engineering | `implemented` | `/data/easydesign/managed-worker` 布局、RemoteJobBundle、`flock` 中央队列、8 GPU 租约、重启对账与 4→5/6→7 就地执行已实现；安装 systemd 仍由运维审核。 |
 | `ENG-032` | Core Engineering | `smoke-validated` | Suzhou2 Manager dev1 revision 8 已用精确 dev35 wheel 激活，三后端/8 GPU probe 和真实 4→5、6→7 小链通过；私有远端推送权限仍是独立运维事项。 |
 | `ENG-033` | Core Engineering | `smoke-validated` | Workbench 资源投影使用 8 秒受管探针上界；真实浏览器验证加载/失败不阻塞执行位置选择、不回退本机且不暴露 SSH 命令。 |
-| `ENG-034` | Core Engineering | `planned` | 根兼容启动器优先使用 uv `.venv`，旧 Conda core 通过 append-only registry revision 退出主运行时身份；旧目录和证据继续保留。 |
+| `ENG-034` | Core Engineering | `smoke-validated` | 根兼容启动器已优先使用 uv `.venv`；旧 Conda core 通过 append-only revision 27 标记 `retired`，目录、inventory 和历史证据均保留。 |
 | `UX-008` | CLI & Developer Experience | `implemented` | 已实现稳定 host fingerprint 确认、工作区 key pair 检测/复用、一次性密码公钥安装、免密 worker 探针和可恢复逻辑解绑；不读取或修改个人 `~/.ssh`。 |
-| `UX-009` | CLI & Developer Experience | `planned` | `./easydesign` 与激活后的 `easydesign` 统一落到 `.venv`，并通过 CLI、UI、env status 与 full doctor 真实验收。 |
+| `UX-009` | CLI & Developer Experience | `smoke-validated` | `./easydesign` 与激活后的 `easydesign` 均报告 dev47；env status、full doctor、localhost UI 和 Suzhou2 精确版本探针通过。 |
 | `UI-022` | Product UI | `implemented` | Stage 04/06 已提供“当前机器 / Suzhou2”执行卡片；配对向导可复用已有密钥并用一次性密码完成公钥安装，随后展示队列/GPU/ETA 与同步状态。 |
 | `UI-023` | Product UI | `smoke-validated` | 设置已收敛为“当前设备 / 公共算力 / 项目存档”三页；环境自动检查、缺失组件按需安装和折叠技术详情已通过双尺寸 Chromium 视觉验收。 |
 | `UI-024` | Product UI | `smoke-validated` | Stage 04/06 与设置页统一使用真实 `pairing_state`，已配对 Suzhou2 可立即选择；设置支持安全逻辑解绑后重新配置，并可一键返回进入设置前的项目或页面。 |

@@ -231,3 +231,31 @@
 - 遗留边界：Suzhou2 Manager 源码仓库保持干净 `main`，但私有 GitHub remote 仍缺可用
   deploy key，无法在 Suzhou2 上 fetch/push；该权限问题不影响已激活的不可变 release。
 - 实现提交：`30f9e7e6589c974a91487ac9b2ef6ef8f9f859f2`；本记录提交负责最终状态归档。
+
+## 2026-08-04 — ENG-034 / UX-009：uv 主运行时收口与旧 core retirement
+
+- 状态：`smoke-validated`。
+- 完成时间：2026-08-04T12:16:30+08:00
+- 完成：根 `./easydesign` 固定优先执行仓库 `.venv/bin/python`，仅在 `.venv` 不存在时
+  回退旧 Conda core。environment registry 新增合法、幂等的 `retired` 状态；ProteinDigger
+  追加 revision 27，将 `easydesign-core-f63c06f1b66f` 退出主运行时身份，但保留目录、
+  package inventory、原探针和全部旧 revision。真实后端自检现在只要求五个科学环境。
+- 验证：`make check`、Python `442 passed / 8 skipped` 和 dev47 wheel 构建通过；
+  `./easydesign --version` 与 `.venv/bin/easydesign --version` 均为 `0.1.0.dev47`。
+  `env status` 报告 core=`retired`、其余六项=`available`；`doctor --full` 的 core、runs、
+  Protenix、PyMOL、ScanNet、BoltzGen 和 TNP 全部通过。18769 UI 以 `.venv` 重启，health
+  和 install-status 均为 HTTP 200，页面投影同一 retirement 状态。wheel SHA-256 为
+  `160c039c3f76384df225fae083e254527acfab2f9a04e25c7a288900007a0443`。
+- Manager 同步：只在 queue/running 均为 0 后创建 immutable dev47 release，追加
+  activation revision 17 并重启服务；Manager 保持 `0.1.0.dev2`，systemd
+  `active/running`、`NRestarts=0`，控制端精确探针报告 dev47、8 GPU、三后端 ready、
+  `[(4,5),(6,7)]`。8 张 GPU 当时均有外部进程，因此可租赁数如实为 0。
+- 部署证据：第一次 prepare 因给暂存 wheel 添加审计前缀而被 pip 判定为非法 wheel
+  文件名；未形成 activation，部分 release 自动移入
+  `runtime/quarantine/20260804T040711Z-release-manager-0.1.0.dev2-8de504767fe9-ed47-160c039c3f76-r1-47a966fb42`。
+  改用唯一目录中的原始合法 wheel 文件名后成功，失败证据完整保留。
+- 安全边界：没有删除旧 core、重装科学环境、复制模型、改写历史 run/release/revision
+  或终止外部 GPU 进程。Suzhou2 前后审计 0009/0010 的六个保护路径和 8 条外部 GPU
+  process record 完全一致。Manager 私有 remote 仍缺 `origin/main` fetch 权限，但源码
+  仓库保持干净 `main`，不影响当前 immutable release。
+- 实现提交：`0a0f0654d1da0f040519ac157a63f2460ffca590`；本记录提交负责最终状态归档。

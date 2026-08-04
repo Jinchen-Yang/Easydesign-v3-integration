@@ -1198,3 +1198,7 @@ revision；Manager 自身版本可以保持不变。激活只允许在受管队�
 随后重启固定 systemd 服务并从控制端验证精确版本、`[(4,5),(6,7)]`、后端 readiness、
 磁盘和逐卡状态。该同步不重装后端环境、不复制模型、不覆盖旧 release 或历史证据；任一
 门失败时，控制端继续 fail closed，不得把不匹配的 Manager 投影为可用。
+
+dev47 完成 uv 主运行时收口：根 `./easydesign` 先选择 `.venv/bin/python`，缺失时才使用
+旧 Conda core；environment registry 用合法 `retired` 终态保留旧 core 的路径、探针与
+inventory，同时不再把它计入真实后端自检的科学环境集合。

@@ -39,15 +39,33 @@ jobs:
         shell: bash
         run: |
           mkdir -p runtime/tmp
-          uv run easydesign ui serve --host 127.0.0.1 --port 18769 \
+          uv run easydesign ui serve --development --host 127.0.0.1 --port 18770 \
             >runtime/tmp/uv-smoke-ui.log 2>&1 &
           ui_pid=$!
           trap 'kill "$ui_pid" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:18769/api/v1/health >/dev/null; then
+            if curl --fail --silent http://127.0.0.1:18770/api/v1/health \
+              >runtime/tmp/uv-smoke-health.json; then
+              uv run python -c 'import json; p=json.load(open("runtime/tmp/uv-smoke-health.json")); assert p["deployment_mode"] == "development"; assert p["remote_execution_enabled"] is False'
               exit 0
             fi
             sleep 1
           done
           cat runtime/tmp/uv-smoke-ui.log
           exit 1
+
+  full-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - name: Sync the frozen development environment
+        run: uv sync --frozen --extra ui --extra dev
+      - name: Run complete Python quality and regression gates
+        run: |
+          uv lock --check
+          make check
+          make test

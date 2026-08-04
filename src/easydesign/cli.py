@@ -573,6 +573,11 @@ def _parser() -> argparse.ArgumentParser:
     ui_serve.add_argument("--projects-root", type=Path)
     ui_serve.add_argument("--host", choices=("127.0.0.1",), default="127.0.0.1")
     ui_serve.add_argument("--port", type=int, default=18769)
+    ui_serve.add_argument(
+        "--development",
+        action="store_true",
+        help="开发预览：必须使用非 18769 端口，并禁用远程执行与配对 API",
+    )
     ui_serve.add_argument("--open", action="store_true", dest="open_browser")
     return parser
 
@@ -873,6 +878,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             host=arguments.host,
             port=arguments.port,
             open_browser=arguments.open_browser,
+            development=arguments.development,
         )
         return 0
     if arguments.command == "init":

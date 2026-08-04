@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+import easydesign
 from easydesign.backends.executors import ManagedWorkerProbe
 from easydesign.core import (
     ArtifactRef,
@@ -173,7 +174,7 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev48",
+        easydesign_version="0.0.0.dev0",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},
@@ -256,6 +257,59 @@ def test_execution_targets_projects_managed_idle_gpu_snapshot(
         "可稍后刷新，或先选择当前机器"
     )
     assert "/root/" not in unavailable["detail"]
+
+
+def test_development_ui_never_probes_or_exposes_managed_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingLocalProbe:
+        def snapshots(self) -> tuple[object, ...]:
+            raise RuntimeError("local probe intentionally unavailable")
+
+    def forbidden_remote_probe(**_kwargs: object) -> ManagedWorkerProbe:
+        raise AssertionError("development UI must not probe Manager")
+
+    monkeypatch.setattr("easydesign.ui.app.NvidiaSmiProbe", FailingLocalProbe)
+    monkeypatch.setattr("easydesign.ui.app.probe_managed_executor", forbidden_remote_probe)
+    app = create_ui_app(
+        runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects",
+        job_root=tmp_path / "runtime" / "state" / "ui" / "jobs",
+        development=True,
+    )
+
+    with TestClient(app) as client:
+        health = client.get("/api/v1/health")
+        targets = client.get("/api/v1/execution-targets")
+        remotes = client.get("/api/v1/remote-executors")
+        preflight = client.post(
+            "/api/v1/preflight",
+            json={"project_id": "not-needed", "executor_id": "suzhou2"},
+        )
+        launch = client.post(
+            "/api/v1/jobs",
+            json={
+                "project_id": "not-needed",
+                "executor_id": "suzhou2",
+                "confirmed": True,
+            },
+        )
+        frontend = client.get("/")
+
+    assert health.json()["deployment_mode"] == "development"
+    assert health.json()["remote_execution_enabled"] is False
+    assert targets.status_code == 200
+    assert targets.json()["managed"] == []
+    assert targets.json()["remote_execution_enabled"] is False
+    assert remotes.status_code == 403
+    assert remotes.json()["code"] == "development_remote_disabled"
+    assert preflight.status_code == 400
+    assert "development" in preflight.json()["detail"]
+    assert launch.status_code == 400
+    assert "development" in launch.json()["detail"]
+    assert "easydesign-development-banner" in frontend.text
+    assert "远程执行已禁用" in frontend.text
 
 
 def _region_projection_fixture() -> RegionEditorProjection:
@@ -439,7 +493,7 @@ def test_install_status_identifies_workspace_venv_as_active_core(
     assert response.json()["core_runtime"] == {
         "status": "available",
         "manager": "uv-venv",
-        "version": "0.1.0.dev48",
+        "version": easydesign.__version__,
     }
 
 
@@ -2092,7 +2146,7 @@ def test_gateway_bootstraps_managed_ssh_key_with_memory_only_password(
     probe = ManagedWorkerProbe(
         observed_at=NOW,
         manager_version="0.1.0.dev2",
-        easydesign_version="0.1.0.dev48",
+        easydesign_version="0.0.0.dev0",
         supported_stage_ranges=((4, 5), (6, 7)),
         backends=(
             {"backend_id": "boltzgen", "ready": True, "detail": "ready"},

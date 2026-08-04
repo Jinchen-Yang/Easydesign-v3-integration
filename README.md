@@ -4,7 +4,8 @@
 
 EasyDesign 是一个以契约、证据和可恢复执行为核心的蛋白结合分子七阶段设计工作台。
 
-当前版本：`0.1.0.dev48`。本仓库仍是 Developer Preview：不发布 PyPI，不附加新的
+正式版本以 `pyproject.toml` 和 `easydesign --version` 为准。本仓库仍是 Developer Preview：
+不发布 PyPI，不附加新的
 开源许可证，并保留 `Private :: Do Not Upload` 分类。请先完成知识产权、许可证和数据
 权限审查，再将它用于仓库授权范围之外的环境。
 

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from pytest import MonkeyPatch
 
+import easydesign
 from easydesign.core import StageManifest
 from easydesign.managed_protocol import ManagedWorkerProbe
 from easydesign.orchestration import remote_execution
@@ -81,6 +82,7 @@ def test_managed_probe_forwards_bounded_timeout(monkeypatch: MonkeyPatch) -> Non
             / "probe-v0.3.json"
         ).read_text(encoding="utf-8")
     )
+    payload["easydesign_version"] = easydesign.__version__
     calls: list[tuple[tuple[str, ...], float | None]] = []
 
     class FakeExecutor:

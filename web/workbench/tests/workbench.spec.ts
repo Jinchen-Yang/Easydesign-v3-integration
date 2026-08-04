@@ -292,7 +292,7 @@ async function mockApi(page: Page) {
           core_runtime: {
             status: "available",
             manager: "uv-venv",
-            version: "0.1.0.dev48",
+            version: "0.0.0.dev0",
           },
           plan: {
             disk: {
@@ -1142,7 +1142,7 @@ test("settings separates local readiness, public compute and archives", async ({
   await expect(page.getByText("BoltzGen", { exact: true })).toBeVisible();
   await expect(page.getByText("/fixture/easydesign", { exact: true })).toBeHidden();
   await page.getByText("技术详情", { exact: true }).click();
-  await expect(page.getByText("uv-venv · 0.1.0.dev48 · available", { exact: true })).toBeVisible();
+  await expect(page.getByText("uv-venv · 0.0.0.dev0 · available", { exact: true })).toBeVisible();
   await expect(page.getByText("retired", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新状态" })).toHaveCount(0);
 

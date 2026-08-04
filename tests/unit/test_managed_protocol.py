@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import easydesign
 from easydesign.core import ConfigurationError
 from easydesign.managed_protocol import (
     ManagedJobRevision,
@@ -194,13 +195,14 @@ def test_managed_probe_rejects_legacy_schema_or_inconsistent_gpu_summary() -> No
 
 def test_controller_fails_closed_for_version_or_capability_mismatch() -> None:
     payload = json.loads((FIXTURES / "probe-v0.3.json").read_text(encoding="utf-8"))
+    payload["easydesign_version"] = easydesign.__version__
     require_managed_probe_compatible(ManagedWorkerProbe.model_validate(payload))
 
     payload["easydesign_version"] = "0.1.0.dev34"
     with pytest.raises(ConfigurationError, match="版本不一致"):
         require_managed_probe_compatible(ManagedWorkerProbe.model_validate(payload))
 
-    payload["easydesign_version"] = "0.1.0.dev48"
+    payload["easydesign_version"] = easydesign.__version__
     payload["supported_stage_ranges"] = [[4, 5]]
     with pytest.raises(ConfigurationError, match="missing_stage_ranges"):
         require_managed_probe_compatible(ManagedWorkerProbe.model_validate(payload))

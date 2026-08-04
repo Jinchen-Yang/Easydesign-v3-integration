@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import csv
+import json
 import re
 import sys
 import tomllib
@@ -39,6 +40,12 @@ ROOT_DOCS = {
     "NANOBODY_FILTER_STANDARD_V1.md",
     "TODO.md",
     "TODO_NOW.md",
+}
+AGENT_GUIDES = {
+    "RELEASE_AND_REMOTE.md",
+    "RUNTIME_AND_DATA.md",
+    "SCIENTIFIC_PIPELINE.md",
+    "UI_AND_REPORTING.md",
 }
 CORE_DEPENDENCIES = {
     "biopython",
@@ -213,6 +220,26 @@ def main() -> int:
 
     actual_root_docs = {path.name for path in ROOT.glob("*.md")}
     require(actual_root_docs == ROOT_DOCS, "根目录 Markdown 集合不符合精简规则", errors)
+    agent_path = ROOT / "AGENTS.md"
+    agent_lines = agent_path.read_text(encoding="utf-8").splitlines()
+    require(
+        60 <= len(agent_lines) <= 90,
+        f"AGENTS.md 必须保持 60–90 行，当前 {len(agent_lines)} 行",
+        errors,
+    )
+    require(
+        agent_path.stat().st_size <= 12_000,
+        f"AGENTS.md 超过 12000 字节预算: {agent_path.stat().st_size}",
+        errors,
+    )
+    actual_agent_guides = {
+        path.name for path in (ROOT / "docs/agent").glob("*.md")
+    }
+    require(
+        actual_agent_guides == AGENT_GUIDES,
+        "docs/agent 专题指南集合不符合精确允许列表",
+        errors,
+    )
     markdown = project_markdown()
     require(
         not [path for path in markdown if path.name.endswith(".zh-CN.md")],
@@ -318,6 +345,10 @@ def main() -> int:
         "DEVELOPMENT.md",
         "README.en.md",
         "docs/ARCHITECTURE.md",
+        "docs/agent/RELEASE_AND_REMOTE.md",
+        "docs/agent/RUNTIME_AND_DATA.md",
+        "docs/agent/SCIENTIFIC_PIPELINE.md",
+        "docs/agent/UI_AND_REPORTING.md",
         "docs/legacy/BASELINE.md",
         "configs/README.md",
         "examples/README.md",
@@ -336,6 +367,18 @@ def main() -> int:
             errors,
         )
     require((ROOT / "uv.lock").is_file(), "缺少 uv.lock", errors)
+    development_policy = ROOT / "configs/development-policy.json"
+    require(development_policy.is_file(), "缺少 configs/development-policy.json", errors)
+    if development_policy.is_file():
+        policy = json.loads(development_policy.read_text(encoding="utf-8"))
+        configured_guides = {
+            Path(item["path"]).name for item in policy.get("agent_guides", [])
+        }
+        require(
+            configured_guides == AGENT_GUIDES,
+            "development policy 没有精确路由四份专题指南",
+            errors,
+        )
 
     # Allow the seven Stage directories to keep one monthly history file each
     # while still preventing ungoverned one-off documents from accumulating.
@@ -348,14 +391,19 @@ def main() -> int:
         not in path.relative_to(ROOT).as_posix()
     ]
     require(
-        len(governed_markdown) <= 55,
+        len(governed_markdown) <= 59,
         f"Markdown 数量超过精简上限: {len(governed_markdown)}",
         errors,
     )
 
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    require(project["version"] == "0.1.0.dev48", "项目版本异常", errors)
+    require(
+        re.fullmatch(r"\d+\.\d+\.\d+(?:\.dev\d+)?", project["version"])
+        is not None,
+        "项目版本必须由 pyproject.toml 提供合法版本",
+        errors,
+    )
     require(project["requires-python"] == ">=3.11,<3.13", "Python 基线异常", errors)
     require(
         project.get("scripts") == {"easydesign": "easydesign.cli:main"},
@@ -437,8 +485,8 @@ def main() -> int:
                 errors,
             )
 
-    agent_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    for heading in ("开始任务前", "实施规则", "完成任务前", "阻塞与询问"):
+    agent_text = agent_path.read_text(encoding="utf-8")
+    for heading in ("安全内核", "任务模式", "按需读取", "实现与验证", "阻塞"):
         require(heading in agent_text, f"AGENTS 缺少工作协议: {heading}", errors)
 
     todo_now = (ROOT / "TODO_NOW.md").read_text(encoding="utf-8")

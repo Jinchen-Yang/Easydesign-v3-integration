@@ -23,7 +23,7 @@ def test_uv_files_and_python_contract_are_committed() -> None:
     assert (ROOT / "uv.lock").is_file()
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    assert project["version"] == "0.1.0.dev48"
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:\.dev\d+)?", project["version"])
     assert project["requires-python"] == ">=3.11,<3.13"
     assert project["classifiers"][-1] == "Private :: Do Not Upload"
 
@@ -35,6 +35,7 @@ def test_readmes_match_the_real_setup_and_remote_cli_contract() -> None:
         assert "uv sync --frozen --extra ui" in shell
         assert "source .venv/bin/activate" in shell
         assert "uv run easydesign" not in shell
+        assert project_version_not_copied(markdown)
         assert "/absolute/path/to/conda" not in markdown
         for component in COMPONENTS:
             assert f"easydesign setup --component {component} --plan" in shell
@@ -47,6 +48,12 @@ def test_readmes_match_the_real_setup_and_remote_cli_contract() -> None:
         assert "easydesign remote pair-confirm suzhou2" in shell
         assert "easydesign remote unpair suzhou2 --confirmed" in shell
         assert "easydesign ui serve" in shell
+
+
+def project_version_not_copied(markdown: str) -> bool:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        version = tomllib.load(handle)["project"]["version"]
+    return version not in markdown
 
 
 def test_readmes_do_not_mix_scientific_backends_into_uv_core() -> None:

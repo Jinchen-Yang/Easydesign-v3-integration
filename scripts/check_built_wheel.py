@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import venv
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
@@ -53,18 +55,51 @@ EXPECTED_PML_SKILLS = (
 )
 
 
-def main() -> int:
-    wheels = sorted(
-        DIST.glob("easydesign-*.whl"),
-        key=lambda path: path.stat().st_mtime_ns,
-        reverse=True,
+def project_version() -> str:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        value = tomllib.load(handle)["project"]["version"]
+    if not isinstance(value, str) or not value:
+        raise RuntimeError("pyproject.toml 缺少 project.version")
+    return value
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--wheel",
+        type=Path,
+        help="验证精确 wheel；省略时使用 dist/ 中最后写入的 wheel",
     )
-    if not wheels:
-        print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    arguments = parse_args(argv)
+    if arguments.wheel is not None:
+        wheel = arguments.wheel.resolve()
+        if not wheel.is_file():
+            print(f"ERROR: wheel 不存在: {wheel}", file=sys.stderr)
+            return 1
+    else:
+        wheels = sorted(
+            DIST.glob("easydesign-*.whl"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        if not wheels:
+            print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
+            return 1
+        wheel = wheels[0]
+    try:
+        expected_version = project_version()
+    except RuntimeError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    wheel = wheels[0]
-    if "0.1.0.dev48" not in wheel.name:
-        print(f"ERROR: 最新 wheel 版本不是 0.1.0.dev48: {wheel.name}", file=sys.stderr)
+    if expected_version not in wheel.name:
+        print(
+            f"ERROR: wheel 版本与 pyproject.toml 不一致: {wheel.name}",
+            file=sys.stderr,
+        )
         return 1
     source_root = ROOT / "src" / PACKAGE_PREFIX
     try:
@@ -126,6 +161,10 @@ def main() -> int:
     except (BadZipFile, KeyError, OSError) as error:
         print(f"ERROR: wheel Target Viewer 资源验证失败: {error}", file=sys.stderr)
         return 1
+    uv = os.environ.get("EASYDESIGN_UV")
+    if not uv or not Path(uv).is_file():
+        print("ERROR: 缺少 EASYDESIGN_UV 精确工具路径", file=sys.stderr)
+        return 1
     try:
         stable_temp = Path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(
@@ -177,14 +216,14 @@ def main() -> int:
             )
             subprocess.run(
                 [
-                    sys.executable,
-                    "-m",
+                    uv,
                     "pip",
+                    "install",
                     "--python",
                     str(python),
-                    "install",
-                    "--force-reinstall",
+                    "--reinstall",
                     "--no-deps",
+                    "--offline",
                     str(wheel),
                 ],
                 check=True,
@@ -200,7 +239,7 @@ def main() -> int:
                 timeout=30,
                 env=dependency_environment,
             ).stdout.strip()
-            if version != "0.1.0.dev48":
+            if version != expected_version:
                 raise RuntimeError(f"console-script 版本异常: {version}")
             subprocess.run(
                 [str(python), "-m", "easydesign", "--help"],

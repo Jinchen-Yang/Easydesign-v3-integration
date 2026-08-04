@@ -23,7 +23,7 @@ import uvicorn
 import yaml  # type: ignore[import-untyped]
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as ApiPath
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
@@ -413,6 +413,7 @@ class UiServiceState:
         projects_root: Path,
         profile_path: Path | None,
         job_root: Path | None,
+        development: bool,
     ) -> None:
         self.workspace = WorkspaceContext.discover(runs_root)
         initialize_workspace_metadata(self.workspace)
@@ -455,6 +456,7 @@ class UiServiceState:
         self.upload_root = self.upload_store.file_root
         self.temporary_root = self.workspace.runtime_root / "tmp" / "ui"
         self.temporary_root.mkdir(parents=True, exist_ok=True)
+        self.development = development
 
     def project_root(self, project_id: str, *, require_exists: bool = True) -> Path:
         root = (self.projects_root / project_id).resolve()
@@ -1386,6 +1388,7 @@ def create_ui_app(
     projects_root: Path | None = None,
     profile_path: Path | None = None,
     job_root: Path | None = None,
+    development: bool = False,
 ) -> FastAPI:
     """创建只在调用者显式启动时运行的本地 UI application。"""
 
@@ -1399,6 +1402,7 @@ def create_ui_app(
         projects_root=selected_projects,
         profile_path=profile_path,
         job_root=job_root,
+        development=development,
     )
     state.discover_runs()
     app = FastAPI(
@@ -1415,6 +1419,14 @@ def create_ui_app(
         host = request.headers.get("host", "").split(":", maxsplit=1)[0].lower()
         if host not in {"127.0.0.1", "localhost", "testserver"}:
             return JSONResponse(status_code=403, content={"detail": "UI 只接受 localhost 请求"})
+        if development and request.url.path.startswith("/api/v1/remote"):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "development 模式禁用远程执行、配对、同步和观察 API",
+                    "code": "development_remote_disabled",
+                },
+            )
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' 'unsafe-eval'; "
@@ -1435,6 +1447,8 @@ def create_ui_app(
             "version": easydesign.__version__,
             "host_policy": "localhost-only",
             "science_source": "manifest-only",
+            "deployment_mode": "development" if development else "formal",
+            "remote_execution_enabled": not development,
         }
 
     @app.get("/api/v1/browser-pymol/status")
@@ -2403,6 +2417,10 @@ def create_ui_app(
     def preflight(payload: PreflightRequest, request: Request) -> dict[str, Any]:
         service = _state(request)
         try:
+            if service.development and payload.executor_id is not None:
+                raise ConfigurationError(
+                    "development 模式禁用远程 executor preflight"
+                )
             config = service.project_config(payload.project_id)
             project_root = service.project_root(payload.project_id)
             plan = validate_run_configuration(
@@ -2462,6 +2480,10 @@ def create_ui_app(
     def launch(payload: LaunchRequest, request: Request) -> Any:
         service = _state(request)
         try:
+            if service.development and payload.executor_id is not None:
+                raise ConfigurationError(
+                    "development 模式禁用远程 executor 提交"
+                )
             service.assert_project_is_draft(payload.project_id)
             if (payload.session_id is None) != (payload.stage_number is None):
                 raise ConfigurationError(
@@ -2567,6 +2589,13 @@ def create_ui_app(
                 "devices": [],
                 "detail": str(error)[:4096] or type(error).__name__,
             }
+        if service.development:
+            return {
+                "local": local,
+                "managed": [],
+                "deployment_mode": "development",
+                "remote_execution_enabled": False,
+            }
         pairings = RemoteExecutorRegistry(service.workspace).list_latest()
         managed: list[dict[str, Any]] = []
         for record in pairings:
@@ -2632,6 +2661,8 @@ def create_ui_app(
         return {
             "local": local,
             "managed": managed,
+            "deployment_mode": "formal",
+            "remote_execution_enabled": True,
         }
 
     @app.get("/api/v1/remote-executors")
@@ -4149,6 +4180,10 @@ def create_ui_app(
             remote_job: dict[str, Any] | None = None
             try:
                 if payload.executor_id is not None:
+                    if service.development:
+                        raise ConfigurationError(
+                            "development 模式禁用 Suzhou2/Managed Worker 提交"
+                        )
                     if next_stage not in {4, 6}:
                         raise ConfigurationError(
                             "managed-ssh 执行位置只能用于 Stage 04 或 Stage 06"
@@ -4389,10 +4424,20 @@ def create_ui_app(
     )
     app.mount("/assets", StaticFiles(directory=ui_root / "assets"), name="ui-assets")
 
-    @app.get("/{path:path}")
-    def frontend(path: str) -> FileResponse:
+    @app.get("/{path:path}", response_model=None)
+    def frontend(path: str) -> FileResponse | HTMLResponse:
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
+        if development:
+            html = (ui_root / "index.html").read_text(encoding="utf-8")
+            banner = (
+                '<div id="easydesign-development-banner" role="status" '
+                'style="position:fixed;z-index:100000;left:50%;top:8px;transform:translateX(-50%);'
+                'padding:7px 14px;border-radius:999px;background:#7c3aed;color:#fff;'
+                'font:600 12px/1.2 system-ui;box-shadow:0 4px 16px #0003">'
+                "开发预览 · 远程执行已禁用 · 正式服务仍在 18769</div>"
+            )
+            return HTMLResponse(html.replace("<body>", f"<body>{banner}", 1))
         return FileResponse(ui_root / "index.html")
 
     return app
@@ -4407,19 +4452,24 @@ def serve_ui(
     host: str = LOCAL_HOST,
     port: int = 18769,
     open_browser: bool = False,
+    development: bool = False,
 ) -> None:
     if host != LOCAL_HOST:
         raise ConfigurationError("UI host 仅允许 127.0.0.1")
     if port < 1 or port > 65535:
         raise ConfigurationError("UI port 必须在 1–65535")
+    if development and port == 18769:
+        raise ConfigurationError("18769 保留给正式 release；development 必须使用其他端口")
     application = create_ui_app(
         runs_root=runs_root,
         projects_root=projects_root,
         profile_path=profile_path,
         job_root=job_root,
+        development=development,
     )
     url = f"http://{host}:{port}"
-    print(f"EasyDesign 科研工作台：{url}")
+    label = "开发预览（远程执行已禁用）" if development else "科研工作台"
+    print(f"EasyDesign {label}：{url}")
     print(f"远程服务器请使用：ssh -L {port}:127.0.0.1:{port} USER@SERVER")
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()

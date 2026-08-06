@@ -18,7 +18,11 @@ from easydesign.core import (
     sha256_file,
 )
 from easydesign.orchestration.project import initialize_project
-from easydesign.orchestration.stage01_sources import execute_stage01_source
+from easydesign.orchestration.stage01_sources import (
+    _search_matches,
+    _uniprot_identity,
+    execute_stage01_source,
+)
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation import TargetBundle
@@ -62,6 +66,51 @@ def _single_chain_pdb() -> str:
             )
             atom_id += 1
     return "\n".join(rows) + "\nEND\n"
+
+
+@pytest.mark.parametrize(
+    ("entry_type", "expected"),
+    [
+        ("UniProtKB reviewed (Swiss-Prot)", True),
+        ("reviewed", True),
+        ("UniProtKB unreviewed (TrEMBL)", False),
+        (None, False),
+    ],
+)
+def test_uniprot_identity_distinguishes_reviewed_from_unreviewed(
+    entry_type: str | None,
+    expected: bool,
+) -> None:
+    _, _, report = _uniprot_identity(
+        {
+            "primaryAccession": "P00001",
+            "sequence": {"value": "ACDE"},
+            "organism": {"taxonId": 9606},
+            "entryType": entry_type,
+        }
+    )
+
+    assert report["reviewed"] is expected
+
+
+def test_uniprot_search_does_not_promote_unreviewed_result() -> None:
+    matches = _search_matches(
+        {
+            "results": [
+                {
+                    "primaryAccession": "A0A000",
+                    "uniProtkbId": "GENE_SPECIES",
+                    "entryType": "UniProtKB unreviewed (TrEMBL)",
+                    "genes": [{"geneName": {"value": "GENE"}}],
+                    "proteinDescription": {},
+                }
+            ]
+        },
+        "GENE",
+    )
+
+    assert matches[0]["exact"] is True
+    assert matches[0]["reviewed"] is False
 
 
 def test_target_bundle_reimport_preserves_optional_evidence(tmp_path: Path) -> None:

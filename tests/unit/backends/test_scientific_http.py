@@ -6,8 +6,42 @@ from pathlib import Path
 import httpx
 import pytest
 
-from easydesign.backends.target_sources.remote import ScientificHttpClient
+from easydesign.backends.target_sources.remote import (
+    RCSB_SEQUENCE_RESULT_LIMIT,
+    ScientificHttpClient,
+    _scientific_ssl_context,
+    rcsb_sequence_search,
+)
 from easydesign.core import BackendContractError
+
+
+def test_scientific_ssl_context_keeps_certificate_verification_enabled() -> None:
+    context = _scientific_ssl_context()
+
+    assert context.verify_mode.name == "CERT_REQUIRED"
+    assert context.check_hostname is True
+    assert context.get_ca_certs()
+
+
+def test_rcsb_sequence_search_uses_bounded_ranked_result_page(tmp_path: Path) -> None:
+    request_body: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_body.update(json.loads(request.content))
+        return httpx.Response(200, json={"result_set": []}, request=request)
+
+    adapter = ScientificHttpClient(
+        evidence_dir=tmp_path / "evidence",
+        cache_root=tmp_path / "cache",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    rcsb_sequence_search(adapter, "ACDE")
+
+    options = request_body["request_options"]
+    assert isinstance(options, dict)
+    assert options["paginate"] == {"start": 0, "rows": RCSB_SEQUENCE_RESULT_LIMIT}
+    assert options["sort"] == [{"sort_by": "score", "direction": "desc"}]
 
 
 def test_scientific_http_retries_429_and_snapshots_response(tmp_path: Path) -> None:

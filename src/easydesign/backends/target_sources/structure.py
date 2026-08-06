@@ -230,10 +230,12 @@ def _canonical_residues(chain: gemmi.Chain) -> list[gemmi.Residue]:
 def _select_residue_altlocs(residue: gemmi.Residue) -> None:
     """每个 atom name 选择最高 occupancy；并列时按空白、A、B…确定性选择。"""
 
-    atoms_by_name: dict[str, list[gemmi.Atom]] = {}
-    for atom in residue:
-        atoms_by_name.setdefault(atom.name, []).append(atom)
-    for name, atoms in atoms_by_name.items():
+    # gemmi atom wrappers can be invalidated when a preceding atom is removed.
+    # Keep only stable names across mutations, and rebuild each atom group from
+    # the current residue immediately before selecting/removing its altlocs.
+    atom_names = tuple(dict.fromkeys(atom.name for atom in residue))
+    for name in atom_names:
+        atoms = [atom for atom in residue if atom.name == name]
         if len(atoms) == 1:
             atoms[0].altloc = "\x00"
             continue

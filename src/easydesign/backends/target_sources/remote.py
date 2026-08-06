@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ssl
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -20,6 +21,13 @@ UNIPROT_BASE = "https://rest.uniprot.org"
 RCSB_SEARCH_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
 RCSB_DATA_BASE = "https://data.rcsb.org/rest/v1/core"
 RCSB_FILE_BASE = "https://files.rcsb.org/download"
+RCSB_SEQUENCE_RESULT_LIMIT = 25
+
+SYSTEM_CA_BUNDLES = (
+    Path("/etc/ssl/certs/ca-certificates.crt"),
+    Path("/etc/pki/tls/certs/ca-bundle.crt"),
+    Path("/etc/ssl/ca-bundle.pem"),
+)
 
 
 class RetrievalRecord(BaseModel):
@@ -57,6 +65,22 @@ class RetrievedResponse:
             ) from error
 
 
+def _scientific_ssl_context() -> ssl.SSLContext:
+    """Combine httpx/certifi roots with available operating-system CA bundles."""
+
+    context = httpx.create_ssl_context()
+    for bundle in SYSTEM_CA_BUNDLES:
+        if not bundle.is_file():
+            continue
+        try:
+            context.load_verify_locations(cafile=str(bundle))
+        except (OSError, ssl.SSLError):
+            # A malformed optional system bundle must not remove the verified
+            # certifi roots already loaded by httpx.
+            continue
+    return context
+
+
 class ScientificHttpClient:
     """明确 online/prefer-cache/offline；online 失败不会偷偷使用旧缓存。"""
 
@@ -92,6 +116,7 @@ class ScientificHttpClient:
                 pool=connect_timeout,
             ),
             follow_redirects=True,
+            verify=_scientific_ssl_context(),
             headers={"User-Agent": "EasyDesign/0.1 Stage01"},
         )
         self._owns_client = client is None
@@ -391,7 +416,7 @@ def rcsb_sequence_search(
         "return_type": "polymer_entity",
         "request_options": {
             "results_content_type": ["experimental"],
-            "paginate": {"start": 0, "rows": 100},
+            "paginate": {"start": 0, "rows": RCSB_SEQUENCE_RESULT_LIMIT},
             "sort": [{"sort_by": "score", "direction": "desc"}],
         },
     }

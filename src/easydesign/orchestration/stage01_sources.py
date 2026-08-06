@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from easydesign.backends.target_sources.remote import (
+    RCSB_SEQUENCE_RESULT_LIMIT,
     ScientificHttpClient,
     rcsb_entry,
     rcsb_mmcif,
@@ -413,6 +414,13 @@ def _scope_with_decision(
     )
 
 
+def _is_reviewed_uniprot_entry(entry_type: object) -> bool:
+    normalized = str(entry_type).strip().casefold()
+    return normalized == "reviewed" or normalized.startswith(
+        "uniprotkb reviewed "
+    )
+
+
 def _uniprot_identity(payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     try:
         accession = str(payload["primaryAccession"])
@@ -420,7 +428,7 @@ def _uniprot_identity(payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]
         taxon_id = int(payload["organism"]["taxonId"])
     except (KeyError, TypeError, ValueError) as error:
         raise TargetInputError("UniProt 响应缺少 accession/sequence/taxonomy") from error
-    reviewed = "reviewed" in str(payload.get("entryType", "")).lower()
+    reviewed = _is_reviewed_uniprot_entry(payload.get("entryType"))
     report = {
         "schema_version": "0.1",
         "status": "resolved",
@@ -462,7 +470,7 @@ def _search_matches(payload: dict[str, Any], query: str) -> list[dict[str, Any]]
             str(recommended).casefold(),
             *gene_names,
         }
-        reviewed = "reviewed" in str(item.get("entryType", "")).lower()
+        reviewed = _is_reviewed_uniprot_entry(item.get("entryType"))
         matches.append(
             {
                 "payload": item,
@@ -958,7 +966,7 @@ def _remote_selection(
             candidates.append(candidate)
             if path is not None:
                 paths[key] = path
-        for result in raw_results[:25]:
+        for result in raw_results[:RCSB_SEQUENCE_RESULT_LIMIT]:
             identifier = str(result.get("identifier", ""))
             if "_" not in identifier:
                 continue
@@ -1243,7 +1251,7 @@ def _sequence_selection(
         candidates: list[dict[str, Any]] = []
         paths: dict[tuple[str, str], Path] = {}
         seen_entities: set[tuple[str, str]] = set()
-        for result in raw_results[:100]:
+        for result in raw_results[:RCSB_SEQUENCE_RESULT_LIMIT]:
             identifier = str(result.get("identifier", ""))
             if "_" not in identifier:
                 continue

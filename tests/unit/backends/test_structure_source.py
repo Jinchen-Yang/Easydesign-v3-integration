@@ -73,6 +73,8 @@ def test_altloc_uses_highest_occupancy_and_label_chain_maps_to_author(
         """ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00 20.00           N
 ATOM      2  CA AALA A   1       1.000   0.000   0.000  0.40 20.00           C
 ATOM      3  CA BALA A   1       9.000   0.000   0.000  0.60 20.00           C
+ATOM      4  CB AALA A   1       2.000   0.000   0.000  0.50 20.00           C
+ATOM      5  CB BALA A   1       8.000   0.000   0.000  0.50 20.00           C
 END
 """,
         encoding="utf-8",
@@ -119,5 +121,8 @@ END
         str(result.built_bundle.bundle.target_structure.verify(tmp_path / "run"))
     )
     ca = next(atom for atom in normalized[0][0][0] if atom.name.strip() == "CA")
+    cb = next(atom for atom in normalized[0][0][0] if atom.name.strip() == "CB")
     assert ca.pos.x == 9.0
     assert ca.altloc == "\x00"
+    assert cb.pos.x == 2.0
+    assert cb.altloc == "\x00"

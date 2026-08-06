@@ -582,6 +582,26 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _normalize_arguments(argv: Sequence[str]) -> list[str]:
+    """Keep the concise UI command compatible with the explicit subcommand."""
+
+    normalized = list(argv)
+    ui_index = next(
+        (
+            index
+            for index, value in enumerate(normalized)
+            if value == "ui" and all(item == "--debug" for item in normalized[:index])
+        ),
+        None,
+    )
+    if ui_index is None:
+        return normalized
+    following = normalized[ui_index + 1 : ui_index + 2]
+    if following not in (["serve"], ["--help"], ["-h"]):
+        normalized.insert(ui_index + 1, "serve")
+    return normalized
+
+
 def _print_plan(plan: RunPlan) -> None:
     print(f"项目：{plan.project_id}")
     print(f"Target：{plan.target_id}（{plan.detected_input_format}）")
@@ -1696,7 +1716,8 @@ def _exit_code(error: Exception) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
-    arguments = parser.parse_args(argv)
+    selected = sys.argv[1:] if argv is None else argv
+    arguments = parser.parse_args(_normalize_arguments(selected))
     try:
         return _dispatch(arguments)
     except (EasyDesignError, OSError, ValueError) as error:

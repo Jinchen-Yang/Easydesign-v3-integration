@@ -135,8 +135,9 @@ archives/
 
 约束如下：
 
-1. `./easydesign` 必须从自身位置解析工作区；不得依赖调用者当前目录、全局 PATH、
-   `/root/.config/easydesign` 或其他 home 目录。
+1. 标准 `easydesign` 命令必须通过 `WorkspaceContext` 解析唯一工作区声明：优先使用显式
+   `EASYDESIGN_WORKSPACE`，否则从当前仓库路径或已安装 package 路径向上查找；不得扫描
+   全局 PATH、`/root/.config/easydesign` 或其他 home 目录猜测工作区。
 2. 用户显式选择的 PSE、PDB、mmCIF、FASTA、A3M、SSH key 等外部文件只允许读取。
    EasyDesign 不得在其父目录创建 cache、sidecar、日志或临时文件。
 3. Conda、pip、Node、Corepack、Playwright 和下载器的临时 HOME/cache/tmp 只能由安装
@@ -162,7 +163,7 @@ archives/
     和引用状态；未获针对该清单的明确批准时只能隔离或阻止新上传。`projects/`、
     `runs/`、环境、模型、cache 和普通 quarantine 永不属于上传清理接口。
 
-旧部署导入使用显式 `./easydesign workspace import-legacy ...`。导入只复制并校验证据；
+旧部署导入使用显式 `easydesign workspace import-legacy ...`。导入只复制并校验证据；
 原 profile、环境、模型、cache 和 run 全部保留，旧 Conda 环境不得直接搬迁或删除。
 
 ## 10. 单一 main Git 制度

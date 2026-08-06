@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-import runpy
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,109 +20,6 @@ def test_repository_foundation_contract() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-
-
-def test_repository_launcher_preserves_proxy_and_translates_ui_shortcut(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    namespace = runpy.run_path(
-        str(ROOT / "easydesign"),
-        run_name="easydesign_launcher_test",
-    )
-    translate = namespace["_translate_arguments"]
-    child_environment = namespace["_child_environment"]
-    monkeypatch.setenv("HTTPS_PROXY", "http://user-owned-proxy.invalid:7898")
-
-    assert translate(["ui"]) == ["ui", "serve"]
-    assert translate(["ui", "--port", "8765"]) == [
-        "ui",
-        "serve",
-        "--port",
-        "8765",
-    ]
-    assert translate(["ui", "serve", "--port", "8765"]) == [
-        "ui",
-        "serve",
-        "--port",
-        "8765",
-    ]
-    assert child_environment()["HTTPS_PROXY"] == os.environ["HTTPS_PROXY"]
-
-
-def test_repository_launcher_prefers_uv_venv_and_keeps_legacy_fallback(
-    tmp_path: Path,
-) -> None:
-    launcher = tmp_path / "easydesign"
-    shutil.copy2(ROOT / "easydesign", launcher)
-    lock_root = tmp_path / "environments" / "locks"
-    lock_root.mkdir(parents=True)
-    shutil.copy2(
-        ROOT / "environments" / "locks" / "easydesign-core-linux-64.lock.json",
-        lock_root,
-    )
-    namespace = runpy.run_path(
-        str(launcher),
-        run_name="easydesign_launcher_runtime_test",
-    )
-    venv_python = tmp_path / ".venv" / "bin" / "python"
-    venv_python.parent.mkdir(parents=True)
-    venv_python.touch()
-
-    assert namespace["_preferred_python"]() == venv_python
-
-    venv_python.unlink()
-    assert namespace["_preferred_python"]() == namespace["_core_python"]()
-
-
-def test_repository_launcher_plan_does_not_bootstrap_core(
-    tmp_path: Path,
-) -> None:
-    launcher = tmp_path / "easydesign"
-    shutil.copy2(ROOT / "easydesign", launcher)
-    locks = tmp_path / "environments" / "locks"
-    locks.mkdir(parents=True)
-    for source in (ROOT / "environments" / "locks").glob(
-        "*-linux-64.lock.json"
-    ):
-        shutil.copy2(source, locks / source.name)
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(launcher),
-            "setup",
-            "--component",
-            "core-ui",
-            "--plan",
-            "--pip-index-url",
-            "https://pypi.tuna.tsinghua.edu.cn/simple",
-        ],
-        cwd=tmp_path,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "easydesign-core" in completed.stdout
-    assert "reporting-web" in completed.stdout
-    assert "protenix-v2" not in completed.stdout
-    assert not (tmp_path / "runtime").exists()
-
-
-def test_repository_launcher_rejects_unsafe_pip_index() -> None:
-    namespace = runpy.run_path(
-        str(ROOT / "easydesign"),
-        run_name="easydesign_launcher_pip_index_test",
-    )
-    validate = namespace["_validated_pip_index_url"]
-
-    assert (
-        validate("https://pypi.tuna.tsinghua.edu.cn/simple")
-        == "https://pypi.tuna.tsinghua.edu.cn/simple"
-    )
-    with pytest.raises(SystemExit, match="完整 HTTPS URL"):
-        validate("http://example.invalid/simple")
 
 
 @pytest.mark.parametrize(

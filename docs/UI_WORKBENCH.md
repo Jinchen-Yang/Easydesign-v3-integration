@@ -428,7 +428,7 @@ revision 并执行下一阶段。`failed`、`cancelled`、前缀不连续或上�
 - 环境状态会区分当前 lock 的 `available` 与旧 lock 的 `outdated`；旧目录继续保留。
 - BoltzGen 只有五个 checkpoint、molecule dataset 和固定源码七项全部可用时才显示
   “可用”，不能因 Python package 已安装而提前解锁 Stage 04/06。
-- “完整安装”调用与 `./easydesign setup` 相同的 Python API；UI 只轮询结构化 setup
+- “完整安装”调用与 `easydesign setup` 相同的 Python API；UI 只轮询结构化 setup
   记录，不解析终端输出。
 - 安装中心与 CLI 共用 `orchestration.setup_jobs`。安装 worker 脱离浏览器/SSH session
   运行，UI 重启后通过 request/process/result 恢复真实状态；不再出现
@@ -437,7 +437,7 @@ revision 并执行下一阶段。`failed`、`cancelled`、前缀不连续或上�
   动作。每张组件卡片展示本组件当前增量峰值和磁盘门；许可确认仍精确绑定资产，单组件
   按钮不得扩大为其他后端的安装授权。
 - 缺后端时新项目页面指向具体环境或资产，不再抛出 profile 文件不存在。
-- `./easydesign ui` 自动使用当前工作区的 profile、projects 和 runs。
+- `easydesign ui` 自动使用当前工作区的 profile、projects 和 runs。
 
 真实后端微型自检已从只登记记录升级为逐 Stage 执行器：
 

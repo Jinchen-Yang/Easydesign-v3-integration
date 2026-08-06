@@ -25,8 +25,8 @@ Conda 环境会记录创建时的绝对 prefix，因此旧工作区中的环境�
 在首次安装前可以安全查看单组件计划。`--plan` 不创建环境、缓存或注册记录：
 
 ```bash
-./easydesign setup --component core-ui --plan
-./easydesign setup --component protenix-v2 --plan
+easydesign setup --component core-ui --plan
+easydesign setup --component protenix-v2 --plan
 ```
 
 网络受限时可以为本次安装显式提供经过确认的 HTTPS Python 包索引。该设置只传给
@@ -34,13 +34,13 @@ EasyDesign 的安装子进程，不修改系统代理、Git 全局配置、shell
 Conda：
 
 ```bash
-./easydesign setup \
+easydesign setup \
   --component core-ui \
   --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 长时安装任务位于 `state/setup-jobs/<job-id>/`，日志位于 `logs/`。关闭 SSH 或 UI
-不会终止通过 `./easydesign setup --detach` 启动的 worker；状态由不可变 request、
+不会终止通过 `easydesign setup --detach` 启动的 worker；状态由不可变 request、
 process 和 result 记录恢复，不依赖终端文本。
 
 ## 平台结构助手 API

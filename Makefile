@@ -1,4 +1,5 @@
 PYTHON ?= $(CURDIR)/.venv/bin/python
+EASYDESIGN ?= $(CURDIR)/.venv/bin/easydesign
 UV ?=
 CONDA ?= conda
 CONDA_ENV ?= easydesign-core
@@ -33,16 +34,16 @@ help:
 	@echo "make release-build RELEASE=1  # publish assets and dist wheel"
 
 ensure-venv:
-	@test -x "$(PYTHON)" || { \
-		echo "ERROR: 缺少仓库 .venv/bin/python；请运行 uv sync --frozen --extra ui --extra dev" >&2; \
+	@test -x "$(PYTHON)" && test -x "$(EASYDESIGN)" || { \
+		echo "ERROR: 缺少仓库 .venv；请运行 uv sync --frozen --extra ui --extra dev" >&2; \
 		exit 2; \
 	}
 
-env-create:
-	./easydesign setup --minimal
+env-create: ensure-venv
+	$(EASYDESIGN) setup --minimal
 
-env-update:
-	./easydesign setup --minimal
+env-update: ensure-venv
+	$(EASYDESIGN) setup --minimal
 
 check: ensure-venv
 	@mkdir -p runtime/tmp runtime/cache/dev/pycache runtime/cache/dev/ruff

@@ -26,9 +26,9 @@ pymol-pse
 
 顺序不是科学依赖，只是便于先验证核心、PSE 和生成主线，并在每次大下载后复核空间。
 core/UI 已由 uv 管理，因此新部署不使用无 `--component` 的全量 setup，也不重复创建
-core/UI Conda 环境。兼容命令 `./easydesign` 会优先使用当前仓库 `.venv`；旧 Conda core
-只在 `.venv` 不存在时作为离线恢复 fallback。迁移完成时 registry 可以追加 `retired`
-revision 退出旧 core 的主运行时身份，但不会删除或改写对应目录、inventory 和历史 revision。
+core/UI Conda 环境。产品命令只使用 uv 管理的当前仓库 `.venv`；根兼容启动器和自动 Conda
+fallback 已退役。旧 Conda core 只保留为显式离线恢复材料，registry 的 `retired` revision
+继续保存对应目录、inventory 和历史记录，但不会让它重新成为主运行时。
 
 安装目标始终由当前 clone 决定。例如仓库位于数据盘：
 

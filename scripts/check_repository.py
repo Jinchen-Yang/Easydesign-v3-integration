@@ -470,6 +470,11 @@ def main() -> int:
         "Developer Preview 必须只提供统一 easydesign 命令",
         errors,
     )
+    require(
+        not (ROOT / "easydesign").exists(),
+        "根 easydesign 兼容启动器已经退役；用户入口必须来自 .venv/bin/easydesign",
+        errors,
+    )
     dependency_names = {
         dependency.split(";", 1)[0]
         .split("[", 1)[0]

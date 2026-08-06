@@ -14,7 +14,7 @@ manifest，至少记录阶段与契约版本、状态、输入输出、checksum�
 后端/模型身份、attempt、警告、失败和时间。扫描目录不是接口。
 
 ```text
-runs/<project_id>/<run_id>/
+workspace/runs/<project_id>/<run_id>/
 ├── input-snapshot/
 ├── config-snapshot/
 ├── manifests/
@@ -29,6 +29,6 @@ runs/<project_id>/<run_id>/
 ```
 
 Stage 内部直接使用 `attempt-0001/`，不再增加 `attempts/` 中间层。开发 smoke 和外部服务
-诊断进入 `runs/_development/`，不能混入正式项目 run。
+诊断进入 `workspace/runs/_development/`，不能混入正式项目 run。
 
 恢复执行必须先验证上游 hash 和配置兼容性，再建立新 attempt；不得改写旧 attempt。

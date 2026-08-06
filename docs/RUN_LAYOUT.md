@@ -1,7 +1,10 @@
 # EasyDesign 运行目录与续跑规则
 
-本文件定义 EasyDesign `runs/` 的稳定语义。它是工程规则的唯一长期说明；运行目录中的
+本文件定义 EasyDesign `workspace/runs/` 的稳定语义。它是工程规则的唯一长期说明；运行目录中的
 JSON、manifest 和指针只是该规则在某个项目上的实例，不替代本文件。
+
+2026-08-06 之前的 status/history 中出现的 `runs/...` 是迁移前路径记录；当前物理位置为
+`workspace/runs/...`，迁移没有改写其中的科学 manifest 或 artifact。
 
 ## 1. 四个概念
 
@@ -22,7 +25,7 @@ Project
 ## 2. 标准目录
 
 ```text
-runs/
+workspace/runs/
 ├── run-index.json
 ├── <project_id>/
 │   ├── PROJECT.json
@@ -108,6 +111,6 @@ runs/
 - UI 的“配置下一步”默认调用同一 run 延续；“重新选区/更换上游输入”明确显示为创建
   新分支。
 - CLI、UI 和脚本只能调用统一 orchestration API，不得各自复制目录。
-- `runs/` 不进入 Git；本文件、架构文档、测试和代码共同定义行为。
+- `workspace/runs/` 不进入 Git；本文件、架构文档、测试和代码共同定义行为。
 - Agent 结束涉及目录或 continuation 的任务前，必须验证：无空 Stage 预创建、旧
   manifest 不变、同 run revision 链完整、分支 lineage 明确、归档可恢复。

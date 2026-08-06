@@ -38,9 +38,7 @@ runtime/*
 *~
 
 # Runtime artifacts and model assets
-runs/*
-projects/*
-archives/*
+workspace/*
 *.ckpt
 *.safetensors
 *.pt

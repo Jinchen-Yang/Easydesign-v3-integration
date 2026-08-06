@@ -9,13 +9,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from easydesign.backends.annotations import (
-    FetchedUniProtRecord,
-    UniProtAnnotationAdapter,
-)
-from easydesign.backends.hotspot import (
+from easydesign.backends.scannet import (
     ScanNetBackendError,
     ScanNetEpitopeAdapter,
+)
+from easydesign.backends.uniprot import (
+    FetchedUniProtRecord,
+    UniProtAnnotationAdapter,
 )
 from easydesign.core import (
     ArtifactRef,

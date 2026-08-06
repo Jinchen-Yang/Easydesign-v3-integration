@@ -103,7 +103,7 @@ IGNORED_REPOSITORY_DIRS = {
     "models",
     "node_modules",
     "playwright-report",
-    "runs",
+    "workspace",
     "runtime",
     "test-results",
 }
@@ -594,7 +594,7 @@ def main() -> int:
     ):
         require(concept in architecture, f"架构文档缺少概念: {concept}", errors)
 
-    apoe_input = ROOT / "examples/stage01-apoe/input"
+    apoe_input = ROOT / "examples/stage01-apoe"
     for filename in (
         "apoe4-fragment-41-183.fasta",
         "easydesign.yaml",
@@ -608,7 +608,7 @@ def main() -> int:
     )
 
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    for pattern in ("runs/*", "projects/*", "*.safetensors", ".env"):
+    for pattern in ("workspace/*", "runtime/*", "*.safetensors", ".env"):
         require(pattern in ignore, f"缺少 ignore 规则: {pattern}", errors)
 
     require(not (ROOT / "LICENSE").exists(), "IP 决策前不得添加 LICENSE", errors)

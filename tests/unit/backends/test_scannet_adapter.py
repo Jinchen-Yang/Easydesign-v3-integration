@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from easydesign.backends.hotspot import (
+from easydesign.backends.scannet import (
     SCANNET_COMMIT,
     ScanNetBackendConfig,
     ScanNetBackendError,

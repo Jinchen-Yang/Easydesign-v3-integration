@@ -249,11 +249,11 @@ easydesign runs resume RUN_DIR
 
 ```bash
 easydesign run easydesign.yaml \
-  --from-run runs/project/stage03-run \
+  --from-run workspace/runs/project/stage03-run \
   --run-id stage04-pilot
 
-easydesign runs watch runs/project/stage04-pilot
-easydesign runs resume runs/project/stage04-pilot
+easydesign runs watch workspace/runs/project/stage04-pilot
+easydesign runs resume workspace/runs/project/stage04-pilot
 ```
 
 CLI 只调用 orchestration API；科学参数只能来自 canonical YAML。

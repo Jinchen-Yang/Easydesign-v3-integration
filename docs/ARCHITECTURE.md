@@ -26,9 +26,10 @@ easydesign-clean/
 ├── scripts/                  # 仅调用 API 的开发脚本
 ├── docs/                     # 平铺文档、Agent 指南、ADR 与工作流
 ├── runtime/                  # 本机环境、模型、缓存、状态与隔离区，Git 忽略
-├── projects/                 # 用户输入和 canonical 配置，Git 忽略
-├── runs/                     # 不可变科学运行与可再生索引，Git 忽略
-└── archives/                 # 有独立保留价值的可恢复归档，Git 忽略
+└── workspace/                # 受保护数据边界，Git 忽略
+    ├── projects/             # 用户输入和 canonical 配置
+    ├── runs/                 # 不可变科学运行与可再生索引
+    └── archives/             # 有独立保留价值的可恢复归档
 ```
 
 ## 2. Python 源码层级
@@ -56,7 +57,8 @@ src/easydesign/
 │   └── s07_final_filtering_and_selection/
 ├── backends/
 │   ├── target_sources/      # PDB/mmCIF、RCSB、序列、UniProt、PSE
-│   ├── hotspot/             # 人工、SASA、界面迁移和注释来源
+│   ├── scannet.py           # ScanNet hotspot adapter
+│   ├── uniprot.py           # UniProt 注释 adapter
 │   ├── boltzgen/            # BoltzGen 能力、请求与结果转换
 │   ├── structure_prediction/# Protenix-v2、AFO、AF3 等通用预测接口
 │   ├── tnp.py               # 固定 TNP Python 3.10 文件协议 adapter
@@ -220,9 +222,10 @@ identity，但不复制机器绝对路径。旧用户级 profile 只能通过显
 
 ```text
 runtime/
-projects/
-runs/
-archives/
+workspace/
+├── projects/
+├── runs/
+└── archives/
 .git/        # 仅用户明确执行 Git 工作流时
 ```
 
@@ -242,12 +245,12 @@ lock 重建；不得直接移动环境目录并宣称可用。
 
 EasyDesign 的 Git 拓扑固定为单一 `main`。不创建开发分支或额外 worktree；科学流程中的
 “branch run”仅表示不可变 run lineage 的科学分叉，与 Git branch 无关。GitHub 只同步
-`main`，runtime、projects、runs 和 archives 继续位于 Git 忽略边界。
+`main`，runtime 和 workspace 继续位于 Git 忽略边界。
 
 ## 6. 运行目录层级
 
 ```text
-runs/
+workspace/runs/
 ├── run-index.json                 # 可再生导航索引，不是科学 artifact
 ├── _development/                  # backend smoke、外部服务诊断
 ├── _archive/                      # 旧布局迁移清单，不放当前项目 run
@@ -376,7 +379,7 @@ ColabFold/MMseqs2 profile 仍属于后续实现。
 旧版目录（只用于解释历史，不再生成）：
 
 ```text
-runs/<project_id>/<run_id>/
+workspace/runs/<project_id>/<run_id>/
 ├── manifests/
 ├── 01-target-preparation/
 │   ├── attempts/
@@ -807,7 +810,7 @@ SSH 端口转发访问。Mol* 5.11.0 官方预构建 bundle 初始化需要动�
 后端共享这一声明，不从用户主目录或环境变量猜测。
 
 项目发布先在全新的 runtime staging 中完成配置、输入和元数据验证，再原子移动到此前
-不存在的 `projects/<project_id>/`，最后创建 DesignSession。成功发布时输入本身移动到
+不存在的 `workspace/projects/<project_id>/`，最后创建 DesignSession。成功发布时输入本身移动到
 项目目录，receipt 改为 referenced；失败内容移入 quarantine 并保留失败 receipt，不得
 产生正式项目、空会话或首页卡片。7 天只触发建议，1/5 GiB 分别触发提醒/阻止；不存在
 自动删除定时器。
@@ -876,7 +879,7 @@ Stage 05 report 的显式联接，禁止拆 strategy ID 猜 region 或 scaffold�
 
 ### 仓库共享的只读运行证据
 
-完整 `runs/` 仍属于 runtime-only。`reporting.evidence_bundle` 只为经明确授权的协作审阅
+完整 `workspace/runs/` 仍属于 runtime-only。`reporting.evidence_bundle` 只为经明确授权的协作审阅
 生成精简副本：
 
 ```text
@@ -980,7 +983,7 @@ StageManifest → verified target.cif / mapping / source annotations
                       ├─ browser PyMOL（默认，离线 WASM）
                       └─ Mol*（平级切换）
                               │
-projects/<project>/interactive-sessions/<session>/revision
+workspace/projects/<project>/interactive-sessions/<session>/revision
                               │
        完整 PML SceneVersion / 明确残基草稿 / 待确认算法计划
                               │
@@ -991,7 +994,7 @@ projects/<project>/interactive-sessions/<session>/revision
   run 目录或直接读取任意路径。
 - Pyodide/PyMOL WASM 由 Python wheel 离线提供，不访问 CDN。PSE 文件解析仍在独立
   `pymol-pse` 环境完成，浏览器运行时不是科学输入 adapter。
-- `StructureInteractionSession 0.4` 保存于 `projects/`，采用新 revision 发布，不提供
+- `StructureInteractionSession 0.4` 保存于 `workspace/projects/`，采用新 revision 发布，不提供
   删除或覆盖接口。每个 SceneVersion 保存完整 PML、parent/base version、SHA-256、
   actor、provider/model、Skill ID 和时间；它不加入 Run/StageManifest，也不改变
   Target Bundle。
@@ -1083,8 +1086,8 @@ ArtifactRef 仍分别承担产品导航、科学状态和产物身份，不因�
 项目目录只读取 `run-index.json` 的 category：
 
 - `project-run`：显示在普通项目和运行任务。
-- `archived-project-run`：移动到 `runs/_archive/`，只在设置中显示，可恢复；即使
-  `projects/<id>/` 仍保留配置，也不得重新投影成主页草稿。
+- `archived-project-run`：移动到 `workspace/runs/_archive/`，只在设置中显示，可恢复；即使
+  `workspace/projects/<id>/` 仍保留配置，也不得重新投影成主页草稿。
 - `developer-smoke-run`：只在开发者自检历史中显示，禁止作为科学输入。
 
 项目首页展示哪一次运行也由 `run-index.json` 显式声明。每个活跃项目最多一个

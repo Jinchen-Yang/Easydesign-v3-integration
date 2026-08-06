@@ -6,7 +6,7 @@
 
 ## 1. 核心原则
 
-1. **先按价值分类。** 用户输入、`projects/`、科学 `runs/`、manifest、终态 attempt、
+1. **先按价值分类。** 用户输入、`workspace/projects/`、科学 `workspace/runs/`、manifest、终态 attempt、
    当前或回退 activation 引用的 release、唯一证据、密钥、已发布环境和模型属于受保护
    数据；删除必须取得用户对精确清单的本次批准。
 2. **可再生垃圾确认后直接删除。** 仓库生成的开发 cache、bytecode、空占位、失败前尚未
@@ -15,7 +15,7 @@
 3. **废弃的 Git 内容通过 diff 删除。** 无引用的旧文档、兼容配置、空 `.gitkeep` 和一次性
    工具应从当前树删除；Git 历史就是恢复来源，不再复制到新的 legacy/archive 目录。
 4. **删除权限有边界。** “整理”不授权删除受保护数据；用户对某一类可再生目标的明确批准
-   也不得扩大到父目录、相邻目录、`.venv/`、`runtime/`、`runs/` 或其他主机。
+   也不得扩大到父目录、相邻目录、`.venv/`、`runtime/`、`workspace/runs/` 或其他主机。
 5. **有疑问就停止。** 路径、挂载点、变量、权限、来源、引用关系或恢复能力有任何不确定
    时，必须保持原状并向用户报告，禁止先操作后解释。
 
@@ -127,9 +127,10 @@
 
 ```text
 runtime/
-projects/
-runs/
-archives/
+workspace/
+├── projects/
+├── runs/
+└── archives/
 .git/
 ```
 
@@ -160,8 +161,8 @@ archives/
    `runtime/tmp/ui-uploads/`、事务 staging、项目 `inputs/` 或 quarantine。失败创建
    不得留下正式项目或空 DesignSession；成功项目不得保留重复输入副本。
 10. 7 天过期仅生成建议，不触发删除。上传暂存清理必须先展示精确相对路径、数量、大小
-    和引用状态；未获针对该清单的明确批准时只能隔离或阻止新上传。`projects/`、
-    `runs/`、环境、模型、cache 和普通 quarantine 永不属于上传清理接口。
+    和引用状态；未获针对该清单的明确批准时只能隔离或阻止新上传。`workspace/projects/`、
+    `workspace/runs/`、环境、模型、cache 和普通 quarantine 永不属于上传清理接口。
 
 旧部署导入使用显式 `easydesign workspace import-legacy ...`。导入只复制并校验证据；
 原 profile、环境、模型、cache 和 run 全部保留，旧 Conda 环境不得直接搬迁或删除。

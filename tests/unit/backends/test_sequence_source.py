@@ -38,7 +38,7 @@ def test_raw_and_fasta_have_same_sequence_identity() -> None:
 
 
 def test_committed_apoe_fixture_matches_its_source_record() -> None:
-    input_dir = ROOT / "examples/stage01-apoe/input"
+    input_dir = ROOT / "examples/stage01-apoe"
     normalized = normalize_fasta(
         (input_dir / "apoe4-fragment-41-183.fasta").read_text(encoding="utf-8"),
         target_id="apoe4-fragment-41-183",

@@ -23,8 +23,6 @@ from easydesign.core import ConfigurationError, PathPolicyError
 
 WORKSPACE_MARKER = "easydesign-workspace.yaml"
 WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
-_WRITE_ROOT_NAMES = ("runtime", "projects", "runs", "archives")
-
 
 class WorkspaceDeclaration(BaseModel):
     """Tracked declaration of the portable workspace layout."""
@@ -34,9 +32,9 @@ class WorkspaceDeclaration(BaseModel):
     schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
     workspace_id: str = Field(default="easydesign-local")
     runtime_root: Path = Path("runtime")
-    projects_root: Path = Path("projects")
-    runs_root: Path = Path("runs")
-    archives_root: Path = Path("archives")
+    projects_root: Path = Path("workspace/projects")
+    runs_root: Path = Path("workspace/runs")
+    archives_root: Path = Path("workspace/archives")
     upload_warning_bytes: int = Field(default=1 * 1024**3, gt=0)
     upload_blocking_bytes: int = Field(default=5 * 1024**3, gt=0)
 

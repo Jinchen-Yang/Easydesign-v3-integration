@@ -21,7 +21,7 @@ from easydesign.orchestration.config import ResolvedProtenixMsaProviderConfig
 from easydesign.stages.s02_hotspot_discovery import load_structure_context
 
 ROOT = Path(__file__).resolve().parents[3]
-APOE_CONFIG = ROOT / "examples/stage01-apoe/input/easydesign.yaml"
+APOE_CONFIG = ROOT / "examples/stage01-apoe/easydesign.yaml"
 ONE_TO_THREE = {
     "A": "ALA",
     "C": "CYS",

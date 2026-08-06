@@ -17,7 +17,7 @@ from easydesign.backends.boltzgen import (
     BoltzGenCheckAdapter,
     BoltzGenGenerationAdapter,
 )
-from easydesign.backends.hotspot import ScanNetBackendConfig, ScanNetEpitopeAdapter
+from easydesign.backends.scannet import ScanNetBackendConfig, ScanNetEpitopeAdapter
 from easydesign.backends.structure_prediction import ProtenixV2Adapter
 from easydesign.backends.target_sources import PyMOLPseAdapter
 from easydesign.backends.tnp import TnpAdapter

@@ -150,7 +150,7 @@ GET /api/v1/runs/{run}/stages/6/execution
 - 浏览器：本机 Chromium 1440/1920 与 Firefox 共 9/9 通过；Proteindigger1
   Chromium 1440/1920 共 6/6 通过。
 - 真实证据：
-  `/root/autodl-tmp/Protein_design/easydesign-clean/runs/apoe-s02-006-pse/`
+  `/root/autodl-tmp/Protein_design/easydesign-clean/workspace/runs/apoe-s02-006-pse/`
   `20260726-004-stage05-pilot-filter` 投影为 Stage 01–04 `succeeded`、Stage 05
   `scientific-stop`、Stage 06/07 `not-reached`；完整性为 `verified`。
 - Stage 05 页面来自 manifest 的事实为 840 pilot、1 个 Tier A、100 expansion、
@@ -504,7 +504,7 @@ REP-009 的完整 PML 四字段协议取代。
 → 持久 UploadReceipt 0.2
 → 配置与环境预检
 → runtime/tmp 中的全新 staging
-→ 原子发布 projects/<project_id>
+→ 原子发布 workspace/projects/<project_id>
 → 最后创建 DesignSession
 ```
 

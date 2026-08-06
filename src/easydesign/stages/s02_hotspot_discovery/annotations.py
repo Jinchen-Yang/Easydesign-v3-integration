@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from easydesign.backends.annotations import FetchedUniProtRecord
+from easydesign.backends.uniprot import FetchedUniProtRecord
 from easydesign.stages.s01_target_preparation import ResidueMapping
 
 from .models import (

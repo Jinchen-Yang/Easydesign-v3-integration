@@ -221,7 +221,7 @@ Stage 03 没有“科学负结果”：它只编译策略。候选数量不足�
 ```bash
 easydesign doctor --config downstream/easydesign.yaml
 easydesign run downstream/easydesign.yaml \
-  --from-run runs/project/source-stage02-run \
+  --from-run workspace/runs/project/source-stage02-run \
   --run-id downstream-stage03
 ```
 

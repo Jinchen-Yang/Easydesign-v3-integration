@@ -199,7 +199,7 @@ easydesign remote adopt-scale SUZHOU2 \
 命令逐一验证本地 Stage 05 RunManifest、Stage05Bundle、远程 Stage 06 RunManifest、
 ScaleBundle、计划、任务、进度、覆盖报告和 candidate index 的大小与 SHA-256，并验证
 候选编号连续、无重复、分片与设备计数一致。成功后只在
-`projects/<project_id>/evidence-adoptions/` 发布新的记录；不复制约 39 GB 候选、不创建
+`workspace/projects/<project_id>/evidence-adoptions/` 发布新的记录；不复制约 39 GB 候选、不创建
 symlink，也不改写旧 v1.5 run。APOE 的采用证据验证了 20/20 shard 和
 50,000/50,000 候选，并让产品投影把 Stage 06 显示为已经完成。
   两种模式都逐一验证大小和 SHA-256，不扫描目录猜结果。
@@ -282,7 +282,7 @@ easydesign remote submit REMOTE_ID \
 easydesign remote status REMOTE_ID JOB_ID
 easydesign remote watch REMOTE_ID JOB_ID
 easydesign remote sync REMOTE_ID JOB_ID \
-  --to runs/PROJECT_ID/RUN_ID --mode metadata
+  --to workspace/runs/PROJECT_ID/RUN_ID --mode metadata
 easydesign remote resume REMOTE_ID JOB_ID
 
 # 从 Stage 01 起把整个项目提交到远端
@@ -354,7 +354,7 @@ dev11/dev12 环境作为新 worker 正式环境，不移动、覆盖或改写旧
 控制端配对复用工作区完整 SSH key pair；首次公钥授权可由 localhost UI 通过一次性
 密码完成，密码不会进入配置、日志、参数、环境或磁盘，授权完成后只使用专用私钥。
 对于已在受管 worker 完成 Stage 05 的 run，Stage 06 通过远端 RunManifest SHA-256 和
-`runs/<project>/<run>` 相对引用就地继续，无需重传大型上游闭包。
+`workspace/runs/<project>/<run>` 相对引用就地继续，无需重传大型上游闭包。
 
 受管 Stage 06 job 的固定阶段范围是 `6→7`：50k 候选主体保留在 Suzhou2，
 Stage 07 原地消费。只有用户显式请求 `complete` 同步时才会回传全部大型结果；

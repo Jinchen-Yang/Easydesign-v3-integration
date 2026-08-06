@@ -19,7 +19,7 @@ from easydesign.orchestration import (
 from easydesign.orchestration.config import migrate_run_config
 
 ROOT = Path(__file__).resolve().parents[3]
-APOE_INPUT = ROOT / "examples/stage01-apoe/input"
+APOE_INPUT = ROOT / "examples/stage01-apoe"
 APOE_SHA256 = "7cfb40e9e78b05724e328df0af5ca673f4379ab7011b7655a2922f494668115a"
 
 

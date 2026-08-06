@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from easydesign.core import PathPolicyError
-from easydesign.workspace_context import WorkspaceContext
+from easydesign.workspace_context import WorkspaceContext, WorkspaceDeclaration
 
 
 def _workspace(tmp_path: Path) -> WorkspaceContext:
@@ -25,6 +25,15 @@ def _workspace(tmp_path: Path) -> WorkspaceContext:
         encoding="utf-8",
     )
     return WorkspaceContext.from_root(tmp_path)
+
+
+def test_default_declaration_groups_protected_data_under_workspace() -> None:
+    declaration = WorkspaceDeclaration()
+
+    assert declaration.runtime_root == Path("runtime")
+    assert declaration.projects_root == Path("workspace/projects")
+    assert declaration.runs_root == Path("workspace/runs")
+    assert declaration.archives_root == Path("workspace/archives")
 
 
 def test_child_environment_is_repository_local_and_does_not_mutate_parent(

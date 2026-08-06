@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easydesign.backends.annotations import FetchedUniProtRecord
+from easydesign.backends.uniprot import FetchedUniProtRecord
 from easydesign.stages.s01_target_preparation import (
     ResidueMapping,
     ResidueMappingEntry,

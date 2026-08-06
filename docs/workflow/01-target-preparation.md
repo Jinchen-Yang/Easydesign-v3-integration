@@ -416,7 +416,7 @@ Stage 02 handoff。Stage 01 不自动启动常驻服务；需要查看时执行�
 
 ```bash
 python scripts/serve_target_viewer.py \
-  runs/apoe/20260724-006-stage01-msa \
+  workspace/runs/apoe/20260724-006-stage01-msa \
   --port 8000
 ```
 
@@ -444,7 +444,7 @@ Stage 01 只读结构摘要只显示规范序列长度；来源、模型数、�
 sticks，区域成员和下游科学契约不受影响。
 
 交互状态写入
-`projects/<project_id>/interactive-sessions/<session_id>/` 的
+`workspace/projects/<project_id>/interactive-sessions/<session_id>/` 的
 `StructureInteractionSession 0.4`。当前完整 PML 是唯一场景事实；每次更新发布新的
 SceneVersion，并记录 parent/base version、SHA-256、actor、provider/model 和实际使用的
 PML Skill。安全追加只增量执行；修改旧内容、恢复历史或增量失败时重新构建结构并完整
@@ -490,7 +490,7 @@ PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重
   类型不得冲突，模型缺失坐标必须显式保留为缺失证据。
 - 搜索、排序、下载、转换、MSA、模板策略和 fallback 全部留痕。
 - 原始输入按 checksum 引用，attempt 和正式 artifact 不覆盖。
-- 同一次实验只有一个 `runs/<project_id>/<run_id>/`；Stage 01 输出不另建第二个 run 根。
+- 同一次实验只有一个 `workspace/runs/<project_id>/<run_id>/`；Stage 01 输出不另建第二个 run 根。
 - 远程 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
 - 远程 MSA 的 provider、mode 和 endpoint 必须一致且可审计；禁止用解析模式名称推断
   实际请求端点。

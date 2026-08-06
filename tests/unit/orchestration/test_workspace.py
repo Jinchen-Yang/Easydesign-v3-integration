@@ -25,7 +25,7 @@ from easydesign.orchestration import (
 )
 
 ROOT = Path(__file__).resolve().parents[3]
-APOE_CONFIG = ROOT / "examples/stage01-apoe/input/easydesign.yaml"
+APOE_CONFIG = ROOT / "examples/stage01-apoe/easydesign.yaml"
 
 
 def adapter() -> ProtenixV2Adapter:

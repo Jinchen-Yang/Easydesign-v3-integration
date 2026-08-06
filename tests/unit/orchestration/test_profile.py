@@ -10,7 +10,10 @@ from easydesign.orchestration import (
     load_runtime_profile,
 )
 from easydesign.orchestration import profile as profile_module
-from easydesign.orchestration.profile import WorkspaceBackendBinding
+from easydesign.orchestration.profile import (
+    WorkspaceBackendBinding,
+    WorkspaceRuntimeProfile,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +32,13 @@ def _declare_test_workspace(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_portable_profile_defaults_follow_workspace_layout() -> None:
+    profile = WorkspaceRuntimeProfile()
+
+    assert profile.runs_root == Path("workspace/runs")
+    assert profile.projects_root == Path("workspace/projects")
 
 
 def test_runtime_profile_is_exclusive_and_path_identity_is_stable(tmp_path: Path) -> None:

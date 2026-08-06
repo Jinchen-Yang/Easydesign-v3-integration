@@ -10,9 +10,10 @@ from easydesign.orchestration import (
     RunMovePlan,
     migrate_run_directories,
 )
+from easydesign.workspace_context import WorkspaceContext
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNS_ROOT = ROOT / "runs"
+RUNS_ROOT = WorkspaceContext.from_root(ROOT).runs_root
 
 
 def main() -> None:

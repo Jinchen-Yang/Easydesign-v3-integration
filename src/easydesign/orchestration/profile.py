@@ -210,8 +210,8 @@ class WorkspaceRuntimeProfile(BaseModel):
 
     schema_version: str = Field(default="0.2", pattern=r"^0\.2$")
     profile_id: str = Field(default="workspace-local", pattern=ID_PATTERN)
-    runs_root: Path = Path("runs")
-    projects_root: Path = Path("projects")
+    runs_root: Path = Path("workspace/runs")
+    projects_root: Path = Path("workspace/projects")
     backend_bindings: WorkspaceRuntimeBackends = WorkspaceRuntimeBackends()
     remote_executors: dict[str, SshRemoteRuntime] = Field(default_factory=dict)
 

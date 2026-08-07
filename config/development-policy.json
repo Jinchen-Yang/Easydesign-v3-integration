@@ -1,5 +1,57 @@
 {
   "schema_version": "0.1",
+  "runtime_retention": {
+    "automatic_deletion": false,
+    "protected_paths": [
+      ".venv",
+      "examples/apoe-ui-demo",
+      "workspace/projects",
+      "workspace/runs",
+      "workspace/archives",
+      "runtime/envs",
+      "runtime/models",
+      "runtime/state",
+      "runtime/secrets"
+    ],
+    "inventory_roots": [
+      {
+        "path": "runtime/tmp",
+        "review_policy": "age",
+        "minimum_age_days": 2,
+        "budget_bytes": 5368709120
+      },
+      {
+        "path": "runtime/cache",
+        "review_policy": "manual",
+        "minimum_age_days": null,
+        "budget_bytes": 21474836480
+      },
+      {
+        "path": "runtime/builds",
+        "review_policy": "age",
+        "minimum_age_days": 2,
+        "budget_bytes": 1073741824
+      },
+      {
+        "path": "runtime/validation",
+        "review_policy": "age",
+        "minimum_age_days": 7,
+        "budget_bytes": 2147483648
+      },
+      {
+        "path": "runtime/quarantine",
+        "review_policy": "manual",
+        "minimum_age_days": null,
+        "budget_bytes": 5368709120
+      },
+      {
+        "path": "dist",
+        "review_policy": "manual",
+        "minimum_age_days": null,
+        "budget_bytes": 1073741824
+      }
+    ]
+  },
   "agent_guides": [
     {
       "path": "docs/agent/SCIENTIFIC_PIPELINE.md",

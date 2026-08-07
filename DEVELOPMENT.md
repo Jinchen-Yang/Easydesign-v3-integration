@@ -58,6 +58,16 @@ make verify-fast
 make verify-integration
 ```
 
+运行时空间只通过只读报告治理，不自动删除：
+
+```bash
+.venv/bin/python scripts/dev.py cleanup-report
+```
+
+报告按预算列出最大目录，并将达到年龄阈值的 staging 标为 `retention-review`；该状态不构成
+删除授权。`examples/apoe-ui-demo/`、workspace 项目与 run、环境、模型和状态始终列入保护清单。
+quarantine、下载 cache 与 wheel 永远要求人工完成引用和活动进程审计。
+
 ## UI 与构建边界
 
 开发 UI 使用 18770，带明确 development 标识并禁用 Suzhou2/Managed Worker：

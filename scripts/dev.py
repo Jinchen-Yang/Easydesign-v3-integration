@@ -13,6 +13,7 @@ import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -223,6 +224,172 @@ class CommandResult:
     command: tuple[str, ...]
     returncode: int
     duration_seconds: float
+
+
+@dataclass(frozen=True)
+class RuntimeTreeStats:
+    logical_bytes: int
+    file_count: int
+    symlink_count: int
+    newest_mtime: float
+
+
+def _runtime_tree_stats(path: Path) -> RuntimeTreeStats:
+    """Inventory one path without following symlinks or changing any state."""
+
+    if not path.exists() and not path.is_symlink():
+        return RuntimeTreeStats(0, 0, 0, 0.0)
+    initial = path.lstat()
+    logical_bytes = initial.st_size
+    file_count = int(path.is_file() and not path.is_symlink())
+    symlink_count = int(path.is_symlink())
+    newest_mtime = initial.st_mtime
+    if not path.is_dir() or path.is_symlink():
+        return RuntimeTreeStats(
+            logical_bytes,
+            file_count,
+            symlink_count,
+            newest_mtime,
+        )
+    for directory, directory_names, filenames in os.walk(path, followlinks=False):
+        directory_path = Path(directory)
+        for name in (*directory_names, *filenames):
+            item = directory_path / name
+            item_stat = item.lstat()
+            logical_bytes += item_stat.st_size
+            newest_mtime = max(newest_mtime, item_stat.st_mtime)
+            if item.is_symlink():
+                symlink_count += 1
+            elif item.is_file():
+                file_count += 1
+    return RuntimeTreeStats(
+        logical_bytes,
+        file_count,
+        symlink_count,
+        newest_mtime,
+    )
+
+
+def cleanup_report_payload(
+    *,
+    limit: int,
+    root: Path = ROOT,
+    policy: dict[str, Any] | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Return a read-only retention report; never infer deletion permission."""
+
+    if limit < 1:
+        raise DeveloperWorkflowError("cleanup-report --limit 必须大于 0")
+    selected_policy = policy or _load_policy()
+    retention = selected_policy.get("runtime_retention")
+    if not isinstance(retention, dict):
+        raise DeveloperWorkflowError("development policy 缺少 runtime_retention")
+    if retention.get("automatic_deletion") is not False:
+        raise DeveloperWorkflowError("runtime retention 必须显式禁止自动删除")
+
+    selected_root = root.resolve(strict=True)
+    generated_at = time.time() if now is None else now
+    protected_paths: list[dict[str, object]] = []
+    for relative in retention.get("protected_paths", []):
+        protected = selected_root / str(relative)
+        protected_paths.append(
+            {
+                "path": str(relative),
+                "exists": protected.exists() or protected.is_symlink(),
+            }
+        )
+
+    apoe_manifest = selected_root / "examples/apoe-ui-demo/bundle-manifest.json"
+    apoe_manifest_sha256 = (
+        hashlib.sha256(apoe_manifest.read_bytes()).hexdigest()
+        if apoe_manifest.is_file()
+        else None
+    )
+    roots: list[dict[str, object]] = []
+    for configured in retention.get("inventory_roots", []):
+        relative = str(configured["path"])
+        inventory_root = selected_root / relative
+        resolved = inventory_root.resolve(strict=False)
+        if not resolved.is_relative_to(selected_root):
+            raise DeveloperWorkflowError(f"retention 路径逃逸仓库: {relative}")
+        root_stats = _runtime_tree_stats(inventory_root)
+        review_policy = str(configured["review_policy"])
+        minimum_age_days = configured.get("minimum_age_days")
+        entries: list[dict[str, object]] = []
+        if inventory_root.is_dir() and not inventory_root.is_symlink():
+            for entry in inventory_root.iterdir():
+                stats = _runtime_tree_stats(entry)
+                age_days = (
+                    max(0.0, (generated_at - stats.newest_mtime) / 86_400)
+                    if stats.newest_mtime
+                    else 0.0
+                )
+                if review_policy == "manual":
+                    status = "manual-review"
+                elif minimum_age_days is not None and age_days >= float(minimum_age_days):
+                    status = "retention-review"
+                else:
+                    status = "retained-young"
+                entries.append(
+                    {
+                        "path": entry.relative_to(selected_root).as_posix(),
+                        "status": status,
+                        "age_days": round(age_days, 3),
+                        "logical_bytes": stats.logical_bytes,
+                        "file_count": stats.file_count,
+                        "symlink_count": stats.symlink_count,
+                        "newest_mtime": (
+                            datetime.fromtimestamp(stats.newest_mtime, UTC).isoformat()
+                            if stats.newest_mtime
+                            else None
+                        ),
+                    }
+                )
+        entries.sort(key=lambda item: (-int(item["logical_bytes"]), str(item["path"])))
+        budget_bytes = int(configured["budget_bytes"])
+        roots.append(
+            {
+                "path": relative,
+                "review_policy": review_policy,
+                "minimum_age_days": minimum_age_days,
+                "budget_bytes": budget_bytes,
+                "over_budget": root_stats.logical_bytes > budget_bytes,
+                "logical_bytes": root_stats.logical_bytes,
+                "file_count": root_stats.file_count,
+                "symlink_count": root_stats.symlink_count,
+                "entry_count": len(entries),
+                "status_counts": {
+                    status: sum(item["status"] == status for item in entries)
+                    for status in ("retention-review", "retained-young", "manual-review")
+                },
+                "largest_entries": entries[:limit],
+            }
+        )
+    return {
+        "schema_version": "0.1",
+        "generated_at": datetime.fromtimestamp(generated_at, UTC).isoformat(),
+        "automatic_deletion": False,
+        "safety_notice": (
+            "只读报告；retention-review 只表示达到年龄阈值，不表示已获得删除授权。"
+            "删除仍需精确路径、引用、活动进程和可再生性证明。"
+        ),
+        "protected_paths": protected_paths,
+        "apoe_bundle_manifest_sha256": apoe_manifest_sha256,
+        "roots": roots,
+    }
+
+
+def cleanup_report_command(arguments: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            cleanup_report_payload(limit=arguments.limit),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
 
 
 def _developer_environment() -> dict[str, str]:
@@ -438,6 +605,13 @@ def parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify", help="按风险模式执行验证")
     verify.add_argument("--mode", choices=("dev-local", "integration", "release"), required=True)
     verify.set_defaults(function=verify_command)
+
+    cleanup = commands.add_parser(
+        "cleanup-report",
+        help="只读盘点 runtime/dist 预算与 retention 复核候选",
+    )
+    cleanup.add_argument("--limit", type=int, default=50)
+    cleanup.set_defaults(function=cleanup_report_command)
 
     tools = commands.add_parser("tool-path", help="解析 workspace 开发工具")
     tools.add_argument("name", choices=("python", "uv", "node", "npm", "pnpm"))

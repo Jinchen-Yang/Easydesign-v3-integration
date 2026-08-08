@@ -208,16 +208,19 @@ class ProtenixV2Adapter:
         return path
 
     def _environment(self) -> tuple[tuple[str, str], ...]:
+        extra_environment = dict(self.extra_environment)
+        extra_path = extra_environment.pop("PATH", "")
+        path_parts = [str(self.executable.parent)]
+        if extra_path:
+            path_parts.append(extra_path)
+        path_parts.append(os.environ.get("PATH", os.defpath))
         values = [
             ("PROTENIX_ROOT_DIR", str(self.model_root)),
-            (
-                "PATH",
-                f"{self.executable.parent}:{os.environ.get('PATH', os.defpath)}",
-            ),
+            ("PATH", os.pathsep.join(path_parts)),
         ]
         if self.cuda_visible_devices is not None:
             values.append(("CUDA_VISIBLE_DEVICES", self.cuda_visible_devices))
-        values.extend(self.extra_environment)
+        values.extend(extra_environment.items())
         return tuple(values)
 
     def _msa_environment(self) -> tuple[tuple[str, str], ...]:

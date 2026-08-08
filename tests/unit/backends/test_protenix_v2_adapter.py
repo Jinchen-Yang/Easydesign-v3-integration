@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -168,6 +169,26 @@ def test_no_msa_smoke_invocation_is_explicit() -> None:
     assert environment["PATH"].split(":", maxsplit=1)[0] == (
         "/opt/conda/envs/protenix-v2/bin"
     )
+
+
+def test_extra_toolchain_path_is_merged_after_the_protenix_bin() -> None:
+    selected = ProtenixV2Adapter(
+        executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),
+        model_root=Path("/data/models/protenix"),
+        extra_environment=(("PATH", "/opt/cuda/nvvm/bin"), ("CC", "conda-cc")),
+    )
+    invocation = selected.prediction_invocation(
+        request(),
+        input_json=Path("/run/input.json"),
+        output_dir=Path("/run/output"),
+    )
+    environment = dict(invocation.environment)
+
+    assert environment["PATH"].split(os.pathsep)[:2] == [
+        "/opt/conda/envs/protenix-v2/bin",
+        "/opt/cuda/nvvm/bin",
+    ]
+    assert environment["CC"] == "conda-cc"
 
 
 def test_remote_msa_and_default_prediction_are_separate_invocations() -> None:

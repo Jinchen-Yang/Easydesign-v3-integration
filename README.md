@@ -13,7 +13,7 @@ Stage 1–7 逐步运行蛋白结合分子设计，并用只读 Mol* Viewer 检�
 需要 Git、[uv](https://docs.astral.sh/uv/) 和 Python 3.11（也支持 3.12）。
 
 ```bash
-cd /root/autodl-tmp/Protein_design/easydesign-vscode
+cd /root/autodl-tmp/Protein_design/easydesign-local
 uv sync --frozen --extra dev
 source .venv/bin/activate
 easydesign --version

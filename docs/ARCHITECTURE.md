@@ -44,7 +44,7 @@ orchestration API，不复制科学逻辑。
 ## 工作区
 
 ```text
-easydesign-vscode/
+easydesign-local/
 ├── .venv/                     独立 editable 本地产品环境
 ├── runtime/                   本产品可写状态
 │   ├── cache/ logs/ tmp/

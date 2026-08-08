@@ -10,7 +10,7 @@ Suzhou2, Manager, or formal UI activation.
 ## Install
 
 ```bash
-cd /root/autodl-tmp/Protein_design/easydesign-vscode
+cd /root/autodl-tmp/Protein_design/easydesign-local
 uv sync --frozen --extra dev
 source .venv/bin/activate
 easydesign --version

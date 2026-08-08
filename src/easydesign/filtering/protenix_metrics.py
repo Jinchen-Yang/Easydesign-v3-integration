@@ -10,6 +10,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from easydesign.backends.structure_prediction.contracts import (
+    ComplexConfidenceMetrics,
+    StructurePredictionProduct,
+)
 from easydesign.core import ManifestStateError
 
 PROTENIX_METRIC_DEFINITION_VERSION = "protenix-v2-complex-confidence-v1"
@@ -37,6 +41,33 @@ class ProtenixComplexConfidence:
     binder_ptm: float
     target_token_count: int
     binder_token_count: int
+
+
+def extract_complex_confidence(
+    product: StructurePredictionProduct,
+) -> ComplexConfidenceMetrics:
+    """优先消费 adapter 规范字段，并兼容旧 Protenix 原生 evidence。"""
+
+    if product.complex_confidence is not None:
+        return product.complex_confidence
+    if product.backend_name != "protenix":
+        raise ManifestStateError(
+            f"{product.backend_identity} 未提供规范化 complex confidence"
+        )
+    if product.full_confidence_path is None:
+        raise ManifestStateError("Protenix product 缺少 full confidence")
+    legacy = extract_protenix_complex_confidence(
+        summary_path=product.confidence_path,
+        full_confidence_path=product.full_confidence_path,
+    )
+    return ComplexConfidenceMetrics(
+        metric_definition_version=PROTENIX_METRIC_DEFINITION_VERSION,
+        pairwise_iptm=legacy.pairwise_iptm,
+        minimum_interface_pae_angstrom=legacy.minimum_interface_pae_angstrom,
+        binder_ptm=legacy.binder_ptm,
+        target_token_count=legacy.target_token_count,
+        binder_token_count=legacy.binder_token_count,
+    )
 
 
 def _matrix_shape(matrix: tuple[tuple[float, ...], ...]) -> tuple[int, int]:

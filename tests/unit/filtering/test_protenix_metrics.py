@@ -5,8 +5,15 @@ from pathlib import Path
 
 import pytest
 
+from easydesign.backends.structure_prediction import (
+    ComplexConfidenceMetrics,
+    StructurePredictionProduct,
+)
 from easydesign.core import ManifestStateError
-from easydesign.filtering import extract_protenix_complex_confidence
+from easydesign.filtering import (
+    extract_complex_confidence,
+    extract_protenix_complex_confidence,
+)
 
 
 def _write(path: Path, value: object) -> Path:
@@ -69,3 +76,49 @@ def test_rejects_missing_full_confidence_matrix(tmp_path: Path) -> None:
             summary_path=summary,
             full_confidence_path=full,
         )
+
+
+def test_extract_complex_confidence_prefers_normalized_adapter_metrics(
+    tmp_path: Path,
+) -> None:
+    structure = tmp_path / "prediction.cif"
+    summary = tmp_path / "summary.json"
+    full = tmp_path / "full.json"
+    structure.write_text("data_prediction\n", encoding="utf-8")
+    summary.write_text("{}\n", encoding="utf-8")
+    full.write_text("{}\n", encoding="utf-8")
+    normalized = ComplexConfidenceMetrics(
+        metric_definition_version="openfold3-p2-af3-jax-complex-confidence-v1",
+        pairwise_iptm=0.72,
+        minimum_interface_pae_angstrom=7.5,
+        binder_ptm=0.81,
+        target_token_count=20,
+        binder_token_count=10,
+    )
+    product = StructurePredictionProduct(
+        backend_name="openfold3-af3-jax",
+        backend_version="3.1.3",
+        model_name="of3-p2-155k",
+        seed=101,
+        sample_index=0,
+        structure_path=structure,
+        structure_sha256="0" * 64,
+        confidence_path=summary,
+        confidence_sha256="1" * 64,
+        full_confidence_path=full,
+        full_confidence_sha256="2" * 64,
+        plddt=85.0,
+        gpde=None,
+        ptm=0.78,
+        iptm=0.72,
+        ranking_score=0.74,
+        has_clash=False,
+        recycle_count=10,
+        complex_confidence=normalized,
+        native_metrics={"fraction_disordered": 0.03},
+    )
+
+    assert product.gpde is None
+    assert product.mean_plddt == 85.0
+    assert product.backend_identity == "openfold3-af3-jax@3.1.3"
+    assert extract_complex_confidence(product) == normalized

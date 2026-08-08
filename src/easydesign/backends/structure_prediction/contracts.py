@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal, Self, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -128,6 +128,21 @@ class ComplexStructurePredictionRequest(BaseModel):
 
 PredictionRequest = StructurePredictionRequest | ComplexStructurePredictionRequest
 
+NativeMetricValue: TypeAlias = str | int | float | bool | None
+
+
+class ComplexConfidenceMetrics(BaseModel):
+    """跨结构预测后端可比较的 target(A)-binder(B) 置信度。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    metric_definition_version: str = Field(pattern=ID_PATTERN)
+    pairwise_iptm: float
+    minimum_interface_pae_angstrom: float = Field(ge=0)
+    binder_ptm: float
+    target_token_count: int = Field(ge=1)
+    binder_token_count: int = Field(ge=1)
+
 
 class BackendInvocation(BaseModel):
     """交给 executor 的无 shell 调用计划。"""
@@ -169,12 +184,14 @@ class StructurePredictionProduct(BaseModel):
     full_confidence_path: Path | None = None
     full_confidence_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     plddt: float
-    gpde: float
-    ptm: float
-    iptm: float
+    gpde: float | None = None
+    ptm: float | None
+    iptm: float | None
     ranking_score: float
     has_clash: bool
     recycle_count: int = Field(ge=0)
+    complex_confidence: ComplexConfidenceMetrics | None = None
+    native_metrics: dict[str, NativeMetricValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_full_confidence(self) -> Self:
@@ -183,3 +200,15 @@ class StructurePredictionProduct(BaseModel):
         ):
             raise ValueError("full confidence path/hash 必须同时存在或同时缺失")
         return self
+
+    @property
+    def backend_identity(self) -> str:
+        return f"{self.backend_name}@{self.backend_version}"
+
+    @property
+    def model_identity(self) -> str:
+        return self.model_name
+
+    @property
+    def mean_plddt(self) -> float:
+        return self.plddt

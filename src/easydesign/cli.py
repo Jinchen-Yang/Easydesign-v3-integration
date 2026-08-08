@@ -1,4 +1,4 @@
-"""EasyDesign Local command line for one explicit project and one step."""
+"""EasyDesign Local agent-native research command line."""
 
 from __future__ import annotations
 
@@ -16,21 +16,35 @@ from pydantic import BaseModel
 import easydesign
 from easydesign.core import EasyDesignError
 from easydesign.orchestration.application import diagnose_runtime
-from easydesign.orchestration.local_project import resolve_project_run
-from easydesign.orchestration.local_steps import (
-    StepCommandResult,
-    approve_step,
-    drain_step,
-    initialize_step_project,
-    resume_step,
-    run_step,
-    stage_template,
-    status_step,
-    validate_step,
-    watch_step,
+from easydesign.orchestration.local_project import completed_steps, resolve_project_run
+from easydesign.orchestration.research import (
+    initialize_research_project,
+    job_drain,
+    job_resume,
+    job_status,
+    job_watch,
+    pilot_plan,
+    pilot_promote,
+    pilot_review,
+    pilot_run,
+    project_status,
+    scale_plan,
+    scale_run,
+    select_plan,
+    select_run,
+    site_approve,
+    site_propose,
+    site_scan,
+    strategy_draft,
+    strategy_freeze,
+    strategy_validate,
+    target_approve,
+    target_prepare,
 )
+from easydesign.orchestration.research_models import CommandResult, ResearchPhase
 from easydesign.orchestration.runtime_link import link_runtime, verify_runtime_link
 from easydesign.reporting import (
+    build_evidence_viewer_payload,
     build_stage02_viewer_overlay,
     create_target_viewer_server,
     resolve_target_viewer_argument,
@@ -46,10 +60,41 @@ def _add_run(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run", dest="run_id", help="显式 run ID")
 
 
+def _add_detach(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--detach", action="store_true", help="启动后立即脱离观察")
+
+
+def _add_confirm(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--confirm", action="store_true", help="显式批准不可变科学操作")
+
+
+def _add_project_source(parser: argparse.ArgumentParser) -> None:
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--target", type=Path, help="PSE、本地结构、FASTA 或裸序列")
+    source.add_argument("--target-bundle", type=Path)
+    source.add_argument("--pdb-id")
+    source.add_argument("--uniprot")
+    source.add_argument("--uniprot-query")
+    parser.add_argument("--source-run-root", type=Path)
+    parser.add_argument("--chain")
+    parser.add_argument("--chain-namespace", choices=("auth", "label"), default="auth")
+    parser.add_argument("--identity-uniprot")
+    parser.add_argument("--taxon-id", type=int)
+    parser.add_argument("--project-id")
+    parser.add_argument("--target-id")
+    parser.add_argument("--scope-range", help="例如 25:646")
+    parser.add_argument("--scope-feature-type", choices=("Domain", "Chain", "Topological domain"))
+    parser.add_argument("--scope-feature-name")
+    parser.add_argument("--precomputed-msa", type=Path)
+    parser.add_argument(
+        "--msa-cache-mode", choices=("online", "prefer-cache", "offline"), default="online"
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="easydesign",
-        description="EasyDesign Local：在 VS Code 终端逐阶段运行可追溯设计流程",
+        description="EasyDesign Local：Codex 主导、研究者批准、manifest 可审计的本地研究工作台",
     )
     parser.add_argument("--version", action="version", version=easydesign.__version__)
     parser.add_argument("--debug", action="store_true", help="失败时显示 traceback")
@@ -67,95 +112,129 @@ def _parser() -> argparse.ArgumentParser:
     doctor.add_argument("--full", action="store_true")
     _add_json(doctor)
 
-    step = commands.add_parser("step", help="初始化、验证并顺序运行 Stage 1–7")
-    step_commands = step.add_subparsers(dest="step_command", required=True)
-
-    init = step_commands.add_parser("init", help="创建平铺的七份 Stage YAML")
-    init.add_argument("project", type=Path)
-    source = init.add_mutually_exclusive_group(required=True)
-    source.add_argument("--target", type=Path)
-    source.add_argument("--target-bundle", type=Path)
-    source.add_argument("--pdb-id")
-    source.add_argument("--uniprot")
-    source.add_argument("--uniprot-query")
-    init.add_argument(
-        "--source-run-root",
-        type=Path,
-        help="--target-bundle 对应的只读源 run（当前 local 或 Git APOE example）",
+    project = commands.add_parser("project", help="创建项目或恢复唯一研究状态")
+    project_commands = project.add_subparsers(dest="project_command", required=True)
+    project_init = project_commands.add_parser("init", help="创建 Agent-native 项目")
+    project_init.add_argument("project", type=Path)
+    _add_project_source(project_init)
+    _add_json(project_init)
+    project_status_parser = project_commands.add_parser(
+        "status", help="读取 target/site、strategy、pilot、production 和待批准事项"
     )
-    init.add_argument("--chain")
-    init.add_argument("--chain-namespace", choices=("auth", "label"), default="auth")
-    init.add_argument("--identity-uniprot")
-    init.add_argument("--taxon-id", type=int)
-    init.add_argument("--project-id")
-    init.add_argument("--target-id")
-    init.add_argument("--scope-range", help="例如 25:646")
-    init.add_argument(
-        "--scope-feature-type",
-        choices=("Domain", "Chain", "Topological domain"),
+    project_status_parser.add_argument("project", type=Path)
+    _add_json(project_status_parser)
+
+    target = commands.add_parser("target", help="准备与批准靶点身份/结构")
+    target_commands = target.add_subparsers(dest="target_command", required=True)
+    target_prepare_parser = target_commands.add_parser("prepare")
+    target_prepare_parser.add_argument("project", type=Path)
+    _add_detach(target_prepare_parser)
+    _add_json(target_prepare_parser)
+    target_approve_parser = target_commands.add_parser("approve")
+    target_approve_parser.add_argument("project", type=Path)
+    target_approve_parser.add_argument("--input", type=Path, required=True)
+    _add_detach(target_approve_parser)
+    _add_json(target_approve_parser)
+
+    site = commands.add_parser("site", help="提出、扫描和批准 binding site")
+    site_commands = site.add_subparsers(dest="site_command", required=True)
+    site_propose_parser = site_commands.add_parser("propose")
+    site_propose_parser.add_argument("project", type=Path)
+    site_source = site_propose_parser.add_mutually_exclusive_group(required=True)
+    site_source.add_argument("--from-pse-colors", action="store_true")
+    site_source.add_argument("--input", type=Path)
+    _add_detach(site_propose_parser)
+    _add_json(site_propose_parser)
+    site_scan_parser = site_commands.add_parser("scan")
+    site_scan_parser.add_argument("project", type=Path)
+    site_scan_parser.add_argument("--method", choices=("sasa", "scannet", "both"), required=True)
+    _add_detach(site_scan_parser)
+    _add_json(site_scan_parser)
+    site_approve_parser = site_commands.add_parser("approve")
+    site_approve_parser.add_argument("project", type=Path)
+    site_approve_parser.add_argument("--input", type=Path, required=True)
+    _add_confirm(site_approve_parser)
+    _add_json(site_approve_parser)
+
+    strategy = commands.add_parser("strategy", help="起草、校验和冻结实验策略")
+    strategy_commands = strategy.add_subparsers(dest="strategy_command", required=True)
+    strategy_draft_parser = strategy_commands.add_parser("draft")
+    strategy_draft_parser.add_argument("project", type=Path)
+    strategy_origin = strategy_draft_parser.add_mutually_exclusive_group()
+    strategy_origin.add_argument("--from", dest="source_revision")
+    strategy_origin.add_argument("--from-pilot")
+    _add_json(strategy_draft_parser)
+    strategy_validate_parser = strategy_commands.add_parser("validate")
+    strategy_validate_parser.add_argument("project", type=Path)
+    strategy_validate_parser.add_argument("--config", type=Path, required=True)
+    _add_json(strategy_validate_parser)
+    strategy_freeze_parser = strategy_commands.add_parser("freeze")
+    strategy_freeze_parser.add_argument("project", type=Path)
+    strategy_freeze_parser.add_argument("--config", type=Path, required=True)
+    _add_confirm(strategy_freeze_parser)
+    _add_json(strategy_freeze_parser)
+
+    pilot = commands.add_parser("pilot", help="运行、诊断和人工 promotion 小批量实验")
+    pilot_commands = pilot.add_subparsers(dest="pilot_command", required=True)
+    for name in ("plan", "run"):
+        sub = pilot_commands.add_parser(name)
+        sub.add_argument("project", type=Path)
+        sub.add_argument("--strategy", required=True)
+        if name == "run":
+            _add_confirm(sub)
+            _add_detach(sub)
+        _add_json(sub)
+    pilot_review_parser = pilot_commands.add_parser("review")
+    pilot_review_parser.add_argument("project", type=Path)
+    pilot_review_parser.add_argument("--run", dest="run_id", required=True)
+    _add_json(pilot_review_parser)
+    pilot_promote_parser = pilot_commands.add_parser("promote")
+    pilot_promote_parser.add_argument("project", type=Path)
+    pilot_promote_parser.add_argument("--run", dest="run_id", required=True)
+    pilot_promote_parser.add_argument(
+        "--strategy", required=True, help="逗号分隔的 StrategyBundle ID"
     )
-    init.add_argument("--scope-feature-name")
-    init.add_argument("--precomputed-msa", type=Path)
-    init.add_argument(
-        "--msa-cache-mode",
-        choices=("online", "prefer-cache", "offline"),
-        default="online",
-    )
-    _add_json(init)
+    _add_confirm(pilot_promote_parser)
+    _add_json(pilot_promote_parser)
 
-    template = step_commands.add_parser("template", help="定位标准 YAML 或生成人工模板")
-    template.add_argument("step", type=int, choices=range(1, 8))
-    template.add_argument("project", type=Path)
-    template.add_argument("--manual", action="store_true")
-    template.add_argument("--output", type=Path)
-    _add_json(template)
+    scale = commands.add_parser("scale", help="计划和启动规模化生产")
+    scale_commands = scale.add_subparsers(dest="scale_command", required=True)
+    for name in ("plan", "run"):
+        sub = scale_commands.add_parser(name)
+        sub.add_argument("project", type=Path)
+        sub.add_argument("--selection", required=True)
+        sub.add_argument("--count", type=int, default=50_000)
+        if name == "run":
+            _add_confirm(sub)
+            _add_detach(sub)
+        _add_json(sub)
 
-    validate = step_commands.add_parser("validate", help="只验证当前 Stage 配置")
-    validate.add_argument("step", type=int, choices=range(1, 8))
-    validate.add_argument("project", type=Path)
-    validate.add_argument("--config", type=Path)
-    _add_run(validate)
-    _add_json(validate)
+    select = commands.add_parser("select", help="计划和执行最终候选选择")
+    select_commands = select.add_subparsers(dest="select_command", required=True)
+    for name in ("plan", "run"):
+        sub = select_commands.add_parser(name)
+        sub.add_argument("project", type=Path)
+        sub.add_argument("--run", dest="run_id", required=True)
+        sub.add_argument("--top", type=int, default=200)
+        if name == "run":
+            _add_confirm(sub)
+            _add_detach(sub)
+        _add_json(sub)
 
-    run = step_commands.add_parser("run", help="只运行当前 run 的下一 Stage")
-    run.add_argument("step", type=int, choices=range(1, 8))
-    run.add_argument("project", type=Path)
-    run.add_argument("--config", type=Path)
-    run.add_argument("--confirm", action="store_true")
-    run.add_argument("--detach", action="store_true")
-    _add_run(run)
-    _add_json(run)
+    job = commands.add_parser("job", help="观察、恢复或安全 drain 本地任务")
+    job_commands = job.add_subparsers(dest="job_command", required=True)
+    for name in ("status", "watch", "resume", "drain"):
+        sub = job_commands.add_parser(name)
+        sub.add_argument("project", type=Path)
+        if name != "drain":
+            _add_run(sub)
+        else:
+            sub.add_argument("--job", dest="job_id")
+        if name == "resume":
+            _add_detach(sub)
+        _add_json(sub)
 
-    approve = step_commands.add_parser("approve", help="批准 Stage 01 decision 或 Stage 02 区域")
-    approve.add_argument("step", type=int, choices=(1, 2))
-    approve.add_argument("project", type=Path)
-    approve.add_argument("--input", type=Path, required=True)
-    approve.add_argument("--detach", action="store_true")
-    _add_run(approve)
-    _add_json(approve)
-
-    status = step_commands.add_parser("status", help="读取项目、run 和 worker 状态")
-    status.add_argument("project", type=Path)
-    _add_run(status)
-    _add_json(status)
-
-    watch = step_commands.add_parser("watch", help="观察持久 worker；Ctrl-C 仅脱离")
-    watch.add_argument("project", type=Path)
-    _add_run(watch)
-    _add_json(watch)
-
-    resume = step_commands.add_parser("resume", help="恢复中断的 Stage 04–07")
-    resume.add_argument("project", type=Path)
-    resume.add_argument("--detach", action="store_true")
-    _add_run(resume)
-    _add_json(resume)
-
-    drain = step_commands.add_parser("drain", help="在安全检查点停止新分片调度")
-    drain.add_argument("project", type=Path)
-    drain.add_argument("--job", dest="job_id")
-    _add_json(drain)
-
-    view = step_commands.add_parser("view", help="启动只读 Target Viewer")
+    view = commands.add_parser("view", help="启动只读 evidence viewer")
     view.add_argument("project", type=Path)
     _add_run(view)
     view.add_argument("--port", type=int, default=8000)
@@ -178,39 +257,72 @@ def _json(value: BaseModel | dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
 
 
-def _print_result(result: StepCommandResult, *, as_json: bool) -> None:
+def _print_result(result: CommandResult, *, as_json: bool) -> None:
     if as_json:
         print(_json(result))
         return
     print(f"状态: {result.status}")
+    print(f"阶段: {result.phase}")
     print(f"项目: {result.project_id}")
     if result.run_id:
         print(f"Run: {result.run_id}")
     if result.job_id:
         print(f"Job: {result.job_id}")
-    if result.run_root:
-        print(f"Run 目录: {result.run_root}")
     if result.manifest:
         print(f"Manifest: {result.manifest}")
-    if result.generated_files:
-        print("生成文件:")
-        for path in result.generated_files:
+    if result.artifacts:
+        print("产物:")
+        for path in result.artifacts:
             print(f"  - {path}")
+    if result.evidence:
+        print("证据:")
+        for item in result.evidence:
+            suffix = f" ({item.path})" if item.path else ""
+            print(f"  - {item.kind}: {item.identity}: {item.status}{suffix}")
     if result.next_actions:
         print("下一步:")
         for action in result.next_actions:
-            print(f"  - {action}")
+            gate = " [需要研究者批准]" if action.approval_required else ""
+            print(f"  - {action.description}{gate}\n    {action.command}")
+    for warning in result.warnings:
+        print(f"警告: {warning}")
+
+
+def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "project_root": args.project,
+        "target": args.target,
+        "target_bundle": args.target_bundle,
+        "source_run_root": args.source_run_root,
+        "pdb_id": args.pdb_id,
+        "uniprot": args.uniprot,
+        "uniprot_query": args.uniprot_query,
+        "taxon_id": args.taxon_id,
+        "chain": args.chain,
+        "chain_namespace": args.chain_namespace,
+        "identity_uniprot": args.identity_uniprot,
+        "project_id": args.project_id,
+        "target_id": args.target_id,
+        "scope_range": _scope_range(args.scope_range),
+        "scope_feature_type": args.scope_feature_type,
+        "scope_feature_name": args.scope_feature_name,
+        "precomputed_msa": args.precomputed_msa,
+        "msa_cache_mode": args.msa_cache_mode,
+    }
 
 
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "runtime":
         if args.runtime_command == "link":
             link_result = link_runtime(args.source)
-            print(_json(link_result) if args.json else (
-                f"已链接只读 runtime: {link_result.source_runtime}\n"
-                f"Profile: {link_result.profile}\nReceipt: {link_result.receipt}\n"
-                f"环境 {link_result.environment_count}，资产 {link_result.asset_count}"
-            ))
+            print(
+                _json(link_result)
+                if args.json
+                else (
+                    f"已链接只读 runtime: {link_result.source_runtime}\n"
+                    f"Profile: {link_result.profile}\nReceipt: {link_result.receipt}"
+                )
+            )
         else:
             receipt = verify_runtime_link()
             print(_json(receipt) if args.json else f"runtime link 有效: {receipt.source_runtime}")
@@ -223,68 +335,96 @@ def _dispatch(args: argparse.Namespace) -> int:
             for check in report.checks:
                 print(f"{check.status}: {check.name}: {check.message}")
         return 0 if report.ok else 2
-    result: StepCommandResult
-    if args.step_command == "init":
-        result = initialize_step_project(
-            project_root=args.project,
-            target=args.target,
-            target_bundle=args.target_bundle,
-            source_run_root=args.source_run_root,
-            pdb_id=args.pdb_id,
-            uniprot=args.uniprot,
-            uniprot_query=args.uniprot_query,
-            taxon_id=args.taxon_id,
-            chain=args.chain,
-            chain_namespace=args.chain_namespace,
-            identity_uniprot=args.identity_uniprot,
-            project_id=args.project_id,
-            target_id=args.target_id,
-            scope_range=_scope_range(args.scope_range),
-            scope_feature_type=args.scope_feature_type,
-            scope_feature_name=args.scope_feature_name,
-            precomputed_msa=args.precomputed_msa,
-            msa_cache_mode=args.msa_cache_mode,
+
+    result: CommandResult
+    if args.command == "project":
+        result = (
+            initialize_research_project(**_project_init_values(args))
+            if args.project_command == "init"
+            else project_status(args.project)
         )
-    elif args.step_command == "template":
-        result = stage_template(
-            args.step,
-            args.project,
-            manual=args.manual,
-            output=args.output,
+    elif args.command == "target":
+        result = (
+            target_prepare(args.project, detach=args.detach)
+            if args.target_command == "prepare"
+            else target_approve(args.project, input_path=args.input, detach=args.detach)
         )
-    elif args.step_command == "validate":
-        result = validate_step(
-            args.step,
-            args.project,
-            config_path=args.config,
-            run_id=args.run_id,
+    elif args.command == "site":
+        if args.site_command == "propose":
+            result = site_propose(
+                args.project,
+                input_path=args.input,
+                from_pse_colors=args.from_pse_colors,
+                detach=args.detach,
+            )
+        elif args.site_command == "scan":
+            result = site_scan(args.project, method=args.method, detach=args.detach)
+        else:
+            result = site_approve(args.project, input_path=args.input, confirm=args.confirm)
+    elif args.command == "strategy":
+        if args.strategy_command == "draft":
+            result = strategy_draft(
+                args.project, source=args.source_revision, from_pilot=args.from_pilot
+            )
+        elif args.strategy_command == "validate":
+            result = strategy_validate(args.project, config_path=args.config)
+        else:
+            result = strategy_freeze(args.project, config_path=args.config, confirm=args.confirm)
+    elif args.command == "pilot":
+        if args.pilot_command == "plan":
+            result = pilot_plan(args.project, strategy_revision=args.strategy)
+        elif args.pilot_command == "run":
+            result = pilot_run(
+                args.project,
+                strategy_revision=args.strategy,
+                confirm=args.confirm,
+                detach=args.detach,
+            )
+        elif args.pilot_command == "review":
+            result = pilot_review(args.project, run_id=args.run_id)
+        else:
+            result = pilot_promote(
+                args.project,
+                run_id=args.run_id,
+                strategy_ids=tuple(
+                    item.strip() for item in args.strategy.split(",") if item.strip()
+                ),
+                confirm=args.confirm,
+            )
+    elif args.command == "scale":
+        result = (
+            scale_plan(args.project, selection=args.selection, count=args.count)
+            if args.scale_command == "plan"
+            else scale_run(
+                args.project,
+                selection=args.selection,
+                count=args.count,
+                confirm=args.confirm,
+                detach=args.detach,
+            )
         )
-    elif args.step_command == "run":
-        result = run_step(
-            args.step,
-            args.project,
-            config_path=args.config,
-            run_id=args.run_id,
-            confirm=args.confirm,
-            detach=args.detach,
+    elif args.command == "select":
+        result = (
+            select_plan(args.project, run_id=args.run_id, top=args.top)
+            if args.select_command == "plan"
+            else select_run(
+                args.project,
+                run_id=args.run_id,
+                top=args.top,
+                confirm=args.confirm,
+                detach=args.detach,
+            )
         )
-    elif args.step_command == "approve":
-        result = approve_step(
-            args.step,
-            args.project,
-            input_path=args.input,
-            run_id=args.run_id,
-            detach=args.detach,
-        )
-    elif args.step_command == "status":
-        result = status_step(args.project, run_id=args.run_id)
-    elif args.step_command == "watch":
-        result = watch_step(args.project, run_id=args.run_id)
-    elif args.step_command == "resume":
-        result = resume_step(args.project, run_id=args.run_id, detach=args.detach)
-    elif args.step_command == "drain":
-        result = drain_step(args.project, job_id=args.job_id)
-    elif args.step_command == "view":
+    elif args.command == "job":
+        if args.job_command == "status":
+            result = job_status(args.project, run_id=args.run_id)
+        elif args.job_command == "watch":
+            result = job_watch(args.project, run_id=args.run_id)
+        elif args.job_command == "resume":
+            result = job_resume(args.project, run_id=args.run_id, detach=args.detach)
+        else:
+            result = job_drain(args.project, job_id=args.job_id)
+    elif args.command == "view":
         summary = resolve_project_run(args.project, run_id=args.run_id, required=True)
         assert summary is not None
         report_root = resolve_target_viewer_argument(summary.path)
@@ -292,16 +432,28 @@ def _dispatch(args: argparse.Namespace) -> int:
             report_root,
             port=args.port,
             stage02_overlay=build_stage02_viewer_overlay(summary.path),
+            evidence=build_evidence_viewer_payload(summary.path),
         )
-        result = StepCommandResult(
+        internal = completed_steps(summary.path)
+        phase: ResearchPhase = (
+            "select"
+            if 7 in internal
+            else "scale"
+            if 6 in internal
+            else "pilot"
+            if any(step in internal for step in (3, 4, 5))
+            else "prepare"
+        )
+        result = CommandResult(
             status="serving",
+            phase=phase,
             project_id=summary.project_id,
             run_id=summary.run_id,
-            run_root=summary.path,
             manifest=summary.latest_manifest,
-            next_actions=(server.url, "Ctrl-C 仅停止只读 Viewer，不影响科学任务。"),
+            next_actions=(),
         )
         _print_result(result, as_json=args.json)
+        print(server.url)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
@@ -310,9 +462,9 @@ def _dispatch(args: argparse.Namespace) -> int:
             server.close()
         return 0
     else:
-        raise RuntimeError(f"未知 step command: {args.step_command}")
+        raise RuntimeError(f"未知 command: {args.command}")
     _print_result(result, as_json=args.json)
-    return 2 if result.status.endswith("-failed") else 0
+    return 2 if result.status in {"operational-failed", "scientific-failed"} else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

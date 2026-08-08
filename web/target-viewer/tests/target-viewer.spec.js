@@ -39,7 +39,7 @@ async function waitForServer(url) {
   throw new Error(`Viewer server did not start: ${url}`);
 }
 
-function startServer(report, port, overlay = "") {
+function startServer(report, port, overlay = "", evidence = "") {
   const serverArgs = [
     path.join(__dirname, "serve_fixture.py"),
     report,
@@ -47,6 +47,7 @@ function startServer(report, port, overlay = "") {
     String(port),
   ];
   if (overlay) serverArgs.push("--overlay", overlay);
+  if (evidence) serverArgs.push("--evidence", evidence);
   const child = spawn(
     PYTHON,
     serverArgs,
@@ -90,7 +91,8 @@ test.beforeAll(async () => {
   startServer(
     path.join(FIXTURE_ROOT, "sequence"),
     18131,
-    path.join(FIXTURE_ROOT, "sequence", "stage02-test-overlay.json")
+    path.join(FIXTURE_ROOT, "sequence", "stage02-test-overlay.json"),
+    path.join(FIXTURE_ROOT, "sequence", "evidence-test-overlay.json")
   );
   startServer(path.join(FIXTURE_ROOT, "pse"), 18132);
   const expectedServers = [waitForServer(URLS.sequence), waitForServer(URLS.pse)];
@@ -199,6 +201,34 @@ test("Stage 2 methods and approved regions are read-only fixed-color layers", as
     page.locator("button", { hasText: /^(编辑|上传|批准|提交)(区域|结果|文件)?$/ })
   ).toHaveCount(0);
 
+  expect(diagnostics.pageErrors).toEqual([]);
+  expect(diagnostics.remoteRequests).toEqual([]);
+});
+
+test("pilot representatives and final selections are read-only evidence structures", async ({
+  page,
+}) => {
+  const diagnostics = await openViewer(page, URLS.sequence);
+
+  await expect(page.locator("#evidence-controls")).toBeVisible();
+  await expect(page.locator("#evidence-structures button")).toHaveCount(3);
+  await expect(page.locator("#evidence-structures")).toContainText("Pilot · fixture-strategy");
+  await expect(page.locator("#evidence-structures")).toContainText("Final primary #1");
+  await page.locator("#evidence-0").click();
+  await page.waitForFunction(
+    () =>
+      window.__EASYDESIGN_VIEWER_STATE__.structureUrl.includes("pilot-fixture") &&
+      window.__EASYDESIGN_VIEWER_STATE__.loading === false
+  );
+  await page.locator("#evidence-1").click();
+  await page.waitForFunction(
+    () =>
+      window.__EASYDESIGN_VIEWER_STATE__.structureUrl.includes("final-fixture") &&
+      window.__EASYDESIGN_VIEWER_STATE__.loading === false
+  );
+  await expect(
+    page.locator("button", { hasText: /^(编辑|上传|批准|提交)(区域|结果|文件)?$/ })
+  ).toHaveCount(0);
   expect(diagnostics.pageErrors).toEqual([]);
   expect(diagnostics.remoteRequests).toEqual([]);
 });

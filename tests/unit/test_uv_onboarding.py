@@ -23,15 +23,17 @@ def test_uv_files_and_local_distribution_identity_are_committed() -> None:
     assert project["classifiers"][-1] == "Private :: Do Not Upload"
 
 
-def test_readme_matches_local_runtime_link_and_step_cli() -> None:
+def test_readme_matches_local_runtime_link_and_agent_native_cli() -> None:
     markdown = (ROOT / "README.md").read_text(encoding="utf-8")
     shell = _shell_blocks(markdown)
     assert "uv sync --frozen --extra dev" in shell
     assert "source .venv/bin/activate" in shell
     assert "easydesign runtime link" in shell
-    assert "easydesign step init" in shell
-    assert "easydesign step run 1" in shell
-    assert "easydesign step view" in shell
+    assert "easydesign project init" in shell
+    assert "easydesign project status" in shell
+    assert "easydesign target prepare" in shell
+    assert "easydesign view" in shell
+    assert "easydesign step" not in shell
     for forbidden in ("easydesign ui", "easydesign remote", "easydesign setup"):
         assert forbidden not in shell
 

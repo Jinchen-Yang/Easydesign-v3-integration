@@ -96,6 +96,7 @@ def test_linked_profile_installs_python_probe_guard(tmp_path: Path) -> None:
         env={**os.environ, **environment},
     )
     assert completed.returncode == 0
+    Path(environment["TMPDIR"]).unlink()
 
 
 def test_python_startup_guard_is_content_addressed(tmp_path: Path) -> None:

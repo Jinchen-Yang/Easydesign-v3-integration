@@ -5,6 +5,12 @@ from .evidence_bundle import (
     build_evidence_bundle,
     verify_evidence_bundle,
 )
+from .evidence_viewer import (
+    EvidenceStructure,
+    EvidenceViewerOverlay,
+    EvidenceViewerPayload,
+    build_evidence_viewer_payload,
+)
 from .models import (
     GENERATOR_VERSION,
     MOLSTAR_VERSION,
@@ -45,6 +51,9 @@ __all__ = [
     "TargetViewerReportManifest",
     "Stage02ViewerOverlay",
     "EvidenceBundleOutcome",
+    "EvidenceStructure",
+    "EvidenceViewerOverlay",
+    "EvidenceViewerPayload",
     "ViewerAnnotationSummary",
     "ViewerColorCount",
     "ViewerDownload",
@@ -52,6 +61,7 @@ __all__ = [
     "ViewerResidue",
     "create_target_viewer_server",
     "build_evidence_bundle",
+    "build_evidence_viewer_payload",
     "build_stage02_viewer_overlay",
     "generate_stage01_target_viewer",
     "generate_stage01_target_viewer_nonblocking",

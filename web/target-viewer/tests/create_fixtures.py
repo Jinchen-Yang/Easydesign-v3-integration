@@ -162,8 +162,7 @@ def _create_report(root: Path, *, pse: bool) -> None:
             annotation_type="pymol-ca-color",
             interpretation="uninterpreted",
             color_counts=tuple(
-                ViewerColorCount(color_hex=color, residue_count=5)
-                for color in palette
+                ViewerColorCount(color_hex=color, residue_count=5) for color in palette
             ),
         )
         if pse
@@ -196,9 +195,7 @@ def _create_report(root: Path, *, pse: bool) -> None:
             coordinate_model_count=1,
             coordinate_model_ids=("1",),
             representative_model_id="1",
-            quality_metrics=(
-                ViewerMetric(key="plddt", label="整体 pLDDT", value=84.0),
-            ),
+            quality_metrics=(ViewerMetric(key="plddt", label="整体 pLDDT", value=84.0),),
             provenance_metrics=(
                 ViewerMetric(
                     key="backend",
@@ -281,6 +278,34 @@ def _create_report(root: Path, *, pse: bool) -> None:
                             ("scannet", "ScanNet epitope no-MSA"),
                             ("approved", "Approved hotspots"),
                         )
+                    ],
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (root / "evidence-test-overlay.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "0.1",
+                    "structures": [
+                        {
+                            "id": "pilot-fixture-candidate",
+                            "label": "Pilot · fixture-strategy",
+                            "kind": "pilot-representative",
+                            "strategy_id": "fixture-strategy",
+                            "structure_url": "/evidence-structures/pilot-fixture-candidate.cif",
+                            "sha256": sha256_file(structure),
+                        },
+                        {
+                            "id": "final-fixture-candidate",
+                            "label": "Final primary #1 · fixture-candidate",
+                            "kind": "final-selection",
+                            "strategy_id": "fixture-strategy",
+                            "structure_url": "/evidence-structures/final-fixture-candidate.cif",
+                            "sha256": sha256_file(structure),
+                        },
                     ],
                 },
                 ensure_ascii=False,

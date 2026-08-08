@@ -123,8 +123,7 @@ def test_full_doctor_fails_when_linked_backends_are_not_configured(
     unavailable = {
         check.name: check
         for check in full.checks
-        if check.name
-        in {"protenix-v2", "pymol-pse", "scannet-epitope", "boltzgen", "tnp"}
+        if check.name in {"protenix-v2", "pymol-pse", "scannet-epitope", "boltzgen", "tnp"}
     }
     assert set(unavailable) == {
         "protenix-v2",
@@ -149,9 +148,7 @@ def test_targeted_runtime_probe_checks_only_requested_backends(tmp_path: Path) -
     )
 
     failed_backends = {
-        check.name
-        for check in report.checks
-        if check.status is DiagnosticStatus.FAILED
+        check.name for check in report.checks if check.status is DiagnosticStatus.FAILED
     }
     assert failed_backends == {"boltzgen", "tnp"}
     assert not report.ok
@@ -264,16 +261,19 @@ def test_stage06_continuation_only_requires_boltzgen_backend(tmp_path: Path) -> 
     assert _required_backends(loaded, start_stage=6) == ("boltzgen",)
 
 
-def test_cli_init_and_config_validate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_project_init_and_status_resume_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     fasta = tmp_path / "target.fasta"
     fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
     project = tmp_path / "projects/cli-demo"
 
-    assert main(["step", "init", str(project), "--target", str(fasta)]) == 0
-    assert main(["step", "validate", "1", str(project)]) == 0
+    assert main(["project", "init", str(project), "--target", str(fasta)]) == 0
+    assert main(["project", "status", str(project), "--json"]) == 0
     output = capsys.readouterr().out
     assert "状态: initialized" in output
-    assert "状态: valid" in output
+    assert '"status": "target-not-started"' in output
+    assert '"phase": "prepare"' in output
 
 
 def test_stage03_requires_explicit_config_before_profile_or_workspace(
@@ -375,9 +375,7 @@ backends:
 
     def fake_stage02(**kwargs: object) -> object:
         captured["scannet_adapter"] = kwargs["adapter"]
-        stage_manifest = run_root / (
-            "02-hotspot-discovery/attempt-0001/stage-manifest.json"
-        )
+        stage_manifest = run_root / ("02-hotspot-discovery/attempt-0001/stage-manifest.json")
         completed_at = datetime(2026, 7, 28, tzinfo=UTC)
         report = stage_manifest.parent / "artifacts/stage02-report.json"
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -496,8 +494,7 @@ END
     assert completed.status == "succeeded"
     assert completed.run_root is not None
     assert (
-        completed.run_root
-        / "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
+        completed.run_root / "01-target-preparation/attempt-0001/artifacts/target-bundle.json"
     ).is_file()
     assert completed.run_manifest is not None
     assert completed.run_manifest.name == "run-manifest.v0002.json"

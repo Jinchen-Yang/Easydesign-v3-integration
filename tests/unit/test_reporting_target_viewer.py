@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import threading
 import urllib.error
 import urllib.request
@@ -40,6 +41,7 @@ from easydesign.reporting import (
     generate_stage01_target_viewer,
     generate_stage01_target_viewer_nonblocking,
     resolve_latest_target_viewer_report,
+    resolve_target_viewer_argument,
     verify_target_viewer_report,
 )
 from easydesign.safe_writes import read_last_text_line
@@ -195,9 +197,7 @@ def _run_with_stage01(
         attempts=(attempt,),
         selected_attempt_id="attempt-0001",
     )
-    stage_path = (
-        run_root / "01-target-preparation" / "stage-manifest.v0001.json"
-    )
+    stage_path = run_root / "01-target-preparation" / "stage-manifest.v0001.json"
     dump_model(stage, stage_path)
     config_path = run_root / "config-snapshot" / "easydesign.yaml"
     config_path.parent.mkdir(parents=True)
@@ -275,9 +275,10 @@ def test_generate_portable_report_and_new_immutable_revision(
     assert second.status is ExecutionStatus.SUCCEEDED
     assert second.report_root.name == "report-0002"
     assert first.manifest_path.read_bytes() == first_manifest_bytes
-    assert read_last_text_line(
-        run_root / "results/01-target-preparation/target-viewer/LATEST"
-    ) == "report-0002/report-manifest.json"
+    assert (
+        read_last_text_line(run_root / "results/01-target-preparation/target-viewer/LATEST")
+        == "report-0002/report-manifest.json"
+    )
 
 
 def test_source_tampering_publishes_failed_revision_without_fallback(
@@ -289,9 +290,7 @@ def test_source_tampering_publishes_failed_revision_without_fallback(
     run_path = run_root / "manifests/run-manifest.v0001.json"
     stage_bytes = stage_path.read_bytes()
     run_bytes = run_path.read_bytes()
-    mapping = run_root / (
-        "01-target-preparation/attempt-0001/artifacts/residue-mapping.json"
-    )
+    mapping = run_root / ("01-target-preparation/attempt-0001/artifacts/residue-mapping.json")
     mapping.write_text(mapping.read_text(encoding="utf-8") + "\n", encoding="utf-8")
 
     failed = generate_stage01_target_viewer(run_root, generated_at=NOW)
@@ -331,9 +330,7 @@ def test_pse_annotation_mapping_mismatch_publishes_failed_report(
             ResidueColorAnnotation(
                 label_seq_id=entry.label_seq_id,
                 author_chain_id=entry.author_chain_id,
-                author_residue_id=(
-                    "999" if entry.label_seq_id == 1 else entry.author_residue_id
-                ),
+                author_residue_id=("999" if entry.label_seq_id == 1 else entry.author_residue_id),
                 insertion_code=entry.insertion_code,
                 ca_color_index=3,
                 ca_color_rgb=(0.0, 1.0, 0.0),
@@ -466,6 +463,26 @@ def test_local_server_exposes_only_verified_report(tmp_path: Path) -> None:
         thread.join(timeout=5)
 
 
+def test_viewer_resolves_unique_copied_stage01_lineage(tmp_path: Path) -> None:
+    project_runs = tmp_path / "runs/viewer-test"
+    project_runs.mkdir(parents=True)
+    original = _run_with_stage01(project_runs)
+    outcome = generate_stage01_target_viewer(original, generated_at=NOW)
+    continuation = project_runs / "continuation"
+    shutil.copytree(original, continuation)
+    shutil.rmtree(continuation / "results")
+    pointer = continuation / "manifests/LATEST"
+    manifest_path = continuation / "manifests" / read_last_text_line(pointer)
+    manifest = load_model(manifest_path, RunManifest).model_copy(
+        update={"run_id": "viewer-continuation"}
+    )
+    manifest_path.write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    resolved = resolve_target_viewer_argument(continuation)
+
+    assert resolved == outcome.report_root
+
+
 def test_report_contains_no_unexpected_root_files(tmp_path: Path) -> None:
     run_root = _run_with_stage01(tmp_path)
     outcome = generate_stage01_target_viewer(run_root, generated_at=NOW)
@@ -484,9 +501,12 @@ def test_report_contains_no_unexpected_root_files(tmp_path: Path) -> None:
     }
     assert actual == declared | {"report-manifest.json"}
     assert not any("log" in path or "a3m" in path for path in actual)
-    assert json.loads(
-        (outcome.report_root / "viewer-data.json").read_text(encoding="utf-8")
-    )["annotation"]["status"] == "not_applicable"
+    assert (
+        json.loads((outcome.report_root / "viewer-data.json").read_text(encoding="utf-8"))[
+            "annotation"
+        ]["status"]
+        == "not_applicable"
+    )
 
 
 def test_nonblocking_integration_never_changes_scientific_success(

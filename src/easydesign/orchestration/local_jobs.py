@@ -204,8 +204,8 @@ class LocalStepJobController:
         job = self.load(job_id)
         if job.status not in {"queued", "running"}:
             raise ConfigurationError("只有 queued/running job 可以请求 drain")
-        if job.step not in {4, 6}:
-            raise ConfigurationError("只有 Stage 04/06 的分片调度支持安全 drain")
+        if job.step not in {3, 4, 6}:
+            raise ConfigurationError("只有 pilot/scale 的分片调度支持安全 drain")
         job.drain_path.touch(exist_ok=True)
         return self.update(job, status="drain-requested")
 
@@ -222,8 +222,26 @@ class LocalStepJobController:
             time.sleep(poll_seconds)
 
 
+def wait_or_detach(
+    controller: LocalStepJobController,
+    job: LocalStepJob,
+    *,
+    detach: bool,
+) -> LocalStepJob:
+    """Observe a persistent worker without transferring signal ownership."""
+
+    if detach:
+        return job.model_copy(update={"status": "detached"})
+    try:
+        return controller.wait(job.job_id)
+    except KeyboardInterrupt:
+        current = controller.load(job.job_id)
+        return current.model_copy(update={"status": "detached"})
+
+
 __all__ = [
     "ACTIVE_JOB_STATUSES",
     "LocalStepJob",
     "LocalStepJobController",
+    "wait_or_detach",
 ]

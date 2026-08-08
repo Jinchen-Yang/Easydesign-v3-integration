@@ -7,22 +7,41 @@ import argparse
 from pathlib import Path
 
 from easydesign.core import load_model
-from easydesign.reporting import Stage02ViewerOverlay, create_target_viewer_server
+from easydesign.reporting import (
+    EvidenceViewerOverlay,
+    EvidenceViewerPayload,
+    Stage02ViewerOverlay,
+    create_target_viewer_server,
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
     parser.add_argument("--overlay", type=Path)
+    parser.add_argument("--evidence", type=Path)
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
-    overlay = (
+    overlay = None if args.overlay is None else load_model(args.overlay, Stage02ViewerOverlay)
+    evidence_overlay = (
+        None if args.evidence is None else load_model(args.evidence, EvidenceViewerOverlay)
+    )
+    evidence = (
         None
-        if args.overlay is None
-        else load_model(args.overlay, Stage02ViewerOverlay)
+        if evidence_overlay is None
+        else EvidenceViewerPayload(
+            overlay=evidence_overlay,
+            files={
+                item.structure_url: args.report / "data/target.cif"
+                for item in evidence_overlay.structures
+            },
+        )
     )
     server = create_target_viewer_server(
-        args.report, port=args.port, stage02_overlay=overlay
+        args.report,
+        port=args.port,
+        stage02_overlay=overlay,
+        evidence=evidence,
     )
     try:
         server.serve_forever()

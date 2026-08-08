@@ -73,6 +73,11 @@ def test_child_environment_is_repository_local_and_does_not_mutate_parent(
         None,
         "/etc/ssl/certs/ca-certificates.crt",
     }
+    tmp_alias = Path(child_overrides["TMPDIR"])
+    assert tmp_alias.parent == Path("/tmp")
+    assert tmp_alias.resolve() == context.runtime_root / "tmp"
+    assert len(os.fsencode(str(tmp_alias / "pymp-xxxxxxxx" / "listener-xxxxxxxx"))) < 108
+    tmp_alias.unlink()
 
 
 def test_write_boundary_rejects_external_path(tmp_path: Path) -> None:

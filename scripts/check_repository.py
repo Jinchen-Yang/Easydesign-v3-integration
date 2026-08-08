@@ -42,11 +42,18 @@ REQUIRED_LOCAL_FILES = (
     "src/easydesign/runtime_guard.py",
     "src/easydesign/orchestration/local_jobs.py",
     "src/easydesign/orchestration/local_project.py",
-    "src/easydesign/orchestration/local_steps.py",
+    "src/easydesign/orchestration/research.py",
+    "src/easydesign/orchestration/research_models.py",
     "src/easydesign/orchestration/runtime_link.py",
+    "src/easydesign/reporting/evidence_viewer.py",
     "src/easydesign/reporting/stage02_overlay.py",
     "web/target-viewer/package.json",
     "examples/apoe-ui-demo/README.md",
+    ".agents/skills/easydesign-research/SKILL.md",
+    ".agents/skills/easydesign-research/references/target-and-site.md",
+    ".agents/skills/easydesign-research/references/strategy-yaml.md",
+    ".agents/skills/easydesign-research/references/pilot-diagnosis.md",
+    ".agents/skills/easydesign-research/references/scale-and-selection.md",
 )
 
 
@@ -95,6 +102,10 @@ def main() -> int:
     if any("ui/" in value for values in package_data.values() for value in values):
         errors.append("local wheel 禁止 UI package data")
     cli_text = (ROOT / "src/easydesign/cli.py").read_text(encoding="utf-8").lower()
+    if 'add_parser("step"' in cli_text:
+        errors.append("Agent-native local CLI 禁止重新暴露 step parser")
+    if (ROOT / "src/easydesign/orchestration/local_steps.py").exists():
+        errors.append("Agent-native local 产品禁止保留旧 step 产品壳")
     for token in ("suzhou", "manager", "managed-ssh", "ssh_pairing"):
         if token in cli_text:
             errors.append(f"local CLI 禁止远程控制词: {token}")

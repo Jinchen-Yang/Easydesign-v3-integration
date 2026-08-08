@@ -7,7 +7,13 @@ import os
 from pathlib import Path
 from typing import Any
 
-from easydesign.core import RunManifest, TargetInputError, load_model
+from easydesign.core import (
+    ExecutionStatus,
+    ManifestStateError,
+    RunManifest,
+    TargetInputError,
+    load_model,
+)
 from easydesign.orchestration.application import (
     continue_pipeline_after_decision,
     execute_pipeline,
@@ -40,6 +46,24 @@ def _manifest_identity(run_root: Path) -> tuple[str, Path]:
 
 def _failure_status(error: Exception) -> str:
     return "scientific-failed" if isinstance(error, TargetInputError) else "operational-failed"
+
+
+def _resume_until_boundary(run_root: Path) -> Any:
+    """Continue completed internal stages until the run reaches its frozen stop boundary."""
+
+    previous_manifest: Path | None = None
+    for _ in range(5):
+        outcome = resume_pipeline(run_root)
+        _, manifest_path = _manifest_identity(run_root)
+        current = load_model(manifest_path, RunManifest)
+        if str(getattr(outcome, "status", "")) != "succeeded":
+            return outcome
+        if current.status is not ExecutionStatus.RUNNING:
+            return outcome
+        if manifest_path == previous_manifest:
+            raise ManifestStateError("resume succeeded 但 run manifest 未前进")
+        previous_manifest = manifest_path
+    raise ManifestStateError("resume 超过内部 Stage 上限仍未到达冻结边界")
 
 
 def main() -> int:
@@ -76,13 +100,14 @@ def main() -> int:
                 outcome = execute_pipeline(
                     job.config_path,
                     runs_root=context.runs_root,
+                    run_id=job.run_id,
                     continue_from_run=job.run_root,
                     continue_after_stage=job.step - 1,
                     source_base_dir=job.project_root,
                 )
         elif job.operation == "resume":
             assert job.run_root is not None
-            outcome = resume_pipeline(job.run_root)
+            outcome = _resume_until_boundary(job.run_root)
         else:
             assert job.run_root is not None
             assert job.decision_record is not None
@@ -122,9 +147,7 @@ def main() -> int:
             status=_failure_status(error),
             run_id=job.run_id if failed_run is None else failed_run.run_id,
             run_root=job.run_root if failed_run is None else failed_run.path,
-            run_manifest=(
-                job.run_manifest if failed_run is None else failed_run.latest_manifest
-            ),
+            run_manifest=(job.run_manifest if failed_run is None else failed_run.latest_manifest),
             error=f"{type(error).__name__}: {str(error)[:4096]}",
         )
         raise

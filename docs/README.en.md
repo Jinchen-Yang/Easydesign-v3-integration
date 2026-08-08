@@ -1,11 +1,17 @@
 # EasyDesign Local
 
-[中文](../README.md) · [Development](../DEVELOPMENT.md) · [Data safety](../DATA_SAFETY.md)
+EasyDesign Local is an agent-native, local protein-binder research workbench. Codex reasons about the
+project and invokes deterministic tools; the researcher approves scientific decisions; EasyDesign
+preserves manifests, checksums, attempts, and immutable evidence.
 
-EasyDesign Local is the permanent VS Code/terminal product for running the seven-stage binder
-design workflow on one local Linux GPU host. It preserves scientific manifests, artifacts, attempts,
-decisions, and checksums, but intentionally contains no Workbench, HTTP API, remote execution,
-Suzhou2, Manager, or formal UI activation.
+The public workflow is:
+
+```text
+prepare → strategize → pilot loop → scale → select
+```
+
+The internal seven-stage scientific engine remains intact, but Stage numbers are not part of the
+researcher-facing CLI.
 
 ## Install
 
@@ -13,57 +19,44 @@ Suzhou2, Manager, or formal UI activation.
 cd /root/autodl-tmp/Protein_design/easydesign-local
 uv sync --frozen --extra dev
 source .venv/bin/activate
-easydesign --version
-```
-
-The local `.venv` contains the package and developer tools only. Reuse the existing verified science
-environments and models through a read-only link:
-
-```bash
 easydesign runtime link /root/autodl-tmp/Protein_design/easydesign-clean/runtime
-easydesign runtime status
 easydesign doctor --full
 ```
 
-The link validates registry revisions, environment locks and inventories, and asset identities. A
-changed source identity fails closed and requires a new explicit link.
+The linked scientific environments and models are read-only. This worktree owns its caches, logs,
+jobs, projects, and runs.
 
-## Run one stage at a time
+## Start or resume with Codex
 
-```bash
-easydesign step init workspace/projects/apoe --uniprot P02649
-easydesign step validate 1 workspace/projects/apoe
-easydesign step run 1 workspace/projects/apoe
-```
-
-Each command returns typed status and exact next actions. To inspect the verified structure from a
-second VS Code terminal:
+Start Codex from the repository or a subdirectory. Repository instructions route protein-design work
+to `$easydesign-research`. Project state is restored only through:
 
 ```bash
-easydesign step view workspace/projects/apoe --run RUN_ID --port 8000
+easydesign project status workspace/projects/apoe --json
 ```
 
-Open `http://127.0.0.1:8000/`. The Target Viewer is read-only: it does not edit, upload, approve, or
-submit work remotely.
-
-Stage 2 runs SASA and ScanNet independently. The Viewer can switch between them and uses fixed
-red/blue/yellow colors for A/B/C. Automatic and manual regions both require an explicit approval:
+Create and prepare a project:
 
 ```bash
-easydesign step run 2 workspace/projects/apoe
-easydesign step template 2 workspace/projects/apoe --manual
-easydesign step approve 2 workspace/projects/apoe \
-  --input workspace/projects/apoe/02-approval.sasa.RUN_ID.yaml
+easydesign project init workspace/projects/apoe --uniprot P02649
+easydesign target prepare workspace/projects/apoe
+easydesign site scan workspace/projects/apoe --method both
+easydesign site approve workspace/projects/apoe --input PROPOSAL --confirm
 ```
 
-Stages 4–7 use canonical scientific budgets. Without `--confirm`, the CLI reports the candidate/task
-budget, GPU occupancy, disk margin, and required backends without creating a worker, stage, or
-attempt. Persistent jobs support `--detach`, `status`, `watch`, safe `drain`, and `resume`; Ctrl-C only
-detaches the observer.
+Draft, validate, freeze, and iterate:
 
-All project and run writes stay under this worktree's `workspace/`; logs, receipts, cache, validation,
-and quarantine stay under its `runtime/`. The original UI projects and runs are never indexed or
-continued. `examples/apoe-ui-demo/` remains a Git-tracked, read-only scientific evidence fixture.
+```bash
+easydesign strategy draft workspace/projects/apoe
+easydesign strategy validate workspace/projects/apoe --config workspace/projects/apoe/strategy-draft.yaml
+easydesign strategy freeze workspace/projects/apoe --config workspace/projects/apoe/strategy-draft.yaml --confirm
+easydesign pilot run workspace/projects/apoe --strategy strategy-r000001 --confirm --detach
+easydesign pilot review workspace/projects/apoe --run PILOT_RUN
+```
 
-This private Developer Preview supports research decisions; it is not experimental validation,
-clinical evidence, biosafety approval, or a supplier order.
+Scale and select only from a human promotion receipt. Defaults are 50,000 production candidates and
+Top 200 delivery; legal results are never duplicated or padded.
+
+Read/validate/color/scan/plan/review/view operations may run directly. Site approval, strategy freeze,
+pilot run/promotion, scale, and selection require explicit researcher confirmation. The viewer is
+read-only and there is no remote executor, Manager, Suzhou2, Workbench, or port-18769 activation.

@@ -152,6 +152,17 @@ h1 {
   gap: 8px;
 }
 
+.button-list {
+  display: grid;
+  gap: 8px;
+}
+
+.button-list button {
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
 .warning {
   padding: 9px 10px;
   border-left: 3px solid #d88a00;

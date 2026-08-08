@@ -11,6 +11,10 @@ from urllib.parse import unquote, urlsplit
 
 from pydantic import BaseModel
 
+from easydesign.core import RunManifest, load_model
+from easydesign.safe_writes import read_last_text_line
+
+from .evidence_viewer import EvidenceViewerPayload
 from .target_viewer import (
     TargetViewerReportError,
     resolve_latest_target_viewer_report,
@@ -41,14 +45,19 @@ class _TargetViewerRequestHandler(SimpleHTTPRequestHandler):
         *args: object,
         directory: str,
         stage02_overlay: bytes | None = None,
+        evidence_overlay: bytes | None = None,
+        evidence_files: dict[str, Path] | None = None,
         **kwargs: object,
     ) -> None:
         self._report_root = Path(directory).resolve()
         self._stage02_overlay = stage02_overlay
+        self._evidence_overlay = evidence_overlay
+        self._evidence_files = evidence_files or {}
         super().__init__(*args, directory=directory, **kwargs)  # type: ignore[arg-type]
 
     def do_GET(self) -> None:  # noqa: N802
-        if urlsplit(self.path).path == "/stage02-regions.json":
+        request_path = unquote(urlsplit(self.path).path)
+        if request_path == "/stage02-regions.json":
             if self._stage02_overlay is None:
                 self.send_error(404, "Stage 02 overlay unavailable")
                 return
@@ -58,14 +67,31 @@ class _TargetViewerRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(self._stage02_overlay)
             return
+        if request_path == "/evidence.json":
+            if self._evidence_overlay is None:
+                self.send_error(404, "Evidence overlay unavailable")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(self._evidence_overlay)))
+            self.end_headers()
+            self.wfile.write(self._evidence_overlay)
+            return
+        evidence = self._evidence_files.get(request_path)
+        if evidence is not None:
+            content = evidence.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "chemical/x-mmcif")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+            return
         super().do_GET()
 
     def translate_path(self, path: str) -> str:
         decoded = unquote(urlsplit(path).path)
         relative = PurePosixPath(decoded.lstrip("/"))
-        if relative.is_absolute() or any(
-            part in {"", ".", ".."} for part in relative.parts
-        ):
+        if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
             return str(self._report_root / ".blocked-request")
         candidate = self._report_root.joinpath(*relative.parts)
         try:
@@ -107,13 +133,53 @@ class TargetViewerHttpServer:
 
 
 def resolve_target_viewer_argument(path: Path) -> Path:
-    """接受 report 目录或 run 根目录，并且不自动回退旧 report。"""
+    """Resolve a report directly or through an identical Stage 01 lineage."""
 
     resolved = path.resolve()
     if (resolved / "report-manifest.json").is_file():
         verify_target_viewer_report(resolved)
         return resolved
-    return resolve_latest_target_viewer_report(resolved)
+    try:
+        return resolve_latest_target_viewer_report(resolved)
+    except TargetViewerReportError as direct_error:
+        try:
+            manifest_name = read_last_text_line(resolved / "manifests/LATEST")
+            run = load_model(resolved / "manifests" / manifest_name, RunManifest)
+            stage01 = next(
+                item
+                for item in run.stage_manifest_refs
+                if item.producer_stage == "01-target-preparation"
+            )
+        except (OSError, StopIteration, ValueError):
+            raise direct_error from None
+        matches: list[Path] = []
+        for sibling in sorted(resolved.parent.iterdir()):
+            if sibling == resolved or not (sibling / "manifests/LATEST").is_file():
+                continue
+            try:
+                sibling_name = read_last_text_line(sibling / "manifests/LATEST")
+                sibling_run = load_model(
+                    sibling / "manifests" / sibling_name,
+                    RunManifest,
+                )
+                sibling_stage01 = next(
+                    item
+                    for item in sibling_run.stage_manifest_refs
+                    if item.producer_stage == "01-target-preparation"
+                )
+                if (
+                    sibling_run.project_id == run.project_id
+                    and sibling_stage01.sha256 == stage01.sha256
+                ):
+                    matches.append(resolve_latest_target_viewer_report(sibling))
+            except (OSError, StopIteration, TargetViewerReportError, ValueError):
+                continue
+        unique = {item.resolve() for item in matches}
+        if len(unique) != 1:
+            raise TargetViewerReportError(
+                "当前 run 没有自带 Target Viewer，且无法唯一解析相同 Stage 01 lineage"
+            ) from direct_error
+        return unique.pop()
 
 
 def create_target_viewer_server(
@@ -121,6 +187,7 @@ def create_target_viewer_server(
     *,
     port: int = 0,
     stage02_overlay: BaseModel | None = None,
+    evidence: EvidenceViewerPayload | None = None,
 ) -> TargetViewerHttpServer:
     """验证报告并创建固定绑定 127.0.0.1 的 HTTP server。"""
 
@@ -139,10 +206,29 @@ def create_target_viewer_server(
             ).encode("utf-8")
         )
     )
+    evidence_bytes = (
+        None
+        if evidence is None
+        else json.dumps(
+            evidence.overlay.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    evidence_files = {} if evidence is None else dict(evidence.files)
+    if evidence is not None:
+        expected = {item.structure_url for item in evidence.overlay.structures}
+        if set(evidence_files) != expected:
+            raise TargetViewerReportError("evidence overlay 与文件路由不一致")
+        for path in evidence_files.values():
+            if not path.is_file() or path.is_symlink():
+                raise TargetViewerReportError(f"evidence structure 非普通文件: {path}")
     handler = partial(
         _TargetViewerRequestHandler,
         directory=str(root),
         stage02_overlay=overlay_bytes,
+        evidence_overlay=evidence_bytes,
+        evidence_files=evidence_files,
     )
     server = ThreadingHTTPServer((HOST, port), handler)
     return TargetViewerHttpServer(report_root=root, server=server)

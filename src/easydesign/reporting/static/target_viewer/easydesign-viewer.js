@@ -4,6 +4,8 @@
   const state = {
     data: null,
     overlay: null,
+    evidence: null,
+    structureUrl: null,
     viewer: null,
     representation: "cartoon",
     theme: "default",
@@ -79,6 +81,23 @@
           throw new Error(`Stage 02 region ${region.id} 颜色或 residue 数据非法。`);
         }
       }
+    }
+  }
+
+  function validateEvidence(evidence) {
+    if (!evidence || evidence.schema_version !== "0.1" || !Array.isArray(evidence.structures)) {
+      throw new Error("evidence.json schema_version 不受支持。");
+    }
+    const ids = new Set();
+    for (const item of evidence.structures) {
+      if (
+        ids.has(item.id) ||
+        !["pilot-representative", "final-selection"].includes(item.kind) ||
+        !item.structure_url.startsWith("/evidence-structures/")
+      ) {
+        throw new Error(`Evidence structure 非法：${item.id}`);
+      }
+      ids.add(item.id);
     }
   }
 
@@ -161,6 +180,44 @@
     }
   }
 
+  function evidenceButtonIds() {
+    return [
+      "evidence-target",
+      ...(state.evidence ? state.evidence.structures.map((_, index) => `evidence-${index}`) : []),
+    ];
+  }
+
+  function renderEvidence(evidence) {
+    if (!evidence || evidence.structures.length === 0) return;
+    byId("evidence-controls").hidden = false;
+    const container = byId("evidence-structures");
+    container.replaceChildren();
+    const target = document.createElement("button");
+    target.id = "evidence-target";
+    target.type = "button";
+    target.className = "active";
+    target.textContent = "Target / site";
+    target.addEventListener("click", async () => {
+      state.structureUrl = null;
+      setButtonState(evidenceButtonIds(), target.id);
+      await reloadStructure(false);
+    });
+    container.append(target);
+    evidence.structures.forEach((item, index) => {
+      const button = document.createElement("button");
+      button.id = `evidence-${index}`;
+      button.type = "button";
+      button.textContent = item.label;
+      button.title = `SHA-256: ${item.sha256}`;
+      button.addEventListener("click", async () => {
+        state.structureUrl = item.structure_url;
+        setButtonState(evidenceButtonIds(), button.id);
+        await reloadStructure(false);
+      });
+      container.append(button);
+    });
+  }
+
   function renderMetadata(data) {
     setText("target-title", data.target_id);
     setText(
@@ -200,7 +257,7 @@
     const builder = mvs.createBuilder();
     builder.canvas({ background_color: "#EEF1F6" });
     const structure = builder
-      .download({ url: data.structure_relative_path })
+      .download({ url: state.structureUrl || data.structure_relative_path })
       .parse({ format: "mmcif" })
       .modelStructure();
     const representation = structure
@@ -376,10 +433,20 @@
     } else if (overlayResponse.status !== 404) {
       throw new Error(`无法读取 stage02-regions.json：HTTP ${overlayResponse.status}`);
     }
+    const evidenceResponse = await fetch("evidence.json", { cache: "no-store" });
+    let evidence = null;
+    if (evidenceResponse.ok) {
+      evidence = await evidenceResponse.json();
+      validateEvidence(evidence);
+    } else if (evidenceResponse.status !== 404) {
+      throw new Error(`无法读取 evidence.json：HTTP ${evidenceResponse.status}`);
+    }
     state.data = data;
     state.overlay = overlay;
+    state.evidence = evidence;
     renderMetadata(data);
     renderStage02(overlay);
+    renderEvidence(evidence);
     bindControls();
     state.viewer = await molstar.Viewer.create("molstar-viewer", {
       extensions: ["mvs"],

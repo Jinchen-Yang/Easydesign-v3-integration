@@ -156,6 +156,26 @@ class WorkspaceContext:
         except PathPolicyError as error:
             raise PathPolicyError(f"{purpose}: {error}") from error
 
+    def _short_tmp_alias(self) -> Path:
+        """Expose owned runtime/tmp through a Unix-socket-safe short path."""
+
+        target = (self.runtime_root / "tmp").resolve(strict=True)
+        system_tmp = Path("/tmp")
+        if not system_tmp.is_dir():
+            raise PathPolicyError("本机缺少 /tmp，无法创建短路径运行时别名")
+        digest = hashlib.sha256(str(self.root).encode("utf-8")).hexdigest()[:16]
+        alias = system_tmp / f"easydesign-{digest}"
+        if not alias.is_symlink() and not alias.exists():
+            try:
+                alias.symlink_to(target, target_is_directory=True)
+            except FileExistsError:
+                pass
+        if not alias.is_symlink():
+            raise PathPolicyError(f"短路径运行时别名被非符号链接占用: {alias}")
+        if alias.resolve(strict=False) != target:
+            raise PathPolicyError(f"短路径运行时别名身份冲突: {alias}")
+        return alias
+
     def child_environment(self) -> dict[str, str]:
         """Environment isolation applied only to EasyDesign child processes."""
 
@@ -164,7 +184,7 @@ class WorkspaceContext:
         git_config = self._git_config_path()
         values = {
             "HOME": str(self.runtime_root / "home"),
-            "TMPDIR": str(self.runtime_root / "tmp"),
+            "TMPDIR": str(self._short_tmp_alias()),
             "CONDA_PKGS_DIRS": str(cache / "conda"),
             "PIP_CACHE_DIR": str(cache / "pip"),
             "UV_CACHE_DIR": str(cache / "uv"),

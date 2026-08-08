@@ -2,15 +2,18 @@
 
 [English](docs/README.en.md) · [开发指南](DEVELOPMENT.md) · [数据安全](DATA_SAFETY.md)
 
-EasyDesign Local 是面向研究者的 VS Code/终端产品：在一台本地 Linux GPU 机器上，按
-Stage 1–7 逐步运行蛋白结合分子设计，并用只读 Mol* Viewer 检查结构和结合区域。
+EasyDesign Local 是一个 Agent 原生的本地蛋白设计研究工作台：Codex 理解问题、讨论策略
+并调用工具，研究者批准关键科学选择，EasyDesign 负责确定性执行、manifest、checksum
+和不可变证据。公开流程只有：
 
-它不包含完整 Workbench、HTTP API、远程提交、Suzhou2 或 Manager，也不会操作正式 UI
-端口 18769。科学 manifest、artifact、attempt、decision 和 checksum 契约与主产品一致。
+```text
+prepare → strategize → pilot loop → scale → select
+```
+
+内部仍保留经过验证的七阶段科学实现，但研究者不再直接操作 Stage 编号。本产品没有完整
+Workbench、远程提交、Suzhou2、Manager 或 18769 activation。
 
 ## 安装
-
-需要 Git、[uv](https://docs.astral.sh/uv/) 和 Python 3.11（也支持 3.12）。
 
 ```bash
 cd /root/autodl-tmp/Protein_design/easydesign-local
@@ -19,8 +22,7 @@ source .venv/bin/activate
 easydesign --version
 ```
 
-`.venv` 只安装 EasyDesign Local、CLI 和开发工具。五个重型科学后端及模型不复制、不重装，
-而是只读链接已经验证的原 runtime：
+`.venv` 不复制重型科学环境和模型。首次使用只读链接已验证 runtime：
 
 ```bash
 easydesign runtime link /root/autodl-tmp/Protein_design/easydesign-clean/runtime
@@ -28,87 +30,99 @@ easydesign runtime status
 easydesign doctor --full
 ```
 
-link 会验证 registry revision、环境 lock/inventory、资产大小和 SHA-256/Git revision，并在
-本仓库写独立 receipt/profile。来源 identity 改变后命令 fail closed，必须重新 link。
+来源 registry、inventory 或资产身份变化后会 fail closed，必须重新 link；cache、日志、job
+和科学结果仍只写本 worktree。
 
-## 初始化项目
+## 用 Codex 开始研究
 
-以下六类 Stage 1 输入都进入同一个严格接口：
+从本仓库或其子目录启动 Codex。根 `AGENTS.md` 会把蛋白设计任务路由到仓库级
+`$easydesign-research` Skill；研究任务不会加载开发协议。可以直接说：
 
-```bash
-easydesign step init workspace/projects/apoe --uniprot P02649
-easydesign step init workspace/projects/apoe-search --uniprot-query APOE --taxon-id 9606
-easydesign step init workspace/projects/pdb-case --pdb-id 1B68 --chain A
-easydesign step init workspace/projects/pse-case --target inputs/target.pse
-easydesign step init workspace/projects/structure-case --target inputs/target.cif --chain A
-easydesign step init workspace/projects/sequence-case --target inputs/target.fasta
+```text
+为 P02649 新建一个 EasyDesign 项目，先准备靶点；遇到歧义停下来和我讨论。
 ```
 
-也支持经过 manifest/checksum 验证的 `--target-bundle`。项目根目录平铺生成七份 Stage YAML、
-`inputs/`、append-only `config-revisions/` 和 `CONFIG_CURRENT`。
-
-## 逐阶段运行
-
-```bash
-easydesign step validate 1 workspace/projects/apoe
-easydesign step run 1 workspace/projects/apoe
+```text
+恢复 workspace/projects/apoe，查看目前证据，和我讨论下一轮 pilot 策略，不要自动批准。
 ```
 
-每个命令都返回结构化状态，并打印下一步的精确命令。完成 Stage 1 后可在另一个 VS Code
-终端启动只读 Viewer：
-
-```bash
-easydesign step view workspace/projects/apoe --run RUN_ID --port 8000
+```text
+检查这个已染色 PSE 的 A/B/C 位点，启动只读 Viewer；我确认前不要 freeze strategy。
 ```
 
-浏览器访问 `http://127.0.0.1:8000/`。Viewer 不会自动启动、后台常驻、打开浏览器、编辑或
-批准任何科学输入。
-
-Stage 2 默认分别运行 SASA 与 ScanNet，不融合结果：
+Codex 每次恢复项目只需读取：
 
 ```bash
-easydesign step run 2 workspace/projects/apoe
+easydesign project status workspace/projects/apoe --json
 ```
 
-Viewer 可在两种方法间只读切换，A/B/C 固定为红/蓝/黄。自动和手动区域都必须显式批准：
+该结果包含当前 target/site foundation、strategy revisions、pilot/production runs、待批准项
+和结构化下一步；不要扫描目录猜状态。
+
+## 语义化命令
+
+创建项目支持 PSE、本地结构、本地序列、PDB ID、UniProt accession/query 和经过验证的
+target bundle：
 
 ```bash
-easydesign step template 2 workspace/projects/apoe --manual
-easydesign step validate 2 workspace/projects/apoe \
-  --config workspace/projects/apoe/02-hotspot-discovery.manual.yaml
-easydesign step approve 2 workspace/projects/apoe \
-  --input workspace/projects/apoe/02-approval.sasa.RUN_ID.yaml
+easydesign project init workspace/projects/apoe --uniprot P02649
+easydesign target prepare workspace/projects/apoe
 ```
 
-Stage 3–7 同样按下一 Stage 顺序运行。Stage 4–7 使用规范科学预算；没有 `--confirm` 时只
-显示候选/任务、GPU、磁盘和 backend 计划，不创建 worker、Stage 或 attempt：
+位点入口按证据选择，最终都汇合为不可变 `target-and-site-ready` foundation：
 
 ```bash
-easydesign step run 6 workspace/projects/apoe --confirm --detach
-easydesign step status workspace/projects/apoe --run RUN_ID
-easydesign step watch workspace/projects/apoe --run RUN_ID
-easydesign step drain workspace/projects/apoe --job JOB_ID
-easydesign step resume workspace/projects/apoe --run RUN_ID --detach
+easydesign site propose workspace/projects/apoe --from-pse-colors
+easydesign site propose workspace/projects/apoe --input workspace/projects/apoe/SITE.yaml
+easydesign site scan workspace/projects/apoe --method both
+easydesign view workspace/projects/apoe --run RUN_ID --port 8000
+easydesign site approve workspace/projects/apoe --input PROPOSAL --confirm
 ```
 
-`Ctrl-C` 只结束当前观察，不杀科学 worker。`drain` 只在 Stage 4/6 安全检查点停止继续调度。
-所有读取/运行命令支持 `--json`，终端提示与 JSON 来自同一个 `StepCommandResult`。
+SASA 与 ScanNet 独立保存，不融合分数；A/B/C 在只读 Viewer 中固定为红/蓝/黄。
 
-## 数据位置
+策略由研究者和 Codex 讨论后起草，校验不发布，显式批准才 freeze：
 
-- `workspace/projects/`：本产品新建的用户项目和 Stage YAML。
-- `workspace/runs/`：本产品新建的不可变科学 run。
-- `runtime/`：本产品自己的 receipt、日志、cache、tmp、validation 和 quarantine。
-- 原仓库 `runtime/envs/`、`runtime/models/`：只读科学后端与模型。
-- 本地 worker 使用 Linux Landlock 强制共享 runtime 只读；JIT、模型 cache、临时文件和日志
-  只写当前 worktree 的 `runtime/`。
-- `examples/apoe-ui-demo/`：Git 跟踪、只读保留的 APOE 科学证据回归包。
+```bash
+easydesign strategy draft workspace/projects/apoe
+easydesign strategy validate workspace/projects/apoe --config workspace/projects/apoe/strategy-draft.yaml
+easydesign strategy freeze workspace/projects/apoe --config workspace/projects/apoe/strategy-draft.yaml --confirm
+```
 
-本产品拒绝读取或继续原 UI 的 `workspace/projects/` 与 `workspace/runs/`。完整布局见
-[RUN_LAYOUT](docs/RUN_LAYOUT.md)，科学边界见七份 [workflow 文档](docs/workflow/README.md)。
+策略支持 target crop、approved binding subset、七 scaffold 或子集、CDR range/插入长度、
+显式多 variant，以及带 SHA-256 和真实 backend check 的专家 BoltzGen YAML。
 
-## 边界
+每轮 pilot 是独立不可变 run；科学负结果仍是有效证据：
 
-结果用于研究决策支持，不等于实验验证、临床结论、生物安全批准或供应商订单。外部模型、
-数据库、权重和服务继续受各自许可证、条款与数据政策约束。本分支为私有 Developer
-Preview，不发布 PyPI。
+```bash
+easydesign pilot plan workspace/projects/apoe --strategy strategy-r000001
+easydesign pilot run workspace/projects/apoe --strategy strategy-r000001 --confirm --detach
+easydesign pilot review workspace/projects/apoe --run PILOT_RUN
+easydesign pilot promote workspace/projects/apoe --run PILOT_RUN --strategy ID1,ID2 --confirm
+```
+
+规模化和选择默认 50,000 / Top 200；不足 200 时不重复、不补齐：
+
+```bash
+easydesign scale plan workspace/projects/apoe --selection SELECTION
+easydesign scale run workspace/projects/apoe --selection SELECTION --count 50000 --confirm --detach
+easydesign select plan workspace/projects/apoe --run PRODUCTION_RUN --top 200
+easydesign select run workspace/projects/apoe --run PRODUCTION_RUN --top 200 --confirm --detach
+```
+
+任务控制统一为 `easydesign job status|watch|resume|drain`。`Ctrl-C` 只脱离观察，`drain`
+只在安全检查点停止新调度。所有命令支持 `--json`，文本和 JSON 来自同一 `CommandResult`。
+
+## 数据位置与批准边界
+
+- `workspace/projects/`：输入、可变 draft、不可变 site/strategy/promotion receipt；
+- `workspace/runs/`：不可变科学 run、manifest、attempt 和 artifact；
+- `runtime/`：本产品 receipt、profile、cache、日志、job、validation 和 quarantine；
+- `examples/apoe-ui-demo/`：Git 跟踪、checksum 不变的只读科学证据。
+
+读取、校验、染色、扫描、规划、review 和 Viewer 可直接执行。`site approve`、
+`strategy freeze`、`pilot run/promote`、`scale run` 和 `select run` 必须由研究者显式确认。
+旧七 YAML 项目只读识别，不原地迁移。
+
+结果用于研究决策支持，不等于实验验证、临床结论、生物安全批准或供应商订单。本分支为
+私有 Developer Preview，不发布 PyPI。

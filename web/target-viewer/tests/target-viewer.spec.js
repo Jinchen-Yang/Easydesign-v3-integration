@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { spawn, spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const WEB_ROOT = path.resolve(__dirname, "..");
@@ -19,6 +20,11 @@ const REAL_URLS = {
   sequence: "http://127.0.0.1:18133/",
   pse: "http://127.0.0.1:18134/",
 };
+const REAL_PSE_FIRST_RESIDUE = REAL_REPORTS.pse
+  ? JSON.parse(
+      fs.readFileSync(path.join(path.resolve(REAL_REPORTS.pse), "viewer-data.json"), "utf-8")
+    ).residues[0]
+  : null;
 
 async function waitForServer(url) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -33,15 +39,17 @@ async function waitForServer(url) {
   throw new Error(`Viewer server did not start: ${url}`);
 }
 
-function startServer(report, port) {
+function startServer(report, port, overlay = "") {
+  const serverArgs = [
+    path.join(__dirname, "serve_fixture.py"),
+    report,
+    "--port",
+    String(port),
+  ];
+  if (overlay) serverArgs.push("--overlay", overlay);
   const child = spawn(
     PYTHON,
-    [
-      path.join(REPO_ROOT, "scripts", "serve_target_viewer.py"),
-      report,
-      "--port",
-      String(port),
-    ],
+    serverArgs,
     {
       cwd: REPO_ROOT,
       env: {
@@ -79,7 +87,11 @@ test.beforeAll(async () => {
   if (generated.status !== 0) {
     throw new Error(`Fixture generation failed:\n${generated.stderr}`);
   }
-  startServer(path.join(FIXTURE_ROOT, "sequence"), 18131);
+  startServer(
+    path.join(FIXTURE_ROOT, "sequence"),
+    18131,
+    path.join(FIXTURE_ROOT, "sequence", "stage02-test-overlay.json")
+  );
   startServer(path.join(FIXTURE_ROOT, "pse"), 18132);
   const expectedServers = [waitForServer(URLS.sequence), waitForServer(URLS.pse)];
   if (REAL_REPORTS.sequence) {
@@ -158,12 +170,45 @@ test("predicted report loads Mol*, mapping controls and local downloads", async 
   expect(diagnostics.remoteRequests).toEqual([]);
 });
 
+test("Stage 2 methods and approved regions are read-only fixed-color layers", async ({
+  page,
+}) => {
+  const diagnostics = await openViewer(page, URLS.sequence);
+
+  await expect(page.locator("#stage02-controls")).toBeVisible();
+  await expect(page.locator("#stage02-methods button")).toHaveCount(3);
+  await expect(page.locator("#stage02-methods")).toContainText("SASA surface diversity");
+  await expect(page.locator("#stage02-methods")).toContainText("ScanNet epitope no-MSA");
+  await expect(page.locator("#stage02-methods")).toContainText("Approved hotspots");
+  await expect(page.locator("#stage02-controls")).toContainText("A");
+  await expect(page.locator("#stage02-controls")).toContainText("B");
+  await expect(page.locator("#stage02-controls")).toContainText("C");
+  await page.locator("#theme-region-scannet").click();
+  await page.waitForFunction(
+    () =>
+      window.__EASYDESIGN_VIEWER_STATE__.theme === "region:scannet" &&
+      window.__EASYDESIGN_VIEWER_STATE__.loading === false
+  );
+  await page.locator("#theme-region-approved").click();
+  await page.waitForFunction(
+    () =>
+      window.__EASYDESIGN_VIEWER_STATE__.theme === "region:approved" &&
+      window.__EASYDESIGN_VIEWER_STATE__.loading === false
+  );
+  await expect(
+    page.locator("button", { hasText: /^(编辑|上传|批准|提交)(区域|结果|文件)?$/ })
+  ).toHaveCount(0);
+
+  expect(diagnostics.pageErrors).toEqual([]);
+  expect(diagnostics.remoteRequests).toEqual([]);
+});
+
 test("PSE report toggles complete uninterpreted source colors", async ({ page }) => {
   const diagnostics = await openViewer(page, URLS.pse);
 
   await expect(page.locator("#pse-controls")).toBeVisible();
   await expect(page.locator("#pse-controls")).toContainText("uninterpreted annotation");
-  await expect(page.locator(".color-chip")).toHaveCount(4);
+  await expect(page.locator("#pse-color-counts .color-chip")).toHaveCount(4);
   await page.locator("#theme-pse").click();
   await page.waitForFunction(
     () =>
@@ -221,10 +266,14 @@ test("real copied APOE PSE report preserves label/auth mapping and colors", asyn
 
   await expect(page.locator("#target-summary")).toContainText("138 aa · imported");
   await expect(page.locator("#pse-controls")).toBeVisible();
-  await expect(page.locator(".color-chip")).toHaveCount(4);
+  await expect(page.locator("#pse-color-counts .color-chip")).toHaveCount(4);
   await page.locator('.msp-sequence-wrapper span[data-seqid="0"]').click();
-  await expect(page.locator("#selected-residue")).toContainText("label: Axp:1");
-  await expect(page.locator("#selected-residue")).toContainText("author: A:23");
+  await expect(page.locator("#selected-residue")).toContainText(
+    `label: ${REAL_PSE_FIRST_RESIDUE.label_asym_id}:${REAL_PSE_FIRST_RESIDUE.label_seq_id}`
+  );
+  await expect(page.locator("#selected-residue")).toContainText(
+    `author: ${REAL_PSE_FIRST_RESIDUE.auth_asym_id}:${REAL_PSE_FIRST_RESIDUE.auth_seq_id}`
+  );
   await page.locator("#theme-pse").click();
   await page.waitForFunction(
     () =>

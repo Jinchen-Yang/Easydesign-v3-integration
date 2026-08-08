@@ -3,6 +3,7 @@
 
   const state = {
     data: null,
+    overlay: null,
     viewer: null,
     representation: "cartoon",
     theme: "default",
@@ -64,6 +65,23 @@
     }
   }
 
+  function validateOverlay(overlay) {
+    if (!overlay || overlay.schema_version !== "0.1" || !Array.isArray(overlay.layers)) {
+      throw new Error("stage02-regions.json schema_version 不受支持。");
+    }
+    for (const layer of overlay.layers) {
+      if (!Array.isArray(layer.regions) || layer.regions.length < 1 || layer.regions.length > 3) {
+        throw new Error(`Stage 02 layer ${layer.id} 区域数量非法。`);
+      }
+      for (const region of layer.regions) {
+        const expected = { A: "#EF4444", B: "#3B82F6", C: "#FACC15" }[region.id];
+        if (!expected || expected !== region.color_hex || !Array.isArray(region.residues)) {
+          throw new Error(`Stage 02 region ${region.id} 颜色或 residue 数据非法。`);
+        }
+      }
+    }
+  }
+
   function formatValue(value) {
     if (typeof value === "boolean") return value ? "是" : "否";
     return String(value);
@@ -112,6 +130,37 @@
     }
   }
 
+  function themeButtonIds() {
+    const values = ["theme-default", "theme-pse"];
+    if (state.overlay) {
+      for (const layer of state.overlay.layers) values.push(`theme-region-${layer.id}`);
+    }
+    return values;
+  }
+
+  function renderStage02(overlay) {
+    if (!overlay || overlay.layers.length === 0) return;
+    byId("stage02-controls").hidden = false;
+    const container = byId("stage02-methods");
+    container.replaceChildren();
+    for (const layer of overlay.layers) {
+      const button = document.createElement("button");
+      button.id = `theme-region-${layer.id}`;
+      button.type = "button";
+      button.textContent = layer.approved ? `${layer.label}（已批准）` : layer.label;
+      button.addEventListener("click", async () => {
+        try {
+          state.theme = `region:${layer.id}`;
+          setButtonState(themeButtonIds(), button.id);
+          await reloadStructure(true);
+        } catch (error) {
+          showFailure(error);
+        }
+      });
+      container.append(button);
+    }
+  }
+
   function renderMetadata(data) {
     setText("target-title", data.target_id);
     setText(
@@ -139,9 +188,8 @@
       "representation-cartoon",
       "representation-surface",
       "representation-stick",
-      "theme-default",
-      "theme-pse",
       "center-structure",
+      ...themeButtonIds(),
     ]) {
       byId(id).disabled = disabled;
     }
@@ -170,6 +218,21 @@
           },
           color: residue.pse_color_hex,
         });
+      }
+    } else if (state.theme.startsWith("region:")) {
+      const layerId = state.theme.split(":", 2)[1];
+      const layer = state.overlay.layers.find((item) => item.id === layerId);
+      if (!layer) throw new Error(`Stage 02 layer 不存在：${layerId}`);
+      for (const region of layer.regions) {
+        for (const residue of region.residues) {
+          representation.color({
+            selector: {
+              label_asym_id: residue.label_asym_id,
+              label_seq_id: residue.label_seq_id,
+            },
+            color: region.color_hex,
+          });
+        }
       }
     }
     return builder.getState({
@@ -257,7 +320,7 @@
     byId("theme-default").addEventListener("click", async () => {
       try {
         state.theme = "default";
-        setButtonState(["theme-default", "theme-pse"], "theme-default");
+        setButtonState(themeButtonIds(), "theme-default");
         await reloadStructure(true);
       } catch (error) {
         showFailure(error);
@@ -266,7 +329,7 @@
     byId("theme-pse").addEventListener("click", async () => {
       try {
         state.theme = "pse";
-        setButtonState(["theme-default", "theme-pse"], "theme-pse");
+        setButtonState(themeButtonIds(), "theme-pse");
         await reloadStructure(true);
       } catch (error) {
         showFailure(error);
@@ -305,8 +368,18 @@
     }
     const data = await response.json();
     validateData(data);
+    const overlayResponse = await fetch("stage02-regions.json", { cache: "no-store" });
+    let overlay = null;
+    if (overlayResponse.ok) {
+      overlay = await overlayResponse.json();
+      validateOverlay(overlay);
+    } else if (overlayResponse.status !== 404) {
+      throw new Error(`无法读取 stage02-regions.json：HTTP ${overlayResponse.status}`);
+    }
     state.data = data;
+    state.overlay = overlay;
     renderMetadata(data);
+    renderStage02(overlay);
     bindControls();
     state.viewer = await molstar.Viewer.create("molstar-viewer", {
       extensions: ["mvs"],

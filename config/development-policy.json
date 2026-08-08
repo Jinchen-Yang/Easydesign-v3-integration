@@ -8,10 +8,7 @@
       "workspace/projects",
       "workspace/runs",
       "workspace/archives",
-      "runtime/envs",
-      "runtime/models",
-      "runtime/state",
-      "runtime/secrets"
+      "runtime/state"
     ],
     "inventory_roots": [
       {
@@ -43,12 +40,6 @@
         "review_policy": "manual",
         "minimum_age_days": null,
         "budget_bytes": 5368709120
-      },
-      {
-        "path": "dist",
-        "review_policy": "manual",
-        "minimum_age_days": null,
-        "budget_bytes": 1073741824
       }
     ]
   },
@@ -61,43 +52,29 @@
         "src/easydesign/backends/**",
         "src/easydesign/filtering/**",
         "src/easydesign/orchestration/stage*.py",
-        "docs/workflow",
         "docs/workflow/**"
       ]
     },
     {
-      "path": "docs/agent/UI_AND_REPORTING.md",
+      "path": "docs/agent/LOCAL_CLI_AND_VIEWER.md",
       "patterns": [
-        "src/easydesign/ui/**",
+        "src/easydesign/cli.py",
+        "src/easydesign/local_worker.py",
+        "src/easydesign/orchestration/local_*.py",
         "src/easydesign/reporting/**",
-        "web/**"
+        "web/target-viewer/**"
       ]
     },
     {
       "path": "docs/agent/RUNTIME_AND_DATA.md",
       "patterns": [
+        "src/easydesign/workspace_context.py",
         "src/easydesign/orchestration/workspace*.py",
         "src/easydesign/orchestration/runtime*.py",
-        "src/easydesign/orchestration/setup*.py",
-        "src/easydesign/orchestration/*registry*.py",
         "environments/**",
         "config/runtime-assets.yaml",
         "easydesign-workspace.yaml",
         "DATA_SAFETY.md"
-      ]
-    },
-    {
-      "path": "docs/agent/RELEASE_AND_REMOTE.md",
-      "patterns": [
-        "pyproject.toml",
-        "uv.lock",
-        "Makefile",
-        ".github/**",
-        "scripts/check_built_wheel.py",
-        "scripts/local_ui_release.py",
-        "src/easydesign/managed_protocol.py",
-        "src/easydesign/orchestration/remote*.py",
-        "src/easydesign/backends/executors/ssh*.py"
       ]
     }
   ],
@@ -106,33 +83,31 @@
     "src/easydesign/stages/**",
     "src/easydesign/backends/**",
     "src/easydesign/filtering/**",
-    "src/easydesign/managed_protocol.py",
     "src/easydesign/orchestration/stage*.py",
-    "src/easydesign/orchestration/remote*.py",
-    "docs/workflow",
+    "src/easydesign/orchestration/local_*.py",
+    "src/easydesign/orchestration/runtime_link.py",
+    "src/easydesign/reporting/**",
+    "web/target-viewer/**",
     "docs/workflow/**",
-    "scripts/local_ui_release.py",
-    "tests/unit/test_local_ui_release.py",
-    "tests/fixtures/managed_protocol/**",
     "easydesign-workspace.yaml",
     "environments/**"
   ],
   "test_routes": [
     {
-      "patterns": ["scripts/local_ui_release.py"],
-      "tests": ["tests/unit/test_local_ui_release.py"]
-    },
-    {
       "patterns": ["scripts/dev.py", "config/development-policy.json"],
       "tests": ["tests/unit/test_dev_workflow.py"]
     },
     {
-      "patterns": ["src/easydesign/ui/**", "web/workbench/**"],
-      "tests": ["tests/unit/ui"]
+      "patterns": [
+        "src/easydesign/cli.py",
+        "src/easydesign/local_worker.py",
+        "src/easydesign/orchestration/local_*.py"
+      ],
+      "tests": ["tests/unit/test_local_steps.py", "tests/unit/test_cli.py"]
     },
     {
-      "patterns": ["src/easydesign/cli.py", "easydesign", "scripts/**", "Makefile"],
-      "tests": ["tests/unit/test_uv_onboarding.py", "tests/test_repository_structure.py"]
+      "patterns": ["src/easydesign/reporting/**", "web/target-viewer/**"],
+      "tests": ["tests/unit/test_reporting_target_viewer.py"]
     },
     {
       "patterns": ["src/easydesign/orchestration/workspace*.py"],

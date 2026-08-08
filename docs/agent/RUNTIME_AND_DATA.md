@@ -1,24 +1,19 @@
-# Agent 指南：运行时与数据
+# Runtime 与数据指南
 
-修改 workspace、setup、registry、环境、模型、资产、run、迁移、归档或任何潜在破坏性
-操作前，必须完整阅读根 `DATA_SAFETY.md`。
+涉及用户项目、run、manifest、attempt、环境、模型、registry、资产或清理时，先完整读取根
+`DATA_SAFETY.md`。
 
-## 写入边界
-
-- 正常写入只允许当前 workspace 的 `runtime/`、`workspace/projects/`、
-  `workspace/runs/`、`workspace/archives/` 和明确 Git 操作；外部输入与 SSH key 只读。
-- 受保护数据禁止擅自删除、覆盖或删除式同步；可再生开发 cache、bytecode、空占位和
-  无引用 build 按 `DATA_SAFETY.md` 完成精确证明后直接删除，不进入 archive。
-- 新环境、模型、release、registry revision 和 artifact 先写不存在的 staging，校验后
-  原子发布；失败 staging 进入 quarantine，旧内容保留。
-- mutable registry/index 使用 append-only revision；损坏的新 revision 不遮蔽旧合法值。
-- 环境 available 必须同时满足 lock、inventory、版本探针和所有必需资产许可/SHA。
-- UI upload、项目、run、归档和恢复遵守 manifest/ArtifactRef 闭包，不创建空成功壳。
-
-## Git 与历史数据
-
-- `workspace/runs/`、环境、模型、quarantine、密钥和历史证据不得提交或由业务运行时自动清理；
-  维护任务只删除已证明可再生且不被引用的精确目标。
-- 已锁定、detached 且提交进入 main 的历史 worktree 可保留只读；未知 worktree/branch
-  先审计，不以“单一 main”为删除授权。
-- ops 只完成用户要求的部署/恢复/观察，不顺带修改代码或清理资源。
+- 本产品只写自己的 `runtime/`、`workspace/projects/`、`workspace/runs/` 和 archives。
+- 原 `easydesign-clean/runtime` 仅可通过 runtime-link receipt 读取 `envs/`、`models/`、两个
+  registry marker、append-only revisions 和 environment inventories。
+- link 时验证本分支环境 lock、registry tip/revision SHA、inventory SHA、文件 size/SHA 或
+  Git revision；任一 identity 改变即 fail closed，要求重新 link。
+- 子进程 cache/home/tmp/log 全部指向本产品 runtime，并设置禁止 bytecode 和离线模型策略；
+  来源 runtime 禁止 setup、下载、cache、job 或 registry 写入。
+- 科学 worker 必须先启用 Linux Landlock 写隔离；只允许本 worktree 的四个可写根以及 CUDA
+  所需的 `/dev`、`/proc` 内核接口。Python 可写性探针必须把共享包目录视为只读，使 JIT 产物
+  落入本地 `runtime/cache/torch-extensions/`。Landlock 不可用时 fail closed。
+- 旧 UI projects/runs 不读取、不索引、不原地继续；外部项目路径一律拒绝。
+- `examples/apoe-ui-demo/` 只读、Git 跟踪、checksum 不变，仅用于 manifest/report 回归。
+- manifest/artifact/attempt/config revision 追加新文件，pointer 只追加；禁止扫描目录猜最新项。
+- 删除前精确确认 Git/代码/receipt/进程引用与可再生性。cache 可删，科学数据和唯一证据不可删。

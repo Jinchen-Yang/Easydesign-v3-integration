@@ -15,7 +15,7 @@ def _resolve_version() -> str:
         if isinstance(source_version, str) and source_version:
             return source_version
     try:
-        return version("easydesign")
+        return version("easydesign-local")
     except PackageNotFoundError:
         return "0+unknown"
 

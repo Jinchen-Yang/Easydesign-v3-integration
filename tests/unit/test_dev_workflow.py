@@ -25,96 +25,100 @@ def _context(*arguments: str) -> dict[str, object]:
 
 def test_context_receipt_avoids_reloading_unchanged_policy() -> None:
     first = _context(
-        "--mode",
-        "dev-local",
-        "--path",
-        "src/easydesign/ui/app.py",
+        "--mode", "dev-local", "--path", "src/easydesign/cli.py"
     )
-
     assert first["required_reading"] == [
-        "AGENTS.md",
-        "docs/agent/UI_AND_REPORTING.md",
+        "AGENTS.md", "docs/agent/LOCAL_CLI_AND_VIEWER.md"
     ]
     bundle = first["policy_bundle_id"]
     second = _context(
-        "--mode",
-        "dev-local",
-        "--path",
-        "src/easydesign/ui/app.py",
-        "--known-bundle-id",
-        str(bundle),
+        "--mode", "dev-local", "--path", "src/easydesign/cli.py",
+        "--known-bundle-id", str(bundle),
     )
-
     assert second["policy_bundle_id"] == bundle
     assert second["policy_unchanged"] is True
     assert second["required_reading"] == []
 
 
-def test_context_scope_expansion_only_requests_the_new_guide() -> None:
-    ui = _context(
-        "--mode",
-        "dev-local",
-        "--path",
-        "src/easydesign/ui/app.py",
+def test_context_scope_expansion_only_requests_new_guide() -> None:
+    local = _context(
+        "--mode", "dev-local", "--path", "src/easydesign/cli.py"
     )
     expanded = _context(
-        "--mode",
-        "dev-local",
-        "--path",
-        "src/easydesign/ui/app.py",
-        "--path",
-        "src/easydesign/orchestration/workspace.py",
-        "--known-bundle-id",
-        str(ui["policy_bundle_id"]),
+        "--mode", "integration", "--path", "src/easydesign/cli.py",
+        "--path", "src/easydesign/stages/s02_hotspot_discovery/models.py",
+        "--known-bundle-id", str(local["policy_bundle_id"]),
     )
-
     assert expanded["required_reading"] == [
-        "docs/agent/RUNTIME_AND_DATA.md"
-    ]
-    assert expanded["selected_guides"] == [
-        "docs/agent/RUNTIME_AND_DATA.md",
-        "docs/agent/UI_AND_REPORTING.md",
+        "docs/agent/SCIENTIFIC_PIPELINE.md"
     ]
 
 
-def test_task_paths_select_only_relevant_guides() -> None:
+def test_task_paths_select_only_local_guides() -> None:
+    assert dev.selected_guides("dev-local", ["src/easydesign/cli.py"]) == (
+        "docs/agent/LOCAL_CLI_AND_VIEWER.md",
+    )
     assert dev.selected_guides(
-        "dev-local", ["src/easydesign/ui/app.py"]
-    ) == ("docs/agent/UI_AND_REPORTING.md",)
-    assert dev.selected_guides("dev-local", ["easydesign"]) == ()
-    assert dev.selected_guides("integration", ["scripts/local_ui_release.py"]) == (
-        "docs/agent/RELEASE_AND_REMOTE.md",
-    )
-    assert dev.selected_guides("release", ["src/easydesign/ui/app.py"]) == (
-        "docs/agent/RELEASE_AND_REMOTE.md",
-        "docs/agent/UI_AND_REPORTING.md",
-    )
+        "integration", ["src/easydesign/stages/s02_hotspot_discovery/models.py"]
+    ) == ("docs/agent/SCIENTIFIC_PIPELINE.md",)
+    assert dev.selected_guides(
+        "ops", ["src/easydesign/orchestration/runtime_link.py"]
+    ) == ("docs/agent/RUNTIME_AND_DATA.md",)
 
 
-def test_risk_classification_keeps_local_work_local() -> None:
+def test_risk_classification_requires_integration_for_science_and_local_worker() -> None:
     assert dev.minimum_mode(["README.md"]) == "dev-local"
-    assert dev.minimum_mode(["easydesign"]) == "dev-local"
-    assert dev.minimum_mode(["src/easydesign/ui/app.py"]) == "dev-local"
-    assert dev.minimum_mode(["scripts/local_ui_release.py"]) == "integration"
-    assert dev.minimum_mode(["src/easydesign/managed_protocol.py"]) == "integration"
+    assert dev.minimum_mode(["src/easydesign/cli.py"]) == "dev-local"
+    assert dev.minimum_mode(["src/easydesign/orchestration/local_jobs.py"]) == "integration"
     assert dev.minimum_mode(["src/easydesign/core/manifests.py"]) == "integration"
 
 
-def test_development_ui_defaults_to_isolated_port() -> None:
-    arguments = dev.parser().parse_args(["ui"])
+def test_core_sync_report_is_read_only() -> None:
+    parsed = dev.parser().parse_args(["core-sync-report", "--against", "main"])
+    assert parsed.against == "main"
+    assert not hasattr(parsed, "write")
 
-    assert arguments.port == 18770
-    assert dev.main(["ui", "--port", "18769"]) == 2
+
+def test_core_sync_report_includes_dirty_shared_science_paths(
+    monkeypatch: object,
+    capsys: object,
+) -> None:
+    outputs = {
+        ("diff", "--name-status", "main...HEAD"): "M\tsrc/easydesign/core/manifests.py\n",
+        ("diff", "--name-status", "HEAD"): "M\tsrc/easydesign/backends/demo.py\n",
+        ("ls-files", "--others", "--exclude-standard"): (
+            "src/easydesign/stages/new_stage_helper.py\n"
+        ),
+        ("log", "--format=%H%x09%s", "main..HEAD"): "",
+        ("rev-parse", "HEAD"): "abc123\n",
+    }
+
+    def fake_git(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        del check
+        prefix = next(key for key in outputs if arguments[: len(key)] == key)
+        return subprocess.CompletedProcess(
+            ["git", *arguments], 0, stdout=outputs[prefix], stderr=""
+        )
+
+    monkeypatch.setattr(dev, "_git", fake_git)  # type: ignore[attr-defined]
+    parsed = dev.parser().parse_args(["core-sync-report", "--against", "main"])
+    assert parsed.function(parsed) == 0
+    payload = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
+    assert payload["working_tree_included"] is True
+    assert {(row["source"], row["path"]) for row in payload["differences"]} == {
+        ("committed", "src/easydesign/core/manifests.py"),
+        ("working-tree", "src/easydesign/backends/demo.py"),
+        ("working-tree", "src/easydesign/stages/new_stage_helper.py"),
+    }
 
 
-def test_legacy_build_targets_have_an_explicit_release_gate() -> None:
+def test_makefile_has_no_ui_or_remote_release_targets() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-
-    assert "build-ui-staging:" in makefile
     assert "build-wheel-staging:" in makefile
-    assert "release-build:" in makefile
-    assert 'test "$(RELEASE)" = "1"' in makefile
-    assert "dist/easydesign-0.1.0.dev" not in makefile
+    assert "test-web:" in makefile
+    assert "release-build:" not in makefile
+    assert "18769" not in makefile
+    assert "dist/" not in makefile
 
 
 def test_cleanup_report_is_read_only_and_never_grants_deletion(
@@ -141,49 +145,26 @@ def test_cleanup_report_is_read_only_and_never_grants_deletion(
             "protected_paths": ["workspace/projects"],
             "inventory_roots": [
                 {
-                    "path": "runtime/tmp",
-                    "review_policy": "age",
-                    "minimum_age_days": 2,
-                    "budget_bytes": 1,
+                    "path": "runtime/tmp", "review_policy": "age",
+                    "minimum_age_days": 2, "budget_bytes": 1,
                 }
             ],
         }
     }
-
     report = dev.cleanup_report_payload(
-        limit=10,
-        root=tmp_path,
-        policy=policy,
-        now=now,
+        limit=10, root=tmp_path, policy=policy, now=now
     )
-
     assert report["automatic_deletion"] is False
-    assert report["protected_paths"] == [
-        {"path": "workspace/projects", "exists": True}
-    ]
-    root_report = report["roots"][0]
-    assert root_report["over_budget"] is True
-    assert {
-        item["path"]: item["status"]
-        for item in root_report["largest_entries"]
-    } == {
-        "runtime/tmp/old-test": "retention-review",
-        "runtime/tmp/young-test": "retained-young",
-    }
+    assert report["roots"][0]["over_budget"] is True
     after = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*"))
     assert after == before
 
 
-def test_repository_retention_policy_protects_science_and_disables_automation() -> None:
+def test_repository_retention_policy_protects_science_and_apoe() -> None:
     policy = json.loads(
         (ROOT / "config/development-policy.json").read_text(encoding="utf-8")
     )["runtime_retention"]
-
     assert policy["automatic_deletion"] is False
     assert {
-        "examples/apoe-ui-demo",
-        "workspace/projects",
-        "workspace/runs",
-        "runtime/envs",
-        "runtime/models",
+        "examples/apoe-ui-demo", "workspace/projects", "workspace/runs"
     } <= set(policy["protected_paths"])

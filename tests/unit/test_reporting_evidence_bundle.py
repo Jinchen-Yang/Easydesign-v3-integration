@@ -16,7 +16,7 @@ from easydesign.core import (
     StageManifest,
     dump_model,
 )
-from easydesign.reporting import build_ui_evidence_bundle, verify_ui_evidence_bundle
+from easydesign.reporting import build_evidence_bundle, verify_evidence_bundle
 
 NOW = datetime(2026, 7, 27, 8, 0, tzinfo=UTC)
 
@@ -126,8 +126,8 @@ def test_builds_manifest_complete_bundle_without_backend_intermediates(
     source = _fixture_run(tmp_path)
     output = tmp_path / "bundle"
 
-    outcome = build_ui_evidence_bundle(source, output, generated_at=NOW)
-    verified = verify_ui_evidence_bundle(output)
+    outcome = build_evidence_bundle(source, output, generated_at=NOW)
+    verified = verify_evidence_bundle(output)
 
     assert outcome.run_root == (
         output / "evidence-runs" / "target-alpha" / "run-001"
@@ -152,9 +152,9 @@ def test_builds_manifest_complete_bundle_without_backend_intermediates(
 def test_verify_rejects_tampered_bundle_file(tmp_path: Path) -> None:
     source = _fixture_run(tmp_path)
     output = tmp_path / "bundle"
-    outcome = build_ui_evidence_bundle(source, output, generated_at=NOW)
+    outcome = build_evidence_bundle(source, output, generated_at=NOW)
     target = outcome.run_root / "config-snapshot" / "resolved-config.json"
     target.write_text("tampered", encoding="utf-8")
 
     with pytest.raises(ValueError, match="文件大小不一致|SHA-256 不一致"):
-        verify_ui_evidence_bundle(output)
+        verify_evidence_bundle(output)

@@ -73,6 +73,7 @@ def _declare_test_workspace(
         encoding="utf-8",
     )
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(git_config))
+    monkeypatch.setenv("EASYDESIGN_WORKSPACE", str(tmp_path))
 
 
 def _project_and_profile(tmp_path: Path) -> tuple[Path, Path]:
@@ -106,7 +107,7 @@ def test_config_validation_does_not_require_backend_profile(
     assert not (plan.runs_root / "demo").exists()
 
 
-def test_full_doctor_fails_when_declared_workspace_backends_are_not_installed(
+def test_full_doctor_fails_when_linked_backends_are_not_configured(
     tmp_path: Path,
 ) -> None:
     profile = initialize_runtime_profile(
@@ -133,7 +134,7 @@ def test_full_doctor_fails_when_declared_workspace_backends_are_not_installed(
         "tnp",
     }
     assert all(check.status is DiagnosticStatus.FAILED for check in unavailable.values())
-    assert all("已声明" in check.message for check in unavailable.values())
+    assert all("未声明" in check.message for check in unavailable.values())
 
 
 def test_targeted_runtime_probe_checks_only_requested_backends(tmp_path: Path) -> None:
@@ -266,13 +267,13 @@ def test_stage06_continuation_only_requires_boltzgen_backend(tmp_path: Path) -> 
 def test_cli_init_and_config_validate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fasta = tmp_path / "target.fasta"
     fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
-    project = tmp_path / "cli-demo"
+    project = tmp_path / "projects/cli-demo"
 
-    assert main(["init", str(project), "--target", str(fasta)]) == 0
-    assert main(["config", "validate", str(project / "easydesign.yaml")]) == 0
+    assert main(["step", "init", str(project), "--target", str(fasta)]) == 0
+    assert main(["step", "validate", "1", str(project)]) == 0
     output = capsys.readouterr().out
-    assert "项目已创建" in output
-    assert "配置校验通过" in output
+    assert "状态: initialized" in output
+    assert "状态: valid" in output
 
 
 def test_stage03_requires_explicit_config_before_profile_or_workspace(

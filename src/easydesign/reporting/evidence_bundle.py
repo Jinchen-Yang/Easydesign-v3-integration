@@ -1,4 +1,4 @@
-"""Build a compact, manifest-faithful run bundle for read-only UI sharing."""
+"""Build a compact, manifest-faithful run bundle for read-only review."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ _PRUNED_RUNTIME_DIRECTORIES = frozenset({"logs", "runtime", "tasks", "work"})
 
 
 @dataclass(frozen=True)
-class UiEvidenceBundleOutcome:
-    """Result of a compact UI evidence export."""
+class EvidenceBundleOutcome:
+    """Result of a compact read-only evidence export."""
 
     bundle_root: Path
     run_root: Path
@@ -134,13 +134,13 @@ def _verify_manifest_closure(
     return tuple(stages)
 
 
-def build_ui_evidence_bundle(
+def build_evidence_bundle(
     source_run_root: Path,
     output_root: Path,
     *,
     generated_at: datetime | None = None,
-) -> UiEvidenceBundleOutcome:
-    """Export one immutable run for UI review without backend intermediate trees."""
+) -> EvidenceBundleOutcome:
+    """Export one immutable run for review without backend intermediate trees."""
 
     source = source_run_root.expanduser().resolve()
     output = output_root.expanduser().resolve()
@@ -190,7 +190,7 @@ def build_ui_evidence_bundle(
                         "status": str(manifest.status),
                         "project_id": manifest.project_id,
                         "run_id": manifest.run_id,
-                        "notes": ["Repository-shared read-only UI evidence bundle."],
+                        "notes": ["Repository-shared read-only evidence bundle."],
                     }
                 ],
             },
@@ -216,7 +216,7 @@ def build_ui_evidence_bundle(
         )
     bundle_manifest = {
         "schema_version": "0.1",
-        "bundle_type": "easydesign-ui-evidence",
+        "bundle_type": "easydesign-local-evidence",
         "generated_at": generated.isoformat().replace("+00:00", "Z"),
         "project_id": manifest.project_id,
         "run_id": manifest.run_id,
@@ -242,7 +242,7 @@ def build_ui_evidence_bundle(
         json.dumps(bundle_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    return UiEvidenceBundleOutcome(
+    return EvidenceBundleOutcome(
         bundle_root=output,
         run_root=target,
         manifest_path=manifest_path,
@@ -251,14 +251,17 @@ def build_ui_evidence_bundle(
     )
 
 
-def verify_ui_evidence_bundle(bundle_root: Path) -> UiEvidenceBundleOutcome:
+def verify_evidence_bundle(bundle_root: Path) -> EvidenceBundleOutcome:
     """Verify bundle file hashes and the enclosed Run/Stage manifest closure."""
 
     root = bundle_root.expanduser().resolve()
     manifest_path = root / "bundle-manifest.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("bundle_type") != "easydesign-ui-evidence":
-        raise ValueError("不是 EasyDesign UI evidence bundle")
+    if not isinstance(payload, dict) or payload.get("bundle_type") not in {
+        "easydesign-local-evidence",
+        "easydesign-ui-evidence",
+    }:
+        raise ValueError("不是 EasyDesign evidence bundle")
     files = payload.get("files")
     if not isinstance(files, list):
         raise ValueError("Evidence bundle files 字段无效")
@@ -293,7 +296,7 @@ def verify_ui_evidence_bundle(bundle_root: Path) -> UiEvidenceBundleOutcome:
         raise ValueError("Evidence bundle run-index 未声明所含 run")
     if size_bytes != int(payload["size_bytes"]):
         raise ValueError("Evidence bundle 总大小不一致")
-    return UiEvidenceBundleOutcome(
+    return EvidenceBundleOutcome(
         bundle_root=root,
         run_root=run_root,
         manifest_path=manifest_path,
@@ -303,7 +306,7 @@ def verify_ui_evidence_bundle(bundle_root: Path) -> UiEvidenceBundleOutcome:
 
 
 __all__ = [
-    "UiEvidenceBundleOutcome",
-    "build_ui_evidence_bundle",
-    "verify_ui_evidence_bundle",
+    "EvidenceBundleOutcome",
+    "build_evidence_bundle",
+    "verify_evidence_bundle",
 ]

@@ -1,4 +1,4 @@
-"""CLI、未来 UI 与开发脚本共用的应用编排 API。"""
+"""Local CLI、worker 与开发脚本共用的应用编排 API。"""
 
 from __future__ import annotations
 
@@ -35,8 +35,10 @@ from easydesign.core import (
     resolve_code_identity,
     sha256_file,
 )
+from easydesign.runtime_guard import landlock_abi_version
 from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s02_hotspot_discovery import RegionMethod
+from easydesign.workspace_context import WorkspaceContext
 
 from .config import (
     ExecutionMode,
@@ -294,7 +296,14 @@ def validate_run_configuration(
     profile = (
         load_runtime_profile(selected_profile_path).profile
         if selected_profile_path.is_file()
-        else RuntimeProfile(profile_id="workspace-local")
+        else RuntimeProfile(
+            profile_id="workspace-local",
+            runs_root=(
+                runs_root.resolve()
+                if runs_root is not None
+                else WorkspaceContext.discover().runs_root
+            ),
+        )
     )
     if not selected_profile_path.is_file() and (
         profile_path is not None or os.environ.get(PROFILE_ENVIRONMENT_VARIABLE) is not None
@@ -372,6 +381,7 @@ def _protenix_adapter(
             model_root=runtime.model_root,
             cuda_visible_devices=runtime.cuda_visible_devices,
             prediction_timeout_seconds=prediction.prediction_timeout_seconds,
+            extra_environment=runtime.extra_environment,
         )
     return ProtenixV2Adapter(
         executable=runtime.executable,
@@ -383,6 +393,7 @@ def _protenix_adapter(
         ),
         remote_msa_timeout_seconds=provider.timeout_seconds,
         prediction_timeout_seconds=prediction.prediction_timeout_seconds,
+        extra_environment=runtime.extra_environment,
     )
 
 
@@ -407,6 +418,7 @@ def _probe_protenix(
             executable=runtime.executable,
             model_root=runtime.model_root,
             cuda_visible_devices=runtime.cuda_visible_devices,
+            extra_environment=runtime.extra_environment,
         )
     else:
         provider = loaded.msa_execution_plan[0] if loaded.msa_execution_plan else None
@@ -492,6 +504,7 @@ def _complex_protenix_adapter_builder(
             ),
             remote_msa_timeout_seconds=provider.timeout_seconds,
             prediction_timeout_seconds=prediction_timeout_seconds,
+            extra_environment=runtime.extra_environment,
         )
 
     return build
@@ -559,6 +572,23 @@ def diagnose_runtime(
             message=f"EasyDesign {easydesign.__version__}; Python {sys.version.split()[0]}",
         )
     )
+    if loaded_profile.profile.runtime_link_source is not None:
+        try:
+            landlock_abi = landlock_abi_version()
+            sandbox_status = DiagnosticStatus.PASSED
+            sandbox_message = (
+                f"Landlock ABI {landlock_abi}；linked env/model 作为只读输入"
+            )
+        except OSError as error:
+            sandbox_status = DiagnosticStatus.FAILED
+            sandbox_message = str(error)
+        checks.append(
+            DiagnosticCheck(
+                name="linked-runtime-write-sandbox",
+                status=sandbox_status,
+                message=sandbox_message,
+            )
+        )
     selected_runs = (
         _selected_runs_root(
             config_path=loaded.config_path,
@@ -592,23 +622,6 @@ def diagnose_runtime(
         ("tnp", backends.tnp),
     ):
         if runtime is None:
-            portable = loaded_profile.portable_profile
-            binding_names = {
-                "protenix-v2": "protenix_v2",
-                "pymol-pse": "pymol_pse",
-                "scannet-epitope": "scannet_epitope",
-                "boltzgen-validation": "boltzgen",
-                "boltzgen": "boltzgen",
-                "tnp": "tnp",
-            }
-            declared = (
-                portable is not None
-                and getattr(
-                    portable.backend_bindings,
-                    binding_names[name],
-                )
-                is not None
-            )
             checks.append(
                 DiagnosticCheck(
                     name=name,
@@ -617,11 +630,7 @@ def diagnose_runtime(
                         if name in required
                         else DiagnosticStatus.NOT_CONFIGURED
                     ),
-                    message=(
-                        "工作区已声明该 backend，但当前锁版本的环境或必需资产尚未完整可用"
-                        if declared
-                        else "profile 未声明该 backend"
-                    ),
+                    message="linked runtime profile 未声明该 backend",
                 )
             )
             continue
@@ -710,6 +719,7 @@ def execute_pipeline(
     dry_run: bool = False,
     continue_from_run: Path | None = None,
     continue_after_stage: int | None = None,
+    source_base_dir: Path | None = None,
 ) -> PipelineExecution:
     """验证后执行当前已实现阶段，或从已验证上游 run 继续。"""
 
@@ -726,11 +736,13 @@ def execute_pipeline(
         profile_path=profile_path,
         runs_root=runs_root,
         start_stage=start_stage,
+        source_base_dir=source_base_dir,
     )
     report = diagnose_runtime(
         profile_path=context.loaded_profile.path,
         config_path=context.loaded_config.config_path,
         runs_root=context.plan.runs_root,
+        source_base_dir=source_base_dir,
         start_stage=start_stage,
     )
     if not report.ok:

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
+
+from pydantic import BaseModel
 
 from .target_viewer import (
     TargetViewerReportError,
@@ -33,9 +36,29 @@ CSP = (
 class _TargetViewerRequestHandler(SimpleHTTPRequestHandler):
     server_version = "EasyDesignTargetViewer/0.1"
 
-    def __init__(self, *args: object, directory: str, **kwargs: object) -> None:
+    def __init__(
+        self,
+        *args: object,
+        directory: str,
+        stage02_overlay: bytes | None = None,
+        **kwargs: object,
+    ) -> None:
         self._report_root = Path(directory).resolve()
+        self._stage02_overlay = stage02_overlay
         super().__init__(*args, directory=directory, **kwargs)  # type: ignore[arg-type]
+
+    def do_GET(self) -> None:  # noqa: N802
+        if urlsplit(self.path).path == "/stage02-regions.json":
+            if self._stage02_overlay is None:
+                self.send_error(404, "Stage 02 overlay unavailable")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(self._stage02_overlay)))
+            self.end_headers()
+            self.wfile.write(self._stage02_overlay)
+            return
+        super().do_GET()
 
     def translate_path(self, path: str) -> str:
         decoded = unquote(urlsplit(path).path)
@@ -97,6 +120,7 @@ def create_target_viewer_server(
     report_root: Path,
     *,
     port: int = 0,
+    stage02_overlay: BaseModel | None = None,
 ) -> TargetViewerHttpServer:
     """验证报告并创建固定绑定 127.0.0.1 的 HTTP server。"""
 
@@ -104,6 +128,21 @@ def create_target_viewer_server(
         raise TargetViewerReportError(f"HTTP port 必须在 0..65535: {port}")
     root = report_root.resolve()
     verify_target_viewer_report(root)
-    handler = partial(_TargetViewerRequestHandler, directory=str(root))
+    overlay_bytes = (
+        None
+        if stage02_overlay is None
+        else (
+            json.dumps(
+                stage02_overlay.model_dump(mode="json"),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+    )
+    handler = partial(
+        _TargetViewerRequestHandler,
+        directory=str(root),
+        stage02_overlay=overlay_bytes,
+    )
     server = ThreadingHTTPServer((HOST, port), handler)
     return TargetViewerHttpServer(report_root=root, server=server)

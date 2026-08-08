@@ -208,8 +208,8 @@ def execute_on_devices(
     return tuple(sorted(results, key=lambda item: item.input_index))
 
 
-def ui_drain_requested() -> bool:
+def local_drain_requested() -> bool:
     """读取可选调度停止标记；不终止已经启动的 backend。"""
 
-    value = os.environ.get("EASYDESIGN_UI_DRAIN_FILE")
+    value = os.environ.get("EASYDESIGN_LOCAL_DRAIN_FILE")
     return False if value is None else Path(value).is_file()

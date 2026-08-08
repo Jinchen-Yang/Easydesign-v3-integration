@@ -49,7 +49,7 @@ workspace/runs/
 说明：
 
 - `run-index.json` 是项目目录、分类和主展示 run 的可再生索引。
-- `PROJECT.json` 是给人和 UI 使用的项目导航投影；它不属于科学证据。
+- `PROJECT.json` 是给人和本地 CLI 使用的项目导航投影；它不属于科学证据。
 - `PRIMARY` 指向项目首页应展示的 run；没有显式主 run 时可以不存在。
 - `config-snapshot/easydesign.yaml` 和 `resolved-config.json` 是创建 run 时的首个配置。
 - 正常逐阶段延续时，新配置写入 `config-snapshot/revisions/`，`CURRENT` 指向当前解析
@@ -92,7 +92,7 @@ workspace/runs/
 ## 5. 归档与空目录
 
 - 归档是可恢复的目录治理，不改变科学 artifact 或 checksum。
-- 正在运行、持有锁或被远程任务引用的 run 不得移动。
+- 正在运行、持有锁或被活动 local job receipt 引用的 run 不得移动。
 - 归档完成后，若原项目目录只剩可再生导航文件，则清理导航文件和空项目壳。
 - 空目录清理只能针对 `run-index.json` 已声明为归档项目的精确一级目录；禁止递归删除、
   glob 删除或触碰未登记内容。
@@ -108,9 +108,8 @@ workspace/runs/
 
 ## 7. 产品和 Agent 约束
 
-- UI 的“配置下一步”默认调用同一 run 延续；“重新选区/更换上游输入”明确显示为创建
-  新分支。
-- CLI、UI 和脚本只能调用统一 orchestration API，不得各自复制目录。
+- `step run` 默认调用同一 run 延续；重新选区或更换上游输入必须显式建立新项目/run。
+- CLI、worker、Viewer 和脚本只能调用统一 orchestration API，不得各自复制目录逻辑。
 - `workspace/runs/` 不进入 Git；本文件、架构文档、测试和代码共同定义行为。
 - Agent 结束涉及目录或 continuation 的任务前，必须验证：无空 Stage 预创建、旧
   manifest 不变、同 run revision 链完整、分支 lineage 明确、归档可恢复。

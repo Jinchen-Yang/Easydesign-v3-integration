@@ -1,269 +1,114 @@
-# EasyDesign
+# EasyDesign Local
 
-[中文](README.md) · [English](docs/README.en.md)
+[English](docs/README.en.md) · [开发指南](DEVELOPMENT.md) · [数据安全](DATA_SAFETY.md)
 
-EasyDesign 是一个以契约、证据和可恢复执行为核心的蛋白结合分子七阶段设计工作台。
+EasyDesign Local 是面向研究者的 VS Code/终端产品：在一台本地 Linux GPU 机器上，按
+Stage 1–7 逐步运行蛋白结合分子设计，并用只读 Mol* Viewer 检查结构和结合区域。
 
-正式版本以 `pyproject.toml` 和 `easydesign --version` 为准。本仓库仍是 Developer Preview：
-不发布 PyPI，不附加新的
-开源许可证，并保留 `Private :: Do Not Upload` 分类。请先完成知识产权、许可证和数据
-权限审查，再将它用于仓库授权范围之外的环境。
+它不包含完整 Workbench、HTTP API、远程提交、Suzhou2 或 Manager，也不会操作正式 UI
+端口 18769。科学 manifest、artifact、attempt、decision 和 checksum 契约与主产品一致。
 
-## 七阶段工作流
+## 安装
 
-```text
-01 目标结构 → 02 结合区域 → 03 设计方案 → 04 小规模生成
-                                          ↓
-07 最终候选 ← 06 规模化 ← 05 筛选验证
-```
-
-- 第 01–03 步冻结目标、用户设计输入和可执行方案。
-- 第 04→05 步作为连续任务完成小规模生成与筛选。
-- 第 06→07 步作为连续任务完成用户指定规模的放大与最终筛选。
-- 用户始终明确选择“当前机器”或已授权的 Suzhou2 公共算力；二者不是自动 fallback。
-- 科学停止、运行失败和人工确认是不同状态，历史 manifest 和 artifact 不会被回写。
-
-## 五分钟安装 core、CLI 和 UI
-
-前提：Git、[uv](https://docs.astral.sh/uv/)、Python 3.11 或 3.12。推荐 Python 3.11。
+需要 Git、[uv](https://docs.astral.sh/uv/) 和 Python 3.11（也支持 3.12）。
 
 ```bash
-git clone https://github.com/Knitua/Easydesign.git
-cd Easydesign
-
-uv sync --frozen --extra ui
-source .venv/bin/activate
-
-easydesign --version
-```
-
-`uv sync` 会创建 `.venv`，并以 editable 方式安装当前源码。`uv.lock` 固定精确版本、来源
-和平台条件；`--frozen` 禁止安装时重新求解或修改 lock。激活 `.venv` 后，所有产品命令
-都直接以 `easydesign` 开头。
-
-每次新开终端只需：
-
-```bash
-cd Easydesign
-source .venv/bin/activate
-```
-
-开发者安装额外检查工具：
-
-```bash
-uv sync --frozen --extra ui --extra dev
+cd /root/autodl-tmp/Protein_design/easydesign-vscode
+uv sync --frozen --extra dev
 source .venv/bin/activate
 easydesign --version
 ```
 
-不希望激活环境时，可以用 `uv run easydesign ...`；CI 和自动化也采用这种形式。普通用户
-主流程保持 `easydesign ...`。
-
-<details>
-<summary>没有 uv 时的 pip 兼容入口</summary>
+`.venv` 只安装 EasyDesign Local、CLI 和开发工具。五个重型科学后端及模型不复制、不重装，
+而是只读链接已经验证的原 runtime：
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[ui,dev]"
-```
-
-该路径不严格消费 `uv.lock`，因此不能提供与 `uv sync --frozen` 相同的依赖复现保证。
-
-</details>
-
-到这里仅完成 core、CLI 和 UI。界面可以打开并浏览已有证据，但这不代表五个科学后端、
-模型或本机 GPU 已经可运行。
-
-## 安装五个独立科学环境
-
-完整本机七阶段计算需要 Linux、NVIDIA GPU 和可用的 Conda：
-
-```bash
-conda --version
-nvidia-smi
-```
-
-PyMOL、BoltzGen、Protenix-v2、ScanNet 和 TNP 不进入 `.venv`。EasyDesign 按仓库内精确
-Conda lock 分别发布到 `runtime/envs/`，模型和缓存分别进入 `runtime/models/` 与
-`runtime/cache/`；它不会修改 base Conda、shell profile、系统代理或全局 pip 配置。
-
-必须逐个组件安装。每项先查看计划和待授权资产，再启动后台任务；当前组件达到终态后
-才能开始下一项。
-
-### 1. PyMOL/PSE
-
-```bash
-easydesign setup --component pymol-pse --plan
-easydesign setup --component pymol-pse --detach
-easydesign setup --status
-```
-
-### 2. BoltzGen
-
-```bash
-easydesign setup --component boltzgen --plan
-easydesign setup --component boltzgen --detach
-easydesign setup --status
-```
-
-### 3. Protenix-v2
-
-```bash
-easydesign setup --component protenix-v2 --plan
-easydesign setup --component protenix-v2 --detach
-easydesign setup --status
-```
-
-### 4. ScanNet
-
-```bash
-easydesign setup --component scannet-epitope --plan
-easydesign setup --component scannet-epitope --detach
-easydesign setup --status
-```
-
-### 5. TNP
-
-```bash
-easydesign setup --component tnp --plan
-easydesign setup --component tnp --detach
-easydesign setup --status
-```
-
-不要同时启动这些大型安装，也不要使用无 `--component` 的全量 setup：core/UI 已由 uv
-管理，第二个 core Conda 环境没有必要。
-
-### 精确批准资产许可
-
-每次以真实输出为准，不要复制历史资产 ID：
-
-```bash
-easydesign assets status
-easydesign setup --component COMPONENT --plan
-
-easydesign setup --component COMPONENT \
-  --accept-license ASSET_ID_1 \
-  --accept-license ASSET_ID_2 \
-  --detach
-```
-
-`--accept-license` 可以重复，但没有“一次接受所有许可”的命令。未批准资产保持
-`awaiting-approval`，不能被报告为后端可用。
-
-### 等待终态并验收
-
-```bash
-easydesign setup --status
-easydesign setup --status --job-id JOB_ID
-easydesign env status
-easydesign assets status
-```
-
-只有任务 `result.json` 为 `succeeded` 才完成该组件。`incomplete`、`failed` 和
-`interrupted` 都不是成功，也不会触发自动清理。五项全部完成后：
-
-```bash
-easydesign env status
-easydesign assets status
+easydesign runtime link /root/autodl-tmp/Protein_design/easydesign-clean/runtime
+easydesign runtime status
 easydesign doctor --full
 ```
 
-只有 `doctor --full` 成功，才代表完整本机科学工作台已就绪。安装原理、磁盘峰值、镜像、
-缓存和安全恢复见 [环境安装手册](environments/README.md)。
+link 会验证 registry revision、环境 lock/inventory、资产大小和 SHA-256/Git revision，并在
+本仓库写独立 receipt/profile。来源 identity 改变后命令 fail closed，必须重新 link。
 
-平台边界：
+## 初始化项目
 
-- Linux + NVIDIA：完整本机七阶段科学执行。
-- macOS：core、UI、证据浏览与远程客户端能力。
-- Windows：本轮不承诺原生运行，推荐 WSL2。
-- 无本地 GPU：可以连接获授权且已经部署 Manager 的 Suzhou2。
-
-## 可选：配置 Suzhou2 仓库专用 SSH 密钥
-
-只有获得 Suzhou2 权限的用户才需要本节。先读取指纹，再通过管理员或另一可信渠道独立
-核对；不能仅凭首次网络连接自动信任。
+以下六类 Stage 1 输入都进入同一个严格接口：
 
 ```bash
-easydesign remote pair-scan \
-  --host SUZHOU2_HOST \
-  --port 22
+easydesign step init workspace/projects/apoe --uniprot P02649
+easydesign step init workspace/projects/apoe-search --uniprot-query APOE --taxon-id 9606
+easydesign step init workspace/projects/pdb-case --pdb-id 1B68 --chain A
+easydesign step init workspace/projects/pse-case --target inputs/target.pse
+easydesign step init workspace/projects/structure-case --target inputs/target.cif --chain A
+easydesign step init workspace/projects/sequence-case --target inputs/target.fasta
 ```
 
-创建或复用当前仓库专用 Ed25519 密钥：
+也支持经过 manifest/checksum 验证的 `--target-bundle`。项目根目录平铺生成七份 Stage YAML、
+`inputs/`、append-only `config-revisions/` 和 `CONFIG_CURRENT`。
+
+## 逐阶段运行
 
 ```bash
-easydesign remote pair-begin suzhou2 \
-  --controller-id MY_CONTROLLER \
-  --host SUZHOU2_HOST \
-  --port 22 \
-  --user root \
-  --confirm-fingerprint SHA256:VERIFIED_FINGERPRINT
+easydesign step validate 1 workspace/projects/apoe
+easydesign step run 1 workspace/projects/apoe
 ```
 
-密钥位于 `runtime/secrets/ssh/suzhou2/`。完整密钥对会被复用；只剩一半时命令会停止，
-不会覆盖重建。私钥权限保持 `0600`，密钥和 known-host 不进入 Git 或科学配置。
-
-用 OpenSSH 交互输入一次远端密码并幂等安装公钥：
+每个命令都返回结构化状态，并打印下一步的精确命令。完成 Stage 1 后可在另一个 VS Code
+终端启动只读 Viewer：
 
 ```bash
-ssh-copy-id \
-  -i runtime/secrets/ssh/suzhou2/id_ed25519.pub \
-  -o UserKnownHostsFile=runtime/secrets/ssh/suzhou2/known_hosts \
-  -o StrictHostKeyChecking=yes \
-  -o IdentitiesOnly=yes \
-  -p 22 root@SUZHOU2_HOST
+easydesign step view workspace/projects/apoe --run RUN_ID --port 8000
 ```
 
-密码只由 OpenSSH 读取，不进入 EasyDesign 参数、环境变量、浏览器、日志或磁盘。然后确认
-Manager、协议、精确 EasyDesign 版本、连续链和资源状态：
+浏览器访问 `http://127.0.0.1:8000/`。Viewer 不会自动启动、后台常驻、打开浏览器、编辑或
+批准任何科学输入。
+
+Stage 2 默认分别运行 SASA 与 ScanNet，不融合结果：
 
 ```bash
-easydesign remote pair-confirm suzhou2
+easydesign step run 2 workspace/projects/apoe
 ```
 
-逻辑解绑：
+Viewer 可在两种方法间只读切换，A/B/C 固定为红/蓝/黄。自动和手动区域都必须显式批准：
 
 ```bash
-easydesign remote unpair suzhou2 --confirmed
+easydesign step template 2 workspace/projects/apoe --manual
+easydesign step validate 2 workspace/projects/apoe \
+  --config workspace/projects/apoe/02-hotspot-discovery.manual.yaml
+easydesign step approve 2 workspace/projects/apoe \
+  --input workspace/projects/apoe/02-approval.sasa.RUN_ID.yaml
 ```
 
-解绑只追加 registry revision，不删除本地密钥、known-host、远端公钥或历史证据。
-
-## 启动 UI
+Stage 3–7 同样按下一 Stage 顺序运行。Stage 4–7 使用规范科学预算；没有 `--confirm` 时只
+显示候选/任务、GPU、磁盘和 backend 计划，不创建 worker、Stage 或 attempt：
 
 ```bash
-easydesign ui serve \
-  --host 127.0.0.1 \
-  --port 18769
+easydesign step run 6 workspace/projects/apoe --confirm --detach
+easydesign step status workspace/projects/apoe --run RUN_ID
+easydesign step watch workspace/projects/apoe --run RUN_ID
+easydesign step drain workspace/projects/apoe --job JOB_ID
+easydesign step resume workspace/projects/apoe --run RUN_ID --detach
 ```
 
-浏览器打开 `http://127.0.0.1:18769`：
+`Ctrl-C` 只结束当前观察，不杀科学 worker。`drain` 只在 Stage 4/6 安全检查点停止继续调度。
+所有读取/运行命令支持 `--json`，终端提示与 JSON 来自同一个 `StepCommandResult`。
 
-- `doctor --full` 通过：可选择当前机器执行完整科学流程。
-- `pair-confirm` 通过：可主动选择 Suzhou2 公共算力。
-- 只完成 uv core：仅适合浏览证据或前端开发。
+## 数据位置
 
-UI 不用启动门伪装环境就绪；真实任务仍在提交前执行结构化 GPU、磁盘、环境、模型和许可
-preflight。
+- `workspace/projects/`：本产品新建的用户项目和 Stage YAML。
+- `workspace/runs/`：本产品新建的不可变科学 run。
+- `runtime/`：本产品自己的 receipt、日志、cache、tmp、validation 和 quarantine。
+- 原仓库 `runtime/envs/`、`runtime/models/`：只读科学后端与模型。
+- 本地 worker 使用 Linux Landlock 强制共享 runtime 只读；JIT、模型 cache、临时文件和日志
+  只写当前 worktree 的 `runtime/`。
+- `examples/apoe-ui-demo/`：Git 跟踪、只读保留的 APOE 科学证据回归包。
 
-## 当前证据与边界
+本产品拒绝读取或继续原 UI 的 `workspace/projects/` 与 `workspace/runs/`。完整布局见
+[RUN_LAYOUT](docs/RUN_LAYOUT.md)，科学边界见七份 [workflow 文档](docs/workflow/README.md)。
 
-- Stage 01–07 工程链、APOE PSE 区域导入和真实小规模/远程 smoke 均有不可变证据。
-- 当前筛选阈值和 APOE 历史结论不会因 UI 或安装方式变化而改写。
-- 结果用于研究决策支持，不等于实验验证、临床结论、生物安全批准或供应商订单。
-- 外部模型、数据库、权重和服务继续受各自许可证、条款与数据政策约束。
-- 公开许可证、PyPI 和正式多用户安全边界仍待独立决策。
+## 边界
 
-动态进展和完整任务见 [路线图](docs/ROADMAP.md)，科学案例见
-[Case Registry](docs/CASE_REGISTRY.md)。
-
-## 文档索引
-
-- [环境安装与恢复](environments/README.md)
-- [开发、测试与 uv lock](DEVELOPMENT.md)
-- [架构与跨仓同步](docs/ARCHITECTURE.md)
-- [七阶段命令与契约](docs/workflow/README.md)
-- [UI 工作台](docs/UI_WORKBENCH.md)
-- [数据安全](DATA_SAFETY.md)
-- [项目章程](docs/CHARTER.md)
+结果用于研究决策支持，不等于实验验证、临床结论、生物安全批准或供应商订单。外部模型、
+数据库、权重和服务继续受各自许可证、条款与数据政策约束。本分支为私有 Developer
+Preview，不发布 PyPI。

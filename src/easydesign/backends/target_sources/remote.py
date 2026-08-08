@@ -105,7 +105,7 @@ class ScientificHttpClient:
         self.cache_root = (
             cache_root
             if cache_root is not None
-            else WorkspaceContext.discover().remote_cache_root
+            else WorkspaceContext.discover().scientific_http_cache_root
         )
         self.max_attempts = max_attempts
         self._client = client or httpx.Client(

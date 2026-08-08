@@ -16,12 +16,11 @@ from easydesign.backends.executors import (
     GpuResourceSnapshot,
     NvidiaSmiProbe,
     execute_on_devices,
-    ui_drain_requested,
+    local_drain_requested,
 )
 from easydesign.core import (
     ArtifactRef,
     Attempt,
-    BackendContractError,
     ErrorInfo,
     ExecutionStatus,
     ManifestStateError,
@@ -61,8 +60,6 @@ from .execution_targets import (
     LocalCurrentHostTarget,
     gpu_lease_store_for_run,
     local_target_with_runtime_limit,
-    resolve_managed_execution_devices,
-    verify_managed_preallocation,
     wait_for_eligible_gpus,
 )
 from .task_tracking import (
@@ -355,10 +352,6 @@ def execute_stage04(
     journal = TaskEventJournal(events_path)
     probe = NvidiaSmiProbe() if gpu_probe is None else gpu_probe
     lease_store = gpu_lease_store_for_run(root)
-    managed_devices = verify_managed_preallocation(
-        lease_store=lease_store,
-        stage_number=4,
-    )
     inventory_path = runtime_root / "gpu-inventory.json"
 
     def select_devices(
@@ -367,15 +360,6 @@ def execute_stage04(
         require_all: bool,
         frozen_plan: bool,
     ) -> tuple[int, ...]:
-        resolved_managed_devices = resolve_managed_execution_devices(
-            managed_devices=managed_devices,
-            requested_devices=target.allowed_devices,
-            frozen_plan=frozen_plan,
-            stage_number=4,
-        )
-        if resolved_managed_devices is not None:
-            return resolved_managed_devices
-
         def record_wait(value: GpuInventory) -> None:
             atomic_dump_runtime_model(value, inventory_path)
 
@@ -557,36 +541,27 @@ def execute_stage04(
             )
             persist("waiting-resource")
 
-    if managed_devices is None:
-        gpu_inventory = wait_for_eligible_gpus(
-            probe=probe,
-            lease_store=lease_store,
-            target=LocalCurrentHostTarget(
-                allowed_devices=execution_devices,
-                maximum_devices=len(execution_devices),
-            ),
-            max_memory_used_mib=config.executor.max_memory_used_mib,
-            max_utilization_percent=config.executor.max_utilization_percent,
-            timeout_seconds=config.executor.resource_wait_timeout_seconds,
-            poll_seconds=config.executor.resource_poll_seconds,
-            require_all_allowed=True,
-            on_wait=lambda inventory: on_wait(
-                tuple(
-                    item.snapshot for item in inventory.devices if not item.eligible
-                )
-            ),
-        )
-        gpu_snapshots = tuple(
-            item.snapshot
-            for item in gpu_inventory.devices
-            if item.snapshot.device in execution_devices
-        )
-    else:
-        snapshots_by_device = {item.device: item for item in probe.snapshots()}
-        missing = [item for item in execution_devices if item not in snapshots_by_device]
-        if missing:
-            raise BackendContractError(f"managed worker 分配的 GPU 不存在: {missing}")
-        gpu_snapshots = tuple(snapshots_by_device[item] for item in execution_devices)
+    gpu_inventory = wait_for_eligible_gpus(
+        probe=probe,
+        lease_store=lease_store,
+        target=LocalCurrentHostTarget(
+            allowed_devices=execution_devices,
+            maximum_devices=len(execution_devices),
+        ),
+        max_memory_used_mib=config.executor.max_memory_used_mib,
+        max_utilization_percent=config.executor.max_utilization_percent,
+        timeout_seconds=config.executor.resource_wait_timeout_seconds,
+        poll_seconds=config.executor.resource_poll_seconds,
+        require_all_allowed=True,
+        on_wait=lambda inventory: on_wait(
+            tuple(item.snapshot for item in inventory.devices if not item.eligible)
+        ),
+    )
+    gpu_snapshots = tuple(
+        item.snapshot
+        for item in gpu_inventory.devices
+        if item.snapshot.device in execution_devices
+    )
     with lock:
         for task_id, task in tuple(tasks.items()):
             if task.status is TaskStatus.WAITING_RESOURCE:
@@ -666,29 +641,17 @@ def execute_stage04(
         persist("running")
     leases: tuple[GpuLeaseRevision, ...] = ()
     if pending_plans:
-        leases = (
-            ()
-            if managed_devices is not None
-            else lease_store.acquire(
-                execution_devices,
-                owner_id="local-controller",
-                job_id=f"stage04-{upstream.run.run_id}"[:128],
-                run_id=upstream.run.run_id,
-                stage_number=4,
-            )
+        leases = lease_store.acquire(
+            execution_devices,
+            owner_id="local-controller",
+            job_id=f"stage04-{upstream.run.run_id}"[:128],
+            run_id=upstream.run.run_id,
+            stage_number=4,
         )
         append_event(
-            event_type=(
-                "managed-gpu-leases-verified"
-                if managed_devices is not None
-                else "gpu-leases-acquired"
-            ),
-            message=(
-                f"central allocation devices={execution_devices}"
-                if managed_devices is not None
-                else ", ".join(
-                    f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
-                )
+            event_type="gpu-leases-acquired",
+            message=", ".join(
+                f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
             ),
         )
         try:
@@ -696,7 +659,7 @@ def execute_stage04(
                 pending_plans,
                 devices=execution_devices,
                 worker=execute_task,
-                should_stop=ui_drain_requested,
+                should_stop=local_drain_requested,
             )
         finally:
             if leases:

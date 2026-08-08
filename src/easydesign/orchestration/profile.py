@@ -1,30 +1,22 @@
-"""跨平台、显式且不进入 run artifact 的本机 runtime profile。"""
+"""Explicit local-only runtime profile.
+
+The VS Code product never installs scientific environments and never resolves
+remote executors. runtime link writes absolute, read-only backend paths after
+verifying the source runtime registries.
+"""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 import yaml  # type: ignore[import-untyped]
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationError,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from easydesign.core import ConfigurationError, RuntimeProfileRef, sha256_file
-from easydesign.core.artifacts import ID_PATTERN
 from easydesign.workspace_context import WorkspaceContext
-
-from .runtime_setup import (
-    expected_environment_lock_sha256,
-    latest_asset_records,
-    latest_environment_records,
-)
 
 PROFILE_ENVIRONMENT_VARIABLE = "EASYDESIGN_PROFILE"
 DEFAULT_PROFILE_NAME = "profile.yaml"
@@ -37,12 +29,23 @@ class ProtenixV2Runtime(BaseModel):
     model_root: Path
     model_checkpoint: Path
     cuda_visible_devices: str | None = None
+    extra_environment: tuple[tuple[str, str], ...] = ()
 
     @field_validator("executable", "model_root", "model_checkpoint")
     @classmethod
     def require_absolute_path(cls, value: Path) -> Path:
         if not value.is_absolute():
             raise ValueError("Protenix runtime 路径必须是绝对路径")
+        return value
+
+    @field_validator("extra_environment")
+    @classmethod
+    def validate_extra_environment(
+        cls, value: tuple[tuple[str, str], ...]
+    ) -> tuple[tuple[str, str], ...]:
+        keys = [key for key, _ in value]
+        if len(keys) != len(set(keys)) or any(not key or not item for key, item in value):
+            raise ValueError("Protenix extra_environment 必须使用唯一且非空的键值")
         return value
 
 
@@ -114,46 +117,6 @@ class TnpRuntime(BaseModel):
         return value
 
 
-class SshRemoteRuntime(BaseModel):
-    """Deployment-only SSH control plane for running EasyDesign on another host."""
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        str_strip_whitespace=True,
-    )
-
-    host: str = Field(pattern=r"^[A-Za-z0-9.-]+$")
-    user: str = Field(default="root", pattern=r"^[A-Za-z0-9._-]+$")
-    port: int = Field(default=22, ge=1, le=65535)
-    identity_file: Path
-    known_hosts_file: Path = Path("/root/.ssh/known_hosts")
-    ssh_executable: Path = Path("/usr/bin/ssh")
-    rsync_executable: Path = Path("/usr/bin/rsync")
-    remote_work_root: Path
-    remote_runs_root: Path
-    remote_easydesign_executable: Path
-    remote_profile: Path
-    launcher: Literal["systemd-run"] = "systemd-run"
-    connect_timeout_seconds: int = Field(default=15, ge=1, le=120)
-
-    @field_validator(
-        "identity_file",
-        "known_hosts_file",
-        "ssh_executable",
-        "rsync_executable",
-        "remote_work_root",
-        "remote_runs_root",
-        "remote_easydesign_executable",
-        "remote_profile",
-    )
-    @classmethod
-    def require_absolute_path(cls, value: Path) -> Path:
-        if not value.is_absolute():
-            raise ValueError("SSH remote runtime 路径必须是绝对路径")
-        return value
-
-
 class RuntimeBackends(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -166,70 +129,29 @@ class RuntimeBackends(BaseModel):
 
 
 class RuntimeProfile(BaseModel):
-    """只保存机器部署信息；科学参数仍属于 easydesign.yaml。"""
+    """Machine-local backend paths; never part of scientific configuration."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
-    profile_id: str = Field(default="local", pattern=ID_PATTERN)
-    runs_root: Path | None = None
+    schema_version: Literal["0.1"] = "0.1"
+    profile_id: str = Field(default="local-linked", pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    runs_root: Path
+    runtime_link_source: Path | None = None
+    runtime_linked_at: datetime | None = None
     backends: RuntimeBackends = RuntimeBackends()
-    remote_executors: dict[str, SshRemoteRuntime] = Field(default_factory=dict)
 
     @field_validator("runs_root")
     @classmethod
-    def require_absolute_runs_root(cls, value: Path | None) -> Path | None:
-        if value is not None and not value.is_absolute():
+    def require_absolute_runs_root(cls, value: Path) -> Path:
+        if not value.is_absolute():
             raise ValueError("runs_root 必须是绝对路径")
         return value
 
-
-class WorkspaceBackendBinding(BaseModel):
-    """Portable backend identity resolved through workspace registries."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    environment_id: str = Field(pattern=ID_PATTERN)
-    asset_ids: tuple[str, ...] = ()
-
-
-class WorkspaceRuntimeBackends(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    protenix_v2: WorkspaceBackendBinding | None = None
-    pymol_pse: WorkspaceBackendBinding | None = None
-    scannet_epitope: WorkspaceBackendBinding | None = None
-    boltzgen: WorkspaceBackendBinding | None = None
-    tnp: WorkspaceBackendBinding | None = None
-
-
-class WorkspaceRuntimeProfile(BaseModel):
-    """Schema 0.2 stores only workspace-relative roots and stable IDs."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
-
-    schema_version: str = Field(default="0.2", pattern=r"^0\.2$")
-    profile_id: str = Field(default="workspace-local", pattern=ID_PATTERN)
-    runs_root: Path = Path("workspace/runs")
-    projects_root: Path = Path("workspace/projects")
-    backend_bindings: WorkspaceRuntimeBackends = WorkspaceRuntimeBackends()
-    remote_executors: dict[str, SshRemoteRuntime] = Field(default_factory=dict)
-
-    @field_validator("runs_root", "projects_root")
+    @field_validator("runtime_link_source")
     @classmethod
-    def require_workspace_relative(cls, value: Path) -> Path:
-        if value.is_absolute() or ".." in value.parts:
-            raise ValueError("schema 0.2 本地路径必须是工作区内相对路径")
-        return value
-
-    @field_validator("remote_executors")
-    @classmethod
-    def validate_remote_executor_ids(
-        cls,
-        value: dict[str, SshRemoteRuntime],
-    ) -> dict[str, SshRemoteRuntime]:
-        if any(re.fullmatch(ID_PATTERN, executor_id) is None for executor_id in value):
-            raise ValueError("remote executor ID 不符合稳定 ID 规则")
+    def require_absolute_link_source(cls, value: Path | None) -> Path | None:
+        if value is not None and not value.is_absolute():
+            raise ValueError("runtime_link_source 必须是绝对路径")
         return value
 
 
@@ -238,94 +160,43 @@ class LoadedRuntimeProfile:
     path: Path
     profile: RuntimeProfile
     identity: RuntimeProfileRef
-    portable_profile: WorkspaceRuntimeProfile | None = None
-
-
-def default_workspace_backend_bindings() -> WorkspaceRuntimeBackends:
-    """Return the complete repository-local backend dependency declaration."""
-
-    return WorkspaceRuntimeBackends(
-        protenix_v2=WorkspaceBackendBinding(
-            environment_id="protenix-v2",
-            asset_ids=(
-                "protenix-v2-checkpoint",
-                "protenix-ccd-components",
-                "protenix-ccd-rdkit-cache",
-                "protenix-pdb-clusters",
-                "protenix-obsolete-releases",
-            ),
-        ),
-        pymol_pse=WorkspaceBackendBinding(environment_id="pymol-pse"),
-        scannet_epitope=WorkspaceBackendBinding(
-            environment_id="scannet-epitope",
-            asset_ids=("scannet-code-and-epitope-models",),
-        ),
-        boltzgen=WorkspaceBackendBinding(
-            environment_id="boltzgen",
-            asset_ids=(
-                "boltzgen-inference-molecule-dataset",
-                "boltzgen-design-diverse-checkpoint",
-                "boltzgen-design-adherence-checkpoint",
-                "boltzgen-inverse-fold-checkpoint",
-                "boltzgen-folding-checkpoint",
-                "boltzgen-affinity-checkpoint",
-                "boltzgen-source-a3149cf",
-            ),
-        ),
-        tnp=WorkspaceBackendBinding(
-            environment_id="tnp",
-            asset_ids=("tnp-source-29dcac72",),
-        ),
-    )
 
 
 def default_runtime_profile_path() -> Path:
-    """Return the current repository's profile; never use a user-global path."""
-
     return WorkspaceContext.discover().profile_path
 
 
 def resolve_runtime_profile_path(explicit_path: Path | None = None) -> Path:
-    """Resolve an explicit migration path or the repository-local profile."""
+    return (
+        explicit_path.expanduser()
+        if explicit_path is not None
+        else default_runtime_profile_path()
+    )
 
-    if explicit_path is not None:
-        return explicit_path.expanduser()
-    return default_runtime_profile_path()
 
-
-def _profile_payload(profile: BaseModel) -> dict[str, object]:
-    return profile.model_dump(mode="json", exclude_none=True)
+def _latest_profile_path(path: Path) -> Path:
+    revisions = sorted(path.with_name(f"{path.name}.revisions").glob("revision-*.yaml"))
+    return revisions[-1] if revisions else path
 
 
 def initialize_runtime_profile(
     path: Path | None = None,
     *,
-    profile_id: str = "local",
+    profile_id: str = "local-test",
     runs_root: Path | None = None,
 ) -> Path:
-    """Exclusively create a repository-local schema 0.2 profile."""
+    """Create an empty local profile for tests; real users run runtime link."""
 
     destination = resolve_runtime_profile_path(path).resolve()
     context = WorkspaceContext.discover(destination.parent)
-    if runs_root is not None:
-        resolved_runs = runs_root.expanduser().resolve()
-        try:
-            relative_runs = resolved_runs.relative_to(context.root)
-        except ValueError as error:
-            raise ConfigurationError("schema 0.2 runs_root 必须位于当前工作区") from error
-    else:
-        relative_runs = context.declaration.runs_root
-    profile = WorkspaceRuntimeProfile(
-        profile_id=profile_id,
-        runs_root=relative_runs,
-        projects_root=context.declaration.projects_root,
-        backend_bindings=default_workspace_backend_bindings(),
-    )
+    selected_runs = context.runs_root if runs_root is None else runs_root.resolve()
+    context.assert_write_path(selected_runs)
+    model = RuntimeProfile(profile_id=profile_id, runs_root=selected_runs)
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
         with destination.open("x", encoding="utf-8", newline="\n") as handle:
             yaml.safe_dump(
-                _profile_payload(profile),
+                model.model_dump(mode="json", exclude_none=True),
                 handle,
                 allow_unicode=True,
                 sort_keys=False,
@@ -336,246 +207,29 @@ def initialize_runtime_profile(
 
 
 def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
-    selected = resolve_runtime_profile_path(path)
+    selected = _latest_profile_path(resolve_runtime_profile_path(path).resolve())
     try:
-        resolved = selected.resolve(strict=True)
-        raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
-        raise ConfigurationError(
-            f"Runtime profile 无法读取: path={selected}, error={error}"
-        ) from error
-    if not isinstance(raw, dict):
-        raise ConfigurationError("Runtime profile 顶层必须是 mapping")
-    schema_version = raw.get("schema_version")
-    try:
-        portable: WorkspaceRuntimeProfile | None = None
-        if schema_version == "0.2":
-            portable = WorkspaceRuntimeProfile.model_validate(raw)
-            context = WorkspaceContext.discover(resolved.parent)
-            profile = _resolve_workspace_profile(context, portable)
-        else:
-            profile = RuntimeProfile.model_validate(raw)
-    except ValidationError as error:
-        raise ConfigurationError(f"Runtime profile 校验失败: {error}") from error
+        raw = yaml.safe_load(selected.read_text(encoding="utf-8"))
+        profile = RuntimeProfile.model_validate(raw)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError, ValidationError) as error:
+        raise ConfigurationError(f"Runtime profile 无法读取: {selected}: {error}") from error
+    receipt = WorkspaceContext.discover(selected.parent).runtime_root / "state/runtime-link.json"
+    if profile.runtime_link_source is not None and not receipt.is_file():
+        raise ConfigurationError("linked runtime profile 缺少 receipt，拒绝使用")
+    if receipt.is_file():
+        from .runtime_link import verify_runtime_link
+
+        verified = verify_runtime_link(receipt)
+        if (
+            profile.runtime_link_source != verified.source_runtime
+            or profile.runtime_linked_at != verified.linked_at
+        ):
+            raise ConfigurationError("runtime profile 与最新 link receipt identity 不一致")
     return LoadedRuntimeProfile(
-        path=resolved,
+        path=selected,
         profile=profile,
         identity=RuntimeProfileRef(
             profile_id=profile.profile_id,
-            sha256=sha256_file(resolved),
+            sha256=sha256_file(selected),
         ),
-        portable_profile=portable,
-    )
-
-
-def _available_prefix(
-    context: WorkspaceContext,
-    binding: WorkspaceBackendBinding | None,
-) -> Path | None:
-    if binding is None:
-        return None
-    record = latest_environment_records(context).get(binding.environment_id)
-    if (
-        record is None
-        or record.status != "available"
-        or record.lock_sha256
-        != expected_environment_lock_sha256(context, binding.environment_id)
-    ):
-        return None
-    prefix = (context.root / record.relative_prefix).resolve()
-    context.assert_write_path(prefix)
-    return prefix if prefix.is_dir() else None
-
-
-def _available_asset(
-    context: WorkspaceContext,
-    asset_id: str,
-) -> Path | None:
-    record = latest_asset_records(context).get(asset_id)
-    if record is None or record.status != "available":
-        return None
-    path = (context.root / record.relative_path).resolve()
-    context.assert_write_path(path)
-    if not path.exists():
-        return None
-    if record.size_bytes is not None and path.is_file():
-        try:
-            if path.stat().st_size != record.size_bytes:
-                return None
-        except OSError:
-            return None
-    return path
-
-
-def _binding_assets_available(
-    context: WorkspaceContext,
-    binding: WorkspaceBackendBinding | None,
-    *,
-    required_asset_ids: frozenset[str],
-) -> bool:
-    """Require every declared backend asset before exposing an adapter.
-
-    A workspace profile is a portable dependency declaration, not a hint.
-    Exposing a backend after finding only its primary checkpoint would allow
-    doctor and the UI to report a partially installed backend as usable.
-    """
-
-    if binding is None:
-        return False
-    declared = frozenset(binding.asset_ids)
-    # Older schema-0.2 profiles remain immutable evidence when a newer
-    # EasyDesign release adds a mandatory asset.  The current adapter contract
-    # supplies those new requirements without rewriting the existing profile;
-    # explicitly declared extra assets remain mandatory as well.
-    effective_requirements = required_asset_ids | declared
-    return all(
-        _available_asset(context, asset_id) is not None
-        for asset_id in effective_requirements
-    )
-
-
-def _resolve_workspace_profile(
-    context: WorkspaceContext,
-    portable: WorkspaceRuntimeProfile,
-) -> RuntimeProfile:
-    """Resolve IDs to absolute adapter paths at the application boundary."""
-
-    bindings = portable.backend_bindings
-    protenix_prefix = _available_prefix(context, bindings.protenix_v2)
-    checkpoint = _available_asset(context, "protenix-v2-checkpoint")
-    protenix_assets_ready = _binding_assets_available(
-        context,
-        bindings.protenix_v2,
-        required_asset_ids=frozenset(
-            {
-                "protenix-v2-checkpoint",
-                "protenix-ccd-components",
-                "protenix-ccd-rdkit-cache",
-                "protenix-pdb-clusters",
-                "protenix-obsolete-releases",
-            }
-        ),
-    )
-    model_root = context.runtime_root / "models" / "protenix-v2"
-    protenix = (
-        ProtenixV2Runtime(
-            executable=protenix_prefix / "bin" / "protenix",
-            model_root=model_root,
-            model_checkpoint=checkpoint,
-        )
-        if (
-            protenix_prefix is not None
-            and checkpoint is not None
-            and protenix_assets_ready
-        )
-        else None
-    )
-    pymol_prefix = _available_prefix(context, bindings.pymol_pse)
-    pymol = (
-        PyMOLPseRuntime(python=pymol_prefix / "bin" / "python")
-        if pymol_prefix is not None
-        else None
-    )
-    scannet_prefix = _available_prefix(context, bindings.scannet_epitope)
-    scannet_root = _available_asset(context, "scannet-code-and-epitope-models")
-    scannet_assets_ready = _binding_assets_available(
-        context,
-        bindings.scannet_epitope,
-        required_asset_ids=frozenset({"scannet-code-and-epitope-models"}),
-    )
-    scannet = (
-        ScanNetEpitopeRuntime(
-            python=scannet_prefix / "bin" / "python",
-            repository_root=scannet_root,
-            execution_device="cpu",
-        )
-        if (
-            scannet_prefix is not None
-            and scannet_root is not None
-            and scannet_assets_ready
-        )
-        else None
-    )
-    boltzgen_prefix = _available_prefix(context, bindings.boltzgen)
-    boltzgen_root = _available_asset(context, "boltzgen-source-a3149cf")
-    molecule_archive = _available_asset(context, "boltzgen-inference-molecule-dataset")
-    boltzgen_validation_assets_ready = _binding_assets_available(
-        context,
-        bindings.boltzgen,
-        required_asset_ids=frozenset(
-            {
-                "boltzgen-source-a3149cf",
-                "boltzgen-inference-molecule-dataset",
-            }
-        ),
-    )
-    boltzgen_assets_ready = _binding_assets_available(
-        context,
-        bindings.boltzgen,
-        required_asset_ids=frozenset(
-            {
-                "boltzgen-source-a3149cf",
-                "boltzgen-inference-molecule-dataset",
-                "boltzgen-design-diverse-checkpoint",
-                "boltzgen-design-adherence-checkpoint",
-                "boltzgen-inverse-fold-checkpoint",
-                "boltzgen-folding-checkpoint",
-                "boltzgen-affinity-checkpoint",
-            }
-        ),
-    )
-    boltzgen_validation = (
-        BoltzGenRuntime(
-            executable=boltzgen_prefix / "bin" / "boltzgen",
-            repository_root=boltzgen_root,
-            cache_root=(
-                context.runtime_root / "models" / "boltzgen" / "huggingface"
-            ),
-        )
-        if (
-            boltzgen_prefix is not None
-            and boltzgen_root is not None
-            and molecule_archive is not None
-            and boltzgen_validation_assets_ready
-        )
-        else None
-    )
-    boltzgen = (
-        boltzgen_validation
-        if (
-            boltzgen_validation is not None
-            and boltzgen_assets_ready
-        )
-        else None
-    )
-    tnp_prefix = _available_prefix(context, bindings.tnp)
-    tnp_root = _available_asset(context, "tnp-source-29dcac72")
-    tnp_assets_ready = _binding_assets_available(
-        context,
-        bindings.tnp,
-        required_asset_ids=frozenset({"tnp-source-29dcac72"}),
-    )
-    tnp = (
-        TnpRuntime(
-            python=tnp_prefix / "bin" / "python",
-            executable=tnp_root / "bin" / "TNP",
-            repository_root=tnp_root,
-        )
-        if tnp_prefix is not None and tnp_root is not None and tnp_assets_ready
-        else None
-    )
-    runs_root = (context.root / portable.runs_root).resolve()
-    context.assert_write_path(runs_root)
-    return RuntimeProfile(
-        profile_id=portable.profile_id,
-        runs_root=runs_root,
-        backends=RuntimeBackends(
-            protenix_v2=protenix,
-            pymol_pse=pymol,
-            scannet_epitope=scannet,
-            boltzgen_validation=boltzgen_validation,
-            boltzgen=boltzgen,
-            tnp=tnp,
-        ),
-        remote_executors=portable.remote_executors,
     )

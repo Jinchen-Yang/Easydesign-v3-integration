@@ -1,4 +1,4 @@
-"""验证最新 wheel 的资源、Developer Preview 入口和隔离安装。"""
+"""验证 local wheel 的只读资源、console script 和隔离安装。"""
 
 from __future__ import annotations
 
@@ -13,13 +13,10 @@ from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
-DIST = ROOT / "dist"
 PACKAGE_PREFIX = "easydesign/reporting/static/target_viewer"
-UI_PREFIX = "easydesign/ui/static"
 SCAFFOLD_PREFIX = (
     "easydesign/resources/scaffolds/vhh/official_boltzgen_0_3_2"
 )
-PML_SKILL_PREFIX = "easydesign/ui/pml_skill_library"
 EXPECTED_VIEWER = (
     "index.html",
     "easydesign-viewer.js",
@@ -45,14 +42,6 @@ EXPECTED_SCAFFOLDS = (
     "sonelokimab.cif",
     "BOLTZGEN_LICENSE.txt",
 )
-EXPECTED_PML_SKILLS = (
-    "safe-pml/SKILL.md",
-    "chain-coloring/SKILL.md",
-    "interface-analysis/SKILL.md",
-    "ligand-pocket/SKILL.md",
-    "publication-figure/SKILL.md",
-    "structure-alignment/SKILL.md",
-)
 
 
 def project_version() -> str:
@@ -68,7 +57,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--wheel",
         type=Path,
-        help="验证精确 wheel；省略时使用 dist/ 中最后写入的 wheel",
+        help="验证精确 wheel；省略时使用 runtime/builds 中最后写入的 local wheel",
     )
     return parser.parse_args(argv)
 
@@ -82,12 +71,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     else:
         wheels = sorted(
-            DIST.glob("easydesign-*.whl"),
+            (ROOT / "runtime/builds").glob("**/easydesign_local-*.whl"),
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
         if not wheels:
-            print("ERROR: dist/ 中没有 EasyDesign wheel", file=sys.stderr)
+            print("ERROR: runtime/builds 中没有 EasyDesign Local wheel", file=sys.stderr)
             return 1
         wheel = wheels[0]
     try:
@@ -120,41 +109,6 @@ def main(argv: list[str] | None = None) -> int:
                 if archive.read(member) != source.read_bytes():
                     print(
                         f"ERROR: wheel scaffold 资产与源码字节不一致: {relative}",
-                        file=sys.stderr,
-                    )
-                    return 1
-            skill_source = ROOT / "src" / PML_SKILL_PREFIX
-            for relative in EXPECTED_PML_SKILLS:
-                member = f"{PML_SKILL_PREFIX}/{relative}"
-                source = skill_source / relative
-                if archive.read(member) != source.read_bytes():
-                    print(
-                        f"ERROR: wheel PML Skill 与源码字节不一致: {relative}",
-                        file=sys.stderr,
-                    )
-                    return 1
-            ui_source = ROOT / "src" / UI_PREFIX
-            ui_files = tuple(
-                sorted(
-                    path.relative_to(ui_source).as_posix()
-                    for path in ui_source.rglob("*")
-                    if path.is_file()
-                )
-            )
-            if not ui_files or "index.html" not in ui_files:
-                print("ERROR: UI 构建产物缺少 index.html", file=sys.stderr)
-                return 1
-            if not any(item.endswith(".js") for item in ui_files) or not any(
-                item.endswith(".css") for item in ui_files
-            ):
-                print("ERROR: UI 构建产物缺少 JS/CSS", file=sys.stderr)
-                return 1
-            for relative in ui_files:
-                member = f"{UI_PREFIX}/{relative}"
-                source = ui_source / relative
-                if archive.read(member) != source.read_bytes():
-                    print(
-                        f"ERROR: wheel UI 资源与源码字节不一致: {relative}",
                         file=sys.stderr,
                     )
                     return 1
@@ -250,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
                 env=dependency_environment,
             )
             subprocess.run(
-                [str(command), "ui", "--help"],
+                [str(command), "step", "--help"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -261,8 +215,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: wheel 安装或 console-script smoke 失败: {error}", file=sys.stderr)
         return 1
     print(
-        f"wheel assets and console script verified: {wheel.name} "
-        "(Target Viewer、VHH7、PML Skills、Workbench resources)"
+        f"local wheel assets and console script verified: {wheel.name} "
+        "(Target Viewer and VHH7 resources)"
     )
     return 0
 

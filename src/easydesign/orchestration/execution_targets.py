@@ -9,7 +9,6 @@ overwriting earlier evidence.
 from __future__ import annotations
 
 import fcntl
-import json
 import os
 import socket
 import time
@@ -17,16 +16,15 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.backends.executors.local_multi_gpu import GpuResourceSnapshot
 from easydesign.core import (
     BackendContractError,
     ConfigurationError,
-    ManifestStateError,
 )
 from easydesign.core.artifacts import ID_PATTERN
 from easydesign.workspace_context import WorkspaceContext
@@ -53,22 +51,6 @@ class LocalCurrentHostTarget(BaseModel):
         return self
 
 
-class ManagedSshTarget(BaseModel):
-    """Submit to an explicitly paired managed SSH executor."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    type: Literal["managed-ssh"] = "managed-ssh"
-    executor_id: str = Field(pattern=ID_PATTERN)
-
-
-ExecutionTarget = Annotated[
-    LocalCurrentHostTarget | ManagedSshTarget,
-    Field(discriminator="type"),
-]
-EXECUTION_TARGET_ADAPTER: TypeAdapter[ExecutionTarget] = TypeAdapter(ExecutionTarget)
-
-
 def local_target_with_runtime_limit(
     *,
     allowed_devices: tuple[int, ...] | None,
@@ -76,7 +58,7 @@ def local_target_with_runtime_limit(
 ) -> LocalCurrentHostTarget:
     """Resolve a local target with the controller's non-scientific GPU cap.
 
-    The UI launcher passes the cap only to the child process.  It therefore
+    The local CLI passes the cap only to the child process.  It therefore
     does not enter the canonical scientific YAML and cannot change scoring or
     candidate semantics.  Once a Stage plan exists its concrete devices remain
     frozen and take precedence during resume.
@@ -204,7 +186,7 @@ class GpuLeaseStore:
             self.context.assert_write_path(self.root)
         else:
             if not lease_root.is_absolute():
-                raise ValueError("managed lease_root 必须是绝对路径")
+                raise ValueError("lease_root 必须是绝对路径")
             self.root = lease_root.resolve(strict=False) / self.host
 
     @contextmanager
@@ -462,80 +444,6 @@ class GpuLeaseStore:
                 )
         return tuple(updated)
 
-    def active_for_job(
-        self,
-        job_id: str,
-        *,
-        devices: tuple[int, ...] | None = None,
-    ) -> tuple[GpuLeaseRevision, ...]:
-        """Return the current active leases owned by one managed job.
-
-        This is used by a managed worker child to prove that the central queue
-        already reserved its devices.  It never treats an unrelated active
-        lease as reusable.
-        """
-
-        selected = None if devices is None else set(devices)
-        rows: list[GpuLeaseRevision] = []
-        if not self.root.is_dir():
-            return ()
-        for device_root in sorted(self.root.glob("gpu-*")):
-            if not device_root.is_dir():
-                continue
-            try:
-                device = int(device_root.name.removeprefix("gpu-"))
-            except ValueError:
-                continue
-            if selected is not None and device not in selected:
-                continue
-            latest = self.latest(device)
-            if latest is not None and latest.status == "active" and latest.job_id == job_id:
-                rows.append(latest)
-        return tuple(sorted(rows, key=lambda item: item.device))
-
-    def assign_pid(
-        self,
-        leases: tuple[GpuLeaseRevision, ...],
-        *,
-        pid: int,
-        now: datetime | None = None,
-    ) -> tuple[GpuLeaseRevision, ...]:
-        """Bind an admission reservation to the launched worker PID."""
-
-        if pid < 1:
-            raise ConfigurationError("GPU lease worker PID 必须是正整数")
-        timestamp = datetime.now(UTC) if now is None else now
-        updated: list[GpuLeaseRevision] = []
-        with self._locked():
-            for lease in leases:
-                paths = self._revision_paths(lease.device)
-                if not paths:
-                    raise ConfigurationError("GPU lease revision 丢失")
-                latest_path = paths[-1]
-                latest = GpuLeaseRevision.model_validate_json(
-                    latest_path.read_text(encoding="utf-8")
-                )
-                if latest.lease_id != lease.lease_id or latest.status != "active":
-                    raise BackendContractError("GPU lease 已不是当前 active revision")
-                updated.append(
-                    self._append(
-                        previous=latest,
-                        previous_path=latest_path,
-                        status="active",
-                        now=timestamp,
-                        lease_id=latest.lease_id,
-                        device=latest.device,
-                        owner_id=latest.owner_id,
-                        job_id=latest.job_id,
-                        run_id=latest.run_id,
-                        stage_number=latest.stage_number,
-                        task_id=latest.task_id,
-                        pid=pid,
-                        acquired_at=latest.acquired_at,
-                    )
-                )
-        return tuple(updated)
-
     def release(
         self,
         leases: tuple[GpuLeaseRevision, ...],
@@ -576,80 +484,6 @@ class GpuLeaseStore:
                     )
                 )
         return tuple(released)
-
-
-def load_execution_target(path: Path) -> ExecutionTarget:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return EXECUTION_TARGET_ADAPTER.validate_python(payload)
-
-
-def managed_preallocated_devices() -> tuple[str, tuple[int, ...]] | None:
-    """Read the central-worker allocation passed to a fixed child process."""
-
-    job_id = os.environ.get("EASYDESIGN_MANAGED_JOB_ID")
-    raw_devices = os.environ.get("EASYDESIGN_ASSIGNED_GPU_DEVICES")
-    if job_id is None and raw_devices is None:
-        return None
-    if not job_id or not raw_devices:
-        raise ConfigurationError("managed worker GPU allocation 环境不完整")
-    values = tuple(item.strip() for item in raw_devices.split(",") if item.strip())
-    try:
-        devices = tuple(int(item) for item in values)
-    except ValueError as error:
-        raise ConfigurationError("managed worker GPU allocation 不是有效编号") from error
-    if (
-        not devices
-        or any(item < 0 for item in devices)
-        or len(devices) != len(set(devices))
-    ):
-        raise ConfigurationError("managed worker GPU allocation 必须非空、非负且唯一")
-    return job_id, devices
-
-
-def verify_managed_preallocation(
-    *,
-    lease_store: GpuLeaseStore,
-    stage_number: Literal[4, 6],
-) -> tuple[int, ...] | None:
-    allocation = managed_preallocated_devices()
-    if allocation is None:
-        return None
-    job_id, devices = allocation
-    leases = lease_store.active_for_job(job_id, devices=devices)
-    if tuple(item.device for item in leases) != devices:
-        raise BackendContractError("managed worker 中央 GPU lease 与子任务分配不一致")
-    if any(item.stage_number != stage_number for item in leases):
-        raise BackendContractError("managed worker GPU lease 的 Stage identity 不一致")
-    return devices
-
-
-def resolve_managed_execution_devices(
-    *,
-    managed_devices: tuple[int, ...] | None,
-    requested_devices: tuple[int, ...] | None,
-    frozen_plan: bool,
-    stage_number: Literal[4, 6],
-) -> tuple[int, ...] | None:
-    """Resolve physical devices after a central Manager allocation.
-
-    Scientific configuration may name devices for direct execution on the
-    current host.  Those physical indices are not portable to a managed host,
-    so a new managed plan records the Manager allocation instead.  Once a plan
-    exists, however, its recorded devices are immutable and must exactly match
-    the allocation used to resume it.
-    """
-
-    if managed_devices is None:
-        return None
-    if (
-        frozen_plan
-        and requested_devices is not None
-        and requested_devices != managed_devices
-    ):
-        raise ManifestStateError(
-            f"Stage {stage_number:02d} frozen plan 与 managed worker GPU allocation 不一致"
-        )
-    return managed_devices
 
 
 def gpu_lease_store_for_run(run_root: Path) -> GpuLeaseStore:

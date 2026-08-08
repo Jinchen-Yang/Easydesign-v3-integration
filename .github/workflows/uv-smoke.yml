@@ -1,12 +1,12 @@
-name: uv core and UI smoke
+name: uv local product regression
 
 on:
   push:
-    branches: [main]
+    branches: [codex/vscode-local]
   pull_request:
 
 jobs:
-  core-ui:
+  local-smoke:
     strategy:
       fail-fast: false
       matrix:
@@ -19,40 +19,23 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-      - name: Sync the frozen core and UI environment
-        run: uv sync --frozen --extra ui --extra dev
+      - name: Sync the frozen local development environment
+        run: uv sync --frozen --extra dev
       - name: Verify lock and product entry points
         run: |
           uv lock --check
           uv run easydesign --version
           uv run easydesign --help
-          uv run easydesign setup --help
-          uv run easydesign ui serve --help
-      - name: Run focused core and UI tests
+          uv run easydesign runtime --help
+          uv run easydesign step --help
+      - name: Run focused local product tests
         run: |
           uv run python -m pytest \
             tests/unit/core \
             tests/unit/test_workspace_context.py \
-            tests/unit/ui/test_workbench.py \
-            -k "health or stage_one_and_two_structure_pml"
-      - name: Start localhost UI and check health
-        shell: bash
-        run: |
-          mkdir -p runtime/tmp
-          uv run easydesign ui serve --development --host 127.0.0.1 --port 18770 \
-            >runtime/tmp/uv-smoke-ui.log 2>&1 &
-          ui_pid=$!
-          trap 'kill "$ui_pid" 2>/dev/null || true' EXIT
-          for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:18770/api/v1/health \
-              >runtime/tmp/uv-smoke-health.json; then
-              uv run python -c 'import json; p=json.load(open("runtime/tmp/uv-smoke-health.json")); assert p["deployment_mode"] == "development"; assert p["remote_execution_enabled"] is False'
-              exit 0
-            fi
-            sleep 1
-          done
-          cat runtime/tmp/uv-smoke-ui.log
-          exit 1
+            tests/unit/test_cli.py \
+            tests/unit/orchestration/test_runtime_link.py \
+            tests/unit/test_runtime_guard.py
 
   full-python:
     runs-on: ubuntu-latest
@@ -63,7 +46,7 @@ jobs:
           enable-cache: true
           python-version: "3.11"
       - name: Sync the frozen development environment
-        run: uv sync --frozen --extra ui --extra dev
+        run: uv sync --frozen --extra dev
       - name: Run complete Python quality and regression gates
         run: |
           uv lock --check

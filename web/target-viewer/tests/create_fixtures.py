@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import shutil
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -246,6 +247,47 @@ def _create_report(root: Path, *, pse: bool) -> None:
         ),
         root / "report-manifest.json",
     )
+    if not pse:
+        (root / "stage02-test-overlay.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "0.1",
+                    "layers": [
+                        {
+                            "id": layer_id,
+                            "label": label,
+                            "approved": layer_id == "approved",
+                            "regions": [
+                                {
+                                    "id": region_id,
+                                    "color_hex": color,
+                                    "source_region_id": f"{layer_id}-{region_id}",
+                                    "residues": [
+                                        {
+                                            "label_asym_id": label_chain,
+                                            "label_seq_id": offset,
+                                        }
+                                    ],
+                                }
+                                for region_id, color, offset in (
+                                    ("A", "#EF4444", 2),
+                                    ("B", "#3B82F6", 8),
+                                    ("C", "#FACC15", 14),
+                                )
+                            ],
+                        }
+                        for layer_id, label in (
+                            ("sasa", "SASA surface diversity"),
+                            ("scannet", "ScanNet epitope no-MSA"),
+                            ("approved", "Approved hotspots"),
+                        )
+                    ],
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def main() -> int:

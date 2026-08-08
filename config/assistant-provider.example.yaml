@@ -1,9 +1,0 @@
-schema_version: "0.1"
-
-# 仅供 EasyDesign 部署者复制到
-# runtime/secrets/structure-assistant/platform-provider.yaml。
-# 普通使用者不会看到或填写这些字段。只选择一个服务端 provider，禁止静默 fallback。
-provider: deepseek
-model: deepseek-chat
-base_url: https://api.deepseek.com
-api_key: replace-with-your-platform-api-key

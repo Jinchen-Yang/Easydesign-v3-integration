@@ -19,7 +19,7 @@ from easydesign.backends.executors import (
     DeviceResult,
     NvidiaSmiProbe,
     execute_on_devices,
-    ui_drain_requested,
+    local_drain_requested,
 )
 from easydesign.core import (
     ArtifactRef,
@@ -81,8 +81,6 @@ from .execution_targets import (
     LocalCurrentHostTarget,
     gpu_lease_store_for_run,
     local_target_with_runtime_limit,
-    resolve_managed_execution_devices,
-    verify_managed_preallocation,
     wait_for_eligible_gpus,
 )
 from .stage04 import _atomic_text
@@ -651,10 +649,6 @@ def execute_stage06(
     plan_path = artifacts / "scale-plan.json"
     probe = NvidiaSmiProbe() if gpu_probe is None else gpu_probe
     lease_store = gpu_lease_store_for_run(root)
-    managed_devices = verify_managed_preallocation(
-        lease_store=lease_store,
-        stage_number=6,
-    )
     inventory_path = runtime / "gpu-inventory.json"
 
     def select_devices(
@@ -663,15 +657,6 @@ def execute_stage06(
         require_all: bool,
         frozen_plan: bool,
     ) -> tuple[int, ...]:
-        resolved_managed_devices = resolve_managed_execution_devices(
-            managed_devices=managed_devices,
-            requested_devices=target.allowed_devices,
-            frozen_plan=frozen_plan,
-            stage_number=6,
-        )
-        if resolved_managed_devices is not None:
-            return resolved_managed_devices
-
         def record_wait(value: GpuInventory) -> None:
             atomic_dump_runtime_model(value, inventory_path)
 
@@ -757,8 +742,7 @@ def execute_stage06(
             or plan.strategy_authorization != authorization
             or plan.resource_report != resource_ref
             or (
-                managed_devices is None
-                and stage04_config.executor.devices is not None
+                stage04_config.executor.devices is not None
                 and plan.devices != stage04_config.executor.devices
             )
             or plan.preauthorized_candidate_limit
@@ -1019,32 +1003,20 @@ def execute_stage06(
     leases: tuple[GpuLeaseRevision, ...] = ()
     results: tuple[DeviceResult[TaskRecord], ...] = ()
     if pending:
-        leases = (
-            ()
-            if managed_devices is not None
-            else lease_store.acquire(
-                plan.devices,
-                owner_id="local-controller",
-                job_id=f"stage06-{upstream.run.run_id}"[:128],
-                run_id=upstream.run.run_id,
-                stage_number=6,
-            )
+        leases = lease_store.acquire(
+            plan.devices,
+            owner_id="local-controller",
+            job_id=f"stage06-{upstream.run.run_id}"[:128],
+            run_id=upstream.run.run_id,
+            stage_number=6,
         )
         journal.append(
             TaskEvent(
                 sequence=journal.next_sequence,
                 occurred_at=datetime.now(UTC),
-                event_type=(
-                    "managed-gpu-leases-verified"
-                    if managed_devices is not None
-                    else "gpu-leases-acquired"
-                ),
-                message=(
-                    f"central allocation devices={plan.devices}"
-                    if managed_devices is not None
-                    else ", ".join(
-                        f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
-                    )
+                event_type="gpu-leases-acquired",
+                message=", ".join(
+                    f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
                 ),
             )
         )
@@ -1053,7 +1025,7 @@ def execute_stage06(
                 pending,
                 devices=plan.devices,
                 worker=run_shard,
-                should_stop=ui_drain_requested,
+                should_stop=local_drain_requested,
             )
         finally:
             if leases:
@@ -1380,7 +1352,6 @@ def execute_stage06(
         datetime.now(UTC),
         created_at + timedelta(microseconds=1),
     )
-    remote_executor_id = os.environ.get("EASYDESIGN_REMOTE_EXECUTOR_ID")
     proposed_attempt = Attempt(
         attempt_id="attempt-0001",
         status=ExecutionStatus.SUCCEEDED,
@@ -1389,11 +1360,7 @@ def execute_stage06(
         ended_at=proposed_completed_at,
         backend_name="boltzgen",
         backend_version="0.3.2",
-        executor_name=(
-            "local-multi-gpu"
-            if remote_executor_id is None
-            else f"ssh-remote-{remote_executor_id}"
-        ),
+        executor_name="local-multi-gpu",
         log_artifacts=tuple(log_refs),
     )
     attempt = _dump_or_verify_model(

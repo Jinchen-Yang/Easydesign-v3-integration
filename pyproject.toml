@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "easydesign"
-version = "0.1.0.dev48"
-description = "A contract-first, traceable platform for accessible binder design"
+name = "easydesign-local"
+version = "0.1.0.dev1"
+description = "A local, stepwise and traceable binder-design workflow for researchers"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 classifiers = [
@@ -36,10 +36,6 @@ dev = [
   "pytest>=8",
   "ruff>=0.8",
 ]
-ui = [
-  "fastapi>=0.116,<1",
-  "uvicorn>=0.35,<1",
-]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -57,12 +53,6 @@ easydesign = [
   "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.cif",
   "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.txt",
   "resources/filter_profiles/*.yaml",
-  "ui/static/*",
-  "ui/static/assets/*",
-  "ui/vendor/browser_pymol/pyodide/*",
-  "ui/vendor/browser_pymol/pymol-wasm/*",
-  "ui/vendor/browser_pymol/licenses/*",
-  "ui/pml_skill_library/*/SKILL.md",
 ]
 
 [tool.pytest.ini_options]

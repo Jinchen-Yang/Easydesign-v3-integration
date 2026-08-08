@@ -20,9 +20,15 @@ import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from easydesign.core import ConfigurationError, PathPolicyError
+from easydesign.runtime_guard import (
+    LOCAL_WRITE_ROOTS_ENV,
+    READ_ONLY_RUNTIME_ENV,
+    install_python_startup_guard,
+)
 
 WORKSPACE_MARKER = "easydesign-workspace.yaml"
 WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
+
 
 class WorkspaceDeclaration(BaseModel):
     """Tracked declaration of the portable workspace layout."""
@@ -88,28 +94,16 @@ class WorkspaceContext:
         return self.runtime_root / "state" / "registries" / "assets"
 
     @property
-    def ui_job_root(self) -> Path:
-        return self.runtime_root / "state" / "ui" / "jobs"
-
-    @property
-    def remote_job_root(self) -> Path:
-        return self.runtime_root / "state" / "remote-jobs"
-
-    @property
     def gpu_lease_root(self) -> Path:
         return self.runtime_root / "state" / "gpu-leases"
-
-    @property
-    def remote_executor_registry_root(self) -> Path:
-        return self.runtime_root / "state" / "remote-executors"
 
     @property
     def msa_cache_root(self) -> Path:
         return self.runtime_root / "cache" / "msa-v1"
 
     @property
-    def remote_cache_root(self) -> Path:
-        return self.runtime_root / "cache" / "remote-v1"
+    def scientific_http_cache_root(self) -> Path:
+        return self.runtime_root / "cache" / "scientific-http-v1"
 
     def _resolve_declared(self, value: Path) -> Path:
         resolved = (self.root / value).resolve()
@@ -124,16 +118,13 @@ class WorkspaceContext:
 
         directories = (
             self.runtime_root,
-            self.runtime_root / "envs",
-            self.runtime_root / "models",
             self.runtime_root / "cache",
             self.runtime_root / "state",
             self.runtime_root / "logs",
             self.runtime_root / "tmp",
+            self.runtime_root / "validation",
             self.runtime_root / "quarantine",
-            self.runtime_root / "secrets",
             self.runtime_root / "home",
-            self.runtime_root / "migrations",
             self.projects_root,
             self.runs_root,
             self.archives_root,
@@ -182,15 +173,41 @@ class WorkspaceContext:
             "PIP_DISABLE_PIP_VERSION_CHECK": "1",
             "PIP_ROOT_USER_ACTION": "ignore",
             "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
             "XDG_CACHE_HOME": str(cache / "xdg"),
             "XDG_DATA_HOME": str(self.runtime_root / "state" / "xdg-data"),
             "XDG_STATE_HOME": str(self.runtime_root / "state" / "xdg-state"),
+            "HF_HOME": str(cache / "huggingface"),
+            "HUGGINGFACE_HUB_CACHE": str(cache / "huggingface" / "hub"),
+            "TRANSFORMERS_CACHE": str(cache / "huggingface" / "transformers"),
+            "TORCH_HOME": str(cache / "torch"),
+            "TORCH_EXTENSIONS_DIR": str(cache / "torch-extensions"),
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
             "COREPACK_HOME": str(cache / "corepack"),
             "PLAYWRIGHT_BROWSERS_PATH": str(cache / "playwright"),
             "NPM_CONFIG_CACHE": str(cache / "npm"),
             "GIT_CONFIG_GLOBAL": str(git_config),
             WORKSPACE_ENVIRONMENT_VARIABLE: str(self.root),
         }
+        linked_runtime = self._linked_runtime_source()
+        if linked_runtime is not None:
+            startup_root = install_python_startup_guard(self.runtime_root / "state")
+            values.update(
+                {
+                    READ_ONLY_RUNTIME_ENV: str(linked_runtime),
+                    LOCAL_WRITE_ROOTS_ENV: os.pathsep.join(
+                        str(path)
+                        for path in (
+                            self.runtime_root,
+                            self.projects_root,
+                            self.runs_root,
+                            self.archives_root,
+                        )
+                    ),
+                    "PYTHONPATH": str(startup_root),
+                }
+            )
         system_ca = Path("/etc/ssl/certs/ca-certificates.crt")
         if system_ca.is_file():
             values.update(
@@ -209,16 +226,42 @@ class WorkspaceContext:
             "PIP_DISABLE_PIP_VERSION_CHECK",
             "PIP_ROOT_USER_ACTION",
             "PYTHONNOUSERSITE",
+            "PYTHONDONTWRITEBYTECODE",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
             "REQUESTS_CA_BUNDLE",
             "PIP_CERT",
             "SSL_CERT_FILE",
             "NODE_EXTRA_CA_CERTS",
+            READ_ONLY_RUNTIME_ENV,
+            LOCAL_WRITE_ROOTS_ENV,
+            "PYTHONPATH",
         }
         for key, value in values.items():
             if key in non_directory_values:
                 continue
             Path(value).mkdir(parents=True, exist_ok=True)
         return values
+
+    def _linked_runtime_source(self) -> Path | None:
+        candidates = sorted(
+            self.profile_path.with_name(f"{self.profile_path.name}.revisions").glob(
+                "revision-*.yaml"
+            )
+        )
+        selected = candidates[-1] if candidates else self.profile_path
+        if not selected.is_file():
+            return None
+        try:
+            raw = yaml.safe_load(selected.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
+            raise ConfigurationError(f"本机 runtime profile 无法读取: {selected}") from error
+        if not isinstance(raw, dict) or raw.get("runtime_link_source") is None:
+            return None
+        source = Path(str(raw["runtime_link_source"])).resolve(strict=True)
+        if not source.is_dir() or source == self.runtime_root:
+            raise ConfigurationError(f"本机 runtime profile 的只读来源无效: {source}")
+        return source
 
     def _git_config_path(self) -> Path:
         """Create an isolated Git config without changing the user's config."""

@@ -21,6 +21,13 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config" / "development-policy.json"
 AGENTS_PATH = ROOT / "AGENTS.md"
 MODE_ORDER = {"inspect": 0, "dev-local": 1, "integration": 2, "release": 3}
+LOCAL_BRANCH = "codex/vscode-local"
+SHARED_SCIENCE_PATHS = (
+    "src/easydesign/core",
+    "src/easydesign/stages",
+    "src/easydesign/filtering",
+    "src/easydesign/backends",
+)
 
 
 class DeveloperWorkflowError(RuntimeError):
@@ -75,15 +82,8 @@ def selected_guides(mode: str, paths: Sequence[str]) -> tuple[str, ...]:
     for guide in policy["agent_guides"]:
         if any(_matches(path, guide["patterns"]) for path in paths):
             selected.add(guide["path"])
-    if mode == "release":
-        selected.add("docs/agent/RELEASE_AND_REMOTE.md")
     if mode == "ops":
-        selected.update(
-            {
-                "docs/agent/RUNTIME_AND_DATA.md",
-                "docs/agent/RELEASE_AND_REMOTE.md",
-            }
-        )
+        selected.add("docs/agent/RUNTIME_AND_DATA.md")
     return tuple(sorted(selected))
 
 
@@ -123,12 +123,13 @@ def git_topology() -> dict[str, Any]:
     warnings: list[str] = []
     blockers: list[str] = []
     branches = []
+    current_branch = _git("branch", "--show-current").stdout.strip()
     for line in _git(
         "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"
     ).stdout.splitlines():
         name, commit = line.split(maxsplit=1)
         branches.append({"name": name, "commit": commit})
-        if name != "main":
+        if name not in {"main", LOCAL_BRANCH}:
             message = f"历史 branch {name} @ {commit[:12]}"
             (warnings if _is_ancestor(commit) else blockers).append(message)
 
@@ -147,11 +148,17 @@ def git_topology() -> dict[str, Any]:
         if item.get("worktree") == root:
             continue
         commit = str(item.get("HEAD", ""))
-        safe_legacy = bool(item.get("locked")) and bool(commit) and _is_ancestor(commit)
+        is_main_worktree = (
+            current_branch == LOCAL_BRANCH
+            and item.get("branch") == "refs/heads/main"
+        )
+        safe_legacy = is_main_worktree or (
+            bool(item.get("locked")) and bool(commit) and _is_ancestor(commit)
+        )
         message = f"额外 worktree {item.get('worktree')} @ {commit[:12]}"
         (warnings if safe_legacy else blockers).append(message)
     return {
-        "branch": _git("branch", "--show-current").stdout.strip(),
+        "branch": current_branch,
         "head": _git("rev-parse", "HEAD").stdout.strip(),
         "status": _git("status", "--short", "--branch").stdout.splitlines(),
         "branches": branches,
@@ -429,13 +436,25 @@ def _python() -> Path:
     selected = ROOT / ".venv" / "bin" / "python"
     if not selected.is_file():
         raise DeveloperWorkflowError(
-            "缺少 .venv/bin/python；请先运行 uv sync --frozen --extra ui --extra dev"
+            "缺少 .venv/bin/python；请先运行 uv sync --frozen --extra dev"
         )
     return selected
 
 
 def _latest_environment_prefix(environment_id: str) -> Path | None:
-    record_root = ROOT / "runtime" / "state" / "registries" / "environments"
+    receipt = ROOT / "runtime/state/runtime-link.json"
+    source_root: Path | None = None
+    if receipt.is_file():
+        try:
+            payload = json.loads(receipt.read_text(encoding="utf-8"))
+            source_root = Path(payload["source_runtime"])
+        except (OSError, KeyError, TypeError, json.JSONDecodeError):
+            source_root = None
+    record_root = (
+        ROOT / "runtime/state/registries/environments"
+        if source_root is None
+        else source_root / "state/registries/environments"
+    )
     for record_path in sorted(record_root.glob("revision-*.json"), reverse=True):
         try:
             record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -447,7 +466,8 @@ def _latest_environment_prefix(environment_id: str) -> Path | None:
             return None
         relative = record.get("relative_prefix")
         if isinstance(relative, str):
-            return ROOT / relative
+            base = ROOT if source_root is None else source_root.parent
+            return base / relative
         return None
     return None
 
@@ -473,7 +493,12 @@ def resolve_tool(name: str) -> Path:
         if name == "node":
             candidates.append(prefix / "bin" / "node")
         else:
-            candidates.append(prefix / "lib" / "node_modules" / "corepack" / "shims" / name)
+            candidates.extend(
+                (
+                    prefix / "bin" / name,
+                    prefix / "lib" / "node_modules" / "corepack" / "shims" / name,
+                )
+            )
     discovered = shutil.which(name)
     if discovered:
         candidates.append(Path(discovered))
@@ -503,8 +528,8 @@ def _dev_local_commands(paths: Sequence[str]) -> list[list[str]]:
     tests = routed_tests(paths)
     if tests:
         commands.append([python, "-m", "pytest", *tests])
-    if any(path.startswith("web/") for path in paths):
-        commands.append(["make", "build-ui-staging"])
+    if any(path.startswith(("web/target-viewer/", "src/easydesign/reporting/")) for path in paths):
+        commands.append(["make", "test-web"])
     return commands
 
 
@@ -537,16 +562,16 @@ def verify_command(arguments: argparse.Namespace) -> int:
         elif arguments.mode == "integration":
             commands = [["make", "check"], ["make", "test"]]
             if any(
-                path.startswith(("src/easydesign/ui/", "src/easydesign/reporting/", "web/"))
+                path.startswith(("src/easydesign/reporting/", "web/target-viewer/"))
                 for path in paths
             ):
-                commands.append(["make", "test-web-chromium"])
+                commands.append(["make", "test-web"])
         else:
             commands = [
                 ["make", "check"],
                 ["make", "test"],
                 ["make", "test-web"],
-                ["make", "release-build", "RELEASE=1"],
+                ["make", "build-wheel-staging"],
             ]
         for command in commands:
             results.append(_run(command))
@@ -571,24 +596,67 @@ def verify_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def ui_command(arguments: argparse.Namespace) -> int:
-    if arguments.port == 18769:
-        raise DeveloperWorkflowError("18769 保留给正式 release；开发 UI 必须使用其他端口")
-    command = [
-        str(_python()),
-        "-m",
-        "easydesign",
-        "ui",
-        "serve",
-        "--development",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(arguments.port),
-    ]
-    if arguments.open:
-        command.append("--open")
-    os.execv(command[0], command)
+def core_sync_report_command(arguments: argparse.Namespace) -> int:
+    against = arguments.against
+    committed = _git(
+        "diff", "--name-status", f"{against}...HEAD", "--", *SHARED_SCIENCE_PATHS,
+        check=False,
+    )
+    if committed.returncode != 0:
+        raise DeveloperWorkflowError(
+            f"无法比较 shared science paths: {committed.stderr.strip()}"
+        )
+    dirty = _git(
+        "diff", "--name-status", "HEAD", "--", *SHARED_SCIENCE_PATHS,
+        check=False,
+    )
+    if dirty.returncode != 0:
+        raise DeveloperWorkflowError(
+            f"无法读取 shared science 工作树差异: {dirty.stderr.strip()}"
+        )
+    rows_by_path: dict[str, dict[str, str]] = {}
+    for source, output in (("committed", committed.stdout), ("working-tree", dirty.stdout)):
+        for line in output.splitlines():
+            fields = line.split("\t")
+            if len(fields) < 2:
+                continue
+            status, path = fields[0], fields[-1]
+            row = {"status": status, "path": path, "source": source}
+            if len(fields) == 3:
+                row["previous_path"] = fields[1]
+            rows_by_path[path] = row
+    untracked = _git(
+        "ls-files", "--others", "--exclude-standard", "--", *SHARED_SCIENCE_PATHS
+    )
+    for path in untracked.stdout.splitlines():
+        rows_by_path[path] = {
+            "status": "A",
+            "path": path,
+            "source": "working-tree",
+        }
+    rows = [rows_by_path[path] for path in sorted(rows_by_path)]
+    commits = _git(
+        "log",
+        "--format=%H%x09%s",
+        f"{against}..HEAD",
+        "--",
+        *SHARED_SCIENCE_PATHS,
+    ).stdout.splitlines()
+    payload = {
+        "schema_version": "0.1",
+        "against": against,
+        "head": _git("rev-parse", "HEAD").stdout.strip(),
+        "working_tree_included": True,
+        "shared_paths": list(SHARED_SCIENCE_PATHS),
+        "differences": rows,
+        "core_commits": [
+            {"commit": line.split("\t", 1)[0], "subject": line.split("\t", 1)[1]}
+            for line in commits
+            if "\t" in line
+        ],
+        "notice": "只读报告；禁止整体 merge local 分支，只能逐个评审 core: commit。",
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -617,10 +685,12 @@ def parser() -> argparse.ArgumentParser:
     tools.add_argument("name", choices=("python", "uv", "node", "npm", "pnpm"))
     tools.set_defaults(function=lambda args: print(resolve_tool(args.name)) or 0)
 
-    ui = commands.add_parser("ui", help="在非正式端口启动禁用 Manager 的开发 UI")
-    ui.add_argument("--port", type=int, default=18770)
-    ui.add_argument("--open", action="store_true")
-    ui.set_defaults(function=ui_command)
+    sync = commands.add_parser(
+        "core-sync-report",
+        help="只读列出 local 与 UI main 的共享科学路径差异",
+    )
+    sync.add_argument("--against", default="main")
+    sync.set_defaults(function=core_sync_report_command)
     return root
 
 

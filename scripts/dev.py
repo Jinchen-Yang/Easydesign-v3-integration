@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config" / "development-policy.json"
 AGENTS_PATH = ROOT / "AGENTS.md"
 MODE_ORDER = {"inspect": 0, "dev-local": 1, "integration": 2, "release": 3}
-LOCAL_BRANCH = "codex/vscode-local"
+LOCAL_BRANCH = "easydesign-local"
 SHARED_SCIENCE_PATHS = (
     "src/easydesign/core",
     "src/easydesign/stages",

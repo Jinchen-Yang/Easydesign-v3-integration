@@ -3,7 +3,7 @@
 ## 当前产品
 
 - 永久 worktree：`/root/autodl-tmp/Protein_design/easydesign-vscode`。
-- 永久分支：`codex/vscode-local`；禁止整体 merge 到 UI main。
+- 永久分支：`easydesign-local`；禁止整体 merge 到 UI main。
 - 独立 distribution：`easydesign-local 0.1.0.dev1`，import/命令仍为 `easydesign`。
 - 产品入口：`runtime link`、`doctor` 和逐阶段 `step` CLI。
 - 可视化：只读 Target Viewer；不包含 Workbench、HTTP API 或远程提交。

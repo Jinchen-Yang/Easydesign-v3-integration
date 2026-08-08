@@ -150,7 +150,7 @@ def test_worker_loss_becomes_explicit_operational_failure(
         step=4,
         config_path=context.projects_root / "example/config.yaml",
         process_id=999_999_999,
-        branch="codex/vscode-local",
+        branch="easydesign-local",
         log_path=context.runtime_root / "logs/job.log",
         drain_path=context.runtime_root / "state/local-jobs/job.drain",
         created_at=now,
@@ -197,7 +197,7 @@ def test_worker_launch_is_detached_and_uses_only_local_writable_roots(
     )
     monkeypatch.setattr(
         "easydesign.orchestration.local_jobs._branch",
-        lambda _context: "codex/vscode-local",
+        lambda _context: "easydesign-local",
     )
 
     job = controller.launch(
@@ -228,7 +228,7 @@ def test_ctrl_c_detaches_observer_without_stopping_worker(tmp_path: Path) -> Non
         step=4,
         config_path=tmp_path / "config.yaml",
         process_id=777,
-        branch="codex/vscode-local",
+        branch="easydesign-local",
         log_path=tmp_path / "job.log",
         drain_path=tmp_path / "job.drain",
         created_at=now,
@@ -266,7 +266,7 @@ def test_drain_only_writes_a_safe_checkpoint_request(
         project_root=context.projects_root / "drain",
         step=6,
         process_id=None,
-        branch="codex/vscode-local",
+        branch="easydesign-local",
         log_path=context.runtime_root / "logs/drain.log",
         drain_path=context.runtime_root / "state/local-jobs/job-drainrequest01.drain",
         created_at=now,
@@ -315,7 +315,7 @@ def test_resume_infers_only_the_manifest_declared_long_stage(
             return LocalStepJob(
                 job_id="job-resume0000001",
                 status="running",
-                branch="codex/vscode-local",
+                branch="easydesign-local",
                 log_path=root / "runtime/logs/resume.log",
                 drain_path=root / "runtime/state/local-jobs/resume.drain",
                 created_at=now,
@@ -366,7 +366,7 @@ def test_status_prefers_a_newer_manifest_over_a_terminal_worker_receipt(
         run_id="run-1",
         run_root=run_root,
         run_manifest=old_manifest,
-        branch="codex/vscode-local",
+        branch="easydesign-local",
         log_path=root / "runtime/logs/status.log",
         drain_path=root / "runtime/state/local-jobs/status.drain",
         created_at=now,

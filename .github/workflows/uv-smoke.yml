@@ -2,7 +2,7 @@ name: uv local product regression
 
 on:
   push:
-    branches: [codex/vscode-local]
+    branches: [easydesign-local]
   pull_request:
 
 jobs:

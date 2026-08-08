@@ -1,6 +1,6 @@
 # Coding Agent 工作协议（VS Code Local）
 
-本分支是永久本地研究者产品，只在 `codex/vscode-local` 开发。不要整体 merge 回 UI
+本分支是永久本地研究者产品，只在 `easydesign-local` 开发。不要整体 merge 回 UI
 `main`，不要操作 18769、Suzhou2、Manager 或原仓库 runtime/workspace。
 
 ## 1. 安全底线
@@ -69,7 +69,7 @@ UI 恢复开发时只能逐个 cherry-pick 已验证的 `core:` commit；本地�
 ```
 
 验证器根据路径拒绝过低模式。提交前检查 scoped diff、`git diff --check`、APOE tree hash 和
-结构禁区；使用 Conventional Commit。推送只针对 `codex/vscode-local`，不得推送 main。
+结构禁区；使用 Conventional Commit。推送只针对 `easydesign-local`，不得推送 main。
 
 只有产品/科学选择、不可逆操作、权限扩大或重叠修改需要询问；依赖和测试问题先在上述
 边界内诊断解决。

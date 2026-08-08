@@ -35,7 +35,7 @@ Manager、安装中心、正式 UI activation 或供应商下单。
 
 ## 分支治理
 
-本产品永久位于 `codex/vscode-local`，不整体 merge 回 UI `main`。共享的 `core/`、
+本产品永久位于 `easydesign-local`，不整体 merge 回 UI `main`。共享的 `core/`、
 `stages/`、`filtering/` 或科学 backend 修复使用独立 `core:` commit。未来同步只能逐个
 cherry-pick 经评审的 `core:` commit，并在两个产品各跑 integration。
 

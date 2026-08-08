@@ -4,7 +4,7 @@
 
 ## 独立分支
 
-本产品永久位于 `codex/vscode-local` 和独立 worktree，不整体 merge 回 UI `main`。任何命令
+本产品永久位于 `easydesign-local` 和独立 worktree，不整体 merge 回 UI `main`。任何命令
 都不得重启 18769、修改主仓库、访问 Suzhou2/Manager 或发布 UI wheel。
 
 ```bash
@@ -71,4 +71,4 @@ make build-wheel-staging
 共享 env/model 和唯一资产始终受保护。
 
 提交前运行 `git diff --check`，核对 APOE subtree hash 和结构检查；推送只能指向
-`origin/codex/vscode-local`。
+`origin/easydesign-local`。

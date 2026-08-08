@@ -28,3 +28,9 @@ def test_remote_and_ui_surfaces_are_absent() -> None:
         "scripts/local_ui_release.py",
     )
     assert all(not (ROOT / item).exists() for item in forbidden)
+
+
+def test_editable_metadata_is_redirected_out_of_the_source_tree() -> None:
+    setup_config = (ROOT / "setup.cfg").read_text(encoding="utf-8")
+    assert setup_config == "[egg_info]\negg_base = runtime\n"
+    assert not (ROOT / "src/easydesign_local.egg-info").exists()

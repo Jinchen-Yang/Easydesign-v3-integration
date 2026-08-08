@@ -69,7 +69,7 @@ test-web: ensure-venv
 
 build-wheel-staging: ensure-venv
 	@mkdir -p runtime/builds runtime/cache/uv runtime/tmp
-	@uv="$$($(PYTHON) scripts/dev.py tool-path uv)"; \
+	@set -eu; \
 		staging="runtime/builds/local-$$(git rev-parse --short HEAD)-$$(date +%s)"; \
 		source="$$(mktemp -d "$(CURDIR)/runtime/tmp/wheel-source.XXXXXXXX")"; \
 		trap 'rm -rf -- "$$source"' EXIT; \
@@ -77,7 +77,9 @@ build-wheel-staging: ensure-venv
 		cp -a pyproject.toml README.md "$$source/"; \
 		mkdir -p "$$source/src"; \
 		cp -a src/easydesign "$$source/src/"; \
-		$(RUNTIME_ENV) "$$uv" build --wheel --offline --out-dir "$$staging" "$$source"; \
+		$(RUNTIME_ENV) $(PYTHON) -m build --wheel --no-isolation \
+			--outdir "$$staging" "$$source"; \
 		wheel="$$(find "$$staging" -maxdepth 1 -name 'easydesign_local-*.whl' -print -quit)"; \
-		$(RUNTIME_ENV) EASYDESIGN_UV="$$uv" $(PYTHON) scripts/check_built_wheel.py --wheel "$$wheel"; \
+		test -n "$$wheel"; \
+		$(RUNTIME_ENV) $(PYTHON) scripts/check_built_wheel.py --wheel "$$wheel"; \
 		echo "Local wheel staging: $(CURDIR)/$$staging"

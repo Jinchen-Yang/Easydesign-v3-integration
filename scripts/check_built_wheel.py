@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 import tempfile
@@ -115,10 +114,6 @@ def main(argv: list[str] | None = None) -> int:
     except (BadZipFile, KeyError, OSError) as error:
         print(f"ERROR: wheel Target Viewer 资源验证失败: {error}", file=sys.stderr)
         return 1
-    uv = os.environ.get("EASYDESIGN_UV")
-    if not uv or not Path(uv).is_file():
-        print("ERROR: 缺少 EASYDESIGN_UV 精确工具路径", file=sys.stderr)
-        return 1
     try:
         stable_temp = Path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(
@@ -126,11 +121,8 @@ def main(argv: list[str] | None = None) -> int:
             dir=stable_temp,
         ) as temporary:
             environment = Path(temporary) / "venv"
-            # Some relocatable Conda/bundled Python runtimes cannot execute ensurepip
-            # inside a second-level venv.  Use the invoking pip's supported --python
-            # target while keeping the smoke environment isolated from source imports.
             venv.EnvBuilder(
-                with_pip=False,
+                with_pip=True,
                 system_site_packages=True,
                 symlinks=sys.platform != "win32",
             ).create(environment)
@@ -144,40 +136,15 @@ def main(argv: list[str] | None = None) -> int:
                 if sys.platform == "win32"
                 else environment / "bin" / "easydesign"
             )
-            dependency_environment = os.environ.copy()
-            installed_site_packages = subprocess.run(
-                [
-                    str(python),
-                    "-c",
-                    "import sysconfig; print(sysconfig.get_paths()['purelib'])",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            ).stdout.strip()
-            dependency_environment["PYTHONPATH"] = os.pathsep.join(
-                [
-                    installed_site_packages,
-                    *[
-                        item
-                        for item in sys.path
-                        if item
-                        and "site-packages" in item
-                        and Path(item).resolve() != (ROOT / "src").resolve()
-                    ],
-                ]
-            )
             subprocess.run(
                 [
-                    uv,
+                    str(python),
+                    "-m",
                     "pip",
                     "install",
-                    "--python",
-                    str(python),
-                    "--reinstall",
+                    "--force-reinstall",
                     "--no-deps",
-                    "--offline",
+                    "--no-index",
                     str(wheel),
                 ],
                 check=True,
@@ -191,7 +158,6 @@ def main(argv: list[str] | None = None) -> int:
                 capture_output=True,
                 text=True,
                 timeout=30,
-                env=dependency_environment,
             ).stdout.strip()
             if version != expected_version:
                 raise RuntimeError(f"console-script 版本异常: {version}")
@@ -201,7 +167,6 @@ def main(argv: list[str] | None = None) -> int:
                 capture_output=True,
                 text=True,
                 timeout=30,
-                env=dependency_environment,
             )
             subprocess.run(
                 [str(command), "step", "--help"],
@@ -209,7 +174,6 @@ def main(argv: list[str] | None = None) -> int:
                 capture_output=True,
                 text=True,
                 timeout=30,
-                env=dependency_environment,
             )
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"ERROR: wheel 安装或 console-script smoke 失败: {error}", file=sys.stderr)

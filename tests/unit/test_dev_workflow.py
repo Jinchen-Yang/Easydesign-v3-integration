@@ -115,6 +115,9 @@ def test_core_sync_report_includes_dirty_shared_science_paths(
 def test_makefile_has_no_ui_or_remote_release_targets() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "build-wheel-staging:" in makefile
+    assert "@set -eu;" in makefile
+    assert "-m build --wheel --no-isolation" in makefile
+    assert "EASYDESIGN_UV" not in makefile
     assert "test-web:" in makefile
     assert "release-build:" not in makefile
     assert "18769" not in makefile

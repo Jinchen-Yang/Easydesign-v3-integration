@@ -36,6 +36,7 @@ FORBIDDEN_PATHS = (
     "docs/agent/RELEASE_AND_REMOTE.md",
 )
 REQUIRED_LOCAL_FILES = (
+    "setup.cfg",
     "src/easydesign/cli.py",
     "src/easydesign/local_worker.py",
     "src/easydesign/runtime_guard.py",

@@ -50,7 +50,7 @@ from .task_tracking import atomic_dump_runtime_model, load_latest_runtime_model
 
 
 class PredictionInputWriter(Protocol):
-    model_name: str
+    profile_backend_id: str
 
     def write_input(
         self,
@@ -649,10 +649,10 @@ def initialize_sequence_run(
         )
     prediction_config = loaded.config.structure_prediction
     assert prediction_config is not None
-    if input_writer.model_name != prediction_config.backend:
+    if input_writer.profile_backend_id != prediction_config.backend:
         raise ManifestStateError(
             "配置 backend 与输入 writer 不一致: "
-            f"config={prediction_config.backend}, writer={input_writer.model_name}"
+            f"config={prediction_config.backend}, writer={input_writer.profile_backend_id}"
         )
     timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
     selected_run_id = _generated_run_id(timestamp) if run_id is None else run_id

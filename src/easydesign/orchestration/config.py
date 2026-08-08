@@ -313,7 +313,7 @@ ProtenixMsaConfig: TypeAlias = Annotated[
 class StructurePredictionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    backend: str = Field(pattern=ID_PATTERN)
+    backend: Literal["protenix-v2", "openfold3-af3-jax"] = "protenix-v2"
     msa: ProtenixMsaConfig
     template_mode: TemplateMode
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
@@ -325,8 +325,6 @@ class StructurePredictionConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_backend(self) -> Self:
-        if self.backend != "protenix-v2":
-            raise ValueError("当前 sequence 路径只实现 backend=protenix-v2")
         if len(self.seeds) != 1 or self.sample_count != 1:
             raise ValueError("Stage 01 v0.1 必须恰好一个 seed 和一个 sample，避免静默选择预测结构")
         return self
@@ -800,11 +798,11 @@ class Stage05AdvisoryValidationConfig(BaseModel):
 
 
 class ComplexPredictionConfig(BaseModel):
-    """Stage 05/07 full-target Protenix policy; binder MSA stays query-only."""
+    """Stage 05/07 model-explicit policy; binder MSA stays query-only."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    backend: Literal["protenix-v2"] = "protenix-v2"
+    backend: Literal["protenix-v2", "openfold3-af3-jax"] = "protenix-v2"
     target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
     binder_msa: Literal["query-only"] = "query-only"
     template_mode: Literal[TemplateMode.DISABLED] = TemplateMode.DISABLED
@@ -818,6 +816,7 @@ class Stage05Config(BaseModel):
     filter_profile: Literal[
         "nanobody-filter-standard-v1.5",
         "nanobody-filter-standard-v1.6",
+        "nanobody-filter-standard-v1.7",
     ] = "nanobody-filter-standard-v1.6"
     maximum_tier_a_strategies: int = Field(default=3, ge=1, le=3)
     advisory_validation: Stage05AdvisoryValidationConfig | None = None
@@ -837,7 +836,10 @@ class Stage05Config(BaseModel):
             "filter_profile",
             "nanobody-filter-standard-v1.6",
         )
-        if profile == "nanobody-filter-standard-v1.6":
+        if profile in {
+            "nanobody-filter-standard-v1.6",
+            "nanobody-filter-standard-v1.7",
+        }:
             payload.setdefault("advisory_validation", {})
         elif profile == "nanobody-filter-standard-v1.5":
             payload.setdefault("expanded_total_per_strategy", 100)
@@ -846,11 +848,14 @@ class Stage05Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_profile_shape(self) -> Self:
-        if self.filter_profile == "nanobody-filter-standard-v1.6":
+        if self.filter_profile in {
+            "nanobody-filter-standard-v1.6",
+            "nanobody-filter-standard-v1.7",
+        }:
             if self.advisory_validation is None:
-                raise ValueError("v1.6 必须声明 advisory_validation")
+                raise ValueError("v1.6/v1.7 必须声明 advisory_validation")
             if self.expanded_total_per_strategy is not None or self.strategy_selection is not None:
-                raise ValueError("v1.6 不接受旧版 expansion/strategy_selection 字段")
+                raise ValueError("v1.6/v1.7 不接受旧版 expansion/strategy_selection 字段")
         else:
             if self.expanded_total_per_strategy is None or self.strategy_selection is None:
                 raise ValueError("v1.5 必须声明旧版 expansion/strategy_selection 字段")
@@ -963,7 +968,10 @@ class Stage06Config(BaseModel):
 class Stage07Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    final_filter_profile: Literal["nanobody-final-v1.5"] = "nanobody-final-v1.5"
+    final_filter_profile: Literal[
+        "nanobody-final-v1.5",
+        "nanobody-final-v1.6",
+    ] = "nanobody-final-v1.5"
     primary_count: int = Field(default=20, ge=0)
     backup_count: int = Field(default=20, ge=0)
     tnp_required: Literal[True] = True
@@ -1100,9 +1108,38 @@ class EasyDesignRunConfig(BaseModel):
                 > self.stage05.diagnostic_expanded_total_per_strategy
             ):
                 raise ValueError("Stage 05 full_target_refold_top_n 不能超过 expansion 总数")
+        if self.stage05 is not None:
+            stage05_afo = (
+                self.stage05.full_target_prediction.backend
+                == "openfold3-af3-jax"
+            )
+            if stage05_afo != (
+                self.stage05.filter_profile
+                == "nanobody-filter-standard-v1.7"
+            ):
+                raise ValueError(
+                    "Stage 05 OpenFold3 必须与 nanobody-filter-standard-v1.7 配对；"
+                    "Protenix 必须保留 v1.5/v1.6"
+                )
+        if self.stage07 is not None:
+            stage07_afo = (
+                self.stage07.full_target_prediction.backend
+                == "openfold3-af3-jax"
+            )
+            if stage07_afo != (
+                self.stage07.final_filter_profile == "nanobody-final-v1.6"
+            ):
+                raise ValueError(
+                    "Stage 07 OpenFold3 必须与 nanobody-final-v1.6 配对；"
+                    "Protenix 必须保留 v1.5"
+                )
         if (
             self.stage05 is not None
-            and self.stage05.filter_profile == "nanobody-filter-standard-v1.6"
+            and self.stage05.filter_profile
+            in {
+                "nanobody-filter-standard-v1.6",
+                "nanobody-filter-standard-v1.7",
+            }
             and self.stage06 is not None
         ):
             if self.stage06.allocation_policy != "equal-across-promoted-v1":

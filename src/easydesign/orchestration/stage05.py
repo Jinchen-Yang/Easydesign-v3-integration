@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +26,7 @@ from easydesign.backends.structure_prediction import (
     BackendInvocation,
     ComplexStructurePredictionRequest,
     MsaMode,
+    OpenFold3Af3JaxAdapter,
     PredictionParameterProfile,
     ProteinPredictionChain,
     ProtenixV2Adapter,
@@ -55,6 +56,7 @@ from easydesign.filtering import (
     METRIC_DEFINITION_VERSION,
     PROFILE_SOURCE_SHA256,
     PROFILE_SOURCE_SHA256_V1_6,
+    PROFILE_SOURCE_SHA256_V1_7,
     InterfaceMetricValues,
     build_advisory_validation_report,
     compute_full_target_structure_metrics,
@@ -62,7 +64,7 @@ from easydesign.filtering import (
     evaluate_expansion_candidates,
     evaluate_pilot_candidates,
     evaluate_pilot_candidates_v1_6,
-    extract_protenix_complex_confidence,
+    extract_complex_confidence,
     parse_protein_chain,
     promotion_records,
     select_scale_strategy,
@@ -117,7 +119,7 @@ from .workspace import (
 
 ComplexAdapterBuilder = Callable[
     [ResolvedProtenixMsaProviderConfig, int],
-    ProtenixV2Adapter,
+    ProtenixV2Adapter | OpenFold3Af3JaxAdapter,
 ]
 
 
@@ -348,11 +350,13 @@ def _publish_final_execution_evidence(
 
 
 def _profile_bytes(profile_id: str) -> bytes:
-    expected_hash = (
-        PROFILE_SOURCE_SHA256_V1_6
-        if profile_id == "nanobody-filter-standard-v1.6"
-        else PROFILE_SOURCE_SHA256
-    )
+    expected_hash = {
+        "nanobody-filter-standard-v1.5": PROFILE_SOURCE_SHA256,
+        "nanobody-filter-standard-v1.6": PROFILE_SOURCE_SHA256_V1_6,
+        "nanobody-filter-standard-v1.7": PROFILE_SOURCE_SHA256_V1_7,
+    }.get(profile_id)
+    if expected_hash is None:
+        raise ManifestStateError(f"未知 Stage 05 filter profile: {profile_id}")
     source = resources.files("easydesign.resources").joinpath(
         f"filter_profiles/{profile_id}.yaml"
     )
@@ -636,12 +640,12 @@ def _prepare_target_msa(
                         output_dir=output_dir,
                     )
                 )
-                updated = adapter.updated_msa_input_path(input_json, output_dir)
-                payload = json.loads(updated.read_text(encoding="utf-8"))
-                msa_value = payload[0]["sequences"][0]["proteinChain"]["unpairedMsaPath"]
-                source = Path(msa_value).resolve()
+                _, source = adapter.remote_msa_artifacts(
+                    input_json=input_json,
+                    msa_output_dir=output_dir,
+                )
                 if not source.is_file() or not source.is_relative_to(output_dir.resolve()):
-                    raise ManifestStateError("Protenix MSA path 逃逸当前 work 目录")
+                    raise ManifestStateError("结构后端 MSA path 逃逸当前 work 目录")
                 depth, query = _a3m_depth_and_query(source)
                 if query != target_sequence:
                     raise ManifestStateError("target MSA query 与 target sequence 不一致")
@@ -977,7 +981,7 @@ def _predict_selected_candidates(
                 append_event(
                     event_type="task-started",
                     task=current,
-                    message="Started Protenix full-target seed 101.",
+                    message="Started structure-prediction full-target seed 101.",
                     attempt_number=attempt_number,
                     device=device,
                     from_status=TaskStatus.PENDING,
@@ -992,7 +996,7 @@ def _predict_selected_candidates(
                 return_code = completed.returncode
                 product = adapter.collect_products(request, output_dir=output)[0]
                 if product.full_confidence_path is None or product.full_confidence_sha256 is None:
-                    raise ManifestStateError("Stage 05 Protenix 没有 full confidence")
+                    raise ManifestStateError("Stage 05 structure backend 没有 full confidence")
                 structure_ref = _artifact(
                     root,
                     product.structure_path,
@@ -1004,20 +1008,17 @@ def _predict_selected_candidates(
                     root,
                     product.confidence_path,
                     artifact_id=f"{candidate.candidate_id}-full-target-summary",
-                    role="protenix-summary-confidence",
+                    role="structure-summary-confidence",
                     file_format="json",
                 )
                 full_ref = _artifact(
                     root,
                     product.full_confidence_path,
                     artifact_id=f"{candidate.candidate_id}-full-target-confidence",
-                    role="protenix-full-confidence",
+                    role="structure-full-confidence",
                     file_format="json",
                 )
-                confidence = extract_protenix_complex_confidence(
-                    summary_path=product.confidence_path,
-                    full_confidence_path=product.full_confidence_path,
-                )
+                confidence = extract_complex_confidence(product)
                 structure = compute_full_target_structure_metrics(
                     designed_complex=candidate.refolded_structure.verify(root),
                     predicted_complex=product.structure_path,
@@ -1061,6 +1062,45 @@ def _predict_selected_candidates(
                 record = FullTargetPredictionRecord(
                     candidate_id=candidate.candidate_id,
                     strategy_id=candidate.strategy_id,
+                    backend_identity=product.backend_identity,
+                    model_identity=product.model_identity,
+                    confidence_metric_definition_version=(
+                        confidence.metric_definition_version
+                    ),
+                    raw_checkpoint_sha256=(
+                        str(product.native_metrics["raw_checkpoint_sha256"])
+                        if isinstance(
+                            product.native_metrics.get("raw_checkpoint_sha256"), str
+                        )
+                        else None
+                    ),
+                    converted_weight_sha256=(
+                        str(product.native_metrics["converted_weight_sha256"])
+                        if isinstance(
+                            product.native_metrics.get("converted_weight_sha256"), str
+                        )
+                        else None
+                    ),
+                    wheel_sha256=(
+                        str(product.native_metrics["wheel_sha256"])
+                        if isinstance(product.native_metrics.get("wheel_sha256"), str)
+                        else None
+                    ),
+                    runner_commit=(
+                        str(product.native_metrics["runner_commit"])
+                        if isinstance(product.native_metrics.get("runner_commit"), str)
+                        else None
+                    ),
+                    msa_provider=(
+                        str(product.native_metrics["msa_provider"])
+                        if isinstance(product.native_metrics.get("msa_provider"), str)
+                        else "precomputed"
+                    ),
+                    msa_endpoint=(
+                        str(product.native_metrics["msa_endpoint"])
+                        if isinstance(product.native_metrics.get("msa_endpoint"), str)
+                        else None
+                    ),
                     predicted_structure=structure_ref,
                     summary_confidence=summary_ref,
                     full_confidence=full_ref,
@@ -1080,7 +1120,7 @@ def _predict_selected_candidates(
                 )
             except Exception as exception:
                 error = ErrorInfo(
-                    code="protenix-full-target-failed",
+                    code="structure-full-target-failed",
                     message=str(exception)[:4096] or exception.__class__.__name__,
                     retryable=True,
                 )
@@ -1442,7 +1482,11 @@ def _publish_stage05(
         stage_id=StageId.PILOT_FILTERING,
         contract_version=(
             "0.2"
-            if filter_profile == "nanobody-filter-standard-v1.6"
+            if filter_profile
+            in {
+                "nanobody-filter-standard-v1.6",
+                "nanobody-filter-standard-v1.7",
+            }
             else "0.1"
         ),
         status=ExecutionStatus.SUCCEEDED,
@@ -1487,7 +1531,10 @@ def _publish_stage05(
     run_manifest_path = root / "manifests" / f"run-manifest.v{next_run.revision:04d}.json"
     dump_model(next_run, run_manifest_path)
     _atomic_text(run_manifest_path.name + "\n", root / "manifests" / "LATEST")
-    use_v1_6 = filter_profile == "nanobody-filter-standard-v1.6"
+    use_v1_6 = filter_profile in {
+        "nanobody-filter-standard-v1.6",
+        "nanobody-filter-standard-v1.7",
+    }
     bundle_status: str
     if use_v1_6:
         bundle_v1_6 = load_model(bundle_path, Stage05BundleV0_2)
@@ -1550,7 +1597,10 @@ def execute_stage05(
     if config is None or stage04_config is None:
         raise ManifestStateError("run config 缺少 Stage 04/05")
     filter_profile = _stage05_filter_profile(config)
-    use_v1_6 = filter_profile == "nanobody-filter-standard-v1.6"
+    use_v1_6 = filter_profile in {
+        "nanobody-filter-standard-v1.6",
+        "nanobody-filter-standard-v1.7",
+    }
     now = datetime.now(UTC) if executed_at is None else executed_at
     attempt_root = root / str(StageId.PILOT_FILTERING) / "attempt-0001"
     artifacts = attempt_root / "artifacts"
@@ -1591,6 +1641,18 @@ def execute_stage05(
                 candidate_index_sha256=upstream.candidate_index_ref.sha256,
                 maximum_tier_a_strategies=config.maximum_tier_a_strategies,
                 generated_at=now,
+                profile_id=cast(
+                    Literal[
+                        "nanobody-filter-standard-v1.6",
+                        "nanobody-filter-standard-v1.7",
+                    ],
+                    filter_profile,
+                ),
+                profile_sha256=(
+                    PROFILE_SOURCE_SHA256_V1_7
+                    if filter_profile == "nanobody-filter-standard-v1.7"
+                    else PROFILE_SOURCE_SHA256_V1_6
+                ),
             )
         else:
             pilot_report = evaluate_pilot_candidates(
@@ -1833,6 +1895,13 @@ def execute_stage05(
             candidates=scored,
             predictions=prediction_records,
             generated_at=datetime.now(UTC),
+            profile_id=cast(
+                Literal[
+                    "nanobody-filter-standard-v1.6",
+                    "nanobody-filter-standard-v1.7",
+                ],
+                filter_profile,
+            ),
         )
         expansion_report_path = artifacts / "advisory-validation-report.json"
     else:

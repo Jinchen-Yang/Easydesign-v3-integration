@@ -244,6 +244,54 @@ def test_multi_seed_consensus_requires_a_passing_consistent_pair() -> None:
     assert failed.score_final is None
 
 
+def test_openfold3_consensus_requires_three_individually_passing_consistent_seeds() -> None:
+    predictions = tuple(
+        _prediction("candidate-one", seed, score)
+        for seed, score in (
+            (101, 0.82),
+            (202, 0.80),
+            (303, 0.78),
+            (404, 0.76),
+            (505, 0.74),
+        )
+    )
+    pair_101_202 = SeedPairConsistency(
+        first_seed=101,
+        second_seed=202,
+        binder_ca_rmsd_angstrom=1.0,
+        hotspot_contact_jaccard=0.8,
+        passed=True,
+    )
+    insufficient = build_multi_seed_consensus(
+        candidate_id="candidate-one",
+        predictions=predictions,
+        score_deep=0.70,
+        pair_metrics=(pair_101_202,),
+        required_individually_passing_seeds=3,
+    )
+    sufficient = build_multi_seed_consensus(
+        candidate_id="candidate-one",
+        predictions=predictions,
+        score_deep=0.70,
+        pair_metrics=(
+            pair_101_202,
+            SeedPairConsistency(
+                first_seed=202,
+                second_seed=303,
+                binder_ca_rmsd_angstrom=1.2,
+                hotspot_contact_jaccard=0.7,
+                passed=True,
+            ),
+        ),
+        required_individually_passing_seeds=3,
+    )
+
+    assert not insufficient.consensus_pass
+    assert insufficient.required_individually_passing_seeds == 3
+    assert sufficient.consensus_pass
+    assert sufficient.consensus_seed_ids == (101, 202, 303)
+
+
 def test_lazy_greedy_selection_is_quality_first_and_never_fills_past_available() -> None:
     first = build_multi_seed_consensus(
         candidate_id="candidate-one",

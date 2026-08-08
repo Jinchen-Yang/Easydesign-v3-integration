@@ -1,0 +1,59 @@
+profile_id: nanobody-final-v1.6
+source_document:
+  name: NANOBODY_FINAL_V1.6.md
+  version: "1.6"
+  sha256: e086b3daf6e59ad1d7a57a39cf982a49a952aacbb37a30bc9e98f648265aafaa
+metric_definition_version: openfold3-p2-af3-jax-complex-confidence-v1
+population_limits:
+  maximum_deep_candidates: 20000
+  seed101_top_n: 400
+  multi_seed_top_n: 60
+  primary_maximum: 20
+  backup_maximum: 20
+sequence_prefilter:
+  standard_amino_acids_only: true
+  reject_unpaired_new_cysteine: true
+  require_boltzgen_pass_filters: true
+  deduplicate_by: full-binder-sequence
+openfold3:
+  backend: openfold3-af3-jax
+  model: of3-p2-155k
+  target_msa: required
+  binder_msa: query-only
+  template_mode: disabled
+  no_silent_fallback: true
+  first_seed: 101
+  additional_seeds: [202, 303, 404, 505]
+  samples_per_seed: 5
+  representative_selection: highest-ranking-score
+seed101_gates:
+  pairwise_iptm_minimum: 0.60
+  minimum_interface_pae_maximum_angstrom: 10.0
+  binder_pose_rmsd_maximum_angstrom: 3.0
+  target_ca_rmsd_maximum_angstrom: 3.0
+  binder_ptm_minimum: 0.60
+  hotspot_coverage_minimum: 0.40
+  severe_clash_maximum: 0
+  moderate_clash_maximum: 3
+consensus_gates:
+  minimum_interface_pae_maximum_angstrom: 7.0
+  binder_pose_rmsd_maximum_angstrom: 2.5
+  required_individually_passing_seeds: 3
+  pair_binder_ca_rmsd_maximum_angstrom: 3.0
+  pair_hotspot_contact_jaccard_minimum: 0.50
+final_score:
+  median_full_weight: 0.70
+  deep_weight: 0.30
+diversity_selection:
+  final_score_weight: 0.90
+  one_minus_maximum_pairwise_identity_weight: 0.10
+  tie_breakers:
+    - lower-tnp-risk
+    - higher-final-score
+    - higher-median-pairwise-iptm
+    - lexicographically-smaller-candidate-id
+tnp:
+  required_for_nonempty_package: true
+  source_commit: 29dcac72f1380e8538e8870f45a699d3c6156162
+  license: BSD-3-Clause
+  role: required-evidence-not-hard-gate

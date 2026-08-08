@@ -188,7 +188,10 @@ class PilotFilterReportV1_6(BaseModel):
 
     schema_version: Literal["0.2"] = "0.2"
     generated_at: datetime
-    profile_id: Literal["nanobody-filter-standard-v1.6"] = (
+    profile_id: Literal[
+        "nanobody-filter-standard-v1.6",
+        "nanobody-filter-standard-v1.7",
+    ] = (
         "nanobody-filter-standard-v1.6"
     )
     profile_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -272,13 +275,28 @@ class ExpansionCandidateRecord(BaseModel):
 
 
 class FullTargetPredictionRecord(BaseModel):
-    """Stage 05 target+binder Protenix result and structural gate audit."""
+    """Stage 05 model-neutral target+binder result and structural gate audit."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     candidate_id: str = Field(pattern=ID_PATTERN)
     strategy_id: str = Field(pattern=ID_PATTERN)
     seed: Literal[101] = 101
+    samples_per_seed: int = Field(default=1, ge=1)
+    recycles: int = Field(default=10, ge=1)
+    template_mode: Literal["disabled"] = "disabled"
+    parameter_profile: Literal["model-default"] = "model-default"
+    msa_provider: str = "precomputed"
+    msa_endpoint: str | None = None
+    backend_identity: str = "protenix-v2@2.0.0"
+    model_identity: str = "protenix-v2"
+    confidence_metric_definition_version: str = (
+        "protenix-v2-complex-confidence-v1"
+    )
+    raw_checkpoint_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    runner_commit: str | None = None
     predicted_structure: ArtifactRef
     summary_confidence: ArtifactRef
     full_confidence: ArtifactRef
@@ -533,7 +551,10 @@ class AdvisoryValidationReport(BaseModel):
 
     schema_version: Literal["0.2"] = "0.2"
     generated_at: datetime
-    profile_id: Literal["nanobody-filter-standard-v1.6"] = (
+    profile_id: Literal[
+        "nanobody-filter-standard-v1.6",
+        "nanobody-filter-standard-v1.7",
+    ] = (
         "nanobody-filter-standard-v1.6"
     )
     expanded_total_per_strategy: int = Field(ge=1)

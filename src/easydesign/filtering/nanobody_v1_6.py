@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from statistics import median
-from typing import Literal
+from typing import Final, Literal, TypeAlias
 
 from easydesign.core import ManifestStateError
 from easydesign.filtering.nanobody_v1_5 import (
@@ -26,9 +26,18 @@ from easydesign.stages.s05_pilot_filtering.models import (
     StrategyTier,
 )
 
-PROFILE_ID_V1_6 = "nanobody-filter-standard-v1.6"
+PilotProfileId: TypeAlias = Literal[
+    "nanobody-filter-standard-v1.6",
+    "nanobody-filter-standard-v1.7",
+]
+
+PROFILE_ID_V1_6: Final[PilotProfileId] = "nanobody-filter-standard-v1.6"
 PROFILE_SOURCE_SHA256_V1_6 = (
     "7fd2d11eba6fe634095bb8cb1e902f39ca59d837cd601c393e978424a4848cfb"
+)
+PROFILE_ID_V1_7: Final[PilotProfileId] = "nanobody-filter-standard-v1.7"
+PROFILE_SOURCE_SHA256_V1_7 = (
+    "6e440bf6d84ab04cce9ea05a4c21adf4e027db13bf4d90ef2a798362477c1fde"
 )
 
 
@@ -39,6 +48,8 @@ def evaluate_pilot_candidates_v1_6(
     candidate_index_sha256: str,
     maximum_tier_a_strategies: int,
     generated_at: datetime,
+    profile_id: PilotProfileId = PROFILE_ID_V1_6,
+    profile_sha256: str = PROFILE_SOURCE_SHA256_V1_6,
 ) -> PilotFilterReportV1_6:
     """Reuse the frozen v1.5 gates while publishing v1.6 promotion semantics."""
 
@@ -66,7 +77,8 @@ def evaluate_pilot_candidates_v1_6(
     )
     return PilotFilterReportV1_6(
         generated_at=generated_at,
-        profile_sha256=PROFILE_SOURCE_SHA256_V1_6,
+        profile_id=profile_id,
+        profile_sha256=profile_sha256,
         candidate_index_sha256=candidate_index_sha256,
         candidate_records=legacy_report.candidate_records,
         strategy_summaries=legacy_report.strategy_summaries,
@@ -109,6 +121,7 @@ def build_advisory_validation_report(
     candidates: tuple[ExpansionCandidateRecord, ...],
     predictions: tuple[FullTargetPredictionRecord, ...],
     generated_at: datetime,
+    profile_id: PilotProfileId = PROFILE_ID_V1_6,
 ) -> AdvisoryValidationReport:
     """Validate diagnostic completeness without turning a scientific negative into a stop."""
 
@@ -240,6 +253,7 @@ def build_advisory_validation_report(
 
     return AdvisoryValidationReport(
         generated_at=generated_at,
+        profile_id=profile_id,
         expanded_total_per_strategy=expanded_total_per_strategy,
         full_target_refold_top_n=full_target_top_n,
         promoted_strategies=promoted_strategies,

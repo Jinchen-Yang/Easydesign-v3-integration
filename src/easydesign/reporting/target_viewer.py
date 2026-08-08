@@ -237,8 +237,16 @@ def _quality_metrics(
     if isinstance(quality, StructureQualityReport):
         return (
             _metric("plddt", "整体 pLDDT", round(quality.plddt, 3)),
-            _metric("ptm", "pTM", round(quality.ptm, 3)),
-            _metric("gpde", "gPDE", round(quality.gpde, 3)),
+            _metric(
+                "ptm",
+                "pTM",
+                "N/A" if quality.ptm is None else round(quality.ptm, 3),
+            ),
+            _metric(
+                "gpde",
+                "gPDE",
+                "N/A" if quality.gpde is None else round(quality.gpde, 3),
+            ),
             _metric("ranking-score", "Ranking score", round(quality.ranking_score, 3)),
             _metric("has-clash", "结构冲突", quality.has_clash),
             _metric("recycle-count", "Recycle 次数", quality.recycle_count),

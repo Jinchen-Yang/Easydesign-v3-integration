@@ -118,7 +118,25 @@ class FinalPredictionRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     candidate_id: str = Field(pattern=ID_PATTERN)
-    seed: Literal[101, 202, 303]
+    seed: Literal[101, 202, 303, 404, 505]
+    prediction_phase: str = "legacy-multi-seed"
+    sample_index: int = Field(default=0, ge=0)
+    samples_per_seed: int = Field(default=1, ge=1)
+    recycles: int = Field(default=10, ge=1)
+    template_mode: Literal["disabled"] = "disabled"
+    parameter_profile: Literal["model-default"] = "model-default"
+    msa_provider: str = "precomputed"
+    msa_endpoint: str | None = None
+    ranking_score: float = 0.0
+    backend_identity: str = "protenix-v2@2.0.0"
+    model_identity: str = "protenix-v2"
+    confidence_metric_definition_version: str = (
+        "protenix-v2-complex-confidence-v1"
+    )
+    raw_checkpoint_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    runner_commit: str | None = None
     predicted_structure: ArtifactRef
     summary_confidence: ArtifactRef
     full_confidence: ArtifactRef
@@ -153,12 +171,31 @@ class FinalPredictionRecord(BaseModel):
 
 
 class RawFinalPrediction(BaseModel):
-    """A complete Protenix product before population-normalized S_full."""
+    """A complete model-neutral product before population-normalized S_full."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     candidate_id: str = Field(pattern=ID_PATTERN)
-    seed: Literal[101, 202, 303]
+    seed: Literal[101, 202, 303, 404, 505]
+    prediction_phase: str = "legacy-multi-seed"
+    sample_index: int = Field(default=0, ge=0)
+    samples_per_seed: int = Field(default=1, ge=1)
+    recycles: int = Field(default=10, ge=1)
+    template_mode: Literal["disabled"] = "disabled"
+    parameter_profile: Literal["model-default"] = "model-default"
+    msa_provider: str = "precomputed"
+    msa_endpoint: str | None = None
+    ranking_score: float = 0.0
+    is_seed_representative: bool = True
+    backend_identity: str = "protenix-v2@2.0.0"
+    model_identity: str = "protenix-v2"
+    confidence_metric_definition_version: str = (
+        "protenix-v2-complex-confidence-v1"
+    )
+    raw_checkpoint_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    runner_commit: str | None = None
     predicted_structure: ArtifactRef
     summary_confidence: ArtifactRef
     full_confidence: ArtifactRef
@@ -195,8 +232,8 @@ class RawFinalPrediction(BaseModel):
 class SeedPairConsistency(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    first_seed: Literal[101, 202, 303]
-    second_seed: Literal[101, 202, 303]
+    first_seed: Literal[101, 202, 303, 404, 505]
+    second_seed: Literal[101, 202, 303, 404, 505]
     binder_ca_rmsd_angstrom: float = Field(ge=0)
     hotspot_contact_jaccard: float = Field(ge=0, le=1)
     passed: bool
@@ -215,10 +252,11 @@ class MultiSeedConsensusRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     candidate_id: str = Field(pattern=ID_PATTERN)
-    available_seeds: tuple[Literal[101, 202, 303], ...]
-    individually_passing_seeds: tuple[Literal[101, 202, 303], ...]
+    available_seeds: tuple[Literal[101, 202, 303, 404, 505], ...]
+    individually_passing_seeds: tuple[Literal[101, 202, 303, 404, 505], ...]
     consistent_seed_pairs: tuple[SeedPairConsistency, ...]
-    consensus_seed_ids: tuple[Literal[101, 202, 303], ...]
+    consensus_seed_ids: tuple[Literal[101, 202, 303, 404, 505], ...]
+    required_individually_passing_seeds: int = Field(default=2, ge=2, le=5)
     consensus_pass: bool
     score_final: float | None = Field(default=None, ge=0, le=1)
     median_score_full: float | None = Field(default=None, ge=0, le=1)
@@ -234,9 +272,14 @@ class MultiSeedConsensusRecord(BaseModel):
         ):
             if tuple(sorted(set(values))) != values:
                 raise ValueError("multi-seed identity 必须升序唯一")
-        expected_pass = len(self.consensus_seed_ids) >= 2
+        expected_pass = (
+            len(self.individually_passing_seeds)
+            >= self.required_individually_passing_seeds
+            and len(self.consensus_seed_ids)
+            >= self.required_individually_passing_seeds
+        )
         if self.consensus_pass != expected_pass:
-            raise ValueError("consensus pass 必须等于至少两个一致 seed")
+            raise ValueError("consensus pass 与所需独立通过且一致的 seed 数不一致")
         if expected_pass:
             if (
                 self.score_final is None
@@ -313,7 +356,7 @@ class TnpReport(BaseModel):
 
 
 class Stage07PredictionState(BaseModel):
-    """Atomic resume state for seed-101 and additional-seed Protenix tasks."""
+    """Atomic resume state for one model-neutral prediction phase."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -324,6 +367,7 @@ class Stage07PredictionState(BaseModel):
     planned_prediction_keys: tuple[str, ...]
     tasks: tuple[TaskRecord, ...]
     predictions: tuple[RawFinalPrediction, ...] = ()
+    sample_predictions: tuple[RawFinalPrediction, ...] = ()
     seed101_normalization: dict[str, tuple[float, ...]] = Field(default_factory=dict)
     progress: ProgressSnapshot
 
@@ -341,6 +385,20 @@ class Stage07PredictionState(BaseModel):
             raise ValueError("Stage 07 prediction identity 不能重复")
         if not set(prediction_keys).issubset(self.planned_prediction_keys):
             raise ValueError("Stage 07 prediction 不在任务计划")
+        sample_keys = tuple(
+            sorted(
+                f"{item.candidate_id}-seed-{item.seed}-sample-{item.sample_index}"
+                for item in self.sample_predictions
+            )
+        )
+        if len(sample_keys) != len(set(sample_keys)):
+            raise ValueError("Stage 07 sample prediction identity 不能重复")
+        representative_keys = {
+            f"{item.candidate_id}-seed-{item.seed}-sample-{item.sample_index}"
+            for item in self.predictions
+        }
+        if not representative_keys.issubset(set(sample_keys)) and self.sample_predictions:
+            raise ValueError("Stage 07 seed representative 必须来自完整 sample evidence")
         return self
 
 
@@ -403,12 +461,16 @@ class FinalFilterReport(BaseModel):
 
     schema_version: Literal["0.1"] = "0.1"
     generated_at: datetime
-    profile_id: Literal["nanobody-final-v1.5"] = "nanobody-final-v1.5"
+    profile_id: Literal[
+        "nanobody-final-v1.5",
+        "nanobody-final-v1.6",
+    ] = "nanobody-final-v1.5"
     profile_sha256: str = Field(pattern=SHA256_PATTERN)
     scale_candidate_index_sha256: str = Field(pattern=SHA256_PATTERN)
     sequence_prefilter: tuple[SequencePrefilterRecord, ...] = Field(min_length=1)
     deep_filter: tuple[DeepFilterRecord, ...]
     predictions: tuple[FinalPredictionRecord, ...]
+    sample_predictions: tuple[RawFinalPrediction, ...] = ()
     consensus: tuple[MultiSeedConsensusRecord, ...]
     selections: tuple[FinalSelectionRecord, ...]
     status: Literal["candidates-selected", "stopped-no-final-candidate"]

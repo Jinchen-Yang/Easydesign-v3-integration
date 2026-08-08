@@ -38,6 +38,10 @@ from .structure_metrics import InterfaceMetricValues
 
 FINAL_PROFILE_ID = "nanobody-final-v1.5"
 FINAL_PROFILE_SOURCE_SHA256 = "c28c82d30420c49d5f55dc2c055c6ee2520e3a7f9ed021c3efcba7681a5be905"
+FINAL_PROFILE_ID_V1_6 = "nanobody-final-v1.6"
+FINAL_PROFILE_SOURCE_SHA256_V1_6 = (
+    "e086b3daf6e59ad1d7a57a39cf982a49a952aacbb37a30bc9e98f648265aafaa"
+)
 FINAL_METRIC_DEFINITION_VERSION = "nanobody-final-v1.5"
 MAXIMUM_DEEP_CANDIDATES = 20_000
 SEED101_TOP_N = 400
@@ -66,6 +70,9 @@ class FullPredictionEvidence:
     target_ca_rmsd_angstrom: float
     contacted_hotspot_residue_ids: tuple[int, ...]
     interface: InterfaceMetricValues
+    confidence_metric_definition_version: str = (
+        "protenix-v2-complex-confidence-v1"
+    )
 
 
 def _required_number(candidate: CandidateRecord, name: str) -> float:
@@ -118,13 +125,15 @@ def _metric(
     *,
     source: str,
     unit: str | None = None,
+    definition_version: str | None = None,
 ) -> FilterMetric:
     return FilterMetric(
         metric_id=metric_id,
         value=value,
         source=source,  # type: ignore[arg-type]
         unit=unit,
-        definition_version=(
+        definition_version=definition_version
+        or (
             "protenix-v2-complex-confidence-v1"
             if source == "derived"
             else ("interface-geometry-v1" if source == "easydesign-structure" else "boltzgen-0.3.2")
@@ -535,14 +544,25 @@ def final_prediction_metrics(
 ) -> tuple[FilterMetric, ...]:
     interface = evidence.interface
     return (
-        _metric("pairwise-iptm", evidence.pairwise_iptm, source="derived"),
+        _metric(
+            "pairwise-iptm",
+            evidence.pairwise_iptm,
+            source="derived",
+            definition_version=evidence.confidence_metric_definition_version,
+        ),
         _metric(
             "minimum-interface-pae",
             evidence.minimum_interface_pae_angstrom,
             source="derived",
             unit="angstrom",
+            definition_version=evidence.confidence_metric_definition_version,
         ),
-        _metric("binder-ptm", evidence.binder_ptm, source="derived"),
+        _metric(
+            "binder-ptm",
+            evidence.binder_ptm,
+            source="derived",
+            definition_version=evidence.confidence_metric_definition_version,
+        ),
         _metric(
             "binder-pose-rmsd",
             evidence.binder_pose_rmsd_angstrom,
@@ -585,6 +605,7 @@ def build_multi_seed_consensus(
     predictions: tuple[FinalPredictionRecord, ...],
     score_deep: float,
     pair_metrics: tuple[SeedPairConsistency, ...],
+    required_individually_passing_seeds: int = 2,
 ) -> MultiSeedConsensusRecord:
     ordered = tuple(sorted(predictions, key=lambda item: item.seed))
     passing = tuple(item.seed for item in ordered if item.consensus_seed_pass)
@@ -596,7 +617,11 @@ def build_multi_seed_consensus(
     consensus_ids = tuple(
         sorted({seed for item in passing_pairs for seed in (item.first_seed, item.second_seed)})
     )
-    if len(consensus_ids) >= 2:
+    consensus_pass = (
+        len(passing) >= required_individually_passing_seeds
+        and len(consensus_ids) >= required_individually_passing_seeds
+    )
+    if consensus_pass:
         selected = [item for item in ordered if item.seed in consensus_ids]
         median_full = float(median(item.score_full for item in selected))
         final = 0.70 * median_full + 0.30 * score_deep
@@ -611,7 +636,8 @@ def build_multi_seed_consensus(
         individually_passing_seeds=passing,
         consistent_seed_pairs=pair_metrics,
         consensus_seed_ids=consensus_ids,
-        consensus_pass=len(consensus_ids) >= 2,
+        required_individually_passing_seeds=required_individually_passing_seeds,
+        consensus_pass=consensus_pass,
         score_final=final,
         median_score_full=median_full,
         score_deep=score_deep,

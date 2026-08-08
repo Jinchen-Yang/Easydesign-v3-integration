@@ -3,7 +3,9 @@
 from .nanobody_final_v1_5 import (
     FINAL_METRIC_DEFINITION_VERSION,
     FINAL_PROFILE_ID,
+    FINAL_PROFILE_ID_V1_6,
     FINAL_PROFILE_SOURCE_SHA256,
+    FINAL_PROFILE_SOURCE_SHA256_V1_6,
     FullPredictionEvidence,
     build_multi_seed_consensus,
     classify_tnp_risk,
@@ -28,7 +30,9 @@ from .nanobody_v1_5 import (
 )
 from .nanobody_v1_6 import (
     PROFILE_ID_V1_6,
+    PROFILE_ID_V1_7,
     PROFILE_SOURCE_SHA256_V1_6,
+    PROFILE_SOURCE_SHA256_V1_7,
     build_advisory_validation_report,
     evaluate_pilot_candidates_v1_6,
     promotion_records,
@@ -36,6 +40,7 @@ from .nanobody_v1_6 import (
 from .protenix_metrics import (
     PROTENIX_METRIC_DEFINITION_VERSION,
     ProtenixComplexConfidence,
+    extract_complex_confidence,
     extract_protenix_complex_confidence,
 )
 from .structure_metrics import (
@@ -55,15 +60,20 @@ __all__ = [
     "FullPredictionEvidence",
     "FINAL_METRIC_DEFINITION_VERSION",
     "FINAL_PROFILE_ID",
+    "FINAL_PROFILE_ID_V1_6",
     "FINAL_PROFILE_SOURCE_SHA256",
+    "FINAL_PROFILE_SOURCE_SHA256_V1_6",
     "InterfaceMetricValues",
     "METRIC_DEFINITION_VERSION",
     "PROFILE_ID",
     "PROFILE_ID_V1_6",
+    "PROFILE_ID_V1_7",
     "PROFILE_SOURCE_SHA256",
     "PROFILE_SOURCE_SHA256_V1_6",
+    "PROFILE_SOURCE_SHA256_V1_7",
     "PROTENIX_METRIC_DEFINITION_VERSION",
     "ProtenixComplexConfidence",
+    "extract_complex_confidence",
     "compute_full_target_structure_metrics",
     "compute_interface_metrics",
     "contacted_hotspot_residue_ids",

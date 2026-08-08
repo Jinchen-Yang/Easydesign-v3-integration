@@ -97,9 +97,9 @@ class StructureQualityReport(BaseModel):
     seed: int = Field(ge=0)
     sample_index: int = Field(ge=0)
     plddt: float
-    gpde: float
-    ptm: float
-    iptm: float
+    gpde: float | None = None
+    ptm: float | None = None
+    iptm: float | None = None
     ranking_score: float
     has_clash: bool
     recycle_count: int = Field(ge=0)
@@ -226,6 +226,10 @@ class PredictionProvenance(BaseModel):
     backend_version: str = Field(min_length=1, max_length=128)
     model_name: str = Field(pattern=ID_PATTERN)
     model_checkpoint_sha256: str = Field(pattern=SHA256_PATTERN)
+    raw_checkpoint_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    runner_commit: str | None = None
     msa_mode: MsaMode
     msa_input_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     msa_server_mode: str | None = Field(default=None, pattern=ID_PATTERN)

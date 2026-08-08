@@ -309,6 +309,26 @@ def build_predicted_target_bundle(
         backend_version=product.backend_version,
         model_name=product.model_name,
         model_checkpoint_sha256=model_checkpoint_sha256,
+        raw_checkpoint_sha256=(
+            str(product.native_metrics["raw_checkpoint_sha256"])
+            if isinstance(product.native_metrics.get("raw_checkpoint_sha256"), str)
+            else None
+        ),
+        converted_weight_sha256=(
+            str(product.native_metrics["converted_weight_sha256"])
+            if isinstance(product.native_metrics.get("converted_weight_sha256"), str)
+            else None
+        ),
+        wheel_sha256=(
+            str(product.native_metrics["wheel_sha256"])
+            if isinstance(product.native_metrics.get("wheel_sha256"), str)
+            else None
+        ),
+        runner_commit=(
+            str(product.native_metrics["runner_commit"])
+            if isinstance(product.native_metrics.get("runner_commit"), str)
+            else None
+        ),
         msa_mode=msa_mode,
         msa_input_sha256=msa_input_sha256,
         msa_server_mode=msa_server_mode,

@@ -23,6 +23,7 @@ from easydesign.backends.boltzgen import (
 from easydesign.backends.executors import GpuResourceSnapshot
 from easydesign.backends.structure_prediction import (
     BackendInvocation,
+    ComplexConfidenceMetrics,
     ComplexStructurePredictionRequest,
     PredictionRequest,
     StructurePredictionProduct,
@@ -336,6 +337,17 @@ class _FakeProtenixAdapter:
         del input_json
         return output_dir / "updated-input.json"
 
+    def remote_msa_artifacts(
+        self,
+        *,
+        input_json: Path,
+        msa_output_dir: Path,
+    ) -> tuple[Path, Path]:
+        return (
+            self.updated_msa_input_path(input_json, msa_output_dir),
+            msa_output_dir / "target.a3m",
+        )
+
     def prediction_invocation(
         self,
         request: PredictionRequest,
@@ -428,6 +440,16 @@ class _FakeProtenixAdapter:
                 ranking_score=0.8,
                 has_clash=False,
                 recycle_count=10,
+                complex_confidence=ComplexConfidenceMetrics(
+                    metric_definition_version=(
+                        "protenix-v2-complex-confidence-v1"
+                    ),
+                    pairwise_iptm=0.75,
+                    minimum_interface_pae_angstrom=5.0,
+                    binder_ptm=0.80,
+                    target_token_count=target_length,
+                    binder_token_count=binder_length,
+                ),
             ),
         )
 

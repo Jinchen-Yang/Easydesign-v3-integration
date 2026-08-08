@@ -21,6 +21,7 @@ from easydesign.backends.executors import execute_on_devices
 from easydesign.backends.structure_prediction import (
     ComplexStructurePredictionRequest,
     MsaMode,
+    OpenFold3Af3JaxAdapter,
     ProteinPredictionChain,
     ProtenixV2Adapter,
 )
@@ -45,6 +46,7 @@ from easydesign.core import (
 )
 from easydesign.filtering import (
     FINAL_PROFILE_SOURCE_SHA256,
+    FINAL_PROFILE_SOURCE_SHA256_V1_6,
     FullPredictionEvidence,
     InterfaceMetricValues,
     build_multi_seed_consensus,
@@ -54,7 +56,7 @@ from easydesign.filtering import (
     convert_deep_filter_records,
     evaluate_pilot_candidates,
     evaluate_sequence_prefilter,
-    extract_protenix_complex_confidence,
+    extract_complex_confidence,
     final_prediction_decisions,
     final_prediction_metrics,
     lazy_greedy_select,
@@ -125,7 +127,7 @@ from .workspace import (
 ModelT = TypeVar("ModelT", bound=BaseModel)
 ComplexAdapterBuilder = Callable[
     [ResolvedProtenixMsaProviderConfig, int],
-    ProtenixV2Adapter,
+    ProtenixV2Adapter | OpenFold3Af3JaxAdapter,
 ]
 
 
@@ -189,6 +191,14 @@ class _Upstream:
     scale_candidate_index: CandidateIndex | MultiStrategyCandidateIndex
     scale_input: Stage07ScaleInput
     hotspot_residue_ids_by_strategy: dict[str, tuple[int, ...]]
+
+
+@dataclass(frozen=True, slots=True)
+class _PredictionBatch:
+    """One prediction phase with every sample and one representative per seed."""
+
+    representatives: tuple[RawFinalPrediction, ...]
+    all_samples: tuple[RawFinalPrediction, ...]
 
 
 def _latest_manifest(root: Path) -> tuple[RunManifest, Path]:
@@ -405,10 +415,10 @@ def _dump_or_verify(
     return existing
 
 
-def _profile_bytes() -> bytes:
+def _profile_bytes(profile_id: str) -> bytes:
     content = (
         resources.files("easydesign.resources")
-        .joinpath("filter_profiles/nanobody-final-v1.5.yaml")
+        .joinpath(f"filter_profiles/{profile_id}.yaml")
         .read_bytes()
     )
     payload: Any = yaml.safe_load(content)
@@ -416,7 +426,12 @@ def _profile_bytes() -> bytes:
         source_hash = payload["source_document"]["sha256"]
     except (KeyError, TypeError) as error:
         raise ManifestStateError("Stage 07 profile 缺少 source document identity") from error
-    if source_hash != FINAL_PROFILE_SOURCE_SHA256:
+    expected = (
+        FINAL_PROFILE_SOURCE_SHA256_V1_6
+        if profile_id == "nanobody-final-v1.6"
+        else FINAL_PROFILE_SOURCE_SHA256
+    )
+    if source_hash != expected:
         raise ManifestStateError("Stage 07 profile source SHA-256 不一致")
     return content
 
@@ -591,6 +606,9 @@ def _raw_evidence(raw: RawFinalPrediction) -> FullPredictionEvidence:
             interface_bsa_angstrom2=raw.interface_bsa_angstrom2,
             interface_bsa_missing_reason=None,
         ),
+        confidence_metric_definition_version=(
+            raw.confidence_metric_definition_version
+        ),
     )
 
 
@@ -615,7 +633,9 @@ def _execute_predictions(
     root: Path,
     upstream: _Upstream,
     candidates: tuple[CandidateRecord, ...],
-    seeds: tuple[Literal[101, 202, 303], ...],
+    seeds: tuple[Literal[101, 202, 303, 404, 505], ...],
+    sample_count: int,
+    phase_id: str,
     work: Path,
     runtime: Path,
     adapter_builder: ComplexAdapterBuilder,
@@ -623,7 +643,7 @@ def _execute_predictions(
     devices: tuple[int, ...],
     maximum_attempts: int,
     created_at: datetime,
-) -> tuple[RawFinalPrediction, ...]:
+) -> _PredictionBatch:
     requested_keys = tuple(
         sorted(
             _prediction_key(candidate.candidate_id, seed)
@@ -635,16 +655,18 @@ def _execute_predictions(
     target_msa = upstream.target_msa_ref.verify(root)
     target_query = prepare_query_only_a3m(
         target_sequence,
-        work / "protenix" / "target-query-only.a3m",
+        work / "structure-prediction" / phase_id / "target-query-only.a3m",
     )
     reference_target = parse_protein_chain(
         upstream.target_structure_ref.verify(root),
         "A",
     )
-    state_path = runtime / "prediction-state.json"
-    progress_path = runtime / "progress.json"
-    journal = TaskEventJournal(runtime / "task-events.jsonl")
+    phase_runtime = runtime / "predictions" / phase_id
+    state_path = phase_runtime / "prediction-state.json"
+    progress_path = phase_runtime / "progress.json"
+    journal = TaskEventJournal(phase_runtime / "task-events.jsonl")
     prediction_by_key: dict[str, RawFinalPrediction]
+    samples_by_key: dict[str, tuple[RawFinalPrediction, ...]]
     if state_path.exists():
         state = load_model(state_path, Stage07PredictionState)
         if state.target_msa_sha256 != upstream.target_msa_ref.sha256:
@@ -653,17 +675,23 @@ def _execute_predictions(
         prediction_by_key = {
             _prediction_key(item.candidate_id, item.seed): item for item in state.predictions
         }
-        for item in state.predictions:
+        sample_values = state.sample_predictions or state.predictions
+        samples_by_key = {}
+        for item in sample_values:
+            key = _prediction_key(item.candidate_id, item.seed)
+            samples_by_key[key] = (*samples_by_key.get(key, ()), item)
+        for item in sample_values:
             item.predicted_structure.verify(root)
             item.summary_confidence.verify(root)
             item.full_confidence.verify(root)
     else:
         tasks = {}
         prediction_by_key = {}
+        samples_by_key = {}
     for key in requested_keys:
         if key not in tasks:
             tasks[key] = TaskRecord(
-                task_id=f"protenix-{key}"[:128],
+                task_id=f"structure-prediction-{key}"[:128],
                 strategy_id=key,
                 requested_candidates=1,
             )
@@ -720,6 +748,13 @@ def _execute_predictions(
                 planned_prediction_keys=planned_keys,
                 tasks=values,
                 predictions=tuple(prediction_by_key[key] for key in sorted(prediction_by_key)),
+                sample_predictions=tuple(
+                    sample
+                    for key in sorted(samples_by_key)
+                    for sample in sorted(
+                        samples_by_key[key], key=lambda item: item.sample_index
+                    )
+                ),
                 progress=snapshot,
             ),
             state_path,
@@ -757,7 +792,7 @@ def _execute_predictions(
             running_attempt = task.attempts[-1]
             interruption = ErrorInfo(
                 code="interrupted-before-resume",
-                message="Previous Stage 07 process ended before Protenix terminal state.",
+                message="Previous Stage 07 process ended before backend terminal state.",
                 retryable=True,
             )
             closed = running_attempt.model_copy(
@@ -778,7 +813,7 @@ def _execute_predictions(
             event(
                 "task-interrupted",
                 tasks[key],
-                "Closed interrupted Stage 07 Protenix attempt.",
+                "Closed interrupted Stage 07 structure-prediction attempt.",
                 attempt_number=running_attempt.attempt_number,
                 device=running_attempt.device,
                 from_status=TaskStatus.RUNNING,
@@ -787,10 +822,10 @@ def _execute_predictions(
             )
         elif task.status is TaskStatus.FAILED and key not in prediction_by_key:
             tasks[key] = task.model_copy(update={"status": TaskStatus.PENDING})
-    persist("running", "protenix-multi-seed")
+    persist("running", phase_id)
 
     def predict(
-        pair: tuple[CandidateRecord, Literal[101, 202, 303]],
+        pair: tuple[CandidateRecord, Literal[101, 202, 303, 404, 505]],
         device: int,
     ) -> TaskRecord:
         candidate, seed = pair
@@ -806,7 +841,8 @@ def _execute_predictions(
             attempt_number = len(current.attempts) + 1
             task_root = (
                 work
-                / "protenix"
+                / "structure-prediction"
+                / phase_id
                 / candidate.candidate_id
                 / f"seed-{seed}"
                 / f"attempt-{attempt_number:04d}"
@@ -834,7 +870,7 @@ def _execute_predictions(
                     ),
                 ),
                 seeds=(seed,),
-                sample_count=1,
+                sample_count=sample_count,
                 msa_mode=MsaMode.PRECOMPUTED,
             )
             adapter = adapter_builder(provider, device)
@@ -874,105 +910,199 @@ def _execute_predictions(
                 event(
                     "task-started",
                     current,
-                    f"Started Protenix seed {seed}.",
+                    f"Started structure-prediction seed {seed} with {sample_count} samples.",
                     attempt_number=attempt_number,
                     device=device,
                     from_status=TaskStatus.PENDING,
                     to_status=TaskStatus.RUNNING,
                 )
-                persist("running", "protenix-multi-seed")
+                persist("running", phase_id)
             error: ErrorInfo | None = None
-            raw: RawFinalPrediction | None = None
+            seed_samples: tuple[RawFinalPrediction, ...] = ()
+            representative: RawFinalPrediction | None = None
             return_code = 1
             try:
                 completed = run_checked_backend_invocation(invocation)
                 return_code = completed.returncode
-                product = adapter.collect_products(request, output_dir=output)[0]
-                if product.full_confidence_path is None or product.full_confidence_sha256 is None:
-                    raise ManifestStateError("Stage 07 Protenix 缺少 full confidence")
-                structure_ref = _artifact(
-                    root,
-                    product.structure_path,
-                    artifact_id=_qualified_artifact_id(key, "structure"),
-                    role="stage07-protenix-structure",
-                    file_format="mmcif",
-                )
-                summary_ref = _artifact(
-                    root,
-                    product.confidence_path,
-                    artifact_id=_qualified_artifact_id(key, "summary"),
-                    role="protenix-summary-confidence",
-                    file_format="json",
-                )
-                full_ref = _artifact(
-                    root,
-                    product.full_confidence_path,
-                    artifact_id=_qualified_artifact_id(key, "confidence"),
-                    role="protenix-full-confidence",
-                    file_format="json",
-                )
-                confidence = extract_protenix_complex_confidence(
-                    summary_path=product.confidence_path,
-                    full_confidence_path=product.full_confidence_path,
-                )
-                structure = compute_full_target_structure_metrics(
-                    designed_complex=candidate.refolded_structure.verify(root),
-                    predicted_complex=product.structure_path,
-                    reference_target=reference_target,
-                )
-                interface = compute_interface_metrics(
-                    candidate_structure=product.structure_path,
-                    reference_target=reference_target,
-                    hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
-                        candidate.strategy_id
-                    ],
-                    cdr_residue_ids=candidate.designed_binder_residue_ids,
-                )
-                if interface.interface_bsa_angstrom2 is None:
+                products = adapter.collect_products(request, output_dir=output)
+                if len(products) != sample_count:
                     raise ManifestStateError(
-                        "Stage 07 Protenix structure 无法计算标准 interface BSA: "
-                        f"{interface.interface_bsa_missing_reason}"
+                        f"Stage 07 expected {sample_count} samples, collected {len(products)}"
                     )
-                contacts = contacted_hotspot_residue_ids(
-                    candidate_structure=product.structure_path,
-                    hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
-                        candidate.strategy_id
-                    ],
+                collected_samples: list[RawFinalPrediction] = []
+                for product in products:
+                    if (
+                        product.full_confidence_path is None
+                        or product.full_confidence_sha256 is None
+                    ):
+                        raise ManifestStateError(
+                            "Stage 07 structure backend 缺少 full confidence"
+                        )
+                    sample_suffix = f"sample-{product.sample_index}"
+                    structure_ref = _artifact(
+                        root,
+                        product.structure_path,
+                        artifact_id=_qualified_artifact_id(
+                            key, f"{sample_suffix}-structure"
+                        ),
+                        role="stage07-structure-prediction",
+                        file_format="mmcif",
+                    )
+                    summary_ref = _artifact(
+                        root,
+                        product.confidence_path,
+                        artifact_id=_qualified_artifact_id(
+                            key, f"{sample_suffix}-summary"
+                        ),
+                        role="structure-summary-confidence",
+                        file_format="json",
+                    )
+                    full_ref = _artifact(
+                        root,
+                        product.full_confidence_path,
+                        artifact_id=_qualified_artifact_id(
+                            key, f"{sample_suffix}-confidence"
+                        ),
+                        role="structure-full-confidence",
+                        file_format="json",
+                    )
+                    confidence = extract_complex_confidence(product)
+                    structure = compute_full_target_structure_metrics(
+                        designed_complex=candidate.refolded_structure.verify(root),
+                        predicted_complex=product.structure_path,
+                        reference_target=reference_target,
+                    )
+                    interface = compute_interface_metrics(
+                        candidate_structure=product.structure_path,
+                        reference_target=reference_target,
+                        hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
+                            candidate.strategy_id
+                        ],
+                        cdr_residue_ids=candidate.designed_binder_residue_ids,
+                    )
+                    if interface.interface_bsa_angstrom2 is None:
+                        raise ManifestStateError(
+                            "Stage 07 structure backend 无法计算标准 interface BSA: "
+                            f"{interface.interface_bsa_missing_reason}"
+                        )
+                    contacts = contacted_hotspot_residue_ids(
+                        candidate_structure=product.structure_path,
+                        hotspot_residue_ids=upstream.hotspot_residue_ids_by_strategy[
+                            candidate.strategy_id
+                        ],
+                    )
+                    collected_samples.append(
+                        RawFinalPrediction(
+                            candidate_id=candidate.candidate_id,
+                            seed=seed,
+                            prediction_phase=phase_id,
+                            sample_index=product.sample_index,
+                            samples_per_seed=sample_count,
+                            recycles=product.recycle_count,
+                            ranking_score=product.ranking_score,
+                            is_seed_representative=False,
+                            backend_identity=product.backend_identity,
+                            model_identity=product.model_identity,
+                            confidence_metric_definition_version=(
+                                confidence.metric_definition_version
+                            ),
+                            raw_checkpoint_sha256=(
+                                str(product.native_metrics["raw_checkpoint_sha256"])
+                                if isinstance(
+                                    product.native_metrics.get("raw_checkpoint_sha256"),
+                                    str,
+                                )
+                                else None
+                            ),
+                            converted_weight_sha256=(
+                                str(product.native_metrics["converted_weight_sha256"])
+                                if isinstance(
+                                    product.native_metrics.get("converted_weight_sha256"),
+                                    str,
+                                )
+                                else None
+                            ),
+                            wheel_sha256=(
+                                str(product.native_metrics["wheel_sha256"])
+                                if isinstance(
+                                    product.native_metrics.get("wheel_sha256"), str
+                                )
+                                else None
+                            ),
+                            runner_commit=(
+                                str(product.native_metrics["runner_commit"])
+                                if isinstance(
+                                    product.native_metrics.get("runner_commit"), str
+                                )
+                                else None
+                            ),
+                            msa_provider=(
+                                str(product.native_metrics["msa_provider"])
+                                if isinstance(
+                                    product.native_metrics.get("msa_provider"), str
+                                )
+                                else "precomputed"
+                            ),
+                            msa_endpoint=(
+                                str(product.native_metrics["msa_endpoint"])
+                                if isinstance(
+                                    product.native_metrics.get("msa_endpoint"), str
+                                )
+                                else None
+                            ),
+                            predicted_structure=structure_ref,
+                            summary_confidence=summary_ref,
+                            full_confidence=full_ref,
+                            pairwise_iptm=confidence.pairwise_iptm,
+                            minimum_interface_pae_angstrom=(
+                                confidence.minimum_interface_pae_angstrom
+                            ),
+                            binder_ptm=confidence.binder_ptm,
+                            binder_pose_rmsd_angstrom=(
+                                structure.binder_pose_rmsd_angstrom
+                            ),
+                            target_ca_rmsd_angstrom=(
+                                structure.target_ca_rmsd_angstrom
+                            ),
+                            contacted_hotspot_residue_ids=contacts,
+                            hotspot_coverage=interface.hotspot_coverage,
+                            hotspot_count=interface.hotspot_count,
+                            binder_contact_coverage=interface.binder_contact_coverage,
+                            cdr_dominance=interface.cdr_dominance,
+                            cdr_utilization=interface.cdr_utilization,
+                            residue_pair_contact_count=(
+                                interface.residue_pair_contact_count
+                            ),
+                            atom_contact_count=interface.atom_contact_count,
+                            severe_clash_count=interface.severe_clash_count,
+                            moderate_clash_count=interface.moderate_clash_count,
+                            hydrogen_bond_count=interface.hydrogen_bond_count,
+                            salt_bridge_count=interface.salt_bridge_count,
+                            polar_contact_fraction=interface.polar_contact_fraction,
+                            interface_bsa_angstrom2=interface.interface_bsa_angstrom2,
+                        )
+                    )
+                selected = max(
+                    collected_samples,
+                    key=lambda item: (item.ranking_score, -item.sample_index),
                 )
-                raw = RawFinalPrediction(
-                    candidate_id=candidate.candidate_id,
-                    seed=seed,
-                    predicted_structure=structure_ref,
-                    summary_confidence=summary_ref,
-                    full_confidence=full_ref,
-                    pairwise_iptm=confidence.pairwise_iptm,
-                    minimum_interface_pae_angstrom=(confidence.minimum_interface_pae_angstrom),
-                    binder_ptm=confidence.binder_ptm,
-                    binder_pose_rmsd_angstrom=structure.binder_pose_rmsd_angstrom,
-                    target_ca_rmsd_angstrom=structure.target_ca_rmsd_angstrom,
-                    contacted_hotspot_residue_ids=contacts,
-                    hotspot_coverage=interface.hotspot_coverage,
-                    hotspot_count=interface.hotspot_count,
-                    binder_contact_coverage=interface.binder_contact_coverage,
-                    cdr_dominance=interface.cdr_dominance,
-                    cdr_utilization=interface.cdr_utilization,
-                    residue_pair_contact_count=interface.residue_pair_contact_count,
-                    atom_contact_count=interface.atom_contact_count,
-                    severe_clash_count=interface.severe_clash_count,
-                    moderate_clash_count=interface.moderate_clash_count,
-                    hydrogen_bond_count=interface.hydrogen_bond_count,
-                    salt_bridge_count=interface.salt_bridge_count,
-                    polar_contact_fraction=interface.polar_contact_fraction,
-                    interface_bsa_angstrom2=interface.interface_bsa_angstrom2,
+                representative = selected.model_copy(
+                    update={"is_seed_representative": True}
+                )
+                seed_samples = tuple(
+                    representative if item.sample_index == representative.sample_index else item
+                    for item in sorted(
+                        collected_samples, key=lambda value: value.sample_index
+                    )
                 )
             except Exception as exception:
                 error = ErrorInfo(
-                    code="stage07-protenix-failed",
+                    code="stage07-structure-prediction-failed",
                     message=str(exception)[:4096] or exception.__class__.__name__,
                     retryable=True,
                 )
             ended = datetime.now(UTC)
-            succeeded = raw is not None and return_code == 0
+            succeeded = representative is not None and return_code == 0
             terminal_attempt = running_attempt.model_copy(
                 update={
                     "status": (TaskStatus.SUCCEEDED if succeeded else TaskStatus.FAILED),
@@ -993,17 +1123,18 @@ def _execute_predictions(
                     }
                 )
                 tasks[key] = current
-                if raw is not None:
-                    prediction_by_key[key] = raw
+                if representative is not None:
+                    prediction_by_key[key] = representative
+                    samples_by_key[key] = seed_samples
                 if error is not None:
                     recent_errors.append(f"{key}: {error.message}")
                 event(
                     "task-succeeded" if succeeded else "task-attempt-failed",
                     current,
                     (
-                        "Collected complete Protenix product."
+                        "Collected complete structure-prediction products."
                         if succeeded
-                        else "Protenix attempt failed."
+                        else "Structure-prediction attempt failed."
                     ),
                     attempt_number=attempt_number,
                     device=device,
@@ -1011,13 +1142,13 @@ def _execute_predictions(
                     to_status=current.status,
                     error=error,
                 )
-                persist("running", "protenix-multi-seed")
+                persist("running", phase_id)
             if succeeded:
                 return current
         if current.status is not TaskStatus.SUCCEEDED:
             exhausted = ErrorInfo(
                 code="task-attempt-budget-exhausted",
-                message=f"Protenix task exhausted {maximum_attempts} attempts.",
+                message=f"Structure-prediction task exhausted {maximum_attempts} attempts.",
                 retryable=True,
             )
             with lock:
@@ -1032,7 +1163,7 @@ def _execute_predictions(
                     to_status=TaskStatus.FAILED,
                     error=exhausted,
                 )
-                persist("incomplete", "protenix-multi-seed")
+                persist("incomplete", phase_id)
         return current
 
     pairs = tuple(
@@ -1043,10 +1174,17 @@ def _execute_predictions(
     )
     execute_on_devices(pairs, devices=devices, worker=predict)
     if any(tasks[key].status is not TaskStatus.SUCCEEDED for key in requested_keys):
-        persist("incomplete", "protenix-multi-seed")
-        raise ManifestStateError("Stage 07 Protenix tasks 未全部完成，可使用 runs resume")
-    persist("phase-succeeded", "protenix-multi-seed")
-    return tuple(prediction_by_key[key] for key in requested_keys)
+        persist("incomplete", phase_id)
+        raise ManifestStateError("Stage 07 structure tasks 未全部完成，可使用 runs resume")
+    persist("phase-succeeded", phase_id)
+    return _PredictionBatch(
+        representatives=tuple(prediction_by_key[key] for key in requested_keys),
+        all_samples=tuple(
+            sample
+            for key in requested_keys
+            for sample in sorted(samples_by_key[key], key=lambda item: item.sample_index)
+        ),
+    )
 
 
 def _scored_prediction_records(
@@ -1068,6 +1206,22 @@ def _scored_prediction_records(
         FinalPredictionRecord(
             candidate_id=item.candidate_id,
             seed=item.seed,
+            prediction_phase=item.prediction_phase,
+            sample_index=item.sample_index,
+            samples_per_seed=item.samples_per_seed,
+            recycles=item.recycles,
+            ranking_score=item.ranking_score,
+            backend_identity=item.backend_identity,
+            model_identity=item.model_identity,
+            confidence_metric_definition_version=(
+                item.confidence_metric_definition_version
+            ),
+            raw_checkpoint_sha256=item.raw_checkpoint_sha256,
+            converted_weight_sha256=item.converted_weight_sha256,
+            wheel_sha256=item.wheel_sha256,
+            runner_commit=item.runner_commit,
+            msa_provider=item.msa_provider,
+            msa_endpoint=item.msa_endpoint,
             predicted_structure=item.predicted_structure,
             summary_confidence=item.summary_confidence,
             full_confidence=item.full_confidence,
@@ -1445,11 +1599,17 @@ def _execute_stage07(
     artifacts.mkdir(parents=True, exist_ok=True)
     runtime.mkdir(parents=True, exist_ok=True)
     profile_path = artifacts / "filter-profile.yaml"
+    profile_bytes = _profile_bytes(config.final_filter_profile)
+    profile_sha256 = (
+        FINAL_PROFILE_SOURCE_SHA256_V1_6
+        if config.final_filter_profile == "nanobody-final-v1.6"
+        else FINAL_PROFILE_SOURCE_SHA256
+    )
     if profile_path.exists():
-        if profile_path.read_bytes() != _profile_bytes():
+        if profile_path.read_bytes() != profile_bytes:
             raise ManifestStateError("Stage 07 existing profile bytes 不一致")
     else:
-        profile_path.write_bytes(_profile_bytes())
+        profile_path.write_bytes(profile_bytes)
     profile_ref = _artifact(
         root,
         profile_path,
@@ -1495,7 +1655,7 @@ def _execute_stage07(
             structural_metrics={
                 item.candidate_id: structural[item.candidate_id] for item in selected_for_deep
             },
-            profile_sha256=FINAL_PROFILE_SOURCE_SHA256,
+            profile_sha256=profile_sha256,
             candidate_index_sha256=upstream.scale_candidate_index_ref.sha256,
             maximum_tier_a_strategies=len(
                 upstream.scale_input.strategy_allocations
@@ -1512,6 +1672,7 @@ def _execute_stage07(
     )
     score_refold = {item.candidate_id: item.score_refold for item in sequence_records}
     all_prediction_records: tuple[FinalPredictionRecord, ...] = ()
+    all_sample_predictions: tuple[RawFinalPrediction, ...] = ()
     consensus_records: tuple[MultiSeedConsensusRecord, ...] = ()
     tnp_report: TnpReport | None = None
     tnp_refs: tuple[ArtifactRef, ...] = ()
@@ -1531,11 +1692,13 @@ def _execute_stage07(
     execution_devices = scale_plan.devices
 
     if seed101_candidates:
-        seed101_raw = _execute_predictions(
+        seed101_batch = _execute_predictions(
             root=root,
             upstream=upstream,
             candidates=seed101_candidates,
             seeds=(101,),
+            sample_count=1,
+            phase_id="seed101-screen",
             work=work,
             runtime=runtime,
             adapter_builder=protenix_adapter_builder,
@@ -1545,13 +1708,15 @@ def _execute_stage07(
             created_at=now,
         )
         seed101_records, reference = _scored_prediction_records(
-            raw=seed101_raw,
+            raw=seed101_batch.representatives,
             score_refold_by_id=score_refold,
             reference=None,
         )
         normalization = Seed101Normalization(
             generated_at=now,
-            source_candidate_ids=tuple(item.candidate_id for item in seed101_raw),
+            source_candidate_ids=tuple(
+                item.candidate_id for item in seed101_batch.representatives
+            ),
             metric_reference_values=reference,
         )
         normalization_path = artifacts / "seed101-normalization.json"
@@ -1576,11 +1741,14 @@ def _execute_stage07(
             )[:60]
         )
         if additional_candidates:
-            additional_raw = _execute_predictions(
+            afo_final = config.final_filter_profile == "nanobody-final-v1.6"
+            additional_batch = _execute_predictions(
                 root=root,
                 upstream=upstream,
                 candidates=additional_candidates,
-                seeds=(202, 303),
+                seeds=(101, 202, 303, 404, 505) if afo_final else (202, 303),
+                sample_count=5 if afo_final else 1,
+                phase_id="deep-5x5" if afo_final else "additional-seeds",
                 work=work,
                 runtime=runtime,
                 adapter_builder=protenix_adapter_builder,
@@ -1590,16 +1758,35 @@ def _execute_stage07(
                 created_at=now,
             )
             additional_records, _ = _scored_prediction_records(
-                raw=additional_raw,
+                raw=additional_batch.representatives,
                 score_refold_by_id=score_refold,
                 reference=reference,
             )
         else:
+            afo_final = config.final_filter_profile == "nanobody-final-v1.6"
+            additional_batch = _PredictionBatch(representatives=(), all_samples=())
             additional_records = ()
+        deep_candidate_ids = {item.candidate_id for item in additional_records}
+        screen_records = tuple(
+            item
+            for item in seed101_records
+            if not afo_final or item.candidate_id not in deep_candidate_ids
+        )
         all_prediction_records = tuple(
             sorted(
-                (*seed101_records, *additional_records),
-                key=lambda item: (item.candidate_id, item.seed),
+                (*screen_records, *additional_records),
+                key=lambda item: (item.candidate_id, item.seed, item.sample_index),
+            )
+        )
+        all_sample_predictions = tuple(
+            sorted(
+                (*seed101_batch.all_samples, *additional_batch.all_samples),
+                key=lambda item: (
+                    item.candidate_id,
+                    item.prediction_phase,
+                    item.seed,
+                    item.sample_index,
+                ),
             )
         )
         by_candidate: dict[str, list[FinalPredictionRecord]] = {}
@@ -1620,6 +1807,7 @@ def _execute_stage07(
                     predictions=tuple(records),
                     reference_target=reference_target,
                 ),
+                required_individually_passing_seeds=3 if afo_final else 2,
             )
             for candidate_id, records in sorted(by_candidate.items())
         )
@@ -1655,11 +1843,13 @@ def _execute_stage07(
     )
     report = FinalFilterReport(
         generated_at=now,
-        profile_sha256=FINAL_PROFILE_SOURCE_SHA256,
+        profile_id=config.final_filter_profile,
+        profile_sha256=profile_sha256,
         scale_candidate_index_sha256=upstream.scale_candidate_index_ref.sha256,
         sequence_prefilter=sequence_records,
         deep_filter=deep_records,
         predictions=all_prediction_records,
+        sample_predictions=all_sample_predictions,
         consensus=consensus_records,
         selections=selections,
         status=status,

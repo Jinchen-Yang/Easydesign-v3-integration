@@ -18,7 +18,10 @@ from easydesign.backends.boltzgen import (
     BoltzGenGenerationAdapter,
 )
 from easydesign.backends.scannet import ScanNetBackendConfig, ScanNetEpitopeAdapter
-from easydesign.backends.structure_prediction import ProtenixV2Adapter
+from easydesign.backends.structure_prediction import (
+    OpenFold3Af3JaxAdapter,
+    ProtenixV2Adapter,
+)
 from easydesign.backends.target_sources import PyMOLPseAdapter
 from easydesign.backends.tnp import TnpAdapter
 from easydesign.core import (
@@ -62,6 +65,7 @@ from .profile import (
     PROFILE_ENVIRONMENT_VARIABLE,
     BoltzGenRuntime,
     LoadedRuntimeProfile,
+    OpenFold3Af3JaxRuntime,
     ProtenixV2Runtime,
     PyMOLPseRuntime,
     RuntimeProfile,
@@ -242,7 +246,9 @@ def _required_backends(
         raise ConfigurationError(f"start_stage 不在已实现范围: {start_stage}")
     backends: list[str] = []
     if start_stage <= 1 and isinstance(loaded, LoadedSequenceRunConfig):
-        backends.append("protenix-v2")
+        prediction = loaded.config.structure_prediction
+        assert prediction is not None
+        backends.append(prediction.backend)
     elif start_stage <= 1 and isinstance(loaded, LoadedPseRunConfig):
         backends.append("pymol-pse")
     elif (
@@ -250,7 +256,9 @@ def _required_backends(
         and isinstance(loaded, LoadedRemoteRunConfig)
         and loaded.config.structure_prediction is not None
     ):
-        backends.append("protenix-v2")
+        prediction = loaded.config.structure_prediction
+        assert prediction is not None
+        backends.append(prediction.backend)
     stop_after = loaded.config.workflow.stop_after_stage
     if start_stage <= 2 <= stop_after:
         stage02 = loaded.config.stage02
@@ -261,11 +269,16 @@ def _required_backends(
         backends.append("boltzgen-validation")
     if start_stage <= 6 and stop_after >= max(start_stage, 4):
         backends.append("boltzgen")
-    if (
-        (start_stage <= 5 <= stop_after or start_stage <= 7 <= stop_after)
-        and "protenix-v2" not in backends
-    ):
-        backends.append("protenix-v2")
+    if start_stage <= 5 <= stop_after:
+        stage05 = loaded.config.stage05
+        assert stage05 is not None
+        if stage05.full_target_prediction.backend not in backends:
+            backends.append(stage05.full_target_prediction.backend)
+    if start_stage <= 7 <= stop_after:
+        stage07 = loaded.config.stage07
+        assert stage07 is not None
+        if stage07.full_target_prediction.backend not in backends:
+            backends.append(stage07.full_target_prediction.backend)
     if start_stage <= 7 <= stop_after:
         backends.append("tnp")
     return tuple(backends)
@@ -397,6 +410,47 @@ def _protenix_adapter(
     )
 
 
+def _sequence_prediction_adapter(
+    profile: RuntimeProfile,
+    loaded: LoadedSequenceRunConfig,
+    provider: ResolvedProtenixMsaProviderConfig | None,
+) -> ProtenixV2Adapter | OpenFold3Af3JaxAdapter:
+    prediction = loaded.config.structure_prediction
+    assert prediction is not None
+    if prediction.backend == "protenix-v2":
+        protenix_runtime = profile.backends.protenix_v2
+        if protenix_runtime is None:
+            raise ConfigurationError("配置选择 Protenix，但 runtime 未安装 protenix-v2")
+        return _protenix_adapter(protenix_runtime, loaded, provider)
+    openfold_runtime = profile.backends.openfold3_af3_jax
+    if openfold_runtime is None:
+        raise ConfigurationError(
+            "配置选择 OpenFold3，但 runtime 未安装 openfold3-af3-jax"
+        )
+    return _openfold3_adapter(
+        openfold_runtime,
+        provider=provider,
+        prediction_timeout_seconds=prediction.prediction_timeout_seconds,
+    )
+
+
+def _sequence_model_sha256(
+    profile: RuntimeProfile,
+    loaded: LoadedSequenceRunConfig,
+) -> str:
+    prediction = loaded.config.structure_prediction
+    assert prediction is not None
+    if prediction.backend == "protenix-v2":
+        protenix_runtime = profile.backends.protenix_v2
+        if protenix_runtime is None:
+            raise ConfigurationError("runtime 未安装 protenix-v2")
+        return sha256_file(protenix_runtime.model_checkpoint)
+    openfold_runtime = profile.backends.openfold3_af3_jax
+    if openfold_runtime is None:
+        raise ConfigurationError("runtime 未安装 openfold3-af3-jax")
+    return openfold_runtime.converted_weight_sha256
+
+
 def _probe_protenix(
     runtime: ProtenixV2Runtime,
     loaded: LoadedSequenceRunConfig | None,
@@ -438,6 +492,69 @@ def _probe_protenix(
         raise BackendContractError(f"Protenix 版本探针失败: {completed.stderr.strip()}")
     adapter.validate_version_output(completed.stdout)
     return checkpoint_sha256
+
+
+def _openfold3_adapter(
+    runtime: OpenFold3Af3JaxRuntime,
+    *,
+    device: int | None = None,
+    provider: ResolvedProtenixMsaProviderConfig | None = None,
+    prediction_timeout_seconds: int | None = None,
+) -> OpenFold3Af3JaxAdapter:
+    return OpenFold3Af3JaxAdapter(
+        python=runtime.python,
+        runner=runtime.runner,
+        model_root=runtime.model_root,
+        cache_root=runtime.cache_root,
+        raw_checkpoint_sha256=runtime.raw_checkpoint_sha256,
+        converted_weight_sha256=runtime.converted_weight_sha256,
+        wheel_sha256=runtime.wheel_sha256,
+        runner_commit=runtime.runner_commit,
+        cuda_visible_devices=(
+            str(device) if device is not None else runtime.cuda_visible_devices
+        ),
+        msa_server_url=(provider.endpoint if provider else runtime.msa_server_url),
+        remote_msa_provider=(
+            str(provider.provider) if provider else "colabfold-public"
+        ),
+        remote_msa_server_mode=(provider.server_mode if provider else "colabfold"),
+        msa_timeout_seconds=(
+            provider.timeout_seconds if provider else runtime.msa_timeout_seconds
+        ),
+        prediction_timeout_seconds=(
+            prediction_timeout_seconds
+            if prediction_timeout_seconds is not None
+            else runtime.prediction_timeout_seconds
+        ),
+        extra_environment=runtime.extra_environment,
+    )
+
+
+def _probe_openfold3(runtime: OpenFold3Af3JaxRuntime) -> str:
+    for path in (runtime.python, runtime.runner, runtime.converted_weight):
+        if not path.is_file():
+            raise BackendContractError(f"OpenFold3 runtime file 不存在: {path}")
+    actual_weight = sha256_file(runtime.converted_weight)
+    if actual_weight != runtime.converted_weight_sha256:
+        raise BackendContractError("OpenFold3 converted weight SHA-256 不匹配")
+    adapter = _openfold3_adapter(runtime)
+    invocation = adapter.version_invocation()
+    environment = os.environ.copy()
+    environment.update(dict(invocation.environment))
+    completed = subprocess.run(
+        list(invocation.argv),
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=invocation.timeout_seconds,
+    )
+    if completed.returncode != 0:
+        raise BackendContractError(
+            f"OpenFold3 版本探针失败: {completed.stderr.strip()}"
+        )
+    adapter.validate_version_output(completed.stdout)
+    return actual_weight
 
 
 def _pymol_adapter(runtime: PyMOLPseRuntime) -> PyMOLPseAdapter:
@@ -544,6 +661,7 @@ def diagnose_runtime(
         )
     known_backends = {
         "protenix-v2",
+        "openfold3-af3-jax",
         "pymol-pse",
         "scannet-epitope",
         "boltzgen-validation",
@@ -612,6 +730,7 @@ def diagnose_runtime(
     backends = loaded_profile.profile.backends
     for name, runtime in (
         ("protenix-v2", backends.protenix_v2),
+        ("openfold3-af3-jax", backends.openfold3_af3_jax),
         ("pymol-pse", backends.pymol_pse),
         ("scannet-epitope", backends.scannet_epitope),
         (
@@ -667,6 +786,13 @@ def diagnose_runtime(
                     loaded if isinstance(loaded, LoadedSequenceRunConfig) else None,
                 )
                 message = f"Protenix 2.0.0；checkpoint={checkpoint}"
+            elif name == "openfold3-af3-jax":
+                assert isinstance(runtime, OpenFold3Af3JaxRuntime)
+                weight = _probe_openfold3(runtime)
+                message = (
+                    "alphafold3-open 3.1.3；OpenFold3 preview2；"
+                    f"converted_weight={weight}"
+                )
             elif name == "pymol-pse":
                 assert isinstance(runtime, PyMOLPseRuntime)
                 message = f"PyMOL {_pymol_adapter(runtime).probe_version()}"
@@ -868,12 +994,9 @@ def execute_pipeline(
                 reference_sequence=fallback.reference_sequence,
                 prediction_fallback_reason=fallback.reason,
             )
-            protenix_runtime = backends.protenix_v2
-            assert isinstance(protenix_runtime, ProtenixV2Runtime)
-            stage01_protenix_runtime = protenix_runtime
             first_provider = derived.msa_execution_plan[0] if derived.msa_execution_plan else None
-            writer = _protenix_adapter(
-                stage01_protenix_runtime,
+            writer = _sequence_prediction_adapter(
+                context.loaded_profile.profile,
                 derived,
                 first_provider,
             )
@@ -899,9 +1022,9 @@ def execute_pipeline(
 
             def remote_adapter_builder(
                 provider: ResolvedProtenixMsaProviderConfig | None,
-            ) -> ProtenixV2Adapter:
-                return _protenix_adapter(
-                    stage01_protenix_runtime,
+            ) -> ProtenixV2Adapter | OpenFold3Af3JaxAdapter:
+                return _sequence_prediction_adapter(
+                    context.loaded_profile.profile,
                     derived,
                     provider,
                 )
@@ -909,7 +1032,10 @@ def execute_pipeline(
             completed_prediction = execute_sequence_prediction(
                 prepared=prepared_prediction,
                 adapter_builder=remote_adapter_builder,
-                model_checkpoint_sha256=sha256_file(stage01_protenix_runtime.model_checkpoint),
+                model_checkpoint_sha256=_sequence_model_sha256(
+                    context.loaded_profile.profile,
+                    derived,
+                ),
             )
             run_root = completed_prediction.prepared.workspace.run_root
             run_manifest = completed_prediction.run_manifest
@@ -1435,13 +1561,12 @@ def continue_pipeline_after_decision(
             reference_sequence=fallback.reference_sequence,
             prediction_fallback_reason=fallback.reason,
         )
-        protenix_runtime = backends.protenix_v2
-        if protenix_runtime is None:
-            raise ConfigurationError(
-                "已批准 Protenix fallback，但 runtime profile 未配置 protenix-v2"
-            )
         first_provider = derived.msa_execution_plan[0] if derived.msa_execution_plan else None
-        writer = _protenix_adapter(protenix_runtime, derived, first_provider)
+        writer = _sequence_prediction_adapter(
+            loaded_profile.profile,
+            derived,
+            first_provider,
+        )
         protenix_input = writer.write_input(
             prediction_request,
             prepared.workspace.attempt_root(
@@ -1464,13 +1589,20 @@ def continue_pipeline_after_decision(
 
         def adapter_builder(
             provider: ResolvedProtenixMsaProviderConfig | None,
-        ) -> ProtenixV2Adapter:
-            return _protenix_adapter(protenix_runtime, derived, provider)
+        ) -> ProtenixV2Adapter | OpenFold3Af3JaxAdapter:
+            return _sequence_prediction_adapter(
+                loaded_profile.profile,
+                derived,
+                provider,
+            )
 
         completed = execute_sequence_prediction(
             prepared=prepared_prediction,
             adapter_builder=adapter_builder,
-            model_checkpoint_sha256=sha256_file(protenix_runtime.model_checkpoint),
+            model_checkpoint_sha256=_sequence_model_sha256(
+                loaded_profile.profile,
+                derived,
+            ),
             attempt_start=attempt_number,
         )
         current_run_manifest = completed.run_manifest

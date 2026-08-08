@@ -1,0 +1,507 @@
+"""OpenFold3 preview2 weights on the alphafold3-open 3.1.3 JAX runner."""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+from easydesign.core import (
+    BackendContractError,
+    ManifestStateError,
+    PredictionOutputError,
+    SerializationError,
+    sha256_file,
+)
+
+from .contracts import (
+    BackendInvocation,
+    ComplexConfidenceMetrics,
+    ComplexStructurePredictionRequest,
+    MsaMode,
+    PredictionParameterProfile,
+    PredictionRequest,
+    StructurePredictionProduct,
+    TemplateMode,
+)
+
+OPENFOLD3_METRIC_DEFINITION_VERSION = (
+    "openfold3-p2-af3-jax-complex-confidence-v1"
+)
+
+
+class _OpenFold3Summary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    ptm: float | None
+    iptm: float | None
+    ranking_score: float
+    fraction_disordered: float
+    has_clash: float
+    chain_pair_iptm: tuple[tuple[float, ...], ...]
+    chain_pair_pae_min: tuple[tuple[float, ...], ...]
+    chain_ptm: tuple[float, ...]
+    chain_ids: tuple[str, ...] = ()
+
+
+class _OpenFold3FullConfidence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    atom_plddts: tuple[float, ...]
+    pae: tuple[tuple[float, ...], ...]
+    token_chain_ids: tuple[str, ...]
+
+
+def _read_a3m(path: Path) -> str:
+    if not path.is_absolute() or not path.is_file():
+        raise BackendContractError(f"AFO MSA 必须是存在的绝对文件: {path}")
+    try:
+        value = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise BackendContractError(f"AFO MSA 无法读取: {path}") from error
+    if not value.startswith(">") or "\n" not in value:
+        raise BackendContractError(f"AFO MSA 不是合法 A3M/FASTA: {path}")
+    return value if value.endswith("\n") else value + "\n"
+
+
+def _matrix_shape(matrix: tuple[tuple[float, ...], ...]) -> tuple[int, int]:
+    if not matrix:
+        return (0, 0)
+    widths = {len(row) for row in matrix}
+    if len(widths) != 1:
+        raise PredictionOutputError("AFO confidence matrix 不是矩形")
+    return (len(matrix), next(iter(widths)))
+
+
+class OpenFold3Af3JaxAdapter:
+    """File-protocol adapter; never imports JAX or AlphaFold into EasyDesign."""
+
+    backend_name = "openfold3-af3-jax"
+    profile_backend_id = "openfold3-af3-jax"
+    backend_version = "3.1.3"
+    model_name = "of3-p2-155k"
+
+    def __init__(
+        self,
+        *,
+        python: Path,
+        runner: Path,
+        model_root: Path,
+        cache_root: Path,
+        raw_checkpoint_sha256: str,
+        converted_weight_sha256: str,
+        wheel_sha256: str,
+        runner_commit: str,
+        cuda_visible_devices: str | None = None,
+        msa_server_url: str = "https://api.colabfold.com",
+        remote_msa_provider: str = "colabfold-public",
+        remote_msa_server_mode: str = "colabfold",
+        msa_timeout_seconds: int = 3600,
+        prediction_timeout_seconds: int = 14_400,
+        extra_environment: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        paths = (python, runner, model_root, cache_root)
+        if any(not path.is_absolute() for path in paths):
+            raise BackendContractError("AFO runtime 必须全部使用绝对路径")
+        identities = (
+            raw_checkpoint_sha256,
+            converted_weight_sha256,
+            wheel_sha256,
+        )
+        if any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in identities
+        ):
+            raise BackendContractError("AFO 资产身份必须是小写 SHA-256")
+        if not runner_commit or len(runner_commit) < 7:
+            raise BackendContractError("AFO runner commit 不合法")
+        if min(msa_timeout_seconds, prediction_timeout_seconds) < 1:
+            raise BackendContractError("AFO timeout 必须大于 0")
+        extra_keys = [key for key, _ in extra_environment]
+        reserved = {
+            "CUDA_VISIBLE_DEVICES",
+            "PYTHONDONTWRITEBYTECODE",
+            "XLA_FLAGS",
+            "XLA_PYTHON_CLIENT_PREALLOCATE",
+            "XDG_CACHE_HOME",
+        }
+        if len(extra_keys) != len(set(extra_keys)) or reserved.intersection(extra_keys):
+            raise BackendContractError("AFO extra_environment 重复或覆盖保留变量")
+        self.python = python
+        self.runner = runner
+        self.model_root = model_root
+        self.cache_root = cache_root
+        self.raw_checkpoint_sha256 = raw_checkpoint_sha256
+        self.converted_weight_sha256 = converted_weight_sha256
+        self.wheel_sha256 = wheel_sha256
+        self.runner_commit = runner_commit
+        self.cuda_visible_devices = cuda_visible_devices
+        self.msa_server_url = msa_server_url.rstrip("/")
+        self.remote_msa_provider = remote_msa_provider
+        self.remote_msa_endpoint = self.msa_server_url
+        self.remote_msa_server_mode = remote_msa_server_mode
+        self.msa_timeout_seconds = msa_timeout_seconds
+        self.remote_msa_timeout_seconds = msa_timeout_seconds
+        self.prediction_timeout_seconds = prediction_timeout_seconds
+        self.extra_environment = extra_environment
+
+    def _environment(self) -> tuple[tuple[str, str], ...]:
+        values = [
+            ("PYTHONDONTWRITEBYTECODE", "1"),
+            ("XLA_FLAGS", "--xla_gpu_enable_triton_gemm=false"),
+            ("XLA_PYTHON_CLIENT_PREALLOCATE", "false"),
+            ("XDG_CACHE_HOME", str(self.cache_root)),
+        ]
+        if self.cuda_visible_devices is not None:
+            values.append(("CUDA_VISIBLE_DEVICES", self.cuda_visible_devices))
+        values.extend(self.extra_environment)
+        return tuple(values)
+
+    @staticmethod
+    def _protein(
+        *,
+        chain_id: str,
+        sequence: str,
+        msa_mode: MsaMode,
+        unpaired_msa_path: Path | None,
+        paired_msa_path: Path | None,
+    ) -> dict[str, Any]:
+        protein: dict[str, Any] = {
+            "id": chain_id,
+            "sequence": sequence,
+            "templates": [],
+        }
+        if unpaired_msa_path is not None:
+            protein["unpairedMsa"] = _read_a3m(unpaired_msa_path)
+        elif msa_mode is not MsaMode.REMOTE:
+            protein["unpairedMsa"] = ""
+        if paired_msa_path is not None:
+            protein["pairedMsa"] = _read_a3m(paired_msa_path)
+        elif msa_mode is not MsaMode.REMOTE:
+            protein["pairedMsa"] = ""
+        return {"protein": protein}
+
+    def render_input(self, request: PredictionRequest) -> dict[str, Any]:
+        if request.template_mode is not TemplateMode.DISABLED:
+            raise BackendContractError("AFO 第一阶段强制 templates: []")
+        sequences: list[dict[str, Any]] = []
+        if isinstance(request, ComplexStructurePredictionRequest):
+            ordered = sorted(
+                request.chains,
+                key=lambda chain: 0 if chain.role == "target" else 1,
+            )
+            if [chain.chain_id for chain in ordered] != ["A", "B"]:
+                raise BackendContractError("AFO complex 必须固定 target=A、binder=B")
+            for chain in ordered:
+                sequences.append(
+                    self._protein(
+                        chain_id=chain.chain_id,
+                        sequence=chain.sequence,
+                        msa_mode=request.msa_mode,
+                        unpaired_msa_path=chain.unpaired_msa_path,
+                        paired_msa_path=chain.paired_msa_path,
+                    )
+                )
+        else:
+            sequences.append(
+                self._protein(
+                    chain_id="A",
+                    sequence=request.target.sequence,
+                    msa_mode=request.msa_mode,
+                    unpaired_msa_path=None,
+                    paired_msa_path=None,
+                )
+            )
+        return {
+            "name": request.job_name,
+            "sequences": sequences,
+            "modelSeeds": list(request.seeds),
+            "dialect": "alphafold3",
+            "version": 4,
+        }
+
+    def write_input(self, request: PredictionRequest, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with path.open("x", encoding="utf-8") as handle:
+                json.dump(
+                    self.render_input(request),
+                    handle,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                handle.write("\n")
+        except FileExistsError as error:
+            raise ManifestStateError(f"不可覆盖已存在的 AFO 输入: {path}") from error
+        return path
+
+    def prepare_precomputed_msa_input(
+        self,
+        *,
+        input_json: Path,
+        msa_path: Path,
+    ) -> Path:
+        try:
+            payload = json.loads(input_json.read_text(encoding="utf-8"))
+            protein = payload["sequences"][0]["protein"]
+            if not isinstance(protein, dict):
+                raise TypeError("protein is not a mapping")
+        except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
+            raise BackendContractError(f"AFO 输入无法更新 MSA: {input_json}") from error
+        protein["unpairedMsa"] = _read_a3m(msa_path)
+        protein["pairedMsa"] = ""
+        updated = input_json.with_name(f"{input_json.stem}-update-msa.json")
+        try:
+            with updated.open("x", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+        except FileExistsError as error:
+            raise ManifestStateError(f"不可覆盖 AFO MSA input: {updated}") from error
+        return updated
+
+    def remote_msa_artifacts(
+        self,
+        *,
+        input_json: Path,
+        msa_output_dir: Path,
+    ) -> tuple[Path, Path]:
+        updated = self.updated_msa_input_path(input_json, msa_output_dir)
+        source = msa_output_dir / input_json.stem / "msas/A_unpaired.a3m"
+        if not updated.is_file() or not source.is_file():
+            raise PredictionOutputError(
+                f"AFO MSA 输出缺失: updated={updated}, a3m={source}"
+            )
+        return updated, source
+
+    def version_invocation(self) -> BackendInvocation:
+        return BackendInvocation(
+            backend_name=self.backend_name,
+            backend_version=self.backend_version,
+            argv=(
+                str(self.python),
+                "-c",
+                "from importlib.metadata import version; print(version('alphafold3-open'))",
+            ),
+            environment=self._environment(),
+            timeout_seconds=30,
+        )
+
+    def validate_version_output(self, output: str) -> None:
+        if output.strip() != self.backend_version:
+            raise BackendContractError(
+                "alphafold3-open 版本不匹配: "
+                f"expected={self.backend_version}, actual={output.strip()!r}"
+            )
+
+    def msa_invocation(
+        self,
+        request: PredictionRequest,
+        *,
+        input_json: Path,
+        output_dir: Path,
+    ) -> BackendInvocation:
+        if request.msa_mode is not MsaMode.REMOTE:
+            raise BackendContractError("只有 remote MSA 请求可以调用 ColabFold")
+        return BackendInvocation(
+            backend_name=self.backend_name,
+            backend_version=self.backend_version,
+            argv=(
+                str(self.python),
+                str(self.runner),
+                f"--json_path={input_json}",
+                f"--output_dir={output_dir}",
+                "--run_data_pipeline=false",
+                "--run_inference=false",
+                "--use_msa_server=true",
+                f"--msa_server_url={self.msa_server_url}",
+                f"--cache_dir={self.cache_root}",
+                "--force_output_dir=true",
+            ),
+            environment=self._environment(),
+            timeout_seconds=self.msa_timeout_seconds,
+        )
+
+    @staticmethod
+    def updated_msa_input_path(input_json: Path, msa_output_dir: Path) -> Path:
+        return msa_output_dir / input_json.stem / f"{input_json.stem}_data.json"
+
+    def prediction_invocation(
+        self,
+        request: PredictionRequest,
+        *,
+        input_json: Path,
+        output_dir: Path,
+    ) -> BackendInvocation:
+        if request.template_mode is not TemplateMode.DISABLED:
+            raise BackendContractError("AFO 第一阶段禁止模板")
+        if request.parameter_profile is not PredictionParameterProfile.MODEL_DEFAULT:
+            raise BackendContractError("AFO 首版只接受已冻结的 model-default 参数")
+        return BackendInvocation(
+            backend_name=self.backend_name,
+            backend_version=self.backend_version,
+            argv=(
+                str(self.python),
+                str(self.runner),
+                f"--json_path={input_json}",
+                f"--output_dir={output_dir}",
+                f"--model_dir={self.model_root}",
+                "--of3_weights=true",
+                "--run_data_pipeline=false",
+                "--run_inference=true",
+                "--use_msa_server=false",
+                f"--cache_dir={self.cache_root}",
+                f"--num_diffusion_samples={request.sample_count}",
+                "--num_recycles=10",
+                "--flash_attention_implementation=xla",
+                "--save_terms_of_use=true",
+                "--force_output_dir=true",
+            ),
+            environment=self._environment(),
+            timeout_seconds=self.prediction_timeout_seconds,
+        )
+
+    @staticmethod
+    def _complex_confidence(
+        summary: _OpenFold3Summary,
+        full: _OpenFold3FullConfidence,
+    ) -> ComplexConfidenceMetrics:
+        chain_count = len(summary.chain_ptm)
+        if chain_count != 2:
+            raise PredictionOutputError("AFO complex summary 必须恰好包含 A/B 两条链")
+        if _matrix_shape(summary.chain_pair_iptm) != (2, 2):
+            raise PredictionOutputError("AFO chain_pair_iptm 必须是 2×2")
+        if summary.chain_ids and summary.chain_ids != ("A", "B"):
+            raise PredictionOutputError("AFO summary chain 顺序必须为 A/B")
+        token_count = len(full.token_chain_ids)
+        if _matrix_shape(full.pae) != (token_count, token_count):
+            raise PredictionOutputError("AFO PAE 必须是 N_token × N_token")
+        target_tokens = tuple(
+            index for index, chain_id in enumerate(full.token_chain_ids) if chain_id == "A"
+        )
+        binder_tokens = tuple(
+            index for index, chain_id in enumerate(full.token_chain_ids) if chain_id == "B"
+        )
+        if not target_tokens or not binder_tokens:
+            raise PredictionOutputError("AFO full confidence 缺少 A/B token")
+        interface_pae = [
+            full.pae[first][second]
+            for first in target_tokens
+            for second in binder_tokens
+        ] + [
+            full.pae[second][first]
+            for first in target_tokens
+            for second in binder_tokens
+        ]
+        values = (
+            summary.chain_pair_iptm[0][1],
+            summary.chain_ptm[1],
+            *interface_pae,
+        )
+        if any(not math.isfinite(value) for value in values):
+            raise PredictionOutputError("AFO complex confidence 包含非有限值")
+        return ComplexConfidenceMetrics(
+            metric_definition_version=OPENFOLD3_METRIC_DEFINITION_VERSION,
+            pairwise_iptm=summary.chain_pair_iptm[0][1],
+            minimum_interface_pae_angstrom=min(interface_pae),
+            binder_ptm=summary.chain_ptm[1],
+            target_token_count=len(target_tokens),
+            binder_token_count=len(binder_tokens),
+        )
+
+    def collect_products(
+        self,
+        request: PredictionRequest,
+        *,
+        output_dir: Path,
+    ) -> tuple[StructurePredictionProduct, ...]:
+        job_dir = output_dir / request.job_name
+        products: list[StructurePredictionProduct] = []
+        for seed in request.seeds:
+            for sample_index in range(request.sample_count):
+                sample_dir = job_dir / f"seed-{seed}_sample-{sample_index}"
+                prefix = f"{request.job_name}_seed-{seed}_sample-{sample_index}_"
+                structure = sample_dir / f"{prefix}model.cif"
+                summary_path = sample_dir / f"{prefix}summary_confidences.json"
+                full_path = sample_dir / f"{prefix}confidences.json"
+                if not all(path.is_file() for path in (structure, summary_path, full_path)):
+                    raise PredictionOutputError(
+                        "AFO 正式输出缺失: "
+                        f"structure={structure}, summary={summary_path}, full={full_path}"
+                    )
+                try:
+                    summary = _OpenFold3Summary.model_validate_json(
+                        summary_path.read_text(encoding="utf-8")
+                    )
+                    full = _OpenFold3FullConfidence.model_validate_json(
+                        full_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, ValueError) as error:
+                    raise SerializationError(
+                        f"AFO confidence JSON 无法校验: {sample_dir}"
+                    ) from error
+                if not full.atom_plddts or any(
+                    not math.isfinite(value) for value in full.atom_plddts
+                ):
+                    raise PredictionOutputError("AFO atom pLDDT 缺失或含非有限值")
+                complex_confidence = (
+                    self._complex_confidence(summary, full)
+                    if isinstance(request, ComplexStructurePredictionRequest)
+                    else None
+                )
+                products.append(
+                    StructurePredictionProduct(
+                        backend_name=self.backend_name,
+                        backend_version=self.backend_version,
+                        model_name=self.model_name,
+                        seed=seed,
+                        sample_index=sample_index,
+                        structure_path=structure,
+                        structure_sha256=sha256_file(structure),
+                        confidence_path=summary_path,
+                        confidence_sha256=sha256_file(summary_path),
+                        full_confidence_path=full_path,
+                        full_confidence_sha256=sha256_file(full_path),
+                        plddt=math.fsum(full.atom_plddts) / len(full.atom_plddts),
+                        gpde=None,
+                        ptm=summary.ptm,
+                        iptm=summary.iptm,
+                        ranking_score=summary.ranking_score,
+                        has_clash=bool(summary.has_clash),
+                        recycle_count=10,
+                        complex_confidence=complex_confidence,
+                        native_metrics={
+                            "fraction_disordered": summary.fraction_disordered,
+                            "raw_checkpoint_sha256": self.raw_checkpoint_sha256,
+                            "converted_weight_sha256": self.converted_weight_sha256,
+                            "wheel_sha256": self.wheel_sha256,
+                            "runner_commit": self.runner_commit,
+                            "msa_provider": (
+                                self.remote_msa_provider
+                                if request.msa_mode is MsaMode.REMOTE
+                                else "precomputed"
+                            ),
+                            "msa_endpoint": (
+                                self.remote_msa_endpoint
+                                if request.msa_mode is MsaMode.REMOTE
+                                else None
+                            ),
+                            "template_mode": "disabled",
+                            "seeds": ",".join(str(value) for value in request.seeds),
+                            "samples_per_seed": request.sample_count,
+                            "recycles": 10,
+                            "parameter_profile": str(request.parameter_profile),
+                        },
+                    )
+                )
+        return tuple(products)
+
+
+__all__ = [
+    "OPENFOLD3_METRIC_DEFINITION_VERSION",
+    "OpenFold3Af3JaxAdapter",
+]

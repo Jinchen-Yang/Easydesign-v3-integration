@@ -2,6 +2,7 @@
 
 from .contracts import (
     BackendInvocation,
+    ComplexConfidenceMetrics,
     ComplexStructurePredictionRequest,
     MsaMode,
     PredictionParameterProfile,
@@ -10,6 +11,10 @@ from .contracts import (
     StructurePredictionProduct,
     StructurePredictionRequest,
     TemplateMode,
+)
+from .openfold3_af3_jax import (
+    OPENFOLD3_METRIC_DEFINITION_VERSION,
+    OpenFold3Af3JaxAdapter,
 )
 from .protenix_v2 import (
     ProtenixMsaProvider,
@@ -20,8 +25,11 @@ from .protenix_v2 import (
 
 __all__ = [
     "BackendInvocation",
+    "ComplexConfidenceMetrics",
     "ComplexStructurePredictionRequest",
     "MsaMode",
+    "OPENFOLD3_METRIC_DEFINITION_VERSION",
+    "OpenFold3Af3JaxAdapter",
     "PredictionRequest",
     "PredictionParameterProfile",
     "ProteinPredictionChain",

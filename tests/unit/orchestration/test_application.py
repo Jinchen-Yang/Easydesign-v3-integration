@@ -107,6 +107,24 @@ def test_config_validation_does_not_require_backend_profile(
     assert not (plan.runs_root / "demo").exists()
 
 
+def test_stage01_openfold3_is_explicit_and_does_not_change_default(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    initialized = initialize_project(project_root=tmp_path / "demo", target=fasta)
+    payload = yaml.safe_load(initialized.config_path.read_text(encoding="utf-8"))
+    assert payload["stage01"]["structure_prediction"]["backend"] == "protenix-v2"
+    payload["stage01"]["structure_prediction"]["backend"] = "openfold3-af3-jax"
+    initialized.config_path.write_text(
+        yaml.safe_dump(payload, sort_keys=False), encoding="utf-8"
+    )
+
+    plan = validate_run_configuration(initialized.config_path)
+
+    assert plan.required_backends == ("openfold3-af3-jax",)
+
+
 def test_full_doctor_fails_when_linked_backends_are_not_configured(
     tmp_path: Path,
 ) -> None:

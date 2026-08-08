@@ -12,11 +12,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 from easydesign.backends.structure_prediction import (
     BackendInvocation,
     MsaMode,
+    OpenFold3Af3JaxAdapter,
     PredictionParameterProfile,
     ProtenixV2Adapter,
 )
@@ -58,8 +58,9 @@ from .workspace import (
 
 AdapterBuilder = Callable[
     [ResolvedProtenixMsaProviderConfig | None],
-    ProtenixV2Adapter,
+    ProtenixV2Adapter | OpenFold3Af3JaxAdapter,
 ]
+PredictionAdapter = ProtenixV2Adapter | OpenFold3Af3JaxAdapter
 
 
 class SequencePredictionExecutionError(RuntimeError):
@@ -164,33 +165,10 @@ def _validated_a3m(
     return sha256_file(source), depth
 
 
-def _write_updated_msa_input(
-    *,
-    input_json: Path,
-    msa_path: Path,
-) -> Path:
-    chain = _load_single_protein_chain(input_json)
-    chain["unpairedMsaPath"] = str(msa_path.resolve())
-    try:
-        payload = json.loads(input_json.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise _InvocationFailure(
-            f"Protenix 输入无法读取: {input_json}",
-            error_code="msa-input-invalid",
-            retryable=False,
-        ) from error
-    payload[0]["sequences"][0]["proteinChain"] = chain
-    updated = input_json.with_name(f"{input_json.stem}-update-msa.json")
-    _exclusive_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        updated,
-    )
-    return updated
-
-
 def _publish_explicit_msa(
     *,
     prepared: PreparedSequenceRun,
+    adapter: PredictionAdapter,
     input_json: Path,
     attempt_root: Path,
     source: Path,
@@ -204,7 +182,7 @@ def _publish_explicit_msa(
         source,
         attempt_root / "artifacts" / "target-msa.a3m",
     )
-    updated = _write_updated_msa_input(
+    updated = adapter.prepare_precomputed_msa_input(
         input_json=input_json,
         msa_path=published,
     )
@@ -423,66 +401,25 @@ def _run_invocation(
     return completed
 
 
-def _load_single_protein_chain(updated_input: Path) -> dict[str, Any]:
-    try:
-        payload: Any = json.loads(updated_input.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise _InvocationFailure(
-            f"Protenix MSA updated input 无法读取: {updated_input}",
-            error_code="remote-msa-output-invalid",
-            retryable=True,
-        ) from error
-    try:
-        if not isinstance(payload, list) or len(payload) != 1:
-            raise ValueError("顶层不是单任务 list")
-        sequences = payload[0]["sequences"]
-        if not isinstance(sequences, list) or len(sequences) != 1:
-            raise ValueError("不是单 sequence")
-        chain = sequences[0]["proteinChain"]
-        if not isinstance(chain, dict):
-            raise ValueError("proteinChain 不是 mapping")
-        return chain
-    except (KeyError, TypeError, ValueError) as error:
-        raise _InvocationFailure(
-            f"Protenix MSA updated input 不符合单蛋白契约: {updated_input}",
-            error_code="remote-msa-output-invalid",
-            retryable=True,
-        ) from error
-
-
 def _validate_and_publish_msa(
     *,
     prepared: PreparedSequenceRun,
-    adapter: ProtenixV2Adapter,
+    adapter: PredictionAdapter,
     attempt_root: Path,
     msa_output_dir: Path,
 ) -> _MsaEvidence:
-    updated = adapter.updated_msa_input_path(
-        attempt_root / "inputs" / "protenix-input.json",
-        msa_output_dir,
-    )
-    if not updated.is_file():
-        raise _InvocationFailure(
-            f"Protenix MSA 未生成 updated input: {updated}",
-            error_code="remote-msa-output-missing",
-            retryable=True,
+    input_json = attempt_root / "inputs" / "protenix-input.json"
+    try:
+        updated, source = adapter.remote_msa_artifacts(
+            input_json=input_json,
+            msa_output_dir=msa_output_dir,
         )
-    chain = _load_single_protein_chain(updated)
-    path_value = chain.get("unpairedMsaPath")
-    if not isinstance(path_value, str) or not path_value:
+    except EasyDesignError as error:
         raise _InvocationFailure(
-            "Protenix MSA updated input 缺少 unpairedMsaPath",
+            str(error),
             error_code="remote-msa-output-invalid",
             retryable=True,
-        )
-    source = Path(path_value).resolve()
-    msa_root = msa_output_dir.resolve()
-    if not source.is_relative_to(msa_root) or not source.is_file():
-        raise _InvocationFailure(
-            f"MSA 路径不在当前 attempt work 目录: {source}",
-            error_code="remote-msa-output-invalid",
-            retryable=True,
-        )
+        ) from error
     try:
         _, depth = _validated_a3m(
             source=source,
@@ -675,7 +612,7 @@ def execute_sequence_prediction(
             try:
                 version = _run_invocation(
                     adapter.version_invocation(),
-                    error_code="protenix-version-probe-failed",
+                    error_code="structure-backend-version-probe-failed",
                     retryable=False,
                 )
                 logs["version-stdout"] = version.stdout
@@ -691,6 +628,7 @@ def execute_sequence_prediction(
                         )
                     msa_evidence = _publish_explicit_msa(
                         prepared=prepared,
+                        adapter=adapter,
                         input_json=input_json,
                         attempt_root=attempt_root,
                         source=prepared.precomputed_msa,
@@ -708,6 +646,7 @@ def execute_sequence_prediction(
                     if cached is not None:
                         msa_evidence = _publish_explicit_msa(
                             prepared=prepared,
+                            adapter=adapter,
                             input_json=input_json,
                             attempt_root=attempt_root,
                             source=cached,

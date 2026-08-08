@@ -109,6 +109,7 @@ class ProtenixV2Adapter:
     """只生成/解释文件协议，不在 easydesign-core 中导入 Protenix。"""
 
     backend_name = "protenix"
+    profile_backend_id = "protenix-v2"
     backend_version = "2.0.0"
     model_name = "protenix-v2"
 
@@ -206,6 +207,51 @@ class ProtenixV2Adapter:
         except FileExistsError as error:
             raise ManifestStateError(f"不可覆盖已存在的 Protenix 输入: {path}") from error
         return path
+
+    def prepare_precomputed_msa_input(
+        self,
+        *,
+        input_json: Path,
+        msa_path: Path,
+    ) -> Path:
+        """Publish a new Protenix input revision that points at an approved A3M."""
+
+        try:
+            payload = json.loads(input_json.read_text(encoding="utf-8"))
+            chain = payload[0]["sequences"][0]["proteinChain"]
+            if not isinstance(chain, dict):
+                raise TypeError("proteinChain is not a mapping")
+        except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
+            raise BackendContractError(f"Protenix 输入无法更新 MSA: {input_json}") from error
+        chain["unpairedMsaPath"] = str(msa_path.resolve())
+        updated = input_json.with_name(f"{input_json.stem}-update-msa.json")
+        try:
+            with updated.open("x", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+        except FileExistsError as error:
+            raise ManifestStateError(f"不可覆盖 Protenix MSA input: {updated}") from error
+        return updated
+
+    def remote_msa_artifacts(
+        self,
+        *,
+        input_json: Path,
+        msa_output_dir: Path,
+    ) -> tuple[Path, Path]:
+        updated = self.updated_msa_input_path(input_json, msa_output_dir)
+        try:
+            payload = json.loads(updated.read_text(encoding="utf-8"))
+            value = payload[0]["sequences"][0]["proteinChain"]["unpairedMsaPath"]
+            if not isinstance(value, str) or not value:
+                raise TypeError("unpairedMsaPath is missing")
+        except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
+            raise PredictionOutputError(f"Protenix MSA updated input 无效: {updated}") from error
+        source = Path(value).resolve()
+        root = msa_output_dir.resolve()
+        if not source.is_relative_to(root) or not source.is_file():
+            raise PredictionOutputError(f"Protenix MSA 路径逃出当前输出: {source}")
+        return updated, source
 
     def _environment(self) -> tuple[tuple[str, str], ...]:
         extra_environment = dict(self.extra_environment)

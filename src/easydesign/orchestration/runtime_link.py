@@ -200,6 +200,8 @@ def _asset_path(assets: dict[str, LinkedAsset], asset_id: str) -> Path:
 
 
 def _profile(context: WorkspaceContext, receipt: RuntimeLinkReceipt) -> RuntimeProfile:
+    from .runtime_components import active_openfold3_runtime
+
     envs = {item.environment_id: item.prefix for item in receipt.environments}
     assets = {item.asset_id: item for item in receipt.assets}
     protenix_prefix = envs["protenix-v2"]
@@ -245,6 +247,7 @@ def _profile(context: WorkspaceContext, receipt: RuntimeLinkReceipt) -> RuntimeP
                 model_checkpoint=_asset_path(assets, "protenix-v2-checkpoint"),
                 extra_environment=protenix_environment,
             ),
+            openfold3_af3_jax=active_openfold3_runtime(context),
             pymol_pse=PyMOLPseRuntime(
                 python=envs["pymol-pse"] / "bin/python",
             ),

@@ -1,6 +1,6 @@
 """Stable public orchestration API for EasyDesign Local."""
 
-from . import runtime_link
+from . import runtime_components, runtime_link
 from .application import (
     DiagnosticCheck,
     DiagnosticReport,
@@ -83,5 +83,6 @@ __all__ = [
     "read_pipeline_progress",
     "replace_run_index_entries",
     "runtime_link",
+    "runtime_components",
     "validate_run_configuration",
 ]

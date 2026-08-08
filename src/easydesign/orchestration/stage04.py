@@ -29,6 +29,7 @@ from easydesign.core import (
     StageId,
     StageManifest,
     TaskEvent,
+    TaskHeartbeat,
     TaskRecord,
     TaskStatus,
     dump_model,
@@ -187,7 +188,7 @@ def _build_plan(
                 task_id=f"pilot-{strategy.strategy_id}",
                 strategy_id=strategy.strategy_id,
                 design_specification=specification,
-                required_complete_candidates=(config.required_complete_candidates_per_strategy),
+                required_complete_candidates=strategy.candidates_per_strategy,
             )
         )
     return PilotPlan(
@@ -205,6 +206,7 @@ def _snapshot(
     updated_at: datetime,
     planned_candidates: int,
     status: str,
+    task_heartbeats: tuple[TaskHeartbeat, ...] = (),
     recent_errors: tuple[str, ...] = (),
 ) -> ProgressSnapshot:
     counts = {item: 0 for item in TaskStatus}
@@ -239,6 +241,7 @@ def _snapshot(
         elapsed_seconds=elapsed,
         throughput_candidates_per_hour=throughput,
         estimated_remaining_seconds=eta,
+        task_heartbeats=task_heartbeats,
         recent_errors=recent_errors[-10:],
     )
 
@@ -272,8 +275,7 @@ def _rehydrate_design_mask_evidence(
     missing = [
         candidate
         for candidate in candidates
-        if candidate.design_mask_source is None
-        or not candidate.designed_binder_residue_ids
+        if candidate.design_mask_source is None or not candidate.designed_binder_residue_ids
     ]
     if not missing:
         return 0
@@ -282,10 +284,7 @@ def _rehydrate_design_mask_evidence(
         ordinal = 1
         task_candidates: list[CandidateRecord] = []
         for task_attempt in task.attempts:
-            if (
-                task_attempt.status is TaskStatus.RUNNING
-                or task_attempt.collected_candidates == 0
-            ):
+            if task_attempt.status is TaskStatus.RUNNING or task_attempt.collected_candidates == 0:
                 continue
             output = root / task_attempt.output_relative_path
             collected = collect_boltzgen_candidates(
@@ -416,6 +415,9 @@ def execute_stage04(
         tasks = {task.task_id: task for task in state.tasks}
         candidates = list(state.candidates)
         created_at = state.created_at
+        heartbeats = {
+            item.task_id: item for item in state.progress.task_heartbeats if item.task_id in tasks
+        }
     else:
         created_at = now
         tasks = {
@@ -427,6 +429,7 @@ def execute_stage04(
             for item in plan.strategies
         }
         candidates = []
+        heartbeats = {}
 
     rehydrated_candidate_count = _rehydrate_design_mask_evidence(
         root=root,
@@ -447,6 +450,7 @@ def execute_stage04(
             updated_at=datetime.now(UTC),
             planned_candidates=planned_candidates,
             status=status,
+            task_heartbeats=tuple(heartbeats[key] for key in sorted(heartbeats)),
             recent_errors=tuple(recent_errors),
         )
         atomic_dump_runtime_model(snapshot, progress_path)
@@ -524,9 +528,7 @@ def execute_stage04(
     with lock:
         for task_id, task in tuple(tasks.items()):
             if task.status is TaskStatus.PENDING:
-                tasks[task_id] = task.model_copy(
-                    update={"status": TaskStatus.WAITING_RESOURCE}
-                )
+                tasks[task_id] = task.model_copy(update={"status": TaskStatus.WAITING_RESOURCE})
         persist("waiting-resource")
 
     def on_wait(busy: tuple[GpuResourceSnapshot, ...]) -> None:
@@ -558,9 +560,7 @@ def execute_stage04(
         ),
     )
     gpu_snapshots = tuple(
-        item.snapshot
-        for item in gpu_inventory.devices
-        if item.snapshot.device in execution_devices
+        item.snapshot for item in gpu_inventory.devices if item.snapshot.device in execution_devices
     )
     with lock:
         for task_id, task in tuple(tasks.items()):
@@ -591,6 +591,8 @@ def execute_stage04(
         def on_transition(transition: TaskTransition) -> None:
             with lock:
                 tasks[transition.task.task_id] = transition.task
+                if transition.task.status is not TaskStatus.RUNNING:
+                    heartbeats.pop(transition.task.task_id, None)
                 candidates.extend(transition.new_candidates)
                 if transition.error is not None:
                     recent_errors.append(
@@ -607,11 +609,15 @@ def execute_stage04(
                     to_status=transition.to_status,
                     error=transition.error,
                 )
-                persist(
-                    "incomplete"
-                    if transition.event_type == "task-incomplete"
-                    else "running"
-                )
+                persist("incomplete" if transition.event_type == "task-incomplete" else "running")
+
+        def on_heartbeat(update: TaskHeartbeat) -> None:
+            with lock:
+                current = tasks.get(update.task_id)
+                if current is None or current.status is not TaskStatus.RUNNING:
+                    return
+                heartbeats[update.task_id] = update
+                persist("running")
 
         return execute_boltzgen_candidate_task(
             root=root,
@@ -624,6 +630,8 @@ def execute_stage04(
             device=device,
             maximum_attempts_this_invocation=config.executor.max_task_attempts,
             on_transition=on_transition,
+            on_heartbeat=on_heartbeat,
+            should_stop=local_drain_requested,
         )
 
     pending_plans = tuple(
@@ -650,9 +658,7 @@ def execute_stage04(
         )
         append_event(
             event_type="gpu-leases-acquired",
-            message=", ".join(
-                f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
-            ),
+            message=", ".join(f"gpu={lease.device},lease={lease.lease_id}" for lease in leases),
         )
         try:
             execute_on_devices(
@@ -667,8 +673,7 @@ def execute_stage04(
                 append_event(
                     event_type="gpu-leases-released",
                     message=", ".join(
-                        f"gpu={item.device},lease={item.lease_id}"
-                        for item in released
+                        f"gpu={item.device},lease={item.lease_id}" for item in released
                     ),
                 )
 
@@ -689,10 +694,16 @@ def execute_stage04(
             key=lambda item: (item.strategy_id, item.ordinal_within_strategy),
         )
     )
+    required_by_strategy = {
+        item.strategy_id: item.required_complete_candidates for item in plan.strategies
+    }
+    variable_budget = upstream.strategy_bundle.schema_version == "0.2"
     candidate_index = CandidateIndex(
+        schema_version="0.2" if variable_budget else "0.1",
         generated_at=datetime.now(UTC),
         strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
         required_per_strategy=config.required_complete_candidates_per_strategy,
+        required_by_strategy=required_by_strategy if variable_budget else None,
         candidates=ordered_candidates,
     )
     candidate_index_path = artifacts / "candidate-index.json"
@@ -761,6 +772,7 @@ def execute_stage04(
     )
     pilot_bundle_path = artifacts / "pilot-bundle.json"
     bundle = PilotBundle(
+        schema_version="0.2" if variable_budget else "0.1",
         generated_at=datetime.now(UTC),
         strategy_bundle=upstream.strategy_bundle_ref,
         pilot_plan=output_refs[0],
@@ -772,6 +784,7 @@ def execute_stage04(
         strategy_count=len(plan.strategies),
         complete_candidate_count=len(ordered_candidates),
         complete_candidates_per_strategy=(config.required_complete_candidates_per_strategy),
+        complete_candidates_by_strategy=(required_by_strategy if variable_budget else None),
     )
     dump_model(bundle, pilot_bundle_path)
     pilot_bundle_ref = _artifact(
@@ -783,9 +796,7 @@ def execute_stage04(
     )
     wall_clock_end = datetime.now(UTC)
     ended_at = (
-        wall_clock_end
-        if wall_clock_end >= created_at
-        else created_at + timedelta(microseconds=1)
+        wall_clock_end if wall_clock_end >= created_at else created_at + timedelta(microseconds=1)
     )
     task_log_refs: list[ArtifactRef] = []
     for task in final_tasks:

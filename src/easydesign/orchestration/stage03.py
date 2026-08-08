@@ -39,6 +39,7 @@ from easydesign.stages.s02_hotspot_discovery import HotspotsFile
 from easydesign.stages.s03_boltzgen_configuration import (
     StrategyBundle,
     compile_basic_vhh_matrix,
+    compile_vhh_strategy_plan,
     write_design_matrix,
 )
 
@@ -205,10 +206,7 @@ def initialize_continuation_run(
 
     source = source_run_root.resolve()
     source_run, source_run_manifest_path = _latest_manifest(source)
-    if (
-        copy_through_stage is None
-        and source_run.status is not ExecutionStatus.SUCCEEDED
-    ):
+    if copy_through_stage is None and source_run.status is not ExecutionStatus.SUCCEEDED:
         raise ManifestStateError("continuation source 必须是终态 succeeded run")
     loaded = load_run_config(config_path)
     if loaded.config.project_id != source_run.project_id:
@@ -219,8 +217,7 @@ def initialize_continuation_run(
         if copy_through_stage is None
         or (
             reference.producer_stage is not None
-            and int(reference.producer_stage.split("-", maxsplit=1)[0])
-            <= copy_through_stage
+            and int(reference.producer_stage.split("-", maxsplit=1)[0]) <= copy_through_stage
         )
     )
     if not source_stage_refs:
@@ -237,11 +234,7 @@ def initialize_continuation_run(
         stage_numbers.append(stage_number)
         copied_stage_sha256[reference.producer_stage] = reference.sha256
     ordered_numbers = sorted(stage_numbers)
-    expected_last = (
-        copy_through_stage
-        if copy_through_stage is not None
-        else max(ordered_numbers)
-    )
+    expected_last = copy_through_stage if copy_through_stage is not None else max(ordered_numbers)
     if ordered_numbers != list(range(1, expected_last + 1)):
         raise ManifestStateError("continuation source Stage 序列不连续")
     next_stage = expected_last + 1
@@ -405,9 +398,7 @@ def _assert_completed_configuration_unchanged(
             previous.user_config,
             field_name,
         ):
-            raise ManifestStateError(
-                f"修改已完成 Stage {stage_number:02d} 配置必须创建分支 run"
-            )
+            raise ManifestStateError(f"修改已完成 Stage {stage_number:02d} 配置必须创建分支 run")
 
 
 def continue_run_in_place(
@@ -423,19 +414,13 @@ def continue_run_in_place(
 
     root = source_run_root.resolve()
     current, current_path = _latest_manifest(root)
-    if (
-        continue_after_stage is None
-        and current.status is not ExecutionStatus.SUCCEEDED
-    ):
+    if continue_after_stage is None and current.status is not ExecutionStatus.SUCCEEDED:
         raise ManifestStateError("同 run continuation 只接受 succeeded run")
-    if (
-        continue_after_stage is not None
-        and current.status
-        not in {ExecutionStatus.RUNNING, ExecutionStatus.SUCCEEDED}
-    ):
-        raise ManifestStateError(
-            "按成功 Stage 前缀继续只接受 running 或 succeeded run"
-        )
+    if continue_after_stage is not None and current.status not in {
+        ExecutionStatus.RUNNING,
+        ExecutionStatus.SUCCEEDED,
+    }:
+        raise ManifestStateError("按成功 Stage 前缀继续只接受 running 或 succeeded run")
     loaded = load_run_config(config_path)
     if loaded.config.project_id != current.project_id:
         raise ManifestStateError("continuation config project_id 必须与当前 run 一致")
@@ -449,14 +434,10 @@ def continue_run_in_place(
     for reference in current.stage_manifest_refs:
         stage_manifest = load_model(reference.verify(root), StageManifest)
         if stage_manifest.status is not ExecutionStatus.SUCCEEDED:
-            raise ManifestStateError(
-                f"同 run continuation 的上游未成功: {stage_manifest.stage_id}"
-            )
+            raise ManifestStateError(f"同 run continuation 的上游未成功: {stage_manifest.stage_id}")
     completed_through = max(stage_numbers)
     if continue_after_stage is not None and continue_after_stage != completed_through:
-        raise ManifestStateError(
-            "从较早 Stage 改写流程必须创建分支 run，不能原地 continuation"
-        )
+        raise ManifestStateError("从较早 Stage 改写流程必须创建分支 run，不能原地 continuation")
     next_stage = completed_through + 1
     if loaded.config.workflow.stop_after_stage < next_stage:
         raise ManifestStateError("continuation config 没有启用下一 Stage")
@@ -469,9 +450,7 @@ def continue_run_in_place(
         completed_through_stage=completed_through,
     )
     timestamp = (
-        datetime.now(UTC)
-        if continued_at is None
-        else normalize_aware_datetime(continued_at)
+        datetime.now(UTC) if continued_at is None else normalize_aware_datetime(continued_at)
     )
     if timestamp <= current.updated_at:
         timestamp = current.updated_at + timedelta(microseconds=1)
@@ -554,9 +533,7 @@ def continue_run_in_place(
         )
         _atomic_text(manifest_path.name + "\n", root / "manifests" / "LATEST")
     except Exception:
-        revision_root.rename(
-            revisions_root / f".{revision_name}.unpublished"
-        )
+        revision_root.rename(revisions_root / f".{revision_name}.unpublished")
         raise
     runs_root = root.parents[1]
     upsert_run_index_entries(
@@ -622,13 +599,23 @@ def execute_stage03(
     target = upstream.target_structure_ref.verify(root)
 
     capability = adapter.probe()
-    scaffold_assets, strategies = compile_basic_vhh_matrix(
-        target_cif=target,
-        hotspots=hotspots,
-        artifacts_root=artifacts,
-        candidates_per_strategy=config.candidates_per_strategy,
-        scaffold_ids=config.scaffold_ids,
-    )
+    explicit_plan = config.variants is not None or bool(config.native_variants)
+    if explicit_plan:
+        scaffold_assets, strategies = compile_vhh_strategy_plan(
+            target_cif=target,
+            hotspots=hotspots,
+            artifacts_root=artifacts,
+            variants=config.variants or (),
+            native_variants=config.native_variants,
+        )
+    else:
+        scaffold_assets, strategies = compile_basic_vhh_matrix(
+            target_cif=target,
+            hotspots=hotspots,
+            artifacts_root=artifacts,
+            candidates_per_strategy=config.candidates_per_strategy,
+            scaffold_ids=config.scaffold_ids,
+        )
     _json_file(capability, artifacts / "boltzgen-capability.json")
     report = adapter.validate(
         artifacts_root=artifacts,
@@ -749,6 +736,7 @@ def execute_stage03(
         artifacts / "scaffold-resolution.json",
     )
     bundle = StrategyBundle(
+        schema_version="0.2" if explicit_plan else "0.1",
         generated_at=now,
         project_id=upstream.run.project_id,
         run_id=upstream.run.run_id,
@@ -869,6 +857,16 @@ def execute_stage03(
                 ),
             )
         )
+        if strategy.variant_scaffold_path is not None:
+            output_refs.append(
+                _artifact(
+                    root,
+                    artifacts / strategy.variant_scaffold_path,
+                    artifact_id=f"strategy-{strategy.strategy_id}-scaffold",
+                    role="variant-scaffold-specification",
+                    file_format="yaml",
+                )
+            )
     stdout_ref = _artifact(
         root,
         stdout_path,
@@ -936,7 +934,11 @@ def execute_stage03(
         attempts=(attempt,),
         selected_attempt_id=attempt_id,
         warnings=(
-            "Basic 1.0 template only: H_all + C_full.",
+            (
+                "Explicit strategy plan: only declared variants/scaffolds were compiled."
+                if explicit_plan
+                else "Basic 1.0 template only: H_all + C_full."
+            ),
             "Non-hotspot residues remain neutral and are not emitted as not_binding.",
             "BoltzGen 0.3.2 does not expose a reliable deterministic generation seed.",
         ),

@@ -14,9 +14,7 @@ from easydesign.stages.s05_pilot_filtering import StrategyPromotionRecord
 
 from .models import ScaleProfile
 
-ALLOCATION_POLICY: Final[Literal["equal-across-promoted-v1"]] = (
-    "equal-across-promoted-v1"
-)
+ALLOCATION_POLICY: Final[Literal["equal-across-promoted-v1"]] = "equal-across-promoted-v1"
 
 
 class StrategyAllocation(BaseModel):
@@ -46,10 +44,7 @@ class MultiStrategyScaleShard(BaseModel):
     def validate_range(self) -> Self:
         if self.strategy_ordinal_end < self.strategy_ordinal_start:
             raise ValueError("multi-strategy shard ordinal range 倒置")
-        if (
-            self.strategy_ordinal_end - self.strategy_ordinal_start + 1
-            != self.requested_candidates
-        ):
+        if self.strategy_ordinal_end - self.strategy_ordinal_start + 1 != self.requested_candidates:
             raise ValueError("multi-strategy shard range 与 requested count 不一致")
         return self
 
@@ -60,12 +55,16 @@ class MultiStrategyScaleAuthorization(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     schema_version: Literal["0.2"] = "0.2"
-    mode: Literal["stage05-v1.6-promotions"] = "stage05-v1.6-promotions"
+    mode: Literal["stage05-v1.6-promotions", "human-promotion-receipt"] = "stage05-v1.6-promotions"
     authorized_at: datetime
     authorized_by: str = Field(min_length=1, max_length=256)
     reason: str = Field(min_length=1, max_length=4096)
     source_stage05_bundle_sha256: str = Field(pattern=SHA256_PATTERN)
     promoted_strategy_ids: tuple[str, ...] = Field(min_length=1, max_length=3)
+    human_promotion_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     total_candidate_budget: int = Field(ge=1)
     acknowledge_high_cost_generation: bool
 
@@ -75,6 +74,11 @@ class MultiStrategyScaleAuthorization(BaseModel):
             raise ValueError("scale authorization strategy_id 不能重复")
         if not self.acknowledge_high_cost_generation:
             raise ValueError("高成本 Stage 06 必须显式确认预算")
+        if self.mode == "human-promotion-receipt":
+            if self.human_promotion_receipt_sha256 is None:
+                raise ValueError("人工 promotion authorization 必须记录 receipt SHA-256")
+        elif self.human_promotion_receipt_sha256 is not None:
+            raise ValueError("Stage 05 自动 authorization 不得伪造人工 receipt")
         return self
 
 
@@ -128,27 +132,18 @@ class ScalePlanV0_2(BaseModel):
             raise ValueError("strategy allocation 总数与 global budget 不一致")
         if self.strategy_authorization.promoted_strategy_ids != allocation_ids:
             raise ValueError("authorization strategy 集合或顺序不一致")
-        if (
-            self.strategy_authorization.total_candidate_budget
-            != self.total_candidate_budget
-        ):
+        if self.strategy_authorization.total_candidate_budget != self.total_candidate_budget:
             raise ValueError("authorization budget 与 scale plan 不一致")
-        if self.strategy_authorization.source_stage05_bundle_sha256 != (
-            self.stage05_bundle_sha256
-        ):
+        if self.strategy_authorization.source_stage05_bundle_sha256 != (self.stage05_bundle_sha256):
             raise ValueError("authorization Stage 05 identity 不一致")
         design_ids = tuple(item.artifact_id for item in self.design_specifications)
         if len(design_ids) != len(set(design_ids)):
             raise ValueError("design specification ArtifactRef 不能重复")
         if len(design_ids) != len(allocation_ids):
             raise ValueError("每个 strategy 必须有一个 design specification")
-        expected_design_ids = tuple(
-            f"strategy-{strategy_id}" for strategy_id in allocation_ids
-        )
+        expected_design_ids = tuple(f"strategy-{strategy_id}" for strategy_id in allocation_ids)
         if design_ids != expected_design_ids:
-            raise ValueError(
-                "design specification 必须按晋级顺序与 strategy identity 一一对应"
-            )
+            raise ValueError("design specification 必须按晋级顺序与 strategy identity 一一对应")
         shard_ids = [item.shard_id for item in self.shards]
         task_ids = [item.task_id for item in self.shards]
         if len(shard_ids) != len(set(shard_ids)):
@@ -163,8 +158,7 @@ class ScalePlanV0_2(BaseModel):
                 raise ValueError("scale shard 来自未晋级 strategy")
             shards_by_strategy[shard.strategy_id].append(shard)
         allocations = {
-            item.strategy_id: item.requested_candidates
-            for item in self.strategy_allocations
+            item.strategy_id: item.requested_candidates for item in self.strategy_allocations
         }
         for strategy_id, strategy_shards in shards_by_strategy.items():
             expected_start = 1
@@ -264,24 +258,17 @@ class MultiStrategyCandidateIndex(BaseModel):
         if len(candidate_ids) != len(set(candidate_ids)):
             raise ValueError("MultiStrategyCandidateIndex candidate_id 不能重复")
         allocations = {
-            item.strategy_id: item.requested_candidates
-            for item in self.strategy_allocations
+            item.strategy_id: item.requested_candidates for item in self.strategy_allocations
         }
-        by_strategy: dict[str, list[int]] = {
-            strategy_id: [] for strategy_id in allocations
-        }
+        by_strategy: dict[str, list[int]] = {strategy_id: [] for strategy_id in allocations}
         for candidate in self.candidates:
             if candidate.strategy_id not in by_strategy:
                 raise ValueError("candidate 来自未晋级 strategy")
-            by_strategy[candidate.strategy_id].append(
-                candidate.ordinal_within_strategy
-            )
+            by_strategy[candidate.strategy_id].append(candidate.ordinal_within_strategy)
         for strategy_id, requested in allocations.items():
             ordinals = sorted(by_strategy[strategy_id])
             if ordinals != list(range(1, requested + 1)):
-                raise ValueError(
-                    f"{strategy_id} candidate ordinal 有缺口、重复或数量不完整"
-                )
+                raise ValueError(f"{strategy_id} candidate ordinal 有缺口、重复或数量不完整")
         return self
 
 
@@ -340,9 +327,7 @@ def allocate_equal_candidate_budget(
         raise ManifestStateError("Stage 06 v0.2 只接受 1–3 个 promoted strategy")
     if total_candidate_budget < len(promoted_strategies):
         raise ManifestStateError("global candidate budget 不能小于 strategy 数")
-    ordered = tuple(
-        sorted(promoted_strategies, key=lambda item: item.promotion_rank)
-    )
+    ordered = tuple(sorted(promoted_strategies, key=lambda item: item.promotion_rank))
     expected_ranks = tuple(range(1, len(ordered) + 1))
     if tuple(item.promotion_rank for item in ordered) != expected_ranks:
         raise ManifestStateError("promotion rank 必须按 1..N 连续")

@@ -16,6 +16,74 @@ SCAFFOLD_REGISTRY_ID = "official-vhh7-v1"
 STRATEGY_PROFILE_ID = "boltzgen-vhh-basic-v1"
 
 
+class TargetCrop(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    start: int = Field(ge=1)
+    end: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> Self:
+        if self.end < self.start:
+            raise ValueError("target crop end 不能小于 start")
+        return self
+
+
+class CdrOverride(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    cdr: Literal[1, 2, 3]
+    design_res_index: str = Field(pattern=r"^[0-9]+(?:\.\.[0-9]+)?(?:,[0-9]+(?:\.\.[0-9]+)?)*$")
+    insertion_num_residues: str = Field(pattern=r"^[0-9]+(?:\.\.[0-9]+)?$")
+
+
+class ExplicitStrategyVariant(BaseModel):
+    """One intentional experiment; scaffold expansion is local to this variant."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    variant_id: str = Field(pattern=ID_PATTERN)
+    hotspot_set_id: str | None = None
+    binding_label_seq_ids: tuple[int, ...] | None = None
+    scaffold_ids: tuple[str, ...] = Field(min_length=1)
+    target_crop: TargetCrop | None = None
+    cdr_overrides: tuple[CdrOverride, ...] = ()
+    candidates_per_strategy: int = Field(default=40, ge=1)
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> Self:
+        if self.hotspot_set_id is None and self.binding_label_seq_ids is None:
+            raise ValueError("variant 必须选择 hotspot_set_id 或 binding residues")
+        if len(self.scaffold_ids) != len(set(self.scaffold_ids)):
+            raise ValueError("variant scaffold_ids 不能重复")
+        if self.binding_label_seq_ids is not None:
+            normalized = tuple(sorted(set(self.binding_label_seq_ids)))
+            if normalized != self.binding_label_seq_ids or any(value < 1 for value in normalized):
+                raise ValueError("binding residues 必须升序、唯一且为正整数")
+        cdrs = [item.cdr for item in self.cdr_overrides]
+        if len(cdrs) != len(set(cdrs)):
+            raise ValueError("同一 CDR 只能覆盖一次")
+        return self
+
+
+class NativeStrategyVariant(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    variant_id: str = Field(pattern=ID_PATTERN)
+    scaffold_id: str = Field(pattern=ID_PATTERN)
+    yaml_text: str = Field(min_length=1)
+    source_sha256: str = Field(pattern=SHA256_PATTERN)
+    candidates_per_strategy: int = Field(default=40, ge=1)
+
+    @model_validator(mode="after")
+    def validate_source_identity(self) -> Self:
+        import hashlib
+
+        if hashlib.sha256(self.yaml_text.encode("utf-8")).hexdigest() != self.source_sha256:
+            raise ValueError("native BoltzGen YAML 文本与 source_sha256 不一致")
+        return self
+
+
 class ScaffoldAsset(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -36,22 +104,28 @@ class StrategyRecord(BaseModel):
     region_id: str = Field(pattern=ID_PATTERN)
     source_hotspot_set_id: str = Field(min_length=1, max_length=64)
     scaffold_id: str = Field(pattern=ID_PATTERN)
-    hotspot_strategy: Literal["H_all"] = "H_all"
-    crop_strategy: Literal["C_full"] = "C_full"
-    crop_enabled: Literal[False] = False
+    hotspot_strategy: str = Field(default="H_all", min_length=1)
+    crop_strategy: str = Field(default="C_full", min_length=1)
+    crop_enabled: bool = False
     target_chain: Literal["A"] = "A"
     binding_label_seq_ids: tuple[int, ...] = Field(min_length=1)
     neutral_residue_policy: Literal["unmarked"] = "unmarked"
     candidates_per_strategy: int = Field(ge=1)
     design_specification_path: str = Field(min_length=1)
     design_specification_sha256: str = Field(pattern=SHA256_PATTERN)
+    variant_scaffold_path: str | None = None
+    variant_scaffold_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    native_source_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_variant_scaffold(self) -> Self:
+        if (self.variant_scaffold_path is None) != (self.variant_scaffold_sha256 is None):
+            raise ValueError("variant scaffold path 与 checksum 必须同时存在")
+        return self
 
     @model_validator(mode="after")
     def validate_binding_residues(self) -> Self:
-        if (
-            tuple(sorted(set(self.binding_label_seq_ids)))
-            != self.binding_label_seq_ids
-        ):
+        if tuple(sorted(set(self.binding_label_seq_ids))) != self.binding_label_seq_ids:
             raise ValueError("binding_label_seq_ids 必须升序且唯一")
         return self
 
@@ -61,7 +135,7 @@ class StrategyBundle(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.1", "0.2"] = "0.2"
     generated_at: datetime
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)
@@ -74,14 +148,12 @@ class StrategyBundle(BaseModel):
     strategy_profile: Literal["boltzgen-vhh-basic-v1"] = "boltzgen-vhh-basic-v1"
     scaffold_registry: Literal["official-vhh7-v1"] = "official-vhh7-v1"
     boltzgen_version: Literal["0.3.2"] = "0.3.2"
-    boltzgen_commit: Literal[
+    boltzgen_commit: Literal["a3149cf18eeb58648d1abbb27539bd73f746cdda"] = (
         "a3149cf18eeb58648d1abbb27539bd73f746cdda"
-    ] = "a3149cf18eeb58648d1abbb27539bd73f746cdda"
+    )
     scaffold_assets: tuple[ScaffoldAsset, ...] = Field(min_length=1)
     strategies: tuple[StrategyRecord, ...] = Field(min_length=1)
-    random_seed_status: Literal["unsupported-by-boltzgen-0.3.2"] = (
-        "unsupported-by-boltzgen-0.3.2"
-    )
+    random_seed_status: Literal["unsupported-by-boltzgen-0.3.2"] = "unsupported-by-boltzgen-0.3.2"
 
     @model_validator(mode="after")
     def validate_matrix(self) -> Self:
@@ -94,13 +166,11 @@ class StrategyBundle(BaseModel):
         known = set(scaffold_ids)
         if any(strategy.scaffold_id not in known for strategy in self.strategies):
             raise ValueError("strategy 引用了 registry 外的 scaffold")
-        pairs = {
-            (strategy.region_id, strategy.scaffold_id)
-            for strategy in self.strategies
-        }
-        regions = {strategy.region_id for strategy in self.strategies}
-        if len(pairs) != len(regions) * len(known):
-            raise ValueError("strategy matrix 必须是 region × scaffold 完整笛卡尔积")
+        if self.schema_version == "0.1":
+            pairs = {(strategy.region_id, strategy.scaffold_id) for strategy in self.strategies}
+            regions = {strategy.region_id for strategy in self.strategies}
+            if len(pairs) != len(regions) * len(known):
+                raise ValueError("0.1 strategy matrix 必须是 region × scaffold 完整笛卡尔积")
         return self
 
 
@@ -123,9 +193,9 @@ class StrategyValidationReport(BaseModel):
     schema_version: Literal["0.1"] = "0.1"
     backend_name: Literal["boltzgen"] = "boltzgen"
     backend_version: Literal["0.3.2"] = "0.3.2"
-    backend_commit: Literal[
+    backend_commit: Literal["a3149cf18eeb58648d1abbb27539bd73f746cdda"] = (
         "a3149cf18eeb58648d1abbb27539bd73f746cdda"
-    ] = "a3149cf18eeb58648d1abbb27539bd73f746cdda"
+    )
     checked_at: datetime
     status: Literal["passed", "failed"]
     items: tuple[StrategyValidationItem, ...] = Field(min_length=1)

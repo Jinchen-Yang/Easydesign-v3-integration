@@ -19,8 +19,13 @@ from easydesign.stages.s02_hotspot_discovery import (
 from easydesign.stages.s03_boltzgen_configuration import (
     BOLTZGEN_COMMIT,
     SCAFFOLD_IDS,
+    CdrOverride,
+    ExplicitStrategyVariant,
+    NativeStrategyVariant,
     StrategyBundle,
+    TargetCrop,
     compile_basic_vhh_matrix,
+    compile_vhh_strategy_plan,
 )
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
@@ -92,13 +97,8 @@ def test_compiler_builds_complete_region_scaffold_matrix_without_negative_sites(
 
     assert len(scaffold_assets) == len(SCAFFOLD_IDS)
     assert len(strategies) == len(region_ids) * len(SCAFFOLD_IDS)
-    assert {
-        (strategy.source_hotspot_set_id, strategy.scaffold_id)
-        for strategy in strategies
-    } == {
-        (region_id, scaffold_id)
-        for region_id in region_ids
-        for scaffold_id in SCAFFOLD_IDS
+    assert {(strategy.source_hotspot_set_id, strategy.scaffold_id) for strategy in strategies} == {
+        (region_id, scaffold_id) for region_id in region_ids for scaffold_id in SCAFFOLD_IDS
     }
     for strategy in strategies:
         path = artifacts / strategy.design_specification_path
@@ -111,10 +111,7 @@ def test_compiler_builds_complete_region_scaffold_matrix_without_negative_sites(
             {
                 "chain": {
                     "id": "A",
-                    "binding": ",".join(
-                        str(value)
-                        for value in strategy.binding_label_seq_ids
-                    ),
+                    "binding": ",".join(str(value) for value in strategy.binding_label_seq_ids),
                 }
             }
         ]
@@ -185,9 +182,7 @@ def test_compiler_rejects_target_checksum_mismatch_and_overwrite(
     with pytest.raises(ManifestStateError, match="SHA|不一致"):
         compile_basic_vhh_matrix(
             target_cif=target,
-            hotspots=hotspots.model_copy(
-                update={"target_structure_sha256": "f" * 64}
-            ),
+            hotspots=hotspots.model_copy(update={"target_structure_sha256": "f" * 64}),
             artifacts_root=artifacts,
             candidates_per_strategy=40,
         )
@@ -205,3 +200,110 @@ def test_compiler_rejects_target_checksum_mismatch_and_overwrite(
             artifacts_root=artifacts,
             candidates_per_strategy=40,
         )
+
+
+def test_explicit_plan_avoids_global_cartesian_and_compiles_crop_and_cdr(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.cif"
+    target.write_text("data_target\n#\n", encoding="utf-8")
+    artifacts = tmp_path / "artifacts"
+
+    assets, strategies = compile_vhh_strategy_plan(
+        target_cif=target,
+        hotspots=_hotspots(target, ("A", "B", "C")),
+        artifacts_root=artifacts,
+        variants=(
+            ExplicitStrategyVariant(
+                variant_id="focused-cdr3",
+                hotspot_set_id="A",
+                binding_label_seq_ids=(1, 2),
+                scaffold_ids=("7eow", "7xl0"),
+                target_crop=TargetCrop(start=1, end=80),
+                cdr_overrides=(
+                    CdrOverride(
+                        cdr=3,
+                        design_res_index="98..116",
+                        insertion_num_residues="3..12",
+                    ),
+                ),
+                candidates_per_strategy=17,
+            ),
+        ),
+    )
+
+    assert [item.scaffold_id for item in assets] == ["7eow", "7xl0"]
+    assert len(strategies) == 2
+    assert {item.region_id for item in strategies} == {"focused-cdr3"}
+    assert all(item.crop_enabled for item in strategies)
+    assert all(item.candidates_per_strategy == 17 for item in strategies)
+    for item in strategies:
+        design = yaml.safe_load(
+            (artifacts / item.design_specification_path).read_text(encoding="utf-8")
+        )
+        assert design["entities"][0]["file"]["include"] == [
+            {"chain": {"id": "A", "res_index": "1..80"}}
+        ]
+        assert design["entities"][1]["file"]["path"] == "scaffold.yaml"
+        assert item.variant_scaffold_path is not None
+        scaffold = yaml.safe_load(
+            (artifacts / item.variant_scaffold_path).read_text(encoding="utf-8")
+        )
+        assert scaffold["design"][0]["chain"]["res_index"].endswith("98..116")
+        assert scaffold["design_insertions"][2]["insertion"]["num_residues"] == "3..12"
+
+    bundle = StrategyBundle(
+        schema_version="0.2",
+        generated_at=NOW,
+        project_id="generic-project",
+        run_id="generic-run",
+        target_id="generic-target",
+        target_structure_sha256="a" * 64,
+        target_bundle_sha256="b" * 64,
+        hotspots_sha256="c" * 64,
+        source_stage02_manifest_sha256="d" * 64,
+        validation_report_sha256="e" * 64,
+        scaffold_assets=assets,
+        strategies=strategies,
+    )
+    assert bundle.schema_version == "0.2"
+
+
+def test_explicit_plan_rejects_unapproved_binding_and_preserves_native_bytes(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.cif"
+    target.write_text("data_target\n#\n", encoding="utf-8")
+    hotspots = _hotspots(target, ("A",))
+    with pytest.raises(ManifestStateError, match="approved hotspots"):
+        compile_vhh_strategy_plan(
+            target_cif=target,
+            hotspots=hotspots,
+            artifacts_root=tmp_path / "bad-artifacts",
+            variants=(
+                ExplicitStrategyVariant(
+                    variant_id="bad-binding",
+                    binding_label_seq_ids=(999,),
+                    scaffold_ids=("7eow",),
+                ),
+            ),
+        )
+
+    native_text = "entities: []\n"
+    _, records = compile_vhh_strategy_plan(
+        target_cif=target,
+        hotspots=hotspots,
+        artifacts_root=tmp_path / "native-artifacts",
+        variants=(),
+        native_variants=(
+            NativeStrategyVariant(
+                variant_id="expert-native",
+                scaffold_id="7eow",
+                yaml_text=native_text,
+                source_sha256=__import__("hashlib").sha256(native_text.encode("utf-8")).hexdigest(),
+            ),
+        ),
+    )
+    path = tmp_path / "native-artifacts" / records[0].design_specification_path
+    assert path.read_bytes() == native_text.encode("utf-8")
+    assert records[0].native_source_sha256 is not None

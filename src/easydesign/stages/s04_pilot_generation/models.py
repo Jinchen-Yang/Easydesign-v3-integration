@@ -102,8 +102,7 @@ class CandidateRecord(BaseModel):
         if has_source != has_residues:
             raise ValueError("design mask source 与 designed residue identity 必须同时存在")
         if self.designed_binder_residue_ids and (
-            tuple(sorted(set(self.designed_binder_residue_ids)))
-            != self.designed_binder_residue_ids
+            tuple(sorted(set(self.designed_binder_residue_ids))) != self.designed_binder_residue_ids
         ):
             raise ValueError("designed_binder_residue_ids 必须升序且唯一")
         return self
@@ -112,10 +111,11 @@ class CandidateRecord(BaseModel):
 class CandidateIndex(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.1", "0.2"] = "0.1"
     generated_at: datetime
     strategy_bundle_sha256: str = Field(pattern=SHA256_PATTERN)
     required_per_strategy: int = Field(ge=1)
+    required_by_strategy: dict[str, int] | None = None
     candidates: tuple[CandidateRecord, ...]
 
     @model_validator(mode="after")
@@ -142,17 +142,27 @@ class CandidateIndex(BaseModel):
         for strategy_id, ordinals in per_strategy.items():
             if sorted(ordinals) != list(range(1, len(ordinals) + 1)):
                 raise ValueError(f"{strategy_id} ordinal_within_strategy 必须连续")
-            if len(ordinals) != self.required_per_strategy:
-                raise ValueError(
-                    f"{strategy_id} 未达到 required_per_strategy={self.required_per_strategy}"
-                )
+            required = (
+                self.required_per_strategy
+                if self.required_by_strategy is None
+                else self.required_by_strategy.get(strategy_id)
+            )
+            if required is None or len(ordinals) != required:
+                raise ValueError(f"{strategy_id} 未达到 required candidates={required}")
+        if self.required_by_strategy is not None:
+            if self.schema_version != "0.2":
+                raise ValueError("required_by_strategy 只属于 CandidateIndex 0.2")
+            if set(self.required_by_strategy) != set(per_strategy):
+                raise ValueError("required_by_strategy 必须精确覆盖 candidate strategies")
+            if any(value < 1 for value in self.required_by_strategy.values()):
+                raise ValueError("required_by_strategy budget 必须为正整数")
         return self
 
 
 class PilotBundle(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.1", "0.2"] = "0.1"
     generated_at: datetime
     strategy_bundle: ArtifactRef
     pilot_plan: ArtifactRef
@@ -164,13 +174,25 @@ class PilotBundle(BaseModel):
     strategy_count: int = Field(ge=1)
     complete_candidate_count: int = Field(ge=1)
     complete_candidates_per_strategy: int = Field(ge=1)
+    complete_candidates_by_strategy: dict[str, int] | None = None
     status: Literal["succeeded"] = "succeeded"
 
     @model_validator(mode="after")
     def validate_count(self) -> Self:
-        expected = self.strategy_count * self.complete_candidates_per_strategy
+        expected = (
+            self.strategy_count * self.complete_candidates_per_strategy
+            if self.complete_candidates_by_strategy is None
+            else sum(self.complete_candidates_by_strategy.values())
+        )
         if self.complete_candidate_count != expected:
             raise ValueError("PilotBundle complete candidate 总数不一致")
+        if self.complete_candidates_by_strategy is not None:
+            if self.schema_version != "0.2":
+                raise ValueError("variable pilot budget 只属于 PilotBundle 0.2")
+            if len(self.complete_candidates_by_strategy) != self.strategy_count:
+                raise ValueError("variable pilot budget 必须覆盖全部 strategy")
+            if any(value < 1 for value in self.complete_candidates_by_strategy.values()):
+                raise ValueError("variable pilot budget 必须为正整数")
         return self
 
 

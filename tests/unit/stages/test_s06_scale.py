@@ -9,8 +9,13 @@ from pydantic import ValidationError
 from easydesign.core import ArtifactRef, ManifestStateError
 from easydesign.orchestration.config import Stage06Config
 from easydesign.orchestration.stage06 import (
+    _resolve_multi_strategy_authorization,
     _resolve_strategy_authorization,
     build_scale_plan,
+)
+from easydesign.stages.s05_pilot_filtering import (
+    Stage05BundleV0_2,
+    StrategyPromotionRecord,
 )
 from easydesign.stages.s06_scale_generation_and_refolding import (
     ScaleCoverageReport,
@@ -31,6 +36,19 @@ def _artifact(artifact_id: str) -> ArtifactRef:
         size_bytes=1,
         producer_stage="05-pilot-filtering",
         producer_attempt="attempt-0001",
+    )
+
+
+def _promotion(rank: int) -> StrategyPromotionRecord:
+    return StrategyPromotionRecord(
+        strategy_id=f"strategy-{rank}",
+        promotion_rank=rank,
+        score_yaml=0.5 - rank / 100,
+        pilot_candidate_count=40,
+        unique_sequence_count=40,
+        boltzgen_hard_pass_count=6,
+        final_gate_pass_count=5,
+        final_gate_pass_rate=5 / 40,
     )
 
 
@@ -154,10 +172,7 @@ def test_manual_scale_authorization_only_accepts_stage05_expanded_tier_a() -> No
             "manual_strategy_authorization": {
                 "strategy_id": "tier-a-strategy",
                 "authorized_by": "principal-investigator",
-                "reason": (
-                    "Run this strategy as an explicitly exploratory "
-                    "production-scale test."
-                ),
+                "reason": ("Run this strategy as an explicitly exploratory production-scale test."),
                 "source_stage05_bundle_sha256": SHA256,
                 "acknowledge_stage05_scientific_stop": True,
                 "acknowledge_not_scientifically_eligible": True,
@@ -195,6 +210,44 @@ def test_manual_scale_authorization_only_accepts_stage05_expanded_tier_a() -> No
                 }
             ),  # type: ignore[arg-type]
             config=config,
+            authorized_at=NOW,
+        )
+
+
+def test_human_promotion_receipt_limits_scale_to_selected_tier_a_subset() -> None:
+    stage05_bundle = Stage05BundleV0_2.model_construct(
+        status="strategies-promoted",
+        promoted_strategy_ids=("strategy-1", "strategy-2"),
+        promotion_rank=(_promotion(1), _promotion(2)),
+    )
+    upstream = SimpleNamespace(
+        stage05_bundle=stage05_bundle,
+        stage05_bundle_ref=SimpleNamespace(sha256=SHA256),
+    )
+    config = Stage06Config(
+        total_candidate_count=50_000,
+        allocation_policy="equal-across-promoted-v1",
+        human_promoted_strategy_ids=("strategy-2",),
+        human_promotion_receipt_sha256="b" * 64,
+    )
+
+    authorization = _resolve_multi_strategy_authorization(
+        upstream=upstream,  # type: ignore[arg-type]
+        profile=ScaleProfile.PRODUCTION_50000,
+        config=config,
+        authorized_at=NOW,
+    )
+
+    assert authorization.mode == "human-promotion-receipt"
+    assert authorization.promoted_strategy_ids == ("strategy-2",)
+    assert authorization.human_promotion_receipt_sha256 == "b" * 64
+
+    invalid = config.model_copy(update={"human_promoted_strategy_ids": ("strategy-missing",)})
+    with pytest.raises(ManifestStateError, match="合法 Tier A"):
+        _resolve_multi_strategy_authorization(
+            upstream=upstream,  # type: ignore[arg-type]
+            profile=ScaleProfile.PRODUCTION_50000,
+            config=invalid,
             authorized_at=NOW,
         )
 

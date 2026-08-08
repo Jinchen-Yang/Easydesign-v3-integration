@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +16,7 @@ from pytest import MonkeyPatch, fixture, raises
 import easydesign.orchestration.stage04 as stage04_module
 import easydesign.orchestration.stage06 as stage06_module
 from easydesign.backends.boltzgen import (
+    BoltzGenGenerationHeartbeat,
     BoltzGenGenerationRequest,
     BoltzGenGenerationResult,
 )
@@ -162,9 +165,16 @@ def _write_complex(
 
 
 class _FakeGenerationAdapter:
-    def __init__(self, *, complete: bool = True, all_pass: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        complete: bool = True,
+        all_pass: bool = False,
+        request_drain: bool = False,
+    ) -> None:
         self.complete = complete
         self.all_pass = all_pass
+        self.request_drain = request_drain
 
     def probe(self) -> dict[str, str]:
         return {
@@ -185,8 +195,15 @@ class _FakeGenerationAdapter:
         self,
         request: BoltzGenGenerationRequest,
         *,
-        heartbeat_callback: object | None = None,
+        heartbeat_callback: Callable[[BoltzGenGenerationHeartbeat], None] | None = None,
     ) -> BoltzGenGenerationResult:
+        if heartbeat_callback is not None:
+            heartbeat_callback(
+                BoltzGenGenerationHeartbeat(
+                    observed_at=NOW,
+                    elapsed_seconds=30.0,
+                )
+            )
         output = request.output_directory
         originals = output / "intermediate_designs_inverse_folded"
         refolds = originals / "refold_cif"
@@ -256,6 +273,8 @@ class _FakeGenerationAdapter:
         request.stdout_path.parent.mkdir(parents=True, exist_ok=True)
         request.stdout_path.write_text("ok\n", encoding="utf-8")
         request.stderr_path.write_text("", encoding="utf-8")
+        if self.request_drain:
+            Path(os.environ["EASYDESIGN_LOCAL_DRAIN_FILE"]).touch()
         return BoltzGenGenerationResult(
             command=self.build_command(request),
             command_sha256="a" * 64,
@@ -851,6 +870,35 @@ def test_stage04_executes_generic_strategy_and_publishes_manifest_only_handoff(
         str(StageId.BOLTZGEN_CONFIGURATION),
         str(StageId.PILOT_GENERATION),
     )
+    revisions = sorted(
+        (root / "04-pilot-generation/attempt-0001/runtime/progress.json.revisions").glob(
+            "revision-*.json"
+        )
+    )
+    snapshots = [load_model(path, ProgressSnapshot) for path in revisions]
+    assert any(snapshot.task_heartbeats for snapshot in snapshots)
+
+
+def test_stage04_drain_stops_retrying_at_attempt_boundary(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    root = _prepared_stage03_run(tmp_path)
+    drain = tmp_path / "pilot.drain"
+    monkeypatch.setenv("EASYDESIGN_LOCAL_DRAIN_FILE", str(drain))
+
+    outcome = execute_stage04(
+        run_root=root,
+        adapter=_FakeGenerationAdapter(complete=False, request_drain=True),  # type: ignore[arg-type]
+        gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
+        executed_at=NOW,
+    )
+
+    assert outcome.status == "incomplete"
+    events = (root / "04-pilot-generation/attempt-0001/runtime/task-events.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert events.count('"event_type":"task-started"') == 1
 
 
 def test_stage05_publishes_audited_scientific_stop_without_starting_backends(

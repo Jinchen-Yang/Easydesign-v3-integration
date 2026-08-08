@@ -28,6 +28,10 @@ from easydesign.backends.target_sources import (
 from easydesign.backends.target_sources.sequence import CANONICAL_AMINO_ACIDS
 from easydesign.core import ConfigurationError, TargetInputError
 from easydesign.core.artifacts import ID_PATTERN
+from easydesign.stages.s03_boltzgen_configuration import (
+    ExplicitStrategyVariant,
+    NativeStrategyVariant,
+)
 
 
 class TargetInputFormat(StrEnum):
@@ -702,19 +706,24 @@ class Stage03Config(BaseModel):
 
     profile: Literal["boltzgen-vhh-basic-v1"] = "boltzgen-vhh-basic-v1"
     scaffold_registry: Literal["official-vhh7-v1"] = "official-vhh7-v1"
-    scaffold_ids: tuple[
-        Literal[
-            "7eow",
-            "7xl0",
-            "8coh",
-            "8z8v",
-            "gontivimab",
-            "isecarosmab",
-            "sonelokimab",
-        ],
-        ...,
-    ] | None = None
+    scaffold_ids: (
+        tuple[
+            Literal[
+                "7eow",
+                "7xl0",
+                "8coh",
+                "8z8v",
+                "gontivimab",
+                "isecarosmab",
+                "sonelokimab",
+            ],
+            ...,
+        ]
+        | None
+    ) = None
     candidates_per_strategy: int = Field(default=40, ge=1)
+    variants: tuple[ExplicitStrategyVariant, ...] | None = None
+    native_variants: tuple[NativeStrategyVariant, ...] = ()
 
     @model_validator(mode="after")
     def validate_scaffold_subset(self) -> Self:
@@ -723,6 +732,14 @@ class Stage03Config(BaseModel):
                 raise ValueError("scaffold_ids 至少包含一个官方 VHH scaffold")
             if len(self.scaffold_ids) != len(set(self.scaffold_ids)):
                 raise ValueError("scaffold_ids 不能重复")
+        identifiers = [
+            *(item.variant_id for item in self.variants or ()),
+            *(item.variant_id for item in self.native_variants),
+        ]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("Stage 03 variant_id 不能重复")
+        if self.variants is not None and not self.variants and not self.native_variants:
+            raise ValueError("显式 strategy plan 至少包含一个 variant")
         return self
 
 
@@ -778,9 +795,7 @@ class Stage05AdvisoryValidationConfig(BaseModel):
     @model_validator(mode="after")
     def validate_top_n(self) -> Self:
         if self.full_target_refold_top_n > self.expanded_total_per_strategy:
-            raise ValueError(
-                "full_target_refold_top_n 不能超过 diagnostic expansion 总数"
-            )
+            raise ValueError("full_target_refold_top_n 不能超过 diagnostic expansion 总数")
         return self
 
 
@@ -793,9 +808,7 @@ class ComplexPredictionConfig(BaseModel):
     target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
     binder_msa: Literal["query-only"] = "query-only"
     template_mode: Literal[TemplateMode.DISABLED] = TemplateMode.DISABLED
-    parameter_profile: PredictionParameterProfile = (
-        PredictionParameterProfile.MODEL_DEFAULT
-    )
+    parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
     prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
 
 
@@ -836,16 +849,10 @@ class Stage05Config(BaseModel):
         if self.filter_profile == "nanobody-filter-standard-v1.6":
             if self.advisory_validation is None:
                 raise ValueError("v1.6 必须声明 advisory_validation")
-            if (
-                self.expanded_total_per_strategy is not None
-                or self.strategy_selection is not None
-            ):
+            if self.expanded_total_per_strategy is not None or self.strategy_selection is not None:
                 raise ValueError("v1.6 不接受旧版 expansion/strategy_selection 字段")
         else:
-            if (
-                self.expanded_total_per_strategy is None
-                or self.strategy_selection is None
-            ):
+            if self.expanded_total_per_strategy is None or self.strategy_selection is None:
                 raise ValueError("v1.5 必须声明旧版 expansion/strategy_selection 字段")
             if self.advisory_validation is not None:
                 raise ValueError("v1.5 不接受 advisory_validation")
@@ -895,6 +902,15 @@ class Stage06Config(BaseModel):
     allocation_policy: Literal["equal-across-promoted-v1"] | None = None
     preauthorized_candidate_limit: int | None = Field(default=None, ge=1)
     manual_strategy_authorization: Stage06ManualStrategyAuthorizationConfig | None = None
+    human_promoted_strategy_ids: tuple[str, ...] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=3,
+    )
+    human_promotion_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -927,6 +943,14 @@ class Stage06Config(BaseModel):
                 "total_candidate_count 超过 preauthorized_candidate_limit；"
                 "高成本运行必须在初始配置中获得显式授权"
             )
+        if (self.human_promoted_strategy_ids is None) != (
+            self.human_promotion_receipt_sha256 is None
+        ):
+            raise ValueError("human promotion strategy IDs 与 receipt SHA-256 必须同时提供")
+        if self.human_promoted_strategy_ids is not None and len(
+            self.human_promoted_strategy_ids
+        ) != len(set(self.human_promoted_strategy_ids)):
+            raise ValueError("human promoted strategy_id 不能重复")
         return self
 
     @property
@@ -1070,16 +1094,12 @@ class EasyDesignRunConfig(BaseModel):
                 self.stage05.diagnostic_expanded_total_per_strategy
                 <= self.stage04.required_complete_candidates_per_strategy
             ):
-                raise ValueError(
-                    "Stage 05 expanded_total_per_strategy 必须大于 Stage 04 pilot 数"
-                )
+                raise ValueError("Stage 05 expanded_total_per_strategy 必须大于 Stage 04 pilot 数")
             if (
                 self.stage05.diagnostic_full_target_refold_top_n
                 > self.stage05.diagnostic_expanded_total_per_strategy
             ):
-                raise ValueError(
-                    "Stage 05 full_target_refold_top_n 不能超过 expansion 总数"
-                )
+                raise ValueError("Stage 05 full_target_refold_top_n 不能超过 expansion 总数")
         if (
             self.stage05 is not None
             and self.stage05.filter_profile == "nanobody-filter-standard-v1.6"
@@ -1091,9 +1111,7 @@ class EasyDesignRunConfig(BaseModel):
                     "allocation_policy=equal-across-promoted-v1"
                 )
             if self.stage06.manual_strategy_authorization is not None:
-                raise ValueError(
-                    "Stage 05 v1.6 不接受旧版单策略 manual authorization"
-                )
+                raise ValueError("Stage 05 v1.6 不接受旧版单策略 manual authorization")
         source = self.stage01.target.source
         is_predictable = (
             isinstance(source, LocalFileSourceConfig)
@@ -1288,9 +1306,7 @@ def _default_source_base_dir(config_path: Path) -> Path:
     parent = config_path.parent
     if parent.name == "config-revisions":
         candidate = parent.parent
-        if (candidate / "easydesign.yaml").is_file() or (
-            candidate / "CONFIG_CURRENT"
-        ).is_file():
+        if (candidate / "easydesign.yaml").is_file() or (candidate / "CONFIG_CURRENT").is_file():
             return candidate
     return parent
 

@@ -163,6 +163,7 @@ def execute_boltzgen_candidate_task(
     maximum_attempts_this_invocation: int,
     on_transition: TaskTransitionCallback,
     on_heartbeat: TaskHeartbeatCallback | None = None,
+    should_stop: Callable[[], bool] | None = None,
     ordinal_offset: int = 0,
 ) -> TaskRecord:
     """Run exact deficits with immutable attempts and strict candidate collection."""
@@ -173,6 +174,8 @@ def execute_boltzgen_candidate_task(
         current.collected_candidates < current.requested_candidates
         and attempts_this_invocation < maximum_attempts_this_invocation
     ):
+        if should_stop is not None and should_stop():
+            break
         attempts_this_invocation += 1
         attempt_number = len(current.attempts) + 1
         remaining = current.requested_candidates - current.collected_candidates
@@ -300,9 +303,7 @@ def execute_boltzgen_candidate_task(
         )
         total = len(candidate_ids)
         succeeded = (
-            operational_error is None
-            and return_code == 0
-            and total == current.requested_candidates
+            operational_error is None and return_code == 0 and total == current.requested_candidates
         )
         final_attempt = running_attempt.model_copy(
             update={
@@ -316,11 +317,7 @@ def execute_boltzgen_candidate_task(
         next_status = (
             TaskStatus.SUCCEEDED
             if succeeded
-            else (
-                TaskStatus.PENDING
-                if total < current.requested_candidates
-                else TaskStatus.FAILED
-            )
+            else (TaskStatus.PENDING if total < current.requested_candidates else TaskStatus.FAILED)
         )
         current = current.model_copy(
             update={
@@ -343,9 +340,7 @@ def execute_boltzgen_candidate_task(
         )
         on_transition(
             TaskTransition(
-                event_type=(
-                    "task-succeeded" if succeeded else "task-attempt-failed"
-                ),
+                event_type=("task-succeeded" if succeeded else "task-attempt-failed"),
                 message=(
                     f"Collected {len(new_candidates)} in attempt; strategy total "
                     f"{total}/{current.requested_candidates}."

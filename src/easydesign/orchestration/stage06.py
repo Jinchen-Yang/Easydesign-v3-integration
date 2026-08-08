@@ -168,9 +168,7 @@ def _load_upstream(root: Path) -> _Upstream:
     pilot_index = load_model(pilot_index_ref.verify(root), CandidateIndex)
     stage05_ref = stage05.require_output("stage05-bundle")
     stage05_path = stage05_ref.verify(root)
-    stage05_schema = json.loads(stage05_path.read_text(encoding="utf-8")).get(
-        "schema_version"
-    )
+    stage05_schema = json.loads(stage05_path.read_text(encoding="utf-8")).get("schema_version")
     stage05_bundle: Stage05Bundle | Stage05BundleV0_2
     pilot_filter_report: PilotFilterReport | PilotFilterReportV1_6
     if stage05_schema == "0.2":
@@ -190,16 +188,11 @@ def _load_upstream(root: Path) -> _Upstream:
     if isinstance(stage05_bundle, Stage05BundleV0_2):
         if stage05_bundle.status == "stopped-no-tier-a":
             raise ManifestStateError("Stage 05 没有 Tier A；Stage 06 不允许继续")
-        available_strategy_ids = {
-            item.strategy_id for item in strategy.strategies
-        }
-        if not set(stage05_bundle.promoted_strategy_ids).issubset(
-            available_strategy_ids
-        ):
+        available_strategy_ids = {item.strategy_id for item in strategy.strategies}
+        if not set(stage05_bundle.promoted_strategy_ids).issubset(available_strategy_ids):
             raise ManifestStateError("Stage05Bundle promoted strategy 不在 StrategyBundle")
     elif stage05_bundle.winner_strategy_id is not None and not any(
-        item.strategy_id == stage05_bundle.winner_strategy_id
-        for item in strategy.strategies
+        item.strategy_id == stage05_bundle.winner_strategy_id for item in strategy.strategies
     ):
         raise ManifestStateError("Stage05Bundle winner 不在 StrategyBundle")
     for candidate in pilot_index.candidates:
@@ -266,8 +259,7 @@ def _resolve_strategy_authorization(
             "manual strategy authorization 只能选择 Stage 05 已扩展的 Tier A strategy"
         )
     if not any(
-        item.strategy_id == manual.strategy_id
-        for item in upstream.strategy_bundle.strategies
+        item.strategy_id == manual.strategy_id for item in upstream.strategy_bundle.strategies
     ):
         raise ManifestStateError("manual strategy authorization 不在 StrategyBundle")
     return ScaleStrategyAuthorization(
@@ -278,12 +270,8 @@ def _resolve_strategy_authorization(
         reason=manual.reason,
         source_stage05_status=bundle.status,
         source_stage05_bundle_sha256=manual.source_stage05_bundle_sha256,
-        acknowledge_stage05_scientific_stop=(
-            manual.acknowledge_stage05_scientific_stop
-        ),
-        acknowledge_not_scientifically_eligible=(
-            manual.acknowledge_not_scientifically_eligible
-        ),
+        acknowledge_stage05_scientific_stop=(manual.acknowledge_stage05_scientific_stop),
+        acknowledge_not_scientifically_eligible=(manual.acknowledge_not_scientifically_eligible),
     )
 
 
@@ -302,23 +290,34 @@ def _resolve_multi_strategy_authorization(
     if config.manual_strategy_authorization is not None:
         raise ManifestStateError("v1.6 晋级策略不得使用旧版单策略 manual override")
     if _stage06_allocation_policy(config) != "equal-across-promoted-v1":
-        raise ManifestStateError(
-            "Stage 06 v0.2 必须显式声明 equal-across-promoted-v1"
-        )
-    promoted_ids = tuple(item.strategy_id for item in bundle.promotion_rank)
-    if promoted_ids != bundle.promoted_strategy_ids:
+        raise ManifestStateError("Stage 06 v0.2 必须显式声明 equal-across-promoted-v1")
+    stage05_promoted_ids = tuple(item.strategy_id for item in bundle.promotion_rank)
+    if stage05_promoted_ids != bundle.promoted_strategy_ids:
         raise ManifestStateError("Stage05Bundle promoted strategy 顺序不一致")
+    promoted_ids = config.human_promoted_strategy_ids or stage05_promoted_ids
+    if not set(promoted_ids).issubset(stage05_promoted_ids):
+        raise ManifestStateError("人工 promotion 必须是 Stage 05 合法 Tier A strategy 的子集")
     if config.total_candidate_count > config.authorized_candidate_limit:
         raise ManifestStateError("Stage 06 global budget 超过初始配置预授权上限")
     return MultiStrategyScaleAuthorization(
+        mode=(
+            "human-promotion-receipt"
+            if config.human_promoted_strategy_ids is not None
+            else "stage05-v1.6-promotions"
+        ),
         authorized_at=authorized_at,
-        authorized_by="initial-run-config",
+        authorized_by=(
+            "researcher-promotion-receipt"
+            if config.human_promoted_strategy_ids is not None
+            else "initial-run-config"
+        ),
         reason=(
             "The canonical run configuration preauthorized one shared global "
             "candidate budget for the Stage 05 v1.6 promoted strategies."
         ),
         source_stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
         promoted_strategy_ids=promoted_ids,
+        human_promotion_receipt_sha256=config.human_promotion_receipt_sha256,
         total_candidate_budget=config.total_candidate_count,
         acknowledge_high_cost_generation=True,
     )
@@ -603,9 +602,7 @@ def execute_stage06(
     profile = ScaleProfile(config.scale_profile)
     requested_candidate_count = config.total_candidate_count
     multi_strategy = isinstance(upstream.stage05_bundle, Stage05BundleV0_2)
-    strategy_by_id = {
-        item.strategy_id: item for item in upstream.strategy_bundle.strategies
-    }
+    strategy_by_id = {item.strategy_id: item for item in upstream.strategy_bundle.strategies}
     if multi_strategy:
         multi_authorization = _resolve_multi_strategy_authorization(
             upstream=upstream,
@@ -613,9 +610,9 @@ def execute_stage06(
             config=config,
             authorized_at=now,
         )
-        authorization: (
-            ScaleStrategyAuthorization | MultiStrategyScaleAuthorization
-        ) = multi_authorization
+        authorization: ScaleStrategyAuthorization | MultiStrategyScaleAuthorization = (
+            multi_authorization
+        )
         strategy_ids = multi_authorization.promoted_strategy_ids
     else:
         legacy_authorization = _resolve_strategy_authorization(
@@ -626,20 +623,14 @@ def execute_stage06(
         authorization = legacy_authorization
         strategy_ids = (legacy_authorization.strategy_id,)
     specifications = tuple(
-        upstream.stage03.require_output(f"strategy-{strategy_id}")
-        for strategy_id in strategy_ids
+        upstream.stage03.require_output(f"strategy-{strategy_id}") for strategy_id in strategy_ids
     )
     specification_by_strategy = dict(zip(strategy_ids, specifications, strict=True))
     for strategy_id, specification in specification_by_strategy.items():
         specification.verify(root)
         strategy = strategy_by_id.get(strategy_id)
-        if (
-            strategy is None
-            or specification.sha256 != strategy.design_specification_sha256
-        ):
-            raise ManifestStateError(
-                f"Stage 06 strategy={strategy_id} YAML identity 不一致"
-            )
+        if strategy is None or specification.sha256 != strategy.design_specification_sha256:
+            raise ManifestStateError(f"Stage 06 strategy={strategy_id} YAML identity 不一致")
 
     attempt_root = root / str(StageId.SCALE_GENERATION_AND_REFOLDING) / "attempt-0001"
     artifacts = attempt_root / "artifacts"
@@ -745,8 +736,7 @@ def execute_stage06(
                 stage04_config.executor.devices is not None
                 and plan.devices != stage04_config.executor.devices
             )
-            or plan.preauthorized_candidate_limit
-            != config.authorized_candidate_limit
+            or plan.preauthorized_candidate_limit != config.authorized_candidate_limit
             or (
                 plan.total_candidate_budget
                 if isinstance(plan, ScalePlanV0_2)
@@ -758,10 +748,7 @@ def execute_stage06(
             assert isinstance(plan, ScalePlanV0_2)
             strategy_identity_mismatch = (
                 plan.design_specifications != specifications
-                or tuple(
-                    item.strategy_id for item in plan.strategy_allocations
-                )
-                != strategy_ids
+                or tuple(item.strategy_id for item in plan.strategy_allocations) != strategy_ids
                 or plan.allocation_policy != _stage06_allocation_policy(config)
             )
         else:
@@ -793,10 +780,20 @@ def execute_stage06(
         if multi_strategy:
             assert isinstance(upstream.stage05_bundle, Stage05BundleV0_2)
             assert isinstance(authorization, MultiStrategyScaleAuthorization)
+            promotion_by_id = {
+                item.strategy_id: item for item in upstream.stage05_bundle.promotion_rank
+            }
+            selected_promotions = tuple(
+                promotion_by_id[strategy_id].model_copy(update={"promotion_rank": index})
+                for index, strategy_id in enumerate(
+                    authorization.promoted_strategy_ids,
+                    start=1,
+                )
+            )
             plan = build_scale_plan_v0_2(
                 profile=profile,
                 total_candidate_count=requested_candidate_count,
-                promoted_strategies=upstream.stage05_bundle.promotion_rank,
+                promoted_strategies=selected_promotions,
                 strategy_bundle_sha256=upstream.strategy_bundle_ref.sha256,
                 stage05_bundle_sha256=upstream.stage05_bundle_ref.sha256,
                 design_specifications=specifications,
@@ -859,9 +856,7 @@ def execute_stage06(
         candidates = list(state.candidates)
         created_at = state.created_at
         heartbeats = {
-            item.task_id: item
-            for item in state.progress.task_heartbeats
-            if item.task_id in tasks
+            item.task_id: item for item in state.progress.task_heartbeats if item.task_id in tasks
         }
         if set(tasks) != {item.task_id for item in plan.shards}:
             raise ManifestStateError("Stage 06 runtime shard identity 不一致")
@@ -895,9 +890,7 @@ def execute_stage06(
             tasks=ordered_tasks(),
             created_at=created_at,
             status=status,
-            task_heartbeats=tuple(
-                heartbeats[key] for key in sorted(heartbeats)
-            ),
+            task_heartbeats=tuple(heartbeats[key] for key in sorted(heartbeats)),
             recent_errors=tuple(recent_errors),
         )
         atomic_dump_runtime_model(snapshot, progress_path)
@@ -983,9 +976,7 @@ def execute_stage06(
         return execute_boltzgen_candidate_task(
             root=root,
             task=tasks[shard.task_id],
-            design_specification=specification_by_strategy[
-                shard.strategy_id
-            ].verify(root),
+            design_specification=specification_by_strategy[shard.strategy_id].verify(root),
             task_root=attempt_root / "tasks" / shard.task_id,
             stage_attempt_id="attempt-0001",
             producer_stage=str(StageId.SCALE_GENERATION_AND_REFOLDING),
@@ -994,6 +985,7 @@ def execute_stage06(
             maximum_attempts_this_invocation=stage04_config.executor.max_task_attempts,
             on_transition=transition,
             on_heartbeat=heartbeat,
+            should_stop=local_drain_requested,
             ordinal_offset=shard_ordinal_start(shard) - 1,
         )
 
@@ -1015,9 +1007,7 @@ def execute_stage06(
                 sequence=journal.next_sequence,
                 occurred_at=datetime.now(UTC),
                 event_type="gpu-leases-acquired",
-                message=", ".join(
-                    f"gpu={lease.device},lease={lease.lease_id}" for lease in leases
-                ),
+                message=", ".join(f"gpu={lease.device},lease={lease.lease_id}" for lease in leases),
             )
         )
         try:
@@ -1036,8 +1026,7 @@ def execute_stage06(
                         occurred_at=datetime.now(UTC),
                         event_type="gpu-leases-released",
                         message=", ".join(
-                            f"gpu={item.device},lease={item.lease_id}"
-                            for item in released
+                            f"gpu={item.device},lease={item.lease_id}" for item in released
                         ),
                     )
                 )
@@ -1053,10 +1042,7 @@ def execute_stage06(
             complete_candidate_count=len(candidates),
         )
 
-    strategy_rank = {
-        strategy_id: rank
-        for rank, strategy_id in enumerate(strategy_ids, start=1)
-    }
+    strategy_rank = {strategy_id: rank for rank, strategy_id in enumerate(strategy_ids, start=1)}
     ordered_candidates = tuple(
         sorted(
             candidates,
@@ -1087,9 +1073,7 @@ def execute_stage06(
         if [item.ordinal_within_strategy for item in ordered_candidates] != list(
             range(1, plan.requested_new_candidates + 1)
         ):
-            raise ManifestStateError(
-                "Stage 06 merge 存在 candidate ordinal 缺口或重复"
-            )
+            raise ManifestStateError("Stage 06 merge 存在 candidate ordinal 缺口或重复")
 
     candidate_index_path = artifacts / "scale-candidate-index.json"
     task_table_path = artifacts / "scale-task-table.json"
@@ -1121,47 +1105,32 @@ def execute_stage06(
         per_strategy_coverage: list[StrategyScaleCoverage] = []
         for allocation in plan.strategy_allocations:
             strategy_candidates = tuple(
-                item
-                for item in ordered_candidates
-                if item.strategy_id == allocation.strategy_id
+                item for item in ordered_candidates if item.strategy_id == allocation.strategy_id
             )
-            ordinals = tuple(
-                item.ordinal_within_strategy for item in strategy_candidates
-            )
+            ordinals = tuple(item.ordinal_within_strategy for item in strategy_candidates)
             per_strategy_coverage.append(
                 StrategyScaleCoverage(
                     strategy_id=allocation.strategy_id,
                     requested_candidates=allocation.requested_candidates,
                     complete_candidates=len(strategy_candidates),
                     candidate_ids_unique=(
-                        len(
-                            {
-                                item.candidate_id
-                                for item in strategy_candidates
-                            }
-                        )
+                        len({item.candidate_id for item in strategy_candidates})
                         == len(strategy_candidates)
                     ),
                     ordinal_min=min(ordinals),
                     ordinal_max=max(ordinals),
                     ordinal_gaps=tuple(
-                        sorted(
-                            set(range(1, allocation.requested_candidates + 1))
-                            - set(ordinals)
-                        )
+                        sorted(set(range(1, allocation.requested_candidates + 1)) - set(ordinals))
                     ),
                 )
             )
-        coverage: ScaleCoverageReport | ScaleCoverageReportV0_2 = (
-            ScaleCoverageReportV0_2(
-                total_requested_candidates=requested_candidates,
-                total_complete_candidates=len(ordered_candidates),
-                global_candidate_ids_unique=(
-                    len({item.candidate_id for item in ordered_candidates})
-                    == len(ordered_candidates)
-                ),
-                strategy_coverage=tuple(per_strategy_coverage),
-            )
+        coverage: ScaleCoverageReport | ScaleCoverageReportV0_2 = ScaleCoverageReportV0_2(
+            total_requested_candidates=requested_candidates,
+            total_complete_candidates=len(ordered_candidates),
+            global_candidate_ids_unique=(
+                len({item.candidate_id for item in ordered_candidates}) == len(ordered_candidates)
+            ),
+            strategy_coverage=tuple(per_strategy_coverage),
         )
         _dump_or_verify_model(
             coverage,
@@ -1174,8 +1143,7 @@ def execute_stage06(
             requested_new_candidates=plan.requested_new_candidates,
             complete_new_candidates=len(ordered_candidates),
             candidate_ids_unique=(
-                len({item.candidate_id for item in ordered_candidates})
-                == len(ordered_candidates)
+                len({item.candidate_id for item in ordered_candidates}) == len(ordered_candidates)
             ),
             ordinal_min=ordered_candidates[0].ordinal_within_strategy,
             ordinal_max=ordered_candidates[-1].ordinal_within_strategy,

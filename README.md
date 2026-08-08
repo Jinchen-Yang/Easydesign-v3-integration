@@ -33,6 +33,19 @@ easydesign doctor --full
 来源 registry、inventory 或资产身份变化后会 fail closed，必须重新 link；cache、日志、job
 和科学结果仍只写本 worktree。
 
+OpenFold3/AFO 正在灰度接入，Protenix 仍是默认结构预测后端。只有持有经过校验的离线
+bundle 时才安装；安装会创建本地不可变 Python 3.12/JAX 环境并执行真实 GPU smoke：
+
+```bash
+easydesign runtime install openfold3 --bundle /absolute/path/to/bundle
+easydesign runtime status
+easydesign doctor --full
+```
+
+安装成功也不会自动切换默认后端。固定科学面板、人工批准和单独的默认切换 commit 全部
+完成前，AFO 只能显式选择，Protenix 继续作为默认及显式 fallback。资产身份、硬件边界和
+灰度验收说明见 [OpenFold3 后端](docs/OPENFOLD3_BACKEND.md)。
+
 ## 用 Codex 开始研究
 
 从本仓库或其子目录启动 Codex。根 `AGENTS.md` 会把蛋白设计任务路由到仓库级

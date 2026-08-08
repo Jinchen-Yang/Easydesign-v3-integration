@@ -9,7 +9,7 @@ import sys
 import traceback
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
@@ -17,6 +17,10 @@ import easydesign
 from easydesign.core import EasyDesignError
 from easydesign.orchestration.application import diagnose_runtime
 from easydesign.orchestration.local_project import completed_steps, resolve_project_run
+from easydesign.orchestration.openfold3_validation import (
+    approve_openfold3_validation_report,
+    generate_openfold3_validation_report,
+)
 from easydesign.orchestration.research import (
     initialize_research_project,
     job_drain,
@@ -42,7 +46,11 @@ from easydesign.orchestration.research import (
     target_prepare,
 )
 from easydesign.orchestration.research_models import CommandResult, ResearchPhase
-from easydesign.orchestration.runtime_link import link_runtime, verify_runtime_link
+from easydesign.orchestration.runtime_components import (
+    install_openfold3_component,
+    runtime_status,
+)
+from easydesign.orchestration.runtime_link import link_runtime
 from easydesign.reporting import (
     build_evidence_viewer_payload,
     build_stage02_viewer_overlay,
@@ -105,8 +113,37 @@ def _parser() -> argparse.ArgumentParser:
     runtime_link = runtime_commands.add_parser("link", help="只读复用已安装 runtime")
     runtime_link.add_argument("source", type=Path)
     _add_json(runtime_link)
-    runtime_status = runtime_commands.add_parser("status", help="验证当前 link receipt")
-    _add_json(runtime_status)
+    runtime_install = runtime_commands.add_parser(
+        "install", help="从离线 bundle 安装本地 immutable component"
+    )
+    runtime_install.add_argument("component", choices=("openfold3",))
+    runtime_install.add_argument("--bundle", required=True, type=Path)
+    _add_json(runtime_install)
+    runtime_status_parser = runtime_commands.add_parser(
+        "status", help="验证 shared link 与本地 component"
+    )
+    _add_json(runtime_status_parser)
+    runtime_compare = runtime_commands.add_parser(
+        "compare", help="生成不可变 OpenFold3/Protenix 灰度比较报告"
+    )
+    runtime_compare.add_argument("component", choices=("openfold3",))
+    runtime_compare.add_argument("--panel", required=True, type=Path)
+    runtime_compare.add_argument("--evidence", required=True, type=Path)
+    _add_json(runtime_compare)
+    runtime_approve = runtime_commands.add_parser(
+        "approve", help="记录研究者灰度审核；不会自动切换默认后端"
+    )
+    runtime_approve.add_argument("component", choices=("openfold3",))
+    runtime_approve.add_argument("--report", required=True, type=Path)
+    runtime_approve.add_argument("--reviewer", required=True)
+    runtime_approve.add_argument(
+        "--decision",
+        required=True,
+        choices=("approve-default-switch", "reject-default-switch"),
+    )
+    runtime_approve.add_argument("--notes", default="")
+    _add_confirm(runtime_approve)
+    _add_json(runtime_approve)
 
     doctor = commands.add_parser("doctor", help="检查本地 runtime/backend")
     doctor.add_argument("--full", action="store_true")
@@ -323,18 +360,73 @@ def _dispatch(args: argparse.Namespace) -> int:
                     f"Profile: {link_result.profile}\nReceipt: {link_result.receipt}"
                 )
             )
+        elif args.runtime_command == "install":
+            installed = install_openfold3_component(args.bundle)
+            print(
+                _json(installed)
+                if args.json
+                else (
+                    f"OpenFold3 component: {installed.status}\n"
+                    f"Environment: {installed.component.environment_root}\n"
+                    f"Model: {installed.component.model_root}\n"
+                    f"Profile: {installed.profile}"
+                )
+            )
+        elif args.runtime_command == "status":
+            status = runtime_status()
+            openfold3_status = (
+                status.openfold3.converted_weight_sha256
+                if status.openfold3
+                else "not-installed"
+            )
+            print(
+                _json(status)
+                if args.json
+                else (
+                    f"Shared runtime: {status.linked_runtime}\n"
+                    f"OpenFold3: {openfold3_status}"
+                )
+            )
+        elif args.runtime_command == "compare":
+            validation_report_path = generate_openfold3_validation_report(
+                panel_path=args.panel,
+                evidence_path=args.evidence,
+            )
+            print(
+                json.dumps(
+                    {"report": str(validation_report_path)}, ensure_ascii=False
+                )
+                if args.json
+                else f"OpenFold3 validation report: {validation_report_path}"
+            )
         else:
-            receipt = verify_runtime_link()
-            print(_json(receipt) if args.json else f"runtime link 有效: {receipt.source_runtime}")
+            approval = approve_openfold3_validation_report(
+                report_path=args.report,
+                reviewer=args.reviewer,
+                decision=cast(
+                    Literal["approve-default-switch", "reject-default-switch"],
+                    args.decision,
+                ),
+                notes=args.notes,
+                confirm=args.confirm,
+            )
+            print(
+                json.dumps({"approval": str(approval)}, ensure_ascii=False)
+                if args.json
+                else (
+                    f"OpenFold3 approval receipt: {approval}\n"
+                    "默认后端尚未改变；切换需要单独的 science commit。"
+                )
+            )
         return 0
     if args.command == "doctor":
-        report = diagnose_runtime(full=args.full)
+        doctor_report = diagnose_runtime(full=args.full)
         if args.json:
-            print(_json(report))
+            print(_json(doctor_report))
         else:
-            for check in report.checks:
+            for check in doctor_report.checks:
                 print(f"{check.status}: {check.name}: {check.message}")
-        return 0 if report.ok else 2
+        return 0 if doctor_report.ok else 2
 
     result: CommandResult
     if args.command == "project":

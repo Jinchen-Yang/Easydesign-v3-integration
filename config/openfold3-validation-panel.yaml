@@ -1,0 +1,75 @@
+schema_version: "0.1"
+panel_id: openfold3-gray-rollout-v1
+cases:
+  - case_id: query-multimer
+    case_class: technical
+    source_uri: https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_multimer.json
+    chain_annotations: {A: protein-1-copy-1, C: protein-1-copy-2, B: protein-2-copy-1, D: protein-2-copy-2}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch]
+  - case_id: query-homomer
+    case_class: technical
+    source_uri: https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_homomer.json
+    chain_annotations: {A: homomer-1, B: homomer-2}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch]
+  - case_id: pdb-7fci-assembly-1
+    case_class: positive-control
+    source_uri: https://www.rcsb.org/structure/7FCI
+    assembly_id: "1"
+    chain_annotations: {A: antigen-sodium-bile-acid-cotransporter, L: fab-light, H: fab-heavy}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch]
+  - case_id: pdb-7n0a-assembly-1
+    case_class: positive-control
+    source_uri: https://www.rcsb.org/structure/7N0A
+    assembly_id: "1"
+    chain_annotations: {C: antigen-leukemia-inhibitory-factor, A: fab-light, B: fab-heavy}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch]
+  - case_id: apoe-protenix-0001
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0002
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0003
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0004
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0005
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0006
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0041
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0042
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0044
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]
+  - case_id: apoe-protenix-0045
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo
+    chain_annotations: {A: target, B: binder}
+    required_backends: [openfold3-af3-jax, openfold3-pytorch, protenix-v2]

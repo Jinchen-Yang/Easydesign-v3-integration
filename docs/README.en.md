@@ -16,15 +16,38 @@ researcher-facing CLI.
 ## Install
 
 ```bash
-cd /root/autodl-tmp/Protein_design/easydesign-local
+git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
+cd Easydesign
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
 uv sync --frozen --extra dev
 source .venv/bin/activate
-easydesign runtime link /root/autodl-tmp/Protein_design/easydesign-clean/runtime
-easydesign doctor --full
 ```
 
-The linked scientific environments and models are read-only. This worktree owns its caches, logs,
-jobs, projects, and runs.
+On a clean Linux x86-64 host, install the pinned Miniforge build into this clone, verify its published
+SHA-256, and install one scientific component at a time:
+
+```bash
+mkdir -p runtime/tmp runtime/tools
+curl -fL \
+  https://github.com/conda-forge/miniforge/releases/download/26.3.2-2/Miniforge3-26.3.2-2-Linux-x86_64.sh \
+  -o runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh
+printf '%s  %s\n' \
+  42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94 \
+  runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh | sha256sum -c -
+bash runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
+  -b -p "$PWD/runtime/tools/miniforge3"
+easydesign runtime plan pymol-pse
+easydesign runtime install pymol-pse \
+  --conda "$PWD/runtime/tools/miniforge3/bin/conda" --detach
+easydesign runtime jobs
+```
+
+Repeat in the order `pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp`, waiting for each
+job to finish. Then run `easydesign runtime status` and `easydesign doctor --full`. If the same machine
+already has a verified EasyDesign runtime, `easydesign runtime link /absolute/path/to/runtime` remains
+an optional read-only shortcut, not an installation prerequisite. Every cache, log, job, project, run,
+and locally installed component remains inside the current clone.
 
 ## Start or resume with Codex
 

@@ -36,11 +36,12 @@ activation 或供应商下单。
 7. 正式经验必须包含适用范围、证据 run、反例、置信度、审核人和日期，研究者批准后发布。
 8. 用户输入、科学 runs、manifest、环境、模型和唯一证据受 `DATA_SAFETY.md` 保护。
 
-本 worktree 独立拥有 `.venv`、`runtime/` 和 `workspace/`。共享 runtime 只读，旧 UI
+本 worktree 独立拥有 `.venv`、`runtime/` 和 `workspace/`。全新机器可从锁定配方和资产清单
+逐组件安装自己的 scientific runtime；同机复用已有共享 runtime 时来源严格只读。旧 UI
 projects/runs 不读取、不索引、不继续；APOE Git evidence 只读用于回归。
 
 本产品永久位于 `easydesign-local`，不整体 merge 回 UI `main`。共享科学修复单独形成
-`core:` commit；本地 façade、Skill、runtime link、worker 和 Viewer 提交永不回 main。
+`core:` commit；本地 façade、Skill、runtime install/link、worker 和 Viewer 提交永不回 main。
 
 版本和 wheel 只在明确 release 指令下处理。任何开发任务不得触碰 18769、Suzhou2、
 Manager 或主仓库。

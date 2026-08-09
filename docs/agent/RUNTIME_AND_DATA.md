@@ -4,6 +4,8 @@
 `DATA_SAFETY.md`。
 
 - 本产品只写自己的 `runtime/`、`workspace/projects/`、`workspace/runs/` 和 archives。
+- 全新 clone 可从仓库锁定配方逐组件安装到自己的 `runtime/envs/`、`runtime/models/` 和
+  append-only registry；Conda、pip、Git 和下载 cache 必须继续使用隔离 child environment。
 - 原 `easydesign-clean/runtime` 仅可通过 runtime-link receipt 读取 `envs/`、`models/`、两个
   registry marker、append-only revisions 和 environment inventories。
 - link 时验证本分支环境 lock、registry tip/revision SHA、inventory SHA、文件 size/SHA 或

@@ -26,6 +26,7 @@ from .profile import (
     OpenFold3Af3JaxRuntime,
     RuntimeBackends,
     RuntimeProfile,
+    initialize_runtime_profile,
     load_runtime_profile,
 )
 
@@ -266,6 +267,17 @@ def _activate_profile(
     context: WorkspaceContext,
     receipt: OpenFold3ComponentReceipt,
 ) -> Path:
+    revision_root = context.profile_path.with_name(
+        f"{context.profile_path.name}.revisions"
+    )
+    if not context.profile_path.is_file() and not tuple(
+        revision_root.glob("revision-*.yaml")
+    ):
+        initialize_runtime_profile(
+            context.profile_path,
+            profile_id="workspace-local",
+            runs_root=context.runs_root,
+        )
     current = load_runtime_profile()
     runtime = _runtime_from_receipt(context, receipt)
     if current.profile.backends.openfold3_af3_jax == runtime:
@@ -656,14 +668,23 @@ def verify_openfold3_component(
 
 def runtime_status() -> RuntimeStatus:
     context = WorkspaceContext.discover()
-    profile = load_runtime_profile().profile
+    profile_revisions = tuple(
+        context.profile_path.with_name(
+            f"{context.profile_path.name}.revisions"
+        ).glob("revision-*.yaml")
+    )
+    linked_runtime = (
+        load_runtime_profile(context.profile_path).profile.runtime_link_source
+        if context.profile_path.is_file() or profile_revisions
+        else None
+    )
     component = (
         verify_openfold3_component(context)
         if _component_path(context).is_file()
         else None
     )
     return RuntimeStatus(
-        linked_runtime=profile.runtime_link_source,
+        linked_runtime=linked_runtime,
         openfold3=component,
     )
 

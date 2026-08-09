@@ -15,23 +15,79 @@ Workbench、远程提交、Suzhou2、Manager 或 18769 activation。
 
 ## 安装
 
+在任意 Linux 数据盘目录 clone 后进入仓库；下面所有相对路径都以当前 clone 为根，不依赖
+开发机上的固定目录。全新主机先安装 uv：
+
 ```bash
-cd /root/autodl-tmp/Protein_design/easydesign-local
+git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
+cd Easydesign
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+uv --version
 uv sync --frozen --extra dev
 source .venv/bin/activate
 easydesign --version
 ```
 
-`.venv` 不复制重型科学环境和模型。首次使用只读链接已验证 runtime：
+`uv sync` 根据 `.python-version` 和 `uv.lock` 创建当前 clone 的 `.venv`；系统 Python 可以是
+3.10，uv 会准备所需的 Python 3.11。`.venv` 只包含 EasyDesign Local 和轻量开发依赖，
+不会混装 PyMOL、BoltzGen、Protenix、ScanNet 或 TNP。
+
+### 全新机器安装科学 runtime
+
+科学环境使用仓库中经过校验的 Conda explicit locks。没有 Conda 的 Linux x86-64 主机可把
+固定版本 Miniforge 安装到当前 clone 的 `runtime/tools/`，不修改系统 Python、base Conda
+或 shell profile：
 
 ```bash
-easydesign runtime link /root/autodl-tmp/Protein_design/easydesign-clean/runtime
+test -f easydesign-workspace.yaml
+mkdir -p runtime/tmp runtime/tools
+curl -fL \
+  https://github.com/conda-forge/miniforge/releases/download/26.3.2-2/Miniforge3-26.3.2-2-Linux-x86_64.sh \
+  -o runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh
+printf '%s  %s\n' \
+  42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94 \
+  runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
+  | sha256sum -c -
+bash runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
+  -b -p "$PWD/runtime/tools/miniforge3"
+runtime/tools/miniforge3/bin/conda --version
+```
+
+逐组件先看只读计划，再启动持久安装。一次只安装一个，完成后再进入下一个；有许可要求的
+资产会在启动前逐项询问。推荐顺序为 `pymol-pse → boltzgen → protenix-v2 →
+scannet-epitope → tnp`：
+
+```bash
+easydesign runtime plan pymol-pse
+easydesign runtime install pymol-pse \
+  --conda "$PWD/runtime/tools/miniforge3/bin/conda" --detach
+easydesign runtime jobs
+easydesign runtime status
+```
+
+把上述组件名依次替换为后续四项。每个环境、模型、cache、日志、registry 和失败 quarantine
+都只写当前 clone 的 `runtime/`；安装目标已存在时校验并复用，不覆盖不可变内容。全部完成
+后运行：
+
+```bash
 easydesign runtime status
 easydesign doctor --full
 ```
 
-来源 registry、inventory 或资产身份变化后会 fail closed，必须重新 link；cache、日志、job
-和科学结果仍只写本 worktree。
+### 已有 runtime 的同机快速路径
+
+只有当前机器已经存在另一套经过验证的 EasyDesign runtime 时，才可以选择只读 link；这
+不是全新安装的前置条件：
+
+```bash
+easydesign runtime link /absolute/path/to/existing/runtime
+easydesign runtime status
+easydesign doctor --full
+```
+
+来源 registry、inventory 或资产身份变化后会 fail closed，必须重新 link；共享来源永远
+只读，cache、日志、job 和科学结果仍只写当前 clone。
 
 OpenFold3/AFO 正在灰度接入，Protenix 仍是默认结构预测后端。只有持有经过校验的离线
 bundle 时才安装；安装会创建本地不可变 Python 3.12/JAX 环境并执行真实 GPU smoke：

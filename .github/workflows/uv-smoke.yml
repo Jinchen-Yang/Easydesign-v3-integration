@@ -27,14 +27,17 @@ jobs:
           uv run easydesign --version
           uv run easydesign --help
           uv run easydesign runtime --help
-          uv run easydesign step --help
+          uv run easydesign runtime plan --help
       - name: Run focused local product tests
         run: |
           uv run python -m pytest \
             tests/unit/core \
             tests/unit/test_workspace_context.py \
             tests/unit/test_cli.py \
+            tests/unit/orchestration/test_profile.py \
             tests/unit/orchestration/test_runtime_link.py \
+            tests/unit/orchestration/test_runtime_setup.py \
+            tests/unit/orchestration/test_setup_jobs.py \
             tests/unit/test_runtime_guard.py
 
   full-python:

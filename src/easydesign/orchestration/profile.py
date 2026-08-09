@@ -1,8 +1,8 @@
 """Explicit local-only runtime profile.
 
-The VS Code product never installs scientific environments and never resolves
-remote executors. runtime link writes absolute, read-only backend paths after
-verifying the source runtime registries.
+Scientific environments can be installed inside this clone or resolved from a
+verified, read-only runtime link. The local product never resolves remote
+executors.
 """
 
 from __future__ import annotations
@@ -241,7 +241,7 @@ def initialize_runtime_profile(
     profile_id: str = "local-test",
     runs_root: Path | None = None,
 ) -> Path:
-    """Create an empty local profile for tests; real users run runtime link."""
+    """Create the local profile populated by setup, link, or component activation."""
 
     destination = resolve_runtime_profile_path(path).resolve()
     context = WorkspaceContext.discover(destination.parent)
@@ -262,6 +262,169 @@ def initialize_runtime_profile(
     return destination
 
 
+def _resolve_local_setup_backends(
+    context: WorkspaceContext,
+    current: RuntimeBackends,
+) -> RuntimeBackends:
+    """Resolve locally installed scientific components from immutable registries.
+
+    Explicit profiles used by tests and advanced users remain valid until a
+    component has a local registry record. Once a component is registered, its
+    current lock and complete asset set become authoritative and fail closed.
+    OpenFold3 remains independently activated by its verified component receipt.
+    """
+
+    from .runtime_setup import (
+        expected_environment_lock_sha256,
+        latest_asset_records,
+        latest_environment_records,
+    )
+
+    environments = latest_environment_records(context)
+    assets = latest_asset_records(context)
+    if not environments and not assets:
+        return current
+
+    def available_prefix(environment_id: str) -> Path | None:
+        record = environments.get(environment_id)
+        if (
+            record is None
+            or record.status != "available"
+            or record.lock_sha256
+            != expected_environment_lock_sha256(context, environment_id)
+        ):
+            return None
+        prefix = (context.root / record.relative_prefix).resolve()
+        context.assert_write_path(prefix)
+        return prefix if prefix.is_dir() else None
+
+    def available_asset(asset_id: str) -> Path | None:
+        record = assets.get(asset_id)
+        if record is None or record.status != "available":
+            return None
+        path = (context.root / record.relative_path).resolve()
+        context.assert_write_path(path)
+        if not path.exists():
+            return None
+        if record.size_bytes is not None and path.is_file():
+            try:
+                if path.stat().st_size != record.size_bytes:
+                    return None
+            except OSError:
+                return None
+        return path
+
+    def assets_ready(*asset_ids: str) -> bool:
+        return all(available_asset(asset_id) is not None for asset_id in asset_ids)
+
+    protenix_prefix = available_prefix("protenix-v2")
+    protenix_checkpoint = available_asset("protenix-v2-checkpoint")
+    protenix = (
+        ProtenixV2Runtime(
+            executable=protenix_prefix / "bin/protenix",
+            model_root=context.runtime_root / "models/protenix-v2",
+            model_checkpoint=protenix_checkpoint,
+        )
+        if protenix_prefix is not None
+        and protenix_checkpoint is not None
+        and assets_ready(
+            "protenix-v2-checkpoint",
+            "protenix-ccd-components",
+            "protenix-ccd-rdkit-cache",
+            "protenix-pdb-clusters",
+            "protenix-obsolete-releases",
+        )
+        else None
+    )
+
+    pymol_prefix = available_prefix("pymol-pse")
+    pymol = (
+        PyMOLPseRuntime(python=pymol_prefix / "bin/python")
+        if pymol_prefix is not None
+        else None
+    )
+
+    scannet_prefix = available_prefix("scannet-epitope")
+    scannet_root = available_asset("scannet-code-and-epitope-models")
+    scannet = (
+        ScanNetEpitopeRuntime(
+            python=scannet_prefix / "bin/python",
+            repository_root=scannet_root,
+            execution_device="cpu",
+        )
+        if scannet_prefix is not None
+        and scannet_root is not None
+        and assets_ready("scannet-code-and-epitope-models")
+        else None
+    )
+
+    boltzgen_prefix = available_prefix("boltzgen")
+    boltzgen_root = available_asset("boltzgen-source-a3149cf")
+    boltzgen_validation_ready = assets_ready(
+        "boltzgen-source-a3149cf",
+        "boltzgen-inference-molecule-dataset",
+    )
+    boltzgen_ready = boltzgen_validation_ready and assets_ready(
+        "boltzgen-design-diverse-checkpoint",
+        "boltzgen-design-adherence-checkpoint",
+        "boltzgen-inverse-fold-checkpoint",
+        "boltzgen-folding-checkpoint",
+        "boltzgen-affinity-checkpoint",
+    )
+    boltzgen_validation = (
+        BoltzGenRuntime(
+            executable=boltzgen_prefix / "bin/boltzgen",
+            repository_root=boltzgen_root,
+            cache_root=context.runtime_root / "models/boltzgen/huggingface",
+        )
+        if boltzgen_prefix is not None
+        and boltzgen_root is not None
+        and boltzgen_validation_ready
+        else None
+    )
+    boltzgen = boltzgen_validation if boltzgen_ready else None
+
+    tnp_prefix = available_prefix("tnp")
+    tnp_root = available_asset("tnp-source-29dcac72")
+    tnp = (
+        TnpRuntime(
+            python=tnp_prefix / "bin/python",
+            executable=tnp_root / "bin/TNP",
+            repository_root=tnp_root,
+        )
+        if tnp_prefix is not None
+        and tnp_root is not None
+        and assets_ready("tnp-source-29dcac72")
+        else None
+    )
+
+    return RuntimeBackends(
+        protenix_v2=(
+            protenix if "protenix-v2" in environments else current.protenix_v2
+        ),
+        openfold3_af3_jax=current.openfold3_af3_jax,
+        pymol_pse=(
+            pymol if "pymol-pse" in environments else current.pymol_pse
+        ),
+        scannet_epitope=(
+            scannet
+            if "scannet-epitope" in environments
+            else current.scannet_epitope
+        ),
+        boltzgen_validation=(
+            boltzgen_validation
+            if "boltzgen" in environments
+            else current.boltzgen_validation
+        ),
+        boltzgen=(
+            boltzgen if "boltzgen" in environments else current.boltzgen
+        ),
+        tnp=(
+            tnp if "tnp" in environments else current.tnp
+        ),
+    )
+
+
 def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
     selected = _latest_profile_path(resolve_runtime_profile_path(path).resolve())
     try:
@@ -269,7 +432,8 @@ def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
         profile = RuntimeProfile.model_validate(raw)
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValidationError) as error:
         raise ConfigurationError(f"Runtime profile 无法读取: {selected}: {error}") from error
-    receipt = WorkspaceContext.discover(selected.parent).runtime_root / "state/runtime-link.json"
+    context = WorkspaceContext.discover(selected.parent)
+    receipt = context.runtime_root / "state/runtime-link.json"
     if profile.runtime_link_source is not None and not receipt.is_file():
         raise ConfigurationError("linked runtime profile 缺少 receipt，拒绝使用")
     if receipt.is_file():
@@ -293,6 +457,12 @@ def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
             or runtime.runner_commit != component.runner_commit
         ):
             raise ConfigurationError("runtime profile 与 OpenFold3 component identity 不一致")
+    if profile.runtime_link_source is None:
+        profile = profile.model_copy(
+            update={
+                "backends": _resolve_local_setup_backends(context, profile.backends),
+            }
+        )
     return LoadedRuntimeProfile(
         path=selected,
         profile=profile,

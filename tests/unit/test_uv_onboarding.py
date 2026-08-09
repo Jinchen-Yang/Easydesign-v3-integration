@@ -23,17 +23,25 @@ def test_uv_files_and_local_distribution_identity_are_committed() -> None:
     assert project["classifiers"][-1] == "Private :: Do Not Upload"
 
 
-def test_readme_matches_local_runtime_link_and_agent_native_cli() -> None:
+def test_readme_supports_clean_machine_runtime_install_and_agent_native_cli() -> None:
     markdown = (ROOT / "README.md").read_text(encoding="utf-8")
     shell = _shell_blocks(markdown)
+    assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in shell
     assert "uv sync --frozen --extra dev" in shell
     assert "source .venv/bin/activate" in shell
+    assert "Miniforge3-26.3.2-2-Linux-x86_64.sh" in shell
+    assert "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94" in shell
+    assert "easydesign runtime plan" in shell
+    assert "easydesign runtime install" in shell
+    assert "easydesign runtime jobs" in shell
     assert "easydesign runtime link" in shell
     assert "easydesign project init" in shell
     assert "easydesign project status" in shell
     assert "easydesign target prepare" in shell
     assert "easydesign view" in shell
     assert "easydesign step" not in shell
+    assert "/root/autodl-tmp/Protein_design/easydesign-local" not in markdown
+    assert "/root/autodl-tmp/Protein_design/easydesign-clean/runtime" not in markdown
     for forbidden in ("easydesign ui", "easydesign remote", "easydesign setup"):
         assert forbidden not in shell
 

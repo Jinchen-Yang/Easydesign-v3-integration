@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from easydesign.core import ConfigurationError
-from easydesign.orchestration import initialize_runtime_profile, load_runtime_profile
+from easydesign.orchestration import (
+    initialize_runtime_profile,
+    load_runtime_profile,
+    runtime_setup,
+)
+from easydesign.orchestration.runtime_setup import EnvironmentRecord
 
 
 @pytest.fixture(autouse=True)
@@ -74,3 +79,42 @@ remote_executors:
     )
     with pytest.raises(ConfigurationError, match="extra_forbidden"):
         load_runtime_profile(profile)
+
+
+def test_runtime_profile_resolves_current_local_component_registry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path = initialize_runtime_profile(
+        tmp_path / "runtime/profile.yaml",
+        profile_id="fresh-clone",
+        runs_root=(tmp_path / "workspace/runs").resolve(),
+    )
+    prefix = tmp_path / "runtime/envs/pymol-pse-lock123"
+    python = prefix / "bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    record = EnvironmentRecord(
+        environment_id="pymol-pse",
+        lock_sha256="a" * 64,
+        relative_prefix=prefix.relative_to(tmp_path),
+        status="available",
+        probe_command=(str(python), "--version"),
+        recorded_at="2026-08-10T00:00:00Z",
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "latest_environment_records",
+        lambda _context: {"pymol-pse": record},
+    )
+    monkeypatch.setattr(runtime_setup, "latest_asset_records", lambda _context: {})
+    monkeypatch.setattr(
+        runtime_setup,
+        "expected_environment_lock_sha256",
+        lambda _context, _environment_id: "a" * 64,
+    )
+
+    loaded = load_runtime_profile(profile_path)
+
+    assert loaded.profile.backends.pymol_pse is not None
+    assert loaded.profile.backends.pymol_pse.python == python.resolve()

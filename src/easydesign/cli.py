@@ -14,7 +14,7 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel
 
 import easydesign
-from easydesign.core import EasyDesignError
+from easydesign.core import ConfigurationError, EasyDesignError
 from easydesign.orchestration.application import diagnose_runtime
 from easydesign.orchestration.local_project import completed_steps, resolve_project_run
 from easydesign.orchestration.openfold3_validation import (
@@ -51,6 +51,19 @@ from easydesign.orchestration.runtime_components import (
     runtime_status,
 )
 from easydesign.orchestration.runtime_link import link_runtime
+from easydesign.orchestration.runtime_setup import (
+    DEFAULT_PIP_INDEX_URL,
+    SETUP_COMPONENT_ASSETS,
+    asset_status,
+    environment_status,
+    setup_plan,
+    setup_workspace,
+)
+from easydesign.orchestration.setup_jobs import (
+    launch_setup_job,
+    list_setup_jobs,
+    read_setup_job,
+)
 from easydesign.reporting import (
     build_evidence_viewer_payload,
     build_stage02_viewer_overlay,
@@ -58,6 +71,14 @@ from easydesign.reporting import (
     resolve_target_viewer_argument,
 )
 from easydesign.workspace_context import WorkspaceContext
+
+LOCAL_RUNTIME_COMPONENTS = (
+    "pymol-pse",
+    "boltzgen",
+    "protenix-v2",
+    "scannet-epitope",
+    "tnp",
+)
 
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
@@ -108,17 +129,43 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="失败时显示 traceback")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    runtime = commands.add_parser("runtime", help="链接或验证本机科学环境/模型")
+    runtime = commands.add_parser("runtime", help="安装、链接或验证本机科学环境/模型")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_link = runtime_commands.add_parser("link", help="只读复用已安装 runtime")
     runtime_link.add_argument("source", type=Path)
     _add_json(runtime_link)
-    runtime_install = runtime_commands.add_parser(
-        "install", help="从离线 bundle 安装本地 immutable component"
+    runtime_plan = runtime_commands.add_parser(
+        "plan", help="只读规划一个本地科学组件及其资产"
     )
-    runtime_install.add_argument("component", choices=("openfold3",))
-    runtime_install.add_argument("--bundle", required=True, type=Path)
+    runtime_plan.add_argument("component", choices=LOCAL_RUNTIME_COMPONENTS)
+    _add_json(runtime_plan)
+    runtime_install = runtime_commands.add_parser(
+        "install", help="安装锁定的科学组件或离线 OpenFold3 bundle"
+    )
+    runtime_install.add_argument(
+        "component", choices=(*LOCAL_RUNTIME_COMPONENTS, "openfold3")
+    )
+    runtime_install.add_argument("--bundle", type=Path)
+    runtime_install.add_argument("--detach", action="store_true")
+    runtime_install.add_argument(
+        "--accept-license",
+        action="append",
+        default=[],
+        metavar="ASSET_ID",
+        help="确认一个运行资产许可；可重复提供",
+    )
+    runtime_install.add_argument("--conda", type=Path, help="显式 Conda executable")
+    runtime_install.add_argument(
+        "--pip-index-url",
+        default=DEFAULT_PIP_INDEX_URL,
+        help="仅用于本次安装子进程的 HTTPS Python package index",
+    )
     _add_json(runtime_install)
+    runtime_jobs = runtime_commands.add_parser(
+        "jobs", help="读取持久 runtime 安装任务"
+    )
+    runtime_jobs.add_argument("--job-id")
+    _add_json(runtime_jobs)
     runtime_status_parser = runtime_commands.add_parser(
         "status", help="验证 shared link 与本地 component"
     )
@@ -294,6 +341,95 @@ def _json(value: BaseModel | dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def _print_runtime_plan(payload: dict[str, Any]) -> None:
+    print(f"组件: {payload['component']}")
+    print(f"工作区: {payload['workspace']}")
+    for environment in payload["environments"]:
+        print(
+            f"环境: {environment['environment_id']} -> {environment['target']} "
+            f"(lock {str(environment['lock_sha256'])[:12]})"
+        )
+    for asset in payload["assets"]:
+        gate = "需要许可确认" if asset["license_confirmation_required"] else "无需确认"
+        print(f"资产: {asset['asset_id']} ({asset['license']}; {gate})")
+    disk = payload["disk"]
+    print(
+        "磁盘: "
+        f"可用 {disk['free_bytes']} bytes; "
+        f"增量峰值 {disk['incremental_peak_bytes']} bytes; "
+        f"保留 {disk['reserve_bytes']} bytes"
+    )
+    print("结论: " + ("空间满足要求" if disk["sufficient"] else "空间不足"))
+
+
+def _confirmed_runtime_licenses(
+    payload: dict[str, Any],
+    *,
+    accepted: set[str],
+    allow_prompt: bool,
+) -> set[str]:
+    pending = [
+        asset
+        for asset in payload["assets"]
+        if asset["license_confirmation_required"]
+        and asset["asset_id"] not in accepted
+    ]
+    if not pending or not allow_prompt:
+        return accepted
+    print("以下资产需要在下载前逐项确认许可：")
+    for asset in pending:
+        answer = input(
+            f"- {asset['asset_id']} ({asset['license']})，确认下载并用于本机运行？[y/N] "
+        )
+        if answer.strip().lower() in {"y", "yes"}:
+            accepted.add(str(asset["asset_id"]))
+    return accepted
+
+
+def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
+    components = runtime_status().model_dump(mode="json")
+    component_assets = {
+        asset_id
+        for component in LOCAL_RUNTIME_COMPONENTS
+        for asset_id in SETUP_COMPONENT_ASSETS[component]
+    }
+    components["installation_mode"] = (
+        "linked" if components["linked_runtime"] is not None else "local"
+    )
+    components["local_environments"] = [
+        item
+        for item in environment_status(context)["environments"]
+        if item["environment_id"] in LOCAL_RUNTIME_COMPONENTS
+    ]
+    components["local_assets"] = [
+        item
+        for item in asset_status(context)["assets"]
+        if item["asset_id"] in component_assets
+    ]
+    return components
+
+
+def _print_runtime_status(payload: dict[str, Any]) -> None:
+    print(f"Installation mode: {payload['installation_mode']}")
+    print(f"Shared runtime: {payload['linked_runtime'] or 'not-linked'}")
+    openfold3 = payload["openfold3"]
+    print(
+        "OpenFold3: "
+        + (
+            str(openfold3["converted_weight_sha256"])
+            if openfold3 is not None
+            else "not-installed"
+        )
+    )
+    for environment in payload["local_environments"]:
+        print(
+            f"Local environment {environment['environment_id']}: "
+            f"{environment['status']}"
+        )
+    for asset in payload["local_assets"]:
+        print(f"Local asset {asset['asset_id']}: {asset['status']}")
+
+
 def _print_result(result: CommandResult, *, as_json: bool) -> None:
     if as_json:
         print(_json(result))
@@ -350,6 +486,7 @@ def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
 
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "runtime":
+        context = WorkspaceContext.discover()
         if args.runtime_command == "link":
             link_result = link_runtime(args.source)
             print(
@@ -360,33 +497,111 @@ def _dispatch(args: argparse.Namespace) -> int:
                     f"Profile: {link_result.profile}\nReceipt: {link_result.receipt}"
                 )
             )
+        elif args.runtime_command == "plan":
+            plan = setup_plan(context, minimal=False, component=args.component)
+            if args.json:
+                print(_json(plan))
+            else:
+                _print_runtime_plan(plan)
         elif args.runtime_command == "install":
-            installed = install_openfold3_component(args.bundle)
-            print(
-                _json(installed)
-                if args.json
-                else (
-                    f"OpenFold3 component: {installed.status}\n"
-                    f"Environment: {installed.component.environment_root}\n"
-                    f"Model: {installed.component.model_root}\n"
-                    f"Profile: {installed.profile}"
+            if args.component == "openfold3":
+                if args.bundle is None:
+                    raise ConfigurationError("安装 OpenFold3 必须提供 --bundle")
+                if (
+                    args.detach
+                    or args.accept_license
+                    or args.conda is not None
+                    or args.pip_index_url != DEFAULT_PIP_INDEX_URL
+                ):
+                    raise ConfigurationError(
+                        "OpenFold3 只接受 --bundle；Conda、许可和 detach 参数用于锁定科学组件"
+                    )
+                installed = install_openfold3_component(args.bundle)
+                print(
+                    _json(installed)
+                    if args.json
+                    else (
+                        f"OpenFold3 component: {installed.status}\n"
+                        f"Environment: {installed.component.environment_root}\n"
+                        f"Model: {installed.component.model_root}\n"
+                        f"Profile: {installed.profile}"
+                    )
                 )
+            else:
+                if args.bundle is not None:
+                    raise ConfigurationError("--bundle 只用于 OpenFold3")
+                plan = setup_plan(context, minimal=False, component=args.component)
+                accepted = _confirmed_runtime_licenses(
+                    plan,
+                    accepted=set(args.accept_license),
+                    allow_prompt=not args.json and sys.stdin.isatty(),
+                )
+                if args.detach:
+                    job = launch_setup_job(
+                        context,
+                        minimal=False,
+                        component=args.component,
+                        accepted_license_ids=accepted,
+                        conda_executable=args.conda,
+                        pip_index_url=args.pip_index_url,
+                    )
+                    print(
+                        _json(job)
+                        if args.json
+                        else f"Runtime job: {job.job_id}\nStatus: {job.status}"
+                    )
+                else:
+                    setup_summary = setup_workspace(
+                        context,
+                        minimal=False,
+                        component=args.component,
+                        accepted_license_ids=accepted,
+                        conda_executable=args.conda,
+                        pip_index_url=args.pip_index_url,
+                    )
+                    if args.json:
+                        print(_json(setup_summary))
+                    else:
+                        summary_status = (
+                            "succeeded" if setup_summary.ok else "incomplete"
+                        )
+                        print(
+                            f"组件: {setup_summary.component}\n状态: {summary_status}"
+                        )
+                        for environment in setup_summary.environments:
+                            print(f"Environment {environment.environment_id}: {environment.status}")
+                        for asset in setup_summary.assets:
+                            print(f"Asset {asset.asset_id}: {asset.status}")
+                    return 0 if setup_summary.ok else 3
+        elif args.runtime_command == "jobs":
+            jobs = (
+                (read_setup_job(context, args.job_id),)
+                if args.job_id is not None
+                else list_setup_jobs(context)
             )
+            if args.json:
+                print(
+                    json.dumps(
+                        [job.model_dump(mode="json") for job in jobs],
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            elif not jobs:
+                print("当前工作区还没有 runtime 安装任务。")
+            else:
+                for job in jobs:
+                    print(
+                        f"{job.job_id}: {job.status}; component={job.component}; "
+                        f"stdout={job.stdout_relative_path}; stderr={job.stderr_relative_path}"
+                    )
         elif args.runtime_command == "status":
-            status = runtime_status()
-            openfold3_status = (
-                status.openfold3.converted_weight_sha256
-                if status.openfold3
-                else "not-installed"
-            )
-            print(
-                _json(status)
-                if args.json
-                else (
-                    f"Shared runtime: {status.linked_runtime}\n"
-                    f"OpenFold3: {openfold3_status}"
-                )
-            )
+            runtime_payload = _runtime_status_payload(context)
+            if args.json:
+                print(_json(runtime_payload))
+            else:
+                _print_runtime_status(runtime_payload)
         elif args.runtime_command == "compare":
             validation_report_path = generate_openfold3_validation_report(
                 panel_path=args.panel,

@@ -38,7 +38,7 @@ EasyDesign 负责可重复工具、严格输入输出、manifest/checksum、work
 - `dev-local`：默认局部实现；不升版本、不构建 wheel、不访问远端。
 - `integration`：科学契约、backend、orchestration、CLI/worker、Skill 或 Viewer 变更。
 - `release`：仅用户明确要求时；不得静默升级。
-- `ops`：仅本地 runtime link、诊断和恢复。
+- `ops`：仅当前 clone 的 runtime install/link、诊断和恢复。
 
 同一逻辑开发任务只读取一次 context，保存 `policy_bundle_id`；上下文压缩后传
 `--known-bundle-id`，未变化不重读。路径路由：

@@ -6,12 +6,12 @@ shell profile、Git 全局配置或系统代理。
 
 ## 推荐流程
 
-先按根 README 使用 uv 创建并激活 core/UI `.venv`。在 Linux 数据盘的仓库根目录运行：
+先按根 README 使用 uv 创建并激活 `.venv`。在 Linux 数据盘的仓库根目录运行：
 
 ```bash
-easydesign setup --component pymol-pse --plan
-easydesign setup --component pymol-pse --detach
-easydesign setup --status
+easydesign runtime plan pymol-pse
+easydesign runtime install pymol-pse --conda /absolute/path/to/conda --detach
+easydesign runtime jobs
 ```
 
 逐后端重复上述流程，推荐顺序为：
@@ -25,18 +25,12 @@ pymol-pse
 ```
 
 顺序不是科学依赖，只是便于先验证核心、PSE 和生成主线，并在每次大下载后复核空间。
-core/UI 已由 uv 管理，因此新部署不使用无 `--component` 的全量 setup，也不重复创建
-core/UI Conda 环境。产品命令只使用 uv 管理的当前仓库 `.venv`；根兼容启动器和自动 Conda
+core 已由 uv 管理，因此新部署只使用显式 component，不重复创建
+core Conda 环境。产品命令只使用 uv 管理的当前仓库 `.venv`；根兼容启动器和自动 Conda
 fallback 已退役。旧 Conda core 只保留为显式离线恢复材料，registry 的 `retired` revision
 继续保存对应目录、inventory 和历史记录，但不会让它重新成为主运行时。
 
-安装目标始终由当前 clone 决定。例如仓库位于数据盘：
-
-```text
-/root/autodl-tmp/Protein_design/easydesign-clean/
-```
-
-则 Conda 环境、模型、下载缓存和临时文件分别进入：
+安装目标始终由当前 clone 决定。Conda 环境、模型、下载缓存和临时文件分别进入：
 
 ```text
 runtime/envs/
@@ -51,8 +45,7 @@ runtime/tmp/
 pwd
 df -h . runtime
 du -sh runtime/envs runtime/models runtime/cache runtime/tmp runtime/quarantine
-easydesign env status
-easydesign assets status
+easydesign runtime status
 ```
 
 输出路径若不位于当前仓库，安装器必须拒绝，而不是改写 `~/.config`、`~/.cache` 或系统盘。
@@ -62,7 +55,8 @@ easydesign assets status
 可信 HTTPS 镜像：
 
 ```bash
-easydesign setup --component boltzgen \
+easydesign runtime install boltzgen \
+  --conda /absolute/path/to/conda \
   --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
   --detach
 ```
@@ -95,8 +89,8 @@ EasyDesign 不自动猜测地区或切换镜像；任何镜像都应由部署者
 查询所有任务或一个任务：
 
 ```bash
-easydesign setup --status
-easydesign setup --status --job-id setup-YYYYMMDDTHHMMSSZ-XXXXXXXXXX
+easydesign runtime jobs
+easydesign runtime jobs --job-id setup-YYYYMMDDTHHMMSSZ-XXXXXXXXXX
 ```
 
 任务目录：
@@ -123,24 +117,25 @@ runtime/state/setup-jobs/<job-id>/
 先查看资产和许可：
 
 ```bash
-easydesign assets status
-easydesign setup --component boltzgen --plan
+easydesign runtime status
+easydesign runtime plan boltzgen
 ```
 
 确认精确资产后再启动：
 
 ```bash
-easydesign setup --component boltzgen \
+easydesign runtime install boltzgen \
+  --conda /absolute/path/to/conda \
   --accept-license ASSET_ID \
   --detach
 ```
 
 每个 `--accept-license` 只授权该 ID。本次未授权资产保持 `awaiting-approval`，不能被报告
-为可用。重试 setup 会校验并复用已发布的正确环境、包缓存和资产；lock 变化会创建新环境
+为可用。重试 runtime install 会校验并复用已发布的正确环境、包缓存和资产；lock 变化会创建新环境
 目录，旧环境、失败 staging、缓存和运行结果全部保留。
 
 计划中的 `incremental_peak_bytes` 是本组件的环境、保留缓存、最终资产和最大单资产
-staging 峰值；setup 还要求保留至少 10% 文件系统容量或 5 GiB。不要通过删除历史数据
+staging 峰值；runtime install 还要求固定保留至少 10 GiB。不要通过删除历史数据
 绕过磁盘门。
 
 ## 完成验收
@@ -148,9 +143,8 @@ staging 峰值；setup 还要求保留至少 10% 文件系统容量或 5 GiB。�
 安装任务成功不等于全产品已经可用。依次运行：
 
 ```bash
-easydesign setup --status --job-id JOB_ID
-easydesign env status
-easydesign assets status
+easydesign runtime jobs --job-id JOB_ID
+easydesign runtime status
 easydesign doctor --full
 ```
 
@@ -163,9 +157,9 @@ easydesign doctor --full
 `PATH` 时才显式提供；该参数不是环境安装目录：
 
 ```bash
-easydesign setup --component pymol-pse \
+easydesign runtime install pymol-pse \
   --conda /root/miniconda3/bin/conda \
-  --plan
+  --detach
 ```
 
 环境仍发布到当前仓库的 `runtime/envs/`。
@@ -176,4 +170,4 @@ easydesign setup --component pymol-pse \
 - 磁盘不足：停止创建新任务，扩容或由用户对精确路径另行决定；EasyDesign 不清理数据。
 - 仓库移动：Conda prefix 可能失效，应在新路径按 lock 新建环境；旧环境继续保留。
 
-任何 setup 过程都不得调用递归删除、修改系统代理、修改 base Conda 或覆盖已有科学运行。
+任何 runtime install 过程都不得调用递归删除、修改系统代理、修改 base Conda 或覆盖已有科学运行。

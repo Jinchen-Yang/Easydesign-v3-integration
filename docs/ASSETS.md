@@ -11,7 +11,8 @@ Target Viewer 固定 Mol* 5.11.0 的 `molstar.js`、`molstar.css` 和 LICENSE；
 source map、无 node_modules。`scripts/check_target_viewer_assets.py` 固定大小和 SHA-256，
 Playwright 只属于开发测试环境。
 
-重型环境和模型不进入本地 wheel，也不由本分支下载：
+重型环境和模型不进入本地 wheel。它们可以安装到当前 clone 的 `runtime/`，也可以从已登记
+source runtime 只读复用：
 
 - PyMOL/PSE、Protenix-v2、ScanNet、BoltzGen、TNP 的独立环境；
 - Protenix checkpoint/CCD/PDB data；
@@ -19,9 +20,10 @@ Playwright 只属于开发测试环境。
 - BoltzGen fixed source、dataset 与五个 checkpoint；
 - TNP fixed source。
 
-它们只通过 `runtime link` 从已登记 source runtime 只读复用。link 首次验证环境 lock 与
-inventory、文件 size/SHA-256、Git revision 和 registry revision；identity 变化后 fail
-closed。模型运行启用 offline 策略，cache 写本产品 runtime，禁止向共享 source 写入。
+全新机器通过 `easydesign runtime plan/install` 按固定配方、lock、来源和 SHA-256 安装；
+已有兼容运行时的机器可选择 `runtime link`。link 首次验证环境 lock 与 inventory、文件
+size/SHA-256、Git revision 和 registry revision；identity 变化后 fail closed。模型运行
+启用 offline 策略，cache 始终写本产品 runtime，禁止向共享 source 写入。
 
 任何升级都必须同时更新来源、license、lock/registry identity、adapter probe 与相关科学
 回归；不能用“可导入”代替完整 backend 可运行证据。

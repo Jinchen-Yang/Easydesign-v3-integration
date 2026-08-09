@@ -9,6 +9,7 @@ from easydesign.core import ConfigurationError, sha256_file
 from easydesign.orchestration.runtime_components import (
     install_openfold3_component,
     load_openfold3_bundle,
+    runtime_status,
 )
 
 REQUIRED_ROLES = (
@@ -137,4 +138,31 @@ def test_install_preflight_failure_records_quarantine_without_profile_change(
 
     receipts = tuple((tmp_path / "runtime/quarantine").glob("*.json"))
     assert len(receipts) == 1
+    assert not (tmp_path / "runtime/profile.yaml").exists()
+
+
+def test_runtime_status_is_readable_before_first_component_install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "workspace_id: fresh-clone",
+                "runtime_root: runtime",
+                "projects_root: workspace/projects",
+                "runs_root: workspace/runs",
+                "archives_root: workspace/archives",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EASYDESIGN_WORKSPACE", str(tmp_path))
+
+    status = runtime_status()
+
+    assert status.linked_runtime is None
+    assert status.openfold3 is None
     assert not (tmp_path / "runtime/profile.yaml").exists()

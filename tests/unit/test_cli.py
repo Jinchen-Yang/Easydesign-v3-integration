@@ -30,6 +30,31 @@ def test_parser_exposes_agent_native_local_commands_and_retires_step() -> None:
     assert "ui" not in help_text
 
 
+def test_runtime_parser_supports_fresh_component_install_without_remote_surface() -> None:
+    planned = cli._parser().parse_args(["runtime", "plan", "protenix-v2"])
+    assert planned.runtime_command == "plan"
+    assert planned.component == "protenix-v2"
+
+    installed = cli._parser().parse_args(
+        [
+            "runtime",
+            "install",
+            "protenix-v2",
+            "--conda",
+            "/data/Easydesign/runtime/tools/miniforge3/bin/conda",
+            "--detach",
+        ]
+    )
+    assert installed.runtime_command == "install"
+    assert installed.detach is True
+    assert installed.bundle is None
+
+    openfold3 = cli._parser().parse_args(
+        ["runtime", "install", "openfold3", "--bundle", "/data/of3-bundle"]
+    )
+    assert openfold3.bundle == Path("/data/of3-bundle")
+
+
 def test_json_uses_stage_free_typed_result_model(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

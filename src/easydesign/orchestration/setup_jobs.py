@@ -23,6 +23,7 @@ from easydesign.workspace_context import WorkspaceContext
 from .runtime_setup import (
     DEFAULT_PIP_INDEX_URL,
     SETUP_COMPONENT_IDS,
+    SetupProgressUpdate,
     SetupSummary,
     validate_pip_index_url,
 )
@@ -89,6 +90,109 @@ class SetupJobResult(BaseModel):
     error: str | None = None
 
 
+class SetupJobProgress(BaseModel):
+    """Atomically replaceable operational projection for one setup worker."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    job_id: str
+    phase: str
+    message: str
+    completed_steps: int
+    total_steps: int
+    current_item: str | None = None
+    current_step_fraction: float = 0.0
+    bytes_completed: int | None = None
+    bytes_total: int | None = None
+    bytes_per_second: float | None = None
+    eta_seconds: float | None = None
+    updated_at: datetime
+
+
+class SetupProgressRecorder:
+    """Persist throttled progress without mutating request or result evidence."""
+
+    def __init__(
+        self,
+        context: WorkspaceContext,
+        request: SetupJobRequest,
+    ) -> None:
+        self._context = context
+        self._request = request
+        self._path = setup_job_root(context) / request.job_id / "progress.json"
+        context.assert_write_path(self._path)
+        self._byte_item: str | None = None
+        self._byte_started_at: datetime | None = None
+        self._byte_started_value = 0
+        self._last_update: SetupProgressUpdate | None = None
+
+    def __call__(self, update: SetupProgressUpdate) -> None:
+        self._last_update = update
+        speed: float | None = None
+        eta: float | None = None
+        if update.bytes_completed is not None:
+            if self._byte_item != update.current_item:
+                self._byte_item = update.current_item
+                self._byte_started_at = update.recorded_at
+                self._byte_started_value = update.bytes_completed
+            elif self._byte_started_at is not None:
+                elapsed = (update.recorded_at - self._byte_started_at).total_seconds()
+                transferred = update.bytes_completed - self._byte_started_value
+                if elapsed > 0 and transferred >= 0:
+                    speed = transferred / elapsed
+                    if (
+                        speed > 0
+                        and update.bytes_total is not None
+                        and update.bytes_total >= update.bytes_completed
+                    ):
+                        eta = (update.bytes_total - update.bytes_completed) / speed
+        progress = SetupJobProgress(
+            job_id=self._request.job_id,
+            phase=update.phase,
+            message=update.message,
+            completed_steps=update.completed_steps,
+            total_steps=update.total_steps,
+            current_item=update.current_item,
+            current_step_fraction=update.current_step_fraction,
+            bytes_completed=update.bytes_completed,
+            bytes_total=update.bytes_total,
+            bytes_per_second=speed,
+            eta_seconds=eta,
+            updated_at=update.recorded_at,
+        )
+        temporary = self._path.with_name(f"progress-{uuid4().hex}.tmp")
+        with temporary.open("x", encoding="utf-8") as handle:
+            handle.write(progress.model_dump_json(indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, self._path)
+
+    def fail(self, message: str) -> None:
+        previous = self._last_update
+        self(
+            SetupProgressUpdate(
+                phase="failed",
+                message=message,
+                completed_steps=0 if previous is None else previous.completed_steps,
+                total_steps=1 if previous is None else previous.total_steps,
+                current_item=(
+                    self._request.component
+                    if previous is None
+                    else previous.current_item
+                ),
+                current_step_fraction=(
+                    0.0 if previous is None else previous.current_step_fraction
+                ),
+                bytes_completed=(
+                    None if previous is None else previous.bytes_completed
+                ),
+                bytes_total=None if previous is None else previous.bytes_total,
+                recorded_at=datetime.now(tz=UTC),
+            )
+        )
+
+
 class SetupJobProjection(BaseModel):
     """Read-only status returned to the CLI and local workbench."""
 
@@ -107,6 +211,7 @@ class SetupJobProjection(BaseModel):
     pip_index_url: str = DEFAULT_PIP_INDEX_URL
     stdout_relative_path: Path
     stderr_relative_path: Path
+    progress: SetupJobProgress | None = None
     error: str | None = None
 
 
@@ -201,6 +306,7 @@ def launch_setup_job(
         pip_index_url=request.pip_index_url,
         stdout_relative_path=request.stdout_relative_path,
         stderr_relative_path=request.stderr_relative_path,
+        progress=None,
     )
 
 
@@ -271,6 +377,12 @@ def _project_setup_job(
         if result_path.is_file()
         else None
     )
+    progress_path = job_directory / "progress.json"
+    progress = (
+        load_model(progress_path, SetupJobProgress)
+        if progress_path.is_file()
+        else None
+    )
     status: Literal[
         "running",
         "succeeded",
@@ -297,6 +409,7 @@ def _project_setup_job(
         pip_index_url=request.pip_index_url,
         stdout_relative_path=request.stdout_relative_path,
         stderr_relative_path=request.stderr_relative_path,
+        progress=progress,
         error=None if result is None else result.error,
     )
 

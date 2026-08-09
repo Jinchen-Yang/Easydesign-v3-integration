@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from easydesign import cli
 from easydesign.orchestration.research_models import CommandResult, NextAction
+from easydesign.orchestration.setup_jobs import SetupJobProgress, SetupJobProjection
 
 
 def test_parser_exposes_agent_native_local_commands_and_retires_step() -> None:
@@ -53,6 +55,78 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
         ["runtime", "install", "openfold3", "--bundle", "/data/of3-bundle"]
     )
     assert openfold3.bundle == Path("/data/of3-bundle")
+
+    watched = cli._parser().parse_args(
+        ["runtime", "jobs", "--job-id", "setup-fixture", "--watch"]
+    )
+    assert watched.watch is True
+    assert watched.interval == 1.0
+
+
+def test_runtime_job_progress_renders_step_bytes_rate_and_eta() -> None:
+    now = datetime.now(tz=UTC)
+    projection = SetupJobProjection(
+        job_id="setup-fixture",
+        status="running",
+        pid=123,
+        started_at=now,
+        minimal=False,
+        component="boltzgen",
+        pip_index_url="https://pypi.org/simple",
+        stdout_relative_path=Path("runtime/logs/setup.stdout.log"),
+        stderr_relative_path=Path("runtime/logs/setup.stderr.log"),
+        progress=SetupJobProgress(
+            job_id="setup-fixture",
+            phase="asset",
+            message="正在下载并校验资产",
+            completed_steps=1,
+            total_steps=4,
+            current_item="fixture-model",
+            current_step_fraction=0.5,
+            bytes_completed=512,
+            bytes_total=1024,
+            bytes_per_second=256,
+            eta_seconds=2,
+            updated_at=now,
+        ),
+    )
+
+    rendered = cli._format_setup_job_progress(projection)
+
+    assert "37.5%" in rendered
+    assert "512 B/1.0 KiB" in rendered
+    assert "256 B/s" in rendered
+    assert "ETA 2s" in rendered
+
+
+def test_runtime_job_watch_ctrl_c_only_stops_observing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    context = cli.WorkspaceContext.from_root(Path(__file__).resolve().parents[2])
+    now = datetime.now(tz=UTC)
+    projection = SetupJobProjection(
+        job_id="setup-fixture",
+        status="running",
+        pid=123,
+        started_at=now,
+        minimal=False,
+        component="pymol-pse",
+        pip_index_url="https://pypi.org/simple",
+        stdout_relative_path=Path("runtime/logs/setup.stdout.log"),
+        stderr_relative_path=Path("runtime/logs/setup.stderr.log"),
+    )
+    monkeypatch.setattr(cli, "read_setup_job", lambda _context, _job_id: projection)
+    monkeypatch.setattr(
+        cli.time,
+        "sleep",
+        lambda _interval: (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+
+    observed = cli._watch_setup_job(context, "setup-fixture", interval=0.01)
+
+    assert observed is projection
+    assert "后台安装任务仍在运行" in capsys.readouterr().out
 
 
 def test_json_uses_stage_free_typed_result_model(

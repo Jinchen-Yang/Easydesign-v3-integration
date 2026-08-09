@@ -304,6 +304,104 @@ def test_disk_preflight_refuses_before_initializing_workspace(
     assert not context.profile_path.exists()
 
 
+def test_setup_workspace_emits_environment_and_byte_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    asset = AssetDefinition(
+        asset_id="fixture-model",
+        kind="file",
+        source="https://example.test/model.bin",
+        destination=Path("fixture/model.bin"),
+        sha256="a" * 64,
+        expected_size_bytes=100,
+        estimated_install_bytes=100,
+        license="test-only",
+        license_confirmation_required=False,
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "_setup_selection",
+        lambda _context, *, minimal, component: (
+            "component",
+            ("fixture-env",),
+            (asset,),
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "setup_plan",
+        lambda _context, *, minimal, component: {
+            "disk": {
+                "sufficient": True,
+                "incremental_peak_bytes": 100,
+                "reserve_bytes": 50,
+                "free_bytes": 1000,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime_setup, "initialize_workspace_metadata", lambda _context: None)
+
+    def fake_environment(
+        _context: WorkspaceContext,
+        environment_id: str,
+        **kwargs: object,
+    ) -> EnvironmentRecord:
+        callback = kwargs["progress_callback"]
+        assert callable(callback)
+        callback("正在创建锁定 Conda 环境", 0.1)
+        callback("环境安装与探针完成", 1.0)
+        return EnvironmentRecord(
+            environment_id=environment_id,
+            lock_sha256="b" * 64,
+            relative_prefix=Path("runtime/envs/fixture-env"),
+            status="available",
+            probe_command=("python", "-V"),
+            recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
+        )
+
+    def fake_asset(
+        _context: WorkspaceContext,
+        definition: AssetDefinition,
+        **kwargs: object,
+    ) -> runtime_setup.AssetRecord:
+        callback = kwargs["progress_callback"]
+        assert callable(callback)
+        callback(50, 100)
+        callback(100, 100)
+        return runtime_setup.AssetRecord(
+            asset_id=definition.asset_id,
+            relative_path=Path("runtime/models/fixture/model.bin"),
+            status="available",
+            sha256="a" * 64,
+            size_bytes=100,
+            license="test-only",
+            recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
+        )
+
+    monkeypatch.setattr(runtime_setup, "ensure_environment", fake_environment)
+    monkeypatch.setattr(runtime_setup, "ensure_asset", fake_asset)
+    events: list[runtime_setup.SetupProgressUpdate] = []
+
+    summary = setup_workspace(
+        context,
+        minimal=False,
+        component="fixture",
+        accepted_license_ids=set(),
+        progress_callback=events.append,
+    )
+
+    assert summary.ok is True
+    assert events[0].phase == "planning"
+    assert any(event.phase == "environment" for event in events)
+    byte_event = next(event for event in events if event.bytes_completed == 50)
+    assert byte_event.current_item == "fixture-model"
+    assert byte_event.current_step_fraction == 0.5
+    assert events[-1].phase == "complete"
+    assert events[-1].completed_steps == events[-1].total_steps == 2
+
+
 def test_inventory_normalizes_only_workspace_editable_commit() -> None:
     old = {
         "pip_freeze": [

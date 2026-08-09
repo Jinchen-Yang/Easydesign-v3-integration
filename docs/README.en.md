@@ -40,8 +40,14 @@ bash runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
 easydesign runtime plan pymol-pse
 easydesign runtime install pymol-pse \
   --conda "$PWD/runtime/tools/miniforge3/bin/conda" --detach
-easydesign runtime jobs
+easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 ```
+
+The install command prints the `SETUP_JOB_ID` and an exact watch command. The
+watch view shows the current phase and an overall progress bar. File downloads
+also show transferred/total bytes, rate, and ETA; Conda and Git phases do not
+invent byte percentages when the upstream tool cannot provide them. `Ctrl-C`
+only stops watching and leaves the detached installer running.
 
 Repeat in the order `pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp`, waiting for each
 job to finish. Then run `easydesign runtime status` and `easydesign doctor --full`. If the same machine

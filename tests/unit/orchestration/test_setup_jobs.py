@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +10,12 @@ import yaml
 
 from easydesign.core import ConfigurationError, dump_model, load_model
 from easydesign.orchestration import setup_jobs
+from easydesign.orchestration.runtime_setup import SetupProgressUpdate
 from easydesign.orchestration.setup_jobs import (
     SetupJobProcess,
     SetupJobRequest,
     SetupJobResult,
+    SetupProgressRecorder,
     launch_setup_job,
     list_setup_jobs,
     read_setup_job,
@@ -127,6 +129,60 @@ def test_terminal_result_survives_launcher_restart(
     assert projection.status == "succeeded"
     assert projection.return_code == 0
     assert list_setup_jobs(restored) == (projection,)
+
+
+def test_progress_is_atomic_and_projects_rate_and_eta(tmp_path: Path) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    now = datetime.now(tz=UTC)
+    job_id = "setup-20260810T000000Z-progress001"
+    job_root = context.runtime_root / "state" / "setup-jobs" / job_id
+    job_root.mkdir(parents=True)
+    request = SetupJobRequest(
+        job_id=job_id,
+        worker_token="progress-token",
+        minimal=False,
+        component="boltzgen",
+        started_at=now,
+        stdout_relative_path=Path("runtime/logs/progress.stdout.log"),
+        stderr_relative_path=Path("runtime/logs/progress.stderr.log"),
+    )
+    dump_model(request, job_root / "request.json")
+    recorder = SetupProgressRecorder(context, request)
+    recorder(
+        SetupProgressUpdate(
+            phase="asset",
+            message="正在下载并校验资产",
+            completed_steps=1,
+            total_steps=4,
+            current_item="fixture-model",
+            bytes_completed=0,
+            bytes_total=1000,
+            recorded_at=now,
+        )
+    )
+    recorder(
+        SetupProgressUpdate(
+            phase="asset",
+            message="正在下载并校验资产",
+            completed_steps=1,
+            total_steps=4,
+            current_item="fixture-model",
+            current_step_fraction=0.5,
+            bytes_completed=500,
+            bytes_total=1000,
+            recorded_at=now + timedelta(seconds=2),
+        )
+    )
+
+    projection = read_setup_job(context, job_id)
+
+    assert projection.progress is not None
+    assert projection.progress.bytes_per_second == 250
+    assert projection.progress.eta_seconds == 2
+    assert projection.progress.current_step_fraction == 0.5
+    assert (job_root / "progress.json").is_file()
+    assert not tuple(job_root.glob("progress-*.tmp"))
 
 
 def test_unknown_setup_job_id_is_rejected(tmp_path: Path) -> None:

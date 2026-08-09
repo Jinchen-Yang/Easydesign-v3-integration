@@ -8,7 +8,11 @@ from pathlib import Path
 
 from easydesign.core import dump_model, load_model
 from easydesign.orchestration.runtime_setup import setup_workspace
-from easydesign.orchestration.setup_jobs import SetupJobRequest, SetupJobResult
+from easydesign.orchestration.setup_jobs import (
+    SetupJobRequest,
+    SetupJobResult,
+    SetupProgressRecorder,
+)
 from easydesign.workspace_context import WorkspaceContext
 
 
@@ -29,6 +33,7 @@ def main() -> int:
     job_directory = request_path.parent
     if request.worker_token != arguments.worker_token:
         raise RuntimeError("Setup worker identity 校验失败")
+    progress = SetupProgressRecorder(context, request)
     try:
         summary = setup_workspace(
             context,
@@ -37,6 +42,7 @@ def main() -> int:
             accepted_license_ids=set(request.accepted_license_ids),
             conda_executable=request.conda_executable,
             pip_index_url=request.pip_index_url,
+            progress_callback=progress,
         )
         return_code = 0 if summary.ok else 3
         result = SetupJobResult(
@@ -48,6 +54,7 @@ def main() -> int:
         )
     except Exception as error:
         return_code = 4
+        progress.fail(f"{type(error).__name__}: {error}")
         result = SetupJobResult(
             job_id=request.job_id,
             status="failed",

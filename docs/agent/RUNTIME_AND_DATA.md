@@ -12,6 +12,8 @@
   Git revision；任一 identity 改变即 fail closed，要求重新 link。
 - 子进程 cache/home/tmp/log 全部指向本产品 runtime，并设置禁止 bytecode 和离线模型策略；
   来源 runtime 禁止 setup、下载、cache、job 或 registry 写入。
+- detached 安装的 request/process/result 保持独立证据；`progress.json` 只作为原子替换的运行态
+  projection。观察命令和 `Ctrl-C` 不得向 worker 发送停止信号。
 - 科学 worker 必须先启用 Linux Landlock 写隔离；只允许本 worktree 的四个可写根以及 CUDA
   所需的 `/dev`、`/proc` 内核接口。Python 可写性探针必须把共享包目录视为只读，使 JIT 产物
   落入本地 `runtime/cache/torch-extensions/`。Landlock 不可用时 fail closed。

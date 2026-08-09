@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import traceback
 from collections.abc import Sequence
 from pathlib import Path
@@ -60,6 +61,7 @@ from easydesign.orchestration.runtime_setup import (
     setup_workspace,
 )
 from easydesign.orchestration.setup_jobs import (
+    SetupJobProjection,
     launch_setup_job,
     list_setup_jobs,
     read_setup_job,
@@ -165,6 +167,17 @@ def _parser() -> argparse.ArgumentParser:
         "jobs", help="读取持久 runtime 安装任务"
     )
     runtime_jobs.add_argument("--job-id")
+    runtime_jobs.add_argument(
+        "--watch",
+        action="store_true",
+        help="持续刷新当前步骤、进度、下载速度和 ETA；Ctrl-C 仅停止观察",
+    )
+    runtime_jobs.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        help="观察刷新间隔秒数（默认 1.0）",
+    )
     _add_json(runtime_jobs)
     runtime_status_parser = runtime_commands.add_parser(
         "status", help="验证 shared link 与本地 component"
@@ -430,6 +443,101 @@ def _print_runtime_status(payload: dict[str, Any]) -> None:
         print(f"Local asset {asset['asset_id']}: {asset['status']}")
 
 
+def _human_bytes(value: float) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    amount = value
+    for unit in units:
+        if abs(amount) < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{amount:.0f} B"
+        amount /= 1024
+    raise AssertionError("unreachable")
+
+
+def _human_duration(seconds: float) -> str:
+    rounded = max(int(seconds), 0)
+    minutes, second = divmod(rounded, 60)
+    hours, minute = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minute:02d}m"
+    if minutes:
+        return f"{minutes}m{second:02d}s"
+    return f"{second}s"
+
+
+def _format_setup_job_progress(job: SetupJobProjection) -> str:
+    progress = job.progress
+    if progress is None:
+        return f"{job.job_id}: {job.status}; 等待 worker 发布进度"
+    total = max(progress.total_steps, 1)
+    fraction = (
+        progress.completed_steps + progress.current_step_fraction
+    ) / total
+    if job.status == "succeeded":
+        fraction = 1.0
+    fraction = max(0.0, min(fraction, 1.0))
+    width = 24
+    filled = min(int(fraction * width), width)
+    bar = "█" * filled + "░" * (width - filled)
+    details = [
+        f"[{bar}] {fraction * 100:5.1f}%",
+        job.status,
+        progress.phase,
+        progress.current_item or job.component or "runtime",
+        progress.message,
+    ]
+    if progress.bytes_completed is not None:
+        downloaded = _human_bytes(float(progress.bytes_completed))
+        if progress.bytes_total is not None:
+            downloaded += f"/{_human_bytes(float(progress.bytes_total))}"
+        details.append(downloaded)
+    if progress.bytes_per_second is not None and progress.bytes_per_second > 0:
+        details.append(f"{_human_bytes(progress.bytes_per_second)}/s")
+    if progress.eta_seconds is not None:
+        details.append(f"ETA {_human_duration(progress.eta_seconds)}")
+    return " | ".join(details)
+
+
+def _print_setup_job(job: SetupJobProjection) -> None:
+    print(_format_setup_job_progress(job))
+    print(f"  stdout: {job.stdout_relative_path}")
+    print(f"  stderr: {job.stderr_relative_path}")
+    if job.error:
+        print(f"  error: {job.error}")
+
+
+def _watch_setup_job(
+    context: WorkspaceContext,
+    job_id: str,
+    *,
+    interval: float,
+) -> SetupJobProjection:
+    if interval <= 0:
+        raise ConfigurationError("--interval 必须大于 0")
+    interactive = sys.stdout.isatty()
+    last_line: str | None = None
+    try:
+        while True:
+            job = read_setup_job(context, job_id)
+            line = _format_setup_job_progress(job)
+            if interactive:
+                sys.stdout.write("\r\x1b[2K" + line)
+                sys.stdout.flush()
+            elif line != last_line:
+                print(line, flush=True)
+            last_line = line
+            if job.status != "running":
+                if interactive:
+                    print()
+                _print_setup_job(job)
+                return job
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        if interactive:
+            print()
+        print("已停止观察；后台安装任务仍在运行。")
+        return read_setup_job(context, job_id)
+
+
 def _print_result(result: CommandResult, *, as_json: bool) -> None:
     if as_json:
         print(_json(result))
@@ -548,7 +656,12 @@ def _dispatch(args: argparse.Namespace) -> int:
                     print(
                         _json(job)
                         if args.json
-                        else f"Runtime job: {job.job_id}\nStatus: {job.status}"
+                        else (
+                            f"Runtime job: {job.job_id}\n"
+                            f"Status: {job.status}\n"
+                            "查看实时进度：\n"
+                            f"  easydesign runtime jobs --job-id {job.job_id} --watch"
+                        )
                     )
                 else:
                     setup_summary = setup_workspace(
@@ -574,6 +687,13 @@ def _dispatch(args: argparse.Namespace) -> int:
                             print(f"Asset {asset.asset_id}: {asset.status}")
                     return 0 if setup_summary.ok else 3
         elif args.runtime_command == "jobs":
+            if args.watch and args.job_id is None:
+                raise ConfigurationError("--watch 必须同时指定 --job-id")
+            if args.watch and args.json:
+                raise ConfigurationError("--watch 与 --json 不能同时使用")
+            if args.watch:
+                _watch_setup_job(context, args.job_id, interval=args.interval)
+                return 0
             jobs = (
                 (read_setup_job(context, args.job_id),)
                 if args.job_id is not None
@@ -592,10 +712,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 print("当前工作区还没有 runtime 安装任务。")
             else:
                 for job in jobs:
-                    print(
-                        f"{job.job_id}: {job.status}; component={job.component}; "
-                        f"stdout={job.stdout_relative_path}; stderr={job.stderr_relative_path}"
-                    )
+                    _print_setup_job(job)
         elif args.runtime_command == "status":
             runtime_payload = _runtime_status_payload(context)
             if args.json:

@@ -9,6 +9,8 @@ import platform
 import shutil
 import ssl
 import subprocess
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -75,6 +77,15 @@ SETUP_FREE_RESERVE_BYTES = 10 * GIB
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
 SetupMode = Literal["minimal", "full", "component"]
+SetupProgressPhase = Literal[
+    "planning",
+    "initializing",
+    "environment",
+    "asset",
+    "finalizing",
+    "complete",
+    "failed",
+]
 
 
 class EnvironmentLock(BaseModel):
@@ -161,6 +172,55 @@ class SetupSummary(BaseModel):
     ok: bool
     awaiting_approval: tuple[str, ...] = ()
     pip_index_url: str = DEFAULT_PIP_INDEX_URL
+
+
+class SetupProgressUpdate(BaseModel):
+    """Typed operational progress emitted by runtime installation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    phase: SetupProgressPhase
+    message: str
+    completed_steps: int
+    total_steps: int
+    current_item: str | None = None
+    current_step_fraction: float = 0.0
+    bytes_completed: int | None = None
+    bytes_total: int | None = None
+    recorded_at: datetime
+
+
+SetupProgressCallback = Callable[[SetupProgressUpdate], None]
+
+
+def _emit_setup_progress(
+    callback: SetupProgressCallback | None,
+    *,
+    phase: SetupProgressPhase,
+    message: str,
+    completed_steps: int,
+    total_steps: int,
+    current_item: str | None = None,
+    current_step_fraction: float = 0.0,
+    bytes_completed: int | None = None,
+    bytes_total: int | None = None,
+) -> None:
+    if callback is None:
+        return
+    callback(
+        SetupProgressUpdate(
+            phase=phase,
+            message=message,
+            completed_steps=completed_steps,
+            total_steps=max(total_steps, 1),
+            current_item=current_item,
+            current_step_fraction=max(0.0, min(current_step_fraction, 1.0)),
+            bytes_completed=bytes_completed,
+            bytes_total=bytes_total,
+            recorded_at=datetime.now(tz=UTC),
+        )
+    )
 
 
 def validate_pip_index_url(value: str) -> str:
@@ -564,6 +624,7 @@ def ensure_environment(
     *,
     conda_executable: Path | None = None,
     pip_index_url: str = DEFAULT_PIP_INDEX_URL,
+    progress_callback: Callable[[str, float], None] | None = None,
 ) -> EnvironmentRecord:
     """Create one immutable lock-addressed environment and probe it."""
 
@@ -605,9 +666,13 @@ def ensure_environment(
     prefix = context.runtime_root / "envs" / f"{environment_id}-{lock_sha256[:12]}"
     context.assert_write_path(prefix)
     if prefix.exists():
+        if progress_callback is not None:
+            progress_callback("正在校验已有环境", 0.9)
         existing = _probe_environment(context, lock, prefix, lock_sha256)
         if existing.status == "available":
             _append_record(context.environment_registry_root, existing)
+            if progress_callback is not None:
+                progress_callback("已有环境校验通过", 1.0)
             return existing
         context.quarantine(
             prefix,
@@ -616,6 +681,8 @@ def ensure_environment(
         )
     if not prefix.exists():
         install_phase = "conda-create"
+        if progress_callback is not None:
+            progress_callback("正在创建锁定 Conda 环境", 0.1)
         command = [
             str(_conda_executable(conda_executable)),
             "create",
@@ -633,6 +700,8 @@ def ensure_environment(
         )
         if completed.returncode == 0 and pip_requirements is not None:
             install_phase = "pip-lock-install"
+            if progress_callback is not None:
+                progress_callback("Conda 环境完成，正在安装锁定 Python 包", 0.65)
             pip_environment = {
                 **os.environ,
                 **context.child_environment(),
@@ -656,6 +725,8 @@ def ensure_environment(
             )
         if completed.returncode == 0 and lock.install_workspace_package:
             install_phase = "workspace-package-install"
+            if progress_callback is not None:
+                progress_callback("正在安装工作区包", 0.85)
             completed = subprocess.run(
                 [
                     str(prefix / "bin" / "python"),
@@ -698,8 +769,12 @@ def ensure_environment(
             )
             _append_record(context.environment_registry_root, failed)
             return failed
+    if progress_callback is not None:
+        progress_callback("正在执行环境探针和 inventory", 0.95)
     record = _probe_environment(context, lock, prefix, lock_sha256)
     _append_record(context.environment_registry_root, record)
+    if progress_callback is not None:
+        progress_callback("环境安装与探针完成", 1.0)
     return record
 
 
@@ -707,6 +782,8 @@ def _download_file(
     context: WorkspaceContext,
     asset: AssetDefinition,
     destination: Path,
+    *,
+    progress_callback: Callable[[int, int | None], None] | None = None,
 ) -> tuple[str, int]:
     staging = context.runtime_root / "tmp" / f"asset-{asset.asset_id}-{uuid4().hex}"
     context.assert_write_path(staging)
@@ -724,11 +801,27 @@ def _download_file(
                 response.raise_for_status()
                 digest = hashlib.sha256()
                 size = 0
+                response_size = response.headers.get("content-length")
+                total_size = asset.expected_size_bytes
+                if total_size is None and response_size is not None:
+                    try:
+                        total_size = int(response_size)
+                    except ValueError:
+                        total_size = None
+                if progress_callback is not None:
+                    progress_callback(0, total_size)
+                last_progress_at = time.monotonic()
                 with staging.open("xb") as handle:
                     for chunk in response.iter_bytes():
                         handle.write(chunk)
                         digest.update(chunk)
                         size += len(chunk)
+                        now = time.monotonic()
+                        if progress_callback is not None and now - last_progress_at >= 0.5:
+                            progress_callback(size, total_size)
+                            last_progress_at = now
+                if progress_callback is not None:
+                    progress_callback(size, total_size)
         actual = digest.hexdigest()
         if (
             asset.expected_size_bytes is not None
@@ -865,6 +958,7 @@ def ensure_asset(
     asset: AssetDefinition,
     *,
     accepted_license_ids: set[str],
+    progress_callback: Callable[[int, int | None], None] | None = None,
 ) -> AssetRecord:
     context.ensure_layout()
     destination = context.runtime_root / "models" / asset.destination
@@ -985,7 +1079,12 @@ def ensure_asset(
         return record
     try:
         if asset.kind == "file":
-            identity, size = _download_file(context, asset, destination)
+            identity, size = _download_file(
+                context,
+                asset,
+                destination,
+                progress_callback=progress_callback,
+            )
             sha256 = identity
             revision = None
         else:
@@ -1067,8 +1166,17 @@ def setup_workspace(
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
     pip_index_url: str = DEFAULT_PIP_INDEX_URL,
+    progress_callback: SetupProgressCallback | None = None,
 ) -> SetupSummary:
     selected_pip_index = validate_pip_index_url(pip_index_url)
+    _emit_setup_progress(
+        progress_callback,
+        phase="planning",
+        message="正在校验安装计划和磁盘余量",
+        completed_steps=0,
+        total_steps=1,
+        current_item=component,
+    )
     plan = setup_plan(context, minimal=minimal, component=component)
     disk = plan["disk"]
     if not disk["sufficient"]:
@@ -1078,31 +1186,107 @@ def setup_workspace(
             f"要求保留 {disk['reserve_bytes']} bytes，"
             f"当前可用 {disk['free_bytes']} bytes"
         )
-    initialize_workspace_metadata(context)
     mode, selected, selected_assets = _setup_selection(
         context,
         minimal=minimal,
         component=component,
     )
-    environment_records = tuple(
-        ensure_environment(
-            context,
-            environment_id,
-            conda_executable=conda_executable,
-            pip_index_url=selected_pip_index,
-        )
-        for environment_id in selected
+    total_steps = max(len(selected) + len(selected_assets), 1)
+    _emit_setup_progress(
+        progress_callback,
+        phase="initializing",
+        message="正在初始化当前 clone 的 runtime 元数据",
+        completed_steps=0,
+        total_steps=total_steps,
+        current_item=component,
     )
-    asset_records: tuple[AssetRecord, ...] = ()
-    if selected_assets:
-        asset_records = tuple(
+    initialize_workspace_metadata(context)
+    completed_steps = 0
+    environment_records_list: list[EnvironmentRecord] = []
+    for environment_id in selected:
+        def environment_progress(
+            message: str,
+            fraction: float,
+            selected_completed_steps: int = completed_steps,
+            selected_environment_id: str = environment_id,
+        ) -> None:
+            _emit_setup_progress(
+                progress_callback,
+                phase="environment",
+                message=message,
+                completed_steps=selected_completed_steps,
+                total_steps=total_steps,
+                current_item=selected_environment_id,
+                current_step_fraction=fraction,
+            )
+
+        environment_progress("准备环境安装", 0.0)
+        environment_records_list.append(
+            ensure_environment(
+                context,
+                environment_id,
+                conda_executable=conda_executable,
+                pip_index_url=selected_pip_index,
+                progress_callback=environment_progress,
+            )
+        )
+        completed_steps += 1
+    environment_records = tuple(environment_records_list)
+    asset_records_list: list[AssetRecord] = []
+    for asset in selected_assets:
+        def asset_progress(
+            bytes_completed: int,
+            bytes_total: int | None,
+            selected_completed_steps: int = completed_steps,
+            selected_asset_id: str = asset.asset_id,
+        ) -> None:
+            fraction = (
+                0.0
+                if not bytes_total
+                else min(bytes_completed / bytes_total, 1.0)
+            )
+            _emit_setup_progress(
+                progress_callback,
+                phase="asset",
+                message="正在下载并校验资产",
+                completed_steps=selected_completed_steps,
+                total_steps=total_steps,
+                current_item=selected_asset_id,
+                current_step_fraction=fraction,
+                bytes_completed=bytes_completed,
+                bytes_total=bytes_total,
+            )
+
+        _emit_setup_progress(
+            progress_callback,
+            phase="asset",
+            message=(
+                "正在下载并校验资产"
+                if asset.kind == "file"
+                else "正在获取并校验固定 Git revision"
+            ),
+            completed_steps=completed_steps,
+            total_steps=total_steps,
+            current_item=asset.asset_id,
+        )
+        asset_records_list.append(
             ensure_asset(
                 context,
                 asset,
                 accepted_license_ids=accepted_license_ids,
+                progress_callback=asset_progress if asset.kind == "file" else None,
             )
-            for asset in selected_assets
         )
+        completed_steps += 1
+    asset_records = tuple(asset_records_list)
+    _emit_setup_progress(
+        progress_callback,
+        phase="finalizing",
+        message="正在汇总探针、registry 和资产结果",
+        completed_steps=completed_steps,
+        total_steps=total_steps,
+        current_item=component,
+    )
     awaiting = tuple(
         record.asset_id
         for record in asset_records
@@ -1111,7 +1295,7 @@ def setup_workspace(
     ok = all(record.status == "available" for record in environment_records) and all(
         record.status == "available" for record in asset_records
     )
-    return SetupSummary(
+    summary = SetupSummary(
         workspace=context.root,
         mode=mode,
         component=component,
@@ -1121,6 +1305,16 @@ def setup_workspace(
         awaiting_approval=awaiting,
         pip_index_url=selected_pip_index,
     )
+    _emit_setup_progress(
+        progress_callback,
+        phase="complete",
+        message="安装完成" if summary.ok else "安装结束，但有组件未通过",
+        completed_steps=total_steps,
+        total_steps=total_steps,
+        current_item=component,
+        current_step_fraction=1.0,
+    )
+    return summary
 
 
 def setup_plan(

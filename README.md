@@ -62,13 +62,15 @@ scannet-epitope → tnp`：
 easydesign runtime plan pymol-pse
 easydesign runtime install pymol-pse \
   --conda "$PWD/runtime/tools/miniforge3/bin/conda" --detach
-easydesign runtime jobs
+easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 easydesign runtime status
 ```
 
-把上述组件名依次替换为后续四项。每个环境、模型、cache、日志、registry 和失败 quarantine
-都只写当前 clone 的 `runtime/`；安装目标已存在时校验并复用，不覆盖不可变内容。全部完成
-后运行：
+安装命令会返回 `SETUP_JOB_ID` 和可直接复制的观察命令。`--watch` 持续显示当前阶段、总体
+进度条；文件资产还显示已下载/总大小、速度和 ETA。Conda/Git 等无法可靠获得总字节数的
+步骤显示阶段进度，不伪造下载百分比；`Ctrl-C` 只停止观察，后台安装继续运行。把上述组件
+名依次替换为后续四项。每个环境、模型、cache、日志、registry 和失败 quarantine 都只写
+当前 clone 的 `runtime/`；安装目标已存在时校验并复用，不覆盖不可变内容。全部完成后运行：
 
 ```bash
 easydesign runtime status

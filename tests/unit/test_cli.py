@@ -40,6 +40,11 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     assert planned.runtime_command == "plan"
     assert planned.component == "protenix-v2"
 
+    miniforge = cli._parser().parse_args(["runtime", "install", "miniforge"])
+    assert miniforge.runtime_command == "install"
+    assert miniforge.component == "miniforge"
+    assert miniforge.detach is False
+
     installed = cli._parser().parse_args(
         [
             "runtime",

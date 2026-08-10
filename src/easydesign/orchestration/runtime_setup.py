@@ -24,6 +24,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from easydesign.core import ConfigurationError, sha256_file
 from easydesign.workspace_context import WorkspaceContext
 
+from .miniforge import local_miniforge_conda, miniforge_status
+
 ENVIRONMENT_IDS = (
     "pymol-pse",
     "protenix-v2",
@@ -405,14 +407,24 @@ def expected_environment_lock_sha256(
     return sha256_file(path)
 
 
-def _conda_executable(explicit: Path | None = None) -> Path:
+def _conda_executable(
+    context: WorkspaceContext,
+    explicit: Path | None = None,
+) -> Path:
     if explicit is not None:
         selected = explicit.expanduser().resolve(strict=True)
     else:
-        candidate = os.environ.get("EASYDESIGN_CONDA") or shutil.which("conda")
+        local_receipt = miniforge_status(context)
+        local = local_miniforge_conda(context)
+        candidate = (
+            str(local)
+            if local_receipt is not None
+            else os.environ.get("EASYDESIGN_CONDA") or shutil.which("conda")
+        )
         if candidate is None:
             raise ConfigurationError(
-                "未找到 Conda；请安装 Miniconda/Anaconda 或设置 EASYDESIGN_CONDA"
+                "未找到 Conda；请先运行 easydesign runtime install miniforge，"
+                "或显式提供 --conda"
             )
         selected = Path(candidate).expanduser().resolve(strict=True)
     if not selected.is_file():
@@ -667,7 +679,7 @@ def ensure_environment(
         if progress_callback is not None:
             progress_callback("正在创建锁定 Conda 环境", 0.1)
         command = [
-            str(_conda_executable(conda_executable)),
+            str(_conda_executable(context, conda_executable)),
             "create",
             "--yes",
             "--prefix",

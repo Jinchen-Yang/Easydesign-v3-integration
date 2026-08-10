@@ -35,22 +35,13 @@ resolved package set. Only `--index auto` may try another measured source; an ex
 `--index official|aliyun|tsinghua` or HTTPS `--index-url` fails closed. Every real attempt writes an
 immutable receipt under `runtime/state/bootstrap/`; use `--dry-run` for a read-only probe.
 
-On a clean Linux x86-64 host, install the pinned Miniforge build into this clone, verify its published
-SHA-256, and install one scientific component at a time:
+On a clean Linux x86-64 host, explicitly install the pinned Miniforge build into this clone. The
+command downloads and verifies the installer, then later component installs use it automatically:
 
 ```bash
-mkdir -p runtime/tmp runtime/tools
-curl -fL \
-  https://github.com/conda-forge/miniforge/releases/download/26.3.2-2/Miniforge3-26.3.2-2-Linux-x86_64.sh \
-  -o runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh
-printf '%s  %s\n' \
-  42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94 \
-  runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh | sha256sum -c -
-bash runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
-  -b -p "$PWD/runtime/tools/miniforge3"
+easydesign runtime install miniforge
 easydesign runtime plan pymol-pse
-easydesign runtime install pymol-pse \
-  --conda "$PWD/runtime/tools/miniforge3/bin/conda" --detach
+easydesign runtime install pymol-pse --detach
 easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 ```
 
@@ -61,10 +52,8 @@ invent byte percentages when the upstream tool cannot provide them. `Ctrl-C`
 only stops watching and leaves the detached installer running.
 
 Repeat in the order `pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp`, waiting for each
-job to finish. Then run `easydesign runtime status` and `easydesign doctor --full`. If the same machine
-already has a verified EasyDesign runtime, `easydesign runtime link EXISTING_CLONE/runtime` remains
-an optional read-only shortcut, not an installation prerequisite. Every cache, log, job, project, run,
-and locally installed component remains inside the current clone.
+job to finish. Then run `easydesign runtime status` and `easydesign doctor --full`. Every cache, log,
+job, project, run, and locally installed component remains inside the current clone.
 
 ## Start or resume with Codex
 

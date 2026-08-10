@@ -18,6 +18,7 @@ import easydesign
 from easydesign.core import ConfigurationError, EasyDesignError
 from easydesign.orchestration.application import diagnose_runtime
 from easydesign.orchestration.local_project import completed_steps, resolve_project_run
+from easydesign.orchestration.miniforge import install_miniforge, miniforge_status
 from easydesign.orchestration.openfold3_validation import (
     approve_openfold3_validation_report,
     generate_openfold3_validation_report,
@@ -142,10 +143,10 @@ def _parser() -> argparse.ArgumentParser:
     runtime_plan.add_argument("component", choices=LOCAL_RUNTIME_COMPONENTS)
     _add_json(runtime_plan)
     runtime_install = runtime_commands.add_parser(
-        "install", help="安装锁定的科学组件或离线 OpenFold3 bundle"
+        "install", help="安装 Miniforge、锁定科学组件或离线 OpenFold3 bundle"
     )
     runtime_install.add_argument(
-        "component", choices=(*LOCAL_RUNTIME_COMPONENTS, "openfold3")
+        "component", choices=("miniforge", *LOCAL_RUNTIME_COMPONENTS, "openfold3")
     )
     runtime_install.add_argument("--bundle", type=Path)
     runtime_install.add_argument("--detach", action="store_true")
@@ -401,6 +402,10 @@ def _confirmed_runtime_licenses(
 
 def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
     components = runtime_status().model_dump(mode="json")
+    miniforge = miniforge_status(context)
+    components["miniforge"] = (
+        None if miniforge is None else miniforge.model_dump(mode="json")
+    )
     component_assets = {
         asset_id
         for component in LOCAL_RUNTIME_COMPONENTS
@@ -425,6 +430,11 @@ def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
 def _print_runtime_status(payload: dict[str, Any]) -> None:
     print(f"Installation mode: {payload['installation_mode']}")
     print(f"Shared runtime: {payload['linked_runtime'] or 'not-linked'}")
+    miniforge = payload["miniforge"]
+    print(
+        "Miniforge: "
+        + (str(miniforge["conda_version"]) if miniforge is not None else "not-installed")
+    )
     openfold3 = payload["openfold3"]
     print(
         "OpenFold3: "
@@ -612,7 +622,34 @@ def _dispatch(args: argparse.Namespace) -> int:
             else:
                 _print_runtime_plan(plan)
         elif args.runtime_command == "install":
-            if args.component == "openfold3":
+            if args.component == "miniforge":
+                if (
+                    args.bundle is not None
+                    or args.detach
+                    or args.accept_license
+                    or args.conda is not None
+                    or args.pip_index_url != DEFAULT_PIP_INDEX_URL
+                ):
+                    raise ConfigurationError(
+                        "Miniforge 安装不接受 bundle、detach、许可、Conda 或 pip index 参数"
+                    )
+                if not args.json:
+                    print("正在下载、校验并安装工作区专用 Miniforge……", flush=True)
+                miniforge_result = install_miniforge(
+                    context, show_progress=not args.json
+                )
+                print(
+                    _json(miniforge_result)
+                    if args.json
+                    else (
+                        f"Miniforge: {miniforge_result.status}\n"
+                        f"Release: {miniforge_result.receipt.release}\n"
+                        f"Conda: {miniforge_result.receipt.conda_executable}\n"
+                        f"Version: {miniforge_result.receipt.conda_version}\n"
+                        f"Receipt: {miniforge_result.receipt_path}"
+                    )
+                )
+            elif args.component == "openfold3":
                 if args.bundle is None:
                     raise ConfigurationError("安装 OpenFold3 必须提供 --bundle")
                 if (
@@ -624,15 +661,15 @@ def _dispatch(args: argparse.Namespace) -> int:
                     raise ConfigurationError(
                         "OpenFold3 只接受 --bundle；Conda、许可和 detach 参数用于锁定科学组件"
                     )
-                installed = install_openfold3_component(args.bundle)
+                openfold3_result = install_openfold3_component(args.bundle)
                 print(
-                    _json(installed)
+                    _json(openfold3_result)
                     if args.json
                     else (
-                        f"OpenFold3 component: {installed.status}\n"
-                        f"Environment: {installed.component.environment_root}\n"
-                        f"Model: {installed.component.model_root}\n"
-                        f"Profile: {installed.profile}"
+                        f"OpenFold3 component: {openfold3_result.status}\n"
+                        f"Environment: {openfold3_result.component.environment_root}\n"
+                        f"Model: {openfold3_result.component.model_root}\n"
+                        f"Profile: {openfold3_result.profile}"
                     )
                 )
             else:

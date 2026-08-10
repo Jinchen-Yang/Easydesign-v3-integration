@@ -36,21 +36,12 @@ easydesign --version
 
 EasyDesign 主程序由 `uv` 安装在 `.venv/`；PyMOL、BoltzGen、Protenix、ScanNet 和 TNP
 还包含 CUDA、编译库等独立依赖，需要 Conda 按仓库中的 explicit lock 分别创建重型环境。
-因此新机器还需要一套只属于当前 clone 的 Miniforge。它安装在 `runtime/tools/`，不会修改
-系统 Python、系统 Conda 或 shell profile：
+因此新机器还需要一套只属于当前 clone 的 Miniforge。用户明确运行下面的命令后，它会下载
+固定版本、校验 SHA-256 并安装到 `runtime/tools/`，不会修改系统 Python、系统 Conda 或
+shell profile：
 
 ```bash
-mkdir -p runtime/tmp runtime/tools
-curl -fL \
-  https://github.com/conda-forge/miniforge/releases/download/26.3.2-2/Miniforge3-26.3.2-2-Linux-x86_64.sh \
-  -o runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh
-printf '%s  %s\n' \
-  42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94 \
-  runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
-  | sha256sum -c -
-bash runtime/tmp/Miniforge3-26.3.2-2-Linux-x86_64.sh \
-  -b -p "$PWD/runtime/tools/miniforge3"
-runtime/tools/miniforge3/bin/conda --version
+easydesign runtime install miniforge
 ```
 
 ### 3. 依次安装科学环境
@@ -65,8 +56,7 @@ pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp
 
 ```bash
 easydesign runtime plan pymol-pse
-easydesign runtime install pymol-pse \
-  --conda "$PWD/runtime/tools/miniforge3/bin/conda" --detach
+easydesign runtime install pymol-pse --detach
 ```
 
 安装命令会打印 `SETUP_JOB_ID` 和对应的观察命令。复制它给出的命令，或运行：

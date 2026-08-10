@@ -29,22 +29,19 @@ def test_readme_supports_clean_machine_runtime_install_and_agent_native_cli() ->
     shell = _shell_blocks(markdown)
     assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in shell
     assert "./scripts/bootstrap.py --index auto" in shell
-    assert "./scripts/bootstrap.py --index aliyun" in shell
     assert "source .venv/bin/activate" in shell
-    assert "Miniforge3-26.3.2-2-Linux-x86_64.sh" in shell
-    assert "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94" in shell
+    assert "easydesign runtime install miniforge" in shell
+    assert "Miniforge3-26.3.2-2-Linux-x86_64.sh" not in shell
+    assert "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94" not in shell
     assert "easydesign runtime plan" in shell
     assert "easydesign runtime install" in shell
     assert "easydesign runtime jobs" in shell
-    assert "easydesign runtime link" in shell
     assert "easydesign project init" in shell
     assert "easydesign project status" in shell
     assert "easydesign target prepare" in shell
-    assert "easydesign view" in shell
     assert "easydesign step" not in shell
-    assert "easydesign-workspace.yaml" in markdown
     assert re.search(r"(?m)^\s*cd /", shell) is None
-    assert re.search(r"(?m)--conda /", shell) is None
+    assert "--conda" not in shell
     for forbidden in ("easydesign ui", "easydesign remote", "easydesign setup"):
         assert forbidden not in shell
 

@@ -49,7 +49,8 @@ def test_runtime_profile_is_exclusive_and_path_identity_is_stable(
 
 
 def test_runtime_profile_rejects_relative_paths(tmp_path: Path) -> None:
-    profile = tmp_path / "profile.yaml"
+    profile = tmp_path / "runtime/profile.yaml"
+    profile.parent.mkdir()
     profile.write_text(
         """
 schema_version: "0.1"
@@ -66,7 +67,8 @@ backends:
 
 
 def test_runtime_profile_rejects_unexpected_fields(tmp_path: Path) -> None:
-    profile = tmp_path / "profile.yaml"
+    profile = tmp_path / "runtime/profile.yaml"
+    profile.parent.mkdir()
     profile.write_text(
         f"""
 schema_version: "0.1"
@@ -77,6 +79,45 @@ unexpected_scheduler:
 """.lstrip(),
         encoding="utf-8",
     )
+    with pytest.raises(ConfigurationError, match="extra_forbidden"):
+        load_runtime_profile(profile)
+
+
+def test_runtime_profile_rejects_backend_path_outside_clone_runtime(
+    tmp_path: Path,
+) -> None:
+    profile = tmp_path / "runtime/profile.yaml"
+    profile.parent.mkdir()
+    profile.write_text(
+        f"""
+schema_version: "0.2"
+profile_id: outside-runtime
+runs_root: {(tmp_path / 'workspace/runs').resolve()}
+backends:
+  pymol_pse:
+    python: {(tmp_path / 'another-checkout/runtime/envs/pymol/bin/python').resolve()}
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="路径逃出当前 clone runtime"):
+        load_runtime_profile(profile)
+
+
+def test_runtime_profile_rejects_removed_cross_clone_field(tmp_path: Path) -> None:
+    profile = tmp_path / "runtime/profile.yaml"
+    profile.parent.mkdir()
+    profile.write_text(
+        f"""
+schema_version: "0.2"
+profile_id: removed-cross-clone-mode
+runs_root: {(tmp_path / 'workspace/runs').resolve()}
+runtime_link_source: {(tmp_path / 'another-checkout/runtime').resolve()}
+backends: {{}}
+""".lstrip(),
+        encoding="utf-8",
+    )
+
     with pytest.raises(ConfigurationError, match="extra_forbidden"):
         load_runtime_profile(profile)
 

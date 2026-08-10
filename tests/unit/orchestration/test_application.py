@@ -125,7 +125,7 @@ def test_stage01_openfold3_is_explicit_and_does_not_change_default(
     assert plan.required_backends == ("openfold3-af3-jax",)
 
 
-def test_full_doctor_fails_when_linked_backends_are_not_configured(
+def test_full_doctor_fails_when_local_backends_are_not_configured(
     tmp_path: Path,
 ) -> None:
     profile = initialize_runtime_profile(
@@ -325,7 +325,7 @@ def test_pse_stage02_pipeline_dispatches_through_shared_api(
         target=pse,
         stop_after_stage=2,
     )
-    profile = tmp_path / "profile.yaml"
+    profile = tmp_path / "runtime/profile.yaml"
     profile.write_text(
         f"""
 schema_version: "0.1"
@@ -333,10 +333,10 @@ profile_id: test
 runs_root: {(tmp_path / "runs").resolve()}
 backends:
   pymol_pse:
-    python: /fake/pymol/python
+    python: {(tmp_path / 'runtime/envs/pymol/bin/python').resolve()}
   scannet_epitope:
-    python: /fake/scannet/python
-    repository_root: /fake/scannet/repository
+    python: {(tmp_path / 'runtime/envs/scannet/bin/python').resolve()}
+    repository_root: {(tmp_path / 'runtime/models/scannet/repository').resolve()}
     execution_device: cpu
 """.lstrip(),
         encoding="utf-8",

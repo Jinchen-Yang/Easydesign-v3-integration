@@ -1,14 +1,8 @@
-"""Explicit local-only runtime profile.
-
-Scientific environments can be installed inside this clone or resolved from a
-verified, read-only runtime link. The local product never resolves remote
-executors.
-"""
+"""Explicit runtime profile whose scientific paths belong to this clone."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -190,10 +184,8 @@ class RuntimeProfile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     schema_version: Literal["0.1", "0.2"] = "0.2"
-    profile_id: str = Field(default="local-linked", pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    profile_id: str = Field(default="clone-local", pattern=r"^[a-z0-9][a-z0-9._-]*$")
     runs_root: Path
-    runtime_link_source: Path | None = None
-    runtime_linked_at: datetime | None = None
     backends: RuntimeBackends = RuntimeBackends()
 
     @field_validator("runs_root")
@@ -202,14 +194,6 @@ class RuntimeProfile(BaseModel):
         if not value.is_absolute():
             raise ValueError("runs_root 必须是绝对路径")
         return value
-
-    @field_validator("runtime_link_source")
-    @classmethod
-    def require_absolute_link_source(cls, value: Path | None) -> Path | None:
-        if value is not None and not value.is_absolute():
-            raise ValueError("runtime_link_source 必须是绝对路径")
-        return value
-
 
 @dataclass(frozen=True, slots=True)
 class LoadedRuntimeProfile:
@@ -241,12 +225,15 @@ def initialize_runtime_profile(
     profile_id: str = "local-test",
     runs_root: Path | None = None,
 ) -> Path:
-    """Create the local profile populated by setup, link, or component activation."""
+    """Create the profile populated by this clone's setup/component activation."""
 
     destination = resolve_runtime_profile_path(path).resolve()
     context = WorkspaceContext.discover(destination.parent)
+    if not destination.is_relative_to(context.runtime_root):
+        raise ConfigurationError("Runtime profile 必须位于当前 clone 的 runtime/ 内")
     selected_runs = context.runs_root if runs_root is None else runs_root.resolve()
-    context.assert_write_path(selected_runs)
+    if selected_runs != context.runs_root:
+        raise ConfigurationError("Runtime profile runs_root 必须是当前 clone 的 workspace/runs")
     model = RuntimeProfile(profile_id=profile_id, runs_root=selected_runs)
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -295,7 +282,12 @@ def _resolve_local_setup_backends(
         ):
             return None
         prefix = (context.root / record.relative_prefix).resolve()
-        context.assert_write_path(prefix)
+        if prefix != context.runtime_root and not prefix.is_relative_to(
+            context.runtime_root
+        ):
+            raise ConfigurationError(
+                f"环境 registry 路径逃出当前 clone runtime: {environment_id}"
+            )
         return prefix if prefix.is_dir() else None
 
     def available_asset(asset_id: str) -> Path | None:
@@ -303,7 +295,12 @@ def _resolve_local_setup_backends(
         if record is None or record.status != "available":
             return None
         path = (context.root / record.relative_path).resolve()
-        context.assert_write_path(path)
+        if path != context.runtime_root and not path.is_relative_to(
+            context.runtime_root
+        ):
+            raise ConfigurationError(
+                f"资产 registry 路径逃出当前 clone runtime: {asset_id}"
+            )
         if not path.exists():
             return None
         if record.size_bytes is not None and path.is_file():
@@ -425,6 +422,29 @@ def _resolve_local_setup_backends(
     )
 
 
+def _require_clone_local_profile(
+    context: WorkspaceContext,
+    profile: RuntimeProfile,
+) -> None:
+    if profile.runs_root.resolve(strict=False) != context.runs_root:
+        raise ConfigurationError("Runtime profile runs_root 不属于当前 clone")
+    runtime_root = context.runtime_root
+    for backend_name in RuntimeBackends.model_fields:
+        backend = getattr(profile.backends, backend_name)
+        if backend is None:
+            continue
+        for field_name in type(backend).model_fields:
+            value = getattr(backend, field_name)
+            if not isinstance(value, Path):
+                continue
+            resolved = value.resolve(strict=False)
+            if resolved != runtime_root and not resolved.is_relative_to(runtime_root):
+                raise ConfigurationError(
+                    "Runtime profile backend 路径逃出当前 clone runtime: "
+                    f"{backend_name}.{field_name}={resolved}"
+                )
+
+
 def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
     selected = _latest_profile_path(resolve_runtime_profile_path(path).resolve())
     try:
@@ -433,18 +453,9 @@ def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValidationError) as error:
         raise ConfigurationError(f"Runtime profile 无法读取: {selected}: {error}") from error
     context = WorkspaceContext.discover(selected.parent)
-    receipt = context.runtime_root / "state/runtime-link.json"
-    if profile.runtime_link_source is not None and not receipt.is_file():
-        raise ConfigurationError("linked runtime profile 缺少 receipt，拒绝使用")
-    if receipt.is_file():
-        from .runtime_link import verify_runtime_link
-
-        verified = verify_runtime_link(receipt)
-        if (
-            profile.runtime_link_source != verified.source_runtime
-            or profile.runtime_linked_at != verified.linked_at
-        ):
-            raise ConfigurationError("runtime profile 与最新 link receipt identity 不一致")
+    if not selected.is_relative_to(context.runtime_root):
+        raise ConfigurationError("Runtime profile 必须位于当前 clone 的 runtime/ 内")
+    _require_clone_local_profile(context, profile)
     if profile.backends.openfold3_af3_jax is not None:
         from .runtime_components import verify_openfold3_component
 
@@ -457,12 +468,12 @@ def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
             or runtime.runner_commit != component.runner_commit
         ):
             raise ConfigurationError("runtime profile 与 OpenFold3 component identity 不一致")
-    if profile.runtime_link_source is None:
-        profile = profile.model_copy(
-            update={
-                "backends": _resolve_local_setup_backends(context, profile.backends),
-            }
-        )
+    profile = profile.model_copy(
+        update={
+            "backends": _resolve_local_setup_backends(context, profile.backends),
+        }
+    )
+    _require_clone_local_profile(context, profile)
     return LoadedRuntimeProfile(
         path=selected,
         profile=profile,

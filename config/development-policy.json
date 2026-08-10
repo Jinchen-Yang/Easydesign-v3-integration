@@ -68,6 +68,7 @@
     {
       "path": "docs/agent/RUNTIME_AND_DATA.md",
       "patterns": [
+        "src/easydesign/runtime_guard.py",
         "src/easydesign/workspace_context.py",
         "src/easydesign/orchestration/workspace*.py",
         "src/easydesign/orchestration/runtime*.py",
@@ -87,6 +88,8 @@
     "src/easydesign/filtering/**",
     "src/easydesign/orchestration/stage*.py",
     "src/easydesign/orchestration/local_*.py",
+    "src/easydesign/runtime_guard.py",
+    "src/easydesign/workspace_context.py",
     "src/easydesign/orchestration/runtime*.py",
     "src/easydesign/orchestration/setup_jobs.py",
     "src/easydesign/setup_worker.py",
@@ -111,17 +114,29 @@
       "patterns": [
         "src/easydesign/cli.py",
         "src/easydesign/local_worker.py",
+        "src/easydesign/runtime_guard.py",
         "src/easydesign/orchestration/local_*.py"
       ],
-      "tests": ["tests/unit/test_local_steps.py", "tests/unit/test_cli.py"]
+      "tests": [
+        "tests/unit/test_local_jobs.py",
+        "tests/unit/test_cli.py",
+        "tests/unit/test_runtime_guard.py"
+      ]
     },
     {
       "patterns": ["src/easydesign/reporting/**", "web/target-viewer/**"],
       "tests": ["tests/unit/test_reporting_target_viewer.py"]
     },
     {
-      "patterns": ["src/easydesign/orchestration/workspace*.py"],
-      "tests": ["tests/unit/test_workspace_context.py", "tests/unit/orchestration/test_workspace.py"]
+      "patterns": [
+        "src/easydesign/workspace_context.py",
+        "src/easydesign/orchestration/workspace*.py"
+      ],
+      "tests": [
+        "tests/unit/test_workspace_context.py",
+        "tests/unit/test_runtime_guard.py",
+        "tests/unit/orchestration/test_workspace.py"
+      ]
     },
     {
       "patterns": [

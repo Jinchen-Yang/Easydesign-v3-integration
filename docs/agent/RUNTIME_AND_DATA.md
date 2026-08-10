@@ -10,12 +10,16 @@
   主机配对、跨服务器 handoff 或结果回传。
 - 全新 clone 可从仓库锁定配方逐组件安装到自己的 `runtime/envs/`、`runtime/models/` 和
   append-only registry；Conda、pip、Git 和下载 cache 必须继续使用隔离 child environment。
-- 同机已有 runtime 仅可通过显式 runtime-link receipt 读取 `envs/`、`models/`、两个
-  registry marker、append-only revisions 和 environment inventories。
-- link 时验证本分支环境 lock、registry tip/revision SHA、inventory SHA、文件 size/SHA 或
-  Git revision；任一 identity 改变即 fail closed，要求重新 link。
+- 主 Python 环境 `.venv/` 是唯一顶级环境入口；bootstrap 必须先在 `runtime/tmp/` 构建
+  relocatable staging，完整验证后原子发布，已有 `.venv/` 一律拒绝原地修改。
+- 全局 uv 只作为固定版本的宿主机工具直接调用；不得复制、升级或删除。bootstrap 必须覆盖
+  HOME/XDG/cache/config/tmp 和 managed-Python 路径，确保 uv 产生的全部状态仍属于当前 clone。
+- 环境、模型、registry、inventory 和 runtime profile 必须解析到当前 clone 的
+  `runtime/`；禁止从同机其他 clone 或外部绝对路径加载环境/模型。
+- runtime profile 只能由当前 clone 的安装/激活流程生成；读取时重新校验所有 backend
+  路径均位于本 clone，并以环境 lock、inventory、文件 SHA 或 Git revision fail closed。
 - 子进程 cache/home/tmp/log 全部指向本产品 runtime，并设置禁止 bytecode 和离线模型策略；
-  来源 runtime 禁止 setup、下载、cache、job 或 registry 写入。
+  不得向当前 clone 之外创建 setup、下载、cache、job 或 registry 状态。
 - detached 安装的 request/process/result 保持独立证据；`progress.json` 只作为原子替换的运行态
   projection。观察命令和 `Ctrl-C` 不得向 worker 发送停止信号。
 - 科学 worker 必须先启用 Linux Landlock 写隔离；只允许本 worktree 的四个可写根以及 CUDA

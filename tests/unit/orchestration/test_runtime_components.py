@@ -163,6 +163,6 @@ def test_runtime_status_is_readable_before_first_component_install(
 
     status = runtime_status()
 
-    assert status.linked_runtime is None
     assert status.openfold3 is None
+    assert status.model_dump() == {"openfold3": None}
     assert not (tmp_path / "runtime/profile.yaml").exists()

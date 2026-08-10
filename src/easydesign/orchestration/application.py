@@ -690,23 +690,20 @@ def diagnose_runtime(
             message=f"EasyDesign {easydesign.__version__}; Python {sys.version.split()[0]}",
         )
     )
-    if loaded_profile.profile.runtime_link_source is not None:
-        try:
-            landlock_abi = landlock_abi_version()
-            sandbox_status = DiagnosticStatus.PASSED
-            sandbox_message = (
-                f"Landlock ABI {landlock_abi}；linked env/model 作为只读输入"
-            )
-        except OSError as error:
-            sandbox_status = DiagnosticStatus.FAILED
-            sandbox_message = str(error)
-        checks.append(
-            DiagnosticCheck(
-                name="linked-runtime-write-sandbox",
-                status=sandbox_status,
-                message=sandbox_message,
-            )
+    try:
+        landlock_abi = landlock_abi_version()
+        sandbox_status = DiagnosticStatus.PASSED
+        sandbox_message = f"Landlock ABI {landlock_abi}；写入限制在当前 clone"
+    except OSError as error:
+        sandbox_status = DiagnosticStatus.FAILED
+        sandbox_message = str(error)
+    checks.append(
+        DiagnosticCheck(
+            name="local-worker-write-sandbox",
+            status=sandbox_status,
+            message=sandbox_message,
         )
+    )
     selected_runs = (
         _selected_runs_root(
             config_path=loaded.config_path,
@@ -749,7 +746,7 @@ def diagnose_runtime(
                         if name in required
                         else DiagnosticStatus.NOT_CONFIGURED
                     ),
-                    message="linked runtime profile 未声明该 backend",
+                    message="当前 clone 的 runtime profile 未声明该 backend",
                 )
             )
             continue

@@ -68,6 +68,10 @@ def test_install_miniforge_is_explicit_verified_and_idempotent(
     assert installed.receipt.installer_sha256 == miniforge.MINIFORGE_INSTALLER_SHA256
     assert installed.receipt.conda_version == "conda 26.3.1"
     assert (context.root / installed.receipt_path).is_file()
+    assert (context.root / miniforge.MINIFORGE_PREFIX).is_symlink()
+    assert (context.root / miniforge.MINIFORGE_PREFIX).resolve() == (
+        context.root / miniforge.MINIFORGE_RELEASE_PREFIX
+    )
     assert miniforge.local_miniforge_conda(context).is_file()
 
 
@@ -108,6 +112,45 @@ def test_miniforge_checksum_mismatch_is_quarantined_before_install(
     metadata = tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
     assert len(metadata) == 1
     assert "SHA-256 mismatch" in metadata[0].read_text(encoding="utf-8")
+
+
+def test_failed_miniforge_install_never_publishes_final_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+
+    def fake_download(
+        selected: WorkspaceContext,
+        *,
+        show_progress: bool,
+    ) -> Path:
+        del show_progress
+        selected.ensure_layout()
+        installer = selected.runtime_root / "tmp/miniforge-fixture.sh"
+        installer.write_text("fixture", encoding="utf-8")
+        return installer
+
+    def fake_run(
+        command: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        release_prefix = Path(command[-1])
+        release_prefix.mkdir(parents=True)
+        (release_prefix / "partial").write_text("partial", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 9, "", "failed")
+
+    monkeypatch.setattr(miniforge, "_download_installer", fake_download)
+    monkeypatch.setattr(miniforge.subprocess, "run", fake_run)
+
+    with pytest.raises(ConfigurationError, match="返回 9"):
+        miniforge.install_miniforge(context, show_progress=False)
+
+    assert not (context.root / miniforge.MINIFORGE_PREFIX).exists()
+    assert not (context.root / miniforge.MINIFORGE_PREFIX).is_symlink()
+    assert not (context.root / miniforge.MINIFORGE_RELEASE_PREFIX).exists()
+    metadata = tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
+    assert len(metadata) == 2
 
 
 def test_runtime_setup_prefers_verified_local_miniforge_path(

@@ -27,6 +27,9 @@ MINIFORGE_INSTALLER_SHA256 = (
     "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94"
 )
 MINIFORGE_PREFIX = Path("runtime/tools/miniforge3")
+MINIFORGE_RELEASE_PREFIX = Path(
+    f"runtime/tools/miniforge3-{MINIFORGE_RELEASE}-{MINIFORGE_INSTALLER_SHA256[:12]}"
+)
 MINIFORGE_RECEIPT = (
     Path("runtime/state/tools/miniforge")
     / f"{MINIFORGE_RELEASE}-{MINIFORGE_INSTALLER_SHA256[:12]}.json"
@@ -48,6 +51,7 @@ class MiniforgeReceipt(BaseModel):
         "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94"
     ] = "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94"
     prefix: Path = MINIFORGE_PREFIX
+    release_prefix: Path = MINIFORGE_RELEASE_PREFIX
     conda_executable: Path = MINIFORGE_PREFIX / "bin/conda"
     conda_version: str
     installed_at: datetime
@@ -103,12 +107,21 @@ def verify_miniforge(context: WorkspaceContext) -> MiniforgeReceipt:
     except (OSError, UnicodeDecodeError, ValidationError) as error:
         raise ConfigurationError(f"Miniforge receipt 无法校验: {path}") from error
     expected_prefix = context.root / MINIFORGE_PREFIX
+    expected_release_prefix = context.root / MINIFORGE_RELEASE_PREFIX
     expected_conda = local_miniforge_conda(context)
     if context.root / receipt.prefix != expected_prefix:
         raise ConfigurationError("Miniforge receipt prefix 与当前工作区不一致")
     if context.root / receipt.conda_executable != expected_conda:
         raise ConfigurationError("Miniforge receipt Conda 路径与当前工作区不一致")
-    if not expected_prefix.is_dir() or not expected_conda.is_file():
+    if context.root / receipt.release_prefix != expected_release_prefix:
+        raise ConfigurationError("Miniforge receipt release prefix 与当前工作区不一致")
+    if (
+        not expected_prefix.is_symlink()
+        or expected_prefix.resolve(strict=False) != expected_release_prefix
+        or not expected_release_prefix.is_dir()
+        or expected_release_prefix.is_symlink()
+        or not expected_conda.is_file()
+    ):
         raise ConfigurationError("Miniforge receipt 存在，但本地工具目录不完整")
     version = _probe_conda(context, expected_conda)
     if version != receipt.conda_version:
@@ -122,10 +135,15 @@ def miniforge_status(context: WorkspaceContext) -> MiniforgeReceipt | None:
     """Return a verified receipt, or None only when nothing has been installed."""
 
     receipt_exists = _receipt_path(context).is_file()
-    prefix_exists = (context.root / MINIFORGE_PREFIX).exists()
-    if not receipt_exists and not prefix_exists:
+    prefix_path = context.root / MINIFORGE_PREFIX
+    release_prefix_path = context.root / MINIFORGE_RELEASE_PREFIX
+    prefix_exists = prefix_path.exists() or prefix_path.is_symlink()
+    release_prefix_exists = (
+        release_prefix_path.exists() or release_prefix_path.is_symlink()
+    )
+    if not receipt_exists and not prefix_exists and not release_prefix_exists:
         return None
-    if receipt_exists and prefix_exists:
+    if receipt_exists and prefix_exists and release_prefix_exists:
         return verify_miniforge(context)
     raise ConfigurationError(
         "Miniforge 目录与 receipt 不完整；拒绝覆盖，请检查 runtime/tools 和 runtime/state"
@@ -149,6 +167,8 @@ def _download_installer(
     command = [
         curl,
         "--proto",
+        "=https",
+        "--proto-redir",
         "=https",
         "--tlsv1.2",
         "--fail",
@@ -222,8 +242,10 @@ def install_miniforge(
         raise ConfigurationError("当前 Miniforge 锁只支持 Linux x86-64")
     context.ensure_layout()
     prefix = context.root / MINIFORGE_PREFIX
+    release_prefix = context.root / MINIFORGE_RELEASE_PREFIX
     receipt_path = _receipt_path(context)
     context.assert_write_path(prefix)
+    context.assert_write_path(release_prefix)
     context.assert_write_path(receipt_path)
     existing = miniforge_status(context)
     if existing is not None:
@@ -233,12 +255,13 @@ def install_miniforge(
             receipt_path=receipt_path.relative_to(context.root),
         )
 
-    prefix.parent.mkdir(parents=True, exist_ok=True)
+    release_prefix.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     installer = _download_installer(context, show_progress=show_progress)
+    alias_published = False
     try:
         completed = subprocess.run(
-            ["/bin/bash", str(installer), "-b", "-p", str(prefix)],
+            ["/bin/bash", str(installer), "-b", "-p", str(release_prefix)],
             cwd=context.root,
             env={**os.environ, **context.child_environment()},
             check=False,
@@ -250,17 +273,33 @@ def install_miniforge(
             raise ConfigurationError(
                 f"Miniforge installer 返回 {completed.returncode}; {detail}"
             )
-        conda = local_miniforge_conda(context)
+        conda = release_prefix / "bin/conda"
         version = _probe_conda(context, conda)
         receipt = MiniforgeReceipt(
             conda_version=version,
             installed_at=datetime.now(tz=UTC),
         )
-        installer.unlink()
+        if prefix.exists() or prefix.is_symlink():
+            raise ConfigurationError("Miniforge 发布入口已存在，拒绝覆盖")
+        prefix.symlink_to(MINIFORGE_RELEASE_PREFIX.name, target_is_directory=True)
+        alias_published = True
+        alias_version = _probe_conda(context, local_miniforge_conda(context))
+        if alias_version != version:
+            raise ConfigurationError("Miniforge 原子发布后的 Conda 探针不一致")
         with receipt_path.open("x", encoding="utf-8") as handle:
             handle.write(
                 json.dumps(receipt.model_dump(mode="json"), ensure_ascii=False, indent=2)
                 + "\n"
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            installer.unlink()
+        except OSError:
+            context.quarantine(
+                installer,
+                operation="install-miniforge-installer-cleanup",
+                reason="安装成功，但已校验 installer 无法删除",
             )
         return MiniforgeInstallResult(
             status="installed",
@@ -268,9 +307,17 @@ def install_miniforge(
             receipt_path=receipt_path.relative_to(context.root),
         )
     except Exception:
+        if alias_published and prefix.is_symlink():
+            prefix.unlink()
         _quarantine_if_present(
             context,
-            prefix,
+            receipt_path,
+            operation="install-miniforge-receipt",
+            reason="receipt 发布未完成",
+        )
+        _quarantine_if_present(
+            context,
+            release_prefix,
             operation="install-miniforge-prefix",
             reason="安装或 Conda 探针未完成",
         )

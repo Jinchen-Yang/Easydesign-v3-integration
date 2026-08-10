@@ -155,7 +155,6 @@ class OpenFold3InstallResult(BaseModel):
 class RuntimeStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    linked_runtime: Path | None
     openfold3: OpenFold3ComponentReceipt | None
 
 
@@ -668,25 +667,12 @@ def verify_openfold3_component(
 
 def runtime_status() -> RuntimeStatus:
     context = WorkspaceContext.discover()
-    profile_revisions = tuple(
-        context.profile_path.with_name(
-            f"{context.profile_path.name}.revisions"
-        ).glob("revision-*.yaml")
-    )
-    linked_runtime = (
-        load_runtime_profile(context.profile_path).profile.runtime_link_source
-        if context.profile_path.is_file() or profile_revisions
-        else None
-    )
     component = (
         verify_openfold3_component(context)
         if _component_path(context).is_file()
         else None
     )
-    return RuntimeStatus(
-        linked_runtime=linked_runtime,
-        openfold3=component,
-    )
+    return RuntimeStatus(openfold3=component)
 
 
 __all__ = [

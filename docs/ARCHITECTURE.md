@@ -84,11 +84,10 @@ LocalStepJob receipt append-only，worker 由独立 process session 持有。前
 不得创建 revision、run、job 或 attempt。
 
 Viewer 只从 manifest 引用加载 target/site、pilot 代表候选和最终 evidence；无编辑、上传、
-批准或跨主机提交控件。Runtime 有两个显式模式：全新机器通过 `runtime plan/install/jobs` 从
-锁定配方逐组件发布环境、模型和 append-only registry；已有机器可通过 `runtime link` 只读
-复用同机另一套已验证环境和模型。两种模式的 cache、日志、job、validation 和 run 都只写
-当前 worktree，link 来源永不写入。worktree 根通过 `easydesign-workspace.yaml` 发现，不允许
-配置第二执行主机。
+批准或跨主机提交控件。Runtime 只通过 `runtime plan/install/jobs` 从锁定配方把环境、模型和
+append-only registry 发布到当前 clone；cache、日志、job、validation 和 run 也只属于当前
+worktree。worktree 根通过 `easydesign-workspace.yaml` 发现，不允许配置第二执行主机或引用
+其他 clone 的环境/模型。
 
 本分支不得整体合回 UI main。共享科学修复使用独立 `core:` commit，并通过
 `scripts/dev.py core-sync-report --against main` 报告；UI 恢复开发后只能逐个 cherry-pick。

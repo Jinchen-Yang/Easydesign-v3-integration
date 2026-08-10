@@ -72,9 +72,10 @@ make build-wheel-staging
 
 ## Runtime 与测试隔离
 
-开发 cache、pytest temp、浏览器和构建产物都写本 worktree `runtime/`。本地逐组件安装只写
-当前 clone；共享 runtime link 来源严格只读。测试应使用合成 registry/asset fixture，不修改
-真实 env/model。真实 Stage 1/2 smoke 只写 `runtime/validation/` 与本 worktree `workspace/`。
+开发 cache、pytest temp、浏览器和构建产物都写本 worktree `runtime/`。逐组件安装只写
+当前 clone，profile/backend 路径不得引用其他 clone。测试应使用合成 registry/asset fixture，
+不修改真实 env/model。真实 Stage 1/2 smoke 只写 `runtime/validation/` 与本 worktree
+`workspace/`。
 
 `scripts/dev.py cleanup-report` 只盘点，不自动删除。APOE evidence、科学 runs、manifest、
 共享 env/model 和唯一资产始终受保护。

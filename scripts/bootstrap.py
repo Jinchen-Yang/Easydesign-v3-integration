@@ -8,6 +8,7 @@ before the repository virtual environment or EasyDesign itself exists.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -15,13 +16,13 @@ import platform
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -35,8 +36,12 @@ PROJECT_PATH = ROOT / "pyproject.toml"
 STATE_ROOT = ROOT / "runtime" / "state" / "bootstrap"
 CACHE_ROOT = ROOT / "runtime" / "cache" / "uv"
 TMP_ROOT = ROOT / "runtime" / "tmp"
+QUARANTINE_ROOT = ROOT / "runtime" / "quarantine"
+TOOLS_ROOT = ROOT / "runtime" / "tools"
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 VENV_ENTRYPOINT = ROOT / ".venv" / "bin" / "easydesign"
+VENV_ROOT = ROOT / ".venv"
+UV_VERSION = "0.12.3"
 USER_AGENT = "EasyDesign-bootstrap/0.1"
 
 
@@ -133,14 +138,40 @@ def _validate_repository() -> None:
         raise BootstrapError("请从 EasyDesign 仓库根目录运行 bootstrap")
 
 
-def _find_uv() -> str:
+def _uv_version(uv: Path, environment: dict[str, str]) -> str:
+    output = _capture([str(uv), "--version"], environment=environment)
+    fields = output.split()
+    if len(fields) < 2 or fields[0] != "uv":
+        raise BootstrapError(f"无法识别 uv 版本输出: {output}")
+    if fields[1] != UV_VERSION:
+        raise BootstrapError(
+            f"uv 版本必须为 {UV_VERSION}，当前为 {fields[1]}；"
+            f"请安装 https://astral.sh/uv/{UV_VERSION}/install.sh"
+        )
+    return output
+
+
+def _find_uv(environment: dict[str, str]) -> Path:
     candidates = [shutil.which("uv"), str(Path.home() / ".local" / "bin" / "uv")]
+    mismatches: list[str] = []
     for candidate in candidates:
-        if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
-            return str(Path(candidate).resolve())
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if not path.is_file() or not os.access(path, os.X_OK):
+            continue
+        resolved = path.resolve()
+        try:
+            _uv_version(resolved, environment)
+        except BootstrapError as error:
+            mismatches.append(str(error))
+            continue
+        return resolved
+    detail = f"；发现但不兼容: {' | '.join(mismatches)}" if mismatches else ""
     raise BootstrapError(
-        "未找到 uv；请先运行 curl -LsSf https://astral.sh/uv/install.sh | sh，"
-        "然后重新执行 bootstrap"
+        f"未找到宿主机 uv {UV_VERSION}；请先运行 "
+        f"curl -LsSf https://astral.sh/uv/{UV_VERSION}/install.sh | "
+        f"env UV_NO_MODIFY_PATH=1 sh{detail}"
     )
 
 
@@ -301,27 +332,137 @@ def _capture(command: Sequence[str], *, environment: dict[str, str]) -> str:
     return completed.stdout.strip()
 
 
+def _isolated_git_config() -> Path:
+    path = STATE_ROOT / "gitconfig"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(f"[safe]\n\tdirectory = {ROOT}\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    return path
+
+
 def _environment() -> dict[str, str]:
     environment = os.environ.copy()
+    runtime_root = ROOT / "runtime"
+    directories = (
+        CACHE_ROOT,
+        TMP_ROOT,
+        QUARANTINE_ROOT,
+        TOOLS_ROOT,
+        runtime_root / "home",
+        runtime_root / "cache" / "pip",
+        runtime_root / "cache" / "xdg",
+        runtime_root / "cache" / "bootstrap-pycache",
+        runtime_root / "state" / "xdg-config",
+        runtime_root / "state" / "xdg-data",
+        runtime_root / "state" / "xdg-state",
+        runtime_root / "tools" / "uv-python",
+        runtime_root / "tools" / "uv-python-bin",
+    )
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+    for key in (
+        "CONDA_PREFIX",
+        "PIP_EXTRA_INDEX_URL",
+        "PIP_INDEX_URL",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "UV_CONFIG_FILE",
+        "UV_DEFAULT_INDEX",
+        "UV_EXTRA_INDEX_URL",
+        "UV_INDEX",
+        "VIRTUAL_ENV",
+    ):
+        environment.pop(key, None)
     environment.update(
         {
+            "HOME": str(runtime_root / "home"),
+            "XDG_CACHE_HOME": str(runtime_root / "cache" / "xdg"),
+            "XDG_CONFIG_HOME": str(runtime_root / "state" / "xdg-config"),
+            "XDG_DATA_HOME": str(runtime_root / "state" / "xdg-data"),
+            "XDG_STATE_HOME": str(runtime_root / "state" / "xdg-state"),
             "UV_CACHE_DIR": str(CACHE_ROOT),
-            "PIP_CACHE_DIR": str(ROOT / "runtime" / "cache" / "pip"),
+            "UV_PYTHON_INSTALL_DIR": str(runtime_root / "tools" / "uv-python"),
+            "UV_PYTHON_BIN_DIR": str(runtime_root / "tools" / "uv-python-bin"),
+            "UV_MANAGED_PYTHON": "1",
+            "UV_NO_CONFIG": "1",
+            "UV_NO_ENV_FILE": "1",
+            "UV_NO_MODIFY_PATH": "1",
+            "UV_NO_SYSTEM_CONFIG": "1",
+            "PIP_CACHE_DIR": str(runtime_root / "cache" / "pip"),
+            "PIP_CONFIG_FILE": os.devnull,
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            "PYTHONNOUSERSITE": "1",
             "TMPDIR": str(TMP_ROOT),
             "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONPYCACHEPREFIX": str(ROOT / "runtime" / "cache" / "bootstrap-pycache"),
+            "PYTHONPYCACHEPREFIX": str(runtime_root / "cache" / "bootstrap-pycache"),
+            "GIT_CONFIG_GLOBAL": str(_isolated_git_config()),
+            "GIT_CONFIG_NOSYSTEM": "1",
         }
     )
     return environment
 
 
-def _ensure_venv(uv: str, environment: dict[str, str]) -> None:
+def _quarantine_path(path: Path, *, operation: str, reason: str) -> Path:
+    resolved = path.resolve(strict=False)
+    runtime_root = (ROOT / "runtime").resolve(strict=False)
+    if resolved != VENV_ROOT.resolve(strict=False) and not resolved.is_relative_to(runtime_root):
+        raise BootstrapError(f"拒绝隔离工作区外路径: {resolved}")
+    if not path.exists() and not path.is_symlink():
+        raise BootstrapError(f"待隔离路径不存在: {path}")
+    QUARANTINE_ROOT.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")  # noqa: UP017
+    destination = (
+        QUARANTINE_ROOT / f"{stamp}-{operation}-{uuid.uuid4().hex[:12]}"
+    )
+    destination.mkdir(parents=False, exist_ok=False)
+    moved = destination / path.name
+    shutil.move(str(path), str(moved))
+    metadata = destination / "quarantine.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "operation": operation,
+                "reason": reason,
+                "source_path": str(resolved.relative_to(ROOT.resolve())),
+                "quarantined_at": _now(),
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _create_staged_venv(
+    uv: Path,
+    environment: dict[str, str],
+    venv_root: Path,
+) -> None:
     expected = (ROOT / ".python-version").read_text(encoding="utf-8").strip()
-    if not VENV_PYTHON.is_file():
-        _run([uv, "venv", "--python", expected, ".venv"], environment=environment)
+    _run(
+        [
+            str(uv),
+            "venv",
+            "--managed-python",
+            "--relocatable",
+            "--python",
+            expected,
+            str(venv_root),
+        ],
+        environment=environment,
+    )
+    python = venv_root / "bin" / "python"
     version = _capture(
         [
-            str(VENV_PYTHON),
+            str(python),
             "-c",
             "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
         ],
@@ -329,9 +470,23 @@ def _ensure_venv(uv: str, environment: dict[str, str]) -> None:
     )
     if version != expected:
         raise BootstrapError(
-            f"现有 .venv Python={version}，但 .python-version={expected}；"
-            "为避免覆盖请先人工检查该环境"
+            f"staging .venv Python={version}，但 .python-version={expected}"
         )
+
+
+@contextmanager
+def _bootstrap_lock() -> Iterator[None]:
+    STATE_ROOT.mkdir(parents=True, exist_ok=True)
+    lock_path = STATE_ROOT / "bootstrap.lock"
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise BootstrapError("另一个 bootstrap 正在运行") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _git_head(environment: dict[str, str]) -> str | None:
@@ -453,13 +608,28 @@ def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
             "would_write": False,
         }
 
+    with _bootstrap_lock():
+        return _install_environment(
+            arguments,
+            config=config,
+            selected_sources=selected_sources,
+            requested=requested,
+        )
+
+
+def _install_environment(
+    arguments: argparse.Namespace,
+    *,
+    config: dict[str, Any],
+    selected_sources: Sequence[IndexSource],
+    requested: str,
+) -> dict[str, Any]:
     started = time.monotonic()
-    started_at = _now()
     before = {"uv.lock": _sha256(LOCK_PATH), "pyproject.toml": _sha256(PROJECT_PATH)}
     receipt: dict[str, Any] = {
         "schema_version": "0.1",
         "status": "running",
-        "started_at": started_at,
+        "started_at": _now(),
         "completed_at": None,
         "duration_seconds": None,
         "requested_source": requested,
@@ -470,12 +640,20 @@ def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
         "git_sha": None,
         "bootstrap_python": platform.python_version(),
         "uv_version": None,
+        "uv_path": None,
+        "uv_sha256": None,
         "input_sha256": before,
         "requirements_sha256": None,
         "verification": {},
         "error": None,
     }
+    staging_root: Path | None = None
+    published_venv = False
     try:
+        if VENV_ROOT.exists() or VENV_ROOT.is_symlink():
+            raise BootstrapError(
+                "现有 .venv 属于受保护环境；bootstrap 拒绝覆盖，请先人工检查"
+            )
         probes = _probe_sources(config, selected_sources, timeout=arguments.timeout)
         receipt["probes"] = [asdict(probe) for probe in probes]
         ranked = rank_probes(probes)
@@ -486,83 +664,106 @@ def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
                 f"显式 package index {requested} 不可用；不会静默 fallback"
             )
         environment = _environment()
-        CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-        TMP_ROOT.mkdir(parents=True, exist_ok=True)
-        uv = _find_uv()
-        receipt["uv_version"] = _capture([uv, "--version"], environment=environment)
+        uv = _find_uv(environment)
+        receipt["uv_version"] = _uv_version(uv, environment)
+        receipt["uv_path"] = str(uv)
+        receipt["uv_sha256"] = _sha256(uv)
         receipt["git_sha"] = _git_head(environment)
-        _ensure_venv(uv, environment)
-        with tempfile.TemporaryDirectory(prefix="bootstrap-", dir=TMP_ROOT) as temp_value:
-            requirements = Path(temp_value) / "dev-requirements.txt"
-            _run(
+        staging_root = TMP_ROOT / f"bootstrap-{uuid.uuid4().hex}"
+        staging_root.mkdir(parents=False, exist_ok=False)
+        staging_venv = staging_root / ".venv"
+        requirements = staging_root / "dev-requirements.txt"
+        _create_staged_venv(uv, environment, staging_venv)
+        staging_python = staging_venv / "bin" / "python"
+        staging_entrypoint = staging_venv / "bin" / "easydesign"
+        install_environment = {
+            **environment,
+            "UV_PROJECT_ENVIRONMENT": str(staging_venv),
+        }
+        _run(
+            [
+                str(uv),
+                "export",
+                "--quiet",
+                "--frozen",
+                "--extra",
+                "dev",
+                "--no-emit-project",
+                "--format",
+                "requirements-txt",
+                "--output-file",
+                str(requirements),
+            ],
+            environment=install_environment,
+        )
+        receipt["requirements_sha256"] = _sha256(requirements)
+        installed: ProbeResult | None = None
+        for candidate in ranked:
+            completed = _run(
                 [
-                    uv,
-                    "export",
-                    "--quiet",
-                    "--frozen",
-                    "--extra",
-                    "dev",
-                    "--no-emit-project",
-                    "--format",
-                    "requirements-txt",
-                    "--output-file",
+                    str(uv),
+                    "pip",
+                    "sync",
+                    "--python",
+                    str(staging_python),
+                    "--require-hashes",
+                    "--default-index",
+                    candidate.index_url,
                     str(requirements),
                 ],
-                environment=environment,
+                environment=install_environment,
+                check=False,
             )
-            receipt["requirements_sha256"] = _sha256(requirements)
-            installed: ProbeResult | None = None
-            for candidate in ranked:
-                completed = _run(
-                    [
-                        uv,
-                        "pip",
-                        "sync",
-                        "--python",
-                        str(VENV_PYTHON),
-                        "--require-hashes",
-                        "--default-index",
-                        candidate.index_url,
-                        str(requirements),
-                    ],
-                    environment=environment,
-                    check=False,
-                )
-                receipt["install_attempts"].append(
-                    {"source": candidate.name, "returncode": completed.returncode}
-                )
-                if completed.returncode == 0:
-                    installed = candidate
-                    break
-                if requested != "auto":
-                    break
-            if installed is None:
-                raise BootstrapError("hash-locked dependency install failed")
-            receipt["selected_source"] = installed.name
-            receipt["selected_index_url"] = installed.index_url
+            receipt["install_attempts"].append(
+                {"source": candidate.name, "returncode": completed.returncode}
+            )
+            if completed.returncode == 0:
+                installed = candidate
+                break
+            if requested != "auto":
+                break
+        if installed is None:
+            raise BootstrapError("hash-locked dependency install failed")
+        receipt["selected_source"] = installed.name
+        receipt["selected_index_url"] = installed.index_url
 
         _run(
             [
-                uv,
+                str(uv),
                 "pip",
                 "install",
                 "--python",
-                str(VENV_PYTHON),
+                str(staging_python),
                 "--no-deps",
                 "--no-build-isolation",
                 "--editable",
                 ".",
             ],
-            environment=environment,
+            environment=install_environment,
         )
-        _run([uv, "sync", "--frozen", "--extra", "dev", "--check"], environment=environment)
-        version = _capture([str(VENV_ENTRYPOINT), "--version"], environment=environment)
+        _run(
+            [str(uv), "sync", "--frozen", "--extra", "dev", "--check"],
+            environment=install_environment,
+        )
+        staging_version = _capture(
+            [str(staging_entrypoint), "--version"], environment=install_environment
+        )
         after = {"uv.lock": _sha256(LOCK_PATH), "pyproject.toml": _sha256(PROJECT_PATH)}
         if after != before:
             raise BootstrapError("bootstrap 期间 uv.lock 或 pyproject.toml 发生变化")
+        if VENV_ROOT.exists() or VENV_ROOT.is_symlink():
+            raise BootstrapError("发布前发现 .venv 已存在；拒绝覆盖")
+        staging_venv.rename(VENV_ROOT)
+        published_venv = True
+        final_version = _capture(
+            [str(VENV_ENTRYPOINT), "--version"], environment=environment
+        )
+        if final_version != staging_version:
+            raise BootstrapError("relocatable .venv 发布后版本探针不一致")
         receipt["verification"] = {
             "uv_sync_check": "passed",
-            "easydesign_version": version,
+            "easydesign_version": final_version,
+            "venv_publication": "atomic-rename",
             "input_sha256_after": after,
         }
         receipt["status"] = "success"
@@ -579,7 +780,41 @@ def bootstrap(arguments: argparse.Namespace) -> dict[str, Any]:
     finally:
         receipt["completed_at"] = _now()
         receipt["duration_seconds"] = round(time.monotonic() - started, 3)
-        receipt_path = _write_receipt(receipt)
+        try:
+            receipt_path = _write_receipt(receipt)
+        except Exception:
+            # A published environment without its durable receipt is not a
+            # completed bootstrap. Only quarantine the environment created by
+            # this invocation; a pre-existing protected .venv never reaches
+            # this branch.
+            if published_venv and (VENV_ROOT.exists() or VENV_ROOT.is_symlink()):
+                _quarantine_path(
+                    VENV_ROOT,
+                    operation="bootstrap-venv",
+                    reason="持久化 bootstrap receipt 失败",
+                )
+            if staging_root is not None and staging_root.exists():
+                _quarantine_path(
+                    staging_root,
+                    operation="bootstrap-staging",
+                    reason="持久化 bootstrap receipt 失败",
+                )
+            raise
+        if receipt["status"] != "success":
+            if published_venv and (VENV_ROOT.exists() or VENV_ROOT.is_symlink()):
+                _quarantine_path(
+                    VENV_ROOT,
+                    operation="bootstrap-venv",
+                    reason="发布后验证未完成",
+                )
+            if staging_root is not None and staging_root.exists():
+                _quarantine_path(
+                    staging_root,
+                    operation="bootstrap-staging",
+                    reason=f"bootstrap 状态为 {receipt['status']}",
+                )
+        elif staging_root is not None and staging_root.exists():
+            shutil.rmtree(staging_root)
         receipt["receipt"] = str(receipt_path.relative_to(ROOT))
         print(f"bootstrap receipt: {receipt['receipt']}", file=sys.stderr)
     return receipt

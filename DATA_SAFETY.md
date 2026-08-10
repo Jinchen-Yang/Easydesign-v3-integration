@@ -130,6 +130,7 @@
 目录固定为：
 
 ```text
+.venv/                 # 仅 bootstrap 原子发布的主环境
 runtime/
 workspace/
 ├── projects/
@@ -148,9 +149,12 @@ workspace/
 3. Conda、pip、Node、Corepack、Playwright 和下载器的临时 HOME/cache/tmp 只能由安装
    器作为子进程环境变量传入 `runtime/`；不得写入 shell profile、系统代理、Git 全局
    配置或 base Conda。pip 必须忽略系统/用户配置和 user-site；Git 必须使用工作区内
-   仅含 safe-directory 的隔离配置，不得 include 用户全局 Git 配置。
+   仅含 safe-directory 的隔离配置，不得 include 用户全局 Git 配置。固定版本的全局 uv
+   可作为唯一宿主机安装工具直接执行，但 bootstrap 不复制、升级或删除它；uv 创建的
+   Python、cache、配置、tmp 和环境仍必须全部落入当前 clone。
 4. 新环境、模型、run 和发布 artifact 必须先写入全新 staging，校验后原子发布到此前
-   不存在的目标。目标已存在时拒绝覆盖。
+   不存在的目标。目标已存在时拒绝覆盖。主环境 `.venv/` 也遵守此规则：只能从
+   `runtime/tmp/` 的 relocatable staging 原子发布，bootstrap 不得原地 sync 已有环境。
 5. 失败 staging、失败下载和临时上传只能移动到
    `runtime/quarantine/<operation-id>/`。系统不自动删除 quarantine、旧环境、旧模型、
    cache 或科学运行。
@@ -192,7 +196,7 @@ workspace/
    远程 executor、受管队列、主机配对、跨服务器 handoff 或结果回传协议。
 2. 代码和文档只使用 `runtime/`、`workspace/` 等 clone-relative 路径。运行时需要绝对路径
    时必须从 `easydesign-workspace.yaml` 解析当前 clone，不得内置开发者主机名或数据盘路径。
-3. 共享 runtime 只能由研究者显式传入绝对路径并通过只读 link 校验；可读取不等于可写入，
-   也不得把共享 runtime 当作另一个执行主机。
+3. 环境、模型、registry、cache 和 runtime profile 必须解析到当前 clone 的 `runtime/`；
+   禁止引用另一个 clone 的环境或模型。研究者显式选择的外部科学输入仍然只读。
 4. worker 不杀死、抢占或重置非 EasyDesign GPU 进程。无可用 GPU 时任务等待或明确失败，
    不将外部占用转换为清理、杀进程或切换服务器的授权。

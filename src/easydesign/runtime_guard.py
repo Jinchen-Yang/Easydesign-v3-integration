@@ -1,9 +1,7 @@
-"""Kernel-enforced write isolation for linked scientific runtimes.
+"""Kernel-enforced write isolation for clone-local scientific workers.
 
-The local product executes scientific backends from another EasyDesign
-runtime.  Those environment and model trees are inputs, never workspaces.
-Landlock confines a worker's writes to this checkout's declared mutable roots
-while leaving reads and executable loading unrestricted.
+Landlock confines every worker's writes to this checkout's declared mutable
+roots while leaving reads and executable loading unrestricted.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-READ_ONLY_RUNTIME_ENV: Final = "EASYDESIGN_RUNTIME_READ_ONLY_SOURCE"
 LOCAL_WRITE_ROOTS_ENV: Final = "EASYDESIGN_LOCAL_WRITE_ROOTS"
 
 _LANDLOCK_CREATE_RULESET = 444
@@ -75,7 +72,7 @@ def landlock_abi_version() -> int:
     """Return the host Landlock ABI version, or raise when unavailable."""
 
     if not sys.platform.startswith("linux"):
-        raise OSError("linked-runtime write isolation requires Linux Landlock")
+        raise OSError("local-worker write isolation requires Linux Landlock")
     libc = ctypes.CDLL(None, use_errno=True)
     return _syscall(
         libc,
@@ -142,29 +139,6 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-
-_source = os.environ.get("EASYDESIGN_RUNTIME_READ_ONLY_SOURCE")
-if _source:
-    _root = Path(_source).resolve(strict=True)
-    _original_access = os.access
-
-    def _guarded_access(path, mode, *, dir_fd=None, effective_ids=False, follow_symlinks=True):
-        if mode & os.W_OK and not isinstance(path, int):
-            try:
-                candidate = Path(os.fsdecode(path)).resolve(strict=False)
-            except (OSError, TypeError, ValueError):
-                candidate = None
-            if candidate is not None and (candidate == _root or _root in candidate.parents):
-                return False
-        return _original_access(
-            path,
-            mode,
-            dir_fd=dir_fd,
-            effective_ids=effective_ids,
-            follow_symlinks=follow_symlinks,
-        )
-
-    os.access = _guarded_access
 
 _write_roots = tuple(
     Path(value).resolve(strict=True)
@@ -237,7 +211,6 @@ def install_python_startup_guard(state_root: Path) -> Path:
 
 __all__ = [
     "LOCAL_WRITE_ROOTS_ENV",
-    "READ_ONLY_RUNTIME_ENV",
     "apply_local_write_sandbox",
     "install_python_startup_guard",
     "landlock_abi_version",

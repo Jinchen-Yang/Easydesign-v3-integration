@@ -21,16 +21,23 @@ EasyDesign 负责确定性工具、任务执行、manifest、checksum 和不可�
 git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
 cd Easydesign
 
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://astral.sh/uv/0.12.3/install.sh \
+  | env UV_NO_MODIFY_PATH=1 sh
 export PATH="$HOME/.local/bin:$PATH"
+uv --version
 
 ./scripts/bootstrap.py --index auto
 source .venv/bin/activate
 easydesign --version
 ```
 
-`bootstrap.py` 会从官方源、阿里云和清华源中实测选择可用来源；`uv.lock` 保证各来源安装的
-依赖版本和校验身份一致。该步骤安装 EasyDesign 主环境，不包含大型科学模型与独立环境。
+已经全局安装 `uv 0.12.3` 的机器可以跳过 uv 安装命令；uv 本身由宿主机管理，bootstrap
+不会复制、升级或删除它。调用全局 uv 时，bootstrap 会把 HOME、配置、cache、Python 下载
+和临时文件全部隔离到当前 clone 的 `runtime/`。随后它从官方源、阿里云和清华源中实测
+选择可用来源；`uv.lock` 保证各来源安装的依赖版本和校验身份一致。`.venv` 先在
+`runtime/tmp/` 中完成安装与验证，再原子发布；失败内容只进入 `runtime/quarantine/`。
+该步骤不包含大型科学模型与独立环境。
 
 ### 2. 安装本仓库的 Miniforge
 

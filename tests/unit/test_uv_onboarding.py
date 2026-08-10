@@ -27,7 +27,9 @@ def test_uv_files_and_local_distribution_identity_are_committed() -> None:
 def test_readme_supports_clean_machine_runtime_install_and_agent_native_cli() -> None:
     markdown = (ROOT / "README.md").read_text(encoding="utf-8")
     shell = _shell_blocks(markdown)
-    assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in shell
+    assert "https://astral.sh/uv/0.12.3/install.sh" in shell
+    assert "UV_NO_MODIFY_PATH=1" in shell
+    assert "uv --version" in shell
     assert "./scripts/bootstrap.py --index auto" in shell
     assert "source .venv/bin/activate" in shell
     assert "easydesign runtime install miniforge" in shell
@@ -40,6 +42,9 @@ def test_readme_supports_clean_machine_runtime_install_and_agent_native_cli() ->
     assert "easydesign project status" in shell
     assert "easydesign target prepare" in shell
     assert "easydesign step" not in shell
+    assert "全局安装 `uv 0.12.3`" in markdown
+    assert "不会复制、升级或删除" in markdown
+    assert "runtime/quarantine/" in markdown
     assert re.search(r"(?m)^\s*cd /", shell) is None
     assert "--conda" not in shell
     for forbidden in ("easydesign ui", "easydesign remote", "easydesign setup"):
@@ -55,6 +60,9 @@ def test_bootstrap_keeps_lock_resolution_separate_from_download_source() -> None
     assert '"--require-hashes"' in script
     assert '"--default-index"' in script
     assert '"--proto-redir"' in script
+    assert '"UV_PYTHON_INSTALL_DIR"' in script
+    assert '"UV_NO_CONFIG"' in script
+    assert '"--relocatable"' in script
     assert '"--insecure"' not in script
     assert {source["name"] for source in indexes["sources"]} == {
         "official",

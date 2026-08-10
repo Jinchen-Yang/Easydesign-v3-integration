@@ -70,6 +70,9 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     assert watched.watch is True
     assert watched.interval == 1.0
 
+    with pytest.raises(SystemExit):
+        cli._parser().parse_args(["runtime", "link", "/another/runtime"])
+
 
 def test_runtime_job_progress_renders_step_bytes_rate_and_eta() -> None:
     now = datetime.now(tz=UTC)

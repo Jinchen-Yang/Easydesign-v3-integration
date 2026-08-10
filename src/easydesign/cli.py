@@ -52,7 +52,6 @@ from easydesign.orchestration.runtime_components import (
     install_openfold3_component,
     runtime_status,
 )
-from easydesign.orchestration.runtime_link import link_runtime
 from easydesign.orchestration.runtime_setup import (
     DEFAULT_PIP_INDEX_URL,
     SETUP_COMPONENT_ASSETS,
@@ -132,11 +131,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="失败时显示 traceback")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    runtime = commands.add_parser("runtime", help="安装、链接或验证本机科学环境/模型")
+    runtime = commands.add_parser("runtime", help="安装或验证当前 clone 的科学环境/模型")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
-    runtime_link = runtime_commands.add_parser("link", help="只读复用已安装 runtime")
-    runtime_link.add_argument("source", type=Path)
-    _add_json(runtime_link)
     runtime_plan = runtime_commands.add_parser(
         "plan", help="只读规划一个本地科学组件及其资产"
     )
@@ -181,7 +177,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     _add_json(runtime_jobs)
     runtime_status_parser = runtime_commands.add_parser(
-        "status", help="验证 shared link 与本地 component"
+        "status", help="验证当前 clone 的本地 component"
     )
     _add_json(runtime_status_parser)
     runtime_compare = runtime_commands.add_parser(
@@ -411,9 +407,6 @@ def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
         for component in LOCAL_RUNTIME_COMPONENTS
         for asset_id in SETUP_COMPONENT_ASSETS[component]
     }
-    components["installation_mode"] = (
-        "linked" if components["linked_runtime"] is not None else "local"
-    )
     components["local_environments"] = [
         item
         for item in environment_status(context)["environments"]
@@ -428,8 +421,7 @@ def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
 
 
 def _print_runtime_status(payload: dict[str, Any]) -> None:
-    print(f"Installation mode: {payload['installation_mode']}")
-    print(f"Shared runtime: {payload['linked_runtime'] or 'not-linked'}")
+    print("Runtime scope: current clone")
     miniforge = payload["miniforge"]
     print(
         "Miniforge: "
@@ -605,17 +597,7 @@ def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "runtime":
         context = WorkspaceContext.discover()
-        if args.runtime_command == "link":
-            link_result = link_runtime(args.source)
-            print(
-                _json(link_result)
-                if args.json
-                else (
-                    f"已链接只读 runtime: {link_result.source_runtime}\n"
-                    f"Profile: {link_result.profile}\nReceipt: {link_result.receipt}"
-                )
-            )
-        elif args.runtime_command == "plan":
+        if args.runtime_command == "plan":
             plan = setup_plan(context, component=args.component)
             if args.json:
                 print(_json(plan))

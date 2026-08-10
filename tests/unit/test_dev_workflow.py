@@ -62,9 +62,12 @@ def test_task_paths_select_only_local_guides() -> None:
         "integration", ["src/easydesign/stages/s02_hotspot_discovery/models.py"]
     ) == ("docs/agent/SCIENTIFIC_PIPELINE.md",)
     assert dev.selected_guides(
-        "ops", ["src/easydesign/orchestration/runtime_link.py"]
+        "ops", ["src/easydesign/orchestration/runtime_setup.py"]
     ) == ("docs/agent/RUNTIME_AND_DATA.md",)
     assert dev.selected_guides("dev-local", ["scripts/bootstrap.py"]) == (
+        "docs/agent/RUNTIME_AND_DATA.md",
+    )
+    assert dev.selected_guides("integration", ["src/easydesign/runtime_guard.py"]) == (
         "docs/agent/RUNTIME_AND_DATA.md",
     )
 
@@ -73,12 +76,31 @@ def test_risk_classification_requires_integration_for_science_and_local_worker()
     assert dev.minimum_mode(["README.md"]) == "dev-local"
     assert dev.minimum_mode(["src/easydesign/cli.py"]) == "dev-local"
     assert dev.minimum_mode(["src/easydesign/orchestration/local_jobs.py"]) == "integration"
+    assert dev.minimum_mode(["src/easydesign/runtime_guard.py"]) == "integration"
     assert dev.minimum_mode(["src/easydesign/core/manifests.py"]) == "integration"
     assert dev.minimum_mode(["scripts/bootstrap.py"]) == "integration"
     assert dev.routed_tests(["scripts/bootstrap.py"]) == (
         "tests/unit/test_bootstrap.py",
         "tests/unit/test_uv_onboarding.py",
     )
+    assert dev.routed_tests(["src/easydesign/orchestration/local_jobs.py"]) == (
+        "tests/unit/test_cli.py",
+        "tests/unit/test_local_jobs.py",
+        "tests/unit/test_runtime_guard.py",
+    )
+
+
+def test_every_development_policy_test_route_exists() -> None:
+    policy = json.loads(
+        (ROOT / "config/development-policy.json").read_text(encoding="utf-8")
+    )
+    routed = {
+        test
+        for route in policy["test_routes"]
+        for test in route["tests"]
+    }
+    missing = sorted(path for path in routed if not (ROOT / path).is_file())
+    assert missing == []
 
 
 def test_core_sync_report_is_read_only() -> None:

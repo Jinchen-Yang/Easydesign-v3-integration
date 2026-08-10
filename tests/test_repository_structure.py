@@ -25,6 +25,7 @@ def test_remote_and_ui_surfaces_are_absent() -> None:
         "src/easydesign/managed_protocol.py",
         "src/easydesign/backends/executors/ssh_remote.py",
         "src/easydesign/orchestration/remote_execution.py",
+        "src/easydesign/orchestration/runtime_link.py",
         "scripts/local_ui_release.py",
     )
     assert all(not (ROOT / item).exists() for item in forbidden)

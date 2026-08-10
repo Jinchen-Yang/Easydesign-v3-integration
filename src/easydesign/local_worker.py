@@ -24,7 +24,6 @@ from easydesign.orchestration.local_jobs import LocalStepJobController
 from easydesign.orchestration.local_project import bind_project_run
 from easydesign.runtime_guard import (
     LOCAL_WRITE_ROOTS_ENV,
-    READ_ONLY_RUNTIME_ENV,
     apply_local_write_sandbox,
 )
 from easydesign.safe_writes import read_last_text_line
@@ -73,18 +72,17 @@ def main() -> int:
     job = controller.load(args.job_record.stem)
     before_run_ids = {item.run_id for item in list_runs(context.runs_root)}
     try:
-        if READ_ONLY_RUNTIME_ENV in os.environ:
-            declared_roots = os.environ.get(LOCAL_WRITE_ROOTS_ENV, "").split(os.pathsep)
-            writable_roots = tuple(Path(value) for value in declared_roots if value)
-            expected_roots = (
-                context.runtime_root,
-                context.projects_root,
-                context.runs_root,
-                context.archives_root,
-            )
-            if writable_roots != expected_roots:
-                raise OSError("local worker write-root declaration does not match workspace")
-            apply_local_write_sandbox(writable_roots)
+        declared_roots = os.environ.get(LOCAL_WRITE_ROOTS_ENV, "").split(os.pathsep)
+        writable_roots = tuple(Path(value) for value in declared_roots if value)
+        expected_roots = (
+            context.runtime_root,
+            context.projects_root,
+            context.runs_root,
+            context.archives_root,
+        )
+        if writable_roots != expected_roots:
+            raise OSError("local worker write-root declaration does not match workspace")
+        apply_local_write_sandbox(writable_roots)
         outcome: Any
         if job.operation == "run":
             assert job.config_path is not None

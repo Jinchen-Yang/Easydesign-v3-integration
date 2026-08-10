@@ -22,7 +22,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from easydesign.core import ConfigurationError, PathPolicyError
 from easydesign.runtime_guard import (
     LOCAL_WRITE_ROOTS_ENV,
-    READ_ONLY_RUNTIME_ENV,
     install_python_startup_guard,
 )
 
@@ -182,6 +181,7 @@ class WorkspaceContext:
         self.ensure_layout()
         cache = self.runtime_root / "cache"
         git_config = self._git_config_path()
+        startup_root = install_python_startup_guard(self.runtime_root / "state")
         values = {
             "HOME": str(self.runtime_root / "home"),
             "TMPDIR": str(self._short_tmp_alias()),
@@ -209,25 +209,17 @@ class WorkspaceContext:
             "NPM_CONFIG_CACHE": str(cache / "npm"),
             "GIT_CONFIG_GLOBAL": str(git_config),
             WORKSPACE_ENVIRONMENT_VARIABLE: str(self.root),
+            LOCAL_WRITE_ROOTS_ENV: os.pathsep.join(
+                str(path)
+                for path in (
+                    self.runtime_root,
+                    self.projects_root,
+                    self.runs_root,
+                    self.archives_root,
+                )
+            ),
+            "PYTHONPATH": str(startup_root),
         }
-        linked_runtime = self._linked_runtime_source()
-        if linked_runtime is not None:
-            startup_root = install_python_startup_guard(self.runtime_root / "state")
-            values.update(
-                {
-                    READ_ONLY_RUNTIME_ENV: str(linked_runtime),
-                    LOCAL_WRITE_ROOTS_ENV: os.pathsep.join(
-                        str(path)
-                        for path in (
-                            self.runtime_root,
-                            self.projects_root,
-                            self.runs_root,
-                            self.archives_root,
-                        )
-                    ),
-                    "PYTHONPATH": str(startup_root),
-                }
-            )
         system_ca = Path("/etc/ssl/certs/ca-certificates.crt")
         if system_ca.is_file():
             values.update(
@@ -253,7 +245,6 @@ class WorkspaceContext:
             "PIP_CERT",
             "SSL_CERT_FILE",
             "NODE_EXTRA_CA_CERTS",
-            READ_ONLY_RUNTIME_ENV,
             LOCAL_WRITE_ROOTS_ENV,
             "PYTHONPATH",
         }
@@ -262,26 +253,6 @@ class WorkspaceContext:
                 continue
             Path(value).mkdir(parents=True, exist_ok=True)
         return values
-
-    def _linked_runtime_source(self) -> Path | None:
-        candidates = sorted(
-            self.profile_path.with_name(f"{self.profile_path.name}.revisions").glob(
-                "revision-*.yaml"
-            )
-        )
-        selected = candidates[-1] if candidates else self.profile_path
-        if not selected.is_file():
-            return None
-        try:
-            raw = yaml.safe_load(selected.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
-            raise ConfigurationError(f"本机 runtime profile 无法读取: {selected}") from error
-        if not isinstance(raw, dict) or raw.get("runtime_link_source") is None:
-            return None
-        source = Path(str(raw["runtime_link_source"])).resolve(strict=True)
-        if not source.is_dir() or source == self.runtime_root:
-            raise ConfigurationError(f"本机 runtime profile 的只读来源无效: {source}")
-        return source
 
     def _git_config_path(self) -> Path:
         """Create an isolated Git config without changing the user's config."""

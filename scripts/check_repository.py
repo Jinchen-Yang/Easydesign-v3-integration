@@ -23,6 +23,7 @@ FORBIDDEN_PATHS = (
     "src/easydesign/orchestration/remote_execution.py",
     "src/easydesign/orchestration/ssh_pairing.py",
     "src/easydesign/orchestration/evidence_adoption.py",
+    "src/easydesign/orchestration/runtime_link.py",
     "src/easydesign/core/evidence_links.py",
     "scripts/local_ui_release.py",
     "scripts/publish_ui_build.py",
@@ -44,7 +45,6 @@ REQUIRED_LOCAL_FILES = (
     "src/easydesign/orchestration/local_project.py",
     "src/easydesign/orchestration/research.py",
     "src/easydesign/orchestration/research_models.py",
-    "src/easydesign/orchestration/runtime_link.py",
     "src/easydesign/orchestration/runtime_setup.py",
     "src/easydesign/orchestration/setup_jobs.py",
     "src/easydesign/setup_worker.py",
@@ -79,6 +79,10 @@ ACTIVE_LOCAL_POLICY_FILES = (
 STALE_REMOTE_POLICY_TOKENS = (
     "managed-ssh",
     "RemoteJobBundle",
+    "runtime link",
+    "runtime-link",
+    "runtime install/link",
+    "共享 runtime",
 )
 
 
@@ -149,6 +153,8 @@ def main() -> int:
     cli_text = (ROOT / "src/easydesign/cli.py").read_text(encoding="utf-8").lower()
     if 'add_parser("step"' in cli_text:
         errors.append("Agent-native local CLI 禁止重新暴露 step parser")
+    if 'add_parser("link"' in cli_text or "shared link" in cli_text:
+        errors.append("clone-local CLI 禁止重新暴露外部 runtime link")
     if (ROOT / "src/easydesign/orchestration/local_steps.py").exists():
         errors.append("Agent-native local 产品禁止保留旧 step 产品壳")
     for token in ("managed-ssh", "ssh_pairing"):
@@ -158,9 +164,16 @@ def main() -> int:
         path.read_text(encoding="utf-8")
         for path in sorted((ROOT / "src/easydesign").rglob("*.py"))
     )
-    for token in ("EASYDESIGN_REMOTE_EXECUTOR_ID", "ssh-remote-"):
+    for token in (
+        "EASYDESIGN_REMOTE_EXECUTOR_ID",
+        "ssh-remote-",
+        "runtime_link_source",
+        "runtime_linked_at",
+        "EASYDESIGN_RUNTIME_READ_ONLY_SOURCE",
+        "linked runtime",
+    ):
         if token in python_text:
-            errors.append(f"local Python 产品残留远程执行 token: {token}")
+            errors.append(f"local Python 产品残留跨 clone/远程执行 token: {token}")
     marker = (ROOT / "easydesign-workspace.yaml").read_text(encoding="utf-8")
     for value in (
         "runtime_root: runtime",

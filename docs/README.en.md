@@ -22,16 +22,23 @@ researcher-facing CLI.
 ```bash
 git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
 cd Easydesign
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://astral.sh/uv/0.12.3/install.sh \
+  | env UV_NO_MODIFY_PATH=1 sh
 export PATH="$HOME/.local/bin:$PATH"
+uv --version
 ./scripts/bootstrap.py --index auto
 source .venv/bin/activate
 easydesign --version
 ```
 
-The bootstrapper measures the official PyPI, Aliyun, and Tsinghua TUNA indexes, then installs a
-SHA-256-pinned export of the frozen `uv.lock`. The selected transport therefore cannot change the
-resolved package set. Only `--index auto` may try another measured source; an explicit
+If the host already has global `uv 0.12.3`, keep it and skip the uv installer. Bootstrap does not
+copy, upgrade, or delete that host tool. When invoking it, bootstrap isolates HOME, configuration,
+caches, managed Python, and temporary files under this clone's `runtime/`, then builds a relocatable
+environment under `runtime/tmp/`. The verified environment is atomically published as `.venv`;
+failed staging is quarantined. Bootstrap then measures the official PyPI, Aliyun, and Tsinghua TUNA
+indexes and installs a SHA-256-pinned export of the frozen `uv.lock`. The selected transport therefore
+cannot change the resolved package set. Only `--index auto` may try another measured source; an explicit
 `--index official|aliyun|tsinghua` or HTTPS `--index-url` fails closed. Every real attempt writes an
 immutable receipt under `runtime/state/bootstrap/`; use `--dry-run` for a read-only probe.
 

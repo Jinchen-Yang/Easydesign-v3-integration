@@ -40,14 +40,14 @@ Local 0.1 保留完整 VHH 科学主线、本地 backend、filter、manifest 和
 8. 用户输入、科学 runs、manifest、环境、模型和唯一证据受 `DATA_SAFETY.md` 保护。
 
 本 worktree 独立拥有 `.venv`、`runtime/` 和 `workspace/`。全新机器可从锁定配方和资产清单
-逐组件安装自己的 scientific runtime；同机复用已有共享 runtime 时来源严格只读。旧 UI
+逐组件安装当前 clone 自己的 scientific runtime；禁止复用同机其他 clone 的环境/模型。旧 UI
 projects/runs 不读取、不索引、不继续；APOE Git evidence 只读用于回归。
 
 不同使用者可以把 clone 放在不同数据盘。仓库根只能通过 `easydesign-workspace.yaml`
 发现，产品文档与代码只能使用 clone-relative 路径，不绑定开发者机器的主机名或绝对路径。
 
 本产品永久位于 `easydesign-local`，不整体 merge 回 UI `main`。共享科学修复单独形成
-`core:` commit；本地 façade、Skill、runtime install/link、worker 和 Viewer 提交永不回 main。
+`core:` commit；本地 façade、Skill、runtime install、worker 和 Viewer 提交永不回 main。
 
 版本和 wheel 只在明确 release 指令下处理。任何开发任务不得触碰旧 UI、远程执行服务、
 受管队列或另一产品的 worktree。

@@ -1,5 +1,8 @@
 # EasyDesign Local 产品宪章
 
+本文只保存稳定、强制的产品边界；设计动机、循环工作流和知识成熟机制见
+[`PRODUCT_PHILOSOPHY.md`](PRODUCT_PHILOSOPHY.md)。
+
 ## 使命
 
 把团队的蛋白设计经验与 Codex 的通用推理能力结合：Codex 不从零猜流程，EasyDesign 也不

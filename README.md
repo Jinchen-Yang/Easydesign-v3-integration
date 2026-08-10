@@ -1,6 +1,7 @@
 # EasyDesign Local
 
-[English](docs/README.en.md) · [开发指南](DEVELOPMENT.md) · [数据安全](DATA_SAFETY.md)
+[English](docs/README.en.md) · [产品理念](docs/PRODUCT_PHILOSOPHY.md) ·
+[开发指南](DEVELOPMENT.md) · [数据安全](DATA_SAFETY.md)
 
 EasyDesign Local 是一个 Agent 原生的本地蛋白设计研究工作台：Codex 理解问题、讨论策略
 并调用工具，研究者批准关键科学选择，EasyDesign 负责确定性执行、manifest、checksum

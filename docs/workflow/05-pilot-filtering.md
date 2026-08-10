@@ -58,6 +58,8 @@ stage05:
 ```
 
 `expanded_total_per_strategy: 100` 表示 pilot 与新增候选合计 100；它不是再生成 100。
+`target_msa.mode: remote` 是既有 schema 对“在线获取 MSA 数据”的名称，不会把 Stage 05、
+Protenix 或 GPU task 提交到外部主机。
 只有按 `F_YAML` 排名前三的 Tier A strategy 会扩展；不足三组时不得用 Tier B–D
 补足。target 必须使用 required MSA，de novo binder 固定使用 query-only A3M；
 不允许 no-MSA fallback。
@@ -203,8 +205,8 @@ SHA-256、相同 pilot 门、Tier 定义和 `F_YAML`。
 - 中断的 Protenix attempt 被关闭为失败证据，再用新 attempt 重试；
 - target MSA、query-only A3M 和已验证 prediction 可在 identity 不变时复用；
 - `progress.json` 原子替换，`task-events.jsonl` 只追加；
-- `easydesign runs watch RUN_DIR` 只读取上述结构化文件；
-- `easydesign runs resume RUN_DIR` 只恢复未完成任务。
+- `easydesign job watch PROJECT --run RUN_ID` 只读取上述结构化文件；
+- `easydesign job resume PROJECT --run RUN_ID` 只恢复未完成任务。
 
 两张 GPU 默认各执行一个重型任务，同一 GPU 不并发多个 BoltzGen strategy。资源探针不
 终止其他进程；资源门未满足时等待或明确失败。
@@ -242,10 +244,10 @@ StageManifest，但 Run 终止并保存 stop code；backend、checksum、任务�
 ## CLI
 
 ```bash
-easydesign run easydesign.yaml
-easydesign runs watch RUN_DIR
-easydesign runs resume RUN_DIR
-easydesign runs show RUN_DIR
+easydesign pilot plan workspace/projects/PROJECT --strategy STRATEGY_REVISION
+easydesign pilot run workspace/projects/PROJECT --strategy STRATEGY_REVISION --confirm --detach
+easydesign job watch workspace/projects/PROJECT --run PILOT_RUN
+easydesign pilot review workspace/projects/PROJECT --run PILOT_RUN
 ```
 
 ## 完成门槛
@@ -268,13 +270,12 @@ easydesign runs show RUN_DIR
 - 氢键完整供受体/角度模型、体系专属阈值校准、实验反馈学习和更丰富的聚类属于后续；
 - 1.0 不使用 LLM/Agent 做筛选判断。
 
-## 远端数据本地性
+## 本地 worker 与数据边界
 
-当 Stage 04 选择 `managed-ssh/suzhou2` 时，受管 job 的固定阶段范围是 `4→5`。
-Stage 05 在 Suzhou2 的同一受管 run 中消费 Stage 04 manifest 闭包，不先将全部
-pilot candidate 下载到控制端。控制端只持续获取队列、进度、错误和摘要；
-完成后默认获取用于审阅的 report、指标、少量结构与批准材料。
+Stage 04 与 Stage 05 只在当前 clone 所在主机运行。Stage 05 在同一 workspace 中按
+manifest/checksum 消费 Stage 04 闭包；候选、报告、指标和批准材料不经过控制端、受管队列
+或第二执行主机。持久 `LocalStepJob` receipt 是状态来源，终端观察连接中断只会脱离观察，
+不会把仍在运行的本地任务改写为 operational failure。
 
-科学决定仍由 Stage 05 profile 与审批记录作出，不由远程 worker 或 SSH 连接状态
-改变。SSH 中断只会让控制端显示“远程连接暂时中断”，不将远端任务改写为
-operational failure。
+科学决定仍由 Stage 05 profile 与审批记录作出，不由 worker 进程状态、终端连接或 GPU
+占用改变。缺少本机环境、模型或 GPU 时必须等待或明确失败，不允许切换到远程 fallback。

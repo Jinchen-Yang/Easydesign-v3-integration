@@ -14,7 +14,8 @@
   drain 只允许安全检查点。
 - Viewer 只读取 manifest 验证后的 target/site、pilot/final evidence；不得编辑、上传、批准、
   提交远程任务或自动打开浏览器。
-- CLI 禁止导入 UI、SSH、Manager、Managed Worker、Suzhou2 或正式 release 模块。
+- CLI 禁止导入 UI、远程 executor、受管队列、主机配对或正式 release 模块。当前主机
+  名称不是产品身份；本机执行始终由当前 clone 的 `easydesign-workspace.yaml` 定位。
 
 验证至少覆盖：CommandResult 一致性、六类 source、foundation identity、strategy revision、
 显式 variant/crop/binding/CDR/native YAML、独立 pilot、人工 promotion、50k/Top200 确认门、

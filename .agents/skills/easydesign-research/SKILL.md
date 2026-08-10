@@ -1,6 +1,6 @@
 ---
 name: easydesign-research
-description: Guide auditable local protein-binder design with EasyDesign. Use for starting or resuming an EasyDesign research project, preparing a target or binding site, drafting and diagnosing design strategies, iterating pilot experiments, scaling approved strategies, or selecting final candidates. Do not use for repository development, packaging, UI, remote compute, Manager, or Suzhou2 operations.
+description: Guide auditable local protein-binder design with EasyDesign on the local Linux GPU host containing the current clone. Use for starting or resuming an EasyDesign research project, preparing a target or binding site, drafting and diagnosing design strategies, iterating pilot experiments, scaling approved strategies, or selecting final candidates. Do not use for repository development, packaging, UI, remote compute, host pairing, or managed queues.
 ---
 
 # EasyDesign Research
@@ -28,8 +28,10 @@ use manifests and checksums as evidence, and leave approval decisions to the res
 - The researcher approves sites, freezes strategies, launches pilot/scale/select, promotes strategies,
   and publishes experience.
 
-Never call `scripts/dev.py context` for a research task. Never invoke remote executors, SSH pairing,
-Manager, Suzhou2, or UI release tooling. Do not expose internal Stage numbers in researcher guidance.
+Never call `scripts/dev.py context` for a research task. Run tools only in the current clone, whose
+root is discovered through `easydesign-workspace.yaml`; never invoke remote executors, host pairing,
+managed queues, another execution host, or UI release tooling. Do not expose internal Stage numbers
+in researcher guidance.
 
 ## Confirmation gates
 

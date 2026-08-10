@@ -2,7 +2,7 @@
 
 - 状态：accepted
 - 日期：2026-07-31
-- 关联任务：`S05-002`、`S06-004`、`S07-002`、`ENG-029`、`UI-021`、`VAL-007`
+- 关联任务：`S05-002`、`S06-004`、`S07-002`、`ENG-029`、`VAL-007`
 
 ## 背景
 
@@ -47,6 +47,6 @@ Nanobody Filter Standard v1.5 在 Tier A pilot 后用 100 条扩增和 full-targ
 ## 未决事项
 
 - APOE 历史 50k 的采用记录必须在完整 candidate identity/checksum 复核后发布。
-- Suzhou2 需要先登记 Protenix、TNP 和模型资产，并等待 GPU 自然释放；不得终止其他
-  任务以抢占资源。
+- 当前 clone 所在主机需要先在本地 runtime 登记 Protenix、TNP 和模型资产，并等待 GPU
+  自然释放；不得终止其他任务以抢占资源，也不得切换到另一执行主机。
 - 第二条独立真实 target 需要验证 2–3 个晋级策略的真实共享预算执行。

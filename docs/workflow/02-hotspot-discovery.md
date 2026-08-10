@@ -108,8 +108,9 @@ stage06: null
 stage07: null
 ```
 
-PSE 输入由 `easydesign init --target FILE.pse --stop-after 2` 默认生成 `mode: detect`。
-普通 PDB/mmCIF、FASTA、UniProt 等入口默认生成 `automatic`。
+PSE 输入由 `easydesign project init PROJECT --target FILE.pse` 建立；target 准备完成后通过
+`easydesign site propose PROJECT --from-pse-colors` 显式读取固定色板。普通 PDB/mmCIF、
+FASTA、UniProt 等入口使用 `site scan` 或显式 `site propose --input`，不隐式选择方法。
 
 显式 PSE 颜色输入：
 
@@ -157,64 +158,27 @@ A/B/C 的任意 1–3 个非空子集；成员不扩展、不删除、不重新�
 `#FFFF00 → C`。只读取逐残基 CA 的 RGB/hex；其他颜色均为背景。普通 PDB/mmCIF 不定义
 私有颜色字段，必须使用 YAML 残基列表。
 
-## 工作台交互式重选区
+## Agent-native 人工重选区
 
-成功的 Stage 01 Target Bundle 都可以从工作台进入“重新选择结合区域”，不要求原始输入
-是 PSE，也不要求已经存在 Stage 02。编辑器把显示状态分成三个互不覆盖的事实层：
+成功的 Stage 01 Target Bundle 都可以提出新的 binding-site 分支，不要求原始输入是 PSE。
+当前产品没有浏览器编辑器或模型结构助手；只读 Viewer 用于核对结构、编号和 proposal，
+不能修改区域或形成批准。
 
-1. PSE 来源颜色：来自 Stage 01 `source-annotations.json`，只读，可隐藏/恢复。
-2. 当前批准区域：来自当前 Stage 02 `hotspots.yaml`，只读参考，可隐藏/恢复。
-3. 本次编辑区域：A=红、B=蓝、C=黄，可通过结构点击、序列点击、Shift 连选、粘贴规范
-   `label_seq_id` 修改。同一画笔再次点击已属于该区域的残基即取消选择。
-
-进入手工编辑时，系统先把“当前批准区域”复制到本次编辑层；若尚无 Stage 02，则复制
-PSE 来源红/蓝/黄。这样左侧 A/B/C 数量始终描述当前可保存的编辑成员，不会出现结构已
-着色但三组均显示 0 的假象。没有任何上游区域时才从 0 开始。
-
-“从空白开始”同时清空第三层并隐藏两个只读参考层，但不删除 PSE annotation 或历史批准
-结果；“恢复上游区域”可以重新复制。A/B/C 按钮只切换画笔，实际成员必须通过点击结构、
-点击序列或粘贴编号加入，每次操作都显示规范残基编号反馈。一个残基在编辑层只能属于一个
-区域；再次点击同一区域即取消，改用另一支画笔会把它从旧区域移动到新区。最终 typed
-record 要为每个非空区域保存 design goal、生物学说明和结构说明，并记录人工来源及
-evidence limitation。
-
-工作台不再把这些稳定字段作为 A/B/C 三套重复表单展示：`design_goal` 继承项目级
-`design.intent`；生物学说明固定如实记录“用户明确选择、当前未提供独立生物学证据”；
-结构说明只记录 EasyDesign 已完成编号映射和代表模型坐标验证，并明确“未执行自动结构
-优选”。逐步骤本机工作台以“保存并完成第2步”作为明确人工提交，不再要求填写未认证的
-批准人、重复勾选证据限制或选择后续运行方式；服务端固定 `review-gated`，记录
-`human:local-workbench` 交互来源，且不把用户区域描述成实验验证的结合位点。直接编写
-初始 YAML、使用 CLI 或提交非交互 unattended 输入时，真实审批人、两类 acknowledgement
-和完整逐区 typed selection 仍是科学契约的一部分。
-
-保存永远建立新的 Stage 02 continuation run：
-
-```text
-已验证 Stage 01 run
-→ 新 config revision（manual-residue-list / label numbering）
-→ 新 Stage 02 run
-→ 显式人工提交直接记录 human authority；automatic review-gated 等待候选确认
-```
-
-旧 RunManifest、StageManifest、`hotspots.yaml` 和下游结果保持不变。UI 只是编辑和调用
-同一 Python API；编号校验、授权和科学交接仍由 Stage 02 契约执行。
-
-重新运行 Stage 02 时只要求来源 run 的 Stage 01 成功前缀完整、checksum 正确；来源 run
-可以因为旧 Stage 02 正在等待确认或已经存在后续结果而尚未终态。新任务创建后，工作台
-轮询结构化 job record，显示排队/运行进度，并在终态自动打开新分支。固定时长等待和
-目录扫描都不是状态判断依据。
-
-Developer Preview 使用同一个 YAML 继续当前 run：
+人工重选必须先生成可审阅的 YAML，明确编号体系、chain、1–3 个非空 A/B/C 区域、
+设计意图、证据限制和批准主体。Agent 可以协助把自然语言整理成该文件，但不能替研究者
+决定 residue，也不能绕过 mapping、互斥、坐标和 checksum 校验。
 
 ```bash
-easydesign init PROJECT_DIR --target TARGET_FILE --stop-after 2
-easydesign doctor --config PROJECT_DIR/easydesign.yaml
-easydesign run PROJECT_DIR/easydesign.yaml
+easydesign site propose workspace/projects/PROJECT --input SITE.yaml
+easydesign site propose workspace/projects/PROJECT --from-pse-colors
+easydesign site scan workspace/projects/PROJECT --method both
+easydesign site approve workspace/projects/PROJECT --input PROPOSAL --confirm
 ```
 
-Stage 02 科学参数全部来自生成后仍可审阅的 `stage02` YAML 区块；CLI 没有隐藏阈值或
-设备 fallback。ScanNet 的 CPU/GPU 选择属于本机 runtime profile，当前默认并验证的是
-CPU。
+每次批准都创建新的不可变 foundation/continuation identity；旧 RunManifest、
+StageManifest、`hotspots.yaml` 和下游结果保持不变。ScanNet 的 CPU/GPU 选择来自当前
+clone 的本地 runtime profile，禁止设备间静默 fallback。
+
 
 ## 方法 A：SASA 表面多样性采样
 
@@ -459,19 +423,18 @@ identity、完整 ResidueIdentity、原始 selector、配置或 annotation SHA-2
 ```
 
 ```bash
-# automatic 双方法需要 --method；用户提供区域不填写 --method
-easydesign hotspots export RUN_DIR --method sasa --output hotspots-review.yaml
-easydesign hotspots export RUN_DIR --output hotspots-review.yaml
-easydesign hotspots approve RUN_DIR --input hotspots-review.yaml
+easydesign site scan workspace/projects/PROJECT --method both
+easydesign site propose workspace/projects/PROJECT --input SITE.yaml
+easydesign site approve workspace/projects/PROJECT --input PROPOSAL --confirm
 ```
 
 automatic 审批必须从同一种方法选择 2–3 个完整推荐区域；用户提供路线批准 1–3 个完整
 区域。二者都禁止混合来源或修改成员。外部 YAML/API 必须提供逐区 typed selection；
-工作台交互式重选则继承项目设计意图，并生成不夸大证据的逐区说明。系统生成 label/auth
+Agent 辅助重选可以继承项目设计意图，并生成不夸大证据的逐区说明。系统生成 label/auth
 编号、范围、证据和风险，避免手抄残基。初始 YAML、CLI 和非交互输入的用户区域仍必须
 设置 `acknowledge_user_provided_regions: true`；structural-only 必须设置
-`acknowledge_evidence_limitations: true`。逐步骤工作台由单次提交动作形成同一保守
-typed record，不再把这两个事实重复呈现为勾选框。
+`acknowledge_evidence_limitations: true`。带 `--confirm` 的批准命令形成同一保守 typed
+record，且不能由只读 Viewer 或后台任务隐式代替。
 
 `hotspots.yaml` schema 0.3 用 discriminated `region_source` 区分：
 
@@ -516,58 +479,6 @@ structural-only 仍可人工批准，但审批文件必须显式设置
 `acknowledge_evidence_limitations: true`，且不能标记为科学验证。自动身份发现、天然复合物
 界面、文献/疾病突变、P2Rank/fpocket/PeSTo/GraphPPIS/MaSIF/DiscoTope 等仍在 TODO。
 
-## 双查看器与自然语言辅助边界
-
-Stage 02 与 Stage 01 共用默认浏览器 PyMOL、平级 Mol* 和同一份已校验
-`target.cif`。PSE 来源颜色、当前批准区域和本次可编辑区域仍是三个独立图层；查看器切换
-不能改变成员、编号或 approval 状态。来源颜色和已批准区域默认不叠加；用户主动查看时，
-同一临时显示层必须同时传给 PyMOL 与 Mol*，且不能写回当前 `ed_region_A/B/C` 草稿。
-鼠标相机操作只保留在浏览器内，不能创建 SceneVersion；场景重放必须恢复用户当前取向。
-重新打开已有结构助手会话时，左侧 A/B/C 必须先恢复该会话的 `current_regions`；只有全新
-会话才从上游区域初始化，加载过程不得把上游副本重新写回已有会话。
-
-A/B/C 默认只以红、蓝、黄 cartoon 着色并保留受管理 selection，不自动显示侧链 sticks。
-兼容旧项目时只在 PyMOL 显示前过滤精确匹配的历史 `show stick(s), ed_region_A/B/C`；
-不重写不可变 PML，也不影响用户或助手创建的其他 selection sticks。Stage 02 主左栏只显示
-三个区域及成员数；完整编号、来源和批准记录保留在正式 artifact 与技术记录，单残基编辑
-反馈仍显示规范编号。
-
-DeepSeek/智谱 GLM 助手采用 ChatPyMol 原生完整 PML 主循环：
-
-```text
-当前完整 PML + 场景/结构 metadata + 最近十轮对话 + 动态 PML Skills + 用户请求
-→ assistantMessage / summary / conversationTitle / 完整新 PML
-→ 校验 → 不可变 SceneVersion → PyMOL 增量执行或完整重放
-```
-
-`safe-pml` 始终注入，再按当前请求最多注入两个
-chain-coloring/interface-analysis/ligand-pocket/publication-figure/
-structure-alignment Skill。`ed_region_A/B/C` 是受管理 selection；模型直接理解用户
-对一个或多个区域的自然语言修改，包括加入、移除、替换和整区清空，并返回表示最终状态
-的完整 PML。用户未声明编号体系时，数字固定按序列区显示的 `label_seq_id` 解释；
-只有明确写出原始/auth/author/PDB 编号时才按 author 解释。模型依据请求中的编号表把
-label 映射为 author selector；服务端不再预解析单个区域操作，而是从返回 PML 反向映射
-A/B/C 草稿并验证对象、链、残基和互斥性。同区再次选择可取消，移入另一颜色会从旧区域移除。
-
-“把32、36加入A区”指规范编号 32 和 36，可以由完整 PML 表达；“寻找最佳区域”不能直接产生残基或 hotspot，
-只能生成 `requires_confirmation=true` 的 SASA/ScanNet 分析计划。PML 场景变化本身不
-发布 Stage 02；用户确认后仍调用现有确定性后端，两种方法保持独立，不融合分数。用户
-区域仍属于 `manual-residue-list` 人工先验，必须经过编号/坐标/checksum 校验和人工
-批准，随后创建新的不可变 Stage 02 branch；旧 run 不回写。
-
-模型不接收坐标、完整序列或 MSA。provider、模型、endpoint 和 API key 由部署者在
-`runtime/secrets/structure-assistant/platform-provider.yaml` 显式配置；普通使用者
-界面不提供 provider 或 key 输入。不允许 DeepSeek/GLM 互相静默 fallback；密钥不进入
-科学 manifest、普通日志、浏览器存储或任何 API 响应。
-
-provider 连接最多等待 10 秒，完整响应读取最多等待 60 秒。UI 分别显示读取/连接超时、
-连接失败、协议中断、HTTP 状态、非 JSON、响应字段缺失或 PML 校验失败；失败不会发布
-SceneVersion，也不会改变 A/B/C 编辑草稿。
-
-完整 PML 必须保留 EasyDesign 结构管理行；Python、系统命令、文件/网络操作、退出和
-重初始化明确拒绝，对象、链、selection、括号、占位符和比对对象必须有效。Mol* 只投影
-它可靠支持的 representation、颜色、选择、聚焦和背景；PyMOL 专属命令会标记兼容提示，
-但不会因为 Mol* 不支持而拒绝保存。
 
 ## 失败与重试
 

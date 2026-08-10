@@ -8,7 +8,7 @@
 
 Stage 01 已能从 sequence/FASTA 预测和 PyMOL PSE 导入发布规范 Target Bundle。使用者需要
 在进入 Stage 02 前直接查看最终 `target.cif`、残基编号映射、来源和整体质量，但正式
-artifact 不能被 UI 改写，远程服务器也不能暴露整个 run 或把私有结构上传到第三方网站。
+artifact 不能被查看器改写，当前服务器也不能暴露整个 run 或把私有结构上传到第三方网站。
 
 ## 决策
 
@@ -22,7 +22,8 @@ artifact 不能被 UI 改写，远程服务器也不能暴露整个 run 或把�
 5. PSE 颜色通过 `(label_asym_id, label_seq_id)` 映射显示，但永远标注为
    `uninterpreted annotation`；首版不保存 hotspot 或人工选择。
 6. 查看服务只绑定 `127.0.0.1`，在启动前验证 report manifest 和全部 checksum，server
-   root 只包含一个 report revision；远程访问采用 SSH 端口转发。
+   root 只包含一个 report revision。跨设备查看仅允许由使用者自行建立安全终端隧道；
+   隧道不创建第二执行主机，也不是 EasyDesign 的远程执行功能。
 7. Mol* 发布字节从官方 npm tarball提取并固定 SHA-256。Node.js 22、npm 和 Playwright
    只用于资产维护和浏览器测试，Python wheel 与运行时不依赖 Node。
 8. Mol* 5.11.0 官方预构建 bundle 初始化时使用动态函数，因此 `script-src` 需要
@@ -45,5 +46,5 @@ artifact 不能被 UI 改写，远程服务器也不能暴露整个 run 或把�
   Mol* build，应通过新资产 revision 移除此例外。
 - Mol* 更新必须同步 npm lockfile、固定字节、SHA-256、资产登记、许可证审查和 Chromium
   测试。
-- 第一版桌面 Chromium 通过自动验收；Safari/Firefox、Stage 02 overlay、人工批准和远程
-  托管另立决策，不在本 ADR 内。
+- 第一版桌面 Chromium 通过自动验收；Safari/Firefox、Stage 02 overlay 和人工批准另立
+  决策，不在本 ADR 内。公网托管不在产品范围内。

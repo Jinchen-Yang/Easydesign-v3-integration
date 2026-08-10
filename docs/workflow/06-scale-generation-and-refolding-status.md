@@ -1,12 +1,26 @@
 # Stage 06 状态
 
-- 状态：`smoke-validated`（旧单策略真实证据）/ `implemented`（Local 人工多策略选择）。
-- 既有 50,000 候选与验证 runs 保持不可变；本次没有重跑或删除。
-- 新 Local 路径会把人工 selection receipt SHA-256 与策略子集冻结到 Stage 06 config，
-  不再默认消费 Stage 05 自动排序的全部策略。
-- 1/2/3 策略预算、尾分片、重复/缺口拒绝和人工子集授权均有回归测试。
-- 当前待验收：从 Agent-native Pilot 的真实 promotion receipt 完成小预算 production smoke；
-  正式 50,000 仍需研究者明确确认。
+稳定职责见 [`06-scale-generation-and-refolding.md`](06-scale-generation-and-refolding.md)。
 
-历史远程工程记录保存在 `06-scale-generation-and-refolding-2026-07.md` 与
-`06-scale-generation-and-refolding-2026-08.md`，不属于 Local 产品操作面。
+| 总体状态 | 当前结论 | 更新时间 |
+| --- | --- | --- |
+| `implemented` | 本地多策略人工选择、共享预算、可恢复 scale/refold 和不可变 selection receipt 已实现。 | 2026-08-10 |
+
+## 当前能力
+
+- 研究者明确选择 1–3 个 Stage 05 晋级策略；选择 receipt SHA-256、策略子集和总预算冻结到
+  Stage 06 config，不默认消费全部自动排序结果。
+- allocation、尾分片、candidate ordinal、重复和缺口校验有确定性回归。
+- 生成、refold、progress、resume 和 ScaleBundle 全部在当前 clone 所在主机执行并保留
+  manifest lineage。
+- 既有单策略 ScaleBundle 和大型 run 只读保留，不因当前政策重写或自动续跑。
+
+## 仍有效的验证事实
+
+- 旧单策略真实运行证明 50,000 候选生成和 refold 管线可完成；它不等于当前多策略路径
+  已完成同规模验证。
+
+## 待完成
+
+- 从当前 Pilot promotion receipt 完成一个小预算多策略 production smoke。
+- 正式 50,000 运行属于高成本操作，必须在 plan 审阅后由研究者再次明确确认。

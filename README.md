@@ -11,8 +11,9 @@ EasyDesign Local 是一个 Agent 原生的本地蛋白设计研究工作台：Co
 prepare → strategize → pilot loop → scale → select
 ```
 
-内部仍保留经过验证的七阶段科学实现，但研究者不再直接操作 Stage 编号。本产品没有完整
-Workbench、远程提交、Suzhou2、Manager 或 18769 activation。
+内部仍保留经过验证的七阶段科学实现，但研究者不再直接操作 Stage 编号。本产品只在当前
+clone 所在的本地 Linux GPU 主机执行，没有 Workbench、远程 executor、受管队列或 UI
+activation。clone 路径由根 `easydesign-workspace.yaml` 定位，不绑定开发者机器路径。
 
 ## 安装
 
@@ -84,7 +85,7 @@ easydesign doctor --full
 不是全新安装的前置条件：
 
 ```bash
-easydesign runtime link /absolute/path/to/existing/runtime
+easydesign runtime link EXISTING_CLONE/runtime
 easydesign runtime status
 easydesign doctor --full
 ```
@@ -96,7 +97,7 @@ OpenFold3/AFO 正在灰度接入，Protenix 仍是默认结构预测后端。只
 bundle 时才安装；安装会创建本地不可变 Python 3.12/JAX 环境并执行真实 GPU smoke：
 
 ```bash
-easydesign runtime install openfold3 --bundle /absolute/path/to/bundle
+easydesign runtime install openfold3 --bundle runtime/imports/openfold3-bundle
 easydesign runtime status
 easydesign doctor --full
 ```

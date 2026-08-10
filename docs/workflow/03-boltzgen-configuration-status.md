@@ -2,32 +2,27 @@
 
 稳定职责见 [`03-boltzgen-configuration.md`](03-boltzgen-configuration.md)。
 
-| 总体状态 | 当前能力 | 验证边界 | 更新时间 |
-| --- | --- | --- | --- |
-| `implemented` | legacy 0.1 basic matrix 保持可读；0.2 支持显式 variant、binding subset、crop、CDR override 和原生 YAML identity。 | 新 0.2 已有 unit/integration 工程回归；真实 BoltzGen smoke 待本次完整验收记录。 | 2026-08-08 |
+| 总体状态 | 当前结论 | 更新时间 |
+| --- | --- | --- |
+| `implemented` | StrategyBundle 0.2 的显式 variant、binding subset、crop、CDR override 和原生 YAML identity 已实现。 | 2026-08-10 |
 
-## 已实现
+## 当前能力
 
-- manifest-only target/hotspot 输入和 checksum 验证；
-- `official-vhh7-v1` 七 scaffold、固定 commit/license/hash；
-- 0.1 完整 matrix 兼容读取与编译；
-- 0.2 不强制全局笛卡尔积，只编译显式实验；
-- approved residue subset 与 crop 覆盖校验；
-- strategy-local CDR scaffold artifact；
-- 专家 YAML 源 SHA-256、原字节复制和统一 backend check 路径；
-- StrategyBundle、design matrix、逐策略 manifest 和 validation report。
+- 只从 manifest 读取 target/hotspot，并验证 checksum。
+- `official-vhh7-v1` 七个 scaffold 固定来源 commit、license 和逐文件 hash。
+- 0.2 只编译显式实验，不强制全局笛卡尔积；approved residue subset 与 crop 必须覆盖校验。
+- strategy-local CDR scaffold、专家 YAML 原字节复制、源 SHA-256、统一 backend check、
+  design matrix 和逐策略 validation report 已实现。
+- StrategyBundle 0.1 仅为既有 manifest 的只读兼容格式，不是新配置入口。
 
-## 已有历史证据
+## 仍有效的验证事实
 
-APOE 0.1 正式 smoke 的 21/21 BoltzGen check 仍有效且不被覆盖；具体旧 run/hash 保存在
-`03-boltzgen-configuration-2026-07.md`。它证明 legacy basic path，不替代 0.2 新能力验证。
+- APOE 0.1 路径的 21/21 BoltzGen check 证明旧 basic matrix 可重读；它不替代 0.2 的
+  新能力验证。
+- 0.2 的 explicit variant、crop、CDR override、未批准 residue 拒绝和新旧 reader
+  已有单元/集成回归。
 
-## 当前验收
+## 待完成
 
-- explicit 两 scaffold variant 不产生 3×7 全局 matrix；
-- crop 写入 target include；CDR3 override 写入独立 scaffold；
-- 未批准 binding residue fail closed；
-- native YAML 字节与 source SHA-256 一致；
-- 新旧 StrategyBundle reader 同时通过。
-
-真实 backend smoke 完成后才能将 0.2 提升为 `smoke-validated`；不能用单元测试冒充。
+- 在当前 clone 的本地 BoltzGen runtime 上完成 0.2 最小真实 backend smoke 后，才能把
+  0.2 提升为 `smoke-validated`。

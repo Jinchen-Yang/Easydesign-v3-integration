@@ -4,9 +4,13 @@
 `DATA_SAFETY.md`。
 
 - 本产品只写自己的 `runtime/`、`workspace/projects/`、`workspace/runs/` 和 archives。
+- 所有路径相对当前 clone 根解析；根由 `easydesign-workspace.yaml` 定位，不允许文档或代码
+  固定开发者主机名、数据盘或 clone 绝对路径。
+- 所有 backend 和 worker 只在当前 clone 所在主机运行；不存在远程 executor、受管队列、
+  主机配对、跨服务器 handoff 或结果回传。
 - 全新 clone 可从仓库锁定配方逐组件安装到自己的 `runtime/envs/`、`runtime/models/` 和
   append-only registry；Conda、pip、Git 和下载 cache 必须继续使用隔离 child environment。
-- 原 `easydesign-clean/runtime` 仅可通过 runtime-link receipt 读取 `envs/`、`models/`、两个
+- 同机已有 runtime 仅可通过显式 runtime-link receipt 读取 `envs/`、`models/`、两个
   registry marker、append-only revisions 和 environment inventories。
 - link 时验证本分支环境 lock、registry tip/revision SHA、inventory SHA、文件 size/SHA 或
   Git revision；任一 identity 改变即 fail closed，要求重新 link。

@@ -65,18 +65,17 @@ sequence/FASTA 当前只接受单条、由 20 种标准氨基酸组成的输入�
 identity；裸序列和同内容 FASTA 必须得到相同规范序列 SHA-256。多记录、空记录和含歧义
 残基的输入明确失败，不静默选择第一条记录。
 
-当前用户入口只有一个 `easydesign.yaml`；本地 source 文件路径相对于 YAML 解析。
+当前用户入口是 Agent-native 项目目录；本地 source 文件路径相对于项目输入或显式参数解析。
 `stage01.target.source` 是 discriminated union，必须恰好选择 `local-file`、`pdb-id`、
 `uniprot`、`uniprot-search` 或 `target-bundle`。`local-file` 再以强证据识别
 sequence/FASTA、PDB、mmCIF 或 PSE。识别、联网、结构选择和预测 fallback 均不得静默。
 
-Developer Preview 推荐先通过统一入口创建和运行，不需要 Agent 手工编排：
+推荐通过语义命令创建项目、准备 target 并读取唯一状态：
 
 ```bash
-easydesign init PROJECT_DIR --target TARGET_FILE --stop-after 1
-easydesign config validate PROJECT_DIR/easydesign.yaml
-easydesign doctor --config PROJECT_DIR/easydesign.yaml
-easydesign run PROJECT_DIR/easydesign.yaml
+easydesign project init workspace/projects/PROJECT --target TARGET_FILE
+easydesign target prepare workspace/projects/PROJECT
+easydesign project status workspace/projects/PROJECT --json
 ```
 
 CLI 只调用本阶段相同 Python API；其成功不会提高本阶段的科学证据等级。
@@ -151,8 +150,9 @@ stage06: null
 stage07: null
 ```
 
-远程 MSA 配置必须把 provider preset 同时解析成服务模式和明确 endpoint；只传
-`--msa_server_mode` 不代表已经切换远程服务。attempt 必须保存 resolved endpoint、
+在线 MSA 配置必须把 provider preset 同时解析成服务模式和明确 endpoint；只传
+`--msa_server_mode` 不代表已经切换数据服务。这里的 YAML `mode: remote` 只表示从外部
+MSA 服务取回 A3M，不表示把 EasyDesign、GPU task 或 run 提交到另一台主机。attempt 必须保存 resolved endpoint、
 ticket、状态历史、timeout、query identity、输出 A3M identity 和实际深度。endpoint
 失败时不得静默切换到另一个 provider 或 no-MSA。
 
@@ -200,13 +200,15 @@ msa:
 CLI 可在建项目时直接选择：
 
 ```bash
-easydesign init PROJECT --target target.fasta --precomputed-msa target.a3m
-easydesign init PROJECT --target target.fasta --msa-cache-mode offline
+easydesign project init workspace/projects/PROJECT \
+  --target target.fasta --precomputed-msa target.a3m
+easydesign project init workspace/projects/PROJECT \
+  --target target.fasta --msa-cache-mode offline
 ```
 
 缓存键包含规范序列 SHA-256、provider、server mode 和 endpoint digest；manifest 保存
 query/A3M hash、depth、provider 和生成时间。`online` 不读取旧 cache；
-`prefer-cache`/`offline` 必须由用户显式声明。无论来自 remote、cache 还是 precomputed，
+`prefer-cache`/`offline` 必须由用户显式声明。无论来自在线服务、cache 还是 precomputed，
 实际 A3M 都复制进当前 run，随后仍以 `use_msa=true` 运行 Protenix。
 使用公共 provider 会把 target 序列提交给第三方服务；当前只批准内部研究运行。敏感或商业
 序列在完成服务条款、隐私和数据处理审查前，必须使用经过批准的自建
@@ -270,7 +272,7 @@ scope 支持 `full-sequence`、`residue-range` 和唯一匹配的 UniProt `Domai
 
 - `review-gated`（默认）：身份、chain/construct、结构候选等有歧义时发布不可变
   `DecisionRequest` 并把 RunManifest 置为 `awaiting-human-approval`。用户通过
-  `easydesign decisions export/approve` 提交带 request SHA-256 的选择；批准后在同一
+  `easydesign target approve PROJECT --input DECISION` 提交带 request SHA-256 的选择；批准后在同一
   run 新建 attempt 并继续。
 - `unattended`：只接受唯一高置信身份/chain/合格实验结构；没有或存在多个合格结构时按
   YAML 明确转 Protenix，API 错误则直接失败。该模式不调用 LLM。
@@ -420,68 +422,10 @@ python scripts/serve_target_viewer.py \
   --port 8000
 ```
 
-服务启动前验证报告状态和全部 checksum，只绑定 `127.0.0.1`，根目录严格限制为单个
-report revision。远程服务器使用 SSH 端口转发，不开放 `0.0.0.0` 或公网访问。
+服务启动前验证报告状态和全部 checksum，只绑定当前主机的 `127.0.0.1`，根目录严格限制
+为单个 report revision。使用者可自行用安全终端隧道访问该 loopback 服务，但这不创建
+第二执行主机；不得绑定 `0.0.0.0` 或开放公网访问。
 
-## 浏览器结构工作区
-
-产品工作台在便携 Mol* 报告之外提供 PyMOL/Mol* 双查看器。默认浏览器 PyMOL 使用
-Pyodide `0.22.1`、NumPy `1.23.5` 和 Open-Source PyMOL WASM `2.6.0a0` 的离线
-vendored 资产；Mol* 保持平级备用。两者必须通过受限 artifact token 读取同一份当前
-StageManifest 声明且校验通过的 `target.cif`，并共享 residue mapping、当前选中残基与
-PSE 来源颜色。
-
-Stage 01 中所有 PyMOL 操作都属于显示状态：
-
-- 允许 cartoon、surface、stick、颜色、标签、选择、居中、方向和视角；
-- PNG、PML、PSE 只能通过专用按钮导出，并标记为可视化文件；
-- 禁止改变原子、残基、对象或坐标，禁止覆盖 `target.cif`；
-- 任意交互前后 Target Bundle 和结构 SHA-256 必须保持不变。
-
-Stage 01 只读结构摘要只显示规范序列长度；来源、模型数、缺失 CA 和 target ID 仍保留在
-正式 artifact 与证据中，不在左栏重复展示。PSE 来源 A/B/C 在 Stage 01 以 cartoon 颜色
-呈现，不强制显示区域 stick；Stage 02 同样保留 selection/cartoon 而不自动显示侧链
-sticks，区域成员和下游科学契约不受影响。
-
-交互状态写入
-`workspace/projects/<project_id>/interactive-sessions/<session_id>/` 的
-`StructureInteractionSession 0.4`。当前完整 PML 是唯一场景事实；每次更新发布新的
-SceneVersion，并记录 parent/base version、SHA-256、actor、provider/model 和实际使用的
-PML Skill。安全追加只增量执行；修改旧内容、恢复历史或增量失败时重新构建结构并完整
-重放。Mol* 只投影它可靠支持的 PML 子集，不能限制 PyMOL。交互会话不是 Stage 01
-artifact，不加入 StageManifest，也不能成为 Stage 02 的隐式输入。PSE 仍由独立服务器
-PyMOL 3.1.0 worker 解析；浏览器 PyMOL 不替代 Stage 01 PSE adapter。
-
-平台结构助手由部署者在
-`runtime/secrets/structure-assistant/platform-provider.yaml` 选择 DeepSeek 或智谱
-GLM，并固定模型与 endpoint。普通使用者不选择 provider，也不填写 API key；前端只能
-看到“EasyDesign 结构助手”是否可用。平台服务未启用时只禁用助手，查看器和 Stage 01
-正常运行。模型请求不包含坐标、MSA、完整序列、绝对路径或密钥，只发送当前完整 PML、
-场景/结构 metadata、最近十轮对话、动态 PML Skills 和用户文字。模型必须返回
-`assistantMessage/summary/conversationTitle/pml` 四字段 JSON；完整 PML 经过安全校验
-并形成不可变 SceneVersion。Stage 01 助手只能修改浏览器可视化场景，不能修改
-Target Bundle 或判断 hotspot。
-
-provider 连接最多等待 10 秒，完整响应读取最多等待 60 秒。UI 必须区分读取/连接超时、
-连接失败、协议中断、HTTP 状态、非 JSON、响应字段缺失和 PML 校验失败；任何失败都保留
-当前 SceneVersion，不得以含糊的“响应无法验证”掩盖真实错误类型。
-
-界面中未特别说明的残基数字一律按底部序列同步显示的规范
-`label_seq_id` 解释；只有用户明确写出“原始编号”、`auth`、`author` 或
-`PDB 编号` 时才使用 author 编号。界面同时展示规范和原始编号；模型直接理解一次请求
-中对一个或多个 A/B/C 区域的自然语言修改，依据编号表把规范编号写成 author selector，
-并返回最终完整 PML。服务端不再先把文字压缩成单个 typed 操作，而是从通过安全与结构
-校验的完整 PML 反向得到规范区域草稿。
-
-PyMOL 与 Mol* 首次加载后在同一结构工作区持续保留实例。切换查看器只改变显隐，不卸载
-PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重绘，防止运行时仍
-绑定已销毁画布而出现“结构已读取但首帧空白”。
-重放、验证和 selection 刷新期间不记录原生 PyMOL 日志；只有场景就绪后的
-用户操作才能形成新 revision。瞬时 `deselect` 和与当前 PML 尾部完全相同的
-命令必须忽略，避免空闲页面不断增长 SceneVersion 并引起闪烁。
-鼠标旋转、平移和缩放是浏览器内瞬时相机状态，不写入 SceneVersion；显示样式变化需要
-完整重放时必须先保存并恢复当前相机。只有用户在专家 PML 中显式写入 `set_view` 才作为
-可复现显示事实保存，重放也不得再用无条件 `orient` 覆盖它。
 
 ## 不变量
 
@@ -491,13 +435,13 @@ PyMOL；返回 PyMOL 时必须重新同步 canvas、OpenGL viewport 并主动重
 - 搜索、排序、下载、转换、MSA、模板策略和 fallback 全部留痕。
 - 原始输入按 checksum 引用，attempt 和正式 artifact 不覆盖。
 - 同一次实验只有一个 `workspace/runs/<project_id>/<run_id>/`；Stage 01 输出不另建第二个 run 根。
-- 远程 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
-- 远程 MSA 的 provider、mode 和 endpoint 必须一致且可审计；禁止用解析模式名称推断
+- 在线 MSA 失败不得静默降级为 no-MSA；no-MSA 只作为明确标记的工程 smoke。
+- 在线 MSA 的 provider、mode 和 endpoint 必须一致且可审计；禁止用解析模式名称推断
   实际请求端点。
 - sequence/FASTA 正式 YAML 必须启用 MSA；公共服务失败时必须终止或进入 YAML 显式声明的
   下一 provider；`offline` cache miss 或 precomputed query mismatch 同样终止，禁止继续
   无 MSA 预测。
-- `easydesign-core` 不导入 Protenix；adapter 只转换请求/结果，独立环境执行重型工具。
+- 主 `.venv` 不导入 Protenix；adapter 只转换请求/结果，锁定的本地科学环境执行重型工具。
 - 预测结构不得描述成实验结构，smoke 分数不得描述成科学验证。
 - PSE 必须恰好一个含蛋白的 molecule object、一条非空 protein chain 和一个 state；
   至少 20 个标准氨基酸残基且每个残基恰好一个 CA。
@@ -544,7 +488,7 @@ PSE provenance 还记录 PyMOL 版本、session inventory、被选中的唯一 o
 - 六类入口全部通过各自契约测试和至少一个真实 fixture。
 - 全部必需 Target Bundle artifact 校验通过并有 checksum。
 - Stage 02 可以只通过 Target Bundle 和残基映射解析每个残基，无需扫描 backend 目录。
-- sequence/FASTA 以 remote、offline cache 和 precomputed A3M 三种 required-MSA 路径
+- sequence/FASTA 以 online、offline cache 和 precomputed A3M 三种 required-MSA 路径
   完成 APOE 真实运行；no-MSA 不属于正式用户路径。
 - PSE 路径通过合成成功/失败 session 契约测试和旧 APOE PSE 真实 smoke。
 - sequence 与 PSE 的 Target Viewer 都通过 Python checksum/revision 契约、Chromium

@@ -108,7 +108,8 @@ workspace/runs/
 
 ## 7. 产品和 Agent 约束
 
-- `step run` 默认调用同一 run 延续；重新选区或更换上游输入必须显式建立新项目/run。
+- Agent-native façade 默认延续同一项目的已批准 foundation；重新选区或更换上游输入必须
+  显式建立新的 foundation/run identity。
 - CLI、worker、Viewer 和脚本只能调用统一 orchestration API，不得各自复制目录逻辑。
 - `workspace/runs/` 不进入 Git；本文件、架构文档、测试和代码共同定义行为。
 - Agent 结束涉及目录或 continuation 的任务前，必须验证：无空 Stage 预创建、旧

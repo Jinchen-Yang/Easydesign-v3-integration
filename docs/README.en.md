@@ -4,6 +4,10 @@ EasyDesign Local is an agent-native, local protein-binder research workbench. Co
 project and invokes deterministic tools; the researcher approves scientific decisions; EasyDesign
 preserves manifests, checksums, attempts, and immutable evidence.
 
+The product executes only on the local Linux GPU host that contains the current clone. The repository
+root is discovered through `easydesign-workspace.yaml`; documentation and code use clone-relative
+paths so each user may choose a different host and data-disk location.
+
 The public workflow is:
 
 ```text
@@ -51,7 +55,7 @@ only stops watching and leaves the detached installer running.
 
 Repeat in the order `pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp`, waiting for each
 job to finish. Then run `easydesign runtime status` and `easydesign doctor --full`. If the same machine
-already has a verified EasyDesign runtime, `easydesign runtime link /absolute/path/to/runtime` remains
+already has a verified EasyDesign runtime, `easydesign runtime link EXISTING_CLONE/runtime` remains
 an optional read-only shortcut, not an installation prerequisite. Every cache, log, job, project, run,
 and locally installed component remains inside the current clone.
 
@@ -88,4 +92,4 @@ Top 200 delivery; legal results are never duplicated or padded.
 
 Read/validate/color/scan/plan/review/view operations may run directly. Site approval, strategy freeze,
 pilot run/promotion, scale, and selection require explicit researcher confirmation. The viewer is
-read-only and there is no remote executor, Manager, Suzhou2, Workbench, or port-18769 activation.
+read-only and there is no remote executor, managed queue, Workbench, or UI activation.

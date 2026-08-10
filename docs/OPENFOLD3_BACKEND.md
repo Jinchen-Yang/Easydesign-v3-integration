@@ -24,7 +24,7 @@ runner、许可证/模型条款、model card、转换日志、checksums 和 smok
 ## 安装与硬件门
 
 ```bash
-easydesign runtime install openfold3 --bundle /absolute/path/to/bundle
+easydesign runtime install openfold3 --bundle runtime/imports/openfold3-bundle
 easydesign runtime status --json
 easydesign doctor --full --json
 ```
@@ -63,10 +63,10 @@ representative，至少 3/5 representatives 分别通过硬门后再执行 RMSD/
 ```bash
 easydesign runtime compare openfold3 \
   --panel config/openfold3-validation-panel.yaml \
-  --evidence /absolute/path/to/frozen-observations.yaml
+  --evidence workspace/reviews/openfold3/frozen-observations.yaml
 
 easydesign runtime approve openfold3 \
-  --report /absolute/path/to/validation-report.json \
+  --report workspace/reviews/openfold3/validation-report.json \
   --reviewer NAME \
   --decision approve-default-switch \
   --confirm

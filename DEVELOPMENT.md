@@ -4,8 +4,13 @@
 
 ## 独立分支
 
-本产品永久位于 `easydesign-local` 和独立 worktree，不整体 merge 回 UI `main`。任何命令
-都不得重启 18769、修改主仓库、访问 Suzhou2/Manager 或发布 UI wheel。
+本产品永久位于 `easydesign-local` 和独立 worktree，不整体 merge 回 UI `main`。开发与
+运行只作用于当前 clone 所在的本地 Linux GPU 主机；不得调用旧 UI、远程 executor、受管
+队列或其他执行主机，也不得发布 UI wheel。
+
+clone 可以位于用户选择的任意数据盘目录。代码、文档和测试通过根
+`easydesign-workspace.yaml` 发现工作区，并使用 `runtime/`、`workspace/` 等相对路径；不得
+把某台开发机的主机名或 clone 绝对路径写成产品前提。
 
 ```bash
 uv sync --frozen --extra dev
@@ -35,7 +40,7 @@ Makefile 只使用仓库 `.venv`，不存在时明确失败，不回退系统 Py
 
 - `dev-local`：diff/结构、changed-file Ruff/compile、全包 mypy 和路径聚焦测试。
 - `integration`：完整 Python 回归；reporting/Viewer 变更增加 Chromium 回归。
-- `release`：仅构建本地产品 staging wheel，不存在 UI/remote activation。
+- `release`：仅构建本地产品 staging wheel，不存在 UI 或远程 activation。
 
 兼容入口：
 

@@ -22,8 +22,8 @@
 ## 产品范围
 
 Local 0.1 保留完整 VHH 科学主线、本地 backend、filter、manifest 和只读 evidence viewer；
-只在当前 Linux GPU 主机执行。它不包含新手 Workbench、远程算力池、Manager、正式 UI
-activation 或供应商下单。
+只在当前 clone 所在的本地 Linux GPU 主机执行。它不包含新手 Workbench、远程 executor、
+受管队列、正式 UI activation 或供应商下单。
 
 一条成功软件运行不等于科学候选成功。无候选通过 filter 是有效负结果；backend failure
 不是负结果；空结果必须可审计。
@@ -43,8 +43,11 @@ activation 或供应商下单。
 逐组件安装自己的 scientific runtime；同机复用已有共享 runtime 时来源严格只读。旧 UI
 projects/runs 不读取、不索引、不继续；APOE Git evidence 只读用于回归。
 
+不同使用者可以把 clone 放在不同数据盘。仓库根只能通过 `easydesign-workspace.yaml`
+发现，产品文档与代码只能使用 clone-relative 路径，不绑定开发者机器的主机名或绝对路径。
+
 本产品永久位于 `easydesign-local`，不整体 merge 回 UI `main`。共享科学修复单独形成
 `core:` commit；本地 façade、Skill、runtime install/link、worker 和 Viewer 提交永不回 main。
 
-版本和 wheel 只在明确 release 指令下处理。任何开发任务不得触碰 18769、Suzhou2、
-Manager 或主仓库。
+版本和 wheel 只在明确 release 指令下处理。任何开发任务不得触碰旧 UI、远程执行服务、
+受管队列或另一产品的 worktree。

@@ -1,8 +1,9 @@
 # EasyDesign Local Agent 协议
 
 本分支是 Codex 主导、研究者批准、EasyDesign 执行确定性工具并保存科学证据的本地产品。
-只在 `easydesign-local` 开发；不要整体合并到 UI `main`，不要操作 18769、Suzhou2、
-Manager、旧 UI workspace 或共享 runtime 的可写内容。
+只在 `easydesign-local` 开发，不整体合并到 UI `main`。产品只在当前 clone 所在的本地
+Linux GPU 主机执行；仓库根由 `easydesign-workspace.yaml` 定位，禁止硬编码主机名、数据盘
+或 clone 绝对路径。不得调用旧 UI、远程 executor、受管队列或共享 runtime 的可写能力。
 
 ## 先判断任务入口
 
@@ -35,7 +36,7 @@ EasyDesign 负责可重复工具、严格输入输出、manifest/checksum、work
 ## 开发模式与按需指南
 
 - `inspect`：只读分析。
-- `dev-local`：默认局部实现；不升版本、不构建 wheel、不访问远端。
+- `dev-local`：默认局部实现；不升版本、不构建 wheel、不调用其他执行主机。
 - `integration`：科学契约、backend、orchestration、CLI/worker、Skill 或 Viewer 变更。
 - `release`：仅用户明确要求时；不得静默升级。
 - `ops`：仅当前 clone 的 runtime install/link、诊断和恢复。

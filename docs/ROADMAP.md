@@ -2,11 +2,11 @@
 
 ## 当前产品
 
-- 永久 worktree `/root/autodl-tmp/Protein_design/easydesign-local`，分支 `easydesign-local`；
+- 当前 clone 根由 `easydesign-workspace.yaml` 定位，分支固定为 `easydesign-local`；
 - 独立 distribution `easydesign-local 0.1.0.dev1`，命令/import 仍为 `easydesign`；
 - 公开流程 `prepare → strategize → pilot loop → scale → select`；
 - Codex 使用 `.agents/skills/easydesign-research`，项目恢复只读 `project status --json`；
-- 只读 evidence viewer；无 Workbench、HTTP API、远程 executor、Manager 或 18769 操作。
+- 只读 evidence viewer；无 Workbench、HTTP API、远程 executor、受管队列或 UI activation。
 
 ## 已冻结边界
 
@@ -33,5 +33,6 @@
 置信度、审核人和日期并经研究者批准后，才平铺加入 Skill reference。出现真正不同的触发
 场景前不拆新 Skill。
 
-本路线图不跟踪 UI、18769、Manager 或 Suzhou2；这些只属于主产品仓库。普通开发不升
-版本、不构建 wheel，release 必须另行明确要求。
+本路线图只跟踪当前本地 Linux GPU 主机上的 `easydesign-local`。旧 UI、远程执行和受管
+队列只属于历史产品，不是本分支入口。普通开发不升版本、不构建 wheel，release 必须
+另行明确要求。

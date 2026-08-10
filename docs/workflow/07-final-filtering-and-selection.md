@@ -58,6 +58,7 @@ stage07:
 
 约束：
 
+- `target_msa.mode: remote` 仅表示在线获取 MSA 数据，不是远程计算或跨主机执行；
 - `primary_count + backup_count` 至少为 1；
 - TNP 在非空候选包中固定为必需证据，不能关掉；
 - target 必须复用 Stage 05 冻结的 required MSA；
@@ -275,17 +276,17 @@ TNP 风险、选择理由和完整 lineage。
 - TNP 失败保留 evidence，resume 创建新 TNP attempt；
 - 发布途中恢复只能复用 identity/bytes 一致的终态 artifact。
 
-`easydesign runs watch RUN_DIR` 只读取结构化 progress 和事件，不解析终端文本。它显示阶段、
+`easydesign job watch PROJECT --run RUN_ID` 只读取结构化 progress 和事件，不解析终端文本。它显示阶段、
 phase、总任务、成功/失败/待重试、GPU 分配、吞吐与 ETA。
 
 ## CLI
 
 ```bash
-easydesign doctor --config easydesign.yaml
-easydesign run easydesign.yaml
-easydesign runs watch RUN_DIR
-easydesign runs resume RUN_DIR
-easydesign runs show RUN_DIR
+easydesign doctor --full
+easydesign select plan workspace/projects/PROJECT --run SCALE_RUN --top 200
+easydesign select run workspace/projects/PROJECT --run SCALE_RUN --top 200 --confirm --detach
+easydesign job watch workspace/projects/PROJECT --run FINAL_RUN
+easydesign project status workspace/projects/PROJECT --json
 ```
 
 CLI 只调用统一 orchestration API。`doctor` 只探测配置实际需要的 Protenix/TNP；不会安装
@@ -339,13 +340,13 @@ operational failure 不能转换为空科学成功。失败调用写入结构化
 后续需要第二个独立真实 target、湿实验反馈、阈值校准、可制造性扩展、正式 review gate、
 产品 UI 和经授权的 production 运行。
 
-## Suzhou2 原地筛选与同步边界
+## 本地筛选与持久状态边界
 
-当 Stage 06 在 Suzhou2 受管队列执行时，Stage 07 与它属于同一固定
-`6→7` job。Stage 07 直接验证并消费远端 ScaleBundle 和 candidate index，不先将
-50k 原始候选回传控制端。需要人工确认时，控制端接收 `review` 证据并发回
-不可变批准 handoff；未批准的远端任务不会自行越过科学决策点。
+Stage 06 与 Stage 07 只在当前 clone 所在主机运行。Stage 07 在同一 workspace 中验证并
+消费 ScaleBundle 和 candidate index，不向控制端或第二执行主机同步 50k 原始候选。需要
+人工确认时，本地流程发布 review 证据并等待不可变批准记录；未批准的任务不会自行越过
+科学决策点。
 
-控制端对 SSH 的轮询只是观察层。暂时断线不改变 Suzhou2 上的 queue/job/run 状态；
-恢复后按最后已知 revision 继续获取。最终候选包、科学停止和 operational failure
-仍只能由远端正式 StageManifest 与通过 checksum 的 artifact 宣告。
+持久 job receipt 和 manifest 是状态来源。终端观察暂时断开不改变本机 job/run 状态；
+恢复观察后按最后合法 revision 继续读取。最终候选包、科学停止和 operational failure
+只能由本地正式 StageManifest 与通过 checksum 的 artifact 宣告。

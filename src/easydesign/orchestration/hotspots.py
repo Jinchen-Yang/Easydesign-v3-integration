@@ -571,7 +571,7 @@ def approve_hotspots(
             else "human-hotspot-approval"
         ),
         backend_version="0.1",
-        executor_name="easydesign-core",
+        executor_name="easydesign-local",
     )
     dump_model(attempt, attempt_root / "attempt-manifest.json")
     approved_stage = StageManifest(

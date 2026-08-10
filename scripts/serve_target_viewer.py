@@ -7,7 +7,6 @@ import argparse
 from pathlib import Path
 
 from easydesign.reporting import (
-    HOST,
     create_target_viewer_server,
     resolve_target_viewer_argument,
 )
@@ -38,10 +37,8 @@ def main() -> int:
     print(f"Target Viewer report: {server.report_root}")
     print(f"Local URL: {server.url}")
     print(
-        "远程服务器访问提示：在本机执行 "
-        f"`ssh -N -L {server.server.server_address[1]}:{HOST}:"
-        f"{server.server.server_address[1]} <server>`，"
-        f"然后打开 {server.url}"
+        "Viewer 只监听当前服务器 loopback；EasyDesign 不开放公网端口，"
+        "也不建立到其他执行主机的连接。"
     )
     try:
         server.serve_forever()

@@ -106,7 +106,7 @@ class _ProtenixConfidence(BaseModel):
 
 
 class ProtenixV2Adapter:
-    """只生成/解释文件协议，不在 easydesign-core 中导入 Protenix。"""
+    """只生成/解释文件协议，不在主 ``.venv`` 中导入 Protenix。"""
 
     backend_name = "protenix"
     profile_backend_id = "protenix-v2"

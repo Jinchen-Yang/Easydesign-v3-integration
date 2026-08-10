@@ -1,7 +1,7 @@
 """Persistent repository-local setup jobs for the local runtime CLI.
 
-Long scientific backend installations must survive an SSH terminal or browser
-session closing.  The launcher therefore starts a session-detached worker and
+Long scientific backend installations must survive the invoking terminal
+closing.  The launcher therefore starts a session-detached worker and
 records immutable request, process and result documents below ``runtime/``.
 """
 
@@ -194,7 +194,7 @@ class SetupProgressRecorder:
 
 
 class SetupJobProjection(BaseModel):
-    """Read-only status returned to the CLI and local workbench."""
+    """Read-only status returned to the local runtime CLI."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -224,17 +224,14 @@ def setup_job_root(context: WorkspaceContext) -> Path:
 def launch_setup_job(
     context: WorkspaceContext,
     *,
-    minimal: bool,
-    component: str | None,
+    component: str,
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
     pip_index_url: str = DEFAULT_PIP_INDEX_URL,
 ) -> SetupJobProjection:
     """Launch one detached worker without shell or global configuration writes."""
 
-    if minimal and component is not None:
-        raise ConfigurationError("--minimal 与 --component 不能同时使用")
-    if component is not None and component not in SETUP_COMPONENT_IDS:
+    if component not in SETUP_COMPONENT_IDS:
         raise ConfigurationError(f"未知安装组件: {component}")
     context.ensure_layout()
     selected_pip_index = validate_pip_index_url(pip_index_url)
@@ -253,7 +250,7 @@ def launch_setup_job(
     request = SetupJobRequest(
         job_id=job_id,
         worker_token=worker_token,
-        minimal=minimal,
+        minimal=False,
         component=component,
         accepted_license_ids=tuple(sorted(accepted_license_ids)),
         conda_executable=conda_executable,
@@ -300,7 +297,7 @@ def launch_setup_job(
         status="running",
         pid=process.pid,
         started_at=now,
-        minimal=minimal,
+        minimal=False,
         component=component,
         accepted_license_ids=request.accepted_license_ids,
         pip_index_url=request.pip_index_url,

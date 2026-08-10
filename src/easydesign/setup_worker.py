@@ -35,9 +35,12 @@ def main() -> int:
         raise RuntimeError("Setup worker identity 校验失败")
     progress = SetupProgressRecorder(context, request)
     try:
+        if request.component is None:
+            raise RuntimeError(
+                "历史 setup request 没有本地科学组件；只能读取，不能重新启动"
+            )
         summary = setup_workspace(
             context,
-            minimal=request.minimal,
             component=request.component,
             accepted_license_ids=set(request.accepted_license_ids),
             conda_executable=request.conda_executable,

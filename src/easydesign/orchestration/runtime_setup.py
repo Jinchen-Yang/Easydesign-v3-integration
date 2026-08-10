@@ -25,24 +25,13 @@ from easydesign.core import ConfigurationError, sha256_file
 from easydesign.workspace_context import WorkspaceContext
 
 ENVIRONMENT_IDS = (
-    "easydesign-core",
-    "reporting-web",
     "pymol-pse",
     "protenix-v2",
     "scannet-epitope",
     "boltzgen",
     "tnp",
 )
-SCIENCE_ENVIRONMENT_IDS = (
-    "pymol-pse",
-    "protenix-v2",
-    "scannet-epitope",
-    "boltzgen",
-    "tnp",
-)
-MINIMAL_ENVIRONMENT_IDS = ("easydesign-core", "reporting-web")
 SETUP_COMPONENT_ENVIRONMENTS: dict[str, tuple[str, ...]] = {
-    "core-ui": MINIMAL_ENVIRONMENT_IDS,
     "pymol-pse": ("pymol-pse",),
     "protenix-v2": ("protenix-v2",),
     "scannet-epitope": ("scannet-epitope",),
@@ -50,7 +39,6 @@ SETUP_COMPONENT_ENVIRONMENTS: dict[str, tuple[str, ...]] = {
     "tnp": ("tnp",),
 }
 SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
-    "core-ui": (),
     "pymol-pse": (),
     "protenix-v2": (
         "protenix-v2-checkpoint",
@@ -76,6 +64,8 @@ GIB = 1024**3
 SETUP_FREE_RESERVE_BYTES = 10 * GIB
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
+# ``minimal`` and ``full`` remain readable only in immutable historical job results.
+# New installation plans can produce only ``component``.
 SetupMode = Literal["minimal", "full", "component"]
 SetupProgressPhase = Literal[
     "planning",
@@ -267,16 +257,9 @@ def _pip_reliability_arguments(python: Path) -> list[str]:
 def _setup_selection(
     context: WorkspaceContext,
     *,
-    minimal: bool,
-    component: str | None,
-) -> tuple[SetupMode, tuple[str, ...], tuple[AssetDefinition, ...]]:
-    if minimal and component is not None:
-        raise ConfigurationError("--minimal 与 --component 不能同时使用")
+    component: str,
+) -> tuple[Literal["component"], tuple[str, ...], tuple[AssetDefinition, ...]]:
     catalog = _load_assets(context)
-    if component is None:
-        if minimal:
-            return "minimal", MINIMAL_ENVIRONMENT_IDS, ()
-        return "full", ENVIRONMENT_IDS, catalog.assets
     if component not in SETUP_COMPONENT_ENVIRONMENTS:
         supported = ", ".join(SETUP_COMPONENT_IDS)
         raise ConfigurationError(
@@ -628,7 +611,7 @@ def ensure_environment(
 ) -> EnvironmentRecord:
     """Create one immutable lock-addressed environment and probe it."""
 
-    if platform.system() != "Linux" and environment_id not in MINIMAL_ENVIRONMENT_IDS:
+    if platform.system() != "Linux":
         lock, lock_path = _load_lock(context, environment_id)
         record = EnvironmentRecord(
             environment_id=environment_id,
@@ -1161,8 +1144,7 @@ def initialize_workspace_metadata(context: WorkspaceContext) -> None:
 def setup_workspace(
     context: WorkspaceContext,
     *,
-    minimal: bool,
-    component: str | None = None,
+    component: str,
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
     pip_index_url: str = DEFAULT_PIP_INDEX_URL,
@@ -1177,7 +1159,7 @@ def setup_workspace(
         total_steps=1,
         current_item=component,
     )
-    plan = setup_plan(context, minimal=minimal, component=component)
+    plan = setup_plan(context, component=component)
     disk = plan["disk"]
     if not disk["sufficient"]:
         raise ConfigurationError(
@@ -1188,7 +1170,6 @@ def setup_workspace(
         )
     mode, selected, selected_assets = _setup_selection(
         context,
-        minimal=minimal,
         component=component,
     )
     total_steps = max(len(selected) + len(selected_assets), 1)
@@ -1320,12 +1301,10 @@ def setup_workspace(
 def setup_plan(
     context: WorkspaceContext,
     *,
-    minimal: bool,
-    component: str | None = None,
+    component: str,
 ) -> dict[str, Any]:
     mode, selected, selected_assets = _setup_selection(
         context,
-        minimal=minimal,
         component=component,
     )
     environments: list[dict[str, Any]] = []
@@ -1499,63 +1478,3 @@ def asset_status(context: WorkspaceContext) -> dict[str, Any]:
             }
         )
     return {"workspace": str(context.root), "assets": result}
-
-
-def import_legacy_deployment(
-    context: WorkspaceContext,
-    *,
-    profile_path: Path,
-    environment_root: Path,
-) -> Path:
-    """Copy legacy evidence into runtime/migrations without mutating its source."""
-
-    source_profile = profile_path.expanduser().resolve(strict=True)
-    source_environments = environment_root.expanduser().resolve(strict=True)
-    if not source_profile.is_file():
-        raise ConfigurationError(f"旧 profile 不是文件: {source_profile}")
-    if not source_environments.is_dir():
-        raise ConfigurationError(f"旧环境根目录不可读: {source_environments}")
-    context.ensure_layout()
-    operation_id = (
-        datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
-        + f"-legacy-import-{uuid4().hex[:10]}"
-    )
-    destination = context.runtime_root / "migrations" / operation_id
-    context.assert_write_path(destination)
-    destination.mkdir(parents=True, exist_ok=False)
-    profile_copy = destination / "legacy-profile.yaml"
-    shutil.copy2(source_profile, profile_copy)
-    environments = []
-    for candidate in sorted(source_environments.iterdir()):
-        if not candidate.is_dir():
-            continue
-        conda_history = candidate / "conda-meta" / "history"
-        environments.append(
-            {
-                "name": candidate.name,
-                "source_path": str(candidate),
-                "conda_history_sha256": (
-                    sha256_file(conda_history) if conda_history.is_file() else None
-                ),
-                "status": "evidence-only-rebuild-required",
-            }
-        )
-    report = {
-        "schema_version": "0.1",
-        "operation_id": operation_id,
-        "imported_at": datetime.now(tz=UTC).isoformat(),
-        "legacy_profile": {
-            "source_path": str(source_profile),
-            "copied_path": str(profile_copy.relative_to(context.root)),
-            "sha256": sha256_file(profile_copy),
-        },
-        "legacy_environment_root": str(source_environments),
-        "environments": environments,
-        "source_preservation": "unchanged",
-        "next_action": "run easydesign setup to rebuild lock-addressed environments",
-    }
-    report_path = destination / "migration-report.json"
-    with report_path.open("x", encoding="utf-8") as handle:
-        handle.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    initialize_workspace_metadata(context)
-    return report_path

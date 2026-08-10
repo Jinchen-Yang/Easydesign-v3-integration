@@ -606,7 +606,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 )
             )
         elif args.runtime_command == "plan":
-            plan = setup_plan(context, minimal=False, component=args.component)
+            plan = setup_plan(context, component=args.component)
             if args.json:
                 print(_json(plan))
             else:
@@ -638,7 +638,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             else:
                 if args.bundle is not None:
                     raise ConfigurationError("--bundle 只用于 OpenFold3")
-                plan = setup_plan(context, minimal=False, component=args.component)
+                plan = setup_plan(context, component=args.component)
                 accepted = _confirmed_runtime_licenses(
                     plan,
                     accepted=set(args.accept_license),
@@ -647,7 +647,6 @@ def _dispatch(args: argparse.Namespace) -> int:
                 if args.detach:
                     job = launch_setup_job(
                         context,
-                        minimal=False,
                         component=args.component,
                         accepted_license_ids=accepted,
                         conda_executable=args.conda,
@@ -666,7 +665,6 @@ def _dispatch(args: argparse.Namespace) -> int:
                 else:
                     setup_summary = setup_workspace(
                         context,
-                        minimal=False,
                         component=args.component,
                         accepted_license_ids=accepted,
                         conda_executable=args.conda,

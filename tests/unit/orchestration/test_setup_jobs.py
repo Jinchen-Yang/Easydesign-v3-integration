@@ -60,7 +60,6 @@ def test_detached_setup_job_stays_inside_workspace_and_avoids_shell(
 
     projection = launch_setup_job(
         context,
-        minimal=False,
         component="boltzgen",
         accepted_license_ids={"boltzgen-source-a3149cf"},
         pip_index_url="https://pypi.tuna.tsinghua.edu.cn/simple",

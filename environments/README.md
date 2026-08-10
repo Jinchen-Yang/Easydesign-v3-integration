@@ -10,7 +10,7 @@ shell profile、Git 全局配置或系统代理。
 
 ```bash
 easydesign runtime plan pymol-pse
-easydesign runtime install pymol-pse --conda /absolute/path/to/conda --detach
+easydesign runtime install pymol-pse --detach
 easydesign runtime jobs
 ```
 
@@ -25,10 +25,8 @@ pymol-pse
 ```
 
 顺序不是科学依赖，只是便于先验证核心、PSE 和生成主线，并在每次大下载后复核空间。
-core 已由 uv 管理，因此新部署只使用显式 component，不重复创建
-core Conda 环境。产品命令只使用 uv 管理的当前仓库 `.venv`；根兼容启动器和自动 Conda
-fallback 已退役。旧 Conda core 只保留为显式离线恢复材料，registry 的 `retired` revision
-继续保存对应目录、inventory 和历史记录，但不会让它重新成为主运行时。
+core 已由 uv 管理，因此新部署只使用显式科学 component，不创建第二套 core 环境。
+产品命令只使用 uv 管理的当前仓库 `.venv`，且没有自动 Conda fallback。
 
 安装目标始终由当前 clone 决定。Conda 环境、模型、下载缓存和临时文件分别进入：
 
@@ -56,7 +54,6 @@ easydesign runtime status
 
 ```bash
 easydesign runtime install boltzgen \
-  --conda /absolute/path/to/conda \
   --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
   --detach
 ```
@@ -73,13 +70,13 @@ EasyDesign 不自动猜测地区或切换镜像；任何镜像都应由部署者
 
 ## 为什么推荐 `--detach`
 
-科学后端会下载数 GB 的 Conda、pip 和模型资产。普通前台进程的 stdout 如果跟随 SSH
-连接关闭，Python/pip 可能因输出管道断开而退出，即使依赖本身没有冲突。
+科学后端会下载数 GB 的 Conda、pip 和模型资产。普通前台进程的 stdout 如果跟随客户端
+终端连接关闭，Python/pip 可能因输出管道断开而退出，即使依赖本身没有冲突。
 
 `--detach` 使用以下固定契约：
 
 - `shell=False`，不解释用户 shell 文本。
-- 独立进程 session，关闭 SSH 或网页不会向 worker 发送挂断信号。
+- 独立进程 session，关闭客户端终端或网页不会向本机 worker 发送挂断信号。
 - stdin 为关闭状态，许可必须在启动前显式确认。
 - 子进程的 HOME、TMP、Conda/pip/npm/Playwright cache 全部指向仓库 `runtime/`。
 - `request.json`、`process.json` 和 `result.json` 均只创建一次，不覆盖历史字节。
@@ -125,7 +122,6 @@ easydesign runtime plan boltzgen
 
 ```bash
 easydesign runtime install boltzgen \
-  --conda /absolute/path/to/conda \
   --accept-license ASSET_ID \
   --detach
 ```
@@ -149,16 +145,17 @@ easydesign doctor --full
 ```
 
 `doctor --full` 只有在当前锁定环境、必需模型/权重、版本探针和设备检查均通过时才返回
-成功。UI 的“安装与环境”页面读取同一批结构化记录，不维护第二套安装状态。
+成功。CLI 只读取这一批结构化记录，不维护第二套安装状态。
 
 ## 故障处理原则
 
 正常主路径要求 `conda --version` 成功，不需要指定路径。只有 Conda executable 不在
-`PATH` 时才显式提供；该参数不是环境安装目录：
+`PATH` 时才通过环境变量提供当前机器上的可执行文件；该参数不是环境安装目录：
 
 ```bash
+export EASYDESIGN_CONDA_EXE=runtime/tools/miniforge3/bin/conda
 easydesign runtime install pymol-pse \
-  --conda /root/miniconda3/bin/conda \
+  --conda "$EASYDESIGN_CONDA_EXE" \
   --detach
 ```
 

@@ -884,13 +884,13 @@ def execute_sequence_prediction(
             if request.msa_mode is MsaMode.PRECOMPUTED
             else (
                 (
-                    "Remote public MSA provider receives the target sequence.",
-                    "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+                    "External public MSA data provider receives the target sequence.",
+                    "Protenix 2.0.0 CLI does not expose the online MSA ticket identifier.",
                 )
                 if selected_provider is not None
                 and str(selected_provider.provider) == "colabfold-public"
                 else (
-                    "Protenix 2.0.0 CLI does not expose the remote MSA ticket identifier.",
+                    "Protenix 2.0.0 CLI does not expose the online MSA ticket identifier.",
                 )
             )
         ),

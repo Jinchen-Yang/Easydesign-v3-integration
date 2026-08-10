@@ -29,6 +29,7 @@ FORBIDDEN_PATHS = (
     "scripts/serve_ui_evidence_bundle.py",
     "tests/fixtures/managed_protocol",
     "docs/UI_WORKBENCH.md",
+    "docs/CASE_REGISTRY.md",
     "docs/agent/UI_AND_REPORTING.md",
     "docs/agent/RELEASE_AND_REMOTE.md",
 )
@@ -55,6 +56,28 @@ REQUIRED_LOCAL_FILES = (
     ".agents/skills/easydesign-research/references/pilot-diagnosis.md",
     ".agents/skills/easydesign-research/references/scale-and-selection.md",
 )
+ACTIVE_LOCAL_POLICY_FILES = (
+    "AGENTS.md",
+    "DATA_SAFETY.md",
+    "DEVELOPMENT.md",
+    "README.md",
+    ".agents/skills/easydesign-research/SKILL.md",
+    "docs/ARCHITECTURE.md",
+    "docs/CHARTER.md",
+    "docs/PRODUCT_PHILOSOPHY.md",
+    "docs/README.en.md",
+    "docs/ROADMAP.md",
+    "docs/agent/LOCAL_CLI_AND_VIEWER.md",
+    "docs/agent/RUNTIME_AND_DATA.md",
+    "docs/decisions/ADR-0004-multi-strategy-promotion-and-shared-scale-budget.md",
+    "docs/workflow/README.md",
+    "environments/README.md",
+    *(f"docs/workflow/{stage}.md" for stage in STAGES),
+)
+STALE_REMOTE_POLICY_TOKENS = (
+    "managed-ssh",
+    "RemoteJobBundle",
+)
 
 
 def main() -> int:
@@ -76,12 +99,32 @@ def main() -> int:
     for relative in FORBIDDEN_PATHS:
         if (ROOT / relative).exists():
             errors.append(f"local 分支禁止路径重新出现: {relative}")
+    historical_documents = tuple(
+        ROOT / "docs" / name
+        for name in (
+            "BASELINE.md",
+            "ROADMAP_HISTORY_2026-07.md",
+            "ROADMAP_HISTORY_2026-08.md",
+        )
+    ) + tuple(
+        (ROOT / "docs" / "workflow").glob("*-2026-??.md")
+    )
+    for path in historical_documents:
+        if path.exists():
+            errors.append(f"旧产品工作日志不得重新成为当前仓库入口: {path.relative_to(ROOT)}")
     for relative in ("build", "src/easydesign.egg-info", "src/easydesign_local.egg-info"):
         if (ROOT / relative).exists():
             errors.append(f"构建产物必须位于 runtime，禁止源码树路径: {relative}")
     for relative in REQUIRED_LOCAL_FILES:
         if not (ROOT / relative).is_file():
             errors.append(f"local 产品缺少文件: {relative}")
+    for relative in ACTIVE_LOCAL_POLICY_FILES:
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for token in STALE_REMOTE_POLICY_TOKENS:
+            if token in text:
+                errors.append(f"当前本地规范残留旧远程或固定路径: {relative}: {token}")
+    if "easydesign-workspace.yaml" not in agents:
+        errors.append("AGENTS.md 必须通过 workspace marker 描述可移植 clone 根")
     for stage in STAGES:
         for suffix in (".md", "-status.md"):
             path = ROOT / "docs/workflow" / f"{stage}{suffix}"
@@ -106,7 +149,7 @@ def main() -> int:
         errors.append("Agent-native local CLI 禁止重新暴露 step parser")
     if (ROOT / "src/easydesign/orchestration/local_steps.py").exists():
         errors.append("Agent-native local 产品禁止保留旧 step 产品壳")
-    for token in ("suzhou", "manager", "managed-ssh", "ssh_pairing"):
+    for token in ("managed-ssh", "ssh_pairing"):
         if token in cli_text:
             errors.append(f"local CLI 禁止远程控制词: {token}")
     python_text = "\n".join(

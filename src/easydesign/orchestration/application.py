@@ -685,7 +685,7 @@ def diagnose_runtime(
     python_ok = (3, 11) <= sys.version_info[:2] < (3, 13)
     checks.append(
         DiagnosticCheck(
-            name="easydesign-core",
+            name="easydesign-local",
             status=DiagnosticStatus.PASSED if python_ok else DiagnosticStatus.FAILED,
             message=f"EasyDesign {easydesign.__version__}; Python {sys.version.split()[0]}",
         )

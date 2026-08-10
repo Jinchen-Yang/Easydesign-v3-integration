@@ -43,9 +43,9 @@ def test_retire_environment_appends_record_without_changing_prefix(
 ) -> None:
     context = _workspace(tmp_path)
     context.ensure_layout()
-    prefix = Path("runtime/envs/easydesign-core-test")
+    prefix = Path("runtime/envs/pymol-pse-test")
     available = EnvironmentRecord(
-        environment_id="easydesign-core",
+        environment_id="pymol-pse",
         lock_sha256="a" * 64,
         relative_prefix=prefix,
         status="available",
@@ -56,8 +56,8 @@ def test_retire_environment_appends_record_without_changing_prefix(
 
     retired = retire_environment(
         context,
-        "easydesign-core",
-        reason="uv .venv is the primary core runtime",
+        "pymol-pse",
+        reason="superseded by a newer lock",
     )
 
     revisions = sorted(context.environment_registry_root.glob("revision-*.json"))
@@ -66,8 +66,8 @@ def test_retire_environment_appends_record_without_changing_prefix(
     assert EnvironmentRecord.model_validate_json(first.read_text()).status == "available"
     assert retired.status == "retired"
     assert retired.relative_prefix == prefix
-    assert retired.message == "uv .venv is the primary core runtime"
-    assert latest_environment_records(context)["easydesign-core"] == retired
+    assert retired.message == "superseded by a newer lock"
+    assert latest_environment_records(context)["pymol-pse"] == retired
 
 
 def test_retire_environment_is_idempotent(tmp_path: Path) -> None:
@@ -76,9 +76,9 @@ def test_retire_environment_is_idempotent(tmp_path: Path) -> None:
     runtime_setup._append_record(
         context.environment_registry_root,
         EnvironmentRecord(
-            environment_id="easydesign-core",
+            environment_id="pymol-pse",
             lock_sha256="b" * 64,
-            relative_prefix=Path("runtime/envs/easydesign-core-test"),
+            relative_prefix=Path("runtime/envs/pymol-pse-test"),
             status="retired",
             probe_command=("python", "-V"),
             recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
@@ -88,7 +88,7 @@ def test_retire_environment_is_idempotent(tmp_path: Path) -> None:
 
     retired = retire_environment(
         context,
-        "easydesign-core",
+        "pymol-pse",
         reason="duplicate request",
     )
 
@@ -100,10 +100,10 @@ def test_setup_plan_keeps_every_target_inside_workspace() -> None:
     repository = Path(__file__).resolve().parents[3]
     context = WorkspaceContext.from_root(repository)
 
-    plan = setup_plan(context, minimal=False)
+    plan = setup_plan(context, component="boltzgen")
 
-    assert len(plan["environments"]) == 7
-    assert len(plan["assets"]) == 15
+    assert len(plan["environments"]) == 1
+    assert len(plan["assets"]) == 7
     assert plan["disk"]["incremental_peak_bytes"] >= 0
     for environment in plan["environments"]:
         assert Path(environment["target"]).parts[:2] == ("runtime", "envs")
@@ -125,7 +125,7 @@ def test_setup_plan_uses_fixed_ten_gib_free_space_reserve(
     )
     monkeypatch.setattr(runtime_setup.shutil, "disk_usage", lambda _path: disk_usage)
 
-    plan = setup_plan(context, minimal=False, component="boltzgen")
+    plan = setup_plan(context, component="boltzgen")
 
     assert plan["disk"]["reserve_bytes"] == 10 * runtime_setup.GIB
     assert plan["disk"]["sufficient"] is (
@@ -196,7 +196,7 @@ def test_component_plan_contains_only_requested_backend(
     repository = Path(__file__).resolve().parents[3]
     context = WorkspaceContext.from_root(repository)
 
-    plan = setup_plan(context, minimal=False, component=component)
+    plan = setup_plan(context, component=component)
 
     assert plan["mode"] == "component"
     assert plan["component"] == component
@@ -206,12 +206,12 @@ def test_component_plan_contains_only_requested_backend(
     assert tuple(item["asset_id"] for item in plan["assets"]) == asset_ids
 
 
-def test_setup_plan_rejects_conflicting_component_scope() -> None:
+def test_setup_plan_rejects_unknown_component() -> None:
     repository = Path(__file__).resolve().parents[3]
     context = WorkspaceContext.from_root(repository)
 
-    with pytest.raises(ConfigurationError, match="不能同时使用"):
-        setup_plan(context, minimal=True, component="pymol-pse")
+    with pytest.raises(ConfigurationError, match="未知安装组件"):
+        setup_plan(context, component="unknown-component")
 
 
 def test_asset_license_gate_writes_record_without_network(tmp_path: Path) -> None:
@@ -284,7 +284,7 @@ def test_disk_preflight_refuses_before_initializing_workspace(
     monkeypatch.setattr(
         runtime_setup,
         "setup_plan",
-        lambda _context, *, minimal, component=None: {
+        lambda _context, *, component: {
             "disk": {
                 "sufficient": False,
                 "incremental_peak_bytes": 100,
@@ -297,7 +297,7 @@ def test_disk_preflight_refuses_before_initializing_workspace(
     with pytest.raises(ConfigurationError, match="磁盘空间不足"):
         setup_workspace(
             context,
-            minimal=True,
+            component="pymol-pse",
             accepted_license_ids=set(),
         )
 
@@ -323,7 +323,7 @@ def test_setup_workspace_emits_environment_and_byte_progress(
     monkeypatch.setattr(
         runtime_setup,
         "_setup_selection",
-        lambda _context, *, minimal, component: (
+        lambda _context, *, component: (
             "component",
             ("fixture-env",),
             (asset,),
@@ -332,7 +332,7 @@ def test_setup_workspace_emits_environment_and_byte_progress(
     monkeypatch.setattr(
         runtime_setup,
         "setup_plan",
-        lambda _context, *, minimal, component: {
+        lambda _context, *, component: {
             "disk": {
                 "sufficient": True,
                 "incremental_peak_bytes": 100,
@@ -386,7 +386,6 @@ def test_setup_workspace_emits_environment_and_byte_progress(
 
     summary = setup_workspace(
         context,
-        minimal=False,
         component="fixture",
         accepted_license_ids=set(),
         progress_callback=events.append,
@@ -405,19 +404,19 @@ def test_setup_workspace_emits_environment_and_byte_progress(
 def test_inventory_normalizes_only_workspace_editable_commit() -> None:
     old = {
         "pip_freeze": [
-            "-e git+ssh://git@example.test/EasyDesign.git@old#egg=easydesign",
+            "-e git+https://example.test/EasyDesign.git@old#egg=easydesign",
             "pydantic==2.13.4",
         ]
     }
     new = {
         "pip_freeze": [
-            "-e git+ssh://git@example.test/EasyDesign.git@new#egg=easydesign",
+            "-e git+https://example.test/EasyDesign.git@new#egg=easydesign",
             "pydantic==2.13.4",
         ]
     }
     drifted = {
         "pip_freeze": [
-            "-e git+ssh://git@example.test/EasyDesign.git@new#egg=easydesign",
+            "-e git+https://example.test/EasyDesign.git@new#egg=easydesign",
             "pydantic==2.14.0",
         ]
     }

@@ -664,7 +664,7 @@ def execute_stage03(
             ended_at=now,
             backend_name="boltzgen",
             backend_version="0.3.2",
-            executor_name="easydesign-core",
+            executor_name="easydesign-local",
             log_artifacts=tuple(failed_log_refs),
             error=ErrorInfo(
                 code="boltzgen-validation-failed",
@@ -911,7 +911,7 @@ def execute_stage03(
         ended_at=now,
         backend_name="boltzgen",
         backend_version="0.3.2",
-        executor_name="easydesign-core",
+        executor_name="easydesign-local",
         log_artifacts=(
             stdout_ref,
             stderr_ref,

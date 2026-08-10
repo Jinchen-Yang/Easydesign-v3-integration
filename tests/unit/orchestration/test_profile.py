@@ -65,15 +65,15 @@ backends:
         load_runtime_profile(profile)
 
 
-def test_runtime_profile_rejects_remote_executor_fields(tmp_path: Path) -> None:
+def test_runtime_profile_rejects_unexpected_fields(tmp_path: Path) -> None:
     profile = tmp_path / "profile.yaml"
     profile.write_text(
         f"""
 schema_version: "0.1"
-profile_id: controller
+profile_id: invalid-extra-field
 runs_root: {(tmp_path / 'workspace/runs').resolve()}
-remote_executors:
-  forbidden: {{host: 192.0.2.10}}
+unexpected_scheduler:
+  mode: forbidden
 """.lstrip(),
         encoding="utf-8",
     )

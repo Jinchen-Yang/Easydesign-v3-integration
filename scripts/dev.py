@@ -441,37 +441,6 @@ def _python() -> Path:
     return selected
 
 
-def _latest_environment_prefix(environment_id: str) -> Path | None:
-    receipt = ROOT / "runtime/state/runtime-link.json"
-    source_root: Path | None = None
-    if receipt.is_file():
-        try:
-            payload = json.loads(receipt.read_text(encoding="utf-8"))
-            source_root = Path(payload["source_runtime"])
-        except (OSError, KeyError, TypeError, json.JSONDecodeError):
-            source_root = None
-    record_root = (
-        ROOT / "runtime/state/registries/environments"
-        if source_root is None
-        else source_root / "state/registries/environments"
-    )
-    for record_path in sorted(record_root.glob("revision-*.json"), reverse=True):
-        try:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if record.get("environment_id") != environment_id:
-            continue
-        if record.get("status") != "available":
-            return None
-        relative = record.get("relative_prefix")
-        if isinstance(relative, str):
-            base = ROOT if source_root is None else source_root.parent
-            return base / relative
-        return None
-    return None
-
-
 def resolve_tool(name: str) -> Path:
     if name == "python":
         return _python()
@@ -487,25 +456,16 @@ def resolve_tool(name: str) -> Path:
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 return candidate
         raise DeveloperWorkflowError("找不到 workspace uv；请先完成 uv onboarding")
-    prefix = _latest_environment_prefix("reporting-web")
     candidates: list[Path] = []
-    if prefix is not None:
-        if name == "node":
-            candidates.append(prefix / "bin" / "node")
-        else:
-            candidates.extend(
-                (
-                    prefix / "bin" / name,
-                    prefix / "lib" / "node_modules" / "corepack" / "shims" / name,
-                )
-            )
     discovered = shutil.which(name)
     if discovered:
         candidates.append(Path(discovered))
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
-    raise DeveloperWorkflowError(f"找不到开发工具 {name}；请先发布 reporting-web 环境")
+    raise DeveloperWorkflowError(
+        f"当前主机 PATH 中找不到开发工具 {name}；请先安装本机开发依赖"
+    )
 
 
 def _dev_local_commands(paths: Sequence[str]) -> list[list[str]]:

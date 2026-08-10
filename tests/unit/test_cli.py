@@ -33,6 +33,9 @@ def test_parser_exposes_agent_native_local_commands_and_retires_step() -> None:
 
 
 def test_runtime_parser_supports_fresh_component_install_without_remote_surface() -> None:
+    workspace = Path.cwd()
+    conda = workspace / "runtime/tools/miniforge3/bin/conda"
+    bundle = workspace / "runtime/imports/openfold3-bundle"
     planned = cli._parser().parse_args(["runtime", "plan", "protenix-v2"])
     assert planned.runtime_command == "plan"
     assert planned.component == "protenix-v2"
@@ -43,7 +46,7 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
             "install",
             "protenix-v2",
             "--conda",
-            "/data/Easydesign/runtime/tools/miniforge3/bin/conda",
+            str(conda),
             "--detach",
         ]
     )
@@ -52,9 +55,9 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     assert installed.bundle is None
 
     openfold3 = cli._parser().parse_args(
-        ["runtime", "install", "openfold3", "--bundle", "/data/of3-bundle"]
+        ["runtime", "install", "openfold3", "--bundle", str(bundle)]
     )
-    assert openfold3.bundle == Path("/data/of3-bundle")
+    assert openfold3.bundle == bundle
 
     watched = cli._parser().parse_args(
         ["runtime", "jobs", "--job-id", "setup-fixture", "--watch"]

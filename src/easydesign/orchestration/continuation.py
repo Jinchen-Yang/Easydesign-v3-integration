@@ -474,15 +474,8 @@ def materialize_continuation_config(
     execution_mode: str,
     options: dict[str, Any] | None = None,
     continue_after_stage: int | None = None,
-    linked_stage_number: int | None = None,
 ) -> Path:
-    """生成下一 Stage 配置；不覆盖现有 revision。
-
-    ``linked_stage_number`` 仅用于受管远程数据本地性：Stage 04 可连带
-    Stage 05，Stage 06 可连带 Stage 07。两个阶段仍使用相同的正式科学
-    配置和 manifest；区别只是后继阶段在同一远端数据位置执行，避免大型
-    candidate 集合在控制端与执行端之间往返。
-    """
+    """生成当前 clone 的下一 Stage 配置；不覆盖现有 revision。"""
 
     source = source_run_root.resolve()
     if continue_after_stage is not None:
@@ -494,12 +487,6 @@ def materialize_continuation_config(
     )
     if stage_number != expected:
         raise ConfigurationError(f"下一阶段必须是 Stage {expected:02d}")
-    if linked_stage_number is not None and (
-        (stage_number, linked_stage_number) not in {(4, 5), (6, 7)}
-    ):
-        raise ConfigurationError(
-            "远程数据本地性只支持 Stage 04→05 或 Stage 06→07"
-        )
     run = _latest_run(source)
     frozen = run.config_snapshot.verify(source)
     try:
@@ -514,8 +501,7 @@ def materialize_continuation_config(
     if execution_mode not in {"unattended", "review-gated"}:
         raise ConfigurationError("execution_mode 无效")
     workflow["execution_mode"] = execution_mode
-    stop_after_stage = linked_stage_number or stage_number
-    workflow["stop_after_stage"] = stop_after_stage
+    workflow["stop_after_stage"] = stage_number
     design = payload.get("design")
     design_intent = (
         str(design.get("intent") or "exploratory")
@@ -528,14 +514,7 @@ def materialize_continuation_config(
         options=options,
         design_intent=design_intent,
     )
-    if linked_stage_number is not None:
-        payload[f"stage{linked_stage_number:02d}"] = _stage_payload(
-            linked_stage_number,
-            execution_mode=execution_mode,
-            options=None,
-            design_intent=design_intent,
-        )
-    for future in range(stop_after_stage + 1, 8):
+    for future in range(stage_number + 1, 8):
         payload[f"stage{future:02d}"] = None
     output = destination.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

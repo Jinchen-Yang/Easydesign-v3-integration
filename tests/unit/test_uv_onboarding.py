@@ -40,8 +40,9 @@ def test_readme_supports_clean_machine_runtime_install_and_agent_native_cli() ->
     assert "easydesign target prepare" in shell
     assert "easydesign view" in shell
     assert "easydesign step" not in shell
-    assert "/root/autodl-tmp/Protein_design/easydesign-local" not in markdown
-    assert "/root/autodl-tmp/Protein_design/easydesign-clean/runtime" not in markdown
+    assert "easydesign-workspace.yaml" in markdown
+    assert re.search(r"(?m)^\s*cd /", shell) is None
+    assert re.search(r"(?m)--conda /", shell) is None
     for forbidden in ("easydesign ui", "easydesign remote", "easydesign setup"):
         assert forbidden not in shell
 

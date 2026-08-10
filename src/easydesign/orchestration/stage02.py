@@ -594,7 +594,7 @@ def execute_stage02_user_regions(
         ended_at=ended,
         backend_name=region_source_name,
         backend_version="easydesign-rby-v1" if "pse" in region_source_name else "0.1",
-        executor_name="easydesign-core",
+        executor_name="easydesign-local",
         log_artifacts=log_refs,
         error=(
             None

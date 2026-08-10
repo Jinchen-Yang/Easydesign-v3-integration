@@ -25,7 +25,7 @@ def test_research_skill_has_exact_flat_reference_set_and_valid_frontmatter() -> 
     assert {path.name for path in SKILL.iterdir()} == {"SKILL.md", "references"}
 
 
-def test_skill_routes_one_reference_per_phase_and_has_no_remote_instructions() -> None:
+def test_skill_routes_one_reference_per_phase_and_stays_on_current_host() -> None:
     skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     complete = "\n".join(
         [
@@ -49,7 +49,9 @@ def test_skill_routes_one_reference_per_phase_and_has_no_remote_instructions() -
     assert "Never call" in skill_text
     assert "easydesign remote" not in complete
     assert "never invoke remote executors" in complete
-    assert "manager" in complete and "suzhou2" in complete
+    assert "easydesign-workspace.yaml" in complete
+    assert "current clone" in complete
+    assert "local linux gpu host" in complete
 
 
 def test_experience_promotion_requires_human_review_and_evidence_fields() -> None:

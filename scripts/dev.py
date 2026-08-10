@@ -116,7 +116,9 @@ def guides_for_known_bundle(bundle_id: str | None) -> tuple[str, ...] | None:
 
 
 def _is_ancestor(commit: str) -> bool:
-    return _git("merge-base", "--is-ancestor", commit, "main", check=False).returncode == 0
+    """Return whether a historical commit is integrated into this product branch."""
+
+    return _git("merge-base", "--is-ancestor", commit, "HEAD", check=False).returncode == 0
 
 
 def git_topology() -> dict[str, Any]:

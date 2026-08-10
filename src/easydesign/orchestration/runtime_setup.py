@@ -237,12 +237,16 @@ def validate_pip_index_url(value: str) -> str:
     return validate_https_url(value, label="Pip index ")
 
 
-def _pip_reliability_arguments(python: Path) -> list[str]:
+def _pip_reliability_arguments(
+    context: WorkspaceContext,
+    python: Path,
+) -> list[str]:
     """Use resumable downloads when the locked pip version supports them."""
 
     base = ["--timeout", "120", "--retries", "10"]
     completed = subprocess.run(
         [str(python), "-c", "import pip; print(pip.__version__)"],
+        env=context.subprocess_environment(),
         check=False,
         capture_output=True,
         text=True,
@@ -273,7 +277,7 @@ def _install_pip_requirements(
         returncode=1,
     )
     selected = candidates[0]
-    reliability = _pip_reliability_arguments(python)
+    reliability = _pip_reliability_arguments(context, python)
     for candidate in candidates:
         completed = subprocess.run(
             [
@@ -289,8 +293,7 @@ def _install_pip_requirements(
             ],
             cwd=context.root,
             env={
-                **os.environ,
-                **context.child_environment(),
+                **context.subprocess_environment(),
                 "PIP_INDEX_URL": candidate.url,
             },
             check=False,
@@ -627,7 +630,7 @@ def _environment_inventory(
         completed = subprocess.run(
             [str(python), "-m", "pip", "freeze", "--all"],
             cwd=context.root,
-            env={**os.environ, **context.child_environment()},
+            env=context.subprocess_environment(),
             capture_output=True,
             text=True,
             check=False,
@@ -698,7 +701,7 @@ def _probe_environment(
         completed = subprocess.run(
             command,
             cwd=context.root,
-            env={**os.environ, **context.child_environment()},
+            env=context.subprocess_environment(),
             capture_output=True,
             text=True,
             check=False,
@@ -719,6 +722,7 @@ def _probe_environment(
     if python.is_file():
         version = subprocess.run(
             [str(python), "--version"],
+            env=context.subprocess_environment(),
             capture_output=True,
             text=True,
             check=False,
@@ -848,7 +852,7 @@ def ensure_environment(
         completed = subprocess.run(
             command,
             cwd=context.root,
-            env={**os.environ, **context.child_environment()},
+            env=context.subprocess_environment(),
             check=False,
         )
         if completed.returncode == 0:
@@ -887,8 +891,7 @@ def ensure_environment(
                 ],
                 cwd=context.root,
                 env={
-                    **os.environ,
-                    **context.child_environment(),
+                    **context.subprocess_environment(),
                     "PIP_INDEX_URL": selected_pip_index,
                 },
                 check=False,
@@ -992,7 +995,7 @@ def _checkout_git(
         raise ConfigurationError(f"Git 资产缺少 revision: {asset.asset_id}")
     staging = context.runtime_root / "tmp" / f"asset-{asset.asset_id}-{uuid4().hex}"
     context.assert_write_path(staging)
-    environment = {**os.environ, **context.child_environment()}
+    environment = context.subprocess_environment()
     try:
         initialize = subprocess.run(
             ["git", "init", "--quiet", str(staging)],
@@ -1060,6 +1063,7 @@ def _checkout_git(
             raise ConfigurationError(f"Git 资产 revision 不可用: {asset.asset_id}")
         revision = subprocess.run(
             ["git", "-C", str(staging), "rev-parse", "HEAD"],
+            env=environment,
             capture_output=True,
             text=True,
             check=True,
@@ -1105,7 +1109,7 @@ def ensure_asset(
         )
         actual_revision = asset.revision
         if destination.is_dir() and asset.kind == "git":
-            environment = {**os.environ, **context.child_environment()}
+            environment = context.subprocess_environment()
             revision_check = subprocess.run(
                 ["git", "-C", str(destination), "rev-parse", "HEAD"],
                 env=environment,

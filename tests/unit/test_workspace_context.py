@@ -80,6 +80,37 @@ def test_child_environment_is_repository_local_and_does_not_mutate_parent(
     tmp_alias.unlink()
 
 
+def test_subprocess_environment_replaces_host_interpreter_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    inherited = {
+        "PYTHONPATH": "/outside/pythonpath",
+        "PYTHONHOME": "/outside/pythonhome",
+        "PYTHONSTARTUP": "/outside/startup.py",
+        "PYTHONUSERBASE": "/outside/userbase",
+        "VIRTUAL_ENV": "/outside/venv",
+        "CONDA_PREFIX": "/outside/conda",
+        "CONDA_DEFAULT_ENV": "outside",
+    }
+    for key, value in inherited.items():
+        monkeypatch.setenv(key, value)
+
+    guarded = context.subprocess_environment()
+    unguarded = context.subprocess_environment(python_startup_guard=False)
+
+    assert Path(guarded["PYTHONPATH"]).is_relative_to(context.runtime_root)
+    assert "/outside" not in guarded["PYTHONPATH"]
+    assert "PYTHONPATH" not in unguarded
+    for key in inherited.keys() - {"PYTHONPATH"}:
+        assert key not in guarded
+        assert key not in unguarded
+    for key, value in inherited.items():
+        assert os.environ[key] == value
+    Path(guarded["TMPDIR"]).unlink()
+
+
 def test_write_boundary_rejects_external_path(tmp_path: Path) -> None:
     context = _workspace(tmp_path)
 

@@ -493,10 +493,14 @@ def test_pip_lock_falls_back_without_changing_requirements(
         ),
     )
     indexes: list[str] = []
+    monkeypatch.setenv("PYTHONPATH", "/outside/pythonpath")
+    monkeypatch.setenv("PYTHONHOME", "/outside/pythonhome")
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         environment = kwargs["env"]
         assert isinstance(environment, dict)
+        assert "/outside" not in environment["PYTHONPATH"]
+        assert "PYTHONHOME" not in environment
         indexes.append(str(environment["PIP_INDEX_URL"]))
         return subprocess.CompletedProcess(
             command,
@@ -505,7 +509,11 @@ def test_pip_lock_falls_back_without_changing_requirements(
             "",
         )
 
-    monkeypatch.setattr(runtime_setup, "_pip_reliability_arguments", lambda _python: [])
+    monkeypatch.setattr(
+        runtime_setup,
+        "_pip_reliability_arguments",
+        lambda _context, _python: [],
+    )
     monkeypatch.setattr(runtime_setup.subprocess, "run", fake_run)
 
     completed, selected = runtime_setup._install_pip_requirements(

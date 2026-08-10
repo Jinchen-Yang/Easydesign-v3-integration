@@ -34,6 +34,9 @@ def test_install_miniforge_is_explicit_verified_and_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _workspace(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", "/outside/pythonpath")
+    monkeypatch.setenv("PYTHONHOME", "/outside/pythonhome")
+    monkeypatch.setenv("VIRTUAL_ENV", "/outside/venv")
 
     def fake_download(
         selected: WorkspaceContext,
@@ -53,8 +56,13 @@ def test_install_miniforge_is_explicit_verified_and_idempotent(
 
     def fake_run(
         command: list[str],
-        **_kwargs: object,
+        **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert "PYTHONPATH" not in environment
+        assert "PYTHONHOME" not in environment
+        assert "VIRTUAL_ENV" not in environment
         if command[0] == "/bin/bash":
             prefix = Path(command[-1])
             conda = prefix / "bin/conda"
@@ -120,6 +128,7 @@ def test_failed_miniforge_install_never_publishes_final_alias(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _workspace(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", "/outside/pythonpath")
 
     def fake_download(
         selected: WorkspaceContext,
@@ -139,8 +148,11 @@ def test_failed_miniforge_install_never_publishes_final_alias(
 
     def fake_run(
         command: list[str],
-        **_kwargs: object,
+        **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert "PYTHONPATH" not in environment
         release_prefix = Path(command[-1])
         release_prefix.mkdir(parents=True)
         (release_prefix / "partial").write_text("partial", encoding="utf-8")

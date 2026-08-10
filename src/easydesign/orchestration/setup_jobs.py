@@ -285,7 +285,7 @@ def launch_setup_job(
         process = subprocess.Popen(
             command,
             cwd=context.root,
-            env={**os.environ, **context.child_environment()},
+            env=context.subprocess_environment(),
             stdin=subprocess.DEVNULL,
             stdout=stdout_handle,
             stderr=stderr_handle,

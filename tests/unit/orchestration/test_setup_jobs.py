@@ -49,6 +49,9 @@ def test_detached_setup_job_stays_inside_workspace_and_avoids_shell(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _workspace(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", "/outside/pythonpath")
+    monkeypatch.setenv("PYTHONHOME", "/outside/pythonhome")
+    monkeypatch.setenv("VIRTUAL_ENV", "/outside/venv")
     captured: dict[str, Any] = {}
 
     def fake_popen(command: tuple[str, ...], **kwargs: Any) -> _FakeProcess:
@@ -74,6 +77,10 @@ def test_detached_setup_job_stays_inside_workspace_and_avoids_shell(
     assert captured["cwd"] == context.root
     assert captured["env"]["HOME"] == str(context.runtime_root / "home")
     assert captured["env"]["PIP_CACHE_DIR"] == str(context.runtime_root / "cache" / "pip")
+    assert Path(captured["env"]["PYTHONPATH"]).is_relative_to(context.runtime_root)
+    assert "/outside" not in captured["env"]["PYTHONPATH"]
+    assert "PYTHONHOME" not in captured["env"]
+    assert "VIRTUAL_ENV" not in captured["env"]
     assert "--worker-token" in captured["command"]
     job_root = context.runtime_root / "state" / "setup-jobs" / projection.job_id
     request = load_model(job_root / "request.json", SetupJobRequest)

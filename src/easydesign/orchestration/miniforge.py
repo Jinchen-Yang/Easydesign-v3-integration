@@ -90,7 +90,7 @@ def _probe_conda(context: WorkspaceContext, conda: Path) -> str:
         completed = subprocess.run(
             [str(conda), "--version"],
             cwd=context.root,
-            env={**os.environ, **context.child_environment()},
+            env=context.subprocess_environment(python_startup_guard=False),
             check=False,
             capture_output=True,
             text=True,
@@ -245,7 +245,7 @@ def install_miniforge(
         completed = subprocess.run(
             ["/bin/bash", str(installer), "-b", "-p", str(release_prefix)],
             cwd=context.root,
-            env={**os.environ, **context.child_environment()},
+            env=context.subprocess_environment(python_startup_guard=False),
             check=False,
             capture_output=not show_progress,
             text=True,

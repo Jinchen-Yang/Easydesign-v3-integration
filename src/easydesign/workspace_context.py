@@ -28,6 +28,23 @@ from easydesign.runtime_guard import (
 WORKSPACE_MARKER = "easydesign-workspace.yaml"
 WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
 
+_INHERITED_INTERPRETER_ENVIRONMENT = frozenset(
+    {
+        "CONDA_DEFAULT_ENV",
+        "CONDA_PREFIX",
+        "CONDA_PROMPT_MODIFIER",
+        "CONDA_PYTHON_EXE",
+        "CONDA_SHLVL",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "PYTHONUSERBASE",
+        "VIRTUAL_ENV",
+        "_CE_CONDA",
+        "_CE_M",
+    }
+)
+
 
 class WorkspaceDeclaration(BaseModel):
     """Tracked declaration of the portable workspace layout."""
@@ -253,6 +270,24 @@ class WorkspaceContext:
                 continue
             Path(value).mkdir(parents=True, exist_ok=True)
         return values
+
+    def subprocess_environment(
+        self,
+        *,
+        python_startup_guard: bool = True,
+    ) -> dict[str, str]:
+        """Build a complete child environment without host interpreter state."""
+
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in _INHERITED_INTERPRETER_ENVIRONMENT
+        }
+        overrides = self.child_environment()
+        if not python_startup_guard:
+            overrides.pop("PYTHONPATH", None)
+        environment.update(overrides)
+        return environment
 
     def _git_config_path(self) -> Path:
         """Create an isolated Git config without changing the user's config."""

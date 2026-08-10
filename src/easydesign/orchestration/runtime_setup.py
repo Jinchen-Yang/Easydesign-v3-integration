@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -21,6 +21,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from easydesign.core import ConfigurationError, sha256_file
 from easydesign.workspace_context import WorkspaceContext
 
+from .git_sources import (
+    GitArchiveLock,
+    directory_content_sha256,
+    materialize_git_source,
+    verify_existing_git_source,
+)
 from .miniforge import local_miniforge_conda, miniforge_status
 from .source_policy import (
     SourceCandidate,
@@ -29,7 +35,6 @@ from .source_policy import (
     download_verified_file,
     load_runtime_sources,
     pip_index_candidates,
-    rank_source_candidates,
     rewritten_candidates,
     validate_https_url,
 )
@@ -152,6 +157,7 @@ class AssetDefinition(BaseModel):
     destination: Path
     sha256: str | None = None
     revision: str | None = None
+    git_archive: GitArchiveLock | None = None
     expected_size_bytes: int | None = None
     estimated_install_bytes: int
     license: str
@@ -279,12 +285,111 @@ def _pip_reliability_arguments(
     return base
 
 
+_LOCKED_VCS_REQUIREMENT = re.compile(
+    r"^(?P<name>[A-Za-z0-9_.-]+(?:\[[^\]]+\])?)\s+@\s+"
+    r"git\+(?P<source>https://[^@\s]+)@(?P<revision>[0-9a-f]{40})$"
+)
+
+
+def _materialize_locked_vcs_requirements(
+    context: WorkspaceContext,
+    *,
+    requirements: Path,
+    source_policy: SourcePolicy,
+    progress_callback: Callable[[str, float], None] | None,
+    download_progress_callback: (
+        Callable[[str, float, int, int | None, str], None] | None
+    ),
+) -> Path:
+    """Replace locked VCS URLs with one verified workspace-local source tree."""
+
+    lines = requirements.read_text(encoding="utf-8").splitlines()
+    matches = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := _LOCKED_VCS_REQUIREMENT.fullmatch(line.strip())) is not None
+    ]
+    if not matches:
+        return requirements
+    assets = _load_assets(context).assets
+    definitions = {
+        (validate_https_url(asset.source), asset.revision): asset
+        for asset in assets
+        if asset.kind == "git" and asset.revision is not None
+    }
+    for position, (line_index, match) in enumerate(matches):
+        source = validate_https_url(match.group("source"), label="Pip VCS source ")
+        revision = match.group("revision")
+        asset = definitions.get((source, revision))
+        if asset is None:
+            raise ConfigurationError(
+                "锁定 Pip VCS 依赖缺少对应 Git 资产: "
+                f"{source}@{revision}"
+            )
+        if asset.license_confirmation_required:
+            raise ConfigurationError(
+                f"Pip VCS 前置源码不能绕过许可确认: {asset.asset_id}"
+            )
+        fraction_base = 0.02 + (0.03 * position / len(matches))
+        current_message = [f"正在准备锁定源码: {asset.asset_id}"]
+
+        def source_status(
+            message: str,
+            selected_fraction: float = fraction_base,
+            message_state: list[str] = current_message,
+        ) -> None:
+            message_state[0] = message
+            if progress_callback is not None:
+                progress_callback(message, selected_fraction)
+
+        def source_bytes(
+            bytes_completed: int,
+            bytes_total: int | None,
+            selected_asset_id: str = asset.asset_id,
+            selected_fraction: float = fraction_base,
+            message_state: list[str] = current_message,
+        ) -> None:
+            if download_progress_callback is not None:
+                download_progress_callback(
+                    message_state[0],
+                    selected_fraction,
+                    bytes_completed,
+                    bytes_total,
+                    selected_asset_id,
+                )
+
+        record = ensure_asset(
+            context,
+            asset,
+            accepted_license_ids=set(),
+            source_policy=source_policy,
+            progress_callback=source_bytes,
+            status_callback=source_status,
+        )
+        if record.status != "available":
+            raise ConfigurationError(
+                f"锁定 Pip VCS 源码不可用: {asset.asset_id}; {record.message or record.status}"
+            )
+        local_source = context.root / record.relative_path
+        lines[line_index] = f"{match.group('name')} @ {local_source.resolve().as_uri()}"
+    resolved = (
+        context.runtime_root
+        / "tmp"
+        / f"pip-local-sources-{requirements.stem}-{uuid4().hex}.txt"
+    )
+    context.assert_write_path(resolved)
+    with resolved.open("x", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    return resolved
+
+
 def _install_pip_requirements(
     context: WorkspaceContext,
     *,
     python: Path,
     requirements: Path,
     candidates: tuple[SourceCandidate, ...],
+    progress_callback: Callable[[str, float], None] | None = None,
 ) -> tuple[subprocess.CompletedProcess[bytes], SourceSelection]:
     if not candidates:
         raise ConfigurationError("Pip source policy 没有候选 index")
@@ -295,6 +400,11 @@ def _install_pip_requirements(
     selected = candidates[0]
     reliability = _pip_reliability_arguments(context, python)
     for candidate in candidates:
+        if progress_callback is not None:
+            progress_callback(
+                f"正在安装锁定 Python 包 [{candidate.source_id}]",
+                0.65,
+            )
         completed = subprocess.run(
             [
                 str(python),
@@ -909,6 +1019,31 @@ def ensure_environment(
             operation=f"setup-{environment_id}",
             reason="现有 lock-addressed 环境未通过探针；保留后重建",
         )
+    resolved_pip_requirements = pip_requirements
+    if pip_requirements is not None:
+        try:
+            resolved_pip_requirements = _materialize_locked_vcs_requirements(
+                context,
+                requirements=pip_requirements,
+                source_policy=source_policy,
+                progress_callback=progress_callback,
+                download_progress_callback=download_progress_callback,
+            )
+        except ConfigurationError as error:
+            failed = EnvironmentRecord(
+                environment_id=environment_id,
+                lock_sha256=lock_sha256,
+                relative_prefix=prefix.relative_to(context.root),
+                status="failed",
+                probe_command=lock.probe,
+                probe_stderr=f"vcs-source-materialize: {error}",
+                source_policy=source_policy,
+                pip_index_url=selected_pip_source.url,
+                pip_source_id=selected_pip_source.source_id,
+                recorded_at=datetime.now(tz=UTC),
+            )
+            _append_record(context.environment_registry_root, failed)
+            return failed
     conda_source_ids: tuple[str, ...] = ()
     if not prefix.exists():
         install_phase = "conda-create"
@@ -949,12 +1084,19 @@ def ensure_environment(
             install_phase = "pip-lock-install"
             if progress_callback is not None:
                 progress_callback("Conda 环境完成，正在安装锁定 Python 包", 0.65)
-            completed, selected_pip_source = _install_pip_requirements(
-                context,
-                python=prefix / "bin" / "python",
-                requirements=pip_requirements,
-                candidates=ranked_pip_sources,
-            )
+            if resolved_pip_requirements is None:
+                raise ConfigurationError("Pip requirements 本地解析结果缺失")
+            try:
+                completed, selected_pip_source = _install_pip_requirements(
+                    context,
+                    python=prefix / "bin" / "python",
+                    requirements=resolved_pip_requirements,
+                    candidates=ranked_pip_sources,
+                    progress_callback=progress_callback,
+                )
+            finally:
+                if resolved_pip_requirements != pip_requirements:
+                    resolved_pip_requirements.unlink(missing_ok=True)
             selected_pip_index = selected_pip_source.url
         if completed.returncode == 0 and lock.install_workspace_package:
             install_phase = "workspace-package-install"
@@ -979,6 +1121,11 @@ def ensure_environment(
                 check=False,
             )
         if completed.returncode != 0:
+            if (
+                resolved_pip_requirements is not None
+                and resolved_pip_requirements != pip_requirements
+            ):
+                resolved_pip_requirements.unlink(missing_ok=True)
             if prefix.exists():
                 context.quarantine(
                     prefix,
@@ -1052,18 +1199,7 @@ def _download_file(
 
 
 def _directory_content_sha256(root: Path) -> str:
-    digest = hashlib.sha256()
-    for path in sorted(
-        item
-        for item in root.rglob("*")
-        if item.is_file() and ".git" not in item.relative_to(root).parts
-    ):
-        relative = path.relative_to(root).as_posix().encode("utf-8")
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
-        file_hash = sha256_file(path).encode("ascii")
-        digest.update(file_hash)
-    return digest.hexdigest()
+    return directory_content_sha256(root)
 
 
 def _checkout_git(
@@ -1072,104 +1208,28 @@ def _checkout_git(
     destination: Path,
     *,
     source_policy: SourcePolicy,
+    progress_callback: Callable[[int, int | None], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> tuple[str, str, int, SourceSelection]:
     if asset.revision is None:
         raise ConfigurationError(f"Git 资产缺少 revision: {asset.asset_id}")
-    staging = context.runtime_root / "tmp" / f"asset-{asset.asset_id}-{uuid4().hex}"
-    context.assert_write_path(staging)
-    environment = context.subprocess_environment()
-    try:
-        initialize = subprocess.run(
-            ["git", "init", "--quiet", str(staging)],
-            cwd=context.root,
-            env=environment,
-            check=False,
-        )
-        if initialize.returncode != 0:
-            raise ConfigurationError(f"Git 资产 init 失败: {asset.asset_id}")
-        catalog = load_runtime_sources(context)
-        candidates = rank_source_candidates(
-            rewritten_candidates(
-                asset.source,
-                source_id="official-git",
-                rewrites=catalog.asset_rewrites,
-            ),
-            source_policy,
-        )
-        remote = subprocess.run(
-            ["git", "-C", str(staging), "remote", "add", "origin", candidates[0].url],
-            cwd=context.root,
-            env=environment,
-            check=False,
-        )
-        if remote.returncode != 0:
-            raise ConfigurationError(f"Git 资产 remote 失败: {asset.asset_id}")
-        selected: SourceSelection | None = None
-        for candidate in candidates:
-            subprocess.run(
-                ["git", "-C", str(staging), "remote", "set-url", "origin", candidate.url],
-                cwd=context.root,
-                env=environment,
-                check=False,
-            )
-            fetch = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(staging),
-                    "fetch",
-                    "--depth",
-                    "1",
-                    "--no-tags",
-                    "origin",
-                    asset.revision,
-                ],
-                cwd=context.root,
-                env=environment,
-                check=False,
-            )
-            if fetch.returncode == 0:
-                selected = SourceSelection(
-                    source_id=candidate.source_id,
-                    url=candidate.url,
-                )
-                break
-        if selected is None:
-            raise ConfigurationError(f"Git 资产所有候选源 fetch 失败: {asset.asset_id}")
-        checkout = subprocess.run(
-            ["git", "-C", str(staging), "checkout", "--detach", "FETCH_HEAD"],
-            env=environment,
-            check=False,
-        )
-        if checkout.returncode != 0:
-            raise ConfigurationError(f"Git 资产 revision 不可用: {asset.asset_id}")
-        revision = subprocess.run(
-            ["git", "-C", str(staging), "rev-parse", "HEAD"],
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-        if revision != asset.revision:
-            raise ConfigurationError(f"Git 资产 commit 不一致: {asset.asset_id}")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise ConfigurationError(f"资产目标已存在，拒绝覆盖: {destination}")
-        staging.rename(destination)
-        size = sum(
-            path.stat().st_size
-            for path in destination.rglob("*")
-            if path.is_file()
-        )
-        return revision, _directory_content_sha256(destination), size, selected
-    except Exception:
-        if staging.exists():
-            context.quarantine(
-                staging,
-                operation=f"asset-{asset.asset_id}",
-                reason="Git checkout 或发布未完成",
-            )
-        raise
+    result = materialize_git_source(
+        context,
+        asset_id=asset.asset_id,
+        source=validate_https_url(asset.source, label="Git source "),
+        revision=asset.revision,
+        archive_lock=asset.git_archive,
+        destination=destination,
+        source_policy=source_policy,
+        progress_callback=progress_callback,
+        status_callback=status_callback,
+    )
+    return (
+        result.revision,
+        result.content_sha256,
+        result.size_bytes,
+        result.source,
+    )
 
 
 def ensure_asset(
@@ -1179,10 +1239,57 @@ def ensure_asset(
     accepted_license_ids: set[str],
     source_policy: SourcePolicy = "auto",
     progress_callback: Callable[[int, int | None], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> AssetRecord:
     context.ensure_layout()
     destination = context.runtime_root / "models" / asset.destination
     context.assert_write_path(destination)
+    if destination.exists() and asset.kind == "git":
+        try:
+            if asset.revision is None:
+                raise ConfigurationError(f"Git 资产缺少 revision: {asset.asset_id}")
+            existing_source = verify_existing_git_source(
+                context,
+                source=validate_https_url(asset.source, label="Git source "),
+                revision=asset.revision,
+                destination=destination,
+            )
+        except ConfigurationError as error:
+            record = AssetRecord(
+                asset_id=asset.asset_id,
+                relative_path=destination.relative_to(context.root),
+                status="failed",
+                sha256=_directory_content_sha256(destination),
+                revision=asset.revision,
+                size_bytes=sum(
+                    path.stat().st_size
+                    for path in destination.rglob("*")
+                    if path.is_file()
+                ),
+                source_policy=source_policy,
+                transport_source_id="workspace-existing",
+                license=asset.license,
+                recorded_at=datetime.now(tz=UTC),
+                message=str(error),
+            )
+            _append_record(context.asset_registry_root, record)
+            return record
+        record = AssetRecord(
+            asset_id=asset.asset_id,
+            relative_path=destination.relative_to(context.root),
+            status="available",
+            sha256=existing_source.content_sha256,
+            revision=existing_source.revision,
+            size_bytes=existing_source.size_bytes,
+            source_policy=source_policy,
+            transport_source_id=existing_source.source.source_id,
+            transport_url=existing_source.source.url,
+            license=asset.license,
+            recorded_at=datetime.now(tz=UTC),
+            message="已验证并复用现有锁定源码",
+        )
+        _append_record(context.asset_registry_root, record)
+        return record
     if destination.exists():
         actual_sha = (
             sha256_file(destination)
@@ -1190,53 +1297,6 @@ def ensure_asset(
             else _directory_content_sha256(destination)
         )
         actual_revision = asset.revision
-        if destination.is_dir() and asset.kind == "git":
-            environment = context.subprocess_environment()
-            revision_check = subprocess.run(
-                ["git", "-C", str(destination), "rev-parse", "HEAD"],
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-            clean_check = subprocess.run(
-                ["git", "-C", str(destination), "status", "--porcelain"],
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-            if (
-                revision_check.returncode != 0
-                or revision_check.stdout.strip() != asset.revision
-                or clean_check.returncode != 0
-                or clean_check.stdout.strip()
-            ):
-                record = AssetRecord(
-                    asset_id=asset.asset_id,
-                    relative_path=destination.relative_to(context.root),
-                    status="failed",
-                    sha256=actual_sha,
-                    revision=(
-                        revision_check.stdout.strip()
-                        if revision_check.returncode == 0
-                        else None
-                    ),
-                    size_bytes=sum(
-                        p.stat().st_size
-                        for p in destination.rglob("*")
-                        if p.is_file()
-                    ),
-                    source_policy=source_policy,
-                    transport_source_id="workspace-existing",
-                    license=asset.license,
-                    recorded_at=datetime.now(tz=UTC),
-                    message="现有 Git 资产 revision 不一致或工作树不干净；未覆盖",
-                )
-                _append_record(context.asset_registry_root, record)
-                return record
         if asset.sha256 is not None and actual_sha != asset.sha256:
             record = AssetRecord(
                 asset_id=asset.asset_id,
@@ -1323,6 +1383,8 @@ def ensure_asset(
                 asset,
                 destination,
                 source_policy=source_policy,
+                progress_callback=progress_callback,
+                status_callback=status_callback,
             )
         record = AssetRecord(
             asset_id=asset.asset_id,
@@ -1529,6 +1591,20 @@ def setup_workspace(
                 bytes_total=bytes_total,
             )
 
+        def asset_status(
+            message: str,
+            selected_completed_steps: int = completed_steps,
+            selected_asset_id: str = asset.asset_id,
+        ) -> None:
+            _emit_setup_progress(
+                progress_callback,
+                phase="asset",
+                message=message,
+                completed_steps=selected_completed_steps,
+                total_steps=total_steps,
+                current_item=selected_asset_id,
+            )
+
         _emit_setup_progress(
             progress_callback,
             phase="asset",
@@ -1546,7 +1622,8 @@ def setup_workspace(
             asset,
             accepted_license_ids=accepted_license_ids,
             source_policy=source_policy,
-            progress_callback=asset_progress if asset.kind == "file" else None,
+            progress_callback=asset_progress,
+            status_callback=asset_status,
         )
         asset_records_list.append(asset_record)
         completed_steps += 1

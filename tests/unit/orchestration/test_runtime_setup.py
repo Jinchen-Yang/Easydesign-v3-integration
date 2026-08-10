@@ -10,6 +10,7 @@ import yaml
 
 from easydesign.core import ConfigurationError
 from easydesign.orchestration import runtime_setup
+from easydesign.orchestration.git_sources import GitSourceResult
 from easydesign.orchestration.runtime_setup import (
     AssetDefinition,
     EnvironmentRecord,
@@ -341,7 +342,7 @@ def test_asset_license_gate_writes_record_without_network(tmp_path: Path) -> Non
     assert tuple(context.asset_registry_root.glob("revision-*.json"))
 
 
-def test_git_asset_fetches_only_pinned_revision(
+def test_git_asset_materializer_receives_only_pinned_revision(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -357,40 +358,39 @@ def test_git_asset_fetches_only_pinned_revision(
         license="test-only",
         license_confirmation_required=False,
     )
-    commands: list[tuple[str, ...]] = []
+    observed: dict[str, object] = {}
 
-    def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
-        rendered = tuple(str(item) for item in command)
-        commands.append(rendered)
-        if rendered[:3] == ("git", "init", "--quiet"):
-            Path(rendered[-1]).mkdir(parents=True)
-            return SimpleNamespace(returncode=0)
-        if "fetch" in rendered:
-            return SimpleNamespace(returncode=1)
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(runtime_setup.subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        runtime_setup,
-        "load_runtime_sources",
-        lambda _context: SimpleNamespace(asset_rewrites=()),
-    )
-    monkeypatch.setattr(
-        runtime_setup,
-        "rank_source_candidates",
-        lambda candidates, _policy: tuple(candidates),
-    )
-
-    with pytest.raises(ConfigurationError, match="fetch 失败"):
-        runtime_setup._checkout_git(
-            context,
-            definition,
-            context.runtime_root / "models" / definition.destination,
-            source_policy="official",
+    def fake_materialize(
+        _context: WorkspaceContext,
+        **kwargs: object,
+    ) -> GitSourceResult:
+        observed.update(kwargs)
+        destination = kwargs["destination"]
+        assert isinstance(destination, Path)
+        destination.mkdir(parents=True)
+        return GitSourceResult(
+            path=destination,
+            revision=revision,
+            content_sha256="b" * 64,
+            size_bytes=100,
+            source=runtime_setup.SourceSelection(
+                source_id="fixture-archive",
+                url="https://example.test/fixture.tar.gz",
+            ),
         )
 
-    fetch = next(command for command in commands if "fetch" in command)
-    assert fetch[-5:] == ("--depth", "1", "--no-tags", "origin", revision)
+    monkeypatch.setattr(runtime_setup, "materialize_git_source", fake_materialize)
+
+    result = runtime_setup._checkout_git(
+        context,
+        definition,
+        context.runtime_root / "models" / definition.destination,
+        source_policy="official",
+    )
+
+    assert observed["source"] == definition.source
+    assert observed["revision"] == revision
+    assert result[:3] == (revision, "b" * 64, 100)
 
 
 def test_disk_preflight_refuses_before_initializing_workspace(
@@ -724,3 +724,78 @@ def test_pip_lock_falls_back_without_changing_requirements(
     assert completed.returncode == 0
     assert indexes == [candidate.url for candidate in candidates]
     assert selected.source_id == "fallback"
+
+
+def test_locked_vcs_requirement_is_materialized_once_and_installed_locally(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    revision = "a" * 40
+    source = "https://github.com/example/fixture.git"
+    requirements = tmp_path / "fixture-lock.txt"
+    requirements.write_text(
+        f"fixture==1.0\nfixture-vcs @ git+{source}@{revision}\n",
+        encoding="utf-8",
+    )
+    definition = AssetDefinition(
+        asset_id="fixture-vcs-source",
+        kind="git",
+        source=source,
+        destination=Path("fixture/source"),
+        revision=revision,
+        estimated_install_bytes=100,
+        license="test-only",
+        license_confirmation_required=False,
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "_load_assets",
+        lambda _context: runtime_setup.AssetCatalog(assets=(definition,)),
+    )
+    materialized: list[str] = []
+
+    def fake_ensure_asset(
+        _context: WorkspaceContext,
+        asset: AssetDefinition,
+        **kwargs: object,
+    ) -> runtime_setup.AssetRecord:
+        materialized.append(asset.asset_id)
+        status_callback = kwargs["status_callback"]
+        assert callable(status_callback)
+        status_callback("正在获取锁定源码归档 [fixture-archive]")
+        destination = context.runtime_root / "models" / asset.destination
+        destination.mkdir(parents=True)
+        return runtime_setup.AssetRecord(
+            asset_id=asset.asset_id,
+            relative_path=destination.relative_to(context.root),
+            status="available",
+            revision=revision,
+            sha256="b" * 64,
+            size_bytes=100,
+            source_policy="auto",
+            transport_source_id="fixture-archive",
+            license=asset.license,
+            recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
+        )
+
+    monkeypatch.setattr(runtime_setup, "ensure_asset", fake_ensure_asset)
+    progress: list[str] = []
+
+    resolved = runtime_setup._materialize_locked_vcs_requirements(
+        context,
+        requirements=requirements,
+        source_policy="auto",
+        progress_callback=lambda message, _fraction: progress.append(message),
+        download_progress_callback=None,
+    )
+
+    assert materialized == ["fixture-vcs-source"]
+    assert requirements.read_text(encoding="utf-8").endswith(
+        f"git+{source}@{revision}\n"
+    )
+    resolved_lines = resolved.read_text(encoding="utf-8").splitlines()
+    assert resolved_lines[0] == "fixture==1.0"
+    assert resolved_lines[1].startswith("fixture-vcs @ file://")
+    assert "fixture-archive" in progress[-1]

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
+import signal
 import ssl
+import subprocess
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -21,6 +25,8 @@ SourcePolicy = Literal["auto", "official", "china"]
 SourceRegion = Literal["official", "china"]
 SOURCE_POLICIES: tuple[SourcePolicy, ...] = ("auto", "official", "china")
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+PYTHON_HTTP_CONNECT_TIMEOUT_SECONDS = 15.0
+PYTHON_HTTP_READ_TIMEOUT_SECONDS = 30.0
 _HOST_LATENCY_CACHE: dict[tuple[str, str], float | None] = {}
 
 
@@ -274,7 +280,10 @@ def _stream_candidate(
     headers = {"Range": f"bytes={offset}-"} if offset else {}
     with httpx.Client(
         follow_redirects=True,
-        timeout=httpx.Timeout(1800.0, connect=30.0),
+        timeout=httpx.Timeout(
+            PYTHON_HTTP_READ_TIMEOUT_SECONDS,
+            connect=PYTHON_HTTP_CONNECT_TIMEOUT_SECONDS,
+        ),
         verify=_ssl_verify(),
         trust_env=True,
     ) as client:
@@ -313,6 +322,88 @@ def _stream_candidate(
             if progress_callback is not None:
                 progress_callback(size, total_size)
             return size
+
+
+def _curl_candidate(
+    context: WorkspaceContext,
+    candidate: SourceCandidate,
+    partial: Path,
+    *,
+    expected_size_bytes: int | None,
+    progress_callback: Callable[[int, int | None], None] | None,
+) -> int:
+    """Fallback to resumable curl HTTP/1.1 with bounded low-speed waits."""
+
+    executable = shutil.which("curl")
+    if executable is None:
+        raise ConfigurationError("系统 curl 不可用")
+    offset = partial.stat().st_size if partial.is_file() else 0
+    if expected_size_bytes is not None and offset == expected_size_bytes:
+        return offset
+    command = [
+        executable,
+        "--silent",
+        "--show-error",
+        "--http1.1",
+        "--location",
+        "--fail",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
+        "--connect-timeout",
+        "15",
+        "--speed-limit",
+        "1024",
+        "--speed-time",
+        "30",
+        "--max-time",
+        "600",
+        "--retry",
+        "2",
+        "--retry-delay",
+        "2",
+        "--retry-all-errors",
+        "--continue-at",
+        "-",
+        "--output",
+        str(partial),
+        candidate.url,
+    ]
+    process = subprocess.Popen(
+        command,
+        cwd=context.root,
+        env=context.subprocess_environment(),
+        stdout=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    started = time.monotonic()
+    while process.poll() is None:
+        size = partial.stat().st_size if partial.is_file() else 0
+        if progress_callback is not None:
+            progress_callback(size, expected_size_bytes)
+        if time.monotonic() - started > 660:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=5)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+            raise ConfigurationError(
+                f"curl transport 超过硬超时: {candidate.source_id}"
+            )
+        time.sleep(0.5)
+    size = partial.stat().st_size if partial.is_file() else 0
+    if progress_callback is not None:
+        progress_callback(size, expected_size_bytes)
+    if process.returncode != 0:
+        raise ConfigurationError(
+            f"curl HTTP/1.1 返回 {process.returncode}: {candidate.source_id}"
+        )
+    return size
 
 
 def download_verified_file(
@@ -360,6 +451,7 @@ def download_verified_file(
     ordered = rank_source_candidates(candidates, policy)
     failures: list[str] = []
     for candidate in ordered:
+        selected_source_id = candidate.source_id
         try:
             if source_callback is not None:
                 source_callback(
@@ -375,8 +467,26 @@ def download_verified_file(
                 progress_callback=progress_callback,
             )
         except (ConfigurationError, httpx.HTTPError, OSError) as error:
-            failures.append(f"{candidate.source_id}: {error}")
-            continue
+            failures.append(f"{candidate.source_id}-python-http: {error}")
+            selected_source_id = f"{candidate.source_id}-curl-http1"
+            try:
+                if source_callback is not None:
+                    source_callback(
+                        SourceSelection(
+                            source_id=selected_source_id,
+                            url=candidate.url,
+                        )
+                    )
+                size = _curl_candidate(
+                    context,
+                    candidate,
+                    partial,
+                    expected_size_bytes=expected_size_bytes,
+                    progress_callback=progress_callback,
+                )
+            except (ConfigurationError, OSError) as curl_error:
+                failures.append(f"{selected_source_id}: {curl_error}")
+                continue
         actual_sha256 = sha256_file(partial)
         if expected_size_bytes is not None and size != expected_size_bytes:
             _quarantine_partial(
@@ -386,10 +496,10 @@ def download_verified_file(
                 reason=(
                     "size mismatch: "
                     f"expected={expected_size_bytes}, actual={size}, "
-                    f"source={candidate.source_id}"
+                    f"source={selected_source_id}"
                 ),
             )
-            failures.append(f"{candidate.source_id}: size mismatch")
+            failures.append(f"{selected_source_id}: size mismatch")
             continue
         if actual_sha256 != expected_sha256:
             _quarantine_partial(
@@ -399,10 +509,10 @@ def download_verified_file(
                 reason=(
                     "SHA-256 mismatch: "
                     f"expected={expected_sha256}, actual={actual_sha256}, "
-                    f"source={candidate.source_id}"
+                    f"source={selected_source_id}"
                 ),
             )
-            failures.append(f"{candidate.source_id}: SHA-256 mismatch")
+            failures.append(f"{selected_source_id}: SHA-256 mismatch")
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
@@ -410,7 +520,7 @@ def download_verified_file(
         partial.rename(destination)
         return VerifiedDownload(
             path=destination,
-            source=SourceSelection(source_id=candidate.source_id, url=candidate.url),
+            source=SourceSelection(source_id=selected_source_id, url=candidate.url),
             sha256=actual_sha256,
             size_bytes=size,
         )

@@ -112,6 +112,13 @@ def test_verified_download_resumes_partial_across_equivalent_sources(
         return len(payload)
 
     monkeypatch.setattr(source_policy, "_stream_candidate", fake_stream)
+    monkeypatch.setattr(
+        source_policy,
+        "_curl_candidate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ConfigurationError("curl unavailable")
+        ),
+    )
     destination = context.runtime_root / "models" / "fixture.bin"
 
     result = download_verified_file(
@@ -128,10 +135,101 @@ def test_verified_download_resumes_partial_across_equivalent_sources(
     )
 
     assert calls == ["official", "china-fast"]
-    assert selected_sources == ["official", "china-fast"]
+    assert selected_sources == [
+        "official",
+        "official-curl-http1",
+        "china-fast",
+    ]
     assert result.path.read_bytes() == payload
     assert result.source.source_id == "china-fast"
     assert not tuple((context.runtime_root / "cache" / "downloads").glob("*.part"))
+
+
+def test_verified_download_falls_back_to_curl_http1_on_same_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    payload = b"locked-artifact-bytes"
+    expected_sha256 = hashlib.sha256(payload).hexdigest()
+    candidate = _candidates()[0]
+    selected_sources: list[str] = []
+    monkeypatch.setattr(
+        source_policy,
+        "rank_source_candidates",
+        lambda values, _policy: tuple(values),
+    )
+
+    def failed_python_http(
+        _candidate: SourceCandidate,
+        partial: Path,
+        **_kwargs: object,
+    ) -> int:
+        partial.write_bytes(payload[:8])
+        raise OSError("python HTTP stalled")
+
+    def successful_curl(
+        _context: WorkspaceContext,
+        _candidate: SourceCandidate,
+        partial: Path,
+        **_kwargs: object,
+    ) -> int:
+        assert partial.read_bytes() == payload[:8]
+        with partial.open("ab") as handle:
+            handle.write(payload[8:])
+        return len(payload)
+
+    monkeypatch.setattr(source_policy, "_stream_candidate", failed_python_http)
+    monkeypatch.setattr(source_policy, "_curl_candidate", successful_curl)
+
+    result = download_verified_file(
+        context,
+        artifact_id="fixture-curl",
+        candidates=(candidate,),
+        policy="auto",
+        destination=context.runtime_root / "models" / "fixture-curl.bin",
+        expected_sha256=expected_sha256,
+        expected_size_bytes=len(payload),
+        source_callback=lambda selection: selected_sources.append(
+            selection.source_id
+        ),
+    )
+
+    assert result.path.read_bytes() == payload
+    assert result.source.source_id == "official-curl-http1"
+    assert selected_sources == ["official", "official-curl-http1"]
+
+
+def test_python_http_uses_bounded_stall_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FailingClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def __enter__(self) -> FailingClient:
+            raise OSError("connection stalled")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(source_policy.httpx, "Client", FailingClient)
+
+    with pytest.raises(OSError, match="connection stalled"):
+        source_policy._stream_candidate(
+            _candidates()[0],
+            tmp_path / "partial",
+            expected_size_bytes=100,
+            progress_callback=None,
+        )
+
+    timeout = captured["timeout"]
+    assert isinstance(timeout, source_policy.httpx.Timeout)
+    assert timeout.connect == source_policy.PYTHON_HTTP_CONNECT_TIMEOUT_SECONDS
+    assert timeout.read == source_policy.PYTHON_HTTP_READ_TIMEOUT_SECONDS
 
 
 def test_verified_download_quarantines_wrong_identity(

@@ -59,6 +59,17 @@ assets:
     source: https://github.com/jertubiana/ScanNet.git
     destination: scannet/a61623cd98d2
     revision: a61623cd98d243c2ff4cd03fc3619d2d22ec50e7
+    git_archive:
+      schema_version: "0.1"
+      sha256: 3ba14c769da16d2fb30cc018698d180ec21f527357d98da5cf4bdfeb1ef40e08
+      expected_size_bytes: 69887697
+      sources:
+        - source_id: github-commit-archive
+          region: official
+          url: https://github.com/jertubiana/ScanNet/archive/a61623cd98d243c2ff4cd03fc3619d2d22ec50e7.tar.gz
+        - source_id: github-codeload-archive
+          region: official
+          url: https://codeload.github.com/jertubiana/ScanNet/tar.gz/a61623cd98d243c2ff4cd03fc3619d2d22ec50e7
     estimated_install_bytes: 524288000
     license: Apache-2.0
     license_confirmation_required: true
@@ -121,6 +132,17 @@ assets:
     source: https://github.com/HannesStark/boltzgen.git
     destination: boltzgen/source/a3149cf18eeb
     revision: a3149cf18eeb58648d1abbb27539bd73f746cdda
+    git_archive:
+      schema_version: "0.1"
+      sha256: 8c151e205accd9de286b22fb3e89f73e25092dd1600dc8f2ef754a431426471c
+      expected_size_bytes: 14439813
+      sources:
+        - source_id: github-commit-archive
+          region: official
+          url: https://github.com/HannesStark/boltzgen/archive/a3149cf18eeb58648d1abbb27539bd73f746cdda.tar.gz
+        - source_id: github-codeload-archive
+          region: official
+          url: https://codeload.github.com/HannesStark/boltzgen/tar.gz/a3149cf18eeb58648d1abbb27539bd73f746cdda
     estimated_install_bytes: 524288000
     license: MIT
     license_confirmation_required: false
@@ -129,6 +151,17 @@ assets:
     source: https://github.com/oxpig/TNP.git
     destination: tnp/source/29dcac72f138
     revision: 29dcac72f1380e8538e8870f45a699d3c6156162
+    git_archive:
+      schema_version: "0.1"
+      sha256: 873ae783535cf5827e6e6c9de9db2e14c9215cb04c0aa048b56fbbaa1d3b2c9e
+      expected_size_bytes: 18901417
+      sources:
+        - source_id: github-commit-archive
+          region: official
+          url: https://github.com/oxpig/TNP/archive/29dcac72f1380e8538e8870f45a699d3c6156162.tar.gz
+        - source_id: github-codeload-archive
+          region: official
+          url: https://codeload.github.com/oxpig/TNP/tar.gz/29dcac72f1380e8538e8870f45a699d3c6156162
     estimated_install_bytes: 268435456
     license: BSD-3-Clause
     license_confirmation_required: false

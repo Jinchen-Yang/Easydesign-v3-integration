@@ -1,0 +1,61 @@
+schema_version: "0.1"
+
+miniforge:
+  - source_id: official-github
+    region: official
+    url: https://github.com/conda-forge/miniforge/releases/download/26.3.2-3/Miniforge3-26.3.2-3-Linux-x86_64.sh
+  - source_id: nju-github-release
+    region: china
+    url: https://mirrors.nju.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-26.3.2-3-Linux-x86_64.sh
+  - source_id: ustc-github-release
+    region: china
+    url: https://mirrors.ustc.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-26.3.2-3-Linux-x86_64.sh
+  - source_id: tuna-github-release
+    region: china
+    url: https://mirrors.tuna.tsinghua.edu.cn/github-release/conda-forge/miniforge/LatestRelease/Miniforge3-26.3.2-3-Linux-x86_64.sh
+
+pip_indexes:
+  - source_id: official-pypi
+    region: official
+    url: https://pypi.org/simple
+  - source_id: aliyun-pypi
+    region: china
+    url: https://mirrors.aliyun.com/pypi/simple
+  - source_id: tuna-pypi
+    region: china
+    url: https://pypi.tuna.tsinghua.edu.cn/simple
+  - source_id: ustc-pypi
+    region: china
+    url: https://pypi.mirrors.ustc.edu.cn/simple
+
+conda_rewrites:
+  - source_id: nju-conda-forge
+    region: china
+    canonical_prefix: https://conda.anaconda.org/conda-forge/
+    transport_prefix: https://mirrors.nju.edu.cn/anaconda/cloud/conda-forge/
+  - source_id: tuna-conda-forge
+    region: china
+    canonical_prefix: https://conda.anaconda.org/conda-forge/
+    transport_prefix: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
+  - source_id: nju-bioconda
+    region: china
+    canonical_prefix: https://conda.anaconda.org/bioconda/
+    transport_prefix: https://mirrors.nju.edu.cn/anaconda/cloud/bioconda/
+  - source_id: tuna-bioconda
+    region: china
+    canonical_prefix: https://conda.anaconda.org/bioconda/
+    transport_prefix: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda/
+  - source_id: nju-anaconda-main
+    region: china
+    canonical_prefix: https://repo.anaconda.com/pkgs/main/
+    transport_prefix: https://mirrors.nju.edu.cn/anaconda/pkgs/main/
+  - source_id: tuna-anaconda-main
+    region: china
+    canonical_prefix: https://repo.anaconda.com/pkgs/main/
+    transport_prefix: https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+
+asset_rewrites:
+  - source_id: hf-mirror
+    region: china
+    canonical_prefix: https://huggingface.co/
+    transport_prefix: https://hf-mirror.com/

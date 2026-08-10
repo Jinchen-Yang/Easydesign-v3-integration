@@ -3,9 +3,13 @@
   "environment_id": "pymol-pse",
   "platform": "linux-64",
   "conda_explicit": "environments/locks/pymol-pse-linux-64.conda-lock.txt",
-  "conda_explicit_sha256": "81df2b7ed63fa77cad2be9d60a345fb0da6df68562df07f00ef9a6e616afa0ba",
+  "conda_explicit_sha256": "cb330a7ee1be4cdfa92be9f82d9ed9bd10c5091ae01bce6f48b043ec8482ec0f",
   "python": "3.11",
-  "probe": ["python", "-c", "import pymol; print(pymol.__version__ if hasattr(pymol, '__version__') else '3.1.0')"],
+  "probe": [
+    "python",
+    "-c",
+    "import pymol; print(pymol.__version__ if hasattr(pymol, '__version__') else '3.1.0')"
+  ],
   "estimated_install_bytes": 2147483648,
   "lock_kind": "resolved-package-set"
 }

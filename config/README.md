@@ -2,6 +2,7 @@
 
 - `development-policy.json`：Agent 指南路由、验证等级和聚焦测试映射。
 - `runtime-assets.yaml`：安装器消费的运行资产目录。
+- `runtime-sources.yaml`：与版本/哈希 lock 分离的官方与国内传输候选。
 - `backends/`：三个已有外部工具的可移植能力和版本要求。
 
 没有实际文件的 defaults、filters 和 profile 子目录不再保留。站点路径和密钥只能放在

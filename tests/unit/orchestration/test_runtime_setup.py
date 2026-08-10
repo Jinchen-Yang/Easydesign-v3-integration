@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from easydesign.orchestration.runtime_setup import (
     setup_workspace,
     validate_pip_index_url,
 )
+from easydesign.orchestration.source_policy import SourceCandidate
 from easydesign.workspace_context import WorkspaceContext
 
 
@@ -111,6 +113,15 @@ def test_setup_plan_keeps_every_target_inside_workspace() -> None:
         assert environment["conda_explicit_sha256"]
     for asset in plan["assets"]:
         assert Path(asset["target"]).parts[:2] == ("runtime", "models")
+
+
+def test_all_conda_explicit_locks_pin_every_package_sha256() -> None:
+    repository = Path(__file__).resolve().parents[3]
+
+    for path in sorted((repository / "environments" / "locks").glob("*.conda-lock.txt")):
+        entries = runtime_setup._conda_lock_entries(path)
+        assert entries
+        assert all(len(package_sha256) == 64 for _url, package_sha256 in entries)
 
 
 def test_setup_plan_uses_fixed_ten_gib_free_space_reserve(
@@ -264,12 +275,23 @@ def test_git_asset_fetches_only_pinned_revision(
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(runtime_setup.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        runtime_setup,
+        "load_runtime_sources",
+        lambda _context: SimpleNamespace(asset_rewrites=()),
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "rank_source_candidates",
+        lambda candidates, _policy: tuple(candidates),
+    )
 
     with pytest.raises(ConfigurationError, match="fetch 失败"):
         runtime_setup._checkout_git(
             context,
             definition,
             context.runtime_root / "models" / definition.destination,
+            source_policy="official",
         )
 
     fetch = next(command for command in commands if "fetch" in command)
@@ -342,6 +364,17 @@ def test_setup_workspace_emits_environment_and_byte_progress(
         },
     )
     monkeypatch.setattr(runtime_setup, "initialize_workspace_metadata", lambda _context: None)
+    monkeypatch.setattr(
+        runtime_setup,
+        "pip_index_candidates",
+        lambda *_args, **_kwargs: (
+            SourceCandidate(
+                source_id="fixture-pip",
+                region="official",
+                url="https://example.test/simple",
+            ),
+        ),
+    )
 
     def fake_environment(
         _context: WorkspaceContext,
@@ -435,3 +468,53 @@ def test_pip_index_must_be_explicit_safe_https_url() -> None:
         validate_pip_index_url("https://user:secret@example.test/simple")
     with pytest.raises(ConfigurationError, match="HTTPS"):
         validate_pip_index_url("http://example.test/simple")
+
+
+def test_pip_lock_falls_back_without_changing_requirements(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    python = tmp_path / "runtime/envs/fixture/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("fixture", encoding="utf-8")
+    requirements = tmp_path / "fixture-requirements.txt"
+    requirements.write_text("example==1.0\n", encoding="utf-8")
+    candidates = (
+        SourceCandidate(
+            source_id="first",
+            region="china",
+            url="https://first.example.test/simple",
+        ),
+        SourceCandidate(
+            source_id="fallback",
+            region="official",
+            url="https://fallback.example.test/simple",
+        ),
+    )
+    indexes: list[str] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        indexes.append(str(environment["PIP_INDEX_URL"]))
+        return subprocess.CompletedProcess(
+            command,
+            0 if len(indexes) == 2 else 1,
+            "",
+            "",
+        )
+
+    monkeypatch.setattr(runtime_setup, "_pip_reliability_arguments", lambda _python: [])
+    monkeypatch.setattr(runtime_setup.subprocess, "run", fake_run)
+
+    completed, selected = runtime_setup._install_pip_requirements(
+        context,
+        python=python,
+        requirements=requirements,
+        candidates=candidates,
+    )
+
+    assert completed.returncode == 0
+    assert indexes == [candidate.url for candidate in candidates]
+    assert selected.source_id == "fallback"

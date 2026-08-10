@@ -53,7 +53,6 @@ from easydesign.orchestration.runtime_components import (
     runtime_status,
 )
 from easydesign.orchestration.runtime_setup import (
-    DEFAULT_PIP_INDEX_URL,
     SETUP_COMPONENT_ASSETS,
     asset_status,
     environment_status,
@@ -66,6 +65,7 @@ from easydesign.orchestration.setup_jobs import (
     list_setup_jobs,
     read_setup_job,
 )
+from easydesign.orchestration.source_policy import SOURCE_POLICIES
 from easydesign.reporting import (
     build_evidence_viewer_payload,
     build_stage02_viewer_overlay,
@@ -155,8 +155,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     runtime_install.add_argument("--conda", type=Path, help="显式 Conda executable")
     runtime_install.add_argument(
+        "--source",
+        choices=SOURCE_POLICIES,
+        default="auto",
+        help="下载来源策略：自动择优、严格官方或国内优先并回退官方",
+    )
+    runtime_install.add_argument(
         "--pip-index-url",
-        default=DEFAULT_PIP_INDEX_URL,
+        default=None,
         help="仅用于本次安装子进程的 HTTPS Python package index",
     )
     _add_json(runtime_install)
@@ -610,7 +616,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                     or args.detach
                     or args.accept_license
                     or args.conda is not None
-                    or args.pip_index_url != DEFAULT_PIP_INDEX_URL
+                    or args.pip_index_url is not None
                 ):
                     raise ConfigurationError(
                         "Miniforge 安装不接受 bundle、detach、许可、Conda 或 pip index 参数"
@@ -618,7 +624,9 @@ def _dispatch(args: argparse.Namespace) -> int:
                 if not args.json:
                     print("正在下载、校验并安装工作区专用 Miniforge……", flush=True)
                 miniforge_result = install_miniforge(
-                    context, show_progress=not args.json
+                    context,
+                    show_progress=not args.json,
+                    source_policy=args.source,
                 )
                 print(
                     _json(miniforge_result)
@@ -626,6 +634,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                     else (
                         f"Miniforge: {miniforge_result.status}\n"
                         f"Release: {miniforge_result.receipt.release}\n"
+                        f"Source: {miniforge_result.receipt.transport_source_id}\n"
                         f"Conda: {miniforge_result.receipt.conda_executable}\n"
                         f"Version: {miniforge_result.receipt.conda_version}\n"
                         f"Receipt: {miniforge_result.receipt_path}"
@@ -638,7 +647,8 @@ def _dispatch(args: argparse.Namespace) -> int:
                     args.detach
                     or args.accept_license
                     or args.conda is not None
-                    or args.pip_index_url != DEFAULT_PIP_INDEX_URL
+                    or args.pip_index_url is not None
+                    or args.source != "auto"
                 ):
                     raise ConfigurationError(
                         "OpenFold3 只接受 --bundle；Conda、许可和 detach 参数用于锁定科学组件"
@@ -670,6 +680,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                         accepted_license_ids=accepted,
                         conda_executable=args.conda,
                         pip_index_url=args.pip_index_url,
+                        source_policy=args.source,
                     )
                     print(
                         _json(job)
@@ -688,6 +699,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                         accepted_license_ids=accepted,
                         conda_executable=args.conda,
                         pip_index_url=args.pip_index_url,
+                        source_policy=args.source,
                     )
                     if args.json:
                         print(_json(setup_summary))

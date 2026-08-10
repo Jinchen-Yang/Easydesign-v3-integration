@@ -8,6 +8,7 @@ import yaml
 
 from easydesign.core import ConfigurationError
 from easydesign.orchestration import miniforge
+from easydesign.orchestration.source_policy import SourceSelection
 from easydesign.workspace_context import WorkspaceContext
 
 
@@ -38,12 +39,17 @@ def test_install_miniforge_is_explicit_verified_and_idempotent(
         selected: WorkspaceContext,
         *,
         show_progress: bool,
-    ) -> Path:
+        source_policy: str,
+    ) -> tuple[Path, SourceSelection]:
         assert show_progress is False
+        assert source_policy == "auto"
         selected.ensure_layout()
         installer = selected.runtime_root / "tmp/miniforge-fixture.sh"
         installer.write_text("fixture", encoding="utf-8")
-        return installer
+        return installer, SourceSelection(
+            source_id="fixture-source",
+            url="https://example.test/miniforge.sh",
+        )
 
     def fake_run(
         command: list[str],
@@ -88,30 +94,25 @@ def test_install_miniforge_refuses_unrecorded_existing_prefix(tmp_path: Path) ->
     assert marker.read_text(encoding="utf-8") == "user-data"
 
 
-def test_miniforge_checksum_mismatch_is_quarantined_before_install(
+def test_miniforge_download_failure_never_starts_install(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _workspace(tmp_path)
 
-    def fake_run(
-        command: list[str],
-        **_kwargs: object,
-    ) -> subprocess.CompletedProcess[str]:
-        output = Path(command[command.index("--output") + 1])
-        output.write_bytes(b"not-the-pinned-installer")
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    monkeypatch.setattr(miniforge.shutil, "which", lambda _name: "/usr/bin/curl")
-    monkeypatch.setattr(miniforge.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        miniforge,
+        "_download_installer",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ConfigurationError("Miniforge installer SHA-256 不匹配")
+        ),
+    )
 
     with pytest.raises(ConfigurationError, match="SHA-256 不匹配"):
         miniforge.install_miniforge(context, show_progress=False)
 
     assert not (context.root / miniforge.MINIFORGE_PREFIX).exists()
-    metadata = tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
-    assert len(metadata) == 1
-    assert "SHA-256 mismatch" in metadata[0].read_text(encoding="utf-8")
+    assert not tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
 
 
 def test_failed_miniforge_install_never_publishes_final_alias(
@@ -124,12 +125,17 @@ def test_failed_miniforge_install_never_publishes_final_alias(
         selected: WorkspaceContext,
         *,
         show_progress: bool,
-    ) -> Path:
+        source_policy: str,
+    ) -> tuple[Path, SourceSelection]:
         del show_progress
+        assert source_policy == "auto"
         selected.ensure_layout()
         installer = selected.runtime_root / "tmp/miniforge-fixture.sh"
         installer.write_text("fixture", encoding="utf-8")
-        return installer
+        return installer, SourceSelection(
+            source_id="fixture-source",
+            url="https://example.test/miniforge.sh",
+        )
 
     def fake_run(
         command: list[str],
@@ -150,7 +156,7 @@ def test_failed_miniforge_install_never_publishes_final_alias(
     assert not (context.root / miniforge.MINIFORGE_PREFIX).is_symlink()
     assert not (context.root / miniforge.MINIFORGE_RELEASE_PREFIX).exists()
     metadata = tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
-    assert len(metadata) == 2
+    assert len(metadata) == 1
 
 
 def test_runtime_setup_prefers_verified_local_miniforge_path(

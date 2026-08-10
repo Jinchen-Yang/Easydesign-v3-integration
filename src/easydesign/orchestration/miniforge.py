@@ -5,26 +5,31 @@ from __future__ import annotations
 import json
 import os
 import platform
-import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from easydesign.core import ConfigurationError, sha256_file
+from easydesign.core import ConfigurationError
 from easydesign.workspace_context import WorkspaceContext
 
-MINIFORGE_RELEASE = "26.3.2-2"
+from .source_policy import (
+    SourcePolicy,
+    SourceSelection,
+    download_verified_file,
+    load_runtime_sources,
+)
+
+MINIFORGE_RELEASE = "26.3.2-3"
 MINIFORGE_INSTALLER_NAME = f"Miniforge3-{MINIFORGE_RELEASE}-Linux-x86_64.sh"
 MINIFORGE_INSTALLER_URL = (
     "https://github.com/conda-forge/miniforge/releases/download/"
     f"{MINIFORGE_RELEASE}/{MINIFORGE_INSTALLER_NAME}"
 )
 MINIFORGE_INSTALLER_SHA256 = (
-    "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94"
+    "848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c"
 )
 MINIFORGE_PREFIX = Path("runtime/tools/miniforge3")
 MINIFORGE_RELEASE_PREFIX = Path(
@@ -43,13 +48,16 @@ class MiniforgeReceipt(BaseModel):
 
     schema_version: Literal["0.1"] = "0.1"
     tool_id: Literal["miniforge"] = "miniforge"
-    release: Literal["26.3.2-2"] = "26.3.2-2"
+    release: Literal["26.3.2-3"] = "26.3.2-3"
     installer_url: Literal[
-        "https://github.com/conda-forge/miniforge/releases/download/26.3.2-2/Miniforge3-26.3.2-2-Linux-x86_64.sh"
-    ] = "https://github.com/conda-forge/miniforge/releases/download/26.3.2-2/Miniforge3-26.3.2-2-Linux-x86_64.sh"
+        "https://github.com/conda-forge/miniforge/releases/download/26.3.2-3/Miniforge3-26.3.2-3-Linux-x86_64.sh"
+    ] = "https://github.com/conda-forge/miniforge/releases/download/26.3.2-3/Miniforge3-26.3.2-3-Linux-x86_64.sh"
     installer_sha256: Literal[
-        "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94"
-    ] = "42260ffe3830fb953d5eee1bbb32229ff06aa7c3833c1ed7a9a0420a95685d94"
+        "848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c"
+    ] = "848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c"
+    source_policy: SourcePolicy = "official"
+    transport_source_id: str = "official-github"
+    transport_url: str = MINIFORGE_INSTALLER_URL
     prefix: Path = MINIFORGE_PREFIX
     release_prefix: Path = MINIFORGE_RELEASE_PREFIX
     conda_executable: Path = MINIFORGE_PREFIX / "bin/conda"
@@ -154,67 +162,36 @@ def _download_installer(
     context: WorkspaceContext,
     *,
     show_progress: bool,
-) -> Path:
-    curl = shutil.which("curl")
-    if curl is None:
-        raise ConfigurationError("安装 Miniforge 需要 curl")
-    staging = (
+    source_policy: SourcePolicy,
+) -> tuple[Path, SourceSelection]:
+    catalog = load_runtime_sources(context)
+    destination = (
         context.runtime_root
-        / "tmp"
-        / f"{MINIFORGE_INSTALLER_NAME}.{uuid4().hex}.part"
+        / "cache"
+        / "downloads"
+        / "miniforge"
+        / MINIFORGE_INSTALLER_NAME
     )
-    context.assert_write_path(staging)
-    command = [
-        curl,
-        "--proto",
-        "=https",
-        "--proto-redir",
-        "=https",
-        "--tlsv1.2",
-        "--fail",
-        "--location",
-        "--show-error",
-        "--retry",
-        "5",
-        "--retry-all-errors",
-        "--output",
-        str(staging),
-        MINIFORGE_INSTALLER_URL,
-    ]
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=context.root,
-            env={**os.environ, **context.child_environment()},
-            check=False,
-            capture_output=not show_progress,
-            text=True,
-        )
-    except OSError as error:
-        raise ConfigurationError("无法启动 curl 下载 Miniforge") from error
-    if completed.returncode != 0:
-        if staging.exists():
-            context.quarantine(
-                staging,
-                operation="install-miniforge-download",
-                reason=f"curl 返回 {completed.returncode}",
-            )
-        detail = (completed.stderr or "").strip()
-        raise ConfigurationError(
-            f"Miniforge 下载失败: returncode={completed.returncode}; {detail}"
-        )
-    actual_sha256 = sha256_file(staging)
-    if actual_sha256 != MINIFORGE_INSTALLER_SHA256:
-        context.quarantine(
-            staging,
-            operation="install-miniforge-checksum",
-            reason=(
-                "SHA-256 mismatch: "
-                f"expected={MINIFORGE_INSTALLER_SHA256}, actual={actual_sha256}"
-            ),
-        )
-        raise ConfigurationError("Miniforge installer SHA-256 不匹配")
-    return staging
+
+    def progress(completed: int, total: int | None) -> None:
+        if not show_progress:
+            return
+        total_text = "?" if total is None else str(total)
+        print(f"\rMiniforge 下载: {completed}/{total_text} bytes", end="", flush=True)
+
+    result = download_verified_file(
+        context,
+        artifact_id=f"miniforge-{MINIFORGE_RELEASE}-linux-x86_64",
+        candidates=catalog.miniforge,
+        policy=source_policy,
+        destination=destination,
+        expected_sha256=MINIFORGE_INSTALLER_SHA256,
+        expected_size_bytes=105_172_629,
+        progress_callback=progress if show_progress else None,
+    )
+    if show_progress:
+        print()
+    return result.path, result.source
 
 
 def _quarantine_if_present(
@@ -232,6 +209,7 @@ def install_miniforge(
     context: WorkspaceContext,
     *,
     show_progress: bool = True,
+    source_policy: SourcePolicy = "auto",
 ) -> MiniforgeInstallResult:
     """Install the pinned Miniforge only after an explicit CLI request."""
 
@@ -257,7 +235,11 @@ def install_miniforge(
 
     release_prefix.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    installer = _download_installer(context, show_progress=show_progress)
+    installer, selected_source = _download_installer(
+        context,
+        show_progress=show_progress,
+        source_policy=source_policy,
+    )
     alias_published = False
     try:
         completed = subprocess.run(
@@ -276,6 +258,9 @@ def install_miniforge(
         conda = release_prefix / "bin/conda"
         version = _probe_conda(context, conda)
         receipt = MiniforgeReceipt(
+            source_policy=source_policy,
+            transport_source_id=selected_source.source_id,
+            transport_url=selected_source.url,
             conda_version=version,
             installed_at=datetime.now(tz=UTC),
         )
@@ -293,14 +278,6 @@ def install_miniforge(
             )
             handle.flush()
             os.fsync(handle.fileno())
-        try:
-            installer.unlink()
-        except OSError:
-            context.quarantine(
-                installer,
-                operation="install-miniforge-installer-cleanup",
-                reason="安装成功，但已校验 installer 无法删除",
-            )
         return MiniforgeInstallResult(
             status="installed",
             receipt=receipt,
@@ -320,11 +297,5 @@ def install_miniforge(
             release_prefix,
             operation="install-miniforge-prefix",
             reason="安装或 Conda 探针未完成",
-        )
-        _quarantine_if_present(
-            context,
-            installer,
-            operation="install-miniforge-installer",
-            reason="安装或 receipt 发布未完成",
         )
         raise

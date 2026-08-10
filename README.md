@@ -51,6 +51,11 @@ shell profile：
 easydesign runtime install miniforge
 ```
 
+该命令默认使用 `--source auto`，只用小请求探测官方源和仓库登记的国内镜像，选择当前主机
+可用且较快的传输地址；版本、文件大小和 SHA-256 始终由仓库锁决定。网络中断后重复同一
+命令会从 `runtime/cache/downloads/` 的 partial 继续，而不是从头下载。需要严格限定来源时
+可以使用 `--source official`；`--source china` 表示国内优先，均不可用时回退官方。
+
 ### 3. 依次安装科学环境
 
 安装顺序是：
@@ -65,6 +70,11 @@ pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp
 easydesign runtime plan pymol-pse
 easydesign runtime install pymol-pse --detach
 ```
+
+重型环境沿用同一来源策略。Conda 包先按逐包 SHA-256 下载到当前 clone 的 cache，再从
+本地显式视图创建环境；Pip index、Hugging Face 文件和 Git source 的实际选择会写入安装
+request、环境或资产记录。镜像只改变传输，不改变 package 版本、build、模型 SHA 或 Git
+commit。需要复现严格官方传输时，在安装命令中加入 `--source official`。
 
 安装命令会打印 `SETUP_JOB_ID` 和对应的观察命令。复制它给出的命令，或运行：
 

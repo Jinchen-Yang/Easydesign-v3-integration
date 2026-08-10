@@ -3,11 +3,15 @@
   "environment_id": "scannet-epitope",
   "platform": "linux-64",
   "conda_explicit": "environments/locks/scannet-epitope-linux-64.conda-lock.txt",
-  "conda_explicit_sha256": "d110df0235e0c8c923e91180763adfa31bb12efda504821be465dfc6d238c82c",
+  "conda_explicit_sha256": "b9f089c1c46183ebb442cf8961509bae8ef0fe4cb21c42a8141847d49dd769cc",
   "pip_requirements": "environments/locks/scannet-epitope-linux-64.pip-lock.txt",
   "pip_requirements_sha256": "16960fd5a72a3eedf388627bd430d196d9fba6dd78ae39472635044502d995f7",
   "python": "3.6.12",
-  "probe": ["python", "-c", "import tensorflow as tf; print(tf.__version__)"],
+  "probe": [
+    "python",
+    "-c",
+    "import tensorflow as tf; print(tf.__version__)"
+  ],
   "estimated_install_bytes": 3221225472,
   "lock_kind": "resolved-package-set"
 }

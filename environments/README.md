@@ -49,24 +49,30 @@ easydesign runtime status
 输出路径若不位于当前仓库，安装器必须拒绝，而不是改写 `~/.config`、`~/.cache` 或系统盘。
 环境配方和锁文件进入 Git；实际环境与模型不进入 Git。
 
-默认使用官方 `https://pypi.org/simple`。网络诊断证明官方 CDN 很慢时，可以显式选择
-可信 HTTPS 镜像：
+安装来源与锁定身份是两个独立层次。Conda lock 固定每个 package URL identity、build 和
+SHA-256；pip lock 固定 requirement；文件资产固定大小/SHA-256，Git 资产固定 commit。
+`config/runtime-sources.yaml` 只登记可替换的传输地址。默认 `--source auto` 会探测后排序，
+`official` 严格只用官方地址，`china` 国内优先并在全部不可用时回退官方：
+
+```bash
+easydesign runtime install boltzgen --source auto --detach
+easydesign runtime install boltzgen --source official --detach
+easydesign runtime install boltzgen --source china --detach
+```
+
+如需指定本组织自己的 HTTPS Python index，仍可单次覆盖 Pip：
 
 ```bash
 easydesign runtime install boltzgen \
+  --source official \
   --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
   --detach
 ```
 
-该选择只进入本任务的子进程和 `request.json`，不会修改系统代理、pip 配置或后续任务。
-EasyDesign 不自动猜测地区或切换镜像；任何镜像都应由部署者明确选择。
-
-下载源选择建议：
-
-1. 先使用官方源执行单组件后台安装。
-2. 只有日志明确显示 CDN 超时或连接中断时，才显式指定可信镜像重试。
-3. 重试会保留失败环境到 `runtime/quarantine/`，并复用仓库内缓存；禁止用清理命令换取重试。
-4. `pip_index_url` 会写入不可变任务请求，便于团队复现和审计。
+来源策略和 Pip override 都进入不可变 `request.json`，实际选中的来源进入结果记录；它们只
+传给本任务的子进程，不修改系统代理、`.condarc`、pip 配置或后续任务。Conda 包和普通文件
+使用稳定的仓库内 partial，跨等价来源续传；最终大小/SHA 不一致的字节进入 quarantine。
+Git fallback 只有在目录中登记了可信候选时才发生，并且最终 commit 必须等于 lock。
 
 ## 为什么推荐 `--detach`
 
@@ -161,7 +167,8 @@ easydesign runtime install pymol-pse \
 
 环境仍发布到当前仓库的 `runtime/envs/`。
 
-- 网络中断：查看任务的 stdout/stderr，再以同一 component 重新运行；缓存会被复用。
+- 网络中断：查看任务的 stdout/stderr，再以同一 component 和 source policy 重新运行；
+  已验证 cache 和未完成 partial 会被复用。
 - 许可未确认：精确确认缺失的 asset ID 后重新运行。
 - 环境失败：失败 staging 会进入 `runtime/quarantine/`；不得自动删除。
 - 磁盘不足：停止创建新任务，扩容或由用户对精确路径另行决定；EasyDesign 不清理数据。

@@ -27,6 +27,7 @@ from .runtime_setup import (
     SetupSummary,
     validate_pip_index_url,
 )
+from .source_policy import SourcePolicy
 
 
 class SetupJobRequest(BaseModel):
@@ -41,7 +42,8 @@ class SetupJobRequest(BaseModel):
     component: str | None = None
     accepted_license_ids: tuple[str, ...] = ()
     conda_executable: Path | None = None
-    pip_index_url: str = DEFAULT_PIP_INDEX_URL
+    source_policy: SourcePolicy = "official"
+    pip_index_url: str | None = None
     started_at: datetime
     stdout_relative_path: Path
     stderr_relative_path: Path
@@ -208,7 +210,8 @@ class SetupJobProjection(BaseModel):
     component: str | None = None
     accepted_license_ids: tuple[str, ...] = ()
     return_code: int | None = None
-    pip_index_url: str = DEFAULT_PIP_INDEX_URL
+    source_policy: SourcePolicy = "official"
+    pip_index_url: str | None = None
     stdout_relative_path: Path
     stderr_relative_path: Path
     progress: SetupJobProgress | None = None
@@ -227,14 +230,17 @@ def launch_setup_job(
     component: str,
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
-    pip_index_url: str = DEFAULT_PIP_INDEX_URL,
+    pip_index_url: str | None = None,
+    source_policy: SourcePolicy = "auto",
 ) -> SetupJobProjection:
     """Launch one detached worker without shell or global configuration writes."""
 
     if component not in SETUP_COMPONENT_IDS:
         raise ConfigurationError(f"未知安装组件: {component}")
     context.ensure_layout()
-    selected_pip_index = validate_pip_index_url(pip_index_url)
+    selected_pip_index = (
+        None if pip_index_url is None else validate_pip_index_url(pip_index_url)
+    )
     root = setup_job_root(context)
     root.mkdir(parents=True, exist_ok=True)
     now = datetime.now(tz=UTC)
@@ -254,6 +260,7 @@ def launch_setup_job(
         component=component,
         accepted_license_ids=tuple(sorted(accepted_license_ids)),
         conda_executable=conda_executable,
+        source_policy=source_policy,
         pip_index_url=selected_pip_index,
         started_at=now,
         stdout_relative_path=stdout_path.relative_to(context.root),
@@ -300,6 +307,7 @@ def launch_setup_job(
         minimal=False,
         component=component,
         accepted_license_ids=request.accepted_license_ids,
+        source_policy=request.source_policy,
         pip_index_url=request.pip_index_url,
         stdout_relative_path=request.stdout_relative_path,
         stderr_relative_path=request.stderr_relative_path,
@@ -351,6 +359,7 @@ def _project_setup_job(
             minimal=legacy.minimal,
             component=legacy.component,
             accepted_license_ids=legacy.accepted_license_ids,
+            source_policy="official",
             pip_index_url=DEFAULT_PIP_INDEX_URL,
             started_at=legacy.started_at,
             stdout_relative_path=legacy.stdout,
@@ -403,6 +412,7 @@ def _project_setup_job(
         component=request.component,
         accepted_license_ids=request.accepted_license_ids,
         return_code=None if result is None else result.return_code,
+        source_policy=request.source_policy,
         pip_index_url=request.pip_index_url,
         stdout_relative_path=request.stdout_relative_path,
         stderr_relative_path=request.stderr_relative_path,

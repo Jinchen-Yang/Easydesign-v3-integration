@@ -44,6 +44,7 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     assert miniforge.runtime_command == "install"
     assert miniforge.component == "miniforge"
     assert miniforge.detach is False
+    assert miniforge.source == "auto"
 
     installed = cli._parser().parse_args(
         [
@@ -58,6 +59,11 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     assert installed.runtime_command == "install"
     assert installed.detach is True
     assert installed.bundle is None
+
+    china = cli._parser().parse_args(
+        ["runtime", "install", "boltzgen", "--source", "china", "--detach"]
+    )
+    assert china.source == "china"
 
     openfold3 = cli._parser().parse_args(
         ["runtime", "install", "openfold3", "--bundle", str(bundle)]

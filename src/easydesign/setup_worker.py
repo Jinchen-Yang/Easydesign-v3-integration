@@ -45,6 +45,7 @@ def main() -> int:
             accepted_license_ids=set(request.accepted_license_ids),
             conda_executable=request.conda_executable,
             pip_index_url=request.pip_index_url,
+            source_policy=request.source_policy,
             progress_callback=progress,
         )
         return_code = 0 if summary.ok else 3

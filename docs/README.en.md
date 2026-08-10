@@ -52,6 +52,13 @@ easydesign runtime install pymol-pse --detach
 easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 ```
 
+These commands default to `--source auto`: EasyDesign probes the tracked official and China-local
+transport candidates, while the repository lock still fixes the Miniforge SHA, each Conda package
+SHA, model SHA, and Git commit. Use `--source official` for strict official transport or
+`--source china` for China-local preference with an audited official fallback. Interrupted verified
+downloads resume from this clone's `runtime/cache/`; the selected transport is recorded but never
+becomes part of the environment identity.
+
 The install command prints the `SETUP_JOB_ID` and an exact watch command. The
 watch view shows the current phase and an overall progress bar. File downloads
 also show transferred/total bytes, rate, and ETA; Conda and Git phases do not

@@ -89,5 +89,11 @@ append-only registry 发布到当前 clone；cache、日志、job、validation �
 worktree。worktree 根通过 `easydesign-workspace.yaml` 发现，不允许配置第二执行主机或引用
 其他 clone 的环境/模型。
 
+Runtime identity 与 transport 分层：Miniforge 固定 release/size/SHA；Conda explicit lock
+固定每包 URL identity 和 SHA；pip 固定 requirements；文件与 Git 资产分别固定 SHA 和
+commit。`config/runtime-sources.yaml` 仅定义官方/国内候选与安全前缀映射。来源探测、fallback
+和 partial 全部发生在当前 clone，Conda 只消费已验证的本地 `file://` 显式视图。request 与
+registry 记录策略和实际来源，但来源不参与环境或资产身份计算。
+
 本分支不得整体合回 UI main。共享科学修复使用独立 `core:` commit，并通过
 `scripts/dev.py core-sync-report --against main` 报告；UI 恢复开发后只能逐个 cherry-pick。

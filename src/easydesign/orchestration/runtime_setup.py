@@ -7,9 +7,7 @@ import json
 import os
 import platform
 import shutil
-import ssl
 import subprocess
-import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,7 +15,6 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
-import httpx
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -25,6 +22,17 @@ from easydesign.core import ConfigurationError, sha256_file
 from easydesign.workspace_context import WorkspaceContext
 
 from .miniforge import local_miniforge_conda, miniforge_status
+from .source_policy import (
+    SourceCandidate,
+    SourcePolicy,
+    SourceSelection,
+    download_verified_file,
+    load_runtime_sources,
+    pip_index_candidates,
+    rank_source_candidates,
+    rewritten_candidates,
+    validate_https_url,
+)
 
 ENVIRONMENT_IDS = (
     "pymol-pse",
@@ -64,7 +72,6 @@ SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
 SETUP_COMPONENT_IDS = tuple(SETUP_COMPONENT_ENVIRONMENTS)
 GIB = 1024**3
 SETUP_FREE_RESERVE_BYTES = 10 * GIB
-SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
 # ``minimal`` and ``full`` remain readable only in immutable historical job results.
 # New installation plans can produce only ``component``.
@@ -112,6 +119,10 @@ class EnvironmentRecord(BaseModel):
     probe_stderr: str = ""
     package_inventory: Path | None = None
     package_inventory_sha256: str | None = None
+    source_policy: SourcePolicy = "official"
+    pip_index_url: str | None = None
+    pip_source_id: str | None = None
+    conda_source_ids: tuple[str, ...] = ()
     recorded_at: datetime
     message: str | None = None
 
@@ -148,6 +159,9 @@ class AssetRecord(BaseModel):
     sha256: str | None = None
     revision: str | None = None
     size_bytes: int | None = None
+    source_policy: SourcePolicy = "official"
+    transport_source_id: str | None = None
+    transport_url: str | None = None
     license: str
     recorded_at: datetime
     message: str | None = None
@@ -163,7 +177,9 @@ class SetupSummary(BaseModel):
     assets: tuple[AssetRecord, ...]
     ok: bool
     awaiting_approval: tuple[str, ...] = ()
+    source_policy: SourcePolicy = "official"
     pip_index_url: str = DEFAULT_PIP_INDEX_URL
+    pip_source_id: str = "official-pypi"
 
 
 class SetupProgressUpdate(BaseModel):
@@ -218,20 +234,7 @@ def _emit_setup_progress(
 def validate_pip_index_url(value: str) -> str:
     """Accept an explicit HTTPS package index without credentials or secrets."""
 
-    normalized = value.rstrip("/")
-    parsed = urlparse(normalized)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ConfigurationError(
-            "Pip index 必须是无凭据、无 query/fragment 的 HTTPS URL"
-        )
-    return normalized
+    return validate_https_url(value, label="Pip index ")
 
 
 def _pip_reliability_arguments(python: Path) -> list[str]:
@@ -254,6 +257,51 @@ def _pip_reliability_arguments(python: Path) -> list[str]:
     if version >= (25, 2):
         base.extend(("--resume-retries", "10"))
     return base
+
+
+def _install_pip_requirements(
+    context: WorkspaceContext,
+    *,
+    python: Path,
+    requirements: Path,
+    candidates: tuple[SourceCandidate, ...],
+) -> tuple[subprocess.CompletedProcess[bytes], SourceSelection]:
+    if not candidates:
+        raise ConfigurationError("Pip source policy 没有候选 index")
+    completed: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+        args=(),
+        returncode=1,
+    )
+    selected = candidates[0]
+    reliability = _pip_reliability_arguments(python)
+    for candidate in candidates:
+        completed = subprocess.run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--no-deps",
+                "--no-build-isolation",
+                *reliability,
+                "--requirement",
+                str(requirements),
+            ],
+            cwd=context.root,
+            env={
+                **os.environ,
+                **context.child_environment(),
+                "PIP_INDEX_URL": candidate.url,
+            },
+            check=False,
+        )
+        selected = candidate
+        if completed.returncode == 0:
+            break
+    return completed, SourceSelection(
+        source_id=selected.source_id,
+        url=selected.url,
+    )
 
 
 def _setup_selection(
@@ -432,6 +480,89 @@ def _conda_executable(
     return selected
 
 
+def _conda_lock_entries(path: Path) -> tuple[tuple[str, str], ...]:
+    """Read canonical package URLs plus mandatory SHA-256 identities."""
+
+    entries: list[tuple[str, str]] = []
+    for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#") or line == "@EXPLICIT":
+            continue
+        canonical_url, separator, package_sha256 = line.rpartition("#")
+        if (
+            not separator
+            or len(package_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in package_sha256)
+        ):
+            raise ConfigurationError(
+                f"Conda lock 第 {line_number} 行缺少 SHA-256: {path}"
+            )
+        entries.append(
+            (
+                validate_https_url(canonical_url, label="Conda canonical URL "),
+                package_sha256,
+            )
+        )
+    if not entries:
+        raise ConfigurationError(f"Conda lock 没有 package identity: {path}")
+    return tuple(entries)
+
+
+def _materialize_conda_explicit(
+    context: WorkspaceContext,
+    *,
+    environment_id: str,
+    conda_lock: Path,
+    source_policy: SourcePolicy,
+    progress_callback: Callable[[str, float], None] | None,
+) -> tuple[Path, tuple[str, ...]]:
+    """Download hashed packages with fallback, then emit a local explicit view."""
+
+    catalog = load_runtime_sources(context)
+    entries = _conda_lock_entries(conda_lock)
+    local_lines = [
+        "# Generated from the tracked EasyDesign lock; transport URLs are not identity.",
+        "# platform: linux-64",
+        "@EXPLICIT",
+    ]
+    source_ids: set[str] = set()
+    package_cache = context.runtime_root / "cache" / "conda-artifacts"
+    package_cache.mkdir(parents=True, exist_ok=True)
+    for index, (canonical_url, package_sha256) in enumerate(entries):
+        filename = Path(urlparse(canonical_url).path).name
+        if not filename or filename in {".", ".."}:
+            raise ConfigurationError(f"Conda package URL 缺少安全文件名: {canonical_url}")
+        if progress_callback is not None:
+            progress_callback(
+                f"正在获取锁定 Conda 包 {index + 1}/{len(entries)}: {filename}",
+                0.05 + (0.45 * index / len(entries)),
+            )
+        candidates = rewritten_candidates(
+            canonical_url,
+            source_id="official-conda",
+            rewrites=catalog.conda_rewrites,
+        )
+        package = download_verified_file(
+            context,
+            artifact_id=f"conda-{package_sha256}",
+            candidates=candidates,
+            policy=source_policy,
+            destination=package_cache / f"{package_sha256}-{filename}",
+            expected_sha256=package_sha256,
+        )
+        source_ids.add(package.source.source_id)
+        local_lines.append(f"{package.path.resolve().as_uri()}#{package_sha256}")
+    explicit = (
+        context.runtime_root
+        / "tmp"
+        / f"conda-{environment_id}-{uuid4().hex}.explicit.txt"
+    )
+    context.assert_write_path(explicit)
+    with explicit.open("x", encoding="utf-8") as handle:
+        handle.write("\n".join(local_lines) + "\n")
+    return explicit, tuple(sorted(source_ids))
+
+
 def _probe_executable(prefix: Path, executable: str) -> str:
     direct = prefix / "bin" / executable
     return str(direct)
@@ -547,6 +678,9 @@ def _probe_environment(
     lock: EnvironmentLock,
     prefix: Path,
     lock_sha256: str,
+    source_policy: SourcePolicy = "official",
+    pip_source: SourceSelection | None = None,
+    conda_source_ids: tuple[str, ...] = (),
 ) -> EnvironmentRecord:
     command = list(lock.probe)
     command[0] = _probe_executable(prefix, command[0])
@@ -609,6 +743,10 @@ def _probe_environment(
         probe_stderr=completed.stderr[-4000:],
         package_inventory=inventory_path,
         package_inventory_sha256=inventory_sha256,
+        source_policy=source_policy,
+        pip_index_url=None if pip_source is None else pip_source.url,
+        pip_source_id=None if pip_source is None else pip_source.source_id,
+        conda_source_ids=conda_source_ids,
         recorded_at=datetime.now(tz=UTC),
     )
 
@@ -618,7 +756,10 @@ def ensure_environment(
     environment_id: str,
     *,
     conda_executable: Path | None = None,
-    pip_index_url: str = DEFAULT_PIP_INDEX_URL,
+    pip_index_url: str | None = None,
+    source_policy: SourcePolicy = "auto",
+    pip_source: SourceSelection | None = None,
+    pip_sources: tuple[SourceCandidate, ...] | None = None,
     progress_callback: Callable[[str, float], None] | None = None,
 ) -> EnvironmentRecord:
     """Create one immutable lock-addressed environment and probe it."""
@@ -636,7 +777,16 @@ def ensure_environment(
         _append_record(context.environment_registry_root, record)
         return record
     context.ensure_layout()
-    selected_pip_index = validate_pip_index_url(pip_index_url)
+    ranked_pip_sources = pip_sources or pip_index_candidates(
+        context,
+        policy=source_policy,
+        explicit_url=pip_index_url,
+    )
+    selected_pip_source = pip_source or SourceSelection(
+        source_id=ranked_pip_sources[0].source_id,
+        url=ranked_pip_sources[0].url,
+    )
+    selected_pip_index = selected_pip_source.url
     lock, lock_path = _load_lock(context, environment_id)
     lock_sha256 = sha256_file(lock_path)
     conda_explicit = _verified_lock_input(
@@ -674,10 +824,18 @@ def ensure_environment(
             operation=f"setup-{environment_id}",
             reason="现有 lock-addressed 环境未通过探针；保留后重建",
         )
+    conda_source_ids: tuple[str, ...] = ()
     if not prefix.exists():
         install_phase = "conda-create"
         if progress_callback is not None:
             progress_callback("正在创建锁定 Conda 环境", 0.1)
+        resolved_conda_explicit, conda_source_ids = _materialize_conda_explicit(
+            context,
+            environment_id=environment_id,
+            conda_lock=conda_explicit,
+            source_policy=source_policy,
+            progress_callback=progress_callback,
+        )
         command = [
             str(_conda_executable(context, conda_executable)),
             "create",
@@ -685,7 +843,7 @@ def ensure_environment(
             "--prefix",
             str(prefix),
             "--file",
-            str(conda_explicit),
+            str(resolved_conda_explicit),
         ]
         completed = subprocess.run(
             command,
@@ -693,31 +851,25 @@ def ensure_environment(
             env={**os.environ, **context.child_environment()},
             check=False,
         )
+        if completed.returncode == 0:
+            resolved_conda_explicit.unlink()
+        else:
+            context.quarantine(
+                resolved_conda_explicit,
+                operation=f"setup-{environment_id}-conda-explicit",
+                reason=f"conda-create 返回 {completed.returncode}",
+            )
         if completed.returncode == 0 and pip_requirements is not None:
             install_phase = "pip-lock-install"
             if progress_callback is not None:
                 progress_callback("Conda 环境完成，正在安装锁定 Python 包", 0.65)
-            pip_environment = {
-                **os.environ,
-                **context.child_environment(),
-                "PIP_INDEX_URL": selected_pip_index,
-            }
-            completed = subprocess.run(
-                [
-                    str(prefix / "bin" / "python"),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--no-deps",
-                    "--no-build-isolation",
-                    *_pip_reliability_arguments(prefix / "bin" / "python"),
-                    "--requirement",
-                    str(pip_requirements),
-                ],
-                cwd=context.root,
-                env=pip_environment,
-                check=False,
+            completed, selected_pip_source = _install_pip_requirements(
+                context,
+                python=prefix / "bin" / "python",
+                requirements=pip_requirements,
+                candidates=ranked_pip_sources,
             )
+            selected_pip_index = selected_pip_source.url
         if completed.returncode == 0 and lock.install_workspace_package:
             install_phase = "workspace-package-install"
             if progress_callback is not None:
@@ -760,13 +912,25 @@ def ensure_environment(
                 probe_command=lock.probe,
                 probe_returncode=completed.returncode,
                 probe_stderr=failure_message,
+                source_policy=source_policy,
+                pip_index_url=selected_pip_source.url,
+                pip_source_id=selected_pip_source.source_id,
+                conda_source_ids=conda_source_ids,
                 recorded_at=datetime.now(tz=UTC),
             )
             _append_record(context.environment_registry_root, failed)
             return failed
     if progress_callback is not None:
         progress_callback("正在执行环境探针和 inventory", 0.95)
-    record = _probe_environment(context, lock, prefix, lock_sha256)
+    record = _probe_environment(
+        context,
+        lock,
+        prefix,
+        lock_sha256,
+        source_policy=source_policy,
+        pip_source=selected_pip_source,
+        conda_source_ids=conda_source_ids,
+    )
     _append_record(context.environment_registry_root, record)
     if progress_callback is not None:
         progress_callback("环境安装与探针完成", 1.0)
@@ -778,79 +942,28 @@ def _download_file(
     asset: AssetDefinition,
     destination: Path,
     *,
+    source_policy: SourcePolicy,
     progress_callback: Callable[[int, int | None], None] | None = None,
-) -> tuple[str, int]:
-    staging = context.runtime_root / "tmp" / f"asset-{asset.asset_id}-{uuid4().hex}"
-    context.assert_write_path(staging)
-    try:
-        verify: ssl.SSLContext | bool = True
-        if SYSTEM_CA_BUNDLE.is_file():
-            verify = ssl.create_default_context(cafile=str(SYSTEM_CA_BUNDLE))
-        with httpx.Client(
-            follow_redirects=True,
-            timeout=httpx.Timeout(1800.0, connect=30.0),
-            verify=verify,
-            trust_env=True,
-        ) as client:
-            with client.stream("GET", asset.source) as response:
-                response.raise_for_status()
-                digest = hashlib.sha256()
-                size = 0
-                response_size = response.headers.get("content-length")
-                total_size = asset.expected_size_bytes
-                if total_size is None and response_size is not None:
-                    try:
-                        total_size = int(response_size)
-                    except ValueError:
-                        total_size = None
-                if progress_callback is not None:
-                    progress_callback(0, total_size)
-                last_progress_at = time.monotonic()
-                with staging.open("xb") as handle:
-                    for chunk in response.iter_bytes():
-                        handle.write(chunk)
-                        digest.update(chunk)
-                        size += len(chunk)
-                        now = time.monotonic()
-                        if progress_callback is not None and now - last_progress_at >= 0.5:
-                            progress_callback(size, total_size)
-                            last_progress_at = now
-                if progress_callback is not None:
-                    progress_callback(size, total_size)
-        actual = digest.hexdigest()
-        if (
-            asset.expected_size_bytes is not None
-            and size != asset.expected_size_bytes
-        ):
-            context.quarantine(
-                staging,
-                operation=f"asset-{asset.asset_id}",
-                reason=(
-                    "size mismatch: "
-                    f"expected={asset.expected_size_bytes}, actual={size}"
-                ),
-            )
-            raise ConfigurationError(f"资产大小不匹配: {asset.asset_id}")
-        if asset.sha256 is not None and actual != asset.sha256:
-            context.quarantine(
-                staging,
-                operation=f"asset-{asset.asset_id}",
-                reason=f"SHA-256 mismatch: expected={asset.sha256}, actual={actual}",
-            )
-            raise ConfigurationError(f"资产 SHA-256 不匹配: {asset.asset_id}")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise ConfigurationError(f"资产目标已存在，拒绝覆盖: {destination}")
-        staging.rename(destination)
-        return actual, size
-    except Exception:
-        if staging.exists():
-            context.quarantine(
-                staging,
-                operation=f"asset-{asset.asset_id}",
-                reason="下载或发布未完成",
-            )
-        raise
+) -> tuple[str, int, SourceSelection]:
+    if asset.sha256 is None:
+        raise ConfigurationError(f"文件资产缺少 SHA-256 identity: {asset.asset_id}")
+    catalog = load_runtime_sources(context)
+    candidates = rewritten_candidates(
+        asset.source,
+        source_id="official-asset",
+        rewrites=catalog.asset_rewrites,
+    )
+    downloaded = download_verified_file(
+        context,
+        artifact_id=f"asset-{asset.asset_id}-{asset.sha256}",
+        candidates=candidates,
+        policy=source_policy,
+        destination=destination,
+        expected_sha256=asset.sha256,
+        expected_size_bytes=asset.expected_size_bytes,
+        progress_callback=progress_callback,
+    )
+    return downloaded.sha256, downloaded.size_bytes, downloaded.source
 
 
 def _directory_content_sha256(root: Path) -> str:
@@ -872,7 +985,9 @@ def _checkout_git(
     context: WorkspaceContext,
     asset: AssetDefinition,
     destination: Path,
-) -> tuple[str, str, int]:
+    *,
+    source_policy: SourcePolicy,
+) -> tuple[str, str, int, SourceSelection]:
     if asset.revision is None:
         raise ConfigurationError(f"Git 资产缺少 revision: {asset.asset_id}")
     staging = context.runtime_root / "tmp" / f"asset-{asset.asset_id}-{uuid4().hex}"
@@ -887,32 +1002,55 @@ def _checkout_git(
         )
         if initialize.returncode != 0:
             raise ConfigurationError(f"Git 资产 init 失败: {asset.asset_id}")
+        catalog = load_runtime_sources(context)
+        candidates = rank_source_candidates(
+            rewritten_candidates(
+                asset.source,
+                source_id="official-git",
+                rewrites=catalog.asset_rewrites,
+            ),
+            source_policy,
+        )
         remote = subprocess.run(
-            ["git", "-C", str(staging), "remote", "add", "origin", asset.source],
+            ["git", "-C", str(staging), "remote", "add", "origin", candidates[0].url],
             cwd=context.root,
             env=environment,
             check=False,
         )
         if remote.returncode != 0:
             raise ConfigurationError(f"Git 资产 remote 失败: {asset.asset_id}")
-        fetch = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(staging),
-                "fetch",
-                "--depth",
-                "1",
-                "--no-tags",
-                "origin",
-                asset.revision,
-            ],
-            cwd=context.root,
-            env=environment,
-            check=False,
-        )
-        if fetch.returncode != 0:
-            raise ConfigurationError(f"Git 资产 fetch 失败: {asset.asset_id}")
+        selected: SourceSelection | None = None
+        for candidate in candidates:
+            subprocess.run(
+                ["git", "-C", str(staging), "remote", "set-url", "origin", candidate.url],
+                cwd=context.root,
+                env=environment,
+                check=False,
+            )
+            fetch = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(staging),
+                    "fetch",
+                    "--depth",
+                    "1",
+                    "--no-tags",
+                    "origin",
+                    asset.revision,
+                ],
+                cwd=context.root,
+                env=environment,
+                check=False,
+            )
+            if fetch.returncode == 0:
+                selected = SourceSelection(
+                    source_id=candidate.source_id,
+                    url=candidate.url,
+                )
+                break
+        if selected is None:
+            raise ConfigurationError(f"Git 资产所有候选源 fetch 失败: {asset.asset_id}")
         checkout = subprocess.run(
             ["git", "-C", str(staging), "checkout", "--detach", "FETCH_HEAD"],
             env=environment,
@@ -937,7 +1075,7 @@ def _checkout_git(
             for path in destination.rglob("*")
             if path.is_file()
         )
-        return revision, _directory_content_sha256(destination), size
+        return revision, _directory_content_sha256(destination), size, selected
     except Exception:
         if staging.exists():
             context.quarantine(
@@ -953,6 +1091,7 @@ def ensure_asset(
     asset: AssetDefinition,
     *,
     accepted_license_ids: set[str],
+    source_policy: SourcePolicy = "auto",
     progress_callback: Callable[[int, int | None], None] | None = None,
 ) -> AssetRecord:
     context.ensure_layout()
@@ -1004,6 +1143,8 @@ def ensure_asset(
                         for p in destination.rglob("*")
                         if p.is_file()
                     ),
+                    source_policy=source_policy,
+                    transport_source_id="workspace-existing",
                     license=asset.license,
                     recorded_at=datetime.now(tz=UTC),
                     message="现有 Git 资产 revision 不一致或工作树不干净；未覆盖",
@@ -1018,6 +1159,8 @@ def ensure_asset(
                 sha256=actual_sha,
                 revision=asset.revision,
                 size_bytes=destination.stat().st_size if destination.is_file() else None,
+                source_policy=source_policy,
+                transport_source_id="workspace-existing",
                 license=asset.license,
                 recorded_at=datetime.now(tz=UTC),
                 message="现有资产 checksum 与目录声明不一致；未覆盖",
@@ -1036,6 +1179,8 @@ def ensure_asset(
                 sha256=actual_sha,
                 revision=actual_revision,
                 size_bytes=destination.stat().st_size,
+                source_policy=source_policy,
+                transport_source_id="workspace-existing",
                 license=asset.license,
                 recorded_at=datetime.now(tz=UTC),
                 message="现有资产大小与目录声明不一致；未覆盖",
@@ -1053,6 +1198,8 @@ def ensure_asset(
                 if destination.is_file()
                 else sum(p.stat().st_size for p in destination.rglob("*") if p.is_file())
             ),
+            source_policy=source_policy,
+            transport_source_id="workspace-existing",
             license=asset.license,
             recorded_at=datetime.now(tz=UTC),
             message="已验证并复用现有资产",
@@ -1066,6 +1213,7 @@ def ensure_asset(
             status="awaiting-approval",
             sha256=asset.sha256,
             revision=asset.revision,
+            source_policy=source_policy,
             license=asset.license,
             recorded_at=datetime.now(tz=UTC),
             message="下载前需要用户确认运行时许可",
@@ -1074,16 +1222,22 @@ def ensure_asset(
         return record
     try:
         if asset.kind == "file":
-            identity, size = _download_file(
+            identity, size, selected_source = _download_file(
                 context,
                 asset,
                 destination,
+                source_policy=source_policy,
                 progress_callback=progress_callback,
             )
             sha256 = identity
             revision = None
         else:
-            revision, sha256, size = _checkout_git(context, asset, destination)
+            revision, sha256, size, selected_source = _checkout_git(
+                context,
+                asset,
+                destination,
+                source_policy=source_policy,
+            )
         record = AssetRecord(
             asset_id=asset.asset_id,
             relative_path=destination.relative_to(context.root),
@@ -1091,6 +1245,9 @@ def ensure_asset(
             sha256=sha256,
             revision=revision,
             size_bytes=size,
+            source_policy=source_policy,
+            transport_source_id=selected_source.source_id,
+            transport_url=selected_source.url,
             license=asset.license,
             recorded_at=datetime.now(tz=UTC),
         )
@@ -1101,6 +1258,7 @@ def ensure_asset(
             status="failed",
             sha256=asset.sha256,
             revision=asset.revision,
+            source_policy=source_policy,
             license=asset.license,
             recorded_at=datetime.now(tz=UTC),
             message=str(error),
@@ -1159,10 +1317,10 @@ def setup_workspace(
     component: str,
     accepted_license_ids: set[str],
     conda_executable: Path | None = None,
-    pip_index_url: str = DEFAULT_PIP_INDEX_URL,
+    pip_index_url: str | None = None,
+    source_policy: SourcePolicy = "auto",
     progress_callback: SetupProgressCallback | None = None,
 ) -> SetupSummary:
-    selected_pip_index = validate_pip_index_url(pip_index_url)
     _emit_setup_progress(
         progress_callback,
         phase="planning",
@@ -1180,6 +1338,15 @@ def setup_workspace(
             f"要求保留 {disk['reserve_bytes']} bytes，"
             f"当前可用 {disk['free_bytes']} bytes"
         )
+    ranked_pip_sources = pip_index_candidates(
+        context,
+        policy=source_policy,
+        explicit_url=pip_index_url,
+    )
+    selected_pip_source = SourceSelection(
+        source_id=ranked_pip_sources[0].source_id,
+        url=ranked_pip_sources[0].url,
+    )
     mode, selected, selected_assets = _setup_selection(
         context,
         component=component,
@@ -1219,7 +1386,9 @@ def setup_workspace(
                 context,
                 environment_id,
                 conda_executable=conda_executable,
-                pip_index_url=selected_pip_index,
+                source_policy=source_policy,
+                pip_source=selected_pip_source,
+                pip_sources=ranked_pip_sources,
                 progress_callback=environment_progress,
             )
         )
@@ -1267,6 +1436,7 @@ def setup_workspace(
                 context,
                 asset,
                 accepted_license_ids=accepted_license_ids,
+                source_policy=source_policy,
                 progress_callback=asset_progress if asset.kind == "file" else None,
             )
         )
@@ -1288,6 +1458,14 @@ def setup_workspace(
     ok = all(record.status == "available" for record in environment_records) and all(
         record.status == "available" for record in asset_records
     )
+    effective_pip_source = next(
+        (
+            SourceSelection(source_id=record.pip_source_id, url=record.pip_index_url)
+            for record in environment_records
+            if record.pip_source_id is not None and record.pip_index_url is not None
+        ),
+        selected_pip_source,
+    )
     summary = SetupSummary(
         workspace=context.root,
         mode=mode,
@@ -1296,7 +1474,9 @@ def setup_workspace(
         assets=asset_records,
         ok=ok,
         awaiting_approval=awaiting,
-        pip_index_url=selected_pip_index,
+        source_policy=source_policy,
+        pip_index_url=effective_pip_source.url,
+        pip_source_id=effective_pip_source.source_id,
     )
     _emit_setup_progress(
         progress_callback,

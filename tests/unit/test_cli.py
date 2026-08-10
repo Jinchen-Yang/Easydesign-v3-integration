@@ -40,6 +40,9 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     assert planned.runtime_command == "plan"
     assert planned.component == "protenix-v2"
 
+    planned_all = cli._parser().parse_args(["runtime", "plan", "all"])
+    assert planned_all.component == "all"
+
     miniforge = cli._parser().parse_args(["runtime", "install", "miniforge"])
     assert miniforge.runtime_command == "install"
     assert miniforge.component == "miniforge"
@@ -64,6 +67,12 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
         ["runtime", "install", "boltzgen", "--source", "china", "--detach"]
     )
     assert china.source == "china"
+
+    installed_all = cli._parser().parse_args(
+        ["runtime", "install", "all", "--detach"]
+    )
+    assert installed_all.component == "all"
+    assert installed_all.detach is True
 
     openfold3 = cli._parser().parse_args(
         ["runtime", "install", "openfold3", "--bundle", str(bundle)]

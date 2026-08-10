@@ -90,6 +90,63 @@ def test_detached_setup_job_stays_inside_workspace_and_avoids_shell(
     assert request.stderr_relative_path.parts[:2] == ("runtime", "logs")
 
 
+def test_all_component_launches_one_detached_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    launches: list[tuple[str, ...]] = []
+
+    def fake_popen(command: tuple[str, ...], **_kwargs: Any) -> _FakeProcess:
+        launches.append(command)
+        return _FakeProcess()
+
+    monkeypatch.setattr(setup_jobs.subprocess, "Popen", fake_popen)
+
+    projection = launch_setup_job(
+        context,
+        component="all",
+        accepted_license_ids=set(),
+    )
+
+    assert projection.component == "all"
+    assert len(launches) == 1
+    request = load_model(
+        context.runtime_root
+        / "state"
+        / "setup-jobs"
+        / projection.job_id
+        / "request.json",
+        SetupJobRequest,
+    )
+    assert request.component == "all"
+
+
+def test_launch_refuses_to_compete_with_running_setup_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    running = setup_jobs.SetupJobProjection(
+        job_id="setup-running-fixture",
+        status="running",
+        pid=424242,
+        started_at=datetime.now(tz=UTC),
+        minimal=False,
+        component="all",
+        stdout_relative_path=Path("runtime/logs/running.stdout.log"),
+        stderr_relative_path=Path("runtime/logs/running.stderr.log"),
+    )
+    monkeypatch.setattr(setup_jobs, "list_setup_jobs", lambda _context: (running,))
+
+    with pytest.raises(ConfigurationError, match="拒绝并发启动"):
+        launch_setup_job(
+            context,
+            component="pymol-pse",
+            accepted_license_ids=set(),
+        )
+
+
 def test_terminal_result_survives_launcher_restart(
     tmp_path: Path,
 ) -> None:

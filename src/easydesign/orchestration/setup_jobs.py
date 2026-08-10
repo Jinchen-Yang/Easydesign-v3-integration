@@ -237,6 +237,16 @@ def launch_setup_job(
 
     if component not in SETUP_COMPONENT_IDS:
         raise ConfigurationError(f"未知安装组件: {component}")
+    active = next(
+        (job for job in list_setup_jobs(context) if job.status == "running"),
+        None,
+    )
+    if active is not None:
+        raise ConfigurationError(
+            f"已有运行中的安装任务 {active.job_id} ({active.component})；"
+            "拒绝并发启动。请运行 "
+            f"easydesign runtime jobs --job-id {active.job_id} --watch"
+        )
     context.ensure_layout()
     selected_pip_index = (
         None if pip_index_url is None else validate_pip_index_url(pip_index_url)

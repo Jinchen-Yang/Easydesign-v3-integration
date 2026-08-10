@@ -54,6 +54,7 @@ from easydesign.orchestration.runtime_components import (
 )
 from easydesign.orchestration.runtime_setup import (
     SETUP_COMPONENT_ASSETS,
+    SETUP_COMPONENT_SEQUENCE,
     asset_status,
     environment_status,
     setup_plan,
@@ -74,13 +75,8 @@ from easydesign.reporting import (
 )
 from easydesign.workspace_context import WorkspaceContext
 
-LOCAL_RUNTIME_COMPONENTS = (
-    "pymol-pse",
-    "boltzgen",
-    "protenix-v2",
-    "scannet-epitope",
-    "tnp",
-)
+LOCAL_RUNTIME_COMPONENTS = SETUP_COMPONENT_SEQUENCE
+RUNTIME_PLAN_COMPONENTS = ("all", *LOCAL_RUNTIME_COMPONENTS)
 
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
@@ -134,15 +130,16 @@ def _parser() -> argparse.ArgumentParser:
     runtime = commands.add_parser("runtime", help="安装或验证当前 clone 的科学环境/模型")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_plan = runtime_commands.add_parser(
-        "plan", help="只读规划一个本地科学组件及其资产"
+        "plan", help="只读规划一个或全部本地科学组件及其资产"
     )
-    runtime_plan.add_argument("component", choices=LOCAL_RUNTIME_COMPONENTS)
+    runtime_plan.add_argument("component", choices=RUNTIME_PLAN_COMPONENTS)
     _add_json(runtime_plan)
     runtime_install = runtime_commands.add_parser(
         "install", help="安装 Miniforge、锁定科学组件或离线 OpenFold3 bundle"
     )
     runtime_install.add_argument(
-        "component", choices=("miniforge", *LOCAL_RUNTIME_COMPONENTS, "openfold3")
+        "component",
+        choices=("miniforge", *RUNTIME_PLAN_COMPONENTS, "openfold3"),
     )
     runtime_install.add_argument("--bundle", type=Path)
     runtime_install.add_argument("--detach", action="store_true")

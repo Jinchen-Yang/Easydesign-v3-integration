@@ -38,6 +38,17 @@ def test_readme_supports_clean_machine_runtime_install_and_agent_native_cli() ->
     assert "easydesign runtime plan" in shell
     assert "easydesign runtime install" in shell
     assert "easydesign runtime jobs" in shell
+    assert "easydesign runtime plan all" in shell
+    assert "easydesign runtime install all --detach" in shell
+    for component in (
+        "pymol-pse",
+        "boltzgen",
+        "protenix-v2",
+        "scannet-epitope",
+        "tnp",
+    ):
+        assert f"easydesign runtime plan {component}" in shell
+        assert f"easydesign runtime install {component} --detach" in shell
     assert "easydesign project init" in shell
     assert "easydesign project status" in shell
     assert "easydesign target prepare" in shell

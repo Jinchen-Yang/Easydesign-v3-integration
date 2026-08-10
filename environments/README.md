@@ -6,15 +6,14 @@ shell profile、Git 全局配置或系统代理。
 
 ## 推荐流程
 
-先按根 README 使用 uv 创建并激活 `.venv`。在 Linux 数据盘的仓库根目录运行：
+先按根 README 使用 uv 创建并激活 `.venv`。可以用一个串行后台任务安装全部组件：
 
 ```bash
-easydesign runtime plan pymol-pse
-easydesign runtime install pymol-pse --detach
-easydesign runtime jobs
+easydesign runtime plan all
+easydesign runtime install all --detach
 ```
 
-逐后端重复上述流程，推荐顺序为：
+也可以逐个执行；完整的五组命令见根 README，推荐顺序为：
 
 ```text
 pymol-pse

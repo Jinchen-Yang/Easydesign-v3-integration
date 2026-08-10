@@ -43,12 +43,33 @@ cannot change the resolved package set. Only `--index auto` may try another meas
 immutable receipt under `runtime/state/bootstrap/`; use `--dry-run` for a read-only probe.
 
 On a clean Linux x86-64 host, explicitly install the pinned Miniforge build into this clone. The
-command downloads and verifies the installer, then later component installs use it automatically:
+command downloads and verifies the installer, then later component installs use it automatically.
+Choose either one all-components job or the five individual jobs. While a setup job is running, the
+CLI rejects a second launch and returns the existing job's watch command instead of competing for the
+same cache.
+
+Install all five components in one sequential detached job:
 
 ```bash
 easydesign runtime install miniforge
+easydesign runtime plan all
+easydesign runtime install all --detach
+easydesign runtime jobs --job-id SETUP_JOB_ID --watch
+```
+
+Alternatively, install and verify one component at a time:
+
+```bash
 easydesign runtime plan pymol-pse
 easydesign runtime install pymol-pse --detach
+easydesign runtime plan boltzgen
+easydesign runtime install boltzgen --detach
+easydesign runtime plan protenix-v2
+easydesign runtime install protenix-v2 --detach
+easydesign runtime plan scannet-epitope
+easydesign runtime install scannet-epitope --detach
+easydesign runtime plan tnp
+easydesign runtime install tnp --detach
 easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 ```
 
@@ -65,9 +86,11 @@ also show transferred/total bytes, rate, and ETA; Conda and Git phases do not
 invent byte percentages when the upstream tool cannot provide them. `Ctrl-C`
 only stops watching and leaves the detached installer running.
 
-Repeat in the order `pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp`, waiting for each
-job to finish. Then run `easydesign runtime status` and `easydesign doctor --full`. Every cache, log,
-job, project, run, and locally installed component remains inside the current clone.
+The `all` command creates one worker and processes
+`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp` sequentially. In individual mode, wait
+for each job to finish before launching the next. Then run `easydesign runtime status` and
+`easydesign doctor --full`. Every cache, log, job, project, run, and locally installed component
+remains inside the current clone.
 
 ## Start or resume with Codex
 

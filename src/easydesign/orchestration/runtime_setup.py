@@ -41,14 +41,22 @@ ENVIRONMENT_IDS = (
     "boltzgen",
     "tnp",
 )
+SETUP_COMPONENT_SEQUENCE = (
+    "pymol-pse",
+    "boltzgen",
+    "protenix-v2",
+    "scannet-epitope",
+    "tnp",
+)
 SETUP_COMPONENT_ENVIRONMENTS: dict[str, tuple[str, ...]] = {
     "pymol-pse": ("pymol-pse",),
     "protenix-v2": ("protenix-v2",),
     "scannet-epitope": ("scannet-epitope",),
     "boltzgen": ("boltzgen",),
     "tnp": ("tnp",),
+    "all": SETUP_COMPONENT_SEQUENCE,
 }
-SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
+_INDIVIDUAL_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
     "pymol-pse": (),
     "protenix-v2": (
         "protenix-v2-checkpoint",
@@ -69,7 +77,15 @@ SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
     ),
     "tnp": ("tnp-source-29dcac72",),
 }
-SETUP_COMPONENT_IDS = tuple(SETUP_COMPONENT_ENVIRONMENTS)
+SETUP_COMPONENT_ASSETS: dict[str, tuple[str, ...]] = {
+    **_INDIVIDUAL_COMPONENT_ASSETS,
+    "all": tuple(
+        asset_id
+        for component in SETUP_COMPONENT_SEQUENCE
+        for asset_id in _INDIVIDUAL_COMPONENT_ASSETS[component]
+    ),
+}
+SETUP_COMPONENT_IDS = ("all", *SETUP_COMPONENT_SEQUENCE)
 GIB = 1024**3
 SETUP_FREE_RESERVE_BYTES = 10 * GIB
 DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"

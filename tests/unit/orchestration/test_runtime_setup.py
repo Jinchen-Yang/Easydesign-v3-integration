@@ -217,6 +217,27 @@ def test_component_plan_contains_only_requested_backend(
     assert tuple(item["asset_id"] for item in plan["assets"]) == asset_ids
 
 
+def test_all_component_plan_contains_every_backend_once_in_install_order() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    context = WorkspaceContext.from_root(repository)
+
+    plan = setup_plan(context, component="all")
+
+    assert plan["mode"] == "component"
+    assert plan["component"] == "all"
+    assert tuple(
+        item["environment_id"] for item in plan["environments"]
+    ) == runtime_setup.SETUP_COMPONENT_SEQUENCE
+    expected_assets = tuple(
+        asset_id
+        for component in runtime_setup.SETUP_COMPONENT_SEQUENCE
+        for asset_id in runtime_setup.SETUP_COMPONENT_ASSETS[component]
+    )
+    observed_assets = tuple(item["asset_id"] for item in plan["assets"])
+    assert observed_assets == expected_assets
+    assert len(observed_assets) == len(set(observed_assets))
+
+
 def test_setup_plan_rejects_unknown_component() -> None:
     repository = Path(__file__).resolve().parents[3]
     context = WorkspaceContext.from_root(repository)

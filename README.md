@@ -56,7 +56,7 @@ easydesign runtime install miniforge
 命令会从 `runtime/cache/downloads/` 的 partial 继续，而不是从头下载。需要严格限定来源时
 可以使用 `--source official`；`--source china` 表示国内优先，均不可用时回退官方。
 
-### 3. 依次安装科学环境
+### 3. 安装五个科学环境
 
 安装顺序是：
 
@@ -64,17 +64,52 @@ easydesign runtime install miniforge
 pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp
 ```
 
-每次先查看计划，再安装一个组件：
+以下两种方式二选一。已有 setup job 运行时，CLI 会拒绝启动第二个任务并返回现有任务的
+观察命令，避免多个安装进程争用同一 cache。
+
+#### 方式 A：一个后台任务安装全部组件
+
+先查看五个组件的合并计划，再启动一个串行后台任务：
 
 ```bash
-easydesign runtime plan pymol-pse
-easydesign runtime install pymol-pse --detach
+easydesign runtime plan all
+easydesign runtime install all --detach
 ```
 
-重型环境沿用同一来源策略。Conda 包先按逐包 SHA-256 下载到当前 clone 的 cache，再从
-本地显式视图创建环境；Pip index、Hugging Face 文件和 Git source 的实际选择会写入安装
-request、环境或资产记录。镜像只改变传输，不改变 package 版本、build、模型 SHA 或 Git
-commit。需要复现严格官方传输时，在安装命令中加入 `--source official`。
+`all` 只创建一个 setup job；它按上述顺序处理五个环境及对应资产，不会并发运行五个 Conda
+安装。任务中断后可重新执行同一命令，已经完成且校验通过的环境、资产和下载 cache 会被复用。
+
+#### 方式 B：逐个安装组件
+
+每个组件都先查看自己的计划，等待当前 job 完成后再启动下一个：
+
+```bash
+# 1. PyMOL/PSE
+easydesign runtime plan pymol-pse
+easydesign runtime install pymol-pse --detach
+
+# 2. BoltzGen
+easydesign runtime plan boltzgen
+easydesign runtime install boltzgen --detach
+
+# 3. Protenix v2
+easydesign runtime plan protenix-v2
+easydesign runtime install protenix-v2 --detach
+
+# 4. ScanNet epitope
+easydesign runtime plan scannet-epitope
+easydesign runtime install scannet-epitope --detach
+
+# 5. TNP
+easydesign runtime plan tnp
+easydesign runtime install tnp --detach
+```
+
+两种方式都使用同一套候选来源策略，而不是固定唯一下载源。Conda 包先按逐包 SHA-256
+下载到当前 clone 的 cache，再从本地显式视图创建环境；Pip index、Hugging Face 文件和
+Git source 的实际选择会写入安装 request、环境或资产记录。镜像只改变传输，不改变
+package 版本、build、模型 SHA 或 Git commit。需要复现严格官方传输时，在对应安装命令中
+加入 `--source official`。
 
 安装命令会打印 `SETUP_JOB_ID` 和对应的观察命令。复制它给出的命令，或运行：
 
@@ -82,9 +117,8 @@ commit。需要复现严格官方传输时，在安装命令中加入 `--source 
 easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 ```
 
-当前组件完成后，把上述命令中的 `pymol-pse` 依次替换为 `boltzgen`、`protenix-v2`、
-`scannet-epitope` 和 `tnp`。遇到许可确认时，阅读终端提示并显式提供要求的
-`--accept-license`；`Ctrl-C` 只退出观察，后台安装继续。
+遇到许可确认时，安装命令会在创建后台 job 前逐项询问；阅读提示后确认，或显式重复提供
+要求的 `--accept-license ASSET_ID`。`Ctrl-C` 只退出观察，后台安装继续。
 
 ### 4. 验收
 

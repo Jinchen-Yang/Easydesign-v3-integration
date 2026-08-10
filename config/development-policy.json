@@ -73,6 +73,8 @@
         "src/easydesign/orchestration/runtime*.py",
         "environments/**",
         "config/runtime-assets.yaml",
+        "config/bootstrap-indexes.json",
+        "scripts/bootstrap.py",
         "easydesign-workspace.yaml",
         "DATA_SAFETY.md"
       ]
@@ -92,9 +94,15 @@
     "web/target-viewer/**",
     "docs/workflow/**",
     "easydesign-workspace.yaml",
-    "environments/**"
+    "environments/**",
+    "scripts/bootstrap.py",
+    "config/bootstrap-indexes.json"
   ],
   "test_routes": [
+    {
+      "patterns": ["scripts/bootstrap.py", "config/bootstrap-indexes.json"],
+      "tests": ["tests/unit/test_bootstrap.py", "tests/unit/test_uv_onboarding.py"]
+    },
     {
       "patterns": ["scripts/dev.py", "config/development-policy.json"],
       "tests": ["tests/unit/test_dev_workflow.py"]

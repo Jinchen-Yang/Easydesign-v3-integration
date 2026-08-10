@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.1",
+  "probe_package": "gemmi",
+  "probe_bytes": 524288,
+  "sources": [
+    {
+      "name": "official",
+      "display_name": "PyPI official",
+      "index_url": "https://pypi.org/simple"
+    },
+    {
+      "name": "aliyun",
+      "display_name": "Aliyun",
+      "index_url": "https://mirrors.aliyun.com/pypi/simple"
+    },
+    {
+      "name": "tsinghua",
+      "display_name": "Tsinghua TUNA",
+      "index_url": "https://pypi.tuna.tsinghua.edu.cn/simple"
+    }
+  ]
+}

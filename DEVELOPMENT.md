@@ -8,12 +8,16 @@
 都不得重启 18769、修改主仓库、访问 Suzhou2/Manager 或发布 UI wheel。
 
 ```bash
-uv sync --frozen --extra dev
+./scripts/bootstrap.py --index auto
 source .venv/bin/activate
 easydesign --version
 ```
 
 Makefile 只使用仓库 `.venv`，不存在时明确失败，不回退系统 Python 或旧 Conda core。
+`uv.lock` 是唯一依赖解析；`config/bootstrap-indexes.json` 只声明下载端点。bootstrap 从 lock
+导出 hash-pinned requirements、同步依赖、以 editable 模式安装当前源码，再执行
+`uv sync --frozen --extra dev --check`。安装 receipt 位于 `runtime/state/bootstrap/`，不得写入
+凭据；自定义源必须显式使用无凭据的 HTTPS URL。
 
 ## 最小上下文
 

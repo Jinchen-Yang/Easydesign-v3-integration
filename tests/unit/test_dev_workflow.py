@@ -64,6 +64,9 @@ def test_task_paths_select_only_local_guides() -> None:
     assert dev.selected_guides(
         "ops", ["src/easydesign/orchestration/runtime_link.py"]
     ) == ("docs/agent/RUNTIME_AND_DATA.md",)
+    assert dev.selected_guides("dev-local", ["scripts/bootstrap.py"]) == (
+        "docs/agent/RUNTIME_AND_DATA.md",
+    )
 
 
 def test_risk_classification_requires_integration_for_science_and_local_worker() -> None:
@@ -71,6 +74,11 @@ def test_risk_classification_requires_integration_for_science_and_local_worker()
     assert dev.minimum_mode(["src/easydesign/cli.py"]) == "dev-local"
     assert dev.minimum_mode(["src/easydesign/orchestration/local_jobs.py"]) == "integration"
     assert dev.minimum_mode(["src/easydesign/core/manifests.py"]) == "integration"
+    assert dev.minimum_mode(["scripts/bootstrap.py"]) == "integration"
+    assert dev.routed_tests(["scripts/bootstrap.py"]) == (
+        "tests/unit/test_bootstrap.py",
+        "tests/unit/test_uv_onboarding.py",
+    )
 
 
 def test_core_sync_report_is_read_only() -> None:

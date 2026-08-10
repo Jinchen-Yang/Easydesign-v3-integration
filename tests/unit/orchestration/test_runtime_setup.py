@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 import pytest
 import yaml
@@ -19,7 +20,11 @@ from easydesign.orchestration.runtime_setup import (
     setup_workspace,
     validate_pip_index_url,
 )
-from easydesign.orchestration.source_policy import SourceCandidate
+from easydesign.orchestration.source_policy import (
+    SourceCandidate,
+    SourceSelection,
+    VerifiedDownload,
+)
 from easydesign.workspace_context import WorkspaceContext
 
 
@@ -122,6 +127,75 @@ def test_all_conda_explicit_locks_pin_every_package_sha256() -> None:
         entries = runtime_setup._conda_lock_entries(path)
         assert entries
         assert all(len(package_sha256) == 64 for _url, package_sha256 in entries)
+
+
+def test_conda_explicit_view_preserves_original_archive_basename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    package_sha256 = "a" * 64
+    filename = "fixture-package-1.0-0.conda"
+    lock = tmp_path / "fixture.conda-lock.txt"
+    lock.write_text(
+        "@EXPLICIT\n"
+        f"https://conda.anaconda.org/fixture/linux-64/{filename}#{package_sha256}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "load_runtime_sources",
+        lambda _context: SimpleNamespace(conda_rewrites=()),
+    )
+
+    def fake_download(
+        _context: WorkspaceContext,
+        **kwargs: object,
+    ) -> VerifiedDownload:
+        destination = kwargs["destination"]
+        assert isinstance(destination, Path)
+        destination.write_bytes(b"verified package bytes")
+        selection = SourceSelection(
+            source_id="fixture-source",
+            url="https://example.test/fixture-package.conda",
+        )
+        callback = kwargs["source_callback"]
+        assert callable(callback)
+        callback(selection)
+        return VerifiedDownload(
+            path=destination,
+            source=selection,
+            sha256=package_sha256,
+            size_bytes=destination.stat().st_size,
+        )
+
+    monkeypatch.setattr(runtime_setup, "download_verified_file", fake_download)
+
+    explicit, source_ids = runtime_setup._materialize_conda_explicit(
+        context,
+        environment_id="fixture",
+        conda_lock=lock,
+        source_policy="auto",
+        progress_callback=None,
+    )
+
+    package_line = next(
+        line
+        for line in explicit.read_text(encoding="utf-8").splitlines()
+        if line.startswith("file:")
+    )
+    local_package = Path(urlparse(package_line.rsplit("#", maxsplit=1)[0]).path)
+    cached_package = (
+        context.runtime_root
+        / "cache"
+        / "conda-artifacts"
+        / f"{package_sha256}-{filename}"
+    )
+    assert local_package.name == filename
+    assert explicit.parent.name.endswith(".explicit-view")
+    assert local_package.stat().st_ino == cached_package.stat().st_ino
+    assert source_ids == ("fixture-source",)
 
 
 def test_setup_plan_uses_fixed_ten_gib_free_space_reserve(
@@ -405,6 +479,15 @@ def test_setup_workspace_emits_environment_and_byte_progress(
         callback = kwargs["progress_callback"]
         assert callable(callback)
         callback("正在创建锁定 Conda 环境", 0.1)
+        download_callback = kwargs["download_progress_callback"]
+        assert callable(download_callback)
+        download_callback(
+            "正在获取锁定 Conda 包 1/2 [fixture-conda]: fixture.conda",
+            0.25,
+            25,
+            100,
+            "fixture.conda",
+        )
         callback("环境安装与探针完成", 1.0)
         return EnvironmentRecord(
             environment_id=environment_id,
@@ -448,11 +531,105 @@ def test_setup_workspace_emits_environment_and_byte_progress(
     assert summary.ok is True
     assert events[0].phase == "planning"
     assert any(event.phase == "environment" for event in events)
+    conda_byte_event = next(event for event in events if event.bytes_completed == 25)
+    assert conda_byte_event.current_item == "fixture.conda"
+    assert "fixture-conda" in conda_byte_event.message
     byte_event = next(event for event in events if event.bytes_completed == 50)
     assert byte_event.current_item == "fixture-model"
     assert byte_event.current_step_fraction == 0.5
     assert events[-1].phase == "complete"
     assert events[-1].completed_steps == events[-1].total_steps == 2
+
+
+def test_setup_workspace_stops_after_first_failed_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    asset = AssetDefinition(
+        asset_id="unreached-model",
+        kind="file",
+        source="https://example.test/model.bin",
+        destination=Path("fixture/model.bin"),
+        sha256="a" * 64,
+        expected_size_bytes=100,
+        estimated_install_bytes=100,
+        license="test-only",
+        license_confirmation_required=False,
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "_setup_selection",
+        lambda _context, *, component: (
+            "component",
+            ("first-env", "unreached-env"),
+            (asset,),
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "setup_plan",
+        lambda _context, *, component: {
+            "disk": {
+                "sufficient": True,
+                "incremental_peak_bytes": 100,
+                "reserve_bytes": 50,
+                "free_bytes": 1000,
+            }
+        },
+    )
+    monkeypatch.setattr(runtime_setup, "initialize_workspace_metadata", lambda _context: None)
+    monkeypatch.setattr(
+        runtime_setup,
+        "pip_index_candidates",
+        lambda *_args, **_kwargs: (
+            SourceCandidate(
+                source_id="fixture-pip",
+                region="official",
+                url="https://example.test/simple",
+            ),
+        ),
+    )
+    attempted: list[str] = []
+
+    def failed_environment(
+        _context: WorkspaceContext,
+        environment_id: str,
+        **_kwargs: object,
+    ) -> EnvironmentRecord:
+        attempted.append(environment_id)
+        return EnvironmentRecord(
+            environment_id=environment_id,
+            lock_sha256="b" * 64,
+            relative_prefix=Path("runtime/envs/first-env"),
+            status="failed",
+            probe_command=("python", "-V"),
+            recorded_at=runtime_setup.datetime.now(tz=runtime_setup.UTC),
+        )
+
+    monkeypatch.setattr(runtime_setup, "ensure_environment", failed_environment)
+    monkeypatch.setattr(
+        runtime_setup,
+        "ensure_asset",
+        lambda *_args, **_kwargs: pytest.fail("asset install must not start"),
+    )
+    events: list[runtime_setup.SetupProgressUpdate] = []
+
+    summary = setup_workspace(
+        context,
+        component="all",
+        accepted_license_ids=set(),
+        progress_callback=events.append,
+    )
+
+    assert attempted == ["first-env"]
+    assert len(summary.environments) == 1
+    assert summary.assets == ()
+    assert summary.ok is False
+    assert events[-1].phase == "failed"
+    assert events[-1].current_item == "first-env"
+    assert events[-1].completed_steps == 1
+    assert events[-1].total_steps == 3
 
 
 def test_inventory_normalizes_only_workspace_editable_commit() -> None:

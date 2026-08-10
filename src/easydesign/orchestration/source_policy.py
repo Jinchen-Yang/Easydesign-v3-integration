@@ -325,6 +325,7 @@ def download_verified_file(
     expected_sha256: str,
     expected_size_bytes: int | None = None,
     progress_callback: Callable[[int, int | None], None] | None = None,
+    source_callback: Callable[[SourceSelection], None] | None = None,
 ) -> VerifiedDownload:
     """Resume across equivalent sources and publish only verified bytes."""
 
@@ -337,12 +338,17 @@ def download_verified_file(
             expected_size_bytes is not None and actual_size != expected_size_bytes
         ):
             raise ConfigurationError(f"下载目标已存在但身份不匹配: {destination}")
+        selection = SourceSelection(
+            source_id="workspace-cache",
+            url="workspace-cache://verified",
+        )
+        if source_callback is not None:
+            source_callback(selection)
+        if progress_callback is not None:
+            progress_callback(actual_size, actual_size)
         return VerifiedDownload(
             path=destination,
-            source=SourceSelection(
-                source_id="workspace-cache",
-                url="workspace-cache://verified",
-            ),
+            source=selection,
             sha256=actual_sha256,
             size_bytes=actual_size,
         )
@@ -355,6 +361,13 @@ def download_verified_file(
     failures: list[str] = []
     for candidate in ordered:
         try:
+            if source_callback is not None:
+                source_callback(
+                    SourceSelection(
+                        source_id=candidate.source_id,
+                        url=candidate.url,
+                    )
+                )
             size = _stream_candidate(
                 candidate,
                 partial,

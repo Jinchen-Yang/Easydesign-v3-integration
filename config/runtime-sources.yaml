@@ -29,6 +29,10 @@ pip_indexes:
     url: https://pypi.mirrors.ustc.edu.cn/simple
 
 conda_rewrites:
+  - source_id: sustech-nvidia
+    region: china
+    canonical_prefix: https://conda.anaconda.org/nvidia/
+    transport_prefix: https://mirrors.sustech.edu.cn/anaconda-extra/cloud/nvidia/
   - source_id: nju-conda-forge
     region: china
     canonical_prefix: https://conda.anaconda.org/conda-forge/

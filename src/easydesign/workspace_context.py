@@ -27,6 +27,10 @@ from easydesign.runtime_guard import (
 
 WORKSPACE_MARKER = "easydesign-workspace.yaml"
 WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
+# The first package cache generation could contain SHA-prefixed Conda archive
+# basenames produced by older installers. Conda scans every archive at startup,
+# so a new generation must not inherit those structurally invalid entries.
+CONDA_PACKAGE_CACHE_NAME = "conda-packages-v2"
 
 _INHERITED_INTERPRETER_ENVIRONMENT = frozenset(
     {
@@ -202,7 +206,7 @@ class WorkspaceContext:
         values = {
             "HOME": str(self.runtime_root / "home"),
             "TMPDIR": str(self._short_tmp_alias()),
-            "CONDA_PKGS_DIRS": str(cache / "conda"),
+            "CONDA_PKGS_DIRS": str(cache / CONDA_PACKAGE_CACHE_NAME),
             "PIP_CACHE_DIR": str(cache / "pip"),
             "UV_CACHE_DIR": str(cache / "uv"),
             "PIP_CONFIG_FILE": os.devnull,

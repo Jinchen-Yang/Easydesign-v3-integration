@@ -65,6 +65,7 @@ def test_child_environment_is_repository_local_and_does_not_mutate_parent(
     assert "[include]" not in git_config
     assert "proxy" not in git_config.lower()
     assert child["PIP_CONFIG_FILE"] == os.devnull
+    assert Path(child["CONDA_PKGS_DIRS"]).name == "conda-packages-v2"
     assert child["PIP_INDEX_URL"] == "https://pypi.org/simple"
     assert child["PYTHONNOUSERSITE"] == "1"
     assert child["HTTPS_PROXY"] == "http://user-owned-proxy.invalid:7898"

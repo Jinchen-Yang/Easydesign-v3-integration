@@ -11,7 +11,9 @@ from easydesign.orchestration import source_policy
 from easydesign.orchestration.source_policy import (
     SourceCandidate,
     download_verified_file,
+    load_runtime_sources,
     rank_source_candidates,
+    rewritten_candidates,
 )
 from easydesign.workspace_context import WorkspaceContext
 
@@ -87,6 +89,7 @@ def test_verified_download_resumes_partial_across_equivalent_sources(
     expected_sha256 = hashlib.sha256(payload).hexdigest()
     candidates = _candidates()[:2]
     calls: list[str] = []
+    selected_sources: list[str] = []
 
     monkeypatch.setattr(
         source_policy,
@@ -119,9 +122,13 @@ def test_verified_download_resumes_partial_across_equivalent_sources(
         destination=destination,
         expected_sha256=expected_sha256,
         expected_size_bytes=len(payload),
+        source_callback=lambda selection: selected_sources.append(
+            selection.source_id
+        ),
     )
 
     assert calls == ["official", "china-fast"]
+    assert selected_sources == ["official", "china-fast"]
     assert result.path.read_bytes() == payload
     assert result.source.source_id == "china-fast"
     assert not tuple((context.runtime_root / "cache" / "downloads").glob("*.part"))
@@ -163,3 +170,30 @@ def test_verified_download_quarantines_wrong_identity(
     metadata = tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
     assert len(metadata) == 1
     assert "SHA-256 mismatch" in metadata[0].read_text(encoding="utf-8")
+
+
+def test_runtime_sources_rewrite_nvidia_packages_to_sustech() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    context = WorkspaceContext.from_root(repository)
+    catalog = load_runtime_sources(context)
+    canonical = (
+        "https://conda.anaconda.org/nvidia/linux-64/"
+        "libcublas-12.6.4.1-0.conda"
+    )
+
+    candidates = rewritten_candidates(
+        canonical,
+        source_id="official-conda",
+        rewrites=catalog.conda_rewrites,
+    )
+
+    sustech = next(
+        candidate
+        for candidate in candidates
+        if candidate.source_id == "sustech-nvidia"
+    )
+    assert sustech.region == "china"
+    assert sustech.url == (
+        "https://mirrors.sustech.edu.cn/anaconda-extra/cloud/nvidia/"
+        "linux-64/libcublas-12.6.4.1-0.conda"
+    )

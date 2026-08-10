@@ -534,17 +534,16 @@ def _materialize_conda_explicit(
     conda_lock: Path,
     source_policy: SourcePolicy,
     progress_callback: Callable[[str, float], None] | None,
+    download_progress_callback: (
+        Callable[[str, float, int, int | None, str], None] | None
+    ) = None,
 ) -> tuple[Path, tuple[str, ...]]:
-    """Download hashed packages with fallback, then emit a local explicit view."""
+    """Download hashed packages, then expose their original Conda filenames."""
 
     catalog = load_runtime_sources(context)
     entries = _conda_lock_entries(conda_lock)
-    local_lines = [
-        "# Generated from the tracked EasyDesign lock; transport URLs are not identity.",
-        "# platform: linux-64",
-        "@EXPLICIT",
-    ]
     source_ids: set[str] = set()
+    downloaded_packages: list[tuple[str, str, Path]] = []
     package_cache = context.runtime_root / "cache" / "conda-artifacts"
     package_cache.mkdir(parents=True, exist_ok=True)
     for index, (canonical_url, package_sha256) in enumerate(entries):
@@ -561,6 +560,42 @@ def _materialize_conda_explicit(
             source_id="official-conda",
             rewrites=catalog.conda_rewrites,
         )
+        active_source_id = ["selecting-source"]
+
+        def source_selected(
+            selection: SourceSelection,
+            selected_source_id: list[str] = active_source_id,
+        ) -> None:
+            selected_source_id[0] = selection.source_id
+
+        def package_progress(
+            bytes_completed: int,
+            bytes_total: int | None,
+            selected_index: int = index,
+            selected_filename: str = filename,
+            selected_source_id: list[str] = active_source_id,
+        ) -> None:
+            within_package = (
+                0.0
+                if not bytes_total
+                else min(bytes_completed / bytes_total, 1.0)
+            )
+            fraction = 0.05 + (
+                0.45 * (selected_index + within_package) / len(entries)
+            )
+            message = (
+                f"正在获取锁定 Conda 包 {selected_index + 1}/{len(entries)} "
+                f"[{selected_source_id[0]}]: {selected_filename}"
+            )
+            if download_progress_callback is not None:
+                download_progress_callback(
+                    message,
+                    fraction,
+                    bytes_completed,
+                    bytes_total,
+                    selected_filename,
+                )
+
         package = download_verified_file(
             context,
             artifact_id=f"conda-{package_sha256}",
@@ -568,17 +603,44 @@ def _materialize_conda_explicit(
             policy=source_policy,
             destination=package_cache / f"{package_sha256}-{filename}",
             expected_sha256=package_sha256,
+            progress_callback=package_progress,
+            source_callback=source_selected,
         )
         source_ids.add(package.source.source_id)
-        local_lines.append(f"{package.path.resolve().as_uri()}#{package_sha256}")
-    explicit = (
+        downloaded_packages.append((filename, package_sha256, package.path))
+
+    # Cache names include SHA-256 to prevent collisions, but Conda derives
+    # archive component names from URL basenames. A temporary hard-link view
+    # provides original basenames without copying large CUDA archives.
+    view_root = (
         context.runtime_root
         / "tmp"
-        / f"conda-{environment_id}-{uuid4().hex}.explicit.txt"
+        / f"conda-{environment_id}-{uuid4().hex}.explicit-view"
     )
-    context.assert_write_path(explicit)
-    with explicit.open("x", encoding="utf-8") as handle:
-        handle.write("\n".join(local_lines) + "\n")
+    context.assert_write_path(view_root)
+    view_root.mkdir(parents=False, exist_ok=False)
+    local_lines = [
+        "# Generated from the tracked EasyDesign lock; transport URLs are not identity.",
+        "# platform: linux-64",
+        "@EXPLICIT",
+    ]
+    try:
+        for index, (filename, package_sha256, cached_path) in enumerate(
+            downloaded_packages
+        ):
+            package_view = view_root / f"{index:04d}"
+            package_view.mkdir(exist_ok=False)
+            local_package = package_view / filename
+            os.link(cached_path, local_package)
+            local_lines.append(
+                f"{local_package.resolve().as_uri()}#{package_sha256}"
+            )
+        explicit = view_root / "explicit.txt"
+        with explicit.open("x", encoding="utf-8") as handle:
+            handle.write("\n".join(local_lines) + "\n")
+    except (OSError, ValueError):
+        shutil.rmtree(view_root)
+        raise
     return explicit, tuple(sorted(source_ids))
 
 
@@ -781,6 +843,9 @@ def ensure_environment(
     pip_source: SourceSelection | None = None,
     pip_sources: tuple[SourceCandidate, ...] | None = None,
     progress_callback: Callable[[str, float], None] | None = None,
+    download_progress_callback: (
+        Callable[[str, float, int, int | None, str], None] | None
+    ) = None,
 ) -> EnvironmentRecord:
     """Create one immutable lock-addressed environment and probe it."""
 
@@ -855,6 +920,7 @@ def ensure_environment(
             conda_lock=conda_explicit,
             source_policy=source_policy,
             progress_callback=progress_callback,
+            download_progress_callback=download_progress_callback,
         )
         command = [
             str(_conda_executable(context, conda_executable)),
@@ -872,10 +938,10 @@ def ensure_environment(
             check=False,
         )
         if completed.returncode == 0:
-            resolved_conda_explicit.unlink()
+            shutil.rmtree(resolved_conda_explicit.parent)
         else:
             context.quarantine(
-                resolved_conda_explicit,
+                resolved_conda_explicit.parent,
                 operation=f"setup-{environment_id}-conda-explicit",
                 reason=f"conda-create 返回 {completed.returncode}",
             )
@@ -1382,6 +1448,7 @@ def setup_workspace(
     )
     initialize_workspace_metadata(context)
     completed_steps = 0
+    failed_item: str | None = None
     environment_records_list: list[EnvironmentRecord] = []
     for environment_id in selected:
         def environment_progress(
@@ -1400,22 +1467,45 @@ def setup_workspace(
                 current_step_fraction=fraction,
             )
 
-        environment_progress("准备环境安装", 0.0)
-        environment_records_list.append(
-            ensure_environment(
-                context,
-                environment_id,
-                conda_executable=conda_executable,
-                source_policy=source_policy,
-                pip_source=selected_pip_source,
-                pip_sources=ranked_pip_sources,
-                progress_callback=environment_progress,
+        def environment_download_progress(
+            message: str,
+            fraction: float,
+            bytes_completed: int,
+            bytes_total: int | None,
+            package_filename: str,
+            selected_completed_steps: int = completed_steps,
+        ) -> None:
+            _emit_setup_progress(
+                progress_callback,
+                phase="environment",
+                message=message,
+                completed_steps=selected_completed_steps,
+                total_steps=total_steps,
+                current_item=package_filename,
+                current_step_fraction=fraction,
+                bytes_completed=bytes_completed,
+                bytes_total=bytes_total,
             )
+
+        environment_progress("准备环境安装", 0.0)
+        environment_record = ensure_environment(
+            context,
+            environment_id,
+            conda_executable=conda_executable,
+            source_policy=source_policy,
+            pip_source=selected_pip_source,
+            pip_sources=ranked_pip_sources,
+            progress_callback=environment_progress,
+            download_progress_callback=environment_download_progress,
         )
+        environment_records_list.append(environment_record)
         completed_steps += 1
+        if environment_record.status != "available":
+            failed_item = environment_id
+            break
     environment_records = tuple(environment_records_list)
     asset_records_list: list[AssetRecord] = []
-    for asset in selected_assets:
+    for asset in (() if failed_item is not None else selected_assets):
         def asset_progress(
             bytes_completed: int,
             bytes_total: int | None,
@@ -1451,16 +1541,18 @@ def setup_workspace(
             total_steps=total_steps,
             current_item=asset.asset_id,
         )
-        asset_records_list.append(
-            ensure_asset(
-                context,
-                asset,
-                accepted_license_ids=accepted_license_ids,
-                source_policy=source_policy,
-                progress_callback=asset_progress if asset.kind == "file" else None,
-            )
+        asset_record = ensure_asset(
+            context,
+            asset,
+            accepted_license_ids=accepted_license_ids,
+            source_policy=source_policy,
+            progress_callback=asset_progress if asset.kind == "file" else None,
         )
+        asset_records_list.append(asset_record)
         completed_steps += 1
+        if asset_record.status != "available":
+            failed_item = asset.asset_id
+            break
     asset_records = tuple(asset_records_list)
     _emit_setup_progress(
         progress_callback,
@@ -1500,11 +1592,15 @@ def setup_workspace(
     )
     _emit_setup_progress(
         progress_callback,
-        phase="complete",
-        message="安装完成" if summary.ok else "安装结束，但有组件未通过",
-        completed_steps=total_steps,
+        phase="complete" if summary.ok else "failed",
+        message=(
+            "安装完成"
+            if summary.ok
+            else f"安装已停止：{failed_item or component} 未通过"
+        ),
+        completed_steps=total_steps if summary.ok else completed_steps,
         total_steps=total_steps,
-        current_item=component,
+        current_item=component if summary.ok else failed_item,
         current_step_fraction=1.0,
     )
     return summary

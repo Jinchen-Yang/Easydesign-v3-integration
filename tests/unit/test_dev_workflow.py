@@ -28,7 +28,8 @@ def test_context_receipt_avoids_reloading_unchanged_policy() -> None:
         "--mode", "dev-local", "--path", "src/easydesign/cli.py"
     )
     assert first["required_reading"] == [
-        "AGENTS.md", "docs/agent/LOCAL_CLI_AND_VIEWER.md"
+        "docs/agent/DEVELOPMENT_AGENT.md",
+        "docs/agent/LOCAL_CLI_AND_VIEWER.md",
     ]
     bundle = first["policy_bundle_id"]
     second = _context(
@@ -70,6 +71,20 @@ def test_task_paths_select_only_local_guides() -> None:
     assert dev.selected_guides("integration", ["src/easydesign/runtime_guard.py"]) == (
         "docs/agent/RUNTIME_AND_DATA.md",
     )
+    assert dev.selected_guides(
+        "integration",
+        [".agents/skills/easydesign-development/SKILL.md"],
+    ) == ("docs/agent/LOCAL_CLI_AND_VIEWER.md",)
+
+
+def test_context_uses_development_guide_instead_of_research_agents() -> None:
+    payload = _context("--mode", "inspect")
+    assert payload["paths"] == ["docs/agent/DEVELOPMENT_AGENT.md"]
+    assert payload["required_reading"] == [
+        "docs/agent/DEVELOPMENT_AGENT.md",
+        "docs/agent/LOCAL_CLI_AND_VIEWER.md",
+    ]
+    assert "AGENTS.md" not in payload["required_reading"]
 
 
 def test_risk_classification_requires_integration_for_science_and_local_worker() -> None:
@@ -79,6 +94,9 @@ def test_risk_classification_requires_integration_for_science_and_local_worker()
     assert dev.minimum_mode(["src/easydesign/runtime_guard.py"]) == "integration"
     assert dev.minimum_mode(["src/easydesign/core/manifests.py"]) == "integration"
     assert dev.minimum_mode(["scripts/bootstrap.py"]) == "integration"
+    assert dev.minimum_mode(
+        [".agents/skills/easydesign-development/SKILL.md"]
+    ) == "integration"
     assert dev.routed_tests(["scripts/bootstrap.py"]) == (
         "tests/unit/test_bootstrap.py",
         "tests/unit/test_uv_onboarding.py",
@@ -87,6 +105,12 @@ def test_risk_classification_requires_integration_for_science_and_local_worker()
         "tests/unit/test_cli.py",
         "tests/unit/test_local_jobs.py",
         "tests/unit/test_runtime_guard.py",
+    )
+    assert dev.routed_tests(
+        [".agents/skills/easydesign-development/SKILL.md"]
+    ) == (
+        "tests/unit/test_agent_skill.py",
+        "tests/unit/test_dev_workflow.py",
     )
 
 

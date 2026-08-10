@@ -1,0 +1,7 @@
+interface:
+  display_name: "EasyDesign Development"
+  short_description: "Develop and validate the EasyDesign repository safely"
+  default_prompt: "Use $easydesign-development to modify and validate this EasyDesign repository task."
+
+policy:
+  allow_implicit_invocation: true

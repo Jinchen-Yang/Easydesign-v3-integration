@@ -1,6 +1,6 @@
 # EasyDesign Local 开发指南
 
-[使用入口](README.md) · [Agent 协议](AGENTS.md) · [数据安全](DATA_SAFETY.md)
+[使用入口](README.md) · [开发 Agent 必读](docs/agent/DEVELOPMENT_AGENT.md) · [数据安全](DATA_SAFETY.md)
 
 ## 独立分支
 

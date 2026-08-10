@@ -19,7 +19,7 @@ from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config" / "development-policy.json"
-AGENTS_PATH = ROOT / "AGENTS.md"
+DEVELOPMENT_GUIDE = "docs/agent/DEVELOPMENT_AGENT.md"
 MODE_ORDER = {"inspect": 0, "dev-local": 1, "integration": 2, "release": 3}
 LOCAL_BRANCH = "easydesign-local"
 SHARED_SCIENCE_PATHS = (
@@ -89,7 +89,11 @@ def selected_guides(mode: str, paths: Sequence[str]) -> tuple[str, ...]:
 
 def policy_bundle_id(guides: Sequence[str]) -> str:
     digest = hashlib.sha256()
-    for relative in ("AGENTS.md", "config/development-policy.json", *sorted(guides)):
+    for relative in (
+        DEVELOPMENT_GUIDE,
+        "config/development-policy.json",
+        *sorted(guides),
+    ):
         path = ROOT / relative
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
@@ -176,7 +180,7 @@ def git_topology() -> dict[str, Any]:
 
 def context_command(arguments: argparse.Namespace) -> int:
     started = time.monotonic()
-    paths = _normalize_paths(arguments.path or ["AGENTS.md"])
+    paths = _normalize_paths(arguments.path or [DEVELOPMENT_GUIDE])
     guides = selected_guides(arguments.mode, paths)
     bundle = policy_bundle_id(guides)
     topology = git_topology()
@@ -189,7 +193,7 @@ def context_command(arguments: argparse.Namespace) -> int:
             guide for guide in guides if guide not in previous_guides
         ]
     else:
-        required_reading = ["AGENTS.md", *guides]
+        required_reading = [DEVELOPMENT_GUIDE, *guides]
     payload = {
         "schema_version": "0.1",
         "mode": arguments.mode,

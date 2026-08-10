@@ -62,7 +62,15 @@
         "src/easydesign/local_worker.py",
         "src/easydesign/orchestration/local_*.py",
         "src/easydesign/reporting/**",
-        "web/target-viewer/**"
+        "web/target-viewer/**",
+        ".agents/skills/**",
+        "AGENTS.md",
+        "DEVELOPMENT.md",
+        "docs/agent/**",
+        "docs/PRODUCT_PHILOSOPHY.md",
+        "scripts/dev.py",
+        "scripts/check_repository.py",
+        "config/development-policy.json"
       ]
     },
     {
@@ -96,10 +104,18 @@
     "src/easydesign/reporting/**",
     "web/target-viewer/**",
     "docs/workflow/**",
+    ".agents/skills/**",
+    "AGENTS.md",
+    "DEVELOPMENT.md",
+    "docs/agent/**",
+    "docs/PRODUCT_PHILOSOPHY.md",
     "easydesign-workspace.yaml",
     "environments/**",
+    "scripts/dev.py",
+    "scripts/check_repository.py",
     "scripts/bootstrap.py",
-    "config/bootstrap-indexes.json"
+    "config/bootstrap-indexes.json",
+    "config/development-policy.json"
   ],
   "test_routes": [
     {
@@ -109,6 +125,20 @@
     {
       "patterns": ["scripts/dev.py", "config/development-policy.json"],
       "tests": ["tests/unit/test_dev_workflow.py"]
+    },
+    {
+      "patterns": [
+        "AGENTS.md",
+        "DEVELOPMENT.md",
+        ".agents/skills/**",
+        "docs/agent/**",
+        "docs/PRODUCT_PHILOSOPHY.md",
+        "scripts/check_repository.py"
+      ],
+      "tests": [
+        "tests/unit/test_agent_skill.py",
+        "tests/unit/test_dev_workflow.py"
+      ]
     },
     {
       "patterns": [

@@ -57,6 +57,9 @@ REQUIRED_LOCAL_FILES = (
     ".agents/skills/easydesign-research/references/strategy-yaml.md",
     ".agents/skills/easydesign-research/references/pilot-diagnosis.md",
     ".agents/skills/easydesign-research/references/scale-and-selection.md",
+    ".agents/skills/easydesign-development/SKILL.md",
+    ".agents/skills/easydesign-development/agents/openai.yaml",
+    "docs/agent/DEVELOPMENT_AGENT.md",
 )
 ACTIVE_LOCAL_POLICY_FILES = (
     "AGENTS.md",
@@ -64,11 +67,13 @@ ACTIVE_LOCAL_POLICY_FILES = (
     "DEVELOPMENT.md",
     "README.md",
     ".agents/skills/easydesign-research/SKILL.md",
+    ".agents/skills/easydesign-development/SKILL.md",
     "docs/ARCHITECTURE.md",
     "docs/CHARTER.md",
     "docs/PRODUCT_PHILOSOPHY.md",
     "docs/README.en.md",
     "docs/ROADMAP.md",
+    "docs/agent/DEVELOPMENT_AGENT.md",
     "docs/agent/LOCAL_CLI_AND_VIEWER.md",
     "docs/agent/RUNTIME_AND_DATA.md",
     "docs/decisions/ADR-0004-multi-strategy-promotion-and-shared-scale-budget.md",
@@ -96,6 +101,7 @@ def main() -> int:
         for path in (ROOT / "docs/agent").glob("*.md")
     }
     expected_guides = {
+        "docs/agent/DEVELOPMENT_AGENT.md",
         "docs/agent/SCIENTIFIC_PIPELINE.md",
         "docs/agent/LOCAL_CLI_AND_VIEWER.md",
         "docs/agent/RUNTIME_AND_DATA.md",
@@ -131,6 +137,27 @@ def main() -> int:
                 errors.append(f"当前本地规范残留旧远程或固定路径: {relative}: {token}")
     if "easydesign-workspace.yaml" not in agents:
         errors.append("AGENTS.md 必须通过 workspace marker 描述可移植 clone 根")
+    for token in (
+        "scripts/dev.py context",
+        "$easydesign-development",
+        "开发模式",
+        "验证、提交",
+    ):
+        if token in agents:
+            errors.append(f"研究 AGENTS.md 不得包含开发入口: {token}")
+    if "$easydesign-research" not in agents:
+        errors.append("研究 AGENTS.md 必须路由到 $easydesign-research")
+    development_guide = (
+        ROOT / "docs/agent/DEVELOPMENT_AGENT.md"
+    ).read_text(encoding="utf-8")
+    for token in (
+        "$easydesign-development",
+        "scripts/dev.py context",
+        "scripts/dev.py verify",
+        "easydesign-local",
+    ):
+        if token not in development_guide:
+            errors.append(f"开发 Agent 必读缺少入口或边界: {token}")
     for stage in STAGES:
         for suffix in (".md", "-status.md"):
             path = ROOT / "docs/workflow" / f"{stage}{suffix}"

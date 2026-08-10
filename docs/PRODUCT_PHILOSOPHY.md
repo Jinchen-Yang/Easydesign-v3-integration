@@ -1,8 +1,9 @@
 # EasyDesign Local 产品理念与 Agent 原生研究范式
 
 > 本文解释 EasyDesign Local 为什么存在、它希望规范什么，以及 EasyDesign、Skill、Codex
-> 和研究者应如何协作。强制性安全规则以 `AGENTS.md`、`DATA_SAFETY.md` 和
-> `docs/CHARTER.md` 为准；源码边界以 `docs/ARCHITECTURE.md` 为准。
+> 和研究者应如何协作。研究行为与安全规则以 `AGENTS.md`、`DATA_SAFETY.md` 和
+> `docs/CHARTER.md` 为准；仓库工程规则以 `docs/agent/DEVELOPMENT_AGENT.md` 为准，
+> 源码边界以 `docs/ARCHITECTURE.md` 为准。
 
 ## 1. 我们真正要解决的问题
 
@@ -174,7 +175,7 @@ flowchart LR
 任务和研究者批准才能修改正式 Skill。这样知识会逐步增长，又不会积累成无法追溯的实验室
 传说。
 
-## 7. 为什么只保留一个主 Skill
+## 7. 为什么研究只保留一个主 Skill
 
 当前知识入口保持简单：
 
@@ -188,13 +189,14 @@ flowchart LR
     └── scale-and-selection.md
 ```
 
-`SKILL.md` 只保存工作方法、责任边界、确认 gate 和 reference 路由。Codex 根据当前 phase
-只读取一份 reference，不在每轮加载全部经验。后续经验优先平铺增加到现有 reference；只有
-出现真正不同的触发场景和生命周期时，才新建另一个 Skill。
+研究 `SKILL.md` 只保存工作方法、责任边界、确认 gate 和 reference 路由。Codex 根据当前
+phase 只读取一份 reference，不在每轮加载全部经验。后续研究经验优先平铺增加到现有
+reference；只有出现真正不同的研究触发场景和生命周期时，才新建另一个研究 Skill。
 
-`AGENTS.md` 也不承担全部蛋白设计知识。它只是一份稳定、短小的操作宪法：判断研究或开发
-入口、规定状态来源和写入位置、划定当前主机执行边界、保护科学数据，并把研究任务路由到
-主 Skill。
+`$easydesign-development` 是独立的薄工程入口，只负责加载开发上下文和分级验证，不包含
+蛋白设计知识。`AGENTS.md` 则只是一份稳定、短小的研究操作宪法：规定状态来源和写入位置、
+划定当前主机执行边界、保护科学数据，并把研究任务路由到 `$easydesign-research`。
+开发规则集中在 `docs/agent/DEVELOPMENT_AGENT.md`，不再混入根协议。
 
 ## 8. 项目文件围绕 Agent 恢复上下文
 

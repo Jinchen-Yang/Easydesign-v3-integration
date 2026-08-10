@@ -16,14 +16,14 @@ RUNTIME_ENV = HOME="$(CURDIR)/runtime/home" \
 .PHONY: help ensure-venv check test verify-fast verify-integration test-web build-wheel-staging
 
 help:
-	@echo "uv sync --frozen --extra dev"
+	@echo "./scripts/bootstrap.py --index auto"
 	@echo "make verify-fast         # structure, Ruff, mypy, focused tests"
 	@echo "make verify-integration  # complete Python and Target Viewer regression"
 	@echo "make build-wheel-staging # local product wheel under runtime/builds"
 
 ensure-venv:
 	@test -x "$(PYTHON)" && test -x "$(EASYDESIGN)" || { \
-		echo "ERROR: 缺少仓库 .venv；请运行 uv sync --frozen --extra dev" >&2; \
+		echo "ERROR: 缺少仓库 .venv；请运行 ./scripts/bootstrap.py --index auto" >&2; \
 		exit 2; \
 	}
 

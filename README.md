@@ -26,14 +26,29 @@ cd Easydesign
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 uv --version
-uv sync --frozen --extra dev
+./scripts/bootstrap.py --index auto
 source .venv/bin/activate
 easydesign --version
 ```
 
-`uv sync` 根据 `.python-version` 和 `uv.lock` 创建当前 clone 的 `.venv`；系统 Python 可以是
-3.10，uv 会准备所需的 Python 3.11。`.venv` 只包含 EasyDesign Local 和轻量开发依赖，
-不会混装 PyMOL、BoltzGen、Protenix、ScanNet 或 TNP。
+bootstrap 会分别探测 PyPI 官方源、阿里云和清华 TUNA，显示可用性、延迟及代表性 wheel
+吞吐量，只在 `auto` 模式按实测结果依次尝试。它从冻结的 `uv.lock` 导出带 SHA-256 的依赖
+清单，因此镜像只改变“从哪里下载”，不会改变“安装什么”。系统 Python 可以是 3.10，uv
+会准备所需的 Python 3.11；`.venv` 只包含 EasyDesign Local 和轻量开发依赖，不会混装
+PyMOL、BoltzGen、Protenix、ScanNet 或 TNP。
+
+需要固定来源时可以显式选择；显式来源失败会立即停止，不会静默换源：
+
+```bash
+./scripts/bootstrap.py --index official
+./scripts/bootstrap.py --index aliyun
+./scripts/bootstrap.py --index tsinghua
+./scripts/bootstrap.py --index-url https://your-mirror.example/simple
+```
+
+每次真实安装都会把 source、探测结果、Git/lock 身份、校验结果和失败原因写入
+`runtime/state/bootstrap/` 的不可变 receipt；`--dry-run` 只探测和展示计划，不创建环境或
+receipt。中断后直接重跑同一命令即可，bootstrap 不会覆盖 lock 或删除已有 `.venv`。
 
 ### 全新机器安装科学 runtime
 

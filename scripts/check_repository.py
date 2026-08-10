@@ -35,6 +35,8 @@ FORBIDDEN_PATHS = (
 )
 REQUIRED_LOCAL_FILES = (
     "setup.cfg",
+    "config/bootstrap-indexes.json",
+    "scripts/bootstrap.py",
     "src/easydesign/cli.py",
     "src/easydesign/local_worker.py",
     "src/easydesign/runtime_guard.py",

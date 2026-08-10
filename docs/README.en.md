@@ -24,9 +24,16 @@ git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
 cd Easydesign
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-uv sync --frozen --extra dev
+./scripts/bootstrap.py --index auto
 source .venv/bin/activate
+easydesign --version
 ```
+
+The bootstrapper measures the official PyPI, Aliyun, and Tsinghua TUNA indexes, then installs a
+SHA-256-pinned export of the frozen `uv.lock`. The selected transport therefore cannot change the
+resolved package set. Only `--index auto` may try another measured source; an explicit
+`--index official|aliyun|tsinghua` or HTTPS `--index-url` fails closed. Every real attempt writes an
+immutable receipt under `runtime/state/bootstrap/`; use `--dry-run` for a read-only probe.
 
 On a clean Linux x86-64 host, install the pinned Miniforge build into this clone, verify its published
 SHA-256, and install one scientific component at a time:

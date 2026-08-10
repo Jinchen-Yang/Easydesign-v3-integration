@@ -129,7 +129,7 @@ def git_topology() -> dict[str, Any]:
     ).stdout.splitlines():
         name, commit = line.split(maxsplit=1)
         branches.append({"name": name, "commit": commit})
-        if name not in {"main", LOCAL_BRANCH}:
+        if name not in {"main", LOCAL_BRANCH, current_branch}:
             message = f"历史 branch {name} @ {commit[:12]}"
             (warnings if _is_ancestor(commit) else blockers).append(message)
 
@@ -144,6 +144,7 @@ def git_topology() -> dict[str, Any]:
         key, _, value = line.partition(" ")
         current[key] = value or True
     root = str(ROOT.resolve())
+    head = _git("rev-parse", "HEAD").stdout.strip()
     for item in worktrees:
         if item.get("worktree") == root:
             continue
@@ -152,14 +153,17 @@ def git_topology() -> dict[str, Any]:
             current_branch == LOCAL_BRANCH
             and item.get("branch") == "refs/heads/main"
         )
-        safe_legacy = is_main_worktree or (
+        is_primary_local_worktree = (
+            item.get("branch") == f"refs/heads/{LOCAL_BRANCH}" and commit == head
+        )
+        safe_legacy = is_main_worktree or is_primary_local_worktree or (
             bool(item.get("locked")) and bool(commit) and _is_ancestor(commit)
         )
         message = f"额外 worktree {item.get('worktree')} @ {commit[:12]}"
         (warnings if safe_legacy else blockers).append(message)
     return {
         "branch": current_branch,
-        "head": _git("rev-parse", "HEAD").stdout.strip(),
+        "head": head,
         "status": _git("status", "--short", "--branch").stdout.splitlines(),
         "branches": branches,
         "worktrees": worktrees,
@@ -436,7 +440,7 @@ def _python() -> Path:
     selected = ROOT / ".venv" / "bin" / "python"
     if not selected.is_file():
         raise DeveloperWorkflowError(
-            "缺少 .venv/bin/python；请先运行 uv sync --frozen --extra dev"
+            "缺少 .venv/bin/python；请先运行 ./scripts/bootstrap.py --index auto"
         )
     return selected
 

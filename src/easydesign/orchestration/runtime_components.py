@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +23,7 @@ from easydesign.orchestration.task_tracking import (
 )
 from easydesign.workspace_context import WorkspaceContext
 
+from .git_sources import directory_content_sha256
 from .profile import (
     OpenFold3Af3JaxRuntime,
     RuntimeBackends,
@@ -31,7 +33,119 @@ from .profile import (
 )
 
 COMPONENT_ID = "openfold3-p2-af3-jax"
-COMPONENT_STATE = Path("state/components") / COMPONENT_ID / "component.json"
+BACKEND_ID = "openfold3-af3-jax"
+MODEL_ID = "of3-p2-155k"
+ADAPTER_CONTRACT_VERSION = "openfold3-af3-jax-cli-v1"
+SEMVER_PATTERN = r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+RELEASE_ID_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+COMPONENT_STATE_ROOT = Path("state/components") / COMPONENT_ID / "releases"
+
+
+class OpenFold3EvidenceFile(BaseModel):
+    """A file adjacent to a validation receipt, addressed by immutable identity."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    relative_path: Path
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_path(self) -> Self:
+        if self.relative_path.is_absolute() or ".." in self.relative_path.parts:
+            raise ValueError("validation evidence 必须使用 receipt 相邻的安全相对路径")
+        return self
+
+
+class OpenFold3ConversionIdentity(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    conversion_id: Literal["conversion-a", "conversion-b"]
+    compressed_size_bytes: int = Field(gt=0)
+    compressed_sha256: str = Field(pattern=SHA256_PATTERN)
+    uncompressed_size_bytes: int = Field(gt=0)
+    uncompressed_sha256: str = Field(pattern=SHA256_PATTERN)
+    log: OpenFold3EvidenceFile
+
+
+class OpenFold3TestReceipt(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    command: tuple[str, ...] = Field(min_length=1)
+    collected: int = Field(ge=43)
+    passed: int = Field(ge=43)
+    return_code: Literal[0]
+    log: OpenFold3EvidenceFile
+
+    @model_validator(mode="after")
+    def require_all_passed(self) -> Self:
+        if self.passed != self.collected:
+            raise ValueError("converter tests 必须全部通过")
+        return self
+
+
+class OpenFold3HarnessReceipt(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    harness_id: str = Field(pattern=RELEASE_ID_PATTERN)
+    command: tuple[str, ...] = Field(min_length=1)
+    return_code: Literal[0]
+    tolerance: float = Field(gt=0)
+    maximum_relative_error: float = Field(ge=0)
+    log: OpenFold3EvidenceFile
+
+    @model_validator(mode="after")
+    def within_tolerance(self) -> Self:
+        if self.maximum_relative_error > self.tolerance:
+            raise ValueError(f"verification harness 超出容差: {self.harness_id}")
+        return self
+
+
+class OpenFold3ConversionValidationReceipt(BaseModel):
+    """Typed release evidence; arbitrary user-provided `ok` files are rejected."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.2"] = "0.2"
+    backend_version: str = Field(pattern=SEMVER_PATTERN)
+    runner_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    runner_tree_sha256: str = Field(pattern=SHA256_PATTERN)
+    raw_checkpoint_sha256: str = Field(pattern=SHA256_PATTERN)
+    conversions: tuple[OpenFold3ConversionIdentity, OpenFold3ConversionIdentity]
+    converter_tests: OpenFold3TestReceipt
+    verification_harnesses: tuple[OpenFold3HarnessReceipt, ...] = Field(min_length=1)
+    python_version: str = Field(min_length=1, max_length=64)
+    pytorch_version: str = Field(min_length=1, max_length=64)
+    environment_inventory: OpenFold3EvidenceFile
+    generated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_conversions(self) -> Self:
+        if {item.conversion_id for item in self.conversions} != {
+            "conversion-a",
+            "conversion-b",
+        }:
+            raise ValueError("validation receipt 必须包含 conversion-a 和 conversion-b")
+        first, second = sorted(self.conversions, key=lambda item: item.conversion_id)
+        if (
+            first.compressed_sha256 != second.compressed_sha256
+            or first.compressed_size_bytes != second.compressed_size_bytes
+            or first.uncompressed_sha256 != second.uncompressed_sha256
+            or first.uncompressed_size_bytes != second.uncompressed_size_bytes
+        ):
+            raise ValueError("两次转换的压缩与未压缩 identity 必须全部一致")
+        identities = [item.harness_id for item in self.verification_harnesses]
+        if len(identities) != len(set(identities)):
+            raise ValueError("verification harness identity 不能重复")
+        return self
+
+    def evidence_files(self) -> tuple[OpenFold3EvidenceFile, ...]:
+        return (
+            *(item.log for item in self.conversions),
+            self.converter_tests.log,
+            *(item.log for item in self.verification_harnesses),
+            self.environment_inventory,
+        )
 
 
 class OpenFold3BundleFile(BaseModel):
@@ -51,6 +165,7 @@ class OpenFold3BundleFile(BaseModel):
         "model-card",
         "conversion-manifest",
         "conversion-log",
+        "validation-evidence",
         "checksums",
         "smoke-input",
         "validation-receipt",
@@ -68,19 +183,25 @@ class OpenFold3BundleFile(BaseModel):
 class OpenFold3ReleaseManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.2"] = "0.2"
+    release_id: str = Field(pattern=RELEASE_ID_PATTERN)
     component_id: Literal["openfold3-p2-af3-jax"] = "openfold3-p2-af3-jax"
     backend_id: Literal["openfold3-af3-jax"] = "openfold3-af3-jax"
-    backend_version: Literal["3.1.3"] = "3.1.3"
+    backend_version: str = Field(pattern=SEMVER_PATTERN)
     model_id: Literal["of3-p2-155k"] = "of3-p2-155k"
+    adapter_contract_version: Literal["openfold3-af3-jax-cli-v1"] = (
+        "openfold3-af3-jax-cli-v1"
+    )
     python_version: Literal["3.12"] = "3.12"
     code_license: Literal["Apache-2.0"]
     template_mode: Literal["disabled"]
     raw_checkpoint_sha256: str = Field(pattern=SHA256_PATTERN)
     converted_weight_sha256: str = Field(pattern=SHA256_PATTERN)
     wheel_sha256: str = Field(pattern=SHA256_PATTERN)
-    runner_commit: str = Field(min_length=7, max_length=64)
+    runner_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    runner_tree_sha256: str = Field(pattern=SHA256_PATTERN)
     environment_lock_sha256: str = Field(pattern=SHA256_PATTERN)
+    conversion_receipt_sha256: str = Field(pattern=SHA256_PATTERN)
     files: tuple[OpenFold3BundleFile, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -113,6 +234,11 @@ class OpenFold3ReleaseManifest(BaseModel):
             != self.environment_lock_sha256
         ):
             raise ValueError("environment lock identity 与 inventory 不一致")
+        if (
+            self.require_role("validation-receipt").sha256
+            != self.conversion_receipt_sha256
+        ):
+            raise ValueError("conversion receipt identity 与 inventory 不一致")
         return self
 
     def require_role(self, role: str) -> OpenFold3BundleFile:
@@ -125,8 +251,15 @@ class OpenFold3ReleaseManifest(BaseModel):
 class OpenFold3ComponentReceipt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.2"] = "0.2"
+    release_id: str = Field(pattern=RELEASE_ID_PATTERN)
     component_id: Literal["openfold3-p2-af3-jax"] = "openfold3-p2-af3-jax"
+    backend_id: Literal["openfold3-af3-jax"] = "openfold3-af3-jax"
+    backend_version: str = Field(pattern=SEMVER_PATTERN)
+    model_id: Literal["of3-p2-155k"] = "of3-p2-155k"
+    adapter_contract_version: Literal["openfold3-af3-jax-cli-v1"] = (
+        "openfold3-af3-jax-cli-v1"
+    )
     installed_at: datetime
     release_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
     environment_lock_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -138,7 +271,9 @@ class OpenFold3ComponentReceipt(BaseModel):
     raw_checkpoint_sha256: str = Field(pattern=SHA256_PATTERN)
     converted_weight_sha256: str = Field(pattern=SHA256_PATTERN)
     wheel_sha256: str = Field(pattern=SHA256_PATTERN)
-    runner_commit: str
+    runner_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    runner_tree_sha256: str = Field(pattern=SHA256_PATTERN)
+    conversion_receipt_sha256: str = Field(pattern=SHA256_PATTERN)
     runner: Path
     smoke_receipt: Path
     smoke_receipt_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -149,17 +284,25 @@ class OpenFold3InstallResult(BaseModel):
 
     status: Literal["installed", "already-installed"]
     component: OpenFold3ComponentReceipt
-    profile: Path
+    profile: Path | None
 
 
 class RuntimeStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     openfold3: OpenFold3ComponentReceipt | None
+    openfold3_installed: tuple[OpenFold3ComponentReceipt, ...] = ()
 
 
-def _component_path(context: WorkspaceContext) -> Path:
-    return context.runtime_root / COMPONENT_STATE
+def _component_path(context: WorkspaceContext, release_id: str) -> Path:
+    if re.fullmatch(RELEASE_ID_PATTERN, release_id) is None:
+        raise ConfigurationError(f"OpenFold3 release_id 不合法: {release_id}")
+    return context.runtime_root / COMPONENT_STATE_ROOT / release_id / "component.json"
+
+
+def _component_paths(context: WorkspaceContext) -> tuple[Path, ...]:
+    root = context.runtime_root / COMPONENT_STATE_ROOT
+    return tuple(sorted(root.glob("*/component.json"))) if root.is_dir() else ()
 
 
 def _bundle_file(bundle: Path, item: OpenFold3BundleFile) -> Path:
@@ -174,6 +317,43 @@ def _bundle_file(bundle: Path, item: OpenFold3BundleFile) -> Path:
     return path
 
 
+def _validation_evidence_file(
+    receipt_path: Path,
+    evidence: OpenFold3EvidenceFile,
+) -> Path:
+    root = receipt_path.parent.resolve(strict=True)
+    path = (root / evidence.relative_path).resolve(strict=True)
+    if not path.is_relative_to(root):
+        raise ConfigurationError(
+            f"OpenFold3 validation evidence 逃出 receipt 边界: {evidence.relative_path}"
+        )
+    if (
+        not path.is_file()
+        or path.stat().st_size != evidence.size_bytes
+        or sha256_file(path) != evidence.sha256
+    ):
+        raise ConfigurationError(
+            f"OpenFold3 validation evidence identity 不一致: {evidence.relative_path}"
+        )
+    return path
+
+
+def load_openfold3_validation_receipt(
+    receipt_path: Path,
+) -> OpenFold3ConversionValidationReceipt:
+    try:
+        receipt = OpenFold3ConversionValidationReceipt.model_validate_json(
+            receipt_path.read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        raise ConfigurationError(
+            f"OpenFold3 conversion validation receipt 无法校验: {receipt_path}"
+        ) from error
+    for evidence in receipt.evidence_files():
+        _validation_evidence_file(receipt_path, evidence)
+    return receipt
+
+
 def load_openfold3_bundle(bundle_path: Path) -> tuple[Path, OpenFold3ReleaseManifest]:
     bundle = bundle_path.expanduser().resolve(strict=True)
     manifest_path = bundle / "release-manifest.json"
@@ -182,9 +362,27 @@ def load_openfold3_bundle(bundle_path: Path) -> tuple[Path, OpenFold3ReleaseMani
             manifest_path.read_text(encoding="utf-8")
         )
     except (OSError, UnicodeDecodeError, ValueError) as error:
-        raise ConfigurationError(f"OpenFold3 release manifest 无法校验: {manifest_path}") from error
+        raise ConfigurationError(
+            "OpenFold3 release manifest 无法校验；schema 0.1/3.1.3 bundle "
+            f"不得用于新安装: {manifest_path}"
+        ) from error
     for item in manifest.files:
         _bundle_file(bundle, item)
+    runner_root = (bundle / "runner").resolve(strict=True)
+    if directory_content_sha256(runner_root) != manifest.runner_tree_sha256:
+        raise ConfigurationError("OpenFold3 runner source tree SHA-256 不一致")
+    receipt_path = _bundle_file(bundle, manifest.require_role("validation-receipt"))
+    receipt = load_openfold3_validation_receipt(receipt_path)
+    if (
+        receipt.backend_version != manifest.backend_version
+        or receipt.runner_commit != manifest.runner_commit
+        or receipt.runner_tree_sha256 != manifest.runner_tree_sha256
+        or receipt.raw_checkpoint_sha256 != manifest.raw_checkpoint_sha256
+    ):
+        raise ConfigurationError("OpenFold3 conversion receipt 与 release manifest 不一致")
+    conversion = receipt.conversions[0]
+    if conversion.compressed_sha256 != manifest.converted_weight_sha256:
+        raise ConfigurationError("OpenFold3 conversion receipt 与 converted weight 不一致")
     return bundle, manifest
 
 
@@ -249,6 +447,11 @@ def _runtime_from_receipt(
     receipt: OpenFold3ComponentReceipt,
 ) -> OpenFold3Af3JaxRuntime:
     return OpenFold3Af3JaxRuntime(
+        release_id=receipt.release_id,
+        backend_id=receipt.backend_id,
+        backend_version=receipt.backend_version,
+        model_id=receipt.model_id,
+        adapter_contract_version=receipt.adapter_contract_version,
         python=receipt.environment_root / "bin/python",
         runner=receipt.runner,
         model_root=receipt.model_root,
@@ -256,8 +459,11 @@ def _runtime_from_receipt(
         cache_root=context.runtime_root / "cache/openfold3-p2-af3-jax",
         raw_checkpoint_sha256=receipt.raw_checkpoint_sha256,
         converted_weight_sha256=receipt.converted_weight_sha256,
+        release_manifest_sha256=receipt.release_manifest_sha256,
+        conversion_receipt_sha256=receipt.conversion_receipt_sha256,
         wheel_sha256=receipt.wheel_sha256,
         runner_commit=receipt.runner_commit,
+        runner_tree_sha256=receipt.runner_tree_sha256,
         environment_lock_sha256=receipt.environment_lock_sha256,
     )
 
@@ -297,9 +503,19 @@ def active_openfold3_runtime(
     context: WorkspaceContext | None = None,
 ) -> OpenFold3Af3JaxRuntime | None:
     selected = WorkspaceContext.discover() if context is None else context
-    if not _component_path(selected).is_file():
+    revision_root = selected.profile_path.with_name(
+        f"{selected.profile_path.name}.revisions"
+    )
+    if not selected.profile_path.is_file() and not tuple(
+        revision_root.glob("revision-*.yaml")
+    ):
         return None
-    return _runtime_from_receipt(selected, verify_openfold3_component(selected))
+    loaded = load_runtime_profile(selected.profile_path)
+    runtime = loaded.profile.backends.openfold3_af3_jax
+    if runtime is None:
+        return None
+    verify_openfold3_component(selected, release_id=runtime.release_id)
+    return runtime
 
 
 def _write_environment_inventory(environment: Path, path: Path) -> Path:
@@ -379,7 +595,7 @@ def _install_environment(
             "-c",
             (
                 "from importlib.metadata import version; "
-                "assert version('alphafold3-open') == '3.1.3'; "
+                f"assert version('alphafold3-open') == {manifest.backend_version!r}; "
                 "assert version('jax') == '0.10.2'; "
                 "assert version('jaxlib') == '0.10.2'; "
                 "assert version('dm-haiku') == '0.0.16'; "
@@ -498,8 +714,12 @@ def _gpu_smoke(
     return receipt
 
 
-def install_openfold3_component(bundle_path: Path) -> OpenFold3InstallResult:
-    """Verify, probe, and atomically activate one immutable OpenFold3 component."""
+def install_openfold3_component(
+    bundle_path: Path,
+    *,
+    activate: bool = True,
+) -> OpenFold3InstallResult:
+    """Verify and install one immutable release, optionally activating it."""
 
     context = WorkspaceContext.discover()
     context.ensure_layout()
@@ -531,30 +751,31 @@ def install_openfold3_component(bundle_path: Path) -> OpenFold3InstallResult:
             )
             handle.write("\n")
         raise
-    existing_path = _component_path(context)
+    existing_path = _component_path(context, manifest.release_id)
     if existing_path.is_file():
-        existing = verify_openfold3_component(context)
+        existing = verify_openfold3_component(context, release_id=manifest.release_id)
         if (
-            existing.environment_lock_sha256 == manifest.environment_lock_sha256
-            and existing.converted_weight_sha256 == manifest.converted_weight_sha256
-            and existing.runner_commit == manifest.runner_commit
+            existing.release_manifest_sha256
+            == sha256_file(bundle / "release-manifest.json")
         ):
-            profile_path = _activate_profile(context, existing)
+            profile_path = _activate_profile(context, existing) if activate else None
             return OpenFold3InstallResult(
                 status="already-installed",
                 component=existing,
                 profile=profile_path,
             )
-        raise ConfigurationError("已有不同 identity 的 OpenFold3 component；禁止覆盖")
+        raise ConfigurationError("同 release_id 已有不同 identity；禁止覆盖")
 
     environment_root = (
         context.runtime_root
         / "envs/openfold3-p2-af3-jax"
+        / manifest.release_id
         / manifest.environment_lock_sha256
     )
     model_root = (
         context.runtime_root
         / "models/openfold3-p2-af3-jax"
+        / manifest.release_id
         / manifest.converted_weight_sha256
     )
     if environment_root.exists() or model_root.exists():
@@ -611,6 +832,11 @@ def install_openfold3_component(bundle_path: Path) -> OpenFold3InstallResult:
         validation.rename(final_validation)
         final_smoke = final_validation / smoke_receipt.name
         receipt = OpenFold3ComponentReceipt(
+            release_id=manifest.release_id,
+            backend_id=manifest.backend_id,
+            backend_version=manifest.backend_version,
+            model_id=manifest.model_id,
+            adapter_contract_version=manifest.adapter_contract_version,
             installed_at=datetime.now(UTC),
             release_manifest_sha256=sha256_file(bundle / "release-manifest.json"),
             environment_lock_sha256=manifest.environment_lock_sha256,
@@ -623,12 +849,14 @@ def install_openfold3_component(bundle_path: Path) -> OpenFold3InstallResult:
             converted_weight_sha256=manifest.converted_weight_sha256,
             wheel_sha256=manifest.wheel_sha256,
             runner_commit=manifest.runner_commit,
+            runner_tree_sha256=manifest.runner_tree_sha256,
+            conversion_receipt_sha256=manifest.conversion_receipt_sha256,
             runner=model_root / runner.relative_to(staging_model),
             smoke_receipt=final_smoke,
             smoke_receipt_sha256=sha256_file(final_smoke),
         )
         atomic_dump_runtime_model(receipt, existing_path)
-        profile_path = _activate_profile(context, receipt)
+        profile_path = _activate_profile(context, receipt) if activate else None
         staging_root.rmdir()
         return OpenFold3InstallResult(
             status="installed",
@@ -647,10 +875,12 @@ def install_openfold3_component(bundle_path: Path) -> OpenFold3InstallResult:
 
 def verify_openfold3_component(
     context: WorkspaceContext | None = None,
+    *,
+    release_id: str,
 ) -> OpenFold3ComponentReceipt:
     selected = WorkspaceContext.discover() if context is None else context
     receipt = load_latest_runtime_model(
-        _component_path(selected), OpenFold3ComponentReceipt
+        _component_path(selected, release_id), OpenFold3ComponentReceipt
     )
     checks = (
         (receipt.environment_inventory, receipt.environment_inventory_sha256),
@@ -660,19 +890,45 @@ def verify_openfold3_component(
     for path, expected in checks:
         if not path.is_file() or sha256_file(path) != expected:
             raise ConfigurationError(f"OpenFold3 component identity 已变化: {path}")
+    if receipt.release_id != release_id:
+        raise ConfigurationError("OpenFold3 component receipt release_id 不一致")
     if not receipt.environment_root.is_dir() or not receipt.runner.is_file():
         raise ConfigurationError("OpenFold3 component 环境或 runner 缺失")
     return receipt
 
 
+def list_openfold3_components(
+    context: WorkspaceContext | None = None,
+) -> tuple[OpenFold3ComponentReceipt, ...]:
+    selected = WorkspaceContext.discover() if context is None else context
+    values: list[OpenFold3ComponentReceipt] = []
+    for path in _component_paths(selected):
+        values.append(
+            verify_openfold3_component(selected, release_id=path.parent.name)
+        )
+    return tuple(sorted(values, key=lambda item: item.release_id))
+
+
+def activate_openfold3_release(
+    release_id: str,
+    *,
+    context: WorkspaceContext | None = None,
+) -> Path:
+    selected = WorkspaceContext.discover() if context is None else context
+    receipt = verify_openfold3_component(selected, release_id=release_id)
+    return _activate_profile(selected, receipt)
+
+
 def runtime_status() -> RuntimeStatus:
     context = WorkspaceContext.discover()
+    installed = list_openfold3_components(context)
+    active = active_openfold3_runtime(context)
     component = (
-        verify_openfold3_component(context)
-        if _component_path(context).is_file()
+        next(item for item in installed if item.release_id == active.release_id)
+        if active is not None
         else None
     )
-    return RuntimeStatus(openfold3=component)
+    return RuntimeStatus(openfold3=component, openfold3_installed=installed)
 
 
 __all__ = [
@@ -680,9 +936,12 @@ __all__ = [
     "OpenFold3InstallResult",
     "OpenFold3ReleaseManifest",
     "RuntimeStatus",
+    "activate_openfold3_release",
     "active_openfold3_runtime",
     "install_openfold3_component",
+    "list_openfold3_components",
     "load_openfold3_bundle",
+    "load_openfold3_validation_receipt",
     "runtime_status",
     "verify_openfold3_component",
 ]

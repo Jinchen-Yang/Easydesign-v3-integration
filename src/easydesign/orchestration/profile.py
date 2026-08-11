@@ -48,6 +48,11 @@ class ProtenixV2Runtime(BaseModel):
 class OpenFold3Af3JaxRuntime(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    release_id: str
+    backend_id: Literal["openfold3-af3-jax"]
+    backend_version: str
+    model_id: Literal["of3-p2-155k"]
+    adapter_contract_version: Literal["openfold3-af3-jax-cli-v1"]
     python: Path
     runner: Path
     model_root: Path
@@ -55,8 +60,11 @@ class OpenFold3Af3JaxRuntime(BaseModel):
     cache_root: Path
     raw_checkpoint_sha256: str
     converted_weight_sha256: str
+    release_manifest_sha256: str
+    conversion_receipt_sha256: str
     wheel_sha256: str
     runner_commit: str
+    runner_tree_sha256: str
     environment_lock_sha256: str
     cuda_visible_devices: str | None = None
     msa_server_url: str = "https://api.colabfold.com"
@@ -74,7 +82,10 @@ class OpenFold3Af3JaxRuntime(BaseModel):
     @field_validator(
         "raw_checkpoint_sha256",
         "converted_weight_sha256",
+        "release_manifest_sha256",
+        "conversion_receipt_sha256",
         "wheel_sha256",
+        "runner_tree_sha256",
         "environment_lock_sha256",
     )
     @classmethod
@@ -445,8 +456,7 @@ def _require_clone_local_profile(
                 )
 
 
-def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
-    selected = _latest_profile_path(resolve_runtime_profile_path(path).resolve())
+def _load_runtime_profile_exact(selected: Path) -> LoadedRuntimeProfile:
     try:
         raw = yaml.safe_load(selected.read_text(encoding="utf-8"))
         profile = RuntimeProfile.model_validate(raw)
@@ -459,13 +469,20 @@ def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
     if profile.backends.openfold3_af3_jax is not None:
         from .runtime_components import verify_openfold3_component
 
-        component = verify_openfold3_component()
+        component = verify_openfold3_component(
+            context,
+            release_id=profile.backends.openfold3_af3_jax.release_id,
+        )
         runtime = profile.backends.openfold3_af3_jax
         if (
-            runtime.environment_lock_sha256 != component.environment_lock_sha256
+            runtime.release_manifest_sha256 != component.release_manifest_sha256
+            or runtime.backend_version != component.backend_version
+            or runtime.model_id != component.model_id
+            or runtime.environment_lock_sha256 != component.environment_lock_sha256
             or runtime.converted_weight_sha256
             != component.converted_weight_sha256
             or runtime.runner_commit != component.runner_commit
+            or runtime.runner_tree_sha256 != component.runner_tree_sha256
         ):
             raise ConfigurationError("runtime profile 与 OpenFold3 component identity 不一致")
     profile = profile.model_copy(
@@ -474,11 +491,62 @@ def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
         }
     )
     _require_clone_local_profile(context, profile)
+    openfold3 = profile.backends.openfold3_af3_jax
+    release_identities = (
+        {}
+        if openfold3 is None
+        else {
+            "openfold3-af3-jax": {
+                "release_id": openfold3.release_id,
+                "backend_id": openfold3.backend_id,
+                "backend_version": openfold3.backend_version,
+                "model_id": openfold3.model_id,
+                "adapter_contract_version": openfold3.adapter_contract_version,
+                "release_manifest_sha256": openfold3.release_manifest_sha256,
+                "conversion_receipt_sha256": openfold3.conversion_receipt_sha256,
+                "raw_checkpoint_sha256": openfold3.raw_checkpoint_sha256,
+                "converted_weight_sha256": openfold3.converted_weight_sha256,
+                "wheel_sha256": openfold3.wheel_sha256,
+                "environment_lock_sha256": openfold3.environment_lock_sha256,
+                "runner_commit": openfold3.runner_commit,
+                "runner_tree_sha256": openfold3.runner_tree_sha256,
+            }
+        }
+    )
     return LoadedRuntimeProfile(
         path=selected,
         profile=profile,
         identity=RuntimeProfileRef(
             profile_id=profile.profile_id,
             sha256=sha256_file(selected),
+            release_identities=release_identities,
         ),
     )
+
+
+def load_runtime_profile(path: Path | None = None) -> LoadedRuntimeProfile:
+    selected = _latest_profile_path(resolve_runtime_profile_path(path).resolve())
+    return _load_runtime_profile_exact(selected)
+
+
+def load_runtime_profile_by_identity(
+    identity: RuntimeProfileRef,
+    path: Path | None = None,
+) -> LoadedRuntimeProfile:
+    """Resolve an append-only profile revision by its run-frozen content hash."""
+
+    base = resolve_runtime_profile_path(path).resolve()
+    revision_root = base.with_name(f"{base.name}.revisions")
+    candidates = ([base] if base.is_file() else []) + sorted(
+        revision_root.glob("revision-*.yaml")
+    )
+    matches = [candidate for candidate in candidates if sha256_file(candidate) == identity.sha256]
+    if len(matches) != 1:
+        raise ConfigurationError(
+            "run 冻结的 runtime profile revision 不存在；拒绝改用当前 active profile: "
+            f"{identity.sha256}"
+        )
+    loaded = _load_runtime_profile_exact(matches[0])
+    if loaded.identity != identity:
+        raise ConfigurationError("runtime profile identity 与 run 冻结值不一致")
+    return loaded

@@ -82,6 +82,7 @@ class RuntimeProfileRef(BaseModel):
 
     profile_id: str = Field(pattern=ID_PATTERN)
     sha256: str = Field(pattern=SHA256_PATTERN)
+    release_identities: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class WorkflowStateType(StrEnum):

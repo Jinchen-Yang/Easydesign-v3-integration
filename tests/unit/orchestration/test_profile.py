@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from easydesign.core import ConfigurationError
+from easydesign.core import ConfigurationError, RuntimeProfileRef
 from easydesign.orchestration import (
     initialize_runtime_profile,
     load_runtime_profile,
     runtime_setup,
 )
+from easydesign.orchestration.profile import load_runtime_profile_by_identity
 from easydesign.orchestration.runtime_setup import EnvironmentRecord
 
 
@@ -46,6 +47,33 @@ def test_runtime_profile_is_exclusive_and_path_identity_is_stable(
     assert len(loaded.identity.sha256) == 64
     with pytest.raises(ConfigurationError, match="禁止覆盖"):
         initialize_runtime_profile(profile_path)
+
+
+def test_run_frozen_profile_resolves_old_revision_and_never_drifts_to_active(
+    tmp_path: Path,
+) -> None:
+    profile_path = initialize_runtime_profile(
+        tmp_path / "runtime/profile.yaml",
+        profile_id="test-local",
+        runs_root=(tmp_path / "workspace/runs").resolve(),
+    )
+    frozen = load_runtime_profile(profile_path)
+    revisions = profile_path.with_name(f"{profile_path.name}.revisions")
+    revisions.mkdir()
+    active_path = revisions / "revision-000001.yaml"
+    active_path.write_text(
+        profile_path.read_text(encoding="utf-8") + "# new active revision\n",
+        encoding="utf-8",
+    )
+
+    assert load_runtime_profile(profile_path).path == active_path
+    resolved = load_runtime_profile_by_identity(frozen.identity, profile_path)
+    assert resolved.path == profile_path
+    with pytest.raises(ConfigurationError, match="拒绝改用当前 active"):
+        load_runtime_profile_by_identity(
+            RuntimeProfileRef(profile_id="test-local", sha256="f" * 64),
+            profile_path,
+        )
 
 
 def test_runtime_profile_rejects_relative_paths(tmp_path: Path) -> None:

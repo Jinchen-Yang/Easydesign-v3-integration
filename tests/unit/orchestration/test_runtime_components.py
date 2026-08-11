@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from easydesign.core import ConfigurationError, sha256_file
+from easydesign.orchestration.git_sources import directory_content_sha256
 from easydesign.orchestration.runtime_components import (
     install_openfold3_component,
     load_openfold3_bundle,
@@ -30,12 +31,23 @@ REQUIRED_ROLES = (
 def _bundle(tmp_path: Path) -> Path:
     bundle = tmp_path / "bundle"
     bundle.mkdir()
+    evidence_root = bundle / "metadata/evidence"
+    evidence_root.mkdir(parents=True)
+    evidence_refs: dict[str, dict[str, object]] = {}
+    for name in ("conversion-a", "conversion-b", "converter-tests", "harness", "inventory"):
+        path = evidence_root / f"{name}.log"
+        path.write_text(f"{name}: verified\n", encoding="utf-8")
+        evidence_refs[name] = {
+            "relative_path": f"evidence/{name}.log",
+            "size_bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
     records: list[dict[str, object]] = []
     for index, role in enumerate(REQUIRED_ROLES):
         if role == "runner-script":
             relative = Path("runner/run_alphafold.py")
         elif role == "alphafold-wheel":
-            relative = Path("wheelhouse/alphafold3_open-3.1.3.whl")
+            relative = Path("wheelhouse/alphafold3_open-3.1.4.whl")
         elif role == "environment-requirements":
             relative = Path("environment/requirements.txt")
         elif role == "converted-weight":
@@ -53,12 +65,68 @@ def _bundle(tmp_path: Path) -> Path:
                 "sha256": sha256_file(path),
             }
         )
+    for name in evidence_refs:
+        path = evidence_root / f"{name}.log"
+        records.append(
+            {
+                "relative_path": path.relative_to(bundle).as_posix(),
+                "role": "validation-evidence",
+                "size_bytes": path.stat().st_size,
+                "sha256": sha256_file(path),
+            }
+        )
     by_role = {str(item["role"]): item for item in records}
+    runner_tree_sha256 = directory_content_sha256(bundle / "runner")
+    weight = bundle / "model/of3_ported_weights.bin.zst"
+    validation_receipt = {
+        "schema_version": "0.2",
+        "backend_version": "3.1.4",
+        "runner_commit": "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997",
+        "runner_tree_sha256": runner_tree_sha256,
+        "raw_checkpoint_sha256": "a" * 64,
+        "conversions": [
+            {
+                "conversion_id": conversion_id,
+                "compressed_size_bytes": weight.stat().st_size,
+                "compressed_sha256": sha256_file(weight),
+                "uncompressed_size_bytes": 833,
+                "uncompressed_sha256": "d" * 64,
+                "log": evidence_refs[conversion_id],
+            }
+            for conversion_id in ("conversion-a", "conversion-b")
+        ],
+        "converter_tests": {
+            "command": ["pytest", "converter"],
+            "collected": 43,
+            "passed": 43,
+            "return_code": 0,
+            "log": evidence_refs["converter-tests"],
+        },
+        "verification_harnesses": [
+            {
+                "harness_id": "pytorch-jax-parity",
+                "command": ["python", "verify.py"],
+                "return_code": 0,
+                "tolerance": 0.001,
+                "maximum_relative_error": 0.0001,
+                "log": evidence_refs["harness"],
+            }
+        ],
+        "python_version": "3.12.11",
+        "pytorch_version": "2.7.1",
+        "environment_inventory": evidence_refs["inventory"],
+        "generated_at": "2026-08-11T00:00:00Z",
+    }
+    receipt_path = bundle / Path(str(by_role["validation-receipt"]["relative_path"]))
+    receipt_path.write_text(json.dumps(validation_receipt), encoding="utf-8")
+    by_role["validation-receipt"]["size_bytes"] = receipt_path.stat().st_size
+    by_role["validation-receipt"]["sha256"] = sha256_file(receipt_path)
     manifest = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
+        "release_id": "afo-3-1-4-of3-p2-155k",
         "component_id": "openfold3-p2-af3-jax",
         "backend_id": "openfold3-af3-jax",
-        "backend_version": "3.1.3",
+        "backend_version": "3.1.4",
         "model_id": "of3-p2-155k",
         "python_version": "3.12",
         "code_license": "Apache-2.0",
@@ -66,8 +134,11 @@ def _bundle(tmp_path: Path) -> Path:
         "raw_checkpoint_sha256": "a" * 64,
         "converted_weight_sha256": by_role["converted-weight"]["sha256"],
         "wheel_sha256": by_role["alphafold-wheel"]["sha256"],
-        "runner_commit": "b811498",
+        "adapter_contract_version": "openfold3-af3-jax-cli-v1",
+        "runner_commit": "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997",
+        "runner_tree_sha256": runner_tree_sha256,
         "environment_lock_sha256": by_role["environment-requirements"]["sha256"],
+        "conversion_receipt_sha256": by_role["validation-receipt"]["sha256"],
         "files": records,
     }
     (bundle / "release-manifest.json").write_text(
@@ -82,8 +153,8 @@ def test_load_bundle_verifies_complete_inventory(tmp_path: Path) -> None:
     selected, manifest = load_openfold3_bundle(bundle)
 
     assert selected == bundle
-    assert manifest.runner_commit == "b811498"
-    assert len(manifest.files) == len(REQUIRED_ROLES)
+    assert manifest.runner_commit == "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997"
+    assert len(manifest.files) == len(REQUIRED_ROLES) + 5
 
 
 def test_load_bundle_fails_closed_after_file_corruption(tmp_path: Path) -> None:
@@ -106,6 +177,18 @@ def test_load_bundle_rejects_missing_required_role(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ConfigurationError, match="无法校验"):
+        load_openfold3_bundle(bundle)
+
+
+def test_load_bundle_explicitly_rejects_legacy_schema_01(tmp_path: Path) -> None:
+    bundle = _bundle(tmp_path)
+    manifest_path = bundle / "release-manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["schema_version"] = "0.1"
+    payload["backend_version"] = "3.1.3"
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="schema 0.1/3.1.3"):
         load_openfold3_bundle(bundle)
 
 
@@ -164,5 +247,5 @@ def test_runtime_status_is_readable_before_first_component_install(
     status = runtime_status()
 
     assert status.openfold3 is None
-    assert status.model_dump() == {"openfold3": None}
+    assert status.model_dump() == {"openfold3": None, "openfold3_installed": ()}
     assert not (tmp_path / "runtime/profile.yaml").exists()

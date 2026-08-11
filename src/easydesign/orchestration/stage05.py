@@ -30,7 +30,9 @@ from easydesign.backends.structure_prediction import (
     PredictionParameterProfile,
     ProteinPredictionChain,
     ProtenixV2Adapter,
+    ScientificMode,
     StructurePredictionRequest,
+    TargetStructureCondition,
     TemplateMode,
 )
 from easydesign.backends.target_sources import normalize_raw_sequence
@@ -71,6 +73,7 @@ from easydesign.filtering import (
 )
 from easydesign.filtering.structure_metrics import ParsedChain
 from easydesign.safe_writes import read_last_text_line
+from easydesign.stages.s01_target_preparation import TargetBundle
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import (
     CandidateIndex,
@@ -91,6 +94,7 @@ from easydesign.stages.s05_pilot_filtering import (
     ScientificStopCode,
     Stage05Bundle,
     Stage05BundleV0_2,
+    TargetConditionedStage05Evidence,
 )
 
 from .boltzgen_tasks import (
@@ -103,6 +107,7 @@ from .complex_prediction_support import (
     prepare_query_only_a3m,
     read_fasta_sequence,
     run_checked_backend_invocation,
+    snapshot_target_structure_condition,
 )
 from .config import ResolvedProtenixMsaProviderConfig, Stage05Config
 from .stage04 import _atomic_text
@@ -194,6 +199,8 @@ class _Upstream:
     stage04: StageManifest
     target_structure_ref: ArtifactRef
     target_sequence_ref: ArtifactRef
+    target_bundle_ref: ArtifactRef | None
+    target_bundle: TargetBundle | None
     strategy_bundle_ref: ArtifactRef
     strategy_bundle_path: Path
     strategy_bundle: StrategyBundle
@@ -237,6 +244,19 @@ def _load_upstream(root: Path) -> _Upstream:
     stage04, _ = _stage_from_run(root, run, StageId.PILOT_GENERATION)
     target_structure_ref = stage01.require_output("target-structure")
     target_sequence_ref = stage01.require_output("target-sequence")
+    target_bundle_ref = next(
+        (
+            item
+            for item in stage01.output_artifacts
+            if item.artifact_id == "target-bundle"
+        ),
+        None,
+    )
+    target_bundle = (
+        None
+        if target_bundle_ref is None
+        else load_model(target_bundle_ref.verify(root), TargetBundle)
+    )
     strategy_bundle_ref = stage03.require_output("strategy-bundle")
     strategy_bundle_path = strategy_bundle_ref.verify(root)
     strategy_bundle = load_model(strategy_bundle_path, StrategyBundle)
@@ -259,6 +279,8 @@ def _load_upstream(root: Path) -> _Upstream:
         stage04=stage04,
         target_structure_ref=target_structure_ref,
         target_sequence_ref=target_sequence_ref,
+        target_bundle_ref=target_bundle_ref,
+        target_bundle=target_bundle,
         strategy_bundle_ref=strategy_bundle_ref,
         strategy_bundle_path=strategy_bundle_path,
         strategy_bundle=strategy_bundle,
@@ -707,11 +729,16 @@ def _predict_selected_candidates(
     devices: tuple[int, ...],
     maximum_attempts: int,
     created_at: datetime,
+    scientific_mode: ScientificMode = ScientificMode.DE_NOVO,
+    target_condition: TargetStructureCondition | None = None,
 ) -> tuple[
     tuple[FullTargetPredictionRecord, ...],
     tuple[ArtifactRef, ...],
     tuple[ArtifactRef, ArtifactRef],
 ]:
+    if (scientific_mode is ScientificMode.DE_NOVO) != (target_condition is None):
+        raise ManifestStateError("Stage 05 scientific mode/target condition 不一致")
+    mode_suffix = str(scientific_mode)
     target_sequence = _read_fasta(upstream.target_sequence_ref.verify(root))
     target_msa, msa_depth, provider = _prepare_target_msa(
         artifacts=artifacts,
@@ -741,9 +768,24 @@ def _predict_selected_candidates(
         "A",
     )
     selected_candidate_ids = tuple(candidate.candidate_id for candidate in selected_candidates)
-    state_path = runtime / "full-target-state.json"
-    progress_path = runtime / "progress.json"
-    journal = TaskEventJournal(runtime / "task-events.jsonl")
+    state_path = runtime / (
+        "full-target-state.json"
+        if scientific_mode is ScientificMode.DE_NOVO
+        else f"full-target-state-{mode_suffix}.json"
+    )
+    progress_path = runtime / (
+        "progress.json"
+        if scientific_mode is ScientificMode.DE_NOVO
+        else f"progress-{mode_suffix}.json"
+    )
+    journal = TaskEventJournal(
+        runtime
+        / (
+            "task-events.jsonl"
+            if scientific_mode is ScientificMode.DE_NOVO
+            else f"task-events-{mode_suffix}.jsonl"
+        )
+    )
     prediction_by_id: dict[str, FullTargetPredictionRecord]
     if state_path.exists():
         state = load_model(state_path, FullTargetExecutionState)
@@ -753,6 +795,14 @@ def _predict_selected_candidates(
             raise ManifestStateError(
                 "Stage 05 full-target state selected candidate identity 不一致"
             )
+        expected_condition_sha = (
+            None if target_condition is None else target_condition.template_data_sha256
+        )
+        if (
+            state.scientific_mode != mode_suffix
+            or state.target_condition_sha256 != expected_condition_sha
+        ):
+            raise ManifestStateError("Stage 05 full-target state scientific mode 不一致")
         tasks = {item.strategy_id: item for item in state.tasks}
         prediction_by_id = {item.candidate_id: item for item in state.predictions}
         for prediction in state.predictions:
@@ -822,6 +872,14 @@ def _predict_selected_candidates(
                 updated_at=updated_at,
                 target_msa_sha256=sha256_file(target_msa),
                 selected_candidate_ids=selected_candidate_ids,
+                scientific_mode=cast(
+                    Literal["de-novo", "target-conditioned"], mode_suffix
+                ),
+                target_condition_sha256=(
+                    None
+                    if target_condition is None
+                    else target_condition.template_data_sha256
+                ),
                 tasks=task_values,
                 predictions=tuple(
                     prediction_by_id[candidate_id]
@@ -914,7 +972,14 @@ def _predict_selected_candidates(
             attempts_this_invocation += 1
             attempt_number = len(current.attempts) + 1
             candidate_root = (
-                work / "full-target" / candidate.candidate_id / f"attempt-{attempt_number:04d}"
+                work
+                / (
+                    "full-target"
+                    if scientific_mode is ScientificMode.DE_NOVO
+                    else f"full-target-{mode_suffix}"
+                )
+                / candidate.candidate_id
+                / f"attempt-{attempt_number:04d}"
             )
             binder_query = _query_only_a3m(
                 sequence,
@@ -941,6 +1006,13 @@ def _predict_selected_candidates(
                 seeds=(101,),
                 sample_count=1,
                 msa_mode=MsaMode.PRECOMPUTED,
+                scientific_mode=scientific_mode,
+                template_mode=(
+                    TemplateMode.DISABLED
+                    if scientific_mode is ScientificMode.DE_NOVO
+                    else TemplateMode.PRECOMPUTED
+                ),
+                target_structure_condition=target_condition,
             )
             adapter = adapter_builder(provider, device)
             input_path = adapter.write_input(
@@ -1001,21 +1073,25 @@ def _predict_selected_candidates(
                 structure_ref = _artifact(
                     root,
                     product.structure_path,
-                    artifact_id=f"{candidate.candidate_id}-full-target-structure",
+                    artifact_id=(
+                        f"{candidate.candidate_id}-full-target-structure-{mode_suffix}"
+                    ),
                     role="stage05-full-target-prediction",
                     file_format="mmcif",
                 )
                 summary_ref = _artifact(
                     root,
                     product.confidence_path,
-                    artifact_id=f"{candidate.candidate_id}-full-target-summary",
+                    artifact_id=f"{candidate.candidate_id}-full-target-summary-{mode_suffix}",
                     role="structure-summary-confidence",
                     file_format="json",
                 )
                 full_ref = _artifact(
                     root,
                     product.full_confidence_path,
-                    artifact_id=f"{candidate.candidate_id}-full-target-confidence",
+                    artifact_id=(
+                        f"{candidate.candidate_id}-full-target-confidence-{mode_suffix}"
+                    ),
                     role="structure-full-confidence",
                     file_format="json",
                 )
@@ -1063,6 +1139,33 @@ def _predict_selected_candidates(
                 record = FullTargetPredictionRecord(
                     candidate_id=candidate.candidate_id,
                     strategy_id=candidate.strategy_id,
+                    scientific_mode=cast(
+                        Literal["de-novo", "target-conditioned"], mode_suffix
+                    ),
+                    template_mode=cast(
+                        Literal["disabled", "precomputed"],
+                        str(request.template_mode),
+                    ),
+                    screening_profile_id=(
+                        "nanobody-filter-standard-v1.7"
+                        if scientific_mode is ScientificMode.DE_NOVO
+                        else "target-conditioned-evidence-v1"
+                    ),
+                    target_condition_sha256=(
+                        None
+                        if target_condition is None
+                        else target_condition.template_data_sha256
+                    ),
+                    target_condition_source_origin=(
+                        None if target_condition is None else target_condition.source_origin
+                    ),
+                    target_condition_self_conditioned=(
+                        False
+                        if target_condition is None
+                        else target_condition.is_self_conditioned_for(
+                            product.backend_name
+                        )
+                    ),
                     backend_identity=product.backend_identity,
                     model_identity=product.model_identity,
                     confidence_metric_definition_version=(
@@ -1220,7 +1323,11 @@ def _predict_selected_candidates(
             record.full_confidence,
         )
     )
-    msa_evidence_path = artifacts / "target-msa-evidence.json"
+    msa_evidence_path = artifacts / (
+        "target-msa-evidence.json"
+        if scientific_mode is ScientificMode.DE_NOVO
+        else f"target-msa-evidence-{mode_suffix}.json"
+    )
     msa_evidence = {
         "schema_version": "0.1",
         "provider": str(provider.provider),
@@ -1230,6 +1337,13 @@ def _predict_selected_candidates(
         "a3m_sha256": sha256_file(target_msa),
         "binder_msa": "query-only",
         "no_msa_fallback": False,
+        "scientific_mode": mode_suffix,
+        "template_mode": (
+            "disabled" if target_condition is None else "precomputed"
+        ),
+        "target_condition_sha256": (
+            None if target_condition is None else target_condition.template_data_sha256
+        ),
     }
     serialized_msa_evidence = json.dumps(msa_evidence, indent=2, sort_keys=True) + "\n"
     if msa_evidence_path.exists():
@@ -1243,7 +1357,7 @@ def _predict_selected_candidates(
     evidence_ref = _artifact(
         root,
         msa_evidence_path,
-        artifact_id="stage05-msa-evidence",
+        artifact_id=f"stage05-msa-evidence-{mode_suffix}",
         role="full-target-msa-provenance",
         file_format="json",
     )
@@ -1861,6 +1975,8 @@ def execute_stage05(
     prediction_records: tuple[FullTargetPredictionRecord, ...]
     prediction_refs: tuple[ArtifactRef, ...]
     msa_refs: tuple[ArtifactRef, ...]
+    conditioned_refs: tuple[ArtifactRef, ...]
+    conditioned_evidence_ref: ArtifactRef | None
     if selected_ids:
         prediction_records, prediction_refs, msa_refs = _predict_selected_candidates(
             root=root,
@@ -1876,10 +1992,121 @@ def execute_stage05(
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
         )
+        if upstream.target_bundle is None:
+            conditioned_refs = ()
+            conditioned_evidence_ref = None
+        else:
+            target_condition = snapshot_target_structure_condition(
+                run_root=root,
+                snapshot_root=work / "target-structure-condition",
+                target_bundle=upstream.target_bundle,
+            )
+            (
+                conditioned_records,
+                conditioned_prediction_refs,
+                conditioned_msa_refs,
+            ) = _predict_selected_candidates(
+                root=root,
+                artifacts=artifacts,
+                work=work,
+                runtime=runtime,
+                upstream=upstream,
+                candidates=expanded_index.candidates,
+                selected_ids=selected_ids,
+                providers=config.full_target_prediction.target_msa.resolved_providers(),
+                adapter_builder=prediction_adapter_builder,
+                devices=execution_devices,
+                maximum_attempts=stage04_config.executor.max_task_attempts,
+                created_at=now,
+                scientific_mode=ScientificMode.TARGET_CONDITIONED,
+                target_condition=target_condition,
+            )
+            conditioned_evidence = TargetConditionedStage05Evidence(
+                generated_at=datetime.now(UTC),
+                target_condition=target_condition,
+                predictions=conditioned_records,
+            )
+            conditioned_evidence_path = artifacts / "target-conditioned-evidence.json"
+            if conditioned_evidence_path.exists():
+                observed_conditioned = load_model(
+                    conditioned_evidence_path,
+                    TargetConditionedStage05Evidence,
+                )
+                if observed_conditioned.model_dump(exclude={"generated_at"}) != (
+                    conditioned_evidence.model_dump(exclude={"generated_at"})
+                ):
+                    raise ManifestStateError(
+                        "Stage 05 target-conditioned evidence 与 resume 不一致"
+                    )
+                conditioned_evidence = observed_conditioned
+            else:
+                dump_model(conditioned_evidence, conditioned_evidence_path)
+            conditioned_evidence_ref = _artifact(
+                root,
+                conditioned_evidence_path,
+                artifact_id="stage05-target-conditioned-evidence",
+                role="target-conditioned-advisory-evidence",
+                file_format="json",
+            )
+            condition_path = work / "target-structure-condition" / "condition.json"
+            conditioned_refs = (
+                *conditioned_prediction_refs,
+                *conditioned_msa_refs,
+                _artifact(
+                    root,
+                    target_condition.snapshot_structure_path,
+                    artifact_id="stage05-target-condition-structure",
+                    role="target-condition-run-snapshot",
+                    file_format="mmcif",
+                ),
+                *(
+                    (
+                        _artifact(
+                            root,
+                            target_condition.snapshot_pdb_path,
+                            artifact_id="stage05-target-condition-pdb",
+                            role="target-condition-run-snapshot",
+                            file_format="pdb",
+                        ),
+                    )
+                    if target_condition.snapshot_pdb_path is not None
+                    else ()
+                ),
+                _artifact(
+                    root,
+                    target_condition.template_structure_path,
+                    artifact_id="stage05-target-condition-template-structure",
+                    role="target-condition-template-snapshot",
+                    file_format="mmcif",
+                ),
+                _artifact(
+                    root,
+                    target_condition.template_data_path,
+                    artifact_id="stage05-target-condition-template-data",
+                    role="target-condition-residue-mapping",
+                    file_format="json",
+                ),
+                _artifact(
+                    root,
+                    target_condition.binder_template_data_path,
+                    artifact_id="stage05-binder-empty-template-data",
+                    role="binder-no-template-snapshot",
+                    file_format="json",
+                ),
+                _artifact(
+                    root,
+                    condition_path,
+                    artifact_id="stage05-target-condition",
+                    role="target-condition-provenance",
+                    file_format="json",
+                ),
+            )
     else:
         prediction_records = ()
         prediction_refs = ()
         msa_refs = ()
+        conditioned_refs = ()
+        conditioned_evidence_ref = None
     if use_v1_6:
         assert isinstance(pilot_report, PilotFilterReportV1_6)
         promotions = promotion_records(pilot_report)
@@ -1999,6 +2226,7 @@ def execute_stage05(
             pilot_filter_report=pilot_report_ref,
             expansion_candidate_index=expanded_index_ref,
             advisory_validation_report=expansion_report_ref,
+            target_conditioned_evidence=conditioned_evidence_ref,
             progress_final=progress_ref,
             task_events=events_ref,
             promoted_strategy_ids=tuple(
@@ -2018,6 +2246,7 @@ def execute_stage05(
             pilot_filter_report=pilot_report_ref,
             expansion_candidate_index=expanded_index_ref,
             expansion_validation_report=expansion_report_ref,
+            target_conditioned_evidence=conditioned_evidence_ref,
             progress_final=progress_ref,
             task_events=events_ref,
             scientific_stop=scale_stop_ref,
@@ -2030,6 +2259,8 @@ def execute_stage05(
             assert isinstance(expansion_report, AdvisoryValidationReport)
             if (
                 bundle_v1_6.advisory_validation_report != expansion_report_ref
+                or bundle_v1_6.target_conditioned_evidence
+                != conditioned_evidence_ref
                 or bundle_v1_6.status != "strategies-promoted"
             ):
                 raise ManifestStateError(
@@ -2041,6 +2272,8 @@ def execute_stage05(
             assert isinstance(expansion_report, ExpansionValidationReport)
             if (
                 bundle_v1_5.expansion_validation_report != expansion_report_ref
+                or bundle_v1_5.target_conditioned_evidence
+                != conditioned_evidence_ref
                 or bundle_v1_5.status != expansion_report.status
             ):
                 raise ManifestStateError(
@@ -2064,6 +2297,8 @@ def execute_stage05(
         events_ref,
         *msa_refs,
         *prediction_refs,
+        *conditioned_refs,
+        *((conditioned_evidence_ref,) if conditioned_evidence_ref is not None else ()),
         expansion_report_ref,
         *((scale_stop_ref,) if scale_stop_ref is not None else ()),
         bundle_ref,

@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from easydesign.core import ConfigurationError, dump_model, load_model
 from easydesign.workspace_context import WorkspaceContext
 
+from .runtime_components import OpenFold3InstallResult
 from .runtime_setup import (
     DEFAULT_PIP_INDEX_URL,
     SETUP_COMPONENT_IDS,
@@ -89,6 +90,7 @@ class SetupJobResult(BaseModel):
     return_code: int
     completed_at: datetime
     summary: SetupSummary | None = None
+    afo: OpenFold3InstallResult | None = None
     error: str | None = None
 
 
@@ -216,6 +218,7 @@ class SetupJobProjection(BaseModel):
     stderr_relative_path: Path
     progress: SetupJobProgress | None = None
     error: str | None = None
+    afo: OpenFold3InstallResult | None = None
 
 
 def setup_job_root(context: WorkspaceContext) -> Path:
@@ -428,6 +431,7 @@ def _project_setup_job(
         stderr_relative_path=request.stderr_relative_path,
         progress=progress,
         error=None if result is None else result.error,
+        afo=None if result is None else result.afo,
     )
 
 

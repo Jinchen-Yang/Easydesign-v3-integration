@@ -204,12 +204,12 @@ class OpenFold3ValidationReport(BaseModel):
 class OpenFold3ApprovalReceipt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.2"] = "0.2"
+    schema_version: Literal["0.3"] = "0.3"
     report_sha256: str = Field(pattern=SHA256_PATTERN)
     afo_release: AfoValidationReleaseIdentity
     reviewer: str = Field(min_length=1, max_length=256)
     reviewed_at: datetime
-    decision: Literal["approve-default-switch", "reject-default-switch"]
+    decision: Literal["approve-stable-promotion", "reject-stable-promotion"]
     notes: str = Field(default="", max_length=4096)
     default_backend_changed: Literal[False] = False
 
@@ -328,7 +328,7 @@ def approve_openfold3_validation_report(
     *,
     report_path: Path,
     reviewer: str,
-    decision: Literal["approve-default-switch", "reject-default-switch"],
+    decision: Literal["approve-stable-promotion", "reject-stable-promotion"],
     notes: str = "",
     confirm: bool,
 ) -> Path:

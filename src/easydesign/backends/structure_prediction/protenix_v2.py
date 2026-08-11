@@ -26,6 +26,7 @@ from .contracts import (
     MsaMode,
     PredictionParameterProfile,
     PredictionRequest,
+    ScientificMode,
     StructurePredictionProduct,
     TemplateMode,
 )
@@ -125,6 +126,7 @@ class ProtenixV2Adapter:
         remote_msa_endpoint: str | None = None,
         remote_msa_timeout_seconds: int = 1800,
         prediction_timeout_seconds: int = 7200,
+        kalign_binary_path: Path | None = None,
         extra_environment: tuple[tuple[str, str], ...] = (),
     ) -> None:
         if not executable.is_absolute() or not model_root.is_absolute():
@@ -158,10 +160,18 @@ class ProtenixV2Adapter:
         self.remote_msa_server_mode = resolved_msa.server_mode
         self.remote_msa_timeout_seconds = remote_msa_timeout_seconds
         self.prediction_timeout_seconds = prediction_timeout_seconds
+        self.kalign_binary_path = kalign_binary_path or (
+            self.executable.parent / "kalign"
+        )
+        if not self.kalign_binary_path.is_absolute():
+            raise BackendContractError("kalign binary 必须是绝对路径")
         self.extra_environment = extra_environment
 
     def render_input(self, request: PredictionRequest) -> list[dict[str, Any]]:
         if isinstance(request, ComplexStructurePredictionRequest):
+            condition = request.target_structure_condition
+            if request.scientific_mode is ScientificMode.TARGET_CONDITIONED:
+                self._validate_target_condition(request)
             sequences: list[dict[str, Any]] = []
             for chain in request.chains:
                 protein_chain: dict[str, Any] = {
@@ -174,8 +184,18 @@ class ProtenixV2Adapter:
                     protein_chain["unpairedMsaPath"] = str(
                         chain.unpaired_msa_path
                     )
+                if condition is not None and chain.role == "target":
+                    protein_chain["templatesPath"] = str(
+                        condition.template_data_path
+                    )
+                elif condition is not None and chain.role == "binder":
+                    protein_chain["templatesPath"] = str(
+                        condition.binder_template_data_path
+                    )
                 sequences.append({"proteinChain": protein_chain})
             return [{"name": request.job_name, "sequences": sequences}]
+        if request.template_mode is not TemplateMode.DISABLED:
+            raise BackendContractError("Protenix 单链 Stage 01 暂不接受模板")
         return [
             {
                 "name": request.job_name,
@@ -189,6 +209,79 @@ class ProtenixV2Adapter:
                 ],
             }
         ]
+
+    def _validate_target_condition(
+        self,
+        request: ComplexStructurePredictionRequest,
+    ) -> None:
+        condition = request.target_structure_condition
+        if condition is None:
+            raise BackendContractError("Protenix target-conditioned 请求缺少 condition")
+        if sha256_file(condition.snapshot_structure_path) != (
+            condition.snapshot_structure_sha256
+        ):
+            raise BackendContractError(
+                "Protenix target condition structure SHA-256 不一致"
+            )
+        if sha256_file(condition.template_data_path) != condition.template_data_sha256:
+            raise BackendContractError(
+                "Protenix target condition template data SHA-256 不一致"
+            )
+        if sha256_file(condition.template_structure_path) != (
+            condition.template_structure_sha256
+        ):
+            raise BackendContractError(
+                "Protenix target condition template structure SHA-256 不一致"
+            )
+        if sha256_file(condition.binder_template_data_path) != (
+            condition.binder_template_data_sha256
+        ):
+            raise BackendContractError(
+                "Protenix binder empty-template data SHA-256 不一致"
+            )
+        try:
+            binder_templates = json.loads(
+                condition.binder_template_data_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise BackendContractError(
+                "Protenix binder empty-template data 无法读取"
+            ) from error
+        if binder_templates != []:
+            raise BackendContractError(
+                "Protenix binder template snapshot 必须严格为空"
+            )
+        try:
+            templates = json.loads(
+                condition.template_data_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise BackendContractError(
+                "Protenix target condition template data 无法读取"
+            ) from error
+        if not isinstance(templates, list) or len(templates) != 1:
+            raise BackendContractError(
+                "Protenix target condition 必须恰好一个显式模板"
+            )
+        template = templates[0]
+        if not isinstance(template, dict) or set(template) != {
+            "mmcif",
+            "queryIndices",
+            "templateIndices",
+        }:
+            raise BackendContractError("Protenix target condition template schema 不合法")
+        if template["queryIndices"] != list(condition.query_indices) or template[
+            "templateIndices"
+        ] != list(condition.template_indices):
+            raise BackendContractError(
+                "Protenix target condition residue mapping 不一致"
+            )
+        if template["mmcif"] != condition.template_structure_path.read_text(
+            encoding="utf-8"
+        ):
+            raise BackendContractError(
+                "Protenix target condition mmCIF 与 template snapshot 不一致"
+            )
 
     def write_input(self, request: PredictionRequest, path: Path) -> Path:
         """排他写入 Protenix JSON；已有请求不可覆盖。"""
@@ -335,10 +428,11 @@ class ProtenixV2Adapter:
         input_json: Path,
         output_dir: Path,
     ) -> BackendInvocation:
-        if request.template_mode is not TemplateMode.DISABLED:
-            raise BackendContractError(
-                "Protenix-v2 首个 EasyDesign adapter 只实现 template disabled"
-            )
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            if request.template_mode is not TemplateMode.DISABLED:
+                raise BackendContractError("Protenix 单链 Stage 01 禁止模板")
+        elif request.scientific_mode is ScientificMode.TARGET_CONDITIONED:
+            self._validate_target_condition(request)
         argv = [
             str(self.executable),
             "pred",
@@ -373,6 +467,8 @@ class ProtenixV2Adapter:
             "--need_atom_confidence",
             str(request.require_full_confidence).lower(),
         ]
+        if request.template_mode is not TemplateMode.DISABLED:
+            argv.extend(("--kalign_binary_path", str(self.kalign_binary_path)))
         if request.parameter_profile is PredictionParameterProfile.MODEL_DEFAULT:
             argv.extend(("--use_default_params", "true"))
         else:
@@ -468,6 +564,34 @@ class ProtenixV2Adapter:
                         ranking_score=confidence.ranking_score,
                         has_clash=confidence.has_clash,
                         recycle_count=confidence.num_recycles,
+                        native_metrics={
+                            "template_mode": str(request.template_mode),
+                            "scientific_mode": (
+                                str(request.scientific_mode)
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                else "de-novo"
+                            ),
+                            "target_condition_sha256": (
+                                request.target_structure_condition.template_data_sha256
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                and request.target_structure_condition is not None
+                                else None
+                            ),
+                            "target_condition_source_origin": (
+                                request.target_structure_condition.source_origin
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                and request.target_structure_condition is not None
+                                else None
+                            ),
+                            "target_condition_self_conditioned": (
+                                request.target_structure_condition.is_self_conditioned_for(
+                                    self.backend_name
+                                )
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                and request.target_structure_condition is not None
+                                else False
+                            ),
+                        },
                     )
                 )
         return tuple(products)

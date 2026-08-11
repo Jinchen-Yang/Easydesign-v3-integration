@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from easydesign.core import dump_model, load_model
+from easydesign.orchestration.afo_releases import install_stable_afo_if_available
 from easydesign.orchestration.runtime_setup import setup_workspace
 from easydesign.orchestration.setup_jobs import (
     SetupJobRequest,
@@ -48,6 +49,14 @@ def main() -> int:
             source_policy=request.source_policy,
             progress_callback=progress,
         )
+        afo = (
+            install_stable_afo_if_available(
+                source_policy=request.source_policy,
+                context=context,
+            )
+            if summary.ok and request.component == "all"
+            else None
+        )
         return_code = 0 if summary.ok else 3
         result = SetupJobResult(
             job_id=request.job_id,
@@ -55,6 +64,7 @@ def main() -> int:
             return_code=return_code,
             completed_at=datetime.now(tz=UTC),
             summary=summary,
+            afo=afo,
         )
     except Exception as error:
         return_code = 4

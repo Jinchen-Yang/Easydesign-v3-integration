@@ -8,6 +8,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from easydesign.backends.structure_prediction.contracts import TargetStructureCondition
 from easydesign.core import ArtifactRef, ProgressSnapshot, TaskRecord
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 from easydesign.stages.s05_pilot_filtering import FilterDecision, FilterMetric
@@ -186,7 +187,18 @@ class RawFinalPrediction(BaseModel):
     sample_index: int = Field(default=0, ge=0)
     samples_per_seed: int = Field(default=1, ge=1)
     recycles: int = Field(default=10, ge=1)
-    template_mode: Literal["disabled"] = "disabled"
+    scientific_mode: Literal["de-novo", "target-conditioned"] = "de-novo"
+    template_mode: Literal["disabled", "precomputed"] = "disabled"
+    screening_profile_id: Literal[
+        "nanobody-final-v1.5",
+        "nanobody-final-v1.6",
+        "target-conditioned-evidence-v1",
+    ] = "nanobody-final-v1.5"
+    target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    target_condition_source_origin: Literal[
+        "experimental", "imported", "predicted"
+    ] | None = None
+    target_condition_self_conditioned: bool = False
     parameter_profile: Literal["model-default"] = "model-default"
     msa_provider: str = "precomputed"
     msa_endpoint: str | None = None
@@ -227,6 +239,21 @@ class RawFinalPrediction(BaseModel):
 
     @model_validator(mode="after")
     def validate_contacts(self) -> Self:
+        if self.scientific_mode == "de-novo":
+            if (
+                self.template_mode != "disabled"
+                or self.target_condition_sha256 is not None
+                or self.target_condition_source_origin is not None
+                or self.target_condition_self_conditioned
+            ):
+                raise ValueError("de-novo raw prediction 不能声明 target condition")
+        elif (
+            self.template_mode != "precomputed"
+            or self.screening_profile_id != "target-conditioned-evidence-v1"
+            or self.target_condition_sha256 is None
+            or self.target_condition_source_origin is None
+        ):
+            raise ValueError("target-conditioned raw prediction condition evidence 不完整")
         if self.backend_identity.startswith("openfold3-af3-jax@") and len(
             self.release_identity
         ) != 13:
@@ -374,6 +401,8 @@ class Stage07PredictionState(BaseModel):
     created_at: datetime
     updated_at: datetime
     target_msa_sha256: str = Field(pattern=SHA256_PATTERN)
+    scientific_mode: Literal["de-novo", "target-conditioned"] = "de-novo"
+    target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     planned_prediction_keys: tuple[str, ...]
     tasks: tuple[TaskRecord, ...]
     predictions: tuple[RawFinalPrediction, ...] = ()
@@ -383,6 +412,10 @@ class Stage07PredictionState(BaseModel):
 
     @model_validator(mode="after")
     def validate_state(self) -> Self:
+        if (self.scientific_mode == "de-novo") != (
+            self.target_condition_sha256 is None
+        ):
+            raise ValueError("Stage 07 state scientific mode/condition 不一致")
         if tuple(sorted(set(self.planned_prediction_keys))) != (self.planned_prediction_keys):
             raise ValueError("Stage 07 prediction key 必须升序唯一")
         task_keys = tuple(sorted(item.strategy_id for item in self.tasks))
@@ -486,6 +519,32 @@ class FinalFilterReport(BaseModel):
     status: Literal["candidates-selected", "stopped-no-final-candidate"]
 
 
+class TargetConditionedStage07Evidence(BaseModel):
+    """Dual-track Stage 07 evidence that never participates in de-novo selection."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    generated_at: datetime
+    screening_profile_id: Literal["target-conditioned-evidence-v1"] = (
+        "target-conditioned-evidence-v1"
+    )
+    selection_authority: Literal["advisory-only"] = "advisory-only"
+    target_condition: TargetStructureCondition
+    predictions: tuple[RawFinalPrediction, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_predictions(self) -> Self:
+        if any(item.scientific_mode != "target-conditioned" for item in self.predictions):
+            raise ValueError("Stage 07 conditioned evidence 含 de-novo prediction")
+        if any(
+            item.target_condition_sha256 != self.target_condition.template_data_sha256
+            for item in self.predictions
+        ):
+            raise ValueError("Stage 07 conditioned prediction/condition identity 不一致")
+        return self
+
+
 class FinalCandidatePackage(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -536,6 +595,7 @@ class Stage07Bundle(BaseModel):
     filter_profile: ArtifactRef
     final_filter_report: ArtifactRef
     final_candidate_package: ArtifactRef
+    target_conditioned_evidence: ArtifactRef | None = None
     seed101_normalization: ArtifactRef | None = None
     tnp_report: ArtifactRef | None = None
     progress_final: ArtifactRef

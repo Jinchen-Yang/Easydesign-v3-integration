@@ -56,7 +56,7 @@ easydesign runtime install miniforge
 命令会从 `runtime/cache/downloads/` 的 partial 继续，而不是从头下载。需要严格限定来源时
 可以使用 `--source official`；`--source china` 表示国内优先，均不可用时回退官方。
 
-### 3. 安装五个科学环境
+### 3. 安装科学环境
 
 安装顺序是：
 
@@ -77,7 +77,9 @@ easydesign runtime install all --detach
 ```
 
 `all` 只创建一个 setup job；它按上述顺序处理五个环境及对应资产，不会并发运行五个 Conda
-安装。任务中断后可重新执行同一命令，已经完成且校验通过的环境、资产和下载 cache 会被复用。
+安装。catalog 出现经过科学批准的 AFO `stable` 后，同一个前台或 `--detach` job 会在这五项
+之后安装并激活该 stable；`candidate` 绝不会被 `all` 静默安装。任务中断后可重新执行同一
+命令，已经完成且校验通过的环境、资产和下载 cache 会被复用。
 
 #### 方式 B：逐个安装组件
 
@@ -122,7 +124,7 @@ easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 
 ### 4. 验收
 
-五个科学组件全部完成后运行：
+科学组件全部完成后运行：
 
 ```bash
 easydesign runtime status
@@ -131,15 +133,33 @@ easydesign doctor --full
 
 只有 `doctor --full` 通过后，才把这台机器视为完整可用的 EasyDesign Local 主机。
 
-OpenFold3/AFO 当前是可选灰度后端，不属于默认新机安装。只有持有经过校验的离线 bundle
-时才执行：
+OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装，也不会改变默认 Protenix。
+其完整预转换发布物包含权重、runner、冻结 wheelhouse、锁、许可、model card、转换 receipt
+和 smoke 输入；安装不需要原始 PyTorch checkpoint 或转换环境。当前发布 archive 的下载体积
+是 5,032,471,378 bytes（4.687 GiB），解包、建环境和缓存还需要额外磁盘空间。实机
+验收基线是 Linux x86-64、NVIDIA A100 40 GB 和兼容 CUDA 12 的驱动；更小 GPU 尚不属于
+本 release 的承诺范围。
+
+当前仓库的 catalog 仍把该 release 记录为 `bundle: null`：确定性 archive 已构建并复验，
+但尚未绑定可公开访问的 HF/S3 source。因此下面是发布完成后的精确安装命令；在 source、
+size 和 SHA-256 写入 catalog 之前，当前版本会 fail closed，不会伪装成公网可安装：
 
 ```bash
-easydesign runtime install openfold3 --bundle runtime/imports/openfold3-bundle
+easydesign runtime list afo
+easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
 easydesign doctor --full
 ```
 
-安装 AFO 不会自动替换默认 Protenix；详细边界见
+只有 catalog 提升为 `stable` 并绑定固定科学报告和人工 approval receipt 后，才可省略 release：
+
+```bash
+easydesign runtime install afo
+```
+
+AFO 与 Protenix 都保留两条科学证据：`de-novo` 禁用 target/binder 模板并承担独立筛选；
+`target-conditioned` 只把 Stage 1 冻结的 target A 作为显式模板，binder B 仍无模板，也不做
+自动模板搜索。条件化结果使用独立 advisory profile，不会混入 de-novo 晋级门；预测来源
+与当前 backend 相同时会明确标记 self-conditioning。详细边界见
 [OpenFold3 后端](docs/OPENFOLD3_BACKEND.md)。
 
 ## 用 Codex 开始

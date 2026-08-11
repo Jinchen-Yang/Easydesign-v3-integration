@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self, TypeAlias
@@ -21,6 +22,121 @@ class MsaMode(StrEnum):
 class TemplateMode(StrEnum):
     DISABLED = "disabled"
     PRECOMPUTED = "precomputed"
+
+
+class ScientificMode(StrEnum):
+    """Scientific interpretation of a target+binder structure prediction."""
+
+    DE_NOVO = "de-novo"
+    TARGET_CONDITIONED = "target-conditioned"
+
+
+class TargetResidueNumbering(BaseModel):
+    """Auditable conversion from Stage 01 numbering to template indices."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sequence_index: int = Field(ge=1)
+    query_index: int = Field(ge=0)
+    template_index: int = Field(ge=0)
+    label_seq_id: int = Field(ge=1)
+    author_chain_id: str = Field(min_length=1, max_length=16)
+    author_residue_id: str = Field(min_length=1, max_length=32)
+    insertion_code: str | None = Field(default=None, max_length=8)
+
+
+class TargetStructureCondition(BaseModel):
+    """Frozen target-only structure condition shared by AFO and Protenix."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.3"] = "0.3"
+    template_mode: Literal["target-conditioned"] = "target-conditioned"
+    source_origin: Literal["experimental", "imported", "predicted"]
+    source_structure_kind: Literal[
+        "experimental", "predicted", "imported-unknown"
+    ]
+    source_backend_name: str | None = Field(default=None, pattern=ID_PATTERN)
+    source_structure_sha256: str = Field(pattern=SHA256_PATTERN)
+    snapshot_structure_path: Path
+    snapshot_structure_sha256: str = Field(pattern=SHA256_PATTERN)
+    snapshot_pdb_path: Path | None = None
+    snapshot_pdb_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    template_structure_path: Path
+    template_structure_sha256: str = Field(pattern=SHA256_PATTERN)
+    template_release_date: date
+    template_release_date_source: Literal[
+        "source-mmcif", "synthetic-conservative"
+    ]
+    template_data_path: Path
+    template_data_sha256: str = Field(pattern=SHA256_PATTERN)
+    binder_template_data_path: Path
+    binder_template_data_sha256: str = Field(pattern=SHA256_PATTERN)
+    run_snapshot_relative_path: str = Field(min_length=1)
+    target_chain_id: Literal["A"] = "A"
+    template_chain_id: str = Field(min_length=1, max_length=16)
+    query_indices: tuple[int, ...] = Field(min_length=1)
+    template_indices: tuple[int, ...] = Field(min_length=1)
+    missing_query_indices: tuple[int, ...] = ()
+    residue_numbering: tuple[TargetResidueNumbering, ...] = Field(min_length=1)
+    screening_profile_id: Literal["target-conditioned-evidence-v1"] = (
+        "target-conditioned-evidence-v1"
+    )
+    automatic_template_search: Literal[False] = False
+    binder_templates_enabled: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_condition(self) -> Self:
+        if not self.snapshot_structure_path.is_absolute():
+            raise ValueError("target condition structure path 必须是绝对路径")
+        if not self.template_data_path.is_absolute():
+            raise ValueError("target condition template data path 必须是绝对路径")
+        if not self.binder_template_data_path.is_absolute():
+            raise ValueError("binder empty-template data path 必须是绝对路径")
+        if not self.template_structure_path.is_absolute():
+            raise ValueError("target condition template structure path 必须是绝对路径")
+        if (self.snapshot_pdb_path is None) != (self.snapshot_pdb_sha256 is None):
+            raise ValueError("target condition PDB path/SHA 必须同时存在或缺失")
+        if self.snapshot_pdb_path is not None and not self.snapshot_pdb_path.is_absolute():
+            raise ValueError("target condition PDB path 必须是绝对路径")
+        if self.source_structure_sha256 != self.snapshot_structure_sha256:
+            raise ValueError("target condition source/snapshot SHA-256 必须一致")
+        if len(self.query_indices) != len(self.template_indices):
+            raise ValueError("target condition query/template indices 数量必须一致")
+        if tuple(sorted(set(self.query_indices))) != self.query_indices:
+            raise ValueError("target condition query indices 必须严格递增且唯一")
+        if len(set(self.template_indices)) != len(self.template_indices):
+            raise ValueError("target condition template indices 不能重复")
+        if tuple(sorted(set(self.missing_query_indices))) != self.missing_query_indices:
+            raise ValueError("target condition missing query indices 必须递增且唯一")
+        if set(self.query_indices).intersection(self.missing_query_indices):
+            raise ValueError("target condition mapped/missing query indices 不能重叠")
+        if tuple(item.query_index for item in self.residue_numbering) != (
+            self.query_indices
+        ):
+            raise ValueError("target condition numbering 与 query indices 不一致")
+        if tuple(item.template_index for item in self.residue_numbering) != (
+            self.template_indices
+        ):
+            raise ValueError("target condition numbering 与 template indices 不一致")
+        if self.source_origin == "predicted" and self.source_backend_name is None:
+            raise ValueError("predicted target condition 必须记录 source backend")
+        if self.source_origin != "predicted" and self.source_backend_name is not None:
+            raise ValueError("非 predicted target condition 不能伪造 source backend")
+        expected_kind = {
+            "experimental": "experimental",
+            "predicted": "predicted",
+            "imported": "imported-unknown",
+        }[self.source_origin]
+        if self.source_structure_kind != expected_kind:
+            raise ValueError("target condition source origin/kind 不一致")
+        return self
+
+    def is_self_conditioned_for(self, backend_name: str) -> bool:
+        return (
+            self.source_origin == "predicted"
+            and self.source_backend_name == backend_name
+        )
 
 
 class PredictionParameterProfile(StrEnum):
@@ -91,6 +207,8 @@ class ComplexStructurePredictionRequest(BaseModel):
     sample_count: int = Field(default=1, ge=1)
     msa_mode: MsaMode
     template_mode: TemplateMode = TemplateMode.DISABLED
+    scientific_mode: ScientificMode = ScientificMode.DE_NOVO
+    target_structure_condition: TargetStructureCondition | None = None
     parameter_profile: PredictionParameterProfile = (
         PredictionParameterProfile.MODEL_DEFAULT
     )
@@ -120,6 +238,19 @@ class ComplexStructurePredictionRequest(BaseModel):
             raise ValueError("model-default profile 不能覆盖 cycle/step")
         if self.msa_mode is MsaMode.DISABLED:
             raise ValueError("Stage 05/07 complex prediction 禁止 no-MSA")
+        if self.scientific_mode is ScientificMode.DE_NOVO:
+            if self.template_mode is not TemplateMode.DISABLED:
+                raise ValueError("de-novo 模式必须禁用模板")
+            if self.target_structure_condition is not None:
+                raise ValueError("de-novo 模式不能携带 target condition")
+        else:
+            if self.template_mode is not TemplateMode.PRECOMPUTED:
+                raise ValueError("target-conditioned 模式必须使用 precomputed template")
+            if self.target_structure_condition is None:
+                raise ValueError("target-conditioned 模式必须携带 target condition")
+            target = self.require_role("target")
+            if target.chain_id != self.target_structure_condition.target_chain_id:
+                raise ValueError("target condition chain 与 target chain 不一致")
         return self
 
     def require_role(self, role: Literal["target", "binder"]) -> ProteinPredictionChain:

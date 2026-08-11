@@ -8,6 +8,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from easydesign.backends.structure_prediction.contracts import TargetStructureCondition
 from easydesign.core import ArtifactRef, ProgressSnapshot, TaskRecord
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 from easydesign.stages.s04_pilot_generation import CandidateRecord
@@ -284,7 +285,17 @@ class FullTargetPredictionRecord(BaseModel):
     seed: Literal[101] = 101
     samples_per_seed: int = Field(default=1, ge=1)
     recycles: int = Field(default=10, ge=1)
-    template_mode: Literal["disabled"] = "disabled"
+    scientific_mode: Literal["de-novo", "target-conditioned"] = "de-novo"
+    template_mode: Literal["disabled", "precomputed"] = "disabled"
+    screening_profile_id: Literal[
+        "nanobody-filter-standard-v1.7",
+        "target-conditioned-evidence-v1",
+    ] = "nanobody-filter-standard-v1.7"
+    target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    target_condition_source_origin: Literal[
+        "experimental", "imported", "predicted"
+    ] | None = None
+    target_condition_self_conditioned: bool = False
     parameter_profile: Literal["model-default"] = "model-default"
     msa_provider: str = "precomputed"
     msa_endpoint: str | None = None
@@ -315,6 +326,21 @@ class FullTargetPredictionRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_gate(self) -> Self:
+        if self.scientific_mode == "de-novo":
+            if (
+                self.template_mode != "disabled"
+                or self.target_condition_sha256 is not None
+                or self.target_condition_source_origin is not None
+                or self.target_condition_self_conditioned
+            ):
+                raise ValueError("de-novo prediction 不能声明 target condition")
+        elif (
+            self.template_mode != "precomputed"
+            or self.screening_profile_id != "target-conditioned-evidence-v1"
+            or self.target_condition_sha256 is None
+            or self.target_condition_source_origin is None
+        ):
+            raise ValueError("target-conditioned prediction 缺少独立 condition evidence")
         if self.backend_identity.startswith("openfold3-af3-jax@") and len(
             self.release_identity
         ) != 13:
@@ -400,6 +426,7 @@ class Stage05Bundle(BaseModel):
     pilot_filter_report: ArtifactRef
     expansion_candidate_index: ArtifactRef | None = None
     expansion_validation_report: ArtifactRef | None = None
+    target_conditioned_evidence: ArtifactRef | None = None
     progress_final: ArtifactRef
     task_events: ArtifactRef
     scientific_stop: ArtifactRef | None = None
@@ -634,6 +661,7 @@ class Stage05BundleV0_2(BaseModel):
     pilot_filter_report: ArtifactRef
     expansion_candidate_index: ArtifactRef | None = None
     advisory_validation_report: ArtifactRef | None = None
+    target_conditioned_evidence: ArtifactRef | None = None
     progress_final: ArtifactRef
     task_events: ArtifactRef
     scientific_stop: ArtifactRef | None = None
@@ -691,12 +719,18 @@ class FullTargetExecutionState(BaseModel):
     updated_at: datetime
     target_msa_sha256: str = Field(pattern=SHA256_PATTERN)
     selected_candidate_ids: tuple[str, ...] = Field(min_length=1)
+    scientific_mode: Literal["de-novo", "target-conditioned"] = "de-novo"
+    target_condition_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     tasks: tuple[TaskRecord, ...] = Field(min_length=1)
     predictions: tuple[FullTargetPredictionRecord, ...] = ()
     progress: ProgressSnapshot
 
     @model_validator(mode="after")
     def validate_identity(self) -> Self:
+        if (self.scientific_mode == "de-novo") != (
+            self.target_condition_sha256 is None
+        ):
+            raise ValueError("full-target state scientific mode/condition 不一致")
         if len(self.selected_candidate_ids) != len(set(self.selected_candidate_ids)):
             raise ValueError("selected_candidate_ids 不能重复")
         task_ids = {task.strategy_id for task in self.tasks}
@@ -707,4 +741,30 @@ class FullTargetExecutionState(BaseModel):
             raise ValueError("full-target prediction identity 不能重复")
         if not set(prediction_ids).issubset(set(self.selected_candidate_ids)):
             raise ValueError("full-target prediction 不在选择集合")
+        return self
+
+
+class TargetConditionedStage05Evidence(BaseModel):
+    """Advisory target-conditioned evidence; it cannot revoke de-novo gates."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    generated_at: datetime
+    screening_profile_id: Literal["target-conditioned-evidence-v1"] = (
+        "target-conditioned-evidence-v1"
+    )
+    selection_authority: Literal["advisory-only"] = "advisory-only"
+    target_condition: TargetStructureCondition
+    predictions: tuple[FullTargetPredictionRecord, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_predictions(self) -> Self:
+        if any(item.scientific_mode != "target-conditioned" for item in self.predictions):
+            raise ValueError("conditioned evidence 含 de-novo prediction")
+        if any(
+            item.target_condition_sha256 != self.target_condition.template_data_sha256
+            for item in self.predictions
+        ):
+            raise ValueError("conditioned evidence prediction/condition identity 不一致")
         return self

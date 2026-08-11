@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import easydesign
 from easydesign.core import ConfigurationError, EasyDesignError
 from easydesign.orchestration.afo_releases import (
+    install_stable_afo_if_available,
     load_afo_release_catalog,
     materialize_afo_bundle,
 )
@@ -224,7 +225,7 @@ def _parser() -> argparse.ArgumentParser:
     runtime_approve.add_argument(
         "--decision",
         required=True,
-        choices=("approve-default-switch", "reject-default-switch"),
+        choices=("approve-stable-promotion", "reject-stable-promotion"),
     )
     runtime_approve.add_argument("--notes", default="")
     _add_confirm(runtime_approve)
@@ -533,6 +534,11 @@ def _print_setup_job(job: SetupJobProjection) -> None:
     print(f"  stderr: {job.stderr_relative_path}")
     if job.error:
         print(f"  error: {job.error}")
+    if job.afo is not None:
+        print(
+            "  AFO stable: "
+            f"{job.afo.component.release_id} ({job.afo.status})"
+        )
 
 
 def _watch_setup_job(
@@ -771,23 +777,14 @@ def _dispatch(args: argparse.Namespace) -> int:
                         pip_index_url=args.pip_index_url,
                         source_policy=args.source,
                     )
-                    afo_result = None
-                    if setup_summary.ok and args.component == "all":
-                        stable = tuple(
-                            item
-                            for item in load_afo_release_catalog(context).releases
-                            if item.channel == "stable"
+                    afo_result = (
+                        install_stable_afo_if_available(
+                            source_policy=args.source,
+                            context=context,
                         )
-                        if stable:
-                            stable_bundle = materialize_afo_bundle(
-                                stable[0],
-                                source_policy=args.source,
-                                context=context,
-                            )
-                            afo_result = install_openfold3_component(
-                                stable_bundle,
-                                activate=True,
-                            )
+                        if setup_summary.ok and args.component == "all"
+                        else None
+                    )
                     if args.json:
                         setup_payload: dict[str, Any] = setup_summary.model_dump(
                             mode="json"
@@ -902,7 +899,10 @@ def _dispatch(args: argparse.Namespace) -> int:
                 report_path=args.report,
                 reviewer=args.reviewer,
                 decision=cast(
-                    Literal["approve-default-switch", "reject-default-switch"],
+                    Literal[
+                        "approve-stable-promotion",
+                        "reject-stable-promotion",
+                    ],
                     args.decision,
                 ),
                 notes=args.notes,

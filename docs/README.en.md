@@ -87,10 +87,43 @@ invent byte percentages when the upstream tool cannot provide them. `Ctrl-C`
 only stops watching and leaves the detached installer running.
 
 The `all` command creates one worker and processes
-`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp` sequentially. In individual mode, wait
+`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp` sequentially. Once the catalog contains
+a scientifically approved AFO `stable`, the same foreground or detached job installs and activates it
+after those five components; a `candidate` is never installed implicitly. In individual mode, wait
 for each job to finish before launching the next. Then run `easydesign runtime status` and
 `easydesign doctor --full`. Every cache, log, job, project, run, and locally installed component
 remains inside the current clone.
+
+## OpenFold3/AFO candidate
+
+OpenFold3/AFO 3.1.4 is currently a `candidate` and does not replace the default Protenix backend. Its
+complete pre-converted release contains the weights, runner, frozen wheelhouse, environment lock,
+licenses, model card, conversion receipt, and smoke input; users do not need the original PyTorch
+checkpoint or a conversion environment. The archive download is 5,032,471,378 bytes (4.687 GiB),
+with additional space required for extraction, the environment, and
+cache. The acceptance baseline is Linux x86-64, an NVIDIA A100 40 GB, and a CUDA 12-compatible driver;
+smaller GPUs are not part of this release guarantee.
+
+The repository catalog still records this release as `bundle: null`: the deterministic archive has
+been built and reproduced, but no publicly reachable HF/S3 source is bound yet. The following is the
+exact command after publication. Until `sources`, `size_bytes`, and `sha256` are committed to the
+catalog, the current installer fails closed instead of pretending that the candidate is publicly
+available:
+
+```bash
+easydesign runtime list afo
+easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
+easydesign doctor --full
+```
+
+Only after the catalog entry becomes `stable` and binds a fixed scientific report plus a human
+approval receipt may users run `easydesign runtime install afo` without `--release`.
+
+Stage 5/7 retain two distinct evidence tracks for both AFO and Protenix. `de-novo` disables target and
+binder templates and remains the independent selection authority. `target-conditioned` uses only the
+frozen Stage 1 target A structure; binder B still has no template and automatic template search stays
+disabled. Conditioned results use a separate advisory profile and are explicitly marked as
+self-conditioned when the Stage 1 prediction came from the same backend.
 
 ## Start or resume with Codex
 

@@ -160,8 +160,11 @@ class OpenFold3BundleFile(BaseModel):
         "runner-source",
         "runner-script",
         "license",
+        "runner-license",
         "notice",
         "model-terms",
+        "runner-terms",
+        "model-attribution",
         "model-card",
         "conversion-manifest",
         "conversion-log",
@@ -183,7 +186,7 @@ class OpenFold3BundleFile(BaseModel):
 class OpenFold3ReleaseManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.2"] = "0.2"
+    schema_version: Literal["0.2", "0.3"] = "0.3"
     release_id: str = Field(pattern=RELEASE_ID_PATTERN)
     component_id: Literal["openfold3-p2-af3-jax"] = "openfold3-p2-af3-jax"
     backend_id: Literal["openfold3-af3-jax"] = "openfold3-af3-jax"
@@ -194,7 +197,14 @@ class OpenFold3ReleaseManifest(BaseModel):
     )
     python_version: Literal["3.12"] = "3.12"
     code_license: Literal["Apache-2.0"]
-    template_mode: Literal["disabled"]
+    model_license: Literal["Apache-2.0"] | None = None
+    model_source_repository: str | None = None
+    model_source_commit: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{40}$",
+    )
+    converted_weight_license: Literal["Apache-2.0"] | None = None
+    template_mode: Literal["disabled", "target-only-precomputed"]
     raw_checkpoint_sha256: str = Field(pattern=SHA256_PATTERN)
     converted_weight_sha256: str = Field(pattern=SHA256_PATTERN)
     wheel_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -225,6 +235,25 @@ class OpenFold3ReleaseManifest(BaseModel):
         for role in singleton_roles:
             if sum(item.role == role for item in self.files) != 1:
                 raise ValueError(f"bundle 必须恰好包含一个 {role}")
+        if self.schema_version == "0.3":
+            if (
+                self.model_license != "Apache-2.0"
+                or self.converted_weight_license != "Apache-2.0"
+                or self.model_source_repository is None
+                or self.model_source_commit is None
+            ):
+                raise ValueError("bundle 0.3 必须绑定 OpenFold3 模型来源和 Apache-2.0 许可")
+            if self.template_mode != "target-only-precomputed":
+                raise ValueError("bundle 0.3 必须声明 target-only template 能力")
+            for role in (
+                "runner-license",
+                "runner-terms",
+                "model-attribution",
+            ):
+                if sum(item.role == role for item in self.files) < 1:
+                    raise ValueError(f"bundle 0.3 缺少 {role}")
+        elif self.template_mode != "disabled":
+            raise ValueError("bundle 0.2 只支持 disabled template mode")
         if self.require_role("converted-weight").sha256 != self.converted_weight_sha256:
             raise ValueError("converted weight identity 与 inventory 不一致")
         if self.require_role("alphafold-wheel").sha256 != self.wheel_sha256:
@@ -718,10 +747,11 @@ def install_openfold3_component(
     bundle_path: Path,
     *,
     activate: bool = True,
+    context: WorkspaceContext | None = None,
 ) -> OpenFold3InstallResult:
     """Verify and install one immutable release, optionally activating it."""
 
-    context = WorkspaceContext.discover()
+    context = WorkspaceContext.discover() if context is None else context
     context.ensure_layout()
     try:
         bundle, manifest = load_openfold3_bundle(bundle_path)

@@ -22,6 +22,7 @@ from .models import (
     StrategyFilterSummary,
     StrategyPromotionRecord,
     StrategyTier,
+    TargetConditionedStage05Evidence,
 )
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
     "StrategyExpansionSummary",
     "StrategyFilterSummary",
     "StrategyTier",
+    "TargetConditionedStage05Evidence",
 ]

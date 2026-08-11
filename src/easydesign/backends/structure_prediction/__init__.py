@@ -8,8 +8,11 @@ from .contracts import (
     PredictionParameterProfile,
     PredictionRequest,
     ProteinPredictionChain,
+    ScientificMode,
     StructurePredictionProduct,
     StructurePredictionRequest,
+    TargetResidueNumbering,
+    TargetStructureCondition,
     TemplateMode,
 )
 from .openfold3_af3_jax import (
@@ -36,8 +39,11 @@ __all__ = [
     "ProtenixMsaProvider",
     "ProtenixV2Adapter",
     "ResolvedProtenixMsaProvider",
+    "ScientificMode",
     "StructurePredictionProduct",
     "StructurePredictionRequest",
+    "TargetResidueNumbering",
+    "TargetStructureCondition",
     "TemplateMode",
     "resolve_protenix_msa_provider",
 ]

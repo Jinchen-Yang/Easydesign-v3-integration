@@ -16,7 +16,11 @@ from easydesign.core import ConfigurationError
 from easydesign.core.artifacts import SHA256_PATTERN
 from easydesign.workspace_context import WorkspaceContext
 
-from .runtime_components import load_openfold3_bundle
+from .runtime_components import (
+    OpenFold3InstallResult,
+    install_openfold3_component,
+    load_openfold3_bundle,
+)
 from .source_policy import SourceCandidate, SourcePolicy, download_verified_file
 
 
@@ -202,9 +206,30 @@ def materialize_afo_bundle(
         raise
 
 
+def install_stable_afo_if_available(
+    *,
+    source_policy: SourcePolicy = "auto",
+    context: WorkspaceContext | None = None,
+) -> OpenFold3InstallResult | None:
+    """Install and activate the single stable AFO release, if one is published."""
+
+    selected = WorkspaceContext.discover() if context is None else context
+    catalog = load_afo_release_catalog(selected)
+    stable = tuple(item for item in catalog.releases if item.channel == "stable")
+    if not stable:
+        return None
+    bundle = materialize_afo_bundle(
+        stable[0],
+        source_policy=source_policy,
+        context=selected,
+    )
+    return install_openfold3_component(bundle, activate=True, context=selected)
+
+
 __all__ = [
     "AfoReleaseCatalog",
     "AfoReleaseEntry",
     "load_afo_release_catalog",
     "materialize_afo_bundle",
+    "install_stable_afo_if_available",
 ]

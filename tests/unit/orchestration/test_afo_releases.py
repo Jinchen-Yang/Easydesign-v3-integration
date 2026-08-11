@@ -6,9 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from easydesign.core import ConfigurationError
+from easydesign.orchestration import afo_releases
 from easydesign.orchestration.afo_releases import (
     AfoReleaseCatalog,
     AfoReleaseEntry,
+    install_stable_afo_if_available,
     load_afo_release_catalog,
     materialize_afo_bundle,
 )
@@ -96,3 +98,60 @@ def test_catalog_rejects_two_stable_releases() -> None:
                 AfoReleaseEntry(release_id="afo-two", **common),
             )
         )
+
+
+def test_stable_helper_materializes_installs_and_activates_for_all_jobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path, monkeypatch)
+    release = AfoReleaseEntry(
+        release_id="afo-3-1-4-of3-p2-155k",
+        channel="stable",
+        backend_version="3.1.4",
+        runner_commit="1" * 40,
+        wheel_sha256="2" * 64,
+        raw_checkpoint_sha256="3" * 64,
+        bundle={
+            "sha256": "4" * 64,
+            "size_bytes": 1,
+            "sources": [
+                {
+                    "source_id": "official",
+                    "url": "https://example.invalid/afo.tar.zst",
+                    "region": "official",
+                }
+            ],
+        },
+        validation_report_sha256="5" * 64,
+        approval_receipt_sha256="6" * 64,
+    )
+    bundle = tmp_path / "materialized-bundle"
+    sentinel = object()
+    install_calls: list[tuple[Path, bool, WorkspaceContext]] = []
+    monkeypatch.setattr(
+        afo_releases,
+        "load_afo_release_catalog",
+        lambda _context: AfoReleaseCatalog(releases=(release,)),
+    )
+    monkeypatch.setattr(
+        afo_releases,
+        "materialize_afo_bundle",
+        lambda *_args, **_kwargs: bundle,
+    )
+
+    def fake_install(
+        path: Path,
+        *,
+        activate: bool,
+        context: WorkspaceContext,
+    ) -> object:
+        install_calls.append((path, activate, context))
+        return sentinel
+
+    monkeypatch.setattr(afo_releases, "install_openfold3_component", fake_install)
+
+    result = install_stable_afo_if_available(context=context)
+
+    assert result is sentinel
+    assert install_calls == [(bundle, True, context)]

@@ -24,6 +24,7 @@ from .contracts import (
     MsaMode,
     PredictionParameterProfile,
     PredictionRequest,
+    ScientificMode,
     StructurePredictionProduct,
     TemplateMode,
 )
@@ -193,11 +194,12 @@ class OpenFold3Af3JaxAdapter:
         msa_mode: MsaMode,
         unpaired_msa_path: Path | None,
         paired_msa_path: Path | None,
+        templates: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         protein: dict[str, Any] = {
             "id": chain_id,
             "sequence": sequence,
-            "templates": [],
+            "templates": templates or [],
         }
         if unpaired_msa_path is not None:
             protein["unpairedMsa"] = _read_a3m(unpaired_msa_path)
@@ -209,9 +211,71 @@ class OpenFold3Af3JaxAdapter:
             protein["pairedMsa"] = ""
         return {"protein": protein}
 
+    def _target_templates(
+        self,
+        request: ComplexStructurePredictionRequest,
+    ) -> list[dict[str, Any]]:
+        condition = request.target_structure_condition
+        if request.scientific_mode is ScientificMode.DE_NOVO:
+            return []
+        if condition is None:
+            raise BackendContractError("AFO target-conditioned 请求缺少 condition")
+        if sha256_file(condition.snapshot_structure_path) != (
+            condition.snapshot_structure_sha256
+        ):
+            raise BackendContractError("AFO target condition structure SHA-256 不一致")
+        if sha256_file(condition.template_data_path) != condition.template_data_sha256:
+            raise BackendContractError("AFO target condition template data SHA-256 不一致")
+        if sha256_file(condition.template_structure_path) != (
+            condition.template_structure_sha256
+        ):
+            raise BackendContractError(
+                "AFO target condition template structure SHA-256 不一致"
+            )
+        if sha256_file(condition.binder_template_data_path) != (
+            condition.binder_template_data_sha256
+        ):
+            raise BackendContractError(
+                "AFO binder empty-template data SHA-256 不一致"
+            )
+        try:
+            binder_templates = json.loads(
+                condition.binder_template_data_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise BackendContractError(
+                "AFO binder empty-template data 无法读取"
+            ) from error
+        if binder_templates != []:
+            raise BackendContractError("AFO binder template snapshot 必须严格为空")
+        try:
+            templates = json.loads(
+                condition.template_data_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise BackendContractError("AFO target condition template data 无法读取") from error
+        if not isinstance(templates, list) or len(templates) != 1:
+            raise BackendContractError("AFO target condition 必须恰好一个显式模板")
+        template = templates[0]
+        if not isinstance(template, dict) or set(template) != {
+            "mmcif",
+            "queryIndices",
+            "templateIndices",
+        }:
+            raise BackendContractError("AFO target condition template schema 不合法")
+        if template["queryIndices"] != list(condition.query_indices) or template[
+            "templateIndices"
+        ] != list(condition.template_indices):
+            raise BackendContractError("AFO target condition residue mapping 不一致")
+        if template["mmcif"] != condition.template_structure_path.read_text(
+            encoding="utf-8"
+        ):
+            raise BackendContractError(
+                "AFO target condition mmCIF 与 template snapshot 不一致"
+            )
+        return templates
+
     def render_input(self, request: PredictionRequest) -> dict[str, Any]:
-        if request.template_mode is not TemplateMode.DISABLED:
-            raise BackendContractError("AFO 第一阶段强制 templates: []")
         sequences: list[dict[str, Any]] = []
         if isinstance(request, ComplexStructurePredictionRequest):
             ordered = sorted(
@@ -220,6 +284,7 @@ class OpenFold3Af3JaxAdapter:
             )
             if [chain.chain_id for chain in ordered] != ["A", "B"]:
                 raise BackendContractError("AFO complex 必须固定 target=A、binder=B")
+            target_templates = self._target_templates(request)
             for chain in ordered:
                 sequences.append(
                     self._protein(
@@ -228,9 +293,12 @@ class OpenFold3Af3JaxAdapter:
                         msa_mode=request.msa_mode,
                         unpaired_msa_path=chain.unpaired_msa_path,
                         paired_msa_path=chain.paired_msa_path,
+                        templates=(target_templates if chain.role == "target" else []),
                     )
                 )
         else:
+            if request.template_mode is not TemplateMode.DISABLED:
+                raise BackendContractError("AFO 单链 Stage 01 暂不接受模板")
             sequences.append(
                 self._protein(
                     chain_id="A",
@@ -361,8 +429,11 @@ class OpenFold3Af3JaxAdapter:
         input_json: Path,
         output_dir: Path,
     ) -> BackendInvocation:
-        if request.template_mode is not TemplateMode.DISABLED:
-            raise BackendContractError("AFO 第一阶段禁止模板")
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            if request.template_mode is not TemplateMode.DISABLED:
+                raise BackendContractError("AFO 单链 Stage 01 禁止模板")
+        elif request.scientific_mode is ScientificMode.TARGET_CONDITIONED:
+            self._target_templates(request)
         if request.parameter_profile is not PredictionParameterProfile.MODEL_DEFAULT:
             raise BackendContractError("AFO 首版只接受已冻结的 model-default 参数")
         return BackendInvocation(
@@ -534,7 +605,32 @@ class OpenFold3Af3JaxAdapter:
                                 if request.msa_mode is MsaMode.REMOTE
                                 else None
                             ),
-                            "template_mode": "disabled",
+                            "template_mode": str(request.template_mode),
+                            "scientific_mode": (
+                                str(request.scientific_mode)
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                else "de-novo"
+                            ),
+                            "target_condition_sha256": (
+                                request.target_structure_condition.template_data_sha256
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                and request.target_structure_condition is not None
+                                else None
+                            ),
+                            "target_condition_source_origin": (
+                                request.target_structure_condition.source_origin
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                and request.target_structure_condition is not None
+                                else None
+                            ),
+                            "target_condition_self_conditioned": (
+                                request.target_structure_condition.is_self_conditioned_for(
+                                    self.backend_name
+                                )
+                                if isinstance(request, ComplexStructurePredictionRequest)
+                                and request.target_structure_condition is not None
+                                else False
+                            ),
                             "seeds": ",".join(str(value) for value in request.seeds),
                             "samples_per_seed": request.sample_count,
                             "recycles": 10,

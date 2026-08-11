@@ -375,6 +375,50 @@ def test_verified_download_quarantines_wrong_identity(
     assert "SHA-256 mismatch" in metadata[0].read_text(encoding="utf-8")
 
 
+def test_verified_download_quarantines_corrupt_published_cache_and_repairs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    payload = b"verified-replacement"
+    expected_sha256 = hashlib.sha256(payload).hexdigest()
+    destination = context.runtime_root / "models" / "fixture.bin"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"corrupt-cache")
+    candidate = _candidates()[0]
+    monkeypatch.setattr(
+        source_policy,
+        "rank_source_candidates",
+        lambda values, _policy: tuple(values),
+    )
+
+    def fake_stream(
+        _candidate: SourceCandidate,
+        partial: Path,
+        **_kwargs: object,
+    ) -> int:
+        partial.write_bytes(payload)
+        return len(payload)
+
+    monkeypatch.setattr(source_policy, "_stream_candidate", fake_stream)
+
+    result = download_verified_file(
+        context,
+        artifact_id="fixture-corrupt-cache",
+        candidates=(candidate,),
+        policy="official",
+        destination=destination,
+        expected_sha256=expected_sha256,
+        expected_size_bytes=len(payload),
+    )
+
+    assert result.path.read_bytes() == payload
+    metadata = tuple(context.runtime_root.glob("quarantine/*/quarantine.yaml"))
+    assert len(metadata) == 1
+    assert "destination identity mismatch" in metadata[0].read_text(encoding="utf-8")
+
+
 def test_runtime_sources_rewrite_nvidia_packages_to_sustech() -> None:
     repository = Path(__file__).resolve().parents[3]
     context = WorkspaceContext.from_root(repository)

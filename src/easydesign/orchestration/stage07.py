@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
@@ -24,6 +24,9 @@ from easydesign.backends.structure_prediction import (
     OpenFold3Af3JaxAdapter,
     ProteinPredictionChain,
     ProtenixV2Adapter,
+    ScientificMode,
+    TargetStructureCondition,
+    TemplateMode,
 )
 from easydesign.backends.tnp import TnpAdapter, TnpBatchRequest
 from easydesign.core import (
@@ -66,6 +69,7 @@ from easydesign.filtering import (
 )
 from easydesign.filtering.structure_metrics import ParsedChain
 from easydesign.safe_writes import read_last_text_line
+from easydesign.stages.s01_target_preparation import TargetBundle
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import CandidateIndex, CandidateRecord
 from easydesign.stages.s05_pilot_filtering import (
@@ -99,6 +103,7 @@ from easydesign.stages.s07_final_filtering_and_selection import (
     Stage07BundleV0_2,
     Stage07PredictionState,
     Stage07ScaleInput,
+    TargetConditionedStage07Evidence,
     TnpReport,
     normalize_scale_bundle_for_stage07,
     summarize_selected_sources,
@@ -110,6 +115,7 @@ from .complex_prediction_support import (
     prepare_query_only_a3m,
     read_fasta_sequence,
     run_checked_backend_invocation,
+    snapshot_target_structure_condition,
 )
 from .config import ResolvedProtenixMsaProviderConfig
 from .stage04 import _atomic_text
@@ -181,6 +187,8 @@ class _Upstream:
     stage06: StageManifest
     target_structure_ref: ArtifactRef
     target_sequence_ref: ArtifactRef
+    target_bundle_ref: ArtifactRef | None
+    target_bundle: TargetBundle | None
     target_msa_ref: ArtifactRef
     strategy_bundle_ref: ArtifactRef
     strategy_bundle: StrategyBundle
@@ -233,6 +241,19 @@ def _load_upstream(root: Path) -> _Upstream:
     stage06 = _stage(root, run, StageId.SCALE_GENERATION_AND_REFOLDING)
     target_structure = stage01.require_output("target-structure")
     target_sequence = stage01.require_output("target-sequence")
+    target_bundle_ref = next(
+        (
+            item
+            for item in stage01.output_artifacts
+            if item.artifact_id == "target-bundle"
+        ),
+        None,
+    )
+    target_bundle = (
+        None
+        if target_bundle_ref is None
+        else load_model(target_bundle_ref.verify(root), TargetBundle)
+    )
     target_msa = stage05.require_output("stage05-target-msa")
     strategy_ref = stage03.require_output("strategy-bundle")
     strategy = load_model(strategy_ref.verify(root), StrategyBundle)
@@ -363,6 +384,8 @@ def _load_upstream(root: Path) -> _Upstream:
         stage06=stage06,
         target_structure_ref=target_structure,
         target_sequence_ref=target_sequence,
+        target_bundle_ref=target_bundle_ref,
+        target_bundle=target_bundle,
         target_msa_ref=target_msa,
         strategy_bundle_ref=strategy_ref,
         strategy_bundle=strategy,
@@ -644,7 +667,11 @@ def _execute_predictions(
     devices: tuple[int, ...],
     maximum_attempts: int,
     created_at: datetime,
+    scientific_mode: ScientificMode = ScientificMode.DE_NOVO,
+    target_condition: TargetStructureCondition | None = None,
 ) -> _PredictionBatch:
+    if (scientific_mode is ScientificMode.DE_NOVO) != (target_condition is None):
+        raise ManifestStateError("Stage 07 scientific mode/target condition 不一致")
     requested_keys = tuple(
         sorted(
             _prediction_key(candidate.candidate_id, seed)
@@ -672,6 +699,14 @@ def _execute_predictions(
         state = load_model(state_path, Stage07PredictionState)
         if state.target_msa_sha256 != upstream.target_msa_ref.sha256:
             raise ManifestStateError("Stage 07 prediction state target MSA 不一致")
+        expected_condition_sha = (
+            None if target_condition is None else target_condition.template_data_sha256
+        )
+        if (
+            state.scientific_mode != str(scientific_mode)
+            or state.target_condition_sha256 != expected_condition_sha
+        ):
+            raise ManifestStateError("Stage 07 prediction state scientific mode 不一致")
         tasks = {item.strategy_id: item for item in state.tasks}
         prediction_by_key = {
             _prediction_key(item.candidate_id, item.seed): item for item in state.predictions
@@ -746,6 +781,15 @@ def _execute_predictions(
                 created_at=created_at,
                 updated_at=updated,
                 target_msa_sha256=upstream.target_msa_ref.sha256,
+                scientific_mode=cast(
+                    Literal["de-novo", "target-conditioned"],
+                    str(scientific_mode),
+                ),
+                target_condition_sha256=(
+                    None
+                    if target_condition is None
+                    else target_condition.template_data_sha256
+                ),
                 planned_prediction_keys=planned_keys,
                 tasks=values,
                 predictions=tuple(prediction_by_key[key] for key in sorted(prediction_by_key)),
@@ -873,6 +917,13 @@ def _execute_predictions(
                 seeds=(seed,),
                 sample_count=sample_count,
                 msa_mode=MsaMode.PRECOMPUTED,
+                scientific_mode=scientific_mode,
+                template_mode=(
+                    TemplateMode.DISABLED
+                    if scientific_mode is ScientificMode.DE_NOVO
+                    else TemplateMode.PRECOMPUTED
+                ),
+                target_structure_condition=target_condition,
             )
             adapter = adapter_builder(provider, device)
             input_path = adapter.write_input(request, task_root / "input.json")
@@ -997,6 +1048,41 @@ def _execute_predictions(
                             candidate_id=candidate.candidate_id,
                             seed=seed,
                             prediction_phase=phase_id,
+                            scientific_mode=cast(
+                                Literal["de-novo", "target-conditioned"],
+                                str(scientific_mode),
+                            ),
+                            template_mode=cast(
+                                Literal["disabled", "precomputed"],
+                                str(request.template_mode),
+                            ),
+                            screening_profile_id=(
+                                "target-conditioned-evidence-v1"
+                                if scientific_mode
+                                is ScientificMode.TARGET_CONDITIONED
+                                else (
+                                    "nanobody-final-v1.6"
+                                    if sample_count == 5
+                                    else "nanobody-final-v1.5"
+                                )
+                            ),
+                            target_condition_sha256=(
+                                None
+                                if target_condition is None
+                                else target_condition.template_data_sha256
+                            ),
+                            target_condition_source_origin=(
+                                None
+                                if target_condition is None
+                                else target_condition.source_origin
+                            ),
+                            target_condition_self_conditioned=(
+                                False
+                                if target_condition is None
+                                else target_condition.is_self_conditioned_for(
+                                    product.backend_name
+                                )
+                            ),
                             sample_index=product.sample_index,
                             samples_per_seed=sample_count,
                             recycles=product.recycle_count,
@@ -1683,6 +1769,8 @@ def _execute_stage07(
     tnp_report: TnpReport | None = None
     tnp_refs: tuple[ArtifactRef, ...] = ()
     normalization_ref: ArtifactRef | None = None
+    conditioned_evidence_ref: ArtifactRef | None = None
+    conditioned_output_refs: tuple[ArtifactRef, ...] = ()
     selections: tuple[FinalSelectionRecord, ...] = ()
     scale_plan: ScalePlanV0_2 | ScalePlan
     if isinstance(upstream.scale_bundle, ScaleBundleV0_2):
@@ -1698,6 +1786,15 @@ def _execute_stage07(
     execution_devices = scale_plan.devices
 
     if seed101_candidates:
+        target_condition = (
+            None
+            if upstream.target_bundle is None
+            else snapshot_target_structure_condition(
+                run_root=root,
+                snapshot_root=work / "target-structure-condition",
+                target_bundle=upstream.target_bundle,
+            )
+        )
         seed101_batch = _execute_predictions(
             root=root,
             upstream=upstream,
@@ -1712,6 +1809,27 @@ def _execute_stage07(
             devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
+        )
+        conditioned_seed101_batch = (
+            _PredictionBatch(representatives=(), all_samples=())
+            if target_condition is None
+            else _execute_predictions(
+                root=root,
+                upstream=upstream,
+                candidates=seed101_candidates,
+                seeds=(101,),
+                sample_count=1,
+                phase_id="seed101-screen-target-conditioned",
+                work=work,
+                runtime=runtime,
+                adapter_builder=prediction_adapter_builder,
+                provider=providers[0],
+                devices=execution_devices,
+                maximum_attempts=stage04_config.executor.max_task_attempts,
+                created_at=now,
+                scientific_mode=ScientificMode.TARGET_CONDITIONED,
+                target_condition=target_condition,
+            )
         )
         seed101_records, reference = _scored_prediction_records(
             raw=seed101_batch.representatives,
@@ -1763,6 +1881,31 @@ def _execute_stage07(
                 maximum_attempts=stage04_config.executor.max_task_attempts,
                 created_at=now,
             )
+            conditioned_additional_batch = (
+                _PredictionBatch(representatives=(), all_samples=())
+                if target_condition is None
+                else _execute_predictions(
+                    root=root,
+                    upstream=upstream,
+                    candidates=additional_candidates,
+                    seeds=(101, 202, 303, 404, 505) if afo_final else (202, 303),
+                    sample_count=5 if afo_final else 1,
+                    phase_id=(
+                        "deep-5x5-target-conditioned"
+                        if afo_final
+                        else "additional-seeds-target-conditioned"
+                    ),
+                    work=work,
+                    runtime=runtime,
+                    adapter_builder=prediction_adapter_builder,
+                    provider=providers[0],
+                    devices=execution_devices,
+                    maximum_attempts=stage04_config.executor.max_task_attempts,
+                    created_at=now,
+                    scientific_mode=ScientificMode.TARGET_CONDITIONED,
+                    target_condition=target_condition,
+                )
+            )
             additional_records, _ = _scored_prediction_records(
                 raw=additional_batch.representatives,
                 score_refold_by_id=score_refold,
@@ -1771,6 +1914,10 @@ def _execute_stage07(
         else:
             afo_final = config.final_filter_profile == "nanobody-final-v1.6"
             additional_batch = _PredictionBatch(representatives=(), all_samples=())
+            conditioned_additional_batch = _PredictionBatch(
+                representatives=(),
+                all_samples=(),
+            )
             additional_records = ()
         deep_candidate_ids = {item.candidate_id for item in additional_records}
         screen_records = tuple(
@@ -1795,6 +1942,99 @@ def _execute_stage07(
                 ),
             )
         )
+        if target_condition is not None:
+            conditioned_predictions = tuple(
+                sorted(
+                    (
+                        *conditioned_seed101_batch.all_samples,
+                        *conditioned_additional_batch.all_samples,
+                    ),
+                    key=lambda item: (
+                        item.candidate_id,
+                        item.prediction_phase,
+                        item.seed,
+                        item.sample_index,
+                    ),
+                )
+            )
+            conditioned_evidence = TargetConditionedStage07Evidence(
+                generated_at=now,
+                target_condition=target_condition,
+                predictions=conditioned_predictions,
+            )
+            conditioned_evidence_path = artifacts / "target-conditioned-evidence.json"
+            conditioned_evidence = _dump_or_verify(
+                conditioned_evidence,
+                conditioned_evidence_path,
+                TargetConditionedStage07Evidence,
+                ignore=frozenset({"generated_at"}),
+            )
+            conditioned_evidence_ref = _artifact(
+                root,
+                conditioned_evidence_path,
+                artifact_id="stage07-target-conditioned-evidence",
+                role="target-conditioned-advisory-evidence",
+                file_format="json",
+            )
+            conditioned_output_refs = (
+                _artifact(
+                    root,
+                    target_condition.snapshot_structure_path,
+                    artifact_id="stage07-target-condition-structure",
+                    role="target-condition-run-snapshot",
+                    file_format="mmcif",
+                ),
+                *(
+                    (
+                        _artifact(
+                            root,
+                            target_condition.snapshot_pdb_path,
+                            artifact_id="stage07-target-condition-pdb",
+                            role="target-condition-run-snapshot",
+                            file_format="pdb",
+                        ),
+                    )
+                    if target_condition.snapshot_pdb_path is not None
+                    else ()
+                ),
+                _artifact(
+                    root,
+                    target_condition.template_structure_path,
+                    artifact_id="stage07-target-condition-template-structure",
+                    role="target-condition-template-snapshot",
+                    file_format="mmcif",
+                ),
+                _artifact(
+                    root,
+                    target_condition.template_data_path,
+                    artifact_id="stage07-target-condition-template-data",
+                    role="target-condition-residue-mapping",
+                    file_format="json",
+                ),
+                _artifact(
+                    root,
+                    target_condition.binder_template_data_path,
+                    artifact_id="stage07-binder-empty-template-data",
+                    role="binder-no-template-snapshot",
+                    file_format="json",
+                ),
+                _artifact(
+                    root,
+                    work / "target-structure-condition" / "condition.json",
+                    artifact_id="stage07-target-condition",
+                    role="target-condition-provenance",
+                    file_format="json",
+                ),
+                *tuple(
+                    reference
+                    for prediction in conditioned_predictions
+                    for reference in (
+                        prediction.predicted_structure,
+                        prediction.summary_confidence,
+                        prediction.full_confidence,
+                    )
+                ),
+            )
         by_candidate: dict[str, list[FinalPredictionRecord]] = {}
         for item in all_prediction_records:
             by_candidate.setdefault(item.candidate_id, []).append(item)
@@ -2133,6 +2373,7 @@ def _execute_stage07(
             filter_profile=profile_ref,
             final_filter_report=report_ref,
             final_candidate_package=package_ref,
+            target_conditioned_evidence=conditioned_evidence_ref,
             seed101_normalization=normalization_ref,
             tnp_report=tnp_report_ref,
             progress_final=progress_ref,
@@ -2154,6 +2395,7 @@ def _execute_stage07(
             filter_profile=profile_ref,
             final_filter_report=report_ref,
             final_candidate_package=package_ref,
+            target_conditioned_evidence=conditioned_evidence_ref,
             seed101_normalization=normalization_ref,
             tnp_report=tnp_report_ref,
             progress_final=progress_ref,
@@ -2173,6 +2415,8 @@ def _execute_stage07(
         *((scale_input_ref,) if scale_input_ref is not None else ()),
         report_ref,
         package_ref,
+        *((conditioned_evidence_ref,) if conditioned_evidence_ref is not None else ()),
+        *conditioned_output_refs,
         *((normalization_ref,) if normalization_ref is not None else ()),
         *tnp_refs,
         *((failure_ref,) if failure_ref is not None else ()),

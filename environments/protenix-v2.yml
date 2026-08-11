@@ -1,5 +1,7 @@
 name: protenix-v2
 channels:
+  - https://conda.anaconda.org/bioconda
+  - https://conda.anaconda.org/conda-forge
   - nvidia
   - defaults
 dependencies:
@@ -7,5 +9,6 @@ dependencies:
   - pip=26.1.2
   - cuda-nvcc=12.6.85
   - cuda-libraries-dev=12.6.3
+  - kalign3=3.4.0
   - pip:
       - protenix==2.0.0

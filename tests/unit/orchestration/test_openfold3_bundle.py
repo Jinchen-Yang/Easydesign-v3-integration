@@ -13,6 +13,7 @@ from easydesign.orchestration.git_sources import directory_content_sha256
 from easydesign.orchestration.openfold3_bundle import (
     _export_runner_source,
     _verify_conversion_receipt,
+    create_deterministic_tar_zst,
 )
 from easydesign.orchestration.runtime_components import (
     load_openfold3_validation_receipt,
@@ -60,6 +61,7 @@ def test_bundle_cli_forwards_only_current_builder_arguments(
         "first-conversion",
         "second-conversion",
         "validation-receipt",
+        "openfold3-source",
     )
     captured: dict[str, Path] = {}
 
@@ -67,7 +69,13 @@ def test_bundle_cli_forwards_only_current_builder_arguments(
         captured.update(kwargs)
         return tmp_path / "bundle"
 
+    def fake_archive(*, bundle: Path, archive: Path) -> Path:
+        assert bundle == tmp_path / "bundle"
+        archive.write_bytes(b"archive")
+        return archive
+
     monkeypatch.setattr(build_bundle_cli, "build_openfold3_release_bundle", fake_builder)
+    monkeypatch.setattr(build_bundle_cli, "create_deterministic_tar_zst", fake_archive)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -91,7 +99,33 @@ def test_bundle_cli_forwards_only_current_builder_arguments(
         "first_conversion",
         "second_conversion",
         "validation_receipt",
+        "openfold3_source",
     }
+
+
+@pytest.mark.skipif(shutil.which("zstd") is None, reason="zstd is required")
+def test_tar_zst_is_deterministic_and_metadata_independent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = tmp_path / "bundle"
+    (bundle / "nested").mkdir(parents=True)
+    first_file = bundle / "nested/payload.txt"
+    first_file.write_text("openfold3\n", encoding="utf-8")
+    (bundle / "release-manifest.json").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "easydesign.orchestration.openfold3_bundle.load_openfold3_bundle",
+        lambda _path: None,
+    )
+    first = tmp_path / "first.tar.zst"
+    second = tmp_path / "second.tar.zst"
+
+    create_deterministic_tar_zst(bundle=bundle, archive=first)
+    first_file.chmod(0o600)
+    first_file.touch()
+    create_deterministic_tar_zst(bundle=bundle, archive=second)
+
+    assert first.read_bytes() == second.read_bytes()
 
 
 def test_runner_export_rejects_head_mismatch(tmp_path: Path) -> None:

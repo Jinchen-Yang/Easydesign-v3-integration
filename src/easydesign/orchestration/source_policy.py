@@ -749,21 +749,30 @@ def download_verified_file(
         if actual_sha256 != expected_sha256 or (
             expected_size_bytes is not None and actual_size != expected_size_bytes
         ):
-            raise ConfigurationError(f"下载目标已存在但身份不匹配: {destination}")
-        selection = SourceSelection(
-            source_id="workspace-cache",
-            url="workspace-cache://verified",
-        )
-        if source_callback is not None:
-            source_callback(selection)
-        if progress_callback is not None:
-            progress_callback(actual_size, actual_size)
-        return VerifiedDownload(
-            path=destination,
-            source=selection,
-            sha256=actual_sha256,
-            size_bytes=actual_size,
-        )
+            context.quarantine(
+                destination,
+                operation="verified-download-cache",
+                reason=(
+                    "download destination identity mismatch: "
+                    f"expected_sha256={expected_sha256}, actual_sha256={actual_sha256}, "
+                    f"expected_size={expected_size_bytes}, actual_size={actual_size}"
+                ),
+            )
+        else:
+            selection = SourceSelection(
+                source_id="workspace-cache",
+                url="workspace-cache://verified",
+            )
+            if source_callback is not None:
+                source_callback(selection)
+            if progress_callback is not None:
+                progress_callback(actual_size, actual_size)
+            return VerifiedDownload(
+                path=destination,
+                source=selection,
+                sha256=actual_sha256,
+                size_bytes=actual_size,
+            )
     cache_root = context.runtime_root / "cache" / "downloads"
     cache_root.mkdir(parents=True, exist_ok=True)
     safe_id = hashlib.sha256(artifact_id.encode("utf-8")).hexdigest()[:16]

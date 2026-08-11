@@ -135,7 +135,7 @@ def test_report_has_no_automatic_gate_and_approval_does_not_switch_default(
     approval_path = approve_openfold3_validation_report(
         report_path=report_path,
         reviewer="researcher-one",
-        decision="approve-default-switch",
+        decision="approve-stable-promotion",
         confirm=True,
     )
     approval = OpenFold3ApprovalReceipt.model_validate_json(
@@ -180,6 +180,6 @@ def test_approval_requires_explicit_confirmation(
         approve_openfold3_validation_report(
             report_path=report,
             reviewer="researcher-one",
-            decision="approve-default-switch",
+            decision="approve-stable-promotion",
             confirm=False,
         )

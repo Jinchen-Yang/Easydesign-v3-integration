@@ -17,6 +17,7 @@ from .models import (
     SequencePrefilterRecord,
     Stage07Bundle,
     Stage07PredictionState,
+    TargetConditionedStage07Evidence,
     TnpCandidateRecord,
     TnpReport,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "StrategySourceDistribution",
     "TnpCandidateRecord",
     "TnpReport",
+    "TargetConditionedStage07Evidence",
     "normalize_scale_bundle_for_stage07",
     "summarize_selected_sources",
     "validate_scale_candidate_lineage",

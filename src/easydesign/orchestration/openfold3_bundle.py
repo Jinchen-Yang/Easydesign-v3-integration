@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from easydesign.core import ConfigurationError, sha256_file
@@ -31,6 +30,8 @@ ALPHAFOLD_WHEEL_SHA256 = (
 RUNNER_COMMIT = "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997"
 BACKEND_VERSION = "3.1.4"
 RELEASE_ID = "afo-3-1-4-of3-p2-155k"
+OPENFOLD3_SOURCE_COMMIT = "f5df7b8099b3603779a965ce8ff91a5987cd3449"
+OPENFOLD3_SOURCE_REPOSITORY = "https://github.com/aqlaboratory/openfold-3"
 
 
 def _copy(source: Path, destination: Path) -> Path:
@@ -58,6 +59,33 @@ def _git(repository: Path, *arguments: str) -> str:
             f"runner Git 校验失败: git {' '.join(arguments)}: {completed.stderr.strip()}"
         )
     return completed.stdout.strip()
+
+
+def _git_file(repository: Path, revision: str, relative_path: str) -> bytes:
+    completed = subprocess.run(
+        ["git", "-C", str(repository), "show", f"{revision}:{relative_path}"],
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise ConfigurationError(
+            "OpenFold3 attribution Git object 无法读取: "
+            f"{revision}:{relative_path}: "
+            + completed.stderr.decode("utf-8", errors="replace").strip()
+        )
+    return completed.stdout
+
+
+def _copy_git_file(
+    repository: Path,
+    revision: str,
+    relative_path: str,
+    destination: Path,
+) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("xb") as handle:
+        handle.write(_git_file(repository, revision, relative_path))
+    return destination
 
 
 def _safe_extract_git_archive(archive: Path, destination: Path) -> Path:
@@ -202,10 +230,12 @@ def build_openfold3_release_bundle(
     first_conversion: Path,
     second_conversion: Path,
     validation_receipt: Path,
+    openfold3_source: Path,
     backend_version: str = BACKEND_VERSION,
     runner_commit: str = RUNNER_COMMIT,
     alphafold_wheel_sha256: str = ALPHAFOLD_WHEEL_SHA256,
     release_id: str = RELEASE_ID,
+    openfold3_source_commit: str = OPENFOLD3_SOURCE_COMMIT,
 ) -> Path:
     """Build a release only from a clean, exact commit and typed validation evidence."""
 
@@ -220,6 +250,8 @@ def build_openfold3_release_bundle(
     first_weight = first_conversion.expanduser().resolve(strict=True)
     second_weight = second_conversion.expanduser().resolve(strict=True)
     selected_receipt = validation_receipt.expanduser().resolve(strict=True)
+    selected_openfold3_source = openfold3_source.expanduser().resolve(strict=True)
+    _git(selected_openfold3_source, "cat-file", "-e", f"{openfold3_source_commit}^{{commit}}")
     if sha256_file(selected_raw) != RAW_CHECKPOINT_SHA256:
         raise ConfigurationError("raw OpenFold3 checkpoint SHA-256 不一致")
 
@@ -300,29 +332,72 @@ def build_openfold3_release_bundle(
                 ),
             )
 
-        add(_copy(exported / "LICENSE", selected_output / "licenses/LICENSE"), role="license")
+        model_license = _copy_git_file(
+            selected_openfold3_source,
+            openfold3_source_commit,
+            "LICENSE",
+            selected_output / "licenses/openfold3-model/LICENSE",
+        )
+        add(model_license, role="license")
+        model_readme = _copy_git_file(
+            selected_openfold3_source,
+            openfold3_source_commit,
+            "README.md",
+            selected_output / "licenses/openfold3-model/README.md",
+        )
+        add(model_readme, role="model-attribution")
+        model_citation = _copy_git_file(
+            selected_openfold3_source,
+            openfold3_source_commit,
+            "CITATION.cff",
+            selected_output / "licenses/openfold3-model/CITATION.cff",
+        )
+        add(model_citation, role="model-attribution")
+        add(
+            _copy(
+                exported / "LICENSE",
+                selected_output / "licenses/alphafold3-open/LICENSE",
+            ),
+            role="runner-license",
+        )
         notice = _write(
             selected_output / "licenses/NOTICE",
             (
                 f"OpenFold3 preview2 / alphafold3-open {backend_version} release bundle.\n"
                 f"Runner source commit: {runner_commit}.\n"
-                "Code license: Apache-2.0. Model weights remain subject to the "
-                "included OpenFold3 weight terms."
+                f"OpenFold3 model source commit: {openfold3_source_commit}.\n"
+                "The OpenFold3 checkpoint and this format-converted derivative are "
+                "distributed under Apache-2.0, as declared by the OpenFold3 source.\n"
+                "The archived alphafold3-open runner contains Google AlphaFold 3 "
+                "weight terms for users who separately obtain Google weights. Those "
+                "terms do not license or govern the bundled OpenFold3 weights."
             ),
         )
         add(notice, role="notice")
         for name in ("WEIGHTS_TERMS_OF_USE.md", "WEIGHTS_PROHIBITED_USE_POLICY.md"):
-            add(_copy(exported / name, selected_output / "licenses" / name), role="model-terms")
+            add(
+                _copy(
+                    exported / name,
+                    selected_output / "licenses/alphafold3-open" / name,
+                ),
+                role="runner-terms",
+            )
         model_card = _write(
             selected_output / "MODEL_CARD.md",
             (
                 "# OpenFold3 preview2 on alphafold3-open\n\n"
                 "- Backend ID: `openfold3-af3-jax`\n"
                 "- Model: `of3-p2-155k` (OpenFold3 preview2)\n"
+                f"- OpenFold3 source: `{OPENFOLD3_SOURCE_REPOSITORY}`\n"
+                f"- OpenFold3 source commit: `{openfold3_source_commit}`\n"
+                "- Original and format-converted model license: Apache-2.0\n"
                 f"- Runner: `alphafold3-open {backend_version}`\n"
                 f"- Runner commit: `{runner_commit}`\n"
-                "- Templates: disabled in EasyDesign Local phase 1\n"
-                "- This is not Google AlphaFold 3 and contains no Google AF3 weights."
+                "- EasyDesign modes: de-novo and target-conditioned target-only template\n"
+                "- Binder templates and automatic template search: disabled\n"
+                "- This is not Google AlphaFold 3 and contains no Google AF3 weights.\n"
+                "- The Google weight terms retained inside the runner source archive "
+                "apply only to separately obtained Google weights, not to this model."
             ),
         )
         add(model_card, role="model-card")
@@ -341,7 +416,7 @@ def build_openfold3_release_bundle(
             json.dumps(
                 {
                     "schema_version": "0.2",
-                    "generated_at": datetime.now(UTC).isoformat(),
+                    "generated_at": receipt.generated_at.isoformat(),
                     "raw_checkpoint_sha256": RAW_CHECKPOINT_SHA256,
                     "converted_weight_sha256": conversion.compressed_sha256,
                     "converted_weight_uncompressed_sha256": (
@@ -393,10 +468,15 @@ def build_openfold3_release_bundle(
         checksums = _write(selected_output / "SHA256SUMS", "\n".join(checksum_lines))
         add(checksums, role="checksums")
         manifest = OpenFold3ReleaseManifest(
+            schema_version="0.3",
             release_id=release_id,
             backend_version=backend_version,
             code_license="Apache-2.0",
-            template_mode="disabled",
+            model_license="Apache-2.0",
+            model_source_repository=OPENFOLD3_SOURCE_REPOSITORY,
+            model_source_commit=openfold3_source_commit,
+            converted_weight_license="Apache-2.0",
+            template_mode="target-only-precomputed",
             raw_checkpoint_sha256=RAW_CHECKPOINT_SHA256,
             converted_weight_sha256=conversion.compressed_sha256,
             wheel_sha256=alphafold_wheel_sha256,
@@ -416,4 +496,74 @@ def build_openfold3_release_bundle(
     return publication
 
 
-__all__ = ["build_openfold3_release_bundle"]
+def create_deterministic_tar_zst(*, bundle: Path, archive: Path) -> Path:
+    """Create a canonical tar stream and single-threaded zstd archive."""
+
+    selected_bundle = bundle.expanduser().resolve(strict=True)
+    selected_archive = archive.expanduser().resolve()
+    if not selected_bundle.is_dir():
+        raise ConfigurationError(f"AFO bundle 不是目录: {selected_bundle}")
+    if selected_archive.exists():
+        raise ConfigurationError(f"AFO archive 已存在，禁止覆盖: {selected_archive}")
+    load_openfold3_bundle(selected_bundle)
+    zstd = shutil.which("zstd")
+    if zstd is None:
+        raise ConfigurationError("发布 AFO bundle 需要 zstd executable")
+    selected_archive.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{selected_archive.name}.staging-",
+        dir=selected_archive.parent,
+    ) as temporary:
+        tar_path = Path(temporary) / "bundle.tar"
+        with tarfile.open(tar_path, mode="x:", format=tarfile.GNU_FORMAT) as handle:
+            paths = tuple(
+                sorted(
+                    selected_bundle.rglob("*"),
+                    key=lambda item: item.relative_to(selected_bundle).as_posix(),
+                )
+            )
+            for path in paths:
+                if path.is_symlink() or not (path.is_dir() or path.is_file()):
+                    raise ConfigurationError(f"AFO bundle 含不支持的文件类型: {path}")
+                relative = path.relative_to(selected_bundle).as_posix()
+                info = handle.gettarinfo(str(path), arcname=relative)
+                info.uid = 0
+                info.gid = 0
+                info.uname = ""
+                info.gname = ""
+                info.mtime = 0
+                info.mode = (
+                    0o755
+                    if path.is_dir() or (path.stat().st_mode & 0o111)
+                    else 0o644
+                )
+                if path.is_file():
+                    with path.open("rb") as source_handle:
+                        handle.addfile(info, source_handle)
+                else:
+                    handle.addfile(info)
+        completed = subprocess.run(
+            [
+                zstd,
+                "--compress",
+                "-10",
+                "--threads=1",
+                "--no-progress",
+                "--output-dir-flat",
+                str(Path(temporary)),
+                str(tar_path),
+            ],
+            check=False,
+            capture_output=True,
+        )
+        generated = Path(temporary) / "bundle.tar.zst"
+        if completed.returncode != 0 or not generated.is_file():
+            raise ConfigurationError(
+                "AFO deterministic archive 压缩失败: "
+                + completed.stderr.decode("utf-8", errors="replace")
+            )
+        generated.rename(selected_archive)
+    return selected_archive
+
+
+__all__ = ["build_openfold3_release_bundle", "create_deterministic_tar_zst"]

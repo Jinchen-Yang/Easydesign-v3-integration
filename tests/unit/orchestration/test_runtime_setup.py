@@ -313,6 +313,23 @@ def test_all_component_plan_contains_every_backend_once_in_install_order() -> No
     assert len(observed_assets) == len(set(observed_assets))
 
 
+def test_all_five_environments_have_component_specific_reliability_probes() -> None:
+    assert set(runtime_setup._ENVIRONMENT_RELIABILITY_PROBES) == set(
+        runtime_setup.SETUP_COMPONENT_SEQUENCE
+    )
+    assert "cmd.fragment" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES["pymol-pse"]
+    assert "cuequivariance_ops_torch" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES[
+        "boltzgen"
+    ]
+    assert "cuequivariance_ops_torch" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES[
+        "protenix-v2"
+    ]
+    assert "is_built_with_cuda" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES[
+        "scannet-epitope"
+    ]
+    assert "mkdssp" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES["tnp"]
+
+
 def test_setup_plan_rejects_unknown_component() -> None:
     repository = Path(__file__).resolve().parents[3]
     context = WorkspaceContext.from_root(repository)
@@ -505,6 +522,9 @@ def test_setup_workspace_emits_environment_and_byte_progress(
     ) -> runtime_setup.AssetRecord:
         callback = kwargs["progress_callback"]
         assert callable(callback)
+        status_callback = kwargs["status_callback"]
+        assert callable(status_callback)
+        status_callback("正在下载并校验资产 [fixture-segmented-http1]")
         callback(50, 100)
         callback(100, 100)
         return runtime_setup.AssetRecord(
@@ -537,6 +557,7 @@ def test_setup_workspace_emits_environment_and_byte_progress(
     byte_event = next(event for event in events if event.bytes_completed == 50)
     assert byte_event.current_item == "fixture-model"
     assert byte_event.current_step_fraction == 0.5
+    assert "fixture-segmented-http1" in byte_event.message
     assert events[-1].phase == "complete"
     assert events[-1].completed_steps == events[-1].total_steps == 2
 
@@ -668,7 +689,7 @@ def test_pip_index_must_be_explicit_safe_https_url() -> None:
         validate_pip_index_url("http://example.test/simple")
 
 
-def test_pip_lock_falls_back_without_changing_requirements(
+def test_pip_lock_caches_each_verified_wheel_and_installs_offline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -691,6 +712,7 @@ def test_pip_lock_falls_back_without_changing_requirements(
         ),
     )
     indexes: list[str] = []
+    offline_locks: list[str] = []
     monkeypatch.setenv("PYTHONPATH", "/outside/pythonpath")
     monkeypatch.setenv("PYTHONHOME", "/outside/pythonhome")
 
@@ -699,10 +721,13 @@ def test_pip_lock_falls_back_without_changing_requirements(
         assert isinstance(environment, dict)
         assert "/outside" not in environment["PYTHONPATH"]
         assert "PYTHONHOME" not in environment
-        indexes.append(str(environment["PIP_INDEX_URL"]))
+        assert "--no-index" in command
+        assert "--require-hashes" in command
+        lock = Path(command[command.index("--requirement") + 1])
+        offline_locks.append(lock.read_text(encoding="utf-8"))
         return subprocess.CompletedProcess(
             command,
-            0 if len(indexes) == 2 else 1,
+            0,
             "",
             "",
         )
@@ -712,6 +737,25 @@ def test_pip_lock_falls_back_without_changing_requirements(
         "_pip_reliability_arguments",
         lambda _context, _python: [],
     )
+
+    def fake_wheel(
+        _context: WorkspaceContext,
+        *,
+        command: list[str],
+        candidate: SourceCandidate,
+    ) -> subprocess.CompletedProcess[bytes]:
+        indexes.append(candidate.url)
+        if len(indexes) == 2:
+            wheel_dir = Path(command[command.index("--wheel-dir") + 1])
+            (wheel_dir / "example-1.0-py3-none-any.whl").write_bytes(
+                b"locked wheel bytes"
+            )
+        return subprocess.CompletedProcess(
+            command,
+            0 if len(indexes) == 2 else 1,
+        )
+
+    monkeypatch.setattr(runtime_setup, "_run_pip_wheel_command", fake_wheel)
     monkeypatch.setattr(runtime_setup.subprocess, "run", fake_run)
 
     completed, selected = runtime_setup._install_pip_requirements(
@@ -719,11 +763,108 @@ def test_pip_lock_falls_back_without_changing_requirements(
         python=python,
         requirements=requirements,
         candidates=candidates,
+        environment_id="fixture",
+        environment_lock_sha256="a" * 64,
     )
 
     assert completed.returncode == 0
     assert indexes == [candidate.url for candidate in candidates]
-    assert selected.source_id == "fallback"
+    assert selected.source_id == "per-wheel-cache:fallback"
+    assert selected.url == candidates[1].url
+    assert "--hash=sha256:" in offline_locks[0]
+    artifact = next(
+        (context.runtime_root / "cache" / "pip-artifacts").glob("*/*.whl")
+    )
+    assert artifact.read_bytes() == b"locked wheel bytes"
+    receipt = next(
+        (context.runtime_root / "state" / "pip-artifacts").rglob("*.json")
+    )
+    assert runtime_setup.PipArtifactReceipt.model_validate_json(
+        receipt.read_text(encoding="utf-8")
+    ).sha256 == runtime_setup.sha256_file(artifact)
+
+    indexes.clear()
+    completed_again, _selected_again = runtime_setup._install_pip_requirements(
+        context,
+        python=python,
+        requirements=requirements,
+        candidates=candidates,
+        environment_id="fixture",
+        environment_lock_sha256="a" * 64,
+    )
+
+    assert completed_again.returncode == 0
+    assert indexes == []
+    assert len(offline_locks) == 2
+
+    artifact.write_bytes(b"corrupt wheel cache")
+    rebuilt, _selected_rebuilt = runtime_setup._install_pip_requirements(
+        context,
+        python=python,
+        requirements=requirements,
+        candidates=candidates,
+        environment_id="fixture",
+        environment_lock_sha256="a" * 64,
+    )
+
+    assert rebuilt.returncode == 0
+    assert indexes == [candidate.url for candidate in candidates]
+    assert artifact.read_bytes() == b"locked wheel bytes"
+    quarantined_wheels = tuple(
+        (context.runtime_root / "quarantine").glob("*/*example*.whl")
+    )
+    assert len(quarantined_wheels) == 1
+
+
+def test_pip_wheel_timeout_terminates_exact_process_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", "/outside/pythonpath")
+    captured: dict[str, object] = {}
+    waits = 0
+
+    class FakeProcess:
+        pid = 4242
+
+        def wait(self, timeout: float | None = None) -> int:
+            nonlocal waits
+            waits += 1
+            if waits == 1:
+                raise subprocess.TimeoutExpired("pip wheel", timeout)
+            return -15
+
+    def fake_popen(command: list[str], **kwargs: object) -> FakeProcess:
+        captured["command"] = command
+        captured.update(kwargs)
+        return FakeProcess()
+
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(runtime_setup.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        runtime_setup.os,
+        "killpg",
+        lambda pid, selected_signal: signals.append((pid, selected_signal)),
+    )
+
+    completed = runtime_setup._run_pip_wheel_command(
+        context,
+        command=["python", "-m", "pip", "wheel", "fixture==1.0"],
+        candidate=SourceCandidate(
+            source_id="fixture",
+            region="official",
+            url="https://example.test/simple",
+        ),
+    )
+
+    assert completed.returncode == 124
+    assert signals == [(4242, runtime_setup.signal.SIGTERM)]
+    assert captured["start_new_session"] is True
+    environment = captured["env"]
+    assert isinstance(environment, dict)
+    assert "/outside" not in environment["PYTHONPATH"]
+    assert environment["PIP_INDEX_URL"] == "https://example.test/simple"
 
 
 def test_locked_vcs_requirement_is_materialized_once_and_installed_locally(
@@ -799,3 +940,75 @@ def test_locked_vcs_requirement_is_materialized_once_and_installed_locally(
     assert resolved_lines[0] == "fixture==1.0"
     assert resolved_lines[1].startswith("fixture-vcs @ file://")
     assert "fixture-archive" in progress[-1]
+    build_source = Path(urlparse(resolved_lines[1].split(" @ ", maxsplit=1)[1]).path)
+    assert build_source.parent == resolved.parent
+    assert build_source != context.runtime_root / "models" / definition.destination
+    runtime_setup._cleanup_resolved_pip_requirements(
+        context,
+        original=requirements,
+        resolved=resolved,
+    )
+    assert not resolved.parent.exists()
+
+
+def test_mutated_git_source_is_quarantined_and_rebuilt_from_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    revision = "a" * 40
+    definition = AssetDefinition(
+        asset_id="fixture-source",
+        kind="git",
+        source="https://github.com/example/fixture.git",
+        destination=Path("fixture/source"),
+        revision=revision,
+        estimated_install_bytes=100,
+        license="test-only",
+        license_confirmation_required=False,
+    )
+    destination = context.runtime_root / "models" / definition.destination
+    destination.mkdir(parents=True)
+    (destination / "mutated-build-output").write_text("drift", encoding="utf-8")
+    monkeypatch.setattr(
+        runtime_setup,
+        "verify_existing_git_source",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ConfigurationError("Git 源码 receipt 与现有内容不一致")
+        ),
+    )
+
+    def fake_checkout(
+        _context: WorkspaceContext,
+        _definition: AssetDefinition,
+        selected_destination: Path,
+        **_kwargs: object,
+    ) -> tuple[str, str, int, SourceSelection]:
+        assert not selected_destination.exists()
+        selected_destination.mkdir(parents=True)
+        (selected_destination / "locked-source").write_text("clean", encoding="utf-8")
+        return (
+            revision,
+            "b" * 64,
+            5,
+            SourceSelection(
+                source_id="workspace-archive-cache",
+                url="https://example.test/source.tar.gz",
+            ),
+        )
+
+    monkeypatch.setattr(runtime_setup, "_checkout_git", fake_checkout)
+
+    record = ensure_asset(
+        context,
+        definition,
+        accepted_license_ids=set(),
+    )
+
+    assert record.status == "available"
+    assert (destination / "locked-source").read_text(encoding="utf-8") == "clean"
+    quarantined = tuple(
+        (context.runtime_root / "quarantine").glob("*/source/mutated-build-output")
+    )
+    assert len(quarantined) == 1

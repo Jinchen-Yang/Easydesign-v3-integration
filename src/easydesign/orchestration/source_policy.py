@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import signal
 import ssl
 import subprocess
 import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 from typing import Literal
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import httpx
 import yaml  # type: ignore[import-untyped]
@@ -27,7 +32,12 @@ SOURCE_POLICIES: tuple[SourcePolicy, ...] = ("auto", "official", "china")
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 PYTHON_HTTP_CONNECT_TIMEOUT_SECONDS = 15.0
 PYTHON_HTTP_READ_TIMEOUT_SECONDS = 30.0
+SEGMENTED_DOWNLOAD_MIN_BYTES = 32 * 1024 * 1024
+SEGMENTED_DOWNLOAD_PARTS = 4
+SEGMENT_LOW_SPEED_WINDOW_SECONDS = 30.0
+SEGMENT_LOW_SPEED_BYTES_PER_SECOND = 128 * 1024
 _HOST_LATENCY_CACHE: dict[tuple[str, str], float | None] = {}
+_CONTENT_RANGE = re.compile(r"^bytes (?P<start>\d+)-(?P<end>\d+)/(?P<total>\d+)$")
 
 
 def validate_https_url(value: str, *, label: str = "下载源") -> str:
@@ -104,6 +114,17 @@ class VerifiedDownload(BaseModel):
     source: SourceSelection
     sha256: str
     size_bytes: int
+
+
+@dataclass(frozen=True)
+class _DownloadSegment:
+    start: int
+    end: int
+    path: Path
+
+    @property
+    def expected_size(self) -> int:
+        return self.end - self.start + 1
 
 
 def load_runtime_sources(context: WorkspaceContext) -> RuntimeSourceCatalog:
@@ -269,6 +290,83 @@ def _quarantine_partial(
         )
 
 
+def _quarantine_download_state(
+    context: WorkspaceContext,
+    partial: Path,
+    *,
+    artifact_id: str,
+    reason: str,
+) -> None:
+    """Preserve every byte that contributed to an identity mismatch."""
+
+    _quarantine_partial(
+        context,
+        partial,
+        artifact_id=artifact_id,
+        reason=reason,
+    )
+    segment_root = partial.with_name(f"{partial.name}.segments")
+    if segment_root.exists():
+        context.quarantine(
+            segment_root,
+            operation=f"download-{artifact_id}-segments",
+            reason=reason,
+        )
+
+
+def _publish_verified_partial(
+    context: WorkspaceContext,
+    partial: Path,
+    *,
+    artifact_id: str,
+    destination: Path,
+    expected_sha256: str,
+    expected_size_bytes: int | None,
+    actual_size: int,
+    source: SourceSelection,
+) -> VerifiedDownload | None:
+    """Verify immutable identity and atomically publish one completed partial."""
+
+    if expected_size_bytes is not None and actual_size != expected_size_bytes:
+        _quarantine_download_state(
+            context,
+            partial,
+            artifact_id=artifact_id,
+            reason=(
+                "size mismatch: "
+                f"expected={expected_size_bytes}, actual={actual_size}, "
+                f"source={source.source_id}"
+            ),
+        )
+        return None
+    actual_sha256 = sha256_file(partial)
+    if actual_sha256 != expected_sha256:
+        _quarantine_download_state(
+            context,
+            partial,
+            artifact_id=artifact_id,
+            reason=(
+                "SHA-256 mismatch: "
+                f"expected={expected_sha256}, actual={actual_sha256}, "
+                f"source={source.source_id}"
+            ),
+        )
+        return None
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise ConfigurationError(f"下载发布目标已存在，拒绝覆盖: {destination}")
+    partial.rename(destination)
+    segment_root = partial.with_name(f"{partial.name}.segments")
+    if segment_root.is_dir():
+        shutil.rmtree(segment_root)
+    return VerifiedDownload(
+        path=destination,
+        source=source,
+        sha256=actual_sha256,
+        size_bytes=actual_size,
+    )
+
+
 def _stream_candidate(
     candidate: SourceCandidate,
     partial: Path,
@@ -322,6 +420,229 @@ def _stream_candidate(
             if progress_callback is not None:
                 progress_callback(size, total_size)
             return size
+
+
+def _segment_plan(
+    partial: Path,
+    *,
+    expected_size_bytes: int,
+    part_count: int = SEGMENTED_DOWNLOAD_PARTS,
+) -> tuple[_DownloadSegment, ...]:
+    """Build stable remaining-byte ranges beside the sequential partial."""
+
+    offset = partial.stat().st_size if partial.is_file() else 0
+    if offset > expected_size_bytes:
+        raise ConfigurationError("下载 partial 大于锁定文件大小")
+    remaining = expected_size_bytes - offset
+    if remaining == 0:
+        return ()
+    count = min(max(part_count, 1), remaining)
+    width = (remaining + count - 1) // count
+    root = partial.with_name(f"{partial.name}.segments")
+    root.mkdir(parents=False, exist_ok=True)
+    segments: list[_DownloadSegment] = []
+    start = offset
+    while start < expected_size_bytes:
+        end = min(start + width - 1, expected_size_bytes - 1)
+        segments.append(
+            _DownloadSegment(
+                start=start,
+                end=end,
+                path=root / f"{start:020d}-{end:020d}.part",
+            )
+        )
+        start = end + 1
+    return tuple(segments)
+
+
+def _download_range_segment(
+    candidate: SourceCandidate,
+    segment: _DownloadSegment,
+    *,
+    expected_size_bytes: int,
+    stop_event: Event | None = None,
+) -> None:
+    """Resume one strict HTTPS byte range and reject non-Range responses."""
+
+    existing = segment.path.stat().st_size if segment.path.is_file() else 0
+    if existing > segment.expected_size:
+        raise ConfigurationError(f"分段 partial 大于锁定范围: {segment.path.name}")
+    if existing == segment.expected_size:
+        return
+    if stop_event is not None and stop_event.is_set():
+        raise ConfigurationError("其他下载分段已经失败")
+    request_start = segment.start + existing
+    with httpx.Client(
+        follow_redirects=True,
+        timeout=httpx.Timeout(
+            PYTHON_HTTP_READ_TIMEOUT_SECONDS,
+            connect=PYTHON_HTTP_CONNECT_TIMEOUT_SECONDS,
+        ),
+        verify=_ssl_verify(),
+        trust_env=True,
+        http1=True,
+        http2=False,
+    ) as client:
+        with client.stream(
+            "GET",
+            candidate.url,
+            headers={"Range": f"bytes={request_start}-{segment.end}"},
+        ) as response:
+            response.raise_for_status()
+            if response.url.scheme != "https":
+                raise ConfigurationError(
+                    f"下载源 {candidate.source_id} 重定向到非 HTTPS 地址"
+                )
+            if response.status_code != 206:
+                raise ConfigurationError(
+                    f"下载源 {candidate.source_id} 不支持严格 Range 下载"
+                )
+            content_range = response.headers.get("content-range", "")
+            match = _CONTENT_RANGE.fullmatch(content_range)
+            if (
+                match is None
+                or int(match.group("start")) != request_start
+                or int(match.group("end")) != segment.end
+                or int(match.group("total")) != expected_size_bytes
+            ):
+                raise ConfigurationError(
+                    f"下载源 {candidate.source_id} 返回错误 Content-Range"
+                )
+            mode = "ab" if existing else "xb"
+            window_started = time.monotonic()
+            window_bytes = 0
+            with segment.path.open(mode) as handle:
+                for chunk in response.iter_bytes(chunk_size=256 * 1024):
+                    if stop_event is not None and stop_event.is_set():
+                        raise ConfigurationError("其他下载分段已经失败")
+                    handle.write(chunk)
+                    window_bytes += len(chunk)
+                    if handle.tell() > segment.expected_size:
+                        raise ConfigurationError(
+                            f"下载源 {candidate.source_id} 返回超出锁定范围的字节"
+                        )
+                    elapsed = time.monotonic() - window_started
+                    if elapsed >= SEGMENT_LOW_SPEED_WINDOW_SECONDS:
+                        if (
+                            window_bytes / elapsed
+                            < SEGMENT_LOW_SPEED_BYTES_PER_SECOND
+                        ):
+                            raise ConfigurationError(
+                                f"下载源 {candidate.source_id} 分段持续低速"
+                            )
+                        window_started = time.monotonic()
+                        window_bytes = 0
+                handle.flush()
+                os.fsync(handle.fileno())
+    actual = segment.path.stat().st_size
+    if actual != segment.expected_size:
+        raise ConfigurationError(
+            f"下载源 {candidate.source_id} 分段大小不完整: "
+            f"expected={segment.expected_size}, actual={actual}"
+        )
+
+
+def _assemble_segments(
+    partial: Path,
+    segments: tuple[_DownloadSegment, ...],
+    *,
+    expected_size_bytes: int,
+) -> int:
+    """Assemble beside the old partial, then atomically replace it."""
+
+    assembly = partial.with_name(f"{partial.name}.assembling-{uuid4().hex}")
+    try:
+        with assembly.open("xb") as output:
+            if partial.is_file():
+                with partial.open("rb") as prefix:
+                    shutil.copyfileobj(prefix, output)
+            for segment in segments:
+                if segment.path.stat().st_size != segment.expected_size:
+                    raise ConfigurationError(
+                        f"下载分段未完成: {segment.path.name}"
+                    )
+                with segment.path.open("rb") as source:
+                    shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
+        actual = assembly.stat().st_size
+        if actual != expected_size_bytes:
+            raise ConfigurationError(
+                f"分段组装大小错误: expected={expected_size_bytes}, actual={actual}"
+            )
+        os.replace(assembly, partial)
+    finally:
+        assembly.unlink(missing_ok=True)
+    segment_root = partial.with_name(f"{partial.name}.segments")
+    if segment_root.is_dir():
+        shutil.rmtree(segment_root)
+    return expected_size_bytes
+
+
+def _segmented_candidate(
+    candidate: SourceCandidate,
+    partial: Path,
+    *,
+    expected_size_bytes: int,
+    progress_callback: Callable[[int, int | None], None] | None,
+) -> int:
+    """Fetch four resumable ranges concurrently, then atomically assemble."""
+
+    segments = _segment_plan(
+        partial,
+        expected_size_bytes=expected_size_bytes,
+    )
+    if not segments:
+        if progress_callback is not None:
+            progress_callback(expected_size_bytes, expected_size_bytes)
+        return expected_size_bytes
+    prefix_size = partial.stat().st_size if partial.is_file() else 0
+    stop_event = Event()
+    failure: BaseException | None = None
+    with ThreadPoolExecutor(
+        max_workers=len(segments),
+        thread_name_prefix="easydesign-download",
+    ) as executor:
+        futures = {
+            executor.submit(
+                _download_range_segment,
+                candidate,
+                segment,
+                expected_size_bytes=expected_size_bytes,
+                stop_event=stop_event,
+            ): segment
+            for segment in segments
+        }
+        pending = set(futures)
+        while pending:
+            done, pending = wait(pending, timeout=0.5)
+            for future in done:
+                exception = future.exception()
+                if exception is not None and failure is None:
+                    failure = exception
+                    stop_event.set()
+            completed = prefix_size + sum(
+                min(
+                    segment.path.stat().st_size if segment.path.is_file() else 0,
+                    segment.expected_size,
+                )
+                for segment in segments
+            )
+            if progress_callback is not None:
+                progress_callback(completed, expected_size_bytes)
+            if failure is not None:
+                for future in pending:
+                    future.cancel()
+                break
+    if failure is not None:
+        raise failure
+    if progress_callback is not None:
+        progress_callback(expected_size_bytes, expected_size_bytes)
+    return _assemble_segments(
+        partial,
+        segments,
+        expected_size_bytes=expected_size_bytes,
+    )
 
 
 def _curl_candidate(
@@ -450,6 +771,40 @@ def download_verified_file(
     context.assert_write_path(partial)
     ordered = rank_source_candidates(candidates, policy)
     failures: list[str] = []
+    if (
+        expected_size_bytes is not None
+        and expected_size_bytes >= SEGMENTED_DOWNLOAD_MIN_BYTES
+    ):
+        for candidate in ordered:
+            selection = SourceSelection(
+                source_id=f"{candidate.source_id}-segmented-http1",
+                url=candidate.url,
+            )
+            if source_callback is not None:
+                source_callback(selection)
+            try:
+                size = _segmented_candidate(
+                    candidate,
+                    partial,
+                    expected_size_bytes=expected_size_bytes,
+                    progress_callback=progress_callback,
+                )
+            except (ConfigurationError, httpx.HTTPError, OSError) as error:
+                failures.append(f"{selection.source_id}: {error}")
+                continue
+            verified = _publish_verified_partial(
+                context,
+                partial,
+                artifact_id=artifact_id,
+                destination=destination,
+                expected_sha256=expected_sha256,
+                expected_size_bytes=expected_size_bytes,
+                actual_size=size,
+                source=selection,
+            )
+            if verified is not None:
+                return verified
+            failures.append(f"{selection.source_id}: identity mismatch")
     for candidate in ordered:
         selected_source_id = candidate.source_id
         try:
@@ -487,42 +842,19 @@ def download_verified_file(
             except (ConfigurationError, OSError) as curl_error:
                 failures.append(f"{selected_source_id}: {curl_error}")
                 continue
-        actual_sha256 = sha256_file(partial)
-        if expected_size_bytes is not None and size != expected_size_bytes:
-            _quarantine_partial(
-                context,
-                partial,
-                artifact_id=artifact_id,
-                reason=(
-                    "size mismatch: "
-                    f"expected={expected_size_bytes}, actual={size}, "
-                    f"source={selected_source_id}"
-                ),
-            )
-            failures.append(f"{selected_source_id}: size mismatch")
-            continue
-        if actual_sha256 != expected_sha256:
-            _quarantine_partial(
-                context,
-                partial,
-                artifact_id=artifact_id,
-                reason=(
-                    "SHA-256 mismatch: "
-                    f"expected={expected_sha256}, actual={actual_sha256}, "
-                    f"source={selected_source_id}"
-                ),
-            )
-            failures.append(f"{selected_source_id}: SHA-256 mismatch")
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise ConfigurationError(f"下载发布目标已存在，拒绝覆盖: {destination}")
-        partial.rename(destination)
-        return VerifiedDownload(
-            path=destination,
-            source=SourceSelection(source_id=selected_source_id, url=candidate.url),
-            sha256=actual_sha256,
-            size_bytes=size,
+        selection = SourceSelection(source_id=selected_source_id, url=candidate.url)
+        verified = _publish_verified_partial(
+            context,
+            partial,
+            artifact_id=artifact_id,
+            destination=destination,
+            expected_sha256=expected_sha256,
+            expected_size_bytes=expected_size_bytes,
+            actual_size=size,
+            source=selection,
         )
+        if verified is not None:
+            return verified
+        failures.append(f"{selected_source_id}: identity mismatch")
     detail = "; ".join(failures[-6:])
     raise ConfigurationError(f"所有候选下载源均失败: {artifact_id}; {detail}")

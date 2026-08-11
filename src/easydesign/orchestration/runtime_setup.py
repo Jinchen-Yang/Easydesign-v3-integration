@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -94,6 +96,28 @@ SETUP_COMPONENT_IDS = ("all", *SETUP_COMPONENT_SEQUENCE)
 GIB = 1024**3
 SETUP_FREE_RESERVE_BYTES = 10 * GIB
 DEFAULT_PIP_INDEX_URL = "https://pypi.org/simple"
+PIP_WHEEL_SOURCE_TIMEOUT_SECONDS = 600
+_ENVIRONMENT_RELIABILITY_PROBES: dict[str, str] = {
+    "pymol-pse": (
+        "from pymol import cmd; cmd.reinitialize(); cmd.fragment('gly'); "
+        "assert cmd.count_atoms() > 0; cmd.delete('all')"
+    ),
+    "boltzgen": (
+        "import torch, cuequivariance, cuequivariance_ops_torch, "
+        "cuequivariance_torch; assert torch.version.cuda is not None"
+    ),
+    "protenix-v2": (
+        "import torch, cuequivariance, cuequivariance_ops_torch, "
+        "cuequivariance_torch; assert torch.version.cuda is not None"
+    ),
+    "scannet-epitope": (
+        "import tensorflow as tf; assert tf.test.is_built_with_cuda()"
+    ),
+    "tnp": (
+        "import shutil; assert shutil.which('mkdssp') or shutil.which('dssp'); "
+        "assert shutil.which('ANARCI') or shutil.which('anarci')"
+    ),
+}
 # ``minimal`` and ``full`` remain readable only in immutable historical job results.
 # New installation plans can produce only ``component``.
 SetupMode = Literal["minimal", "full", "component"]
@@ -187,6 +211,22 @@ class AssetRecord(BaseModel):
     license: str
     recorded_at: datetime
     message: str | None = None
+
+
+class PipArtifactReceipt(BaseModel):
+    """Immutable evidence for one locally materialized locked wheel."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["0.1"] = "0.1"
+    environment_id: str
+    environment_lock_sha256: str
+    requirement: str
+    relative_artifact: Path
+    sha256: str
+    size_bytes: int
+    source_id: str
+    source_url: str
 
 
 class SetupSummary(BaseModel):
@@ -311,76 +351,109 @@ def _materialize_locked_vcs_requirements(
     ]
     if not matches:
         return requirements
+    resolved_root = (
+        context.runtime_root
+        / "tmp"
+        / f"pip-local-sources-{requirements.stem}-{uuid4().hex}"
+    )
+    context.assert_write_path(resolved_root)
+    resolved_root.mkdir(parents=True)
     assets = _load_assets(context).assets
     definitions = {
         (validate_https_url(asset.source), asset.revision): asset
         for asset in assets
         if asset.kind == "git" and asset.revision is not None
     }
-    for position, (line_index, match) in enumerate(matches):
-        source = validate_https_url(match.group("source"), label="Pip VCS source ")
-        revision = match.group("revision")
-        asset = definitions.get((source, revision))
-        if asset is None:
-            raise ConfigurationError(
-                "锁定 Pip VCS 依赖缺少对应 Git 资产: "
-                f"{source}@{revision}"
-            )
-        if asset.license_confirmation_required:
-            raise ConfigurationError(
-                f"Pip VCS 前置源码不能绕过许可确认: {asset.asset_id}"
-            )
-        fraction_base = 0.02 + (0.03 * position / len(matches))
-        current_message = [f"正在准备锁定源码: {asset.asset_id}"]
-
-        def source_status(
-            message: str,
-            selected_fraction: float = fraction_base,
-            message_state: list[str] = current_message,
-        ) -> None:
-            message_state[0] = message
-            if progress_callback is not None:
-                progress_callback(message, selected_fraction)
-
-        def source_bytes(
-            bytes_completed: int,
-            bytes_total: int | None,
-            selected_asset_id: str = asset.asset_id,
-            selected_fraction: float = fraction_base,
-            message_state: list[str] = current_message,
-        ) -> None:
-            if download_progress_callback is not None:
-                download_progress_callback(
-                    message_state[0],
-                    selected_fraction,
-                    bytes_completed,
-                    bytes_total,
-                    selected_asset_id,
+    try:
+        for position, (line_index, match) in enumerate(matches):
+            source = validate_https_url(match.group("source"), label="Pip VCS source ")
+            revision = match.group("revision")
+            asset = definitions.get((source, revision))
+            if asset is None:
+                raise ConfigurationError(
+                    "锁定 Pip VCS 依赖缺少对应 Git 资产: "
+                    f"{source}@{revision}"
                 )
+            if asset.license_confirmation_required:
+                raise ConfigurationError(
+                    f"Pip VCS 前置源码不能绕过许可确认: {asset.asset_id}"
+                )
+            fraction_base = 0.02 + (0.03 * position / len(matches))
+            current_message = [f"正在准备锁定源码: {asset.asset_id}"]
 
-        record = ensure_asset(
-            context,
-            asset,
-            accepted_license_ids=set(),
-            source_policy=source_policy,
-            progress_callback=source_bytes,
-            status_callback=source_status,
-        )
-        if record.status != "available":
-            raise ConfigurationError(
-                f"锁定 Pip VCS 源码不可用: {asset.asset_id}; {record.message or record.status}"
+            def source_status(
+                message: str,
+                selected_fraction: float = fraction_base,
+                message_state: list[str] = current_message,
+            ) -> None:
+                message_state[0] = message
+                if progress_callback is not None:
+                    progress_callback(message, selected_fraction)
+
+            def source_bytes(
+                bytes_completed: int,
+                bytes_total: int | None,
+                selected_asset_id: str = asset.asset_id,
+                selected_fraction: float = fraction_base,
+                message_state: list[str] = current_message,
+            ) -> None:
+                if download_progress_callback is not None:
+                    download_progress_callback(
+                        message_state[0],
+                        selected_fraction,
+                        bytes_completed,
+                        bytes_total,
+                        selected_asset_id,
+                    )
+
+            record = ensure_asset(
+                context,
+                asset,
+                accepted_license_ids=set(),
+                source_policy=source_policy,
+                progress_callback=source_bytes,
+                status_callback=source_status,
             )
-        local_source = context.root / record.relative_path
-        lines[line_index] = f"{match.group('name')} @ {local_source.resolve().as_uri()}"
-    resolved = (
-        context.runtime_root
-        / "tmp"
-        / f"pip-local-sources-{requirements.stem}-{uuid4().hex}.txt"
-    )
-    context.assert_write_path(resolved)
-    with resolved.open("x", encoding="utf-8") as handle:
-        handle.write("\n".join(lines) + "\n")
-    return resolved
+            if record.status != "available":
+                raise ConfigurationError(
+                    f"锁定 Pip VCS 源码不可用: {asset.asset_id}; "
+                    f"{record.message or record.status}"
+                )
+            local_source = context.root / record.relative_path
+            build_source = resolved_root / asset.asset_id
+            shutil.copytree(local_source, build_source)
+            lines[line_index] = (
+                f"{match.group('name')} @ {build_source.resolve().as_uri()}"
+            )
+        resolved = resolved_root / "requirements.txt"
+        with resolved.open("x", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        return resolved
+    except Exception:
+        if resolved_root.exists():
+            context.quarantine(
+                resolved_root,
+                operation="pip-local-sources",
+                reason="Pip VCS build copy 未准备完成",
+            )
+        raise
+
+
+def _cleanup_resolved_pip_requirements(
+    context: WorkspaceContext,
+    *,
+    original: Path | None,
+    resolved: Path | None,
+) -> None:
+    if original is None or resolved is None or resolved == original:
+        return
+    root = resolved.parent
+    expected_parent = context.runtime_root / "tmp"
+    if root.parent == expected_parent and root.name.startswith("pip-local-sources-"):
+        if root.exists():
+            shutil.rmtree(root)
+        return
+    resolved.unlink(missing_ok=True)
 
 
 def _install_pip_requirements(
@@ -389,22 +462,103 @@ def _install_pip_requirements(
     python: Path,
     requirements: Path,
     candidates: tuple[SourceCandidate, ...],
+    environment_id: str = "environment",
+    environment_lock_sha256: str | None = None,
     progress_callback: Callable[[str, float], None] | None = None,
 ) -> tuple[subprocess.CompletedProcess[bytes], SourceSelection]:
+    """Materialize each locked requirement once, then install verified wheels offline."""
+
     if not candidates:
         raise ConfigurationError("Pip source policy 没有候选 index")
-    completed: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
-        args=(),
-        returncode=1,
+    lock_sha256 = environment_lock_sha256 or sha256_file(requirements)
+    lines = tuple(
+        line.strip()
+        for line in requirements.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
     )
-    selected = candidates[0]
+    if any(line.startswith("-") for line in lines):
+        raise ConfigurationError("Pip lock 不能包含可变安装选项")
+    cache_root = context.runtime_root / "cache" / "pip-artifacts"
+    receipt_root = (
+        context.runtime_root
+        / "state"
+        / "pip-artifacts"
+        / f"{environment_id}-{lock_sha256[:12]}"
+    )
+    cache_root.mkdir(parents=True, exist_ok=True)
+    receipt_root.mkdir(parents=True, exist_ok=True)
     reliability = _pip_reliability_arguments(context, python)
-    for candidate in candidates:
+    receipts: list[PipArtifactReceipt] = []
+    selected_source_ids: list[str] = []
+    for position, requirement in enumerate(lines, start=1):
+        requirement_key = hashlib.sha256(requirement.encode("utf-8")).hexdigest()
+        receipt_path = receipt_root / f"{requirement_key}.json"
+        receipt = _verified_pip_artifact_receipt(
+            context,
+            receipt_path=receipt_path,
+            requirement=requirement,
+            environment_id=environment_id,
+            environment_lock_sha256=lock_sha256,
+        )
+        if receipt is None:
+            if progress_callback is not None:
+                progress_callback(
+                    f"正在获取锁定 Python wheel {position}/{len(lines)}: "
+                    f"{requirement}",
+                    0.52 + (0.28 * (position - 1) / max(len(lines), 1)),
+                )
+
+            def wheel_source_status(
+                source_id: str,
+                selected_position: int = position,
+                selected_requirement: str = requirement,
+            ) -> None:
+                if progress_callback is not None:
+                    progress_callback(
+                        f"正在获取锁定 Python wheel "
+                        f"{selected_position}/{len(lines)} [{source_id}]: "
+                        f"{selected_requirement}",
+                        0.52
+                        + (
+                            0.28
+                            * (selected_position - 1)
+                            / max(len(lines), 1)
+                        ),
+                    )
+
+            receipt = _materialize_pip_wheel(
+                context,
+                python=python,
+                requirement=requirement,
+                environment_id=environment_id,
+                environment_lock_sha256=lock_sha256,
+                candidates=candidates,
+                reliability=reliability,
+                receipt_path=receipt_path,
+                cache_root=cache_root,
+                source_callback=wheel_source_status,
+            )
+        receipts.append(receipt)
+        selected_source_ids.append(receipt.source_id)
         if progress_callback is not None:
             progress_callback(
-                f"正在安装锁定 Python 包 [{candidate.source_id}]",
-                0.65,
+                f"正在获取锁定 Python wheel {position}/{len(lines)} "
+                f"[{receipt.source_id}]: {requirement}",
+                0.52 + (0.28 * position / max(len(lines), 1)),
             )
+    offline_lock = (
+        context.runtime_root
+        / "tmp"
+        / f"pip-offline-{environment_id}-{uuid4().hex}.txt"
+    )
+    context.assert_write_path(offline_lock)
+    with offline_lock.open("x", encoding="utf-8") as handle:
+        for receipt in receipts:
+            artifact = context.root / receipt.relative_artifact
+            handle.write(f"{artifact.resolve().as_uri()} --hash=sha256:{receipt.sha256}\n")
+    if progress_callback is not None:
+        progress_callback("wheel 均已校验，正在从工作区缓存离线安装", 0.82)
+    try:
         completed = subprocess.run(
             [
                 str(python),
@@ -412,25 +566,191 @@ def _install_pip_requirements(
                 "pip",
                 "install",
                 "--no-deps",
-                "--no-build-isolation",
-                *reliability,
+                "--no-index",
+                "--require-hashes",
                 "--requirement",
-                str(requirements),
+                str(offline_lock),
             ],
             cwd=context.root,
-            env={
-                **context.subprocess_environment(),
-                "PIP_INDEX_URL": candidate.url,
-            },
+            env=context.subprocess_environment(),
             check=False,
         )
-        selected = candidate
-        if completed.returncode == 0:
-            break
+    finally:
+        offline_lock.unlink(missing_ok=True)
+    unique_sources = tuple(dict.fromkeys(selected_source_ids))
     return completed, SourceSelection(
-        source_id=selected.source_id,
-        url=selected.url,
+        source_id=f"per-wheel-cache:{','.join(unique_sources)}",
+        url=receipts[-1].source_url if receipts else candidates[0].url,
     )
+
+
+def _verified_pip_artifact_receipt(
+    context: WorkspaceContext,
+    *,
+    receipt_path: Path,
+    requirement: str,
+    environment_id: str,
+    environment_lock_sha256: str,
+) -> PipArtifactReceipt | None:
+    if not receipt_path.is_file():
+        return None
+    artifact: Path | None = None
+    artifact_identity_mismatch = False
+    try:
+        receipt = PipArtifactReceipt.model_validate_json(
+            receipt_path.read_text(encoding="utf-8")
+        )
+        artifact = context.root / receipt.relative_artifact
+        context.assert_write_path(artifact)
+        if (
+            receipt.requirement != requirement
+            or receipt.environment_id != environment_id
+            or receipt.environment_lock_sha256 != environment_lock_sha256
+        ):
+            raise ConfigurationError("receipt lock identity 不匹配")
+        artifact_identity_mismatch = (
+            not artifact.is_file()
+            or artifact.stat().st_size != receipt.size_bytes
+            or sha256_file(artifact) != receipt.sha256
+        )
+        if artifact_identity_mismatch:
+            raise ConfigurationError("wheel identity 不匹配")
+        return receipt
+    except (OSError, ValidationError, ConfigurationError) as error:
+        if artifact_identity_mismatch and artifact is not None and artifact.exists():
+            context.quarantine(
+                artifact,
+                operation=f"pip-artifact-{environment_id}-wheel",
+                reason=f"Pip wheel cache 无法复用: {error}",
+            )
+        context.quarantine(
+            receipt_path,
+            operation=f"pip-artifact-{environment_id}",
+            reason=f"Pip artifact receipt 无法复用: {error}",
+        )
+        return None
+
+
+def _materialize_pip_wheel(
+    context: WorkspaceContext,
+    *,
+    python: Path,
+    requirement: str,
+    environment_id: str,
+    environment_lock_sha256: str,
+    candidates: tuple[SourceCandidate, ...],
+    reliability: list[str],
+    receipt_path: Path,
+    cache_root: Path,
+    source_callback: Callable[[str], None] | None = None,
+) -> PipArtifactReceipt:
+    failures: list[str] = []
+    for candidate in candidates:
+        if source_callback is not None:
+            source_callback(candidate.source_id)
+        staging = (
+            context.runtime_root
+            / "tmp"
+            / f"pip-wheel-{environment_id}-{uuid4().hex}"
+        )
+        staging.mkdir(parents=True)
+        try:
+            command = [
+                str(python),
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--no-build-isolation",
+                *reliability,
+                "--wheel-dir",
+                str(staging),
+                requirement,
+            ]
+            completed = _run_pip_wheel_command(
+                context,
+                command=command,
+                candidate=candidate,
+            )
+            if completed.returncode == 124:
+                failures.append(
+                    f"{candidate.source_id}: wheel 获取超过 "
+                    f"{PIP_WHEEL_SOURCE_TIMEOUT_SECONDS}s"
+                )
+                continue
+            wheels = tuple(staging.glob("*.whl"))
+            if completed.returncode != 0 or len(wheels) != 1:
+                failures.append(
+                    f"{candidate.source_id}: pip wheel 返回 {completed.returncode}, "
+                    f"wheel_count={len(wheels)}"
+                )
+                continue
+            wheel = wheels[0]
+            artifact_sha256 = sha256_file(wheel)
+            artifact_root = cache_root / artifact_sha256
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            artifact = artifact_root / wheel.name
+            if artifact.exists():
+                if sha256_file(artifact) != artifact_sha256:
+                    raise ConfigurationError(f"Pip wheel cache identity 冲突: {artifact}")
+            else:
+                os.replace(wheel, artifact)
+            receipt = PipArtifactReceipt(
+                environment_id=environment_id,
+                environment_lock_sha256=environment_lock_sha256,
+                requirement=requirement,
+                relative_artifact=artifact.relative_to(context.root),
+                sha256=artifact_sha256,
+                size_bytes=artifact.stat().st_size,
+                source_id=candidate.source_id,
+                source_url=candidate.url,
+            )
+            temporary_receipt = receipt_path.with_name(
+                f".{receipt_path.name}.{uuid4().hex}.tmp"
+            )
+            with temporary_receipt.open("x", encoding="utf-8") as handle:
+                handle.write(receipt.model_dump_json(indent=2) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_receipt, receipt_path)
+            return receipt
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    detail = "; ".join(failures[-6:])
+    raise ConfigurationError(f"锁定 Pip wheel 的全部来源均失败: {requirement}; {detail}")
+
+
+def _run_pip_wheel_command(
+    context: WorkspaceContext,
+    *,
+    command: list[str],
+    candidate: SourceCandidate,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run one bounded Pip source attempt and terminate its whole process group."""
+
+    process = subprocess.Popen(
+        command,
+        cwd=context.root,
+        env={
+            **context.subprocess_environment(),
+            "PIP_INDEX_URL": candidate.url,
+        },
+        start_new_session=True,
+    )
+    try:
+        returncode = process.wait(timeout=PIP_WHEEL_SOURCE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=5)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        returncode = 124
+    return subprocess.CompletedProcess(args=command, returncode=returncode)
 
 
 def _setup_selection(
@@ -875,6 +1195,13 @@ def _probe_environment(
 ) -> EnvironmentRecord:
     command = list(lock.probe)
     command[0] = _probe_executable(prefix, command[0])
+    reliability_probe = _ENVIRONMENT_RELIABILITY_PROBES.get(lock.environment_id)
+    if reliability_probe is not None:
+        if len(command) != 3 or command[1] != "-c":
+            raise ConfigurationError(
+                f"环境 {lock.environment_id} 的可靠性探针要求 Python -c 入口"
+            )
+        command[2] = f"{command[2]}; {reliability_probe}"
     if not Path(command[0]).is_file():
         return EnvironmentRecord(
             environment_id=lock.environment_id,
@@ -1047,6 +1374,7 @@ def ensure_environment(
     conda_source_ids: tuple[str, ...] = ()
     if not prefix.exists():
         install_phase = "conda-create"
+        install_error: str | None = None
         if progress_callback is not None:
             progress_callback("正在创建锁定 Conda 环境", 0.1)
         resolved_conda_explicit, conda_source_ids = _materialize_conda_explicit(
@@ -1087,16 +1415,28 @@ def ensure_environment(
             if resolved_pip_requirements is None:
                 raise ConfigurationError("Pip requirements 本地解析结果缺失")
             try:
-                completed, selected_pip_source = _install_pip_requirements(
-                    context,
-                    python=prefix / "bin" / "python",
-                    requirements=resolved_pip_requirements,
-                    candidates=ranked_pip_sources,
-                    progress_callback=progress_callback,
-                )
+                try:
+                    completed, selected_pip_source = _install_pip_requirements(
+                        context,
+                        python=prefix / "bin" / "python",
+                        requirements=resolved_pip_requirements,
+                        candidates=ranked_pip_sources,
+                        environment_id=environment_id,
+                        environment_lock_sha256=lock_sha256,
+                        progress_callback=progress_callback,
+                    )
+                except ConfigurationError as error:
+                    install_error = str(error)
+                    completed = subprocess.CompletedProcess(
+                        args=("pip-wheel-materialize",),
+                        returncode=1,
+                    )
             finally:
-                if resolved_pip_requirements != pip_requirements:
-                    resolved_pip_requirements.unlink(missing_ok=True)
+                _cleanup_resolved_pip_requirements(
+                    context,
+                    original=pip_requirements,
+                    resolved=resolved_pip_requirements,
+                )
             selected_pip_index = selected_pip_source.url
         if completed.returncode == 0 and lock.install_workspace_package:
             install_phase = "workspace-package-install"
@@ -1121,11 +1461,11 @@ def ensure_environment(
                 check=False,
             )
         if completed.returncode != 0:
-            if (
-                resolved_pip_requirements is not None
-                and resolved_pip_requirements != pip_requirements
-            ):
-                resolved_pip_requirements.unlink(missing_ok=True)
+            _cleanup_resolved_pip_requirements(
+                context,
+                original=pip_requirements,
+                resolved=resolved_pip_requirements,
+            )
             if prefix.exists():
                 context.quarantine(
                     prefix,
@@ -1135,7 +1475,9 @@ def ensure_environment(
                         "环境 staging 已保留"
                     ),
                 )
-            failure_message = f"{install_phase} 返回 {completed.returncode}"
+            failure_message = install_error or (
+                f"{install_phase} 返回 {completed.returncode}"
+            )
             failed = EnvironmentRecord(
                 environment_id=environment_id,
                 lock_sha256=lock_sha256,
@@ -1176,6 +1518,7 @@ def _download_file(
     *,
     source_policy: SourcePolicy,
     progress_callback: Callable[[int, int | None], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> tuple[str, int, SourceSelection]:
     if asset.sha256 is None:
         raise ConfigurationError(f"文件资产缺少 SHA-256 identity: {asset.asset_id}")
@@ -1194,6 +1537,13 @@ def _download_file(
         expected_sha256=asset.sha256,
         expected_size_bytes=asset.expected_size_bytes,
         progress_callback=progress_callback,
+        source_callback=(
+            None
+            if status_callback is None
+            else lambda selection: status_callback(
+                f"正在下载并校验资产 [{selection.source_id}]"
+            )
+        ),
     )
     return downloaded.sha256, downloaded.size_bytes, downloaded.source
 
@@ -1255,7 +1605,7 @@ def ensure_asset(
                 destination=destination,
             )
         except ConfigurationError as error:
-            record = AssetRecord(
+            failed = AssetRecord(
                 asset_id=asset.asset_id,
                 relative_path=destination.relative_to(context.root),
                 status="failed",
@@ -1272,24 +1622,34 @@ def ensure_asset(
                 recorded_at=datetime.now(tz=UTC),
                 message=str(error),
             )
+            _append_record(context.asset_registry_root, failed)
+            context.quarantine(
+                destination,
+                operation=f"source-repair-{asset.asset_id}",
+                reason=(
+                    "现有锁定源码未通过 receipt/content 验证；"
+                    "已保留并从不可变来源重建"
+                ),
+            )
+            if status_callback is not None:
+                status_callback(f"现有源码校验失败，正在安全重建: {asset.asset_id}")
+        else:
+            record = AssetRecord(
+                asset_id=asset.asset_id,
+                relative_path=destination.relative_to(context.root),
+                status="available",
+                sha256=existing_source.content_sha256,
+                revision=existing_source.revision,
+                size_bytes=existing_source.size_bytes,
+                source_policy=source_policy,
+                transport_source_id=existing_source.source.source_id,
+                transport_url=existing_source.source.url,
+                license=asset.license,
+                recorded_at=datetime.now(tz=UTC),
+                message="已验证并复用现有锁定源码",
+            )
             _append_record(context.asset_registry_root, record)
             return record
-        record = AssetRecord(
-            asset_id=asset.asset_id,
-            relative_path=destination.relative_to(context.root),
-            status="available",
-            sha256=existing_source.content_sha256,
-            revision=existing_source.revision,
-            size_bytes=existing_source.size_bytes,
-            source_policy=source_policy,
-            transport_source_id=existing_source.source.source_id,
-            transport_url=existing_source.source.url,
-            license=asset.license,
-            recorded_at=datetime.now(tz=UTC),
-            message="已验证并复用现有锁定源码",
-        )
-        _append_record(context.asset_registry_root, record)
-        return record
     if destination.exists():
         actual_sha = (
             sha256_file(destination)
@@ -1374,6 +1734,7 @@ def ensure_asset(
                 destination,
                 source_policy=source_policy,
                 progress_callback=progress_callback,
+                status_callback=status_callback,
             )
             sha256 = identity
             revision = None
@@ -1568,11 +1929,18 @@ def setup_workspace(
     environment_records = tuple(environment_records_list)
     asset_records_list: list[AssetRecord] = []
     for asset in (() if failed_item is not None else selected_assets):
+        asset_message = [
+            "正在下载并校验资产"
+            if asset.kind == "file"
+            else "正在获取并校验固定 Git revision"
+        ]
+
         def asset_progress(
             bytes_completed: int,
             bytes_total: int | None,
             selected_completed_steps: int = completed_steps,
             selected_asset_id: str = asset.asset_id,
+            selected_message: list[str] = asset_message,
         ) -> None:
             fraction = (
                 0.0
@@ -1582,7 +1950,7 @@ def setup_workspace(
             _emit_setup_progress(
                 progress_callback,
                 phase="asset",
-                message="正在下载并校验资产",
+                message=selected_message[0],
                 completed_steps=selected_completed_steps,
                 total_steps=total_steps,
                 current_item=selected_asset_id,
@@ -1595,7 +1963,9 @@ def setup_workspace(
             message: str,
             selected_completed_steps: int = completed_steps,
             selected_asset_id: str = asset.asset_id,
+            selected_message: list[str] = asset_message,
         ) -> None:
+            selected_message[0] = message
             _emit_setup_progress(
                 progress_callback,
                 phase="asset",

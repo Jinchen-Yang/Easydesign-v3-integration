@@ -200,6 +200,111 @@ def test_verified_download_falls_back_to_curl_http1_on_same_source(
     assert selected_sources == ["official", "official-curl-http1"]
 
 
+def test_segmented_download_reuses_prefix_and_publishes_only_verified_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    context.ensure_layout()
+    payload = b"0123456789abcdefghijklmnopqrstuvwxyz"
+    expected_sha256 = hashlib.sha256(payload).hexdigest()
+    artifact_id = "segmented-fixture"
+    safe_id = hashlib.sha256(artifact_id.encode("utf-8")).hexdigest()[:16]
+    partial = (
+        context.runtime_root
+        / "cache"
+        / "downloads"
+        / f"{safe_id}-{expected_sha256[:16]}.part"
+    )
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(payload[:8])
+    monkeypatch.setattr(source_policy, "SEGMENTED_DOWNLOAD_MIN_BYTES", 1)
+    monkeypatch.setattr(
+        source_policy,
+        "rank_source_candidates",
+        lambda values, _policy: tuple(values),
+    )
+    starts: list[int] = []
+
+    def fake_range(
+        _candidate: SourceCandidate,
+        segment: source_policy._DownloadSegment,
+        **_kwargs: object,
+    ) -> None:
+        starts.append(segment.start)
+        segment.path.write_bytes(payload[segment.start : segment.end + 1])
+
+    monkeypatch.setattr(source_policy, "_download_range_segment", fake_range)
+    selected_sources: list[str] = []
+    result = download_verified_file(
+        context,
+        artifact_id=artifact_id,
+        candidates=(_candidates()[0],),
+        policy="official",
+        destination=context.runtime_root / "models" / "segmented.bin",
+        expected_sha256=expected_sha256,
+        expected_size_bytes=len(payload),
+        source_callback=lambda selection: selected_sources.append(
+            selection.source_id
+        ),
+    )
+
+    assert min(starts) == 8
+    assert result.path.read_bytes() == payload
+    assert result.source.source_id == "official-segmented-http1"
+    assert selected_sources == ["official-segmented-http1"]
+    assert not partial.exists()
+    assert not partial.with_name(f"{partial.name}.segments").exists()
+
+
+def test_segmented_download_preserves_chunks_while_switching_sources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    payload = b"segmented-equivalent-source-payload"
+    expected_sha256 = hashlib.sha256(payload).hexdigest()
+    calls: list[str] = []
+    monkeypatch.setattr(source_policy, "SEGMENTED_DOWNLOAD_MIN_BYTES", 1)
+    monkeypatch.setattr(
+        source_policy,
+        "rank_source_candidates",
+        lambda values, _policy: tuple(values),
+    )
+
+    def fake_segmented(
+        candidate: SourceCandidate,
+        partial: Path,
+        **_kwargs: object,
+    ) -> int:
+        calls.append(candidate.source_id)
+        if candidate.source_id == "official":
+            segment_root = partial.with_name(f"{partial.name}.segments")
+            segment_root.mkdir(parents=True)
+            (segment_root / "000.part").write_bytes(payload[:8])
+            raise ConfigurationError("sustained low speed")
+        assert (
+            partial.with_name(f"{partial.name}.segments") / "000.part"
+        ).read_bytes()
+        partial.write_bytes(payload)
+        return len(payload)
+
+    monkeypatch.setattr(source_policy, "_segmented_candidate", fake_segmented)
+    result = download_verified_file(
+        context,
+        artifact_id="segmented-fallback",
+        candidates=_candidates()[:2],
+        policy="auto",
+        destination=context.runtime_root / "models" / "fallback.bin",
+        expected_sha256=expected_sha256,
+        expected_size_bytes=len(payload),
+    )
+
+    assert calls == ["official", "china-fast"]
+    assert result.source.source_id == "china-fast-segmented-http1"
+    assert result.path.read_bytes() == payload
+
+
 def test_python_http_uses_bounded_stall_timeout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -295,3 +400,29 @@ def test_runtime_sources_rewrite_nvidia_packages_to_sustech() -> None:
         "https://mirrors.sustech.edu.cn/anaconda-extra/cloud/nvidia/"
         "linux-64/libcublas-12.6.4.1-0.conda"
     )
+
+
+def test_protenix_identity_uses_official_url_and_mirror_only_as_transport() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    context = WorkspaceContext.from_root(repository)
+    assets = yaml.safe_load(
+        (repository / "config" / "runtime-assets.yaml").read_text(encoding="utf-8")
+    )["assets"]
+    checkpoint = next(
+        asset
+        for asset in assets
+        if asset["asset_id"] == "protenix-v2-checkpoint"
+    )
+
+    assert checkpoint["source"].startswith("https://huggingface.co/")
+    candidates = rewritten_candidates(
+        checkpoint["source"],
+        source_id="official-asset",
+        rewrites=load_runtime_sources(context).asset_rewrites,
+    )
+
+    assert candidates[0].source_id == "official-asset"
+    assert candidates[0].region == "official"
+    mirror = next(item for item in candidates if item.source_id == "hf-mirror")
+    assert mirror.region == "china"
+    assert mirror.url.startswith("https://hf-mirror.com/")

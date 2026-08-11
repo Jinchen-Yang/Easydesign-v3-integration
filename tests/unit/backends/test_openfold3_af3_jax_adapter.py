@@ -169,7 +169,7 @@ def test_collects_all_samples_and_computes_true_cross_chain_pae(
                     "chain_pair_iptm": [[0.8, 0.72], [0.71, 0.79]],
                     "chain_pair_pae_min": [[0.2, 1.0], [1.0, 0.2]],
                     "chain_ptm": [0.74, 0.81],
-                    "chain_ids": ["A", "B"],
+                    "chain_ids": ["A", "A", "B", "B"],
                 }
             ),
             encoding="utf-8",
@@ -229,7 +229,7 @@ def test_collects_complete_five_by_five_evidence(tmp_path: Path) -> None:
                         "chain_pair_iptm": [[0.8, 0.72], [0.71, 0.79]],
                         "chain_pair_pae_min": [[0.2, 1.0], [1.0, 0.2]],
                         "chain_ptm": [0.74, 0.81],
-                        "chain_ids": ["A", "B"],
+                        "chain_ids": ["A", "A", "B", "B"],
                     }
                 ),
                 encoding="utf-8",

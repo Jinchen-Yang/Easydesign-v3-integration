@@ -399,9 +399,20 @@ class OpenFold3Af3JaxAdapter:
             raise PredictionOutputError("AFO complex summary 必须恰好包含 A/B 两条链")
         if _matrix_shape(summary.chain_pair_iptm) != (2, 2):
             raise PredictionOutputError("AFO chain_pair_iptm 必须是 2×2")
-        if summary.chain_ids and summary.chain_ids != ("A", "B"):
-            raise PredictionOutputError("AFO summary chain 顺序必须为 A/B")
         token_count = len(full.token_chain_ids)
+        if summary.chain_ids:
+            summary_chain_order = tuple(dict.fromkeys(summary.chain_ids))
+            if summary_chain_order != ("A", "B"):
+                raise PredictionOutputError("AFO summary chain 顺序必须为 A/B")
+            if len(summary.chain_ids) not in {2, token_count}:
+                raise PredictionOutputError(
+                    "AFO summary chain_ids 必须是 A/B chain list 或 token-level IDs"
+                )
+            if (
+                len(summary.chain_ids) == token_count
+                and summary.chain_ids != full.token_chain_ids
+            ):
+                raise PredictionOutputError("AFO summary/full token chain IDs 不一致")
         if _matrix_shape(full.pae) != (token_count, token_count):
             raise PredictionOutputError("AFO PAE 必须是 N_token × N_token")
         target_tokens = tuple(

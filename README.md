@@ -136,7 +136,7 @@ easydesign doctor --full
 OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装，也不会改变默认 Protenix。
 其完整预转换发布物包含权重、runner、冻结 wheelhouse、锁、许可、model card、转换 receipt
 和 smoke 输入；安装不需要原始 PyTorch checkpoint 或转换环境。当前发布 archive 的下载体积
-是 5,032,471,378 bytes（4.687 GiB），解包、建环境和缓存还需要额外磁盘空间。实机
+是 5,032,471,381 bytes（4.687 GiB），解包、建环境和缓存还需要额外磁盘空间。实机
 验收基线是 Linux x86-64、NVIDIA A100 40 GB 和兼容 CUDA 12 的驱动；更小 GPU 尚不属于
 本 release 的承诺范围。若当前 clone 尚无 Python 3.12，安装器会复用 bootstrap 已要求的
 `uv 0.12.3`，把精确 Python `3.12.13` 安装到 `runtime/tools/uv-python/`；无需用户手工准备

@@ -99,7 +99,7 @@ remains inside the current clone.
 OpenFold3/AFO 3.1.4 is currently a `candidate` and does not replace the default Protenix backend. Its
 complete pre-converted release contains the weights, runner, frozen wheelhouse, environment lock,
 licenses, model card, conversion receipt, and smoke input; users do not need the original PyTorch
-checkpoint or a conversion environment. The archive download is 5,032,471,378 bytes (4.687 GiB),
+checkpoint or a conversion environment. The archive download is 5,032,471,381 bytes (4.687 GiB),
 with additional space required for extraction, the environment, and
 cache. The acceptance baseline is Linux x86-64, an NVIDIA A100 40 GB, and a CUDA 12-compatible driver;
 smaller GPUs are not part of this release guarantee. If the clone does not yet contain Python 3.12,

@@ -15,8 +15,8 @@ EasyDesign Local 通过 `openfold3-af3-jax` 后端运行 OpenFold3 preview2 权�
   `91b13810c3d51c18b75d0ad27b95b7448dee60933fa3688363c861dded0f7bf0`；
 - 原始 `of3-p2-155k.pt` SHA-256：
   `af09eac4f29cef856633af07558cb143226fe95ebbef2c20921769d4a5f4bee4`；
-- deterministic bundle archive：5,032,471,378 bytes，SHA-256
-  `c862b9913430cd0a14d4a163a43a4561a413e49448590a7442054e2f7d0a674a`；
+- deterministic bundle archive：5,032,471,381 bytes，SHA-256
+  `83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`；
 - metric definition：`openfold3-p2-af3-jax-complex-confidence-v1`。
 
 3.1.4 修正了 diffusion conditioning feature layout。旧 3.1.3 转换权重及 schema 0.1
@@ -33,7 +33,7 @@ tests、PyTorch/JAX parity harness、Python/PyTorch/inventory 和全部日志 ch
 
 正式 AFO runtime 只包含 Python 3.12/JAX 环境，不安装 PyTorch。发布后，预转换权重和冻结
 wheelhouse 从 catalog 登记的 Hugging Face/S3 artifact 下载；传输地址不定义身份，下载结果
-必须匹配 catalog 的精确 size/SHA。当前完整 archive 是 5,032,471,378 bytes（4.687 GiB），
+必须匹配 catalog 的精确 size/SHA。当前完整 archive 是 5,032,471,381 bytes（4.687 GiB），
 另需解包、环境和 cache 空间。当前 catalog 仍为 `bundle: null`，所以公网 source 写入前安装器
 必须 fail closed；archive 已生成不等于已经公开发布。
 当前 3.1.4 条目是 `candidate`；只有显式 `--release` 才能安装，`runtime install all` 不会

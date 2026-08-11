@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml  # type: ignore[import-untyped]
 
@@ -22,12 +22,15 @@ from easydesign.safe_writes import quarantine_if_workspace_path, read_last_text_
 from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 from .config import (
+    PredictionBackend,
     Stage03Config,
     Stage04Config,
     Stage05Config,
     Stage06Config,
     Stage07Config,
     load_run_config,
+    stage05_config_for_backend,
+    stage07_config_for_backend,
 )
 from .workspace import load_resolved_run_config
 
@@ -88,7 +91,11 @@ def next_stage_number(run_root: Path) -> int:
     return ordered[-1] + 1
 
 
-def stage_form_definition(stage_number: int) -> dict[str, Any]:
+def stage_form_definition(
+    stage_number: int,
+    *,
+    prediction_backend: PredictionBackend = "protenix-v2",
+) -> dict[str, Any]:
     """返回由 Python 契约生成的产品表单默认值。"""
 
     names = (
@@ -135,9 +142,9 @@ def stage_form_definition(stage_number: int) -> dict[str, Any]:
         model = {
             3: Stage03Config(),
             4: Stage04Config(),
-            5: Stage05Config(),
+            5: stage05_config_for_backend(prediction_backend),
             6: Stage06Config(),
-            7: Stage07Config(),
+            7: stage07_config_for_backend(prediction_backend),
         }[stage_number]
         defaults = model.model_dump(mode="json")
         if stage_number == 3:
@@ -265,6 +272,7 @@ def _stage_payload(
     execution_mode: str,
     options: dict[str, Any] | None,
     design_intent: str = "exploratory",
+    prediction_backend: PredictionBackend = "protenix-v2",
 ) -> dict[str, Any]:
     selected = options or {}
     if stage_number == 2:
@@ -375,11 +383,13 @@ def _stage_payload(
     if stage_number == 4:
         return Stage04Config.model_validate(selected).model_dump(mode="json")
     if stage_number == 5:
-        return Stage05Config.model_validate(selected).model_dump(mode="json")
+        default = stage05_config_for_backend(prediction_backend).model_dump(mode="json")
+        return Stage05Config.model_validate({**default, **selected}).model_dump(mode="json")
     if stage_number == 6:
         return Stage06Config.model_validate(selected).model_dump(mode="json")
     if stage_number == 7:
-        return Stage07Config.model_validate(selected).model_dump(mode="json")
+        default = stage07_config_for_backend(prediction_backend).model_dump(mode="json")
+        return Stage07Config.model_validate({**default, **selected}).model_dump(mode="json")
     raise ConfigurationError("Stage 01 不能通过 continuation 配置")
 
 
@@ -508,11 +518,21 @@ def materialize_continuation_config(
         if isinstance(design, dict)
         else "exploratory"
     )
+    prediction_policy = payload.get("prediction_policy")
+    prediction_backend = (
+        str(prediction_policy.get("backend") or "protenix-v2")
+        if isinstance(prediction_policy, dict)
+        else "protenix-v2"
+    )
+    if prediction_backend not in {"protenix-v2", "openfold3-af3-jax"}:
+        raise ConfigurationError("prediction_policy.backend 无效")
+    selected_prediction_backend = cast(PredictionBackend, prediction_backend)
     payload[f"stage{stage_number:02d}"] = _stage_payload(
         stage_number,
         execution_mode=execution_mode,
         options=options,
         design_intent=design_intent,
+        prediction_backend=selected_prediction_backend,
     )
     for future in range(stage_number + 1, 8):
         payload[f"stage{future:02d}"] = None

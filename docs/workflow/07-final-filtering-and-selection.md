@@ -9,7 +9,7 @@
 ## 目的
 
 Stage 07 消费 Stage 06 新生成的完整候选，按固定的
-`nanobody-final-v1.5` 规则完成序列预筛、深度结构筛选、Protenix 多 seed 复合物复核、
+按后端冻结的 final profile 完成序列预筛、深度结构筛选、多 seed 复合物复核、
 TNP 可开发性证据和质量/多样性联合选择，最后发布供人审阅的候选包。
 
 本阶段最多建议 20 个 primary 和 20 个 backup；通过者不足时输出实际数量，不能用失败
@@ -32,7 +32,7 @@ Stage 07 只读取当前 `RunManifest` 声明并逐一通过大小和 SHA-256 �
 - Stage 05 `Stage05Bundle` 0.1/0.2 与 required target MSA；
 - Stage 06 `ScaleBundle` / `ScaleBundleV0_2` 和对应 candidate index；
 - schema 0.7 的 Stage 04 executor / Stage 07 scientific profile；
-- runtime profile 显式声明的 Protenix-v2 与 TNP backend。
+- run 冻结 runtime profile 显式声明的 AFO 或 Protenix-v2，以及 TNP backend。
 
 Stage 05 v1.6 必须是 `strategies-promoted`；旧 v1.5 可为 `winner-selected` 或经明确
 授权采用的历史单策略证据。Stage 06 必须完整发布，每个 candidate 都必须属于冻结的
@@ -43,11 +43,12 @@ original/refold 结构。代码不能扫描目录补齐候选，也不能从文�
 
 ```yaml
 stage07:
-  final_filter_profile: nanobody-final-v1.5
+  final_filter_profile: nanobody-final-v1.5 # AFO 使用 nanobody-final-v1.6
   primary_count: 20
   backup_count: 20
   tnp_required: true
   full_target_prediction:
+    backend: protenix-v2 # 或显式 openfold3-af3-jax
     target_msa:
       mode: remote
       providers:
@@ -64,7 +65,8 @@ stage07:
 - target 必须复用 Stage 05 冻结的 required MSA；
 - de novo binder 固定使用 query-only A3M；
 - template 禁用，禁止 no-MSA fallback；
-- Protenix 初轮 seed 101，复核 seed 202/303，均为单 sample；
+- Protenix 初轮 seed 101、复核 seed 202/303，均为单 sample；AFO 按 v1.6 执行
+  seed 101 初筛及五 seed × 五 sample 深筛；
 - GPU 来自 Stage 04 明确配置，一张 GPU 同时只运行一个预测任务。
 
 ## 执行流程
@@ -120,7 +122,7 @@ interface BSA、design mask 或必需指标是 operational failure，不能把�
 
 ### 3. Protenix seed 101 与冻结参考池
 
-每个候选执行完整 target + binder 的 Protenix-v2 复合物预测：
+每个候选使用阶段显式选择的 AFO 或 Protenix-v2 执行完整 target + binder 复合物预测：
 
 - target chain A：Stage 05 required MSA；
 - binder chain B：query-only A3M；

@@ -35,7 +35,7 @@ flowchart LR
     EQ --> ES{"合格实验结构数量"}
     ES -->|"唯一"| EX["采用实验结构"]
     ES -->|"多个，review-gated"| DG
-    ES -->|"无合格或 unattended policy"| PR["required MSA<br/>Protenix-v2"]
+    ES -->|"无合格或 unattended policy"| PR["required MSA<br/>项目冻结的预测后端"]
     P --> PW["独立 PyMOL worker"]
     PW --> PQ["单 object / chain / state QC<br/>保留未解释颜色"]
     B --> BV["验证 Bundle / ArtifactRef / SHA-256<br/>复制并重建 attempt 引用"]
@@ -93,14 +93,15 @@ PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导�
 sequence/FASTA 和 UniProt 路径先经 RCSB Sequence Search v2/Data API 寻找实验结构，
 只有 design scope 坐标覆盖与序列一致性均为 100%、每个 residue 有 CA 且方法/分辨率
 通过 `experimental-strict-v1` 才能自动采用。无唯一候选时才按执行模式进入人工选择或
-Protenix fallback。预测通过通用 `StructurePredictionRequest` 访问 backend；1.0 当前
-实现为 `protenix==2.0.0` / `protenix-v2`，AFO/AF3 不得成为静默替代。
+项目冻结的预测后端。预测通过通用 `StructurePredictionRequest` 访问 backend；新项目默认
+为 `protenix==2.0.0` / `protenix-v2`，也可在项目创建时显式选择已批准/激活的 AFO
+release。两者之间禁止静默 fallback。
 
-sequence/FASTA 的用户 YAML 必须声明 `msa` 和 `template_mode`。默认且当前唯一正式主线是
-MSA-backed Protenix-v2；用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
+sequence/FASTA 的用户 YAML 必须声明 `msa` 和 `template_mode`。默认主线是 MSA-backed
+Protenix-v2；显式 AFO 项目使用同一 MSA 契约。用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
 内部工程 smoke。EasyDesign 保存原始输入和 YAML snapshot，生成
 `resolved-config.json`，再由 adapter 生成 attempt 内部 `inputs/protenix-input.json`；
-用户不维护 Protenix JSON。
+用户不维护后端私有 JSON。
 
 当前标准配置：
 

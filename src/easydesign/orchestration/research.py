@@ -45,10 +45,10 @@ from .config import (
     Stage02Config,
     Stage03Config,
     Stage04Config,
-    Stage05Config,
     Stage06Config,
-    Stage07Config,
     load_run_config,
+    stage05_config_for_backend,
+    stage07_config_for_backend,
 )
 from .decisions import approve_decision, export_decision
 from .hotspots import approve_hotspots, export_hotspot_review
@@ -84,6 +84,7 @@ class ProjectDescriptor(BaseModel):
     project_id: str
     target_id: str
     source_type: str
+    prediction_backend: Literal["protenix-v2", "openfold3-af3-jax"] = "protenix-v2"
     created_at: datetime
 
 
@@ -265,6 +266,7 @@ def initialize_research_project(**values: Any) -> CommandResult:
             project_id=initial.project_id,
             target_id=initial.stage01.target.target_id,
             source_type=_source_type(initial),
+            prediction_backend=initial.prediction_policy.backend,
             created_at=datetime.now(UTC),
         )
         descriptor_path = _exclusive_yaml(descriptor, root / "PROJECT.yaml")
@@ -1257,7 +1259,7 @@ def _pilot_config(root: Path, foundation: RunSummary, strategy_path: Path) -> Ea
             2: stage02,
             3: stage03,
             4: Stage04Config(required_complete_candidates_per_strategy=candidates),
-            5: Stage05Config(),
+            5: stage05_config_for_backend(resolved.user_config.prediction_policy.backend),
         },
     )
 
@@ -1580,6 +1582,8 @@ def select_plan(project_root: Path, *, run_id: str, top: int = 200) -> CommandRe
     run = _run_by_id(root, run_id)
     if 6 not in completed_steps(run.path):
         raise ConfigurationError("select 需要完成的 production run")
+    resolved, _ = load_resolved_run_config(run.path)
+    backend = resolved.user_config.prediction_policy.backend
     return CommandResult(
         status="confirmation-required",
         phase="select",
@@ -1591,7 +1595,7 @@ def select_plan(project_root: Path, *, run_id: str, top: int = 200) -> CommandRe
                 kind="selection-plan",
                 identity=f"top-{top}",
                 status="planned",
-                metadata={"requested_top": top, "padding": False, "backend": "protenix-v2 + tnp"},
+                metadata={"requested_top": top, "padding": False, "backend": f"{backend} + tnp"},
             ),
         ),
         next_actions=(
@@ -1618,7 +1622,11 @@ def select_run(
         if value is None:
             raise ConfigurationError("production config 前缀不完整")
         stages[number] = value
-    stages[7] = Stage07Config(primary_count=top, backup_count=0)
+    stages[7] = stage07_config_for_backend(
+        resolved.user_config.prediction_policy.backend,
+        primary_count=top,
+        backup_count=0,
+    )
     config = _config_from_base(resolved.user_config, stop_after=7, stages=stages)
     result, _ = _launch(
         root,

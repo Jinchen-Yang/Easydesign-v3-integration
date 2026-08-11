@@ -14,7 +14,7 @@ Playwright 只属于开发测试环境。
 
 重型环境和模型不进入本地 wheel。它们必须按锁定配方安装到当前 clone 的 `runtime/`：
 
-- PyMOL/PSE、Protenix-v2、ScanNet、BoltzGen、TNP 的独立环境；
+- PyMOL/PSE、Protenix-v2、AFO/OpenFold3 JAX、ScanNet、BoltzGen、TNP 的独立环境；
 - Protenix checkpoint/CCD/PDB data；
 - ScanNet fixed source/models；
 - BoltzGen fixed source、dataset 与五个 checkpoint；

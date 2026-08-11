@@ -16,7 +16,6 @@ from easydesign.workspace_context import WorkspaceContext
 
 ValidationBackend = Literal[
     "openfold3-af3-jax",
-    "openfold3-pytorch",
     "protenix-v2",
 ]
 
@@ -43,8 +42,8 @@ class ValidationPanelCase(BaseModel):
 class OpenFold3ValidationPanel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
-    panel_id: Literal["openfold3-gray-rollout-v1"] = "openfold3-gray-rollout-v1"
+    schema_version: Literal["0.2"] = "0.2"
+    panel_id: Literal["afo-release-comparison-v2"] = "afo-release-comparison-v2"
     cases: tuple[ValidationPanelCase, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -120,10 +119,38 @@ class BackendValidationObservation(BaseModel):
         )
 
 
+class AfoValidationReleaseIdentity(BaseModel):
+    """Exact AFO supply-chain identity to which panel evidence is bound."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    release_id: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    backend_id: Literal["openfold3-af3-jax"] = "openfold3-af3-jax"
+    backend_version: str = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+    )
+    model_id: Literal["of3-p2-155k"] = "of3-p2-155k"
+    adapter_contract_version: Literal["openfold3-af3-jax-cli-v1"] = (
+        "openfold3-af3-jax-cli-v1"
+    )
+    release_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+    conversion_receipt_sha256: str = Field(pattern=SHA256_PATTERN)
+    raw_checkpoint_sha256: str = Field(pattern=SHA256_PATTERN)
+    converted_weight_sha256: str = Field(pattern=SHA256_PATTERN)
+    wheel_sha256: str = Field(pattern=SHA256_PATTERN)
+    environment_lock_sha256: str = Field(pattern=SHA256_PATTERN)
+    runner_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    runner_tree_sha256: str = Field(pattern=SHA256_PATTERN)
+
+    def native_metrics(self) -> dict[str, str]:
+        return self.model_dump(mode="json")
+
+
 class OpenFold3ValidationEvidence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.2"] = "0.2"
+    afo_release: AfoValidationReleaseIdentity
     observations: tuple[BackendValidationObservation, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -131,6 +158,15 @@ class OpenFold3ValidationEvidence(BaseModel):
         identities = [(item.case_id, item.backend) for item in self.observations]
         if len(identities) != len(set(identities)):
             raise ValueError("每个 case/backend 只能有一个冻结 observation")
+        expected = self.afo_release.native_metrics()
+        for item in self.observations:
+            if item.backend != "openfold3-af3-jax":
+                continue
+            if item.model_identity != self.afo_release.model_id:
+                raise ValueError("AFO observation model identity 与 release 不一致")
+            for key, value in expected.items():
+                if item.native_metrics.get(key) != value:
+                    raise ValueError(f"AFO observation 缺少或错配 release identity: {key}")
         return self
 
 
@@ -151,12 +187,13 @@ class MetricDrift(BaseModel):
 class OpenFold3ValidationReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.2"] = "0.2"
     report_id: str = Field(pattern=ID_PATTERN)
     generated_at: datetime
-    panel_id: Literal["openfold3-gray-rollout-v1"]
+    panel_id: Literal["afo-release-comparison-v2"]
     panel_sha256: str = Field(pattern=SHA256_PATTERN)
     evidence_sha256: str = Field(pattern=SHA256_PATTERN)
+    afo_release: AfoValidationReleaseIdentity
     observations: tuple[BackendValidationObservation, ...]
     metric_drift: tuple[MetricDrift, ...]
     status: Literal["awaiting-researcher-approval"] = "awaiting-researcher-approval"
@@ -167,8 +204,9 @@ class OpenFold3ValidationReport(BaseModel):
 class OpenFold3ApprovalReceipt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1"] = "0.1"
+    schema_version: Literal["0.2"] = "0.2"
     report_sha256: str = Field(pattern=SHA256_PATTERN)
+    afo_release: AfoValidationReleaseIdentity
     reviewer: str = Field(min_length=1, max_length=256)
     reviewed_at: datetime
     decision: Literal["approve-default-switch", "reject-default-switch"]
@@ -266,6 +304,7 @@ def generate_openfold3_validation_report(
         panel_id=panel.panel_id,
         panel_sha256=panel_sha,
         evidence_sha256=evidence_sha,
+        afo_release=evidence.afo_release,
         observations=tuple(
             sorted(evidence.observations, key=lambda item: (item.case_id, item.backend))
         ),
@@ -309,6 +348,7 @@ def approve_openfold3_validation_report(
     report_sha = sha256_file(selected)
     receipt = OpenFold3ApprovalReceipt(
         report_sha256=report_sha,
+        afo_release=report.afo_release,
         reviewer=reviewer.strip(),
         reviewed_at=datetime.now(UTC),
         decision=decision,
@@ -317,7 +357,9 @@ def approve_openfold3_validation_report(
     context = WorkspaceContext.discover()
     destination = (
         context.runtime_root
-        / "state/components/openfold3-p2-af3-jax/approvals"
+        / "state/components/openfold3-p2-af3-jax/releases"
+        / report.afo_release.release_id
+        / "approvals"
         / f"{report_sha}-{decision}.json"
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -329,6 +371,7 @@ def approve_openfold3_validation_report(
 
 __all__ = [
     "BackendValidationObservation",
+    "AfoValidationReleaseIdentity",
     "OpenFold3ApprovalReceipt",
     "OpenFold3ValidationEvidence",
     "OpenFold3ValidationPanel",

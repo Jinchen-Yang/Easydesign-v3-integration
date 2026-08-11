@@ -1,0 +1,12 @@
+schema_version: "0.1"
+releases:
+  - release_id: afo-3-1-4-of3-p2-155k
+    channel: candidate
+    backend_version: 3.1.4
+    runner_commit: bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997
+    wheel_sha256: 91b13810c3d51c18b75d0ad27b95b7448dee60933fa3688363c861dded0f7bf0
+    raw_checkpoint_sha256: af09eac4f29cef856633af07558cb143226fe95ebbef2c20921769d4a5f4bee4
+    # Filled only after the typed conversion receipt and bundle archive are published.
+    bundle: null
+    validation_report_sha256: null
+    approval_receipt_sha256: null

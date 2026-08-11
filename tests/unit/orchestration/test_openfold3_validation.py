@@ -41,8 +41,8 @@ def _files(tmp_path: Path) -> tuple[Path, Path, Path]:
     panel.write_text(
         yaml.safe_dump(
             {
-                "schema_version": "0.1",
-                "panel_id": "openfold3-gray-rollout-v1",
+                "schema_version": "0.2",
+                "panel_id": "afo-release-comparison-v2",
                 "cases": [
                     {
                         "case_id": "case-one",
@@ -65,6 +65,21 @@ def _files(tmp_path: Path) -> tuple[Path, Path, Path]:
         "sha256": sha256_file(structure),
     }
     evidence = tmp_path / "evidence.json"
+    release_identity = {
+        "release_id": "afo-3-1-4-of3-p2-155k",
+        "backend_id": "openfold3-af3-jax",
+        "backend_version": "3.1.4",
+        "model_id": "of3-p2-155k",
+        "adapter_contract_version": "openfold3-af3-jax-cli-v1",
+        "release_manifest_sha256": "a" * 64,
+        "conversion_receipt_sha256": "b" * 64,
+        "raw_checkpoint_sha256": "c" * 64,
+        "converted_weight_sha256": "d" * 64,
+        "wheel_sha256": "e" * 64,
+        "environment_lock_sha256": "f" * 64,
+        "runner_commit": "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997",
+        "runner_tree_sha256": "1" * 64,
+    }
     observations = []
     for backend, iptm in (
         ("openfold3-af3-jax", 0.65),
@@ -75,7 +90,9 @@ def _files(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "case_id": "case-one",
                 "backend": backend,
                 "backend_identity": f"{backend}@fixture",
-                "model_identity": backend,
+                "model_identity": (
+                    "of3-p2-155k" if backend == "openfold3-af3-jax" else backend
+                ),
                 "structure": file_ref,
                 "chain_ids": ["A", "B"],
                 "chain_complete": True,
@@ -86,10 +103,19 @@ def _files(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "target_ca_rmsd_angstrom": 2.0,
                 "has_clash": False,
                 "gpde": None if backend == "openfold3-af3-jax" else 0.2,
+                "native_metrics": (
+                    release_identity if backend == "openfold3-af3-jax" else {}
+                ),
             }
         )
     evidence.write_text(
-        json.dumps({"schema_version": "0.1", "observations": observations}),
+        json.dumps(
+            {
+                "schema_version": "0.2",
+                "afo_release": release_identity,
+                "observations": observations,
+            }
+        ),
         encoding="utf-8",
     )
     return panel, evidence, structure
@@ -120,6 +146,7 @@ def test_report_has_no_automatic_gate_and_approval_does_not_switch_default(
     assert not report.default_backend_changed
     assert report.metric_drift[0].threshold_decision_changed
     assert not approval.default_backend_changed
+    assert approval.afo_release.release_id == "afo-3-1-4-of3-p2-155k"
     assert not (tmp_path / "runtime/profile.yaml").exists()
 
 

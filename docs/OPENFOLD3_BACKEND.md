@@ -1,77 +1,85 @@
-# OpenFold3/AFO 灰度后端
+# AFO/OpenFold3 多版本后端
 
-EasyDesign Local 将 OpenFold3 preview2 权重运行在 `alphafold3-open 3.1.3` JAX runner
-上，后端 ID 为 `openfold3-af3-jax`。它与 `protenix-v2` 并行存在；在固定面板完成且研究者
-明确批准前，Protenix 始终是默认后端，不允许静默 fallback 或自动切换。
+EasyDesign Local 通过 `openfold3-af3-jax` 后端运行 OpenFold3 preview2 权重。每次科学
+运行锁定精确 release，不跟随上游 `latest`；Protenix 在研究者完成固定面板批准并合入
+独立 `science:` 提升提交前仍是新项目默认后端。
 
-## 冻结身份
+## 3.1.4 candidate 身份
 
-- 原始模型：`of3-p2-155k.pt`，SHA-256
-  `af09eac4f29cef856633af07558cb143226fe95ebbef2c20921769d4a5f4bee4`；
-- runner：`alphafold3-open 3.1.3`，commit
-  `b811498caf10001eab4029e7b903453ef48f4d37`；
+- release ID：`afo-3-1-4-of3-p2-155k`；
+- component/model：`openfold3-p2-af3-jax` / `of3-p2-155k`；
+- adapter contract：`openfold3-af3-jax-cli-v1`；
+- runner：`alphafold3-open 3.1.4`，commit
+  `bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997`；
 - wheel SHA-256：
-  `d8a54a63627542cbbad4d0df98d2c6f10ecb716955da110c4f4415e01383a942`；
-- 正式依赖：Python 3.12、JAX/JAX CUDA 0.10.2、dm-haiku 0.0.16、RDKit
-  2025.9.4、tokamax 0.0.12；正式环境不得包含 PyTorch；
-- templates 固定禁用，任何结果不得标记为 Google AF3。
+  `91b13810c3d51c18b75d0ad27b95b7448dee60933fa3688363c861dded0f7bf0`；
+- 原始 `of3-p2-155k.pt` SHA-256：
+  `af09eac4f29cef856633af07558cb143226fe95ebbef2c20921769d4a5f4bee4`；
+- metric definition：`openfold3-p2-af3-jax-complex-confidence-v1`。
 
-转换必须在独立 PyTorch 2.8.0 环境中执行两次。只有压缩文件和未压缩内容的 SHA-256
-都分别一致时，bundle builder 才会发布转换 receipt。发布包包含精确 wheelhouse、冻结
-runner、许可证/模型条款、model card、转换日志、checksums 和 smoke 输入；它不包含虚构
-的 Zenodo/Hugging Face URL。
+3.1.4 修正了 diffusion conditioning feature layout。旧 3.1.3 转换权重及 schema 0.1
+bundle 被明确拒绝；原始 checkpoint 可复用，但必须用 3.1.4 转换器独立转换两次。
+builder 解压两份 `.bin.zst`，同时比较压缩和未压缩内容的大小与 SHA-256。
 
-## 安装与硬件门
+## 供应链与 conversion receipt
+
+正式 builder 要求输入仓库 HEAD 等于 manifest commit、tracked worktree clean，并使用
+`git archive <commit>` 从 Git object 导出 runner；当前工作树文件永远不会直接进入 bundle。
+实际 wheel 会重新计算 SHA-256。强类型 JSON receipt 至少保存两次转换、43 个 converter
+tests、PyTorch/JAX parity harness、Python/PyTorch/inventory 和全部日志 checksum，builder
+逐字段与 runner tree、checkpoint、转换文件和 release manifest 交叉验证。
+
+正式 AFO runtime 只包含 Python 3.12/JAX 环境，不安装 PyTorch。预转换权重和冻结
+wheelhouse 从 catalog 登记的 Hugging Face artifact 下载；传输地址不定义身份，下载结果
+必须匹配 catalog SHA。当前 3.1.4 条目是 `candidate`，在 artifact 发布前标记为
+`pending-assets`，安装会 fail closed。
+
+## 安装、并存和激活
 
 ```bash
-easydesign runtime install openfold3 --bundle runtime/imports/openfold3-bundle
-easydesign runtime status --json
-easydesign doctor --full --json
+easydesign runtime list afo
+easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
+easydesign runtime activate afo --release afo-3-1-4-of3-p2-155k --confirm
 ```
 
-安装器逐项校验 bundle 后，在 `runtime/tmp/` 建立全新环境，离线安装依赖、构建 AF3 CCD
-数据并执行最小无 MSA GPU 推理。全部通过后才原子写入：
+`runtime install afo` 只解析唯一 `stable`；`--release` 安装指定 release 且不改变 active。
+激活会生成 append-only profile revision。组件按 release ID 分目录，禁止同 ID 覆盖不同
+identity。run 创建时把 profile SHA 和完整 AFO release identity 写入 resolved config 与
+manifest；resume 只查找这份旧 revision，缺失时失败，绝不借用新的 active release。
 
-```text
-runtime/envs/openfold3-p2-af3-jax/<environment-lock-sha>/
-runtime/models/openfold3-p2-af3-jax/<converted-weight-sha>/
-runtime/state/components/openfold3-p2-af3-jax/
-```
-
-失败 staging 移入 `runtime/quarantine/`，当前 profile 不变。`tokamax 0.0.12` 的无补丁
-Pallas-Triton 内核要求足够的 per-block shared memory；RTX 4080 SUPER（compute capability
-8.9，101,376 bytes available）无法满足已观察到的 110,592-byte kernel 请求。严格的无
-本地补丁环境在该硬件上必须 fail closed，不能把旧 AFO patch 偷带进正式环境。应在兼容
-的 datacenter GPU 上继续 smoke 和固定面板验证，或先通过单独评审变更依赖/runner 契约。
+安装器在 `runtime/tmp/` 建立环境、离线安装依赖、构建 AF3 CCD 并执行最小无 MSA GPU
+smoke；成功后才发布 component receipt。失败 staging 进入 quarantine，当前 profile 不变。
 
 ## MSA、复合物和证据
 
-- 单链 Stage 1 可显式使用公共 ColabFold MSA，并记录 endpoint、cache 和输入身份；
-- Stage 5/7 使用预计算 target A3M，binder query-only，不访问公共网络；
-- target 固定为 chain A，binder 固定为 chain B，AF3 JSON v4 中 `templates: []`；
-- 原始 summary/full-confidence、CIF 和全部 sample 都保留并校验；
-- `pairwise_iptm` 取 A→B，`binder_ptm` 取 chain B，interface PAE 从 A/B 跨链矩阵计算；
-- AFO 无 gPDE 等价指标，公开结果为 `N/A`，不得推造数值。
+- Stage 1 可显式选择 AFO，使用 ColabFold 或预计算 MSA；
+- Stage 5/7 使用 target A3M，binder query-only，target/binder 固定 chain A/B；
+- AF3 JSON v4，第一阶段 `templates: []`；
+- 保留 CIF、summary/full confidence 及全部 sample；
+- `pairwise_iptm` 取 A→B，`binder_ptm` 取 B，interface PAE 从 A/B 跨链矩阵计算；
+- AFO 的 gPDE 为 `N/A`，不得伪造。
 
-Pilot 使用单次低成本预测。AFO final profile 对 Top 60 使用 seeds
-`101,202,303,404,505`，每 seed 5 samples；每 seed 选择 ranking score 最高的
-representative，至少 3/5 representatives 分别通过硬门后再执行 RMSD/contact Jaccard
-共识。25 份输出均进入 evidence。Top 400 初筛仍为 seed 101 × 1。
+AFO Stage 5 使用 `nanobody-filter-standard-v1.7`。Stage 7 使用
+`nanobody-final-v1.6`：Top 400 做 seed 101 × 1，Top 60 做五个 seed × 五个 sample，
+至少 3/5 seed representatives 通过硬门后再做 RMSD/contact Jaccard 共识；25 份输出全部
+进入 evidence。prediction product、阶段记录和科学 provenance 均携带完整 release identity。
 
-## 对比与人工批准
+## candidate 提升
 
 ```bash
-easydesign runtime compare openfold3 \
+easydesign runtime compare afo \
   --panel config/openfold3-validation-panel.yaml \
-  --evidence workspace/reviews/openfold3/frozen-observations.yaml
+  --evidence workspace/reviews/afo/frozen-observations.json
 
-easydesign runtime approve openfold3 \
-  --report workspace/reviews/openfold3/validation-report.json \
+easydesign runtime approve afo \
+  --report runtime/validation/openfold3/REPORT/report.json \
   --reviewer NAME \
   --decision approve-default-switch \
   --confirm
 ```
 
-比较报告要求 AFO、OpenFold3 PyTorch 和 Protenix 对固定面板均有带 checksum 的真实观察，
-不设置虚假的自动一致率门。批准命令只发布 append-only 审核 receipt，仍不会修改默认
-后端；默认切换必须是后续独立 `science:` commit。Protenix 的删除不属于本轮。
+固定面板只比较精确 AFO release 与 Protenix。report 和 approval receipt 绑定 release
+manifest、runner tree、wheel、环境锁、conversion receipt 及转换权重 SHA；任一 identity
+变化都必须重跑。批准命令不会修改 release manifest 或默认后端。后续独立 `science:`
+catalog commit 引用 report/approval SHA，将 candidate 提升为 stable；再以独立科学提交切换
+新项目默认。A100 安装、Stage 1、Stage 5、Stage 7 5×5 smoke 是提升前的实机门。

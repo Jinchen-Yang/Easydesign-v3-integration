@@ -23,6 +23,7 @@ from easydesign.stages.s07_final_filtering_and_selection import (
     SequenceLiability,
     TnpCandidateRecord,
 )
+from easydesign.workspace_context import INHERITED_INTERPRETER_ENVIRONMENT
 
 TNP_COMMIT = "29dcac72f1380e8538e8870f45a699d3c6156162"
 TNP_LICENSE = "BSD-3-Clause"
@@ -156,7 +157,11 @@ class TnpAdapter:
         """Activate only the explicitly configured prefix for native libraries."""
 
         prefix = self.python.parent.parent
-        environment = os.environ.copy()
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in INHERITED_INTERPRETER_ENVIRONMENT
+        }
         environment["PATH"] = os.pathsep.join(
             part for part in (str(prefix / "bin"), environment.get("PATH", "")) if part
         )

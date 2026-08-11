@@ -32,7 +32,7 @@ WORKSPACE_ENVIRONMENT_VARIABLE = "EASYDESIGN_WORKSPACE"
 # so a new generation must not inherit those structurally invalid entries.
 CONDA_PACKAGE_CACHE_NAME = "conda-packages-v2"
 
-_INHERITED_INTERPRETER_ENVIRONMENT = frozenset(
+INHERITED_INTERPRETER_ENVIRONMENT = frozenset(
     {
         "CONDA_DEFAULT_ENV",
         "CONDA_PREFIX",
@@ -279,18 +279,38 @@ class WorkspaceContext:
         self,
         *,
         python_startup_guard: bool = True,
+        environment_prefix: Path | None = None,
     ) -> dict[str, str]:
         """Build a complete child environment without host interpreter state."""
 
         environment = {
             key: value
             for key, value in os.environ.items()
-            if key not in _INHERITED_INTERPRETER_ENVIRONMENT
+            if key not in INHERITED_INTERPRETER_ENVIRONMENT
         }
         overrides = self.child_environment()
         if not python_startup_guard:
             overrides.pop("PYTHONPATH", None)
         environment.update(overrides)
+        if environment_prefix is not None:
+            prefix = environment_prefix.resolve()
+            environment["PATH"] = os.pathsep.join(
+                part
+                for part in (
+                    str(prefix / "bin"),
+                    environment.get("PATH", ""),
+                )
+                if part
+            )
+            environment["LD_LIBRARY_PATH"] = os.pathsep.join(
+                part
+                for part in (
+                    str(prefix / "lib"),
+                    environment.get("LD_LIBRARY_PATH", ""),
+                )
+                if part
+            )
+            environment["CONDA_PREFIX"] = str(prefix)
         return environment
 
     def _git_config_path(self) -> Path:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlparse
@@ -328,6 +329,52 @@ def test_all_five_environments_have_component_specific_reliability_probes() -> N
         "scannet-epitope"
     ]
     assert "mkdssp" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES["tnp"]
+
+
+def test_environment_probe_activates_target_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _workspace(tmp_path)
+    prefix = context.runtime_root / "envs" / "fixture-lock"
+    bin_directory = prefix / "bin"
+    bin_directory.mkdir(parents=True)
+    (bin_directory / "python").symlink_to(sys.executable)
+    for executable in ("mkdssp", "ANARCI"):
+        path = bin_directory / executable
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+    lock = runtime_setup.EnvironmentLock(
+        environment_id="fixture",
+        platform="linux-64",
+        conda_explicit=Path("fixture.conda-lock.txt"),
+        conda_explicit_sha256="a" * 64,
+        python="3.11",
+        probe=(
+            "python",
+            "-c",
+            "import os,shutil; "
+            f"assert os.environ['CONDA_PREFIX'] == {str(prefix)!r}; "
+            f"assert os.environ['PATH'].split(os.pathsep)[0] == {str(bin_directory)!r}; "
+            "assert shutil.which('mkdssp'); assert shutil.which('ANARCI')",
+        ),
+        estimated_install_bytes=1,
+    )
+    monkeypatch.setattr(
+        runtime_setup,
+        "_environment_inventory",
+        lambda *_args, **_kwargs: (Path("runtime/state/inventory.json"), "b" * 64),
+    )
+
+    record = runtime_setup._probe_environment(
+        context,
+        lock,
+        prefix,
+        "c" * 64,
+    )
+
+    assert record.status == "available"
+    assert record.probe_returncode == 0
 
 
 def test_setup_plan_rejects_unknown_component() -> None:

@@ -156,7 +156,14 @@ def test_tnp_collect_rejects_nonfinite_metric(tmp_path: Path) -> None:
         )
 
 
-def test_tnp_runtime_environment_is_prefix_bound_and_cpu_only(tmp_path: Path) -> None:
+def test_tnp_runtime_environment_is_prefix_bound_and_cpu_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", "/host/pythonpath")
+    monkeypatch.setenv("PYTHONHOME", "/host/pythonhome")
+    monkeypatch.setenv("VIRTUAL_ENV", "/host/venv")
+    monkeypatch.setenv("CONDA_DEFAULT_ENV", "host-conda")
     adapter = _adapter(tmp_path)
     prefix = adapter.python.parent.parent
 
@@ -167,3 +174,7 @@ def test_tnp_runtime_environment_is_prefix_bound_and_cpu_only(tmp_path: Path) ->
     assert environment["CONDA_PREFIX"] == str(prefix)
     assert environment["PYTHONNOUSERSITE"] == "1"
     assert environment["CUDA_VISIBLE_DEVICES"] == ""
+    assert "PYTHONPATH" not in environment
+    assert "PYTHONHOME" not in environment
+    assert "VIRTUAL_ENV" not in environment
+    assert "CONDA_DEFAULT_ENV" not in environment

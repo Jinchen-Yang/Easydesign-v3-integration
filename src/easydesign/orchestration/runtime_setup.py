@@ -1138,7 +1138,7 @@ def _environment_inventory(
         completed = subprocess.run(
             [str(python), "-m", "pip", "freeze", "--all"],
             cwd=context.root,
-            env=context.subprocess_environment(),
+            env=context.subprocess_environment(environment_prefix=prefix),
             capture_output=True,
             text=True,
             check=False,
@@ -1216,7 +1216,7 @@ def _probe_environment(
         completed = subprocess.run(
             command,
             cwd=context.root,
-            env=context.subprocess_environment(),
+            env=context.subprocess_environment(environment_prefix=prefix),
             capture_output=True,
             text=True,
             check=False,
@@ -1237,7 +1237,7 @@ def _probe_environment(
     if python.is_file():
         version = subprocess.run(
             [str(python), "--version"],
-            env=context.subprocess_environment(),
+            env=context.subprocess_environment(environment_prefix=prefix),
             capture_output=True,
             text=True,
             check=False,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from easydesign.orchestration.openfold3_bundle import (
 from easydesign.orchestration.runtime_components import (
     load_openfold3_validation_receipt,
 )
+from scripts import build_openfold3_bundle as build_bundle_cli
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -43,6 +45,53 @@ def _runner_repository(tmp_path: Path) -> tuple[Path, str]:
     _git(repository, "add", ".")
     _git(repository, "commit", "-m", "fixture")
     return repository, _git(repository, "rev-parse", "HEAD")
+
+
+def test_bundle_cli_forwards_only_current_builder_arguments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    argument_names = (
+        "output",
+        "source",
+        "wheelhouse",
+        "requirements",
+        "raw-checkpoint",
+        "first-conversion",
+        "second-conversion",
+        "validation-receipt",
+    )
+    captured: dict[str, Path] = {}
+
+    def fake_builder(**kwargs: Path) -> Path:
+        captured.update(kwargs)
+        return tmp_path / "bundle"
+
+    monkeypatch.setattr(build_bundle_cli, "build_openfold3_release_bundle", fake_builder)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_openfold3_bundle.py",
+            *(
+                value
+                for name in argument_names
+                for value in (f"--{name}", str(tmp_path / name))
+            ),
+        ],
+    )
+
+    assert build_bundle_cli.main() == 0
+    assert set(captured) == {
+        "output",
+        "source",
+        "wheelhouse",
+        "requirements",
+        "raw_checkpoint",
+        "first_conversion",
+        "second_conversion",
+        "validation_receipt",
+    }
 
 
 def test_runner_export_rejects_head_mismatch(tmp_path: Path) -> None:

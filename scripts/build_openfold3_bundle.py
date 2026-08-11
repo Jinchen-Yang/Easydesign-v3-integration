@@ -18,8 +18,6 @@ def main() -> int:
         "raw-checkpoint",
         "first-conversion",
         "second-conversion",
-        "first-log",
-        "second-log",
         "validation-receipt",
     ):
         parser.add_argument(f"--{name}", required=True, type=Path)
@@ -32,8 +30,6 @@ def main() -> int:
         raw_checkpoint=args.raw_checkpoint,
         first_conversion=args.first_conversion,
         second_conversion=args.second_conversion,
-        first_log=args.first_log,
-        second_log=args.second_log,
         validation_receipt=args.validation_receipt,
     )
     print(result)

@@ -15,7 +15,14 @@ from easydesign.core import ConfigurationError
 from easydesign.core.artifacts import ID_PATTERN
 from easydesign.safe_writes import quarantine_if_workspace_path
 
-from .config import TargetInputFormat, detect_target_input_format, load_run_config
+from .config import (
+    PredictionBackend,
+    TargetInputFormat,
+    detect_target_input_format,
+    load_run_config,
+    stage05_config_for_backend,
+    stage07_config_for_backend,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +101,7 @@ def _prediction_payload(
     *,
     precomputed_msa_path: str | None,
     cache_mode: str,
+    backend: PredictionBackend,
 ) -> dict[str, object]:
     msa: dict[str, object]
     if precomputed_msa_path is not None:
@@ -116,7 +124,7 @@ def _prediction_payload(
             "no_msa_fallback": False,
         }
     return {
-        "backend": "protenix-v2",
+        "backend": backend,
         "msa": msa,
         "template_mode": "disabled",
         "parameter_profile": "model-default",
@@ -151,6 +159,7 @@ def initialize_project(
     scope_feature_name: str | None = None,
     precomputed_msa: Path | None = None,
     msa_cache_mode: str = "online",
+    prediction_backend: PredictionBackend = "protenix-v2",
     source_transfer: Literal["copy", "move"] = "copy",
     quarantine_on_error: bool = True,
 ) -> InitializedProject:
@@ -343,6 +352,7 @@ def initialize_project(
     payload: dict[str, object] = {
         "schema_version": "0.8",
         "project_id": selected_project_id,
+        "prediction_policy": {"backend": prediction_backend},
         "design": {
             "binder_profile": "vhh",
             "intent": design_intent,
@@ -374,6 +384,7 @@ def initialize_project(
                         f"inputs/{msa_source.name}" if msa_source is not None else None
                     ),
                     cache_mode=msa_cache_mode,
+                    backend=prediction_backend,
                 )
                 if needs_prediction
                 else None
@@ -412,14 +423,7 @@ def initialize_project(
             else None
         ),
         "stage05": (
-            {
-                "filter_profile": "nanobody-filter-standard-v1.6",
-                "maximum_tier_a_strategies": 3,
-                "advisory_validation": {
-                    "expanded_total_per_strategy": 100,
-                    "full_target_refold_top_n": 10,
-                },
-            }
+            stage05_config_for_backend(prediction_backend).model_dump(mode="json")
             if stop_after_stage >= 5
             else None
         ),
@@ -433,12 +437,7 @@ def initialize_project(
             else None
         ),
         "stage07": (
-            {
-                "final_filter_profile": "nanobody-final-v1.5",
-                "primary_count": 20,
-                "backup_count": 20,
-                "tnp_required": True,
-            }
+            stage07_config_for_backend(prediction_backend).model_dump(mode="json")
             if stop_after_stage >= 7
             else None
         ),

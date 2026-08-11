@@ -309,11 +309,21 @@ ProtenixMsaConfig: TypeAlias = Annotated[
     Field(discriminator="mode"),
 ]
 
+PredictionBackend: TypeAlias = Literal["protenix-v2", "openfold3-af3-jax"]
+
+
+class PredictionPolicyConfig(BaseModel):
+    """Project default; concrete stage configs may explicitly override it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    backend: PredictionBackend = "protenix-v2"
+
 
 class StructurePredictionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    backend: Literal["protenix-v2", "openfold3-af3-jax"] = "protenix-v2"
+    backend: PredictionBackend = "protenix-v2"
     msa: ProtenixMsaConfig
     template_mode: TemplateMode
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
@@ -802,7 +812,7 @@ class ComplexPredictionConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    backend: Literal["protenix-v2", "openfold3-af3-jax"] = "protenix-v2"
+    backend: PredictionBackend = "protenix-v2"
     target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
     binder_msa: Literal["query-only"] = "query-only"
     template_mode: Literal[TemplateMode.DISABLED] = TemplateMode.DISABLED
@@ -984,6 +994,35 @@ class Stage07Config(BaseModel):
         return self
 
 
+def stage05_config_for_backend(backend: PredictionBackend) -> Stage05Config:
+    if backend == "openfold3-af3-jax":
+        return Stage05Config.model_validate(
+            {
+                "filter_profile": "nanobody-filter-standard-v1.7",
+                "full_target_prediction": {"backend": backend},
+            }
+        )
+    return Stage05Config()
+
+
+def stage07_config_for_backend(
+    backend: PredictionBackend,
+    *,
+    primary_count: int = 20,
+    backup_count: int = 20,
+) -> Stage07Config:
+    if backend == "openfold3-af3-jax":
+        return Stage07Config.model_validate(
+            {
+                "final_filter_profile": "nanobody-final-v1.6",
+                "primary_count": primary_count,
+                "backup_count": backup_count,
+                "full_target_prediction": {"backend": backend},
+            }
+        )
+    return Stage07Config(primary_count=primary_count, backup_count=backup_count)
+
+
 class EasyDesignRunConfig(BaseModel):
     """用户维护的唯一 run 配置；不包含 Protenix 私有 JSON。"""
 
@@ -992,6 +1031,7 @@ class EasyDesignRunConfig(BaseModel):
     schema_version: str = Field(default="0.8", pattern=r"^0\.8$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
+    prediction_policy: PredictionPolicyConfig = PredictionPolicyConfig()
     stage01: Stage01Config
     stage02: Stage02Config | None = None
     stage03: Stage03Config | None = None

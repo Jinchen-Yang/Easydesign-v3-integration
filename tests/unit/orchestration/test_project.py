@@ -229,3 +229,29 @@ def test_initialize_stage07_project_materializes_all_late_stage_profiles(
     assert loaded.config.stage07.primary_count == 20
     assert loaded.config.stage07.backup_count == 20
     assert loaded.config.stage07.tnp_required is True
+
+
+def test_initialize_afo_project_propagates_backend_and_scientific_profiles(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+
+    initialized = initialize_project(
+        project_root=tmp_path / "afo-project",
+        target=fasta,
+        stop_after_stage=7,
+        execution_mode="unattended",
+        prediction_backend="openfold3-af3-jax",
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert loaded.config.prediction_policy.backend == "openfold3-af3-jax"
+    assert loaded.config.structure_prediction is not None
+    assert loaded.config.structure_prediction.backend == "openfold3-af3-jax"
+    assert loaded.config.stage05 is not None
+    assert loaded.config.stage05.filter_profile == "nanobody-filter-standard-v1.7"
+    assert loaded.config.stage05.full_target_prediction.backend == "openfold3-af3-jax"
+    assert loaded.config.stage07 is not None
+    assert loaded.config.stage07.final_filter_profile == "nanobody-final-v1.6"
+    assert loaded.config.stage07.full_target_prediction.backend == "openfold3-af3-jax"

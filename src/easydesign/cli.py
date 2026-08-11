@@ -16,6 +16,10 @@ from pydantic import BaseModel
 
 import easydesign
 from easydesign.core import ConfigurationError, EasyDesignError
+from easydesign.orchestration.afo_releases import (
+    load_afo_release_catalog,
+    materialize_afo_bundle,
+)
 from easydesign.orchestration.application import diagnose_runtime
 from easydesign.orchestration.local_project import completed_steps, resolve_project_run
 from easydesign.orchestration.miniforge import install_miniforge, miniforge_status
@@ -49,7 +53,9 @@ from easydesign.orchestration.research import (
 )
 from easydesign.orchestration.research_models import CommandResult, ResearchPhase
 from easydesign.orchestration.runtime_components import (
+    activate_openfold3_release,
     install_openfold3_component,
+    list_openfold3_components,
     runtime_status,
 )
 from easydesign.orchestration.runtime_setup import (
@@ -116,6 +122,12 @@ def _add_project_source(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--msa-cache-mode", choices=("online", "prefer-cache", "offline"), default="online"
     )
+    parser.add_argument(
+        "--prediction-backend",
+        choices=("protenix", "afo", "protenix-v2", "openfold3-af3-jax"),
+        default="protenix",
+        help="项目默认结构预测后端；各阶段仍可在配置中显式覆盖",
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -132,16 +144,17 @@ def _parser() -> argparse.ArgumentParser:
     runtime_plan = runtime_commands.add_parser(
         "plan", help="只读规划一个或全部本地科学组件及其资产"
     )
-    runtime_plan.add_argument("component", choices=RUNTIME_PLAN_COMPONENTS)
+    runtime_plan.add_argument("component", choices=(*RUNTIME_PLAN_COMPONENTS, "afo"))
     _add_json(runtime_plan)
     runtime_install = runtime_commands.add_parser(
         "install", help="安装 Miniforge、锁定科学组件或离线 OpenFold3 bundle"
     )
     runtime_install.add_argument(
         "component",
-        choices=("miniforge", *RUNTIME_PLAN_COMPONENTS, "openfold3"),
+        choices=("miniforge", *RUNTIME_PLAN_COMPONENTS, "afo", "openfold3"),
     )
     runtime_install.add_argument("--bundle", type=Path)
+    runtime_install.add_argument("--release")
     runtime_install.add_argument("--detach", action="store_true")
     runtime_install.add_argument(
         "--accept-license",
@@ -163,6 +176,18 @@ def _parser() -> argparse.ArgumentParser:
         help="仅用于本次安装子进程的 HTTPS Python package index",
     )
     _add_json(runtime_install)
+    runtime_activate = runtime_commands.add_parser(
+        "activate", help="显式激活一个已安装的 AFO release"
+    )
+    runtime_activate.add_argument("component", choices=("afo",))
+    runtime_activate.add_argument("--release", required=True)
+    _add_confirm(runtime_activate)
+    _add_json(runtime_activate)
+    runtime_list = runtime_commands.add_parser(
+        "list", help="列出 AFO candidate/stable、已安装与 active release"
+    )
+    runtime_list.add_argument("component", choices=("afo",))
+    _add_json(runtime_list)
     runtime_jobs = runtime_commands.add_parser(
         "jobs", help="读取持久 runtime 安装任务"
     )
@@ -186,14 +211,14 @@ def _parser() -> argparse.ArgumentParser:
     runtime_compare = runtime_commands.add_parser(
         "compare", help="生成不可变 OpenFold3/Protenix 灰度比较报告"
     )
-    runtime_compare.add_argument("component", choices=("openfold3",))
+    runtime_compare.add_argument("component", choices=("afo", "openfold3"))
     runtime_compare.add_argument("--panel", required=True, type=Path)
     runtime_compare.add_argument("--evidence", required=True, type=Path)
     _add_json(runtime_compare)
     runtime_approve = runtime_commands.add_parser(
         "approve", help="记录研究者灰度审核；不会自动切换默认后端"
     )
-    runtime_approve.add_argument("component", choices=("openfold3",))
+    runtime_approve.add_argument("component", choices=("afo", "openfold3"))
     runtime_approve.add_argument("--report", required=True, type=Path)
     runtime_approve.add_argument("--reviewer", required=True)
     runtime_approve.add_argument(
@@ -575,6 +600,10 @@ def _print_result(result: CommandResult, *, as_json: bool) -> None:
 
 
 def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
+    prediction_backend = {
+        "protenix": "protenix-v2",
+        "afo": "openfold3-af3-jax",
+    }.get(args.prediction_backend, args.prediction_backend)
     return {
         "project_root": args.project,
         "target": args.target,
@@ -594,6 +623,7 @@ def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
         "scope_feature_name": args.scope_feature_name,
         "precomputed_msa": args.precomputed_msa,
         "msa_cache_mode": args.msa_cache_mode,
+        "prediction_backend": prediction_backend,
     }
 
 
@@ -601,15 +631,36 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "runtime":
         context = WorkspaceContext.discover()
         if args.runtime_command == "plan":
-            plan = setup_plan(context, component=args.component)
-            if args.json:
-                print(_json(plan))
+            if args.component == "afo":
+                catalog = load_afo_release_catalog(context)
+                payload = {
+                    "component": "afo",
+                    "default_channel": "stable",
+                    "releases": [
+                        item.model_dump(mode="json") for item in catalog.releases
+                    ],
+                }
+                if args.json:
+                    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+                else:
+                    print("AFO default channel: stable")
+                    for item in catalog.releases:
+                        state = "installable" if item.bundle is not None else "pending-assets"
+                        print(
+                            f"{item.release_id}: {item.channel}; "
+                            f"alphafold3-open {item.backend_version}; {state}"
+                        )
             else:
-                _print_runtime_plan(plan)
+                plan = setup_plan(context, component=args.component)
+                if args.json:
+                    print(_json(plan))
+                else:
+                    _print_runtime_plan(plan)
         elif args.runtime_command == "install":
             if args.component == "miniforge":
                 if (
                     args.bundle is not None
+                    or args.release is not None
                     or args.detach
                     or args.accept_license
                     or args.conda is not None
@@ -637,33 +688,55 @@ def _dispatch(args: argparse.Namespace) -> int:
                         f"Receipt: {miniforge_result.receipt_path}"
                     )
                 )
-            elif args.component == "openfold3":
+            elif args.component in {"afo", "openfold3"}:
+                if args.component == "openfold3" and args.release is not None:
+                    raise ConfigurationError("兼容 openfold3 入口不接受 --release")
                 if args.bundle is None:
-                    raise ConfigurationError("安装 OpenFold3 必须提供 --bundle")
+                    if args.component == "openfold3":
+                        raise ConfigurationError("兼容 OpenFold3 入口必须提供 --bundle")
+                    release = load_afo_release_catalog(context).resolve(
+                        release_id=args.release,
+                        channel="stable",
+                    )
+                    selected_bundle = materialize_afo_bundle(
+                        release,
+                        source_policy=args.source,
+                        context=context,
+                    )
+                    activate = args.release is None
+                else:
+                    if args.release is not None:
+                        raise ConfigurationError("--bundle 与 --release 不能同时使用")
+                    selected_bundle = args.bundle
+                    activate = True
                 if (
                     args.detach
                     or args.accept_license
                     or args.conda is not None
                     or args.pip_index_url is not None
-                    or args.source != "auto"
+                    or (args.bundle is not None and args.source != "auto")
                 ):
                     raise ConfigurationError(
-                        "OpenFold3 只接受 --bundle；Conda、许可和 detach 参数用于锁定科学组件"
+                        "AFO 不接受 Conda、许可、detach 或 bundle source 参数"
                     )
-                openfold3_result = install_openfold3_component(args.bundle)
+                openfold3_result = install_openfold3_component(
+                    selected_bundle,
+                    activate=activate,
+                )
                 print(
                     _json(openfold3_result)
                     if args.json
                     else (
                         f"OpenFold3 component: {openfold3_result.status}\n"
+                        f"Release: {openfold3_result.component.release_id}\n"
                         f"Environment: {openfold3_result.component.environment_root}\n"
                         f"Model: {openfold3_result.component.model_root}\n"
                         f"Profile: {openfold3_result.profile}"
                     )
                 )
             else:
-                if args.bundle is not None:
-                    raise ConfigurationError("--bundle 只用于 OpenFold3")
+                if args.bundle is not None or args.release is not None:
+                    raise ConfigurationError("--bundle/--release 只用于 AFO")
                 plan = setup_plan(context, component=args.component)
                 accepted = _confirmed_runtime_licenses(
                     plan,
@@ -698,8 +771,33 @@ def _dispatch(args: argparse.Namespace) -> int:
                         pip_index_url=args.pip_index_url,
                         source_policy=args.source,
                     )
+                    afo_result = None
+                    if setup_summary.ok and args.component == "all":
+                        stable = tuple(
+                            item
+                            for item in load_afo_release_catalog(context).releases
+                            if item.channel == "stable"
+                        )
+                        if stable:
+                            stable_bundle = materialize_afo_bundle(
+                                stable[0],
+                                source_policy=args.source,
+                                context=context,
+                            )
+                            afo_result = install_openfold3_component(
+                                stable_bundle,
+                                activate=True,
+                            )
                     if args.json:
-                        print(_json(setup_summary))
+                        setup_payload: dict[str, Any] = setup_summary.model_dump(
+                            mode="json"
+                        )
+                        setup_payload["afo"] = (
+                            None
+                            if afo_result is None
+                            else afo_result.model_dump(mode="json")
+                        )
+                        print(_json(setup_payload))
                     else:
                         summary_status = (
                             "succeeded" if setup_summary.ok else "incomplete"
@@ -711,7 +809,49 @@ def _dispatch(args: argparse.Namespace) -> int:
                             print(f"Environment {environment.environment_id}: {environment.status}")
                         for asset in setup_summary.assets:
                             print(f"Asset {asset.asset_id}: {asset.status}")
+                        if afo_result is not None:
+                            print(
+                                "AFO stable: "
+                                f"{afo_result.component.release_id} ({afo_result.status})"
+                            )
                     return 0 if setup_summary.ok else 3
+        elif args.runtime_command == "activate":
+            if not args.confirm:
+                raise ConfigurationError("激活 AFO release 需要 --confirm")
+            profile = activate_openfold3_release(args.release, context=context)
+            activation_payload = {"release_id": args.release, "profile": str(profile)}
+            print(
+                json.dumps(
+                    activation_payload, ensure_ascii=False, indent=2, sort_keys=True
+                )
+                if args.json
+                else f"AFO active release: {args.release}\nProfile: {profile}"
+            )
+        elif args.runtime_command == "list":
+            catalog = load_afo_release_catalog(context)
+            installed = list_openfold3_components(context)
+            active = runtime_status().openfold3
+            list_payload: dict[str, Any] = {
+                "catalog": [item.model_dump(mode="json") for item in catalog.releases],
+                "installed": [item.model_dump(mode="json") for item in installed],
+                "active_release_id": None if active is None else active.release_id,
+            }
+            if args.json:
+                print(
+                    json.dumps(
+                        list_payload, ensure_ascii=False, indent=2, sort_keys=True
+                    )
+                )
+            else:
+                for item in catalog.releases:
+                    installed_mark = any(
+                        receipt.release_id == item.release_id for receipt in installed
+                    )
+                    active_mark = active is not None and active.release_id == item.release_id
+                    print(
+                        f"{item.release_id}: channel={item.channel}; "
+                        f"installed={installed_mark}; active={active_mark}"
+                    )
         elif args.runtime_command == "jobs":
             if args.watch and args.job_id is None:
                 raise ConfigurationError("--watch 必须同时指定 --job-id")

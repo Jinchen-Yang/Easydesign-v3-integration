@@ -79,6 +79,24 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     )
     assert openfold3.bundle == bundle
 
+    afo_release = cli._parser().parse_args(
+        ["runtime", "install", "afo", "--release", "afo-3-1-4-of3-p2-155k"]
+    )
+    assert afo_release.release == "afo-3-1-4-of3-p2-155k"
+    activated = cli._parser().parse_args(
+        [
+            "runtime",
+            "activate",
+            "afo",
+            "--release",
+            "afo-3-1-4-of3-p2-155k",
+            "--confirm",
+        ]
+    )
+    assert activated.confirm is True
+    listed = cli._parser().parse_args(["runtime", "list", "afo"])
+    assert listed.runtime_command == "list"
+
     watched = cli._parser().parse_args(
         ["runtime", "jobs", "--job-id", "setup-fixture", "--watch"]
     )
@@ -213,6 +231,24 @@ def test_target_bundle_and_source_run_are_a_valid_project_init_pair() -> None:
 
     assert parsed.target_bundle == Path("bundle.json")
     assert parsed.source_run_root == Path("examples/apoe-ui-demo/evidence-runs/example")
+
+
+def test_project_init_accepts_afo_as_project_default() -> None:
+    parsed = cli._parser().parse_args(
+        [
+            "project",
+            "init",
+            "workspace/projects/afo",
+            "--target",
+            "target.fasta",
+            "--prediction-backend",
+            "afo",
+        ]
+    )
+
+    assert cli._project_init_values(parsed)["prediction_backend"] == (
+        "openfold3-af3-jax"
+    )
 
 
 @pytest.mark.parametrize(

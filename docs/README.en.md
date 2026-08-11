@@ -102,7 +102,10 @@ licenses, model card, conversion receipt, and smoke input; users do not need the
 checkpoint or a conversion environment. The archive download is 5,032,471,378 bytes (4.687 GiB),
 with additional space required for extraction, the environment, and
 cache. The acceptance baseline is Linux x86-64, an NVIDIA A100 40 GB, and a CUDA 12-compatible driver;
-smaller GPUs are not part of this release guarantee.
+smaller GPUs are not part of this release guarantee. If the clone does not yet contain Python 3.12,
+the installer reuses bootstrap's required `uv 0.12.3` to install exact Python `3.12.13` under
+`runtime/tools/uv-python/`; users do not need to prepare a conversion environment or modify system
+Python.
 
 The repository catalog still records this release as `bundle: null`: the deterministic archive has
 been built and reproduced, but no publicly reachable HF/S3 source is bound yet. The following is the

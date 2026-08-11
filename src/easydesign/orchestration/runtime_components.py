@@ -39,6 +39,8 @@ ADAPTER_CONTRACT_VERSION = "openfold3-af3-jax-cli-v1"
 SEMVER_PATTERN = r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
 RELEASE_ID_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 COMPONENT_STATE_ROOT = Path("state/components") / COMPONENT_ID / "releases"
+AFO_PYTHON_VERSION = "3.12.13"
+BOOTSTRAP_UV_VERSION = "0.12.3"
 
 
 class OpenFold3EvidenceFile(BaseModel):
@@ -415,7 +417,44 @@ def load_openfold3_bundle(bundle_path: Path) -> tuple[Path, OpenFold3ReleaseMani
     return bundle, manifest
 
 
-def _python312() -> Path:
+def _python312(
+    context: WorkspaceContext,
+    child_environment: dict[str, str],
+) -> Path:
+    isolated_environment = {
+        **os.environ,
+        **child_environment,
+        "UV_CACHE_DIR": str(context.runtime_root / "cache/uv"),
+        "UV_PYTHON_INSTALL_DIR": str(context.runtime_root / "tools/uv-python"),
+        "UV_PYTHON_BIN_DIR": str(context.runtime_root / "tools/uv-python-bin"),
+        "UV_MANAGED_PYTHON": "1",
+        "UV_NO_CONFIG": "1",
+        "UV_NO_ENV_FILE": "1",
+        "UV_NO_MODIFY_PATH": "1",
+        "UV_NO_SYSTEM_CONFIG": "1",
+    }
+
+    def valid(candidate: Path) -> Path | None:
+        if not (candidate.is_file() or candidate.is_symlink()):
+            return None
+        completed = subprocess.run(
+            [
+                str(candidate),
+                "-c",
+                "import sys; print('.'.join(map(str, sys.version_info[:3])))",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=isolated_environment,
+        )
+        return (
+            candidate.resolve()
+            if completed.returncode == 0
+            and completed.stdout.strip() == AFO_PYTHON_VERSION
+            else None
+        )
+
     configured = os.environ.get("EASYDESIGN_PYTHON312")
     candidates = [Path(configured)] if configured else []
     discovered = shutil.which("python3.12")
@@ -423,31 +462,60 @@ def _python312() -> Path:
         candidates.append(Path(discovered))
     uv = shutil.which("uv")
     if uv:
-        found = subprocess.run(
-            [uv, "python", "find", "3.12"],
+        uv_version = subprocess.run(
+            [uv, "--version"],
             check=False,
             capture_output=True,
             text=True,
+            env=isolated_environment,
+        )
+        if uv_version.returncode != 0 or not uv_version.stdout.startswith(
+            f"uv {BOOTSTRAP_UV_VERSION}"
+        ):
+            raise ConfigurationError(
+                f"安装 OpenFold3 需要 bootstrap 固定的 uv {BOOTSTRAP_UV_VERSION}"
+            )
+        found = subprocess.run(
+            [uv, "python", "find", AFO_PYTHON_VERSION],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=isolated_environment,
         )
         if found.returncode == 0 and found.stdout.strip():
             candidates.append(Path(found.stdout.strip()))
     candidates.append(Path("/usr/bin/python3.12"))
     for candidate in candidates:
-        if candidate.is_file() or candidate.is_symlink():
-            completed = subprocess.run(
-                [
-                    str(candidate),
-                    "-c",
-                    "import sys; print('.'.join(map(str, sys.version_info[:2])))",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
+        resolved = valid(candidate)
+        if resolved is not None:
+            return resolved
+    if uv:
+        installed = subprocess.run(
+            [uv, "python", "install", AFO_PYTHON_VERSION],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=isolated_environment,
+        )
+        if installed.returncode != 0:
+            raise ConfigurationError(
+                "OpenFold3 Python 3.12 自动安装失败: "
+                + (installed.stderr or installed.stdout)[-2048:]
             )
-            if completed.returncode == 0 and completed.stdout.strip() == "3.12":
-                return candidate.resolve()
+        found = subprocess.run(
+            [uv, "python", "find", AFO_PYTHON_VERSION],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=isolated_environment,
+        )
+        if found.returncode == 0 and found.stdout.strip():
+            resolved = valid(Path(found.stdout.strip()))
+            if resolved is not None:
+                return resolved
     raise ConfigurationError(
-        "安装 OpenFold3 需要 Python 3.12；请设置 EASYDESIGN_PYTHON312 为其绝对路径"
+        f"安装 OpenFold3 需要 Python {AFO_PYTHON_VERSION}；请先执行 bootstrap 安装 "
+        f"uv {BOOTSTRAP_UV_VERSION}，或设置 EASYDESIGN_PYTHON312 为其绝对路径"
     )
 
 
@@ -562,12 +630,13 @@ def _write_environment_inventory(environment: Path, path: Path) -> Path:
 
 def _install_environment(
     *,
+    context: WorkspaceContext,
     bundle: Path,
     manifest: OpenFold3ReleaseManifest,
     environment: Path,
     child_environment: dict[str, str],
 ) -> Path:
-    python312 = _python312()
+    python312 = _python312(context, child_environment)
     completed = subprocess.run(
         [str(python312), "-m", "venv", "--copies", str(environment)],
         check=False,
@@ -826,6 +895,7 @@ def install_openfold3_component(
     child_environment = context.child_environment()
     try:
         _install_environment(
+            context=context,
             bundle=bundle,
             manifest=manifest,
             environment=staging_environment,

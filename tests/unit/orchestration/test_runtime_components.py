@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from easydesign.core import ConfigurationError, sha256_file
+from easydesign.orchestration import runtime_components
 from easydesign.orchestration.git_sources import directory_content_sha256
 from easydesign.orchestration.runtime_components import (
     install_openfold3_component,
     load_openfold3_bundle,
     runtime_status,
 )
+from easydesign.workspace_context import WorkspaceContext
 
 REQUIRED_ROLES = (
     "alphafold-wheel",
@@ -26,6 +29,83 @@ REQUIRED_ROLES = (
     "smoke-input",
     "validation-receipt",
 )
+
+
+def test_python312_is_installed_by_pinned_uv_inside_clone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "easydesign-workspace.yaml").write_text(
+        "\n".join(
+            (
+                'schema_version: "0.1"',
+                "workspace_id: python312-test",
+                "runtime_root: runtime",
+                "projects_root: workspace/projects",
+                "runs_root: workspace/runs",
+                "archives_root: workspace/archives",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    context = WorkspaceContext.from_root(tmp_path)
+    context.ensure_layout()
+    managed_python = (
+        context.runtime_root
+        / "tools/uv-python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12"
+    )
+    find_count = 0
+    calls: list[tuple[tuple[str, ...], dict[str, str] | None]] = []
+
+    monkeypatch.delenv("EASYDESIGN_PYTHON312", raising=False)
+    monkeypatch.setattr(
+        runtime_components.shutil,
+        "which",
+        lambda name: "/fixture/uv" if name == "uv" else None,
+    )
+
+    def fake_run(
+        argv: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal find_count
+        environment = kwargs.get("env")
+        calls.append(
+            (
+                tuple(argv),
+                environment if isinstance(environment, dict) else None,
+            )
+        )
+        if argv == ["/fixture/uv", "--version"]:
+            return subprocess.CompletedProcess(argv, 0, "uv 0.12.3\n", "")
+        if argv[:3] == ["/fixture/uv", "python", "find"]:
+            find_count += 1
+            return subprocess.CompletedProcess(
+                argv,
+                1 if find_count == 1 else 0,
+                "" if find_count == 1 else f"{managed_python}\n",
+                "",
+            )
+        if argv[:3] == ["/fixture/uv", "python", "install"]:
+            managed_python.parent.mkdir(parents=True, exist_ok=True)
+            managed_python.write_text("fixture", encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0, "installed\n", "")
+        if argv[0] == str(managed_python):
+            return subprocess.CompletedProcess(argv, 0, "3.12.13\n", "")
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(runtime_components.subprocess, "run", fake_run)
+
+    selected = runtime_components._python312(context, context.child_environment())
+
+    assert selected == managed_python.resolve()
+    install_call = next(item for item in calls if item[0][1:3] == ("python", "install"))
+    assert install_call[0][-1] == "3.12.13"
+    assert install_call[1] is not None
+    assert install_call[1]["UV_PYTHON_INSTALL_DIR"] == str(
+        context.runtime_root / "tools/uv-python"
+    )
 
 
 def _bundle(tmp_path: Path) -> Path:

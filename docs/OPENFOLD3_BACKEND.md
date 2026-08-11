@@ -58,7 +58,9 @@ identity。run 创建时把 profile SHA 和完整 AFO release identity 写入 re
 manifest；resume 只查找这份旧 revision，缺失时失败，绝不借用新的 active release。
 
 安装器在 `runtime/tmp/` 建立环境、离线安装依赖、构建 AF3 CCD 并执行最小无 MSA GPU
-smoke；成功后才发布 component receipt。失败 staging 进入 quarantine，当前 profile 不变。
+smoke；成功后才发布 component receipt。clone 缺少 Python 3.12 时，安装器通过 bootstrap
+固定的 `uv 0.12.3` 自动安装精确 Python `3.12.13` 到 clone-local `runtime/tools/uv-python/`；
+随后 wheel 安装保持离线。失败 staging 进入 quarantine，当前 profile 不变。
 
 ## MSA、复合物和证据
 

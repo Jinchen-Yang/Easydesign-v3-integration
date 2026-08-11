@@ -62,7 +62,7 @@ def test_python312_is_installed_by_pinned_uv_inside_clone(
     monkeypatch.setattr(
         runtime_components.shutil,
         "which",
-        lambda name: "/fixture/uv" if name == "uv" else None,
+        lambda name: "/fixture/uv" if name == "uv" else "/global/python3.12",
     )
 
     def fake_run(

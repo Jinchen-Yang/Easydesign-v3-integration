@@ -197,7 +197,7 @@ class OpenFold3ReleaseManifest(BaseModel):
     adapter_contract_version: Literal["openfold3-af3-jax-cli-v1"] = (
         "openfold3-af3-jax-cli-v1"
     )
-    python_version: Literal["3.12"] = "3.12"
+    python_version: Literal["3.12", "3.12.13"] = "3.12.13"
     code_license: Literal["Apache-2.0"]
     model_license: Literal["Apache-2.0"] | None = None
     model_source_repository: str | None = None
@@ -239,12 +239,15 @@ class OpenFold3ReleaseManifest(BaseModel):
                 raise ValueError(f"bundle 必须恰好包含一个 {role}")
         if self.schema_version == "0.3":
             if (
-                self.model_license != "Apache-2.0"
+                self.python_version != AFO_PYTHON_VERSION
+                or self.model_license != "Apache-2.0"
                 or self.converted_weight_license != "Apache-2.0"
                 or self.model_source_repository is None
                 or self.model_source_commit is None
             ):
-                raise ValueError("bundle 0.3 必须绑定 OpenFold3 模型来源和 Apache-2.0 许可")
+                raise ValueError(
+                    "bundle 0.3 必须绑定精确 Python、OpenFold3 模型来源和 Apache-2.0 许可"
+                )
             if self.template_mode != "target-only-precomputed":
                 raise ValueError("bundle 0.3 必须声明 target-only template 能力")
             for role in (
@@ -282,7 +285,7 @@ class OpenFold3ReleaseManifest(BaseModel):
 class OpenFold3ComponentReceipt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.2"] = "0.2"
+    schema_version: Literal["0.2", "0.3"] = "0.3"
     release_id: str = Field(pattern=RELEASE_ID_PATTERN)
     component_id: Literal["openfold3-p2-af3-jax"] = "openfold3-p2-af3-jax"
     backend_id: Literal["openfold3-af3-jax"] = "openfold3-af3-jax"
@@ -291,6 +294,7 @@ class OpenFold3ComponentReceipt(BaseModel):
     adapter_contract_version: Literal["openfold3-af3-jax-cli-v1"] = (
         "openfold3-af3-jax-cli-v1"
     )
+    python_version: Literal["3.12", "3.12.13"] | None = None
     installed_at: datetime
     release_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
     environment_lock_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -308,6 +312,12 @@ class OpenFold3ComponentReceipt(BaseModel):
     runner: Path
     smoke_receipt: Path
     smoke_receipt_sha256: str = Field(pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_python_identity(self) -> Self:
+        if self.schema_version == "0.3" and self.python_version != AFO_PYTHON_VERSION:
+            raise ValueError("OpenFold3 component receipt 0.3 缺少精确 Python identity")
+        return self
 
 
 class OpenFold3InstallResult(BaseModel):
@@ -420,6 +430,8 @@ def load_openfold3_bundle(bundle_path: Path) -> tuple[Path, OpenFold3ReleaseMani
 def _python312(
     context: WorkspaceContext,
     child_environment: dict[str, str],
+    *,
+    required_version: str = AFO_PYTHON_VERSION,
 ) -> Path:
     isolated_environment = {
         **os.environ,
@@ -451,15 +463,16 @@ def _python312(
         return (
             candidate.resolve()
             if completed.returncode == 0
-            and completed.stdout.strip() == AFO_PYTHON_VERSION
+            and (
+                completed.stdout.strip() == required_version
+                if required_version.count(".") == 2
+                else completed.stdout.strip().startswith(f"{required_version}.")
+            )
             else None
         )
 
     configured = os.environ.get("EASYDESIGN_PYTHON312")
     candidates = [Path(configured)] if configured else []
-    discovered = shutil.which("python3.12")
-    if discovered:
-        candidates.append(Path(discovered))
     uv = shutil.which("uv")
     if uv:
         uv_version = subprocess.run(
@@ -476,7 +489,7 @@ def _python312(
                 f"安装 OpenFold3 需要 bootstrap 固定的 uv {BOOTSTRAP_UV_VERSION}"
             )
         found = subprocess.run(
-            [uv, "python", "find", AFO_PYTHON_VERSION],
+            [uv, "python", "find", required_version],
             check=False,
             capture_output=True,
             text=True,
@@ -484,14 +497,13 @@ def _python312(
         )
         if found.returncode == 0 and found.stdout.strip():
             candidates.append(Path(found.stdout.strip()))
-    candidates.append(Path("/usr/bin/python3.12"))
     for candidate in candidates:
         resolved = valid(candidate)
         if resolved is not None:
             return resolved
     if uv:
         installed = subprocess.run(
-            [uv, "python", "install", AFO_PYTHON_VERSION],
+            [uv, "python", "install", required_version],
             check=False,
             capture_output=True,
             text=True,
@@ -503,7 +515,7 @@ def _python312(
                 + (installed.stderr or installed.stdout)[-2048:]
             )
         found = subprocess.run(
-            [uv, "python", "find", AFO_PYTHON_VERSION],
+            [uv, "python", "find", required_version],
             check=False,
             capture_output=True,
             text=True,
@@ -514,7 +526,7 @@ def _python312(
             if resolved is not None:
                 return resolved
     raise ConfigurationError(
-        f"安装 OpenFold3 需要 Python {AFO_PYTHON_VERSION}；请先执行 bootstrap 安装 "
+        f"安装 OpenFold3 需要 Python {required_version}；请先执行 bootstrap 安装 "
         f"uv {BOOTSTRAP_UV_VERSION}，或设置 EASYDESIGN_PYTHON312 为其绝对路径"
     )
 
@@ -616,6 +628,20 @@ def active_openfold3_runtime(
 
 
 def _write_environment_inventory(environment: Path, path: Path) -> Path:
+    python = subprocess.run(
+        [
+            str(environment / "bin/python"),
+            "-c",
+            "import sys; print('.'.join(map(str, sys.version_info[:3])))",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if python.returncode != 0:
+        raise ConfigurationError(
+            f"OpenFold3 Python environment inventory 失败: {python.stderr}"
+        )
     completed = subprocess.run(
         [str(environment / "bin/python"), "-m", "pip", "freeze", "--all"],
         check=False,
@@ -624,7 +650,10 @@ def _write_environment_inventory(environment: Path, path: Path) -> Path:
     )
     if completed.returncode != 0:
         raise ConfigurationError(f"OpenFold3 environment inventory 失败: {completed.stderr}")
-    path.write_text(completed.stdout, encoding="utf-8")
+    path.write_text(
+        f"# python_version={python.stdout.strip()}\n{completed.stdout}",
+        encoding="utf-8",
+    )
     return path
 
 
@@ -636,7 +665,11 @@ def _install_environment(
     environment: Path,
     child_environment: dict[str, str],
 ) -> Path:
-    python312 = _python312(context, child_environment)
+    python312 = _python312(
+        context,
+        child_environment,
+        required_version=manifest.python_version,
+    )
     completed = subprocess.run(
         [str(python312), "-m", "venv", "--copies", str(environment)],
         check=False,
@@ -932,11 +965,13 @@ def install_openfold3_component(
         validation.rename(final_validation)
         final_smoke = final_validation / smoke_receipt.name
         receipt = OpenFold3ComponentReceipt(
+            schema_version=manifest.schema_version,
             release_id=manifest.release_id,
             backend_id=manifest.backend_id,
             backend_version=manifest.backend_version,
             model_id=manifest.model_id,
             adapter_contract_version=manifest.adapter_contract_version,
+            python_version=manifest.python_version,
             installed_at=datetime.now(UTC),
             release_manifest_sha256=sha256_file(bundle / "release-manifest.json"),
             environment_lock_sha256=manifest.environment_lock_sha256,

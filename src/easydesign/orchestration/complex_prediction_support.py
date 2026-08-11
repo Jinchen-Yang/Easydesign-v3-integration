@@ -6,8 +6,43 @@ import os
 import subprocess
 from pathlib import Path
 
-from easydesign.backends.structure_prediction import BackendInvocation
+from easydesign.backends.structure_prediction import (
+    BackendInvocation,
+    StructurePredictionProduct,
+)
 from easydesign.core import ManifestStateError
+
+AFO_RELEASE_IDENTITY_KEYS = (
+    "release_id",
+    "backend_id",
+    "backend_version",
+    "model_id",
+    "adapter_contract_version",
+    "release_manifest_sha256",
+    "conversion_receipt_sha256",
+    "raw_checkpoint_sha256",
+    "converted_weight_sha256",
+    "wheel_sha256",
+    "environment_lock_sha256",
+    "runner_commit",
+    "runner_tree_sha256",
+)
+
+
+def prediction_release_identity(product: StructurePredictionProduct) -> dict[str, str]:
+    """Extract the complete immutable AFO identity; Protenix returns an empty mapping."""
+
+    values = {
+        key: str(product.native_metrics[key])
+        for key in AFO_RELEASE_IDENTITY_KEYS
+        if isinstance(product.native_metrics.get(key), str)
+    }
+    if product.backend_name == "openfold3-af3-jax" and set(values) != set(
+        AFO_RELEASE_IDENTITY_KEYS
+    ):
+        missing = sorted(set(AFO_RELEASE_IDENTITY_KEYS) - set(values))
+        raise ManifestStateError(f"AFO prediction 缺少完整 release identity: {missing}")
+    return values
 
 
 def read_fasta_sequence(path: Path) -> str:

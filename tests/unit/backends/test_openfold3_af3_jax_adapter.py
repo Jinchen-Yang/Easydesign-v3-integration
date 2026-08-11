@@ -22,10 +22,18 @@ def adapter() -> OpenFold3Af3JaxAdapter:
         runner=Path("/runtime/models/openfold3/runner/run_alphafold.py"),
         model_root=Path("/runtime/models/openfold3/weights"),
         cache_root=Path("/runtime/cache/openfold3"),
+        release_id="afo-3-1-4-of3-p2-155k",
+        backend_version="3.1.4",
+        model_name="of3-p2-155k",
+        adapter_contract_version="openfold3-af3-jax-cli-v1",
+        release_manifest_sha256="d" * 64,
+        conversion_receipt_sha256="e" * 64,
         raw_checkpoint_sha256="a" * 64,
         converted_weight_sha256="b" * 64,
         wheel_sha256="c" * 64,
-        runner_commit="b811498",
+        environment_lock_sha256="f" * 64,
+        runner_commit="bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997",
+        runner_tree_sha256="1" * 64,
         cuda_visible_devices="0",
     )
 
@@ -191,6 +199,10 @@ def test_collects_all_samples_and_computes_true_cross_chain_pae(
     assert products[0].complex_confidence.pairwise_iptm == pytest.approx(0.72)
     assert products[0].complex_confidence.minimum_interface_pae_angstrom == 4.0
     assert products[0].complex_confidence.binder_ptm == pytest.approx(0.81)
+    assert products[0].backend_version == "3.1.4"
+    assert products[0].model_name == "of3-p2-155k"
+    assert products[0].native_metrics["release_id"] == "afo-3-1-4-of3-p2-155k"
+    assert products[0].native_metrics["environment_lock_sha256"] == "f" * 64
     assert products[1].ranking_score > products[0].ranking_score
 
 

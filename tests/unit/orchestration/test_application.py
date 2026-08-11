@@ -33,12 +33,17 @@ from easydesign.orchestration import (
 )
 from easydesign.orchestration.application import (
     PROTENIX_V2_CHECKPOINT_SHA256,
+    _complex_prediction_adapter_builder,
     _prepared_existing_run,
     _probe_protenix,
     _required_backends,
 )
-from easydesign.orchestration.config import LoadedSequenceRunConfig, load_run_config
-from easydesign.orchestration.profile import ProtenixV2Runtime
+from easydesign.orchestration.config import (
+    ComplexPredictionConfig,
+    LoadedSequenceRunConfig,
+    load_run_config,
+)
+from easydesign.orchestration.profile import ProtenixV2Runtime, RuntimeProfile
 from easydesign.orchestration.workspace import (
     RunIndexEntry,
     initialize_run_workspace,
@@ -123,6 +128,47 @@ def test_stage01_openfold3_is_explicit_and_does_not_change_default(
     plan = validate_run_configuration(initialized.config_path)
 
     assert plan.required_backends == ("openfold3-af3-jax",)
+
+
+def test_complex_afo_builder_does_not_require_protenix_runtime() -> None:
+    runtime_root = Path("/runtime")
+    profile = RuntimeProfile.model_validate(
+        {
+            "profile_id": "afo-only",
+            "runs_root": "/workspace/runs",
+            "backends": {
+                "openfold3_af3_jax": {
+                    "release_id": "afo-3-1-4-of3-p2-155k",
+                    "backend_id": "openfold3-af3-jax",
+                    "backend_version": "3.1.4",
+                    "model_id": "of3-p2-155k",
+                    "adapter_contract_version": "openfold3-af3-jax-cli-v1",
+                    "python": runtime_root / "envs/afo/bin/python",
+                    "runner": runtime_root / "models/afo/runner/run_alphafold.py",
+                    "model_root": runtime_root / "models/afo/model",
+                    "converted_weight": runtime_root / "models/afo/model/weights.bin.zst",
+                    "cache_root": runtime_root / "cache/afo",
+                    "raw_checkpoint_sha256": "1" * 64,
+                    "converted_weight_sha256": "2" * 64,
+                    "release_manifest_sha256": "3" * 64,
+                    "conversion_receipt_sha256": "4" * 64,
+                    "wheel_sha256": "5" * 64,
+                    "runner_commit": "6" * 40,
+                    "runner_tree_sha256": "7" * 64,
+                    "environment_lock_sha256": "8" * 64,
+                }
+            },
+        }
+    )
+    prediction = ComplexPredictionConfig(backend="openfold3-af3-jax")
+    provider = prediction.target_msa.resolved_providers()[0]
+
+    selected = _complex_prediction_adapter_builder(profile, prediction)(provider, 0)
+
+    assert selected.backend_name == "openfold3-af3-jax"
+    assert selected.backend_version == "3.1.4"
+    assert selected.release_id == "afo-3-1-4-of3-p2-155k"
+    assert profile.backends.protenix_v2 is None
 
 
 def test_full_doctor_fails_when_local_backends_are_not_configured(

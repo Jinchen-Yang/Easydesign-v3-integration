@@ -329,6 +329,25 @@ def build_predicted_target_bundle(
             if isinstance(product.native_metrics.get("runner_commit"), str)
             else None
         ),
+        release_identity={
+            key: str(product.native_metrics[key])
+            for key in (
+                "release_id",
+                "backend_id",
+                "backend_version",
+                "model_id",
+                "adapter_contract_version",
+                "release_manifest_sha256",
+                "conversion_receipt_sha256",
+                "raw_checkpoint_sha256",
+                "converted_weight_sha256",
+                "wheel_sha256",
+                "environment_lock_sha256",
+                "runner_commit",
+                "runner_tree_sha256",
+            )
+            if isinstance(product.native_metrics.get(key), str)
+        },
         msa_mode=msa_mode,
         msa_input_sha256=msa_input_sha256,
         msa_server_mode=msa_server_mode,

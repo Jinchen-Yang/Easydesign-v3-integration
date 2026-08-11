@@ -99,6 +99,7 @@ from .boltzgen_tasks import (
     recover_interrupted_boltzgen_task,
 )
 from .complex_prediction_support import (
+    prediction_release_identity,
     prepare_query_only_a3m,
     read_fasta_sequence,
     run_checked_backend_invocation,
@@ -1091,6 +1092,7 @@ def _predict_selected_candidates(
                         if isinstance(product.native_metrics.get("runner_commit"), str)
                         else None
                     ),
+                    release_identity=prediction_release_identity(product),
                     msa_provider=(
                         str(product.native_metrics["msa_provider"])
                         if isinstance(product.native_metrics.get("msa_provider"), str)
@@ -1576,7 +1578,7 @@ def execute_stage05(
     *,
     run_root: Path,
     boltzgen_adapter: BoltzGenGenerationAdapter,
-    protenix_adapter_builder: ComplexAdapterBuilder,
+    prediction_adapter_builder: ComplexAdapterBuilder,
     gpu_probe: NvidiaSmiProbe | None = None,
     executed_at: datetime | None = None,
 ) -> Stage05Execution:
@@ -1869,7 +1871,7 @@ def execute_stage05(
             candidates=expanded_index.candidates,
             selected_ids=selected_ids,
             providers=config.full_target_prediction.target_msa.resolved_providers(),
-            adapter_builder=protenix_adapter_builder,
+            adapter_builder=prediction_adapter_builder,
             devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,

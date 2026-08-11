@@ -297,6 +297,7 @@ class FullTargetPredictionRecord(BaseModel):
     converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     runner_commit: str | None = None
+    release_identity: dict[str, str] = Field(default_factory=dict)
     predicted_structure: ArtifactRef
     summary_confidence: ArtifactRef
     full_confidence: ArtifactRef
@@ -314,6 +315,10 @@ class FullTargetPredictionRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_gate(self) -> Self:
+        if self.backend_identity.startswith("openfold3-af3-jax@") and len(
+            self.release_identity
+        ) != 13:
+            raise ValueError("AFO full-target record 缺少完整 release identity")
         if self.structure_gate_pass != all(
             decision.passed for decision in self.structure_gate_decisions
         ):

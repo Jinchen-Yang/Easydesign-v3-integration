@@ -44,6 +44,7 @@ from easydesign.stages.s02_hotspot_discovery import RegionMethod
 from easydesign.workspace_context import WorkspaceContext
 
 from .config import (
+    ComplexPredictionConfig,
     ExecutionMode,
     LoadedPseRunConfig,
     LoadedRemoteRunConfig,
@@ -72,6 +73,7 @@ from .profile import (
     ScanNetEpitopeRuntime,
     TnpRuntime,
     load_runtime_profile,
+    load_runtime_profile_by_identity,
     resolve_runtime_profile_path,
 )
 from .sequence_prediction import execute_sequence_prediction
@@ -502,6 +504,12 @@ def _openfold3_adapter(
     prediction_timeout_seconds: int | None = None,
 ) -> OpenFold3Af3JaxAdapter:
     return OpenFold3Af3JaxAdapter(
+        release_id=runtime.release_id,
+        backend_version=runtime.backend_version,
+        model_name=runtime.model_id,
+        adapter_contract_version=runtime.adapter_contract_version,
+        release_manifest_sha256=runtime.release_manifest_sha256,
+        conversion_receipt_sha256=runtime.conversion_receipt_sha256,
         python=runtime.python,
         runner=runtime.runner,
         model_root=runtime.model_root,
@@ -509,7 +517,9 @@ def _openfold3_adapter(
         raw_checkpoint_sha256=runtime.raw_checkpoint_sha256,
         converted_weight_sha256=runtime.converted_weight_sha256,
         wheel_sha256=runtime.wheel_sha256,
+        environment_lock_sha256=runtime.environment_lock_sha256,
         runner_commit=runtime.runner_commit,
+        runner_tree_sha256=runtime.runner_tree_sha256,
         cuda_visible_devices=(
             str(device) if device is not None else runtime.cuda_visible_devices
         ),
@@ -622,6 +632,40 @@ def _complex_protenix_adapter_builder(
             remote_msa_timeout_seconds=provider.timeout_seconds,
             prediction_timeout_seconds=prediction_timeout_seconds,
             extra_environment=runtime.extra_environment,
+        )
+
+    return build
+
+
+def _complex_prediction_adapter_builder(
+    profile: RuntimeProfile,
+    prediction: ComplexPredictionConfig,
+) -> ComplexAdapterBuilder:
+    """Resolve the exact configured complex backend without silent fallback."""
+
+    if prediction.backend == "protenix-v2":
+        runtime = profile.backends.protenix_v2
+        if runtime is None:
+            raise ConfigurationError("配置选择 Protenix，但 runtime 未安装 protenix-v2")
+        return _complex_protenix_adapter_builder(
+            runtime,
+            prediction_timeout_seconds=prediction.prediction_timeout_seconds,
+        )
+    afo_runtime = profile.backends.openfold3_af3_jax
+    if afo_runtime is None:
+        raise ConfigurationError(
+            "配置选择 AFO，但 runtime 未安装或激活 openfold3-af3-jax"
+        )
+
+    def build(
+        provider: ResolvedProtenixMsaProviderConfig,
+        device: int,
+    ) -> OpenFold3Af3JaxAdapter:
+        return _openfold3_adapter(
+            afo_runtime,
+            device=device,
+            provider=provider,
+            prediction_timeout_seconds=prediction.prediction_timeout_seconds,
         )
 
     return build
@@ -787,7 +831,7 @@ def diagnose_runtime(
                 assert isinstance(runtime, OpenFold3Af3JaxRuntime)
                 weight = _probe_openfold3(runtime)
                 message = (
-                    "alphafold3-open 3.1.3；OpenFold3 preview2；"
+                    f"alphafold3-open {runtime.backend_version}；OpenFold3 preview2；"
                     f"converted_weight={weight}"
                 )
             elif name == "pymol-pse":
@@ -1165,19 +1209,15 @@ def execute_pipeline(
         and str(StageId.PILOT_FILTERING) not in completed_stage_ids
     ):
         boltzgen_runtime = backends.boltzgen
-        protenix_runtime = backends.protenix_v2
         stage05_config = loaded.config.stage05
         assert boltzgen_runtime is not None
-        assert protenix_runtime is not None
         assert stage05_config is not None
         completed_stage05 = execute_stage05(
             run_root=run_root,
             boltzgen_adapter=_boltzgen_generation_adapter(boltzgen_runtime),
-            protenix_adapter_builder=_complex_protenix_adapter_builder(
-                protenix_runtime,
-                prediction_timeout_seconds=(
-                    stage05_config.full_target_prediction.prediction_timeout_seconds
-                ),
+            prediction_adapter_builder=_complex_prediction_adapter_builder(
+                context.loaded_profile.profile,
+                stage05_config.full_target_prediction,
             ),
         )
         run_manifest = completed_stage05.run_manifest
@@ -1208,19 +1248,15 @@ def execute_pipeline(
         and context.plan.stop_after_stage >= 7
         and str(StageId.FINAL_FILTERING_AND_SELECTION) not in completed_stage_ids
     ):
-        protenix_runtime = backends.protenix_v2
         tnp_runtime = backends.tnp
         stage07_config = loaded.config.stage07
-        assert protenix_runtime is not None
         assert tnp_runtime is not None
         assert stage07_config is not None
         completed_stage07 = execute_stage07(
             run_root=run_root,
-            protenix_adapter_builder=_complex_protenix_adapter_builder(
-                protenix_runtime,
-                prediction_timeout_seconds=(
-                    stage07_config.full_target_prediction.prediction_timeout_seconds
-                ),
+            prediction_adapter_builder=_complex_prediction_adapter_builder(
+                context.loaded_profile.profile,
+                stage07_config.full_target_prediction,
             ),
             tnp_adapter=_tnp_adapter(tnp_runtime),
         )
@@ -1247,13 +1283,18 @@ def resume_pipeline(
     if current.status is not ExecutionStatus.RUNNING:
         raise ManifestStateError("runs resume 只接受 running run")
     resolved, _ = load_resolved_run_config(root)
+    frozen_profile = (
+        load_runtime_profile_by_identity(resolved.runtime_profile, profile_path)
+        if resolved.runtime_profile is not None
+        else load_runtime_profile(profile_path)
+    )
     completed = {reference.producer_stage for reference in current.stage_manifest_refs}
     if (
         resolved.stop_after_stage >= 4
         and str(StageId.BOLTZGEN_CONFIGURATION) in completed
         and str(StageId.PILOT_GENERATION) not in completed
     ):
-        profile = load_runtime_profile(profile_path)
+        profile = frozen_profile
         runtime = profile.profile.backends.boltzgen
         if runtime is None:
             raise ConfigurationError("runtime profile 缺少 BoltzGen backend")
@@ -1266,22 +1307,19 @@ def resume_pipeline(
         and str(StageId.PILOT_GENERATION) in completed
         and str(StageId.PILOT_FILTERING) not in completed
     ):
-        profile = load_runtime_profile(profile_path)
+        profile = frozen_profile
         boltzgen_runtime = profile.profile.backends.boltzgen
-        protenix_runtime = profile.profile.backends.protenix_v2
         config = resolved.user_config.stage05
-        if boltzgen_runtime is None or protenix_runtime is None:
-            raise ConfigurationError("runtime profile 缺少 Stage 05 所需 BoltzGen/Protenix backend")
+        if boltzgen_runtime is None:
+            raise ConfigurationError("runtime profile 缺少 Stage 05 所需 BoltzGen backend")
         if config is None:
             raise ConfigurationError("resolved config 缺少 Stage 05")
         return execute_stage05(
             run_root=root,
             boltzgen_adapter=_boltzgen_generation_adapter(boltzgen_runtime),
-            protenix_adapter_builder=_complex_protenix_adapter_builder(
-                protenix_runtime,
-                prediction_timeout_seconds=(
-                    config.full_target_prediction.prediction_timeout_seconds
-                ),
+            prediction_adapter_builder=_complex_prediction_adapter_builder(
+                profile.profile,
+                config.full_target_prediction,
             ),
         )
     if (
@@ -1289,7 +1327,7 @@ def resume_pipeline(
         and str(StageId.PILOT_FILTERING) in completed
         and str(StageId.SCALE_GENERATION_AND_REFOLDING) not in completed
     ):
-        profile = load_runtime_profile(profile_path)
+        profile = frozen_profile
         runtime = profile.profile.backends.boltzgen
         if runtime is None:
             raise ConfigurationError("runtime profile 缺少 Stage 06 BoltzGen backend")
@@ -1302,21 +1340,18 @@ def resume_pipeline(
         and str(StageId.SCALE_GENERATION_AND_REFOLDING) in completed
         and str(StageId.FINAL_FILTERING_AND_SELECTION) not in completed
     ):
-        profile = load_runtime_profile(profile_path)
-        protenix_runtime = profile.profile.backends.protenix_v2
+        profile = frozen_profile
         tnp_runtime = profile.profile.backends.tnp
         stage07_config_resolved = resolved.user_config.stage07
-        if protenix_runtime is None or tnp_runtime is None:
-            raise ConfigurationError("runtime profile 缺少 Stage 07 所需 Protenix/TNP backend")
+        if tnp_runtime is None:
+            raise ConfigurationError("runtime profile 缺少 Stage 07 所需 TNP backend")
         if stage07_config_resolved is None:
             raise ConfigurationError("resolved config 缺少 Stage 07")
         return execute_stage07(
             run_root=root,
-            protenix_adapter_builder=_complex_protenix_adapter_builder(
-                protenix_runtime,
-                prediction_timeout_seconds=(
-                    stage07_config_resolved.full_target_prediction.prediction_timeout_seconds
-                ),
+            prediction_adapter_builder=_complex_prediction_adapter_builder(
+                profile.profile,
+                stage07_config_resolved.full_target_prediction,
             ),
             tnp_adapter=_tnp_adapter(tnp_runtime),
         )
@@ -1494,7 +1529,12 @@ def continue_pipeline_after_decision(
         raise ManifestStateError("Stage 01 decision 必须且只能选择一个 option")
     option_by_id = {option.option_id: option for option in request.options}
     selected_option = option_by_id[record.selected_option_ids[0]]
-    loaded_profile = load_runtime_profile(profile_path)
+    resolved, _ = load_resolved_run_config(prepared.workspace.run_root)
+    loaded_profile = (
+        load_runtime_profile_by_identity(resolved.runtime_profile, profile_path)
+        if resolved.runtime_profile is not None
+        else load_runtime_profile(profile_path)
+    )
     attempt_id, attempt_number = _next_stage01_attempt(prepared.workspace.run_root)
     outcome = execute_stage01_source(
         prepared,

@@ -941,7 +941,7 @@ def test_stage05_publishes_audited_scientific_stop_without_starting_backends(
     stage05 = execute_stage05(
         run_root=root,
         boltzgen_adapter=_FakeGenerationAdapter(),  # type: ignore[arg-type]
-        protenix_adapter_builder=forbidden_protenix,  # type: ignore[arg-type]
+        prediction_adapter_builder=forbidden_protenix,  # type: ignore[arg-type]
         gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -979,7 +979,7 @@ def test_stage05_expands_and_selects_one_full_target_winner(
     stage05 = execute_stage05(
         run_root=root,
         boltzgen_adapter=generation,  # type: ignore[arg-type]
-        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
         gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1021,7 +1021,7 @@ def test_stage06_generates_exactly_one_thousand_new_candidates_in_two_shards(
     stage05 = execute_stage05(
         run_root=root,
         boltzgen_adapter=generation,  # type: ignore[arg-type]
-        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
         gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1080,7 +1080,7 @@ def test_stage06_disk_preflight_fails_before_creating_scale_tasks(
     execute_stage05(
         run_root=root,
         boltzgen_adapter=generation,  # type: ignore[arg-type]
-        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
         gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1129,7 +1129,7 @@ def test_stage07_publishes_a_complete_non_apoe_review_package(
     execute_stage05(
         run_root=root,
         boltzgen_adapter=generation,  # type: ignore[arg-type]
-        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
         gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1159,7 +1159,7 @@ def test_stage07_publishes_a_complete_non_apoe_review_package(
     )
     outcome = execute_stage07(
         run_root=root,
-        protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
         tnp_adapter=_FakeTnpAdapter(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1189,7 +1189,7 @@ def test_stage07_records_operational_failure_without_publishing_a_stage(
     with raises(ManifestStateError, match="缺少上游"):
         execute_stage07(
             run_root=root,
-            protenix_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+            prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
             tnp_adapter=_FakeTnpAdapter(),  # type: ignore[arg-type]
             executed_at=NOW,
         )

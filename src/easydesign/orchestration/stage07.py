@@ -106,6 +106,7 @@ from easydesign.stages.s07_final_filtering_and_selection import (
 )
 
 from .complex_prediction_support import (
+    prediction_release_identity,
     prepare_query_only_a3m,
     read_fasta_sequence,
     run_checked_backend_invocation,
@@ -1036,6 +1037,7 @@ def _execute_predictions(
                                 )
                                 else None
                             ),
+                            release_identity=prediction_release_identity(product),
                             msa_provider=(
                                 str(product.native_metrics["msa_provider"])
                                 if isinstance(
@@ -1220,6 +1222,7 @@ def _scored_prediction_records(
             converted_weight_sha256=item.converted_weight_sha256,
             wheel_sha256=item.wheel_sha256,
             runner_commit=item.runner_commit,
+            release_identity=item.release_identity,
             msa_provider=item.msa_provider,
             msa_endpoint=item.msa_endpoint,
             predicted_structure=item.predicted_structure,
@@ -1479,6 +1482,9 @@ def _publish(
         file_format="json",
     )
     all_outputs = (*output_refs, progress_ref, event_ref, bundle_ref)
+    stage07_config = resolved.user_config.stage07
+    if stage07_config is None:
+        raise ManifestStateError("resolved config 缺少 Stage 07")
     attempt = Attempt(
         attempt_id="attempt-0001",
         status=ExecutionStatus.SUCCEEDED,
@@ -1486,7 +1492,7 @@ def _publish(
         started_at=created_at,
         ended_at=completed,
         backend_name="easydesign-final-filter",
-        backend_version="nanobody-final-v1.5",
+        backend_version=stage07_config.final_filter_profile,
         executor_name="local-multi-gpu",
     )
     dump_model(attempt, artifacts.parent / "attempt-manifest.json")
@@ -1568,7 +1574,7 @@ def _publish(
 def _execute_stage07(
     *,
     run_root: Path,
-    protenix_adapter_builder: ComplexAdapterBuilder,
+    prediction_adapter_builder: ComplexAdapterBuilder,
     tnp_adapter: TnpAdapter,
     executed_at: datetime | None = None,
 ) -> Stage07Execution:
@@ -1701,7 +1707,7 @@ def _execute_stage07(
             phase_id="seed101-screen",
             work=work,
             runtime=runtime,
-            adapter_builder=protenix_adapter_builder,
+            adapter_builder=prediction_adapter_builder,
             provider=providers[0],
             devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
@@ -1751,7 +1757,7 @@ def _execute_stage07(
                 phase_id="deep-5x5" if afo_final else "additional-seeds",
                 work=work,
                 runtime=runtime,
-                adapter_builder=protenix_adapter_builder,
+                adapter_builder=prediction_adapter_builder,
                 provider=providers[0],
                 devices=execution_devices,
                 maximum_attempts=stage04_config.executor.max_task_attempts,
@@ -2198,7 +2204,7 @@ def _execute_stage07(
 def execute_stage07(
     *,
     run_root: Path,
-    protenix_adapter_builder: ComplexAdapterBuilder,
+    prediction_adapter_builder: ComplexAdapterBuilder,
     tnp_adapter: TnpAdapter,
     executed_at: datetime | None = None,
 ) -> Stage07Execution:
@@ -2207,7 +2213,7 @@ def execute_stage07(
     try:
         return _execute_stage07(
             run_root=run_root,
-            protenix_adapter_builder=protenix_adapter_builder,
+            prediction_adapter_builder=prediction_adapter_builder,
             tnp_adapter=tnp_adapter,
             executed_at=executed_at,
         )

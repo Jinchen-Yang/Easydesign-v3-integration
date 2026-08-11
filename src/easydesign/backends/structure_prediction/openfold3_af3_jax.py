@@ -1,4 +1,4 @@
-"""OpenFold3 preview2 weights on the alphafold3-open 3.1.3 JAX runner."""
+"""OpenFold3 preview2 weights on a receipt-pinned alphafold3-open JAX runner."""
 
 from __future__ import annotations
 
@@ -81,8 +81,6 @@ class OpenFold3Af3JaxAdapter:
 
     backend_name = "openfold3-af3-jax"
     profile_backend_id = "openfold3-af3-jax"
-    backend_version = "3.1.3"
-    model_name = "of3-p2-155k"
 
     def __init__(
         self,
@@ -91,10 +89,18 @@ class OpenFold3Af3JaxAdapter:
         runner: Path,
         model_root: Path,
         cache_root: Path,
+        release_id: str,
+        backend_version: str,
+        model_name: str,
+        adapter_contract_version: str,
+        release_manifest_sha256: str,
+        conversion_receipt_sha256: str,
         raw_checkpoint_sha256: str,
         converted_weight_sha256: str,
         wheel_sha256: str,
+        environment_lock_sha256: str,
         runner_commit: str,
+        runner_tree_sha256: str,
         cuda_visible_devices: str | None = None,
         msa_server_url: str = "https://api.colabfold.com",
         remote_msa_provider: str = "colabfold-public",
@@ -107,9 +113,13 @@ class OpenFold3Af3JaxAdapter:
         if any(not path.is_absolute() for path in paths):
             raise BackendContractError("AFO runtime 必须全部使用绝对路径")
         identities = (
+            release_manifest_sha256,
+            conversion_receipt_sha256,
             raw_checkpoint_sha256,
             converted_weight_sha256,
             wheel_sha256,
+            environment_lock_sha256,
+            runner_tree_sha256,
         )
         if any(
             len(value) != 64
@@ -119,6 +129,12 @@ class OpenFold3Af3JaxAdapter:
             raise BackendContractError("AFO 资产身份必须是小写 SHA-256")
         if not runner_commit or len(runner_commit) < 7:
             raise BackendContractError("AFO runner commit 不合法")
+        if not release_id or not backend_version or not model_name:
+            raise BackendContractError("AFO release/version/model identity 不能为空")
+        if adapter_contract_version != "openfold3-af3-jax-cli-v1":
+            raise BackendContractError(
+                f"不支持的 AFO adapter contract: {adapter_contract_version}"
+            )
         if min(msa_timeout_seconds, prediction_timeout_seconds) < 1:
             raise BackendContractError("AFO timeout 必须大于 0")
         extra_keys = [key for key, _ in extra_environment]
@@ -135,10 +151,18 @@ class OpenFold3Af3JaxAdapter:
         self.runner = runner
         self.model_root = model_root
         self.cache_root = cache_root
+        self.release_id = release_id
+        self.backend_version = backend_version
+        self.model_name = model_name
+        self.adapter_contract_version = adapter_contract_version
+        self.release_manifest_sha256 = release_manifest_sha256
+        self.conversion_receipt_sha256 = conversion_receipt_sha256
         self.raw_checkpoint_sha256 = raw_checkpoint_sha256
         self.converted_weight_sha256 = converted_weight_sha256
         self.wheel_sha256 = wheel_sha256
+        self.environment_lock_sha256 = environment_lock_sha256
         self.runner_commit = runner_commit
+        self.runner_tree_sha256 = runner_tree_sha256
         self.cuda_visible_devices = cuda_visible_devices
         self.msa_server_url = msa_server_url.rstrip("/")
         self.remote_msa_provider = remote_msa_provider
@@ -476,10 +500,19 @@ class OpenFold3Af3JaxAdapter:
                         complex_confidence=complex_confidence,
                         native_metrics={
                             "fraction_disordered": summary.fraction_disordered,
+                            "release_id": self.release_id,
+                            "backend_id": self.profile_backend_id,
+                            "backend_version": self.backend_version,
+                            "model_id": self.model_name,
+                            "release_manifest_sha256": self.release_manifest_sha256,
+                            "adapter_contract_version": self.adapter_contract_version,
+                            "conversion_receipt_sha256": self.conversion_receipt_sha256,
                             "raw_checkpoint_sha256": self.raw_checkpoint_sha256,
                             "converted_weight_sha256": self.converted_weight_sha256,
                             "wheel_sha256": self.wheel_sha256,
+                            "environment_lock_sha256": self.environment_lock_sha256,
                             "runner_commit": self.runner_commit,
+                            "runner_tree_sha256": self.runner_tree_sha256,
                             "msa_provider": (
                                 self.remote_msa_provider
                                 if request.msa_mode is MsaMode.REMOTE

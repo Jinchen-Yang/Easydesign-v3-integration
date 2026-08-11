@@ -79,6 +79,18 @@ from .workspace import (
 ATTEMPT_ID = "attempt-0001"
 
 
+def _prediction_backend_presentation(config: Any) -> tuple[str, str]:
+    prediction = config.stage01.structure_prediction
+    backend = (
+        str(prediction.backend)
+        if prediction is not None
+        else str(config.prediction_policy.backend)
+    )
+    if backend == "openfold3-af3-jax":
+        return "predict-openfold3-af3-jax", "AFO (OpenFold3 AF3 JAX)"
+    return "predict-protenix-v2", "Protenix-v2"
+
+
 @dataclass(frozen=True, slots=True)
 class PredictionFallback:
     target: NormalizedProteinSequence
@@ -1101,6 +1113,7 @@ def _remote_selection(
             )
         if config.workflow.execution_mode is ExecutionMode.UNATTENDED:
             return fallback
+        prediction_option_id, prediction_label = _prediction_backend_presentation(config)
         options = tuple(
             DecisionOption(
                 option_id=(
@@ -1122,10 +1135,10 @@ def _remote_selection(
             for item in selectable
         ) + (
             DecisionOption(
-                option_id="predict-protenix-v2",
-                label="使用 Protenix-v2 预测",
+                option_id=prediction_option_id,
+                label=f"使用 {prediction_label} 预测",
                 description=(
-                    "没有唯一 eligible 实验结构；按 required-MSA Protenix-v2 "
+                    f"没有唯一 eligible 实验结构；按 required-MSA {prediction_label} "
                     "预测 design scope。"
                 ),
                 payload={"action": "predict", "reason": fallback.reason},
@@ -1135,7 +1148,8 @@ def _remote_selection(
             prepared,
             gate="structure-selection",
             message=(
-                "实验结构没有唯一 eligible 候选；请选择一个结构或确认使用 Protenix-v2。"
+                "实验结构没有唯一 eligible 候选；请选择一个结构或确认使用 "
+                f"{prediction_label}。"
             ),
             options=options,
             attempt_id=attempt_id,
@@ -1357,6 +1371,7 @@ def _sequence_selection(
         raise TargetInputError(f"{reason}: structure_selection policy=fail")
     if config.workflow.execution_mode is ExecutionMode.UNATTENDED:
         return fallback
+    prediction_option_id, prediction_label = _prediction_backend_presentation(config)
     options = tuple(
         DecisionOption(
             option_id=(
@@ -1377,9 +1392,9 @@ def _sequence_selection(
         for item in selectable
     ) + (
         DecisionOption(
-            option_id="predict-protenix-v2",
-            label="使用 Protenix-v2 预测",
-            description="按 required-MSA Protenix-v2 预测 design scope。",
+            option_id=prediction_option_id,
+            label=f"使用 {prediction_label} 预测",
+            description=f"按 required-MSA {prediction_label} 预测 design scope。",
             payload={"action": "predict", "reason": reason},
         ),
     )

@@ -137,6 +137,7 @@ class FinalPredictionRecord(BaseModel):
     converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     runner_commit: str | None = None
+    release_identity: dict[str, str] = Field(default_factory=dict)
     predicted_structure: ArtifactRef
     summary_confidence: ArtifactRef
     full_confidence: ArtifactRef
@@ -158,6 +159,10 @@ class FinalPredictionRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_record(self) -> Self:
+        if self.backend_identity.startswith("openfold3-af3-jax@") and len(
+            self.release_identity
+        ) != 13:
+            raise ValueError("AFO final prediction 缺少完整 release identity")
         if self.seed101_gate_pass != all(item.passed for item in self.seed101_gate_decisions):
             raise ValueError("seed101 gate 与逐规则结果不一致")
         if self.consensus_seed_pass != all(item.passed for item in self.consensus_gate_decisions):
@@ -196,6 +201,7 @@ class RawFinalPrediction(BaseModel):
     converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     runner_commit: str | None = None
+    release_identity: dict[str, str] = Field(default_factory=dict)
     predicted_structure: ArtifactRef
     summary_confidence: ArtifactRef
     full_confidence: ArtifactRef
@@ -221,6 +227,10 @@ class RawFinalPrediction(BaseModel):
 
     @model_validator(mode="after")
     def validate_contacts(self) -> Self:
+        if self.backend_identity.startswith("openfold3-af3-jax@") and len(
+            self.release_identity
+        ) != 13:
+            raise ValueError("AFO raw prediction 缺少完整 release identity")
         if (
             tuple(sorted(set(self.contacted_hotspot_residue_ids)))
             != self.contacted_hotspot_residue_ids

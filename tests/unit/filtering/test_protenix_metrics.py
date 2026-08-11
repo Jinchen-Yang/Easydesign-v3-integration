@@ -97,7 +97,7 @@ def test_extract_complex_confidence_prefers_normalized_adapter_metrics(
     )
     product = StructurePredictionProduct(
         backend_name="openfold3-af3-jax",
-        backend_version="3.1.3",
+        backend_version="3.1.4",
         model_name="of3-p2-155k",
         seed=101,
         sample_index=0,
@@ -120,5 +120,5 @@ def test_extract_complex_confidence_prefers_normalized_adapter_metrics(
 
     assert product.gpde is None
     assert product.mean_plddt == 85.0
-    assert product.backend_identity == "openfold3-af3-jax@3.1.3"
+    assert product.backend_identity == "openfold3-af3-jax@3.1.4"
     assert extract_complex_confidence(product) == normalized

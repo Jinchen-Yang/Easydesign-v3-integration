@@ -230,6 +230,7 @@ class PredictionProvenance(BaseModel):
     converted_weight_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     wheel_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     runner_commit: str | None = None
+    release_identity: dict[str, str] = Field(default_factory=dict)
     msa_mode: MsaMode
     msa_input_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     msa_server_mode: str | None = Field(default=None, pattern=ID_PATTERN)
@@ -248,6 +249,22 @@ class PredictionProvenance(BaseModel):
 
     @model_validator(mode="after")
     def validate_msa_evidence(self) -> Self:
+        if self.backend_name == "openfold3-af3-jax" and set(self.release_identity) != {
+            "release_id",
+            "backend_id",
+            "backend_version",
+            "model_id",
+            "adapter_contract_version",
+            "release_manifest_sha256",
+            "conversion_receipt_sha256",
+            "raw_checkpoint_sha256",
+            "converted_weight_sha256",
+            "wheel_sha256",
+            "environment_lock_sha256",
+            "runner_commit",
+            "runner_tree_sha256",
+        }:
+            raise ValueError("AFO prediction provenance 缺少完整 release identity")
         detailed_values = (
             self.msa_provider,
             self.msa_endpoint,

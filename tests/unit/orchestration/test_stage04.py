@@ -14,6 +14,7 @@ import yaml
 from pytest import MonkeyPatch, fixture, raises
 
 import easydesign.orchestration.stage04 as stage04_module
+import easydesign.orchestration.stage05 as stage05_module
 import easydesign.orchestration.stage06 as stage06_module
 from easydesign.backends.boltzgen import (
     BoltzGenGenerationHeartbeat,
@@ -26,6 +27,7 @@ from easydesign.backends.structure_prediction import (
     ComplexConfidenceMetrics,
     ComplexStructurePredictionRequest,
     PredictionRequest,
+    ScientificMode,
     StructurePredictionProduct,
 )
 from easydesign.core import (
@@ -860,6 +862,15 @@ def _prepared_stage03_run(
         encoding="utf-8",
     )
     return root
+
+
+def test_stage05_scientific_modes_use_unique_target_msa_artifact_ids() -> None:
+    assert stage05_module._target_msa_artifact_id(ScientificMode.DE_NOVO) == (
+        "stage05-target-msa"
+    )
+    assert stage05_module._target_msa_artifact_id(
+        ScientificMode.TARGET_CONDITIONED
+    ) == "stage05-target-msa-target-conditioned"
 
 
 def test_stage04_executes_generic_strategy_and_publishes_manifest_only_handoff(

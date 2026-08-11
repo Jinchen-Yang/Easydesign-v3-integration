@@ -696,6 +696,14 @@ def _query_only_a3m(sequence: str, path: Path) -> Path:
     return prepare_query_only_a3m(sequence, path)
 
 
+def _target_msa_artifact_id(scientific_mode: ScientificMode) -> str:
+    return (
+        "stage05-target-msa"
+        if scientific_mode is ScientificMode.DE_NOVO
+        else f"stage05-target-msa-{scientific_mode}"
+    )
+
+
 def _filter_decision(
     *,
     rule_id: str,
@@ -755,7 +763,7 @@ def _predict_selected_candidates(
     target_msa_ref = _artifact(
         root,
         target_msa,
-        artifact_id="stage05-target-msa",
+        artifact_id=_target_msa_artifact_id(scientific_mode),
         role="protenix-required-target-msa",
         file_format="a3m",
     )
@@ -1590,10 +1598,21 @@ def _publish_stage05(
         backend_version=filter_profile,
         executor_name="local-multi-gpu",
     )
-    dump_model(
-        attempt,
-        artifacts.parent / "attempt-manifest.json",
-    )
+    attempt_path = artifacts.parent / "attempt-manifest.json"
+    if attempt_path.exists():
+        observed_attempt = load_model(attempt_path, Attempt)
+        if observed_attempt.model_dump(
+            exclude={"created_at", "started_at", "ended_at"}
+        ) != attempt.model_dump(exclude={"created_at", "started_at", "ended_at"}):
+            raise ManifestStateError(
+                "Stage 05 partial publish attempt manifest 与当前执行不一致"
+            )
+        attempt = observed_attempt
+        created_at = attempt.created_at
+        assert attempt.ended_at is not None
+        completed_at = attempt.ended_at
+    else:
+        dump_model(attempt, attempt_path)
     stage_manifest = StageManifest(
         stage_id=StageId.PILOT_FILTERING,
         contract_version=(
@@ -1624,7 +1643,15 @@ def _publish_stage05(
         (upstream.stage01, upstream.stage03, upstream.stage04)
     )
     stage_manifest_path = artifacts / "stage-manifest.json"
-    dump_model(stage_manifest, stage_manifest_path)
+    if stage_manifest_path.exists():
+        observed_stage = load_model(stage_manifest_path, StageManifest)
+        if observed_stage != stage_manifest:
+            raise ManifestStateError(
+                "Stage 05 partial publish stage manifest 与当前结果不一致"
+            )
+        stage_manifest = observed_stage
+    else:
+        dump_model(stage_manifest, stage_manifest_path)
     stage_ref = _artifact(
         root,
         stage_manifest_path,
@@ -1645,7 +1672,15 @@ def _publish_stage05(
         clear_workflow_state=True,
     )
     run_manifest_path = root / "manifests" / f"run-manifest.v{next_run.revision:04d}.json"
-    dump_model(next_run, run_manifest_path)
+    if run_manifest_path.exists():
+        observed_run = load_model(run_manifest_path, RunManifest)
+        if observed_run != next_run:
+            raise ManifestStateError(
+                "Stage 05 partial publish run manifest 与当前结果不一致"
+            )
+        next_run = observed_run
+    else:
+        dump_model(next_run, run_manifest_path)
     _atomic_text(run_manifest_path.name + "\n", root / "manifests" / "LATEST")
     use_v1_6 = filter_profile in {
         "nanobody-filter-standard-v1.6",

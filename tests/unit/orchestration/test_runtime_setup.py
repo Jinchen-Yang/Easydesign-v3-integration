@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.parse import urlparse
 import pytest
 import yaml
 
-from easydesign.core import ConfigurationError
+from easydesign.core import ConfigurationError, sha256_file
 from easydesign.orchestration import runtime_setup
 from easydesign.orchestration.git_sources import GitSourceResult
 from easydesign.orchestration.runtime_setup import (
@@ -129,6 +130,26 @@ def test_all_conda_explicit_locks_pin_every_package_sha256() -> None:
         entries = runtime_setup._conda_lock_entries(path)
         assert entries
         assert all(len(package_sha256) == 64 for _url, package_sha256 in entries)
+
+
+def test_protenix_conda_lock_includes_pinned_kalign3() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    lock = repository / "environments/locks/protenix-v2-linux-64.conda-lock.txt"
+
+    entries = dict(runtime_setup._conda_lock_entries(lock))
+
+    url = (
+        "https://conda.anaconda.org/bioconda/linux-64/"
+        "kalign3-3.4.0-h503566f_2.tar.bz2"
+    )
+    assert entries[url] == "d3ada5ff479f0c082c87c61070dabd8d7ead25b59a6b476bcb2ab504e37d5663"
+    manifest = json.loads(
+        (repository / "environments/locks/protenix-v2-linux-64.lock.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["conda_explicit_sha256"] == sha256_file(lock)
+    assert "shutil.which('kalign')" in manifest["probe"][2]
 
 
 def test_conda_explicit_view_preserves_original_archive_basename(

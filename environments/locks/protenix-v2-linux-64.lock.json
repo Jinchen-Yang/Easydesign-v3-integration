@@ -3,14 +3,14 @@
   "environment_id": "protenix-v2",
   "platform": "linux-64",
   "conda_explicit": "environments/locks/protenix-v2-linux-64.conda-lock.txt",
-  "conda_explicit_sha256": "f9b20793608f1225eccb27b27a3d642547c0068931c17a0a2771137834d2413f",
+  "conda_explicit_sha256": "b342ff5a08cfa2b2c9a1cf84f2867e456770f75902f130c396b64f36078a38e9",
   "pip_requirements": "environments/locks/protenix-v2-linux-64.pip-lock.txt",
   "pip_requirements_sha256": "08345fd4b70527a42c795b25e0822c75b3dd9e7d756c24d8d0b9213b686a9f46",
   "python": "3.11.15",
   "probe": [
     "python",
     "-c",
-    "import protenix; print(getattr(protenix, '__version__', '2.0.0'))"
+    "import protenix, shutil; assert shutil.which('kalign'); print(getattr(protenix, '__version__', '2.0.0'))"
   ],
   "estimated_install_bytes": 8589934592,
   "lock_kind": "resolved-package-set"

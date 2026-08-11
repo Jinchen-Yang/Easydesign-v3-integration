@@ -93,3 +93,4 @@ https://repo.anaconda.com/pkgs/main/linux-64/packaging-26.0-py311h06a4308_0.cond
 https://repo.anaconda.com/pkgs/main/linux-64/setuptools-83.0.0-py311h06a4308_0.conda#3407df5998ddf3398a08e4a4def4d2c653e252d824272bdc1bada2a1e8d284da
 https://repo.anaconda.com/pkgs/main/linux-64/wheel-0.47.0-py311h06a4308_0.conda#48c0706884c4a81c720332b2f8ceab77eccb48ae157d5d45ad597f981495c91e
 https://repo.anaconda.com/pkgs/main/noarch/pip-26.1.2-pyhc872135_0.conda#fe4396e88d44b9df60ebc911505b3902d0754439c2cf4fc0d2c6bfc281ee05e8
+https://conda.anaconda.org/bioconda/linux-64/kalign3-3.4.0-h503566f_2.tar.bz2#d3ada5ff479f0c082c87c61070dabd8d7ead25b59a6b476bcb2ab504e37d5663

@@ -17,6 +17,7 @@ from easydesign.orchestration.git_sources import (
     GitSourceResult,
     materialize_git_source,
     verify_existing_git_source,
+    verify_git_source_identity,
 )
 from easydesign.orchestration.source_policy import (
     SourceCandidate,
@@ -187,6 +188,23 @@ def test_archive_failure_switches_to_git_transport(
 
     assert result == expected
     assert "自动切换 Git transport" in statuses[-1]
+
+
+def test_source_without_receipt_cannot_discover_parent_git_checkout(
+    tmp_path: Path,
+) -> None:
+    parent = tmp_path / "parent-checkout"
+    source = parent / "runtime" / "models" / "source"
+    source.mkdir(parents=True)
+    (parent / ".git").mkdir()
+    (source / "model.py").write_text("VERSION = 'fixed'\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="自身 .git"):
+        verify_git_source_identity(
+            source,
+            source="https://example.test/source.git",
+            revision="a" * 40,
+        )
 
 
 def test_git_transport_tries_http1_before_default(

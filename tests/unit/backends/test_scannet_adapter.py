@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -12,6 +13,10 @@ from easydesign.backends.scannet import (
     ScanNetBackendConfig,
     ScanNetBackendError,
     ScanNetEpitopeAdapter,
+)
+from easydesign.orchestration.git_sources import (
+    GitSourceReceipt,
+    directory_content_sha256,
 )
 from easydesign.stages.s02_hotspot_discovery import StructureContext
 from easydesign.stages.s02_hotspot_discovery.models import ResidueIdentity
@@ -41,6 +46,19 @@ def adapter(tmp_path: Path) -> ScanNetEpitopeAdapter:
     repository = tmp_path / "ScanNet"
     repository.mkdir()
     (repository / "predict_bindingsites.py").touch()
+    receipt = GitSourceReceipt(
+        source="https://github.com/jertubiana/ScanNet.git",
+        revision=SCANNET_COMMIT,
+        content_sha256=directory_content_sha256(repository),
+        transport_source_id="fixture-archive",
+        transport_url="https://example.test/scannet.tar.gz",
+        archive_sha256="a" * 64,
+        recorded_at=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+    (repository / ".easydesign-source.json").write_text(
+        receipt.model_dump_json(),
+        encoding="utf-8",
+    )
     return ScanNetEpitopeAdapter(
         ScanNetBackendConfig(
             python_path=python,
@@ -100,13 +118,8 @@ def test_cpu_runtime_disables_gpu(tmp_path: Path) -> None:
 
 def test_cpu_probe_accepts_cpu_result(monkeypatch, tmp_path: Path) -> None:
     backend = adapter(tmp_path)
-    calls = 0
 
     def fake_run(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return subprocess.CompletedProcess(args[0], 0, SCANNET_COMMIT + "\n", "")
         payload = (
             'EASYDESIGN_RUNTIME_PROBE={"execution_device":"cpu",'
             '"gpu_available":false,'
@@ -131,13 +144,7 @@ def test_explicit_gpu_probe_rejects_cpu_only_result(
     backend = ScanNetEpitopeAdapter(
         original.config.model_copy(update={"execution_device": "gpu"})
     )
-    calls = 0
-
     def fake_run(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return subprocess.CompletedProcess(args[0], 0, SCANNET_COMMIT + "\n", "")
         payload = (
             'EASYDESIGN_RUNTIME_PROBE={"execution_device":"gpu",'
             '"gpu_available":false,'

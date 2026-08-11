@@ -14,10 +14,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core import ManifestStateError
+from easydesign.orchestration.git_sources import verify_git_source_identity
 from easydesign.stages.s02_hotspot_discovery.geometry import StructureContext
 
 SCANNET_COMMIT = "a61623cd98d243c2ff4cd03fc3619d2d22ec50e7"
 SCANNET_MODEL = "ScanNet_epitope_noMSA"
+SCANNET_SOURCE = "https://github.com/jertubiana/ScanNet.git"
 
 
 class ScanNetBackendError(ManifestStateError):
@@ -218,23 +220,18 @@ class ScanNetEpitopeAdapter:
                 f"ScanNet predict_bindingsites.py 不存在: {script}",
                 error_code="scannet-repository-missing",
             )
-        completed = subprocess.run(
-            ["git", "-C", str(self.config.repository_root), "rev-parse", "HEAD"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        commit = completed.stdout.strip()
-        if completed.returncode != 0 or commit != self.config.expected_commit:
-            raise ScanNetBackendError(
-                "ScanNet commit 不匹配: "
-                f"expected={self.config.expected_commit}, actual={commit or 'unknown'}",
-                error_code="scannet-commit-mismatch",
-                stdout=completed.stdout,
-                stderr=completed.stderr,
+        try:
+            identity = verify_git_source_identity(
+                self.config.repository_root,
+                source=SCANNET_SOURCE,
+                revision=self.config.expected_commit,
             )
-        return commit
+        except Exception as error:
+            raise ScanNetBackendError(
+                f"ScanNet source identity 不匹配: {error}",
+                error_code="scannet-commit-mismatch",
+            ) from error
+        return identity.revision
 
     def probe_runtime(self) -> ScanNetRuntimeProbe:
         self._validate_installation()

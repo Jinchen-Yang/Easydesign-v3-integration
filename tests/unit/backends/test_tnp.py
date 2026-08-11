@@ -13,7 +13,11 @@ from easydesign.backends.tnp import (
     TnpBatchResult,
     _verified_tnp_source_snapshot,
 )
-from easydesign.core import BackendContractError, ManifestStateError, sha256_file
+from easydesign.core import BackendContractError, ManifestStateError
+from easydesign.orchestration.git_sources import (
+    GitSourceReceipt,
+    directory_content_sha256,
+)
 from easydesign.stages.s07_final_filtering_and_selection import DevelopabilityRisk
 
 NOW = datetime(2026, 7, 26, 8, 0, tzinfo=UTC)
@@ -41,21 +45,24 @@ def test_exported_tnp_source_snapshot_is_verified_without_git(tmp_path: Path) ->
     source = tmp_path / "bin" / "TNP"
     source.parent.mkdir()
     source.write_text("#!/bin/sh\n", encoding="utf-8")
-    marker = {
-        "schema_version": "0.1",
-        "backend_id": "tnp",
-        "commit": TNP_COMMIT,
-        "tree": {"bin/TNP": {"sha256": sha256_file(source), "mode": "0o755"}},
-    }
+    marker = GitSourceReceipt(
+        source="https://github.com/oxpig/TNP.git",
+        revision=TNP_COMMIT,
+        content_sha256=directory_content_sha256(tmp_path),
+        transport_source_id="fixture-archive",
+        transport_url="https://example.test/tnp.tar.gz",
+        archive_sha256="a" * 64,
+        recorded_at=NOW,
+    )
     (tmp_path / ".easydesign-source.json").write_text(
-        json.dumps(marker),
+        marker.model_dump_json(),
         encoding="utf-8",
     )
 
     assert _verified_tnp_source_snapshot(tmp_path) == TNP_COMMIT
 
     source.write_text("drift\n", encoding="utf-8")
-    with pytest.raises(BackendContractError, match="文件漂移"):
+    with pytest.raises(BackendContractError, match="现有内容不一致"):
         _verified_tnp_source_snapshot(tmp_path)
 
 

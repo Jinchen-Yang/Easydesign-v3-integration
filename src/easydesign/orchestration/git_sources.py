@@ -383,15 +383,17 @@ def _publish_git_source(
     )
 
 
-def verify_existing_git_source(
-    context: WorkspaceContext,
-    *,
-    source: str,
-    revision: str,
+def verify_git_source_identity(
     destination: Path,
+    *,
+    revision: str,
+    source: str | None = None,
+    environment: dict[str, str] | None = None,
 ) -> GitSourceResult:
-    """Verify either an archived source receipt or a clean Git checkout."""
+    """Verify a generic source receipt or an explicit, self-contained checkout."""
 
+    if not destination.is_dir():
+        raise ConfigurationError(f"Git 源码目录不存在: {destination}")
     content_sha256 = directory_content_sha256(destination)
     receipt_path = destination / SOURCE_RECEIPT_NAME
     if receipt_path.is_file():
@@ -402,7 +404,7 @@ def verify_existing_git_source(
         except (OSError, ValueError) as error:
             raise ConfigurationError("Git 源码 receipt 损坏") from error
         if (
-            receipt.source != source
+            (source is not None and receipt.source != source)
             or receipt.revision != revision
             or receipt.content_sha256 != content_sha256
         ):
@@ -417,18 +419,30 @@ def verify_existing_git_source(
                 url="workspace-cache://verified-git-source",
             ),
         )
-    environment = context.subprocess_environment()
+    # Never allow ``git -C`` to discover the EasyDesign repository (or any
+    # other parent checkout) when an extracted source snapshot lacks a receipt.
+    if not (destination / ".git").is_dir():
+        raise ConfigurationError("Git 源码缺少统一 receipt 或自身 .git 目录")
+    git_environment = dict(os.environ if environment is None else environment)
+    git_environment["GIT_CEILING_DIRECTORIES"] = str(destination.parent.resolve())
     revision_check = subprocess.run(
         ["git", "-C", str(destination), "rev-parse", "HEAD"],
-        env=environment,
+        env=git_environment,
         capture_output=True,
         text=True,
         check=False,
         timeout=30,
     )
     clean_check = subprocess.run(
-        ["git", "-C", str(destination), "status", "--porcelain"],
-        env=environment,
+        [
+            "git",
+            "-C",
+            str(destination),
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+        ],
+        env=git_environment,
         capture_output=True,
         text=True,
         check=False,
@@ -450,6 +464,23 @@ def verify_existing_git_source(
             source_id="workspace-existing",
             url="workspace-cache://verified-git-source",
         ),
+    )
+
+
+def verify_existing_git_source(
+    context: WorkspaceContext,
+    *,
+    source: str,
+    revision: str,
+    destination: Path,
+) -> GitSourceResult:
+    """Verify either an archived source receipt or a clean Git checkout."""
+
+    return verify_git_source_identity(
+        destination,
+        source=source,
+        revision=revision,
+        environment=context.subprocess_environment(),
     )
 
 

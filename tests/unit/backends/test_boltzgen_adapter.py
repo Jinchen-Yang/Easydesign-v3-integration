@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +9,10 @@ import pytest
 from easydesign.backends.boltzgen import BoltzGenCheckAdapter
 from easydesign.backends.boltzgen.check import _verified_source_snapshot
 from easydesign.core import BackendContractError
+from easydesign.orchestration.git_sources import (
+    GitSourceReceipt,
+    directory_content_sha256,
+)
 from easydesign.stages.s03_boltzgen_configuration import BOLTZGEN_COMMIT, StrategyRecord
 
 
@@ -34,26 +36,24 @@ def test_exported_source_snapshot_is_verified_without_git(tmp_path: Path) -> Non
     source = repository / "src" / "boltzgen.py"
     source.parent.mkdir(parents=True)
     source.write_text("VERSION = '0.3.2'\n", encoding="utf-8")
-    marker = {
-        "schema_version": "0.1",
-        "backend_id": "boltzgen",
-        "commit": BOLTZGEN_COMMIT,
-        "tree": {
-            "src/boltzgen.py": {
-                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-                "mode": "0o644",
-            }
-        },
-    }
+    marker = GitSourceReceipt(
+        source="https://github.com/HannesStark/boltzgen.git",
+        revision=BOLTZGEN_COMMIT,
+        content_sha256=directory_content_sha256(repository),
+        transport_source_id="fixture-archive",
+        transport_url="https://example.test/boltzgen.tar.gz",
+        archive_sha256="a" * 64,
+        recorded_at=datetime(2026, 8, 11, tzinfo=UTC),
+    )
     (repository / ".easydesign-source.json").write_text(
-        json.dumps(marker),
+        marker.model_dump_json(),
         encoding="utf-8",
     )
 
     assert _verified_source_snapshot(repository) == BOLTZGEN_COMMIT
 
     source.write_text("VERSION = 'drift'\n", encoding="utf-8")
-    with pytest.raises(BackendContractError, match="文件漂移"):
+    with pytest.raises(BackendContractError, match="现有内容不一致"):
         _verified_source_snapshot(repository)
 
 

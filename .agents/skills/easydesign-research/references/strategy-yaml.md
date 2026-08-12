@@ -41,6 +41,21 @@
 5. 可由当前 schema 解析、由 compiler 编译、由 backend check 的配置；
 6. freeze/run 两个独立审批边界。
 
+### 1.3 Strategize decision kernel
+
+按以下顺序执行；前一步未通过时不要跳到后一步补 YAML：
+
+1. 锁定 approved foundation、target/site/mapping 与 current artifact identity；
+2. 写出 primary mechanism、至少一个 competing hypothesis 与各自 falsifier；
+3. 从 approved site 选择有三维证据的 hotspot topology；没有坐标则停止方向性命名；
+4. 建立 `PI-FIRST-PILOT-001` 七 scaffold baseline；
+5. 只为最大的不确定性增加少量 matched diagnostic；
+6. 为每组声明 comparator、changed/held factors 与 generalization scope；
+7. 逐 scaffold 核验 asset/CDR override，逐 representation 核验 crop/context；
+8. 计算 expanded denominator，生成 config draft；
+9. 分别记录 parse/schema/project/backend validation receipt；
+10. 展示 exact revision 与风险，等待 freeze；run 仍需独立批准。
+
 ## 2. 首轮唯一产品 policy
 
 ### `PI-FIRST-PILOT-001`
@@ -186,15 +201,20 @@ approved site 含 18 residues。baseline hotspot 选 4 个覆盖界面中心与�
 
 **证据**：`PI-FIRST-PILOT-001`、registry identity、current asset validation。
 
-**分支**：首轮 baseline全 registry；diagnostic尽量保留相同 scaffold覆盖。预算不足不能静默删 baseline，必须回到用户调整 scope/policy。
+**分支**：首轮 baseline 全 registry。diagnostic 默认使用与 baseline 有 matched comparator 的一个
+`sentinel scaffold`；需要检验 scaffold generalizability 时，才按有说明的 geometry/asset strata 选择
+2–3 个 scaffold。只有科学问题明确是 scaffold interaction、且预算与审批允许时，diagnostic 才扩展
+到全 registry。预算不足不能静默删 baseline，必须回到用户调整 scope/policy。
 
-**正例**：一个 baseline variant列出全部 registry scaffold，compiler本地展开。
+**正例**：一个 baseline variant列出全部 registry scaffold，compiler本地展开；一个 CDR3 reach
+diagnostic 先在具备同 scaffold baseline 对照且 asset 已核验的 sentinel 上测试，成功后再确认迁移性。
 
 **反例**：因为 target 是 GPCR而只选长 CDR3 insertion上限较大的两个 scaffold。
 
 **反证**：registry/hash/backend drift，停止并报告。
 
-**输出**：`scaffold_ids`, `registry`, `coverage_check`。
+**输出**：`scaffold_ids`, `registry`, `coverage_check`, `scaffold_scope`,
+`sentinel_selection_rationale`, `generalization_scope`。
 
 ### 5.3 CDR design
 
@@ -266,7 +286,9 @@ schema `1.1` 的每个 variant 必须形成完整科学合同：
 
 ### 6.2 正例
 
-`H_cdr3_reach` 组只覆盖 CDR3 insertion，held constant包含 site/hotspot/all scaffolds/full target/count/backend/profile；expected result是 pocket-depth contact和hotspot coverage提高；failure interpretation明确“不会单独否定site”。
+`H_cdr3_reach` 组在一个 asset 已核验的 sentinel scaffold 上只改变 CDR3 insertion；其 matched
+comparator 是 baseline 中同一 scaffold，held constant 包含 site/hotspot/scaffold/full target/count/
+backend/profile。结果只支持该 scaffold 上的 reach 解释；跨 scaffold 结论需要后续 confirmation。
 
 ### 6.3 反例/误判
 
@@ -287,6 +309,10 @@ schema `1.1` 的每个 variant 必须形成完整科学合同：
 - `integrated-best-alternative`：Agent认为最优的联合策略，但不用于单因素因果归因。
 
 不是每个项目都需要全部组。选择原则是最大化“一个 pilot 后可排除多少竞争解释”，而不是最大化 YAML 数量。
+
+`PI-FIRST-PILOT-001` 的全 registry 要求只约束 mandatory baseline，不自动复制到每个 diagnostic。
+diagnostic 必须拥有 matched baseline comparator；sentinel 结果不得宣称 scaffold-general。若选择
+2–3 个 scaffold，说明 strata 与仍未覆盖的范围；全 registry diagnostic 需要独立预算理由和审批。
 
 ### 7.2 覆盖空间与优先级
 
@@ -340,6 +366,7 @@ variants:
     hypothesis_id: h-primary-site-default-vhh7
     role: baseline
     hotspot_set_id: hs-primary
+    binding_label_seq_ids: null
     scaffold_ids:
       - 7eow
       - 7xl0
@@ -348,19 +375,24 @@ variants:
       - gontivimab
       - isecarosmab
       - sonelokimab
+    target_crop: null
+    cdr_overrides: []
     candidates: 40
     evidence_refs:
       - site:site-primary@REVISION
       - claim:MECHANISM-ID
       - artifact:target-bundle@SHA256
     changed_factors:
-      - baseline-reference
+      - scaffold_id
     held_constant:
-      - approved-foundation
-      - full-target-context
-      - scaffold-registry:official-vhh7-v1
-      - asset-default-cdrs
-      - backend-and-filter-profile
+      - target_state
+      - target_context
+      - approved_site
+      - hotspot_set
+      - target_crop
+      - cdr_design
+      - candidates_per_strategy
+      - backend_and_filter_profile
     rationale: >-
       以 primary mechanism hotspot 和 asset defaults 建立首轮全 registry baseline。
     expected_result: >-
@@ -369,43 +401,8 @@ variants:
     failure_interpretation: >-
       全组共同失败优先削弱 shared site/context/hotspot 或 pipeline 合同，
       不证明七个 scaffold 各自都不适合所有后续策略。
-
-  - id: diagnostic-cdr3-reach
-    hypothesis_id: h-cdr3-reach-limits-pocket
-    role: diagnostic
-    hotspot_set_id: hs-primary
-    scaffold_ids:
-      - 7eow
-      - 7xl0
-      - 8coh
-      - 8z8v
-      - gontivimab
-      - isecarosmab
-      - sonelokimab
-    cdr_overrides:
-      - cdr: 3
-        design_res_index: "REVIEW_PER_ASSET"
-        insertion_num_residues: "REVIEW_PER_ASSET"
-    candidates: 40
-    evidence_refs:
-      - hypothesis:h-cdr3-reach-limits-pocket
-      - claim:VHH-CLEFT-001
-    changed_factors:
-      - cdr3-design-and-insertion-range
-    held_constant:
-      - approved-foundation
-      - hotspot-set:hs-primary
-      - target-context
-      - scaffold-registry:official-vhh7-v1
-      - candidates-per-expanded-strategy
-      - backend-and-filter-profile
-    rationale: >-
-      仅在 geometry 显示 reach 不足时测试 CDR3 search-space 假设；
-      每个 scaffold override 必须先与 asset 对齐，若范围不能共用则拆分 variant。
-    expected_result: >-
-      hotspot reach/coverage 增加且 clash、target drift、framework dominance 不恶化。
-    failure_interpretation: >-
-      若未改善或物理冲突增加，削弱所测试 CDR3 range；不单独否定 site。
+    native_boltzgen_yaml: null
+    native_boltzgen_sha256: null
 ```
 
 ### 9.1 模板注意
@@ -416,6 +413,8 @@ variants:
 - 不同 scaffold的native CDR range不同。若一个override字符串对各asset不科学，拆成多个仍可比较的variant，不要假装统一；
 - native expert variant合同见 [boltzgen-contract.md](boltzgen-contract.md)；
 - 科学 metadata不得写入生成的native design YAML。
+- 上述 canonical baseline 与产品生成的初始 draft 对齐。CDR/crop/context diagnostic 不提供可复制的
+  通用数值模板：先绑定 current asset/representation，再创建只改变一个主要因素的独立 variant。
 
 ## 10. 编译、校验与冻结
 
@@ -432,7 +431,37 @@ variants:
 9. 等待用户执行/批准 `easydesign strategy freeze ... --confirm`；
 10. freeze完成后，run仍需单独批准。
 
-### 10.2 Freeze 前检查表
+### 10.2 Validation receipt
+
+每个 validation 层级分别记录，不得用笼统的“已验证”覆盖：
+
+```yaml
+validation_receipt:
+  artifact_sha256: ""
+  parser:
+    status: not_run
+    tool: null
+    command: null
+    exit_code: null
+  schema:
+    status: not_run
+    validator: null
+    exit_code: null
+  project_binding:
+    status: not_run
+    project_id: null
+    foundation_sha256: null
+  backend:
+    status: not_run
+    backend_identity: null
+    exit_code: null
+  checked_at: null
+```
+
+只有对应 receipt 为 passed 才能声称该层通过。没有 command/tool receipt 时不得自行补 parser 名称或
+版本；semantic review 必须列出实际规则与逐项结果。
+
+### 10.3 Freeze 前检查表
 
 - [ ] current project/phase合法；
 - [ ] target/site revision与checksum匹配；

@@ -52,11 +52,27 @@
 - state sensor：优先差异表面，同时设置“binder 是否改变 state”的独立 assay；
 - structural chaperone：用目标 ligand/transducer context；bound structure 解释为 stabilized state。`claim:GPCR-CHAPERONE-001`
 
-### 2.4 正例
+### 2.4 State sensor 强制竞争假设
+
+凡目标含 `state sensor`、conformation reporter 或低扰动 state imaging，不得只写一个“最佳 sensing
+site”。至少并列以下机制，并在拿到判别证据前保持同级：
+
+| hypothesis | 机制 | 可区分预测 | 最小 falsifier / no-go |
+|---|---|---|---|
+| `H_sense` | binder 被动报告 pre-existing state | state-selective signal存在，但剂量变化不移动功能/ensemble | binding同时显著改变 signaling、population 或 partner occupancy |
+| `H_stabilize` | binder 选择并稳定某一 state | binder剂量依赖地移动 state marker/kinetics | 在可靠灵敏度下无 state shift，削弱 stabilization |
+| `H_compete` | binder sterically阻断 ligand/transducer/GRK/arrestin | overlap/competition 与功能变化一致 | 无 footprint overlap且正交competition assay阴性 |
+| `H_artifact` | expression、label、delivery、膜环境造成信号 | signal跟随format/expression而非state marker | 多format、剂量与negative target controls排除该解释 |
+
+每条都输出 `prediction`、`discriminating_assay`、`falsifier`、`no_go_threshold`。低扰动不是次要风险，
+而是与 state selectivity 同级的 co-primary constraint；只要 `H_stabilize` 或 `H_compete` 未被充分
+排除，就不得把 binder 称为 passive sensor。
+
+### 2.5 正例
 
 目标是 active-state intrabody：比较 agonist-bound 与 antagonist-bound结构，选择 active state 新形成的 intracellular cavity；同时测 state-selective binding 与 cAMP/effector coupling，承认 binder 可能同时选择并稳定该状态。
 
-### 2.5 反例/误判
+### 2.6 反例/误判
 
 - 仅凭“GPCR”就强制 15–50 aa CDR3；
 - 用 extracellular design 结构讨论 intracellular delivery；
@@ -64,7 +80,7 @@
 - 把 thermostabilized mutant 的一个构象当天然 ensemble；
 - 用高 interface score 宣称 agonist/antagonist specificity。
 
-### 2.6 反证或停止条件
+### 2.7 反证或停止条件
 
 - desired state 没有定义或 assay 不区分 state；
 - design structure 与 assay ligand/transducer context 不一致；
@@ -72,9 +88,11 @@
 - target construct 的 stabilizing mutation 正位于 candidate；
 - extracellular/intracellular delivery 不可实现。
 
-### 2.7 输出字段
+### 2.8 输出字段
 
-`receptor_state`, `counter_state`, `side`, `ligand_context`, `transducer_context`, `membrane_model`, `state_defining_features`, `competition_risk`, `state_shift_assay`。
+`receptor_state`, `counter_state`, `side`, `ligand_context`, `transducer_context`, `membrane_model`,
+`state_defining_features`, `mechanism_hypotheses`, `competition_risk`, `state_shift_assay`,
+`low_perturbation_no_go`。
 
 ## 3. 一般膜蛋白与 glycosylated target
 

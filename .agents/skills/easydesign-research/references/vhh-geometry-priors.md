@@ -10,7 +10,7 @@
 4. CDR1/2/3 功能假设
 5. Long-CDR3 决策
 6. Scaffold 作为实验因素
-7. Current scaffold asset 事实
+7. Scaffold asset authoring snapshot
 8. Crop 与结构 context
 9. Framework contact 与 paratope attribution
 10. Matched diagnostic designs
@@ -131,6 +131,12 @@
 
 ## 3. Approach direction
 
+`knowledge_class: product_invariant`：方向性角色必须来自 current 3D coordinates、明确的
+partner/ligand footprint 或可复现的几何计算。residue number、序列顺序、列表位置和“看起来在
+中间”都不能证明 `center`、`edge`、`directional anchor`、surface normal 或 approach axis。
+没有坐标时，把每个几何角色写为 `unresolved`，先请求 structure/checksum/chain mapping；不得以
+“provisional”名义把这些角色写入 runnable hotspot 或 acceptance criterion。
+
 ### 3.1 表达方式
 
 为每个 site 定义：
@@ -247,9 +253,16 @@ scaffold identity 同时影响 framework geometry、CDR anchor、loop defaults�
 
 看到某 scaffold 来自已有药物就把它定义为“最稳定”并只跑它；provenance 不证明在 current site 的 geometry最优。
 
-## 7. Current scaffold asset 事实
+## 7. Scaffold asset authoring snapshot
 
-`knowledge_class: version_specific_tool_fact`：下表仅对 repository 中 BoltzGen `0.3.2` 绑定的 `official-vhh7-v1` asset 成立。数字是 native asset 的 `design.res_index` 与 `design_insertions.num_residues`，不是通用 IMGT CDR 长度，也不是最终序列长度。
+`knowledge_class: version_specific_tool_fact`：下表是 Skill authoring 时从 repository 中 BoltzGen
+`0.3.2` / `official-vhh7-v1` reviewed asset 提取的 `documentation_snapshot`。数字是 native asset 的
+`design.res_index` 与 `design_insertions.num_residues`，不是通用 IMGT CDR 长度，也不是最终序列长度。
+
+该表可帮助形成需要核验的假设，但不能独立证明 current project/run 使用同一字节资产。任何精确
+range 进入 runnable strategy 前，必须从 current registry/manifest 解析相应 YAML，记录
+`asset_path`、`asset_yaml_sha256`、registry、BoltzGen version/commit 与 asset diff。无法访问 current
+asset 时只能写 `asset-default` 或 `REQUIRES_ASSET_BINDING`，不得把下表称为“当前已验证范围”。
 
 | scaffold_id | chain | design CDR1 | design CDR2 | design CDR3 | insertion CDR1 | insertion CDR2 | insertion CDR3 |
 |---|---|---|---|---|---|---|---|
@@ -268,6 +281,27 @@ scaffold identity 同时影响 framework geometry、CDR anchor、loop defaults�
 - final CDR length：生成结果的实际 loop 定义与长度，需要按产物/numbering重新计算。
 
 正则合法只说明字符串可解析，不证明科学合理、asset 相容或 backend 可运行。每次 override 都要检查 asset diff 与 backend validation。
+
+### 7.2 精确值来源绑定
+
+```yaml
+asset_binding:
+  status: not_run
+  scaffold_id: ""
+  registry: official-vhh7-v1
+  boltzgen_version: ""
+  boltzgen_commit: ""
+  asset_path: null
+  asset_yaml_sha256: null
+  source_manifest_sha256: null
+  extracted_defaults: null
+  proposed_diff: null
+  backend_validation_receipt: null
+```
+
+只有 `status: verified` 且 receipt 与 current config identity 一致时，才能把 `extracted_defaults` 或
+`proposed_diff` 作为当前事实。Skill snapshot 与 current artifact 不一致时以 artifact 为准并报告
+`contract_drift`，不得静默选择。
 
 ## 8. Crop 与结构 context
 

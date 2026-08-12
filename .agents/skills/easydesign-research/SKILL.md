@@ -30,11 +30,14 @@ description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：�
 
 ### `strategize`：approved site → pilot experiment
 
-必须读取：
+必须先读取：
 
-- [strategy-yaml.md](references/strategy-yaml.md)：产品 policy、hotspot、实验矩阵和冻结前决策；
-- [vhh-geometry-priors.md](references/vhh-geometry-priors.md)：site geometry、approach、CDR、scaffold 和 crop 先验；
-- [boltzgen-contract.md](references/boltzgen-contract.md)：当前真实 schema、adapter、版本和 expert native 边界。
+- [strategy-yaml.md](references/strategy-yaml.md)：产品 policy、hotspot、实验矩阵和冻结前决策。
+
+需要决定 site geometry、approach、CDR、scaffold 或 crop 时，再读取
+[vhh-geometry-priors.md](references/vhh-geometry-priors.md)。需要输出/验证 `ResearchStrategy`、解释
+adapter/backend/asset 或进入 expert native path 时，再读取
+[boltzgen-contract.md](references/boltzgen-contract.md)。不要为了“完整”加载与当前决定无关的章节。
 
 不要从 prepare 阶段的“大 site”直接复制全部 residue 为 conditioning hotspot。不要把科学计划字段写入 native BoltzGen YAML。
 
@@ -72,6 +75,24 @@ description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：�
 - `decision`：当前约束下的选择，写替代方案、代价和 residual uncertainty。
 
 不得把 product policy 写成普适生物学定律；不得把 predictor 输出写成实验事实；不得把某个 project 的经验自动升级为通用规则。
+
+### 2.1 认识状态与来源绑定硬规则
+
+以下规则优先于任何示例、经验或默认值：
+
+1. `unknown`、`not_provided`、`unresolved`、`not_applicable` 与经证据确认的
+   `verified_none` 不可互换。nullable value 必须同时给出 `value_status`；不得把未知静默写成
+   `null`、空串、`0` 或“无”。
+2. 精确 residue、chain、insertion code、CDR range、asset/profile/backend version、threshold
+   只有绑定 current source identity 后才能作为本项目事实。至少记录 artifact/path、SHA-256、
+   version/commit 与 validation status；否则只可称 `documentation_snapshot` 或条件性假设。
+3. 不能从 residue number、序列先后或二维列表推断三维 `center`、`edge`、方向锚点、表面法向
+   或 approach axis。缺坐标时保留角色为 `unresolved`，先获取结构或几何计算结果。
+4. `provisional` 信息可以驱动证据获取计划，不能驱动 runnable config、hard gate、promotion 或
+   approval。无法完成来源绑定时停止在 `config_draft`。
+5. 不得声称已 parse、schema validate、semantic validate 或 backend validate，除非有对应 receipt。
+   receipt 至少包含 `command/tool`、`artifact_sha256`、`exit_code/status`、实际检查层级与时间；
+   未运行时明确写 `validation_status: not_run`。
 
 ## 3. 决策写作合同
 

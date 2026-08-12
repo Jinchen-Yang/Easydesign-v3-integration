@@ -207,7 +207,29 @@ scale不是“更多pilot candidate”的简单同义词。分析必须保留：
 
 单一aggregate score不能表达所有tradeoff。选择报告必须说明保留某个分数稍低候选是为了覆盖哪种独立假设。
 
-### 6.4 Panel角色
+### 6.4 Panel 算术合同
+
+分配候选前先证明约束可行，不能在文字里留下“20 个 panel + 3 个 controls”究竟是 20 还是 23
+的歧义。必须显式声明：
+
+```yaml
+panel_contract:
+  panel_total: 20
+  controls_inside_total: true
+  lead_slots: 17
+  control_slots: 3
+  cluster_cap: 2
+  cluster_cap_applies_to: leads
+  eligible_lead_clusters: 9
+  arithmetic_status: feasible
+```
+
+检查 `lead_slots + control_slots == panel_total`（controls inside 时），以及 cluster 数量与 cap 是否
+足以容纳 lead slots。不可行时输出冲突和最小可修改约束，等待研究者选择；不得暗自少选、多选或
+改变 cap。hard-gate failure 不得成为 lead；若作为安全且有解释价值的 control，必须单列 role、风险
+与审批。cluster 集中还要并列“真实机制收敛”与“framework/metric artifact”解释及判别实验。
+
+### 6.5 Panel角色
 
 - `primary_leads`：综合证据最强；
 - `mechanism_diverse`：不同site/approach/steric path；
@@ -216,11 +238,11 @@ scale不是“更多pilot candidate”的简单同义词。分析必须保留：
 - `negative_controls`：不命中机制或低confidence的可解释对照（必须安全且有价值）；
 - `backup_formats`：对label/linker/valency或expression有替代。
 
-### 6.5 正例
+### 6.6 正例
 
 实验panel不只是top 20：保留若干不同pose/site/scaffold/sequence cluster，且每个候选都通过hard gates；加入一个target-site正确但CDR attribution边界的risk control验证framework假设。
 
-### 6.6 反例/误判
+### 6.7 反例/误判
 
 - 取score top-N，实际18个是同一sequence/pose；
 - 为多样性纳入hard-gate失败候选而不标control；
@@ -333,6 +355,14 @@ scale_selection_plan:
     unique_sequence_pool: null
     sequence_clusters: null
     pose_clusters: null
+    panel_contract:
+      panel_total: null
+      controls_inside_total: null
+      lead_slots: null
+      control_slots: null
+      cluster_cap: null
+      cluster_cap_applies_to: null
+      arithmetic_status: unresolved
     panel:
       primary_leads: []
       mechanism_diverse: []

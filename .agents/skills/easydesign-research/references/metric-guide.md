@@ -39,6 +39,13 @@ prediction receipt、metric definition 与 source hash，再选择解释合同�
 
 任一条件不满足都停止 v1.7 解释，不能借用 v1.7 字段或阈值补全 v1.6/未知 artifact。历史 v1.5、当前 v1.6、条件性 v1.7 的同名 metric 也必须保留各自 source/version。
 
+### 1.1 Default 文档与 current artifact 的边界
+
+本章中的精确阈值是 versioned documentation snapshot。只有 frozen candidate/report 明确绑定同一
+profile、source SHA、metric definition 与 backend receipt 时，才可写“该候选适用阈值 X”或据此
+作 gate 判断。受控输入未给 profile receipt 时，只能写“repository default 文档规定 X，若 current
+artifact identity 匹配则适用”；不得把条件句改成已验证事实，更不得自行重算 promotion。
+
 ## 2. Identity 与 completeness
 
 这些不是“性能分数”，却是所有解释的前提：

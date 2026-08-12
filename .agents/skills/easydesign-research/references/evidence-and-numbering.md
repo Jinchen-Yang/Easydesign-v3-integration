@@ -220,13 +220,33 @@ mutagenesis 指向 patch A，scan 指向 patch B。检查后发现 A mutation �
 7. 输出唯一 mapping artifact；
 8. 在 approved site 与 strategy 中使用 current artifact 所需的 `label_seq_id`。
 
-### 7.2 映射表
+### 7.2 值状态协议
 
-| source | structure | auth_chain | auth_seq_id | ins_code | residue | label_chain | label_seq_id | current_seq_id | status | note |
-|---|---|---:|---:|---|---|---|---:|---:|---|---|
-| paper-1 | PDB X | A | 123 | ? | TYR | A | 101 | 101 | mapped | mature numbering offset |
+residue mapping 中任何 nullable 字段都必须保存“值”和“认识状态”，禁止让 `null` 同时表示
+多个含义。允许的 `value_status`：
 
-### 7.3 必须保留的异常
+- `verified`：值由锁定的 source artifact 直接验证；
+- `verified_none`：source 明确表达该字段不存在，例如该 residue 经核验没有 insertion code；
+- `not_provided`：受控输入或文献没有给出，尚未查询权威 source；
+- `unresolved`：已查询但存在冲突、歧义或无法唯一映射；
+- `not_applicable`：该字段对该对象没有语义。
+
+`null` 只有与上述 status 同时出现才可解释。`not_provided`/`unresolved` 不得改写成
+`verified_none`；只要 insertion code、chain、construct offset 或 residue identity 仍未锁定，就不能
+将该 residue 写入 approved hotspot 或 runnable strategy。
+
+### 7.3 映射表
+
+| source_artifact | source_sha256 | auth_chain | auth_seq_id | ins_code | ins_code_status | residue | label_chain | label_seq_id | current_seq_id | mapping_status | note |
+|---|---|---|---:|---|---|---|---|---:|---:|---|---|
+| `paper-1/PDB-X.cif` | `SHA256` | A | 123 | null | `not_provided` | TYR | null | null | null | `blocked` | 必须读取锁定 mmCIF 后再映射 |
+
+正例：mmCIF 中 residue 的 insertion code 字段经核验为空，写
+`ins_code: null, ins_code_status: verified_none`，并记录 mmCIF SHA-256。
+
+反例：任务包没有 insertion code，于是写 `ins_code: null` 并继续声称 mapping complete。
+
+### 7.4 必须保留的异常
 
 - author numbering 缺口、负数、0、insertion code；
 - signal peptide/mature-chain offset；
@@ -236,11 +256,11 @@ mutagenesis 指向 patch A，scan 指向 patch B。检查后发现 A mutation �
 - PDB 与 UniProt sequence conflict；
 - symmetry-related copy 或 alternate assembly。
 
-### 7.4 反例/误判
+### 7.5 反例/误判
 
 文献写 `Y123`，viewer 显示 `101`，于是选择 label 123。正确做法是以 mmCIF 显式映射并验证 residue identity。
 
-### 7.5 映射停止条件
+### 7.6 映射停止条件
 
 - 一个 author residue 映射到多个 current residues 且无法消歧；
 - residue type 不一致且不能由 mutation/processing 解释；
@@ -309,7 +329,24 @@ evidence_items:
     confidence: medium
 residue_mapping:
   source_structure_sha256: ""
-  rows: []
+  mapping_artifact_sha256: ""
+  rows:
+    - auth_chain: null
+      auth_chain_status: not_provided
+      auth_seq_id: null
+      auth_seq_id_status: not_provided
+      insertion_code: null
+      insertion_code_status: not_provided
+      residue: null
+      residue_status: not_provided
+      label_chain: null
+      label_chain_status: unresolved
+      label_seq_id: null
+      label_seq_id_status: unresolved
+      current_seq_id: null
+      current_seq_id_status: unresolved
+      mapping_status: blocked
+      evidence_ref: ""
 conflicts:
   - conflict_id: conflict-001
     evidence_refs: []

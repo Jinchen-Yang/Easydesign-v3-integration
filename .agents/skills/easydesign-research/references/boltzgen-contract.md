@@ -16,7 +16,7 @@
 10. Validation 与 provenance
 11. Contract failure 输出
 
-## 1. 固定 identity
+## 1. 版本化 identity snapshot
 
 `knowledge_class: version_specific_tool_fact`
 
@@ -31,6 +31,11 @@
 - external research schema：`ResearchStrategy` `1.1`
 - internal compiled `StrategyBundle`：`0.3`
 - random seed status：`unsupported-by-boltzgen-0.3.2`
+
+以上是 Skill authoring 时核验的 repository default，角色是 `documentation_snapshot`，不是任意
+current project/run 的自动事实。使用精确字段、asset range、backend/profile 或 threshold 前，必须
+读取 current frozen config/manifest/receipt 并输出 identity diff。无法读取时可以条件性描述默认
+合同，但不得声称 current artifact 已绑定或已验证。
 
 `nanobody-filter-standard-v1.7`只与显式选择且已安装、已验证的`openfold3-af3-jax`配对；它不是 v1.6 的静默升级、fallback 或“当前最新所以自动使用”的路径。
 
@@ -218,7 +223,19 @@ source repository：`https://github.com/HannesStark/boltzgen`
 
 source commit：`a3149cf18eeb58648d1abbb27539bd73f746cdda`
 
-详细CDR ranges见 [vhh-geometry-priors.md](vhh-geometry-priors.md)。不得从scaffold名称推断current target上的性能，也不得使用同名但checksum不同的外部asset替换而仍称同一registry。
+详细CDR range 的 authoring snapshot 见 [vhh-geometry-priors.md](vhh-geometry-priors.md)。current 精确
+range 必须从 materialized asset/manifest 读取并绑定 path+SHA-256；不得仅引用 Skill 表格生成 runnable
+override。不得从scaffold名称推断current target上的性能，也不得使用同名但checksum不同的外部asset
+替换而仍称同一registry。
+
+### 7.1 Current asset 解析顺序
+
+1. 从 current frozen `StrategyBundle`/manifest 取得 registry、BoltzGen version/commit 与 scaffold asset
+   path；尚未 materialize 时，从当前 clone 的 compiler registry 解析 package，不凭 Skill 表格猜路径；
+2. 对实际 YAML/CIF 计算 SHA-256，并与 compiler 的 expected hash/manifest 对照；
+3. 从实际 YAML 提取 `design.res_index` 与 `design_insertions.num_residues`；
+4. 逐 scaffold 输出 extracted default 与 proposed override diff；
+5. 保存 backend check receipt。任一步缺失都保持 `asset_binding.status != verified`。
 
 ## 8. Unsupported / not automatic
 
@@ -316,11 +333,18 @@ source commit：`a3149cf18eeb58648d1abbb27539bd73f746cdda`
 - target/hotspot/source stage manifest hashes；
 - `random_seed_status`。
 
-### 10.3 正例
+### 10.3 Validation claim receipt
+
+报告 parser/schema/project/backend 结论时，为每层保存 `tool_or_command`、`input_sha256`、
+`status/exit_code`、实际检查项与时间。没有 receipt 的层级写 `not_run`；不得写“Ruby/Python 已解析”、
+“semantic checks 已通过”或具体 validator 版本。Agent/研究者人工检查也必须列出规则和结果，不能
+冒充 compiler 自动验证。
+
+### 10.4 正例
 
 所有strategy backend check通过，bundle identity匹配，planned denominator与scientific matrix一致；freeze前仍展示exact file/revision，等待用户批准。
 
-### 10.4 反例/误判
+### 10.5 反例/误判
 
 - YAML parser能读就说validated；
 - 一个strategy通过就推断全部通过；

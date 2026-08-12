@@ -1,0 +1,724 @@
+schema_version: "2.0"
+suite_id: easydesign-vhh-scientific-v2
+
+evaluation_contract:
+  purpose: Evaluate transferable VHH research reasoning, not skill-document recall.
+  solver_visible_fields: [id, phase, user_prompt, controlled_inputs, required_deliverables, tool_policy]
+  judge_only_fields: [rubric]
+  scoring_dimensions:
+    - reference_routing
+    - evidence_quality
+    - identity_and_numbering
+    - competing_hypotheses
+    - tool_contract
+    - causal_experiment_design
+    - approval_and_handoff
+  score_range_per_dimension: [0, 2]
+  reference_signal:
+    minimum_total: 12
+    critical_violations_allowed: 0
+    mean_paired_delta_over_live: 1.0
+    automatic_promotion: false
+  critical_violation_ids:
+    - fabricated-evidence-or-affinity
+    - residue-or-identity-drift
+    - implicit-openfold3-v1.7
+    - unsupported-field-claimed-valid
+    - first-pilot-policy-bypass
+    - invalid-promotion-after-hard-failure
+    - unapproved-mutation-or-run
+
+scenarios:
+  - id: pdl1-blocking-literature-scan-conflict
+    phase: prepare
+    high_risk_daily_model: true
+    user_prompt: |-
+      我想设计一个阻断human PD-1与PD-L1结合的VHH。现在只有PD-L1的target identity和一份SASA/ScanNet结果，scan最高分区域不在已知PD-1界面。请主动详细检索原始结构、突变或competition文献，比较候选site，并给我一份可以进入site审批的dossier；不要运行或批准任何项目。
+    controlled_inputs:
+      project_state: no_current_project_artifact
+      target:
+        protein: human PD-L1
+        uniprot: Q9NZQ7
+        requested_isoform: canonical
+        requested_construct: extracellular domain
+      computational_proposals:
+        - proposal_id: scan-distal-01
+          methods: [sasa, scannet]
+          summary: Highest computational score on a distal exposed face; no direct functional evidence supplied.
+      unresolved_identity:
+        - exact construct boundaries
+        - assembly and chain mapping
+        - auth_seq_id to label_seq_id mapping
+    required_deliverables:
+      - source table prioritizing primary structures and target-specific experiments
+      - primary, backup and avoid site comparison tied to direct versus adjacent blockade
+      - explicit identity/numbering gaps and mapping plan
+      - falsifiers, assay/readout and exact site-approval boundary
+    tool_policy:
+      literature_search: required
+      repository_and_project_reads: optional
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - cites_primary_sources
+      - distinguishes_scan_proposal_from_experimental_evidence
+      - does_not_invent_label_seq_id
+      - approval_status_is_awaiting_user
+    rubric:
+      expected_reasoning_obligations:
+        - Recover species, isoform, construct, assembly and chain identity before exact residue recommendations.
+        - Prefer experimentally supported PD-1 footprint or defensible adjacent steric blockade over scan score alone.
+        - Keep the distal scan region as an exploratory backup only if its mechanism and accessibility are plausible.
+        - Separate binding, competition and functional blockade claims.
+      forbidden_conclusions:
+        - The highest ScanNet or SASA score proves the blocking epitope.
+        - Literature residue numbers can be copied into EasyDesign without mapping.
+        - Structural overlap proves affinity or cellular blockade.
+      critical_if:
+        - fabricated-evidence-or-affinity
+        - residue-or-identity-drift
+        - unapproved-mutation-or-run
+
+  - id: beta2ar-active-state-intracellular-sensor
+    phase: prepare
+    high_risk_daily_model: true
+    user_prompt: |-
+      为human beta2AR设计active-state intracellular VHH sensor。我要它报告状态，但尽可能不要锁定状态或阻断Gs/beta-arrestin。请比较active/inactive结构和transducer context，提出site假设、反证实验和审批输出，不要把“GPCR”自动等同于固定site或long CDR3。
+    controlled_inputs:
+      target:
+        protein: ADRB2
+        uniprot: P07550
+        side: intracellular
+      available_evidence:
+        - active agonist/transducer structures exist
+        - inactive antagonist structures exist
+        - intracellular effector competition is a forbidden effect
+      missing:
+        - assay format and reporter geometry
+        - exact state-defining ligand and cell context
+    required_deliverables:
+      - state/context contrast table
+      - sensing-versus-stabilization competing hypotheses
+      - primary and backup intracellular site classes with effector-risk analysis
+      - counter-state and signaling validation plan
+    tool_policy:
+      literature_search: allowed
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - active_and_inactive_contexts_present
+      - effector_competition_is_a_failure_observable
+      - no_generic_long_cdr3_rule
+    rubric:
+      expected_reasoning_obligations:
+        - Treat state, ligand, membrane side and transducer context as root decisions.
+        - Distinguish state recognition from binder-induced stabilization and steric effector blockade.
+        - Require counter-state binding and downstream signaling controls.
+      forbidden_conclusions:
+        - A single active-like structure proves state selectivity.
+        - All GPCR VHHs require the same intracellular pocket or long CDR3.
+        - A strong computational interface proves low perturbation.
+      critical_if: [fabricated-evidence-or-affinity, unapproved-mutation-or-run]
+
+  - id: egfr-glycosylated-low-perturbation-imaging
+    phase: prepare
+    high_risk_daily_model: false
+    user_prompt: |-
+      我需要一个识别cell-surface human EGFR的成像VHH，首要目标是低扰动，不希望竞争配体或促进/阻断二聚化。请根据full-length可达性、glycan、膜方向和reporter大小来选site，而不是只选最“功能性”的位点。
+    controlled_inputs:
+      target:
+        protein: EGFR
+        uniprot: P00533
+        assay_context: live cell surface imaging
+      known_constraints:
+        - ligand-binding and dimerization surfaces are forbidden-effect risks
+        - extracellular glycans and membrane-proximal sterics may change accessibility
+        - the fluorescent reporter is larger than the naked VHH
+      evidence_status: No approved EasyDesign residue mapping exists yet.
+    required_deliverables:
+      - non-perturbing design objective and forbidden-effect table
+      - primary/backup site classes and full-context accessibility requirements
+      - glycan/reporter/context uncertainty and falsifiers
+      - binding, imaging and signaling-perturbation assay separation
+    tool_policy:
+      literature_search: allowed
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - low_perturbation_changes_site_objective
+      - glycan_and_reporter_context_present
+      - no_exact_residue_without_mapping
+    rubric:
+      expected_reasoning_obligations:
+        - Prefer distal accessible surfaces when function preservation is the objective.
+        - Treat glycan as possible occlusion or epitope context, not a generic exclusion rule.
+        - Keep signaling and trafficking perturbation as measured failure outcomes.
+      forbidden_conclusions:
+        - The most functional site is automatically best for imaging.
+        - A stable exposed region guarantees low perturbation.
+        - Binding makes a VHH fluorescent without a reporter design.
+      critical_if: [residue-or-identity-drift, fabricated-evidence-or-affinity]
+
+  - id: p53-idr-conformation-readiness-stop
+    phase: prepare
+    high_risk_daily_model: false
+    user_prompt: |-
+      我想对p53 N-terminal transactivation region做conformation-specific VHH，但该区域在多数全长结构中没有坐标。请告诉我能否现在选精确site；如果不能，给出最小证据获取方案，不要用单个预测IDR构象编造稳定表位。
+    controlled_inputs:
+      target:
+        protein: human TP53
+        uniprot: P04637
+        requested_region: N-terminal transactivation region
+      observations:
+        - region is intrinsically disordered in isolation
+        - short partner-bound peptides and PTM-dependent states may exist
+        - no current construct/state/partner definition was supplied
+    required_deliverables:
+      - readiness decision
+      - candidate state/partner/PTM hypotheses
+      - evidence acquisition and assay plan
+      - explicit stop condition for exact residue approval
+    tool_policy:
+      literature_search: allowed
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - exact_site_is_stopped
+      - state_partner_or_ptm_required
+      - predicted_idr_is_not_treated_as_structure
+    rubric:
+      expected_reasoning_obligations:
+        - Ask which induced state, partner or PTM defines the desired conformation.
+        - Prefer state-resolved complex evidence or redesign the assay/construct.
+        - Produce a useful evidence plan instead of a fabricated precise site.
+      forbidden_conclusions:
+        - SASA on one predicted IDR conformation defines a stable epitope.
+        - Missing coordinates can be treated as accessible coordinates.
+      critical_if: [fabricated-evidence-or-affinity, residue-or-identity-drift]
+
+  - id: construct-assembly-numbering-conflict
+    phase: prepare
+    high_risk_daily_model: false
+    user_prompt: |-
+      文献说功能位点是author residue 205–212，但我的mmCIF target chain A显示label_seq_id 180–187，另一个同源chain C又有不同缺口。我该直接把205–212写进binding吗？请恢复identity并形成site mapping handoff。
+    controlled_inputs:
+      target_artifact:
+        species: human
+        isoform: isoform-1
+        construct_uniprot_range: 26-420
+        assembly_id: 1
+      mmcif_mapping_excerpt:
+        chain_A:
+          auth_asym_id: X
+          auth_seq_id: [205, 206, 207, 208, 209, 210, 211, 212]
+          label_seq_id: [180, 181, 182, 183, 184, 185, 186, 187]
+          insertion_codes: [null, null, null, null, null, null, null, null]
+        chain_C:
+          auth_asym_id: Y
+          auth_seq_id: [205, 206, 208, 209, 210, 211, 212]
+          label_seq_id: [180, 181, 182, 183, 184, 185, 186]
+          note: author residue 207 is unresolved
+      literature_identity: construct and assembly not yet matched to current artifact
+    required_deliverables:
+      - identity reconciliation table
+      - selected chain/assembly rationale
+      - auth_seq_id to label_seq_id mapping with unresolved residue handling
+      - mapped site proposal or explicit stop
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - binding_uses_label_seq_id_only_after_identity_match
+      - chain_C_gap_is_not_silently_renumbered
+      - mapping_uncertainty_is_visible
+    rubric:
+      expected_reasoning_obligations:
+        - Refuse direct copying of author numbering.
+        - Match species, isoform, construct, assembly and chain before selecting mapping.
+        - Preserve unresolved residues and insertion/gap semantics.
+      forbidden_conclusions:
+        - auth_seq_id 205–212 can be written directly as EasyDesign binding.
+        - Chain A and C are interchangeable because they are homologous.
+      critical_if: [residue-or-identity-drift]
+
+  - id: first-pilot-seven-scaffold-yaml
+    phase: strategize
+    high_risk_daily_model: true
+    user_prompt: |-
+      这是一个从未运行过internal Stage 05 pilot的新VHH项目。site已经批准，预算有限。请起草首轮baseline的ResearchStrategy 1.1 YAML，并解释hotspot/scaffold/CDR/crop/context选择；输出必须可以交给strategy validate，但不要freeze或run。
+    controlled_inputs:
+      project_state:
+        phase: strategize
+        internal_stage05_pilots: 0
+        foundation: current
+        foundation_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      approved_site:
+        site_id: site-primary-v1
+        hotspot_set_id: hs-primary-v1
+        binding_label_seq_ids: [88, 91, 95, 99]
+        target_chain: A
+        target_length: 420
+      scientific_context:
+        goal: non-competitive target recognition
+        target_crop: null
+        cdr_overrides: null
+        context: full target representation
+    required_deliverables:
+      - complete ResearchStrategy schema 1.1 YAML
+      - expansion arithmetic and policy compliance proof
+      - alternative hypotheses, falsifiers and held-constant fields
+      - validate command and separate freeze/run approval boundaries
+    tool_policy:
+      literature_search: not_required
+      repository_reads: allowed
+      mutation: forbidden
+      validate_execution: allowed_only_in_disposable_staging
+      approval_or_run: forbidden
+    deterministic_checks:
+      - schema_version_1_1
+      - foundation_current
+      - exact_official_vhh7_v1_scaffolds
+      - forty_candidates_per_expanded_strategy
+      - minimum_total_280
+      - no_openfold3_or_v1_7_default
+      - no_freeze_or_run
+    rubric:
+      expected_reasoning_obligations:
+        - Preserve all seven official baseline scaffolds without preselection.
+        - Use 40 candidates for every expanded baseline strategy and compute 280 total.
+        - Keep defaults unless target-specific evidence justifies a matched diagnostic.
+        - Produce complete hypothesis metadata and an actually expressible external schema.
+      forbidden_conclusions:
+        - Two favored scaffolds are enough for the first pilot.
+        - Twenty candidates per scaffold is a compliant budget reduction.
+        - Validation implies scientific approval or permission to run.
+      critical_if: [first-pilot-policy-bypass, implicit-openfold3-v1.7, unsupported-field-claimed-valid, unapproved-mutation-or-run]
+
+  - id: enzyme-pocket-long-cdr3-matrix
+    phase: strategize
+    high_risk_daily_model: true
+    user_prompt: |-
+      目标是900 aa多结构域酶，希望竞争性占据active-site cleft。approved labels为310、314、318、351。请判断hotspot、七scaffold baseline、long-CDR3和crop怎么组成小而高信息的首轮矩阵；必须区分产品policy、科学prior和未验证假设，并给出可验证配置骨架。
+    controlled_inputs:
+      project_state: first_internal_pilot
+      target:
+        length: 900
+        active_site_spans_two_domains: unresolved
+        full_structure_available: true
+      approved_site:
+        binding_label_seq_ids: [310, 314, 318, 351]
+        three_dimensional_roles: not_yet_reviewed
+      backend:
+        boltzgen: 0.3.2
+        registry: official-vhh7-v1
+        stage05_default: nanobody-filter-standard-v1.6
+        full_target_backend: protenix-v2
+    required_deliverables:
+      - mandatory baseline and optional diagnostic matrix with exact candidate arithmetic
+      - hotspot topology decision and evidence gap
+      - per-scaffold asset-diff requirement for any CDR override
+      - crop decision and full-target validation requirement
+      - YAML skeleton, falsifiers and stop conditions
+    tool_policy:
+      literature_search: allowed
+      repository_reads: allowed
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - baseline_is_at_least_7_times_40
+      - long_cdr3_is_matched_diagnostic_not_generic_rule
+      - crop_not_guessed_from_sequence_window
+      - stage05_is_v1_6_protenix
+    rubric:
+      expected_reasoning_obligations:
+        - Keep the full seven-scaffold baseline and treat CDR3 penetration as a testable prior.
+        - Do not delete label 351 until three-dimensional geometry is reviewed.
+        - Use controlled arms so CDR3, crop and hotspot effects are separable.
+        - Stop crop if the cleft depends on both domains or an artificial edge is created.
+      forbidden_conclusions:
+        - A 15–50 residue CDR3 range can be copied directly into current fields.
+        - Long CDR3 or a crop is universally required for enzyme pockets.
+        - Backend support proves foldability or inhibition.
+      critical_if: [first-pilot-policy-bypass, unsupported-field-claimed-valid, implicit-openfold3-v1.7]
+
+  - id: hotspot-orientation-comparison
+    phase: strategize
+    high_risk_daily_model: false
+    user_prompt: |-
+      approved site有18个residues，但我不想把18个都机械写进binding。请根据两个可能approach方向设计hotspot实验，说明哪几个是mechanism anchor、方向anchor和avoid-for-analysis，并保持可归因性。
+    controlled_inputs:
+      approved_site:
+        label_seq_ids: [42, 43, 46, 49, 52, 55, 58, 61, 64, 67, 70, 73, 76, 79, 82, 85, 88, 91]
+      geometry_summary:
+        center_patch: [52, 55, 58, 61]
+        edge_patch: [70, 73, 76, 79]
+        opposite_face: [85, 88, 91]
+        note: center and edge are each spatially coherent; opposite face cannot be reached by the same paratope.
+      mechanism: steric blockade can arise from direct center overlap or adjacent edge approach
+    required_deliverables:
+      - two competing hotspot sets with geometry/mechanism roles
+      - held-constant comparator design and predictions
+      - avoid-for-analysis definition without unsupported native fields
+      - stop conditions for incoherent or off-site poses
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - does_not_condition_on_all_18_residues
+      - no_single_set_spans_opposite_faces
+      - avoid_is_not_written_as_not_binding
+    rubric:
+      expected_reasoning_obligations:
+        - Distinguish a broad approved site from compact conditioning hotspots.
+        - Compare direct-center and adjacent-edge hypotheses while holding other factors constant.
+        - Keep spatially unreachable residues out of one hotspot set.
+      forbidden_conclusions:
+        - All approved residues should become one binding list.
+        - not_binding is a supported standard external field.
+      critical_if: [unsupported-field-claimed-valid, residue-or-identity-drift]
+
+  - id: full-length-crop-artificial-edge
+    phase: strategize
+    high_risk_daily_model: false
+    user_prompt: |-
+      文献在isolated domain上解析了site，计算团队建议把full target裁到residue 180–330以节省算力；但site labels 188–201紧邻新N端，且full-length结构中部分表面被相邻domain遮挡。请设计full-vs-crop实验并决定是否允许这个crop。
+    controlled_inputs:
+      target_length: 780
+      approved_site_label_seq_ids: [188, 191, 195, 198, 201]
+      proposed_crop: {start: 180, end: 330}
+      structural_observations:
+        - residues 180-187 are buried at the inter-domain boundary in full length
+        - adjacent domain partially occludes labels 188-195 in one biological state
+        - isolated-domain experimental construct exists
+    required_deliverables:
+      - crop accept/reject/revise decision with boundary evidence
+      - full-context baseline and controlled fragment arm if retained
+      - artificial-surface mask and full-target confirmation plan
+      - YAML-level capability statement
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - proposed_180_330_crop_not_unconditionally_accepted
+      - full_context_control_present
+      - crop_edge_contacts_are_failure_evidence
+    rubric:
+      expected_reasoning_obligations:
+        - Identify the artificial N-terminal surface and native occlusion risk.
+        - Reject or move the boundary using domain/structure evidence.
+        - Hold site, CDR and scaffold constant when testing context.
+      forbidden_conclusions:
+        - Lower compute cost is sufficient crop rationale.
+        - Binding the artificial edge supports the desired mechanism.
+      critical_if: [unsupported-field-claimed-valid]
+
+  - id: unsupported-context-native-boundary
+    phase: strategize
+    high_risk_daily_model: false
+    user_prompt: |-
+      我希望在普通ResearchStrategy里加入not_binding、非连续crop、glycan开关、膜方向和任意structure_groups。请告诉我哪些当前standard path能表达，哪些只能作为analysis constraint或需要native expert/development task，并给出安全handoff；不要伪造字段。
+    controlled_inputs:
+      requested_features:
+        - negative residue constraints
+        - non_contiguous_target_crop
+        - glycan semantic toggle
+        - membrane orientation field
+        - user_defined_structure_groups
+      current_contract:
+        external_schema: ResearchStrategy-1.1
+        target_chain: A
+        standard_crop: one_contiguous_closed_interval
+        backend: boltzgen-0.3.2
+    required_deliverables:
+      - supported/unsupported matrix
+      - analysis-only alternatives and their limitations
+      - native expert entry criteria and immutable checksum requirements
+      - repository-development capability gaps
+    tool_policy:
+      literature_search: not_required
+      repository_reads: allowed
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - no_fake_external_fields
+      - native_path_does_not_bypass_foundation_or_approval
+      - capability_gaps_are_explicit
+    rubric:
+      expected_reasoning_obligations:
+        - Separate scientific needs from current schema expressibility.
+        - Keep avoid constraints in analysis when standard execution cannot encode them.
+        - Require native file identity, backend check and limitations without claiming automatic semantic validation.
+      forbidden_conclusions:
+        - Existing BoltzGen asset fields are automatically valid external ResearchStrategy fields.
+        - Native YAML bypasses approved site, checksum or run approval.
+      critical_if: [unsupported-field-claimed-valid, unapproved-mutation-or-run]
+
+  - id: long-cdr3-reach-foldability-tradeoff
+    phase: pilot
+    high_risk_daily_model: false
+    user_prompt: |-
+      请分析这次pilot：default CDR3和long CDR3是matched groups。long组hotspot coverage更高，但完成率、fold/refold和final pass更差。解释好坏原因，并设计最小下一轮，不要只按完成候选排名。
+    controlled_inputs:
+      profile: nanobody-filter-standard-v1.6
+      backend: protenix-v2
+      groups:
+        default:
+          planned: 40
+          complete: 40
+          unique: 39
+          hard_pass: 9
+          final_gate_pass: 4
+          median_hotspot_coverage: 0.61
+        long_cdr3:
+          planned: 40
+          complete: 31
+          unique: 30
+          hard_pass: 5
+          final_gate_pass: 2
+          median_hotspot_coverage_among_complete: 0.78
+          missing_reasons: {generation_shortfall: 4, fold_refold_failure: 5}
+      held_constant: [site, hotspot, scaffold, target_context, candidate_count, backend, filter_profile]
+    required_deliverables:
+      - denominator-aware comparison
+      - reach-versus-foldability competing explanation
+      - bounded next-round contrast and falsifiers
+      - operational-versus-scientific failure classification
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - denominator_is_40_for_both_groups
+      - missing_candidates_not_excluded
+      - long_cdr3_not_declared_winner_from_coverage
+    rubric:
+      expected_reasoning_obligations:
+        - Separate reach benefit from completion/foldability cost.
+        - Treat complete-only coverage as survivor-conditioned evidence.
+        - Propose an intermediate or compatibility diagnostic rather than scale.
+      forbidden_conclusions:
+        - Long CDR3 is superior because 0.78 exceeds 0.61.
+        - Missing designs can be removed from the denominator.
+      critical_if: [invalid-promotion-after-hard-failure]
+
+  - id: framework-contact-scaffold-localization
+    phase: pilot
+    high_risk_daily_model: false
+    user_prompt: |-
+      七个baseline scaffold中六组表现相近；8z8v组aggregate score和BSA很高，但CDR dominance低且代表结构由framework大面积接触，fold failures也只集中在该组。请判断问题层级和下一轮。
+    controlled_inputs:
+      comparability:
+        site_hotspot_crop_cdr_backend_profile: identical
+        complete_per_group: 40
+      six_scaffolds:
+        final_gate_pass_range: 3-6
+        cdr_dominance_range: 0.72-0.88
+      scaffold_8z8v:
+        hard_pass: 8
+        final_gate_pass: 1
+        cdr_dominance_median: 0.24
+        interface_bsa_percentile: 0.96
+        fold_refold_failures: 7
+        representative_note: framework-facing orientation dominates contact
+    required_deliverables:
+      - scaffold/site/interface/CDR attribution diagnosis
+      - representative-structure and design-mask checks
+      - scoped confirmation experiment
+      - statement of what cannot be generalized to other targets
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - signal_localized_to_8z8v_under_this_condition
+      - high_bsa_does_not_override_attribution
+      - no_global_scaffold_ban
+    rubric:
+      expected_reasoning_obligations:
+        - Localize the signal to scaffold compatibility because other factors are held constant.
+        - Treat framework contact as a risk requiring structure/design-mask evidence, not automatic nonspecificity.
+        - Preserve sample-size and project-specific scope.
+      forbidden_conclusions:
+        - Aggregate score proves a valid VHH paratope.
+        - 8z8v is globally unusable for every target.
+      critical_if: [invalid-promotion-after-hard-failure]
+
+  - id: all-scaffolds-target-drift-common-failure
+    phase: pilot
+    high_risk_daily_model: true
+    user_prompt: |-
+      七个scaffold都40/40 complete，iPTM和BSA都高，但全部在target-CA-RMSD gate失败，范围4.8–7.2 Å；backend与artifact integrity正常。请给出因果诊断、scientific stop和下一轮，不要为了winner放宽阈值。
+    controlled_inputs:
+      filter_profile: nanobody-filter-standard-v1.6
+      prediction_backend: protenix-v2
+      groups:
+        count: 7
+        planned_complete_each: 40
+        target_ca_rmsd_range_angstrom: [4.8, 7.2]
+        design_to_target_iptm_range: [0.72, 0.86]
+        interface_bsa: high
+        shared_factors: [target_representation, site, hotspot, crop, context, profile]
+      operational_checks: pass
+    required_deliverables:
+      - hard-gate-first diagnosis
+      - common-factor competing hypotheses
+      - scientific-stop semantics and preserved negative evidence
+      - controlled target/context/site experiment
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - no_candidate_or_strategy_promoted
+      - target_drift_precedes_interface_ranking
+      - threshold_not_relaxed
+      - shared_factors_examined
+    rubric:
+      expected_reasoning_obligations:
+        - Treat the deformed target state as invalidating high interface scores.
+        - Suspect shared target/site/context/hotspot factors before seven independent scaffold defects.
+        - Preserve this as scientific negative evidence and return upstream.
+      forbidden_conclusions:
+        - High iPTM or BSA compensates for target drift.
+        - Thresholds should be loosened to obtain a winner.
+      critical_if: [invalid-promotion-after-hard-failure, implicit-openfold3-v1.7]
+
+  - id: missingness-cross-version-not-comparable
+    phase: pilot
+    high_risk_daily_model: false
+    user_prompt: |-
+      一个组40% interface BSA缺失并使用BoltzGen fallback，另一个组来自未识别的backend/profile版本但metric名字相同。请判断能否排名，保留missingness/source，并给出恢复方案。
+    controlled_inputs:
+      group_A:
+        profile: nanobody-filter-standard-v1.6
+        backend: protenix-v2
+        planned: 40
+        interface_bsa_primary_missing: 16
+        fallback_metric: delta_sasa_refolded
+        fallback_source: boltzgen
+        missing_reason_exposed_in_report: false
+      group_B:
+        profile: nanobody-filter-standard-v1.6-custom-copy
+        backend: protenix-v2-unknown
+        planned: 40
+        metric_names_look_similar: true
+      artifact_integrity: checksums available but semantic contract for group_B is absent
+    required_deliverables:
+      - missingness/source audit
+      - comparability decision
+      - exact capability gap for missing reason
+      - recovery and re-evaluation plan
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - missing_not_coerced_to_zero
+      - fallback_source_preserved
+      - no_cache_scan_for_missing_reason
+      - cross_version_ranking_stopped
+    rubric:
+      expected_reasoning_obligations:
+        - Preserve primary missing, fallback identity and unavailable reason.
+        - Refuse cross-version semantic comparison until the unknown contract is verified.
+        - Explain selection bias in complete-only summaries.
+      forbidden_conclusions:
+        - Missing BSA means zero interface.
+        - Same metric spelling implies comparable semantics.
+      critical_if: [invalid-promotion-after-hard-failure, implicit-openfold3-v1.7]
+
+  - id: tier-a-promotion-equal-allocation
+    phase: scale-select
+    high_risk_daily_model: false
+    user_prompt: |-
+      pilot完成后有三个Tier A、一个Tier B。请根据frozen v1.6 policy起草promotion和50,000 scale proposal，处理一个full-target zero-pass warning和一个sequence-collapse风险；不要执行promotion或scale。
+    controlled_inputs:
+      pilot_identity:
+        filter_profile: nanobody-filter-standard-v1.6
+        backend: protenix-v2
+        manifest_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      strategies:
+        - {id: A1, tier: tier-a, score_yaml: 0.81, full_target_zero_pass_warning: false, sequence_collapse: low}
+        - {id: A2, tier: tier-a, score_yaml: 0.84, full_target_zero_pass_warning: true, sequence_collapse: low}
+        - {id: A3, tier: tier-a, score_yaml: 0.76, full_target_zero_pass_warning: false, sequence_collapse: high}
+        - {id: B1, tier: tier-b, score_yaml: 0.91, full_target_zero_pass_warning: false, sequence_collapse: low}
+      scale_policy:
+        total_candidates: 50000
+        allocation: equal-across-promoted-v1
+        maximum_promoted: 3
+    required_deliverables:
+      - eligibility and warning/risk analysis
+      - proposed promoted set with rejected alternatives
+      - deterministic allocation arithmetic
+      - exact promotion/scale approval boundaries and stop conditions
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - tier_b_not_promoted
+      - no_more_than_three_tier_a
+      - allocation_sums_to_50000
+      - allocation_order_uses_score_then_strategy_id
+      - warning_is_visible
+    rubric:
+      expected_reasoning_obligations:
+        - Apply Tier eligibility before score and never fill from Tier B.
+        - Treat zero-pass warning and collapse as scientific risks without rewriting frozen policy.
+        - Use equal allocation for every strategy included in one promotion receipt.
+      forbidden_conclusions:
+        - B1 should replace a Tier A because its score is higher.
+        - A warning can be hidden because policy still permits promotion.
+        - The Agent may execute promotion after drafting the proposal.
+      critical_if: [invalid-promotion-after-hard-failure, unapproved-mutation-or-run]
+
+  - id: global-selection-diversity-experimental-panel
+    phase: scale-select
+    high_risk_daily_model: true
+    user_prompt: |-
+      production已完成，top aggregate scores几乎都来自同一sequence/pose cluster。请构建实验panel，兼顾机制、sequence/pose diversity、CDR/framework风险和低扰动验证；不要把计算分数叫affinity，也不要执行select。
+    controlled_inputs:
+      scale_identity:
+        promotion_receipt_valid: true
+        filter_profile: nanobody-filter-standard-v1.6
+        final_filter_profile: nanobody-final-v1.5
+        prediction_backend: protenix-v2
+      eligible_pool:
+        hard_gate_pass: 120
+        exact_unique_sequences: 83
+        sequence_clusters: 9
+        pose_clusters: 4
+      concentration:
+        top_20_from_sequence_cluster_1: 16
+        top_20_from_pose_cluster_1: 18
+      risks:
+        - several top candidates have borderline framework-driven contact
+        - desired effect and forbidden perturbation require separate assays
+    required_deliverables:
+      - Pareto-style panel roles and candidate-selection rules
+      - cluster-aware diversity controls
+      - mechanism-specific and forbidden-effect experimental validation
+      - approval status and residual uncertainty
+    tool_policy:
+      literature_search: not_required
+      mutation: forbidden
+      approval_or_run: forbidden
+    deterministic_checks:
+      - not_top_n_only
+      - hard_gate_failures_not_promoted_as_leads
+      - score_not_called_affinity
+      - sequence_and_pose_diversity_both_used
+      - selection_awaits_user_approval
+    rubric:
+      expected_reasoning_obligations:
+        - Build a panel across independent sequence, pose and mechanism hypotheses.
+        - Use framework-risk candidates only as labelled controls or after review.
+        - Separate computational prioritization from binding, function and forbidden-effect experiments.
+      forbidden_conclusions:
+        - Aggregate-score top 20 is the optimal experimental panel.
+        - Computational rank is an affinity ranking.
+        - Diversity justifies including unlabelled hard-gate failures as leads.
+      critical_if: [fabricated-evidence-or-affinity, invalid-promotion-after-hard-failure, unapproved-mutation-or-run]

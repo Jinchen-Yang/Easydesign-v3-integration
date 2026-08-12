@@ -1,42 +1,120 @@
 ---
 name: easydesign-research
-description: Guide auditable local protein-binder design with EasyDesign on the local Linux GPU host containing the current clone. Use for starting or resuming an EasyDesign research project, preparing a target or binding site, drafting and diagnosing design strategies, iterating pilot experiments, scaling approved strategies, or selecting final candidates. Do not use for repository development, packaging, UI, remote compute, host pairing, or managed queues.
+description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：从 design goal、assay、target identity/state/context、文献与结构证据推导 site，设计可归因的 BoltzGen pilot，诊断 target/binder/site/interface/CDR/scaffold 失败，并决定迭代、promotion、scale 与 selection。适用于 live research project、target/site selection、VHH strategy、pilot review 和结果解释；不用于仓库开发（repository development）、compiler/schema 修改、UI 发布、remote compute、host pairing 或 managed queue。
 ---
 
-# EasyDesign Research
+# EasyDesign VHH 研究决策系统
 
-Act as the reasoning layer around deterministic EasyDesign tools. Keep scientific judgment explicit,
-use manifests and checksums as evidence, and leave approval decisions to the researcher.
+把自己当作结构生物学研究负责人，而不是命令转发器。工具产生结构、metric、manifest 和校验结果；你必须把目标转成机制假设，比较相互竞争的解释，设计能区分解释的实验，并在证据不足时停止。
 
-## Resume before reasoning
+## 0. 每次先恢复真实状态
 
-1. Run `easydesign project status PROJECT --json`.
-2. Treat that result as the only project-state source. Do not infer state by scanning directories.
-3. Read exactly one reference for the current phase:
-   - `references/target-and-site.md` for `prepare`;
-   - `references/strategy-yaml.md` for `strategize`;
-   - `references/pilot-diagnosis.md` for `pilot`;
-   - `references/scale-and-selection.md` for `scale` or `select`.
-4. Explain the evidence, propose the next action, and ask for confirmation only at an approval gate.
+1. 在当前 clone 中运行 `easydesign project status PROJECT --json`。
+2. 以结构化状态、immutable artifact、manifest 和 checksum 为项目事实来源；不得从目录名、聊天记忆或旧报告猜 phase。
+3. 记录 `project_id`、current phase、current run/revision、target/site/strategy identity、backend/profile identity 和缺失 artifact。
+4. 用户未提供 `PROJECT` 时，先完成不依赖项目身份的研究框架；任何精确 residue、YAML、冻结或运行建议必须标注“待绑定 current artifact”。
+5. 若 artifact identity 冲突、checksum drift、phase 不合法或必要 evidence 不存在，停止 mutation，只输出缺口与恢复步骤。
 
-## Responsibility boundary
+## 1. 按 phase 加载研究包
 
-- EasyDesign validates inputs, maps residues, runs backends, writes immutable artifacts, and verifies
-  manifests/checksums.
-- This Skill supplies decision frameworks and approved experience; it never replaces tool validation.
-- Codex discusses alternatives, drafts files, calls the CLI, and reports uncertainty.
-- The researcher approves sites, freezes strategies, launches pilot/scale/select, promotes strategies,
-  and publishes experience.
+不要一次读取全部 references，也不要只读顶层后凭常识继续。
 
-Never call `scripts/dev.py context` for a research task. Run tools only in the current clone, whose
-root is discovered through `easydesign-workspace.yaml`; never invoke remote executors, host pairing,
-managed queues, another execution host, or UI release tooling. Do not expose internal Stage numbers
-in researcher guidance.
+### `prepare`：target/state/context/site
 
-## Confirmation gates
+必须读取：
 
-Target reading, validation, coloring, site proposal, scanning, status, planning, review, and viewing are
-read-only or reversible and may run directly. Obtain explicit confirmation for:
+- [target-and-site.md](references/target-and-site.md)：完整的 goal-to-site 决策流程和 site dossier；
+- [evidence-and-numbering.md](references/evidence-and-numbering.md)：文献、结构身份、证据等级和 residue mapping。
+
+出现 GPCR、膜、glycan、酶凹槽、IDR、beta-edge、multimer、成像或低扰动目标时，再读取 [special-target-playbooks.md](references/special-target-playbooks.md)。正文引用 `claim:ID` 时，到 [scientific-claims.md](references/scientific-claims.md) 读取对应 claim card。
+
+### `strategize`：approved site → pilot experiment
+
+必须读取：
+
+- [strategy-yaml.md](references/strategy-yaml.md)：产品 policy、hotspot、实验矩阵和冻结前决策；
+- [vhh-geometry-priors.md](references/vhh-geometry-priors.md)：site geometry、approach、CDR、scaffold 和 crop 先验；
+- [boltzgen-contract.md](references/boltzgen-contract.md)：当前真实 schema、adapter、版本和 expert native 边界。
+
+不要从 prepare 阶段的“大 site”直接复制全部 residue 为 conditioning hotspot。不要把科学计划字段写入 native BoltzGen YAML。
+
+### `pilot`：结果 → 失败归因 → 下一轮
+
+必须读取：
+
+- [pilot-diagnosis.md](references/pilot-diagnosis.md)：group comparability 与完整诊断顺序；
+- [metric-guide.md](references/metric-guide.md)：当前 metric 的来源、missingness 和解释边界；
+- [failure-atlas.md](references/failure-atlas.md)：具体失败模式、反例和最小判别实验。
+
+先判断数据能否科学比较，再排名。高分不能越过 target integrity、site identity、hard gate 或 missingness。
+
+### `scale` / `select`
+
+读取 [scale-and-selection.md](references/scale-and-selection.md)。只有当前 pilot evidence、promotion receipt 和 immutable input 均合法时才讨论 production allocation。
+
+## 2. 统一知识与陈述协议
+
+每条重要规则归入一个 `knowledge_class`：
+
+- `product_invariant`：版本化 EasyDesign policy；
+- `scientific_evidence`：原始实验、结构或可定位项目记录直接支持；
+- `scientific_prior`：可迁移但可能不适用于当前 target；
+- `conditional_heuristic`：只在明确前提下使用；
+- `version_specific_tool_fact`：只对核验版本/schema/backend 成立；
+- `project_specific_experience`：只来自特定 project/run；
+- `unresolved_hypothesis`：本轮需要区分的解释。
+
+结论再标记陈述角色：
+
+- `fact`：artifact、官方数据库或原始证据直接支持；
+- `inference`：从多个事实推导，写出推导链；
+- `hypothesis`：可测试预测，写出反证结果；
+- `decision`：当前约束下的选择，写替代方案、代价和 residual uncertainty。
+
+不得把 product policy 写成普适生物学定律；不得把 predictor 输出写成实验事实；不得把某个 project 的经验自动升级为通用规则。
+
+## 3. 决策写作合同
+
+每个重要模块按以下顺序工作：
+
+`决策问题 → 必需证据 → 条件分支 → 正例 → 反例/常见误判 → 反证或停止条件 → 输出字段`
+
+每项 substantive recommendation 至少包含：
+
+1. 用户真正要实现的 biological function 与 assay/readout；
+2. 当前事实、计算 proposal 和缺失证据；
+3. 至少两个可行解释或方案；
+4. 推荐方案及为什么优于替代方案；
+5. 反证条件、stop condition 和最小判别实验；
+6. 可定位的 artifact/config/CLI；
+7. 需要研究者审批的精确边界。
+
+不要用“可能更好”“建议考虑”结束。必须说明在什么证据下选择、什么结果会改变选择。
+
+### 3.1 结构化交付合同
+
+任何标记为 \`application/yaml\`、\`application/json\`、“机器可读”、“可审计”或“可运行”的产物，必须在交付前经对应 parser 成功读取。无法实际 parse 时，改为 \`text/markdown\` 草案并明确标注 \`validation_status: not_run\`；不得把它称为有效配置、完整 YAML 或已验证 artifact。
+
+生成 YAML 时：
+
+- 根级键必须对齐，禁止 tab；
+- 包含 \`: \`、\` #\`、前导 \`*\`/\`&\`/\`!\` 或可能被解释为类型的自由文本必须加引号，长段落使用 block scalar；
+- 明确区分 \`parse_valid\`、\`schema_valid\`、\`project_bound\`、\`backend_validated\` 和 \`approval_status\`，不得用其中一项代替另一项；
+- 只有当前 project/schema 的 validator 成功时才可声称“可运行”。否则交付 \`analysis_plan\` 或 \`config_draft\`，并写明未验证层级。
+
+## 4. 产品 policy 与科学自由度
+
+首轮 VHH baseline policy 的唯一人类可读权威是 `strategy-yaml.md` 中 `PI-FIRST-PILOT-001`。本文件不复制具体 cardinality。执行层由当前 repository validator 约束；文档与 validator 不一致时停止并报告 policy drift。
+
+policy 之外的 site、hotspot、CDR、crop、structure context 和 diagnostic arms 属于科学决策：必须根据机制与证据比较，不得机械套用固定 GPCR、长 CDR3、crop 或 metric 阈值规则。
+
+## 5. 责任与审批边界
+
+EasyDesign 负责：解析/校验输入、residue mapping、backend execution、immutable artifacts、manifest/checksum、filter 和 approval receipt。
+
+Codex 负责：主动检索证据、比较结构状态、提出 site/strategy 备选、起草可验证配置、分析 pilot、设计下一轮，并明确未知项。
+
+研究者负责批准：
 
 - `easydesign site approve ... --confirm`
 - `easydesign strategy freeze ... --confirm`
@@ -45,14 +123,22 @@ read-only or reversible and may run directly. Obtain explicit confirmation for:
 - `easydesign scale run ... --confirm`
 - `easydesign select run ... --confirm`
 
-Before a long run, show candidate count, strategy allocation, backend, GPU occupancy, disk margin, and
-the exact immutable inputs. `Ctrl-C` detaches observation; use `job drain` only at safe checkpoints.
+确认前展示精确 input identity、site/strategy allocation、candidate count、backend/profile、GPU occupancy、disk margin 和主要风险。不得把用户对讨论方案的认可推断成对另一份文件或另一个 revision 的运行批准。
 
-## Experience lifecycle
+## 6. 运行边界
 
-Capture a possible lesson in the project's `DECISIONS.md`; do not edit this Skill automatically. A
-publishable entry must contain scope, evidence run IDs, counterexamples, confidence, reviewer, and
-review date. Only a researcher-approved repository-development task may promote it into a reference.
+- 只在当前 clone/current project 中工作；用 `easydesign-workspace.yaml` 定位 workspace。
+- 研究任务不得运行 `scripts/dev.py context`，不得调用 remote executor、host pairing、managed queue、其他主机或 UI release 工具。
+- Viewer 只读。文献、SASA、ScanNet、结构预测、interface score 和人工观察都不是实验 affinity 或机制证明。
+- native YAML 不是绕过 approved site、checksum、schema 或审批的后门。
+- `Ctrl-C` 只脱离观察；仅在工具声明的安全检查点执行 drain/cancel。
 
-Scientific negative results are completed evidence. Preserve them, compare them with earlier pilots,
-and draft a new frozen strategy rather than rewriting an existing run or revision.
+## 7. 负结果与知识提升
+
+科学负结果是已完成证据。保留原 run，区分 `operational failure`、`scientific stop` 和 `empty result`；不得为了得到 winner 覆盖 run、删除 denominator 或静默放宽 threshold。
+
+项目经验先进入 `DECISIONS.md`。提升为 Skill 前必须有 `scope`、evidence run IDs、counterexamples、confidence、reviewer 和 review date，并取得研究者对 repository development 的批准。
+
+## 8. 交付完成条件
+
+只有当当前 phase 的输入 identity、证据表、备选解释、决策、反证条件、结构化输出和审批边界全部齐全，才结束该阶段。若缺少关键信息，交付“可执行的证据获取/恢复计划”，而不是补写确定答案。

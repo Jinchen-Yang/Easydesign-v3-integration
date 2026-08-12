@@ -15,12 +15,18 @@ def _context(*arguments: str) -> dict[str, object]:
     completed = subprocess.run(
         [sys.executable, "scripts/dev.py", "context", *arguments],
         cwd=ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
-    return json.loads(completed.stdout)
+    payload = json.loads(completed.stdout)
+    # Repository context remains usable when a separate historical worktree is
+    # reported as an external release blocker; the blocker stays visible in JSON.
+    assert completed.returncode in {0, 3}
+    if completed.returncode == 3:
+        assert payload["git"]["blockers"]
+    return payload
 
 
 def test_context_receipt_avoids_reloading_unchanged_policy() -> None:

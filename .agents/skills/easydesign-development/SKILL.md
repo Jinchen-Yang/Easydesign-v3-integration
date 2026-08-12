@@ -1,29 +1,28 @@
 ---
 name: easydesign-development
-description: Use for EasyDesign repository engineering tasks, including code, tests, documentation, developer policy, repository skills, runtime configuration, the local worker, and the Viewer. Do not use for protein-binder research execution.
+description: 用于 EasyDesign 仓库开发（repository engineering），包括 code、test、documentation、developer policy、仓库 Skill、runtime configuration、local worker 和 Viewer；不用于蛋白结合物研究执行（protein-binder research execution）。
 ---
 
-# EasyDesign Repository Development
+# EasyDesign 仓库开发
 
-Use this skill only for repository engineering. Do not create scientific runs, jobs, or attempts.
+仅用于仓库工程任务。不得创建科学 run、job 或 attempt。
 
-1. Identify every repository path in scope.
-2. Choose the least sufficient mode:
-   - `inspect` for read-only analysis.
-   - `dev-local` for isolated implementation.
-   - `integration` for science contracts, orchestration, CLI/worker, Agent or Skill policy,
-     runtime boundaries, or Viewer integration.
-   - `release` only when the user explicitly requests a release.
-   - `ops` only for current-clone runtime installation, diagnosis, or recovery.
-3. Run `.venv/bin/python scripts/dev.py context --mode MODE --path PATH`. Repeat
-   `--path` for each scoped path.
-4. Read every file listed in `required_reading` completely. Preserve the
-   `policy_bundle_id` for the same logical task and pass it through
-   `--known-bundle-id` after context compaction.
-5. Make the smallest scoped change while preserving user data and unrelated edits.
-6. Run `.venv/bin/python scripts/dev.py verify --mode MODE`. If verification reports
-   that the mode is too low, rerun it at the required mode.
-7. Review the scoped diff and report validation results and any unresolved risk.
+1. 识别本次任务涉及的全部仓库路径。
+2. 选择满足任务所需的最低 mode：
+   - `inspect`：只读分析；
+   - `dev-local`：隔离的局部实现；
+   - `integration`：science contract、orchestration、CLI/worker、Agent/Skill policy、
+     runtime boundary 或 Viewer integration；
+   - `release`：仅在用户明确要求发布时使用；
+   - `ops`：仅用于当前 clone 的 runtime install、诊断或恢复。
+3. 运行 `.venv/bin/python scripts/dev.py context --mode MODE --path PATH`；每个任务路径重复
+   传入 `--path`。
+4. 完整读取 `required_reading` 中的所有文件。保存同一逻辑任务的 `policy_bundle_id`；
+   上下文压缩后通过 `--known-bundle-id` 传回。
+5. 在保留用户数据和非相关修改的前提下，实施最小范围改动。
+6. 运行 `.venv/bin/python scripts/dev.py verify --mode MODE`。如果验证器报告 mode 过低，
+   使用要求的 mode 重新运行。
+7. 检查 scoped diff，并报告验证结果与未解决风险。
 
-The development context owns engineering policy. Treat the root `AGENTS.md` as the
-research-facing protocol; never use it to infer repository engineering workflow.
+开发 context 负责工程策略。根 `AGENTS.md` 是面向研究 Agent 的协议，不得从中推断仓库
+工程流程。

@@ -17,10 +17,12 @@ from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.research import (
     ResearchStrategy,
     _site_fragment_from_file,
+    _validate_first_pilot_strategy,
     initialize_research_project,
     pilot_review,
     project_status,
 )
+from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 
 def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -152,6 +154,74 @@ def test_strategy_schema_rejects_unknown_scaffold_and_ambiguous_native() -> None
                         "expected_result": "reject",
                     }
                 ]
+            }
+        )
+
+
+def _schema_1_1_strategy(
+    *,
+    scaffold_ids: tuple[str, ...] = SCAFFOLD_IDS,
+    candidates: int = 40,
+) -> ResearchStrategy:
+    return ResearchStrategy.model_validate(
+        {
+            "schema_version": "1.1",
+            "foundation": "current",
+            "variants": [
+                {
+                    "id": "baseline",
+                    "hypothesis_id": "h-baseline",
+                    "role": "baseline",
+                    "evidence_refs": ["run:foundation", "registry:official-vhh7-v1"],
+                    "changed_factors": ["scaffold_id"],
+                    "held_constant": ["site", "crop", "cdr_design"],
+                    "hotspot_set_id": "A",
+                    "scaffold_ids": list(scaffold_ids),
+                    "candidates": candidates,
+                    "rationale": "measure scaffold-specific compatibility",
+                    "expected_result": "compare held-constant scaffold groups",
+                    "failure_interpretation": "one failure does not reject the site",
+                }
+            ],
+        }
+    )
+
+
+def test_first_pilot_requires_complete_vhh7_baseline_and_40_per_group() -> None:
+    strategy = _schema_1_1_strategy()
+
+    _validate_first_pilot_strategy(strategy)
+    assert sum(item.candidates * len(item.scaffold_ids) for item in strategy.variants) == 280
+
+    with pytest.raises(ConfigurationError, match="缺少 official-vhh7-v1 scaffold"):
+        _validate_first_pilot_strategy(_schema_1_1_strategy(scaffold_ids=SCAFFOLD_IDS[:-1]))
+    with pytest.raises(ConfigurationError, match="必须生成 40 candidates"):
+        _validate_first_pilot_strategy(_schema_1_1_strategy(candidates=39))
+
+
+def test_first_pilot_stops_if_canonical_registry_is_not_exactly_seven(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    strategy = _schema_1_1_strategy()
+    monkeypatch.setattr(research_module, "SCAFFOLD_IDS", SCAFFOLD_IDS[:-1])
+
+    with pytest.raises(ConfigurationError, match="精确包含 7 个唯一 scaffold"):
+        _validate_first_pilot_strategy(strategy)
+
+
+def test_schema_1_1_rejects_missing_experiment_contract() -> None:
+    with pytest.raises(ValueError, match="完整 experiment contract"):
+        ResearchStrategy.model_validate(
+            {
+                "schema_version": "1.1",
+                "variants": [
+                    {
+                        "id": "incomplete",
+                        "hotspot_set_id": "A",
+                        "rationale": "missing causal metadata",
+                        "expected_result": "must be rejected",
+                    }
+                ],
             }
         )
 

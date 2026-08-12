@@ -8,9 +8,13 @@
 任务、attempt、日志、原始结构、refold 结构、官方 design mask 和 checksum。它只判断
 候选是否完整，不做科学筛选或策略晋级。
 
-每个 variant 的候选预算来自该 variant 的 `candidates`。因此 20/40/55 等不同预算可在
-同一 Pilot 中共存；旧 `required_complete_candidates_per_strategy` 仅用于 schema 0.1
-兼容。新的 `CandidateIndex`/`PilotBundle` schema 0.2 同时记录逐策略预算和总数。
+每个 variant 的候选预算来自该 variant 的 `candidates`。新项目首轮在进入本阶段前已由
+research façade 强制七个 scaffold 各 40 个候选；已有 Pilot 后的诊断或确认轮可让 20/40/55
+等不同预算在同一 Pilot 中共存。旧 `required_complete_candidates_per_strategy` 仅用于
+schema 0.1 兼容；`CandidateIndex`/`PilotBundle` schema 0.2 同时记录逐策略预算和总数。
+
+StrategyBundle 0.3 还把 hypothesis、role、evidence、changed/held-constant factors、预期与
+失败解释原样传入 Pilot 证据，供后续诊断使用；Stage 04 不根据这些文字自动晋级策略。
 
 ## 执行与恢复
 

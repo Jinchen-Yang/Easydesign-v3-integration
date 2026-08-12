@@ -14,6 +14,12 @@ BOLTZGEN_VERSION = "0.3.2"
 BOLTZGEN_COMMIT = "a3149cf18eeb58648d1abbb27539bd73f746cdda"
 SCAFFOLD_REGISTRY_ID = "official-vhh7-v1"
 STRATEGY_PROFILE_ID = "boltzgen-vhh-basic-v1"
+ExperimentRole = Literal[
+    "baseline",
+    "diagnostic",
+    "integrated-alternative",
+    "confirmatory",
+]
 
 
 class TargetCrop(BaseModel):
@@ -49,6 +55,14 @@ class ExplicitStrategyVariant(BaseModel):
     target_crop: TargetCrop | None = None
     cdr_overrides: tuple[CdrOverride, ...] = ()
     candidates_per_strategy: int = Field(default=40, ge=1)
+    hypothesis_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    role: ExperimentRole | None = None
+    evidence_refs: tuple[str, ...] = ()
+    changed_factors: tuple[str, ...] = ()
+    held_constant: tuple[str, ...] = ()
+    rationale: str | None = Field(default=None, min_length=1, max_length=4096)
+    expected_result: str | None = Field(default=None, min_length=1, max_length=4096)
+    failure_interpretation: str | None = Field(default=None, min_length=1, max_length=4096)
 
     @model_validator(mode="after")
     def validate_selection(self) -> Self:
@@ -63,6 +77,7 @@ class ExplicitStrategyVariant(BaseModel):
         cdrs = [item.cdr for item in self.cdr_overrides]
         if len(cdrs) != len(set(cdrs)):
             raise ValueError("同一 CDR 只能覆盖一次")
+        _validate_experiment_metadata(self)
         return self
 
 
@@ -74,6 +89,14 @@ class NativeStrategyVariant(BaseModel):
     yaml_text: str = Field(min_length=1)
     source_sha256: str = Field(pattern=SHA256_PATTERN)
     candidates_per_strategy: int = Field(default=40, ge=1)
+    hypothesis_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    role: ExperimentRole | None = None
+    evidence_refs: tuple[str, ...] = ()
+    changed_factors: tuple[str, ...] = ()
+    held_constant: tuple[str, ...] = ()
+    rationale: str | None = Field(default=None, min_length=1, max_length=4096)
+    expected_result: str | None = Field(default=None, min_length=1, max_length=4096)
+    failure_interpretation: str | None = Field(default=None, min_length=1, max_length=4096)
 
     @model_validator(mode="after")
     def validate_source_identity(self) -> Self:
@@ -81,7 +104,33 @@ class NativeStrategyVariant(BaseModel):
 
         if hashlib.sha256(self.yaml_text.encode("utf-8")).hexdigest() != self.source_sha256:
             raise ValueError("native BoltzGen YAML 文本与 source_sha256 不一致")
+        _validate_experiment_metadata(self)
         return self
+
+
+def _validate_experiment_metadata(
+    value: ExplicitStrategyVariant | NativeStrategyVariant | StrategyRecord,
+) -> None:
+    """Allow old technical callers, but reject partially recorded experiments."""
+
+    present = (
+        value.hypothesis_id is not None,
+        value.role is not None,
+        bool(value.evidence_refs),
+        bool(value.changed_factors),
+        bool(value.held_constant),
+        value.rationale is not None,
+        value.expected_result is not None,
+        value.failure_interpretation is not None,
+    )
+    if any(present) and not all(present):
+        raise ValueError("experiment metadata 必须完整记录，不能只填写部分字段")
+    for field_name in ("evidence_refs", "changed_factors", "held_constant"):
+        items = getattr(value, field_name)
+        if any(not item.strip() for item in items):
+            raise ValueError(f"{field_name} 不能包含空值")
+        if len(items) != len(set(items)):
+            raise ValueError(f"{field_name} 不能重复")
 
 
 class ScaffoldAsset(BaseModel):
@@ -116,6 +165,14 @@ class StrategyRecord(BaseModel):
     variant_scaffold_path: str | None = None
     variant_scaffold_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     native_source_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    hypothesis_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    role: ExperimentRole | None = None
+    evidence_refs: tuple[str, ...] = ()
+    changed_factors: tuple[str, ...] = ()
+    held_constant: tuple[str, ...] = ()
+    rationale: str | None = Field(default=None, min_length=1, max_length=4096)
+    expected_result: str | None = Field(default=None, min_length=1, max_length=4096)
+    failure_interpretation: str | None = Field(default=None, min_length=1, max_length=4096)
 
     @model_validator(mode="after")
     def validate_variant_scaffold(self) -> Self:
@@ -127,6 +184,7 @@ class StrategyRecord(BaseModel):
     def validate_binding_residues(self) -> Self:
         if tuple(sorted(set(self.binding_label_seq_ids))) != self.binding_label_seq_ids:
             raise ValueError("binding_label_seq_ids 必须升序且唯一")
+        _validate_experiment_metadata(self)
         return self
 
 
@@ -135,7 +193,7 @@ class StrategyBundle(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["0.1", "0.2"] = "0.2"
+    schema_version: Literal["0.1", "0.2", "0.3"] = "0.3"
     generated_at: datetime
     project_id: str = Field(pattern=ID_PATTERN)
     run_id: str = Field(pattern=ID_PATTERN)

@@ -74,6 +74,14 @@ from .workspace import load_resolved_run_config
 SITE_POINTER = "SITE_CURRENT"
 STRATEGY_POINTER = "STRATEGY_CURRENT"
 PROMOTION_POINTER = "PROMOTION_CURRENT"
+ExperimentRole = Literal[
+    "baseline",
+    "diagnostic",
+    "integrated-alternative",
+    "confirmatory",
+]
+FIRST_PILOT_SCAFFOLD_COUNT = 7
+FIRST_PILOT_CANDIDATES_PER_GROUP = 40
 
 
 class ProjectDescriptor(BaseModel):
@@ -121,8 +129,17 @@ class StrategyVariant(BaseModel):
     candidates: int = Field(default=40, ge=1)
     native_boltzgen_yaml: Path | None = None
     native_boltzgen_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    hypothesis_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$",
+    )
+    role: ExperimentRole | None = None
+    evidence_refs: tuple[str, ...] = ()
+    changed_factors: tuple[str, ...] = ()
+    held_constant: tuple[str, ...] = ()
     rationale: str = Field(min_length=1, max_length=4096)
     expected_result: str = Field(min_length=1, max_length=4096)
+    failure_interpretation: str | None = Field(default=None, min_length=1, max_length=4096)
 
     @model_validator(mode="after")
     def validate_variant(self) -> Self:
@@ -147,13 +164,29 @@ class StrategyVariant(BaseModel):
         cdrs = [item.cdr for item in self.cdr_overrides]
         if len(cdrs) != len(set(cdrs)):
             raise ValueError("同一 CDR 只能覆盖一次")
+        for field_name in ("evidence_refs", "changed_factors", "held_constant"):
+            items = getattr(self, field_name)
+            if any(not item.strip() for item in items):
+                raise ValueError(f"{field_name} 不能包含空值")
+            if len(items) != len(set(items)):
+                raise ValueError(f"{field_name} 不能重复")
         return self
+
+    def has_complete_experiment_contract(self) -> bool:
+        return bool(
+            self.hypothesis_id
+            and self.role
+            and self.evidence_refs
+            and self.changed_factors
+            and self.held_constant
+            and self.failure_interpretation
+        )
 
 
 class ResearchStrategy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     foundation: Literal["current"] | str = "current"
     variants: tuple[StrategyVariant, ...] = Field(min_length=1)
 
@@ -162,6 +195,14 @@ class ResearchStrategy(BaseModel):
         ids = [item.id for item in self.variants]
         if len(ids) != len(set(ids)):
             raise ValueError("strategy variant id 不能重复")
+        if self.schema_version == "1.1":
+            incomplete = [
+                item.id for item in self.variants if not item.has_complete_experiment_contract()
+            ]
+            if incomplete:
+                raise ValueError(
+                    f"schema 1.1 variant 必须记录完整 experiment contract: {incomplete}"
+                )
         return self
 
 
@@ -278,10 +319,13 @@ def initialize_research_project(**values: Any) -> CommandResult:
         )
         draft = _exclusive_yaml(
             {
-                "schema_version": "1.0",
+                "schema_version": "1.1",
                 "foundation": "current",
                 "variants": [],
-                "guidance": "site approval 后由 Codex 与研究者共同填写 variants",
+                "guidance": (
+                    "site approval 后填写完整 experiment contract；"
+                    "首轮 baseline 必须是 7 scaffolds × 40 candidates"
+                ),
             },
             root / "strategy-draft.yaml",
         )
@@ -891,6 +935,39 @@ def _target_length(summary: RunSummary) -> int:
     return length
 
 
+def _validate_first_pilot_strategy(strategy: ResearchStrategy) -> None:
+    """Enforce the VHH7 coverage product invariant before any first pilot."""
+
+    if (
+        len(SCAFFOLD_IDS) != FIRST_PILOT_SCAFFOLD_COUNT
+        or len(set(SCAFFOLD_IDS)) != FIRST_PILOT_SCAFFOLD_COUNT
+    ):
+        raise ConfigurationError("official-vhh7-v1 registry 必须精确包含 7 个唯一 scaffold")
+    wrong_counts = [
+        item.id for item in strategy.variants if item.candidates != FIRST_PILOT_CANDIDATES_PER_GROUP
+    ]
+    if wrong_counts:
+        raise ConfigurationError(
+            f"首轮每个 experiment group 必须生成 40 candidates: {wrong_counts}"
+        )
+    baseline = tuple(
+        item
+        for item in strategy.variants
+        if item.native_boltzgen_yaml is None
+        and (strategy.schema_version == "1.0" or item.role == "baseline")
+    )
+    covered = {scaffold for item in baseline for scaffold in item.scaffold_ids}
+    missing = sorted(set(SCAFFOLD_IDS) - covered)
+    if missing:
+        raise ConfigurationError(
+            f"首轮 baseline 不得预筛 scaffold；缺少 official-vhh7-v1 scaffold: {missing}"
+        )
+    required = FIRST_PILOT_SCAFFOLD_COUNT * FIRST_PILOT_CANDIDATES_PER_GROUP
+    baseline_candidates = sum(item.candidates * len(item.scaffold_ids) for item in baseline)
+    if baseline_candidates < required:
+        raise ConfigurationError(f"首轮 baseline 至少需要 7 scaffolds × 40 = {required} candidates")
+
+
 def load_strategy(project_root: Path, path: Path) -> ResearchStrategy:
     root = resolve_project_path(project_root, must_exist=True)
     selected = path if path.is_absolute() else root / path
@@ -906,6 +983,8 @@ def load_strategy(project_root: Path, path: Path) -> ResearchStrategy:
     approved = {item.id: set(item.label_seq_ids) for item in hotspots.hotspot_sets}
     all_approved = set().union(*approved.values())
     target_length = _target_length(foundation)
+    if not any(_has_internal_stage(item, 5) for item in _runs(root)):
+        _validate_first_pilot_strategy(strategy)
     for variant in strategy.variants:
         if variant.native_boltzgen_yaml is not None:
             native = variant.native_boltzgen_yaml
@@ -963,7 +1042,7 @@ def strategy_draft(
         resolved, _ = load_resolved_run_config(pilot.path)
         source_revision = resolved.user_config.stage03
         payload = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "foundation": "current",
             "variants": [],
             "previous_stage03": source_revision.model_dump(mode="json")
@@ -976,21 +1055,46 @@ def strategy_draft(
         assert foundation is not None
         hotspot_sets = [item.id for item in _load_hotspots(foundation).hotspot_sets]
         payload = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "foundation": "current",
             "variants": [
                 {
                     "id": "baseline",
+                    "hypothesis_id": "h-baseline-all-scaffolds",
+                    "role": "baseline",
+                    "evidence_refs": [
+                        f"run:{foundation.run_id}",
+                        "scaffold-registry:official-vhh7-v1",
+                    ],
+                    "changed_factors": ["scaffold_id"],
+                    "held_constant": [
+                        "target_state",
+                        "target_context",
+                        "approved_site",
+                        "hotspot_set",
+                        "target_crop",
+                        "cdr_design",
+                        "candidates_per_strategy",
+                    ],
                     "hotspot_set_id": hotspot_sets[0],
                     "binding_label_seq_ids": None,
                     "scaffold_ids": list(SCAFFOLD_IDS),
                     "target_crop": None,
                     "cdr_overrides": [],
-                    "candidates": 40,
+                    "candidates": FIRST_PILOT_CANDIDATES_PER_GROUP,
                     "native_boltzgen_yaml": None,
                     "native_boltzgen_sha256": None,
-                    "rationale": "与研究者讨论后填写；rationale 不是科学证据。",
-                    "expected_result": "约 40 个候选用于 pilot 过滤和诊断。",
+                    "rationale": (
+                        "首轮不预筛 scaffold；在相同 site/crop/CDR 下测量 scaffold effect。"
+                    ),
+                    "expected_result": (
+                        "7 个 scaffold 各生成 40 个、合计 280 个 baseline candidates，"
+                        "用于 hard-gate 过滤与 scaffold 对照。"
+                    ),
+                    "failure_interpretation": (
+                        "单个 scaffold 失败只支持 scaffold-specific incompatibility；"
+                        "全部失败才优先检查共同 site/context 或生成约束。"
+                    ),
                 }
             ],
         }
@@ -1036,6 +1140,14 @@ def _compiled_strategy_variants(
                 for override in item.cdr_overrides
             ),
             candidates_per_strategy=item.candidates,
+            hypothesis_id=item.hypothesis_id,
+            role=item.role,
+            evidence_refs=item.evidence_refs,
+            changed_factors=item.changed_factors,
+            held_constant=item.held_constant,
+            rationale=item.rationale,
+            expected_result=item.expected_result,
+            failure_interpretation=item.failure_interpretation,
         )
         for item in strategy.variants
         if item.native_boltzgen_yaml is None
@@ -1055,6 +1167,14 @@ def _compiled_strategy_variants(
             ),
             source_sha256=cast(str, item.native_boltzgen_sha256),
             candidates_per_strategy=item.candidates,
+            hypothesis_id=item.hypothesis_id,
+            role=item.role,
+            evidence_refs=item.evidence_refs,
+            changed_factors=item.changed_factors,
+            held_constant=item.held_constant,
+            rationale=item.rationale,
+            expected_result=item.expected_result,
+            failure_interpretation=item.failure_interpretation,
         )
         for item in strategy.variants
         if item.native_boltzgen_yaml is not None
@@ -1315,6 +1435,29 @@ def pilot_review(project_root: Path, *, run_id: str) -> CommandResult:
         )
     ]
     promotable_strategy_ids: tuple[str, ...] = ()
+    experiment_groups: dict[str, dict[str, Any]] = {}
+    try:
+        _, strategy_bundle_path = _artifact(run.path, "strategy-bundle")
+        strategy_bundle = json.loads(strategy_bundle_path.read_text(encoding="utf-8"))
+    except ConfigurationError:
+        strategy_bundle = {"strategies": []}
+    for item in strategy_bundle.get("strategies", []):
+        if not isinstance(item, dict) or not isinstance(item.get("strategy_id"), str):
+            continue
+        experiment_groups[item["strategy_id"]] = {
+            key: item.get(key)
+            for key in (
+                "hypothesis_id",
+                "role",
+                "evidence_refs",
+                "changed_factors",
+                "held_constant",
+                "rationale",
+                "expected_result",
+                "failure_interpretation",
+                "candidates_per_strategy",
+            )
+        }
     for artifact_id in (
         "stage05-summary",
         "pilot-filter-report",
@@ -1374,6 +1517,7 @@ def pilot_review(project_root: Path, *, run_id: str) -> CommandResult:
                     "failure_rule_counts": dict(sorted(failure_counts.items())),
                     "representative_candidates": representatives,
                     "promoted_strategy_ids": list(promotable_strategy_ids),
+                    "experiment_groups": experiment_groups,
                 }
             )
         evidence.append(

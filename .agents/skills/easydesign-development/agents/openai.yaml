@@ -1,7 +1,7 @@
 interface:
-  display_name: "EasyDesign Development"
-  short_description: "Develop and validate the EasyDesign repository safely"
-  default_prompt: "Use $easydesign-development to modify and validate this EasyDesign repository task."
+  display_name: "EasyDesign 开发"
+  short_description: "安全加载 EasyDesign 开发上下文并执行分级验证"
+  default_prompt: "使用 $easydesign-development 完成并验证这项 EasyDesign 仓库开发任务。"
 
 policy:
   allow_implicit_invocation: true

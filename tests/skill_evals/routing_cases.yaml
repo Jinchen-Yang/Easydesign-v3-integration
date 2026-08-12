@@ -1,0 +1,43 @@
+schema_version: "1.0"
+suite_id: easydesign-skill-routing-v1
+cases:
+  - id: research-positive
+    category: positive-trigger
+    request: Design a VHH site and pilot for this target using the approved EasyDesign project.
+    expected_skill: easydesign-research
+    expected_behavior: Restore project status and route to the current research phase.
+  - id: research-near-neighbor
+    category: near-neighbor-trigger
+    request: Explain why this completed nanobody pilot failed and propose the next experiment.
+    expected_skill: easydesign-research
+    expected_behavior: Route to pilot diagnosis, not repository development.
+  - id: research-negative
+    category: negative-trigger
+    request: Fix the Python compiler bug and add unit tests for StrategyBundle.
+    expected_skill: easydesign-development
+    expected_behavior: Do not invoke the research workflow or approval gates.
+  - id: development-positive
+    category: positive-trigger
+    request: Change the strategy schema, update the compiler, and run repository verification.
+    expected_skill: easydesign-development
+    expected_behavior: Load development context and use graded verification.
+  - id: development-negative
+    category: negative-trigger
+    request: Choose an approved site for my GPCR VHH project.
+    expected_skill: easydesign-research
+    expected_behavior: Do not treat a scientific decision as code development.
+  - id: ambiguous-improve-selection
+    category: ambiguous-request
+    request: Improve EasyDesign site selection.
+    expected_skill: clarify
+    expected_behavior: Distinguish a live-project scientific decision from a repository implementation change before mutation.
+  - id: research-to-development-handoff
+    category: multi-skill-handoff
+    request: This pilot exposed a missing metric; diagnose the run, then implement a new metric in the product.
+    expected_skill: easydesign-research -> human-approved development task -> easydesign-development
+    expected_behavior: Preserve immutable scientific evidence and do not silently turn a project observation into a product rule.
+  - id: development-to-research-handoff
+    category: multi-skill-handoff
+    request: After adding schema support, use it to draft a new live-project pilot.
+    expected_skill: easydesign-development -> verified release -> easydesign-research
+    expected_behavior: Finish repository verification before consuming the capability in a research approval flow.

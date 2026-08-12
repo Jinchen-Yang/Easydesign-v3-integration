@@ -736,7 +736,7 @@ def execute_stage03(
         artifacts / "scaffold-resolution.json",
     )
     bundle = StrategyBundle(
-        schema_version="0.2" if explicit_plan else "0.1",
+        schema_version="0.3" if explicit_plan else "0.1",
         generated_at=now,
         project_id=upstream.run.project_id,
         run_id=upstream.run.run_id,

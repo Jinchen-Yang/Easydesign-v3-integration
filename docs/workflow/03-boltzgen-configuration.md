@@ -2,7 +2,7 @@
 
 **状态：** `implemented`
 
-**契约版本：** legacy `0.1` / explicit plan `0.2`
+**契约版本：** legacy `0.1` / explicit plan `0.2` / causal experiment plan `0.3`
 
 ## 目的与边界
 
@@ -46,6 +46,25 @@ Agent-native strategy 可以声明多个独立 variant。每个 variant 显式�
 积。未知 scaffold、未批准 residue、越界/遗漏 binding 的 crop、重复 CDR override、原生
 YAML identity 漂移或 backend check 失败全部 fail closed。
 
+### 0.3 causal experiment plan
+
+当前 Agent-native 新策略使用 0.3。在 0.2 的技术字段之外，每个 variant 还必须完整记录：
+
+- `hypothesis_id` 与实验 `role`；
+- `evidence_refs`；
+- 本组主动改变的 `changed_factors`；
+- 与比较组保持一致的 `held_constant`；
+- `rationale`、`expected_result` 与 `failure_interpretation`。
+
+这些字段随 strategy bundle、design matrix 和 `pilot review` 证据传递，便于区分 scaffold、
+site、crop、CDR 等因素并形成可反证诊断；它们不替代真实结果，也不自动证明因果关系。
+元数据必须整组提供，禁止只填写部分字段。
+
+新项目首轮在 research façade 冻结前额外执行 `PI-FIRST-PILOT-001`：baseline 必须覆盖
+`official-vhh7-v1` 全部七个 scaffold，每个展开 strategy 固定 40 个候选，总数至少 280。
+这是首轮产品策略，不把 Stage 03 编译器变成通用科学审批器；已有 Pilot 之后的迭代仍按
+研究者批准的策略和候选预算编译。
+
 CDR override 生成 strategy-local `scaffold.yaml`，保留官方 CIF 与来源身份；该派生 YAML
 本身也作为 StageManifest artifact 记录。原生 YAML 按源字节写入 attempt，checksum 和
 官方 check 均进入不可变证据。
@@ -55,6 +74,8 @@ CDR override 生成 strategy-local `scaffold.yaml`，保留官方 CIF 与来源�
 - target structure SHA-256 必须与 approved hotspots 完全一致；
 - non-hotspot residue 保持中性，绝不自动输出 `not_binding`；
 - StrategyBundle 0.2 只要求 strategy ID 唯一及 scaffold 有 registry provenance；
+- StrategyBundle 0.3 还保存完整 experiment contract，并由新项目首轮 façade 强制
+  `7 scaffolds × 40 candidates` baseline；
 - StrategyBundle 0.1 额外要求完整 region × scaffold matrix；
 - 每份 design/scaffold YAML、validation log、bundle、StageManifest 都可校验；
 - 任一 YAML check 失败时不发布部分成功 StrategyBundle；
@@ -88,7 +109,8 @@ Stage 04 只消费 StageManifest 声明且 checksum 正确的 StrategyBundle 和
 ## 完成门槛
 
 - legacy 1/2/3 region matrix 与旧 bundle reader 回归通过；
-- explicit multi-variant、scaffold 子集、binding subset、crop、CDR override 通过；
+- 0.3 experiment contract、首轮七 scaffold × 40、explicit multi-variant、binding subset、
+  crop、CDR override 通过；
 - 原生 YAML 字节 identity 与真实 BoltzGen check 通过；
 - 所有非法输入 fail closed，失败不覆盖历史；
 - Ruff、mypy、Python integration 与 manifest/checksum 回归通过。

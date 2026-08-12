@@ -12,7 +12,6 @@ from easydesign.orchestration.afo_releases import (
     AfoReleaseEntry,
     install_stable_afo_if_available,
     load_afo_release_catalog,
-    materialize_afo_bundle,
 )
 from easydesign.workspace_context import WorkspaceContext
 
@@ -36,7 +35,7 @@ def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> WorkspaceCont
     return WorkspaceContext.discover()
 
 
-def test_committed_314_release_is_candidate_and_not_installable_yet(
+def test_committed_314_release_is_public_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -51,8 +50,17 @@ def test_committed_314_release_is_candidate_and_not_installable_yet(
     assert release.channel == "candidate"
     assert release.backend_version == "3.1.4"
     assert release.runner_commit == "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997"
-    with pytest.raises(ConfigurationError, match="尚未发布"):
-        materialize_afo_bundle(release, context=context)
+    assert release.bundle is not None
+    assert release.bundle.sha256 == (
+        "83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd"
+    )
+    assert release.bundle.size_bytes == 5_032_471_381
+    assert release.bundle.archive_format == "tar.zst"
+    assert release.bundle.sources[0].url == (
+        "https://huggingface.co/knitua/Easydesign-afo/resolve/"
+        "5d03182f5487c5392236b4fb096875b6f660d902/releases/"
+        "afo-3-1-4-of3-p2-155k/afo-3-1-4-of3-p2-155k.tar.zst"
+    )
     with pytest.raises(ConfigurationError, match="无唯一可用 release"):
         catalog.resolve(channel="stable")
 

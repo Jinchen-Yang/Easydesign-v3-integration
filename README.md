@@ -142,14 +142,24 @@ OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装，也不
 `uv 0.12.3`，把精确 Python `3.12.13` 安装到 `runtime/tools/uv-python/`；无需用户手工准备
 转换环境或设置系统 Python。
 
-当前仓库的 catalog 仍把该 release 记录为 `bundle: null`：确定性 archive 已构建并复验，
-但尚未绑定可公开访问的 HF/S3 source。因此下面是发布完成后的精确安装命令；在 source、
-size 和 SHA-256 写入 catalog 之前，当前版本会 fail closed，不会伪装成公网可安装：
+该确定性 archive 已发布到公开 Hugging Face 仓库；catalog 锁定具体 Hub commit、
+5,032,471,381-byte 大小和 SHA-256
+`83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`，不会跟随
+`main` 漂移。安装当前 public candidate 必须显式指定 release：
 
 ```bash
 easydesign runtime list afo
 easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
 easydesign doctor --full
+```
+
+创建项目时可明确选择 AFO 或 Protenix；未指定时仍使用 Protenix，candidate 发布不会改变默认值：
+
+```bash
+easydesign project init workspace/projects/my-afo-project --target target.cif \
+  --prediction-backend afo
+easydesign project init workspace/projects/my-protenix-project --target target.cif \
+  --prediction-backend protenix
 ```
 
 只有 catalog 提升为 `stable` 并绑定固定科学报告和人工 approval receipt 后，才可省略 release：

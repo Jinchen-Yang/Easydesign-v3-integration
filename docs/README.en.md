@@ -107,16 +107,25 @@ the installer reuses bootstrap's required `uv 0.12.3` to install exact Python `3
 `runtime/tools/uv-python/`; users do not need to prepare a conversion environment or modify system
 Python.
 
-The repository catalog still records this release as `bundle: null`: the deterministic archive has
-been built and reproduced, but no publicly reachable HF/S3 source is bound yet. The following is the
-exact command after publication. Until `sources`, `size_bytes`, and `sha256` are committed to the
-catalog, the current installer fails closed instead of pretending that the candidate is publicly
-available:
+The deterministic archive is now public on Hugging Face. The catalog pins a concrete Hub commit,
+the exact 5,032,471,381-byte size, and SHA-256
+`83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`; it never follows a mutable
+`main`. Installing this public candidate requires an explicit release:
 
 ```bash
 easydesign runtime list afo
 easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
 easydesign doctor --full
+```
+
+Projects can explicitly select either AFO or Protenix. Omitting the option still selects Protenix;
+publishing the candidate does not change the default:
+
+```bash
+easydesign project init workspace/projects/my-afo-project --target target.cif \
+  --prediction-backend afo
+easydesign project init workspace/projects/my-protenix-project --target target.cif \
+  --prediction-backend protenix
 ```
 
 Only after the catalog entry becomes `stable` and binds a fixed scientific report plus a human

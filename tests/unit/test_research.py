@@ -8,14 +8,16 @@ from types import SimpleNamespace
 import pytest
 
 import easydesign.orchestration.research as research_module
-from easydesign.core import ConfigurationError
+from easydesign.core import ConfigurationError, DecisionOption, DecisionRequest
 from easydesign.orchestration.application import RunSummary
+from easydesign.orchestration.decisions import publish_decision_request
 from easydesign.orchestration.local_project import (
     STAGE_FILENAMES,
 )
 from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.research import (
     ResearchStrategy,
+    _latest_pending_target_run,
     _site_fragment_from_file,
     _validate_first_pilot_strategy,
     initialize_research_project,
@@ -62,6 +64,42 @@ def test_agent_native_project_is_compact_and_status_is_the_resume_entry(
     assert all(not (project / name).exists() for name in STAGE_FILENAMES.values())
     assert status.next_actions[0].command.startswith("easydesign target prepare")
     assert "step" not in status.model_dump_json()
+
+
+def test_pending_stage01_decision_is_discoverable_before_stage_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_root = tmp_path / "workspace/runs/example/run-one"
+    publish_decision_request(
+        run_root,
+        DecisionRequest(
+            decision_id="stage01-structure-selection",
+            stage_id="01-target-preparation",
+            gate="structure-selection",
+            created_at="2026-08-12T00:00:00Z",
+            message="Choose prediction or an experimental structure.",
+            options=(
+                DecisionOption(
+                    option_id="predict-openfold3-af3-jax",
+                    label="AFO",
+                    description="Predict with AFO.",
+                ),
+            ),
+        ),
+    )
+    summary = RunSummary(
+        project_id="example",
+        run_id="run-one",
+        path=run_root,
+        status="running",
+        latest_manifest=run_root / "manifests/run-manifest.v0002.json",
+        manifest_revision=2,
+        completed_stages=(),
+    )
+    monkeypatch.setattr(research_module, "_runs", lambda _root: (summary,))
+
+    assert _latest_pending_target_run(tmp_path) == summary
 
 
 def test_legacy_seven_yaml_project_is_read_only(

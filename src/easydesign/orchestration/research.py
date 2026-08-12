@@ -18,6 +18,7 @@ from easydesign.backends.executors import NvidiaSmiProbe
 from easydesign.core import (
     ArtifactRef,
     ConfigurationError,
+    ManifestStateError,
     RunManifest,
     StageManifest,
     load_model,
@@ -50,7 +51,7 @@ from .config import (
     stage05_config_for_backend,
     stage07_config_for_backend,
 )
-from .decisions import approve_decision, export_decision
+from .decisions import approve_decision, export_decision, load_pending_decision
 from .hotspots import approve_hotspots, export_hotspot_review
 from .local_jobs import (
     ACTIVE_JOB_STATUSES,
@@ -404,6 +405,25 @@ def _latest_target_run(root: Path) -> RunSummary | None:
     return candidates[-1] if candidates else None
 
 
+def _latest_pending_target_run(root: Path) -> RunSummary | None:
+    """Return the newest run waiting at the Stage 01 decision gate.
+
+    A pending decision is published before the Stage 01 manifest.  Detached
+    workers therefore need an explicit discovery path instead of relying on
+    ``_has_internal_stage(..., 1)``.
+    """
+
+    candidates: list[RunSummary] = []
+    for item in _runs(root):
+        try:
+            request, _ = load_pending_decision(item.path)
+        except ManifestStateError:
+            continue
+        if request.stage_id == "01-target-preparation":
+            candidates.append(item)
+    return candidates[-1] if candidates else None
+
+
 def _latest_foundation(root: Path) -> RunSummary | None:
     candidates = [
         item
@@ -532,7 +552,7 @@ def project_status(project_root: Path) -> CommandResult:
             ),
         )
     else:
-        target = _latest_target_run(root)
+        target = _latest_target_run(root) or _latest_pending_target_run(root)
         phase = "prepare"
         if target is None:
             status = "target-not-started"
@@ -550,6 +570,13 @@ def project_status(project_root: Path) -> CommandResult:
                 )
                 for decision in decisions
             )
+            if not actions:
+                actions = (
+                    NextAction(
+                        command=f"easydesign target prepare {root}",
+                        description="导出当前待审核的靶点结构决策文件。",
+                    ),
+                )
         else:
             status = "site-required"
             actions = (
@@ -630,6 +657,26 @@ def _launch(
 def target_prepare(project_root: Path, *, detach: bool = False) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     _descriptor(root)
+    pending = _latest_pending_target_run(root)
+    if pending is not None:
+        decision = root / f"target-decision.{pending.run_id}.yaml"
+        if not decision.exists():
+            export_decision(pending.path, output=decision)
+        return CommandResult(
+            status="awaiting-human-approval",
+            phase="prepare",
+            project_id=pending.project_id,
+            run_id=pending.run_id,
+            manifest=pending.latest_manifest,
+            artifacts=(decision,),
+            next_actions=(
+                NextAction(
+                    command=f"easydesign target approve {root} --input {decision}",
+                    description="审核结构/链歧义后继续 target prepare。",
+                    approval_required=True,
+                ),
+            ),
+        )
     existing = _latest_target_run(root)
     if existing is not None:
         return CommandResult(
@@ -686,7 +733,7 @@ def target_prepare(project_root: Path, *, detach: bool = False) -> CommandResult
 
 def target_approve(project_root: Path, *, input_path: Path, detach: bool = False) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
-    target = _latest_target_run(root)
+    target = _latest_pending_target_run(root)
     if target is None:
         raise ConfigurationError("项目没有可批准的 target run")
     record = approve_decision(target.path, input_path=input_path.expanduser().resolve(strict=True))

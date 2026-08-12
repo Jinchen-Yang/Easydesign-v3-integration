@@ -228,6 +228,14 @@ def test_explicit_plan_avoids_global_cartesian_and_compiles_crop_and_cdr(
                     ),
                 ),
                 candidates_per_strategy=17,
+                hypothesis_id="h-focused-cdr3",
+                role="diagnostic",
+                evidence_refs=("site:approved-a",),
+                changed_factors=("cdr3-design",),
+                held_constant=("target", "site", "crop"),
+                rationale="test CDR3 reach while holding the site constant",
+                expected_result="more CDR-mediated approved-site contacts",
+                failure_interpretation="failure may reflect scaffold-loop incompatibility",
             ),
         ),
     )
@@ -237,6 +245,9 @@ def test_explicit_plan_avoids_global_cartesian_and_compiles_crop_and_cdr(
     assert {item.region_id for item in strategies} == {"focused-cdr3"}
     assert all(item.crop_enabled for item in strategies)
     assert all(item.candidates_per_strategy == 17 for item in strategies)
+    assert {item.hypothesis_id for item in strategies} == {"h-focused-cdr3"}
+    assert {item.role for item in strategies} == {"diagnostic"}
+    assert all(item.changed_factors == ("cdr3-design",) for item in strategies)
     for item in strategies:
         design = yaml.safe_load(
             (artifacts / item.design_specification_path).read_text(encoding="utf-8")
@@ -253,7 +264,7 @@ def test_explicit_plan_avoids_global_cartesian_and_compiles_crop_and_cdr(
         assert scaffold["design_insertions"][2]["insertion"]["num_residues"] == "3..12"
 
     bundle = StrategyBundle(
-        schema_version="0.2",
+        schema_version="0.3",
         generated_at=NOW,
         project_id="generic-project",
         run_id="generic-run",
@@ -266,7 +277,7 @@ def test_explicit_plan_avoids_global_cartesian_and_compiles_crop_and_cdr(
         scaffold_assets=assets,
         strategies=strategies,
     )
-    assert bundle.schema_version == "0.2"
+    assert bundle.schema_version == "0.3"
 
 
 def test_explicit_plan_rejects_unapproved_binding_and_preserves_native_bytes(

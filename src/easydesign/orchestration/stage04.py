@@ -697,7 +697,7 @@ def execute_stage04(
     required_by_strategy = {
         item.strategy_id: item.required_complete_candidates for item in plan.strategies
     }
-    variable_budget = upstream.strategy_bundle.schema_version == "0.2"
+    variable_budget = upstream.strategy_bundle.schema_version in {"0.2", "0.3"}
     candidate_index = CandidateIndex(
         schema_version="0.2" if variable_budget else "0.1",
         generated_at=datetime.now(UTC),

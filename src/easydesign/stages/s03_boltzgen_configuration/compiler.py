@@ -296,10 +296,18 @@ def compile_vhh_strategy_plan(
                 design_specification_sha256=sha256_file(specification),
                 variant_scaffold_path=variant_scaffold_path,
                 variant_scaffold_sha256=variant_scaffold_sha,
+                hypothesis_id=variant.hypothesis_id,
+                role=variant.role,
+                evidence_refs=variant.evidence_refs,
+                changed_factors=variant.changed_factors,
+                held_constant=variant.held_constant,
+                rationale=variant.rationale,
+                expected_result=variant.expected_result,
+                failure_interpretation=variant.failure_interpretation,
             )
             _atomic_json(
                 {
-                    "schema_version": "0.2",
+                    "schema_version": "0.3",
                     "compilation_status": "compiled",
                     "strategy_profile": STRATEGY_PROFILE_ID,
                     "scaffold_registry": SCAFFOLD_REGISTRY_ID,
@@ -333,10 +341,18 @@ def compile_vhh_strategy_plan(
             design_specification_path=specification.relative_to(artifacts_root).as_posix(),
             design_specification_sha256=sha256_file(specification),
             native_source_sha256=native_variant.source_sha256,
+            hypothesis_id=native_variant.hypothesis_id,
+            role=native_variant.role,
+            evidence_refs=native_variant.evidence_refs,
+            changed_factors=native_variant.changed_factors,
+            held_constant=native_variant.held_constant,
+            rationale=native_variant.rationale,
+            expected_result=native_variant.expected_result,
+            failure_interpretation=native_variant.failure_interpretation,
         )
         _atomic_json(
             {
-                "schema_version": "0.2",
+                "schema_version": "0.3",
                 "compilation_status": "compiled-native",
                 "strategy_profile": STRATEGY_PROFILE_ID,
                 "scaffold_registry": SCAFFOLD_REGISTRY_ID,
@@ -468,6 +484,14 @@ def write_design_matrix(
         "variant_scaffold_path",
         "variant_scaffold_sha256",
         "native_source_sha256",
+        "hypothesis_id",
+        "role",
+        "evidence_refs",
+        "changed_factors",
+        "held_constant",
+        "rationale",
+        "expected_result",
+        "failure_interpretation",
     )
     with tsv_path.open("x", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
@@ -477,4 +501,6 @@ def write_design_matrix(
             normalized["binding_label_seq_ids"] = ",".join(
                 str(value) for value in normalized["binding_label_seq_ids"]
             )
+            for name in ("evidence_refs", "changed_factors", "held_constant"):
+                normalized[name] = " | ".join(normalized[name])
             writer.writerow(normalized)

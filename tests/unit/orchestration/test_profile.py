@@ -10,7 +10,10 @@ from easydesign.orchestration import (
     load_runtime_profile,
     runtime_setup,
 )
-from easydesign.orchestration.profile import load_runtime_profile_by_identity
+from easydesign.orchestration.profile import (
+    _protenix_compile_environment,
+    load_runtime_profile_by_identity,
+)
 from easydesign.orchestration.runtime_setup import EnvironmentRecord
 
 
@@ -187,3 +190,18 @@ def test_runtime_profile_resolves_current_local_component_registry(
 
     assert loaded.profile.backends.pymol_pse is not None
     assert loaded.profile.backends.pymol_pse.python == python.resolve()
+
+
+def test_protenix_compile_environment_uses_installed_cuda_devel_files(
+    tmp_path: Path,
+) -> None:
+    prefix = tmp_path / "runtime/envs/protenix-v2-lock"
+
+    environment = dict(_protenix_compile_environment(prefix))
+
+    assert environment["CUDA_HOME"] == str(prefix)
+    assert environment["CPATH"] == str(prefix / "targets/x86_64-linux/include")
+    assert environment["LIBRARY_PATH"].split(":") == [
+        str(prefix / "targets/x86_64-linux/lib"), str(prefix / "lib")
+    ]
+    assert environment["MAX_JOBS"] == "4"

@@ -128,10 +128,17 @@ def _template_ready_mmcif(
     if parsed:
         return source_text, min(parsed), "source-mmcif"
     lines = source_text.splitlines(keepends=True)
-    if not lines or not lines[0].startswith("data_"):
+    header_index = next(
+        (index for index, line in enumerate(lines) if line.startswith("data_")),
+        None,
+    )
+    if header_index is None:
         raise ManifestStateError("Stage 01 target mmCIF 缺少 data_ header")
     release_date = _CONSERVATIVE_TEMPLATE_RELEASE_DATE.isoformat()
-    lines.insert(1, f"{_TEMPLATE_RELEASE_DATE_FIELD} {release_date}\n")
+    lines.insert(
+        header_index + 1,
+        f"{_TEMPLATE_RELEASE_DATE_FIELD} {release_date}\n",
+    )
     return "".join(lines), _CONSERVATIVE_TEMPLATE_RELEASE_DATE, (
         "synthetic-conservative"
     )

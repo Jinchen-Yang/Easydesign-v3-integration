@@ -23,6 +23,8 @@ runtime:
   model_root_env_var: PROTENIX_ROOT_DIR
   required_first_compile_environment:
     - CUDA_HOME
+    - CPATH
+    - LIBRARY_PATH
     - PATH
     - MAX_JOBS
   site_paths_committed: false

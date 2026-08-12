@@ -807,6 +807,7 @@ def _gpu_smoke(
             **os.environ,
             **child_environment,
             "CUDA_VISIBLE_DEVICES": smoke_device,
+            "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES": "none",
             "XLA_FLAGS": xla_flags,
             "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
         },

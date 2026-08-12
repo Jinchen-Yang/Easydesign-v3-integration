@@ -122,6 +122,9 @@ def test_remote_msa_and_prediction_are_separate_explicit_invocations() -> None:
     assert "--run_inference=true" in prediction.argv
     assert "--use_msa_server=false" in prediction.argv
     assert not any("protenix" in value.lower() for value in prediction.argv)
+    assert dict(prediction.environment)[
+        "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES"
+    ] == "none"
 
 
 def test_write_input_is_append_only(tmp_path: Path) -> None:

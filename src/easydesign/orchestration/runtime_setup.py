@@ -108,7 +108,8 @@ _ENVIRONMENT_RELIABILITY_PROBES: dict[str, str] = {
     ),
     "protenix-v2": (
         "import torch, cuequivariance, cuequivariance_ops_torch, "
-        "cuequivariance_torch; assert torch.version.cuda is not None"
+        "cuequivariance_torch; assert torch.version.cuda is not None; "
+        "from protenix.model.layer_norm.layer_norm import FusedLayerNorm"
     ),
     "scannet-epitope": (
         "import tensorflow as tf; assert tf.test.is_built_with_cuda()"
@@ -1184,6 +1185,20 @@ def _environment_inventory(
     return path.relative_to(context.root), sha256_file(path)
 
 
+def _protenix_compile_environment(prefix: Path) -> dict[str, str]:
+    """Return the environment required by Protenix's first CUDA JIT compile."""
+
+    cuda_target = prefix / "targets" / "x86_64-linux"
+    return {
+        "CUDA_HOME": str(prefix),
+        "CPATH": str(cuda_target / "include"),
+        "LIBRARY_PATH": os.pathsep.join(
+            (str(cuda_target / "lib"), str(prefix / "lib"))
+        ),
+        "MAX_JOBS": "4",
+    }
+
+
 def _probe_environment(
     context: WorkspaceContext,
     lock: EnvironmentLock,
@@ -1213,14 +1228,19 @@ def _probe_environment(
             recorded_at=datetime.now(tz=UTC),
         )
     try:
+        environment = context.subprocess_environment(environment_prefix=prefix)
+        timeout_seconds = 300
+        if lock.environment_id == "protenix-v2":
+            environment.update(_protenix_compile_environment(prefix))
+            timeout_seconds = 1_200
         completed = subprocess.run(
             command,
             cwd=context.root,
-            env=context.subprocess_environment(environment_prefix=prefix),
+            env=environment,
             capture_output=True,
             text=True,
             check=False,
-            timeout=300,
+            timeout=timeout_seconds,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         return EnvironmentRecord(

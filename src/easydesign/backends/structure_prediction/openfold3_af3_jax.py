@@ -141,6 +141,7 @@ class OpenFold3Af3JaxAdapter:
         extra_keys = [key for key, _ in extra_environment]
         reserved = {
             "CUDA_VISIBLE_DEVICES",
+            "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES",
             "PYTHONDONTWRITEBYTECODE",
             "XLA_FLAGS",
             "XLA_PYTHON_CLIENT_PREALLOCATE",
@@ -176,6 +177,7 @@ class OpenFold3Af3JaxAdapter:
 
     def _environment(self) -> tuple[tuple[str, str], ...]:
         values = [
+            ("JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES", "none"),
             ("PYTHONDONTWRITEBYTECODE", "1"),
             ("XLA_FLAGS", "--xla_gpu_enable_triton_gemm=false"),
             ("XLA_PYTHON_CLIENT_PREALLOCATE", "false"),

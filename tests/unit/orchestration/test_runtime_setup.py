@@ -346,10 +346,26 @@ def test_all_five_environments_have_component_specific_reliability_probes() -> N
     assert "cuequivariance_ops_torch" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES[
         "protenix-v2"
     ]
+    assert "FusedLayerNorm" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES[
+        "protenix-v2"
+    ]
     assert "is_built_with_cuda" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES[
         "scannet-epitope"
     ]
     assert "mkdssp" in runtime_setup._ENVIRONMENT_RELIABILITY_PROBES["tnp"]
+
+
+def test_protenix_probe_environment_exposes_cuda_devel_files(tmp_path: Path) -> None:
+    prefix = tmp_path / "runtime/envs/protenix-v2-lock"
+
+    environment = runtime_setup._protenix_compile_environment(prefix)
+
+    assert environment["CUDA_HOME"] == str(prefix)
+    assert environment["CPATH"].endswith("/targets/x86_64-linux/include")
+    assert environment["LIBRARY_PATH"].split(":") == [
+        str(prefix / "targets/x86_64-linux/lib"), str(prefix / "lib")
+    ]
+    assert environment["MAX_JOBS"] == "4"
 
 
 def test_environment_probe_activates_target_prefix(

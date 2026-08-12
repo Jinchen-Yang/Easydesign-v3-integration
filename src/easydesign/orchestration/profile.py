@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -260,6 +261,21 @@ def initialize_runtime_profile(
     return destination
 
 
+def _protenix_compile_environment(prefix: Path) -> tuple[tuple[str, str], ...]:
+    """Expose the CUDA development files required by Protenix's first JIT."""
+
+    cuda_target = prefix / "targets" / "x86_64-linux"
+    return (
+        ("CUDA_HOME", str(prefix)),
+        ("CPATH", str(cuda_target / "include")),
+        (
+            "LIBRARY_PATH",
+            os.pathsep.join((str(cuda_target / "lib"), str(prefix / "lib"))),
+        ),
+        ("MAX_JOBS", "4"),
+    )
+
+
 def _resolve_local_setup_backends(
     context: WorkspaceContext,
     current: RuntimeBackends,
@@ -332,6 +348,7 @@ def _resolve_local_setup_backends(
             executable=protenix_prefix / "bin/protenix",
             model_root=context.runtime_root / "models/protenix-v2",
             model_checkpoint=protenix_checkpoint,
+            extra_environment=_protenix_compile_environment(protenix_prefix),
         )
         if protenix_prefix is not None
         and protenix_checkpoint is not None

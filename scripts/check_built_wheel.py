@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import site
 import subprocess
 import sys
 import tempfile
@@ -152,6 +153,48 @@ def main(argv: list[str] | None = None) -> int:
                 text=True,
                 timeout=180,
             )
+            dependency_sites = [
+                Path(item).resolve()
+                for item in site.getsitepackages()
+                if Path(item).is_dir()
+            ]
+            if not dependency_sites:
+                raise RuntimeError("当前验证环境没有可复用的 site-packages")
+            purelib = subprocess.run(
+                [
+                    str(python),
+                    "-c",
+                    "import sysconfig; print(sysconfig.get_path('purelib'))",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ).stdout.strip()
+            Path(purelib, "easydesign-build-dependencies.pth").write_text(
+                "".join(f"{item}\n" for item in dependency_sites),
+                encoding="utf-8",
+            )
+            imported_module = Path(
+                subprocess.run(
+                    [
+                        str(python),
+                        "-c",
+                        (
+                            "from pathlib import Path; import easydesign; "
+                            "print(Path(easydesign.__file__).resolve())"
+                        ),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                ).stdout.strip()
+            )
+            if not imported_module.is_relative_to(environment):
+                raise RuntimeError(
+                    f"隔离 smoke 未导入刚安装的 wheel: {imported_module}"
+                )
             version = subprocess.run(
                 [str(command), "--version"],
                 check=True,
@@ -169,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout=30,
             )
             subprocess.run(
-                [str(command), "step", "--help"],
+                [str(command), "runtime", "--help"],
                 check=True,
                 capture_output=True,
                 text=True,

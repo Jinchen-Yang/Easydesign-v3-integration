@@ -4,7 +4,7 @@ EasyDesign Local 通过 `openfold3-af3-jax` 后端运行 OpenFold3 preview2 权�
 运行锁定精确 release，不跟随上游 `latest`。项目不设置预测后端默认值；AFO 是否成为
 `stable` 只影响能否省略 release ID 安装，不会改变任何阶段的科学选择。
 
-## 3.1.4 candidate 身份
+## 3.1.4 stable 身份
 
 - release ID：`afo-3-1-4-of3-p2-155k`；
 - component/model：`openfold3-p2-af3-jax` / `of3-p2-155k`；
@@ -36,8 +36,8 @@ wheelhouse 从 catalog 登记的 Hugging Face/S3 artifact 下载；传输地址�
 必须匹配 catalog 的精确 size/SHA。当前完整 archive 是 5,032,471,381 bytes（4.687 GiB），
 另需解包、环境和 cache 空间。当前 catalog 已锁定公开 Hugging Face commit、精确 archive
 大小和 SHA-256；安装器对缺失、截断或损坏内容均 fail closed。
-当前 3.1.4 条目是 `candidate`；只有显式 `--release` 才能安装，`runtime install all` 不会
-静默选取 candidate。
+当前 3.1.4 条目是经人工批准的唯一 `stable`；`runtime install afo` 可省略 release，
+`runtime install all` 会在其余五项后安装并激活它。未来 candidate 仍不会被静默选取。
 
 bundle 中的 `of3-p2-155k` 及格式转换衍生权重按 OpenFold3 源仓库声明使用 Apache-2.0，
 并固定 OpenFold3 source commit、LICENSE、README 和 CITATION。runner 源归档中保留的
@@ -48,6 +48,7 @@ OpenFold3 权重的许可；bundle 不含 Google AF3 权重。
 
 ```bash
 easydesign runtime list afo
+easydesign runtime install afo
 easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
 easydesign runtime activate afo --release afo-3-1-4-of3-p2-155k --confirm
 ```
@@ -84,7 +85,7 @@ AFO Stage 5 使用 `nanobody-filter-standard-v1.7`。Stage 7 使用
 target-conditioned 使用独立 `target-conditioned-evidence-v1` advisory profile，不参与上述
 de-novo gate、归一化、共识或最终选择。
 
-## candidate 提升
+## stable 提升证据
 
 ```bash
 easydesign runtime compare afo \
@@ -98,8 +99,10 @@ easydesign runtime approve afo \
   --confirm
 ```
 
-固定面板只比较精确 AFO release 与 Protenix。report 和 approval receipt 绑定 release
+本次 stable 使用 `config/openfold3-stable-sanity-mini-v1.yaml` 中两个冻结的
+boundary-negative 案例比较精确 AFO release 与 Protenix。report 和 approval receipt 绑定 release
 manifest、runner tree、wheel、环境锁、conversion receipt 及转换权重 SHA；任一 identity
-变化都必须重跑。批准命令不会修改 release manifest 或阶段选择。后续独立 `science:`
-catalog commit 引用 report/approval SHA，将 candidate 提升为 stable；stable 仍不会建立
-项目默认后端。A100 安装、Stage 1、Stage 5、Stage 7 5×5 smoke 是提升前的实机门。
+变化都必须重跑。批准范围还包括加速 Stage 1→5→7/resume、target-conditioned 和全新 clone
+续传/幂等/quarantine/A100 GPU smoke；不宣称完成 14 案例或多 seed 科学认证。catalog 以独立
+`science:` commit 引用 report/approval SHA；stable 不建立项目默认后端，也不自动决定新项目
+的任何 Stage 后端。

@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from easydesign.core import ConfigurationError
 from easydesign.orchestration import afo_releases
 from easydesign.orchestration.afo_releases import (
     AfoReleaseCatalog,
@@ -35,7 +34,7 @@ def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> WorkspaceCont
     return WorkspaceContext.discover()
 
 
-def test_committed_314_release_is_public_candidate(
+def test_committed_314_release_is_approved_stable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -47,7 +46,7 @@ def test_committed_314_release_is_public_candidate(
     catalog = load_afo_release_catalog(context)
     release = catalog.resolve(release_id="afo-3-1-4-of3-p2-155k")
 
-    assert release.channel == "candidate"
+    assert release.channel == "stable"
     assert release.backend_version == "3.1.4"
     assert release.runner_commit == "bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997"
     assert release.bundle is not None
@@ -61,8 +60,13 @@ def test_committed_314_release_is_public_candidate(
         "5d03182f5487c5392236b4fb096875b6f660d902/releases/"
         "afo-3-1-4-of3-p2-155k/afo-3-1-4-of3-p2-155k.tar.zst"
     )
-    with pytest.raises(ConfigurationError, match="无唯一可用 release"):
-        catalog.resolve(channel="stable")
+    assert release.validation_report_sha256 == (
+        "b645065c5614c95071143c5b44df051b0ea59bc2a3e180abc916f87e69370423"
+    )
+    assert release.approval_receipt_sha256 == (
+        "03cab2913fe97058ee865157cee2d3a7aae88d522d247fecad64716c50c89f8c"
+    )
+    assert catalog.resolve(channel="stable") == release
 
 
 def test_stable_release_requires_bundle_panel_and_human_approval() -> None:

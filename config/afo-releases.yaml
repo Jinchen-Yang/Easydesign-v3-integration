@@ -1,7 +1,7 @@
 schema_version: "0.1"
 releases:
   - release_id: afo-3-1-4-of3-p2-155k
-    channel: candidate
+    channel: stable
     backend_version: 3.1.4
     runner_commit: bc32b22ff5902e3daffd5d1f7203d7f2ab6cb997
     wheel_sha256: 91b13810c3d51c18b75d0ad27b95b7448dee60933fa3688363c861dded0f7bf0
@@ -14,5 +14,5 @@ releases:
         - source_id: huggingface
           region: official
           url: https://huggingface.co/knitua/Easydesign-afo/resolve/5d03182f5487c5392236b4fb096875b6f660d902/releases/afo-3-1-4-of3-p2-155k/afo-3-1-4-of3-p2-155k.tar.zst
-    validation_report_sha256: null
-    approval_receipt_sha256: null
+    validation_report_sha256: b645065c5614c95071143c5b44df051b0ea59bc2a3e180abc916f87e69370423
+    approval_receipt_sha256: 03cab2913fe97058ee865157cee2d3a7aae88d522d247fecad64716c50c89f8c

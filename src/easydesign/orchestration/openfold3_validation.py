@@ -18,6 +18,10 @@ ValidationBackend = Literal[
     "openfold3-af3-jax",
     "protenix-v2",
 ]
+ValidationPanelId = Literal[
+    "afo-release-comparison-v2",
+    "afo-stable-sanity-mini-v1",
+]
 
 
 class ValidationPanelCase(BaseModel):
@@ -43,7 +47,7 @@ class OpenFold3ValidationPanel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["0.2"] = "0.2"
-    panel_id: Literal["afo-release-comparison-v2"] = "afo-release-comparison-v2"
+    panel_id: ValidationPanelId
     cases: tuple[ValidationPanelCase, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -190,7 +194,7 @@ class OpenFold3ValidationReport(BaseModel):
     schema_version: Literal["0.2"] = "0.2"
     report_id: str = Field(pattern=ID_PATTERN)
     generated_at: datetime
-    panel_id: Literal["afo-release-comparison-v2"]
+    panel_id: ValidationPanelId
     panel_sha256: str = Field(pattern=SHA256_PATTERN)
     evidence_sha256: str = Field(pattern=SHA256_PATTERN)
     afo_release: AfoValidationReleaseIdentity

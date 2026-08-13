@@ -1,0 +1,21 @@
+schema_version: "0.2"
+panel_id: afo-stable-sanity-mini-v1
+cases:
+  - case_id: apoe-protenix-0001
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo#region-a-h-all-c-full-scaffold-gontivimab-candidate-0001
+    chain_annotations:
+      A: target
+      B: binder
+    required_backends:
+      - openfold3-af3-jax
+      - protenix-v2
+  - case_id: apoe-protenix-0002
+    case_class: boundary-negative
+    source_uri: examples/apoe-ui-demo#region-a-h-all-c-full-scaffold-gontivimab-candidate-0002
+    chain_annotations:
+      A: target
+      B: binder
+    required_backends:
+      - openfold3-af3-jax
+      - protenix-v2

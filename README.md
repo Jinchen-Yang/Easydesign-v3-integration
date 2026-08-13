@@ -77,8 +77,8 @@ easydesign runtime install all --detach
 ```
 
 `all` 只创建一个 setup job；它按上述顺序处理五个环境及对应资产，不会并发运行五个 Conda
-安装。catalog 出现经过科学批准的 AFO `stable` 后，同一个前台或 `--detach` job 会在这五项
-之后安装并激活该 stable；`candidate` 绝不会被 `all` 静默安装。任务中断后可重新执行同一
+安装。catalog 当前包含经过人工批准的 AFO `stable`，同一个前台或 `--detach` job 会在这五项
+之后安装并激活该 stable；未来的 `candidate` 绝不会被 `all` 静默安装。任务中断后可重新执行同一
 命令，已经完成且校验通过的环境、资产和下载 cache 会被复用。
 
 #### 方式 B：逐个安装组件
@@ -133,8 +133,8 @@ easydesign doctor --full
 
 只有 `doctor --full` 通过后，才把这台机器视为完整可用的 EasyDesign Local 主机。
 
-OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装；EasyDesign 项目也不设置任何
-预测后端默认值。
+OpenFold3/AFO 3.1.4 当前是受支持的 `stable` 组件；完整的 `runtime install all` 会安装它，
+但 EasyDesign 项目仍不设置任何预测后端默认值。
 其完整预转换发布物包含权重、runner、冻结 wheelhouse、锁、许可、model card、转换 receipt
 和 smoke 输入；安装不需要原始 PyTorch checkpoint 或转换环境。当前发布 archive 的下载体积
 是 5,032,471,381 bytes（4.687 GiB），解包、建环境和缓存还需要额外磁盘空间。实机
@@ -146,11 +146,14 @@ OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装；EasyDe
 该确定性 archive 已发布到公开 Hugging Face 仓库；catalog 锁定具体 Hub commit、
 5,032,471,381-byte 大小和 SHA-256
 `83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`，不会跟随
-`main` 漂移。安装当前 public candidate 必须显式指定 release：
+`main` 漂移。安装当前 stable 可以省略 release；需要精确复现时仍可显式写出 release：
 
 ```bash
 easydesign runtime list afo
+easydesign runtime install afo
+# 精确安装指定 release（不会改变当前 active）：
 easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
+easydesign runtime activate afo --release afo-3-1-4-of3-p2-155k --confirm
 easydesign doctor --full
 ```
 
@@ -172,11 +175,10 @@ easydesign select run workspace/projects/my-project --run PRODUCTION_RUN \
   --de-novo-backend afo --target-conditioned-backend protenix --confirm
 ```
 
-只有 catalog 提升为 `stable` 并绑定固定科学报告和人工 approval receipt 后，才可省略 release：
-
-```bash
-easydesign runtime install afo
-```
+本 stable 绑定不可变 2 案例 AFO/Protenix boundary-negative sanity report 与人工 approval
+receipt，并通过小型 Stage 1→5→7/resume、target-conditioned、全新 clone 续传/幂等/
+quarantine/A100 GPU smoke。该批准不等同于完整 14 案例或多 seed 科学认证；仓库转为公开
+仍是产品发布阶段的独立决定。
 
 AFO 与 Protenix 都保留两条科学证据：`de-novo` 禁用 target/binder 模板并承担独立筛选；
 `target-conditioned` 只把 Stage 1 冻结的 target A 作为显式模板，binder B 仍无模板，也不做

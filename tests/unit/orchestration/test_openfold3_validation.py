@@ -183,3 +183,19 @@ def test_approval_requires_explicit_confirmation(
             decision="approve-stable-promotion",
             confirm=False,
         )
+
+
+def test_committed_mini_panel_has_distinct_stable_scope() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    payload = yaml.safe_load(
+        (repository / "config/openfold3-stable-sanity-mini-v1.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert payload["panel_id"] == "afo-stable-sanity-mini-v1"
+    assert [item["case_id"] for item in payload["cases"]] == [
+        "apoe-protenix-0001",
+        "apoe-protenix-0002",
+    ]
+    assert all(item["case_class"] == "boundary-negative" for item in payload["cases"])

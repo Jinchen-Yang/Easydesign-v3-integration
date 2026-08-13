@@ -87,16 +87,17 @@ invent byte percentages when the upstream tool cannot provide them. `Ctrl-C`
 only stops watching and leaves the detached installer running.
 
 The `all` command creates one worker and processes
-`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp` sequentially. Once the catalog contains
-a scientifically approved AFO `stable`, the same foreground or detached job installs and activates it
-after those five components; a `candidate` is never installed implicitly. In individual mode, wait
+`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp` sequentially. The catalog now contains
+a human-approved AFO `stable`, so the same foreground or detached job installs and activates it
+after those five components; future `candidate` releases are never installed implicitly. In individual mode, wait
 for each job to finish before launching the next. Then run `easydesign runtime status` and
 `easydesign doctor --full`. Every cache, log, job, project, run, and locally installed component
 remains inside the current clone.
 
-## OpenFold3/AFO candidate
+## OpenFold3/AFO stable
 
-OpenFold3/AFO 3.1.4 is currently a `candidate`; projects have no default prediction backend. Its
+OpenFold3/AFO 3.1.4 is currently a supported `stable` component; projects still have no default
+prediction backend. Its
 complete pre-converted release contains the weights, runner, frozen wheelhouse, environment lock,
 licenses, model card, conversion receipt, and smoke input; users do not need the original PyTorch
 checkpoint or a conversion environment. The archive download is 5,032,471,381 bytes (4.687 GiB),
@@ -110,11 +111,14 @@ Python.
 The deterministic archive is now public on Hugging Face. The catalog pins a concrete Hub commit,
 the exact 5,032,471,381-byte size, and SHA-256
 `83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`; it never follows a mutable
-`main`. Installing this public candidate requires an explicit release:
+`main`. Install the stable release without an ID, or spell out the immutable release for exact reproduction:
 
 ```bash
 easydesign runtime list afo
+easydesign runtime install afo
+# Install an exact release without changing the active release:
 easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
+easydesign runtime activate afo --release afo-3-1-4-of3-p2-155k --confirm
 easydesign doctor --full
 ```
 
@@ -131,8 +135,10 @@ easydesign select run workspace/projects/my-project --run PRODUCTION_RUN \
   --de-novo-backend afo --target-conditioned-backend protenix --confirm
 ```
 
-Only after the catalog entry becomes `stable` and binds a fixed scientific report plus a human
-approval receipt may users run `easydesign runtime install afo` without `--release`.
+This stable binds an immutable two-case AFO/Protenix boundary-negative sanity report and a human
+approval receipt, plus accelerated Stage 1→5→7/resume, target-conditioned, and fresh-clone
+resume/idempotency/quarantine/A100 GPU installation evidence. It is not a full 14-case or multi-seed
+scientific certification. Making the GitHub repository public remains a separate product-release decision.
 
 Stage 5/7 retain two distinct evidence tracks for both AFO and Protenix. `de-novo` disables target and
 binder templates and remains the independent selection authority. `target-conditioned` uses only the

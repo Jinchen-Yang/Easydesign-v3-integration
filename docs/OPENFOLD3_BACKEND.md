@@ -34,8 +34,8 @@ tests、PyTorch/JAX parity harness、Python/PyTorch/inventory 和全部日志 ch
 正式 AFO runtime 只包含 Python 3.12/JAX 环境，不安装 PyTorch。发布后，预转换权重和冻结
 wheelhouse 从 catalog 登记的 Hugging Face/S3 artifact 下载；传输地址不定义身份，下载结果
 必须匹配 catalog 的精确 size/SHA。当前完整 archive 是 5,032,471,381 bytes（4.687 GiB），
-另需解包、环境和 cache 空间。当前 catalog 仍为 `bundle: null`，所以公网 source 写入前安装器
-必须 fail closed；archive 已生成不等于已经公开发布。
+另需解包、环境和 cache 空间。当前 catalog 已锁定公开 Hugging Face commit、精确 archive
+大小和 SHA-256；安装器对缺失、截断或损坏内容均 fail closed。
 当前 3.1.4 条目是 `candidate`；只有显式 `--release` 才能安装，`runtime install all` 不会
 静默选取 candidate。
 

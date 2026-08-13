@@ -18,7 +18,7 @@ EasyDesign 负责确定性工具、任务执行、manifest、checksum 和不可�
 ### 1. Clone 并安装主环境
 
 ```bash
-git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
+git clone -b easydesign-local https://github.com/Knitua/Easydesign.git
 cd Easydesign
 
 curl --proto '=https' --tlsv1.2 -LsSf \

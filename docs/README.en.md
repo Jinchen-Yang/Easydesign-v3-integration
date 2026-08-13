@@ -20,7 +20,7 @@ researcher-facing CLI.
 ## Install
 
 ```bash
-git clone -b easydesign-local git@github.com:Knitua/Easydesign.git
+git clone -b easydesign-local https://github.com/Knitua/Easydesign.git
 cd Easydesign
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://astral.sh/uv/0.12.3/install.sh \

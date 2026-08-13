@@ -1,0 +1,6 @@
+interface:
+  display_name: "EasyDesign 结果审阅"
+  short_description: "生成可审计的 Pilot 与 Scale 只读交互报告"
+  default_prompt: "使用 $easydesign-result-review 审阅当前 EasyDesign Pilot 或 Scale 结果。"
+policy:
+  allow_implicit_invocation: true

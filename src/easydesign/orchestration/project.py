@@ -21,7 +21,7 @@ from .config import (
     detect_target_input_format,
     load_run_config,
     stage05_config_for_backend,
-    stage07_config_for_backend,
+    stage07_config_for_backends,
 )
 
 
@@ -159,11 +159,14 @@ def initialize_project(
     scope_feature_name: str | None = None,
     precomputed_msa: Path | None = None,
     msa_cache_mode: str = "online",
-    prediction_backend: PredictionBackend = "protenix-v2",
+    stage01_prediction_backend: PredictionBackend | None = None,
+    stage05_prediction_backend: PredictionBackend | None = None,
+    stage07_de_novo_backend: PredictionBackend | None = None,
+    stage07_target_conditioned_backend: PredictionBackend | None = None,
     source_transfer: Literal["copy", "move"] = "copy",
     quarantine_on_error: bool = True,
 ) -> InitializedProject:
-    """生成 schema 0.7；六类 Stage 01 入口全部有显式 init。"""
+    """Create a project whose prediction choices are explicit at each consuming stage."""
 
     if stop_after_stage not in {1, 2, 3, 4, 5, 6, 7}:
         raise ConfigurationError("Developer Preview init 只支持 --stop-after 1 到 7")
@@ -340,6 +343,15 @@ def initialize_project(
         raise ConfigurationError("--precomputed-msa 只适用于 FASTA/裸序列/UniProt 预测入口")
     if msa_cache_mode != "online" and not needs_prediction:
         raise ConfigurationError("--msa-cache-mode 只适用于 FASTA/裸序列/UniProt 预测入口")
+    if stop_after_stage >= 5 and stage05_prediction_backend is None:
+        raise ConfigurationError("Stage 5 必须显式选择预测后端")
+    if stop_after_stage >= 7 and (
+        stage07_de_novo_backend is None
+        or stage07_target_conditioned_backend is None
+    ):
+        raise ConfigurationError(
+            "Stage 7 必须分别显式选择 de-novo 和 target-conditioned 后端"
+        )
     if (
         detected is TargetInputFormat.PSE
         and stop_after_stage >= 2
@@ -350,9 +362,9 @@ def initialize_project(
             "逐区域理由和证据局限确认；请先用 review-gated 初始化后显式编辑配置"
         )
     payload: dict[str, object] = {
-        "schema_version": "0.8",
+        "schema_version": "0.9",
         "project_id": selected_project_id,
-        "prediction_policy": {"backend": prediction_backend},
+        "prediction_policy": {"selection_mode": "explicit-per-stage"},
         "design": {
             "binder_profile": "vhh",
             "intent": design_intent,
@@ -384,9 +396,9 @@ def initialize_project(
                         f"inputs/{msa_source.name}" if msa_source is not None else None
                     ),
                     cache_mode=msa_cache_mode,
-                    backend=prediction_backend,
+                    backend=stage01_prediction_backend,
                 )
-                if needs_prediction
+                if needs_prediction and stage01_prediction_backend is not None
                 else None
             ),
         },
@@ -423,8 +435,8 @@ def initialize_project(
             else None
         ),
         "stage05": (
-            stage05_config_for_backend(prediction_backend).model_dump(mode="json")
-            if stop_after_stage >= 5
+            stage05_config_for_backend(stage05_prediction_backend).model_dump(mode="json")
+            if stop_after_stage >= 5 and stage05_prediction_backend is not None
             else None
         ),
         "stage06": (
@@ -437,8 +449,15 @@ def initialize_project(
             else None
         ),
         "stage07": (
-            stage07_config_for_backend(prediction_backend).model_dump(mode="json")
-            if stop_after_stage >= 7
+            stage07_config_for_backends(
+                stage07_de_novo_backend,
+                stage07_target_conditioned_backend,
+            ).model_dump(mode="json")
+            if (
+                stop_after_stage >= 7
+                and stage07_de_novo_backend is not None
+                and stage07_target_conditioned_backend is not None
+            )
             else None
         ),
     }

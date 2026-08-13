@@ -343,7 +343,9 @@ stage02:
         load_run_config(config)
 
 
-def test_sequence_yaml_requires_structure_prediction(tmp_path: Path) -> None:
+def test_sequence_yaml_allows_project_draft_without_structure_prediction(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "target.fasta"
     source.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
     config = tmp_path / "easydesign.yaml"
@@ -358,7 +360,125 @@ target:
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="必须显式提供 structure_prediction"):
+    loaded = load_run_config(config)
+    assert isinstance(loaded, LoadedSequenceRunConfig)
+    assert loaded.config.structure_prediction is None
+    assert loaded.prediction_request is None
+
+
+def test_schema_09_rejects_missing_stage_prediction_selection(tmp_path: Path) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"synthetic")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.9"
+project_id: explicit-per-stage
+prediction_policy:
+  selection_mode: explicit-per-stage
+workflow:
+  stop_after_stage: 5
+stage01:
+  target:
+    id: target
+    source:
+      type: local-file
+      path: {source}
+      format: pse
+    scope:
+      type: full-sequence
+stage02: {{}}
+stage03: {{}}
+stage04: {{}}
+stage05: {{}}
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="full_target_prediction"):
+        load_run_config(config)
+
+
+def test_legacy_project_backend_migrates_to_frozen_stage_choices(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"synthetic")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.8"
+project_id: legacy-afo
+prediction_policy:
+  backend: openfold3-af3-jax
+workflow:
+  stop_after_stage: 7
+stage01:
+  target:
+    id: target
+    source:
+      type: local-file
+      path: {source}
+      format: pse
+    scope:
+      type: full-sequence
+stage02: {{}}
+stage03: {{}}
+stage04: {{}}
+stage05:
+  filter_profile: nanobody-filter-standard-v1.7
+stage06:
+  allocation_policy: equal-across-promoted-v1
+stage07:
+  final_filter_profile: nanobody-final-v1.6
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert loaded.config.prediction_policy.selection_mode == "explicit-per-stage"
+    assert loaded.config.stage05 is not None
+    assert loaded.config.stage05.full_target_prediction.backend == "openfold3-af3-jax"
+    assert loaded.config.stage07 is not None
+    assert loaded.config.stage07.full_target_prediction.backend == "openfold3-af3-jax"
+    assert (
+        loaded.config.stage07.target_conditioned_prediction.backend
+        == "openfold3-af3-jax"
+    )
+
+
+def test_legacy_config_without_explicit_backend_does_not_fall_back_to_protenix(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.pse"
+    source.write_bytes(b"synthetic")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.8"
+project_id: legacy-without-selection
+workflow:
+  stop_after_stage: 5
+stage01:
+  target:
+    id: target
+    source:
+      type: local-file
+      path: {source}
+      format: pse
+    scope:
+      type: full-sequence
+stage02: {{}}
+stage03: {{}}
+stage04: {{}}
+stage05:
+  filter_profile: nanobody-filter-standard-v1.7
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="full_target_prediction"):
         load_run_config(config)
 
 
@@ -609,7 +729,7 @@ stage07: null
     loaded = load_run_config(config)
 
     assert isinstance(loaded, LoadedPseRunConfig)
-    assert loaded.config.schema_version == "0.8"
+    assert loaded.config.schema_version == "0.9"
     assert loaded.config.stage01.target.identity.uniprot_accession is None
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.methods == ("sasa",)
@@ -649,7 +769,7 @@ stage07: null
         load_run_config(config)
 
 
-def test_config_migrate_writes_canonical_08_without_overwriting(
+def test_config_migrate_writes_canonical_09_without_overwriting(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "target.pse"
@@ -672,8 +792,8 @@ workflow:
     migrate_run_config(old, migrated)
     loaded = load_run_config(migrated)
 
-    assert loaded.config.schema_version == "0.8"
-    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.8'")
+    assert loaded.config.schema_version == "0.9"
+    assert migrated.read_text(encoding="utf-8").startswith("schema_version: '0.9'")
     assert loaded.config.stage01.target.target_id == "demo"
     text = migrated.read_text(encoding="utf-8")
     assert "stage01:" in text

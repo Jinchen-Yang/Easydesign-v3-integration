@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
@@ -22,7 +22,6 @@ from easydesign.safe_writes import quarantine_if_workspace_path, read_last_text_
 from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 from .config import (
-    PredictionBackend,
     Stage03Config,
     Stage04Config,
     Stage05Config,
@@ -30,7 +29,7 @@ from .config import (
     Stage07Config,
     load_run_config,
     stage05_config_for_backend,
-    stage07_config_for_backend,
+    stage07_config_for_backends,
 )
 from .workspace import load_resolved_run_config
 
@@ -91,11 +90,7 @@ def next_stage_number(run_root: Path) -> int:
     return ordered[-1] + 1
 
 
-def stage_form_definition(
-    stage_number: int,
-    *,
-    prediction_backend: PredictionBackend = "protenix-v2",
-) -> dict[str, Any]:
+def stage_form_definition(stage_number: int) -> dict[str, Any]:
     """返回由 Python 契约生成的产品表单默认值。"""
 
     names = (
@@ -139,14 +134,29 @@ def stage_form_definition(
             "facts": [],
         }
     else:
-        model = {
+        model: Stage03Config | Stage04Config | Stage06Config | None = {
             3: Stage03Config(),
             4: Stage04Config(),
-            5: stage05_config_for_backend(prediction_backend),
+            5: None,
             6: Stage06Config(),
-            7: stage07_config_for_backend(prediction_backend),
+            7: None,
         }[stage_number]
-        defaults = model.model_dump(mode="json")
+        defaults = (
+            {
+                "prediction_backend": None,
+                "backend_options": ["openfold3-af3-jax", "protenix-v2"],
+            }
+            if stage_number == 5
+            else {
+                "de_novo_backend": None,
+                "target_conditioned_backend": None,
+                "backend_options": ["openfold3-af3-jax", "protenix-v2"],
+            }
+            if stage_number == 7
+            else model.model_dump(mode="json")
+            if model is not None
+            else {}
+        )
         if stage_number == 3:
             presentation = {
                 "description": (
@@ -179,47 +189,14 @@ def stage_form_definition(
                 "facts": [],
             }
         elif stage_number == 5:
-            advisory = defaults["filter_profile"] == (
-                "nanobody-filter-standard-v1.6"
-            )
-            if advisory:
-                expansion_total = defaults["advisory_validation"][
-                    "expanded_total_per_strategy"
-                ]
-                full_target_top_n = defaults["advisory_validation"][
-                    "full_target_refold_top_n"
-                ]
-            else:
-                expansion_total = defaults["expanded_total_per_strategy"]
-                full_target_top_n = defaults["strategy_selection"][
-                    "full_target_refold_top_n"
-                ]
             presentation = {
-                "description": (
-                    "逐规则筛选小规模候选，晋级 Tier A，并完成诊断性扩增。"
-                    if advisory
-                    else "逐规则筛选小规模候选并选择是否进入规模化生成。"
-                ),
+                "description": "显式选择验证后端后，筛选候选并完成诊断性扩增。",
                 "action_label": "开始筛选与验证",
                 "facts": [
                     {
-                        "label": "筛选标准",
-                        "value": defaults["filter_profile"],
-                        "note": "阈值由版本化 profile 决定",
-                    },
-                    {
-                        "label": "扩展总数",
-                        "value": expansion_total,
-                        "note": "每个晋级策略的诊断性扩增",
-                    },
-                    {
-                        "label": "完整目标复核",
-                        "value": full_target_top_n,
-                        "note": (
-                            "只形成支持证据或 warning，不取消 Tier A 晋级"
-                            if advisory
-                            else "每个扩展策略的候选数"
-                        ),
+                        "label": "预测后端",
+                        "value": None,
+                        "note": "必选；不会从项目或上一次运行继承",
                     },
                 ],
             }
@@ -241,19 +218,14 @@ def stage_form_definition(
                 "action_label": "开始最终筛选",
                 "facts": [
                     {
-                        "label": "最终标准",
-                        "value": defaults["final_filter_profile"],
-                        "note": "不会自动向供应商下单",
+                        "label": "de-novo 后端",
+                        "value": None,
+                        "note": "必选",
                     },
                     {
-                        "label": "主候选",
-                        "value": defaults["primary_count"],
-                        "note": "不足时输出实际数量",
-                    },
-                    {
-                        "label": "备选候选",
-                        "value": defaults["backup_count"],
-                        "note": "不足时输出实际数量",
+                        "label": "target-conditioned 后端",
+                        "value": None,
+                        "note": "单独必选，可与 de-novo 不同",
                     },
                 ],
             }
@@ -272,7 +244,6 @@ def _stage_payload(
     execution_mode: str,
     options: dict[str, Any] | None,
     design_intent: str = "exploratory",
-    prediction_backend: PredictionBackend = "protenix-v2",
 ) -> dict[str, Any]:
     selected = options or {}
     if stage_number == 2:
@@ -383,12 +354,36 @@ def _stage_payload(
     if stage_number == 4:
         return Stage04Config.model_validate(selected).model_dump(mode="json")
     if stage_number == 5:
-        default = stage05_config_for_backend(prediction_backend).model_dump(mode="json")
+        selected = dict(selected)
+        nested = selected.get("full_target_prediction")
+        backend = selected.pop("prediction_backend", None)
+        if backend is None and isinstance(nested, dict):
+            backend = nested.get("backend")
+        if backend not in {"protenix-v2", "openfold3-af3-jax"}:
+            raise ConfigurationError("Stage 5 必须显式选择 prediction_backend")
+        default = stage05_config_for_backend(backend).model_dump(mode="json")
         return Stage05Config.model_validate({**default, **selected}).model_dump(mode="json")
     if stage_number == 6:
         return Stage06Config.model_validate(selected).model_dump(mode="json")
     if stage_number == 7:
-        default = stage07_config_for_backend(prediction_backend).model_dump(mode="json")
+        selected = dict(selected)
+        de_novo = selected.pop("de_novo_backend", None)
+        conditioned = selected.pop("target_conditioned_backend", None)
+        full = selected.get("full_target_prediction")
+        target_conditioned = selected.get("target_conditioned_prediction")
+        if de_novo is None and isinstance(full, dict):
+            de_novo = full.get("backend")
+        if conditioned is None and isinstance(target_conditioned, dict):
+            conditioned = target_conditioned.get("backend")
+        allowed = {"protenix-v2", "openfold3-af3-jax"}
+        if de_novo not in allowed or conditioned not in allowed:
+            raise ConfigurationError(
+                "Stage 7 必须分别显式选择 de_novo_backend 和 target_conditioned_backend"
+            )
+        default = stage07_config_for_backends(
+            de_novo,
+            conditioned,
+        ).model_dump(mode="json")
         return Stage07Config.model_validate({**default, **selected}).model_dump(mode="json")
     raise ConfigurationError("Stage 01 不能通过 continuation 配置")
 
@@ -518,21 +513,11 @@ def materialize_continuation_config(
         if isinstance(design, dict)
         else "exploratory"
     )
-    prediction_policy = payload.get("prediction_policy")
-    prediction_backend = (
-        str(prediction_policy.get("backend") or "protenix-v2")
-        if isinstance(prediction_policy, dict)
-        else "protenix-v2"
-    )
-    if prediction_backend not in {"protenix-v2", "openfold3-af3-jax"}:
-        raise ConfigurationError("prediction_policy.backend 无效")
-    selected_prediction_backend = cast(PredictionBackend, prediction_backend)
     payload[f"stage{stage_number:02d}"] = _stage_payload(
         stage_number,
         execution_mode=execution_mode,
         options=options,
         design_intent=design_intent,
-        prediction_backend=selected_prediction_backend,
     )
     for future in range(stage_number + 1, 8):
         payload[f"stage{future:02d}"] = None

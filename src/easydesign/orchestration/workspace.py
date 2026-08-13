@@ -108,10 +108,9 @@ class ResolvedRunConfig(BaseModel):
             TargetInputFormat.SEQUENCE,
             TargetInputFormat.FASTA,
         }
-        if is_sequence and (self.target is None or self.prediction_request is None):
-            raise ValueError("sequence/FASTA resolved config 必须包含规范序列和预测请求")
-        if is_sequence and self.schema_version != "0.2":
-            assert self.prediction_request is not None
+        if is_sequence and self.target is None:
+            raise ValueError("sequence/FASTA resolved config 必须包含规范序列")
+        if is_sequence and self.prediction_request is not None and self.schema_version != "0.2":
             if self.prediction_request.msa_mode is MsaMode.REMOTE:
                 if not self.msa_execution_plan or self.precomputed_msa_snapshot is not None:
                     raise ValueError("remote MSA 必须且只能包含 execution plan")
@@ -648,7 +647,11 @@ def initialize_sequence_run(
             f"initialize_sequence_run 只接受 sequence/FASTA，实际为 {loaded.detected_format}"
         )
     prediction_config = loaded.config.structure_prediction
-    assert prediction_config is not None
+    prediction_request = loaded.prediction_request
+    if prediction_config is None or prediction_request is None:
+        raise ManifestStateError(
+            "initialize_sequence_run 需要已显式选择 Stage 1 预测后端"
+        )
     if input_writer.profile_backend_id != prediction_config.backend:
         raise ManifestStateError(
             "配置 backend 与输入 writer 不一致: "
@@ -665,7 +668,7 @@ def initialize_sequence_run(
             / "inputs"
             / "protenix-input.json"
         )
-        return input_writer.write_input(loaded.prediction_request, path)
+        return input_writer.write_input(prediction_request, path)
 
     workspace, prepared_input = _initialize_workspace(
         loaded=loaded,

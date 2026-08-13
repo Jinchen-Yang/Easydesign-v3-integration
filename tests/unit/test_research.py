@@ -16,6 +16,7 @@ from easydesign.orchestration.local_project import (
 )
 from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.research import (
+    ProjectDescriptor,
     ResearchStrategy,
     _latest_pending_target_run,
     _site_fragment_from_file,
@@ -63,6 +64,8 @@ def test_agent_native_project_is_compact_and_status_is_the_resume_entry(
     }
     assert all(not (project / name).exists() for name in STAGE_FILENAMES.values())
     assert status.next_actions[0].command.startswith("easydesign target prepare")
+    assert "--prediction-backend" not in status.next_actions[0].command
+    assert "--prediction-backend" in status.next_actions[0].description
     assert "step" not in status.model_dump_json()
 
 
@@ -100,6 +103,21 @@ def test_pending_stage01_decision_is_discoverable_before_stage_manifest(
     monkeypatch.setattr(research_module, "_runs", lambda _root: (summary,))
 
     assert _latest_pending_target_run(tmp_path) == summary
+
+
+def test_legacy_project_descriptor_drops_default_backend() -> None:
+    descriptor = ProjectDescriptor.model_validate(
+        {
+            "project_id": "legacy",
+            "target_id": "target",
+            "source_type": "local-file",
+            "prediction_backend": "protenix-v2",
+            "created_at": "2026-08-13T00:00:00Z",
+        }
+    )
+
+    assert descriptor.prediction_selection_mode == "explicit-per-stage"
+    assert "prediction_backend" not in descriptor.model_dump()
 
 
 def test_legacy_seven_yaml_project_is_read_only(

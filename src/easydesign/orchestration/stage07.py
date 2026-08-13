@@ -32,6 +32,7 @@ from easydesign.backends.tnp import TnpAdapter, TnpBatchRequest
 from easydesign.core import (
     ArtifactRef,
     Attempt,
+    ConfigurationError,
     ErrorInfo,
     ExecutionStatus,
     ManifestStateError,
@@ -991,11 +992,12 @@ def _execute_predictions(
                             "Stage 07 structure backend 缺少 full confidence"
                         )
                     sample_suffix = f"sample-{product.sample_index}"
+                    phase_key = _qualified_artifact_id(phase_id, key)
                     structure_ref = _artifact(
                         root,
                         product.structure_path,
                         artifact_id=_qualified_artifact_id(
-                            key, f"{sample_suffix}-structure"
+                            phase_key, f"{sample_suffix}-structure"
                         ),
                         role="stage07-structure-prediction",
                         file_format="mmcif",
@@ -1004,7 +1006,7 @@ def _execute_predictions(
                         root,
                         product.confidence_path,
                         artifact_id=_qualified_artifact_id(
-                            key, f"{sample_suffix}-summary"
+                            phase_key, f"{sample_suffix}-summary"
                         ),
                         role="structure-summary-confidence",
                         file_format="json",
@@ -1013,7 +1015,7 @@ def _execute_predictions(
                         root,
                         product.full_confidence_path,
                         artifact_id=_qualified_artifact_id(
-                            key, f"{sample_suffix}-confidence"
+                            phase_key, f"{sample_suffix}-confidence"
                         ),
                         role="structure-full-confidence",
                         file_format="json",
@@ -1660,7 +1662,8 @@ def _publish(
 def _execute_stage07(
     *,
     run_root: Path,
-    prediction_adapter_builder: ComplexAdapterBuilder,
+    de_novo_prediction_adapter_builder: ComplexAdapterBuilder,
+    target_conditioned_prediction_adapter_builder: ComplexAdapterBuilder,
     tnp_adapter: TnpAdapter,
     executed_at: datetime | None = None,
 ) -> Stage07Execution:
@@ -1680,9 +1683,12 @@ def _execute_stage07(
     stage04_config = resolved.user_config.stage04
     if config is None or stage04_config is None:
         raise ManifestStateError("run config 缺少 Stage 04/07")
-    providers = config.full_target_prediction.target_msa.resolved_providers()
-    if not providers:
-        raise ManifestStateError("Stage 07 target MSA provider identity 缺失")
+    de_novo_providers = config.full_target_prediction.target_msa.resolved_providers()
+    conditioned_providers = (
+        config.target_conditioned_prediction.target_msa.resolved_providers()
+    )
+    if not de_novo_providers or not conditioned_providers:
+        raise ManifestStateError("Stage 07 prediction mode 的 target MSA provider identity 缺失")
     now = datetime.now(UTC) if executed_at is None else executed_at
     attempt_root = root / str(StageId.FINAL_FILTERING_AND_SELECTION) / "attempt-0001"
     artifacts = attempt_root / "artifacts"
@@ -1804,8 +1810,8 @@ def _execute_stage07(
             phase_id="seed101-screen",
             work=work,
             runtime=runtime,
-            adapter_builder=prediction_adapter_builder,
-            provider=providers[0],
+            adapter_builder=de_novo_prediction_adapter_builder,
+            provider=de_novo_providers[0],
             devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
@@ -1822,8 +1828,8 @@ def _execute_stage07(
                 phase_id="seed101-screen-target-conditioned",
                 work=work,
                 runtime=runtime,
-                adapter_builder=prediction_adapter_builder,
-                provider=providers[0],
+                adapter_builder=target_conditioned_prediction_adapter_builder,
+                provider=conditioned_providers[0],
                 devices=execution_devices,
                 maximum_attempts=stage04_config.executor.max_task_attempts,
                 created_at=now,
@@ -1875,8 +1881,8 @@ def _execute_stage07(
                 phase_id="deep-5x5" if afo_final else "additional-seeds",
                 work=work,
                 runtime=runtime,
-                adapter_builder=prediction_adapter_builder,
-                provider=providers[0],
+                adapter_builder=de_novo_prediction_adapter_builder,
+                provider=de_novo_providers[0],
                 devices=execution_devices,
                 maximum_attempts=stage04_config.executor.max_task_attempts,
                 created_at=now,
@@ -1897,8 +1903,8 @@ def _execute_stage07(
                     ),
                     work=work,
                     runtime=runtime,
-                    adapter_builder=prediction_adapter_builder,
-                    provider=providers[0],
+                    adapter_builder=target_conditioned_prediction_adapter_builder,
+                    provider=conditioned_providers[0],
                     devices=execution_devices,
                     maximum_attempts=stage04_config.executor.max_task_attempts,
                     created_at=now,
@@ -2448,16 +2454,33 @@ def _execute_stage07(
 def execute_stage07(
     *,
     run_root: Path,
-    prediction_adapter_builder: ComplexAdapterBuilder,
+    de_novo_prediction_adapter_builder: ComplexAdapterBuilder | None = None,
+    target_conditioned_prediction_adapter_builder: ComplexAdapterBuilder | None = None,
+    prediction_adapter_builder: ComplexAdapterBuilder | None = None,
     tnp_adapter: TnpAdapter,
     executed_at: datetime | None = None,
 ) -> Stage07Execution:
     """Execute Stage 07 and append structured operational evidence on failure."""
 
+    if de_novo_prediction_adapter_builder is None:
+        de_novo_prediction_adapter_builder = prediction_adapter_builder
+    if target_conditioned_prediction_adapter_builder is None:
+        target_conditioned_prediction_adapter_builder = prediction_adapter_builder
+    if (
+        de_novo_prediction_adapter_builder is None
+        or target_conditioned_prediction_adapter_builder is None
+    ):
+        raise ConfigurationError(
+            "Stage 07 必须分别提供 de-novo 与 target-conditioned prediction adapter"
+        )
+
     try:
         return _execute_stage07(
             run_root=run_root,
-            prediction_adapter_builder=prediction_adapter_builder,
+            de_novo_prediction_adapter_builder=de_novo_prediction_adapter_builder,
+            target_conditioned_prediction_adapter_builder=(
+                target_conditioned_prediction_adapter_builder
+            ),
             tnp_adapter=tnp_adapter,
             executed_at=executed_at,
         )

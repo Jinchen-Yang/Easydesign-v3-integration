@@ -547,7 +547,10 @@ def execute_sequence_prediction(
     workspace = prepared.workspace
     request = prepared.loaded_config.prediction_request
     prediction_config = prepared.loaded_config.config.structure_prediction
-    assert prediction_config is not None
+    if prediction_config is None or request is None:
+        raise SequencePredictionExecutionError(
+            "sequence prediction 需要已冻结的显式 Stage 1 后端选择"
+        )
     remote_msa_config = (
         prediction_config.msa
         if isinstance(prediction_config.msa, RemoteProtenixMsaConfig)

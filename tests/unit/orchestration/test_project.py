@@ -14,7 +14,7 @@ from easydesign.orchestration import (
 )
 
 
-def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Path) -> None:
+def test_initialize_sequence_project_has_no_prediction_default(tmp_path: Path) -> None:
     fasta = tmp_path / "apoe.fasta"
     fasta.write_text(">apoe\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
 
@@ -26,13 +26,13 @@ def test_initialize_sequence_project_materializes_explicit_defaults(tmp_path: Pa
     loaded = load_run_config(initialized.config_path)
 
     assert isinstance(loaded, LoadedSequenceRunConfig)
-    assert loaded.config.structure_prediction is not None
-    assert loaded.config.structure_prediction.msa.no_msa_fallback is False
+    assert loaded.config.prediction_policy.selection_mode == "explicit-per-stage"
+    assert loaded.config.structure_prediction is None
     assert loaded.config.stage02 is not None
     assert loaded.config.stage02.automatic is not None
     assert loaded.config.stage02.automatic.patch.target_member_count == 12
     config_text = initialized.config_path.read_text(encoding="utf-8")
-    assert config_text.startswith("schema_version: '0.8'")
+    assert config_text.startswith("schema_version: '0.9'")
     assert "execution_mode: review-gated" in config_text
     assert "type: local-file" in config_text
     assert all(f"stage0{number}:" in config_text for number in range(1, 8))
@@ -168,6 +168,7 @@ def test_initialize_sequence_project_can_materialize_precomputed_msa(
         project_root=tmp_path / "precomputed-project",
         target=fasta,
         precomputed_msa=a3m,
+        stage01_prediction_backend="protenix-v2",
     )
     loaded = load_run_config(initialized.config_path)
 
@@ -210,6 +211,10 @@ def test_initialize_stage07_project_materializes_all_late_stage_profiles(
         stop_after_stage=7,
         execution_mode="unattended",
         stage06_candidate_count=37,
+        stage01_prediction_backend="protenix-v2",
+        stage05_prediction_backend="protenix-v2",
+        stage07_de_novo_backend="protenix-v2",
+        stage07_target_conditioned_backend="protenix-v2",
     )
     loaded = load_run_config(initialized.config_path)
 
@@ -242,16 +247,23 @@ def test_initialize_afo_project_propagates_backend_and_scientific_profiles(
         target=fasta,
         stop_after_stage=7,
         execution_mode="unattended",
-        prediction_backend="openfold3-af3-jax",
+        stage01_prediction_backend="protenix-v2",
+        stage05_prediction_backend="openfold3-af3-jax",
+        stage07_de_novo_backend="openfold3-af3-jax",
+        stage07_target_conditioned_backend="protenix-v2",
     )
     loaded = load_run_config(initialized.config_path)
 
-    assert loaded.config.prediction_policy.backend == "openfold3-af3-jax"
+    assert loaded.config.prediction_policy.selection_mode == "explicit-per-stage"
     assert loaded.config.structure_prediction is not None
-    assert loaded.config.structure_prediction.backend == "openfold3-af3-jax"
+    assert loaded.config.structure_prediction.backend == "protenix-v2"
     assert loaded.config.stage05 is not None
     assert loaded.config.stage05.filter_profile == "nanobody-filter-standard-v1.7"
     assert loaded.config.stage05.full_target_prediction.backend == "openfold3-af3-jax"
     assert loaded.config.stage07 is not None
     assert loaded.config.stage07.final_filter_profile == "nanobody-final-v1.6"
     assert loaded.config.stage07.full_target_prediction.backend == "openfold3-af3-jax"
+    assert (
+        loaded.config.stage07.target_conditioned_prediction.backend
+        == "protenix-v2"
+    )

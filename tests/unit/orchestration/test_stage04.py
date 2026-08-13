@@ -56,6 +56,12 @@ from easydesign.orchestration.stage07 import execute_stage07
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.safe_writes import append_pointer_revision
+from easydesign.stages.s01_target_preparation import (
+    CoordinateEnsemble,
+    ResidueMapping,
+    ResidueMappingEntry,
+    TargetBundle,
+)
 from easydesign.stages.s03_boltzgen_configuration import (
     ScaffoldAsset,
     StrategyBundle,
@@ -633,6 +639,7 @@ def _prepared_stage03_run(
                 "stage05": (
                     {
                         "filter_profile": "nanobody-filter-standard-v1.5",
+                        "full_target_prediction": {"backend": "protenix-v2"},
                         "expanded_total_per_strategy": 4,
                         "maximum_tier_a_strategies": 1,
                         "strategy_selection": {
@@ -654,6 +661,11 @@ def _prepared_stage03_run(
                 "stage07": (
                     {
                         "final_filter_profile": "nanobody-final-v1.5",
+                        "full_target_prediction": {"backend": "protenix-v2"},
+                        "target_conditioned_prediction": {
+                            "backend": "protenix-v2",
+                            "template_mode": "precomputed",
+                        },
                         "primary_count": 20,
                         "backup_count": 20,
                         "tnp_required": True,
@@ -725,6 +737,76 @@ def _prepared_stage03_run(
         producer_stage=str(StageId.TARGET_PREPARATION),
         producer_attempt="attempt-0001",
     )
+    mapping_path = target_artifacts / "residue-mapping.json"
+    dump_model(
+        ResidueMapping(
+            target_id="generic-target",
+            sequence_sha256=sha256_file(sequence_path),
+            entries=tuple(
+                ResidueMappingEntry(
+                    sequence_index=number,
+                    amino_acid=amino_acid,
+                    label_chain_id="A",
+                    label_seq_id=number,
+                    author_chain_id="A",
+                    author_residue_id=str(number),
+                    model_presence=("1",),
+                )
+                for number, amino_acid in enumerate("GAS", start=1)
+            ),
+        ),
+        mapping_path,
+    )
+    quality_path = target_artifacts / "quality.json"
+    quality_path.write_text('{"origin":"imported"}\n', encoding="utf-8")
+    provenance_path = target_artifacts / "provenance.json"
+    provenance_path.write_text('{"origin":"imported"}\n', encoding="utf-8")
+
+    def target_artifact(path: Path, artifact_id: str, role: str) -> ArtifactRef:
+        return ArtifactRef.from_file(
+            run_root=root,
+            relative_path=path.relative_to(root).as_posix(),
+            artifact_id=artifact_id,
+            role=role,
+            file_format="json",
+            producer_stage=str(StageId.TARGET_PREPARATION),
+            producer_attempt="attempt-0001",
+        )
+
+    mapping_ref = target_artifact(mapping_path, "residue-mapping", "residue-mapping")
+    quality_ref = target_artifact(quality_path, "target-quality", "target-quality")
+    provenance_ref = target_artifact(
+        provenance_path,
+        "target-provenance",
+        "target-provenance",
+    )
+    target_bundle_path = target_artifacts / "target-bundle.json"
+    dump_model(
+        TargetBundle(
+            schema_version="0.4",
+            target_id="generic-target",
+            origin="imported",
+            sequence_length=3,
+            sequence_sha256=sha256_file(sequence_path),
+            producer_attempt="attempt-0001",
+            target_structure=target_ref,
+            sequence=sequence_ref,
+            residue_mapping=mapping_ref,
+            quality_report=quality_ref,
+            provenance=provenance_ref,
+            coordinate_ensemble=CoordinateEnsemble(
+                model_count=1,
+                model_ids=("1",),
+                representative_model_id="1",
+            ),
+        ),
+        target_bundle_path,
+    )
+    target_bundle_ref = target_artifact(
+        target_bundle_path,
+        "target-bundle",
+        "target-bundle",
+    )
     target_attempt = Attempt(
         attempt_id="attempt-0001",
         status=ExecutionStatus.SUCCEEDED,
@@ -741,7 +823,14 @@ def _prepared_stage03_run(
         status=ExecutionStatus.SUCCEEDED,
         created_at=NOW,
         completed_at=NOW,
-        output_artifacts=(target_ref, sequence_ref),
+        output_artifacts=(
+            target_ref,
+            sequence_ref,
+            mapping_ref,
+            quality_ref,
+            provenance_ref,
+            target_bundle_ref,
+        ),
         attempts=(target_attempt,),
         selected_attempt_id="attempt-0001",
     )
@@ -1168,9 +1257,30 @@ def test_stage07_publishes_a_complete_non_apoe_review_package(
         "easydesign.orchestration.stage07._batch_local_metrics",
         local_metrics,
     )
+    de_novo_modes: list[str] = []
+    conditioned_modes: list[str] = []
+
+    class RecordingPredictionAdapter(_FakeProtenixAdapter):
+        def __init__(self, modes: list[str]) -> None:
+            self.modes = modes
+
+        def write_input(self, request: PredictionRequest, path: Path) -> Path:
+            self.modes.append(str(request.scientific_mode))
+            return super().write_input(request, path)
+
+    def de_novo_builder(_provider: object, _device: int) -> RecordingPredictionAdapter:
+        return RecordingPredictionAdapter(de_novo_modes)
+
+    def conditioned_builder(
+        _provider: object,
+        _device: int,
+    ) -> RecordingPredictionAdapter:
+        return RecordingPredictionAdapter(conditioned_modes)
+
     outcome = execute_stage07(
         run_root=root,
-        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        de_novo_prediction_adapter_builder=de_novo_builder,  # type: ignore[arg-type]
+        target_conditioned_prediction_adapter_builder=conditioned_builder,  # type: ignore[arg-type]
         tnp_adapter=_FakeTnpAdapter(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1178,6 +1288,8 @@ def test_stage07_publishes_a_complete_non_apoe_review_package(
     assert outcome.status == "candidates-selected"
     assert outcome.primary_count == 2
     assert outcome.backup_count == 0
+    assert de_novo_modes and set(de_novo_modes) == {"de-novo"}
+    assert conditioned_modes and set(conditioned_modes) == {"target-conditioned"}
     bundle = load_model(outcome.stage07_bundle, Stage07Bundle)
     assert bundle.seed101_normalization is not None
     bundle.seed101_normalization.verify(root)

@@ -32,6 +32,7 @@ from easydesign.core import (
     ArtifactRef,
     Attempt,
     BackendContractError,
+    ConfigurationError,
     DecisionOption,
     DecisionRequest,
     ErrorInfo,
@@ -79,16 +80,22 @@ from .workspace import (
 ATTEMPT_ID = "attempt-0001"
 
 
-def _prediction_backend_presentation(config: Any) -> tuple[str, str]:
+def _prediction_backend_presentation(config: Any) -> tuple[str, str] | None:
     prediction = config.stage01.structure_prediction
-    backend = (
-        str(prediction.backend)
-        if prediction is not None
-        else str(config.prediction_policy.backend)
-    )
+    if prediction is None:
+        return None
+    backend = str(prediction.backend)
     if backend == "openfold3-af3-jax":
         return "predict-openfold3-af3-jax", "AFO (OpenFold3 AF3 JAX)"
     return "predict-protenix-v2", "Protenix-v2"
+
+
+def _require_prediction_backend(config: Any) -> None:
+    if config.stage01.structure_prediction is None:
+        raise ConfigurationError(
+            "Stage 1 检索后确认需要预测 target；请带 "
+            "--prediction-backend afo 或 protenix 重新运行 target prepare"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1112,8 +1119,9 @@ def _remote_selection(
                 f"{fallback.reason}: structure_selection policy=fail"
             )
         if config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+            _require_prediction_backend(config)
             return fallback
-        prediction_option_id, prediction_label = _prediction_backend_presentation(config)
+        prediction_presentation = _prediction_backend_presentation(config)
         options = tuple(
             DecisionOption(
                 option_id=(
@@ -1133,23 +1141,30 @@ def _remote_selection(
                 eligible=True,
             )
             for item in selectable
-        ) + (
-            DecisionOption(
-                option_id=prediction_option_id,
-                label=f"使用 {prediction_label} 预测",
-                description=(
-                    f"没有唯一 eligible 实验结构；按 required-MSA {prediction_label} "
-                    "预测 design scope。"
-                ),
-                payload={"action": "predict", "reason": fallback.reason},
-            ),
         )
+        if prediction_presentation is not None:
+            prediction_option_id, prediction_label = prediction_presentation
+            options += (
+                DecisionOption(
+                    option_id=prediction_option_id,
+                    label=f"使用 {prediction_label} 预测",
+                    description=(
+                        f"没有唯一 eligible 实验结构；按 required-MSA {prediction_label} "
+                        "预测 design scope。"
+                    ),
+                    payload={"action": "predict", "reason": fallback.reason},
+                ),
+            )
+        elif not options:
+            raise ConfigurationError(
+                "Stage 1 检索后确认需要预测 target；请带 "
+                "--prediction-backend afo 或 protenix 重新运行 target prepare"
+            )
         return _pause_for_decision(
             prepared,
             gate="structure-selection",
             message=(
-                "实验结构没有唯一 eligible 候选；请选择一个结构或确认使用 "
-                f"{prediction_label}。"
+                "实验结构没有唯一 eligible 候选；请选择一个结构，或显式选择后端后预测。"
             ),
             options=options,
             attempt_id=attempt_id,
@@ -1370,8 +1385,9 @@ def _sequence_selection(
     ):
         raise TargetInputError(f"{reason}: structure_selection policy=fail")
     if config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+        _require_prediction_backend(config)
         return fallback
-    prediction_option_id, prediction_label = _prediction_backend_presentation(config)
+    prediction_presentation = _prediction_backend_presentation(config)
     options = tuple(
         DecisionOption(
             option_id=(
@@ -1390,14 +1406,22 @@ def _sequence_selection(
             },
         )
         for item in selectable
-    ) + (
-        DecisionOption(
-            option_id=prediction_option_id,
-            label=f"使用 {prediction_label} 预测",
-            description=f"按 required-MSA {prediction_label} 预测 design scope。",
-            payload={"action": "predict", "reason": reason},
-        ),
     )
+    if prediction_presentation is not None:
+        prediction_option_id, prediction_label = prediction_presentation
+        options += (
+            DecisionOption(
+                option_id=prediction_option_id,
+                label=f"使用 {prediction_label} 预测",
+                description=f"按 required-MSA {prediction_label} 预测 design scope。",
+                payload={"action": "predict", "reason": reason},
+            ),
+        )
+    elif not options:
+        raise ConfigurationError(
+            "Stage 1 检索后确认需要预测 target；请带 "
+            "--prediction-backend afo 或 protenix 重新运行 target prepare"
+        )
     return _pause_for_decision(
         prepared,
         gate="structure-selection",

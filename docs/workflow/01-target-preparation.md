@@ -74,7 +74,7 @@ sequence/FASTA、PDB、mmCIF 或 PSE。识别、联网、结构选择和预测 f
 
 ```bash
 easydesign project init workspace/projects/PROJECT --target TARGET_FILE
-easydesign target prepare workspace/projects/PROJECT
+easydesign target prepare workspace/projects/PROJECT --prediction-backend afo
 easydesign project status workspace/projects/PROJECT --json
 ```
 
@@ -93,12 +93,12 @@ PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导�
 sequence/FASTA 和 UniProt 路径先经 RCSB Sequence Search v2/Data API 寻找实验结构，
 只有 design scope 坐标覆盖与序列一致性均为 100%、每个 residue 有 CA 且方法/分辨率
 通过 `experimental-strict-v1` 才能自动采用。无唯一候选时才按执行模式进入人工选择或
-项目冻结的预测后端。预测通过通用 `StructurePredictionRequest` 访问 backend；新项目默认
-为 `protenix==2.0.0` / `protenix-v2`，也可在项目创建时显式选择已批准/激活的 AFO
-release。两者之间禁止静默 fallback。
+本次 Stage 1 显式选择的预测后端。项目没有默认预测后端；只有 target 确实需要预测时，
+CLI 才要求 `--prediction-backend afo|protenix`。预测通过通用
+`StructurePredictionRequest` 访问 backend，两者之间禁止静默 fallback。
 
-sequence/FASTA 的用户 YAML 必须声明 `msa` 和 `template_mode`。默认主线是 MSA-backed
-Protenix-v2；显式 AFO 项目使用同一 MSA 契约。用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
+一旦选择预测，sequence/FASTA 的 run revision 必须声明 `backend`、`msa` 和
+`template_mode`。AFO 和 Protenix 使用同一 MSA 契约。用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
 内部工程 smoke。EasyDesign 保存原始输入和 YAML snapshot，生成
 `resolved-config.json`，再由 adapter 生成 attempt 内部 `inputs/protenix-input.json`；
 用户不维护后端私有 JSON。
@@ -106,8 +106,10 @@ Protenix-v2；显式 AFO 项目使用同一 MSA 契约。用户 YAML 禁止 `mod
 当前标准配置：
 
 ```yaml
-schema_version: "0.6"
+schema_version: "0.9"
 project_id: apoe
+prediction_policy:
+  selection_mode: explicit-per-stage
 workflow:
   execution_mode: review-gated
   stop_after_stage: 1

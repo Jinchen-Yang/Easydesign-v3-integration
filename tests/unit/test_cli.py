@@ -200,9 +200,27 @@ def test_json_uses_stage_free_typed_result_model(
 @pytest.mark.parametrize(
     "argv",
     (
-        ["pilot", "run", "apoe", "--strategy", "strategy-r000001"],
+        [
+            "pilot",
+            "run",
+            "apoe",
+            "--strategy",
+            "strategy-r000001",
+            "--prediction-backend",
+            "afo",
+        ],
         ["scale", "run", "apoe", "--selection", "selection-1"],
-        ["select", "run", "apoe", "--run", "production-1"],
+        [
+            "select",
+            "run",
+            "apoe",
+            "--run",
+            "production-1",
+            "--de-novo-backend",
+            "afo",
+            "--target-conditioned-backend",
+            "protenix",
+        ],
     ),
 )
 def test_scientific_run_commands_default_to_unconfirmed(argv: list[str]) -> None:
@@ -233,22 +251,53 @@ def test_target_bundle_and_source_run_are_a_valid_project_init_pair() -> None:
     assert parsed.source_run_root == Path("examples/apoe-ui-demo/evidence-runs/example")
 
 
-def test_project_init_accepts_afo_as_project_default() -> None:
-    parsed = cli._parser().parse_args(
+def test_project_init_rejects_project_default_prediction_backend() -> None:
+    with pytest.raises(SystemExit):
+        cli._parser().parse_args(
+            [
+                "project",
+                "init",
+                "workspace/projects/afo",
+                "--target",
+                "target.fasta",
+                "--prediction-backend",
+                "afo",
+            ]
+        )
+
+
+def test_stage_prediction_commands_require_explicit_backends() -> None:
+    with pytest.raises(SystemExit):
+        cli._parser().parse_args(
+            ["pilot", "plan", "apoe", "--strategy", "strategy-r000001"]
+        )
+    selected = cli._parser().parse_args(
         [
-            "project",
-            "init",
-            "workspace/projects/afo",
-            "--target",
-            "target.fasta",
-            "--prediction-backend",
+            "select",
+            "plan",
+            "apoe",
+            "--run",
+            "production-1",
+            "--de-novo-backend",
             "afo",
+            "--target-conditioned-backend",
+            "protenix",
         ]
     )
-
-    assert cli._project_init_values(parsed)["prediction_backend"] == (
-        "openfold3-af3-jax"
-    )
+    assert cli._prediction_backend(selected.de_novo_backend) == "openfold3-af3-jax"
+    assert cli._prediction_backend(selected.target_conditioned_backend) == "protenix-v2"
+    with pytest.raises(SystemExit):
+        cli._parser().parse_args(
+            [
+                "job",
+                "resume",
+                "apoe",
+                "--run",
+                "production-1",
+                "--prediction-backend",
+                "afo",
+            ]
+        )
 
 
 @pytest.mark.parametrize(

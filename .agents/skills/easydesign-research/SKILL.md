@@ -139,10 +139,10 @@ Codex 负责：主动检索证据、比较结构状态、提出 site/strategy �
 
 - `easydesign site approve ... --confirm`
 - `easydesign strategy freeze ... --confirm`
-- `easydesign pilot run ... --confirm`
+- `easydesign pilot run ... --prediction-backend <afo|protenix> --confirm`
 - `easydesign pilot promote ... --confirm`
 - `easydesign scale run ... --confirm`
-- `easydesign select run ... --confirm`
+- `easydesign select run ... --de-novo-backend <afo|protenix> --target-conditioned-backend <afo|protenix> --confirm`
 
 确认前展示精确 input identity、site/strategy allocation、candidate count、backend/profile、GPU occupancy、disk margin 和主要风险。不得把用户对讨论方案的认可推断成对另一份文件或另一个 revision 的运行批准。
 

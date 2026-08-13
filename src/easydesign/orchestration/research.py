@@ -43,13 +43,14 @@ from easydesign.workspace_context import WorkspaceContext
 from .application import RunSummary, list_runs
 from .config import (
     EasyDesignRunConfig,
+    PredictionBackend,
     Stage02Config,
     Stage03Config,
     Stage04Config,
     Stage06Config,
     load_run_config,
     stage05_config_for_backend,
-    stage07_config_for_backend,
+    stage07_config_for_backends,
 )
 from .decisions import approve_decision, export_decision, load_pending_decision
 from .hotspots import approve_hotspots, export_hotspot_review
@@ -93,8 +94,18 @@ class ProjectDescriptor(BaseModel):
     project_id: str
     target_id: str
     source_type: str
-    prediction_backend: Literal["protenix-v2", "openfold3-af3-jax"] = "protenix-v2"
+    prediction_selection_mode: Literal["explicit-per-stage"] = "explicit-per-stage"
     created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_project_default(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "prediction_backend" not in value:
+            return value
+        migrated = dict(value)
+        migrated.pop("prediction_backend", None)
+        migrated["prediction_selection_mode"] = "explicit-per-stage"
+        return migrated
 
 
 class TargetCrop(BaseModel):
@@ -286,18 +297,13 @@ def initialize_research_project(**values: Any) -> CommandResult:
             )
     initialized: InitializedProject = initialize_project(
         project_root=root,
-        stop_after_stage=7,
+        stop_after_stage=1,
         stage02_method="both",
         execution_mode="review-gated",
         **values,
     )
     try:
-        full = load_run_config(initialized.config_path, source_base_dir=root).config
-        payload = full.model_dump(mode="python", exclude_none=False)
-        payload["workflow"]["stop_after_stage"] = 1
-        for step in range(2, 8):
-            payload[f"stage{step:02d}"] = None
-        initial = EasyDesignRunConfig.model_validate(payload)
+        initial = load_run_config(initialized.config_path, source_base_dir=root).config
         initialized.config_path.unlink()
         gitignore = root / ".gitignore"
         if gitignore.is_file():
@@ -308,7 +314,7 @@ def initialize_research_project(**values: Any) -> CommandResult:
             project_id=initial.project_id,
             target_id=initial.stage01.target.target_id,
             source_type=_source_type(initial),
-            prediction_backend=initial.prediction_policy.backend,
+            prediction_selection_mode="explicit-per-stage",
             created_at=datetime.now(UTC),
         )
         descriptor_path = _exclusive_yaml(descriptor, root / "PROJECT.yaml")
@@ -340,7 +346,10 @@ def initialize_research_project(**values: Any) -> CommandResult:
         next_actions=(
             NextAction(
                 command=f"easydesign target prepare {root}",
-                description="解析靶点来源并建立可审计 target foundation。",
+                description=(
+                    "解析靶点来源并建立可审计 target foundation；若确实需要预测，"
+                    "命令会停止并提示显式选择后端。"
+                ),
             ),
         ),
     )
@@ -496,8 +505,15 @@ def project_status(project_root: Path) -> CommandResult:
         phase, status = "select", "selection-ready"
         actions = (
             NextAction(
-                command=f"easydesign select plan {root} --run {productions[-1].run_id}",
-                description="核对最终过滤与 Top 200 计划。",
+                command=(
+                    f"easydesign select plan {root} --run {productions[-1].run_id} "
+                    "--de-novo-backend <afo|protenix> "
+                    "--target-conditioned-backend <afo|protenix>"
+                ),
+                description=(
+                    "分别选择 de-novo 与 target-conditioned 后端，"
+                    "再核对最终过滤与 Top 200 计划。"
+                ),
             ),
         )
     elif promotion is not None:
@@ -539,8 +555,11 @@ def project_status(project_root: Path) -> CommandResult:
         phase, status = "pilot", "pilot-ready"
         actions = (
             NextAction(
-                command=f"easydesign pilot plan {root} --strategy {strategies[-1].stem}",
-                description="核对 pilot 预算与 backend。",
+                command=(
+                    f"easydesign pilot plan {root} --strategy {strategies[-1].stem} "
+                    "--prediction-backend <afo|protenix>"
+                ),
+                description="显式选择 Stage 5 验证后端并核对 pilot 预算。",
             ),
         )
     elif foundation is not None:
@@ -557,7 +576,13 @@ def project_status(project_root: Path) -> CommandResult:
         if target is None:
             status = "target-not-started"
             actions = (
-                NextAction(command=f"easydesign target prepare {root}", description="准备靶点。"),
+                NextAction(
+                    command=f"easydesign target prepare {root}",
+                    description=(
+                        "先解析实验结构；若确实需要预测，命令会停止并提示使用 "
+                        "--prediction-backend <afo|protenix> 重试。"
+                    ),
+                ),
             )
         elif 1 not in completed_steps(target.path):
             status = "target-approval-required"
@@ -654,7 +679,53 @@ def _launch(
     return result, observed
 
 
-def target_prepare(project_root: Path, *, detach: bool = False) -> CommandResult:
+def _stage01_config_with_backend(
+    root: Path,
+    config: EasyDesignRunConfig,
+    backend: PredictionBackend,
+) -> EasyDesignRunConfig:
+    payload = config.model_dump(mode="python", exclude_none=False)
+    a3m_files = tuple(sorted((root / "inputs").glob("*.a3m")))
+    if len(a3m_files) > 1:
+        raise ConfigurationError("Stage 1 发现多个 A3M；请只保留本次运行要冻结的一个文件")
+    msa: dict[str, Any]
+    if a3m_files:
+        msa = {
+            "mode": "precomputed",
+            "path": a3m_files[0].relative_to(root).as_posix(),
+        }
+    else:
+        msa = {
+            "mode": "remote",
+            "cache_mode": "online",
+            "providers": [
+                {
+                    "provider": "colabfold-public",
+                    "timeout_seconds": 1800,
+                    "max_attempts": 3,
+                    "retry_backoff_seconds": 30,
+                }
+            ],
+            "no_msa_fallback": False,
+        }
+    payload["stage01"]["structure_prediction"] = {
+        "backend": backend,
+        "msa": msa,
+        "template_mode": "disabled",
+        "parameter_profile": "model-default",
+        "seeds": [101],
+        "sample_count": 1,
+        "prediction_timeout_seconds": 7200,
+    }
+    return EasyDesignRunConfig.model_validate(payload)
+
+
+def target_prepare(
+    project_root: Path,
+    *,
+    prediction_backend: PredictionBackend | None = None,
+    detach: bool = False,
+) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     _descriptor(root)
     pending = _latest_pending_target_run(root)
@@ -693,6 +764,8 @@ def target_prepare(project_root: Path, *, detach: bool = False) -> CommandResult
             ),
         )
     config = load_run_config(project_config_path(root), source_base_dir=root).config
+    if prediction_backend is not None:
+        config = _stage01_config_with_backend(root, config, prediction_backend)
     result, observed = _launch(
         root,
         phase="prepare",
@@ -1343,8 +1416,11 @@ def strategy_freeze(project_root: Path, *, config_path: Path, confirm: bool) -> 
         evidence=validation.evidence,
         next_actions=(
             NextAction(
-                command=f"easydesign pilot plan {root} --strategy {destination.stem}",
-                description="核对 pilot 预算与资源。",
+                command=(
+                    f"easydesign pilot plan {root} --strategy {destination.stem} "
+                    "--prediction-backend <afo|protenix>"
+                ),
+                description="显式选择 Stage 5 验证后端并核对 pilot 预算与资源。",
             ),
         ),
     )
@@ -1384,7 +1460,12 @@ def _resource_evidence(kind: str, count: int, *, strategies: int) -> EvidenceIte
     )
 
 
-def pilot_plan(project_root: Path, *, strategy_revision: str) -> CommandResult:
+def pilot_plan(
+    project_root: Path,
+    *,
+    strategy_revision: str,
+    prediction_backend: PredictionBackend,
+) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     path = _strategy_revision(root, strategy_revision)
     strategy = load_strategy(root, path)
@@ -1397,7 +1478,10 @@ def pilot_plan(project_root: Path, *, strategy_revision: str) -> CommandResult:
         evidence=(_resource_evidence("pilot", count, strategies=len(strategy.variants)),),
         next_actions=(
             NextAction(
-                command=f"easydesign pilot run {root} --strategy {path.stem} --confirm",
+                command=(
+                    f"easydesign pilot run {root} --strategy {path.stem} "
+                    f"--prediction-backend {prediction_backend} --confirm"
+                ),
                 description="创建独立 pilot run，执行策略编译、生成、标准过滤和诊断。",
                 approval_required=True,
             ),
@@ -1405,7 +1489,12 @@ def pilot_plan(project_root: Path, *, strategy_revision: str) -> CommandResult:
     )
 
 
-def _pilot_config(root: Path, foundation: RunSummary, strategy_path: Path) -> EasyDesignRunConfig:
+def _pilot_config(
+    root: Path,
+    foundation: RunSummary,
+    strategy_path: Path,
+    prediction_backend: PredictionBackend,
+) -> EasyDesignRunConfig:
     strategy = load_strategy(root, strategy_path)
     candidates = max(item.candidates for item in strategy.variants)
     resolved, _ = load_resolved_run_config(foundation.path)
@@ -1426,18 +1515,27 @@ def _pilot_config(root: Path, foundation: RunSummary, strategy_path: Path) -> Ea
             2: stage02,
             3: stage03,
             4: Stage04Config(required_complete_candidates_per_strategy=candidates),
-            5: stage05_config_for_backend(resolved.user_config.prediction_policy.backend),
+            5: stage05_config_for_backend(prediction_backend),
         },
     )
 
 
 def pilot_run(
-    project_root: Path, *, strategy_revision: str, confirm: bool, detach: bool = False
+    project_root: Path,
+    *,
+    strategy_revision: str,
+    prediction_backend: PredictionBackend,
+    confirm: bool,
+    detach: bool = False,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     path = _strategy_revision(root, strategy_revision)
     if not confirm:
-        return pilot_plan(root, strategy_revision=strategy_revision)
+        return pilot_plan(
+            root,
+            strategy_revision=strategy_revision,
+            prediction_backend=prediction_backend,
+        )
     foundation = _latest_foundation(root)
     if foundation is None:
         raise ConfigurationError("pilot 需要 approved foundation")
@@ -1445,7 +1543,7 @@ def pilot_run(
     result, _ = _launch(
         root,
         phase="pilot",
-        config=_pilot_config(root, foundation, path),
+        config=_pilot_config(root, foundation, path, prediction_backend),
         internal_start=3,
         base=foundation,
         run_id=run_id,
@@ -1758,23 +1856,35 @@ def scale_run(
             "artifacts": (*result.artifacts, receipt_path),
             "next_actions": (
                 NextAction(
-                    command=f"easydesign select plan {root} --run {run_id}",
-                    description="核对最终 Top 200 选择。",
+                    command=(
+                        f"easydesign select plan {root} --run {run_id} "
+                        "--de-novo-backend <afo|protenix> "
+                        "--target-conditioned-backend <afo|protenix>"
+                    ),
+                    description=(
+                        "分别选择 de-novo 与 target-conditioned 后端，"
+                        "再核对最终 Top 200 选择。"
+                    ),
                 ),
             ),
         }
     )
 
 
-def select_plan(project_root: Path, *, run_id: str, top: int = 200) -> CommandResult:
+def select_plan(
+    project_root: Path,
+    *,
+    run_id: str,
+    de_novo_backend: PredictionBackend,
+    target_conditioned_backend: PredictionBackend,
+    top: int = 200,
+) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     if top < 1:
         raise ConfigurationError("top 必须为正整数")
     run = _run_by_id(root, run_id)
     if 6 not in completed_steps(run.path):
         raise ConfigurationError("select 需要完成的 production run")
-    resolved, _ = load_resolved_run_config(run.path)
-    backend = resolved.user_config.prediction_policy.backend
     return CommandResult(
         status="confirmation-required",
         phase="select",
@@ -1786,12 +1896,22 @@ def select_plan(project_root: Path, *, run_id: str, top: int = 200) -> CommandRe
                 kind="selection-plan",
                 identity=f"top-{top}",
                 status="planned",
-                metadata={"requested_top": top, "padding": False, "backend": f"{backend} + tnp"},
+                metadata={
+                    "requested_top": top,
+                    "padding": False,
+                    "de_novo_backend": de_novo_backend,
+                    "target_conditioned_backend": target_conditioned_backend,
+                    "tnp": True,
+                },
             ),
         ),
         next_actions=(
             NextAction(
-                command=f"easydesign select run {root} --run {run_id} --top {top} --confirm",
+                command=(
+                    f"easydesign select run {root} --run {run_id} --top {top} "
+                    f"--de-novo-backend {de_novo_backend} "
+                    f"--target-conditioned-backend {target_conditioned_backend} --confirm"
+                ),
                 description="只交付真实合法候选，不重复、不补齐。",
                 approval_required=True,
             ),
@@ -1800,11 +1920,24 @@ def select_plan(project_root: Path, *, run_id: str, top: int = 200) -> CommandRe
 
 
 def select_run(
-    project_root: Path, *, run_id: str, top: int, confirm: bool, detach: bool = False
+    project_root: Path,
+    *,
+    run_id: str,
+    de_novo_backend: PredictionBackend,
+    target_conditioned_backend: PredictionBackend,
+    top: int,
+    confirm: bool,
+    detach: bool = False,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     if not confirm:
-        return select_plan(root, run_id=run_id, top=top)
+        return select_plan(
+            root,
+            run_id=run_id,
+            de_novo_backend=de_novo_backend,
+            target_conditioned_backend=target_conditioned_backend,
+            top=top,
+        )
     production = _run_by_id(root, run_id)
     resolved, _ = load_resolved_run_config(production.path)
     stages: dict[int, BaseModel] = {}
@@ -1813,8 +1946,9 @@ def select_run(
         if value is None:
             raise ConfigurationError("production config 前缀不完整")
         stages[number] = value
-    stages[7] = stage07_config_for_backend(
-        resolved.user_config.prediction_policy.backend,
+    stages[7] = stage07_config_for_backends(
+        de_novo_backend,
+        target_conditioned_backend,
         primary_count=top,
         backup_count=0,
     )

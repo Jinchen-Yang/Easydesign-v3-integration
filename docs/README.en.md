@@ -96,7 +96,7 @@ remains inside the current clone.
 
 ## OpenFold3/AFO candidate
 
-OpenFold3/AFO 3.1.4 is currently a `candidate` and does not replace the default Protenix backend. Its
+OpenFold3/AFO 3.1.4 is currently a `candidate`; projects have no default prediction backend. Its
 complete pre-converted release contains the weights, runner, frozen wheelhouse, environment lock,
 licenses, model card, conversion receipt, and smoke input; users do not need the original PyTorch
 checkpoint or a conversion environment. The archive download is 5,032,471,381 bytes (4.687 GiB),
@@ -118,14 +118,17 @@ easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
 easydesign doctor --full
 ```
 
-Projects can explicitly select either AFO or Protenix. Omitting the option still selects Protenix;
-publishing the candidate does not change the default:
+Environment installation and scientific selection are independent. Projects do not have a default
+prediction backend. Select a backend only when a stage needs prediction; omission fails closed and
+never falls back silently to Protenix. Different stages may use different backends:
 
 ```bash
-easydesign project init workspace/projects/my-afo-project --target target.cif \
-  --prediction-backend afo
-easydesign project init workspace/projects/my-protenix-project --target target.cif \
-  --prediction-backend protenix
+easydesign project init workspace/projects/my-project --target target.cif
+easydesign target prepare workspace/projects/my-project --prediction-backend protenix
+easydesign pilot run workspace/projects/my-project --strategy strategy-r000001 \
+  --prediction-backend afo --confirm
+easydesign select run workspace/projects/my-project --run PRODUCTION_RUN \
+  --de-novo-backend afo --target-conditioned-backend protenix --confirm
 ```
 
 Only after the catalog entry becomes `stable` and binds a fixed scientific report plus a human
@@ -150,7 +153,7 @@ Create and prepare a project:
 
 ```bash
 easydesign project init workspace/projects/apoe --uniprot P02649
-easydesign target prepare workspace/projects/apoe
+easydesign target prepare workspace/projects/apoe --prediction-backend afo
 easydesign site scan workspace/projects/apoe --method both
 easydesign site approve workspace/projects/apoe --input PROPOSAL --confirm
 ```
@@ -161,7 +164,8 @@ Draft, validate, freeze, and iterate:
 easydesign strategy draft workspace/projects/apoe
 easydesign strategy validate workspace/projects/apoe --config workspace/projects/apoe/strategy-draft.yaml
 easydesign strategy freeze workspace/projects/apoe --config workspace/projects/apoe/strategy-draft.yaml --confirm
-easydesign pilot run workspace/projects/apoe --strategy strategy-r000001 --confirm --detach
+easydesign pilot run workspace/projects/apoe --strategy strategy-r000001 \
+  --prediction-backend afo --confirm --detach
 easydesign pilot review workspace/projects/apoe --run PILOT_RUN
 ```
 
@@ -171,3 +175,6 @@ Top 200 delivery; legal results are never duplicated or padded.
 Read/validate/color/scan/plan/review/view operations may run directly. Site approval, strategy freeze,
 pilot run/promotion, scale, and selection require explicit researcher confirmation. The viewer is
 read-only and there is no remote executor, managed queue, Workbench, or UI activation.
+Each run freezes the selected backends, AFO release identity, runtime-profile SHA, and config
+snapshot. `job resume` accepts no backend override and reuses those frozen identities even if the
+active machine profile changes later.

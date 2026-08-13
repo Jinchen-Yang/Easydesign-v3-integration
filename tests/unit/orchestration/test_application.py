@@ -43,6 +43,7 @@ from easydesign.orchestration.config import (
     LoadedSequenceRunConfig,
     load_run_config,
 )
+from easydesign.orchestration.continuation import _stage_payload, stage_form_definition
 from easydesign.orchestration.profile import ProtenixV2Runtime, RuntimeProfile
 from easydesign.orchestration.workspace import (
     RunIndexEntry,
@@ -87,6 +88,7 @@ def _project_and_profile(tmp_path: Path) -> tuple[Path, Path]:
     initialized = initialize_project(
         project_root=tmp_path / "demo",
         target=fasta,
+        stage01_prediction_backend="protenix-v2",
     )
     profile = initialize_runtime_profile(
         tmp_path / "runtime" / "profile.yaml",
@@ -107,7 +109,7 @@ def test_config_validation_does_not_require_backend_profile(
     plan = validate_run_configuration(initialized.config_path)
 
     assert plan.profile_id == "workspace-local"
-    assert plan.required_backends == ("protenix-v2",)
+    assert plan.required_backends == ()
     assert plan.runs_root.name == "runs"
     assert not (plan.runs_root / "demo").exists()
 
@@ -117,7 +119,11 @@ def test_stage01_openfold3_is_explicit_and_does_not_change_default(
 ) -> None:
     fasta = tmp_path / "target.fasta"
     fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
-    initialized = initialize_project(project_root=tmp_path / "demo", target=fasta)
+    initialized = initialize_project(
+        project_root=tmp_path / "demo",
+        target=fasta,
+        stage01_prediction_backend="protenix-v2",
+    )
     payload = yaml.safe_load(initialized.config_path.read_text(encoding="utf-8"))
     assert payload["stage01"]["structure_prediction"]["backend"] == "protenix-v2"
     payload["stage01"]["structure_prediction"]["backend"] = "openfold3-af3-jax"
@@ -261,6 +267,7 @@ def test_stage01_decision_continuation_restores_precomputed_msa_snapshot(
         project_root=tmp_path / "demo",
         target=fasta,
         precomputed_msa=a3m,
+        stage01_prediction_backend="protenix-v2",
     )
     prepared = initialize_run_workspace(
         config_path=initialized.config_path,
@@ -280,6 +287,59 @@ def test_stage01_decision_continuation_restores_precomputed_msa_snapshot(
     assert isinstance(restored.loaded_config, LoadedSequenceRunConfig)
     assert restored.loaded_config.precomputed_msa_path is not None
     assert restored.loaded_config.precomputed_msa_path.read_bytes() == a3m.read_bytes()
+
+
+def test_stage01_decision_continuation_allows_no_prediction_selection(
+    tmp_path: Path,
+) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    initialized = initialize_project(project_root=tmp_path / "demo", target=fasta)
+    prepared = initialize_run_workspace(
+        config_path=initialized.config_path,
+        runs_root=tmp_path / "runs",
+        easydesign_version="0.1.0.dev13",
+        code_identity=CodeIdentity(
+            version="0.1.0.dev13",
+            source=CodeIdentitySource.INSTALLED_PACKAGE,
+            dirty=False,
+            content_sha256="b" * 64,
+        ),
+        run_id="experimental-decision",
+    )
+
+    restored = _prepared_existing_run(prepared.workspace.run_root)
+
+    assert isinstance(restored.loaded_config, LoadedSequenceRunConfig)
+    assert restored.loaded_config.prediction_request is None
+
+
+def test_continuation_forms_fail_closed_without_stage_prediction_backends() -> None:
+    stage05 = stage_form_definition(5)
+    stage07 = stage_form_definition(7)
+
+    assert stage05["defaults"]["prediction_backend"] is None
+    assert stage07["defaults"]["de_novo_backend"] is None
+    assert stage07["defaults"]["target_conditioned_backend"] is None
+    with pytest.raises(ConfigurationError, match="Stage 5"):
+        _stage_payload(5, execution_mode="review-gated", options={})
+    with pytest.raises(ConfigurationError, match="Stage 7"):
+        _stage_payload(
+            7,
+            execution_mode="review-gated",
+            options={"de_novo_backend": "openfold3-af3-jax"},
+        )
+
+    mixed = _stage_payload(
+        7,
+        execution_mode="review-gated",
+        options={
+            "de_novo_backend": "openfold3-af3-jax",
+            "target_conditioned_backend": "protenix-v2",
+        },
+    )
+    assert mixed["full_target_prediction"]["backend"] == "openfold3-af3-jax"
+    assert mixed["target_conditioned_prediction"]["backend"] == "protenix-v2"
 
 
 def test_sasa_only_stage02_does_not_require_scannet_backend(tmp_path: Path) -> None:
@@ -310,7 +370,9 @@ def test_stage06_continuation_only_requires_boltzgen_backend(tmp_path: Path) -> 
     payload["workflow"]["stop_after_stage"] = 6
     payload["stage03"] = {}
     payload["stage04"] = {}
-    payload["stage05"] = {}
+    payload["stage05"] = {
+        "full_target_prediction": {"backend": "protenix-v2"},
+    }
     payload["stage06"] = {
         "scale_profile": "smoke-1000",
         "preauthorized_candidate_limit": 1000,
@@ -323,6 +385,28 @@ def test_stage06_continuation_only_requires_boltzgen_backend(tmp_path: Path) -> 
     loaded = load_run_config(initialized.config_path)
 
     assert _required_backends(loaded, start_stage=6) == ("boltzgen",)
+
+
+def test_mixed_stage_backends_are_independent_runtime_requirements(tmp_path: Path) -> None:
+    pse = tmp_path / "target.pse"
+    pse.write_bytes(b"synthetic")
+    initialized = initialize_project(
+        project_root=tmp_path / "demo",
+        target=pse,
+        stop_after_stage=7,
+        stage02_method="sasa",
+        stage05_prediction_backend="openfold3-af3-jax",
+        stage07_de_novo_backend="openfold3-af3-jax",
+        stage07_target_conditioned_backend="protenix-v2",
+    )
+    loaded = load_run_config(initialized.config_path)
+
+    assert _required_backends(loaded, start_stage=5) == (
+        "boltzgen",
+        "openfold3-af3-jax",
+        "protenix-v2",
+        "tnp",
+    )
 
 
 def test_cli_project_init_and_status_resume_entry(
@@ -580,6 +664,7 @@ def test_protenix_doctor_accepts_precomputed_msa_without_provider(
         project_root=tmp_path / "precomputed",
         target=fasta,
         precomputed_msa=a3m,
+        stage01_prediction_backend="protenix-v2",
     )
     loaded = load_run_config(initialized.config_path)
     assert isinstance(loaded, LoadedSequenceRunConfig)

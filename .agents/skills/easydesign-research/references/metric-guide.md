@@ -136,13 +136,13 @@ fallback值不能在不声明source的情况下与primary BSA混排。当前`pil
 
 ### 5.1 Stage 05 v1.6 advisory validation
 
-Stage 05默认Protenix full-target复核的structure hard decisions是：binder pose RMSD `<=3.0 Å`、target Cα RMSD `<=3.0 Å`、severe clash `=0`、moderate clash `<=3`。
+Stage 05显式选择预测后端；当前 full-target structure hard decisions是：binder pose RMSD `<=3.0 Å`、target Cα RMSD `<=3.0 Å`、severe clash `=0`、moderate clash `<=3`。
 
 `pairwise target–binder iPTM >=0.50`、`minimum target–binder PAE <=15 Å`、`binder pTM >=0.70`是confidence reference signals；当前合同以OR形成`confidence_reference_pass`，不是promotion hard gates。一个strategy没有full-target structure通过者时，v1.6发布warning但不撤销已由pilot确定的Tier-A资格。Agent必须同时报告warning的科学风险，不能把“policy允许继续”写成“结构已验证”。
 
-### 5.2 Stage 07默认final合同
+### 5.2 Stage 07 final合同
 
-当前Stage 07默认是`nanobody-final-v1.5` + Protenix。单seed/representative层的典型artifact decisions包括：pairwise iPTM `>=0.60`、minimum interface PAE `<=10 Å`、binder pose RMSD `<=3.0 Å`、target Cα RMSD `<=3.0 Å`、binder pTM `>=0.60`、full-target hotspot coverage `>=0.40`、severe clash `=0`、moderate clash `<=3`；consensus层再使用PAE `<=7 Å`、pose RMSD `<=2.5 Å`与至少2个individually passing seeds。仍须引用artifact实际rule，不能凭本段重算。
+Stage 07 de-novo与target-conditioned后端分别显式选择；Protenix de-novo对应`nanobody-final-v1.5`，AFO de-novo对应v1.6。单seed/representative层的典型artifact decisions包括：pairwise iPTM `>=0.60`、minimum interface PAE `<=10 Å`、binder pose RMSD `<=3.0 Å`、target Cα RMSD `<=3.0 Å`、binder pTM `>=0.60`、full-target hotspot coverage `>=0.40`、severe clash `=0`、moderate clash `<=3`；consensus层再使用PAE `<=7 Å`、pose RMSD `<=2.5 Å`与至少2个individually passing seeds。仍须引用artifact实际rule，不能凭本段重算。
 
 只有Stage 07 artifact显式绑定`nanobody-final-v1.6`、OpenFold3 runtime/config/model identity与相应multi-seed/sample合同，才解释OpenFold3 final semantics。不要将Stage 05 advisory、Stage 07 Protenix final与OpenFold3 final的同名metric decision表混用。
 

@@ -173,7 +173,7 @@ scale不是“更多pilot candidate”的简单同义词。分析必须保留：
 
 若scale阶段使用不同prediction/filter/selection规则，必须把它视为新证据层，不与pilot score直接合并。
 
-当前Stage 07默认filter是`nanobody-final-v1.5`并使用Protenix。只有runtime、config、profile与artifact全部显式绑定OpenFold3 final合同，才可解释`nanobody-final-v1.6`；不得因文件存在或版本号更高而自动切换。
+Stage 07没有默认后端：de-novo与target-conditioned必须分别显式选择。Protenix de-novo使用`nanobody-final-v1.5`；只有runtime、config、profile与artifact全部显式绑定OpenFold3 final合同，才可解释`nanobody-final-v1.6`；不得因文件存在或版本号更高而自动切换。
 
 ## 6. Selection framework
 

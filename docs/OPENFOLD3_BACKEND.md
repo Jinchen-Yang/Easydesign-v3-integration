@@ -1,8 +1,8 @@
 # AFO/OpenFold3 多版本后端
 
 EasyDesign Local 通过 `openfold3-af3-jax` 后端运行 OpenFold3 preview2 权重。每次科学
-运行锁定精确 release，不跟随上游 `latest`；Protenix 在研究者完成固定面板批准并合入
-独立 `science:` 提升提交前仍是新项目默认后端。
+运行锁定精确 release，不跟随上游 `latest`。项目不设置预测后端默认值；AFO 是否成为
+`stable` 只影响能否省略 release ID 安装，不会改变任何阶段的科学选择。
 
 ## 3.1.4 candidate 身份
 
@@ -100,6 +100,6 @@ easydesign runtime approve afo \
 
 固定面板只比较精确 AFO release 与 Protenix。report 和 approval receipt 绑定 release
 manifest、runner tree、wheel、环境锁、conversion receipt 及转换权重 SHA；任一 identity
-变化都必须重跑。批准命令不会修改 release manifest 或默认后端。后续独立 `science:`
-catalog commit 引用 report/approval SHA，将 candidate 提升为 stable；再以独立科学提交切换
-新项目默认。A100 安装、Stage 1、Stage 5、Stage 7 5×5 smoke 是提升前的实机门。
+变化都必须重跑。批准命令不会修改 release manifest 或阶段选择。后续独立 `science:`
+catalog commit 引用 report/approval SHA，将 candidate 提升为 stable；stable 仍不会建立
+项目默认后端。A100 安装、Stage 1、Stage 5、Stage 7 5×5 smoke 是提升前的实机门。

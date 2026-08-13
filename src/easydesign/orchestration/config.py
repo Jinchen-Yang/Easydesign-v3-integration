@@ -313,17 +313,17 @@ PredictionBackend: TypeAlias = Literal["protenix-v2", "openfold3-af3-jax"]
 
 
 class PredictionPolicyConfig(BaseModel):
-    """Project default; concrete stage configs may explicitly override it."""
+    """Project-wide selection contract; it never names a prediction backend."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    backend: PredictionBackend = "protenix-v2"
+    selection_mode: Literal["explicit-per-stage"] = "explicit-per-stage"
 
 
 class StructurePredictionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    backend: PredictionBackend = "protenix-v2"
+    backend: PredictionBackend
     msa: ProtenixMsaConfig
     template_mode: TemplateMode
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
@@ -812,10 +812,23 @@ class ComplexPredictionConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    backend: PredictionBackend = "protenix-v2"
+    backend: PredictionBackend
     target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
     binder_msa: Literal["query-only"] = "query-only"
     template_mode: Literal[TemplateMode.DISABLED] = TemplateMode.DISABLED
+    parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
+    prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
+
+
+class TargetConditionedPredictionConfig(BaseModel):
+    """Stage 07 target-conditioned model selection; binder templates stay disabled."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    backend: PredictionBackend
+    target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
+    binder_msa: Literal["query-only"] = "query-only"
+    template_mode: Literal[TemplateMode.PRECOMPUTED] = TemplateMode.PRECOMPUTED
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
     prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
 
@@ -832,7 +845,7 @@ class Stage05Config(BaseModel):
     advisory_validation: Stage05AdvisoryValidationConfig | None = None
     expanded_total_per_strategy: int | None = Field(default=None, ge=1)
     strategy_selection: Stage05StrategySelectionConfig | None = None
-    full_target_prediction: ComplexPredictionConfig = ComplexPredictionConfig()
+    full_target_prediction: ComplexPredictionConfig
 
     @model_validator(mode="before")
     @classmethod
@@ -985,7 +998,8 @@ class Stage07Config(BaseModel):
     primary_count: int = Field(default=20, ge=0)
     backup_count: int = Field(default=20, ge=0)
     tnp_required: Literal[True] = True
-    full_target_prediction: ComplexPredictionConfig = ComplexPredictionConfig()
+    full_target_prediction: ComplexPredictionConfig
+    target_conditioned_prediction: TargetConditionedPredictionConfig
 
     @model_validator(mode="after")
     def validate_package_size(self) -> Self:
@@ -1002,7 +1016,44 @@ def stage05_config_for_backend(backend: PredictionBackend) -> Stage05Config:
                 "full_target_prediction": {"backend": backend},
             }
         )
-    return Stage05Config()
+    return Stage05Config.model_validate(
+        {
+            "filter_profile": "nanobody-filter-standard-v1.6",
+            "full_target_prediction": {"backend": backend},
+        }
+    )
+
+
+def stage07_config_for_backends(
+    de_novo_backend: PredictionBackend,
+    target_conditioned_backend: PredictionBackend,
+    *,
+    primary_count: int = 20,
+    backup_count: int = 20,
+) -> Stage07Config:
+    if de_novo_backend == "openfold3-af3-jax":
+        return Stage07Config.model_validate(
+            {
+                "final_filter_profile": "nanobody-final-v1.6",
+                "primary_count": primary_count,
+                "backup_count": backup_count,
+                "full_target_prediction": {"backend": de_novo_backend},
+                "target_conditioned_prediction": {
+                    "backend": target_conditioned_backend,
+                },
+            }
+        )
+    return Stage07Config.model_validate(
+        {
+            "final_filter_profile": "nanobody-final-v1.5",
+            "primary_count": primary_count,
+            "backup_count": backup_count,
+            "full_target_prediction": {"backend": de_novo_backend},
+            "target_conditioned_prediction": {
+                "backend": target_conditioned_backend,
+            },
+        }
+    )
 
 
 def stage07_config_for_backend(
@@ -1011,16 +1062,14 @@ def stage07_config_for_backend(
     primary_count: int = 20,
     backup_count: int = 20,
 ) -> Stage07Config:
-    if backend == "openfold3-af3-jax":
-        return Stage07Config.model_validate(
-            {
-                "final_filter_profile": "nanobody-final-v1.6",
-                "primary_count": primary_count,
-                "backup_count": backup_count,
-                "full_target_prediction": {"backend": backend},
-            }
-        )
-    return Stage07Config(primary_count=primary_count, backup_count=backup_count)
+    """Compatibility helper for frozen callers that selected one backend for both modes."""
+
+    return stage07_config_for_backends(
+        backend,
+        backend,
+        primary_count=primary_count,
+        backup_count=backup_count,
+    )
 
 
 class EasyDesignRunConfig(BaseModel):
@@ -1028,7 +1077,7 @@ class EasyDesignRunConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(default="0.8", pattern=r"^0\.8$")
+    schema_version: str = Field(default="0.9", pattern=r"^0\.9$")
     project_id: str = Field(pattern=ID_PATTERN)
     design: DesignConfig = DesignConfig()
     prediction_policy: PredictionPolicyConfig = PredictionPolicyConfig()
@@ -1079,7 +1128,32 @@ class EasyDesignRunConfig(BaseModel):
                         "scope": {"type": "full-sequence"},
                     }
             migrated["stage01"] = stage01
-        source_schema = migrated.get("schema_version")
+        source_schema = str(migrated.get("schema_version") or "")
+        legacy_prediction_policy = migrated.get("prediction_policy")
+        legacy_backend: PredictionBackend | None = None
+        if isinstance(legacy_prediction_policy, dict):
+            candidate = legacy_prediction_policy.get("backend")
+            if candidate in {"protenix-v2", "openfold3-af3-jax"}:
+                legacy_backend = candidate
+        if legacy_backend is None and isinstance(stage01, dict):
+            legacy_prediction = stage01.get("structure_prediction")
+            if isinstance(legacy_prediction, dict):
+                candidate = legacy_prediction.get("backend")
+                if candidate in {"protenix-v2", "openfold3-af3-jax"}:
+                    legacy_backend = candidate
+        if source_schema != "0.9":
+            migrated["prediction_policy"] = {
+                "selection_mode": "explicit-per-stage",
+            }
+            stage01 = migrated.get("stage01")
+            if isinstance(stage01, dict):
+                prediction = stage01.get("structure_prediction")
+                if isinstance(prediction, dict) and legacy_backend is not None:
+                    prediction = dict(prediction)
+                    prediction.setdefault("backend", legacy_backend)
+                    stage01 = dict(stage01)
+                    stage01["structure_prediction"] = prediction
+                    migrated["stage01"] = stage01
         stage05 = migrated.get("stage05")
         if (
             source_schema != "0.8"
@@ -1097,7 +1171,43 @@ class EasyDesignRunConfig(BaseModel):
                 },
             )
             migrated["stage05"] = stage05
-        migrated["schema_version"] = "0.8"
+        if (
+            source_schema != "0.9"
+            and isinstance(stage05, dict)
+            and legacy_backend is not None
+        ):
+            stage05 = dict(stage05)
+            stage05.setdefault(
+                "full_target_prediction",
+                {"backend": legacy_backend},
+            )
+            migrated["stage05"] = stage05
+        stage07 = migrated.get("stage07")
+        if (
+            source_schema != "0.9"
+            and isinstance(stage07, dict)
+            and legacy_backend is not None
+        ):
+            stage07 = dict(stage07)
+            de_novo = stage07.setdefault(
+                "full_target_prediction",
+                {"backend": legacy_backend},
+            )
+            conditioned_backend = legacy_backend
+            if isinstance(de_novo, dict) and de_novo.get("backend") in {
+                "protenix-v2",
+                "openfold3-af3-jax",
+            }:
+                conditioned_backend = de_novo["backend"]
+            stage07.setdefault(
+                "target_conditioned_prediction",
+                {
+                    "backend": conditioned_backend,
+                    "template_mode": "precomputed",
+                },
+            )
+            migrated["stage07"] = stage07
+        migrated["schema_version"] = "0.9"
         return migrated
 
     @model_validator(mode="after")
@@ -1190,19 +1300,6 @@ class EasyDesignRunConfig(BaseModel):
             if self.stage06.manual_strategy_authorization is not None:
                 raise ValueError("Stage 05 v1.6 不接受旧版单策略 manual authorization")
         source = self.stage01.target.source
-        is_predictable = (
-            isinstance(source, LocalFileSourceConfig)
-            and source.format
-            in {
-                TargetInputFormat.SEQUENCE,
-                TargetInputFormat.FASTA,
-            }
-        ) or isinstance(source, (UniProtSourceConfig, UniProtSearchSourceConfig))
-        if is_predictable and self.stage01.structure_prediction is None:
-            raise ValueError(
-                "sequence/FASTA/UniProt 输入必须显式提供 structure_prediction，"
-                "以便无合格实验结构时使用 Protenix"
-            )
         if (
             isinstance(
                 source,
@@ -1258,7 +1355,7 @@ class LoadedSequenceRunConfig:
     source_path: Path
     detected_format: TargetInputFormat
     target: NormalizedProteinSequence
-    prediction_request: StructurePredictionRequest
+    prediction_request: StructurePredictionRequest | None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...]
     precomputed_msa_path: Path | None = None
     identity_report: dict[str, Any] | None = None
@@ -1539,8 +1636,6 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         )
     if detected not in {TargetInputFormat.SEQUENCE, TargetInputFormat.FASTA}:
         raise TargetInputError(f"不支持的本地 target format={detected}")
-    if config.structure_prediction is None:
-        raise ConfigurationError("sequence/FASTA 输入必须显式提供 structure_prediction")
     if config.workflow.stop_after_stage >= 2 and config.stage02 is None:
         raise ConfigurationError("stop_after_stage >= 2 时必须显式提供 stage02 配置")
 
@@ -1555,20 +1650,22 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         )
 
     prediction = config.structure_prediction
-    try:
-        request = StructurePredictionRequest(
-            job_name=config.target.target_id,
-            target=target,
-            seeds=prediction.seeds,
-            sample_count=prediction.sample_count,
-            msa_mode=prediction.msa.mode,
-            template_mode=prediction.template_mode,
-            parameter_profile=prediction.parameter_profile,
-            cycle_count=prediction.cycle_count,
-            diffusion_step_count=prediction.diffusion_step_count,
-        )
-    except ValidationError as error:
-        raise ConfigurationError(f"结构预测配置不符合通用请求契约: {error}") from error
+    request: StructurePredictionRequest | None = None
+    if prediction is not None:
+        try:
+            request = StructurePredictionRequest(
+                job_name=config.target.target_id,
+                target=target,
+                seeds=prediction.seeds,
+                sample_count=prediction.sample_count,
+                msa_mode=prediction.msa.mode,
+                template_mode=prediction.template_mode,
+                parameter_profile=prediction.parameter_profile,
+                cycle_count=prediction.cycle_count,
+                diffusion_step_count=prediction.diffusion_step_count,
+            )
+        except ValidationError as error:
+            raise ConfigurationError(f"结构预测配置不符合通用请求契约: {error}") from error
     precomputed_msa_path = _resolve_precomputed_msa_path(
         config_path,
         config,
@@ -1581,7 +1678,9 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         detected_format=detected,
         target=target,
         prediction_request=request,
-        msa_execution_plan=prediction.msa.resolved_providers(),
+        msa_execution_plan=(
+            prediction.msa.resolved_providers() if prediction is not None else ()
+        ),
         precomputed_msa_path=precomputed_msa_path,
     )
 

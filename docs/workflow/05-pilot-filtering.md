@@ -29,7 +29,7 @@ Stage 05 只读取当前 `RunManifest` 声明且通过 SHA-256 校验的：
 - Stage 01 `target.cif` 与 `sequence.fasta`；
 - Stage 03 `StrategyBundle` 和每个 strategy 的 BoltzGen YAML；
 - Stage 04 `PilotBundle` 与 `CandidateIndex`；
-- schema 0.7 中的 `stage05`、`stage04.executor`；
+- schema 0.9 中显式选择 backend 的 `stage05`、`stage04.executor`；
 - runtime profile 中显式配置的 BoltzGen 和 Protenix backend。
 
 候选必须同时具有原始 complex、refold complex、官方 NPZ `design_mask` 和 BoltzGen
@@ -38,6 +38,8 @@ metrics。CDR/设计残基身份只能来自官方 `design_mask`，禁止根据 
 ## 配置
 
 ```yaml
+prediction_policy:
+  selection_mode: explicit-per-stage
 stage05:
   filter_profile: nanobody-filter-standard-v1.6
   maximum_tier_a_strategies: 3
@@ -56,6 +58,10 @@ stage05:
     parameter_profile: model-default
     prediction_timeout_seconds: 7200
 ```
+
+`stage05.full_target_prediction.backend` 是本次 Stage 5 的必选项；不得从项目、Stage 1、
+上一次 pilot 或 runtime profile 推导。de-novo 与 target-conditioned 证据在 Stage 5
+共用这一次显式选择。
 
 `expanded_total_per_strategy: 100` 表示 pilot 与新增候选合计 100；它不是再生成 100。
 `target_msa.mode: remote` 是既有 schema 对“在线获取 MSA 数据”的名称，不会把 Stage 05、
@@ -244,8 +250,10 @@ StageManifest，但 Run 终止并保存 stop code；backend、checksum、任务�
 ## CLI
 
 ```bash
-easydesign pilot plan workspace/projects/PROJECT --strategy STRATEGY_REVISION
-easydesign pilot run workspace/projects/PROJECT --strategy STRATEGY_REVISION --confirm --detach
+easydesign pilot plan workspace/projects/PROJECT --strategy STRATEGY_REVISION \
+  --prediction-backend afo
+easydesign pilot run workspace/projects/PROJECT --strategy STRATEGY_REVISION \
+  --prediction-backend afo --confirm --detach
 easydesign job watch workspace/projects/PROJECT --run PILOT_RUN
 easydesign pilot review workspace/projects/PROJECT --run PILOT_RUN
 ```

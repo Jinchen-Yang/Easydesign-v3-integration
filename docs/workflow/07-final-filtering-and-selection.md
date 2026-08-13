@@ -55,11 +55,20 @@ stage07:
         - provider: colabfold-public
     template_mode: disabled
     no_msa_fallback: false
+  target_conditioned_prediction:
+    backend: openfold3-af3-jax # 可与 de-novo 不同
+    target_msa:
+      mode: remote
+      providers:
+        - provider: colabfold-public
+    template_mode: precomputed
 ```
 
 约束：
 
 - `target_msa.mode: remote` 仅表示在线获取 MSA 数据，不是远程计算或跨主机执行；
+- de-novo 的 `full_target_prediction.backend` 与
+  `target_conditioned_prediction.backend` 分别必选，且允许混用 AFO/Protenix；
 - `primary_count + backup_count` 至少为 1；
 - TNP 在非空候选包中固定为必需证据，不能关掉；
 - target 必须复用 Stage 05 冻结的 required MSA；
@@ -285,8 +294,10 @@ phase、总任务、成功/失败/待重试、GPU 分配、吞吐与 ETA。
 
 ```bash
 easydesign doctor --full
-easydesign select plan workspace/projects/PROJECT --run SCALE_RUN --top 200
-easydesign select run workspace/projects/PROJECT --run SCALE_RUN --top 200 --confirm --detach
+easydesign select plan workspace/projects/PROJECT --run SCALE_RUN --top 200 \
+  --de-novo-backend afo --target-conditioned-backend protenix
+easydesign select run workspace/projects/PROJECT --run SCALE_RUN --top 200 \
+  --de-novo-backend afo --target-conditioned-backend protenix --confirm --detach
 easydesign job watch workspace/projects/PROJECT --run FINAL_RUN
 easydesign project status workspace/projects/PROJECT --json
 ```

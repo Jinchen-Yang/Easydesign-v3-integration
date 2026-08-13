@@ -102,6 +102,29 @@ def _add_confirm(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--confirm", action="store_true", help="显式批准不可变科学操作")
 
 
+def _add_prediction_backend(
+    parser: argparse.ArgumentParser,
+    option: str = "--prediction-backend",
+    *,
+    required: bool,
+) -> None:
+    parser.add_argument(
+        option,
+        choices=("protenix", "afo", "protenix-v2", "openfold3-af3-jax"),
+        required=required,
+        help="本阶段显式结构预测后端；不会成为项目默认值",
+    )
+
+
+def _prediction_backend(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return {
+        "protenix": "protenix-v2",
+        "afo": "openfold3-af3-jax",
+    }.get(value, value)
+
+
 def _add_project_source(parser: argparse.ArgumentParser) -> None:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--target", type=Path, help="PSE、本地结构、FASTA 或裸序列")
@@ -122,12 +145,6 @@ def _add_project_source(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--precomputed-msa", type=Path)
     parser.add_argument(
         "--msa-cache-mode", choices=("online", "prefer-cache", "offline"), default="online"
-    )
-    parser.add_argument(
-        "--prediction-backend",
-        choices=("protenix", "afo", "protenix-v2", "openfold3-af3-jax"),
-        default="protenix",
-        help="项目默认结构预测后端；各阶段仍可在配置中显式覆盖",
     )
 
 
@@ -251,6 +268,7 @@ def _parser() -> argparse.ArgumentParser:
     target_commands = target.add_subparsers(dest="target_command", required=True)
     target_prepare_parser = target_commands.add_parser("prepare")
     target_prepare_parser.add_argument("project", type=Path)
+    _add_prediction_backend(target_prepare_parser, required=False)
     _add_detach(target_prepare_parser)
     _add_json(target_prepare_parser)
     target_approve_parser = target_commands.add_parser("approve")
@@ -303,6 +321,7 @@ def _parser() -> argparse.ArgumentParser:
         sub = pilot_commands.add_parser(name)
         sub.add_argument("project", type=Path)
         sub.add_argument("--strategy", required=True)
+        _add_prediction_backend(sub, required=True)
         if name == "run":
             _add_confirm(sub)
             _add_detach(sub)
@@ -339,6 +358,8 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("project", type=Path)
         sub.add_argument("--run", dest="run_id", required=True)
         sub.add_argument("--top", type=int, default=200)
+        _add_prediction_backend(sub, "--de-novo-backend", required=True)
+        _add_prediction_backend(sub, "--target-conditioned-backend", required=True)
         if name == "run":
             _add_confirm(sub)
             _add_detach(sub)
@@ -606,10 +627,6 @@ def _print_result(result: CommandResult, *, as_json: bool) -> None:
 
 
 def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
-    prediction_backend = {
-        "protenix": "protenix-v2",
-        "afo": "openfold3-af3-jax",
-    }.get(args.prediction_backend, args.prediction_backend)
     return {
         "project_root": args.project,
         "target": args.target,
@@ -629,7 +646,6 @@ def _project_init_values(args: argparse.Namespace) -> dict[str, Any]:
         "scope_feature_name": args.scope_feature_name,
         "precomputed_msa": args.precomputed_msa,
         "msa_cache_mode": args.msa_cache_mode,
-        "prediction_backend": prediction_backend,
     }
 
 
@@ -935,7 +951,14 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
     elif args.command == "target":
         result = (
-            target_prepare(args.project, detach=args.detach)
+            target_prepare(
+                args.project,
+                prediction_backend=cast(
+                    Any,
+                    _prediction_backend(args.prediction_backend),
+                ),
+                detach=args.detach,
+            )
             if args.target_command == "prepare"
             else target_approve(args.project, input_path=args.input, detach=args.detach)
         )
@@ -962,11 +985,16 @@ def _dispatch(args: argparse.Namespace) -> int:
             result = strategy_freeze(args.project, config_path=args.config, confirm=args.confirm)
     elif args.command == "pilot":
         if args.pilot_command == "plan":
-            result = pilot_plan(args.project, strategy_revision=args.strategy)
+            result = pilot_plan(
+                args.project,
+                strategy_revision=args.strategy,
+                prediction_backend=cast(Any, _prediction_backend(args.prediction_backend)),
+            )
         elif args.pilot_command == "run":
             result = pilot_run(
                 args.project,
                 strategy_revision=args.strategy,
+                prediction_backend=cast(Any, _prediction_backend(args.prediction_backend)),
                 confirm=args.confirm,
                 detach=args.detach,
             )
@@ -995,11 +1023,25 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
     elif args.command == "select":
         result = (
-            select_plan(args.project, run_id=args.run_id, top=args.top)
+            select_plan(
+                args.project,
+                run_id=args.run_id,
+                de_novo_backend=cast(Any, _prediction_backend(args.de_novo_backend)),
+                target_conditioned_backend=cast(
+                    Any,
+                    _prediction_backend(args.target_conditioned_backend),
+                ),
+                top=args.top,
+            )
             if args.select_command == "plan"
             else select_run(
                 args.project,
                 run_id=args.run_id,
+                de_novo_backend=cast(Any, _prediction_backend(args.de_novo_backend)),
+                target_conditioned_backend=cast(
+                    Any,
+                    _prediction_backend(args.target_conditioned_backend),
+                ),
                 top=args.top,
                 confirm=args.confirm,
                 detach=args.detach,

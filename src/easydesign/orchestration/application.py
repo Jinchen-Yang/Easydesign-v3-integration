@@ -53,6 +53,7 @@ from .config import (
     LoadedStructureRunConfig,
     ResolvedProtenixMsaProviderConfig,
     Stage02Method,
+    TargetConditionedPredictionConfig,
     TargetInputFormat,
     load_run_config,
     migrate_run_config,
@@ -249,8 +250,8 @@ def _required_backends(
     backends: list[str] = []
     if start_stage <= 1 and isinstance(loaded, LoadedSequenceRunConfig):
         prediction = loaded.config.structure_prediction
-        assert prediction is not None
-        backends.append(prediction.backend)
+        if prediction is not None:
+            backends.append(prediction.backend)
     elif start_stage <= 1 and isinstance(loaded, LoadedPseRunConfig):
         backends.append("pymol-pse")
     elif (
@@ -279,8 +280,12 @@ def _required_backends(
     if start_stage <= 7 <= stop_after:
         stage07 = loaded.config.stage07
         assert stage07 is not None
-        if stage07.full_target_prediction.backend not in backends:
-            backends.append(stage07.full_target_prediction.backend)
+        for complex_prediction in (
+            stage07.full_target_prediction,
+            stage07.target_conditioned_prediction,
+        ):
+            if complex_prediction.backend not in backends:
+                backends.append(complex_prediction.backend)
     if start_stage <= 7 <= stop_after:
         backends.append("tnp")
     return tuple(backends)
@@ -639,7 +644,7 @@ def _complex_protenix_adapter_builder(
 
 def _complex_prediction_adapter_builder(
     profile: RuntimeProfile,
-    prediction: ComplexPredictionConfig,
+    prediction: ComplexPredictionConfig | TargetConditionedPredictionConfig,
 ) -> ComplexAdapterBuilder:
     """Resolve the exact configured complex backend without silent fallback."""
 
@@ -999,7 +1004,10 @@ def execute_pipeline(
             fallback = source_outcome.prediction_fallback
             assert fallback is not None
             prediction_config = loaded.config.structure_prediction
-            assert prediction_config is not None
+            if prediction_config is None:
+                raise ConfigurationError(
+                    "Stage 1 需要预测 target；必须显式选择 AFO 或 Protenix"
+                )
             from easydesign.backends.structure_prediction import (
                 StructurePredictionRequest,
             )
@@ -1254,9 +1262,15 @@ def execute_pipeline(
         assert stage07_config is not None
         completed_stage07 = execute_stage07(
             run_root=run_root,
-            prediction_adapter_builder=_complex_prediction_adapter_builder(
+            de_novo_prediction_adapter_builder=_complex_prediction_adapter_builder(
                 context.loaded_profile.profile,
                 stage07_config.full_target_prediction,
+            ),
+            target_conditioned_prediction_adapter_builder=(
+                _complex_prediction_adapter_builder(
+                    context.loaded_profile.profile,
+                    stage07_config.target_conditioned_prediction,
+                )
             ),
             tnp_adapter=_tnp_adapter(tnp_runtime),
         )
@@ -1349,9 +1363,15 @@ def resume_pipeline(
             raise ConfigurationError("resolved config 缺少 Stage 07")
         return execute_stage07(
             run_root=root,
-            prediction_adapter_builder=_complex_prediction_adapter_builder(
+            de_novo_prediction_adapter_builder=_complex_prediction_adapter_builder(
                 profile.profile,
                 stage07_config_resolved.full_target_prediction,
+            ),
+            target_conditioned_prediction_adapter_builder=(
+                _complex_prediction_adapter_builder(
+                    profile.profile,
+                    stage07_config_resolved.target_conditioned_prediction,
+                )
             ),
             tnp_adapter=_tnp_adapter(tnp_runtime),
         )
@@ -1445,8 +1465,8 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
         TargetInputFormat.SEQUENCE,
         TargetInputFormat.FASTA,
     }:
-        if resolved.target is None or resolved.prediction_request is None:
-            raise ManifestStateError("sequence continuation 缺少 resolved target/request")
+        if resolved.target is None:
+            raise ManifestStateError("sequence continuation 缺少 resolved target")
         loaded: LoadedRunConfig = LoadedSequenceRunConfig(
             config_path=config_path,
             config=resolved.user_config,
@@ -1564,7 +1584,10 @@ def continue_pipeline_after_decision(
         fallback = outcome.prediction_fallback
         assert fallback is not None
         prediction_config = prepared.loaded_config.config.structure_prediction
-        assert prediction_config is not None
+        if prediction_config is None:
+            raise ConfigurationError(
+                "Stage 1 需要预测 target；必须显式选择 AFO 或 Protenix"
+            )
         from easydesign.backends.structure_prediction import StructurePredictionRequest
 
         prediction_request = StructurePredictionRequest(

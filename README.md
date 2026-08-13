@@ -133,7 +133,8 @@ easydesign doctor --full
 
 只有 `doctor --full` 通过后，才把这台机器视为完整可用的 EasyDesign Local 主机。
 
-OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装，也不会改变默认 Protenix。
+OpenFold3/AFO 3.1.4 当前是 `candidate`，不属于默认新机安装；EasyDesign 项目也不设置任何
+预测后端默认值。
 其完整预转换发布物包含权重、runner、冻结 wheelhouse、锁、许可、model card、转换 receipt
 和 smoke 输入；安装不需要原始 PyTorch checkpoint 或转换环境。当前发布 archive 的下载体积
 是 5,032,471,381 bytes（4.687 GiB），解包、建环境和缓存还需要额外磁盘空间。实机
@@ -153,13 +154,22 @@ easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
 easydesign doctor --full
 ```
 
-创建项目时可明确选择 AFO 或 Protenix；未指定时仍使用 Protenix，candidate 发布不会改变默认值：
+环境安装与科学选择彼此独立。项目创建不选择预测后端；运行需要预测的阶段时才显式选择，
+未选会立即停止，不会静默回退 Protenix。各阶段可以混用后端：
 
 ```bash
-easydesign project init workspace/projects/my-afo-project --target target.cif \
-  --prediction-backend afo
-easydesign project init workspace/projects/my-protenix-project --target target.cif \
-  --prediction-backend protenix
+easydesign project init workspace/projects/my-project --target target.cif
+
+# 只有 Stage 1 真正需要预测 target 时才提供：
+easydesign target prepare workspace/projects/my-project --prediction-backend protenix
+
+# Stage 5 的验证后端单独选择：
+easydesign pilot run workspace/projects/my-project --strategy strategy-r000001 \
+  --prediction-backend afo --confirm
+
+# Stage 7 两种科学模式分别选择，可混用：
+easydesign select run workspace/projects/my-project --run PRODUCTION_RUN \
+  --de-novo-backend afo --target-conditioned-backend protenix --confirm
 ```
 
 只有 catalog 提升为 `stable` 并绑定固定科学报告和人工 approval receipt 后，才可省略 release：
@@ -187,7 +197,7 @@ Codex 会读取仓库级 `$easydesign-research` Skill，并通过语义化命令
 
 ```bash
 easydesign project init workspace/projects/apoe --uniprot P02649
-easydesign target prepare workspace/projects/apoe
+easydesign target prepare workspace/projects/apoe --prediction-backend afo
 easydesign project status workspace/projects/apoe --json
 ```
 
@@ -207,6 +217,8 @@ easydesign runtime --help
 - `examples/apoe-ui-demo/`：只读 APOE 科学证据示例，不得改写。
 
 读取、校验、染色、扫描、规划和 review 可以直接执行。`site approve`、`strategy freeze`、
-`pilot run/promote`、`scale run` 和 `select run` 必须由研究者显式确认。
+`pilot run/promote`、`scale run` 和 `select run` 必须由研究者显式确认。每个 run 还会冻结
+已选 backend、AFO release、runtime profile SHA 和配置快照；`job resume` 只读取该快照，
+不接受新的后端参数，也不受之后的 profile 激活变化影响。
 
 本分支为私有 Developer Preview；结果用于研究决策支持，不等于实验或临床验证。

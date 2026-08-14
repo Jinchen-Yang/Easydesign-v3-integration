@@ -90,8 +90,10 @@ def _condition(tmp_path: Path) -> TargetStructureCondition:
 
 
 def _request(tmp_path: Path) -> ComplexStructurePredictionRequest:
-    query = (tmp_path / "query.a3m").resolve()
-    query.write_text(">query\nAC\n", encoding="utf-8")
+    target_query = (tmp_path / "target-query.a3m").resolve()
+    target_query.write_text(">query\nAC\n", encoding="utf-8")
+    binder_query = (tmp_path / "binder-query.a3m").resolve()
+    binder_query.write_text(">query\nDE\n", encoding="utf-8")
     return ComplexStructurePredictionRequest(
         job_name="conditioned-complex",
         chains=(
@@ -99,15 +101,15 @@ def _request(tmp_path: Path) -> ComplexStructurePredictionRequest:
                 chain_id="A",
                 role="target",
                 sequence="AC",
-                paired_msa_path=query,
-                unpaired_msa_path=query,
+                paired_msa_path=target_query,
+                unpaired_msa_path=target_query,
             ),
             ProteinPredictionChain(
                 chain_id="B",
                 role="binder",
                 sequence="DE",
-                paired_msa_path=query,
-                unpaired_msa_path=query,
+                paired_msa_path=binder_query,
+                unpaired_msa_path=binder_query,
             ),
         ),
         msa_mode=MsaMode.PRECOMPUTED,
@@ -159,12 +161,7 @@ def test_adapters_condition_only_target_and_enable_template_flag(tmp_path: Path)
     assert protenix_target["templatesPath"] == str(
         request.target_structure_condition.template_data_path
     )
-    assert protenix_binder["templatesPath"] == str(
-        request.target_structure_condition.binder_template_data_path
-    )
-    assert json.loads(
-        request.target_structure_condition.binder_template_data_path.read_text()
-    ) == []
+    assert "templatesPath" not in protenix_binder
     invocation = _protenix().prediction_invocation(
         request,
         input_json=tmp_path / "input.json",
@@ -187,12 +184,11 @@ def test_conditioned_request_rejects_corrupt_snapshot(tmp_path: Path) -> None:
         _protenix().render_input(request)
 
 
-def test_contract_rejects_implicit_template_mode(tmp_path: Path) -> None:
+def test_scientific_label_does_not_restrict_feature_combination(tmp_path: Path) -> None:
     base = _request(tmp_path)
     payload = base.model_dump()
-    payload.update(
-        scientific_mode=ScientificMode.DE_NOVO,
-        target_structure_condition=None,
-    )
-    with pytest.raises(ValueError, match="de-novo"):
-        ComplexStructurePredictionRequest.model_validate(payload)
+    payload.update(scientific_mode=ScientificMode.DE_NOVO)
+    request = ComplexStructurePredictionRequest.model_validate(payload)
+
+    rendered = _afo().render_input(request)
+    assert rendered["sequences"][0]["protein"]["templates"]

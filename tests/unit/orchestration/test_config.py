@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -16,11 +17,70 @@ from easydesign.orchestration import (
     detect_target_input_format,
     load_run_config,
 )
-from easydesign.orchestration.config import migrate_run_config
+from easydesign.orchestration.config import (
+    ComplexPredictionConfig,
+    TargetConditionedPredictionConfig,
+    migrate_run_config,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 APOE_INPUT = ROOT / "examples/stage01-apoe"
 APOE_SHA256 = "7cfb40e9e78b05724e328df0af5ca673f4379ab7011b7655a2922f494668115a"
+
+
+def test_complex_prediction_config_allows_independent_chain_features(
+    tmp_path: Path,
+) -> None:
+    binder_templates = (tmp_path / "binder-templates.json").resolve()
+    binder_templates.write_text("[]\n", encoding="utf-8")
+
+    config = ComplexPredictionConfig.model_validate(
+        {
+            "backend": "openfold3-af3-jax",
+            "target_msa": {"mode": "remote"},
+            "target_paired_msa": {"mode": "disabled"},
+            "binder_msa": {"mode": "remote"},
+            "binder_paired_msa": "query-only",
+            "target_templates": {"mode": "target-structure"},
+            "binder_templates": {
+                "mode": "precomputed",
+                "data_path": binder_templates,
+                "data_sha256": hashlib.sha256(
+                    binder_templates.read_bytes()
+                ).hexdigest(),
+            },
+        }
+    )
+
+    assert config.target_msa.mode == "remote"
+    assert config.target_paired_msa.mode == "disabled"
+    assert config.binder_msa.mode == "remote"
+    assert config.binder_paired_msa.mode == "query-only"
+    assert config.target_templates.mode == "target-structure"
+    assert config.binder_templates.mode == "precomputed"
+
+
+def test_legacy_template_mode_is_migrated_without_overriding_explicit_choice() -> None:
+    legacy = TargetConditionedPredictionConfig.model_validate(
+        {
+            "backend": "openfold3-af3-jax",
+            "template_mode": "disabled",
+        }
+    )
+    explicit = TargetConditionedPredictionConfig.model_validate(
+        {
+            "backend": "openfold3-af3-jax",
+            "template_mode": "disabled",
+            "target_templates": {
+                "mode": "precomputed",
+                "data_path": "/input.json",
+                "data_sha256": "a" * 64,
+            },
+        }
+    )
+
+    assert legacy.target_templates.mode == "disabled"
+    assert explicit.target_templates.mode == "precomputed"
 
 
 def test_apoe_user_yaml_resolves_sequence_and_prediction_request() -> None:

@@ -26,7 +26,7 @@ from .contracts import (
     MsaMode,
     PredictionParameterProfile,
     PredictionRequest,
-    ScientificMode,
+    ProteinPredictionChain,
     StructurePredictionProduct,
     TemplateMode,
 )
@@ -169,9 +169,6 @@ class ProtenixV2Adapter:
 
     def render_input(self, request: PredictionRequest) -> list[dict[str, Any]]:
         if isinstance(request, ComplexStructurePredictionRequest):
-            condition = request.target_structure_condition
-            if request.scientific_mode is ScientificMode.TARGET_CONDITIONED:
-                self._validate_target_condition(request)
             sequences: list[dict[str, Any]] = []
             for chain in request.chains:
                 protein_chain: dict[str, Any] = {
@@ -184,14 +181,9 @@ class ProtenixV2Adapter:
                     protein_chain["unpairedMsaPath"] = str(
                         chain.unpaired_msa_path
                     )
-                if condition is not None and chain.role == "target":
-                    protein_chain["templatesPath"] = str(
-                        condition.template_data_path
-                    )
-                elif condition is not None and chain.role == "binder":
-                    protein_chain["templatesPath"] = str(
-                        condition.binder_template_data_path
-                    )
+                template_path = self._chain_template_path(request, chain)
+                if template_path is not None:
+                    protein_chain["templatesPath"] = str(template_path)
                 sequences.append({"proteinChain": protein_chain})
             return [{"name": request.job_name, "sequences": sequences}]
         if request.template_mode is not TemplateMode.DISABLED:
@@ -209,6 +201,86 @@ class ProtenixV2Adapter:
                 ],
             }
         ]
+
+    def _chain_template_path(
+        self,
+        request: ComplexStructurePredictionRequest,
+        chain: ProteinPredictionChain,
+    ) -> Path | None:
+        mode = chain.resolved_template_mode(
+            request.template_mode,
+            legacy_target_condition_available=(
+                request.target_structure_condition is not None
+            ),
+        )
+        if mode is TemplateMode.DISABLED:
+            return None
+        if chain.template_data_path is not None:
+            assert chain.template_data_sha256 is not None
+            self._validate_chain_templates(chain)
+            return chain.template_data_path
+        if chain.role == "target" and request.target_structure_condition is not None:
+            self._validate_target_condition(request)
+            return request.target_structure_condition.template_data_path
+        raise BackendContractError(
+            f"Protenix chain={chain.chain_id} precomputed template 缺少 data path"
+        )
+
+    @staticmethod
+    def _validate_chain_templates(chain: ProteinPredictionChain) -> None:
+        path = chain.template_data_path
+        expected_sha256 = chain.template_data_sha256
+        if path is None or expected_sha256 is None:
+            raise BackendContractError(
+                f"Protenix chain={chain.chain_id} template path/SHA 缺失"
+            )
+        if not path.is_file() or sha256_file(path) != expected_sha256:
+            raise BackendContractError(
+                f"Protenix chain={chain.chain_id} template data 缺失或 SHA-256 不一致"
+            )
+        try:
+            templates = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise BackendContractError(
+                f"Protenix chain={chain.chain_id} template data 无法读取"
+            ) from error
+        if not isinstance(templates, list):
+            raise BackendContractError(
+                f"Protenix chain={chain.chain_id} template data 必须是 JSON list"
+            )
+        for index, template in enumerate(templates):
+            prefix = f"Protenix chain={chain.chain_id} template[{index}]"
+            if not isinstance(template, dict) or set(template) != {
+                "mmcif",
+                "queryIndices",
+                "templateIndices",
+            }:
+                raise BackendContractError(f"{prefix} schema 不合法")
+            mmcif = template["mmcif"]
+            query_indices = template["queryIndices"]
+            template_indices = template["templateIndices"]
+            if not isinstance(mmcif, str) or not mmcif.strip():
+                raise BackendContractError(f"{prefix} mmCIF 不能为空")
+            if (
+                not isinstance(query_indices, list)
+                or not isinstance(template_indices, list)
+                or not query_indices
+                or len(query_indices) != len(template_indices)
+                or any(
+                    type(value) is not int
+                    for value in (*query_indices, *template_indices)
+                )
+            ):
+                raise BackendContractError(f"{prefix} residue mapping 不合法")
+            if (
+                len(set(query_indices)) != len(query_indices)
+                or any(
+                    value < 0 or value >= len(chain.sequence)
+                    for value in query_indices
+                )
+                or any(value < 0 for value in template_indices)
+            ):
+                raise BackendContractError(f"{prefix} residue mapping 越界或重复")
 
     def _validate_target_condition(
         self,
@@ -232,24 +304,6 @@ class ProtenixV2Adapter:
         ):
             raise BackendContractError(
                 "Protenix target condition template structure SHA-256 不一致"
-            )
-        if sha256_file(condition.binder_template_data_path) != (
-            condition.binder_template_data_sha256
-        ):
-            raise BackendContractError(
-                "Protenix binder empty-template data SHA-256 不一致"
-            )
-        try:
-            binder_templates = json.loads(
-                condition.binder_template_data_path.read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError) as error:
-            raise BackendContractError(
-                "Protenix binder empty-template data 无法读取"
-            ) from error
-        if binder_templates != []:
-            raise BackendContractError(
-                "Protenix binder template snapshot 必须严格为空"
             )
         try:
             templates = json.loads(
@@ -397,7 +451,7 @@ class ProtenixV2Adapter:
         input_json: Path,
         output_dir: Path,
     ) -> BackendInvocation:
-        if request.msa_mode is not MsaMode.REMOTE:
+        if not self._uses_remote_msa(request):
             raise BackendContractError("只有 remote MSA 请求可以创建远程 MSA 调用")
         return BackendInvocation(
             backend_name=self.backend_name,
@@ -431,8 +485,11 @@ class ProtenixV2Adapter:
         if not isinstance(request, ComplexStructurePredictionRequest):
             if request.template_mode is not TemplateMode.DISABLED:
                 raise BackendContractError("Protenix 单链 Stage 01 禁止模板")
-        elif request.scientific_mode is ScientificMode.TARGET_CONDITIONED:
-            self._validate_target_condition(request)
+        else:
+            for chain in request.chains:
+                self._chain_template_path(request, chain)
+        uses_msa = self._uses_msa(request)
+        uses_templates = self._uses_templates(request)
         argv = [
             str(self.executable),
             "pred",
@@ -449,9 +506,9 @@ class ProtenixV2Adapter:
             "--model_name",
             self.model_name,
             "--use_msa",
-            str(request.msa_mode is not MsaMode.DISABLED).lower(),
+            str(uses_msa).lower(),
             "--use_template",
-            str(request.template_mode is not TemplateMode.DISABLED).lower(),
+            str(uses_templates).lower(),
             "--use_rna_msa",
             "false",
             "--trimul_kernel",
@@ -467,7 +524,7 @@ class ProtenixV2Adapter:
             "--need_atom_confidence",
             str(request.require_full_confidence).lower(),
         ]
-        if request.template_mode is not TemplateMode.DISABLED:
+        if uses_templates:
             argv.extend(("--kalign_binary_path", str(self.kalign_binary_path)))
         if request.parameter_profile is PredictionParameterProfile.MODEL_DEFAULT:
             argv.extend(("--use_default_params", "true"))
@@ -489,6 +546,77 @@ class ProtenixV2Adapter:
             environment=self._environment(),
             timeout_seconds=self.prediction_timeout_seconds,
         )
+
+    @staticmethod
+    def _uses_remote_msa(request: PredictionRequest) -> bool:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return request.msa_mode is MsaMode.REMOTE
+        return any(
+            mode is MsaMode.REMOTE
+            for chain in request.chains
+            for mode in (
+                chain.resolved_unpaired_msa_mode(request.msa_mode),
+                chain.resolved_paired_msa_mode(request.msa_mode),
+            )
+        )
+
+    @staticmethod
+    def _uses_msa(request: PredictionRequest) -> bool:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return request.msa_mode is not MsaMode.DISABLED
+        return any(
+            mode is not MsaMode.DISABLED
+            for chain in request.chains
+            for mode in (
+                chain.resolved_unpaired_msa_mode(request.msa_mode),
+                chain.resolved_paired_msa_mode(request.msa_mode),
+            )
+        )
+
+    @staticmethod
+    def _uses_templates(request: PredictionRequest) -> bool:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return request.template_mode is not TemplateMode.DISABLED
+        return any(
+            chain.resolved_template_mode(
+                request.template_mode,
+                legacy_target_condition_available=(
+                    request.target_structure_condition is not None
+                ),
+            )
+            is not TemplateMode.DISABLED
+            for chain in request.chains
+        )
+
+    @staticmethod
+    def _chain_feature_metrics(request: PredictionRequest) -> dict[str, str | None]:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return {
+                "target_unpaired_msa_mode": str(request.msa_mode),
+                "target_paired_msa_mode": str(request.msa_mode),
+                "binder_unpaired_msa_mode": None,
+                "binder_paired_msa_mode": None,
+                "target_template_data_sha256": None,
+                "binder_template_data_sha256": None,
+            }
+        target = request.require_role("target")
+        binder = request.require_role("binder")
+        return {
+            "target_unpaired_msa_mode": str(
+                target.resolved_unpaired_msa_mode(request.msa_mode)
+            ),
+            "target_paired_msa_mode": str(
+                target.resolved_paired_msa_mode(request.msa_mode)
+            ),
+            "binder_unpaired_msa_mode": str(
+                binder.resolved_unpaired_msa_mode(request.msa_mode)
+            ),
+            "binder_paired_msa_mode": str(
+                binder.resolved_paired_msa_mode(request.msa_mode)
+            ),
+            "target_template_data_sha256": target.template_data_sha256,
+            "binder_template_data_sha256": binder.template_data_sha256,
+        }
 
     def collect_products(
         self,
@@ -565,6 +693,16 @@ class ProtenixV2Adapter:
                         has_clash=confidence.has_clash,
                         recycle_count=confidence.num_recycles,
                         native_metrics={
+                            "msa_provider": (
+                                str(self.remote_msa_provider)
+                                if self._uses_remote_msa(request)
+                                else "precomputed"
+                            ),
+                            "msa_endpoint": (
+                                self.remote_msa_endpoint
+                                if self._uses_remote_msa(request)
+                                else None
+                            ),
                             "template_mode": str(request.template_mode),
                             "scientific_mode": (
                                 str(request.scientific_mode)
@@ -591,6 +729,7 @@ class ProtenixV2Adapter:
                                 and request.target_structure_condition is not None
                                 else False
                             ),
+                            **self._chain_feature_metrics(request),
                         },
                     )
                 )

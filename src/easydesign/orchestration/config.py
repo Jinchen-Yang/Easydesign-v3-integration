@@ -27,7 +27,7 @@ from easydesign.backends.target_sources import (
 )
 from easydesign.backends.target_sources.sequence import CANONICAL_AMINO_ACIDS
 from easydesign.core import ConfigurationError, TargetInputError
-from easydesign.core.artifacts import ID_PATTERN
+from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 from easydesign.stages.s03_boltzgen_configuration import (
     ExplicitStrategyVariant,
     NativeStrategyVariant,
@@ -308,6 +308,78 @@ ProtenixMsaConfig: TypeAlias = Annotated[
     RemoteProtenixMsaConfig | PrecomputedProtenixMsaConfig,
     Field(discriminator="mode"),
 ]
+
+
+class QueryOnlyComplexMsaConfig(BaseModel):
+    """Use only the query row for one complex chain."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Literal["query-only"] = "query-only"
+
+    def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
+        return ()
+
+
+class DisabledComplexMsaConfig(BaseModel):
+    """Explicitly omit one complex chain MSA feature."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Literal[MsaMode.DISABLED] = MsaMode.DISABLED
+
+    def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
+        return ()
+
+
+class PrecomputedComplexMsaConfig(BaseModel):
+    """An immutable A3M selected for one complex chain."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Literal[MsaMode.PRECOMPUTED] = MsaMode.PRECOMPUTED
+    path: Path
+    sha256: str = Field(pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_path(self) -> Self:
+        if not self.path.is_absolute():
+            raise ValueError("complex precomputed MSA path 必须是绝对路径")
+        return self
+
+    def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
+        return ()
+
+
+ComplexMsaConfig: TypeAlias = Annotated[
+    RemoteProtenixMsaConfig
+    | PrecomputedComplexMsaConfig
+    | QueryOnlyComplexMsaConfig
+    | DisabledComplexMsaConfig,
+    Field(discriminator="mode"),
+]
+
+
+class ComplexTemplateConfig(BaseModel):
+    """Per-chain template source; combinations are never gated by scientific labels."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Literal["disabled", "precomputed", "target-structure"] = "disabled"
+    data_path: Path | None = None
+    data_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def validate_source(self) -> Self:
+        supplied = self.data_path is not None or self.data_sha256 is not None
+        if self.mode == "precomputed":
+            if self.data_path is None or self.data_sha256 is None:
+                raise ValueError("precomputed template 必须提供 data_path/data_sha256")
+            if not self.data_path.is_absolute():
+                raise ValueError("precomputed template data_path 必须是绝对路径")
+        elif supplied:
+            raise ValueError(f"template mode={self.mode} 不能提供 precomputed data")
+        return self
 
 PredictionBackend: TypeAlias = Literal["protenix-v2", "openfold3-af3-jax"]
 
@@ -808,29 +880,46 @@ class Stage05AdvisoryValidationConfig(BaseModel):
 
 
 class ComplexPredictionConfig(BaseModel):
-    """Stage 05/07 model-explicit policy; binder MSA stays query-only."""
+    """Uniform per-chain feature policy for Stage 05/07 complex prediction."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     backend: PredictionBackend
     target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
-    binder_msa: Literal["query-only"] = "query-only"
-    template_mode: Literal[TemplateMode.DISABLED] = TemplateMode.DISABLED
+    target_paired_msa: ComplexMsaConfig = QueryOnlyComplexMsaConfig()
+    binder_msa: ComplexMsaConfig = QueryOnlyComplexMsaConfig()
+    binder_paired_msa: ComplexMsaConfig = QueryOnlyComplexMsaConfig()
+    target_templates: ComplexTemplateConfig = ComplexTemplateConfig()
+    binder_templates: ComplexTemplateConfig = ComplexTemplateConfig()
+    template_mode: TemplateMode = TemplateMode.DISABLED
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
     prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
 
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_scalar_msa(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        for field in ("target_msa", "target_paired_msa", "binder_msa", "binder_paired_msa"):
+            if isinstance(migrated.get(field), str):
+                migrated[field] = {"mode": migrated[field]}
+        if "target_templates" not in migrated:
+            legacy_template_mode = migrated.get("template_mode")
+            if legacy_template_mode == TemplateMode.PRECOMPUTED:
+                migrated["target_templates"] = {"mode": "target-structure"}
+            elif legacy_template_mode == TemplateMode.DISABLED:
+                migrated["target_templates"] = {"mode": "disabled"}
+        return migrated
 
-class TargetConditionedPredictionConfig(BaseModel):
-    """Stage 07 target-conditioned model selection; binder templates stay disabled."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+class TargetConditionedPredictionConfig(ComplexPredictionConfig):
+    """Compatibility name; it exposes the same freely composable chain features."""
 
-    backend: PredictionBackend
-    target_msa: RemoteProtenixMsaConfig = RemoteProtenixMsaConfig()
-    binder_msa: Literal["query-only"] = "query-only"
-    template_mode: Literal[TemplateMode.PRECOMPUTED] = TemplateMode.PRECOMPUTED
-    parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
-    prediction_timeout_seconds: int = Field(default=7200, ge=60, le=86400)
+    target_templates: ComplexTemplateConfig = ComplexTemplateConfig(
+        mode="target-structure"
+    )
+    template_mode: TemplateMode = TemplateMode.PRECOMPUTED
 
 
 class Stage05Config(BaseModel):

@@ -53,15 +53,22 @@ stage07:
       mode: remote
       providers:
         - provider: colabfold-public
-    template_mode: disabled
-    no_msa_fallback: false
+    target_paired_msa: {mode: query-only}
+    binder_msa: {mode: query-only}
+    binder_paired_msa: {mode: query-only}
+    target_templates: {mode: disabled}
+    binder_templates: {mode: disabled}
   target_conditioned_prediction:
     backend: openfold3-af3-jax # 可与 de-novo 不同
     target_msa:
       mode: remote
       providers:
         - provider: colabfold-public
-    template_mode: precomputed
+    target_paired_msa: {mode: query-only}
+    binder_msa: {mode: query-only}
+    binder_paired_msa: {mode: query-only}
+    target_templates: {mode: target-structure}
+    binder_templates: {mode: disabled}
 ```
 
 约束：
@@ -71,9 +78,13 @@ stage07:
   `target_conditioned_prediction.backend` 分别必选，且允许混用 AFO/Protenix；
 - `primary_count + backup_count` 至少为 1；
 - TNP 在非空候选包中固定为必需证据，不能关掉；
-- target 必须复用 Stage 05 冻结的 required MSA；
-- de novo binder 固定使用 query-only A3M；
-- template 禁用，禁止 no-MSA fallback；
+- target unpaired MSA 复用 Stage 05 冻结的 required MSA；
+- target/binder 的 paired MSA、binder unpaired MSA 可逐链选择
+  `remote / precomputed / query-only / disabled`；
+- target/binder template 可分别选择 disabled 或 checksum 固定的 precomputed 0..N 模板，
+  target 还可显式选择当前 run 的 `target-structure`；这些选择不再由 scientific label 限制；
+- remote MSA 失败不得静默 fallback；自动 template search 在本地数据库 provider 发布前不
+  宣称可用；
 - Protenix 初轮 seed 101、复核 seed 202/303，均为单 sample；AFO 按 v1.6 执行
   seed 101 初筛及五 seed × 五 sample 深筛；
 - GPU 来自 Stage 04 明确配置，一张 GPU 同时只运行一个预测任务。
@@ -133,9 +144,10 @@ interface BSA、design mask 或必需指标是 operational failure，不能把�
 
 每个候选使用阶段显式选择的 AFO 或 Protenix-v2 执行完整 target + binder 复合物预测：
 
-- target chain A：Stage 05 required MSA；
-- binder chain B：query-only A3M；
-- 无模板、单 seed、单 sample；
+- target chain A：Stage 05 required unpaired MSA；
+- binder chain B：默认 query-only，也可按 resolved config 搜索或读取预计算 MSA；
+- 两条链默认无模板，也可同时读取各自 checksum 固定的 0..N 预计算模板；
+- 单 seed、单 sample；
 - 输出结构、summary confidence 和 full confidence 都必须存在且校验。
 
 seed-101 初轮硬门：
@@ -346,7 +358,7 @@ operational failure 不能转换为空科学成功。失败调用写入结构化
 - 用 TNP risk 隐式删除候选；
 - 修改 v1.5 阈值迎合 APOE 历史结果；
 - 用失败候选凑足 40；
-- 无 MSA fallback、模板或 Agent/LLM 选择；
+- 无 MSA fallback 或 Agent/LLM 选择；
 - 自动湿实验、免疫原性/毒理结论或 production-ready 宣称；
 - 真实 50k 后的生产发布。
 

@@ -19,10 +19,10 @@ from pydantic import BaseModel, ConfigDict
 
 from easydesign.backends.executors import execute_on_devices
 from easydesign.backends.structure_prediction import (
+    BackendInvocation,
     ComplexStructurePredictionRequest,
     MsaMode,
     OpenFold3Af3JaxAdapter,
-    ProteinPredictionChain,
     ProtenixV2Adapter,
     ScientificMode,
     TargetStructureCondition,
@@ -112,13 +112,17 @@ from easydesign.stages.s07_final_filtering_and_selection import (
 )
 
 from .complex_prediction_support import (
+    configured_prediction_chain,
     prediction_release_identity,
-    prepare_query_only_a3m,
     read_fasta_sequence,
     run_checked_backend_invocation,
     snapshot_target_structure_condition,
 )
-from .config import ResolvedProtenixMsaProviderConfig
+from .config import (
+    ComplexPredictionConfig,
+    PrecomputedComplexMsaConfig,
+    ResolvedProtenixMsaProviderConfig,
+)
 from .stage04 import _atomic_text
 from .task_tracking import (
     TaskEventJournal,
@@ -665,6 +669,7 @@ def _execute_predictions(
     runtime: Path,
     adapter_builder: ComplexAdapterBuilder,
     provider: ResolvedProtenixMsaProviderConfig,
+    prediction_config: ComplexPredictionConfig,
     devices: tuple[int, ...],
     maximum_attempts: int,
     created_at: datetime,
@@ -682,9 +687,25 @@ def _execute_predictions(
     )
     target_sequence = read_fasta_sequence(upstream.target_sequence_ref.verify(root))
     target_msa = upstream.target_msa_ref.verify(root)
-    target_query = prepare_query_only_a3m(
-        target_sequence,
-        work / "structure-prediction" / phase_id / "target-query-only.a3m",
+    target_unpaired = PrecomputedComplexMsaConfig(
+        path=target_msa,
+        sha256=sha256_file(target_msa),
+    )
+    remote_feature_providers = tuple(
+        source.resolved_providers()[0]
+        for source in (
+            prediction_config.target_paired_msa,
+            prediction_config.binder_msa,
+            prediction_config.binder_paired_msa,
+        )
+        if source.resolved_providers()
+    )
+    if len(set(remote_feature_providers)) > 1:
+        raise ManifestStateError(
+            "同一次 complex prediction 的 remote MSA chain 必须使用同一 provider 配置"
+        )
+    request_provider = (
+        remote_feature_providers[0] if remote_feature_providers else provider
     )
     reference_target = parse_protein_chain(
         upstream.target_structure_ref.verify(root),
@@ -893,50 +914,78 @@ def _execute_predictions(
                 / f"seed-{seed}"
                 / f"attempt-{attempt_number:04d}"
             )
-            binder_query = prepare_query_only_a3m(
-                sequence,
-                task_root / "binder-query-only.a3m",
+            target_chain = configured_prediction_chain(
+                chain_id="A",
+                role="target",
+                sequence=target_sequence,
+                unpaired_msa=target_unpaired,
+                paired_msa=prediction_config.target_paired_msa,
+                templates=prediction_config.target_templates,
+                query_only_root=task_root,
+                target_condition=target_condition,
+            )
+            binder_chain = configured_prediction_chain(
+                chain_id="B",
+                role="binder",
+                sequence=sequence,
+                unpaired_msa=prediction_config.binder_msa,
+                paired_msa=prediction_config.binder_paired_msa,
+                templates=prediction_config.binder_templates,
+                query_only_root=task_root,
+                target_condition=target_condition,
+            )
+            uses_templates = any(
+                chain.template_mode is TemplateMode.PRECOMPUTED
+                for chain in (target_chain, binder_chain)
             )
             request = ComplexStructurePredictionRequest(
                 job_name=f"{candidate.candidate_id}-s{seed}"[:128],
-                chains=(
-                    ProteinPredictionChain(
-                        chain_id="A",
-                        role="target",
-                        sequence=target_sequence,
-                        paired_msa_path=target_query,
-                        unpaired_msa_path=target_msa,
-                    ),
-                    ProteinPredictionChain(
-                        chain_id="B",
-                        role="binder",
-                        sequence=sequence,
-                        paired_msa_path=binder_query,
-                        unpaired_msa_path=binder_query,
-                    ),
-                ),
+                chains=(target_chain, binder_chain),
                 seeds=(seed,),
                 sample_count=sample_count,
-                msa_mode=MsaMode.PRECOMPUTED,
+                msa_mode=MsaMode.DISABLED,
                 scientific_mode=scientific_mode,
                 template_mode=(
-                    TemplateMode.DISABLED
-                    if scientific_mode is ScientificMode.DE_NOVO
-                    else TemplateMode.PRECOMPUTED
+                    TemplateMode.PRECOMPUTED
+                    if uses_templates
+                    else TemplateMode.DISABLED
                 ),
                 target_structure_condition=target_condition,
             )
-            adapter = adapter_builder(provider, device)
+            adapter = adapter_builder(request_provider, device)
             input_path = adapter.write_input(request, task_root / "input.json")
+            remote_invocation: BackendInvocation | None = None
+            prediction_input = input_path
+            if any(
+                mode is MsaMode.REMOTE
+                for chain in request.chains
+                for mode in (
+                    chain.resolved_unpaired_msa_mode(request.msa_mode),
+                    chain.resolved_paired_msa_mode(request.msa_mode),
+                )
+            ):
+                msa_output = task_root / "msa-output"
+                remote_invocation = adapter.msa_invocation(
+                    request,
+                    input_json=input_path,
+                    output_dir=msa_output,
+                )
+                prediction_input = adapter.updated_msa_input_path(
+                    input_path,
+                    msa_output,
+                )
             output = task_root / "output"
             invocation = adapter.prediction_invocation(
                 request,
-                input_json=input_path,
+                input_json=prediction_input,
                 output_dir=output,
             )
             command_hash = hashlib.sha256(
                 json.dumps(
-                    invocation.argv,
+                    (
+                        remote_invocation.argv if remote_invocation is not None else (),
+                        invocation.argv,
+                    ),
                     ensure_ascii=True,
                     separators=(",", ":"),
                 ).encode("utf-8")
@@ -975,6 +1024,12 @@ def _execute_predictions(
             representative: RawFinalPrediction | None = None
             return_code = 1
             try:
+                if remote_invocation is not None:
+                    run_checked_backend_invocation(remote_invocation)
+                    if not prediction_input.is_file():
+                        raise ManifestStateError(
+                            "complex remote MSA 没有生成 updated prediction input"
+                        )
                 completed = run_checked_backend_invocation(invocation)
                 return_code = completed.returncode
                 products = adapter.collect_products(request, output_dir=output)
@@ -1140,6 +1195,74 @@ def _execute_predictions(
                                 )
                                 else None
                             ),
+                            target_unpaired_msa_mode=cast(
+                                Literal["disabled", "remote", "precomputed"],
+                                product.native_metrics.get(
+                                    "target_unpaired_msa_mode",
+                                    request.require_role("target")
+                                    .resolved_unpaired_msa_mode(request.msa_mode)
+                                    .value,
+                                ),
+                            ),
+                            target_paired_msa_mode=cast(
+                                Literal["disabled", "remote", "precomputed"],
+                                product.native_metrics.get(
+                                    "target_paired_msa_mode",
+                                    request.require_role("target")
+                                    .resolved_paired_msa_mode(request.msa_mode)
+                                    .value,
+                                ),
+                            ),
+                            binder_unpaired_msa_mode=cast(
+                                Literal["disabled", "remote", "precomputed"],
+                                product.native_metrics.get(
+                                    "binder_unpaired_msa_mode",
+                                    request.require_role("binder")
+                                    .resolved_unpaired_msa_mode(request.msa_mode)
+                                    .value,
+                                ),
+                            ),
+                            binder_paired_msa_mode=cast(
+                                Literal["disabled", "remote", "precomputed"],
+                                product.native_metrics.get(
+                                    "binder_paired_msa_mode",
+                                    request.require_role("binder")
+                                    .resolved_paired_msa_mode(request.msa_mode)
+                                    .value,
+                                ),
+                            ),
+                            target_template_data_sha256=(
+                                str(
+                                    product.native_metrics[
+                                        "target_template_data_sha256"
+                                    ]
+                                )
+                                if isinstance(
+                                    product.native_metrics.get(
+                                        "target_template_data_sha256"
+                                    ),
+                                    str,
+                                )
+                                else request.require_role(
+                                    "target"
+                                ).template_data_sha256
+                            ),
+                            binder_template_data_sha256=(
+                                str(
+                                    product.native_metrics[
+                                        "binder_template_data_sha256"
+                                    ]
+                                )
+                                if isinstance(
+                                    product.native_metrics.get(
+                                        "binder_template_data_sha256"
+                                    ),
+                                    str,
+                                )
+                                else request.require_role(
+                                    "binder"
+                                ).template_data_sha256
+                            ),
                             predicted_structure=structure_ref,
                             summary_confidence=summary_ref,
                             full_confidence=full_ref,
@@ -1300,6 +1423,7 @@ def _scored_prediction_records(
             sample_index=item.sample_index,
             samples_per_seed=item.samples_per_seed,
             recycles=item.recycles,
+            template_mode=item.template_mode,
             ranking_score=item.ranking_score,
             backend_identity=item.backend_identity,
             model_identity=item.model_identity,
@@ -1313,6 +1437,12 @@ def _scored_prediction_records(
             release_identity=item.release_identity,
             msa_provider=item.msa_provider,
             msa_endpoint=item.msa_endpoint,
+            target_unpaired_msa_mode=item.target_unpaired_msa_mode,
+            target_paired_msa_mode=item.target_paired_msa_mode,
+            binder_unpaired_msa_mode=item.binder_unpaired_msa_mode,
+            binder_paired_msa_mode=item.binder_paired_msa_mode,
+            target_template_data_sha256=item.target_template_data_sha256,
+            binder_template_data_sha256=item.binder_template_data_sha256,
             predicted_structure=item.predicted_structure,
             summary_confidence=item.summary_confidence,
             full_confidence=item.full_confidence,
@@ -1812,6 +1942,7 @@ def _execute_stage07(
             runtime=runtime,
             adapter_builder=de_novo_prediction_adapter_builder,
             provider=de_novo_providers[0],
+            prediction_config=config.full_target_prediction,
             devices=execution_devices,
             maximum_attempts=stage04_config.executor.max_task_attempts,
             created_at=now,
@@ -1830,6 +1961,7 @@ def _execute_stage07(
                 runtime=runtime,
                 adapter_builder=target_conditioned_prediction_adapter_builder,
                 provider=conditioned_providers[0],
+                prediction_config=config.target_conditioned_prediction,
                 devices=execution_devices,
                 maximum_attempts=stage04_config.executor.max_task_attempts,
                 created_at=now,
@@ -1883,6 +2015,7 @@ def _execute_stage07(
                 runtime=runtime,
                 adapter_builder=de_novo_prediction_adapter_builder,
                 provider=de_novo_providers[0],
+                prediction_config=config.full_target_prediction,
                 devices=execution_devices,
                 maximum_attempts=stage04_config.executor.max_task_attempts,
                 created_at=now,
@@ -1905,6 +2038,7 @@ def _execute_stage07(
                     runtime=runtime,
                     adapter_builder=target_conditioned_prediction_adapter_builder,
                     provider=conditioned_providers[0],
+                    prediction_config=config.target_conditioned_prediction,
                     devices=execution_devices,
                     maximum_attempts=stage04_config.executor.max_task_attempts,
                     created_at=now,

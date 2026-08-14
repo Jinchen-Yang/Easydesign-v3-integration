@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from easydesign.backends.structure_prediction import (
     OpenFold3Af3JaxAdapter,
     ProteinPredictionChain,
     StructurePredictionRequest,
+    TemplateMode,
 )
 from easydesign.backends.target_sources import normalize_raw_sequence
 from easydesign.core import BackendContractError, ManifestStateError
@@ -80,6 +82,26 @@ def complex_request(
     )
 
 
+def _template_data(
+    tmp_path: Path,
+    *,
+    chain_id: str,
+    sequence: str,
+    count: int,
+) -> tuple[Path, str]:
+    path = (tmp_path / f"{chain_id}-templates.json").resolve()
+    payload = [
+        {
+            "mmcif": f"data_{chain_id}_{index}\n#\n",
+            "queryIndices": list(range(len(sequence))),
+            "templateIndices": list(range(len(sequence))),
+        }
+        for index in range(count)
+    ]
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_renders_af3_v4_with_templates_disabled_and_query_only_binder(
     tmp_path: Path,
 ) -> None:
@@ -100,6 +122,166 @@ def test_renders_af3_v4_with_templates_disabled_and_query_only_binder(
         "unpairedMsa": ">query\nLMNPQRSTV\n",
         "pairedMsa": "",
     }
+
+
+def test_renders_independent_msa_and_multiple_templates_for_both_chains(
+    tmp_path: Path,
+) -> None:
+    target_msa = (tmp_path / "target-independent.a3m").resolve()
+    binder_msa = (tmp_path / "binder-independent.a3m").resolve()
+    target_msa.write_text(">query\nACDE\n>hit\nAC-E\n", encoding="utf-8")
+    binder_msa.write_text(">query\nFGHI\n>hit\nF-HI\n", encoding="utf-8")
+    target_templates, target_templates_sha = _template_data(
+        tmp_path,
+        chain_id="A",
+        sequence="ACDE",
+        count=2,
+    )
+    binder_templates, binder_templates_sha = _template_data(
+        tmp_path,
+        chain_id="B",
+        sequence="FGHI",
+        count=1,
+    )
+    request = ComplexStructurePredictionRequest(
+        job_name="free-chain-features",
+        chains=(
+            ProteinPredictionChain(
+                chain_id="A",
+                role="target",
+                sequence="ACDE",
+                unpaired_msa_mode=MsaMode.PRECOMPUTED,
+                unpaired_msa_path=target_msa,
+                paired_msa_mode=MsaMode.DISABLED,
+                template_mode=TemplateMode.PRECOMPUTED,
+                template_data_path=target_templates,
+                template_data_sha256=target_templates_sha,
+            ),
+            ProteinPredictionChain(
+                chain_id="B",
+                role="binder",
+                sequence="FGHI",
+                unpaired_msa_mode=MsaMode.PRECOMPUTED,
+                unpaired_msa_path=binder_msa,
+                paired_msa_mode=MsaMode.DISABLED,
+                template_mode=TemplateMode.PRECOMPUTED,
+                template_data_path=binder_templates,
+                template_data_sha256=binder_templates_sha,
+            ),
+        ),
+        msa_mode=MsaMode.DISABLED,
+        template_mode=TemplateMode.DISABLED,
+    )
+
+    payload = adapter().render_input(request)
+    target = payload["sequences"][0]["protein"]
+    binder = payload["sequences"][1]["protein"]
+
+    assert len(target["templates"]) == 2
+    assert len(binder["templates"]) == 1
+    assert ">hit" in target["unpairedMsa"]
+    assert ">hit" in binder["unpairedMsa"]
+    assert target["pairedMsa"] == ""
+    assert binder["pairedMsa"] == ""
+
+
+def test_remote_msa_can_be_selected_for_only_one_complex_chain(
+    tmp_path: Path,
+) -> None:
+    base = complex_request(tmp_path)
+    request = base.model_copy(
+        update={
+            "msa_mode": MsaMode.DISABLED,
+            "chains": (
+                base.chains[0].model_copy(
+                    update={
+                        "unpaired_msa_mode": MsaMode.REMOTE,
+                        "unpaired_msa_path": None,
+                        "paired_msa_mode": MsaMode.DISABLED,
+                    }
+                ),
+                base.chains[1].model_copy(
+                    update={
+                        "unpaired_msa_mode": MsaMode.PRECOMPUTED,
+                        "paired_msa_mode": MsaMode.DISABLED,
+                    }
+                ),
+            ),
+        }
+    )
+
+    payload = adapter().render_input(request)
+    target = payload["sequences"][0]["protein"]
+    binder = payload["sequences"][1]["protein"]
+    invocation = adapter().msa_invocation(
+        request,
+        input_json=Path("/run/complex.json"),
+        output_dir=Path("/run/msa"),
+    )
+
+    assert "unpairedMsa" not in target
+    assert target["pairedMsa"] == ""
+    assert binder["unpairedMsa"].startswith(">query")
+    assert "--use_msa_server=true" in invocation.argv
+
+
+def test_complex_request_allows_explicit_no_msa_for_each_chain() -> None:
+    request = ComplexStructurePredictionRequest(
+        job_name="no-msa-complex",
+        chains=(
+            ProteinPredictionChain(
+                chain_id="A",
+                role="target",
+                sequence="ACDE",
+                unpaired_msa_mode=MsaMode.DISABLED,
+                paired_msa_mode=MsaMode.DISABLED,
+                template_mode=TemplateMode.DISABLED,
+            ),
+            ProteinPredictionChain(
+                chain_id="B",
+                role="binder",
+                sequence="FGHI",
+                unpaired_msa_mode=MsaMode.DISABLED,
+                paired_msa_mode=MsaMode.DISABLED,
+                template_mode=TemplateMode.DISABLED,
+            ),
+        ),
+        msa_mode=MsaMode.DISABLED,
+    )
+
+    payload = adapter().render_input(request)
+
+    for item in payload["sequences"]:
+        protein = item["protein"]
+        assert protein["unpairedMsa"] == ""
+        assert protein["pairedMsa"] == ""
+
+
+def test_rejects_precomputed_msa_with_wrong_chain_query(tmp_path: Path) -> None:
+    wrong = (tmp_path / "wrong.a3m").resolve()
+    wrong.write_text(">query\nAAAA\n", encoding="utf-8")
+    request = ComplexStructurePredictionRequest(
+        job_name="wrong-query",
+        chains=(
+            ProteinPredictionChain(
+                chain_id="A",
+                role="target",
+                sequence="ACDE",
+                unpaired_msa_mode=MsaMode.PRECOMPUTED,
+                unpaired_msa_path=wrong,
+            ),
+            ProteinPredictionChain(
+                chain_id="B",
+                role="binder",
+                sequence="FGHI",
+                unpaired_msa_mode=MsaMode.DISABLED,
+            ),
+        ),
+        msa_mode=MsaMode.DISABLED,
+    )
+
+    with pytest.raises(BackendContractError, match="query"):
+        adapter().render_input(request)
 
 
 def test_remote_msa_and_prediction_are_separate_explicit_invocations() -> None:
@@ -125,6 +307,36 @@ def test_remote_msa_and_prediction_are_separate_explicit_invocations() -> None:
     assert dict(prediction.environment)[
         "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES"
     ] == "none"
+
+
+def test_collects_remote_msa_artifacts_for_each_requested_chain(
+    tmp_path: Path,
+) -> None:
+    input_json = (tmp_path / "complex.json").resolve()
+    input_json.write_text("{}\n", encoding="utf-8")
+    output = (tmp_path / "msa-output").resolve()
+    job = output / "complex"
+    msas = job / "msas"
+    msas.mkdir(parents=True)
+    updated = job / "complex_data.json"
+    updated.write_text("{}\n", encoding="utf-8")
+    for chain_id, sequence in (("A", "ACDE"), ("B", "FGHI")):
+        (msas / f"{chain_id}_unpaired.a3m").write_text(
+            f">query\n{sequence}\n",
+            encoding="utf-8",
+        )
+
+    observed_updated, artifacts = adapter().remote_msa_chain_artifacts(
+        input_json=input_json,
+        msa_output_dir=output,
+        chain_ids=("A", "B"),
+    )
+
+    assert observed_updated == updated
+    assert artifacts == {
+        "A": msas / "A_unpaired.a3m",
+        "B": msas / "B_unpaired.a3m",
+    }
 
 
 def test_write_input_is_append_only(tmp_path: Path) -> None:
@@ -206,6 +418,10 @@ def test_collects_all_samples_and_computes_true_cross_chain_pae(
     assert products[0].model_name == "of3-p2-155k"
     assert products[0].native_metrics["release_id"] == "afo-3-1-4-of3-p2-155k"
     assert products[0].native_metrics["environment_lock_sha256"] == "f" * 64
+    assert products[0].native_metrics["target_unpaired_msa_mode"] == "precomputed"
+    assert products[0].native_metrics["target_paired_msa_mode"] == "disabled"
+    assert products[0].native_metrics["binder_unpaired_msa_mode"] == "precomputed"
+    assert products[0].native_metrics["binder_paired_msa_mode"] == "disabled"
     assert products[1].ranking_score > products[0].ranking_score
 
 

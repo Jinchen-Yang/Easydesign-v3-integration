@@ -183,6 +183,26 @@ def _prediction(
     )
 
 
+def test_full_target_evidence_does_not_gate_features_by_scientific_label() -> None:
+    payload = _prediction(
+        "candidate-configured",
+        "strategy-configured",
+        passed=True,
+    ).model_dump()
+    payload.update(
+        template_mode="precomputed",
+        binder_unpaired_msa_mode="remote",
+        target_template_data_sha256="a" * 64,
+        binder_template_data_sha256="b" * 64,
+    )
+
+    record = FullTargetPredictionRecord.model_validate(payload)
+
+    assert record.scientific_mode == "de-novo"
+    assert record.template_mode == "precomputed"
+    assert record.binder_unpaired_msa_mode == "remote"
+
+
 def test_full_target_zero_pass_is_warning_and_does_not_revoke_promotion() -> None:
     pilot_candidates = tuple(
         _candidate(1, ordinal, final_gate_pass=True) for ordinal in (1, 2)

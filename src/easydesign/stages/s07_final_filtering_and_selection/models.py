@@ -124,10 +124,30 @@ class FinalPredictionRecord(BaseModel):
     sample_index: int = Field(default=0, ge=0)
     samples_per_seed: int = Field(default=1, ge=1)
     recycles: int = Field(default=10, ge=1)
-    template_mode: Literal["disabled"] = "disabled"
+    template_mode: Literal["disabled", "precomputed"] = "disabled"
     parameter_profile: Literal["model-default"] = "model-default"
     msa_provider: str = "precomputed"
     msa_endpoint: str | None = None
+    target_unpaired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    target_paired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    binder_unpaired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    binder_paired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    target_template_data_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
+    binder_template_data_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     ranking_score: float = 0.0
     backend_identity: str = "protenix-v2@2.0.0"
     model_identity: str = "protenix-v2"
@@ -202,6 +222,26 @@ class RawFinalPrediction(BaseModel):
     parameter_profile: Literal["model-default"] = "model-default"
     msa_provider: str = "precomputed"
     msa_endpoint: str | None = None
+    target_unpaired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    target_paired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    binder_unpaired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    binder_paired_msa_mode: Literal["disabled", "remote", "precomputed"] = (
+        "precomputed"
+    )
+    target_template_data_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
+    binder_template_data_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     ranking_score: float = 0.0
     is_seed_representative: bool = True
     backend_identity: str = "protenix-v2@2.0.0"
@@ -239,21 +279,12 @@ class RawFinalPrediction(BaseModel):
 
     @model_validator(mode="after")
     def validate_contacts(self) -> Self:
-        if self.scientific_mode == "de-novo":
-            if (
-                self.template_mode != "disabled"
-                or self.target_condition_sha256 is not None
-                or self.target_condition_source_origin is not None
-                or self.target_condition_self_conditioned
-            ):
-                raise ValueError("de-novo raw prediction 不能声明 target condition")
-        elif (
-            self.template_mode != "precomputed"
-            or self.screening_profile_id != "target-conditioned-evidence-v1"
-            or self.target_condition_sha256 is None
-            or self.target_condition_source_origin is None
+        if (self.target_condition_sha256 is None) != (
+            self.target_condition_source_origin is None
         ):
-            raise ValueError("target-conditioned raw prediction condition evidence 不完整")
+            raise ValueError("target condition SHA/source origin 必须同时存在或缺失")
+        if self.target_condition_self_conditioned and self.target_condition_sha256 is None:
+            raise ValueError("self-conditioned prediction 必须记录 condition identity")
         if self.backend_identity.startswith("openfold3-af3-jax@") and len(
             self.release_identity
         ) != 13:

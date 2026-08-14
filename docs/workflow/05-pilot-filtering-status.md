@@ -14,8 +14,9 @@
   均由冻结 profile 决定。
 - Stage05Bundle 0.2 最多晋级三个 Tier A，不从 Tier B–D 补位；没有 Tier A 时发布
   `stopped-no-tier-a`。
-- Tier A 扩展复用 Stage 04 的本地 BoltzGen executor；full-target Protenix 使用 target
-  required MSA、binder query-only、无模板和固定 seed 101。
+- Tier A 扩展复用 Stage 04 的本地 BoltzGen executor；full-target prediction 默认使用 target
+  required MSA、binder query-only、无模板和固定 seed 101，同时支持显式逐链 MSA 与
+  target/binder 预计算模板组合；resolved config 与 checksum 是证据身份的一部分。
 - 旧 Bundle 0.1 和 v1.5 scientific stop 只读保留；新 policy 不回写旧 manifest。
 
 ## 仍有效的验证事实

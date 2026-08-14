@@ -24,7 +24,7 @@ from .contracts import (
     MsaMode,
     PredictionParameterProfile,
     PredictionRequest,
-    ScientificMode,
+    ProteinPredictionChain,
     StructurePredictionProduct,
     TemplateMode,
 )
@@ -56,7 +56,7 @@ class _OpenFold3FullConfidence(BaseModel):
     token_chain_ids: tuple[str, ...]
 
 
-def _read_a3m(path: Path) -> str:
+def _read_a3m(path: Path, *, expected_query: str | None = None) -> str:
     if not path.is_absolute() or not path.is_file():
         raise BackendContractError(f"AFO MSA 必须是存在的绝对文件: {path}")
     try:
@@ -65,7 +65,78 @@ def _read_a3m(path: Path) -> str:
         raise BackendContractError(f"AFO MSA 无法读取: {path}") from error
     if not value.startswith(">") or "\n" not in value:
         raise BackendContractError(f"AFO MSA 不是合法 A3M/FASTA: {path}")
+    if expected_query is not None:
+        query_parts: list[str] = []
+        seen_header = False
+        for raw in value.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if seen_header:
+                    break
+                seen_header = True
+            elif seen_header:
+                query_parts.append(line)
+        if "".join(query_parts) != expected_query:
+            raise BackendContractError(
+                f"AFO MSA query 与 chain sequence 不一致: {path}"
+            )
     return value if value.endswith("\n") else value + "\n"
+
+
+def _read_templates(
+    *,
+    path: Path,
+    expected_sha256: str,
+    chain: ProteinPredictionChain,
+) -> list[dict[str, Any]]:
+    if not path.is_absolute() or not path.is_file():
+        raise BackendContractError(
+            f"AFO chain={chain.chain_id} template data 必须是存在的绝对文件: {path}"
+        )
+    if sha256_file(path) != expected_sha256:
+        raise BackendContractError(
+            f"AFO chain={chain.chain_id} template data SHA-256 不一致"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BackendContractError(
+            f"AFO chain={chain.chain_id} template data 无法读取"
+        ) from error
+    if not isinstance(payload, list):
+        raise BackendContractError(
+            f"AFO chain={chain.chain_id} template data 必须是 JSON list"
+        )
+    for index, template in enumerate(payload):
+        prefix = f"AFO chain={chain.chain_id} template[{index}]"
+        if not isinstance(template, dict) or set(template) != {
+            "mmcif",
+            "queryIndices",
+            "templateIndices",
+        }:
+            raise BackendContractError(f"{prefix} schema 不合法")
+        mmcif = template["mmcif"]
+        query_indices = template["queryIndices"]
+        template_indices = template["templateIndices"]
+        if not isinstance(mmcif, str) or not mmcif.strip():
+            raise BackendContractError(f"{prefix} mmCIF 不能为空")
+        if (
+            not isinstance(query_indices, list)
+            or not isinstance(template_indices, list)
+            or not query_indices
+            or len(query_indices) != len(template_indices)
+            or any(type(value) is not int for value in (*query_indices, *template_indices))
+        ):
+            raise BackendContractError(f"{prefix} residue mapping 不合法")
+        if (
+            len(set(query_indices)) != len(query_indices)
+            or any(value < 0 or value >= len(chain.sequence) for value in query_indices)
+            or any(value < 0 for value in template_indices)
+        ):
+            raise BackendContractError(f"{prefix} residue mapping 越界或重复")
+    return payload
 
 
 def _matrix_shape(matrix: tuple[tuple[float, ...], ...]) -> tuple[int, int]:
@@ -193,7 +264,8 @@ class OpenFold3Af3JaxAdapter:
         *,
         chain_id: str,
         sequence: str,
-        msa_mode: MsaMode,
+        unpaired_msa_mode: MsaMode,
+        paired_msa_mode: MsaMode,
         unpaired_msa_path: Path | None,
         paired_msa_path: Path | None,
         templates: list[dict[str, Any]] | None = None,
@@ -203,25 +275,31 @@ class OpenFold3Af3JaxAdapter:
             "sequence": sequence,
             "templates": templates or [],
         }
-        if unpaired_msa_path is not None:
-            protein["unpairedMsa"] = _read_a3m(unpaired_msa_path)
-        elif msa_mode is not MsaMode.REMOTE:
+        if unpaired_msa_mode is MsaMode.PRECOMPUTED:
+            protein["unpairedMsa"] = (
+                _read_a3m(unpaired_msa_path, expected_query=sequence)
+                if unpaired_msa_path is not None
+                else ""
+            )
+        elif unpaired_msa_mode is MsaMode.DISABLED:
             protein["unpairedMsa"] = ""
-        if paired_msa_path is not None:
-            protein["pairedMsa"] = _read_a3m(paired_msa_path)
-        elif msa_mode is not MsaMode.REMOTE:
+        if paired_msa_mode is MsaMode.PRECOMPUTED:
+            protein["pairedMsa"] = (
+                _read_a3m(paired_msa_path, expected_query=sequence)
+                if paired_msa_path is not None
+                else ""
+            )
+        elif paired_msa_mode is MsaMode.DISABLED:
             protein["pairedMsa"] = ""
         return {"protein": protein}
 
-    def _target_templates(
+    def _legacy_target_templates(
         self,
         request: ComplexStructurePredictionRequest,
     ) -> list[dict[str, Any]]:
         condition = request.target_structure_condition
-        if request.scientific_mode is ScientificMode.DE_NOVO:
-            return []
         if condition is None:
-            raise BackendContractError("AFO target-conditioned 请求缺少 condition")
+            raise BackendContractError("AFO legacy target template 缺少 condition")
         if sha256_file(condition.snapshot_structure_path) != (
             condition.snapshot_structure_sha256
         ):
@@ -234,22 +312,6 @@ class OpenFold3Af3JaxAdapter:
             raise BackendContractError(
                 "AFO target condition template structure SHA-256 不一致"
             )
-        if sha256_file(condition.binder_template_data_path) != (
-            condition.binder_template_data_sha256
-        ):
-            raise BackendContractError(
-                "AFO binder empty-template data SHA-256 不一致"
-            )
-        try:
-            binder_templates = json.loads(
-                condition.binder_template_data_path.read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError) as error:
-            raise BackendContractError(
-                "AFO binder empty-template data 无法读取"
-            ) from error
-        if binder_templates != []:
-            raise BackendContractError("AFO binder template snapshot 必须严格为空")
         try:
             templates = json.loads(
                 condition.template_data_path.read_text(encoding="utf-8")
@@ -277,6 +339,75 @@ class OpenFold3Af3JaxAdapter:
             )
         return templates
 
+    def _chain_templates(
+        self,
+        request: ComplexStructurePredictionRequest,
+        chain: ProteinPredictionChain,
+    ) -> list[dict[str, Any]]:
+        mode = chain.resolved_template_mode(
+            request.template_mode,
+            legacy_target_condition_available=(
+                request.target_structure_condition is not None
+            ),
+        )
+        if mode is TemplateMode.DISABLED:
+            return []
+        if chain.template_data_path is not None:
+            assert chain.template_data_sha256 is not None
+            return _read_templates(
+                path=chain.template_data_path,
+                expected_sha256=chain.template_data_sha256,
+                chain=chain,
+            )
+        if chain.role == "target" and request.target_structure_condition is not None:
+            return self._legacy_target_templates(request)
+        raise BackendContractError(
+            f"AFO chain={chain.chain_id} precomputed template 缺少 data path"
+        )
+
+    @staticmethod
+    def _has_remote_msa(request: PredictionRequest) -> bool:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return request.msa_mode is MsaMode.REMOTE
+        return any(
+            mode is MsaMode.REMOTE
+            for chain in request.chains
+            for mode in (
+                chain.resolved_unpaired_msa_mode(request.msa_mode),
+                chain.resolved_paired_msa_mode(request.msa_mode),
+            )
+        )
+
+    @staticmethod
+    def _chain_feature_metrics(request: PredictionRequest) -> dict[str, str | None]:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return {
+                "target_unpaired_msa_mode": str(request.msa_mode),
+                "target_paired_msa_mode": str(request.msa_mode),
+                "binder_unpaired_msa_mode": None,
+                "binder_paired_msa_mode": None,
+                "target_template_data_sha256": None,
+                "binder_template_data_sha256": None,
+            }
+        target = request.require_role("target")
+        binder = request.require_role("binder")
+        return {
+            "target_unpaired_msa_mode": str(
+                target.resolved_unpaired_msa_mode(request.msa_mode)
+            ),
+            "target_paired_msa_mode": str(
+                target.resolved_paired_msa_mode(request.msa_mode)
+            ),
+            "binder_unpaired_msa_mode": str(
+                binder.resolved_unpaired_msa_mode(request.msa_mode)
+            ),
+            "binder_paired_msa_mode": str(
+                binder.resolved_paired_msa_mode(request.msa_mode)
+            ),
+            "target_template_data_sha256": target.template_data_sha256,
+            "binder_template_data_sha256": binder.template_data_sha256,
+        }
+
     def render_input(self, request: PredictionRequest) -> dict[str, Any]:
         sequences: list[dict[str, Any]] = []
         if isinstance(request, ComplexStructurePredictionRequest):
@@ -286,16 +417,20 @@ class OpenFold3Af3JaxAdapter:
             )
             if [chain.chain_id for chain in ordered] != ["A", "B"]:
                 raise BackendContractError("AFO complex 必须固定 target=A、binder=B")
-            target_templates = self._target_templates(request)
             for chain in ordered:
                 sequences.append(
                     self._protein(
                         chain_id=chain.chain_id,
                         sequence=chain.sequence,
-                        msa_mode=request.msa_mode,
+                        unpaired_msa_mode=chain.resolved_unpaired_msa_mode(
+                            request.msa_mode
+                        ),
+                        paired_msa_mode=chain.resolved_paired_msa_mode(
+                            request.msa_mode
+                        ),
                         unpaired_msa_path=chain.unpaired_msa_path,
                         paired_msa_path=chain.paired_msa_path,
-                        templates=(target_templates if chain.role == "target" else []),
+                        templates=self._chain_templates(request, chain),
                     )
                 )
         else:
@@ -305,7 +440,8 @@ class OpenFold3Af3JaxAdapter:
                 self._protein(
                     chain_id="A",
                     sequence=request.target.sequence,
-                    msa_mode=request.msa_mode,
+                    unpaired_msa_mode=request.msa_mode,
+                    paired_msa_mode=request.msa_mode,
                     unpaired_msa_path=None,
                     paired_msa_path=None,
                 )
@@ -364,13 +500,37 @@ class OpenFold3Af3JaxAdapter:
         input_json: Path,
         msa_output_dir: Path,
     ) -> tuple[Path, Path]:
+        updated, artifacts = self.remote_msa_chain_artifacts(
+            input_json=input_json,
+            msa_output_dir=msa_output_dir,
+            chain_ids=("A",),
+        )
+        return updated, artifacts["A"]
+
+    def remote_msa_chain_artifacts(
+        self,
+        *,
+        input_json: Path,
+        msa_output_dir: Path,
+        chain_ids: tuple[str, ...],
+    ) -> tuple[Path, dict[str, Path]]:
+        if not chain_ids or len(chain_ids) != len(set(chain_ids)):
+            raise BackendContractError("AFO remote MSA chain_ids 必须非空且唯一")
         updated = self.updated_msa_input_path(input_json, msa_output_dir)
-        source = msa_output_dir / input_json.stem / "msas/A_unpaired.a3m"
-        if not updated.is_file() or not source.is_file():
-            raise PredictionOutputError(
-                f"AFO MSA 输出缺失: updated={updated}, a3m={source}"
+        sources = {
+            chain_id: (
+                msa_output_dir
+                / input_json.stem
+                / f"msas/{chain_id}_unpaired.a3m"
             )
-        return updated, source
+            for chain_id in chain_ids
+        }
+        missing = [str(path) for path in sources.values() if not path.is_file()]
+        if not updated.is_file() or missing:
+            raise PredictionOutputError(
+                f"AFO MSA 输出缺失: updated={updated}, missing={missing}"
+            )
+        return updated, sources
 
     def version_invocation(self) -> BackendInvocation:
         return BackendInvocation(
@@ -399,7 +559,7 @@ class OpenFold3Af3JaxAdapter:
         input_json: Path,
         output_dir: Path,
     ) -> BackendInvocation:
-        if request.msa_mode is not MsaMode.REMOTE:
+        if not self._has_remote_msa(request):
             raise BackendContractError("只有 remote MSA 请求可以调用 ColabFold")
         return BackendInvocation(
             backend_name=self.backend_name,
@@ -434,8 +594,9 @@ class OpenFold3Af3JaxAdapter:
         if not isinstance(request, ComplexStructurePredictionRequest):
             if request.template_mode is not TemplateMode.DISABLED:
                 raise BackendContractError("AFO 单链 Stage 01 禁止模板")
-        elif request.scientific_mode is ScientificMode.TARGET_CONDITIONED:
-            self._target_templates(request)
+        else:
+            for chain in request.chains:
+                self._chain_templates(request, chain)
         if request.parameter_profile is not PredictionParameterProfile.MODEL_DEFAULT:
             raise BackendContractError("AFO 首版只接受已冻结的 model-default 参数")
         return BackendInvocation(
@@ -599,12 +760,12 @@ class OpenFold3Af3JaxAdapter:
                             "runner_tree_sha256": self.runner_tree_sha256,
                             "msa_provider": (
                                 self.remote_msa_provider
-                                if request.msa_mode is MsaMode.REMOTE
+                                if self._has_remote_msa(request)
                                 else "precomputed"
                             ),
                             "msa_endpoint": (
                                 self.remote_msa_endpoint
-                                if request.msa_mode is MsaMode.REMOTE
+                                if self._has_remote_msa(request)
                                 else None
                             ),
                             "template_mode": str(request.template_mode),
@@ -633,6 +794,7 @@ class OpenFold3Af3JaxAdapter:
                                 and request.target_structure_condition is not None
                                 else False
                             ),
+                            **self._chain_feature_metrics(request),
                             "seeds": ",".join(str(value) for value in request.seeds),
                             "samples_per_seed": request.sample_count,
                             "recycles": 10,

@@ -25,7 +25,7 @@ class TemplateMode(StrEnum):
 
 
 class ScientificMode(StrEnum):
-    """Scientific interpretation of a target+binder structure prediction."""
+    """Backward-compatible evidence label; it never gates chain features."""
 
     DE_NOVO = "de-novo"
     TARGET_CONDITIONED = "target-conditioned"
@@ -46,7 +46,11 @@ class TargetResidueNumbering(BaseModel):
 
 
 class TargetStructureCondition(BaseModel):
-    """Frozen target-only structure condition shared by AFO and Protenix."""
+    """Frozen target-only provenance shared by AFO and Protenix.
+
+    The binder empty-template fields remain only for schema-0.3 resume.  Binder
+    template capability is controlled independently by ``ProteinPredictionChain``.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -178,22 +182,101 @@ class StructurePredictionRequest(BaseModel):
 
 
 class ProteinPredictionChain(BaseModel):
-    """A typed protein chain for a complex-prediction file protocol."""
+    """One independently configurable protein chain in a complex request.
+
+    The global ``msa_mode``/``template_mode`` fields on the enclosing request are
+    retained as a legacy default.  New callers should set the per-chain modes so
+    target and binder features can be combined without a scientific-mode gate.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     chain_id: str = Field(pattern=r"^[A-Za-z0-9]{1,4}$")
     role: Literal["target", "binder"]
     sequence: str = Field(pattern=r"^[ACDEFGHIKLMNPQRSTVWY]+$")
-    paired_msa_path: Path | None = None
+    unpaired_msa_mode: MsaMode | None = None
     unpaired_msa_path: Path | None = None
+    paired_msa_mode: MsaMode | None = None
+    paired_msa_path: Path | None = None
+    template_mode: TemplateMode | None = None
+    template_data_path: Path | None = None
+    template_data_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
     @model_validator(mode="after")
-    def validate_msa_paths(self) -> Self:
-        for path in (self.paired_msa_path, self.unpaired_msa_path):
+    def validate_feature_inputs(self) -> Self:
+        msa_inputs = (
+            ("unpaired", self.unpaired_msa_mode, self.unpaired_msa_path),
+            ("paired", self.paired_msa_mode, self.paired_msa_path),
+        )
+        for label, mode, path in msa_inputs:
             if path is not None and not path.is_absolute():
                 raise ValueError("complex prediction MSA path 必须是绝对路径")
+            if mode is MsaMode.PRECOMPUTED and path is None:
+                raise ValueError(f"{label} precomputed MSA 必须提供 path")
+            if mode in {MsaMode.DISABLED, MsaMode.REMOTE} and path is not None:
+                raise ValueError(f"{label} {mode} MSA 不能同时提供 path")
+        if (self.template_data_path is None) != (
+            self.template_data_sha256 is None
+        ):
+            raise ValueError("template data path/SHA-256 必须同时存在或缺失")
+        if (
+            self.template_data_path is not None
+            and not self.template_data_path.is_absolute()
+        ):
+            raise ValueError("complex prediction template data path 必须是绝对路径")
+        if (
+            self.template_mode is TemplateMode.PRECOMPUTED
+            and self.template_data_path is None
+        ):
+            raise ValueError("precomputed template 必须提供 data path/SHA-256")
+        if (
+            self.template_mode is TemplateMode.DISABLED
+            and self.template_data_path is not None
+        ):
+            raise ValueError("disabled template 不能同时提供 data path")
         return self
+
+    @staticmethod
+    def _resolved_msa_mode(
+        explicit_mode: MsaMode | None,
+        path: Path | None,
+        legacy_mode: MsaMode,
+    ) -> MsaMode:
+        if explicit_mode is not None:
+            return explicit_mode
+        if path is not None:
+            return MsaMode.PRECOMPUTED
+        if legacy_mode is MsaMode.REMOTE:
+            return MsaMode.REMOTE
+        return MsaMode.DISABLED
+
+    def resolved_unpaired_msa_mode(self, legacy_mode: MsaMode) -> MsaMode:
+        return self._resolved_msa_mode(
+            self.unpaired_msa_mode,
+            self.unpaired_msa_path,
+            legacy_mode,
+        )
+
+    def resolved_paired_msa_mode(self, legacy_mode: MsaMode) -> MsaMode:
+        return self._resolved_msa_mode(
+            self.paired_msa_mode,
+            self.paired_msa_path,
+            legacy_mode,
+        )
+
+    def resolved_template_mode(
+        self,
+        legacy_mode: TemplateMode,
+        *,
+        legacy_target_condition_available: bool,
+    ) -> TemplateMode:
+        if self.template_mode is not None:
+            return self.template_mode
+        if self.template_data_path is not None:
+            return TemplateMode.PRECOMPUTED
+        if legacy_target_condition_available and self.role == "target":
+            return legacy_mode
+        return TemplateMode.DISABLED
 
 
 class ComplexStructurePredictionRequest(BaseModel):
@@ -236,18 +319,7 @@ class ComplexStructurePredictionRequest(BaseModel):
                 raise ValueError("custom profile 必须同时声明 cycle_count 和 diffusion_step_count")
         elif any(value is not None for value in custom_values):
             raise ValueError("model-default profile 不能覆盖 cycle/step")
-        if self.msa_mode is MsaMode.DISABLED:
-            raise ValueError("Stage 05/07 complex prediction 禁止 no-MSA")
-        if self.scientific_mode is ScientificMode.DE_NOVO:
-            if self.template_mode is not TemplateMode.DISABLED:
-                raise ValueError("de-novo 模式必须禁用模板")
-            if self.target_structure_condition is not None:
-                raise ValueError("de-novo 模式不能携带 target condition")
-        else:
-            if self.template_mode is not TemplateMode.PRECOMPUTED:
-                raise ValueError("target-conditioned 模式必须使用 precomputed template")
-            if self.target_structure_condition is None:
-                raise ValueError("target-conditioned 模式必须携带 target condition")
+        if self.target_structure_condition is not None:
             target = self.require_role("target")
             if target.chain_id != self.target_structure_condition.target_chain_id:
                 raise ValueError("target condition chain 与 target chain 不一致")

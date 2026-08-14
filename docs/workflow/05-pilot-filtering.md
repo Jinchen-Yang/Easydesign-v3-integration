@@ -53,7 +53,16 @@ stage05:
       cache_mode: online
       providers:
         - provider: colabfold-public
-    binder_msa: query-only
+    target_paired_msa:
+      mode: query-only
+    binder_msa:
+      mode: query-only # 也可 remote / precomputed / disabled
+    binder_paired_msa:
+      mode: query-only # 也可 remote / precomputed / disabled
+    target_templates:
+      mode: disabled # 也可 precomputed；conditioned 证据可用 target-structure
+    binder_templates:
+      mode: disabled # 也可 precomputed，支持 0..N 个模板
     template_mode: disabled
     parameter_profile: model-default
     prediction_timeout_seconds: 7200
@@ -67,8 +76,10 @@ stage05:
 `target_msa.mode: remote` 是既有 schema 对“在线获取 MSA 数据”的名称，不会把 Stage 05、
 Protenix 或 GPU task 提交到外部主机。
 只有按 `F_YAML` 排名前三的 Tier A strategy 会扩展；不足三组时不得用 Tier B–D
-补足。target 必须使用 required MSA，de novo binder 固定使用 query-only A3M；
-不允许 no-MSA fallback。
+补足。target 的 required MSA 仍是 Stage 05 冻结证据；target/binder 的 paired MSA、binder
+unpaired MSA 以及两条链的 template 来源由每次 prediction 配置独立选择。默认值保持历史的
+query-only/no-template，但不再以 de-novo/target-conditioned 标签禁止合法组合。远程搜索失败
+是可恢复 operational failure，不会静默回退成 query-only 或 no-MSA。
 
 ## 执行流程
 
@@ -165,15 +176,21 @@ collector 和恢复协议，扩展到总计 100 个完整候选。新增 candida
 `S_expand_structure`。每个 strategy 只把 local-pass 中最高的 top N 送入 full-target
 Protenix；失败候选不会为了凑数进入预测。
 
-### 6. Full-target Protenix 诊断
+### 6. Full-target 结构预测诊断
 
-Protenix 输入固定为：
+默认输入保持既有基线：
 
 - chain A：Stage 01 的完整 design-scope target，required MSA；
 - chain B：完整设计 binder，query-only；
 - template disabled；
 - seed `101`、单 sample；
 - 必须输出 summary confidence、full confidence 和结构。
+
+研究者可以在同一请求中独立配置 target/binder 的 paired/unpaired MSA，以及任意一条链
+0..N 个预计算模板。AFO 和 Protenix 都消费同一份逐链合同；AFO 的远程 MSA 会先生成冻结的
+updated AF3 JSON，再进入推理。输入 A3M 的 query、模板 JSON、绝对只读路径和 SHA-256
+均严格校验。自动 template search 仍需要独立、版本固定的本地数据库 provider；当前配置
+只承诺预计算模板，不把缺失资产伪装成自动搜索。
 
 从真实 cross-chain PAE 矩阵与 chain-pair confidence 读取 pairwise iPTM、minimum
 interface PAE 和 binder pTM。结构门审计 target CA RMSD、target-aligned binder pose

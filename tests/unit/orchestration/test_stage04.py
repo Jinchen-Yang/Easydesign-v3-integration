@@ -297,7 +297,18 @@ class _FakeGenerationAdapter:
 
 
 class _FakeProtenixAdapter:
+    def __init__(
+        self,
+        observed_requests: list[ComplexStructurePredictionRequest] | None = None,
+    ) -> None:
+        self.observed_requests = observed_requests
+
     def write_input(self, request: PredictionRequest, path: Path) -> Path:
+        observed_requests = getattr(self, "observed_requests", None)
+        if observed_requests is not None and isinstance(
+            request, ComplexStructurePredictionRequest
+        ):
+            observed_requests.append(request)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps([{"name": request.job_name, "sequences": []}]),
@@ -1076,10 +1087,13 @@ def test_stage05_expands_and_selects_one_full_target_winner(
     )
     assert stage04.complete_candidate_count == 2
 
+    observed_requests: list[ComplexStructurePredictionRequest] = []
     stage05 = execute_stage05(
         run_root=root,
         boltzgen_adapter=generation,  # type: ignore[arg-type]
-        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(),  # type: ignore[arg-type]
+        prediction_adapter_builder=lambda _provider, _device: _FakeProtenixAdapter(  # type: ignore[arg-type]
+            observed_requests
+        ),
         gpu_probe=_FakeGpuProbe(),  # type: ignore[arg-type]
         executed_at=NOW,
     )
@@ -1096,6 +1110,17 @@ def test_stage05_expands_and_selects_one_full_target_winner(
     assert tuple(item.ordinal_within_strategy for item in expanded.candidates) == (1, 2, 3, 4)
     assert bundle.expansion_validation_report is not None
     assert bundle.scientific_stop is None
+    conditioned_requests = [
+        request
+        for request in observed_requests
+        if request.scientific_mode is ScientificMode.TARGET_CONDITIONED
+    ]
+    assert conditioned_requests
+    assert all(
+        request.require_role("target").template_mode is not None
+        and request.require_role("target").template_mode.value == "disabled"
+        for request in conditioned_requests
+    )
 
 
 def test_stage06_generates_exactly_one_thousand_new_candidates_in_two_shards(

@@ -14,6 +14,9 @@
   lineage，不为任何策略硬留名额。
 - 实现序列合法性、liability/Cys、BoltzGen prefilter、`S_refold`、Protenix
   seed 101/202/303、一致性门、TNP evidence 和 20+20 上限。
+- AFO/Protenix complex prediction 使用统一逐链 feature 合同；binder MSA 可显式搜索或
+  预计算，target/binder template 可独立提供且能够与 MSA 同时使用。历史默认仍为
+  target required MSA、binder query-only、无模板。
 - 候选包始终为 `awaiting-human-review/not-ordered`；实际下单不属于本阶段。
 - 所有 backend、GPU job、artifact 和 review package 都在当前 clone 所在主机处理；没有
   跨主机提交或远程 review 同步入口。

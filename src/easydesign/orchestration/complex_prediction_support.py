@@ -15,9 +15,12 @@ from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
 from easydesign.backends.structure_prediction import (
     BackendInvocation,
+    MsaMode,
+    ProteinPredictionChain,
     StructurePredictionProduct,
     TargetResidueNumbering,
     TargetStructureCondition,
+    TemplateMode,
 )
 from easydesign.core import (
     ManifestStateError,
@@ -26,6 +29,8 @@ from easydesign.core import (
     sha256_file,
 )
 from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
+
+from .config import ComplexMsaConfig, ComplexTemplateConfig
 
 AFO_RELEASE_IDENTITY_KEYS = (
     "release_id",
@@ -54,7 +59,7 @@ def _exclusive_copy_or_verify(source: Path, destination: Path, digest: str) -> N
     if destination.exists():
         if not destination.is_file() or sha256_file(destination) != digest:
             raise ManifestStateError(
-                f"target condition snapshot 已存在但身份不一致: {destination}"
+                f"immutable input snapshot 已存在但身份不一致: {destination}"
             )
         return
     temporary = destination.with_name(f".{destination.name}.tmp-{os.getpid()}")
@@ -64,7 +69,7 @@ def _exclusive_copy_or_verify(source: Path, destination: Path, digest: str) -> N
             output_handle.flush()
             os.fsync(output_handle.fileno())
         if sha256_file(temporary) != digest:
-            raise ManifestStateError("target condition snapshot copy SHA-256 不一致")
+            raise ManifestStateError("immutable input snapshot copy SHA-256 不一致")
         temporary.rename(destination)
     finally:
         if temporary.exists():
@@ -368,6 +373,147 @@ def prepare_query_only_a3m(sequence: str, path: Path) -> Path:
     else:
         path.write_text(expected, encoding="ascii")
     return path.resolve()
+
+
+def _validated_precomputed_a3m(
+    config: ComplexMsaConfig,
+    *,
+    sequence: str,
+    snapshot_path: Path,
+) -> Path:
+    path = getattr(config, "path", None)
+    expected_sha256 = getattr(config, "sha256", None)
+    if not isinstance(path, Path) or not isinstance(expected_sha256, str):
+        raise ManifestStateError("precomputed complex MSA 缺少 path/SHA-256")
+    if not path.is_file() or sha256_file(path) != expected_sha256:
+        raise ManifestStateError("precomputed complex MSA 缺失或 SHA-256 不一致")
+    records: list[str] = []
+    current = -1
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise ManifestStateError("precomputed complex MSA 无法读取") from error
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            records.append("")
+            current += 1
+        elif current < 0:
+            raise ManifestStateError("precomputed complex MSA 在 header 前出现序列")
+        else:
+            records[current] += line
+    if not records or records[0] != sequence:
+        raise ManifestStateError("precomputed complex MSA query 与 chain sequence 不一致")
+    _exclusive_copy_or_verify(path, snapshot_path, expected_sha256)
+    return snapshot_path.resolve()
+
+
+def resolve_complex_msa_input(
+    config: ComplexMsaConfig,
+    *,
+    sequence: str,
+    query_only_path: Path,
+) -> tuple[MsaMode, Path | None]:
+    """Resolve one user-selected chain MSA without a scientific-mode default."""
+
+    mode = str(config.mode)
+    if mode == "remote":
+        return MsaMode.REMOTE, None
+    if mode == "disabled":
+        return MsaMode.DISABLED, None
+    if mode == "query-only":
+        return (
+            MsaMode.PRECOMPUTED,
+            prepare_query_only_a3m(sequence, query_only_path),
+        )
+    if mode == "precomputed":
+        return (
+            MsaMode.PRECOMPUTED,
+            _validated_precomputed_a3m(
+                config,
+                sequence=sequence,
+                snapshot_path=query_only_path.with_name(
+                    query_only_path.name.replace("query-only", "precomputed")
+                ),
+            ),
+        )
+    raise ManifestStateError(f"不支持的 complex MSA mode: {mode}")
+
+
+def resolve_complex_template_input(
+    config: ComplexTemplateConfig,
+    *,
+    role: Literal["target", "binder"],
+    target_condition: TargetStructureCondition | None,
+    snapshot_path: Path,
+) -> tuple[TemplateMode, Path | None, str | None]:
+    """Resolve one chain template source independently of MSA and labels."""
+
+    if config.mode == "disabled":
+        return TemplateMode.DISABLED, None, None
+    if config.mode == "target-structure":
+        if role != "target" or target_condition is None:
+            raise ManifestStateError(
+                "target-structure template 只能用于有 target condition 的 target chain"
+            )
+        return (
+            TemplateMode.PRECOMPUTED,
+            target_condition.template_data_path,
+            target_condition.template_data_sha256,
+        )
+    path = config.data_path
+    expected_sha256 = config.data_sha256
+    if path is None or expected_sha256 is None:
+        raise ManifestStateError("precomputed template 缺少 data path/SHA-256")
+    if not path.is_file() or sha256_file(path) != expected_sha256:
+        raise ManifestStateError("precomputed template 缺失或 SHA-256 不一致")
+    _exclusive_copy_or_verify(path, snapshot_path, expected_sha256)
+    return TemplateMode.PRECOMPUTED, snapshot_path.resolve(), expected_sha256
+
+
+def configured_prediction_chain(
+    *,
+    chain_id: str,
+    role: Literal["target", "binder"],
+    sequence: str,
+    unpaired_msa: ComplexMsaConfig,
+    paired_msa: ComplexMsaConfig,
+    templates: ComplexTemplateConfig,
+    query_only_root: Path,
+    target_condition: TargetStructureCondition | None,
+) -> ProteinPredictionChain:
+    """Build one resolved backend chain from freely composable feature sources."""
+
+    unpaired_mode, unpaired_path = resolve_complex_msa_input(
+        unpaired_msa,
+        sequence=sequence,
+        query_only_path=query_only_root / f"{chain_id}-unpaired-query-only.a3m",
+    )
+    paired_mode, paired_path = resolve_complex_msa_input(
+        paired_msa,
+        sequence=sequence,
+        query_only_path=query_only_root / f"{chain_id}-paired-query-only.a3m",
+    )
+    template_mode, template_path, template_sha256 = resolve_complex_template_input(
+        templates,
+        role=role,
+        target_condition=target_condition,
+        snapshot_path=query_only_root / f"{chain_id}-templates-precomputed.json",
+    )
+    return ProteinPredictionChain(
+        chain_id=chain_id,
+        role=role,
+        sequence=sequence,
+        unpaired_msa_mode=unpaired_mode,
+        unpaired_msa_path=unpaired_path,
+        paired_msa_mode=paired_mode,
+        paired_msa_path=paired_path,
+        template_mode=template_mode,
+        template_data_path=template_path,
+        template_data_sha256=template_sha256,
+    )
 
 
 def run_checked_backend_invocation(

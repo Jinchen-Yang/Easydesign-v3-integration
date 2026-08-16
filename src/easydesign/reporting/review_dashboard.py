@@ -168,8 +168,15 @@ def _route_for(
     token = f"structure-{reference.sha256[:24]}"
     route = ReviewStructureRoute(token=token, artifact=reference, mime_type=mime)
     previous = routes.get(token)
-    if previous is not None and previous.artifact != reference:
-        raise ReviewDashboardError("structure route token collision")
+    if previous is not None:
+        same_content = (
+            previous.artifact.sha256 == reference.sha256
+            and previous.artifact.size_bytes == reference.size_bytes
+            and previous.mime_type == mime
+        )
+        if not same_content:
+            raise ReviewDashboardError("structure route token collision")
+        return token
     routes[token] = route
     return token
 

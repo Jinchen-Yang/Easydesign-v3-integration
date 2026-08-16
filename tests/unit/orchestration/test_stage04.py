@@ -55,6 +55,11 @@ from easydesign.orchestration.stage06 import execute_stage06
 from easydesign.orchestration.stage07 import execute_stage07
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
+from easydesign.reporting import (
+    ReviewDashboardReport,
+    export_review_dashboard,
+    verify_review_dashboard,
+)
 from easydesign.safe_writes import append_pointer_revision
 from easydesign.stages.s01_target_preparation import (
     CoordinateEnsemble,
@@ -1121,6 +1126,19 @@ def test_stage05_expands_and_selects_one_full_target_winner(
         and request.require_role("target").template_mode.value == "disabled"
         for request in conditioned_requests
     )
+    assert stage05.review_dashboard is not None
+    assert stage05.reporting_warning is None
+    dashboard = load_model(stage05.review_dashboard.parent / "report.json", ReviewDashboardReport)
+    assert dashboard.report_kind == "stage05"
+    assert {candidate.cohort for candidate in dashboard.candidates} == {
+        "pilot",
+        "expansion",
+    }
+    assert any(
+        structure.scientific_mode == "de-novo"
+        for candidate in dashboard.candidates
+        for structure in candidate.structures
+    )
 
 
 def test_stage06_generates_exactly_one_thousand_new_candidates_in_two_shards(
@@ -1327,6 +1345,22 @@ def test_stage07_publishes_a_complete_non_apoe_review_package(
     assert len(package.primary) == 2
     assert package.ordering_status == "not-ordered"
     assert {item.strategy_id for item in package.primary} == {"generic-strategy"}
+    assert outcome.review_dashboard is not None
+    assert outcome.reporting_warning is None
+    dashboard_root = outcome.review_dashboard.parent
+    dashboard = load_model(dashboard_root / "report.json", ReviewDashboardReport)
+    assert dashboard.report_kind == "stage07"
+    assert dashboard.requested_review_cohort_size == 200
+    assert dashboard.actual_review_cohort_size == 2
+    assert len(dashboard.candidates) == 2
+    assert {
+        structure.scientific_mode
+        for candidate in dashboard.candidates
+        for structure in candidate.structures
+    }.issuperset({"de-novo", "target-conditioned"})
+    portable = tmp_path / "portable-stage07-dashboard"
+    export_review_dashboard(dashboard_root, run_root=root, output=portable)
+    verify_review_dashboard(portable)
 
 
 def test_stage07_records_operational_failure_without_publishing_a_stage(

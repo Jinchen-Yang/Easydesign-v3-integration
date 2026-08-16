@@ -184,3 +184,10 @@ read-only and there is no remote executor, managed queue, Workbench, or UI activ
 Each run freezes the selected backends, AFO release identity, runtime-profile SHA, and config
 snapshot. `job resume` accepts no backend override and reuses those frozen identities even if the
 active machine profile changes later.
+
+Successful Stage 5 and Stage 7 runs automatically publish an immutable, read-only review dashboard.
+Use `easydesign view PROJECT --run RUN --report auto` to open the highest completed report, or select
+`target`, `stage05`, or `stage07` explicitly. Legacy runs and reporting failures can be rebuilt with
+`easydesign report build`; `easydesign report export ... --output NEW_PATH` creates a portable copy
+containing every referenced structure. Browser filters, sorting, scatter selection, and favourites are
+display-only and never create a promotion, final selection, or approval receipt.

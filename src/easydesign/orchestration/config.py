@@ -1086,6 +1086,7 @@ class Stage07Config(BaseModel):
     ] = "nanobody-final-v1.5"
     primary_count: int = Field(default=20, ge=0)
     backup_count: int = Field(default=20, ge=0)
+    review_cohort_size: int = Field(default=200, ge=1, le=400)
     tnp_required: Literal[True] = True
     full_target_prediction: ComplexPredictionConfig
     target_conditioned_prediction: TargetConditionedPredictionConfig

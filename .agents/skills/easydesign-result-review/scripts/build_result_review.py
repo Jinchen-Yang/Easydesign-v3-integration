@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from easydesign.core import RunManifest, StageId, StageManifest, load_model, sha256_file
 from easydesign.safe_writes import read_last_text_line
+from easydesign.reporting import export_review_dashboard, generate_review_dashboard
 from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
 from easydesign.stages.s04_pilot_generation import CandidateIndex
 from easydesign.stages.s05_pilot_filtering import (
@@ -304,6 +305,21 @@ def build_pilot_review(run_root: Path, output_root: Path) -> Path:
     )
     if destination.exists():
         raise ValueError(f"Result review 输出目录必须不存在: {destination}")
+    current_run, _ = _current_run(root)
+    current_stage05, _ = _stage(root, current_run, StageId.PILOT_FILTERING)
+    if any(
+        artifact.artifact_id == "stage05-bundle"
+        for artifact in current_stage05.output_artifacts
+    ):
+        outcome = generate_review_dashboard(root, report_kind="stage05")
+        if outcome.entrypoint is None:
+            raise ValueError(f"Stage 05 core dashboard 生成失败: {outcome.error}")
+        exported = export_review_dashboard(
+            outcome.report_root,
+            run_root=root,
+            output=destination,
+        )
+        return exported / "index.html"
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging_parent = context.runtime_root / "tmp"
     staging_parent.mkdir(parents=True, exist_ok=True)

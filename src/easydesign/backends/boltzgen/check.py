@@ -12,7 +12,6 @@ from functools import lru_cache
 from pathlib import Path
 
 from easydesign.core import BackendContractError, sha256_file
-from easydesign.orchestration.git_sources import verify_git_source_identity
 from easydesign.stages.s03_boltzgen_configuration import (
     BOLTZGEN_COMMIT,
     BOLTZGEN_VERSION,
@@ -105,6 +104,10 @@ def _verified_source_snapshot(repository_root: Path) -> str:
     """Verify the installer-owned source identity without parent Git discovery."""
 
     try:
+        # Import lazily so the backend can be imported without recursively
+        # initializing the orchestration public API.
+        from easydesign.orchestration.git_sources import verify_git_source_identity
+
         result = verify_git_source_identity(
             repository_root,
             source=_BOLTZGEN_SOURCE,

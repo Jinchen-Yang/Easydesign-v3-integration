@@ -120,6 +120,17 @@ class FullTargetStructureMetrics(BaseModel):
     moderate_clash_count: int = Field(ge=0)
 
 
+class DualModeStructureMetrics(BaseModel):
+    """Model-neutral geometry between two predictions in a target-aligned frame."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_aligned_binder_rmsd_angstrom: float = Field(ge=0)
+    binder_internal_rmsd_angstrom: float = Field(ge=0)
+    target_rmsd_angstrom: float = Field(ge=0)
+    binder_centroid_displacement_angstrom: float = Field(ge=0)
+
+
 def _selected_atoms(chain: gemmi.Chain) -> tuple[AtomPoint, ...]:
     selected: dict[tuple[int, str], tuple[float, str, AtomPoint]] = {}
     observed_residue_ids: set[int] = set()
@@ -376,6 +387,78 @@ def compute_full_target_structure_metrics(
         severe_clash_count=int((distances < SEVERE_CLASH_ANGSTROM).sum()),
         moderate_clash_count=int(
             ((distances >= SEVERE_CLASH_ANGSTROM) & (distances < MODERATE_CLASH_ANGSTROM)).sum()
+        ),
+    )
+
+
+def compare_dual_mode_structures(
+    *,
+    reference_complex: Path,
+    comparison_complex: Path,
+    target_chain_id: str = "A",
+    binder_chain_id: str = "B",
+) -> DualModeStructureMetrics:
+    """Compare two complex predictions without assigning either one authority.
+
+    The target of ``comparison_complex`` is aligned to ``reference_complex``.
+    Binder pose RMSD and centroid displacement are then measured in that shared
+    frame; binder internal RMSD is independently superposed and therefore only
+    describes fold similarity.
+    """
+
+    reference_target = parse_protein_chain(reference_complex, target_chain_id)
+    comparison_target = parse_protein_chain(comparison_complex, target_chain_id)
+    reference_binder = parse_protein_chain(reference_complex, binder_chain_id)
+    comparison_binder = parse_protein_chain(comparison_complex, binder_chain_id)
+    target_reference, target_mobile = _common_ca_coordinates(
+        reference_target,
+        comparison_target,
+    )
+    rotation, mobile_center, reference_center = _kabsch_transform(
+        target_reference,
+        target_mobile,
+    )
+
+    reference_ca = {
+        residue.residue_id: residue.ca
+        for residue in reference_binder.residues
+        if residue.ca is not None
+    }
+    comparison_ca = {
+        residue.residue_id: residue.ca
+        for residue in comparison_binder.residues
+        if residue.ca is not None
+    }
+    reference_names = {
+        residue.residue_id: residue.one_letter for residue in reference_binder.residues
+    }
+    comparison_names = {
+        residue.residue_id: residue.one_letter for residue in comparison_binder.residues
+    }
+    if set(reference_ca) != set(comparison_ca) or reference_names != comparison_names:
+        raise ManifestStateError("dual-mode binder residue identity 不一致")
+    identifiers = sorted(reference_ca)
+    binder_reference = np.asarray(
+        [reference_ca[identifier] for identifier in identifiers],
+        dtype=np.float64,
+    )
+    binder_mobile = np.asarray(
+        [comparison_ca[identifier] for identifier in identifiers],
+        dtype=np.float64,
+    )
+    binder_aligned = (binder_mobile - mobile_center) @ rotation + reference_center
+    pose_delta = binder_aligned - binder_reference
+    return DualModeStructureMetrics(
+        target_aligned_binder_rmsd_angstrom=float(
+            np.sqrt(np.mean(np.sum(pose_delta**2, axis=1)))
+        ),
+        binder_internal_rmsd_angstrom=_kabsch_rmsd(
+            binder_reference,
+            binder_mobile,
+        ),
+        target_rmsd_angstrom=_kabsch_rmsd(target_reference, target_mobile),
+        binder_centroid_displacement_angstrom=float(
+            np.linalg.norm(binder_aligned.mean(axis=0) - binder_reference.mean(axis=0))
         ),
     )
 

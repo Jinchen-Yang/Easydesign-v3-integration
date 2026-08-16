@@ -102,10 +102,14 @@ from easydesign.stages.s07_final_filtering_and_selection import (
     SeedPairConsistency,
     Stage07Bundle,
     Stage07BundleV0_2,
+    Stage07PredictionComparisonReport,
     Stage07PredictionState,
+    Stage07ReviewCohortIndex,
     Stage07ScaleInput,
     TargetConditionedStage07Evidence,
     TnpReport,
+    build_stage07_prediction_comparison_report,
+    build_stage07_review_cohort,
     normalize_scale_bundle_for_stage07,
     summarize_selected_sources,
     validate_scale_candidate_lineage,
@@ -153,6 +157,9 @@ class Stage07Execution(BaseModel):
     stage07_bundle: Path
     primary_count: int
     backup_count: int
+    review_dashboard: Path | None = None
+    reporting_warning: str | None = None
+    next_actions: tuple[str, ...] = ()
 
 
 class _LocalMetricCache(BaseModel):
@@ -1907,6 +1914,7 @@ def _execute_stage07(
     normalization_ref: ArtifactRef | None = None
     conditioned_evidence_ref: ArtifactRef | None = None
     conditioned_output_refs: tuple[ArtifactRef, ...] = ()
+    conditioned_predictions: tuple[RawFinalPrediction, ...] = ()
     selections: tuple[FinalSelectionRecord, ...] = ()
     scale_plan: ScalePlanV0_2 | ScalePlan
     if isinstance(upstream.scale_bundle, ScaleBundleV0_2):
@@ -2224,6 +2232,51 @@ def _execute_stage07(
                 backup_count=config.backup_count,
             )
 
+    review_cohort = build_stage07_review_cohort(
+        deep_records=deep_records,
+        candidates=candidate_by_id,
+        requested_size=config.review_cohort_size,
+        profile_sha256=profile_sha256,
+        candidate_index_sha256=upstream.scale_candidate_index_ref.sha256,
+        generated_at=now,
+    )
+    review_cohort_path = artifacts / "review-cohort-index.json"
+    review_cohort = _dump_or_verify(
+        review_cohort,
+        review_cohort_path,
+        Stage07ReviewCohortIndex,
+        ignore=frozenset({"generated_at"}),
+    )
+    review_cohort_ref = _artifact(
+        root,
+        review_cohort_path,
+        artifact_id="stage07-review-cohort-index",
+        role="frozen-review-cohort",
+        file_format="json",
+    )
+    comparison_report = build_stage07_prediction_comparison_report(
+        root=root,
+        cohort=review_cohort,
+        cohort_sha256=review_cohort_ref.sha256,
+        de_novo_predictions=all_sample_predictions,
+        target_conditioned_predictions=conditioned_predictions,
+        generated_at=now,
+    )
+    comparison_report_path = artifacts / "prediction-comparison-report.json"
+    comparison_report = _dump_or_verify(
+        comparison_report,
+        comparison_report_path,
+        Stage07PredictionComparisonReport,
+        ignore=frozenset({"generated_at"}),
+    )
+    comparison_report_ref = _artifact(
+        root,
+        comparison_report_path,
+        artifact_id="stage07-prediction-comparison-report",
+        role="model-neutral-dual-mode-comparison",
+        file_format="json",
+    )
+
     status: Literal["candidates-selected", "stopped-no-final-candidate"] = (
         "candidates-selected" if selections else "stopped-no-final-candidate"
     )
@@ -2514,6 +2567,8 @@ def _execute_stage07(
             final_filter_report=report_ref,
             final_candidate_package=package_ref,
             target_conditioned_evidence=conditioned_evidence_ref,
+            review_cohort_index=review_cohort_ref,
+            prediction_comparison_report=comparison_report_ref,
             seed101_normalization=normalization_ref,
             tnp_report=tnp_report_ref,
             progress_final=progress_ref,
@@ -2536,6 +2591,8 @@ def _execute_stage07(
             final_filter_report=report_ref,
             final_candidate_package=package_ref,
             target_conditioned_evidence=conditioned_evidence_ref,
+            review_cohort_index=review_cohort_ref,
+            prediction_comparison_report=comparison_report_ref,
             seed101_normalization=normalization_ref,
             tnp_report=tnp_report_ref,
             progress_final=progress_ref,
@@ -2550,10 +2607,34 @@ def _execute_stage07(
             Stage07Bundle,
             ignore=frozenset({"generated_at"}),
         )
+    representative_prediction_refs = tuple(
+        reference
+        for prediction in all_prediction_records
+        for reference in (
+            prediction.predicted_structure,
+            prediction.summary_confidence,
+            prediction.full_confidence,
+        )
+    )
+    representative_artifact_ids = {
+        reference.artifact_id for reference in representative_prediction_refs
+    }
+    sample_output_refs = tuple(
+        reference
+        for prediction in all_sample_predictions
+        for reference in (
+            prediction.predicted_structure,
+            prediction.summary_confidence,
+            prediction.full_confidence,
+        )
+        if reference.artifact_id not in representative_artifact_ids
+    )
     base_output_refs = (
         profile_ref,
         *((scale_input_ref,) if scale_input_ref is not None else ()),
         report_ref,
+        review_cohort_ref,
+        comparison_report_ref,
         package_ref,
         *((conditioned_evidence_ref,) if conditioned_evidence_ref is not None else ()),
         *conditioned_output_refs,
@@ -2561,15 +2642,8 @@ def _execute_stage07(
         *tnp_refs,
         *((failure_ref,) if failure_ref is not None else ()),
         *((stop_ref,) if stop_ref is not None else ()),
-        *tuple(
-            reference
-            for prediction in all_prediction_records
-            for reference in (
-                prediction.predicted_structure,
-                prediction.summary_confidence,
-                prediction.full_confidence,
-            )
-        ),
+        *representative_prediction_refs,
+        *sample_output_refs,
     )
     return _publish(
         root=root,
@@ -2609,7 +2683,7 @@ def execute_stage07(
         )
 
     try:
-        return _execute_stage07(
+        execution = _execute_stage07(
             run_root=run_root,
             de_novo_prediction_adapter_builder=de_novo_prediction_adapter_builder,
             target_conditioned_prediction_adapter_builder=(
@@ -2617,6 +2691,29 @@ def execute_stage07(
             ),
             tnp_adapter=tnp_adapter,
             executed_at=executed_at,
+        )
+        from easydesign.reporting.review_dashboard import (
+            generate_review_dashboard_nonblocking,
+        )
+
+        dashboard = generate_review_dashboard_nonblocking(
+            execution.run_root,
+            report_kind="stage07",
+            generated_at=executed_at,
+        )
+        if dashboard.entrypoint is not None:
+            return execution.model_copy(update={"review_dashboard": dashboard.entrypoint})
+        message = (
+            "Stage 07 科学产物已发布，但 review dashboard 生成失败："
+            f"{dashboard.error.message if dashboard.error is not None else 'unknown error'}"
+        )
+        return execution.model_copy(
+            update={
+                "reporting_warning": message,
+                "next_actions": (
+                    "运行 easydesign report build PROJECT --run RUN --report stage07 重建页面",
+                ),
+            }
         )
     except Exception as error:
         root = run_root.expanduser().resolve()

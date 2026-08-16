@@ -18,6 +18,8 @@ from easydesign.backends.executors import NvidiaSmiProbe
 from easydesign.core import (
     ArtifactRef,
     ConfigurationError,
+    EasyDesignError,
+    ExecutionStatus,
     ManifestStateError,
     RunManifest,
     StageManifest,
@@ -500,7 +502,15 @@ def project_status(project_root: Path) -> CommandResult:
     if selections:
         phase: ResearchPhase = "select"
         status = "completed"
-        actions: tuple[NextAction, ...] = ()
+        actions: tuple[NextAction, ...] = (
+            NextAction(
+                command=(
+                    f"easydesign view {root} --run {selections[-1].run_id} "
+                    "--report stage07"
+                ),
+                description="打开冻结的 Stage 7 Top-200 与双模式 Review Dashboard。",
+            ),
+        )
     elif productions:
         phase, status = "select", "selection-ready"
         actions = (
@@ -532,8 +542,11 @@ def project_status(project_root: Path) -> CommandResult:
             status = "pilot-review-ready"
             actions = (
                 NextAction(
-                    command=f"easydesign pilot review {root} --run {latest_pilot.run_id}",
-                    description="比较过滤结果并讨论下一轮策略或人工 promotion。",
+                    command=(
+                        f"easydesign view {root} --run {latest_pilot.run_id} "
+                        "--report stage05"
+                    ),
+                    description="打开 Stage 5 Pilot/Expansion 完整 Review Dashboard。",
                 ),
             )
         else:
@@ -614,6 +627,53 @@ def project_status(project_root: Path) -> CommandResult:
                     description="映射合作者提供的文字 residue 位点。",
                 ),
             )
+    reporting_warnings: tuple[str, ...] = ()
+    review_run = selections[-1] if selections else (pilot_runs[-1] if pilot_runs else None)
+    review_kind = (
+        "stage07"
+        if selections
+        else "stage05"
+        if review_run is not None and _has_internal_stage(review_run, 5)
+        else None
+    )
+    if review_run is not None and review_kind is not None:
+        stage_dir = (
+            "07-final-filtering-and-selection"
+            if review_kind == "stage07"
+            else "05-pilot-filtering"
+        )
+        report_base = review_run.path / "results" / stage_dir / "review-dashboard"
+        try:
+            from easydesign.reporting.review_models import ReviewDashboardManifest
+
+            report_pointer = read_last_text_line(report_base / "LATEST")
+            report_manifest = load_model(
+                report_base / report_pointer,
+                ReviewDashboardManifest,
+            )
+            report_failed = report_manifest.status is ExecutionStatus.FAILED
+            failure_message = (
+                report_manifest.error.message
+                if report_manifest.error is not None
+                else "unknown reporting failure"
+            )
+        except (EasyDesignError, OSError, ValueError):
+            report_failed = True
+            failure_message = "dashboard LATEST 尚未发布"
+        if report_failed:
+            reporting_warnings = (
+                f"科学阶段已完成，但 {review_kind} dashboard 需要重建：{failure_message}",
+            )
+            actions = (
+                NextAction(
+                    command=(
+                        f"easydesign report build {root} --run {review_run.run_id} "
+                        f"--report {review_kind}"
+                    ),
+                    description="重建 reporting revision；不会重跑或改写科学阶段。",
+                ),
+                *actions,
+            )
     return CommandResult(
         status=status,
         phase=phase,
@@ -622,6 +682,7 @@ def project_status(project_root: Path) -> CommandResult:
         manifest=None if latest is None else latest.latest_manifest,
         evidence=evidence,
         next_actions=actions,
+        warnings=reporting_warnings,
     )
 
 

@@ -46,6 +46,7 @@ stage07:
   final_filter_profile: nanobody-final-v1.5 # AFO 使用 nanobody-final-v1.6
   primary_count: 20
   backup_count: 20
+  review_cohort_size: 200
   tnp_required: true
   full_target_prediction:
     backend: protenix-v2 # 或显式 openfold3-af3-jax
@@ -250,6 +251,9 @@ Stage 07 版本化并导出：
 - `FinalSelectionRecord` / `FinalCandidatePackage`：主备候选及人工审核状态；
 - `CandidateStrategyLineage` / `StrategySourceDistribution`：多策略来源与最终分布；
 - `FinalCandidatePackageV0_2` / `Stage07BundleV0_2`：全局竞争和来源完整交接；
+- `Stage07ReviewCohortIndex`：absolute-gate pass 中按固定排序冻结的最多 200 条审查母集；
+- `Stage07PredictionComparisonReport`：de-novo/target-conditioned 代表 sample 与模型中立几何；
+- `Stage07AdvisoryComparisonProfile`：可选、独立冻结且只产生 advisory 判词的比较规则；
 - `OperationalFailure`：必需工具、任务数、错误和可重试性；
 - `Stage07Bundle`：Stage 07 唯一下游/报告交接。
 
@@ -264,6 +268,8 @@ Stage 07 版本化并导出：
 │   ├── filter-profile.yaml
 │   ├── seed101-normalization.json        # 有 seed-101 预测时
 │   ├── final-filter-report.json
+│   ├── review-cohort-index.json
+│   ├── prediction-comparison-report.json
 │   ├── tnp-report.json                   # 有 consensus pass 时
 │   ├── final-candidate-package.json
 │   ├── scientific-stop.json              # 零最终候选时
@@ -283,6 +289,9 @@ Stage 07 版本化并导出：
     ├── protenix/<candidate>/seed-<seed>/attempt-XXXX/
     └── tnp/attempt-XXXX/
 ```
+
+Stage 发布成功后自动生成 `results/07-final-filtering-and-selection/review-dashboard/report-NNNN/`。
+页面失败不回滚本阶段，但 execution status 会给出 reporting warning 和重建命令。
 
 Protenix 与 TNP 上游原始文件可以位于 `work/`，但只有 StageManifest 明确声明且 checksum
 正确的 ArtifactRef 才构成正式证据。候选包中保留序列、结构引用、逐级分数、consensus、

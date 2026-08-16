@@ -12,10 +12,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel
 
 import easydesign
-from easydesign.core import ConfigurationError, EasyDesignError
+from easydesign.core import ConfigurationError, EasyDesignError, load_model
 from easydesign.orchestration.afo_releases import (
     install_stable_afo_if_available,
     load_afo_release_catalog,
@@ -75,9 +76,15 @@ from easydesign.orchestration.setup_jobs import (
 )
 from easydesign.orchestration.source_policy import SOURCE_POLICIES
 from easydesign.reporting import (
+    ReviewDashboardPresentationOverride,
+    ReviewDashboardReport,
     build_evidence_viewer_payload,
     build_stage02_viewer_overlay,
+    create_review_dashboard_server,
     create_target_viewer_server,
+    export_review_dashboard,
+    generate_review_dashboard,
+    resolve_latest_review_dashboard,
     resolve_target_viewer_argument,
 )
 from easydesign.workspace_context import WorkspaceContext
@@ -382,7 +389,31 @@ def _parser() -> argparse.ArgumentParser:
     view.add_argument("project", type=Path)
     _add_run(view)
     view.add_argument("--port", type=int, default=8000)
+    view.add_argument(
+        "--report",
+        choices=("auto", "target", "stage05", "stage07"),
+        default="auto",
+    )
     _add_json(view)
+
+    report = commands.add_parser("report", help="重建或导出不可变 review dashboard")
+    report_commands = report.add_subparsers(dest="report_command", required=True)
+    report_build = report_commands.add_parser("build", help="为旧 run 或 reporting failure 重建")
+    report_build.add_argument("project", type=Path)
+    _add_run(report_build)
+    report_build.add_argument("--report", choices=("stage05", "stage07"), required=True)
+    report_build.add_argument(
+        "--presentation",
+        type=Path,
+        help="可选 YAML/JSON，仅允许标题、中文标签、指标顺序和默认图轴",
+    )
+    _add_json(report_build)
+    report_export = report_commands.add_parser("export", help="生成包含全部结构的便携报告")
+    report_export.add_argument("project", type=Path)
+    _add_run(report_export)
+    report_export.add_argument("--report", choices=("stage05", "stage07"), required=True)
+    report_export.add_argument("--output", type=Path, required=True)
+    _add_json(report_export)
     return parser
 
 
@@ -941,6 +972,51 @@ def _dispatch(args: argparse.Namespace) -> int:
             for check in doctor_report.checks:
                 print(f"{check.status}: {check.name}: {check.message}")
         return 0 if doctor_report.ok else 2
+    if args.command == "report":
+        summary = resolve_project_run(args.project, run_id=args.run_id, required=True)
+        assert summary is not None
+        report_kind = cast(Literal["stage05", "stage07"], args.report)
+        if args.report_command == "build":
+            presentation = (
+                None
+                if args.presentation is None
+                else ReviewDashboardPresentationOverride.model_validate(
+                    yaml.safe_load(args.presentation.read_text(encoding="utf-8"))
+                )
+            )
+            outcome = generate_review_dashboard(
+                summary.path,
+                report_kind=report_kind,
+                presentation=presentation,
+            )
+            payload = outcome.model_dump(mode="json")
+            print(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+                if args.json
+                else (
+                    f"Dashboard status: {outcome.status}\n"
+                    f"Manifest: {outcome.manifest_path}\n"
+                    + (
+                        f"Entrypoint: {outcome.entrypoint}"
+                        if outcome.entrypoint is not None
+                        else f"Error: {outcome.error}"
+                    )
+                )
+            )
+            return 0 if outcome.entrypoint is not None else 2
+        report_root = resolve_latest_review_dashboard(summary.path, report_kind)
+        exported = export_review_dashboard(
+            report_root,
+            run_root=summary.path,
+            output=args.output,
+        )
+        payload = {"status": "succeeded", "output": str(exported)}
+        print(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+            if args.json
+            else f"Portable dashboard: {exported}"
+        )
+        return 0
 
     result: CommandResult
     if args.command == "project":
@@ -1057,16 +1133,61 @@ def _dispatch(args: argparse.Namespace) -> int:
         else:
             result = job_drain(args.project, job_id=args.job_id)
     elif args.command == "view":
+        direct_report = args.project.expanduser().resolve()
+        if (
+            (direct_report / "report-manifest.json").is_file()
+            and (direct_report / "report.json").is_file()
+        ):
+            portable = load_model(
+                direct_report / "report.json",
+                ReviewDashboardReport,
+            )
+            portable_server = create_review_dashboard_server(
+                direct_report,
+                run_root=direct_report,
+                port=args.port,
+            )
+            result = CommandResult(
+                status="serving",
+                phase="select" if portable.report_kind == "stage07" else "pilot",
+                project_id=portable.project_id,
+                run_id=portable.run_id,
+                next_actions=(),
+            )
+            _print_result(result, as_json=args.json)
+            print(portable_server.url)
+            try:
+                portable_server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                portable_server.close()
+            return 0
         summary = resolve_project_run(args.project, run_id=args.run_id, required=True)
         assert summary is not None
-        report_root = resolve_target_viewer_argument(summary.path)
-        server = create_target_viewer_server(
-            report_root,
-            port=args.port,
-            stage02_overlay=build_stage02_viewer_overlay(summary.path),
-            evidence=build_evidence_viewer_payload(summary.path),
-        )
         internal = completed_steps(summary.path)
+        requested_report = args.report
+        if requested_report == "auto":
+            requested_report = (
+                "stage07" if 7 in internal else "stage05" if 5 in internal else "target"
+            )
+        server: Any
+        if requested_report == "target":
+            report_root = resolve_target_viewer_argument(summary.path)
+            server = create_target_viewer_server(
+                report_root,
+                port=args.port,
+                stage02_overlay=build_stage02_viewer_overlay(summary.path),
+                evidence=build_evidence_viewer_payload(summary.path),
+            )
+        else:
+            report_kind = cast(Literal["stage05", "stage07"], requested_report)
+            report_root = resolve_latest_review_dashboard(summary.path, report_kind)
+            server = create_review_dashboard_server(
+                report_root,
+                run_root=summary.path,
+                port=args.port,
+            )
         phase: ResearchPhase = (
             "select"
             if 7 in internal

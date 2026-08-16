@@ -32,6 +32,17 @@ from .multi_strategy import (
     summarize_selected_sources,
     validate_scale_candidate_lineage,
 )
+from .review import (
+    PredictionRepresentative,
+    Stage07AdvisoryComparisonProfile,
+    Stage07AdvisoryComparisonVerdict,
+    Stage07PredictionComparison,
+    Stage07PredictionComparisonReport,
+    Stage07ReviewCohortEntry,
+    Stage07ReviewCohortIndex,
+    build_stage07_prediction_comparison_report,
+    build_stage07_review_cohort,
+)
 
 __all__ = [
     "DevelopabilityRisk",
@@ -62,4 +73,13 @@ __all__ = [
     "normalize_scale_bundle_for_stage07",
     "summarize_selected_sources",
     "validate_scale_candidate_lineage",
+    "PredictionRepresentative",
+    "Stage07AdvisoryComparisonProfile",
+    "Stage07AdvisoryComparisonVerdict",
+    "Stage07PredictionComparison",
+    "Stage07PredictionComparisonReport",
+    "Stage07ReviewCohortEntry",
+    "Stage07ReviewCohortIndex",
+    "build_stage07_prediction_comparison_report",
+    "build_stage07_review_cohort",
 ]

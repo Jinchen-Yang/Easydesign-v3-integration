@@ -144,6 +144,39 @@ class Stage05Execution(BaseModel):
     stage05_bundle: Path
     selected_strategy_id: str | None = None
     promoted_strategy_ids: tuple[str, ...] = ()
+    review_dashboard: Path | None = None
+    reporting_warning: str | None = None
+    next_actions: tuple[str, ...] = ()
+
+
+def _with_review_dashboard(
+    execution: Stage05Execution,
+    *,
+    generated_at: datetime,
+) -> Stage05Execution:
+    from easydesign.reporting.review_dashboard import (
+        generate_review_dashboard_nonblocking,
+    )
+
+    dashboard = generate_review_dashboard_nonblocking(
+        execution.run_root,
+        report_kind="stage05",
+        generated_at=generated_at,
+    )
+    if dashboard.entrypoint is not None:
+        return execution.model_copy(update={"review_dashboard": dashboard.entrypoint})
+    message = (
+        "Stage 05 科学产物已发布，但 review dashboard 生成失败："
+        f"{dashboard.error.message if dashboard.error is not None else 'unknown error'}"
+    )
+    return execution.model_copy(
+        update={
+            "reporting_warning": message,
+            "next_actions": (
+                "运行 easydesign report build PROJECT --run RUN --report stage05 重建页面",
+            ),
+        }
+    )
 
 
 class _StructureMetricCacheRecord(BaseModel):
@@ -2016,27 +2049,30 @@ def execute_stage05(
             role="stage06-strategy-input-or-stop",
             file_format="json",
         )
-        return _publish_stage05(
-            root=root,
-            upstream=upstream,
-            resolved=resolved,
-            artifacts=artifacts,
-            created_at=now,
-            output_refs=(
-                profile_ref,
-                pilot_report_ref,
-                progress_ref,
-                events_ref,
-                tier_stop_ref,
-                bundle_ref,
+        return _with_review_dashboard(
+            _publish_stage05(
+                root=root,
+                upstream=upstream,
+                resolved=resolved,
+                artifacts=artifacts,
+                created_at=now,
+                output_refs=(
+                    profile_ref,
+                    pilot_report_ref,
+                    progress_ref,
+                    events_ref,
+                    tier_stop_ref,
+                    bundle_ref,
+                ),
+                bundle_path=bundle_path,
+                warnings=(
+                    "Scientific stop: stopped-no-tier-a.",
+                    "Software execution succeeded; no scale strategy was published.",
+                ),
+                scientific_stop=True,
+                filter_profile=filter_profile,
             ),
-            bundle_path=bundle_path,
-            warnings=(
-                "Scientific stop: stopped-no-tier-a.",
-                "Software execution succeeded; no scale strategy was published.",
-            ),
-            scientific_stop=True,
-            filter_profile=filter_profile,
+            generated_at=now,
         )
 
     pilot_plan = load_model(upstream.pilot_bundle.pilot_plan.verify(root), PilotPlan)
@@ -2466,7 +2502,7 @@ def execute_stage05(
             "Exactly one deterministic scale strategy was selected.",
             "Protenix confidence is structural evidence, not binding affinity.",
         )
-    return _publish_stage05(
+    execution = _publish_stage05(
         root=root,
         upstream=upstream,
         resolved=resolved,
@@ -2478,3 +2514,4 @@ def execute_stage05(
         scientific_stop=scale_stop_ref is not None,
         filter_profile=filter_profile,
     )
+    return _with_review_dashboard(execution, generated_at=now)

@@ -211,6 +211,22 @@ easydesign project --help
 easydesign runtime --help
 ```
 
+Stage 5 和 Stage 7 成功后会自动生成只读 Review Dashboard；报告失败不会改变科学阶段状态，
+但会返回可执行的重建提示。`auto` 优先打开已完成的最高阶段，Stage 1/2 仍使用 Target Viewer：
+
+```bash
+easydesign view workspace/projects/apoe --run RUN_ID --report auto
+easydesign report build workspace/projects/apoe --run RUN_ID --report stage05
+easydesign report build workspace/projects/apoe --run RUN_ID --report stage07
+easydesign report export workspace/projects/apoe --run RUN_ID \
+  --report stage07 --output /safe/new/path/stage07-review
+```
+
+Stage 7 Review cohort 固定从 deep absolute-gate pass 中按 `score_deep` 降序、
+`candidate_id` 升序选择最多 200 条；不足时显示真实 `N/200`，不会用失败候选补齐。
+浏览器搜索、排序、散点联动和收藏均为展示操作，不产生 promotion、selection 或 approval。
+详见 [Stage 5/7 Review Dashboard](docs/REVIEW_DASHBOARD.md)。
+
 ## 数据位置与批准边界
 
 - `workspace/projects/`：输入、draft、位点和策略 revision；

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>EasyDesign Review Dashboard</title>
+  <link rel="stylesheet" href="assets/review-dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">ED</span><div><b>EasyDesign</b><small>Review Dashboard</small></div></div>
+    <nav id="tabs" aria-label="报告页签"></nav>
+    <div class="top-actions"><span id="report-identity" class="mono"></span><button id="export-favorites">导出收藏</button></div>
+  </header>
+  <main>
+    <section class="hero">
+      <div><p class="eyebrow" id="stage-label"></p><h1 id="title">加载报告…</h1><p id="subtitle"></p></div>
+      <div id="hero-stats" class="hero-stats"></div>
+    </section>
+    <aside id="warning-banner" class="warning-banner hidden"></aside>
+    <section id="route-view" class="page"></section>
+    <section id="candidate-view" class="page hidden"></section>
+    <section id="comparison-view" class="page hidden"></section>
+  </main>
+  <footer>只读审查页面 · 科学状态来自冻结 artifact · 浏览器操作不写回 run</footer>
+  <script src="assets/3Dmol-min.js"></script>
+  <script src="assets/review-dashboard.js"></script>
+</body>
+</html>

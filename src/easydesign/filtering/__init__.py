@@ -45,8 +45,10 @@ from .protenix_metrics import (
 )
 from .structure_metrics import (
     METRIC_DEFINITION_VERSION,
+    DualModeStructureMetrics,
     FullTargetStructureMetrics,
     InterfaceMetricValues,
+    compare_dual_mode_structures,
     compute_full_target_structure_metrics,
     compute_interface_metrics,
     contacted_hotspot_residue_ids,
@@ -56,6 +58,7 @@ from .structure_metrics import (
 )
 
 __all__ = [
+    "DualModeStructureMetrics",
     "FullTargetStructureMetrics",
     "FullPredictionEvidence",
     "FINAL_METRIC_DEFINITION_VERSION",
@@ -75,6 +78,7 @@ __all__ = [
     "ProtenixComplexConfidence",
     "extract_complex_confidence",
     "compute_full_target_structure_metrics",
+    "compare_dual_mode_structures",
     "compute_interface_metrics",
     "contacted_hotspot_residue_ids",
     "build_multi_seed_consensus",

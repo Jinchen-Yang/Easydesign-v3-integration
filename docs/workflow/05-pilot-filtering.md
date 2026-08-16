@@ -275,6 +275,10 @@ easydesign job watch workspace/projects/PROJECT --run PILOT_RUN
 easydesign pilot review workspace/projects/PROJECT --run PILOT_RUN
 ```
 
+成功 Stage 05 自动生成不可变 Review Dashboard。旧 `pilot review` 页面命令在存在正式
+`stage05-bundle` 时转发到同一核心生成器；Pilot/Expansion 完整母集、方案比较与结构证据
+不再由旧 Skill 抽取少量代表候选。
+
 ## 完成门槛
 
 - 每个 Stage 04 候选都有完整逐指标、逐规则处置；

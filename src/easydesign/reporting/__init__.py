@@ -24,6 +24,25 @@ from .models import (
     ViewerMetric,
     ViewerResidue,
 )
+from .review_dashboard import (
+    ReviewDashboardError,
+    generate_review_dashboard,
+    generate_review_dashboard_nonblocking,
+    resolve_latest_review_dashboard,
+    verify_review_dashboard,
+)
+from .review_models import (
+    ReviewDashboardExportManifest,
+    ReviewDashboardManifest,
+    ReviewDashboardOutcome,
+    ReviewDashboardPresentationOverride,
+    ReviewDashboardReport,
+)
+from .review_server import (
+    ReviewDashboardHttpServer,
+    create_review_dashboard_server,
+    export_review_dashboard,
+)
 from .server import (
     HOST,
     TargetViewerHttpServer,
@@ -69,4 +88,17 @@ __all__ = [
     "resolve_target_viewer_argument",
     "verify_target_viewer_report",
     "verify_evidence_bundle",
+    "ReviewDashboardError",
+    "ReviewDashboardExportManifest",
+    "ReviewDashboardHttpServer",
+    "ReviewDashboardManifest",
+    "ReviewDashboardOutcome",
+    "ReviewDashboardPresentationOverride",
+    "ReviewDashboardReport",
+    "create_review_dashboard_server",
+    "export_review_dashboard",
+    "generate_review_dashboard",
+    "generate_review_dashboard_nonblocking",
+    "resolve_latest_review_dashboard",
+    "verify_review_dashboard",
 ]

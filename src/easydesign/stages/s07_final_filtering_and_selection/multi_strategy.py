@@ -178,6 +178,8 @@ class Stage07BundleV0_2(BaseModel):
     final_filter_report: ArtifactRef
     final_candidate_package: ArtifactRef
     target_conditioned_evidence: ArtifactRef | None = None
+    review_cohort_index: ArtifactRef | None = None
+    prediction_comparison_report: ArtifactRef | None = None
     seed101_normalization: ArtifactRef | None = None
     tnp_report: ArtifactRef | None = None
     progress_final: ArtifactRef

@@ -543,6 +543,7 @@ def _stage07_report(
         if package_raw.get("schema_version") == "0.2"
         else FinalCandidatePackage.model_validate(package_raw)
     )
+    sequence_by_id = {item.candidate_id: item for item in final_report.sequence_prefilter}
     deep_by_id = {item.candidate_id: item for item in final_report.deep_filter}
     consensus_by_id = {item.candidate_id: item for item in final_report.consensus}
     selections_by_id = {item.candidate_id: item for item in final_report.selections}
@@ -591,6 +592,113 @@ def _stage07_report(
         consensus = consensus_by_id.get(entry.candidate_id)
         selection = selections_by_id.get(entry.candidate_id)
         package_item = package_by_id.get(entry.candidate_id)
+        sequence = sequence_by_id[entry.candidate_id]
+        review_metrics = [
+            _metric(
+                "score-refold",
+                "Score refold",
+                sequence.score_refold,
+                bundle.final_filter_report.sha256,
+            ),
+            _metric(
+                "score-deep",
+                "Score deep",
+                entry.score_deep,
+                bundle.review_cohort_index.sha256,
+            ),
+            *(
+                _metric(
+                    item.metric_id,
+                    item.metric_id,
+                    item.value,
+                    bundle.final_filter_report.sha256,
+                    item.unit,
+                )
+                for item in deep.metrics
+                if item.metric_id not in {"score-refold", "score-deep"}
+            ),
+            _metric(
+                "seed101-selected",
+                "Seed-101 Top 400",
+                deep.selected_for_seed101,
+                bundle.final_filter_report.sha256,
+            ),
+            _metric(
+                "consensus-pass",
+                "Consensus",
+                None if consensus is None else consensus.consensus_pass,
+                bundle.final_filter_report.sha256,
+            ),
+            _metric(
+                "selection-class",
+                "Selection",
+                None if selection is None else selection.selection_class,
+                bundle.final_filter_report.sha256,
+            ),
+            _metric(
+                "tnp-risk",
+                "TNP",
+                None if package_item is None else package_item.tnp.risk.value,
+                bundle.final_candidate_package.sha256,
+            ),
+        ]
+        if consensus is not None:
+            review_metrics.extend(
+                (
+                    _metric(
+                        "score-final",
+                        "Score final",
+                        consensus.score_final,
+                        bundle.final_filter_report.sha256,
+                    ),
+                    _metric(
+                        "median-score-full",
+                        "Median score full",
+                        consensus.median_score_full,
+                        bundle.final_filter_report.sha256,
+                    ),
+                    _metric(
+                        "median-pairwise-iptm",
+                        "Median pairwise ipTM",
+                        consensus.median_pairwise_iptm,
+                        bundle.final_filter_report.sha256,
+                    ),
+                )
+            )
+        if selection is not None:
+            review_metrics.extend(
+                (
+                    _metric(
+                        "selection-rank",
+                        "Selection rank",
+                        selection.selection_rank,
+                        bundle.final_filter_report.sha256,
+                    ),
+                    _metric(
+                        "selection-gain",
+                        "Selection gain",
+                        selection.gain,
+                        bundle.final_filter_report.sha256,
+                    ),
+                )
+            )
+        if package_item is not None:
+            review_metrics.extend(
+                (
+                    _metric(
+                        "tnp-red-flags",
+                        "TNP red flags",
+                        package_item.tnp.red_flag_count,
+                        bundle.final_candidate_package.sha256,
+                    ),
+                    _metric(
+                        "tnp-amber-flags",
+                        "TNP amber flags",
+                        package_item.tnp.amber_flag_count,
+                        bundle.final_candidate_package.sha256,
+                    ),
+                )
+            )
         candidates.append(
             ReviewCandidate(
                 candidate_id=entry.candidate_id,
@@ -598,38 +706,7 @@ def _stage07_report(
                 cohort="review",
                 current_display_order=entry.review_rank,
                 authoritative_rank=entry.review_rank,
-                metrics=(
-                    _metric(
-                        "score-deep",
-                        "Score deep",
-                        entry.score_deep,
-                        bundle.review_cohort_index.sha256,
-                    ),
-                    _metric(
-                        "seed101-selected",
-                        "Seed-101 Top 400",
-                        deep.selected_for_seed101,
-                        bundle.final_filter_report.sha256,
-                    ),
-                    _metric(
-                        "consensus-pass",
-                        "Consensus",
-                        None if consensus is None else consensus.consensus_pass,
-                        bundle.final_filter_report.sha256,
-                    ),
-                    _metric(
-                        "selection-class",
-                        "Selection",
-                        None if selection is None else selection.selection_class,
-                        bundle.final_filter_report.sha256,
-                    ),
-                    _metric(
-                        "tnp-risk",
-                        "TNP",
-                        None if package_item is None else package_item.tnp.risk.value,
-                        bundle.final_candidate_package.sha256,
-                    ),
-                ),
+                metrics=tuple(review_metrics),
                 scientific_record={
                     "cohort": entry.model_dump(mode="json"),
                     "deep": deep.model_dump(mode="json"),

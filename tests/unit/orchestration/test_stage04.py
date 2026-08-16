@@ -1353,6 +1353,15 @@ def test_stage07_publishes_a_complete_non_apoe_review_package(
     assert dashboard.requested_review_cohort_size == 200
     assert dashboard.actual_review_cohort_size == 2
     assert len(dashboard.candidates) == 2
+    assert all(
+        sum(
+            isinstance(metric.value, (int, float))
+            and not isinstance(metric.value, bool)
+            for metric in candidate.metrics
+        )
+        >= 2
+        for candidate in dashboard.candidates
+    )
     assert {
         structure.scientific_mode
         for candidate in dashboard.candidates

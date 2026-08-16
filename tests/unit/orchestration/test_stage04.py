@@ -56,8 +56,11 @@ from easydesign.orchestration.stage07 import execute_stage07
 from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
 from easydesign.orchestration.workspace import initialize_run_workspace
 from easydesign.reporting import (
+    ReviewDashboardPresentationOverride,
     ReviewDashboardReport,
     export_review_dashboard,
+    generate_review_dashboard,
+    resolve_latest_review_dashboard,
     verify_review_dashboard,
 )
 from easydesign.safe_writes import append_pointer_revision
@@ -1139,6 +1142,28 @@ def test_stage05_expands_and_selects_one_full_target_winner(
         for candidate in dashboard.candidates
         for structure in candidate.structures
     )
+    rebuilt = generate_review_dashboard(root, report_kind="stage05", generated_at=NOW)
+    assert rebuilt.report_root == stage05.review_dashboard.parent
+    customised = generate_review_dashboard(
+        root,
+        report_kind="stage05",
+        generated_at=NOW,
+        presentation=ReviewDashboardPresentationOverride(title="Fixture dashboard"),
+    )
+    assert customised.report_root.name == "report-0002"
+    assert generate_review_dashboard(
+        root,
+        report_kind="stage05",
+        generated_at=NOW,
+        presentation=ReviewDashboardPresentationOverride(title="Fixture dashboard"),
+    ).report_root == customised.report_root
+    bundle.pilot_filter_report.verify(root).write_text("{}\n", encoding="utf-8")
+    failed = generate_review_dashboard(root, report_kind="stage05", generated_at=NOW)
+    assert failed.status is ExecutionStatus.FAILED
+    assert failed.report_root.name == "report-0003"
+    assert customised.report_root.is_dir()
+    with raises(Exception, match="failed dashboard"):
+        resolve_latest_review_dashboard(root, "stage05")
 
 
 def test_stage06_generates_exactly_one_thousand_new_candidates_in_two_shards(

@@ -184,6 +184,32 @@ def test_routing_suite_covers_required_categories_without_broad_collision() -> N
     assert "repository engineering" in development
     assert "project status" in research
     assert "scripts/dev.py context" in development
+    by_id = {item["id"]: item for item in cases}
+    for case_id in ("stage05-dashboard-review", "stage07-dashboard-review"):
+        assert by_id[case_id]["expected_skill"] == "easydesign-research"
+        assert "result-review" not in by_id[case_id]["expected_skill"]
+
+
+def test_research_owns_core_stage05_and_stage07_dashboard_contracts() -> None:
+    skill = (RESEARCH_SKILL / "SKILL.md").read_text(encoding="utf-8")
+    pilot = (RESEARCH_SKILL / "references/pilot-diagnosis.md").read_text(
+        encoding="utf-8"
+    )
+    scale = (RESEARCH_SKILL / "references/scale-and-selection.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "easydesign view PROJECT --run RUN --report stage05" in skill
+    assert "easydesign view PROJECT --run RUN --report stage07" in skill
+    for text, report_kind in ((pilot, "stage05"), (scale, "stage07")):
+        assert f"easydesign report build PROJECT --run RUN --report {report_kind}" in text
+        assert "display-only" in text
+        assert "data_sha256" in text
+        assert "3Dmol.js" in text
+    assert "Review cohort" in scale
+    assert "最多 200" in scale
+    assert "AFO" in pilot and "Protenix" in pilot
+    assert "AFO" in scale and "Protenix" in scale
 
 
 def test_live_description_keeps_bilingual_development_negative_boundary() -> None:

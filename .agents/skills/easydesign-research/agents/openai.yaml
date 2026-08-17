@@ -1,7 +1,7 @@
 interface:
   display_name: "EasyDesign VHH 研究"
-  short_description: "从机制选点到可归因 VHH pilot 与结果诊断"
-  default_prompt: "使用 $easydesign-research 恢复当前项目状态，并基于证据完成当前 VHH 研究阶段。"
+  short_description: "从机制选点到 VHH pilot、Dashboard 诊断与最终选择"
+  default_prompt: "使用 $easydesign-research 恢复当前项目状态，完成当前 VHH 研究阶段及 Stage 5/7 结果审阅。"
 
 policy:
   allow_implicit_invocation: true

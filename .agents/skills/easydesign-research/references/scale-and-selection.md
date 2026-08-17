@@ -4,7 +4,7 @@
 
 ## 目录
 
-1. 输入与状态机
+1. 输入、状态机与 Dashboard
 2. Promotion gate
 3. Promotion receipt
 4. Scale allocation
@@ -33,6 +33,35 @@
 - current project phase/status；
 - GPU/disk/runtime/budget预检；
 - planned experimental validation。
+
+### 1.2 Stage 07 Review Dashboard 调用与解释合同
+
+**决策问题**：如何用核心 Dashboard 审阅规模化筛选、双模式结构证据和最终候选 panel，同时保留 frozen selection 语义？
+
+**必需证据**：先运行 `easydesign project status PROJECT --json`，绑定 current selection run、RunManifest、Stage 07 StageManifest、`stage07-bundle`、final filter report、review cohort index、prediction comparison report、TNP report（若存在）、Dashboard report manifest/revision 与 data SHA-256。分别记录 de-novo 和 target-conditioned 的 backend/model/release/profile identity；AFO 与 Protenix 均可被显式选择，任何一个都不是跨 stage 默认继承项。
+
+**调用分支**：
+
+1. Stage 07 completed 且 Dashboard revision 成功：用户明确要求打开/呈现时，执行 `easydesign view PROJECT --run RUN --report stage07`。
+2. 状态 warning 明确 Dashboard 缺失或 reporting failure：执行 `easydesign report build PROJECT --run RUN --report stage07`，核验新 revision 后再 view。重建不重跑 Stage 07，也不改变 frozen cohort/final package。
+3. 需要离线分享时，只有用户指定全新输出路径后才使用 `easydesign report export PROJECT --run RUN --report stage07 --output NEW_PATH`；export 是可移植副本，不是新科学 revision。
+4. Stage 07 bundle、cohort、comparison 或 checksum 不合法：停止页面解释，不扫描目录或用旧 Pilot 字段伪装 Scale/Selection。
+
+**解释合同**：
+
+- `设计路线比较`、`全局候选审查` 与 `双模式预测结果`必须回指 source artifact。Review cohort 只能是 deep absolute-gate pass 且属于 seed-101 Top 400 的冻结集合，最多 200；不足时如实写 `N/200`，不得补入失败候选。
+- 双模式默认 representative 可能来自不同 seed/sample；出现 non-matched-seed warning 时，只能作描述性并列。若已发布 matched-seed representative，可用它做受限比较，但仍不能把不同 backend 的 raw score 当同一量纲。
+- target-aligned binder RMSD、binder internal RMSD、target RMSD、hotspot/contact recovery、contact Jaccard 与 displacement 是模型中立的描述性证据。只有独立版本化且带 SHA-256 的 advisory comparison profile 才能输出“支持/不支持”，并始终标 `advisory-only`。
+- 搜索、排序、散点联动和收藏均为 `display-only`；收藏 CSV/JSON 不写回 run、不改变 Top 200、不形成 selection approval。结构观察使用本地 3Dmol.js，并绑定 report/candidate/structure identity。
+- TNP 只按 current artifact 的字段、版本与 missingness解释；不存在或失败时保留 unknown/operational evidence，不能写成零风险。
+
+**正例**：报告 frozen cohort 为 137/200，先按 hard gate、mechanism 和 lineage分层，再用匹配身份的结构证据构建 Pareto panel；对 unmatched-seed 双模式差异明确降级，不把收藏候选当 selected package。
+
+**反例/误判**：为了凑满 200 把 deep gate fail 加回；用页面排序覆盖 final filter rank；把 AFO/Protenix confidence 或不同 profile 的 raw score相减后宣布 backend 胜负。
+
+**反证或停止条件**：report/data hash 不可验证、cohort 不满足冻结约束、dual-mode identity 缺失、selection package 与页面不一致、关键 missingness 被折叠。此时停止候选结论并回到 artifact 恢复。
+
+**输出字段**：`dashboard_review.report_kind`, `report_revision`, `report_manifest_sha256`, `data_sha256`, `source_stage_bundle_sha256`, `de_novo_backend_identity`, `target_conditioned_backend_identity`, `review_cohort_n`, `display_only_actions_excluded`, `reporting_status`。
 
 ## 2. Promotion gate
 
@@ -332,6 +361,17 @@ panel_contract:
 ```yaml
 scale_selection_plan:
   project_id: ""
+  dashboard_review:
+    report_kind: stage07
+    report_revision: ""
+    report_manifest_sha256: ""
+    data_sha256: ""
+    source_stage_bundle_sha256: ""
+    de_novo_backend_identity: ""
+    target_conditioned_backend_identity: ""
+    review_cohort_n: null
+    display_only_actions_excluded: []
+    reporting_status: available|rebuilt|failed|not_applicable
   pilot_identity:
     run_id: ""
     manifest_sha256: ""

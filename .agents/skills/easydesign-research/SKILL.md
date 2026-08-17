@@ -1,6 +1,6 @@
 ---
 name: easydesign-research
-description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：从 design goal、assay、target identity/state/context、文献与结构证据推导 site，设计可归因的 BoltzGen pilot，诊断 target/binder/site/interface/CDR/scaffold 失败，并决定迭代、promotion、scale 与 selection。适用于 live research project、target/site selection、VHH strategy、pilot review 和结果解释；不用于仓库开发（repository development）、compiler/schema 修改、UI 发布、remote compute、host pairing 或 managed queue。
+description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：从 design goal、assay、target identity/state/context、文献与结构证据推导 site，设计可归因的 BoltzGen pilot，诊断 target/binder/site/interface/CDR/scaffold 失败，并决定迭代、promotion、scale 与 selection。适用于 live research project、target/site selection、VHH strategy、Stage 5/7 Review Dashboard、pilot/scale 结果解释与最终选择；不用于仓库开发（repository development）、compiler/schema 修改、UI 发布、remote compute、host pairing 或 managed queue。
 ---
 
 # EasyDesign VHH 研究决策系统
@@ -51,9 +51,13 @@ adapter/backend/asset 或进入 expert native path 时，再读取
 
 先判断数据能否科学比较，再排名。高分不能越过 target integrity、site identity、hard gate 或 missingness。
 
+当 `project status` 返回 `pilot-review-ready` 时，Stage 05 Dashboard 审阅属于本 phase，不再路由到独立结果 Skill。用户明确要求打开/呈现页面时，使用状态输出绑定的 current run 执行 `easydesign view PROJECT --run RUN --report stage05`；若状态警告页面缺失或失败，先用 `easydesign report build PROJECT --run RUN --report stage05` 重建 reporting revision。具体证据身份、display-only 边界和解释合同见 `pilot-diagnosis.md`，不得调用已退役的 wrapper 或脚本。
+
 ### `scale` / `select`
 
 读取 [scale-and-selection.md](references/scale-and-selection.md)。只有当前 pilot evidence、promotion receipt 和 immutable input 均合法时才讨论 production allocation。
+
+完成 Stage 07 后的结果呈现与最终候选审阅也属于本 phase。用户明确要求打开/呈现页面时，使用 `easydesign view PROJECT --run RUN --report stage07`；若状态警告要求重建，使用 `easydesign report build PROJECT --run RUN --report stage07`。Dashboard 不产生新 selection、promotion 或 approval receipt。
 
 ## 2. 统一知识与陈述协议
 
@@ -131,7 +135,7 @@ policy 之外的 site、hotspot、CDR、crop、structure context 和 diagnostic 
 
 ## 5. 责任与审批边界
 
-EasyDesign 负责：解析/校验输入、residue mapping、backend execution、immutable artifacts、manifest/checksum、filter 和 approval receipt。
+EasyDesign 负责：解析/校验输入、residue mapping、backend execution、immutable artifacts、manifest/checksum、filter、只读 Review Dashboard 和 approval receipt。
 
 Codex 负责：主动检索证据、比较结构状态、提出 site/strategy 备选、起草可验证配置、分析 pilot、设计下一轮，并明确未知项。
 

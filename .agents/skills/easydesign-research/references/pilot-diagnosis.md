@@ -4,7 +4,7 @@
 
 ## 目录
 
-1. 输入与完成标准
+1. 输入、Dashboard 与完成标准
 2. 数据可用性与 denominator
 3. Group comparability
 4. 诊断顺序
@@ -40,6 +40,34 @@
 5. promotion、停止、返回上游或下一轮的决策；
 6. 下一轮每组的changed/held factors、prediction与falsifier；
 7. 审批边界。
+
+### 1.3 Stage 05 Review Dashboard 调用与解释合同
+
+**决策问题**：如何用核心 Dashboard 高效检查完整 Pilot/Expansion 母集，同时不把页面交互或视觉印象升级为新的科学事实？
+
+**必需证据**：先运行 `easydesign project status PROJECT --json`，绑定 current `project_id`、`run_id`、RunManifest、Stage 05 StageManifest、`stage05-bundle`、Dashboard report manifest/revision、report data SHA-256、filter profile、prediction backend/model/release 与所有 source artifact checksum。AFO 和 Protenix 在产品地位上等同；本次 Stage 05 使用哪一个，只能从 current config/artifact identity 读取，不能从项目历史或其他 stage 继承。
+
+**调用分支**：
+
+1. 状态为 `pilot-review-ready` 且 Dashboard revision 成功：用户明确要求打开/呈现时，执行状态给出的 `easydesign view PROJECT --run RUN --report stage05`；分析必须绑定该 revision 和 data hash。
+2. 状态 warning 明确 Dashboard 缺失或 reporting failure：执行 `easydesign report build PROJECT --run RUN --report stage05`，确认新 revision 成功后再 view。重建只产生 reporting revision，不重跑 filter、不改变 Tier/promotion，也不修复 scientific artifact。
+3. Stage 05 尚未完成、bundle/checksum 不合法或 report source identity 与 current run 不一致：停止 Dashboard 结论，回到数据恢复；不得扫描目录拼装页面，也不得调用旧 `easydesign-result-review` wrapper 或 `build_result_review.py`。
+
+**解释合同**：
+
+- `实验方案比较` 与 `全局候选审查`（Pilot/Expansion）用于遍历完整 denominator、missingness、hard/local gate、`score_screen`、`score_expand_structure` 和 target-conditioned evidence；页面不得缩成少数代表候选后替代分布分析。
+- 搜索、排序、散点联动、置顶与收藏都是 `display-only`。收藏导出不是候选选择、promotion 或 approval receipt；页面显示顺序不是新的 rank。
+- 页面中的结构来自 manifest 验证后的 artifact，并由本地 3Dmol.js 呈现。截图或人工观察必须记录 `report_revision`、`data_sha256`、`candidate_id`、structure artifact identity 和观察者结论；它属于 `fact`（页面显示内容）或 `inference`（人工解释），不能替代 hard gate。
+- 比较组必须先满足本章第 3 节的 comparability。跨 backend/profile/model/release 的原始 score 不直接合并或解释为优劣；若阶段内确有不同身份，分层报告并说明不可比项。
+- Dashboard reporting failure 不改变已完成 Stage 05 的科学状态；Stage 05 scientific stop、operational failure 与 reporting failure 必须分开。
+
+**正例**：先核对 report manifest 指向 current Stage 05 bundle，再用完整 strategy 分布定位七 scaffold 共同 low hotspot coverage，并从候选结构抽查 approach/crop-edge；结论仍引用原始 metric/hard-gate artifact，Dashboard 只提供可追踪的审阅视图。
+
+**反例/误判**：按页面默认排序截取 top 10，把收藏列表称为 promoted panel；或把 AFO 组与 Protenix 组的 raw confidence 直接平均。
+
+**反证或停止条件**：report manifest/data hash 不可验证、页面与 current run 不一致、关键候选结构缺失、backend/profile identity 未绑定、页面展示与 source artifact 冲突。此时只报告 reporting/provenance gap，不作候选优劣结论。
+
+**输出字段**：`dashboard_review.report_kind`, `report_revision`, `report_manifest_sha256`, `data_sha256`, `source_stage_bundle_sha256`, `backend_identity`, `display_only_actions_excluded`, `structured_observations`, `reporting_status`。
 
 ## 2. 数据可用性与 denominator
 
@@ -469,6 +497,16 @@ pilot_diagnosis:
     strategy_bundle_sha256: ""
     filter_profile: ""
     filter_profile_sha256: ""
+  dashboard_review:
+    report_kind: stage05
+    report_revision: ""
+    report_manifest_sha256: ""
+    data_sha256: ""
+    source_stage_bundle_sha256: ""
+    backend_identity: ""
+    display_only_actions_excluded: []
+    structured_observations: []
+    reporting_status: available|rebuilt|failed|not_applicable
   data_readiness:
     status: comparable|partially-comparable|not-comparable
     denominators_by_strategy: []

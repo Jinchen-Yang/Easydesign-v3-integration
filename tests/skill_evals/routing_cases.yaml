@@ -11,6 +11,16 @@ cases:
     request: Explain why this completed nanobody pilot failed and propose the next experiment.
     expected_skill: easydesign-research
     expected_behavior: Route to pilot diagnosis, not repository development.
+  - id: stage05-dashboard-review
+    category: near-neighbor-trigger
+    request: Open the completed Stage 5 Review Dashboard, explain why the VHH pilot groups succeeded or failed, and propose the next experiment.
+    expected_skill: easydesign-research
+    expected_behavior: Route to pilot diagnosis and the core stage05 dashboard; do not invoke a separate result-review skill.
+  - id: stage07-dashboard-review
+    category: near-neighbor-trigger
+    request: Review the completed Stage 7 Top-200 and dual-mode predictions, then propose a diverse experimental panel.
+    expected_skill: easydesign-research
+    expected_behavior: Route to scale/select interpretation and the core stage07 dashboard without treating display actions as selection approval.
   - id: research-negative
     category: negative-trigger
     request: Fix the Python compiler bug and add unit tests for StrategyBundle.

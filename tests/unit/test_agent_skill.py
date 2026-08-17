@@ -7,7 +7,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 RESEARCH_SKILL = ROOT / ".agents/skills/easydesign-research"
 DEVELOPMENT_SKILL = ROOT / ".agents/skills/easydesign-development"
-RESULT_REVIEW_SKILL = ROOT / ".agents/skills/easydesign-result-review"
 
 
 def test_research_skill_has_exact_flat_reference_set_and_valid_frontmatter() -> None:
@@ -143,36 +142,14 @@ def test_development_skill_is_thin_context_and_verification_entry() -> None:
     }
 
 
-def test_result_review_skill_is_read_only_and_progressively_loaded() -> None:
-    skill_text = (RESULT_REVIEW_SKILL / "SKILL.md").read_text(encoding="utf-8")
-    _, frontmatter, body = skill_text.split("---", maxsplit=2)
-    metadata = yaml.safe_load(frontmatter)
-    openai = yaml.safe_load(
-        (RESULT_REVIEW_SKILL / "agents/openai.yaml").read_text(encoding="utf-8")
-    )
+def test_only_research_and_development_skills_are_discoverable() -> None:
+    discovered = {
+        path.parent.name
+        for path in (ROOT / ".agents/skills").glob("*/SKILL.md")
+    }
 
-    assert metadata["name"] == "easydesign-result-review"
-    assert "pilot dashboard" in metadata["description"].lower()
-    assert "不用于 prepare/site" in metadata["description"]
-    assert "references/pilot-review.md" in body
-    assert "references/scale-selection-review.md" in body
-    assert "build_result_review.py" in body
-    assert "只读" in body
-    assert "不得用 Pilot 字段伪装" in body
-    assert "全新输出目录原子发布" in body
-    assert openai["policy"]["allow_implicit_invocation"] is True
-    assert "$easydesign-result-review" in openai["interface"]["default_prompt"]
-    assert openai["interface"]["display_name"] == "EasyDesign 结果审阅"
-    assert {path.name for path in RESULT_REVIEW_SKILL.iterdir()} == {
-        "SKILL.md",
-        "agents",
-        "references",
-        "scripts",
-    }
-    assert {path.name for path in (RESULT_REVIEW_SKILL / "references").iterdir()} == {
-        "pilot-review.md",
-        "scale-selection-review.md",
-    }
+    assert discovered == {"easydesign-research", "easydesign-development"}
+    assert not (ROOT / ".agents/skills/easydesign-result-review").exists()
 
 
 def test_skill_prose_is_chinese_first_and_machine_literals_stay_exact() -> None:
@@ -180,8 +157,6 @@ def test_skill_prose_is_chinese_first_and_machine_literals_stay_exact() -> None:
         RESEARCH_SKILL / "SKILL.md",
         *(sorted((RESEARCH_SKILL / "references").glob("*.md"))),
         DEVELOPMENT_SKILL / "SKILL.md",
-        RESULT_REVIEW_SKILL / "SKILL.md",
-        *(sorted((RESULT_REVIEW_SKILL / "references").glob("*.md"))),
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in skill_files)
 

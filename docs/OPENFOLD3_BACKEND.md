@@ -4,6 +4,9 @@ EasyDesign Local 通过 `openfold3-af3-jax` 后端运行 OpenFold3 preview2 权�
 运行锁定精确 release，不跟随上游 `latest`。项目不设置预测后端默认值；AFO 是否成为
 `stable` 只影响能否省略 release ID 安装，不会改变任何阶段的科学选择。
 
+维护者升级权重、构建 bundle 和发布新 release 时，按
+[AFO 权重转换与发布手册](maintainers/AFO_WEIGHT_RELEASE_PLAYBOOK.md)执行。
+
 ## 3.1.4 stable 身份
 
 - release ID：`afo-3-1-4-of3-p2-155k`；
@@ -65,11 +68,17 @@ smoke；成功后才发布 component receipt。clone 缺少 Python 3.12 时，�
 
 ## MSA、复合物和证据
 
-- Stage 1 可显式选择 AFO，使用 ColabFold 或预计算 MSA；
-- Stage 5/7 使用 target A3M，binder query-only，target/binder 固定 chain A/B；
-- AF3 JSON v4；`de-novo` 对 target/binder 都写空模板；
-- `target-conditioned` 只允许 Stage 1 冻结的 target A mmCIF，binder B 始终空模板；
-- 禁止 binder template、自动模板搜索和静默 fallback；
+- Stage 1 可显式选择 AFO，target unpaired MSA 使用 ColabFold 或预计算 A3M；Stage 1
+  不接受模板；
+- Stage 5 冻结 required target unpaired MSA，Stage 7 按 SHA 复用；target paired、binder
+  unpaired 和 binder paired 可逐链选择 `remote`、`precomputed`、`query-only` 或
+  `disabled`；
+- `query-only` 表示只写 query sequence，`disabled` 才表示空 MSA；任何远程失败都不得
+  静默回退；
+- AF3 JSON v4；target/binder 模板均可使用 checksum 固定的 `precomputed` 0..N 列表，
+  target 还可显式使用本次 run 冻结的 `target-structure`；
+- 自动模板搜索和本地模板数据库尚未作为 EasyDesign runtime 组件发布，不得把研究脚本
+  描述成普通用户可用的一键功能；
 - condition snapshot 固定结构/模板 JSON SHA、来源、A/模板 chain、zero-based
   query/template indices、缺失残基、author/label 编号转换和 resume 精确路径；
 - predicted target 若来自当前执行 backend，evidence 明确标记 self-conditioning，不能作为

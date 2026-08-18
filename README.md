@@ -61,7 +61,7 @@ easydesign runtime install miniforge
 安装顺序是：
 
 ```text
-pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp
+pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp → afo
 ```
 
 以下两种方式二选一。已有 setup job 运行时，CLI 会拒绝启动第二个任务并返回现有任务的
@@ -69,17 +69,16 @@ pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp
 
 #### 方式 A：一个后台任务安装全部组件
 
-先查看五个组件的合并计划，再启动一个串行后台任务：
+先查看全部组件的合并计划，再启动一个串行后台任务：
 
 ```bash
 easydesign runtime plan all
 easydesign runtime install all --detach
 ```
 
-`all` 只创建一个 setup job；它按上述顺序处理五个环境及对应资产，不会并发运行五个 Conda
-安装。catalog 当前包含经过人工批准的 AFO `stable`，同一个前台或 `--detach` job 会在这五项
-之后安装并激活该 stable；未来的 `candidate` 绝不会被 `all` 静默安装。任务中断后可重新执行同一
-命令，已经完成且校验通过的环境、资产和下载 cache 会被复用。
+`all` 只创建一个 setup job；它按上述顺序处理六个环境及对应资产，不会并发运行多个 Conda
+安装。catalog 中的 AFO `stable` 会被安装并激活；未来的 `candidate` 绝不会被 `all` 静默安装。
+任务中断后可重新执行同一命令，已经完成且校验通过的环境、资产和下载 cache 会被复用。
 
 #### 方式 B：逐个安装组件
 
@@ -105,7 +104,15 @@ easydesign runtime install scannet-epitope --detach
 # 5. TNP
 easydesign runtime plan tnp
 easydesign runtime install tnp --detach
+
+# 6. OpenFold3/AFO stable
+easydesign runtime list afo
+easydesign runtime install afo --detach
 ```
+
+AFO 安装器会从公开的 Hugging Face 仓库自动下载完整预转换发布物并创建独立环境；不需要
+安装 Hugging Face CLI、手动下载权重、准备原始 PyTorch checkpoint 或运行转换。当前发布物
+下载约 4.7 GiB，已验收平台为 Linux x86-64、NVIDIA A100 40 GB 和兼容 CUDA 12 的驱动。
 
 两种方式都使用同一套候选来源策略，而不是固定唯一下载源。Conda 包先按逐包 SHA-256
 下载到当前 clone 的 cache，再从本地显式视图创建环境；Pip index、Hugging Face 文件和
@@ -132,59 +139,6 @@ easydesign doctor --full
 ```
 
 只有 `doctor --full` 通过后，才把这台机器视为完整可用的 EasyDesign Local 主机。
-
-OpenFold3/AFO 3.1.4 当前是受支持的 `stable` 组件；完整的 `runtime install all` 会安装它，
-但 EasyDesign 项目仍不设置任何预测后端默认值。
-其完整预转换发布物包含权重、runner、冻结 wheelhouse、锁、许可、model card、转换 receipt
-和 smoke 输入；安装不需要原始 PyTorch checkpoint 或转换环境。当前发布 archive 的下载体积
-是 5,032,471,381 bytes（4.687 GiB），解包、建环境和缓存还需要额外磁盘空间。实机
-验收基线是 Linux x86-64、NVIDIA A100 40 GB 和兼容 CUDA 12 的驱动；更小 GPU 尚不属于
-本 release 的承诺范围。若当前 clone 尚无 Python 3.12，安装器会复用 bootstrap 已要求的
-`uv 0.12.3`，把精确 Python `3.12.13` 安装到 `runtime/tools/uv-python/`；无需用户手工准备
-转换环境或设置系统 Python。
-
-该确定性 archive 已发布到公开 Hugging Face 仓库；catalog 锁定具体 Hub commit、
-5,032,471,381-byte 大小和 SHA-256
-`83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`，不会跟随
-`main` 漂移。安装当前 stable 可以省略 release；需要精确复现时仍可显式写出 release：
-
-```bash
-easydesign runtime list afo
-easydesign runtime install afo
-# 精确安装指定 release（不会改变当前 active）：
-easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
-easydesign runtime activate afo --release afo-3-1-4-of3-p2-155k --confirm
-easydesign doctor --full
-```
-
-环境安装与科学选择彼此独立。项目创建不选择预测后端；运行需要预测的阶段时才显式选择，
-未选会立即停止，不会静默回退 Protenix。各阶段可以混用后端：
-
-```bash
-easydesign project init workspace/projects/my-project --target target.cif
-
-# 只有 Stage 1 真正需要预测 target 时才提供：
-easydesign target prepare workspace/projects/my-project --prediction-backend protenix
-
-# Stage 5 的验证后端单独选择：
-easydesign pilot run workspace/projects/my-project --strategy strategy-r000001 \
-  --prediction-backend afo --confirm
-
-# Stage 7 两种科学模式分别选择，可混用：
-easydesign select run workspace/projects/my-project --run PRODUCTION_RUN \
-  --de-novo-backend afo --target-conditioned-backend protenix --confirm
-```
-
-本 stable 绑定不可变 2 案例 AFO/Protenix boundary-negative sanity report 与人工 approval
-receipt，并通过小型 Stage 1→5→7/resume、target-conditioned、全新 clone 续传/幂等/
-quarantine/A100 GPU smoke。该批准不等同于完整 14 案例或多 seed 科学认证；仓库转为公开
-仍是产品发布阶段的独立决定。
-
-AFO 与 Protenix 都保留两条科学证据：`de-novo` 禁用 target/binder 模板并承担独立筛选；
-`target-conditioned` 只把 Stage 1 冻结的 target A 作为显式模板，binder B 仍无模板，也不做
-自动模板搜索。条件化结果使用独立 advisory profile，不会混入 de-novo 晋级门；预测来源
-与当前 backend 相同时会明确标记 self-conditioning。详细边界见
-[OpenFold3 后端](docs/OPENFOLD3_BACKEND.md)。
 
 ## 用 Codex 开始
 

@@ -44,11 +44,11 @@ immutable receipt under `runtime/state/bootstrap/`; use `--dry-run` for a read-o
 
 On a clean Linux x86-64 host, explicitly install the pinned Miniforge build into this clone. The
 command downloads and verifies the installer, then later component installs use it automatically.
-Choose either one all-components job or the five individual jobs. While a setup job is running, the
+Choose either one all-components job or the six individual jobs. While a setup job is running, the
 CLI rejects a second launch and returns the existing job's watch command instead of competing for the
 same cache.
 
-Install all five components in one sequential detached job:
+Install all six components in one sequential detached job:
 
 ```bash
 easydesign runtime install miniforge
@@ -70,8 +70,16 @@ easydesign runtime plan scannet-epitope
 easydesign runtime install scannet-epitope --detach
 easydesign runtime plan tnp
 easydesign runtime install tnp --detach
+easydesign runtime list afo
+easydesign runtime install afo --detach
 easydesign runtime jobs --job-id SETUP_JOB_ID --watch
 ```
+
+The AFO installer downloads the complete pre-converted release from the public Hugging Face
+repository and creates its isolated environment automatically. It does not require the Hugging Face
+CLI, a manual weight download, the original PyTorch checkpoint, or a conversion environment. The
+current download is about 4.7 GiB; the validated platform is Linux x86-64 with an NVIDIA A100 40 GB
+and a CUDA 12-compatible driver.
 
 These commands default to `--source auto`: EasyDesign probes the tracked official and China-local
 transport candidates, while the repository lock still fixes the Miniforge SHA, each Conda package
@@ -87,64 +95,12 @@ invent byte percentages when the upstream tool cannot provide them. `Ctrl-C`
 only stops watching and leaves the detached installer running.
 
 The `all` command creates one worker and processes
-`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp` sequentially. The catalog now contains
-a human-approved AFO `stable`, so the same foreground or detached job installs and activates it
-after those five components; future `candidate` releases are never installed implicitly. In individual mode, wait
+`pymol-pse → boltzgen → protenix-v2 → scannet-epitope → tnp → afo` sequentially. The catalog's AFO
+`stable` is installed and activated by that same foreground or detached job; future `candidate`
+releases are never installed implicitly. In individual mode, wait
 for each job to finish before launching the next. Then run `easydesign runtime status` and
 `easydesign doctor --full`. Every cache, log, job, project, run, and locally installed component
 remains inside the current clone.
-
-## OpenFold3/AFO stable
-
-OpenFold3/AFO 3.1.4 is currently a supported `stable` component; projects still have no default
-prediction backend. Its
-complete pre-converted release contains the weights, runner, frozen wheelhouse, environment lock,
-licenses, model card, conversion receipt, and smoke input; users do not need the original PyTorch
-checkpoint or a conversion environment. The archive download is 5,032,471,381 bytes (4.687 GiB),
-with additional space required for extraction, the environment, and
-cache. The acceptance baseline is Linux x86-64, an NVIDIA A100 40 GB, and a CUDA 12-compatible driver;
-smaller GPUs are not part of this release guarantee. If the clone does not yet contain Python 3.12,
-the installer reuses bootstrap's required `uv 0.12.3` to install exact Python `3.12.13` under
-`runtime/tools/uv-python/`; users do not need to prepare a conversion environment or modify system
-Python.
-
-The deterministic archive is now public on Hugging Face. The catalog pins a concrete Hub commit,
-the exact 5,032,471,381-byte size, and SHA-256
-`83b6d8e895090a0c74d21e495d50b75a7cb031389386f5b7cd9843b6d3501afd`; it never follows a mutable
-`main`. Install the stable release without an ID, or spell out the immutable release for exact reproduction:
-
-```bash
-easydesign runtime list afo
-easydesign runtime install afo
-# Install an exact release without changing the active release:
-easydesign runtime install afo --release afo-3-1-4-of3-p2-155k
-easydesign runtime activate afo --release afo-3-1-4-of3-p2-155k --confirm
-easydesign doctor --full
-```
-
-Environment installation and scientific selection are independent. Projects do not have a default
-prediction backend. Select a backend only when a stage needs prediction; omission fails closed and
-never falls back silently to Protenix. Different stages may use different backends:
-
-```bash
-easydesign project init workspace/projects/my-project --target target.cif
-easydesign target prepare workspace/projects/my-project --prediction-backend protenix
-easydesign pilot run workspace/projects/my-project --strategy strategy-r000001 \
-  --prediction-backend afo --confirm
-easydesign select run workspace/projects/my-project --run PRODUCTION_RUN \
-  --de-novo-backend afo --target-conditioned-backend protenix --confirm
-```
-
-This stable binds an immutable two-case AFO/Protenix boundary-negative sanity report and a human
-approval receipt, plus accelerated Stage 1→5→7/resume, target-conditioned, and fresh-clone
-resume/idempotency/quarantine/A100 GPU installation evidence. It is not a full 14-case or multi-seed
-scientific certification. Making the GitHub repository public remains a separate product-release decision.
-
-Stage 5/7 retain two distinct evidence tracks for both AFO and Protenix. `de-novo` disables target and
-binder templates and remains the independent selection authority. `target-conditioned` uses only the
-frozen Stage 1 target A structure; binder B still has no template and automatic template search stays
-disabled. Conditioned results use a separate advisory profile and are explicitly marked as
-self-conditioned when the Stage 1 prediction came from the same backend.
 
 ## Start or resume with Codex
 

@@ -7,7 +7,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, Self
@@ -15,7 +15,7 @@ from typing import Protocol, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from easydesign.backends.structure_prediction import StructurePredictionRequest
-from easydesign.backends.structure_prediction.contracts import MsaMode
+from easydesign.backends.structure_prediction.contracts import MsaMode, TemplateMode
 from easydesign.backends.target_sources import NormalizedProteinSequence
 from easydesign.core import (
     ArtifactRef,
@@ -88,6 +88,8 @@ class ResolvedRunConfig(BaseModel):
     prediction_request: StructurePredictionRequest | None = None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...] = ()
     precomputed_msa_snapshot: ArtifactRef | None = None
+    precomputed_paired_msa_snapshot: ArtifactRef | None = None
+    precomputed_template_snapshot: ArtifactRef | None = None
     stop_after_stage: int = Field(ge=1, le=7)
     runtime_profile: RuntimeProfileRef | None = None
 
@@ -102,6 +104,7 @@ class ResolvedRunConfig(BaseModel):
             "0.5",
             "0.6",
             "0.7",
+            "0.8",
         }:
             raise ValueError(f"不支持的 resolved config schema: {self.schema_version}")
         is_sequence = self.detected_input_format in {
@@ -110,7 +113,33 @@ class ResolvedRunConfig(BaseModel):
         }
         if is_sequence and self.target is None:
             raise ValueError("sequence/FASTA resolved config 必须包含规范序列")
-        if is_sequence and self.prediction_request is not None and self.schema_version != "0.2":
+        if (
+            is_sequence
+            and self.prediction_request is not None
+            and self.schema_version == "0.8"
+        ):
+            request = self.prediction_request
+            if request.has_remote_msa and not self.msa_execution_plan:
+                raise ValueError("remote MSA 必须包含 execution plan")
+            if not request.has_remote_msa and self.msa_execution_plan:
+                raise ValueError("非 remote MSA 不得包含 execution plan")
+            if (
+                request.resolved_target_unpaired_msa_mode is MsaMode.PRECOMPUTED
+            ) != (self.precomputed_msa_snapshot is not None):
+                raise ValueError("target unpaired precomputed MSA snapshot 不一致")
+            if (
+                request.resolved_target_paired_msa_mode is MsaMode.PRECOMPUTED
+            ) != (self.precomputed_paired_msa_snapshot is not None):
+                raise ValueError("target paired precomputed MSA snapshot 不一致")
+            if (
+                request.template_mode is TemplateMode.PRECOMPUTED
+            ) != (self.precomputed_template_snapshot is not None):
+                raise ValueError("target precomputed template snapshot 不一致")
+        elif (
+            is_sequence
+            and self.prediction_request is not None
+            and self.schema_version != "0.2"
+        ):
             if self.prediction_request.msa_mode is MsaMode.REMOTE:
                 if not self.msa_execution_plan or self.precomputed_msa_snapshot is not None:
                     raise ValueError("remote MSA 必须且只能包含 execution plan")
@@ -492,25 +521,68 @@ def _initialize_workspace(
                 role="msa-input-snapshot",
                 file_format="a3m",
             )
+        precomputed_paired_msa_ref: ArtifactRef | None = None
+        loaded_paired_msa = getattr(loaded, "precomputed_paired_msa_path", None)
+        if loaded_paired_msa is not None:
+            paired_snapshot = staging / "input-snapshot" / "target-paired-msa.a3m"
+            _exclusive_copy(loaded_paired_msa, paired_snapshot)
+            precomputed_paired_msa_ref = ArtifactRef.from_file(
+                run_root=staging,
+                relative_path=paired_snapshot.relative_to(staging).as_posix(),
+                artifact_id="precomputed-paired-msa-source",
+                role="paired-msa-input-snapshot",
+                file_format="a3m",
+            )
+        precomputed_template_ref: ArtifactRef | None = None
+        loaded_template = getattr(loaded, "precomputed_template_path", None)
+        if loaded_template is not None:
+            template_snapshot = staging / "input-snapshot" / "target-templates.json"
+            _exclusive_copy(loaded_template, template_snapshot)
+            precomputed_template_ref = ArtifactRef.from_file(
+                run_root=staging,
+                relative_path=template_snapshot.relative_to(staging).as_posix(),
+                artifact_id="precomputed-target-template-source",
+                role="template-input-snapshot",
+                file_format="json",
+            )
+        prediction_request = (
+            loaded.prediction_request
+            if isinstance(loaded, LoadedSequenceRunConfig)
+            else None
+        )
+        if prediction_request is not None:
+            updates: dict[str, Path] = {}
+            if precomputed_msa_ref is not None:
+                updates["target_unpaired_msa_path"] = (
+                    final_root / precomputed_msa_ref.relative_path
+                )
+            if precomputed_paired_msa_ref is not None:
+                updates["target_paired_msa_path"] = (
+                    final_root / precomputed_paired_msa_ref.relative_path
+                )
+            if precomputed_template_ref is not None:
+                updates["target_template_data_path"] = (
+                    final_root / precomputed_template_ref.relative_path
+                )
+            if updates:
+                prediction_request = prediction_request.model_copy(update=updates)
         resolved = ResolvedRunConfig(
-            schema_version="0.7",
+            schema_version="0.8",
             project_id=loaded.config.project_id,
             run_id=selected_run_id,
             user_config=loaded.config,
             detected_input_format=loaded.detected_format,
             input_snapshot=input_ref,
             target=loaded.target if isinstance(loaded, LoadedSequenceRunConfig) else None,
-            prediction_request=(
-                loaded.prediction_request
-                if isinstance(loaded, LoadedSequenceRunConfig)
-                else None
-            ),
+            prediction_request=prediction_request,
             msa_execution_plan=(
                 loaded.msa_execution_plan
                 if isinstance(loaded, LoadedSequenceRunConfig)
                 else ()
             ),
             precomputed_msa_snapshot=precomputed_msa_ref,
+            precomputed_paired_msa_snapshot=precomputed_paired_msa_ref,
+            precomputed_template_snapshot=precomputed_template_ref,
             stop_after_stage=loaded.config.workflow.stop_after_stage,
             runtime_profile=runtime_profile,
         )
@@ -660,16 +732,6 @@ def initialize_sequence_run(
     timestamp = datetime.now(UTC) if created_at is None else normalize_aware_datetime(created_at)
     selected_run_id = _generated_run_id(timestamp) if run_id is None else run_id
 
-    def prepare(staging: Path, _: Path) -> Path:
-        path = (
-            staging
-            / str(StageId.TARGET_PREPARATION)
-            / "attempt-0001"
-            / "inputs"
-            / "protenix-input.json"
-        )
-        return input_writer.write_input(prediction_request, path)
-
     workspace, prepared_input = _initialize_workspace(
         loaded=loaded,
         runs_root=runs_root,
@@ -679,10 +741,39 @@ def initialize_sequence_run(
         easydesign_version=easydesign_version,
         selected_run_id=selected_run_id,
         timestamp=timestamp,
-        prepare_attempt_input=prepare,
+        prepare_attempt_input=None,
         index_note="Stage 01 sequence input prepared; backend execution not started.",
     )
-    assert prepared_input is not None
+    assert prepared_input is None
+    resolved, _ = load_resolved_run_config(workspace.run_root)
+    resolved_request = resolved.prediction_request
+    if resolved_request is None:
+        raise ManifestStateError("Stage 01 resolved prediction request 缺失")
+    prepared_input = input_writer.write_input(
+        resolved_request,
+        workspace.attempt_root(StageId.TARGET_PREPARATION, "attempt-0001")
+        / "inputs"
+        / "protenix-input.json",
+    )
+    loaded = replace(
+        loaded,
+        prediction_request=resolved_request,
+        precomputed_msa_path=(
+            None
+            if resolved.precomputed_msa_snapshot is None
+            else resolved.precomputed_msa_snapshot.verify(workspace.run_root)
+        ),
+        precomputed_paired_msa_path=(
+            None
+            if resolved.precomputed_paired_msa_snapshot is None
+            else resolved.precomputed_paired_msa_snapshot.verify(workspace.run_root)
+        ),
+        precomputed_template_path=(
+            None
+            if resolved.precomputed_template_snapshot is None
+            else resolved.precomputed_template_snapshot.verify(workspace.run_root)
+        ),
+    )
     return PreparedSequenceRun(
         loaded_config=loaded,
         workspace=workspace,

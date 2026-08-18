@@ -28,6 +28,7 @@ from .contracts import (
     PredictionRequest,
     ProteinPredictionChain,
     StructurePredictionProduct,
+    StructurePredictionRequest,
     TemplateMode,
 )
 
@@ -186,17 +187,28 @@ class ProtenixV2Adapter:
                     protein_chain["templatesPath"] = str(template_path)
                 sequences.append({"proteinChain": protein_chain})
             return [{"name": request.job_name, "sequences": sequences}]
-        if request.template_mode is not TemplateMode.DISABLED:
-            raise BackendContractError("Protenix 单链 Stage 01 暂不接受模板")
+        target_protein_chain: dict[str, Any] = {
+            "sequence": request.target.sequence,
+            "count": 1,
+        }
+        if request.target_unpaired_msa_path is not None:
+            target_protein_chain["unpairedMsaPath"] = str(
+                request.target_unpaired_msa_path
+            )
+        if request.target_paired_msa_path is not None:
+            target_protein_chain["pairedMsaPath"] = str(
+                request.target_paired_msa_path
+            )
+        if request.target_template_data_path is not None:
+            target_protein_chain["templatesPath"] = str(
+                request.target_template_data_path
+            )
         return [
             {
                 "name": request.job_name,
                 "sequences": [
                     {
-                        "proteinChain": {
-                            "sequence": request.target.sequence,
-                            "count": 1,
-                        }
+                        "proteinChain": target_protein_chain
                     }
                 ],
             }
@@ -341,10 +353,82 @@ class ProtenixV2Adapter:
         """排他写入 Protenix JSON；已有请求不可覆盖。"""
 
         path.parent.mkdir(parents=True, exist_ok=True)
+        render_request = request
+        if isinstance(request, StructurePredictionRequest):
+            feature_root = path.parent / "features"
+            updates: dict[str, Any] = {}
+            for label, mode, source, mode_field, path_field in (
+                (
+                    "unpaired",
+                    request.resolved_target_unpaired_msa_mode,
+                    request.target_unpaired_msa_path,
+                    "target_unpaired_msa_mode",
+                    "target_unpaired_msa_path",
+                ),
+                (
+                    "paired",
+                    request.resolved_target_paired_msa_mode,
+                    request.target_paired_msa_path,
+                    "target_paired_msa_mode",
+                    "target_paired_msa_path",
+                ),
+            ):
+                if mode not in {MsaMode.PRECOMPUTED, MsaMode.QUERY_ONLY}:
+                    continue
+                feature_root.mkdir(parents=True, exist_ok=True)
+                destination = feature_root / f"target-{label}.a3m"
+                if mode is MsaMode.QUERY_ONLY:
+                    content = f">query\n{request.target.sequence}\n"
+                else:
+                    assert source is not None
+                    try:
+                        content = source.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError) as error:
+                        raise BackendContractError(
+                            f"Protenix Stage 01 {label} MSA 无法读取"
+                        ) from error
+                try:
+                    with destination.open("x", encoding="utf-8") as handle:
+                        handle.write(content)
+                except FileExistsError as error:
+                    raise ManifestStateError(
+                        f"不可覆盖 Stage 01 {label} MSA snapshot: {destination}"
+                    ) from error
+                updates[mode_field] = MsaMode.PRECOMPUTED
+                updates[path_field] = destination.resolve()
+            if request.template_mode is TemplateMode.PRECOMPUTED:
+                source = request.target_template_data_path
+                expected = request.target_template_data_sha256
+                assert source is not None and expected is not None
+                self._validate_chain_templates(
+                    ProteinPredictionChain(
+                        chain_id="A",
+                        role="target",
+                        sequence=request.target.sequence,
+                        template_mode=TemplateMode.PRECOMPUTED,
+                        template_data_path=source,
+                        template_data_sha256=expected,
+                    )
+                )
+                feature_root.mkdir(parents=True, exist_ok=True)
+                destination = feature_root / "target-templates.json"
+                try:
+                    with source.open("rb") as input_handle, destination.open(
+                        "xb"
+                    ) as output_handle:
+                        while chunk := input_handle.read(1024 * 1024):
+                            output_handle.write(chunk)
+                except FileExistsError as error:
+                    raise ManifestStateError(
+                        f"不可覆盖 Stage 01 template snapshot: {destination}"
+                    ) from error
+                updates["target_template_data_path"] = destination.resolve()
+            if updates:
+                render_request = request.model_copy(update=updates)
         try:
             with path.open("x", encoding="utf-8") as handle:
                 json.dump(
-                    self.render_input(request),
+                    self.render_input(render_request),
                     handle,
                     ensure_ascii=False,
                     indent=2,
@@ -483,8 +567,20 @@ class ProtenixV2Adapter:
         output_dir: Path,
     ) -> BackendInvocation:
         if not isinstance(request, ComplexStructurePredictionRequest):
-            if request.template_mode is not TemplateMode.DISABLED:
-                raise BackendContractError("Protenix 单链 Stage 01 禁止模板")
+            if request.template_mode is TemplateMode.PRECOMPUTED:
+                source = request.target_template_data_path
+                expected = request.target_template_data_sha256
+                assert source is not None and expected is not None
+                self._validate_chain_templates(
+                    ProteinPredictionChain(
+                        chain_id="A",
+                        role="target",
+                        sequence=request.target.sequence,
+                        template_mode=TemplateMode.PRECOMPUTED,
+                        template_data_path=source,
+                        template_data_sha256=expected,
+                    )
+                )
         else:
             for chain in request.chains:
                 self._chain_template_path(request, chain)
@@ -550,7 +646,7 @@ class ProtenixV2Adapter:
     @staticmethod
     def _uses_remote_msa(request: PredictionRequest) -> bool:
         if not isinstance(request, ComplexStructurePredictionRequest):
-            return request.msa_mode is MsaMode.REMOTE
+            return request.has_remote_msa
         return any(
             mode is MsaMode.REMOTE
             for chain in request.chains
@@ -563,7 +659,13 @@ class ProtenixV2Adapter:
     @staticmethod
     def _uses_msa(request: PredictionRequest) -> bool:
         if not isinstance(request, ComplexStructurePredictionRequest):
-            return request.msa_mode is not MsaMode.DISABLED
+            return any(
+                mode is not MsaMode.DISABLED
+                for mode in (
+                    request.resolved_target_unpaired_msa_mode,
+                    request.resolved_target_paired_msa_mode,
+                )
+            )
         return any(
             mode is not MsaMode.DISABLED
             for chain in request.chains
@@ -592,11 +694,15 @@ class ProtenixV2Adapter:
     def _chain_feature_metrics(request: PredictionRequest) -> dict[str, str | None]:
         if not isinstance(request, ComplexStructurePredictionRequest):
             return {
-                "target_unpaired_msa_mode": str(request.msa_mode),
-                "target_paired_msa_mode": str(request.msa_mode),
+                "target_unpaired_msa_mode": str(
+                    request.resolved_target_unpaired_msa_mode
+                ),
+                "target_paired_msa_mode": str(
+                    request.resolved_target_paired_msa_mode
+                ),
                 "binder_unpaired_msa_mode": None,
                 "binder_paired_msa_mode": None,
-                "target_template_data_sha256": None,
+                "target_template_data_sha256": request.target_template_data_sha256,
                 "binder_template_data_sha256": None,
             }
         target = request.require_role("target")

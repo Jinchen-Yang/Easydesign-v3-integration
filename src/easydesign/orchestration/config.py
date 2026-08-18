@@ -26,7 +26,7 @@ from easydesign.backends.target_sources import (
     normalize_raw_sequence,
 )
 from easydesign.backends.target_sources.sequence import CANONICAL_AMINO_ACIDS
-from easydesign.core import ConfigurationError, TargetInputError
+from easydesign.core import ConfigurationError, TargetInputError, sha256_file
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 from easydesign.stages.s03_boltzgen_configuration import (
     ExplicitStrategyVariant,
@@ -299,6 +299,7 @@ class PrecomputedProtenixMsaConfig(BaseModel):
 
     mode: Literal[MsaMode.PRECOMPUTED]
     path: Path
+    sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
     def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
         return ()
@@ -360,6 +361,15 @@ ComplexMsaConfig: TypeAlias = Annotated[
 ]
 
 
+Stage01MsaConfig: TypeAlias = Annotated[
+    RemoteProtenixMsaConfig
+    | PrecomputedProtenixMsaConfig
+    | QueryOnlyComplexMsaConfig
+    | DisabledComplexMsaConfig,
+    Field(discriminator="mode"),
+]
+
+
 class ComplexTemplateConfig(BaseModel):
     """Per-chain template source; combinations are never gated by scientific labels."""
 
@@ -396,8 +406,9 @@ class StructurePredictionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     backend: PredictionBackend
-    msa: ProtenixMsaConfig
-    template_mode: TemplateMode
+    target_msa: Stage01MsaConfig
+    target_paired_msa: Stage01MsaConfig = QueryOnlyComplexMsaConfig()
+    target_templates: ComplexTemplateConfig = ComplexTemplateConfig()
     parameter_profile: PredictionParameterProfile = PredictionParameterProfile.MODEL_DEFAULT
     seeds: tuple[int, ...] = (101,)
     sample_count: int = Field(default=1, ge=1)
@@ -405,11 +416,65 @@ class StructurePredictionConfig(BaseModel):
     cycle_count: int | None = Field(default=None, ge=1)
     diffusion_step_count: int | None = Field(default=None, ge=1)
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_features(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        if "target_msa" not in migrated and "msa" in migrated:
+            migrated["target_msa"] = migrated.pop("msa")
+        if "target_templates" not in migrated and "template_mode" in migrated:
+            legacy_mode = migrated.pop("template_mode")
+            if legacy_mode in {TemplateMode.DISABLED, str(TemplateMode.DISABLED)}:
+                migrated["target_templates"] = {"mode": "disabled"}
+            else:
+                raise ValueError(
+                    "Stage 01 precomputed template 请使用 target_templates.data_path/data_sha256"
+                )
+        return migrated
+
     @model_validator(mode="after")
     def validate_backend(self) -> Self:
         if len(self.seeds) != 1 or self.sample_count != 1:
             raise ValueError("Stage 01 v0.1 必须恰好一个 seed 和一个 sample，避免静默选择预测结构")
+        if self.target_templates.mode == "target-structure":
+            raise ValueError("Stage 01 不能用尚未生成的 target-structure 反向条件化自身")
+        remote = tuple(
+            item
+            for item in (self.target_msa, self.target_paired_msa)
+            if isinstance(item, RemoteProtenixMsaConfig)
+        )
+        if len(remote) == 2 and remote[0] != remote[1]:
+            raise ValueError(
+                "Stage 01 target unpaired/paired remote MSA 必须使用同一 provider 配置"
+            )
         return self
+
+    @property
+    def msa(self) -> Stage01MsaConfig:
+        """Compatibility alias for schema <=0.9 and existing runtime code."""
+
+        return self.target_msa
+
+    @property
+    def template_mode(self) -> TemplateMode:
+        return (
+            TemplateMode.DISABLED
+            if self.target_templates.mode == "disabled"
+            else TemplateMode.PRECOMPUTED
+        )
+
+    def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
+        remote = next(
+            (
+                item
+                for item in (self.target_msa, self.target_paired_msa)
+                if isinstance(item, RemoteProtenixMsaConfig)
+            ),
+            None,
+        )
+        return () if remote is None else remote.resolved_providers()
 
 
 class WorkflowConfig(BaseModel):
@@ -1448,6 +1513,8 @@ class LoadedSequenceRunConfig:
     prediction_request: StructurePredictionRequest | None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...]
     precomputed_msa_path: Path | None = None
+    precomputed_paired_msa_path: Path | None = None
+    precomputed_template_path: Path | None = None
     identity_report: dict[str, Any] | None = None
     scope_report: dict[str, Any] | None = None
     structure_candidates: tuple[dict[str, Any], ...] = ()
@@ -1488,6 +1555,8 @@ class LoadedRemoteRunConfig:
     source_path: None
     detected_format: TargetInputFormat
     precomputed_msa_path: Path | None = None
+    precomputed_paired_msa_path: Path | None = None
+    precomputed_template_path: Path | None = None
 
 
 LoadedRunConfig: TypeAlias = (
@@ -1607,13 +1676,100 @@ def _resolve_precomputed_msa_path(
     source_base_dir: Path | None = None,
 ) -> Path | None:
     prediction = config.structure_prediction
-    if prediction is None or not isinstance(prediction.msa, PrecomputedProtenixMsaConfig):
+    if prediction is None or not isinstance(
+        prediction.target_msa,
+        PrecomputedProtenixMsaConfig,
+    ):
         return None
-    return _resolve_source_path(
+    resolved = _resolve_source_path(
         config_path,
-        prediction.msa.path,
+        prediction.target_msa.path,
         source_base_dir=source_base_dir,
     )
+    expected = prediction.target_msa.sha256
+    if expected is not None and sha256_file(resolved) != expected:
+        raise ConfigurationError("Stage 01 target unpaired MSA SHA-256 不一致")
+    return resolved
+
+
+def _resolve_precomputed_paired_msa_path(
+    config_path: Path,
+    config: EasyDesignRunConfig,
+    *,
+    source_base_dir: Path | None = None,
+) -> Path | None:
+    prediction = config.structure_prediction
+    if prediction is None or not isinstance(
+        prediction.target_paired_msa,
+        PrecomputedProtenixMsaConfig,
+    ):
+        return None
+    resolved = _resolve_source_path(
+        config_path,
+        prediction.target_paired_msa.path,
+        source_base_dir=source_base_dir,
+    )
+    expected = prediction.target_paired_msa.sha256
+    if expected is not None and sha256_file(resolved) != expected:
+        raise ConfigurationError("Stage 01 target paired MSA SHA-256 不一致")
+    return resolved
+
+
+def _resolve_precomputed_template_path(
+    config_path: Path,
+    config: EasyDesignRunConfig,
+    *,
+    source_base_dir: Path | None = None,
+) -> Path | None:
+    prediction = config.structure_prediction
+    if prediction is None or prediction.target_templates.mode != "precomputed":
+        return None
+    source = prediction.target_templates.data_path
+    expected = prediction.target_templates.data_sha256
+    assert source is not None and expected is not None
+    resolved = _resolve_source_path(
+        config_path,
+        source,
+        source_base_dir=source_base_dir,
+    )
+    if sha256_file(resolved) != expected:
+        raise ConfigurationError("Stage 01 target template SHA-256 不一致")
+    return resolved
+
+
+def _stage01_msa_mode(config: Stage01MsaConfig) -> MsaMode:
+    return MsaMode(str(config.mode))
+
+
+def _rebase_stage01_template_for_validation(
+    raw: dict[str, Any],
+    *,
+    config_path: Path,
+    source_base_dir: Path | None,
+) -> None:
+    """Let project YAML use the same project-relative template paths as target/MSA inputs."""
+
+    stage01 = raw.get("stage01")
+    if not isinstance(stage01, dict):
+        return
+    prediction = stage01.get("structure_prediction")
+    if not isinstance(prediction, dict):
+        return
+    template = prediction.get("target_templates")
+    if not isinstance(template, dict) or template.get("mode") != "precomputed":
+        return
+    declared = template.get("data_path")
+    if not isinstance(declared, str):
+        return
+    path = Path(declared).expanduser()
+    if path.is_absolute():
+        return
+    base = (
+        source_base_dir.expanduser().resolve()
+        if source_base_dir is not None
+        else _default_source_base_dir(config_path)
+    )
+    template["data_path"] = str((base / path).resolve())
 
 
 def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> LoadedRunConfig:
@@ -1626,6 +1782,11 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         raise ConfigurationError(f"EasyDesign YAML 无法读取: path={path}, error={error}") from error
     if not isinstance(raw, dict):
         raise ConfigurationError("EasyDesign YAML 顶层必须是 mapping")
+    _rebase_stage01_template_for_validation(
+        raw,
+        config_path=config_path,
+        source_base_dir=source_base_dir,
+    )
     try:
         config = EasyDesignRunConfig.model_validate(raw)
     except ValidationError as error:
@@ -1638,6 +1799,15 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
             config=config,
             source_path=None,
             detected_format=TargetInputFormat.PDB_ID,
+            precomputed_msa_path=_resolve_precomputed_msa_path(
+                config_path, config, source_base_dir=source_base_dir
+            ),
+            precomputed_paired_msa_path=_resolve_precomputed_paired_msa_path(
+                config_path, config, source_base_dir=source_base_dir
+            ),
+            precomputed_template_path=_resolve_precomputed_template_path(
+                config_path, config, source_base_dir=source_base_dir
+            ),
         )
     if isinstance(source, UniProtSourceConfig):
         return LoadedRemoteRunConfig(
@@ -1650,6 +1820,16 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
                 config,
                 source_base_dir=source_base_dir,
             ),
+            precomputed_paired_msa_path=_resolve_precomputed_paired_msa_path(
+                config_path,
+                config,
+                source_base_dir=source_base_dir,
+            ),
+            precomputed_template_path=_resolve_precomputed_template_path(
+                config_path,
+                config,
+                source_base_dir=source_base_dir,
+            ),
         )
     if isinstance(source, UniProtSearchSourceConfig):
         return LoadedRemoteRunConfig(
@@ -1658,6 +1838,16 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
             source_path=None,
             detected_format=TargetInputFormat.UNIPROT_SEARCH,
             precomputed_msa_path=_resolve_precomputed_msa_path(
+                config_path,
+                config,
+                source_base_dir=source_base_dir,
+            ),
+            precomputed_paired_msa_path=_resolve_precomputed_paired_msa_path(
+                config_path,
+                config,
+                source_base_dir=source_base_dir,
+            ),
+            precomputed_template_path=_resolve_precomputed_template_path(
                 config_path,
                 config,
                 source_base_dir=source_base_dir,
@@ -1740,6 +1930,21 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         )
 
     prediction = config.structure_prediction
+    precomputed_msa_path = _resolve_precomputed_msa_path(
+        config_path,
+        config,
+        source_base_dir=source_base_dir,
+    )
+    precomputed_paired_msa_path = _resolve_precomputed_paired_msa_path(
+        config_path,
+        config,
+        source_base_dir=source_base_dir,
+    )
+    precomputed_template_path = _resolve_precomputed_template_path(
+        config_path,
+        config,
+        source_base_dir=source_base_dir,
+    )
     request: StructurePredictionRequest | None = None
     if prediction is not None:
         try:
@@ -1748,19 +1953,28 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
                 target=target,
                 seeds=prediction.seeds,
                 sample_count=prediction.sample_count,
-                msa_mode=prediction.msa.mode,
+                msa_mode=_stage01_msa_mode(prediction.target_msa),
                 template_mode=prediction.template_mode,
+                target_unpaired_msa_mode=_stage01_msa_mode(
+                    prediction.target_msa
+                ),
+                target_unpaired_msa_path=precomputed_msa_path,
+                target_paired_msa_mode=_stage01_msa_mode(
+                    prediction.target_paired_msa
+                ),
+                target_paired_msa_path=precomputed_paired_msa_path,
+                target_template_data_path=precomputed_template_path,
+                target_template_data_sha256=(
+                    prediction.target_templates.data_sha256
+                    if precomputed_template_path is not None
+                    else None
+                ),
                 parameter_profile=prediction.parameter_profile,
                 cycle_count=prediction.cycle_count,
                 diffusion_step_count=prediction.diffusion_step_count,
             )
         except ValidationError as error:
             raise ConfigurationError(f"结构预测配置不符合通用请求契约: {error}") from error
-    precomputed_msa_path = _resolve_precomputed_msa_path(
-        config_path,
-        config,
-        source_base_dir=source_base_dir,
-    )
     return LoadedSequenceRunConfig(
         config_path=config_path,
         config=config,
@@ -1769,14 +1983,16 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         target=target,
         prediction_request=request,
         msa_execution_plan=(
-            prediction.msa.resolved_providers() if prediction is not None else ()
+            prediction.resolved_providers() if prediction is not None else ()
         ),
         precomputed_msa_path=precomputed_msa_path,
+        precomputed_paired_msa_path=precomputed_paired_msa_path,
+        precomputed_template_path=precomputed_template_path,
     )
 
 
 def migrate_run_config(source: Path, destination: Path) -> Path:
-    """将旧配置显式写成 canonical 0.7；禁止覆盖原文件或目标文件。"""
+    """将旧配置显式写成 canonical 0.9；禁止覆盖原文件或目标文件。"""
 
     source_path = source.resolve(strict=True)
     target_path = destination.expanduser().resolve()
@@ -1817,12 +2033,26 @@ def migrate_run_config(source: Path, destination: Path) -> Path:
     if loaded_precomputed_msa is not None:
         prediction = payload["stage01"]["structure_prediction"]
         assert isinstance(prediction, dict)
-        msa = prediction["msa"]
+        msa = prediction["target_msa"]
         assert isinstance(msa, dict)
         msa["path"] = os.path.relpath(
             loaded_precomputed_msa,
             target_path.parent,
         )
+    loaded_paired_msa = getattr(loaded, "precomputed_paired_msa_path", None)
+    if loaded_paired_msa is not None:
+        prediction = payload["stage01"]["structure_prediction"]
+        assert isinstance(prediction, dict)
+        paired = prediction["target_paired_msa"]
+        assert isinstance(paired, dict)
+        paired["path"] = os.path.relpath(loaded_paired_msa, target_path.parent)
+    loaded_template = getattr(loaded, "precomputed_template_path", None)
+    if loaded_template is not None:
+        prediction = payload["stage01"]["structure_prediction"]
+        assert isinstance(prediction, dict)
+        template = prediction["target_templates"]
+        assert isinstance(template, dict)
+        template["data_path"] = os.path.relpath(loaded_template, target_path.parent)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with target_path.open("x", encoding="utf-8", newline="\n") as handle:

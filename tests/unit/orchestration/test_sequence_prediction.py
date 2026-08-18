@@ -128,7 +128,12 @@ def successful_fake_run(
         updated.write_text(json.dumps(payload), encoding="utf-8")
         return subprocess.CompletedProcess(args, 0, "MSA complete\n", "")
     assert args[1] == "pred"
-    assert option(args, "--use_msa") == "true"
+    protein_chain = payload[0]["sequences"][0]["proteinChain"]
+    expected_use_msa = bool(
+        protein_chain.get("unpairedMsaPath")
+        or protein_chain.get("pairedMsaPath")
+    )
+    assert option(args, "--use_msa") == str(expected_use_msa).lower()
     write_prediction(Path(option(args, "--out_dir")), job_name, sequence)
     return subprocess.CompletedProcess(args, 0, "Prediction complete\n", "")
 
@@ -408,6 +413,83 @@ def test_execute_sequence_prediction_consumes_validated_precomputed_a3m(
     assert provenance["msa_mode"] == "precomputed"
     assert provenance["msa_provider"] == "precomputed"
     assert provenance["msa_ticket_status"] == "precomputed"
+
+
+def test_execute_sequence_prediction_supports_explicit_no_msa(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "disabled-project"
+    project.mkdir()
+    sequence = "ACDEFGHIKLMNPQRSTVWY"
+    (project / "target.fasta").write_text(
+        f">target\n{sequence}\n",
+        encoding="utf-8",
+    )
+    config = project / "easydesign.yaml"
+    config.write_text(
+        """
+schema_version: "0.9"
+project_id: msa-disabled
+workflow:
+  execution_mode: review-gated
+  stop_after_stage: 1
+stage01:
+  target:
+    id: target
+    source:
+      type: local-file
+      path: target.fasta
+      format: fasta
+    scope: {type: full-sequence}
+  structure_prediction:
+    backend: protenix-v2
+    target_msa: {mode: disabled}
+    target_paired_msa: {mode: disabled}
+    target_templates: {mode: disabled}
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+    operations: list[str] = []
+
+    def record_run(args: list[str], **kwargs):
+        operations.append(args[1])
+        return successful_fake_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record_run)
+    prepared = initialize_sequence_run(
+        config_path=config,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter_builder(None),
+        code_commit="a1b2c3d",
+        easydesign_version="0.1.0.dev3",
+        run_id="disabled-msa",
+    )
+
+    completed = execute_sequence_prediction(
+        prepared=prepared,
+        adapter_builder=adapter_builder,
+        model_checkpoint_sha256="8" * 64,
+    )
+
+    assert operations == ["-c", "pred"]
+    assert completed.msa_artifact is None
+    stage = load_model(completed.stage_manifest, StageManifest)
+    assert all(item.artifact_id != "target-msa" for item in stage.output_artifacts)
+    provenance = json.loads(
+        completed.built_bundle.bundle.provenance.verify(
+            prepared.workspace.run_root
+        ).read_text(encoding="utf-8")
+    )
+    assert provenance["msa_mode"] == "disabled"
+    assert provenance["paired_msa_mode"] == "disabled"
+    assert provenance["msa_input_sha256"] is None
 
 
 def test_remote_msa_cache_requires_explicit_offline_mode(

@@ -63,7 +63,6 @@ stage05:
       mode: disabled # 也可 precomputed；conditioned 证据可用 target-structure
     binder_templates:
       mode: disabled # 也可 precomputed，支持 0..N 个模板
-    template_mode: disabled
     parameter_profile: model-default
     prediction_timeout_seconds: 7200
 ```

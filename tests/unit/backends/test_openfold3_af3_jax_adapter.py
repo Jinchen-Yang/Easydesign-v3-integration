@@ -50,6 +50,41 @@ def single_request(msa_mode: MsaMode = MsaMode.DISABLED) -> StructurePredictionR
     )
 
 
+def test_stage01_single_chain_features_are_independently_configurable(
+    tmp_path: Path,
+) -> None:
+    paired = (tmp_path / "paired.a3m").resolve()
+    paired.write_text(">query\nACDEFGHIK\n", encoding="utf-8")
+    templates, template_sha256 = _template_data(
+        tmp_path,
+        chain_id="A",
+        sequence="ACDEFGHIK",
+        count=2,
+    )
+    request = StructurePredictionRequest(
+        job_name="target-one",
+        target=normalize_raw_sequence("ACDEFGHIK", target_id="target-one"),
+        msa_mode=MsaMode.QUERY_ONLY,
+        template_mode=TemplateMode.PRECOMPUTED,
+        target_unpaired_msa_mode=MsaMode.QUERY_ONLY,
+        target_paired_msa_mode=MsaMode.PRECOMPUTED,
+        target_paired_msa_path=paired,
+        target_template_data_path=templates,
+        target_template_data_sha256=template_sha256,
+    )
+
+    protein = adapter().render_input(request)["sequences"][0]["protein"]
+
+    assert protein["unpairedMsa"] == ">query\nACDEFGHIK\n"
+    assert protein["pairedMsa"] == ">query\nACDEFGHIK\n"
+    assert len(protein["templates"]) == 2
+    adapter().prediction_invocation(
+        request,
+        input_json=tmp_path / "input.json",
+        output_dir=tmp_path / "output",
+    )
+
+
 def complex_request(
     tmp_path: Path,
     *,

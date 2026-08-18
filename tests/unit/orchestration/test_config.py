@@ -663,6 +663,66 @@ stage07: null
     assert loaded.precomputed_msa_path == a3m.resolve()
 
 
+def test_stage01_allows_independent_msa_and_precomputed_template_modes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIK\n", encoding="utf-8")
+    paired = tmp_path / "paired.a3m"
+    paired.write_text(">query\nACDEFGHIK\n", encoding="utf-8")
+    templates = (tmp_path / "templates.json").resolve()
+    templates.write_text("[]\n", encoding="utf-8")
+    paired_sha = hashlib.sha256(paired.read_bytes()).hexdigest()
+    template_sha = hashlib.sha256(templates.read_bytes()).hexdigest()
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.9"
+project_id: stage01-features
+workflow:
+  stop_after_stage: 1
+stage01:
+  target:
+    id: target
+    source:
+      type: local-file
+      path: target.fasta
+      format: fasta
+    scope: {{type: full-sequence}}
+  structure_prediction:
+    backend: openfold3-af3-jax
+    target_msa: {{mode: disabled}}
+    target_paired_msa:
+      mode: precomputed
+      path: paired.a3m
+      sha256: {paired_sha}
+    target_templates:
+      mode: precomputed
+      data_path: templates.json
+      data_sha256: {template_sha}
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_run_config(config)
+
+    assert isinstance(loaded, LoadedSequenceRunConfig)
+    assert loaded.prediction_request is not None
+    assert loaded.prediction_request.resolved_target_unpaired_msa_mode == "disabled"
+    assert loaded.prediction_request.resolved_target_paired_msa_mode == "precomputed"
+    assert loaded.precomputed_paired_msa_path == paired.resolve()
+    assert loaded.precomputed_template_path == templates
+    assert loaded.config.structure_prediction is not None
+    assert loaded.config.structure_prediction.target_templates.data_path == templates
+    assert loaded.prediction_request.target_template_data_sha256 == template_sha
+
+
 def test_schema_05_target_bundle_requires_explicit_source_run_root(
     tmp_path: Path,
 ) -> None:

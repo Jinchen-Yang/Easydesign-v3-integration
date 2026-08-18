@@ -15,6 +15,7 @@ from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 
 class MsaMode(StrEnum):
     DISABLED = "disabled"
+    QUERY_ONLY = "query-only"
     REMOTE = "remote"
     PRECOMPUTED = "precomputed"
 
@@ -159,6 +160,15 @@ class StructurePredictionRequest(BaseModel):
     sample_count: int = Field(default=1, ge=1)
     msa_mode: MsaMode
     template_mode: TemplateMode = TemplateMode.DISABLED
+    target_unpaired_msa_mode: MsaMode | None = None
+    target_unpaired_msa_path: Path | None = None
+    target_paired_msa_mode: MsaMode | None = None
+    target_paired_msa_path: Path | None = None
+    target_template_data_path: Path | None = None
+    target_template_data_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     parameter_profile: PredictionParameterProfile = (
         PredictionParameterProfile.MODEL_DEFAULT
     )
@@ -178,7 +188,65 @@ class StructurePredictionRequest(BaseModel):
                 raise ValueError("custom profile 必须同时声明 cycle_count 和 diffusion_step_count")
         elif any(value is not None for value in custom_values):
             raise ValueError("model-default profile 不能覆盖 cycle/step")
+        for label, mode, path in (
+            (
+                "target unpaired",
+                self.target_unpaired_msa_mode,
+                self.target_unpaired_msa_path,
+            ),
+            (
+                "target paired",
+                self.target_paired_msa_mode,
+                self.target_paired_msa_path,
+            ),
+        ):
+            resolved_mode = self.msa_mode if mode is None else mode
+            if mode is None and path is None:
+                continue
+            if path is not None and not path.is_absolute():
+                raise ValueError(f"{label} MSA path 必须是绝对路径")
+            if resolved_mode is MsaMode.PRECOMPUTED and path is None:
+                raise ValueError(f"{label} precomputed MSA 必须提供 path")
+            if resolved_mode is not MsaMode.PRECOMPUTED and path is not None:
+                raise ValueError(f"{label} {resolved_mode} MSA 不能同时提供 path")
+        if (self.target_template_data_path is None) != (
+            self.target_template_data_sha256 is None
+        ):
+            raise ValueError("Stage 01 template path/SHA-256 必须同时存在或缺失")
+        if (
+            self.target_template_data_path is not None
+            and not self.target_template_data_path.is_absolute()
+        ):
+            raise ValueError("Stage 01 template path 必须是绝对路径")
+        if (
+            self.template_mode is TemplateMode.PRECOMPUTED
+            and self.target_template_data_path is None
+        ):
+            raise ValueError("Stage 01 precomputed template 必须提供 path/SHA-256")
+        if (
+            self.template_mode is TemplateMode.DISABLED
+            and self.target_template_data_path is not None
+        ):
+            raise ValueError("Stage 01 disabled template 不能同时提供 path")
         return self
+
+    @property
+    def resolved_target_unpaired_msa_mode(self) -> MsaMode:
+        return self.target_unpaired_msa_mode or self.msa_mode
+
+    @property
+    def resolved_target_paired_msa_mode(self) -> MsaMode:
+        # The legacy single-chain request had no paired-MSA control and emitted
+        # an empty paired feature.  Keep that behavior for callers that have not
+        # adopted the explicit Stage 01 fields.
+        return self.target_paired_msa_mode or MsaMode.DISABLED
+
+    @property
+    def has_remote_msa(self) -> bool:
+        return MsaMode.REMOTE in {
+            self.resolved_target_unpaired_msa_mode,
+            self.resolved_target_paired_msa_mode,
+        }
 
 
 class ProteinPredictionChain(BaseModel):
@@ -213,7 +281,11 @@ class ProteinPredictionChain(BaseModel):
                 raise ValueError("complex prediction MSA path 必须是绝对路径")
             if mode is MsaMode.PRECOMPUTED and path is None:
                 raise ValueError(f"{label} precomputed MSA 必须提供 path")
-            if mode in {MsaMode.DISABLED, MsaMode.REMOTE} and path is not None:
+            if mode in {
+                MsaMode.DISABLED,
+                MsaMode.QUERY_ONLY,
+                MsaMode.REMOTE,
+            } and path is not None:
                 raise ValueError(f"{label} {mode} MSA 不能同时提供 path")
         if (self.template_data_path is None) != (
             self.template_data_sha256 is None
@@ -248,6 +320,8 @@ class ProteinPredictionChain(BaseModel):
             return MsaMode.PRECOMPUTED
         if legacy_mode is MsaMode.REMOTE:
             return MsaMode.REMOTE
+        if legacy_mode is MsaMode.QUERY_ONLY:
+            return MsaMode.QUERY_ONLY
         return MsaMode.DISABLED
 
     def resolved_unpaired_msa_mode(self, legacy_mode: MsaMode) -> MsaMode:

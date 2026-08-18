@@ -26,6 +26,7 @@ from easydesign.core import (
     EasyDesignError,
     ErrorInfo,
     ExecutionStatus,
+    ManifestStateError,
     RunManifest,
     StageId,
     StageManifest,
@@ -87,10 +88,10 @@ class _InvocationFailure(SequencePredictionExecutionError):
 @dataclass(frozen=True, slots=True)
 class _MsaEvidence:
     updated_input: Path
-    source_a3m: Path
-    published_a3m: Path
-    sha256: str
-    depth: int
+    source_a3m: Path | None
+    published_a3m: Path | None
+    sha256: str | None
+    depth: int | None
     cache_status: str
 
 
@@ -263,6 +264,12 @@ def _store_msa_cache(
     provider: ResolvedProtenixMsaProviderConfig,
     evidence: _MsaEvidence,
 ) -> None:
+    if (
+        evidence.sha256 is None
+        or evidence.depth is None
+        or evidence.published_a3m is None
+    ):
+        raise ManifestStateError("remote MSA cache 不能保存空 evidence")
     legacy_a3m, _legacy_manifest = _msa_cache_paths(
         sequence_sha256=prepared.loaded_config.target.sequence_sha256,
         provider=provider,
@@ -310,7 +317,7 @@ def _store_msa_cache(
 class CompletedSequenceRun:
     prepared: PreparedSequenceRun
     built_bundle: BuiltTargetBundle
-    msa_artifact: ArtifactRef
+    msa_artifact: ArtifactRef | None
     attempt_manifests: tuple[Path, ...]
     stage_manifest: Path
     run_manifest: Path
@@ -551,11 +558,34 @@ def execute_sequence_prediction(
         raise SequencePredictionExecutionError(
             "sequence prediction 需要已冻结的显式 Stage 1 后端选择"
         )
-    remote_msa_config = (
-        prediction_config.msa
-        if isinstance(prediction_config.msa, RemoteProtenixMsaConfig)
-        else None
+    remote_msa_config = next(
+        (
+            item
+            for item in (
+                prediction_config.target_msa,
+                prediction_config.target_paired_msa,
+            )
+            if isinstance(item, RemoteProtenixMsaConfig)
+        ),
+        None,
     )
+    unpaired_mode = request.resolved_target_unpaired_msa_mode
+    paired_mode = request.resolved_target_paired_msa_mode
+    paired_msa_input_sha256: str | None = None
+    if paired_mode is MsaMode.PRECOMPUTED:
+        paired_path = request.target_paired_msa_path
+        if paired_path is None:
+            raise SequencePredictionExecutionError(
+                "Stage 1 precomputed paired MSA path 缺失"
+            )
+        paired_msa_input_sha256, _ = _validated_a3m(
+            source=paired_path,
+            expected_query=prepared.loaded_config.target.sequence,
+        )
+    elif paired_mode is MsaMode.QUERY_ONLY:
+        paired_msa_input_sha256 = hashlib.sha256(
+            f">query\n{prepared.loaded_config.target.sequence}\n".encode()
+        ).hexdigest()
     start = datetime.now(UTC) if started_at is None else started_at
     attempts: list[Attempt] = []
     attempt_paths: list[Path] = []
@@ -570,7 +600,7 @@ def execute_sequence_prediction(
     execution_count = 0
     execution_plan: tuple[ResolvedProtenixMsaProviderConfig | None, ...] = (
         tuple(prepared.loaded_config.msa_execution_plan)
-        if request.msa_mode is MsaMode.REMOTE
+        if request.has_remote_msa
         else (None,)
     )
     if not execution_plan:
@@ -622,27 +652,14 @@ def execute_sequence_prediction(
                 logs["version-stderr"] = version.stderr
                 adapter.validate_version_output(version.stdout)
 
-                if provider is None:
-                    if prepared.precomputed_msa is None:
-                        raise _InvocationFailure(
-                            "precomputed MSA snapshot 缺失",
-                            error_code="precomputed-msa-missing",
-                            retryable=False,
-                        )
-                    msa_evidence = _publish_explicit_msa(
-                        prepared=prepared,
-                        adapter=adapter,
-                        input_json=input_json,
-                        attempt_root=attempt_root,
-                        source=prepared.precomputed_msa,
-                        cache_status="precomputed",
-                    )
-                    logs["msa-source"] = "precomputed A3M validated\n"
-                else:
+                working_input = input_json
+                if provider is not None:
                     assert remote_msa_config is not None
                     cached = (
                         _load_msa_cache(prepared=prepared, provider=provider)
-                        if remote_msa_config.cache_mode
+                        if unpaired_mode is MsaMode.REMOTE
+                        and paired_mode is not MsaMode.REMOTE
+                        and remote_msa_config.cache_mode
                         in {CacheMode.PREFER_CACHE, CacheMode.OFFLINE}
                         else None
                     )
@@ -655,8 +672,13 @@ def execute_sequence_prediction(
                             source=cached,
                             cache_status="cache-hit",
                         )
+                        working_input = msa_evidence.updated_input
                         logs["msa-source"] = "validated sequence-hash cache hit\n"
-                    elif remote_msa_config.cache_mode is CacheMode.OFFLINE:
+                    elif (
+                        unpaired_mode is MsaMode.REMOTE
+                        and paired_mode is not MsaMode.REMOTE
+                        and remote_msa_config.cache_mode is CacheMode.OFFLINE
+                    ):
                         raise _InvocationFailure(
                             "offline MSA cache miss",
                             error_code="msa-cache-miss",
@@ -675,17 +697,78 @@ def execute_sequence_prediction(
                         )
                         logs["msa-stdout"] = msa.stdout
                         logs["msa-stderr"] = msa.stderr
-                        msa_evidence = _validate_and_publish_msa(
-                            prepared=prepared,
-                            adapter=adapter,
-                            attempt_root=attempt_root,
-                            msa_output_dir=msa_output,
+                        if unpaired_mode is MsaMode.REMOTE:
+                            msa_evidence = _validate_and_publish_msa(
+                                prepared=prepared,
+                                adapter=adapter,
+                                attempt_root=attempt_root,
+                                msa_output_dir=msa_output,
+                            )
+                            working_input = msa_evidence.updated_input
+                            if paired_mode is not MsaMode.REMOTE:
+                                _store_msa_cache(
+                                    prepared=prepared,
+                                    provider=provider,
+                                    evidence=msa_evidence,
+                                )
+                        else:
+                            working_input = adapter.updated_msa_input_path(
+                                input_json,
+                                msa_output,
+                            )
+                            if not working_input.is_file():
+                                raise _InvocationFailure(
+                                    "paired remote MSA 未发布 updated input",
+                                    error_code="remote-msa-output-invalid",
+                                    retryable=True,
+                                )
+
+                if unpaired_mode is MsaMode.PRECOMPUTED:
+                    if prepared.precomputed_msa is None:
+                        raise _InvocationFailure(
+                            "precomputed MSA snapshot 缺失",
+                            error_code="precomputed-msa-missing",
+                            retryable=False,
                         )
-                        _store_msa_cache(
-                            prepared=prepared,
-                            provider=provider,
-                            evidence=msa_evidence,
-                        )
+                    msa_evidence = _publish_explicit_msa(
+                        prepared=prepared,
+                        adapter=adapter,
+                        input_json=working_input,
+                        attempt_root=attempt_root,
+                        source=prepared.precomputed_msa,
+                        cache_status="precomputed",
+                    )
+                    logs["msa-source"] = "precomputed A3M validated\n"
+                elif unpaired_mode is MsaMode.QUERY_ONLY:
+                    query_only = _exclusive_text(
+                        f">query\n{prepared.loaded_config.target.sequence}\n",
+                        attempt_root / "work" / "target-query-only.a3m",
+                    )
+                    msa_evidence = _publish_explicit_msa(
+                        prepared=prepared,
+                        adapter=adapter,
+                        input_json=working_input,
+                        attempt_root=attempt_root,
+                        source=query_only,
+                        cache_status="query-only",
+                    )
+                    logs["msa-source"] = "query-only A3M generated\n"
+                elif unpaired_mode is MsaMode.DISABLED:
+                    msa_evidence = _MsaEvidence(
+                        updated_input=working_input,
+                        source_a3m=None,
+                        published_a3m=None,
+                        sha256=None,
+                        depth=None,
+                        cache_status="disabled",
+                    )
+                    logs["msa-source"] = "target unpaired MSA disabled\n"
+                elif msa_evidence is None:
+                    raise _InvocationFailure(
+                        "remote target unpaired MSA evidence 缺失",
+                        error_code="remote-msa-output-invalid",
+                        retryable=True,
+                    )
 
                 prediction_output = attempt_root / "work" / "prediction"
                 prediction = _run_invocation(
@@ -723,10 +806,12 @@ def execute_sequence_prediction(
                     target=prepared.loaded_config.target,
                     product=products[0],
                     model_checkpoint_sha256=model_checkpoint_sha256,
-                    msa_mode=request.msa_mode,
+                    msa_mode=unpaired_mode,
                     msa_input_sha256=msa_evidence.sha256,
                     msa_server_mode=(
-                        provider.server_mode if provider is not None else None
+                        provider.server_mode
+                        if provider is not None and unpaired_mode is MsaMode.REMOTE
+                        else None
                     ),
                     template_mode=request.template_mode,
                     parameter_profile=request.parameter_profile,
@@ -734,20 +819,41 @@ def execute_sequence_prediction(
                     resolved_diffusion_step_count=diffusion_steps,
                     msa_provider=(
                         str(provider.provider)
-                        if provider is not None
-                        else "precomputed"
+                        if provider is not None and unpaired_mode is MsaMode.REMOTE
+                        else (
+                            "precomputed"
+                            if unpaired_mode is MsaMode.PRECOMPUTED
+                            else (
+                                "query-only"
+                                if unpaired_mode is MsaMode.QUERY_ONLY
+                                else None
+                            )
+                        )
                     ),
                     msa_endpoint=(
-                        provider.endpoint if provider is not None else None
+                        provider.endpoint
+                        if provider is not None and unpaired_mode is MsaMode.REMOTE
+                        else None
                     ),
                     msa_depth=msa_evidence.depth,
-                    msa_query_sha256=prepared.loaded_config.target.sequence_sha256,
+                    msa_query_sha256=(
+                        prepared.loaded_config.target.sequence_sha256
+                        if msa_evidence.sha256 is not None
+                        else None
+                    ),
                     msa_ticket=None,
                     msa_ticket_status=(
-                        "not-exposed-by-protenix-cli-2.0.0"
-                        if msa_evidence.cache_status == "remote-refresh"
-                        else msa_evidence.cache_status
+                        None
+                        if unpaired_mode is MsaMode.DISABLED
+                        else (
+                            "not-exposed-by-protenix-cli-2.0.0"
+                            if msa_evidence.cache_status == "remote-refresh"
+                            else msa_evidence.cache_status
+                        )
                     ),
+                    paired_msa_mode=paired_mode,
+                    paired_msa_input_sha256=paired_msa_input_sha256,
+                    template_data_sha256=request.target_template_data_sha256,
                     identity_report=prepared.loaded_config.identity_report,
                     scope_report=prepared.loaded_config.scope_report,
                     structure_candidates=prepared.loaded_config.structure_candidates,
@@ -792,14 +898,15 @@ def execute_sequence_prediction(
                 )
                 selected_attempt_id = attempt_id
                 selected_provider = provider
-                selected_msa_ref = _artifact(
-                    run_root=workspace.run_root,
-                    path=msa_evidence.published_a3m,
-                    artifact_id="target-msa",
-                    role="target-msa",
-                    file_format="a3m",
-                    attempt_id=attempt_id,
-                )
+                if msa_evidence.published_a3m is not None:
+                    selected_msa_ref = _artifact(
+                        run_root=workspace.run_root,
+                        path=msa_evidence.published_a3m,
+                        artifact_id="target-msa",
+                        role="target-msa",
+                        file_format="a3m",
+                        attempt_id=attempt_id,
+                    )
             else:
                 failure = current_failure
                 attempt = Attempt(
@@ -842,7 +949,6 @@ def execute_sequence_prediction(
         output_artifacts: tuple[ArtifactRef, ...] = ()
         stage_status = ExecutionStatus.FAILED
     else:
-        assert selected_msa_ref is not None
         bundle = built.bundle
         core_artifacts = (
             bundle.target_structure,
@@ -850,9 +956,9 @@ def execute_sequence_prediction(
             bundle.residue_mapping,
             bundle.quality_report,
             bundle.provenance,
-            selected_msa_ref,
             built.bundle_artifact,
         )
+        msa_artifacts = (() if selected_msa_ref is None else (selected_msa_ref,))
         optional_artifacts = tuple(
             artifact
             for artifact in (
@@ -868,35 +974,51 @@ def execute_sequence_prediction(
             )
             if artifact is not None
         )
-        output_artifacts = core_artifacts + optional_artifacts
+        output_artifacts = core_artifacts + msa_artifacts + optional_artifacts
         stage_status = ExecutionStatus.SUCCEEDED
     assert attempts
     last_attempt_id = attempts[-1].attempt_id
+    stage_warnings: tuple[str, ...]
+    if unpaired_mode is MsaMode.PRECOMPUTED:
+        stage_warnings = (
+            "Precomputed MSA was supplied and validated by exact query identity.",
+        )
+    elif unpaired_mode is MsaMode.DISABLED:
+        stage_warnings = ("Target unpaired MSA was explicitly disabled.",)
+    elif unpaired_mode is MsaMode.QUERY_ONLY:
+        stage_warnings = ("Target unpaired MSA contains only the query sequence.",)
+    elif (
+        selected_provider is not None
+        and str(selected_provider.provider) == "colabfold-public"
+    ):
+        stage_warnings = (
+            "External public MSA data provider receives the target sequence.",
+            "Protenix 2.0.0 CLI does not expose the online MSA ticket identifier.",
+        )
+    else:
+        stage_warnings = (
+            "Protenix 2.0.0 CLI does not expose the online MSA ticket identifier.",
+        )
+    feature_inputs = tuple(
+        item
+        for item in (
+            resolved.precomputed_msa_snapshot,
+            resolved.precomputed_paired_msa_snapshot,
+            resolved.precomputed_template_snapshot,
+        )
+        if item is not None
+    )
     stage = StageManifest(
         stage_id=StageId.TARGET_PREPARATION,
         contract_version="0.4",
         status=stage_status,
         created_at=start,
         completed_at=ended,
-        input_artifacts=(resolved.input_snapshot,),
+        input_artifacts=(resolved.input_snapshot,) + feature_inputs,
         output_artifacts=output_artifacts,
         attempts=tuple(attempts),
         selected_attempt_id=selected_attempt_id,
-        warnings=(
-            ("Precomputed MSA was supplied and validated by exact query identity.",)
-            if request.msa_mode is MsaMode.PRECOMPUTED
-            else (
-                (
-                    "External public MSA data provider receives the target sequence.",
-                    "Protenix 2.0.0 CLI does not expose the online MSA ticket identifier.",
-                )
-                if selected_provider is not None
-                and str(selected_provider.provider) == "colabfold-public"
-                else (
-                    "Protenix 2.0.0 CLI does not expose the online MSA ticket identifier.",
-                )
-            )
-        ),
+        warnings=stage_warnings,
     )
     stage_manifest = dump_model(
         stage,
@@ -913,7 +1035,6 @@ def execute_sequence_prediction(
     if built is None:
         assert failure is not None
         raise failure
-    assert selected_msa_ref is not None
     target_viewer = generate_stage01_target_viewer_nonblocking(
         prepared.workspace.run_root
     )

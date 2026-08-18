@@ -125,8 +125,9 @@ def _prediction_payload(
         }
     return {
         "backend": backend,
-        "msa": msa,
-        "template_mode": "disabled",
+        "target_msa": msa,
+        "target_paired_msa": {"mode": "query-only"},
+        "target_templates": {"mode": "disabled"},
         "parameter_profile": "model-default",
         "prediction_timeout_seconds": 7200,
         "seeds": [101],

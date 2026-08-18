@@ -19,6 +19,7 @@ from easydesign.backends.boltzgen import (
 )
 from easydesign.backends.scannet import ScanNetBackendConfig, ScanNetEpitopeAdapter
 from easydesign.backends.structure_prediction import (
+    MsaMode,
     OpenFold3Af3JaxAdapter,
     ProtenixV2Adapter,
 )
@@ -1012,13 +1013,52 @@ def execute_pipeline(
                 StructurePredictionRequest,
             )
 
+            resolved_stage01, _ = load_resolved_run_config(
+                prepared_source.workspace.run_root
+            )
+            unpaired_snapshot = (
+                None
+                if resolved_stage01.precomputed_msa_snapshot is None
+                else resolved_stage01.precomputed_msa_snapshot.verify(
+                    prepared_source.workspace.run_root
+                )
+            )
+            paired_snapshot = (
+                None
+                if resolved_stage01.precomputed_paired_msa_snapshot is None
+                else resolved_stage01.precomputed_paired_msa_snapshot.verify(
+                    prepared_source.workspace.run_root
+                )
+            )
+            template_snapshot = (
+                None
+                if resolved_stage01.precomputed_template_snapshot is None
+                else resolved_stage01.precomputed_template_snapshot.verify(
+                    prepared_source.workspace.run_root
+                )
+            )
+
             prediction_request = StructurePredictionRequest(
                 job_name=loaded.config.target.target_id,
                 target=fallback.target,
                 seeds=prediction_config.seeds,
                 sample_count=prediction_config.sample_count,
-                msa_mode=prediction_config.msa.mode,
+                msa_mode=MsaMode(str(prediction_config.target_msa.mode)),
                 template_mode=prediction_config.template_mode,
+                target_unpaired_msa_mode=MsaMode(
+                    str(prediction_config.target_msa.mode)
+                ),
+                target_unpaired_msa_path=unpaired_snapshot,
+                target_paired_msa_mode=MsaMode(
+                    str(prediction_config.target_paired_msa.mode)
+                ),
+                target_paired_msa_path=paired_snapshot,
+                target_template_data_path=template_snapshot,
+                target_template_data_sha256=(
+                    prediction_config.target_templates.data_sha256
+                    if template_snapshot is not None
+                    else None
+                ),
                 parameter_profile=prediction_config.parameter_profile,
                 cycle_count=prediction_config.cycle_count,
                 diffusion_step_count=prediction_config.diffusion_step_count,
@@ -1030,12 +1070,10 @@ def execute_pipeline(
                 detected_format=TargetInputFormat.SEQUENCE,
                 target=fallback.target,
                 prediction_request=prediction_request,
-                msa_execution_plan=prediction_config.msa.resolved_providers(),
-                precomputed_msa_path=getattr(
-                    loaded,
-                    "precomputed_msa_path",
-                    None,
-                ),
+                msa_execution_plan=prediction_config.resolved_providers(),
+                precomputed_msa_path=unpaired_snapshot,
+                precomputed_paired_msa_path=paired_snapshot,
+                precomputed_template_path=template_snapshot,
                 identity_report=fallback.identity_report,
                 scope_report=fallback.scope_report,
                 structure_candidates=tuple(fallback.candidates),
@@ -1459,6 +1497,16 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
         if resolved.precomputed_msa_snapshot is not None
         else None
     )
+    precomputed_paired_msa_snapshot = (
+        resolved.precomputed_paired_msa_snapshot.verify(root)
+        if resolved.precomputed_paired_msa_snapshot is not None
+        else None
+    )
+    precomputed_template_snapshot = (
+        resolved.precomputed_template_snapshot.verify(root)
+        if resolved.precomputed_template_snapshot is not None
+        else None
+    )
     current_run, _ = _load_latest_run_manifest(root)
     config_path = current_run.config_snapshot.verify(root)
     if resolved.detected_input_format in {
@@ -1476,6 +1524,8 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
             prediction_request=resolved.prediction_request,
             msa_execution_plan=resolved.msa_execution_plan,
             precomputed_msa_path=precomputed_msa_snapshot,
+            precomputed_paired_msa_path=precomputed_paired_msa_snapshot,
+            precomputed_template_path=precomputed_template_snapshot,
         )
     elif resolved.detected_input_format in {
         TargetInputFormat.PDB,
@@ -1498,6 +1548,8 @@ def _prepared_existing_run(run_root: Path) -> PreparedRun:
             source_path=None,
             detected_format=resolved.detected_input_format,
             precomputed_msa_path=precomputed_msa_snapshot,
+            precomputed_paired_msa_path=precomputed_paired_msa_snapshot,
+            precomputed_template_path=precomputed_template_snapshot,
         )
     elif resolved.detected_input_format is TargetInputFormat.TARGET_BUNDLE:
         raise ManifestStateError("Target Bundle 导入不会创建 Stage 01 decision gate")
@@ -1590,13 +1642,43 @@ def continue_pipeline_after_decision(
             )
         from easydesign.backends.structure_prediction import StructurePredictionRequest
 
+        unpaired_snapshot = getattr(
+            prepared.loaded_config,
+            "precomputed_msa_path",
+            None,
+        )
+        paired_snapshot = getattr(
+            prepared.loaded_config,
+            "precomputed_paired_msa_path",
+            None,
+        )
+        template_snapshot = getattr(
+            prepared.loaded_config,
+            "precomputed_template_path",
+            None,
+        )
+
         prediction_request = StructurePredictionRequest(
             job_name=prepared.loaded_config.config.target.target_id,
             target=fallback.target,
             seeds=prediction_config.seeds,
             sample_count=prediction_config.sample_count,
-            msa_mode=prediction_config.msa.mode,
+            msa_mode=MsaMode(str(prediction_config.target_msa.mode)),
             template_mode=prediction_config.template_mode,
+            target_unpaired_msa_mode=MsaMode(
+                str(prediction_config.target_msa.mode)
+            ),
+            target_unpaired_msa_path=unpaired_snapshot,
+            target_paired_msa_mode=MsaMode(
+                str(prediction_config.target_paired_msa.mode)
+            ),
+            target_paired_msa_path=paired_snapshot,
+            target_template_data_path=template_snapshot,
+            target_template_data_sha256=(
+                prediction_config.target_templates.data_sha256
+                if template_snapshot is not None
+                else None
+            ),
             parameter_profile=prediction_config.parameter_profile,
             cycle_count=prediction_config.cycle_count,
             diffusion_step_count=prediction_config.diffusion_step_count,
@@ -1608,12 +1690,10 @@ def continue_pipeline_after_decision(
             detected_format=TargetInputFormat.SEQUENCE,
             target=fallback.target,
             prediction_request=prediction_request,
-            msa_execution_plan=prediction_config.msa.resolved_providers(),
-            precomputed_msa_path=getattr(
-                prepared.loaded_config,
-                "precomputed_msa_path",
-                None,
-            ),
+            msa_execution_plan=prediction_config.resolved_providers(),
+            precomputed_msa_path=unpaired_snapshot,
+            precomputed_paired_msa_path=paired_snapshot,
+            precomputed_template_path=template_snapshot,
             identity_report=fallback.identity_report,
             scope_report=fallback.scope_report,
             structure_candidates=tuple(fallback.candidates),

@@ -68,8 +68,10 @@ smoke；成功后才发布 component receipt。clone 缺少 Python 3.12 时，�
 
 ## MSA、复合物和证据
 
-- Stage 1 可显式选择 AFO，target unpaired MSA 使用 ColabFold 或预计算 A3M；Stage 1
-  不接受模板；
+- Stage 1 可显式选择 AFO 或 Protenix；target unpaired/paired MSA 均可独立选择
+  `remote`、`precomputed`、`query-only` 或 `disabled`，target template 可选
+  `disabled` 或 checksum 固定的 `precomputed`；
+- Stage 1 不接受 `target-structure`（尚无可条件化的冻结 target），也不自动搜索模板；
 - Stage 5 冻结 required target unpaired MSA，Stage 7 按 SHA 复用；target paired、binder
   unpaired 和 binder paired 可逐链选择 `remote`、`precomputed`、`query-only` 或
   `disabled`；

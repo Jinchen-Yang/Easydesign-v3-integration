@@ -28,6 +28,38 @@ from easydesign.orchestration.research import (
 from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 
+def test_stage01_prediction_fragment_rebases_precomputed_inputs(
+    tmp_path: Path,
+) -> None:
+    paired = tmp_path / "paired.a3m"
+    paired.write_text(">query\nACDE\n", encoding="utf-8")
+    templates = tmp_path / "templates.json"
+    templates.write_text("[]\n", encoding="utf-8")
+    fragment = tmp_path / "stage01-prediction.yaml"
+    fragment.write_text(
+        f"""
+backend: openfold3-af3-jax
+target_msa: {{mode: disabled}}
+target_paired_msa:
+  mode: precomputed
+  path: paired.a3m
+  sha256: {hashlib.sha256(paired.read_bytes()).hexdigest()}
+target_templates:
+  mode: precomputed
+  data_path: templates.json
+  data_sha256: {hashlib.sha256(templates.read_bytes()).hexdigest()}
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = research_module._load_stage01_prediction_config(fragment)
+
+    assert config.backend == "openfold3-af3-jax"
+    assert config.target_msa.mode == "disabled"
+    assert config.target_paired_msa.path == paired.resolve()
+    assert config.target_templates.data_path == templates.resolve()
+
+
 def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / "easydesign-workspace.yaml").write_text(
         'schema_version: "0.1"\nworkspace_id: local-research-test\n',

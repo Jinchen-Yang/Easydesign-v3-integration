@@ -1,27 +1,47 @@
-schema_version: "0.2"
+schema_version: "0.9"
 project_id: apoe
-
-target:
-  id: apoe4-fragment-41-183
-  source: apoe4-fragment-41-183.fasta
-  format: auto
-
-structure_prediction:
-  backend: protenix-v2
-  msa:
-    mode: remote
-    providers:
-      - provider: colabfold-public
-        timeout_seconds: 1800
-        max_attempts: 3
-        retry_backoff_seconds: 30
-    no_msa_fallback: false
-  template_mode: disabled
-  parameter_profile: model-default
-  prediction_timeout_seconds: 7200
-  seeds:
-    - 101
-  sample_count: 1
+prediction_policy:
+  selection_mode: explicit-per-stage
 
 workflow:
+  execution_mode: review-gated
   stop_after_stage: 1
+  cache_mode: online
+
+stage01:
+  target:
+    id: apoe4-fragment-41-183
+    source:
+      type: local-file
+      path: apoe4-fragment-41-183.fasta
+      format: auto
+      identity:
+        uniprot_accession: null
+    scope:
+      type: full-sequence
+  structure_prediction:
+    backend: protenix-v2
+    target_msa:
+      mode: remote
+      cache_mode: online
+      providers:
+        - provider: colabfold-public
+          timeout_seconds: 1800
+          max_attempts: 3
+          retry_backoff_seconds: 30
+      no_msa_fallback: false
+    target_paired_msa:
+      mode: query-only
+    target_templates:
+      mode: disabled
+    parameter_profile: model-default
+    prediction_timeout_seconds: 7200
+    seeds: [101]
+    sample_count: 1
+
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null

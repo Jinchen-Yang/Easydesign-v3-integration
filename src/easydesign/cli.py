@@ -276,6 +276,11 @@ def _parser() -> argparse.ArgumentParser:
     target_prepare_parser = target_commands.add_parser("prepare")
     target_prepare_parser.add_argument("project", type=Path)
     _add_prediction_backend(target_prepare_parser, required=False)
+    target_prepare_parser.add_argument(
+        "--prediction-config",
+        type=Path,
+        help="Stage 1 显式 MSA/template 配置片段；backend 必须与命令一致",
+    )
     _add_detach(target_prepare_parser)
     _add_json(target_prepare_parser)
     target_approve_parser = target_commands.add_parser("approve")
@@ -1033,6 +1038,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                     Any,
                     _prediction_backend(args.prediction_backend),
                 ),
+                prediction_config_path=args.prediction_config,
                 detach=args.detach,
             )
             if args.target_command == "prepare"

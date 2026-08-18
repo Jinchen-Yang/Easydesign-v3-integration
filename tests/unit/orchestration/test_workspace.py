@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,7 +75,7 @@ def test_initialize_sequence_run_creates_one_shallow_workspace(tmp_path: Path) -
     assert manifest.run_id == "20260724-001"
     assert manifest.config_snapshot.verify(workspace.run_root) == workspace.config_snapshot
     resolved = load_model(workspace.resolved_config, ResolvedRunConfig)
-    assert resolved.schema_version == "0.7"
+    assert resolved.schema_version == "0.8"
     assert resolved.prediction_request is not None
     assert resolved.prediction_request.msa_mode == "remote"
     assert len(resolved.msa_execution_plan) == 1
@@ -106,6 +107,79 @@ def test_initialize_sequence_run_refuses_existing_run(tmp_path: Path) -> None:
         initialize_sequence_run(**kwargs)
 
 
+def test_stage01_snapshots_independent_paired_msa_and_template(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "target.fasta"
+    source.write_text(">target\nACDEFGHIK\n", encoding="utf-8")
+    paired = tmp_path / "paired.a3m"
+    paired.write_text(">query\nACDEFGHIK\n", encoding="utf-8")
+    templates = tmp_path / "templates.json"
+    templates.write_text("[]\n", encoding="utf-8")
+    config = tmp_path / "easydesign.yaml"
+    config.write_text(
+        f"""
+schema_version: "0.9"
+project_id: explicit-features
+workflow: {{stop_after_stage: 1}}
+stage01:
+  target:
+    id: target
+    source: {{type: local-file, path: target.fasta, format: fasta}}
+    scope: {{type: full-sequence}}
+  structure_prediction:
+    backend: protenix-v2
+    target_msa: {{mode: disabled}}
+    target_paired_msa:
+      mode: precomputed
+      path: paired.a3m
+      sha256: {hashlib.sha256(paired.read_bytes()).hexdigest()}
+    target_templates:
+      mode: precomputed
+      data_path: templates.json
+      data_sha256: {hashlib.sha256(templates.read_bytes()).hexdigest()}
+stage02: null
+stage03: null
+stage04: null
+stage05: null
+stage06: null
+stage07: null
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    prepared = initialize_sequence_run(
+        config_path=config,
+        runs_root=tmp_path / "runs",
+        input_writer=adapter(),
+        code_commit="d1b46f9",
+        easydesign_version="0.1.0.dev0",
+        run_id="explicit-features",
+    )
+    resolved = load_model(prepared.workspace.resolved_config, ResolvedRunConfig)
+
+    assert resolved.precomputed_msa_snapshot is None
+    assert resolved.precomputed_paired_msa_snapshot is not None
+    assert resolved.precomputed_template_snapshot is not None
+    assert (
+        resolved.precomputed_paired_msa_snapshot.verify(prepared.workspace.run_root).read_bytes()
+        == paired.read_bytes()
+    )
+    assert (
+        resolved.precomputed_template_snapshot.verify(prepared.workspace.run_root).read_bytes()
+        == templates.read_bytes()
+    )
+    assert resolved.prediction_request is not None
+    assert resolved.prediction_request.target_paired_msa_path is not None
+    assert str(resolved.prediction_request.target_paired_msa_path).startswith(
+        str(prepared.workspace.run_root)
+    )
+    payload = json.loads(prepared.protenix_input.read_text(encoding="utf-8"))
+    protein = payload[0]["sequences"][0]["proteinChain"]
+    assert Path(protein["pairedMsaPath"]).is_relative_to(prepared.workspace.run_root)
+    assert Path(protein["templatesPath"]).is_relative_to(prepared.workspace.run_root)
+
+
 def test_initialize_workspace_uses_manifest_12_for_packaged_execution(
     tmp_path: Path,
 ) -> None:
@@ -132,7 +206,7 @@ def test_initialize_workspace_uses_manifest_12_for_packaged_execution(
     assert manifest.schema_version == "1.2"
     assert manifest.code_identity == identity
     assert manifest.runtime_profile == profile
-    assert resolved.schema_version == "0.7"
+    assert resolved.schema_version == "0.8"
     assert resolved.runtime_profile == profile
 
 

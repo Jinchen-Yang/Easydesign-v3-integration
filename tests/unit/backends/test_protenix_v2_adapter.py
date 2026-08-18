@@ -52,6 +52,42 @@ def request(
     )
 
 
+def test_stage01_write_input_snapshots_independent_msa_and_template_features(
+    tmp_path: Path,
+) -> None:
+    paired = (tmp_path / "paired.a3m").resolve()
+    paired.write_text(">query\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    templates = (tmp_path / "templates.json").resolve()
+    templates.write_text("[]\n", encoding="utf-8")
+    configured = StructurePredictionRequest(
+        job_name="apoe-smoke",
+        target=target(),
+        msa_mode=MsaMode.QUERY_ONLY,
+        template_mode=TemplateMode.PRECOMPUTED,
+        target_unpaired_msa_mode=MsaMode.QUERY_ONLY,
+        target_paired_msa_mode=MsaMode.PRECOMPUTED,
+        target_paired_msa_path=paired,
+        target_template_data_path=templates,
+        target_template_data_sha256=hashlib.sha256(
+            templates.read_bytes()
+        ).hexdigest(),
+    )
+    input_json = tmp_path / "attempt" / "input.json"
+
+    adapter().write_input(configured, input_json)
+    protein = json.loads(input_json.read_text(encoding="utf-8"))[0]["sequences"][0][
+        "proteinChain"
+    ]
+
+    assert Path(protein["unpairedMsaPath"]).read_text(encoding="utf-8") == (
+        ">query\nACDEFGHIKLMNPQRSTVWY\n"
+    )
+    assert Path(protein["pairedMsaPath"]).read_text(encoding="utf-8") == (
+        paired.read_text(encoding="utf-8")
+    )
+    assert Path(protein["templatesPath"]).read_bytes() == templates.read_bytes()
+
+
 def adapter() -> ProtenixV2Adapter:
     return ProtenixV2Adapter(
         executable=Path("/opt/conda/envs/protenix-v2/bin/protenix"),

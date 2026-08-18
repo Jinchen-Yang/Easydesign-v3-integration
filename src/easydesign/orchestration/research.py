@@ -11,7 +11,7 @@ from typing import Any, Literal, Self, cast
 from uuid import uuid4
 
 import yaml  # type: ignore[import-untyped]
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from easydesign.backends.boltzgen import BoltzGenCheckAdapter
 from easydesign.backends.executors import NvidiaSmiProbe
@@ -50,6 +50,7 @@ from .config import (
     Stage03Config,
     Stage04Config,
     Stage06Config,
+    StructurePredictionConfig,
     load_run_config,
     stage05_config_for_backend,
     stage07_config_for_backends,
@@ -744,8 +745,26 @@ def _stage01_config_with_backend(
     root: Path,
     config: EasyDesignRunConfig,
     backend: PredictionBackend,
+    *,
+    prediction_config: StructurePredictionConfig | None = None,
 ) -> EasyDesignRunConfig:
     payload = config.model_dump(mode="python", exclude_none=False)
+    if prediction_config is not None:
+        if prediction_config.backend != backend:
+            raise ConfigurationError(
+                "--prediction-backend 与 --prediction-config backend 不一致"
+            )
+        payload["stage01"]["structure_prediction"] = prediction_config.model_dump(
+            mode="python",
+            exclude_none=False,
+        )
+        return EasyDesignRunConfig.model_validate(payload)
+    existing = config.structure_prediction
+    if existing is not None:
+        configured = existing.model_dump(mode="python", exclude_none=False)
+        configured["backend"] = backend
+        payload["stage01"]["structure_prediction"] = configured
+        return EasyDesignRunConfig.model_validate(payload)
     a3m_files = tuple(sorted((root / "inputs").glob("*.a3m")))
     if len(a3m_files) > 1:
         raise ConfigurationError("Stage 1 发现多个 A3M；请只保留本次运行要冻结的一个文件")
@@ -771,8 +790,9 @@ def _stage01_config_with_backend(
         }
     payload["stage01"]["structure_prediction"] = {
         "backend": backend,
-        "msa": msa,
-        "template_mode": "disabled",
+        "target_msa": msa,
+        "target_paired_msa": {"mode": "query-only"},
+        "target_templates": {"mode": "disabled"},
         "parameter_profile": "model-default",
         "seeds": [101],
         "sample_count": 1,
@@ -781,10 +801,50 @@ def _stage01_config_with_backend(
     return EasyDesignRunConfig.model_validate(payload)
 
 
+def _load_stage01_prediction_config(path: Path) -> StructurePredictionConfig:
+    try:
+        source = path.expanduser().resolve(strict=True)
+        raw = yaml.safe_load(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
+        raise ConfigurationError(
+            f"Stage 1 prediction config 无法读取: path={path}, error={error}"
+        ) from error
+    if not isinstance(raw, dict):
+        raise ConfigurationError("Stage 1 prediction config 顶层必须是 mapping")
+    for field, path_key in (
+        ("target_msa", "path"),
+        ("target_paired_msa", "path"),
+        ("target_templates", "data_path"),
+    ):
+        item = raw.get(field)
+        if not isinstance(item, dict) or item.get("mode") != "precomputed":
+            continue
+        value = item.get(path_key)
+        if not isinstance(value, str):
+            continue
+        selected = Path(value).expanduser()
+        if not selected.is_absolute():
+            try:
+                item[path_key] = str(
+                    (source.parent / selected).resolve(strict=True)
+                )
+            except OSError as error:
+                raise ConfigurationError(
+                    f"Stage 1 precomputed input 无法读取: field={field}, path={value}"
+                ) from error
+    try:
+        return StructurePredictionConfig.model_validate(raw)
+    except ValidationError as error:
+        raise ConfigurationError(
+            f"Stage 1 prediction config 校验失败: {error}"
+        ) from error
+
+
 def target_prepare(
     project_root: Path,
     *,
     prediction_backend: PredictionBackend | None = None,
+    prediction_config_path: Path | None = None,
     detach: bool = False,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
@@ -825,8 +885,23 @@ def target_prepare(
             ),
         )
     config = load_run_config(project_config_path(root), source_base_dir=root).config
-    if prediction_backend is not None:
-        config = _stage01_config_with_backend(root, config, prediction_backend)
+    selected_prediction = (
+        None
+        if prediction_config_path is None
+        else _load_stage01_prediction_config(prediction_config_path)
+    )
+    selected_backend = (
+        prediction_backend
+        if prediction_backend is not None
+        else (None if selected_prediction is None else selected_prediction.backend)
+    )
+    if selected_backend is not None:
+        config = _stage01_config_with_backend(
+            root,
+            config,
+            selected_backend,
+            prediction_config=selected_prediction,
+        )
     result, observed = _launch(
         root,
         phase="prepare",

@@ -1,7 +1,7 @@
 # 01 — Target 准备
 
 **阶段状态：** `smoke-validated`。schema 0.6 的六类入口、严格实验结构选择、
-Target Bundle 0.4、通用 Decision Gate、三种 MSA 来源和 Viewer 均已通过
+Target Bundle 0.4、通用 Decision Gate、独立预测特征配置和 Viewer 均已通过
 Proteindigger1 真实 smoke；该状态只证明工程流程可运行，不代表科学准确率。
 
 **契约版本：** Target Bundle `0.4`，兼容读取 `0.1`–`0.3`。
@@ -35,7 +35,7 @@ flowchart LR
     EQ --> ES{"合格实验结构数量"}
     ES -->|"唯一"| EX["采用实验结构"]
     ES -->|"多个，review-gated"| DG
-    ES -->|"无合格或 unattended policy"| PR["required MSA<br/>项目冻结的预测后端"]
+    ES -->|"无合格或 unattended policy"| PR["显式预测特征<br/>本次运行冻结的预测后端"]
     P --> PW["独立 PyMOL worker"]
     PW --> PQ["单 object / chain / state QC<br/>保留未解释颜色"]
     B --> BV["验证 Bundle / ArtifactRef / SHA-256<br/>复制并重建 attempt 引用"]
@@ -97,9 +97,14 @@ sequence/FASTA 和 UniProt 路径先经 RCSB Sequence Search v2/Data API 寻找�
 CLI 才要求 `--prediction-backend afo|protenix`。预测通过通用
 `StructurePredictionRequest` 访问 backend，两者之间禁止静默 fallback。
 
-一旦选择预测，sequence/FASTA 的 run revision 必须声明 `backend`、`msa` 和
-`template_mode`。AFO 和 Protenix 使用同一 MSA 契约。用户 YAML 禁止 `mode: disabled`，no-MSA 只保留为 Python API
-内部工程 smoke。EasyDesign 保存原始输入和 YAML snapshot，生成
+一旦选择预测，sequence/FASTA 的 run revision 必须分别声明 `backend`、
+`target_msa`、`target_paired_msa` 和 `target_templates`。AFO 和 Protenix 使用同一契约，
+四项均由用户显式决定，系统不因后端不同而强加特征组合。unpaired/paired MSA 都支持
+`remote`、`precomputed`、`query-only` 和 `disabled`；target template 支持
+`disabled` 和 `precomputed`。Stage 1 不接受 `target-structure`，因为此时 target 尚未生成；
+当前也没有自动模板搜索 runtime，不能静默搜索或回退模板。
+
+EasyDesign 保存原始输入和 YAML snapshot，生成
 `resolved-config.json`，再由 adapter 生成 attempt 内部 `inputs/protenix-input.json`；
 用户不维护后端私有 JSON。
 
@@ -133,8 +138,8 @@ stage01:
     preserve_source_context: true
     keep_ligands: []
   structure_prediction:
-    backend: protenix-v2
-    msa:
+    backend: openfold3-af3-jax
+    target_msa:
       mode: remote
       cache_mode: online
       providers:
@@ -143,7 +148,10 @@ stage01:
           max_attempts: 3
           retry_backoff_seconds: 30
       no_msa_fallback: false
-    template_mode: disabled
+    target_paired_msa:
+      mode: query-only
+    target_templates:
+      mode: disabled
     parameter_profile: model-default
 stage02: null
 stage03: null
@@ -171,11 +179,11 @@ no-MSA。A3M 必须来自当前 attempt、首条 query 与规范 target 完全�
 才允许启动结构预测。Protenix 2.0.0 CLI 不暴露 ticket，必须明确记录“不可见”状态，不能
 伪造 ticket。
 
-MSA 有三条正式且互斥的来源：
+每条 MSA 轨道均有四种正式且互斥的模式：
 
 ```yaml
 # 默认：每次重新联网；成功后原子刷新 sequence-hash cache
-msa:
+target_msa:  # target_paired_msa 也可使用同一写法
   mode: remote
   cache_mode: online
   providers:
@@ -185,7 +193,7 @@ msa:
 
 ```yaml
 # 用户显式允许读取同 sequence/provider/mode/endpoint identity 的有效缓存
-msa:
+target_msa:
   mode: remote
   cache_mode: prefer-cache  # 或 offline；offline miss 直接失败
   providers:
@@ -195,10 +203,63 @@ msa:
 
 ```yaml
 # 用户直接提供 A3M；首条 query 必须与规范 target 逐位相同
-msa:
+target_msa:
   mode: precomputed
   path: inputs/target.a3m
 ```
+
+```yaml
+# 仅保留 query 行；不同于 disabled 的空 MSA
+target_paired_msa:
+  mode: query-only
+```
+
+```yaml
+# 明确关闭某一条 MSA 轨道
+target_msa:
+  mode: disabled
+target_paired_msa:
+  mode: disabled
+```
+
+两个 MSA 轨道可以自由组合，例如 remote unpaired + disabled paired，或 precomputed
+unpaired + query-only paired。若两轨都选 `remote`，必须使用完全相同的 provider 计划，
+避免一次预测产生两个互相矛盾的远程服务身份。远程失败绝不改成 query-only 或 disabled。
+
+显式 target template 使用 AF3 template JSON 列表；文件与 SHA-256 都会复制进本次 run
+snapshot，resume 只读取冻结副本：
+
+```yaml
+target_templates:
+  mode: precomputed
+  data_path: inputs/target-templates.json
+  data_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+模板 JSON 的每个元素必须包含 `mmcif`、`queryIndices` 和 `templateIndices`；indices 使用
+zero-based 编号且长度一致。若不需要模板，必须显式写 `target_templates: {mode: disabled}`。
+
+不想直接编辑项目配置时，可把完整的 `structure_prediction` 内容保存为独立 YAML，并在
+真正需要预测 target 时传入：
+
+```bash
+easydesign target prepare workspace/projects/PROJECT \
+  --prediction-backend afo \
+  --prediction-config stage01-afo.yaml
+```
+
+`stage01-afo.yaml` 示例：
+
+```yaml
+backend: openfold3-af3-jax
+target_msa: {mode: disabled}
+target_paired_msa: {mode: query-only}
+target_templates: {mode: disabled}
+parameter_profile: model-default
+```
+
+fragment 中的相对 A3M/template 路径以 fragment 文件所在目录解析。CLI 后端和 fragment
+同时出现时必须一致；只提供 fragment 时也可以由其中的 `backend` 完成本阶段显式选择。
 
 CLI 可在建项目时直接选择：
 
@@ -212,7 +273,8 @@ easydesign project init workspace/projects/PROJECT \
 缓存键包含规范序列 SHA-256、provider、server mode 和 endpoint digest；manifest 保存
 query/A3M hash、depth、provider 和生成时间。`online` 不读取旧 cache；
 `prefer-cache`/`offline` 必须由用户显式声明。无论来自在线服务、cache 还是 precomputed，
-实际 A3M 都复制进当前 run，随后仍以 `use_msa=true` 运行 Protenix。
+实际 A3M 都复制进当前 run；Protenix 的 `use_msa` 和 AFO 的 JSON feature 由两条冻结轨道
+共同决定，不会因历史默认值被强制打开。
 使用公共 provider 会把 target 序列提交给第三方服务；当前只批准内部研究运行。敏感或商业
 序列在完成服务条款、隐私和数据处理审查前，必须使用经过批准的自建
 `custom-colabfold`/本地 MSA，不得由 UI 静默发送到公共 endpoint。

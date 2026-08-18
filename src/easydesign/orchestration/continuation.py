@@ -466,9 +466,45 @@ def _rebase_continuation_inputs(
             resolved.precomputed_msa_snapshot.sha256,
         )
         prediction = stage01.get("structure_prediction")
-        msa = prediction.get("msa") if isinstance(prediction, dict) else None
+        msa = prediction.get("target_msa") if isinstance(prediction, dict) else None
         if isinstance(msa, dict) and msa.get("mode") == "precomputed":
             msa["path"] = Path(os.path.relpath(copied_msa, output.parent)).as_posix()
+    if resolved.precomputed_paired_msa_snapshot is not None:
+        paired_snapshot = resolved.precomputed_paired_msa_snapshot.verify(
+            source_run_root
+        )
+        copied_paired = _copy_verified_continuation_input(
+            paired_snapshot,
+            inputs_root / "target-paired-msa.a3m",
+            resolved.precomputed_paired_msa_snapshot.sha256,
+        )
+        prediction = stage01.get("structure_prediction")
+        paired = (
+            prediction.get("target_paired_msa")
+            if isinstance(prediction, dict)
+            else None
+        )
+        if isinstance(paired, dict) and paired.get("mode") == "precomputed":
+            paired["path"] = Path(
+                os.path.relpath(copied_paired, output.parent)
+            ).as_posix()
+    if resolved.precomputed_template_snapshot is not None:
+        template_snapshot = resolved.precomputed_template_snapshot.verify(
+            source_run_root
+        )
+        copied_template = _copy_verified_continuation_input(
+            template_snapshot,
+            inputs_root / "target-templates.json",
+            resolved.precomputed_template_snapshot.sha256,
+        )
+        prediction = stage01.get("structure_prediction")
+        templates = (
+            prediction.get("target_templates")
+            if isinstance(prediction, dict)
+            else None
+        )
+        if isinstance(templates, dict) and templates.get("mode") == "precomputed":
+            templates["data_path"] = str(copied_template.resolve())
 
 
 def materialize_continuation_config(

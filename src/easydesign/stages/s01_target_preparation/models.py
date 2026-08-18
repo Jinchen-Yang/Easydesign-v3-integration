@@ -240,7 +240,13 @@ class PredictionProvenance(BaseModel):
     msa_query_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     msa_ticket: str | None = Field(default=None, min_length=1, max_length=256)
     msa_ticket_status: str | None = Field(default=None, min_length=1, max_length=128)
+    paired_msa_mode: MsaMode = MsaMode.DISABLED
+    paired_msa_input_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     template_mode: TemplateMode
+    template_data_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     parameter_profile: PredictionParameterProfile
     resolved_cycle_count: int = Field(ge=1)
     resolved_diffusion_step_count: int = Field(ge=1)
@@ -297,6 +303,19 @@ class PredictionProvenance(BaseModel):
                     "remote MSA provenance 0.2 "
                     "缺少 provider/endpoint/depth/query/status"
                 )
+        if self.paired_msa_mode is MsaMode.DISABLED:
+            if self.paired_msa_input_sha256 is not None:
+                raise ValueError("disabled paired MSA 不能声明 input SHA-256")
+        elif self.paired_msa_mode in {
+            MsaMode.PRECOMPUTED,
+            MsaMode.QUERY_ONLY,
+        } and self.paired_msa_input_sha256 is None:
+            raise ValueError("paired MSA 启用时必须冻结 input SHA-256")
+        if self.template_mode is TemplateMode.DISABLED:
+            if self.template_data_sha256 is not None:
+                raise ValueError("disabled template 不能声明 data SHA-256")
+        elif self.template_data_sha256 is None:
+            raise ValueError("precomputed template 必须冻结 data SHA-256")
         return self
 
 

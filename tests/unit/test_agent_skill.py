@@ -31,6 +31,10 @@ def test_research_skill_has_exact_flat_reference_set_and_valid_frontmatter() -> 
         "failure-atlas.md",
         "scale-and-selection.md",
         "scientific-claims.md",
+        "gpcr-family-playbooks.md",
+        "gpcr-mechanism-and-state.md",
+        "gpcr-review-schema.md",
+        "gpcrdb-contract.md",
     }
     assert {path.name for path in RESEARCH_SKILL.iterdir()} == {
         "SKILL.md",

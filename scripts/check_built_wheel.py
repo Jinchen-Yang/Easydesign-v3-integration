@@ -14,6 +14,7 @@ from zipfile import BadZipFile, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_PREFIX = "easydesign/reporting/static/target_viewer"
+GPCR_REVIEW_PREFIX = "easydesign/reporting/static/gpcr_site_review"
 SCAFFOLD_PREFIX = (
     "easydesign/resources/scaffolds/vhh/official_boltzgen_0_3_2"
 )
@@ -24,6 +25,13 @@ EXPECTED_VIEWER = (
     "vendor/molstar/molstar.js",
     "vendor/molstar/molstar.css",
     "vendor/molstar/LICENSE",
+)
+EXPECTED_GPCR_REVIEW = (
+    "index.html",
+    "index.js",
+    "report.css",
+    "structure.html",
+    "structure.js",
 )
 EXPECTED_SCAFFOLDS = (
     "7eow.yaml",
@@ -99,6 +107,16 @@ def main(argv: list[str] | None = None) -> int:
                 if archive.read(member) != source.read_bytes():
                     print(
                         f"ERROR: wheel 静态资源与源码字节不一致: {relative}",
+                        file=sys.stderr,
+                    )
+                    return 1
+            gpcr_source = ROOT / "src" / GPCR_REVIEW_PREFIX
+            for relative in EXPECTED_GPCR_REVIEW:
+                member = f"{GPCR_REVIEW_PREFIX}/{relative}"
+                source = gpcr_source / relative
+                if archive.read(member) != source.read_bytes():
+                    print(
+                        f"ERROR: wheel GPCR 审阅资源与源码字节不一致: {relative}",
                         file=sys.stderr,
                     )
                     return 1
@@ -218,12 +236,27 @@ def main(argv: list[str] | None = None) -> int:
                 text=True,
                 timeout=30,
             )
+            subprocess.run(
+                [
+                    str(python),
+                    "-c",
+                    (
+                        "from easydesign.reporting.gpcr_site_review import "
+                        "REPORT_RESOURCE_ROOT; "
+                        "assert REPORT_RESOURCE_ROOT.joinpath('index.html').is_file()"
+                    ),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"ERROR: wheel 安装或 console-script smoke 失败: {error}", file=sys.stderr)
         return 1
     print(
         f"local wheel assets and console script verified: {wheel.name} "
-        "(Target Viewer and VHH7 resources)"
+        "(Target Viewer, GPCR review, and VHH7 resources)"
     )
     return 0
 

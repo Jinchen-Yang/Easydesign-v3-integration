@@ -5,7 +5,7 @@
 
 | 总体状态 | 当前结论 | 更新时间 |
 | --- | --- | --- |
-| `implemented` | SASA、ScanNet、PSE/YAML 人工区域和显式批准契约已实现；完整科学 benchmark 尚未完成。 | 2026-08-10 |
+| `implemented` | SASA、ScanNet、PSE/YAML 人工区域和显式批准契约已实现；GPCR provider 正在进行核心化迁移；完整科学 benchmark 尚未完成。 | 2026-08-19 |
 
 ## 当前能力
 
@@ -26,6 +26,22 @@
 - ScanNet、SASA 和批准流程在当前 clone 所在主机运行；没有公共算力、跨主机 job 或
   浏览器模型助手入口。
 
+## GPCR provider 迁移状态
+
+- GPCR 是 `prepare` 内的 target-specific provider，不是独立产品流程或第三个 Skill。研究知识已
+  合并到 `easydesign-research`，结构与候选算法已用原型源码 SHA-256 固定回归基线。
+- GPCRdb 使用共享 `ScientificHttpClient` 的 cache、retry 和 provenance；身份冲突显式失败，
+  可选 endpoint 失败保留为 `partial`/未知，不把失败解释为空的生物学集合。
+- canonical dossier 使用 `GpcrSiteAnalysis` typed contract；primary 必须通过 identity/mapping、
+  membrane、approach、target/counterstate、assay 和 hard-gate 检查，禁止 `fused_score`。
+- 离线结构审阅已经迁入核心 reporting，并使用安装包内固定的 Mol* 资源；报告只读，不产生
+  site approval 或阶段晋级。
+- 当前仍是工程迁移切片：尚未接入公开 `easydesign site` 命令，也尚未进入正式 prepare artifact
+  manifest。因此其输出只能称为 read-only research dossier，不能声称 prepare 已完成。
+- 尚无 GPCR 科学 benchmark。当前测试只覆盖契约、provenance、失败语义、原算法等价性和离线
+  报告完整性；在 membrane orientation、状态对比或完整 scaffold approach 未解决时必须停止
+  primary 发布。
+
 ## 仍有效的验证事实
 
 - 138-aa APOE 上 SASA/geometry 已完成真实 smoke。
@@ -39,3 +55,5 @@
 - 增加独立 VHH–抗原正对照和预注册 benchmark，校准科学表现而非只验证工程闭环。
 - 为多模型 ScanNet 定义并评审科学策略；在此之前继续 fail closed。
 - required annotation、编号歧义、区域重叠或 checksum 不一致必须保持显式失败。
+- 将 GPCR dossier 接入正式 prepare artifact writer 和语义化 `site` CLI，再补充同受体 active/
+  inactive、不同 GPCR 家族及真实 VHH approach 的预注册 benchmark。

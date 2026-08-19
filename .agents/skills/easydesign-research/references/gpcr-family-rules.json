@@ -1,0 +1,398 @@
+{
+  "schema_version": "1.0",
+  "kind": "gpcr-family-conditional-heuristics",
+  "rule_type": "conditional_heuristic",
+  "authority": {
+    "may_generate_hypotheses": true,
+    "may_apply_hard_gates": true,
+    "may_assign_fused_score": false,
+    "may_choose_winner": false,
+    "may_approve_site": false,
+    "may_write_native_hotspots": false
+  },
+  "family_resolution": {
+    "source": "GPCRdb protein family parent hierarchy",
+    "match": "first top-level slug component after parent-chain verification",
+    "unknown_action": "retain receptor-specific hypotheses as unresolved",
+    "forbidden_branch": "non-receptor families such as G-protein"
+  },
+  "global": {
+    "required_context": [
+      "resolved receptor identity and receptor chain",
+      "dual structure numbering and GPCRdb residue mapping",
+      "target state and counterstate",
+      "membrane normal and extracellular side",
+      "ligand modality and intended pharmacology",
+      "construct, partner, fusion, mutation, glycan, cleavage, and assembly context",
+      "full-scaffold approach geometry",
+      "functional assay and falsifier"
+    ],
+    "default_delivery_side": "extracellular",
+    "hard_gates": [
+      {
+        "id": "intracellular-transducer-surface",
+        "when": "candidate is on the G-protein, arrestin, or intracellular transducer face",
+        "action": "classify_avoid",
+        "exception": "intracellular delivery is explicitly authorized and reassessed"
+      },
+      {
+        "id": "lipid-facing-transmembrane",
+        "when": "candidate side chains face the bilayer or require framework insertion into membrane",
+        "action": "classify_avoid",
+        "exception": null
+      },
+      {
+        "id": "artificial-construct-only",
+        "when": "candidate belongs only to a fusion, tag, artificial linker, stabilizer, or unexplained engineered feature",
+        "action": "classify_avoid",
+        "exception": null
+      },
+      {
+        "id": "unmapped-or-ambiguous",
+        "when": "receptor chain or candidate residue mapping is ambiguous",
+        "action": "classify_unresolved_and_stop_primary",
+        "exception": null
+      },
+      {
+        "id": "unresolved-membrane-access",
+        "when": "extracellular side, membrane orientation, or approach path cannot be established",
+        "action": "classify_unresolved_and_stop_primary",
+        "exception": null
+      },
+      {
+        "id": "inaccessible-cavity",
+        "when": "candidate requires passage through membrane, intact native domain, or a pore too narrow for the proposed binder",
+        "action": "classify_avoid",
+        "exception": null
+      },
+      {
+        "id": "unsupported-assembly-interface",
+        "when": "candidate depends on a crystal contact or unverified oligomer",
+        "action": "classify_unresolved_or_avoid",
+        "exception": "biological assembly and functional evidence support the interface"
+      }
+    ],
+    "comparison_dimensions": [
+      "mechanistic_causality",
+      "evidence_tier",
+      "state_discrimination",
+      "extracellular_accessibility",
+      "approach_feasibility",
+      "construct_robustness",
+      "family_coherence",
+      "experimental_testability",
+      "explicit_risks"
+    ],
+    "maximum_design_hypotheses": 3,
+    "allowed_classifications": [
+      "primary",
+      "backup",
+      "avoid",
+      "unresolved"
+    ]
+  },
+  "families": {
+    "001": {
+      "name": "Class A (Rhodopsin)",
+      "architecture_checks": [
+        "small-molecule, lipid, peptide, protein, light, or tethered-ligand input",
+        "N-terminus and extracellular-loop contribution",
+        "orthosteric pocket depth and extracellular vestibule width",
+        "receptor-specific dimer or oligomer evidence"
+      ],
+      "inhibit_hypotheses": [
+        "extracellular pocket-rim or vestibule blockade",
+        "reachable orthosteric competition",
+        "validated extracellular negative allostery",
+        "inactive-state extracellular lock",
+        "protease-cleavage or tethered-ligand blockade when applicable"
+      ],
+      "activate_hypotheses": [
+        "reachable active-state pocket core or trigger network",
+        "agonist-mimetic peptide or extracellular-loop engagement",
+        "active-state-selective extracellular stabilization"
+      ],
+      "mandatory_risks": [
+        "deep pocket may accept a small molecule but not a protein binder",
+        "TM residue may be lipid-facing rather than pocket-facing",
+        "crystal dimer may not be functional"
+      ],
+      "stop_if": [
+        "small-molecule and peptide recognition modes remain conflated",
+        "candidate pocket access cannot accommodate the proposed scaffold"
+      ]
+    },
+    "002": {
+      "name": "Class B1 (Secretin)",
+      "architecture_checks": [
+        "intact structured ECD and ECD-to-TMD orientation",
+        "peptide C-terminal ECD capture and N-terminal TMD trigger",
+        "ECD disulfides, glycans, linker flexibility, and construct truncation"
+      ],
+      "inhibit_hypotheses": [
+        "peptide-capture ECD competition",
+        "ECD-to-TMD ligand-entry blockade",
+        "extracellular TMD vestibule competition",
+        "inactive-state ECD-TMD stabilization"
+      ],
+      "activate_hypotheses": [
+        "peptide N-terminal trigger mimicry",
+        "active extracellular TMD stabilization",
+        "same-receptor evidence-supported ECD-TMD agonist bridge"
+      ],
+      "mandatory_risks": [
+        "stand-alone ECD pose may lack membrane reference",
+        "full peptide contact shell is too broad for conditioning hotspots",
+        "glycan or ECD orientation may block approach"
+      ],
+      "stop_if": [
+        "ECD and TMD recognition roles cannot be separated",
+        "native ECD is absent but the hypothesis depends on it"
+      ]
+    },
+    "003": {
+      "name": "Class B2 (Adhesion)",
+      "architecture_checks": [
+        "full modular ECD and GAIN domain composition",
+        "GPS autoproteolysis status",
+        "N-terminal-fragment and C-terminal-fragment association",
+        "tethered agonist sequence and exposure",
+        "mechanical-force, ligand, and oligomer context"
+      ],
+      "inhibit_hypotheses": [
+        "autoinhibited ECD or GAIN stabilization",
+        "tethered-agonist exposure blockade",
+        "tethered-agonist TMD-entry blockade",
+        "supported inhibitory oligomer stabilization"
+      ],
+      "activate_hypotheses": [
+        "autoinhibition release",
+        "tethered-agonist exposure or mimicry",
+        "active extracellular TMD stabilization",
+        "supported productive oligomer stabilization"
+      ],
+      "mandatory_risks": [
+        "TMD-only construct may omit the causal ECD mechanism",
+        "cleavage and fragment association may differ from native receptor",
+        "large ECD may occupy the proposed binder path"
+      ],
+      "stop_if": [
+        "cleavage or tethered-agonist status is unresolved",
+        "hypothesis depends on an ECD absent from the structure"
+      ]
+    },
+    "004": {
+      "name": "Class C (Glutamate)",
+      "architecture_checks": [
+        "VFT, cysteine-rich domain, and TMD composition",
+        "homodimer or heterodimer identity and stoichiometry",
+        "VFT open or closed state",
+        "orthosteric ECD versus allosteric TMD ligand"
+      ],
+      "inhibit_hypotheses": [
+        "VFT orthosteric competition",
+        "VFT closure prevention",
+        "inactive dimer lock",
+        "validated negative-allosteric TMD pocket"
+      ],
+      "activate_hypotheses": [
+        "closed VFT stabilization",
+        "productive VFT-to-CRD-to-TMD coupling",
+        "active dimer arrangement stabilization",
+        "validated positive-allosteric TMD pocket"
+      ],
+      "mandatory_risks": [
+        "isolated protomer approach may clash with partner",
+        "heterodimer partner roles are not interchangeable",
+        "ECD and TMD sites have different mechanism logic"
+      ],
+      "stop_if": [
+        "functional protomer identity or stoichiometry is unresolved",
+        "partner protomer is omitted from approach analysis"
+      ]
+    },
+    "005": {
+      "name": "Class D1 (Ste2-like fungal pheromone)",
+      "architecture_checks": [
+        "receptor-specific topology and ligand modality",
+        "same-receptor or close-homolog structural evidence",
+        "receptor-specific oligomer evidence"
+      ],
+      "inhibit_hypotheses": [
+        "evidence-supported extracellular-loop or N-terminal blockade",
+        "reachable ligand-pocket competition",
+        "supported oligomer disruption or lock"
+      ],
+      "activate_hypotheses": [
+        "evidence-supported ligand mimicry",
+        "state-selective extracellular stabilization"
+      ],
+      "mandatory_risks": [
+        "Class A motifs and pocket rules may not transfer",
+        "experimental structure coverage may be sparse"
+      ],
+      "stop_if": [
+        "candidate relies only on an unvalidated Class A analogy"
+      ]
+    },
+    "006": {
+      "name": "Class F (Frizzled)",
+      "architecture_checks": [
+        "Frizzled-like versus Smoothened-like branch",
+        "intact cysteine-rich domain and linker",
+        "Wnt, protein, lipid, or sterol context",
+        "co-receptor and dimer evidence"
+      ],
+      "inhibit_hypotheses": [
+        "receptor-specific CRD ligand blockade",
+        "validated co-receptor interface blockade",
+        "extracellular linker or TMD-cavity blockade",
+        "inactive extracellular-state stabilization"
+      ],
+      "activate_hypotheses": [
+        "ligand or sterol-supported active arrangement",
+        "CRD-linker-to-TMD coupling",
+        "active extracellular TMD stabilization"
+      ],
+      "mandatory_risks": [
+        "sterol or lipid site may be intramembrane and inaccessible",
+        "detached CRD pose may lack membrane reference",
+        "Frizzled and Smoothened mechanisms are not interchangeable"
+      ],
+      "stop_if": [
+        "family sub-branch or native ECD orientation is unresolved"
+      ]
+    },
+    "007": {
+      "name": "Class O1",
+      "architecture_checks": [
+        "current GPCRdb parent hierarchy",
+        "receptor-specific domains, ligand, state, and topology"
+      ],
+      "inhibit_hypotheses": [
+        "receptor-specific accessible causal site"
+      ],
+      "activate_hypotheses": [
+        "receptor-specific accessible state or trigger site"
+      ],
+      "mandatory_risks": [
+        "transferable family priors may be sparse"
+      ],
+      "stop_if": [
+        "hypothesis depends only on analogy to another GPCR class"
+      ]
+    },
+    "008": {
+      "name": "Class O2",
+      "architecture_checks": [
+        "current GPCRdb parent hierarchy",
+        "receptor-specific domains, ligand, state, and topology"
+      ],
+      "inhibit_hypotheses": [
+        "receptor-specific accessible causal site"
+      ],
+      "activate_hypotheses": [
+        "receptor-specific accessible state or trigger site"
+      ],
+      "mandatory_risks": [
+        "generic numbering and structural coverage may be incomplete"
+      ],
+      "stop_if": [
+        "access geometry or assay-linked mechanism is unavailable"
+      ]
+    },
+    "009": {
+      "name": "Class T2",
+      "architecture_checks": [
+        "exact receptor, species, and ligand modality",
+        "receptor-specific extracellular vestibule and TMD evidence",
+        "accessory-protein or oligomer evidence"
+      ],
+      "inhibit_hypotheses": [
+        "accessible extracellular vestibule blockade",
+        "evidence-supported ligand-site competition"
+      ],
+      "activate_hypotheses": [
+        "accessible state-selective extracellular stabilization"
+      ],
+      "mandatory_risks": [
+        "structural and pharmacological coverage may be sparse",
+        "deep-pocket claims may exceed available evidence"
+      ],
+      "stop_if": [
+        "membrane-facing status or ligand-site mapping is unresolved"
+      ]
+    },
+    "010": {
+      "name": "Other GPCRs",
+      "architecture_checks": [
+        "sequence-derived and curated domain architecture",
+        "receptor-specific ligand, state, dimer, and autoinhibition evidence"
+      ],
+      "inhibit_hypotheses": [
+        "receptor-specific accessible causal site"
+      ],
+      "activate_hypotheses": [
+        "receptor-specific accessible state or trigger site"
+      ],
+      "mandatory_risks": [
+        "Other is a routing category, not a mechanism"
+      ],
+      "stop_if": [
+        "analysis requires forcing the receptor into an unsupported class template"
+      ]
+    }
+  },
+  "cross_cutting": {
+    "dimer_or_oligomer": {
+      "applies_when": "functional oligomer evidence exists or the hypothesis depends on an interface",
+      "required_checks": [
+        "biological assembly",
+        "repeated structural interface",
+        "conserved contacts",
+        "crosslinking or mutagenesis",
+        "functional assay support",
+        "both protomers in membrane-referenced approach model"
+      ],
+      "separate_hypotheses": [
+        "bind one protomer near interface",
+        "bridge protomers",
+        "sterically disrupt interface",
+        "lock productive or inactive geometry"
+      ]
+    },
+    "large_ecd_or_autoinhibition": {
+      "applies_when": "VFT, CRD, GAIN, large ECD, or endogenous blocking segment is present",
+      "required_checks": [
+        "domain boundaries and unresolved linkers",
+        "cleavage and fragment association",
+        "glycans and disulfides",
+        "intact versus activated structure",
+        "native domain occupancy of binder approach path"
+      ],
+      "inhibit_prior": "stabilize closed/autoinhibited state or block trigger exposure",
+      "activate_prior": "release block, mimic trigger, or stabilize productive coupling"
+    },
+    "tethered_agonist": {
+      "applies_when": "proteolysis or displacement exposes an endogenous agonist segment",
+      "required_checks": [
+        "cleavage state",
+        "agonist sequence identity",
+        "fragment association",
+        "exposure and TMD entry path",
+        "intact, cleaved, and trigger-mutant assay controls"
+      ]
+    },
+    "deep_pocket": {
+      "applies_when": "candidate contains buried TMD-pocket residues",
+      "required_checks": [
+        "extracellular opening width",
+        "CDR tip reach",
+        "framework-membrane clearance",
+        "pocket-facing side chains",
+        "target-state causality"
+      ],
+      "failure_action": "classify_avoid_or_unresolved"
+    }
+  }
+}

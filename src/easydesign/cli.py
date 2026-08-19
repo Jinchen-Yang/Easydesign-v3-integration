@@ -23,6 +23,12 @@ from easydesign.orchestration.afo_releases import (
     materialize_afo_bundle,
 )
 from easydesign.orchestration.application import diagnose_runtime
+from easydesign.orchestration.gpcr_site import (
+    GpcrSiteRequest,
+    publish_gpcr_analysis,
+    resolve_latest_gpcr_analysis,
+    validate_gpcr_analysis_bundle,
+)
 from easydesign.orchestration.local_project import completed_steps, resolve_project_run
 from easydesign.orchestration.miniforge import install_miniforge, miniforge_status
 from easydesign.orchestration.openfold3_validation import (
@@ -80,12 +86,17 @@ from easydesign.reporting import (
     ReviewDashboardReport,
     build_evidence_viewer_payload,
     build_stage02_viewer_overlay,
+    create_gpcr_review_server,
     create_review_dashboard_server,
     create_target_viewer_server,
+    export_gpcr_review_report,
     export_review_dashboard,
+    generate_gpcr_review_report,
     generate_review_dashboard,
+    resolve_latest_gpcr_review_report,
     resolve_latest_review_dashboard,
     resolve_target_viewer_argument,
+    validate_gpcr_review_report,
 )
 from easydesign.workspace_context import WorkspaceContext
 
@@ -130,6 +141,22 @@ def _prediction_backend(value: str | None) -> str | None:
         "protenix": "protenix-v2",
         "afo": "openfold3-af3-jax",
     }.get(value, value)
+
+
+def _gpcr_report_base(project: Path, analysis_root: Path) -> Path:
+    return (
+        project.expanduser().resolve(strict=True)
+        / "gpcr-site"
+        / "report-rebuilds"
+        / analysis_root.name
+    )
+
+
+def _resolved_gpcr_report(project: Path, analysis_root: Path) -> Path:
+    rebuilt = _gpcr_report_base(project, analysis_root)
+    if (rebuilt / "LATEST").is_file():
+        return resolve_latest_gpcr_review_report(rebuilt)
+    return resolve_latest_gpcr_review_report(analysis_root / "review")
 
 
 def _add_project_source(parser: argparse.ArgumentParser) -> None:
@@ -301,6 +328,11 @@ def _parser() -> argparse.ArgumentParser:
     site_scan_parser = site_commands.add_parser("scan")
     site_scan_parser.add_argument("project", type=Path)
     site_scan_parser.add_argument("--method", choices=("sasa", "scannet", "both"), required=True)
+    site_scan_parser.add_argument(
+        "--provider", choices=("auto", "gpcr", "generic"), default="auto"
+    )
+    site_scan_parser.add_argument("--context", type=Path)
+    site_scan_parser.add_argument("--offline", action="store_true")
     _add_detach(site_scan_parser)
     _add_json(site_scan_parser)
     site_approve_parser = site_commands.add_parser("approve")
@@ -396,7 +428,7 @@ def _parser() -> argparse.ArgumentParser:
     view.add_argument("--port", type=int, default=8000)
     view.add_argument(
         "--report",
-        choices=("auto", "target", "stage05", "stage07"),
+        choices=("auto", "target", "gpcr", "stage05", "stage07"),
         default="auto",
     )
     _add_json(view)
@@ -406,7 +438,7 @@ def _parser() -> argparse.ArgumentParser:
     report_build = report_commands.add_parser("build", help="为旧 run 或 reporting failure 重建")
     report_build.add_argument("project", type=Path)
     _add_run(report_build)
-    report_build.add_argument("--report", choices=("stage05", "stage07"), required=True)
+    report_build.add_argument("--report", choices=("gpcr", "stage05", "stage07"), required=True)
     report_build.add_argument(
         "--presentation",
         type=Path,
@@ -416,9 +448,34 @@ def _parser() -> argparse.ArgumentParser:
     report_export = report_commands.add_parser("export", help="生成包含全部结构的便携报告")
     report_export.add_argument("project", type=Path)
     _add_run(report_export)
-    report_export.add_argument("--report", choices=("stage05", "stage07"), required=True)
+    report_export.add_argument("--report", choices=("gpcr", "stage05", "stage07"), required=True)
     report_export.add_argument("--output", type=Path, required=True)
     _add_json(report_export)
+
+    gpcr = commands.add_parser("gpcr", help="独立 GPCR 分析、批量只读报告和 bundle 校验")
+    gpcr_commands = gpcr.add_subparsers(dest="gpcr_command", required=True)
+    gpcr_analyze = gpcr_commands.add_parser("analyze")
+    gpcr_analyze.add_argument("--structure", type=Path, required=True)
+    gpcr_analyze.add_argument("--output-dir", type=Path, required=True)
+    gpcr_analyze.add_argument("--mode", choices=("both", "inhibit", "activate"), default="both")
+    identity = gpcr_analyze.add_mutually_exclusive_group(required=True)
+    identity.add_argument("--gpcr-entry")
+    identity.add_argument("--accession")
+    gpcr_analyze.add_argument("--receptor-chain", required=True)
+    gpcr_analyze.add_argument("--context", type=Path)
+    gpcr_analyze.add_argument("--membrane-orientation", type=Path)
+    gpcr_analyze.add_argument("--state")
+    gpcr_analyze.add_argument("--offline", action="store_true")
+    _add_json(gpcr_analyze)
+    gpcr_batch = gpcr_commands.add_parser("batch-review")
+    gpcr_batch.add_argument("--input", type=Path, required=True)
+    gpcr_batch.add_argument("--output-dir", type=Path, required=True)
+    gpcr_batch.add_argument("--mode", choices=("both", "inhibit", "activate"), default="both")
+    gpcr_batch.add_argument("--offline", action="store_true")
+    _add_json(gpcr_batch)
+    gpcr_validate = gpcr_commands.add_parser("validate")
+    gpcr_validate.add_argument("--bundle", type=Path, required=True)
+    _add_json(gpcr_validate)
     return parser
 
 
@@ -978,6 +1035,30 @@ def _dispatch(args: argparse.Namespace) -> int:
                 print(f"{check.status}: {check.name}: {check.message}")
         return 0 if doctor_report.ok else 2
     if args.command == "report":
+        if args.report == "gpcr":
+            analysis_root = resolve_latest_gpcr_analysis(args.project)
+            if args.report_command == "build":
+                gpcr_report_outcome = generate_gpcr_review_report(
+                    analysis_root / "gpcr-hotspot-analysis.json",
+                    _gpcr_report_base(args.project, analysis_root),
+                )
+                report_payload: dict[str, Any] = {
+                    "status": "succeeded",
+                    "manifest": str(gpcr_report_outcome.manifest_path),
+                    "entrypoint": str(gpcr_report_outcome.index_path),
+                }
+            else:
+                report_root = _resolved_gpcr_report(args.project, analysis_root)
+                exported = export_gpcr_review_report(report_root, args.output)
+                report_payload = {"status": "succeeded", "output": str(exported)}
+            print(
+                json.dumps(report_payload, ensure_ascii=False, indent=2, sort_keys=True)
+                if args.json
+                else "\n".join(
+                    f"{key}: {value}" for key, value in report_payload.items()
+                )
+            )
+            return 0
         summary = resolve_project_run(args.project, run_id=args.run_id, required=True)
         assert summary is not None
         report_kind = cast(Literal["stage05", "stage07"], args.report)
@@ -989,37 +1070,94 @@ def _dispatch(args: argparse.Namespace) -> int:
                     yaml.safe_load(args.presentation.read_text(encoding="utf-8"))
                 )
             )
-            outcome = generate_review_dashboard(
+            dashboard_outcome = generate_review_dashboard(
                 summary.path,
                 report_kind=report_kind,
                 presentation=presentation,
             )
-            payload = outcome.model_dump(mode="json")
+            dashboard_payload = dashboard_outcome.model_dump(mode="json")
             print(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+                json.dumps(dashboard_payload, ensure_ascii=False, indent=2, sort_keys=True)
                 if args.json
                 else (
-                    f"Dashboard status: {outcome.status}\n"
-                    f"Manifest: {outcome.manifest_path}\n"
+                    f"Dashboard status: {dashboard_outcome.status}\n"
+                    f"Manifest: {dashboard_outcome.manifest_path}\n"
                     + (
-                        f"Entrypoint: {outcome.entrypoint}"
-                        if outcome.entrypoint is not None
-                        else f"Error: {outcome.error}"
+                        f"Entrypoint: {dashboard_outcome.entrypoint}"
+                        if dashboard_outcome.entrypoint is not None
+                        else f"Error: {dashboard_outcome.error}"
                     )
                 )
             )
-            return 0 if outcome.entrypoint is not None else 2
+            return 0 if dashboard_outcome.entrypoint is not None else 2
         report_root = resolve_latest_review_dashboard(summary.path, report_kind)
         exported = export_review_dashboard(
             report_root,
             run_root=summary.path,
             output=args.output,
         )
-        payload = {"status": "succeeded", "output": str(exported)}
+        dashboard_payload = {"status": "succeeded", "output": str(exported)}
         print(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+            json.dumps(dashboard_payload, ensure_ascii=False, indent=2, sort_keys=True)
             if args.json
             else f"Portable dashboard: {exported}"
+        )
+        return 0
+
+    if args.command == "gpcr":
+        if args.gpcr_command == "analyze":
+            gpcr_analysis_outcome = publish_gpcr_analysis(
+                GpcrSiteRequest(
+                    evidence_dir=args.output_dir / ".unused-evidence",
+                    structure=args.structure,
+                    mode=args.mode,
+                    gpcr_entry=args.gpcr_entry,
+                    accession=args.accession,
+                    receptor_chain=args.receptor_chain,
+                    selection=args.context,
+                    membrane_orientation=args.membrane_orientation,
+                    state=args.state,
+                    cache_mode="offline" if args.offline else "online",
+                ),
+                args.output_dir,
+            )
+            gpcr_payload: dict[str, Any] = {
+                "status": "awaiting-human-review",
+                "manifest": str(gpcr_analysis_outcome.manifest_path),
+                "analysis": str(gpcr_analysis_outcome.analysis_path),
+                "context": str(gpcr_analysis_outcome.context_path),
+                "selection": str(gpcr_analysis_outcome.selection_path),
+                "report": str(gpcr_analysis_outcome.report_root / "index.html"),
+            }
+        elif args.gpcr_command == "batch-review":
+            gpcr_batch_outcome = generate_gpcr_review_report(
+                args.input,
+                args.output_dir,
+                mode=args.mode,
+            )
+            gpcr_payload = {
+                "status": "succeeded",
+                "manifest": str(gpcr_batch_outcome.manifest_path),
+                "entrypoint": str(gpcr_batch_outcome.index_path),
+                "structure_count": gpcr_batch_outcome.structure_count,
+            }
+        else:
+            supplied = args.bundle.expanduser().resolve(strict=True)
+            if (supplied / "review-manifest.json").is_file() or (
+                supplied / "LATEST"
+            ).is_file() and any(supplied.glob("report-*")):
+                manifest = validate_gpcr_review_report(supplied)
+            else:
+                manifest = validate_gpcr_analysis_bundle(supplied)
+            gpcr_payload = {
+                "status": "valid",
+                "schema_version": manifest.get("schema_version"),
+                "bundle": str(supplied),
+            }
+        print(
+            json.dumps(gpcr_payload, ensure_ascii=False, indent=2, sort_keys=True)
+            if args.json
+            else "\n".join(f"{key}: {value}" for key, value in gpcr_payload.items())
         )
         return 0
 
@@ -1053,7 +1191,14 @@ def _dispatch(args: argparse.Namespace) -> int:
                 detach=args.detach,
             )
         elif args.site_command == "scan":
-            result = site_scan(args.project, method=args.method, detach=args.detach)
+            result = site_scan(
+                args.project,
+                method=args.method,
+                provider=args.provider,
+                context_path=args.context,
+                offline=args.offline,
+                detach=args.detach,
+            )
         else:
             result = site_approve(args.project, input_path=args.input, confirm=args.confirm)
     elif args.command == "strategy":
@@ -1140,6 +1285,27 @@ def _dispatch(args: argparse.Namespace) -> int:
             result = job_drain(args.project, job_id=args.job_id)
     elif args.command == "view":
         direct_report = args.project.expanduser().resolve()
+        if args.report == "gpcr":
+            analysis_root = resolve_latest_gpcr_analysis(args.project)
+            report_root = _resolved_gpcr_report(args.project, analysis_root)
+            gpcr_server = create_gpcr_review_server(report_root, port=args.port)
+            status_result = project_status(args.project)
+            result = CommandResult(
+                status="serving",
+                phase="prepare",
+                project_id=status_result.project_id,
+                manifest=analysis_root / "analysis-manifest.json",
+                next_actions=(),
+            )
+            _print_result(result, as_json=args.json)
+            print(gpcr_server.url)
+            try:
+                gpcr_server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                gpcr_server.close()
+            return 0
         if (
             (direct_report / "report-manifest.json").is_file()
             and (direct_report / "report.json").is_file()

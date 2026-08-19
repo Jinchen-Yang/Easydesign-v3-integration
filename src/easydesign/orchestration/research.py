@@ -500,6 +500,11 @@ def project_status(project_root: Path) -> CommandResult:
     selections = [item for item in _runs(root) if _has_internal_stage(item, 7)]
     promotion = _read_pointer(root, PROMOTION_POINTER)
     latest = _runs(root)[-1] if _runs(root) else None
+    proposed_sites = tuple(
+        item
+        for item in evidence
+        if item.kind == "site-foundation" and item.status == "proposed"
+    )
     if selections:
         phase: ResearchPhase = "select"
         status = "completed"
@@ -576,6 +581,24 @@ def project_status(project_root: Path) -> CommandResult:
                 description="显式选择 Stage 5 验证后端并核对 pilot 预算。",
             ),
         )
+    elif proposed_sites:
+        phase, status = "prepare", "site-approval-required"
+        proposal_paths = sorted(root.glob(f"site-proposal.*.{proposed_sites[-1].identity}.yaml"))
+        actions = tuple(
+            NextAction(
+                command=f"easydesign site approve {root} --input {path} --confirm",
+                description="审核标准 Stage 02 proposal 后发布不可变 site foundation。",
+                approval_required=True,
+            )
+            for path in proposal_paths
+        )
+        if not actions:
+            actions = (
+                NextAction(
+                    command=f"easydesign view {root} --run {proposed_sites[-1].identity}",
+                    description="检查尚未批准的 Stage 02 区域与来源证据。",
+                ),
+            )
     elif foundation is not None:
         phase, status = "strategize", "strategy-draft-ready"
         actions = (
@@ -617,17 +640,73 @@ def project_status(project_root: Path) -> CommandResult:
                     ),
                 )
         else:
-            status = "site-required"
-            actions = (
-                NextAction(
-                    command=f"easydesign site scan {root} --method both",
-                    description="独立运行 SASA 与 ScanNet 候选。",
-                ),
-                NextAction(
-                    command=f"easydesign site propose {root} --input SITE.yaml",
-                    description="映射合作者提供的文字 residue 位点。",
-                ),
+            from .gpcr_site import (
+                resolve_latest_gpcr_analysis,
+                validate_gpcr_analysis_bundle,
             )
+
+            gpcr_base = root / "gpcr-site"
+            if (gpcr_base / "LATEST").is_file() or (
+                (gpcr_base / "LATEST.revisions").is_dir()
+            ):
+                gpcr_root = resolve_latest_gpcr_analysis(root)
+                gpcr_manifest = validate_gpcr_analysis_bundle(gpcr_root)
+                gpcr_analysis = json.loads(
+                    (gpcr_root / "gpcr-hotspot-analysis.json").read_text(encoding="utf-8")
+                )
+            else:
+                gpcr_root = None
+                gpcr_manifest = None
+                gpcr_analysis = None
+            if gpcr_root is not None and gpcr_manifest is not None and gpcr_analysis is not None:
+                analysis_id = str(gpcr_manifest["analysis_id"])
+                if gpcr_analysis.get("decision_context", {}).get("status") != "resolved":
+                    status = "gpcr-context-required"
+                    context_path = root / f"gpcr-context.{analysis_id}.yaml"
+                    actions = (
+                        NextAction(
+                            command=(
+                                f"easydesign site scan {root} --method both --provider gpcr "
+                                f"--context {context_path}"
+                            ),
+                            description=(
+                                "填写 GPCR 机制、状态、assay 与 approach clearance "
+                                "后重建 dossier。"
+                            ),
+                        ),
+                        NextAction(
+                            command=f"easydesign view {root} --report gpcr",
+                            description="只读检查 preliminary GPCR dossier。",
+                        ),
+                    )
+                else:
+                    status = "gpcr-site-review-ready"
+                    selection_path = root / f"gpcr-site-selection.{analysis_id}.yaml"
+                    actions = (
+                        NextAction(
+                            command=f"easydesign view {root} --report gpcr",
+                            description="审阅 GPCR primary/backup/avoid/unresolved 候选。",
+                        ),
+                        NextAction(
+                            command=f"easydesign site propose {root} --input {selection_path}",
+                            description=(
+                                "填写 1-3 个 primary/backup candidate ID 后投影到"
+                                "标准 A/B/C 区域。"
+                            ),
+                        ),
+                    )
+            else:
+                status = "site-required"
+                actions = (
+                    NextAction(
+                        command=f"easydesign site scan {root} --method both --provider auto",
+                        description="自动解析 GPCR provider；明确非 GPCR 时运行 SASA/ScanNet。",
+                    ),
+                    NextAction(
+                        command=f"easydesign site propose {root} --input SITE.yaml",
+                        description="映射合作者提供的文字 residue 位点。",
+                    ),
+                )
     reporting_warnings: tuple[str, ...] = ()
     review_run = selections[-1] if selections else (pilot_runs[-1] if pilot_runs else None)
     review_kind = (
@@ -973,10 +1052,16 @@ def target_approve(project_root: Path, *, input_path: Path, detach: bool = False
     )
 
 
-def _site_fragment_from_file(path: Path) -> Stage02Config:
+def _site_fragment_from_file(path: Path, root: Path | None = None) -> Stage02Config:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ConfigurationError("SITE YAML 顶层必须是 mapping")
+    if payload.get("schema_version") == "gpcr-site-selection-v1":
+        if root is None:
+            raise ConfigurationError("GPCR selection projection requires a project")
+        from .gpcr_site import gpcr_selection_to_stage02_config
+
+        return gpcr_selection_to_stage02_config(root, path)
     if "mode" in payload:
         fragment = Stage02Config.model_validate(payload)
         embedded_approval = (
@@ -1082,9 +1167,110 @@ def _run_site(root: Path, fragment: Stage02Config, *, detach: bool) -> CommandRe
 
 
 def site_scan(
-    project_root: Path, *, method: Literal["sasa", "scannet", "both"], detach: bool = False
+    project_root: Path,
+    *,
+    method: Literal["sasa", "scannet", "both"],
+    provider: Literal["auto", "gpcr", "generic"] = "auto",
+    context_path: Path | None = None,
+    offline: bool = False,
+    detach: bool = False,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
+    if provider != "generic":
+        if method != "both":
+            raise ConfigurationError("GPCR provider requires --method both")
+        from .gpcr_site import (
+            AnalysisWorkflowError,
+            publish_project_gpcr_analysis,
+            resolve_project_gpcr_provider,
+        )
+
+        resolution = None
+        selected_provider: str = provider
+        if provider == "auto":
+            resolution = resolve_project_gpcr_provider(root, offline=offline)
+            selected_provider = resolution.provider
+            if selected_provider == "unresolved":
+                assert resolution.request_path is not None
+                return CommandResult(
+                    status="provider-resolution-required",
+                    phase="prepare",
+                    project_id=_project_id(root),
+                    artifacts=(resolution.request_path,),
+                    warnings=(resolution.reason,),
+                    next_actions=(
+                        NextAction(
+                            command=f"easydesign project status {root} --json",
+                            description=(
+                                "核对 Stage 01 PDB/UniProt/chain 身份后重试；"
+                                "不会静默使用 generic provider。"
+                            ),
+                        ),
+                    ),
+                )
+        if selected_provider == "gpcr":
+            try:
+                published = publish_project_gpcr_analysis(
+                    root,
+                    mode="both",
+                    context_path=(
+                        None
+                        if context_path is None
+                        else context_path.expanduser().resolve(strict=True)
+                    ),
+                    offline=offline,
+                    gpcr_entry=(None if resolution is None else resolution.gpcr_entry),
+                    accession=(None if resolution is None else resolution.accession),
+                )
+            except AnalysisWorkflowError:
+                raise
+            analysis = json.loads(published.analysis_path.read_text(encoding="utf-8"))
+            context_resolved = analysis.get("decision_context", {}).get("status") == "resolved"
+            status = "gpcr-site-review-ready" if context_resolved else "gpcr-context-required"
+            actions = [
+                NextAction(
+                    command=f"easydesign view {root} --report gpcr",
+                    description="打开只读 GPCR hotspot dossier 与结构图层。",
+                )
+            ]
+            if context_resolved:
+                actions.append(
+                    NextAction(
+                        command=(
+                            f"easydesign site propose {root} "
+                            f"--input {published.selection_path}"
+                        ),
+                        description="填写并提交 1-3 个 primary/backup candidate ID。",
+                    )
+                )
+            else:
+                actions.append(
+                    NextAction(
+                        command=(
+                            f"easydesign site scan {root} --method both --provider gpcr "
+                            f"--context {published.context_path}"
+                        ),
+                        description="填写机制 context 后生成新的 append-only analysis revision。",
+                    )
+                )
+            return CommandResult(
+                status=status,
+                phase="prepare",
+                project_id=_project_id(root),
+                manifest=published.manifest_path,
+                artifacts=(
+                    published.analysis_path,
+                    published.handoff_path,
+                    published.context_path,
+                    published.selection_path,
+                    published.report_root / "index.html",
+                ),
+                next_actions=tuple(actions),
+            )
+        if selected_provider != "generic":
+            raise ConfigurationError(f"unsupported resolved provider: {selected_provider}")
+    if context_path is not None:
+        raise ConfigurationError("--context is only valid for the GPCR provider")
     methods = ["sasa", "scannet"] if method == "both" else [method]
     fragment = Stage02Config.model_validate(
         {
@@ -1115,7 +1301,9 @@ def site_propose(
     else:
         if input_path is None:
             raise ConfigurationError("site propose 必须提供 --input 或 --from-pse-colors")
-        fragment = _site_fragment_from_file(input_path.expanduser().resolve(strict=True))
+        fragment = _site_fragment_from_file(
+            input_path.expanduser().resolve(strict=True), root
+        )
     return _run_site(root, fragment, detach=detach)
 
 

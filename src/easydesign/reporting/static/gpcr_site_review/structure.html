@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>{{STRUCTURE_ID}} · GPCR hotspot review</title>
+    <link rel="stylesheet" href="../assets/molstar.css">
+    <link rel="stylesheet" href="../assets/report.css">
+  </head>
+  <body class="structure-page" data-read-only="true">
+    <header class="topbar structure-topbar">
+      <div>
+        <a class="back-link" href="../index.html" aria-label="Back to report index">← Report index</a>
+        <p class="eyebrow">EasyDesign local evidence · read only</p>
+        <h1>{{STRUCTURE_ID}}</h1>
+      </div>
+      <div id="load-state" class="load-state" role="status">Loading structure</div>
+    </header>
+
+    <section class="identity-band" aria-label="Receptor identity">
+      <dl>
+        <div><dt>Entry</dt><dd>{{ENTRY}}</dd></div>
+        <div><dt>State</dt><dd>{{STATE}}</dd></div>
+        <div><dt>Family</dt><dd>{{FAMILY}}</dd></div>
+        <div><dt>Class</dt><dd>{{CLASS}}</dd></div>
+        <div><dt>Receptor chain</dt><dd>{{CHAIN}}</dd></div>
+      </dl>
+      <a class="download-link" href="{{STRUCTURE_DOWNLOAD}}" download>Download structure</a>
+    </section>
+
+    <main class="review-workspace">
+      <section class="viewer-region" aria-label="Interactive structure">
+        <div id="viewer-error" class="error-panel" role="alert" hidden>
+          <strong>Structure viewer unavailable</strong>
+          <span id="viewer-error-message"></span>
+        </div>
+        <div id="molstar-viewer" aria-label="Mol* 3D structure canvas"></div>
+        <noscript>JavaScript is required for the local Mol* structure view.</noscript>
+      </section>
+
+      <aside class="review-sidebar">
+        <section class="control-section">
+          <h2>Mechanism hypothesis</h2>
+          <div id="mode-tabs" class="segmented" role="tablist" aria-label="Mechanism mode">
+            <button id="mode-inhibit" type="button" role="tab">Inhibit</button>
+            <button id="mode-activate" type="button" role="tab">Activate</button>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <h2>Candidate hypotheses</h2>
+          <div id="candidate-list" class="candidate-list"></div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading compact">
+            <h2>Layers</h2>
+            <button id="center-view" class="icon-button" type="button" title="Center structure" aria-label="Center structure">⌖</button>
+          </div>
+          <div id="layer-controls" class="layer-grid">
+            <label><input type="checkbox" value="tm" checked><span class="swatch swatch-tm"></span>TM</label>
+            <label><input type="checkbox" value="ecl" checked><span class="swatch swatch-ecl"></span>ECL</label>
+            <label><input type="checkbox" value="icl"><span class="swatch swatch-icl"></span>ICL / H8</label>
+            <label><input type="checkbox" value="ecd" checked><span class="swatch swatch-ecd"></span>ECD</label>
+            <label><input type="checkbox" value="ligand" checked><span class="swatch swatch-ligand"></span>Ligand</label>
+            <label><input type="checkbox" value="partner"><span class="swatch swatch-partner"></span>Partner</label>
+            <label><input type="checkbox" value="candidate" checked><span class="swatch swatch-candidate"></span>Candidate</label>
+            <label><input type="checkbox" value="avoid" checked><span class="swatch swatch-avoid"></span>Avoid</label>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <h2>Selected residue</h2>
+          <div id="selected-residue" class="selected-residue" aria-live="polite">Select a residue in the 3D view or table.</div>
+        </section>
+
+        <section id="warnings-section" class="control-section">
+          <h2>Warnings</h2>
+          <ul id="warning-list" class="warning-list"></ul>
+        </section>
+
+        <section class="control-section">
+          <h2>Provenance</h2>
+          <dl id="provenance-list" class="provenance-list"></dl>
+        </section>
+      </aside>
+
+      <section class="residue-region" aria-labelledby="residue-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Dual numbering retained</p>
+            <h2 id="residue-title">Candidate residues</h2>
+          </div>
+          <p id="candidate-summary"></p>
+        </div>
+        <div class="table-scroll residue-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Role</th>
+                <th scope="col">Residue</th>
+                <th scope="col">Author</th>
+                <th scope="col">Label</th>
+                <th scope="col">Generic</th>
+                <th scope="col">Segment</th>
+                <th scope="col">Evidence</th>
+                <th scope="col">Approach</th>
+              </tr>
+            </thead>
+            <tbody id="residue-rows"></tbody>
+          </table>
+        </div>
+        <p id="no-residues" class="empty-state" hidden>No mapped residues for this mode.</p>
+      </section>
+    </main>
+
+    <script src="../assets/molstar.js"></script>
+    <script src="{{DATA_JS}}"></script>
+    <script src="../assets/structure.js"></script>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>GPCR hotspot review</title>
+    <link rel="stylesheet" href="assets/report.css">
+  </head>
+  <body class="index-page" data-read-only="true">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">EasyDesign local evidence · read only</p>
+        <h1>GPCR hotspot review</h1>
+      </div>
+      <div class="report-meta" aria-label="Report metadata">
+        <span>Revision {{REVISION}}</span>
+        <span>Mode {{MODE}}</span>
+        <span>{{STRUCTURE_COUNT}} structures</span>
+      </div>
+    </header>
+
+    <main class="index-main">
+      <section class="filter-band" aria-label="Report filters">
+        <label>
+          <span>Search</span>
+          <input id="search-filter" type="search" autocomplete="off" placeholder="ID, entry, accession, chain">
+        </label>
+        <label>
+          <span>Family</span>
+          <select id="family-filter">
+            <option value="">All families</option>
+            {{FAMILY_OPTIONS}}
+          </select>
+        </label>
+        <label>
+          <span>State</span>
+          <select id="state-filter">
+            <option value="">All states</option>
+            {{STATE_OPTIONS}}
+          </select>
+        </label>
+        <p id="visible-count" class="filter-result" aria-live="polite"></p>
+      </section>
+
+      <section class="table-region" aria-labelledby="structure-table-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Input order preserved</p>
+            <h2 id="structure-table-title">Structures</h2>
+          </div>
+          <p>Candidate columns show primary / backup hypothesis counts.</p>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Structure</th>
+                <th scope="col">State</th>
+                <th scope="col">Family</th>
+                <th scope="col">Inhibit</th>
+                <th scope="col">Activate</th>
+                <th scope="col">Warnings</th>
+                <th scope="col"><span class="visually-hidden">Open review</span></th>
+              </tr>
+            </thead>
+            <tbody id="report-rows">
+              {{TABLE_ROWS}}
+            </tbody>
+          </table>
+        </div>
+        <p id="no-match" class="empty-state" hidden>No structures match these filters.</p>
+      </section>
+    </main>
+
+    <script src="assets/index.js"></script>
+  </body>
+</html>

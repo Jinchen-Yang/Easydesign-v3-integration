@@ -1,6 +1,6 @@
 ---
 name: easydesign-research
-description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：从 design goal、assay、target identity/state/context、文献与结构证据推导 site，设计可归因的 BoltzGen pilot，诊断 target/binder/site/interface/CDR/scaffold 失败，并决定迭代、promotion、scale 与 selection。适用于 live research project、target/site selection、VHH strategy、Stage 5/7 Review Dashboard、pilot/scale 结果解释与最终选择；不用于仓库开发（repository development）、compiler/schema 修改、UI 发布、remote compute、host pairing 或 managed queue。
+description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：从 design goal、assay、target identity/state/context、文献与结构证据推导 site，包含 GPCR 的受体身份、状态、膜方向、家族机制与可接近性分析；设计可归因的 BoltzGen pilot，诊断 target/binder/site/interface/CDR/scaffold 失败，并决定迭代、promotion、scale 与 selection。适用于 live research project、target/site selection、VHH strategy、pilot/selection Review Dashboard、pilot/scale 结果解释与最终选择；不用于仓库开发（repository development）、compiler/schema 修改、UI 发布、remote compute、host pairing 或 managed queue。
 ---
 
 # EasyDesign VHH 研究决策系统
@@ -26,7 +26,28 @@ description: 使用 EasyDesign 开展可审计的 VHH/nanobody 研究决策：�
 - [target-and-site.md](references/target-and-site.md)：完整的 goal-to-site 决策流程和 site dossier；
 - [evidence-and-numbering.md](references/evidence-and-numbering.md)：文献、结构身份、证据等级和 residue mapping。
 
-出现 GPCR、膜、glycan、酶凹槽、IDR、beta-edge、multimer、成像或低扰动目标时，再读取 [special-target-playbooks.md](references/special-target-playbooks.md)。正文引用 `claim:ID` 时，到 [scientific-claims.md](references/scientific-claims.md) 读取对应 claim card。
+出现膜、glycan、酶凹槽、IDR、beta-edge、multimer、成像或低扰动目标时，再读取 [special-target-playbooks.md](references/special-target-playbooks.md)。
+
+若 target 是 GPCR，额外按当前问题逐步读取：
+
+- 机制、状态、膜方向、approach 与 hard gate：
+  [gpcr-mechanism-and-state.md](references/gpcr-mechanism-and-state.md)；
+- GPCRdb 身份、endpoint、cache/provenance 和 residue mapping：
+  [gpcrdb-contract.md](references/gpcrdb-contract.md)；
+- 确认 top-family 与真实 domain architecture 后才读取
+  [gpcr-family-playbooks.md](references/gpcr-family-playbooks.md)，必要时把
+  [gpcr-family-rules.json](references/gpcr-family-rules.json) 作为同一组
+  `conditional_heuristic` 的结构化伴随资料，不得当作独立证据或 winner selector；
+- 需要产出 typed dossier、离线结构审阅或向普通 site 流程交接时读取
+  [gpcr-review-schema.md](references/gpcr-review-schema.md)。
+
+GPCR 不是第三条产品流程。它是 `prepare` 内的 target-specific provider：共用当前 prepare
+Target Bundle、residue mapping、HTTP cache/provenance、artifact integrity 和只读 reporting
+基础设施；只把受体特有的 identity/state/topology/membrane/mechanism 推理放进 GPCR 模块。
+分析结束时报告 dossier/report 的精确位置与尚未解决项；不要把“请确认继续”作为只读分析的固定尾声，
+也不要把打开结构页解释为 site approval。
+
+正文引用 `claim:ID` 时，到 [scientific-claims.md](references/scientific-claims.md) 读取对应 claim card。
 
 ### `strategize`：approved site → pilot experiment
 

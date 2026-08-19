@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml  # type: ignore[import-untyped]
 
 from easydesign import cli
-from easydesign.core import sha256_file
+from easydesign.core import BackendContractError, sha256_file
+from easydesign.orchestration import gpcr_site as gpcr_site_module
 from easydesign.orchestration.gpcr_site import (
     AnalysisWorkflowError,
     GpcrSiteRequest,
     gpcr_selection_to_stage02_config,
     publish_gpcr_analysis,
+    resolve_project_gpcr_provider,
     validate_gpcr_analysis_bundle,
 )
 
@@ -176,3 +179,61 @@ def test_gpcr_selection_rejects_avoid_or_unresolved_candidate(tmp_path: Path) ->
 
     with pytest.raises(AnalysisWorkflowError, match="only primary/backup"):
         gpcr_selection_to_stage02_config(project, selection_path)
+
+
+@pytest.mark.parametrize(
+    ("accession", "expected_provider"),
+    ((None, "unresolved"), ("P12345", "generic")),
+)
+def test_auto_provider_does_not_treat_pdb_only_404_as_non_gpcr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    accession: str | None,
+    expected_provider: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    structure = tmp_path / "target.cif"
+    structure.write_text("data_target\n", encoding="ascii")
+    details = SimpleNamespace(
+        source_pdb_code="1ABC",
+        source_accession=accession,
+        analysis_structure=structure,
+        stage01_manifest=tmp_path / "stage01.json",
+        stage01_manifest_sha256="1" * 64,
+        target_bundle=tmp_path / "target-bundle.json",
+        target_bundle_sha256="2" * 64,
+        analysis_structure_sha256="3" * 64,
+        receptor_chain="A",
+    )
+
+    class FakeRecord:
+        status_code = 404
+
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            return {"status_code": self.status_code, "mode": mode}
+
+    class FakeHttp:
+        def __init__(self, **_kwargs: object) -> None:
+            self.records: list[FakeRecord] = []
+
+        def close(self) -> None:
+            return
+
+    class FakeAdapter:
+        def __init__(self, client: FakeHttp) -> None:
+            self.client = client
+
+        def fetch_receptor_context(self, **_kwargs: object) -> object:
+            self.client.records.append(FakeRecord())
+            raise BackendContractError("HTTP 404")
+
+    monkeypatch.setattr(gpcr_site_module, "resolve_gpcr_prepare_context", lambda _root: details)
+    monkeypatch.setattr(gpcr_site_module, "ScientificHttpClient", FakeHttp)
+    monkeypatch.setattr(gpcr_site_module, "GpcrdbAdapter", FakeAdapter)
+
+    resolution = resolve_project_gpcr_provider(project)
+
+    assert resolution.provider == expected_provider
+    if accession is None:
+        assert "PDB-only 404" in resolution.reason

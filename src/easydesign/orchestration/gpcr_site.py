@@ -1303,13 +1303,25 @@ def resolve_project_gpcr_provider(
                 error = first_error
             if context is None:
                 codes = [record.status_code for record in http.records]
-                only_not_found = bool(codes) and all(code == 404 for code in codes)
+                only_not_found = (
+                    accession is not None
+                    and bool(codes)
+                    and all(code == 404 for code in codes)
+                )
                 if only_not_found:
                     provider = "generic"
                     status = "resolved"
-                    reason = "GPCRdb returned a definitive 404 for all declared identities"
+                    reason = (
+                        "GPCRdb returned a definitive 404 for the declared UniProt "
+                        "identity"
+                    )
                 else:
-                    reason = f"GPCRdb identity resolution was inconclusive: {error}"
+                    suffix = (
+                        "; a PDB-only 404 is not evidence that the target is non-GPCR"
+                        if pdb_code and accession is None
+                        else ""
+                    )
+                    reason = f"GPCRdb identity resolution was inconclusive: {error}{suffix}"
         if context is not None:
             entry = context.identity.entry_name
             accession = context.identity.accession or accession

@@ -413,7 +413,11 @@ def _has_internal_stage(summary: RunSummary, number: int) -> bool:
 
 
 def _latest_target_run(root: Path) -> RunSummary | None:
-    candidates = [item for item in _runs(root) if _has_internal_stage(item, 1)]
+    candidates = [
+        item
+        for item in _runs(root)
+        if item.status == "succeeded" and _has_internal_stage(item, 1)
+    ]
     return candidates[-1] if candidates else None
 
 

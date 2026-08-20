@@ -19,6 +19,7 @@ from easydesign.orchestration.research import (
     ProjectDescriptor,
     ResearchStrategy,
     _latest_pending_target_run,
+    _latest_target_run,
     _site_fragment_from_file,
     _validate_first_pilot_strategy,
     initialize_research_project,
@@ -135,6 +136,34 @@ def test_pending_stage01_decision_is_discoverable_before_stage_manifest(
     monkeypatch.setattr(research_module, "_runs", lambda _root: (summary,))
 
     assert _latest_pending_target_run(tmp_path) == summary
+
+
+def test_failed_stage01_run_is_not_reused_as_completed_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed = RunSummary(
+        project_id="example",
+        run_id="run-failed",
+        path=tmp_path / "workspace/runs/example/run-failed",
+        status="failed",
+        latest_manifest=tmp_path / "failed-manifest.json",
+        manifest_revision=3,
+        completed_stages=("01-target-preparation",),
+    )
+    succeeded = RunSummary(
+        project_id="example",
+        run_id="run-succeeded",
+        path=tmp_path / "workspace/runs/example/run-succeeded",
+        status="succeeded",
+        latest_manifest=tmp_path / "succeeded-manifest.json",
+        manifest_revision=2,
+        completed_stages=("01-target-preparation",),
+    )
+    monkeypatch.setattr(research_module, "_runs", lambda _root: (failed, succeeded))
+    monkeypatch.setattr(research_module, "_has_internal_stage", lambda _summary, _number: True)
+
+    assert _latest_target_run(tmp_path) == succeeded
 
 
 def test_legacy_project_descriptor_drops_default_backend() -> None:

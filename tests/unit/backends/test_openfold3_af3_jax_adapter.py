@@ -335,7 +335,7 @@ def test_remote_msa_and_prediction_are_separate_explicit_invocations() -> None:
 
     assert "--run_inference=false" in msa.argv
     assert "--use_msa_server=true" in msa.argv
-    assert "--run_data_pipeline=false" in msa.argv
+    assert "--run_data_pipeline=true" in msa.argv
     assert "--run_inference=true" in prediction.argv
     assert "--use_msa_server=false" in prediction.argv
     assert not any("protenix" in value.lower() for value in prediction.argv)

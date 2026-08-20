@@ -601,7 +601,7 @@ class OpenFold3Af3JaxAdapter:
                 str(self.runner),
                 f"--json_path={input_json}",
                 f"--output_dir={output_dir}",
-                "--run_data_pipeline=false",
+                "--run_data_pipeline=true",
                 "--run_inference=false",
                 "--use_msa_server=true",
                 f"--msa_server_url={self.msa_server_url}",

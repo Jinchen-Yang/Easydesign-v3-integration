@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+import yaml
 
 import easydesign.reporting.target_viewer as target_viewer_module
 from easydesign.backends.structure_prediction import (
@@ -30,6 +31,7 @@ from easydesign.core import (
     RunManifest,
     StageId,
     StageManifest,
+    canonical_model_sha256,
     dump_model,
     load_model,
 )
@@ -37,6 +39,7 @@ from easydesign.reporting import (
     TargetViewerData,
     TargetViewerReportError,
     TargetViewerReportManifest,
+    build_stage02_viewer_overlay,
     create_target_viewer_server,
     generate_stage01_target_viewer,
     generate_stage01_target_viewer_nonblocking,
@@ -49,7 +52,17 @@ from easydesign.stages.s01_target_preparation import (
     ColorCount,
     PseSourceAnnotations,
     ResidueColorAnnotation,
+    TargetBundle,
     build_predicted_target_bundle,
+)
+from easydesign.stages.s02_hotspot_discovery import (
+    AnnotationStatus,
+    ApprovedHotspotSet,
+    DesignGoal,
+    EvidenceLevel,
+    HotspotEvidence,
+    HotspotsFile,
+    ManualResidueListRegionSource,
 )
 
 NOW = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
@@ -536,3 +549,140 @@ def test_nonblocking_integration_never_changes_scientific_success(
     assert outcome.error.code == "target-viewer-unpublished-failure"
     assert run_manifest.read_bytes() == original_run
     assert stage_manifest.read_bytes() == original_stage
+
+
+def test_stage02_overlay_reads_manifest_declared_hotspots_yaml(tmp_path: Path) -> None:
+    run_root = _run_with_stage01(tmp_path)
+    run_path = run_root / "manifests/run-manifest.v0001.json"
+    run = load_model(run_path, RunManifest)
+    stage01 = load_model(run.stage_manifest_refs[0].verify(run_root), StageManifest)
+    bundle = load_model(
+        stage01.require_output("target-bundle").verify(run_root), TargetBundle
+    )
+    hotspots = HotspotsFile(
+        project_id=run.project_id,
+        run_id=run.run_id,
+        target_id=bundle.target_id,
+        target_structure_sha256=bundle.target_structure.sha256,
+        coordinate_model_ids=("1",),
+        region_source=ManualResidueListRegionSource(
+            numbering="label",
+            input_config_sha256="a" * 64,
+        ),
+        selection_basis=EvidenceLevel.STRUCTURAL_ONLY,
+        annotation_status=AnnotationStatus.NOT_REQUESTED,
+        approval_request_sha256="b" * 64,
+        approved_by="viewer-test",
+        hotspot_sets=(
+            ApprovedHotspotSet(
+                id="A",
+                slug="primary",
+                source_region_id="outer-vestibule",
+                design_goal=DesignGoal.BLOCKING,
+                biological_rationale="synthetic primary site",
+                structural_rationale="synthetic exposed site",
+                auth_residues=("A:1", "A:2"),
+                label_seq_ids=(1, 2),
+                label_ranges="1-2",
+                evidence=(
+                    HotspotEvidence(
+                        type="structure",
+                        source="synthetic",
+                        description="manifest-declared YAML regression fixture",
+                    ),
+                ),
+            ),
+            ApprovedHotspotSet(
+                id="B",
+                slug="backup",
+                source_region_id="transmembrane-pore",
+                design_goal=DesignGoal.EXPLORATORY,
+                biological_rationale="synthetic backup site",
+                structural_rationale="synthetic alternate site",
+                auth_residues=("A:3",),
+                label_seq_ids=(3,),
+                label_ranges="3",
+                evidence=(
+                    HotspotEvidence(
+                        type="structure",
+                        source="synthetic",
+                        description="second approved viewer region",
+                    ),
+                ),
+            ),
+        ),
+    )
+    hotspots_path = (
+        run_root / "02-hotspot-discovery/attempt-0002/artifacts/hotspots.yaml"
+    )
+    hotspots_path.parent.mkdir(parents=True)
+    hotspots_path.write_text(
+        yaml.safe_dump(
+            hotspots.model_dump(mode="json", exclude_none=False),
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    hotspots_ref = ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=hotspots_path.relative_to(run_root).as_posix(),
+        artifact_id="hotspots",
+        role="approved-hotspots",
+        file_format="yaml",
+        producer_stage="02-hotspot-discovery",
+        producer_attempt="attempt-0002",
+    )
+    attempt = Attempt(
+        attempt_id="attempt-0002",
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=NOW,
+        started_at=NOW,
+        ended_at=NOW,
+        backend_name="manual",
+        backend_version="1",
+        executor_name="local",
+    )
+    stage02 = StageManifest(
+        stage_id=StageId.HOTSPOT_DISCOVERY,
+        contract_version="0.3",
+        status=ExecutionStatus.SUCCEEDED,
+        created_at=NOW,
+        completed_at=NOW,
+        output_artifacts=(hotspots_ref,),
+        attempts=(attempt,),
+        selected_attempt_id=attempt.attempt_id,
+    )
+    stage02_path = run_root / "02-hotspot-discovery/stage-manifest.v0001.json"
+    dump_model(stage02, stage02_path)
+    stage02_ref = ArtifactRef.from_file(
+        run_root=run_root,
+        relative_path=stage02_path.relative_to(run_root).as_posix(),
+        artifact_id="stage-02-manifest",
+        role="stage-manifest",
+        file_format="json",
+        producer_stage="02-hotspot-discovery",
+        producer_attempt="attempt-0002",
+    )
+    revised_run = run.model_copy(
+        update={
+            "revision": 2,
+            "previous_manifest_sha256": canonical_model_sha256(run),
+            "stage_manifest_refs": run.stage_manifest_refs + (stage02_ref,),
+        }
+    )
+    revised_path = run_root / "manifests/run-manifest.v0002.json"
+    dump_model(revised_run, revised_path)
+    (run_root / "manifests/LATEST").write_text(
+        f"{revised_path.name}\n", encoding="utf-8"
+    )
+
+    overlay = build_stage02_viewer_overlay(run_root)
+
+    assert overlay is not None
+    approved = next(layer for layer in overlay.layers if layer.id == "approved")
+    assert approved.approved is True
+    assert [(region.id, region.color_hex) for region in approved.regions] == [
+        ("A", "#EF4444"),
+        ("B", "#3B82F6"),
+    ]

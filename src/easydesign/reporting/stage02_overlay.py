@@ -5,9 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+import yaml  # type: ignore[import-untyped]
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from easydesign.core import RunManifest, StageManifest, load_model
+from easydesign.core import (
+    ArtifactRef,
+    RunManifest,
+    SerializationError,
+    StageManifest,
+    load_model,
+)
 from easydesign.safe_writes import read_last_text_line
 from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
 from easydesign.stages.s02_hotspot_discovery import (
@@ -92,6 +99,27 @@ def _layers_from_recommendations(
     )
 
 
+def _load_hotspots(reference: ArtifactRef, root: Path) -> HotspotsFile:
+    path = reference.verify(root)
+    if reference.file_format != "yaml":
+        raise SerializationError(
+            "hotspots artifact 必须由 manifest 声明为 YAML: "
+            f"path={path}, file_format={reference.file_format}"
+        )
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise SerializationError(
+            f"Hotspots YAML 读取失败: path={path}, error={error}"
+        ) from error
+    try:
+        return HotspotsFile.model_validate(raw)
+    except ValidationError as error:
+        raise SerializationError(
+            f"Hotspots 模型校验失败: path={path}, error={error}"
+        ) from error
+
+
 def build_stage02_viewer_overlay(run_root: Path) -> Stage02ViewerOverlay | None:
     root = run_root.resolve()
     run = _latest_run(root)
@@ -151,7 +179,7 @@ def build_stage02_viewer_overlay(run_root: Path) -> Stage02ViewerOverlay | None:
         layers.append(ViewerRegionLayer(id="manual", label="Manual regions", regions=regions))
     hotspots_reference = artifacts.get("hotspots")
     if hotspots_reference is not None:
-        hotspots = load_model(hotspots_reference.verify(root), HotspotsFile)
+        hotspots = _load_hotspots(hotspots_reference, root)
         approved_regions: list[ViewerRegion] = []
         for item in hotspots.hotspot_sets:
             if item.id not in REGION_COLORS:

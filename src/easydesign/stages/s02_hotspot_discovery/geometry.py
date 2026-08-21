@@ -278,6 +278,8 @@ def load_structure_context(
             label_seq_id=entry.label_seq_id,
             auth_asym_id=entry.author_chain_id,
             auth_seq_id=entry.author_residue_id,
+            source_auth_asym_id=entry.source_author_chain_id,
+            source_auth_seq_id=entry.source_author_residue_id,
             insertion_code=entry.insertion_code,
         )
         for entry in mapping.entries
@@ -333,14 +335,33 @@ def load_structure_context(
             bio_model=model,
         )
 
-    expected_labels = [entry.label_seq_id for entry in mapping.entries]
+    expected_labels = [
+        entry.label_seq_id for entry in mapping.entries if entry.coordinate_present
+    ]
     observed_labels = {
         label for model in models.values() for label in model.residues
     }
     if observed_labels != set(expected_labels):
+        missing = sorted(set(expected_labels) - observed_labels)
+        unexpected = sorted(observed_labels - set(expected_labels))
         raise ManifestStateError(
-            "Stage 02 所有模型的残基并集与 Stage 01 mapping 不一致"
+            "Stage 02 coordinate-present 残基与 Stage 01 mapping 不一致: "
+            f"missing={missing}, unexpected={unexpected}"
         )
+    if mapping.schema_version == "0.3":
+        for entry in mapping.entries:
+            actual_presence = tuple(
+                model_id
+                for model_id in model_ids
+                if entry.label_seq_id in models[model_id].residues
+            )
+            if actual_presence != entry.model_presence:
+                raise ManifestStateError(
+                    "Stage 02 coordinate model presence 与 Stage 01 mapping 不一致: "
+                    f"label_seq_id={entry.label_seq_id}, "
+                    f"declared={list(entry.model_presence)}, "
+                    f"actual={list(actual_presence)}"
+                )
     representative = models[representative_model_id]
     reference_residues = {
         label: (
@@ -352,7 +373,7 @@ def load_structure_context(
                 if label in model.residues
             )
         )
-        for label in expected_labels
+        for label in sorted(expected_labels)
     }
     return bundle, StructureContext(
         target_id=bundle.target_id,

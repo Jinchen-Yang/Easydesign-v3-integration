@@ -11,6 +11,7 @@ from importlib import resources
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
 from easydesign.core import ManifestStateError, sha256_file
 from easydesign.stages.s02_hotspot_discovery import HotspotsFile
@@ -53,6 +54,54 @@ EXPECTED_ASSET_SHA256 = {
     "sonelokimab.yaml": "87c4d65ea8bac576c4c89acb2d2e0f66fddb2729124d0719ae6c0b6a91580888",
     "BOLTZGEN_LICENSE.txt": ("1d3aafee1429a716ca9afbe1760adf3a461cf61e750e92756dee510bdc0b7911"),
 }
+
+
+def _mmcif_column(raw: dict[str, object], name: str) -> list[str]:
+    value = raw.get(name)
+    if value is None:
+        raise ManifestStateError(f"target.cif 缺少必需列: {name}")
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _coordinate_label_seq_ids(target_cif: Path) -> frozenset[int]:
+    try:
+        raw: dict[str, object] = MMCIF2Dict(str(target_cif))  # type: ignore[no-untyped-call]
+    except Exception as error:
+        raise ManifestStateError(f"无法解析 Stage 03 target.cif: {target_cif}") from error
+
+    groups = _mmcif_column(raw, "_atom_site.group_PDB")
+    chains = _mmcif_column(raw, "_atom_site.label_asym_id")
+    labels = _mmcif_column(raw, "_atom_site.label_seq_id")
+    if len({len(groups), len(chains), len(labels)}) != 1:
+        raise ManifestStateError("target.cif atom_site 编号列长度不一致")
+    present: set[int] = set()
+    for group, chain, label in zip(groups, chains, labels, strict=True):
+        if group != "ATOM" or chain != "A" or label in {".", "?"}:
+            continue
+        try:
+            present.add(int(label))
+        except ValueError as error:
+            raise ManifestStateError(f"target.cif 含非法 label_seq_id={label}") from error
+    if not present:
+        raise ManifestStateError("target.cif 的标准链 A 没有 coordinate-present 残基")
+    return frozenset(present)
+
+
+def _validate_hotspot_coordinate_presence(target_cif: Path, hotspots: HotspotsFile) -> None:
+    present = _coordinate_label_seq_ids(target_cif)
+    approved = {
+        label
+        for hotspot_set in hotspots.hotspot_sets
+        for label in hotspot_set.label_seq_ids
+    }
+    missing = sorted(approved - present)
+    if missing:
+        raise ManifestStateError(
+            "approved hotspots 包含无坐标的 canonical label_seq_id；"
+            f"不能交给 BoltzGen: {missing}"
+        )
 
 
 def _exclusive_bytes(content: bytes, path: Path) -> None:
@@ -213,6 +262,7 @@ def compile_vhh_strategy_plan(
 
     if sha256_file(target_cif) != hotspots.target_structure_sha256:
         raise ManifestStateError("hotspots.yaml 的 target_structure_sha256 与 Target Bundle 不一致")
+    _validate_hotspot_coordinate_presence(target_cif, hotspots)
     if not variants and not native_variants:
         raise ManifestStateError("strategy plan 至少包含一个 variant")
     selected_scaffolds = tuple(
@@ -381,6 +431,7 @@ def compile_basic_vhh_matrix(
     target_hash = sha256_file(target_cif)
     if target_hash != hotspots.target_structure_sha256:
         raise ManifestStateError("hotspots.yaml 的 target_structure_sha256 与 Target Bundle 不一致")
+    _validate_hotspot_coordinate_presence(target_cif, hotspots)
     if candidates_per_strategy < 1:
         raise ManifestStateError("candidates_per_strategy 必须为正整数")
     selected_scaffolds = SCAFFOLD_IDS if scaffold_ids is None else scaffold_ids

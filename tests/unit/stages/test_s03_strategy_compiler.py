@@ -31,6 +31,24 @@ from easydesign.stages.s03_boltzgen_configuration import (
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
 
 
+def _write_target(
+    target: Path,
+    *,
+    present_label_seq_ids: tuple[int, ...] = tuple(range(1, 41)),
+) -> None:
+    rows = "\n".join(
+        f"ATOM A {label_seq_id}"
+        for label_seq_id in present_label_seq_ids
+    )
+    target.write_text(
+        "data_target\nloop_\n_atom_site.group_PDB\n"
+        "_atom_site.label_asym_id\n_atom_site.label_seq_id\n"
+        + rows
+        + "\n#\n",
+        encoding="utf-8",
+    )
+
+
 def _hotspots(
     target: Path,
     region_ids: tuple[str, ...],
@@ -86,7 +104,7 @@ def test_compiler_builds_complete_region_scaffold_matrix_without_negative_sites(
     region_ids: tuple[str, ...],
 ) -> None:
     target = tmp_path / "target.cif"
-    target.write_text("data_target\n#\n", encoding="utf-8")
+    _write_target(target)
     artifacts = tmp_path / "artifacts"
     scaffold_assets, strategies = compile_basic_vhh_matrix(
         target_cif=target,
@@ -124,7 +142,7 @@ def test_strategy_bundle_records_complete_registry_and_upstream_identity(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target.cif"
-    target.write_text("data_target\n#\n", encoding="utf-8")
+    _write_target(target)
     hotspots = _hotspots(target, ("A", "B", "C"))
     scaffold_assets, strategies = compile_basic_vhh_matrix(
         target_cif=target,
@@ -156,7 +174,7 @@ def test_compiler_allows_explicit_official_scaffold_subset_for_backend_probe(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target.cif"
-    target.write_text("data_target\n#\n", encoding="utf-8")
+    _write_target(target)
 
     scaffold_assets, strategies = compile_basic_vhh_matrix(
         target_cif=target,
@@ -175,7 +193,7 @@ def test_compiler_rejects_target_checksum_mismatch_and_overwrite(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target.cif"
-    target.write_text("data_target\n#\n", encoding="utf-8")
+    _write_target(target)
     hotspots = _hotspots(target, ("A",))
     artifacts = tmp_path / "artifacts"
 
@@ -206,7 +224,7 @@ def test_explicit_plan_avoids_global_cartesian_and_compiles_crop_and_cdr(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target.cif"
-    target.write_text("data_target\n#\n", encoding="utf-8")
+    _write_target(target)
     artifacts = tmp_path / "artifacts"
 
     assets, strategies = compile_vhh_strategy_plan(
@@ -284,7 +302,7 @@ def test_explicit_plan_rejects_unapproved_binding_and_preserves_native_bytes(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target.cif"
-    target.write_text("data_target\n#\n", encoding="utf-8")
+    _write_target(target)
     hotspots = _hotspots(target, ("A",))
     with pytest.raises(ManifestStateError, match="approved hotspots"):
         compile_vhh_strategy_plan(
@@ -318,3 +336,22 @@ def test_explicit_plan_rejects_unapproved_binding_and_preserves_native_bytes(
     path = tmp_path / "native-artifacts" / records[0].design_specification_path
     assert path.read_bytes() == native_text.encode("utf-8")
     assert records[0].native_source_sha256 is not None
+
+
+def test_compiler_rejects_approved_hotspot_without_coordinates(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "partial-target.cif"
+    _write_target(target, present_label_seq_ids=(1,))
+    artifacts = tmp_path / "artifacts"
+
+    with pytest.raises(ManifestStateError, match="无坐标.*2"):
+        compile_basic_vhh_matrix(
+            target_cif=target,
+            hotspots=_hotspots(target, ("A",)),
+            artifacts_root=artifacts,
+            candidates_per_strategy=1,
+            scaffold_ids=("7eow",),
+        )
+
+    assert not artifacts.exists()

@@ -111,6 +111,8 @@ def _mapping_identity(entry: ResidueMappingEntry) -> ResidueIdentity:
         label_seq_id=entry.label_seq_id,
         auth_asym_id=entry.author_chain_id,
         auth_seq_id=entry.author_residue_id,
+        source_auth_asym_id=entry.source_author_chain_id,
+        source_auth_seq_id=entry.source_author_residue_id,
         insertion_code=entry.insertion_code,
     )
 
@@ -363,19 +365,36 @@ def normalize_manual_regions(
     elif numbering == "auth":
         if chain is None:
             raise ManifestStateError("auth numbering 必须显式提供 chain")
+        source_entries = tuple(
+            entry
+            for entry in entries
+            if entry.source_author_chain_id == chain
+            and entry.source_author_residue_id is not None
+        )
+        normalized_entries = tuple(
+            entry for entry in entries if entry.author_chain_id == chain
+        )
+        selected_entries = source_entries or normalized_entries
+        namespace = (
+            f"source-auth-chain-{chain}"
+            if source_entries
+            else f"normalized-auth-chain-{chain}"
+        )
         index = _unique_index(
             (
                 (
-                    entry.author_residue_id + (entry.insertion_code or ""),
+                    (entry.source_author_residue_id or entry.author_residue_id)
+                    + (entry.insertion_code or ""),
                     entry,
                 )
-                for entry in entries
-                if entry.author_chain_id == chain
+                for entry in selected_entries
             ),
-            namespace=f"auth-chain-{chain}",
+            namespace=namespace,
         )
         if not index:
-            raise ManifestStateError(f"Target Bundle 中不存在 auth chain={chain}")
+            raise ManifestStateError(
+                f"Target Bundle 中不存在 source 或 normalized auth chain={chain}"
+            )
     elif numbering == "uniprot":
         if any(entry.reference_position is None for entry in entries):
             raise ManifestStateError(

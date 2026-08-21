@@ -89,6 +89,8 @@ def _region(index: int, labels: tuple[int, ...]) -> CandidateSurfaceRegion:
             label_seq_id=label,
             auth_asym_id="A",
             auth_seq_id=str(label + 20),
+            source_auth_asym_id="X",
+            source_auth_seq_id=str(label + 20),
         )
         for label in labels
     )
@@ -426,6 +428,9 @@ def test_structural_only_review_requires_acknowledgement_then_publishes(
     assert hotspots.selection_basis is EvidenceLevel.STRUCTURAL_ONLY
     assert hotspots.ready_for_stage03 is True
     assert [item.id for item in hotspots.hotspot_sets] == ["A", "B", "C"]
+    assert hotspots.hotspot_sets[0].auth_residues == (
+        "X:21", "X:22", "X:23", "X:24", "X:25"
+    )
     assert hotspots.hotspot_sets[0].label_seq_ids == (1, 2, 3, 4, 5)
     assert hotspots.hotspot_sets[0].label_ranges == "1..5"
     latest = read_last_text_line(root / "manifests/LATEST")

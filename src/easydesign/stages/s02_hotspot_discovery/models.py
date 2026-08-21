@@ -64,7 +64,26 @@ class ResidueIdentity(BaseModel):
     label_seq_id: int = Field(ge=1)
     auth_asym_id: str = Field(min_length=1, max_length=16)
     auth_seq_id: str = Field(min_length=1, max_length=32)
+    source_auth_asym_id: str | None = Field(default=None, max_length=16)
+    source_auth_seq_id: str | None = Field(default=None, max_length=32)
     insertion_code: str | None = Field(default=None, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_source_author_identity(self) -> Self:
+        if (self.source_auth_asym_id is None) != (self.source_auth_seq_id is None):
+            raise ValueError(
+                "source PDB author identity 必须同时包含 chain 和 residue id"
+            )
+        return self
+
+    @property
+    def preferred_author_identity(self) -> tuple[str, str]:
+        """Return source-PDB identity when available, otherwise normalized identity."""
+
+        return (
+            self.source_auth_asym_id or self.auth_asym_id,
+            self.source_auth_seq_id or self.auth_seq_id,
+        )
 
 
 class ResidueModelEvidence(BaseModel):

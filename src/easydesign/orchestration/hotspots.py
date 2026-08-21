@@ -312,11 +312,12 @@ def _approved_set(
                 )
             )
             risk_flags.append(f"potential-glycosylation-motif:{motif_text}")
-    auth_residues = tuple(
-        f"{member.auth_asym_id}:{member.auth_seq_id}"
-        f"{member.insertion_code or ''}"
-        for member in members
-    )
+    auth_residues: list[str] = []
+    for member in members:
+        author_chain, author_residue = member.preferred_author_identity
+        auth_residues.append(
+            f"{author_chain}:{author_residue}{member.insertion_code or ''}"
+        )
     return ApprovedHotspotSet(
         id=selection.id,
         slug=f"area-{selection.id.lower()}-{selection.design_goal}",
@@ -324,7 +325,7 @@ def _approved_set(
         design_goal=selection.design_goal,
         biological_rationale=selection.biological_rationale,
         structural_rationale=selection.structural_rationale,
-        auth_residues=auth_residues,
+        auth_residues=tuple(auth_residues),
         label_seq_ids=label_ids,
         label_ranges=_label_ranges(label_ids),
         evidence=tuple(evidence),

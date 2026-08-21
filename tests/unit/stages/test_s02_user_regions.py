@@ -42,6 +42,8 @@ def _artifact(
 
 def _fixture(
     tmp_path: Path,
+    *,
+    present_label_seq_ids: tuple[int, ...] = (1, 2, 3, 4),
 ) -> tuple[Path, TargetBundle, ResidueMapping, StructureContext]:
     root = tmp_path / "run"
     artifacts = root / "01-target-preparation/attempt-0001/artifacts"
@@ -49,7 +51,7 @@ def _fixture(
     cif = artifacts / "target.cif"
     rows: list[str] = []
     serial = 1
-    for label in range(1, 5):
+    for label in present_label_seq_ids:
         for atom, element, offset in (
             ("N", "N", -1.2),
             ("CA", "C", 0.0),
@@ -98,8 +100,11 @@ _atom_site.pdbx_PDB_model_num
                 label_seq_id=index,
                 author_chain_id="A",
                 author_residue_id=str(index + 20),
+                source_author_chain_id="X",
+                source_author_residue_id=str(index + 20),
                 reference_position=100 + index,
-                model_presence=("1",),
+                coordinate_present=index in present_label_seq_ids,
+                model_presence=("1",) if index in present_label_seq_ids else (),
             )
             for index in range(1, 5)
         ),
@@ -187,7 +192,7 @@ def test_pse_fixed_colors_and_manual_auth_normalize_to_same_members(
         context=context,
         mapping=mapping,
         numbering="auth",
-        chain="A",
+        chain="X",
         configured_regions=(
             ("A", ("21",)),
             ("B", ("23",)),
@@ -204,6 +209,11 @@ def test_pse_fixed_colors_and_manual_auth_normalize_to_same_members(
         tuple(member.label_seq_id for member in region.members)
         for region in manual_regions.regions
     ] == [(1,), (3,), (4,)]
+    assert [
+        member.preferred_author_identity
+        for region in manual_regions.regions
+        for member in region.members
+    ] == [("X", "21"), ("X", "23"), ("X", "24")]
     assert evidence.standard_color_counts == {
         "#0000FF": 1,
         "#FF0000": 1,
@@ -251,4 +261,62 @@ def test_manual_selector_must_map_uniquely(tmp_path: Path) -> None:
             chain=None,
             configured_regions=(("A", ("99",)),),
             input_config_sha256="d" * 64,
+        )
+
+
+def test_source_auth_numbering_preserves_insertion_code_and_normalized_fallback(
+    tmp_path: Path,
+) -> None:
+    _root, bundle, mapping, context = _fixture(tmp_path)
+    updated_entries = tuple(
+        entry.model_copy(update={"insertion_code": "A"})
+        if entry.label_seq_id == 2
+        else entry
+        for entry in mapping.entries
+    )
+    updated_mapping = mapping.model_copy(update={"entries": updated_entries})
+
+    source_regions, _, _ = normalize_manual_regions(
+        bundle=bundle,
+        context=context,
+        mapping=updated_mapping,
+        numbering="auth",
+        chain="X",
+        configured_regions=(("A", ("22A",)),),
+        input_config_sha256="e" * 64,
+    )
+    source_member = source_regions.regions[0].members[0]
+    assert source_member.label_seq_id == 2
+    assert source_member.preferred_author_identity == ("X", "22")
+
+    normalized_regions, _, _ = normalize_manual_regions(
+        bundle=bundle,
+        context=context,
+        mapping=updated_mapping,
+        numbering="auth",
+        chain="A",
+        configured_regions=(("A", ("22A",)),),
+        input_config_sha256="f" * 64,
+    )
+    assert normalized_regions.regions[0].members[0].label_seq_id == 2
+
+
+def test_partial_mapping_loads_only_coordinate_present_residues(
+    tmp_path: Path,
+) -> None:
+    _root, bundle, mapping, context = _fixture(
+        tmp_path,
+        present_label_seq_ids=(1, 3, 4),
+    )
+
+    assert set(context.residues) == {1, 3, 4}
+    with pytest.raises(ManifestStateError, match="不在代表模型"):
+        normalize_manual_regions(
+            bundle=bundle,
+            context=context,
+            mapping=mapping,
+            numbering="auth",
+            chain="X",
+            configured_regions=(("A", ("22",)),),
+            input_config_sha256="1" * 64,
         )

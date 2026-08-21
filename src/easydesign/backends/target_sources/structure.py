@@ -44,6 +44,7 @@ THREE_TO_ONE = {
     "TYR": "Y",
     "VAL": "V",
 }
+ONE_TO_THREE = {one: three for three, one in THREE_TO_ONE.items()}
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,9 @@ class ChainInventory:
     residue_count: int
     canonical_residue_count: int
     sequence: str
+    deposited_sequence: str | None
+    coordinate_label_seq_ids: tuple[int, ...]
+    ca_label_seq_ids: tuple[int, ...]
     model_ids: tuple[str, ...]
     ligand_names: tuple[str, ...]
     water_count: int
@@ -74,6 +78,21 @@ class StructureNormalizationResult:
     target_pdb: Path | None
     residue_mapping_tsv: Path
     output_artifacts: tuple[ArtifactRef, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedScope:
+    sequence: str
+    source_label_seq_start: int | None
+    observed_start_index: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScopeCoordinateEvidence:
+    sequence_identity: float
+    coordinate_coverage: float
+    observed_residue_count: int
+    missing_coordinate_ranges: tuple[dict[str, Any], ...]
 
 
 def _exclusive_text(text: str, path: Path) -> Path:
@@ -135,6 +154,8 @@ def inventory_structure(path: Path) -> StructureInventory:
     total_waters = 0
     for chain in first:
         sequence: list[str] = []
+        coordinate_label_seq_ids: list[int] = []
+        ca_label_seq_ids: list[int] = []
         ligands: set[str] = set()
         waters = 0
         altloc = 0
@@ -142,6 +163,11 @@ def inventory_structure(path: Path) -> StructureInventory:
         for residue in chain:
             if residue.name in THREE_TO_ONE:
                 sequence.append(THREE_TO_ONE[residue.name])
+                if residue.label_seq is not None:
+                    label_seq_id = int(residue.label_seq)
+                    coordinate_label_seq_ids.append(label_seq_id)
+                    if any(atom.name.strip() == "CA" for atom in residue):
+                        ca_label_seq_ids.append(label_seq_id)
                 if residue.subchain:
                     label_chain_ids.add(residue.subchain)
             elif residue.is_water():
@@ -151,6 +177,20 @@ def inventory_structure(path: Path) -> StructureInventory:
             altloc += sum(1 for atom in residue if atom.altloc not in {"\x00", " ", ""})
         all_ligands.update(ligands)
         total_waters += waters
+        deposited_sequence: str | None = None
+        try:
+            polymer = chain.get_polymer()
+            entity = structure.get_entity_of(polymer) if len(polymer) > 0 else None
+        except (AttributeError, RuntimeError):
+            entity = None
+        if entity is not None and entity.full_sequence:
+            try:
+                deposited_sequence = "".join(
+                    THREE_TO_ONE[residue_name]
+                    for residue_name in entity.full_sequence
+                )
+            except KeyError:
+                deposited_sequence = None
         chains.append(
             ChainInventory(
                 author_chain_id=chain.name,
@@ -162,6 +202,9 @@ def inventory_structure(path: Path) -> StructureInventory:
                 residue_count=len(chain),
                 canonical_residue_count=len(sequence),
                 sequence="".join(sequence),
+                deposited_sequence=deposited_sequence,
+                coordinate_label_seq_ids=tuple(coordinate_label_seq_ids),
+                ca_label_seq_ids=tuple(ca_label_seq_ids),
                 model_ids=model_ids,
                 ligand_names=tuple(sorted(ligands)),
                 water_count=waters,
@@ -213,7 +256,7 @@ def choose_chain(
         matches = tuple(
             chain.author_chain_id
             for chain in inventory.chains
-            if expected_sequence in chain.sequence
+            if expected_sequence in (chain.deposited_sequence or chain.sequence)
         )
         if len(matches) == 1:
             return matches[0]
@@ -270,67 +313,175 @@ def _model_chain(model: gemmi.Model, chain_id: str) -> gemmi.Chain:
     return matches[0]
 
 
-def _scope_slice(
-    observed: str,
+def _resolve_scope(
+    chain: ChainInventory,
     expected: str | None,
-) -> tuple[int, int, str]:
+) -> _ResolvedScope:
     if expected is None:
-        return 0, len(observed), observed
-    start = observed.find(expected)
+        if chain.deposited_sequence is not None:
+            return _ResolvedScope(
+                sequence=chain.deposited_sequence,
+                source_label_seq_start=1,
+                observed_start_index=None,
+            )
+        return _ResolvedScope(
+            sequence=chain.sequence,
+            source_label_seq_start=None,
+            observed_start_index=0,
+        )
+    if chain.deposited_sequence is not None:
+        deposited_start = chain.deposited_sequence.find(expected)
+        if deposited_start >= 0:
+            return _ResolvedScope(
+                sequence=expected,
+                source_label_seq_start=deposited_start + 1,
+                observed_start_index=None,
+            )
+    start = chain.sequence.find(expected)
     if start < 0:
         raise TargetInputError(
-            "experimental-sequence-mismatch: design scope 必须 100% identity 且 100% coverage; "
-            f"expected_length={len(expected)}, observed_length={len(observed)}"
+            "experimental-sequence-mismatch: design scope 必须与 deposited polymer "
+            "sequence 形成 100% identity 映射；坐标缺失本身不属于序列不一致；"
+            f"expected_length={len(expected)}, observed_length={len(chain.sequence)}, "
+            "deposited_length="
+            f"{None if chain.deposited_sequence is None else len(chain.deposited_sequence)}"
         )
-    return start, start + len(expected), expected
+    return _ResolvedScope(
+        sequence=expected,
+        source_label_seq_start=None,
+        observed_start_index=start,
+    )
+
+
+def _missing_coordinate_ranges(
+    present_label_seq_ids: set[int],
+    sequence_length: int,
+) -> tuple[dict[str, Any], ...]:
+    ranges: list[dict[str, Any]] = []
+    range_start: int | None = None
+    for label_seq_id in range(1, sequence_length + 2):
+        missing = (
+            label_seq_id <= sequence_length
+            and label_seq_id not in present_label_seq_ids
+        )
+        if missing and range_start is None:
+            range_start = label_seq_id
+        if not missing and range_start is not None:
+            range_end = label_seq_id - 1
+            ranges.append(
+                {
+                    "start": range_start,
+                    "end": range_end,
+                    "kind": (
+                        "terminal"
+                        if range_start == 1 or range_end == sequence_length
+                        else "internal"
+                    ),
+                }
+            )
+            range_start = None
+    return tuple(ranges)
+
+
+def scope_coordinate_evidence(
+    chain: ChainInventory,
+    expected_sequence: str,
+) -> ScopeCoordinateEvidence:
+    """Separately establish polymer identity and representative-coordinate coverage."""
+
+    scope = _resolve_scope(chain, expected_sequence)
+    if scope.source_label_seq_start is None:
+        present = set(range(1, len(scope.sequence) + 1))
+    else:
+        source_start = scope.source_label_seq_start
+        source_end = source_start + len(scope.sequence) - 1
+        present = {
+            source_label - source_start + 1
+            for source_label in chain.ca_label_seq_ids
+            if source_start <= source_label <= source_end
+        }
+    return ScopeCoordinateEvidence(
+        sequence_identity=1.0,
+        coordinate_coverage=len(present) / len(scope.sequence),
+        observed_residue_count=len(present),
+        missing_coordinate_ranges=_missing_coordinate_ranges(
+            present,
+            len(scope.sequence),
+        ),
+    )
 
 
 def _clone_scoped_structure(
     source: gemmi.Structure,
     *,
     source_chain_id: str,
-    start_index: int,
-    end_index: int,
+    scope: _ResolvedScope,
 ) -> gemmi.Structure:
     result = gemmi.Structure()
     result.name = source.name or "easydesign_target"
     result.cell = source.cell
     result.spacegroup_hm = source.spacegroup_hm
-    representative_chain = _model_chain(source[0], source_chain_id)
-    representative_residues = _canonical_residues(representative_chain)
-    if len(representative_residues) < end_index:
-        raise TargetInputError(
-            "experimental-scope-missing: representative model 缺少 design scope residue"
+    scope_keys: tuple[tuple[int | None, str, str], ...] | None = None
+    if scope.source_label_seq_start is None:
+        assert scope.observed_start_index is not None
+        representative_chain = _model_chain(source[0], source_chain_id)
+        representative_residues = _canonical_residues(representative_chain)
+        end_index = scope.observed_start_index + len(scope.sequence)
+        if len(representative_residues) < end_index:
+            raise TargetInputError(
+                "experimental-scope-missing: representative model 缺少 design scope residue"
+            )
+        scope_residues = representative_residues[
+            scope.observed_start_index : end_index
+        ]
+        scope_keys = tuple(
+            (residue.seqid.num, residue.seqid.icode, residue.name)
+            for residue in scope_residues
         )
-    scope_residues = representative_residues[start_index:end_index]
-    scope_keys = tuple(
-        (residue.seqid.num, residue.seqid.icode, residue.name)
-        for residue in scope_residues
-    )
-    for model_index, model in enumerate(source):
+    for model in source:
         source_chain = _model_chain(model, source_chain_id)
         residues = _canonical_residues(source_chain)
-        by_key = {
-            (residue.seqid.num, residue.seqid.icode, residue.name): residue
-            for residue in residues
-        }
+        selected: list[tuple[int, gemmi.Residue]] = []
+        if scope.source_label_seq_start is not None:
+            source_start = scope.source_label_seq_start
+            source_end = source_start + len(scope.sequence) - 1
+            seen_labels: set[int] = set()
+            for residue in residues:
+                if residue.label_seq is None:
+                    continue
+                source_label = int(residue.label_seq)
+                if source_label < source_start or source_label > source_end:
+                    continue
+                target_label = source_label - source_start + 1
+                if target_label in seen_labels:
+                    raise TargetInputError(
+                        "experimental-label-seq-duplicate: "
+                        f"model={model.num}, label_seq_id={source_label}"
+                    )
+                seen_labels.add(target_label)
+                expected_name = ONE_TO_THREE[scope.sequence[target_label - 1]]
+                if residue.name != expected_name:
+                    raise TargetInputError(
+                        "experimental-coordinate-identity-mismatch: "
+                        f"model={model.num}, source_label_seq_id={source_label}, "
+                        f"expected={expected_name}, observed={residue.name}"
+                    )
+                selected.append((target_label, residue))
+        else:
+            assert scope_keys is not None
+            by_key = {
+                (residue.seqid.num, residue.seqid.icode, residue.name): residue
+                for residue in residues
+            }
+            for target_label, key in enumerate(scope_keys, start=1):
+                mapped_residue = by_key.get(key)
+                if mapped_residue is not None:
+                    selected.append((target_label, mapped_residue))
         output_model = gemmi.Model(model.num)
         output_chain = gemmi.Chain("A")
-        for label_seq_id, key in enumerate(scope_keys, start=1):
-            residue = by_key.get(key)
-            if residue is None:
-                if model_index == 0:
-                    raise TargetInputError(
-                        "representative model scope identity changed during normalization"
-                    )
-                continue
+        for label_seq_id, residue in sorted(selected, key=lambda item: item[0]):
             if not any(atom.name.strip() == "CA" for atom in residue):
-                if model_index != 0:
-                    continue
-                raise TargetInputError(
-                    "experimental-scope-missing-ca: "
-                    f"model={model.num}, chain={source_chain_id}, residue={residue.seqid}"
-                )
+                continue
             cloned = residue.clone()
             _select_residue_altlocs(cloned)
             # gemmi may synthesize a label subchain such as ``Axp`` for PDB
@@ -341,11 +492,14 @@ def _clone_scoped_structure(
             output_chain.add_residue(cloned)
         output_model.add_chain(output_chain)
         result.add_model(output_model)
+    if len(result[0][0]) == 0:
+        raise TargetInputError(
+            "experimental-scope-no-coordinate-anchor: representative model 在 design scope "
+            "内没有带 CA 的残基"
+        )
     result.setup_entities()
     if result.entities:
-        result.entities[0].full_sequence = [
-            residue.name for residue in result[0][0]
-        ]
+        result.entities[0].full_sequence = [ONE_TO_THREE[aa] for aa in scope.sequence]
     result.assign_label_seq_id()
     return result
 
@@ -407,21 +561,26 @@ def _mapping(
     reference_start: int | None,
 ) -> ResidueMapping:
     entries: list[ResidueMappingEntry] = []
-    first = scoped[0][0]
-    model_ids = tuple(str(model.num) for model in scoped)
     model_presence: dict[int, tuple[str, ...]] = {}
-    for index in range(1, len(first) + 1):
+    residue_by_label: dict[int, gemmi.Residue] = {}
+    for index in range(1, sequence.length + 1):
         present = []
         for model in scoped:
-            if any(
-                residue.label_seq == index
-                for residue in model[0]
-            ):
+            residue = next(
+                (
+                    item
+                    for item in model[0]
+                    if item.label_seq == index
+                ),
+                None,
+            )
+            if residue is not None:
                 present.append(str(model.num))
+                residue_by_label.setdefault(index, residue)
         model_presence[index] = tuple(present)
-    for index, residue in enumerate(first, start=1):
-        original = residue.seqid
-        amino_acid = THREE_TO_ONE[residue.name]
+    for index, amino_acid in enumerate(sequence.sequence, start=1):
+        residue = residue_by_label.get(index)
+        original = residue.seqid if residue is not None else None
         entries.append(
             ResidueMappingEntry(
                 sequence_index=index,
@@ -429,24 +588,36 @@ def _mapping(
                 label_chain_id="A",
                 label_seq_id=index,
                 author_chain_id="A",
-                author_residue_id=str(original.num),
+                author_residue_id=(
+                    str(index) if original is None else str(original.num)
+                ),
                 source_label_chain_id=source_label_chain_id,
-                source_author_chain_id=source_chain_id,
-                source_author_residue_id=str(original.num),
+                source_author_chain_id=(
+                    None if original is None else source_chain_id
+                ),
+                source_author_residue_id=(
+                    None if original is None else str(original.num)
+                ),
                 insertion_code=(
                     None
-                    if original.icode in {"\x00", " ", ""}
+                    if original is None
+                    or original.icode in {"\x00", " ", ""}
                     else original.icode
                 ),
                 reference_position=(
                     None if reference_start is None else reference_start + index - 1
                 ),
-                model_presence=model_presence[index] or (model_ids[0],),
-                source_residue_name=residue.name,
+                coordinate_present=bool(model_presence[index]),
+                model_presence=model_presence[index],
+                source_residue_name=(
+                    ONE_TO_THREE[amino_acid]
+                    if residue is None
+                    else residue.name
+                ),
             )
         )
     return ResidueMapping(
-        schema_version="0.2",
+        schema_version="0.3",
         target_id=target_id,
         sequence_sha256=sequence.sequence_sha256,
         entries=tuple(entries),
@@ -457,7 +628,7 @@ def _mapping_tsv(mapping: ResidueMapping) -> str:
     header = (
         "sequence_index\tamino_acid\tlabel_chain_id\tlabel_seq_id\t"
         "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
-        "reference_position\tmodel_presence\n"
+        "reference_position\tcoordinate_present\tmodel_presence\n"
     )
     rows = []
     for entry in mapping.entries:
@@ -476,6 +647,7 @@ def _mapping_tsv(mapping: ResidueMapping) -> str:
                         if entry.reference_position is None
                         else str(entry.reference_position)
                     ),
+                    str(entry.coordinate_present).lower(),
                     ",".join(entry.model_presence),
                 )
             )
@@ -519,18 +691,14 @@ def build_experimental_target_bundle(
     chain_info = next(
         chain for chain in inventory.chains if chain.author_chain_id == selected_chain
     )
-    start_index, end_index, scope_sequence = _scope_slice(
-        chain_info.sequence,
-        expected_scope_sequence,
-    )
+    scope = _resolve_scope(chain_info, expected_scope_sequence)
     scoped = _clone_scoped_structure(
         source,
         source_chain_id=selected_chain,
-        start_index=start_index,
-        end_index=end_index,
+        scope=scope,
     )
     normalized = normalize_raw_sequence(
-        scope_sequence,
+        scope.sequence,
         target_id=target_id,
         source_label=source_path.name,
     )
@@ -606,6 +774,17 @@ def build_experimental_target_bundle(
         ]
         for model_id in (str(model.num) for model in scoped)
     }
+    representative_model_id = str(scoped[0].num)
+    representative_present = {
+        entry.label_seq_id
+        for entry in mapping.entries
+        if representative_model_id in entry.model_presence
+    }
+    coordinate_coverage = len(representative_present) / normalized.length
+    missing_ranges = _missing_coordinate_ranges(
+        representative_present,
+        normalized.length,
+    )
     missing_backbone_by_model: dict[str, list[int]] = {}
     missing_sidechain_by_model: dict[str, list[int]] = {}
     for model in scoped:
@@ -625,8 +804,17 @@ def build_experimental_target_bundle(
         "coordinate_model_count": len(scoped),
         "coordinate_model_ids": [str(model.num) for model in scoped],
         "scope_residue_count": normalized.length,
-        "scope_coverage": 1.0,
+        "observed_scope_residue_count": len(representative_present),
+        "scope_coverage": coordinate_coverage,
+        "scope_sequence_coverage": 1.0,
+        "scope_coordinate_coverage": coordinate_coverage,
         "scope_sequence_identity": 1.0,
+        "target_structure_status": (
+            "experimental-complete"
+            if coordinate_coverage == 1.0
+            else "experimental-partial"
+        ),
+        "missing_coordinate_ranges": missing_ranges,
         "missing_label_seq_ids_by_model": missing_by_model,
         "missing_backbone_label_seq_ids_by_model": missing_backbone_by_model,
         "missing_sidechain_anchor_label_seq_ids_by_model": missing_sidechain_by_model,

@@ -91,10 +91,12 @@ PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导�
 - 可选 chain/domain 选择与生物学约束。
 
 sequence/FASTA 和 UniProt 路径先经 RCSB Sequence Search v2/Data API 寻找实验结构，
-只有 design scope 坐标覆盖与序列一致性均为 100%、每个 residue 有 CA 且方法/分辨率
-通过 `experimental-strict-v1` 才能自动采用。无唯一候选时才按执行模式进入人工选择或
-本次 Stage 1 显式选择的预测后端。项目没有默认预测后端；只有 target 确实需要预测时，
-CLI 才要求 `--prediction-backend afo|protenix`。预测通过通用
+design scope 必须与 deposited polymer sequence 建立 100% identity 的唯一映射，且
+方法/分辨率通过 `experimental-strict-v1`。`_atom_site` 缺失 N/C 端或内部 loop 不再被
+解释为序列不一致：候选保持 eligible，Target Bundle 标记为 `experimental-partial`，并
+逐残基记录 coordinate presence、覆盖率和缺失区间。无唯一候选时才按执行模式进入人工
+选择或本次 Stage 1 显式选择的预测后端。项目没有默认预测后端；只有 target 确实需要
+预测时，CLI 才要求 `--prediction-backend afo|protenix`。预测通过通用
 `StructurePredictionRequest` 访问 backend，两者之间禁止静默 fallback。
 
 一旦选择预测，sequence/FASTA 的 run revision 必须分别声明 `backend`、
@@ -349,6 +351,8 @@ scope 支持 `full-sequence`、`residue-range` 和唯一匹配的 UniProt `Domai
 
 - 规范 `target.cif`；PDB 格式可表达时派生兼容 `target.pdb`。
 - `sequence.fasta`、可用时的 `reference-sequence.fasta`、机器 mapping JSON 和人读 TSV。
+- 实验结构的 deposited sequence 与 coordinate presence 分离保存；无坐标残基仍占用稳定
+  `label_seq_id`，不得把缺口后的残基向前压缩编号。
 - identity、scope、全部结构候选及淘汰理由、统一 QC、provenance 和 retrieval manifest。
 - 有上下文时的 `source-context.cif`，有白名单配体时的 `design-context.cif`。
 - `target-bundle.json` 及其中每个 artifact 的相对路径、大小、SHA-256 和生产 attempt。
@@ -429,9 +433,11 @@ author residue 和 insertion code 保存到 mapping 的 `source_*` 字段。sche
 
 Target Bundle `0.4` 允许 `target.cif` 包含一个或多个
 `_atom_site.pdbx_PDB_model_num`。`sequence.fasta` 与 mapping 描述所有模型共享的残基
-身份；模型可以缺部分残基或原子，但同一 `label_seq_id` 在不同模型中的氨基酸类型必须
-一致。下游不得把 ensemble 静默压成 model 1。代表模型只服务于展示和输出质心，不替代
-多模型科学共识。
+身份；单模型实验结构也可以因 unresolved loop 或 terminal truncation 缺部分残基。
+缺失残基在 mapping 中声明 `coordinate_present=false`，在 `target.cif` polymer sequence
+中保留身份和编号，但不伪造 `_atom_site` 坐标。同一 `label_seq_id` 在不同模型中的
+氨基酸类型必须一致。下游不得把 ensemble 静默压成 model 1。代表模型只服务于展示和
+输出质心，不替代多模型科学共识。
 
 当前 PSE adapter 仍严格单 state，Protenix adapter 仍严格单 seed/单 sample，因此这两条
 已实现入口均发布 `model_count: 1`。这是 adapter 范围，不再是 Target Bundle 的全局

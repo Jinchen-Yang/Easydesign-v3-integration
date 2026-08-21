@@ -64,6 +64,10 @@ class ResidueMappingEntry(BaseModel):
     source_author_chain_id: str | None = Field(default=None, max_length=16)
     source_author_residue_id: str | None = Field(default=None, max_length=32)
     reference_position: int | None = Field(default=None, ge=1)
+    coordinate_present: bool = Field(
+        default=True,
+        exclude_if=lambda value: value is True,
+    )
     model_presence: tuple[str, ...] = ()
     source_residue_name: str | None = Field(default=None, max_length=8)
 
@@ -78,11 +82,16 @@ class ResidueMapping(BaseModel):
 
     @model_validator(mode="after")
     def validate_mapping(self) -> Self:
-        if self.schema_version not in {"0.1", "0.2"}:
+        if self.schema_version not in {"0.1", "0.2", "0.3"}:
             raise ValueError(f"不支持 ResidueMapping schema: {self.schema_version}")
         indices = [entry.sequence_index for entry in self.entries]
         if indices != list(range(1, len(self.entries) + 1)):
             raise ValueError("残基映射 sequence_index 必须从 1 连续递增")
+        if any(
+            not entry.coordinate_present and entry.model_presence
+            for entry in self.entries
+        ):
+            raise ValueError("无坐标残基不能声明 model_presence")
         return self
 
 

@@ -205,7 +205,8 @@ def snapshot_target_structure_condition(
     present = tuple(
         entry
         for entry in mapping.entries
-        if not entry.model_presence or representative in entry.model_presence
+        if entry.coordinate_present
+        and (not entry.model_presence or representative in entry.model_presence)
     )
     if not present:
         raise ManifestStateError("Stage 01 target condition 没有可映射残基")

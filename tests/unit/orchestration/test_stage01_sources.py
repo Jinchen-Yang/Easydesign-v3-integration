@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import gemmi
 import pytest
 import yaml
 
@@ -19,6 +20,7 @@ from easydesign.core import (
 )
 from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.stage01_sources import (
+    _candidate,
     _search_matches,
     _uniprot_identity,
     execute_stage01_source,
@@ -51,6 +53,31 @@ RESIDUE_NAMES = (
     "TRP",
     "TYR",
 )
+
+
+def _partial_mmcif(path: Path) -> None:
+    structure = gemmi.Structure()
+    structure.name = "partial-candidate"
+    model = gemmi.Model(1)
+    chain = gemmi.Chain("X")
+    for label_seq_id, residue_name in ((1, "ALA"), (3, "ASP"), (4, "GLU")):
+        residue = gemmi.Residue()
+        residue.name = residue_name
+        residue.seqid = gemmi.SeqId(label_seq_id, " ")
+        residue.subchain = "A"
+        residue.label_seq = label_seq_id
+        atom = gemmi.Atom()
+        atom.name = "CA"
+        atom.element = gemmi.Element("C")
+        atom.pos = gemmi.Position(float(label_seq_id), 0.0, 0.0)
+        residue.add_atom(atom)
+        chain.add_residue(residue)
+    model.add_chain(chain)
+    structure.add_model(model)
+    structure.setup_entities()
+    structure.entities[0].full_sequence = ["ALA", "CYS", "ASP", "GLU"]
+    structure.assign_label_seq_id()
+    path.write_text(structure.make_mmcif_document().as_string(), encoding="utf-8")
 
 
 def _single_chain_pdb() -> str:
@@ -111,6 +138,54 @@ def test_uniprot_search_does_not_promote_unreviewed_result() -> None:
 
     assert matches[0]["exact"] is True
     assert matches[0]["reviewed"] is False
+
+
+def test_rcsb_candidate_keeps_identity_eligible_when_coordinates_are_partial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    structure_path = tmp_path / "partial.cif"
+    _partial_mmcif(structure_path)
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_entry",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "exptl": [{"method": "X-RAY DIFFRACTION"}],
+                "rcsb_entry_info": {"resolution_combined": [2.0]},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_polymer_entity",
+        lambda *_: SimpleNamespace(
+            json=lambda: {
+                "entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
+                "rcsb_polymer_entity_container_identifiers": {
+                    "auth_asym_ids": ["X"],
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "easydesign.orchestration.stage01_sources.rcsb_mmcif",
+        lambda *_: SimpleNamespace(artifact_path=structure_path),
+    )
+
+    candidate, selected_path = _candidate(
+        client=object(),  # type: ignore[arg-type]
+        pdb_id="TEST",
+        entity_id="1",
+        expected_scope="ACDE",
+    )
+
+    assert selected_path == structure_path
+    assert candidate["eligible"] is True
+    assert candidate["scope_identity"] == 1.0
+    assert candidate["scope_coordinate_coverage"] == 0.75
+    assert candidate["warnings"] == ["scope-coordinate-coverage-partial"]
+    assert candidate["missing_coordinate_ranges"] == [
+        {"start": 2, "end": 2, "kind": "internal"}
+    ]
 
 
 def test_target_bundle_reimport_preserves_optional_evidence(tmp_path: Path) -> None:

@@ -27,6 +27,7 @@ from easydesign.backends.target_sources.structure import (
     build_experimental_target_bundle,
     choose_chain,
     inventory_structure,
+    scope_coordinate_evidence,
 )
 from easydesign.core import (
     ArtifactRef,
@@ -588,6 +589,10 @@ def _candidate(
     if expected_scope not in entity_sequence:
         eligible = False
         reasons.append("scope-sequence-not-exact-substring-of-entity")
+    warnings: list[str] = []
+    coordinate_coverage = 0.0
+    observed_scope_residue_count = 0
+    missing_coordinate_ranges: list[dict[str, Any]] = []
     structure_path: Path | None = None
     selected_author_chain: str | None = None
     if eligible or review_eligible:
@@ -601,15 +606,17 @@ def _candidate(
                 chain_namespace=preferred_chain_namespace,
             )
             selected_author_chain = selected
-            observed = next(
-                item.sequence
+            chain_info = next(
+                item
                 for item in inventory.chains
                 if item.author_chain_id == selected
             )
-            if expected_scope not in observed:
-                eligible = False
-                review_eligible = False
-                reasons.append("scope-coordinate-coverage-or-identity-below-100-percent")
+            evidence = scope_coordinate_evidence(chain_info, expected_scope)
+            coordinate_coverage = evidence.coordinate_coverage
+            observed_scope_residue_count = evidence.observed_residue_count
+            missing_coordinate_ranges = list(evidence.missing_coordinate_ranges)
+            if coordinate_coverage < 1.0:
+                warnings.append("scope-coordinate-coverage-partial")
         except TargetInputError as error:
             eligible = False
             review_eligible = False
@@ -624,10 +631,22 @@ def _candidate(
         "resolution_angstrom": resolution,
         "entity_sequence_length": len(entity_sequence),
         "scope_coverage": 1.0 if expected_scope in entity_sequence else 0.0,
+        "scope_sequence_coverage": (
+            1.0 if expected_scope in entity_sequence else 0.0
+        ),
         "scope_identity": 1.0 if expected_scope in entity_sequence else 0.0,
+        "scope_coordinate_coverage": coordinate_coverage,
+        "observed_scope_residue_count": observed_scope_residue_count,
+        "missing_coordinate_ranges": missing_coordinate_ranges,
+        "target_structure_status": (
+            "experimental-complete"
+            if coordinate_coverage == 1.0
+            else "experimental-partial"
+        ),
         "eligible": eligible,
         "review_eligible": review_eligible,
         "reasons": reasons,
+        "warnings": warnings,
     }, structure_path
 
 
@@ -660,6 +679,10 @@ def _candidate_from_pdb_cross_reference(
     eligible, reasons = _quality_eligible(method, resolution)
     review_eligible = reasons == ["nmr-review-only"]
     chain = chains[0]
+    warnings: list[str] = []
+    coordinate_coverage = 0.0
+    observed_scope_residue_count = 0
+    missing_coordinate_ranges: list[dict[str, Any]] = []
     structure_path: Path | None = None
     if eligible or review_eligible:
         structure_path = rcsb_mmcif(client, pdb_id).artifact_path
@@ -670,17 +693,17 @@ def _candidate_from_pdb_cross_reference(
                 explicit_chain=chain,
                 expected_sequence=expected_scope,
             )
-            observed = next(
-                item.sequence
+            chain_info = next(
+                item
                 for item in inventory.chains
                 if item.author_chain_id == selected
             )
-            if expected_scope not in observed:
-                eligible = False
-                review_eligible = False
-                reasons.append(
-                    "scope-coordinate-coverage-or-identity-below-100-percent"
-                )
+            evidence = scope_coordinate_evidence(chain_info, expected_scope)
+            coordinate_coverage = evidence.coordinate_coverage
+            observed_scope_residue_count = evidence.observed_residue_count
+            missing_coordinate_ranges = list(evidence.missing_coordinate_ranges)
+            if coordinate_coverage < 1.0:
+                warnings.append("scope-coordinate-coverage-partial")
         except TargetInputError as error:
             eligible = False
             review_eligible = False
@@ -693,10 +716,20 @@ def _candidate_from_pdb_cross_reference(
         "resolution_angstrom": resolution,
         "entity_sequence_length": len(expected_scope),
         "scope_coverage": 1.0,
+        "scope_sequence_coverage": 1.0,
         "scope_identity": 1.0,
+        "scope_coordinate_coverage": coordinate_coverage,
+        "observed_scope_residue_count": observed_scope_residue_count,
+        "missing_coordinate_ranges": missing_coordinate_ranges,
+        "target_structure_status": (
+            "experimental-complete"
+            if coordinate_coverage == 1.0
+            else "experimental-partial"
+        ),
         "eligible": eligible,
         "review_eligible": review_eligible,
         "reasons": reasons,
+        "warnings": warnings,
     }, structure_path
 
 
@@ -1643,7 +1676,7 @@ def _local_selection(
         matching_chains = tuple(
             chain.author_chain_id
             for chain in inventory.chains
-            if expected in chain.sequence
+            if expected in (chain.deposited_sequence or chain.sequence)
         )
         if approved_chain is not None and approved_chain not in matching_chains:
             raise TargetInputError(

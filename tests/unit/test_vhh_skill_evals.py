@@ -50,9 +50,23 @@ def test_suite_directly_covers_product_policy_and_backend_default() -> None:
     payload = yaml.safe_load(SCENARIOS.read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in payload["scenarios"]}
     first = by_id["first-pilot-seven-scaffold-yaml"]
+    matrix = by_id["enzyme-pocket-long-cdr3-matrix"]
     assert "exact_official_vhh7_v1_scaffolds" in first["deterministic_checks"]
     assert "forty_candidates_per_expanded_strategy" in first["deterministic_checks"]
-    assert "minimum_total_280" in first["deterministic_checks"]
+    assert "exact_condition_count_x" in first["deterministic_checks"]
+    assert "exact_total_280_times_x" in first["deterministic_checks"]
+    assert (
+        "every_first_pilot_condition_is_exactly_7_times_40"
+        in matrix["deterministic_checks"]
+    )
+    assert "total_is_exactly_280_times_x" in matrix["deterministic_checks"]
+    forbidden = "\n".join(
+        conclusion
+        for scenario in (first, matrix)
+        for conclusion in scenario["rubric"]["forbidden_conclusions"]
+    ).lower()
+    assert "two favored scaffolds" in forbidden
+    assert "twenty candidates per scaffold" in forbidden or "20 candidates" in forbidden
 
     scientific_text = SCENARIOS.read_text(encoding="utf-8").lower()
     for token in (

@@ -4,6 +4,10 @@
 - 日期：2026-07-31
 - 关联任务：`S05-002`、`S06-004`、`S07-002`、`ENG-029`、`VAL-007`
 
+> Architecture v2 amendment（2026-09-04）：本 ADR 的 50,000 allocation 是默认值示例与
+> 历史 `production-50000` identity，不再是唯一合法总数。当前 façade 接受任意正整数；
+> exact count 进入 plan/allocation/shard/resource/approval SHA，count 改变必须重新审批。
+
 ## 背景
 
 Nanobody Filter Standard v1.5 在 Tier A pilot 后用 100 条扩增和 full-target Protenix
@@ -23,7 +27,7 @@ Nanobody Filter Standard v1.5 在 Tier A pilot 后用 100 条扩增和 full-targ
    晋级；后端、数量、文件和 checksum 故障仍阻止发布。
 4. v1.6 Stage05Bundle 0.2 不再发布唯一 `winner_strategy_id`，也不产生
    `stopped-no-scale-winner`；无 Tier A 仍以 `stopped-no-tier-a` 终止。
-5. Stage 06 的 50,000 是全局预算。1/2/3 组分别分配
+5. Stage 06 的默认 50,000 是全局预算示例。1/2/3 组分别分配
    `50000`、`25000/25000`、`16667/16667/16666`，余数按 promotion rank 分配。
 6. 每个 strategy 使用独立 ordinal 空间和 shard，合并时同时验证每组与全局的数量、
    唯一性、连续性和 lineage。

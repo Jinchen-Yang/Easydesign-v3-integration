@@ -18,13 +18,16 @@ from easydesign.backends.target_sources.remote import (
 from easydesign.core import (
     ArtifactRef,
     Attempt,
+    CanonicalIdentityStatus,
     ErrorInfo,
     ExecutionStatus,
+    ReviewRequirement,
     RunManifest,
     StageId,
     StageManifest,
     dump_model,
     load_model,
+    resolve_target_identity,
 )
 from easydesign.reporting import (
     TargetViewerOutcome,
@@ -200,33 +203,49 @@ def execute_pse_import(
                 except (KeyError, TypeError, ValueError) as error:
                     raise ValueError("UniProt 响应缺少身份或 canonical sequence") from error
                 observed = product.response.sequence
-                positions = [
-                    index + 1
-                    for index in range(len(canonical))
-                    if canonical.startswith(observed, index)
-                ]
-                if len(positions) != 1:
+                identity_v2 = resolve_target_identity(
+                    target_id=prepared.loaded_config.config.target.target_id,
+                    canonical_sequence=canonical,
+                    construct_sequence=observed,
+                    canonical_status=CanonicalIdentityStatus.RESOLVED,
+                    source_identity_status="resolved",
+                    source_kind="local-structure",
+                    accession=resolved_accession,
+                    taxon_id=taxonomy_id,
+                    auth_chain_id=product.response.chain_id,
+                    coordinate_present_construct_positions=tuple(
+                        range(1, len(observed) + 1)
+                    ),
+                )
+                if identity_v2.review_requirement is ReviewRequirement.REJECT:
                     raise ValueError(
-                        "PSE observed sequence 必须与 UniProt canonical sequence "
-                        f"形成唯一精确子序列映射: matches={len(positions)}"
+                        "PSE observed sequence 与 UniProt canonical identity 无法建立可靠 mapping"
+                    )
+                if identity_v2.review_requirement is ReviewRequirement.HUMAN_REQUIRED:
+                    raise ValueError(
+                        "target-identity-review-required: PSE construct 含 engineered/"
+                        "ambiguous identity；当前 PSE 单步导入不静默接受，请改用可审核的"
+                        "本地 mmCIF/PDB target prepare 路径"
                     )
                 reference_sequence = canonical
-                reference_start = positions[0]
-                identity_report = {
-                    "schema_version": "0.1",
-                    "status": "resolved",
-                    "identity_status": "resolved",
-                    "identity_resolution": "explicit-accession-exact-subsequence",
-                    "accession": resolved_accession,
-                    "taxonomy_id": taxonomy_id,
-                    "input_sequence_reference_start": reference_start,
-                    "input_sequence_reference_end": (
-                        reference_start + len(observed) - 1
-                    ),
-                }
+                reference_start = identity_v2.design_scope.canonical_start
+                identity_report = identity_v2.model_dump(mode="json")
                 retrieval_records = tuple(
                     record.model_dump(mode="json") for record in client.records
                 )
+        if identity_report is None:
+            identity_report = resolve_target_identity(
+                target_id=prepared.loaded_config.config.target.target_id,
+                canonical_sequence=None,
+                construct_sequence=product.response.sequence,
+                canonical_status=CanonicalIdentityStatus.UNRESOLVED,
+                source_identity_status="user-declared",
+                source_kind="local-structure",
+                auth_chain_id=product.response.chain_id,
+                coordinate_present_construct_positions=tuple(
+                    range(1, len(product.response.sequence) + 1)
+                ),
+            ).model_dump(mode="json")
         built = build_imported_pse_target_bundle(
             run_root=workspace.run_root,
             attempt_id=ATTEMPT_ID,

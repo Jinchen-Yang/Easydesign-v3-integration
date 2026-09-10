@@ -27,6 +27,7 @@ from easydesign.core import (
     ErrorInfo,
     ExecutionStatus,
     ManifestStateError,
+    MsaSourceReceipt,
     RunManifest,
     StageId,
     StageManifest,
@@ -90,6 +91,7 @@ class _MsaEvidence:
     updated_input: Path
     source_a3m: Path | None
     published_a3m: Path | None
+    published_receipt: Path | None
     sha256: str | None
     depth: int | None
     cache_status: str
@@ -191,6 +193,7 @@ def _publish_explicit_msa(
         updated_input=updated,
         source_a3m=source,
         published_a3m=published,
+        published_receipt=None,
         sha256=sha256,
         depth=depth,
         cache_status=cache_status,
@@ -442,10 +445,18 @@ def _validate_and_publish_msa(
         source,
         attempt_root / "artifacts" / "target-msa.a3m",
     )
+    published_receipt: Path | None = None
+    if isinstance(adapter, OpenFold3Af3JaxAdapter):
+        receipt_source = adapter.remote_msa_receipt_path(input_json, msa_output_dir)
+        published_receipt = _exclusive_copy(
+            receipt_source,
+            attempt_root / "artifacts" / "remote-msa-receipt.json",
+        )
     return _MsaEvidence(
         updated_input=updated,
         source_a3m=source,
         published_a3m=published,
+        published_receipt=published_receipt,
         sha256=sha256_file(published),
         depth=depth,
         cache_status="remote-refresh",
@@ -552,6 +563,13 @@ def execute_sequence_prediction(
     """按 YAML provider 顺序执行 MSA 和单结构预测，并发布完整 Stage 01 交接。"""
 
     workspace = prepared.workspace
+    resolved_config = load_model(workspace.resolved_config, ResolvedRunConfig)
+    msa_source_receipt: MsaSourceReceipt | None = None
+    if resolved_config.precomputed_msa_source_snapshot is not None:
+        msa_source_receipt = load_model(
+            resolved_config.precomputed_msa_source_snapshot.verify(workspace.run_root),
+            MsaSourceReceipt,
+        )
     request = prepared.loaded_config.prediction_request
     prediction_config = prepared.loaded_config.config.structure_prediction
     if prediction_config is None or request is None:
@@ -591,6 +609,7 @@ def execute_sequence_prediction(
     attempt_paths: list[Path] = []
     built: BuiltTargetBundle | None = None
     selected_msa_ref: ArtifactRef | None = None
+    selected_msa_receipt_ref: ArtifactRef | None = None
     selected_provider: ResolvedProtenixMsaProviderConfig | None = None
     failure: _InvocationFailure | None = None
     selected_attempt_id: str | None = None
@@ -758,6 +777,7 @@ def execute_sequence_prediction(
                         updated_input=working_input,
                         source_a3m=None,
                         published_a3m=None,
+                        published_receipt=None,
                         sha256=None,
                         depth=None,
                         cache_status="disabled",
@@ -851,6 +871,27 @@ def execute_sequence_prediction(
                             else msa_evidence.cache_status
                         )
                     ),
+                    msa_source_type=(
+                        None if msa_source_receipt is None else msa_source_receipt.source_type
+                    ),
+                    msa_library_schema_version=(
+                        None
+                        if msa_source_receipt is None
+                        else msa_source_receipt.library_schema_version
+                    ),
+                    msa_release_id=(
+                        None if msa_source_receipt is None else msa_source_receipt.release_id
+                    ),
+                    msa_library_manifest_sha256=(
+                        None
+                        if msa_source_receipt is None
+                        else msa_source_receipt.library_manifest_sha256
+                    ),
+                    msa_release_receipt_sha256=(
+                        None
+                        if msa_source_receipt is None
+                        else msa_source_receipt.release_receipt_sha256
+                    ),
                     paired_msa_mode=paired_mode,
                     paired_msa_input_sha256=paired_msa_input_sha256,
                     template_data_sha256=request.target_template_data_sha256,
@@ -907,6 +948,15 @@ def execute_sequence_prediction(
                         file_format="a3m",
                         attempt_id=attempt_id,
                     )
+                if msa_evidence.published_receipt is not None:
+                    selected_msa_receipt_ref = _artifact(
+                        run_root=workspace.run_root,
+                        path=msa_evidence.published_receipt,
+                        artifact_id="remote-msa-receipt",
+                        role="remote-msa-provenance",
+                        file_format="json",
+                        attempt_id=attempt_id,
+                    )
             else:
                 failure = current_failure
                 attempt = Attempt(
@@ -944,7 +994,6 @@ def execute_sequence_prediction(
             break
 
     ended = _strictly_later(datetime.now(UTC), start)
-    resolved = load_model(workspace.resolved_config, ResolvedRunConfig)
     if built is None:
         output_artifacts: tuple[ArtifactRef, ...] = ()
         stage_status = ExecutionStatus.FAILED
@@ -958,7 +1007,11 @@ def execute_sequence_prediction(
             bundle.provenance,
             built.bundle_artifact,
         )
-        msa_artifacts = (() if selected_msa_ref is None else (selected_msa_ref,))
+        msa_artifacts = tuple(
+            item
+            for item in (selected_msa_ref, selected_msa_receipt_ref)
+            if item is not None
+        )
         optional_artifacts = tuple(
             artifact
             for artifact in (
@@ -1002,9 +1055,10 @@ def execute_sequence_prediction(
     feature_inputs = tuple(
         item
         for item in (
-            resolved.precomputed_msa_snapshot,
-            resolved.precomputed_paired_msa_snapshot,
-            resolved.precomputed_template_snapshot,
+            resolved_config.precomputed_msa_snapshot,
+            resolved_config.precomputed_msa_source_snapshot,
+            resolved_config.precomputed_paired_msa_snapshot,
+            resolved_config.precomputed_template_snapshot,
         )
         if item is not None
     )
@@ -1014,7 +1068,7 @@ def execute_sequence_prediction(
         status=stage_status,
         created_at=start,
         completed_at=ended,
-        input_artifacts=(resolved.input_snapshot,) + feature_inputs,
+        input_artifacts=(resolved_config.input_snapshot,) + feature_inputs,
         output_artifacts=output_artifacts,
         attempts=tuple(attempts),
         selected_attempt_id=selected_attempt_id,

@@ -12,9 +12,10 @@
 6. 跨组因果推理
 7. Candidate 结构审阅
 8. 失败归因卡
-9. 下一轮 experiment plan
-10. Promotion/return-upstream
-11. 输出模板
+9. Typed Interpretation 与 hypothesis update
+10. 下一轮 experiment plan
+11. Promotion/return-upstream
+12. 输出模板
 
 ## 1. 输入与完成标准
 
@@ -418,13 +419,47 @@ failure_card:
 
 不要把多个层次合成“模型不好”。例如：target drift、low hotspot coverage、framework contact和duplicate collapse应分别保留，再判断共同原因。
 
-## 9. 下一轮 experiment plan
+## 9. Typed Interpretation 与 hypothesis update
 
-### 9.1 选择原则
+完成 `pilot review` 并获得 immutable Observation 后，Agent 将科学含义写入 project-local YAML：
+
+```yaml
+schema_version: "1.0"
+interpretation_id: interpretation-pilot-run-one
+observation_refs:
+  - observation-pilot-run-one
+supports:
+  - h-primary-site
+weakens: []
+rejects: []
+unresolved:
+  - h-competing-mechanism
+conclusion: >-
+  Current computational evidence supports the primary-site hypothesis under this pilot protocol,
+  but does not distinguish the competing mechanism.
+alternative_explanations:
+  - The observed difference may include a scaffold-by-condition interaction.
+limitations:
+  - This is computational pilot evidence and is not affinity or functional evidence.
+open_scientific_questions:
+  - Does the direction reproduce under a held-constant diagnostic condition?
+suggested_next_step: >-
+  Keep the site fixed and test one matched diagnostic condition.
+confidence: plausible
+```
+
+运行 `easydesign pilot interpret PROJECT --run RUN --input FILE`。至少一个 hypothesis 必须被
+显式标为 supports、weakens、rejects 或 unresolved；同一 interpretation 中不能冲突。系统验证
+Observation/hypothesis identity 与 event SHA，保存 inference ClaimReceipt，并只在 reducer summary
+中更新 hypothesis 当前状态。不得改写旧 event，不得把 inference 写成 affinity/function fact。
+
+## 10. 下一轮 experiment plan
+
+### 10.1 选择原则
 
 下一轮优先区分当前最高价值、最可行动的不确定性；不是把所有参数都调到本轮winner附近。
 
-### 9.2 每组必填
+### 10.2 每组必填
 
 - `hypothesis_id`；
 - comparator；
@@ -436,7 +471,7 @@ failure_card:
 - candidate denominator；
 - stop/promotion criterion。
 
-### 9.3 常见下一轮
+### 10.3 常见下一轮
 
 - target representation test；
 - primary vs backup site matched test；
@@ -448,17 +483,17 @@ failure_card:
 - missingness/metric pipeline audit；
 - mechanism assay验证。
 
-### 9.4 正例
+### 10.4 正例
 
 七scaffold共同low coverage且target integrity合格：下一轮先比较primary hotspot topology与backup site，保持scaffold/CDR/full context不变；不先微调score weights。
 
-### 9.5 反例
+### 10.5 反例
 
 本轮只有integrated winner，下一轮直接scale；缺少confirmatory组，无法知道成功是否可重现。
 
-## 10. Promotion/return-upstream
+## 11. Promotion/return-upstream
 
-### 10.1 可考虑promotion
+### 11.1 可考虑promotion
 
 - data/identity完整；
 - frozen hard gates通过；
@@ -469,7 +504,7 @@ failure_card:
 - promotion receipt可绑定immutable inputs；
 - residual uncertainty与实验验证计划明确。
 
-### 10.2 返回上游
+### 11.2 返回上游
 
 - identity/mapping问题→prepare/evidence；
 - site/hotspot共同失败→prepare/strategize；
@@ -478,7 +513,7 @@ failure_card:
 - metric/parser/adapter能力问题→停止research mutation，形成code gap；
 - operational failure→恢复/重跑同一immutable plan，不伪装新科学组。
 
-### 10.3 不允许promotion
+### 11.3 不允许promotion
 
 - 仅凭aggregate score；
 - target drift或hard gate失败；
@@ -486,7 +521,7 @@ failure_card:
 - framework/crop-edge主导且未解释；
 - 因用户说“继续”就推断promotion approval。
 
-## 11. 输出模板
+## 12. 输出模板
 
 ```yaml
 pilot_diagnosis:
@@ -537,6 +572,19 @@ pilot_diagnosis:
       target_site_interface_summary: ""
       structural_review: ""
       interpretation_limit: ""
+  interpretation:
+    interpretation_id: ""
+    observation_refs: []
+    supports: []
+    weakens: []
+    rejects: []
+    unresolved: []
+    conclusion: ""
+    alternative_explanations: []
+    limitations: []
+    open_scientific_questions: []
+    suggested_next_step: ""
+    confidence: unassessed|weak|plausible|supported|unresolved
   decision:
     action: promote|iterate|return-prepare|return-strategize|stop-operational
     rationale: ""

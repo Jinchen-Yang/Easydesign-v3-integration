@@ -30,6 +30,59 @@ def test_parser_exposes_agent_native_local_commands_and_retires_step() -> None:
     assert "remote" not in help_text
     assert "setup" not in help_text
     assert "ui" not in help_text
+    assert "msa" not in help_text
+
+
+def test_parser_exposes_typed_pilot_interpret_input() -> None:
+    parsed = cli._parser().parse_args(
+        [
+            "pilot",
+            "interpret",
+            "workspace/projects/example",
+            "--run",
+            "pilot-one",
+            "--input",
+            "interpretation.yaml",
+            "--json",
+        ]
+    )
+
+    assert parsed.pilot_command == "interpret"
+    assert parsed.run_id == "pilot-one"
+    assert parsed.input == Path("interpretation.yaml")
+
+
+def test_target_prepare_accepts_exactly_one_precomputed_msa_source() -> None:
+    parser = cli._parser()
+    library = parser.parse_args(
+        [
+            "target",
+            "prepare",
+            "/project",
+            "--prediction-backend",
+            "afo",
+            "--msa-library",
+            "gpcr-msa-20260823-v3",
+        ]
+    )
+    assert library.msa_library == "gpcr-msa-20260823-v3"
+    assert library.msa_a3m is None
+
+    direct = parser.parse_args(["target", "prepare", "/project", "--msa-a3m", "/input/target.a3m"])
+    assert direct.msa_a3m == Path("/input/target.a3m")
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "target",
+                "prepare",
+                "/project",
+                "--msa-library",
+                "release-one",
+                "--msa-a3m",
+                "/input/target.a3m",
+            ]
+        )
 
 
 def test_runtime_parser_supports_fresh_component_install_without_remote_surface() -> None:
@@ -68,9 +121,7 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     )
     assert china.source == "china"
 
-    installed_all = cli._parser().parse_args(
-        ["runtime", "install", "all", "--detach"]
-    )
+    installed_all = cli._parser().parse_args(["runtime", "install", "all", "--detach"])
     assert installed_all.component == "all"
     assert installed_all.detach is True
 
@@ -97,9 +148,7 @@ def test_runtime_parser_supports_fresh_component_install_without_remote_surface(
     listed = cli._parser().parse_args(["runtime", "list", "afo"])
     assert listed.runtime_command == "list"
 
-    watched = cli._parser().parse_args(
-        ["runtime", "jobs", "--job-id", "setup-fixture", "--watch"]
-    )
+    watched = cli._parser().parse_args(["runtime", "jobs", "--job-id", "setup-fixture", "--watch"])
     assert watched.watch is True
     assert watched.interval == 1.0
 
@@ -268,9 +317,7 @@ def test_project_init_rejects_project_default_prediction_backend() -> None:
 
 def test_stage_prediction_commands_require_explicit_backends() -> None:
     with pytest.raises(SystemExit):
-        cli._parser().parse_args(
-            ["pilot", "plan", "apoe", "--strategy", "strategy-r000001"]
-        )
+        cli._parser().parse_args(["pilot", "plan", "apoe", "--strategy", "strategy-r000001"])
     selected = cli._parser().parse_args(
         [
             "select",

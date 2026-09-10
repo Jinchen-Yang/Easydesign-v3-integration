@@ -23,7 +23,7 @@
 2. 六类 target source、PSE colors、文字 residue、SASA/ScanNet foundation；
 3. strategy variant、crop、binding subset、CDR override、native YAML；
 4. 独立 pilot lineage、负结果 review、人工 promotion；
-5. 50,000 production、Top 200 不补齐；
+5. 默认 50,000、可选任意正整数的 exact-count production，以及 Top 200 不补齐；
 6. persistent worker 的 detach/watch/drain/resume/lost/Ctrl-C；
 7. Ruff、mypy、Python integration、Viewer Chromium、APOE tree hash 和数据零漂移。
 

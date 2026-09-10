@@ -9,8 +9,10 @@
 候选是否完整，不做科学筛选或策略晋级。
 
 每个 variant 的候选预算来自该 variant 的 `candidates`。新项目首轮在进入本阶段前已由
-research façade 强制七个 scaffold 各 40 个候选；已有 Pilot 后的诊断或确认轮可让 20/40/55
-等不同预算在同一 Pilot 中共存。旧 `required_complete_candidates_per_strategy` 仅用于
+research façade 对每个显式 experimental condition 强制七个 scaffold 各 40 个候选，总数
+精确为 `280 × X`；已有完成 observation 的 follow-up/confirmatory 轮才可让 20/40/55 等
+不同预算共存，并必须引用前序 hypothesis/observation/interpretation。旧
+`required_complete_candidates_per_strategy` 仅用于
 schema 0.1 兼容；`CandidateIndex`/`PilotBundle` schema 0.2 同时记录逐策略预算和总数。
 
 StrategyBundle 0.3 还把 hypothesis、role、evidence、changed/held-constant factors、预期与
@@ -33,10 +35,12 @@ design mask、可验证的 binder residue 映射和全部 SHA-256。BoltzGen 的
 ## 输出
 
 - `PilotPlan`
+- content-addressed immutable execution plan（显式输出 X、7、40、280 与 `280 × X`）
 - `TaskTable`
 - `CandidateIndex` 0.1/0.2
 - `PilotBundle` 0.1/0.2
 - progress、events、backend identity 和 StageManifest
 
-公开 `easydesign pilot review` 随后读取 Stage 05 的结构化诊断；本阶段不会自动替代研究者
-选择策略。
+公开 `easydesign pilot review` 随后读取 Stage 05 的结构化诊断，并且只在 scientific output
+完整时记录 checksum-grounded `ObservationEvent`。科学解释由后续 `pilot interpret` 的 Agent
+proposal 单独记录；本阶段不会自动推断 hypothesis 状态或替代研究者选择策略。

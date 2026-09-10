@@ -20,7 +20,7 @@
 
 `knowledge_class: scientific_prior`：VHH paratope 可由 CDR3 主导，也可广泛使用 CDR1/CDR2/framework 邻域；不能把经典抗体的“只有 CDR 接触”当 VHH 普遍事实。`claim:VHH-PARATOPE-001`
 
-`knowledge_class: product_invariant`：首轮 baseline 必须按 `PI-FIRST-PILOT-001` 覆盖 registry，不得凭 scaffold 名称、来源药物或单个结构先验预筛。
+`knowledge_class: product_invariant`：首轮每个显式 condition 都必须按 `PI-FIRST-PILOT-001` 覆盖 registry；baseline、diagnostic 或 integrated condition 均不得凭 scaffold 名称、来源药物或单个结构先验预筛或缩量。
 
 每个 geometry 决定都要包含：
 

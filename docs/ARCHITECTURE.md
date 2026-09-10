@@ -6,10 +6,12 @@
 研究者批准 ───────────────┐
                           ▼
 Codex + easydesign-research Skill
-        │  project status / typed commands
+        │  project status / typed ActionIntent
         ▼
 Agent-native façade (CommandResult)
         │
+        ├── immutable ExecutionPlan + plan-bound approval
+        ├── append-only Research Graph + ClaimReceipt
         ├── project/site/strategy immutable revisions
         ├── LocalStepJob + detached local_worker
         └── read-only evidence viewer
@@ -29,11 +31,11 @@ site、strategy、pilot、scale、select 以及经验发布的确认权。公开
 
 ```text
 src/easydesign/
-├── core/             manifest、artifact、attempt、decision、hash、序列化
+├── core/             manifest、artifact、attempt、decision、claim、Target Identity、hash
 ├── stages/           内部七阶段科学模型和算法
 ├── backends/         PSE、UniProt/PDB、Protenix、ScanNet、BoltzGen、TNP、本地 GPU
 ├── filtering/        冻结的 VHH filter profile
-├── orchestration/    internal Stage、continuation、research façade、project/job/runtime
+├── orchestration/    Stage、research façade/actions/plans/graph/approval、project/job/runtime
 ├── reporting/        manifest 验证后的报告和只读 Viewer
 ├── resources/        VHH scaffold 与 filter profile package data
 ├── cli.py            语义化参数解析与 CommandResult 输出
@@ -45,6 +47,63 @@ src/easydesign/
 保持 `core/stages/backends/filtering → orchestration → CLI/worker/reporting`，科学层不依赖
 Agent 产品壳。
 
+## Target Identity v2
+
+TargetBundle 0.5 将 biological identity 与结构来源拆开，并冻结四层身份：canonical biological
+identity、experimental construct、observed coordinates、design scope。纯函数 resolver 使用带
+显式参数的 deterministic Biopython global alignment；exact native/唯一 exact subsequence 可走
+自动路径，engineered construct、isoform、ortholog、chimera、多解 mapping 或 scope 缺坐标进入
+human review，mismatch/reject fail closed。显式 PDB ID 只证明 source identity，不能自动证明
+canonical biological identity。
+
+`residue-mapping.json`/TSV 将每个 design residue 映射到 canonical、construct、label/auth
+coordinate，并记录 mapping status、edit type 和 coordinate presence。Stage 02/03 以后只消费该
+冻结 mapping；mapping SHA 改变会使旧 plan/approval 失效。0.3/0.4 bundle 保持只读兼容，旧内容
+不会被原地升级或改写。
+
+## Research Graph、typed action 与 approval
+
+`orchestration/research_graph.py` 保存 hypothesis、experiment、observation、interpretation、decision
+五类 append-only event。Observation 只能引用 checksum-verified artifact；解释不能伪装成观察；
+状态摘要由 event 重建并通过 `project status --json` 的 `research_state` 返回。ClaimReceipt 区分
+observation、inference、hypothesis、human decision 与 external fact，结构计算指标不能自动成为
+affinity/function observation。
+
+Scientific Loop 的实际写入路径是：冻结 Strategy 时追加 `HypothesisEvent` 与
+`ExperimentEvent`；`pilot review` 从完整 Stage 05 artifact 追加 deterministic
+`ObservationEvent`；`pilot interpret --input` 追加引用 Observation 的 Agent-proposed
+`InterpretationEvent`；reducer 由事件顺序派生 hypothesis 的
+`unassessed/supported/weakened/rejected/unresolved` 当前状态；`strategy draft --from-pilot`
+只在存在连通的 Hypothesis→Observation→Interpretation lineage 时创建 Strategy 1.3 草稿。
+状态变化记录 interpretation 与 observation trace，不修改历史 event。Research Graph 1.0 与
+Strategy 1.0–1.2 保持读取兼容；新事件使用 1.1，新策略使用 1.3。历史链身份按磁盘 JSON 的
+规范化内容计算，schema 新默认字段不会改变旧事件 SHA。
+
+`research_actions.py` 的 discriminated ActionIntent 是 Agent JSON 协议；shell command 仅由 renderer
+生成以兼容人类 CLI。freeze、pilot、promotion、scale、selection 先发布 content-addressed plan，
+随后 DecisionRequest/Record 绑定 plan SHA。执行前重新核验 foundation、target mapping、backend、
+count/allocation 与输入 checksum。
+
+## MSA 数据生产边界
+
+```text
+Stockholm/A3M 原始库
+        │ maintainer-only 离线构建
+        ▼
+runtime/databases/gpcr-msa/<release-id>/
+        │ canonical sequence SHA-256 resolve
+        ▼
+project selection → run input-snapshot
+        │ 已验证 A3M + source receipt
+        ▼
+AFO/Protenix adapter → prediction
+```
+
+`core/msa.py` 定义 library、release receipt、per-target source receipt 和 remote provider
+receipt；`orchestration/msa_precompute.py` 只负责 register/validate/resolve/snapshot。批量
+Stockholm 转换仅位于 maintainer script，不进入安装包和公开研究 CLI。MSA 与 template 是
+两条独立 feature：选择 library 不会触发模板搜索，precomputed 失败也不会切换 remote。
+
 ## 项目与 lineage
 
 ```text
@@ -52,15 +111,21 @@ workspace/projects/<project>/
 ├── PROJECT.yaml
 ├── DECISIONS.md
 ├── strategy-draft.yaml
+├── interpretation.<pilot-run-id>.yaml
 ├── inputs/
 ├── strategies/strategy-rNNNNNN.yaml
+├── plans/<plan-type>/plan-<sha256>.json
+├── approvals/<plan-type>/<plan-sha256>/{request,record}.json
+├── research/events/research-event-rNNNNNN.json
+├── research/snapshots/research-state-rNNNNNN.json
 ├── config-revisions/easydesign.rev-NNNNNN.yaml
 ├── site-proposal.<method>.<run-id>.yaml
 ├── site-approved.rNNNNNN.yaml
 ├── CONFIG_CURRENT
 ├── SITE_CURRENT
 ├── STRATEGY_CURRENT
-└── PROMOTION_CURRENT
+├── PROMOTION_CURRENT
+└── RESEARCH_CURRENT
 ```
 
 Draft 是可变讨论区；site approval、strategy revision、promotion receipt 和 canonical config
@@ -76,6 +141,12 @@ foundation 复制并校验前缀后运行内部 Stage 3–5；production 从人�
 region × scaffold 笛卡尔积；binding residues 必须属于 approved site，crop 必须覆盖选择
 residue，scaffold 必须来自 checksum registry。CDR override 生成 variant-local scaffold YAML；
 专家原生 YAML 保存源 SHA-256 并通过同一 BoltzGen 0.3.2 adapter 校验，不能绕过 manifest。
+
+BoltzGen capability manifest 绑定 0.3.2、pinned commit 与 source-tree SHA。已核实的显式
+`avoid_label_seq_ids` 被编译为 `not_binding`；binding/avoid 重叠、无坐标、crop 外或 capability
+不支持均 deterministic fail。未选择的 non-hotspot residue 保持 neutral，绝不自动变成
+`not_binding`。首轮协议由独立 policy 模块严格计算为 `7 × 40 × X`；后续 pilot 才允许显式灵活
+budget。Scale 默认 50,000，但任何正整数都以 `user-defined-v1` exact plan 执行。
 
 ## Worker、Viewer 与 runtime
 

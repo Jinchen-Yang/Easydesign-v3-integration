@@ -23,6 +23,7 @@ from easydesign.core import (
     EvidenceStatus,
     ExecutionStatus,
     ManifestStateError,
+    MsaSourceReceipt,
     RunManifest,
     RuntimeProfileRef,
     StageId,
@@ -88,6 +89,7 @@ class ResolvedRunConfig(BaseModel):
     prediction_request: StructurePredictionRequest | None = None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...] = ()
     precomputed_msa_snapshot: ArtifactRef | None = None
+    precomputed_msa_source_snapshot: ArtifactRef | None = None
     precomputed_paired_msa_snapshot: ArtifactRef | None = None
     precomputed_template_snapshot: ArtifactRef | None = None
     stop_after_stage: int = Field(ge=1, le=7)
@@ -105,6 +107,7 @@ class ResolvedRunConfig(BaseModel):
             "0.6",
             "0.7",
             "0.8",
+            "0.9",
         }:
             raise ValueError(f"不支持的 resolved config schema: {self.schema_version}")
         is_sequence = self.detected_input_format in {
@@ -157,6 +160,11 @@ class ResolvedRunConfig(BaseModel):
             not in {TargetInputFormat.UNIPROT, TargetInputFormat.UNIPROT_SEARCH}
         ):
             raise ValueError("该非 sequence source 不得声明 precomputed MSA")
+        if (
+            self.precomputed_msa_source_snapshot is not None
+            and self.precomputed_msa_snapshot is None
+        ):
+            raise ValueError("MSA source receipt 必须与 precomputed MSA snapshot 同时存在")
         return self
 
 
@@ -521,6 +529,36 @@ def _initialize_workspace(
                 role="msa-input-snapshot",
                 file_format="a3m",
             )
+        precomputed_msa_source_ref: ArtifactRef | None = None
+        loaded_msa_source = getattr(
+            loaded,
+            "precomputed_msa_source_receipt_path",
+            None,
+        )
+        if loaded_msa_source is not None:
+            if (
+                precomputed_msa_ref is None
+                or not isinstance(loaded, LoadedSequenceRunConfig)
+            ):
+                raise ManifestStateError(
+                    "MSA source receipt 只能绑定 sequence precomputed MSA"
+                )
+            source_receipt = load_model(loaded_msa_source, MsaSourceReceipt)
+            if source_receipt.canonical_sequence_sha256 != loaded.target.sequence_sha256:
+                raise ManifestStateError("MSA source receipt canonical sequence SHA-256 不一致")
+            if source_receipt.a3m_sha256 != precomputed_msa_ref.sha256:
+                raise ManifestStateError("MSA source receipt A3M SHA-256 不一致")
+            if source_receipt.paired_msa != "empty":
+                raise ManifestStateError("MSA source receipt paired MSA policy 不受支持")
+            receipt_snapshot = staging / "input-snapshot" / "target-msa-source.json"
+            _exclusive_copy(loaded_msa_source, receipt_snapshot)
+            precomputed_msa_source_ref = ArtifactRef.from_file(
+                run_root=staging,
+                relative_path=receipt_snapshot.relative_to(staging).as_posix(),
+                artifact_id="precomputed-msa-source-receipt",
+                role="msa-source-provenance",
+                file_format="json",
+            )
         precomputed_paired_msa_ref: ArtifactRef | None = None
         loaded_paired_msa = getattr(loaded, "precomputed_paired_msa_path", None)
         if loaded_paired_msa is not None:
@@ -567,7 +605,7 @@ def _initialize_workspace(
             if updates:
                 prediction_request = prediction_request.model_copy(update=updates)
         resolved = ResolvedRunConfig(
-            schema_version="0.8",
+            schema_version="0.9",
             project_id=loaded.config.project_id,
             run_id=selected_run_id,
             user_config=loaded.config,
@@ -581,6 +619,7 @@ def _initialize_workspace(
                 else ()
             ),
             precomputed_msa_snapshot=precomputed_msa_ref,
+            precomputed_msa_source_snapshot=precomputed_msa_source_ref,
             precomputed_paired_msa_snapshot=precomputed_paired_msa_ref,
             precomputed_template_snapshot=precomputed_template_ref,
             stop_after_stage=loaded.config.workflow.stop_after_stage,

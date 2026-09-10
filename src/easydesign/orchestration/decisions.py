@@ -71,7 +71,7 @@ def export_decision(run_root: Path, *, output: Path) -> Path:
     if destination.exists():
         raise ManifestStateError(f"Decision 导出目标已存在，禁止覆盖: {destination}")
     payload = {
-        "schema_version": "0.1",
+        "schema_version": request.schema_version,
         "decision_id": request.decision_id,
         "request_revision": request.revision,
         "request_sha256": canonical_model_sha256(request),
@@ -79,6 +79,8 @@ def export_decision(run_root: Path, *, output: Path) -> Path:
         "selected_option_ids": [],
         "approved_by": None,
         "acknowledgement": None,
+        "plan_type": request.plan_type,
+        "plan_sha256": request.plan_sha256,
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x", encoding="utf-8", newline="\n") as handle:
@@ -106,6 +108,11 @@ def approve_decision(
     expected_sha = canonical_model_sha256(request)
     if raw.get("request_sha256") != expected_sha:
         raise ManifestStateError("Decision 审批 request SHA-256 不一致")
+    if request.schema_version == "0.2" and (
+        raw.get("plan_type") != request.plan_type
+        or raw.get("plan_sha256") != request.plan_sha256
+    ):
+        raise ManifestStateError("Decision 审批 execution plan identity 不一致")
     selected = raw.get("selected_option_ids")
     if not isinstance(selected, list) or not selected:
         raise ManifestStateError("Decision 审批必须选择至少一个 option")
@@ -121,6 +128,7 @@ def approve_decision(
         raise ManifestStateError("Decision 审批必须填写 approved_by")
     timestamp = datetime.now(UTC) if approved_at is None else approved_at
     record = DecisionRecord(
+        schema_version=request.schema_version,
         decision_id=request.decision_id,
         request_revision=request.revision,
         request_sha256=expected_sha,
@@ -133,6 +141,8 @@ def approve_decision(
             if raw.get("acknowledgement") is not None
             else None
         ),
+        plan_type=request.plan_type,
+        plan_sha256=request.plan_sha256,
     )
     record_path = request_path.parent / f"record.v{request.revision:04d}.json"
     if record_path.exists():
@@ -165,6 +175,11 @@ def load_decision_record_context(
         raise ManifestStateError("DecisionRequest/Record decision_id 不一致")
     if canonical_model_sha256(request) != record.request_sha256:
         raise ManifestStateError("DecisionRequest 已变更或 Record hash 不匹配")
+    if request.schema_version == "0.2" and (
+        request.plan_type != record.plan_type
+        or request.plan_sha256 != record.plan_sha256
+    ):
+        raise ManifestStateError("DecisionRequest/Record plan identity 不一致")
     option_ids = {option.option_id for option in request.options}
     if any(value not in option_ids for value in record.selected_option_ids):
         raise ManifestStateError("DecisionRecord 选择了 request 不存在的 option")

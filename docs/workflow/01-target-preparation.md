@@ -1,10 +1,11 @@
 # 01 — Target 准备
 
 **阶段状态：** `smoke-validated`。schema 0.6 的六类入口、严格实验结构选择、
-Target Bundle 0.4、通用 Decision Gate、独立预测特征配置和 Viewer 均已通过
+历史 Target Bundle 0.4、通用 Decision Gate、独立预测特征配置和 Viewer 均已通过
 Proteindigger1 真实 smoke；该状态只证明工程流程可运行，不代表科学准确率。
 
-**契约版本：** Target Bundle `0.4`，兼容读取 `0.1`–`0.3`。
+**契约版本：** 新写 Target Bundle `0.5`，兼容读取 `0.1`–`0.4`。0.5 冻结
+Target Identity v2 与逐残基 mapping；旧 bundle 不会被原地升级。
 
 ## 目的
 
@@ -47,7 +48,8 @@ flowchart LR
     PQ --> N
     BV --> N
     N --> O["protein-only target.cif，chain A<br/>sequence、编号映射、QC、provenance、retrieval"]
-    O --> TB["Target Bundle 0.4 + Manifest"]
+    O --> TI["Target Identity v2<br/>canonical / construct / observed / design scope"]
+    TI --> TB["Target Bundle 0.5 + frozen mapping + Manifest"]
     TB --> V["Mol* Viewer"]
     TB --> H["Stage 02 handoff"]
 ```
@@ -89,6 +91,22 @@ PSE 首版只实现可信本地、单蛋白、单链、单 coordinate state 导�
 - 恰好一种 source kind 及其专属参数。
 - 结构选择规则和显式预测 fallback 规则。
 - 可选 chain/domain 选择与生物学约束。
+
+## Target Identity v2
+
+新写 0.5 bundle 明确区分四层身份：canonical biological identity、experimental
+construct、observed coordinates 与 design scope。显式 PDB ID 只解析结构来源，不等于
+canonical biological identity 已解析。exact native 与唯一 terminal subsequence 可自动通过；
+stabilizing substitution、loop deletion、isoform、ortholog、chimera、scope 附近 fusion/
+insertion 或多解 alignment 必须进入 human review，无法建立或与声明身份冲突则拒绝。
+unattended 模式不会选择“最像”的 alignment。
+
+alignment 算法、参数、输入 SHA-256、substitution/deletion/insertion 与 ambiguity 均冻结在
+identity report；mapping JSON/TSV 保存 canonical、construct、label/auth 编号、insertion code、
+coordinate presence、mapping status 与 edit type。Stage 02 及以后只消费这一份 checksum 正确
+的冻结 mapping，不重新猜编号。mapping identity 变化会改变 foundation/plan SHA，使旧 site、
+strategy 与 execution approval 失效。读取 0.3/0.4 时诚实返回
+`legacy-insufficient-identity-detail`，不伪造缺失 construct identity。
 
 sequence/FASTA 和 UniProt 路径先经 RCSB Sequence Search v2/Data API 寻找实验结构，
 design scope 必须与 deposited polymer sequence 建立 100% identity 的唯一映射，且
@@ -281,6 +299,54 @@ query/A3M hash、depth、provider 和生成时间。`online` 不读取旧 cache�
 序列在完成服务条款、隐私和数据处理审查前，必须使用经过批准的自建
 `custom-colabfold`/本地 MSA，不得由 UI 静默发送到公共 endpoint。
 
+### GPCR MSA library 边界
+
+EasyDesign 不从 Stockholm 归档批量生产 GPCR MSA，也不扫描模板数据库或部署树。离线维护者
+工具先生成不可变 release，EasyDesign 只按 target canonical sequence SHA-256 解析、验证和
+冻结已生产的 A3M。新 release 的固定布局是：
+
+```text
+runtime/databases/gpcr-msa/<release-id>/
+├── library-manifest.json
+├── entries/
+│   └── <canonical-sequence-sha256>.a3m
+└── release-receipt.json
+```
+
+manifest 和 receipt 必须绑定 release ID、source identity、entry 数量和 manifest SHA-256；
+entry 路径、query、A3M SHA-256、大小和 depth 全部一致。缺失、重复 sequence match、路径逃逸
+或 identity 不一致都会终止，禁止按 accession/文件名猜测，也禁止回退到 remote/no-MSA。
+
+研究入口直接选择已注册 release：
+
+```bash
+easydesign target prepare PROJECT \
+  --prediction-backend afo \
+  --msa-library gpcr-msa-20260823-v3
+```
+
+或显式输入一条 A3M：
+
+```bash
+easydesign target prepare PROJECT \
+  --prediction-backend afo \
+  --msa-a3m /path/to/target.a3m
+```
+
+两条路径都先逐位核对 query 与 canonical target，再将 A3M 和 `msa-source.json` 无损复制到
+项目的 content-addressed `inputs/msa-selections/`；run 创建时继续冻结为
+`input-snapshot/target-msa.a3m` 和 `input-snapshot/target-msa-source.json`。receipt 记录
+release ID、library/receipt SHA-256、canonical sequence SHA-256、A3M SHA-256、depth、
+`paired_msa=empty`、显式 template mode 和 `fallback_policy=fail-closed`。
+
+现有 `gpcr-msa-source-20260823-v3` 是 schema 0.2 的 source-derived legacy 库：仍可按
+canonical sequence SHA-256 只读解析，但没有 1.0 release receipt，不能冒充新格式或按
+accession 直接使用。新的批量 release 只能由
+`scripts/maintainers/gpcr_msa_release_builder.py` 在研究 CLI 外生成；具体见维护者文档。
+
+当前 `TemplateMode` 只有 `disabled/precomputed`。MSA library 选择不会触发模板搜索；已安装
+的 OpenFold/AF3 结构库也不能被描述为已接通的一键 template database 功能。
+
 PSE 路径使用排他的 YAML 分支：
 
 ```yaml
@@ -431,7 +497,7 @@ schema 0.6 的新 PSE run 也把正式 target label/auth chain 规范为 `A`；P
 author residue 和 insertion code 保存到 mapping 的 `source_*` 字段。schema 0.1–0.3 的
 历史 artifact（例如旧 APOE report 的 label chain `Axp`）继续按原 hash 读取，绝不重写。
 
-Target Bundle `0.4` 允许 `target.cif` 包含一个或多个
+Target Bundle `0.4`/`0.5` 允许 `target.cif` 包含一个或多个
 `_atom_site.pdbx_PDB_model_num`。`sequence.fasta` 与 mapping 描述所有模型共享的残基
 身份；单模型实验结构也可以因 unresolved loop 或 terminal truncation 缺部分残基。
 缺失残基在 mapping 中声明 `coordinate_present=false`，在 `target.cif` polymer sequence

@@ -39,7 +39,7 @@ flowchart LR
     F --> G{"结果是否足够好？"}
     G -- "否" --> C
     G -- "是" --> H["人工选择获胜策略"]
-    H --> I["约 5 万规模生成"]
+    H --> I["默认 5 万、可选正整数规模生成"]
     I --> J["筛选并交付 Top 200"]
 ```
 
@@ -122,8 +122,9 @@ Skill。
 一份 strategy revision 应回答“这轮想验证什么”，而不只是罗列参数。
 
 - 每轮可以包含多组显式 variant；不同 variant 应尽量对应可解释的假设差异；
-- 每组约 40 个设计是经验默认值，用于低成本获得信号，不是不可修改的科学规则；
-- 七套 VHH scaffold 是推荐起点，可以全部尝试，也可以根据证据选择子集；
+- 首轮每个显式 experimental condition 必须完整覆盖七套 official VHH scaffold，且每个
+  scaffold 恰好 40 个候选；这是版本化产品 invariant，不是普适生物学定律；
+- 因此首轮总量严格为 `7 × 40 × X`，其中 `X` 是冻结策略中显式列出的 condition 数；
 - 不强制 region × scaffold 的全笛卡尔积，避免把算力花在没有问题意识的组合上；
 - target crop、binding residue subset、CDR range 和插入长度都必须显式记录并验证；
 - rationale 和预期结果用于解释设计，但只有 run 产物、结构和指标才是执行证据。
@@ -137,17 +138,28 @@ Pilot 不只是“缩小版生产”，而是将经验转化为可比较证据�
 
 1. Codex 和研究者提出一个或多个可区分策略；
 2. EasyDesign 校验并冻结策略 revision；
-3. 每个 variant 使用合适的小预算运行，默认约 40 个候选；
-4. 统一 filter，并保留失败规则、代表结构和可比较指标；
-5. Codex 判断问题更可能来自 site、策略、backend 还是过滤标准；
-6. 研究者决定修订、继续、停止或 promote；
-7. 下一轮创建新 revision 和新 run，旧证据不覆盖。
+3. 首轮每个显式 condition 运行七个 scaffold、每 scaffold 40 个候选；后续 pilot 才允许
+   在引用前序 hypothesis/observation/interpretation 后使用不同 denominator；
+4. 统一 filter，并由 deterministic code 将真实计数、失败规则和 missingness 保存为
+   `ObservationEvent`；
+5. Codex 提交引用 Observation 的 typed `InterpretationEvent`，明确 conclusion、替代解释、
+   limitations、不确定状态和建议下一步；
+6. reducer 从 Interpretation 派生 hypothesis 当前状态，并保留 Interpretation→Observation
+   trace；它不修改旧 HypothesisEvent；
+7. 研究者决定修订、继续、停止或 promote；
+8. 下一轮 Strategy 1.3 引用 active hypothesis、previous observation 和 interpretation，创建
+   新 revision 与新 run，旧证据不覆盖。
+
+四类语义不可互换：Observation 是 artifact 实际显示的事实；Interpretation 是基于这些事实的
+科学含义；Hypothesis update 是 reducer 派生的当前科学状态；Decision 是研究者选择采取的行动。
+Deterministic threshold 不自动证明科学假设，Agent inference 也不能冒充 affinity/function 实验事实。
 
 没有候选通过可以是完整、有效的科学负结果。只有 backend、环境、数据或协议失败才属于运行
 失败。产品必须把二者区分，否则 Codex 会从错误证据中学习。
 
-Scale 只消费人工 promote 的策略。默认生产预算约 50,000，默认交付 Top 200，但二者都是
-显式可审查的产品默认值；不足 200 个合法候选时只交付真实数量，不重复、不补造。
+Scale 只消费人工 promote 的策略。生产预算默认 50,000，但用户可选择任意合法正整数；
+默认交付 Top 200。二者都是显式可审查的产品默认值；不足 200 个合法候选时只交付真实
+数量，不重复、不补造。
 
 ## 6. 经验怎样进入 Skill
 
@@ -210,6 +222,10 @@ workspace/projects/<project>/
 ├── inputs/
 ├── strategies/
 │   └── strategy-rNNNNNN.yaml
+├── plans/<action>/plan-<sha256>.json
+├── approvals/<action>/<plan-sha256>/
+├── research/events/research-event-rNNNNNN.json
+├── research/snapshots/research-state-rNNNNNN.json
 ├── config-revisions/
 │   └── easydesign.rev-NNNNNN.yaml
 ├── site-proposal.<method>.<run-id>.yaml
@@ -217,7 +233,8 @@ workspace/projects/<project>/
 ├── CONFIG_CURRENT
 ├── SITE_CURRENT
 ├── STRATEGY_CURRENT
-└── PROMOTION_CURRENT
+├── PROMOTION_CURRENT
+└── RESEARCH_CURRENT
 ```
 
 这里的子目录已经具有多文件规模和独立生命周期，不是为一个文件提前增加的空层级。
@@ -235,8 +252,8 @@ workspace/projects/<project>/
 easydesign project status PROJECT --json
 ```
 
-这个接口必须足以返回 foundation、strategy revisions、pilot/production runs、待批准事项和
-结构化下一步。
+这个接口必须足以返回 foundation、strategy revisions、pilot/production runs、active hypothesis、
+latest observation/interpretation、开放科学问题、待批准事项和结构化下一步。
 
 ## 9. 人工 gate 与自动执行边界
 
@@ -251,7 +268,9 @@ easydesign project status PROJECT --json
 - promote pilot 策略进入生产；
 - 把项目观察发布为正式 Skill 经验。
 
-高成本任务在确认前必须显示候选数、策略分配、backend、GPU 占用、磁盘余量和精确输入。
+高成本任务在确认前必须显示候选数、策略分配、backend、GPU 占用、磁盘余量和精确输入，
+并生成 immutable ExecutionPlan。`--confirm` 只批准 current plan 的精确 SHA；count、backend、
+foundation、mapping 或输入改变都会使旧 approval 失效。
 `Ctrl-C` 只脱离观察；`drain` 只在安全检查点停止继续调度，不粗暴终止科学进程。
 
 ## 10. 借鉴什么，不照搬什么
@@ -260,7 +279,9 @@ Agent 原生参考实现最有价值的思想是：Codex 作为主要交互界�
 执行确定性操作、关键位置保留人工 gate。EasyDesign Local 接受这套思想，但不照搬：
 
 - 不建立大量职责重叠的 Skill、agent 和 script 层级；
-- 不把固定三区域、七 scaffold 或 40 个候选写成不可改变的矩阵；
+- 不把固定三区域、七 scaffold 或 40 个候选误写成普适生物学规律；七 scaffold 与
+  40 candidates/scaffold 仍是 `PI-FIRST-PILOT-001` 的首轮产品不变量，后续 pilot 才可按
+  前序 observation/hypothesis 明确改变；
 - 不引入远程 executor、受管队列、主机配对或特定集群假设；
 - 不再用另一套 G0–G5 或类似名称替换旧 Stage 后继续制造僵硬线性流程；
 - 不让 prompt 承担本应由 schema、CLI、checksum 或 worker 保证的正确性。

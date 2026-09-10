@@ -35,7 +35,11 @@ from easydesign.reporting.gpcr_site_review import (
     validate_review_report,
 )
 from easydesign.safe_writes import append_pointer_revision, read_last_text_line
-from easydesign.stages.s01_target_preparation import ResidueMapping, TargetBundle
+from easydesign.stages.s01_target_preparation import (
+    ResidueMapping,
+    ResidueMappingEntry,
+    TargetBundle,
+)
 from easydesign.stages.s02_hotspot_discovery.gpcr import (
     GpcrSiteAnalysis,
     StructureAnalysisError,
@@ -1568,14 +1572,17 @@ def publish_gpcr_analysis(
         context_template = final_root / "gpcr-context-template.yaml"
         if project_root is not None:
             context_path = project_root / f"gpcr-context.{analysis.analysis_id}.yaml"
-            selection_path = project_root / f"gpcr-site-selection.{analysis.analysis_id}.yaml"
+            selection_path = project_root / (
+                f"gpcr-site-selection.{analysis.analysis_id}.r{revision:06d}.yaml"
+            )
         else:
             context_path = base / f"gpcr-context.{analysis.analysis_id}.yaml"
-            selection_path = base / f"gpcr-site-selection.{analysis.analysis_id}.yaml"
+            selection_path = base / (
+                f"gpcr-site-selection.{analysis.analysis_id}.r{revision:06d}.yaml"
+            )
         if not context_path.exists():
             _copy_exclusive(context_template, context_path)
-        if not selection_path.exists():
-            _write_yaml(selection_path, selection_value)
+        _write_yaml(selection_path, selection_value)
         append_pointer_revision(
             base / GPCR_SITE_POINTER,
             f"{final_root.name}/analysis-manifest.json",
@@ -1632,6 +1639,111 @@ def resolve_latest_gpcr_analysis(project_or_root: Path) -> Path:
         raise AnalysisWorkflowError("invalid GPCR analysis LATEST pointer")
     validate_gpcr_analysis_bundle(candidate.parent)
     return candidate.parent
+
+
+def _selection_residue_mapping(
+    project_root: Path,
+    manifest: Mapping[str, Any],
+) -> tuple[ResidueMapping, str]:
+    """Load the exact Stage 01 mapping frozen into the selected GPCR analysis."""
+
+    source = _mapping(manifest.get("source"), "analysis manifest source")
+    stage01 = _mapping(source.get("stage01"), "analysis manifest Stage 01 source")
+    role = str(stage01.get("analysis_structure_role") or "")
+    if role not in {"canonical-target", "source-context"}:
+        raise AnalysisWorkflowError(
+            "GPCR analysis does not declare a supported Stage 01 structure role"
+        )
+    raw_path = str(stage01.get("residue_mapping") or "")
+    expected_sha = str(stage01.get("residue_mapping_sha256") or "")
+    if not raw_path or not expected_sha:
+        raise AnalysisWorkflowError(
+            "GPCR analysis does not declare its frozen Stage 01 residue mapping"
+        )
+    mapping_path = Path(raw_path).expanduser().resolve(strict=True)
+    workspace_root = project_root.parent.parent.resolve(strict=True)
+    if (
+        not mapping_path.is_relative_to(workspace_root)
+        or not mapping_path.is_file()
+        or mapping_path.is_symlink()
+    ):
+        raise AnalysisWorkflowError(
+            "GPCR analysis Stage 01 residue mapping is outside the current workspace"
+        )
+    if sha256_file(mapping_path) != expected_sha:
+        raise AnalysisWorkflowError(
+            "GPCR analysis Stage 01 residue mapping SHA-256 mismatch"
+        )
+    mapping = load_model(mapping_path, ResidueMapping)
+    declared_entries = tuple(
+        ResidueMappingEntry.model_validate(item).model_dump(mode="json")
+        for item in _rows(
+            stage01.get("residue_mapping_entries"),
+            "analysis manifest Stage 01 residue mapping entries",
+        )
+    )
+    artifact_entries = tuple(item.model_dump(mode="json") for item in mapping.entries)
+    if declared_entries != artifact_entries:
+        raise AnalysisWorkflowError(
+            "GPCR analysis Stage 01 residue mapping entries differ from the frozen artifact"
+        )
+    return mapping, role
+
+
+def _candidate_target_labels(
+    candidate_id: str,
+    residues: Sequence[Any],
+    mapping: ResidueMapping,
+    structure_role: str,
+) -> list[int]:
+    """Project source/canonical candidate identities into normalized target labels."""
+
+    index: dict[tuple[str, str, str], list[Any]] = {}
+    for entry in mapping.entries:
+        if structure_role == "source-context":
+            chain = entry.source_author_chain_id
+            residue_id = entry.source_author_residue_id
+        else:
+            chain = entry.author_chain_id
+            residue_id = entry.author_residue_id
+        if chain is None or residue_id is None:
+            continue
+        key = (chain, residue_id, entry.insertion_code or "")
+        index.setdefault(key, []).append(entry)
+
+    labels: list[int] = []
+    outside_scope: list[str] = []
+    for residue in residues:
+        chain = str(residue.auth_asym_id or residue.chain_id)
+        residue_id = str(residue.auth_seq_id)
+        insertion_code = str(residue.insertion_code or "")
+        matches = index.get((chain, residue_id, insertion_code), [])
+        residue_name = f"{chain}:{residue_id}{insertion_code}"
+        if not matches:
+            outside_scope.append(residue_name)
+            continue
+        if len(matches) != 1:
+            raise AnalysisWorkflowError(
+                f"GPCR candidate {candidate_id} residue {residue_name} maps ambiguously "
+                "into the Stage 01 target"
+            )
+        entry = matches[0]
+        if residue.amino_acid != entry.amino_acid:
+            raise AnalysisWorkflowError(
+                f"GPCR candidate {candidate_id} residue {residue_name} amino acid "
+                "differs from the Stage 01 target mapping"
+            )
+        labels.append(entry.label_seq_id)
+    if outside_scope:
+        raise AnalysisWorkflowError(
+            f"GPCR candidate {candidate_id} contains residues outside the current "
+            f"Stage 01 target scope: {outside_scope}"
+        )
+    if len(set(labels)) != len(residues) or not labels:
+        raise AnalysisWorkflowError(
+            f"GPCR candidate {candidate_id} does not map uniquely into Stage 01 label numbering"
+        )
+    return sorted(labels)
 
 
 def validate_gpcr_analysis_bundle(bundle: Path) -> dict[str, Any]:
@@ -1705,6 +1817,7 @@ def gpcr_selection_to_stage02_config(project: Path, selection_path: Path) -> Sta
     analysis = GpcrSiteAnalysis.model_validate(
         load_document(manifest_path.parent / "gpcr-hotspot-analysis.json")
     )
+    residue_mapping, structure_role = _selection_residue_mapping(project_root, manifest)
     candidates = {
         item.id: item for item in (*analysis.candidates.inhibit, *analysis.candidates.activate)
     }
@@ -1719,17 +1832,12 @@ def gpcr_selection_to_stage02_config(project: Path, selection_path: Path) -> Sta
                 f"GPCR candidate {candidate_id} is {candidate.classification.value}; "
                 "only primary/backup candidates can be proposed"
             )
-        labels = sorted(
-            {
-                int(residue.label_seq_id)
-                for residue in candidate.residues
-                if residue.label_seq_id is not None
-            }
+        labels = _candidate_target_labels(
+            candidate_id,
+            candidate.residues,
+            residue_mapping,
+            structure_role,
         )
-        if len(labels) != len(candidate.residues) or not labels:
-            raise AnalysisWorkflowError(
-                f"GPCR candidate {candidate_id} lacks unique Stage 01 label numbering"
-            )
         overlap = used_labels.intersection(labels)
         if overlap:
             raise AnalysisWorkflowError(

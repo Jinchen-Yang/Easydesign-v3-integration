@@ -272,11 +272,22 @@ easydesign pilot run workspace/projects/PROJECT --strategy STRATEGY_REVISION \
   --prediction-backend afo --confirm --detach
 easydesign job watch workspace/projects/PROJECT --run PILOT_RUN
 easydesign pilot review workspace/projects/PROJECT --run PILOT_RUN
+easydesign pilot interpret workspace/projects/PROJECT --run PILOT_RUN \
+  --input workspace/projects/PROJECT/interpretation.PILOT_RUN.yaml
+easydesign strategy draft workspace/projects/PROJECT --from-pilot PILOT_RUN
 ```
 
 成功 Stage 05 自动生成不可变 Review Dashboard。旧 `pilot review` 页面命令在存在正式
 `stage05-bundle` 时转发到同一核心生成器；Pilot/Expansion 完整母集、方案比较与结构证据
 不再由旧 Skill 抽取少量代表候选。
+
+`pilot review` 的 deterministic 部分只保存“artifact 显示了什么”的 Observation；
+`pilot interpret` 接受 project-local typed YAML，由 Agent 保存 conclusion、alternative
+explanations、limitations、suggested next step，以及 hypothesis 的
+supports/weakens/rejects/unresolved 作用。当前 hypothesis 状态由 append-only event reducer
+派生。没有完整 Observation 的 empty/partial/operational failure 不得进入 scientific
+interpretation；`strategy draft --from-pilot` 必须验证连通的
+Hypothesis→Observation→Interpretation refs。
 
 ## 完成门槛
 

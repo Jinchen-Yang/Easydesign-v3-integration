@@ -1,0 +1,14 @@
+target_id,target_name,target_family,benchmark_source,pdb_id,uniprot,x_conditions,inclusion_reason,site_status
+adrb2,ADRB2,GPCR-class-A,prospective-GPCR-panel,2RH1,P07550,1,adrenergic engineered inactive receptor,unresolved
+cxcr4,CXCR4,GPCR-class-A,prospective-GPCR-panel,3ODU,P61073,1,chemokine receptor extracellular loops,unresolved
+mc4r,MC4R,GPCR-class-A,prospective-GPCR-panel,7PIU,P32245,1,melanocortin ligand pocket and peptide recognition,unresolved
+glp1r,GLP1R,GPCR-class-B1,prospective-GPCR-panel,8JIR,P43220,1,large peptide receptor ectodomain and context,unresolved
+adora2a,ADORA2A,GPCR-class-A,prospective-GPCR-panel,3EML,P29274,1,adenosine receptor engineered construct,unresolved
+drd2,DRD2,GPCR-class-A,prospective-GPCR-panel,6CM4,P14416,1,dopamine receptor engineered inactive construct,unresolved
+pdl1,PD-L1,receptor-ectodomain,BenchBB-standardized-target-only,4Z18,Q9NZQ7,1,checkpoint surface challenge,unresolved
+egfr,EGFR,receptor-ectodomain,BenchBB-standardized-target-only,8HGO,P00533,1,multidomain receptor challenge,unresolved
+il7ra,IL7Ralpha,receptor-ectodomain,BenchBB-standardized-target-only,3DI3,P16871,1,cytokine receptor challenge,unresolved
+bhrf1,BHRF1,viral-protein,BenchBB-standardized-target-only,2WH6,P03182,1,standard target identity and recognition only,unresolved
+spcas9,SpCas9,nuclease,BenchBB-standardized-target-only,4OO8,Q99ZW2,1,large multidomain generalization challenge,unresolved
+bbf14,BBF-14,synthetic-protein,BenchBB-standardized-target-only,9HAG,,1,non-natural beta barrel target,unresolved
+mbp,MBP,soluble-protein,BenchBB-standardized-target-only,1PEB,P0AEX9,1,soluble periplasmic binding protein,unresolved

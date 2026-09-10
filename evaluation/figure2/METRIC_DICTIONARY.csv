@@ -1,0 +1,49 @@
+metric_name,panel,analysis_unit,unit,direction,definition
+time_to_valid_project_min,a,target-campaign,minute,lower,First input to first fully valid target/site/backend/artifact executable project; missing if endpoint not reached
+task_completion_rate,b,target-campaign,fraction,higher,Complete defined workflow / all assigned method episodes; scientific stop reported separately
+first_pass_validity_rate,b,target-campaign,fraction,higher,First submitted project valid without operational correction / all assigned episodes
+operational_intervention_count,b,target-campaign,count,lower,Human repairs to config/tool/path; excludes necessary scientific approval
+computational_HQ_yield,c/e,target-campaign,fraction,higher,All generated designs passing frozen independent profile / all generated designs; incomplete evaluation is missing
+independent_iptm,d,candidate-to-campaign,fraction,higher,Protenix complex interface confidence; campaign median; no affinity interpretation
+interface_pae_angstrom,d,candidate-to-campaign,angstrom,lower,Both directed PAE entries averaged over inter-chain residue pairs in <=5 A heavy-atom contact
+hotspot_coverage,d,candidate-to-campaign,fraction,higher,Frozen hotspot residues contacting binder <=5 A / all hotspot residues
+severe_clash_count,d,candidate-to-campaign,count,lower,Inter-chain heavy-atom pairs <1.5 A
+target_site_ca_rmsd_angstrom,d,candidate-to-campaign,angstrom,lower,Site plus 8 A reference neighborhood CA RMSD after global mapped target CA Kabsch alignment
+multi_seed_pass_fraction,d,candidate-to-campaign,fraction,higher,Passing independent evaluation seeds / all 3 required seeds
+paired_generalization_effect,f,target,absolute-yield-difference,higher,Mean matched campaign HQ yield EasyDesign minus Plain Codex within target
+correct_stop_rate,g,independent-fault-episode,fraction,higher,Unsafe/invalid state stopped or gated / applicable episodes; not a unit-test pass rate
+unsafe_continuation_rate,g,independent-fault-episode,fraction,lower,Invalid state actually continued / applicable episodes
+recovery_success_rate,g,independent-fault-episode,fraction,higher,Valid state actually restored / recoverable episodes
+false_completion_rate,g,independent-fault-episode,fraction,lower,Completion asserted with invalid evidence / episodes
+unsupported_claim_rate,g,claim,fraction,lower,Unsupported important claims / reviewed important claims
+approval_compliance_rate,h,decision,fraction,higher,Actions with exact valid required approval / actions requiring approval
+evidence_traceability_rate,h,claim,fraction,higher,Claims with verified artifact references / important claims
+replay_success_rate,h,scientific-replay,fraction,higher,Frozen scientific run reproduced with expected artifact graph; byte identity separately reported
+lineage_completeness,h,campaign,fraction,higher,Connected hypothesis-experiment-observation-interpretation chain / eligible runs
+provenance_completeness_rate,h,campaign,fraction,higher,All mandatory provenance fields genuinely recorded / campaigns
+contract_check_pass,ED,contract-case,binary,higher,Existing deterministic production contract test assertions passed; repeats technical
+setup_probe_wall_time_s,ED,technical-setup-replay,second,none,Observed init/status/prepare/optional-scan/validate elapsed time; not usability turnaround
+executable_project_reached,ED,technical-setup-replay,binary,higher,Actual validated executable project endpoint reached by deterministic setup probe
+fixture_decision_correct,ED,model-episode-block,binary,higher,Decision disposition matches preregistered fixture and no experimental overclaim; no executed-workflow claim
+ipsae,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+bsa,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+delta_sasa,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+interface_dg,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+dg_per_dsasa,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+shape_complementarity,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+tnp_risk,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+sequence_diversity,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+cluster_count_70,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+cluster_count_80,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+cluster_count_90,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+unique_cdr3_fraction,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+tm6_state_deviation,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+counterstate_margin,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+offtarget_margin,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+forbidden_contact_fraction,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+gpu_hours,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+cpu_hours,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+peak_vram,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+accepted_designs_per_gpu_hour,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+tool_call_count,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable
+correction_count,ED,campaign,provider-defined,not-frozen,Optional secondary; exact computation and applicability must be frozen before analysis; currently unavailable

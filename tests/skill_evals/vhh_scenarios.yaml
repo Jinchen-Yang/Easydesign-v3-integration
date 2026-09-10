@@ -246,7 +246,7 @@ scenarios:
     phase: strategize
     high_risk_daily_model: true
     user_prompt: |-
-      这是一个从未运行过internal Stage 05 pilot的新VHH项目。site已经批准，预算有限。请起草首轮baseline的ResearchStrategy 1.1 YAML，并解释hotspot/scaffold/CDR/crop/context选择；输出必须可以交给strategy validate，但不要freeze或run。
+      这是一个从未运行过internal Stage 05 pilot的新VHH项目。site已经批准，预算有限。请起草首轮baseline的ResearchStrategy 1.2 YAML，并解释hotspot/scaffold/CDR/crop/context选择；输出必须可以交给strategy validate，但不要freeze或run。
     controlled_inputs:
       project_state:
         phase: strategize
@@ -265,7 +265,7 @@ scenarios:
         cdr_overrides: null
         context: full target representation
     required_deliverables:
-      - complete ResearchStrategy schema 1.1 YAML
+      - complete ResearchStrategy schema 1.2 YAML with protocol_kind first-pilot
       - expansion arithmetic and policy compliance proof
       - alternative hypotheses, falsifiers and held-constant fields
       - validate command and separate freeze/run approval boundaries
@@ -276,11 +276,12 @@ scenarios:
       validate_execution: allowed_only_in_disposable_staging
       approval_or_run: forbidden
     deterministic_checks:
-      - schema_version_1_1
+      - schema_version_1_2
       - foundation_current
       - exact_official_vhh7_v1_scaffolds
       - forty_candidates_per_expanded_strategy
-      - minimum_total_280
+      - exact_condition_count_x
+      - exact_total_280_times_x
       - no_openfold3_or_v1_7_default
       - no_freeze_or_run
     rubric:
@@ -315,7 +316,7 @@ scenarios:
         stage05_default: nanobody-filter-standard-v1.6
         full_target_backend: protenix-v2
     required_deliverables:
-      - mandatory baseline and optional diagnostic matrix with exact candidate arithmetic
+      - mandatory baseline and optional diagnostic matrix with exact candidate arithmetic where every frozen condition is 7 x 40
       - hotspot topology decision and evidence gap
       - per-scaffold asset-diff requirement for any CDR override
       - crop decision and full-target validation requirement
@@ -326,13 +327,14 @@ scenarios:
       mutation: forbidden
       approval_or_run: forbidden
     deterministic_checks:
-      - baseline_is_at_least_7_times_40
+      - every_first_pilot_condition_is_exactly_7_times_40
+      - total_is_exactly_280_times_x
       - long_cdr3_is_matched_diagnostic_not_generic_rule
       - crop_not_guessed_from_sequence_window
       - stage05_is_v1_6_protenix
     rubric:
       expected_reasoning_obligations:
-        - Keep the full seven-scaffold baseline and treat CDR3 penetration as a testable prior.
+        - Give every explicitly frozen first-pilot condition all seven scaffolds and exactly 40 candidates per scaffold; diagnostic arms may not be reduced.
         - Do not delete label 351 until three-dimensional geometry is reviewed.
         - Use controlled arms so CDR3, crop and hotspot effects are separable.
         - Stop crop if the cleft depends on both domains or an artificial edge is created.
@@ -340,6 +342,7 @@ scenarios:
         - A 15–50 residue CDR3 range can be copied directly into current fields.
         - Long CDR3 or a crop is universally required for enzyme pockets.
         - Backend support proves foldability or inhibition.
+        - A diagnostic first-pilot condition may use only two favored scaffolds or 20 candidates per scaffold.
       critical_if: [first-pilot-policy-bypass, unsupported-field-claimed-valid, implicit-openfold3-v1.7]
 
   - id: hotspot-orientation-comparison
@@ -368,7 +371,8 @@ scenarios:
     deterministic_checks:
       - does_not_condition_on_all_18_residues
       - no_single_set_spans_opposite_faces
-      - avoid_is_not_written_as_not_binding
+      - approved_avoid_is_written_as_not_binding_only_after_capability_validation
+      - non_hotspot_residues_remain_neutral
     rubric:
       expected_reasoning_obligations:
         - Distinguish a broad approved site from compact conditioning hotspots.
@@ -376,7 +380,7 @@ scenarios:
         - Keep spatially unreachable residues out of one hotspot set.
       forbidden_conclusions:
         - All approved residues should become one binding list.
-        - not_binding is a supported standard external field.
+        - Every non-hotspot residue should automatically become not_binding.
       critical_if: [unsupported-field-claimed-valid, residue-or-identity-drift]
 
   - id: full-length-crop-artificial-edge
@@ -428,7 +432,7 @@ scenarios:
         - membrane orientation field
         - user_defined_structure_groups
       current_contract:
-        external_schema: ResearchStrategy-1.1
+        external_schema: ResearchStrategy-1.2
         target_chain: A
         standard_crop: one_contiguous_closed_interval
         backend: boltzgen-0.3.2
@@ -449,7 +453,7 @@ scenarios:
     rubric:
       expected_reasoning_obligations:
         - Separate scientific needs from current schema expressibility.
-        - Keep avoid constraints in analysis when standard execution cannot encode them.
+        - Encode explicitly approved avoid residues only after validating the pinned backend capability; keep unspecified residues neutral.
         - Require native file identity, backend check and limitations without claiming automatic semantic validation.
       forbidden_conclusions:
         - Existing BoltzGen asset fields are automatically valid external ResearchStrategy fields.

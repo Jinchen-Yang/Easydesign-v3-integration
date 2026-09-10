@@ -1,0 +1,30 @@
+# Keep benchmark source/configuration in Git, not generated science evidence.
+# Ignoring a file never deletes it: existing evidence remains in this clone.
+/*
+!/.gitignore
+!/README.md
+!/configs/
+!/runners/
+!/metrics/
+!/METRIC_DICTIONARY.csv
+
+!/plots/
+/plots/*
+!/plots/plot_figure2.py
+
+!/reports/
+/reports/*
+!/reports/EVAL_PREFLIGHT.md
+!/reports/FIGURE_CONTRACT.md
+!/reports/CONTROLLED_ESTIMAND_REVIEW.md
+!/reports/PROTOCOL_AND_HARNESS_HISTORY.md
+
+!/manifests/
+/manifests/*
+!/manifests/GPU_TASK_QUEUE.json
+
+!/provenance/
+/provenance/*
+!/provenance/freeze.json
+!/provenance/harness-at-freeze/
+!/provenance/specification/

@@ -76,9 +76,55 @@ def test_standalone_gpcr_bundle_is_immutable_and_validated(tmp_path: Path) -> No
     assert not (output / "analysis-r000001" / "analysis-manifest.json").is_symlink()
 
 
-def _project_bundle_with_selectable_candidate(tmp_path: Path) -> tuple[Path, Path, str]:
-    project = tmp_path / "project"
-    project.mkdir()
+def test_each_gpcr_analysis_revision_gets_a_manifest_bound_selection(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "workspace" / "projects" / "project"
+    project.mkdir(parents=True)
+    structure = tmp_path / "target.pdb"
+    structure.write_text(PDB, encoding="ascii")
+    request = GpcrSiteRequest(
+        evidence_dir=tmp_path / "unused",
+        structure=structure,
+        gpcr_entry="adrb2_human",
+        receptor_chain="A",
+        cache_mode="offline",
+        cache_root=tmp_path / "empty-cache",
+    )
+
+    first = publish_gpcr_analysis(
+        request,
+        project / "gpcr-site",
+        project_root=project,
+    )
+    second = publish_gpcr_analysis(
+        request,
+        project / "gpcr-site",
+        project_root=project,
+    )
+
+    assert first.selection_path != second.selection_path
+    assert first.selection_path.name.endswith(".r000001.yaml")
+    assert second.selection_path.name.endswith(".r000002.yaml")
+    first_selection = yaml.safe_load(first.selection_path.read_text(encoding="utf-8"))
+    second_selection = yaml.safe_load(second.selection_path.read_text(encoding="utf-8"))
+    assert first_selection["analysis_manifest_sha256"] == sha256_file(
+        first.manifest_path
+    )
+    assert second_selection["analysis_manifest_sha256"] == sha256_file(
+        second.manifest_path
+    )
+
+
+def _project_bundle_with_selectable_candidate(
+    tmp_path: Path,
+    *,
+    candidate_auth_seq_id: int = 189,
+    candidate_label_seq_id: int = 197,
+) -> tuple[Path, Path, str]:
+    workspace = tmp_path / "workspace"
+    project = workspace / "projects" / "project"
+    project.mkdir(parents=True)
     structure = tmp_path / "target.pdb"
     structure.write_text(PDB, encoding="ascii")
     published = publish_gpcr_analysis(
@@ -98,18 +144,20 @@ def _project_bundle_with_selectable_candidate(tmp_path: Path) -> tuple[Path, Pat
     candidate["classification"] = "backup"
     candidate["residues"] = [
         {
-            "key": "1|A|ATOM|1|A:1",
+            "key": (
+                f"1|R|ATOM|{candidate_auth_seq_id}|A:{candidate_label_seq_id}"
+            ),
             "model_id": "1",
-            "chain_id": "A",
-            "auth_asym_id": "A",
-            "auth_seq_id": 1,
+            "chain_id": "R",
+            "auth_asym_id": "R",
+            "auth_seq_id": candidate_auth_seq_id,
             "insertion_code": "",
             "hetero_flag": "ATOM",
             "label_chain_id": "A",
             "label_asym_id": "A",
-            "label_seq_id": 1,
-            "sequence_index": 1,
-            "amino_acid": "A",
+            "label_seq_id": candidate_label_seq_id,
+            "sequence_index": candidate_auth_seq_id - 1,
+            "amino_acid": "D",
         }
     ]
     published.analysis_path.write_text(
@@ -117,6 +165,40 @@ def _project_bundle_with_selectable_candidate(tmp_path: Path) -> tuple[Path, Pat
         encoding="utf-8",
     )
     manifest = json.loads(published.manifest_path.read_text(encoding="utf-8"))
+    mapping_path = workspace / "runs" / "target-run" / "residue-mapping.json"
+    mapping_path.parent.mkdir(parents=True)
+    mapping = {
+        "schema_version": "0.2",
+        "target_id": "test-target",
+        "sequence_sha256": "1" * 64,
+        "entries": [
+            {
+                "sequence_index": 1,
+                "amino_acid": "D",
+                "label_chain_id": "A",
+                "label_seq_id": 73,
+                "author_chain_id": "A",
+                "author_residue_id": "189",
+                "insertion_code": None,
+                "source_label_chain_id": "A",
+                "source_author_chain_id": "R",
+                "source_author_residue_id": "189",
+                "reference_position": 189,
+                "model_presence": ["1"],
+                "source_residue_name": "ASP",
+            }
+        ],
+    }
+    mapping_path.write_text(
+        json.dumps(mapping, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest["source"]["stage01"] = {
+        "analysis_structure_role": "source-context",
+        "residue_mapping": str(mapping_path),
+        "residue_mapping_sha256": sha256_file(mapping_path),
+        "residue_mapping_entries": mapping["entries"],
+    }
     for item in manifest["files"]:
         if item["path"] == "gpcr-hotspot-analysis.json":
             item["sha256"] = sha256_file(published.analysis_path)
@@ -147,7 +229,23 @@ def test_gpcr_selection_projects_only_verified_candidate_to_label_region(
     source = config.user_regions.source
     assert source.type == "residue-list"
     assert source.regions[0].id == "A"
-    assert source.regions[0].residues == ("1",)
+    assert source.regions[0].residues == ("73",)
+
+
+def test_gpcr_selection_rejects_candidate_residue_outside_target_scope(
+    tmp_path: Path,
+) -> None:
+    project, selection_path, _ = _project_bundle_with_selectable_candidate(
+        tmp_path,
+        candidate_auth_seq_id=272,
+        candidate_label_seq_id=280,
+    )
+
+    with pytest.raises(
+        AnalysisWorkflowError,
+        match=r"outside the current Stage 01 target scope: \['R:272'\]",
+    ):
+        gpcr_selection_to_stage02_config(project, selection_path)
 
 
 def test_gpcr_selection_rejects_avoid_or_unresolved_candidate(tmp_path: Path) -> None:

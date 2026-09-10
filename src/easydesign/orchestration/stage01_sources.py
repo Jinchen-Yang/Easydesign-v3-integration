@@ -36,17 +36,25 @@ from easydesign.core import (
     ConfigurationError,
     DecisionOption,
     DecisionRequest,
+    DesignResidueMapping,
     ErrorInfo,
     ExecutionStatus,
     RunManifest,
     StageId,
     StageManifest,
+    TargetIdentityReport,
     TargetInputError,
     WorkflowState,
     WorkflowStateType,
     dump_model,
     load_model,
+    resolve_target_identity,
     sha256_file,
+)
+from easydesign.core.target_identity import (
+    CanonicalIdentityStatus,
+    ConstructRelationship,
+    ReviewRequirement,
 )
 from easydesign.reporting import generate_stage01_target_viewer_nonblocking
 from easydesign.safe_writes import append_pointer_revision
@@ -134,6 +142,7 @@ class _ExperimentalSelection:
     quality_report: dict[str, Any]
     provenance: dict[str, Any]
     retrieval_records: list[dict[str, Any]]
+    identity_mapping: tuple[DesignResidueMapping, ...] | None = None
 
 
 def _strictly_later(candidate: datetime, previous: datetime) -> datetime:
@@ -573,6 +582,12 @@ def _candidate(
     expected_scope: str,
     preferred_chain: str | None = None,
     preferred_chain_namespace: str = "auth",
+    biological_identity_resolved: bool = True,
+    declared_relationship: ConstructRelationship | None = None,
+    accession: str | None = None,
+    canonical_scope_start: int | None = None,
+    canonical_scope_end: int | None = None,
+    canonical_sequence: str | None = None,
 ) -> tuple[dict[str, Any], Path | None]:
     entry_payload = rcsb_entry(client, pdb_id).json()
     entity_payload = rcsb_polymer_entity(client, pdb_id, entity_id).json()
@@ -586,9 +601,40 @@ def _candidate(
     chain = preferred_chain if preferred_chain in chains else chains[0]
     eligible, reasons = _quality_eligible(method, resolution)
     review_eligible = reasons == ["nmr-review-only"]
-    if expected_scope not in entity_sequence:
-        eligible = False
-        reasons.append("scope-sequence-not-exact-substring-of-entity")
+    identity = resolve_target_identity(
+        target_id=f"{pdb_id.lower()}-{entity_id.lower()}",
+        canonical_sequence=(
+            (canonical_sequence or expected_scope)
+            if biological_identity_resolved
+            else None
+        ),
+        construct_sequence=entity_sequence,
+        canonical_status=(
+            CanonicalIdentityStatus.RESOLVED
+            if biological_identity_resolved
+            else CanonicalIdentityStatus.UNRESOLVED
+        ),
+        source_identity_status="resolved",
+        source_kind="pdb",
+        accession=accession,
+        pdb_id=pdb_id.upper(),
+        entity_id=entity_id,
+        auth_chain_id=chain if preferred_chain_namespace == "auth" else None,
+        label_chain_id=chain if preferred_chain_namespace == "label" else None,
+        canonical_scope_start=canonical_scope_start,
+        canonical_scope_end=canonical_scope_end,
+        declared_relationship=declared_relationship,
+    )
+    design_sequence = identity.design_scope.sequence
+    if biological_identity_resolved:
+        if identity.review_requirement is ReviewRequirement.REJECT:
+            eligible = False
+            review_eligible = False
+            reasons.append(f"target-identity-{identity.relationship}")
+        elif identity.review_requirement is ReviewRequirement.HUMAN_REQUIRED:
+            review_eligible = eligible or review_eligible
+            eligible = False
+            reasons.append("target-identity-human-review-required")
     warnings: list[str] = []
     coordinate_coverage = 0.0
     observed_scope_residue_count = 0
@@ -602,7 +648,7 @@ def _candidate(
             selected = choose_chain(
                 inventory,
                 explicit_chain=chain,
-                expected_sequence=expected_scope,
+                expected_sequence=design_sequence,
                 chain_namespace=preferred_chain_namespace,
             )
             selected_author_chain = selected
@@ -611,7 +657,7 @@ def _candidate(
                 for item in inventory.chains
                 if item.author_chain_id == selected
             )
-            evidence = scope_coordinate_evidence(chain_info, expected_scope)
+            evidence = scope_coordinate_evidence(chain_info, design_sequence)
             coordinate_coverage = evidence.coordinate_coverage
             observed_scope_residue_count = evidence.observed_residue_count
             missing_coordinate_ranges = list(evidence.missing_coordinate_ranges)
@@ -630,11 +676,11 @@ def _candidate(
         "method": method,
         "resolution_angstrom": resolution,
         "entity_sequence_length": len(entity_sequence),
-        "scope_coverage": 1.0 if expected_scope in entity_sequence else 0.0,
+        "scope_coverage": identity.alignment.canonical_coverage if identity.alignment else 1.0,
         "scope_sequence_coverage": (
-            1.0 if expected_scope in entity_sequence else 0.0
+            identity.alignment.canonical_coverage if identity.alignment else 1.0
         ),
-        "scope_identity": 1.0 if expected_scope in entity_sequence else 0.0,
+        "scope_identity": identity.alignment.sequence_identity if identity.alignment else 1.0,
         "scope_coordinate_coverage": coordinate_coverage,
         "observed_scope_residue_count": observed_scope_residue_count,
         "missing_coordinate_ranges": missing_coordinate_ranges,
@@ -647,6 +693,8 @@ def _candidate(
         "review_eligible": review_eligible,
         "reasons": reasons,
         "warnings": warnings,
+        "identity_report": identity.model_dump(mode="json"),
+        "design_scope_sequence": design_sequence,
     }, structure_path
 
 
@@ -655,6 +703,10 @@ def _candidate_from_pdb_cross_reference(
     client: ScientificHttpClient,
     pdb_id: str,
     expected_scope: str,
+    canonical_sequence: str | None = None,
+    canonical_scope_start: int | None = None,
+    canonical_scope_end: int | None = None,
+    accession: str | None = None,
 ) -> tuple[dict[str, Any], Path | None] | None:
     entry_payload = rcsb_entry(client, pdb_id).json()
     if not isinstance(entry_payload, dict):
@@ -670,67 +722,35 @@ def _candidate_from_pdb_cross_reference(
         if not isinstance(entity, dict):
             continue
         sequence, chains = _entity_fields(entity)
-        if expected_scope in sequence:
+        identity = resolve_target_identity(
+            target_id=f"{pdb_id.lower()}-{str(entity_id).lower()}",
+            canonical_sequence=canonical_sequence or expected_scope,
+            construct_sequence=sequence,
+            canonical_status=CanonicalIdentityStatus.RESOLVED,
+            source_identity_status="resolved",
+            source_kind="pdb",
+            accession=accession,
+            pdb_id=pdb_id.upper(),
+            entity_id=str(entity_id),
+            canonical_scope_start=canonical_scope_start,
+            canonical_scope_end=canonical_scope_end,
+        )
+        if identity.review_requirement is not ReviewRequirement.REJECT:
             matches.append((str(entity_id), chains))
     if len(matches) != 1:
         return None
     entity_id, chains = matches[0]
-    method, resolution = _entry_method(entry_payload)
-    eligible, reasons = _quality_eligible(method, resolution)
-    review_eligible = reasons == ["nmr-review-only"]
-    chain = chains[0]
-    warnings: list[str] = []
-    coordinate_coverage = 0.0
-    observed_scope_residue_count = 0
-    missing_coordinate_ranges: list[dict[str, Any]] = []
-    structure_path: Path | None = None
-    if eligible or review_eligible:
-        structure_path = rcsb_mmcif(client, pdb_id).artifact_path
-        inventory = inventory_structure(structure_path)
-        try:
-            selected = choose_chain(
-                inventory,
-                explicit_chain=chain,
-                expected_sequence=expected_scope,
-            )
-            chain_info = next(
-                item
-                for item in inventory.chains
-                if item.author_chain_id == selected
-            )
-            evidence = scope_coordinate_evidence(chain_info, expected_scope)
-            coordinate_coverage = evidence.coordinate_coverage
-            observed_scope_residue_count = evidence.observed_residue_count
-            missing_coordinate_ranges = list(evidence.missing_coordinate_ranges)
-            if coordinate_coverage < 1.0:
-                warnings.append("scope-coordinate-coverage-partial")
-        except TargetInputError as error:
-            eligible = False
-            review_eligible = False
-            reasons.append(str(error))
-    return {
-        "pdb_id": pdb_id,
-        "entity_id": entity_id,
-        "chain": chain,
-        "method": method,
-        "resolution_angstrom": resolution,
-        "entity_sequence_length": len(expected_scope),
-        "scope_coverage": 1.0,
-        "scope_sequence_coverage": 1.0,
-        "scope_identity": 1.0,
-        "scope_coordinate_coverage": coordinate_coverage,
-        "observed_scope_residue_count": observed_scope_residue_count,
-        "missing_coordinate_ranges": missing_coordinate_ranges,
-        "target_structure_status": (
-            "experimental-complete"
-            if coordinate_coverage == 1.0
-            else "experimental-partial"
-        ),
-        "eligible": eligible,
-        "review_eligible": review_eligible,
-        "reasons": reasons,
-        "warnings": warnings,
-    }, structure_path
+    return _candidate(
+        client=client,
+        pdb_id=pdb_id,
+        entity_id=entity_id,
+        expected_scope=expected_scope,
+        preferred_chain=chains[0],
+        canonical_sequence=canonical_sequence,
+        canonical_scope_start=canonical_scope_start,
+        canonical_scope_end=canonical_scope_end,
+        accession=accession,
+    )
 
 
 def _remote_selection(
@@ -859,19 +879,14 @@ def _remote_selection(
                 expected_scope=expected,
                 preferred_chain=selected_direct_chain,
                 preferred_chain_namespace=source.chain_namespace,
+                biological_identity_resolved=False,
             )
             if not candidate["eligible"] or path is None:
                 raise TargetInputError(
                     "显式 PDB ID 未通过 experimental-strict-v1；禁止自动换结构: "
                     f"{candidate['reasons']}"
                 )
-            direct_identity = {
-                "schema_version": "0.1",
-                "status": "resolved",
-                "identity_resolution": "explicit-pdb-id",
-                "pdb_id": source.pdb_id.upper(),
-                "entity_id": entity_id,
-            }
+            direct_identity = candidate["identity_report"]
             return _ExperimentalSelection(
                 source_path=path,
                 selected_chain=str(candidate["chain"]),
@@ -1007,6 +1022,10 @@ def _remote_selection(
                 client=client,
                 pdb_id=pdb_id,
                 expected_scope=expected,
+                canonical_sequence=reference,
+                canonical_scope_start=start,
+                canonical_scope_end=end,
+                accession=accession,
             )
             if resolved_candidate is None:
                 continue
@@ -1030,6 +1049,10 @@ def _remote_selection(
                 pdb_id=pdb_id,
                 entity_id=entity_id,
                 expected_scope=expected,
+                accession=accession,
+                canonical_sequence=reference,
+                canonical_scope_start=start,
+                canonical_scope_end=end,
             )
             seen_entities.add((pdb_id, entity_id))
             candidates.append(candidate)
@@ -1326,6 +1349,15 @@ def _sequence_selection(
                 pdb_id=pdb_id,
                 entity_id=entity_id,
                 expected_scope=expected,
+                accession=config.target.identity.uniprot_accession,
+                canonical_sequence=reference,
+                canonical_scope_start=start,
+                canonical_scope_end=end,
+                declared_relationship=(
+                    None
+                    if config.target.identity.relationship is None
+                    else ConstructRelationship(config.target.identity.relationship)
+                ),
             )
             seen_entities.add(key)
             candidates.append(candidate)
@@ -1471,6 +1503,20 @@ def _execute_experimental(
     attempt_id: str = ATTEMPT_ID,
 ) -> Stage01SourceOutcome:
     start = datetime.now(UTC)
+    identity_payload = selection.quality_report.get(
+        "identity_report",
+        selection.identity_report,
+    )
+    identity_mapping = selection.identity_mapping
+    expected_scope_sequence = selection.expected_scope_sequence
+    if isinstance(identity_payload, dict) and identity_payload.get("schema_version") == "0.2":
+        identity_v2 = TargetIdentityReport.model_validate(identity_payload)
+        identity_v2 = identity_v2.model_copy(
+            update={"target_id": prepared.loaded_config.config.target.target_id}
+        )
+        identity_payload = identity_v2.model_dump(mode="json")
+        identity_mapping = identity_v2.design_scope.residues
+        expected_scope_sequence = identity_v2.design_scope.sequence
     result = build_experimental_target_bundle(
         run_root=prepared.workspace.run_root,
         attempt_id=attempt_id,
@@ -1478,10 +1524,10 @@ def _execute_experimental(
         source_path=selection.source_path,
         source_format=selection.source_path.suffix.lower().lstrip("."),
         selected_chain=selection.selected_chain,
-        expected_scope_sequence=selection.expected_scope_sequence,
+        expected_scope_sequence=expected_scope_sequence,
         reference_sequence=selection.reference_sequence,
         reference_start=selection.reference_start,
-        identity_report=selection.identity_report,
+        identity_report=identity_payload,
         scope_report=selection.scope_report,
         candidates=selection.candidates,
         quality_report=selection.quality_report,
@@ -1493,6 +1539,7 @@ def _execute_experimental(
         keep_ligands=(
             prepared.loaded_config.config.stage01.structure_selection.keep_ligands
         ),
+        identity_mapping=identity_mapping,
     )
     ended = _strictly_later(datetime.now(UTC), start)
     attempt = Attempt(
@@ -1513,7 +1560,7 @@ def _execute_experimental(
     resolved = load_model(prepared.workspace.resolved_config, ResolvedRunConfig)
     stage = StageManifest(
         stage_id=StageId.TARGET_PREPARATION,
-        contract_version="0.4",
+        contract_version="0.5",
         status=ExecutionStatus.SUCCEEDED,
         created_at=start,
         completed_at=ended,
@@ -1617,6 +1664,9 @@ def _local_selection(
             for chain in inventory.chains
             if chain.author_chain_id == selected
         )
+        selected_chain_info = next(
+            chain for chain in inventory.chains if chain.author_chain_id == selected
+        )
         expected = observed
         scope_report = {
             "schema_version": "0.1",
@@ -1627,13 +1677,20 @@ def _local_selection(
             "reference_completeness": "unknown",
             "evidence_limitations": ["reference-completeness-unknown"],
         }
-        identity_report = {
-            "schema_version": "0.1",
-            "status": "structural-only",
-            "identity_resolution": "not-requested",
-            "identity_status": "not_requested",
-            "reference_completeness": "unknown",
-        }
+        identity_v2 = resolve_target_identity(
+            target_id=loaded.config.stage01.target.target_id,
+            canonical_sequence=None,
+            construct_sequence=selected_chain_info.deposited_sequence or observed,
+            canonical_status=CanonicalIdentityStatus.UNRESOLVED,
+            source_identity_status="user-declared",
+            source_kind="local-structure",
+            auth_chain_id=selected_chain_info.author_chain_id,
+            label_chain_id=selected_chain_info.label_chain_id,
+            coordinate_present_construct_positions=(
+                selected_chain_info.coordinate_label_seq_ids
+            ),
+        )
+        identity_report = identity_v2.model_dump(mode="json")
     else:
         work = (
             prepared.workspace.attempt_root(
@@ -1665,7 +1722,7 @@ def _local_selection(
             )
             if isinstance(resolved_scope, Stage01SourceOutcome):
                 return resolved_scope
-            expected, reference_start, _, scope_report = resolved_scope
+            expected, reference_start, reference_end, scope_report = resolved_scope
             retrieval = [record.model_dump(mode="json") for record in client.records]
         approved_chain = (
             str(approved_option.payload.get("chain"))
@@ -1673,50 +1730,104 @@ def _local_selection(
             and approved_option.payload.get("chain") is not None
             else None
         )
-        matching_chains = tuple(
-            chain.author_chain_id
-            for chain in inventory.chains
-            if expected in (chain.deposited_sequence or chain.sequence)
+        declared_relationship = (
+            None
+            if identity.relationship is None
+            else ConstructRelationship(identity.relationship)
         )
-        if approved_chain is not None and approved_chain not in matching_chains:
-            raise TargetInputError(
-                "已批准 chain 不再与当前 UniProt design scope 精确匹配"
+        identity_by_chain = {
+            chain.author_chain_id: resolve_target_identity(
+                target_id=loaded.config.stage01.target.target_id,
+                canonical_sequence=reference,
+                construct_sequence=chain.deposited_sequence or chain.sequence,
+                canonical_status=CanonicalIdentityStatus.RESOLVED,
+                source_identity_status="resolved",
+                source_kind="local-structure",
+                accession=identity.uniprot_accession,
+                isoform=identity.isoform,
+                taxon_id=identity.taxon_id,
+                auth_chain_id=chain.author_chain_id,
+                label_chain_id=chain.label_chain_id,
+                coordinate_present_construct_positions=chain.coordinate_label_seq_ids,
+                declared_relationship=declared_relationship,
+                canonical_scope_start=reference_start,
+                canonical_scope_end=reference_end,
             )
-        if source.chain is None and approved_chain is None and len(matching_chains) > 1:
+            for chain in inventory.chains
+        }
+        selectable_chains = tuple(
+            chain_id
+            for chain_id, report in identity_by_chain.items()
+            if report.review_requirement is not ReviewRequirement.REJECT
+        )
+        requested_chain = source.chain or approved_chain
+        if requested_chain is not None:
+            selected = choose_chain(
+                inventory,
+                explicit_chain=requested_chain,
+                expected_sequence=None,
+                chain_namespace=(
+                    source.chain_namespace if source.chain is not None else "auth"
+                ),
+            )
+            if selected not in selectable_chains:
+                raise TargetInputError("指定 chain 与 canonical target 无法建立可靠 mapping")
+        elif len(selectable_chains) == 1:
+            selected = selectable_chains[0]
+        elif len(selectable_chains) > 1:
             if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
-                raise TargetInputError(
-                    "ambiguous-local-identity-chain: unattended 必须显式提供 chain"
-                )
+                raise TargetInputError("ambiguous-local-identity-chain: unattended 停止")
             return _pause_for_decision(
                 prepared,
                 gate="chain-selection",
-                message="多条本地 protein chain 均与 design scope 精确匹配，请确认目标 chain。",
+                message="多条本地 protein chain 可映射到 design scope，请审核 identity 后选择。",
                 options=tuple(
                     DecisionOption(
                         option_id=f"chain-{chain.lower()}",
                         label=f"chain {chain}",
-                        description="与 UniProt design scope 100% identity/coverage",
+                        description=(
+                            f"relationship={identity_by_chain[chain].relationship}; "
+                            f"review={identity_by_chain[chain].review_requirement}"
+                        ),
                         payload={"chain": chain, "chain_namespace": "auth"},
                     )
-                    for chain in matching_chains
+                    for chain in selectable_chains
                 ),
                 attempt_id=attempt_id,
             )
-        selected = choose_chain(
-            inventory,
-            explicit_chain=source.chain or approved_chain,
-            expected_sequence=expected,
-            chain_namespace=(
-                source.chain_namespace if source.chain is not None else "auth"
-            ),
-        )
+        else:
+            raise TargetInputError("local structure 没有可解释的 canonical/design mapping")
+        identity_v2 = identity_by_chain[selected]
+        if (
+            identity_v2.review_requirement is ReviewRequirement.HUMAN_REQUIRED
+            and approved_option is None
+        ):
+            if loaded.config.workflow.execution_mode is ExecutionMode.UNATTENDED:
+                raise TargetInputError("target-identity-review-required: unattended 停止")
+            return _pause_for_decision(
+                prepared,
+                gate="target-identity-review",
+                message="实验 construct 与 canonical target 非 exact；请审核 mapping/edits。",
+                options=(
+                    DecisionOption(
+                        option_id=f"chain-{selected.lower()}",
+                        label=f"Approve mapped chain {selected}",
+                        description=(
+                            f"relationship={identity_v2.relationship}; "
+                            f"mapping={identity_v2.design_scope.mapping_status}"
+                        ),
+                        payload={"chain": selected, "chain_namespace": "auth"},
+                    ),
+                ),
+                attempt_id=attempt_id,
+            )
         return _ExperimentalSelection(
             source_path=loaded.source_path,
             selected_chain=selected,
-            expected_scope_sequence=expected,
+            expected_scope_sequence=identity_v2.design_scope.sequence,
             reference_sequence=reference,
             reference_start=reference_start,
-            identity_report=identity_report,
+            identity_report=identity_v2.model_dump(mode="json"),
             scope_report=scope_report,
             candidates=[],
             quality_report={
@@ -1725,6 +1836,7 @@ def _local_selection(
                 "eligibility": "eligible",
                 "quality_profile": "local-explicit-structure",
                 "reference_completeness": "known",
+                "identity_report": identity_v2.model_dump(mode="json"),
             },
             provenance={
                 "schema_version": "0.2",
@@ -1734,6 +1846,7 @@ def _local_selection(
                 "fallback_used": False,
             },
             retrieval_records=retrieval,
+            identity_mapping=identity_v2.design_scope.residues,
         )
     return _ExperimentalSelection(
         source_path=loaded.source_path,
@@ -1759,6 +1872,7 @@ def _local_selection(
             "fallback_used": False,
         },
         retrieval_records=[],
+        identity_mapping=identity_v2.design_scope.residues,
     )
 
 
@@ -1994,7 +2108,11 @@ def _import_bundle(
         )
 
     bundle = TargetBundle(
-        schema_version="0.4",
+        schema_version=(
+            "0.5"
+            if source_bundle.schema_version == "0.5"
+            else "0.4"
+        ),
         target_id=loaded.config.target.target_id,
         origin=source_bundle.origin,
         sequence_length=source_bundle.sequence_length,

@@ -1,0 +1,22 @@
+{
+  "profile_id": "independent-computational-hq-v1",
+  "status": "prospectively-specified-not-runtime-validated",
+  "claim_scope": "computational HQ, not affinity or experimental hit rate",
+  "independent_predictor": "protenix-v2",
+  "required_runtime_identity": ["package_version", "source_commit", "model_checkpoint_sha256", "parameter_profile_sha256"],
+  "all_generated_candidates_evaluated": true,
+  "seeds": [11, 29, 47],
+  "per_seed_gates": {
+    "independent_iptm": {"operator": ">=", "threshold": 0.70, "unit": "fraction"},
+    "interface_pae_angstrom": {"operator": "<=", "threshold": 10.0, "unit": "angstrom", "definition": "mean of both directed target-binder PAE entries for residue pairs with minimum inter-heavy-atom distance <=5 A"},
+    "hotspot_coverage": {"operator": ">=", "threshold": 0.50, "unit": "fraction", "definition": "frozen hotspot residues with any binder heavy atom <=5 A / all frozen hotspot residues"},
+    "severe_clash_count": {"operator": "<=", "threshold": 0, "unit": "atom_pair", "definition": "inter-chain non-H atom pairs separated by <1.5 A"},
+    "target_site_ca_rmsd_angstrom": {"operator": "<=", "threshold": 2.0, "unit": "angstrom", "definition": "CA RMSD of frozen site plus all target residues within 8 A in reference, after Kabsch alignment of all mapped target CA; require >=3 non-collinear mapped CA and complete site mapping"}
+  },
+  "multi_seed_gate": {"passing_seeds_at_least": 2, "required_seeds": 3, "all_seed_results_required": true},
+  "missingness": "Any missing, nonfinite, invalid-scale or unmapped required metric makes the candidate unevaluable. Campaign primary HQ yield remains unavailable until every generated candidate is accounted for.",
+  "threshold_basis": "Prospective operational benchmark definition selected before any comparative generation; these cutoffs are not experimentally calibrated for VHH or every family.",
+  "optional_secondary": ["ipSAE", "BSA", "Rosetta_interface_deltaG", "deltaG_per_deltaSASA", "shape_complementarity", "TNP", "sequence_diversity"],
+  "scope_gates": "State, counterstate, glycan, membrane, crop and off-target constraints must be declared per frozen target before execution; unavailable mandatory constraints block that target equally for every method.",
+  "freeze_rule": "The profile file SHA-256 is locked before outcomes. Runtime binding and smoke validation are still required before GPU authorization. No target-specific cutoff tuning."
+}

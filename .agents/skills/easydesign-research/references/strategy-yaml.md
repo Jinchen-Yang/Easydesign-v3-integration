@@ -1,6 +1,6 @@
 # Approved site → 可归因首轮 VHH pilot
 
-本章是 `strategize` phase 核心，也是首轮 baseline 产品 policy 的唯一人类可读权威。它指导 Agent 从已批准 site 构造 scientific pilot matrix 与可验证 `ResearchStrategy`，而不是机械填 YAML。
+本章是 `strategize` phase 核心，也是首轮 protocol 产品 policy 的唯一人类可读权威。它指导 Agent 从已批准 site 构造 scientific pilot matrix 与可验证 `ResearchStrategy`，而不是机械填 YAML。
 
 ## 目录
 
@@ -12,7 +12,7 @@
 6. Experiment contract
 7. Pilot matrix 设计
 8. Candidate allocation
-9. ResearchStrategy 1.1 模板
+9. ResearchStrategy 1.3 模板
 10. 编译、校验与冻结
 11. 正例、反例与停止条件
 12. Scientific pilot matrix 输出模板
@@ -48,7 +48,7 @@
 1. 锁定 approved foundation、target/site/mapping 与 current artifact identity；
 2. 写出 primary mechanism、至少一个 competing hypothesis 与各自 falsifier；
 3. 从 approved site 选择有三维证据的 hotspot topology；没有坐标则停止方向性命名；
-4. 建立 `PI-FIRST-PILOT-001` 七 scaffold baseline；
+4. 让 `PI-FIRST-PILOT-001` 中每个显式 condition 都完整覆盖七 scaffold；
 5. 只为最大的不确定性增加少量 matched diagnostic；
 6. 为每组声明 comparator、changed/held factors 与 generalization scope；
 7. 逐 scaffold 核验 asset/CDR override，逐 representation 核验 crop/context；
@@ -62,11 +62,11 @@
 
 `knowledge_class: product_invariant`
 
-适用范围：当前 project 尚无任何 internal stage 05 pilot 时的首轮标准 VHH baseline。
+适用范围：当前 project 尚无任何已完成 internal Stage 05 evidence 时的首轮标准 VHH pilot。
 
 规则：
 
-1. baseline 必须覆盖 `official-vhh7-v1` 的全部七个且不重复 scaffold：
+1. 每个显式冻结的 experimental condition 都必须覆盖 `official-vhh7-v1` 的全部七个且不重复 scaffold：
    - `7eow`
    - `7xl0`
    - `8coh`
@@ -74,10 +74,12 @@
    - `gontivimab`
    - `isecarosmab`
    - `sonelokimab`
-2. 每个展开后的 experiment group / strategy 必须计划 `40` 个 candidates；
-3. baseline 计划总量不得低于 `7 × 40 = 280` candidates；
-4. baseline 不得根据药物来源、单次先验、预测稳定性或个人偏好预筛 scaffold；
-5. diagnostic/integrated-alternative 可以增加，但不能替代上述 baseline coverage；
+2. 每个 condition 的每个 scaffold 必须恰好计划 `40` 个 candidates；
+3. 每个 condition 精确 `7 × 40 = 280`；若显式 condition 数为 `X`，首轮精确总量是
+   `7 × 40 × X = 280 × X`；
+4. baseline、diagnostic、integrated-alternative 和 confirmatory 只要列入首轮冻结策略，就都属于 X，
+   不得预筛 scaffold 或缩减某组 denominator；
+5. 不做 hotspot × CDR 等隐式笛卡尔积；只有 YAML 中显式列出的组合才计入 X；
 6. 当前 repository 的 `ResearchStrategy` validator 是执行层。文档与 validator 不一致时停止并报告 `policy_drift`，不得自行选择一方继续。
 
 这些数值是产品 policy，不是 VHH 普适科学规律。其他文档只引用 `PI-FIRST-PILOT-001`，不得复制成第二份权威定义。
@@ -130,7 +132,8 @@
 
 - `site`：机制相关、较大的允许/研究区域；
 - `hotspot_set` / `binding_label_seq_ids`：本 experiment 用来条件化 approach 的少量、空间连贯、可解释 residue；
-- `avoid`：不应被误用为 current standard adapter 的负 binding 字段；作为科学/分析约束保留。
+- `avoid`：只有显式批准且位于 frozen design scope、有坐标的 residue 才写
+  `avoid_label_seq_ids`；capability resolver 核实后编译为 `not_binding`。未选择 residue 保持 neutral。
 
 ### 4.2 决策问题
 
@@ -162,7 +165,7 @@ approved site 含 18 residues。baseline hotspot 选 4 个覆盖界面中心与�
 - 将全部 18 residues 原样作为 binding；
 - 选择空间相隔过远、单个 VHH 无法覆盖的 residue；
 - 挑 mutation effect 最大的 residue，但 mutation 同时破坏 target fold；
-- 用 `not_binding` 表达 avoid，尽管标准 adapter 不支持。
+- 把所有 non-hotspot residue 自动写成 `not_binding`，或在 capability/mapping 未验证时写 avoid。
 
 ### 4.7 反证或停止条件
 
@@ -201,20 +204,20 @@ approved site 含 18 residues。baseline hotspot 选 4 个覆盖界面中心与�
 
 **证据**：`PI-FIRST-PILOT-001`、registry identity、current asset validation。
 
-**分支**：首轮 baseline 全 registry。diagnostic 默认使用与 baseline 有 matched comparator 的一个
-`sentinel scaffold`；需要检验 scaffold generalizability 时，才按有说明的 geometry/asset strata 选择
-2–3 个 scaffold。只有科学问题明确是 scaffold interaction、且预算与审批允许时，diagnostic 才扩展
-到全 registry。预算不足不能静默删 baseline，必须回到用户调整 scope/policy。
+**分支**：首轮每个显式 condition 都是全 registry；diagnostic 也不能使用 sentinel 或 2–3 个
+scaffold 后仍声称 first-pilot compliant。若预算不足，减少显式 condition 数或暂停并请求修改 scope，
+不得缩减七 scaffold 或 40/scaffold。只有完成 Stage 05 后的 follow-up/confirmatory strategy 才允许
+带前序 observation/hypothesis refs 使用 scaffold subset。
 
-**正例**：一个 baseline variant列出全部 registry scaffold，compiler本地展开；一个 CDR3 reach
-diagnostic 先在具备同 scaffold baseline 对照且 asset 已核验的 sentinel 上测试，成功后再确认迁移性。
+**正例**：baseline-primary 与 CDR3-reach 两个显式 condition 均列出全部 registry，故
+`X=2`、总量 `560`；两组只改变 CDR3 约束并保留 matched comparator。
 
 **反例**：因为 target 是 GPCR而只选长 CDR3 insertion上限较大的两个 scaffold。
 
 **反证**：registry/hash/backend drift，停止并报告。
 
 **输出**：`scaffold_ids`, `registry`, `coverage_check`, `scaffold_scope`,
-`sentinel_selection_rationale`, `generalization_scope`。
+`first_pilot_condition_id`, `generalization_scope`。
 
 ### 5.3 CDR design
 
@@ -267,9 +270,14 @@ diagnostic 先在具备同 scaffold baseline 对照且 asset 已核验的 sentin
 
 ## 6. Experiment contract
 
-schema `1.1` 的每个 variant 必须形成完整科学合同：
+新写 schema `1.3` 的每个 variant 必须形成完整科学合同，并显式声明
+`protocol_kind: first-pilot|follow-up`；follow-up 的 `prior_research_event_ids` 必须形成连通的
+Hypothesis→Observation→Interpretation lineage。历史 1.0/1.1/1.2 只读兼容，但若用于新的首轮
+运行，仍必须通过当前 `7 × 40 × X` policy：
 
 - `hypothesis_id`：稳定、唯一、可追踪；
+- `hypothesis_statement` / `hypothesis_basis`：新策略可选的结构化假设与依据；缺失时兼容旧
+  `rationale`；
 - `role`：`baseline`, `diagnostic`, `integrated-alternative`, `confirmatory`；
 - `evidence_refs`：site dossier、claim、artifact、run；
 - `changed_factors`：本组相对明确 comparator 改了什么；
@@ -286,9 +294,8 @@ schema `1.1` 的每个 variant 必须形成完整科学合同：
 
 ### 6.2 正例
 
-`H_cdr3_reach` 组在一个 asset 已核验的 sentinel scaffold 上只改变 CDR3 insertion；其 matched
-comparator 是 baseline 中同一 scaffold，held constant 包含 site/hotspot/scaffold/full target/count/
-backend/profile。结果只支持该 scaffold 上的 reach 解释；跨 scaffold 结论需要后续 confirmation。
+`H_cdr3_reach` 首轮 condition 在全部七个 scaffold 上只改变 CDR3 insertion；其 matched comparator
+是同样七 scaffold 的 baseline，held constant 包含 site/hotspot/full target/count/backend/profile。
 
 ### 6.3 反例/误判
 
@@ -310,9 +317,9 @@ backend/profile。结果只支持该 scaffold 上的 reach 解释；跨 scaffold
 
 不是每个项目都需要全部组。选择原则是最大化“一个 pilot 后可排除多少竞争解释”，而不是最大化 YAML 数量。
 
-`PI-FIRST-PILOT-001` 的全 registry 要求只约束 mandatory baseline，不自动复制到每个 diagnostic。
-diagnostic 必须拥有 matched baseline comparator；sentinel 结果不得宣称 scaffold-general。若选择
-2–3 个 scaffold，说明 strata 与仍未覆盖的范围；全 registry diagnostic 需要独立预算理由和审批。
+`PI-FIRST-PILOT-001` 的全 registry 与 40/scaffold 约束应用于每个首轮显式 condition，而不只是
+mandatory baseline。diagnostic 必须拥有 matched comparator；若不值得承担额外 280 candidates，
+就不要把它列入首轮冻结策略，不能缩量后仍贴 first-pilot compliant 标签。
 
 ### 7.2 覆盖空间与优先级
 
@@ -354,19 +361,26 @@ diagnostic 必须拥有 matched baseline comparator；sentinel 结果不得宣�
 - 将 native expert variant混入baseline却不给独立provenance；
 - 用候选数量弥补错误site/context。
 
-## 9. ResearchStrategy 1.1 模板
+## 9. ResearchStrategy 1.3 模板
 
 以下是科学计划输入，不是 native BoltzGen YAML。示例中的 residue/范围是占位符，必须绑定 current approved artifact。
 
 ```yaml
-schema_version: "1.1"
+schema_version: "1.3"
 foundation: current
+protocol_kind: first-pilot
+prior_research_event_ids: []
 variants:
   - id: baseline-primary
     hypothesis_id: h-primary-site-default-vhh7
+    hypothesis_statement: >-
+      The approved primary site can support productive VHH engagement across the official panel.
+    hypothesis_basis: >-
+      The site passed the approved structural evidence review and is tested without scaffold preselection.
     role: baseline
     hotspot_set_id: hs-primary
     binding_label_seq_ids: null
+    avoid_label_seq_ids: []
     scaffold_ids:
       - 7eow
       - 7xl0
@@ -408,6 +422,8 @@ variants:
 ### 9.1 模板注意
 
 - `id` 使用 external `ResearchStrategy` 字段；内部 compiler 会生成每 scaffold strategy；
+- follow-up 必须使用 `strategy draft --from-pilot RUN` 生成包含 hypothesis、observation 与
+  interpretation event IDs 的 `prior_research_event_ids`；不得只复制 previous YAML；
 - `hotspot_set_id` 与 `binding_label_seq_ids` 二选一；
 - `binding_label_seq_ids` 只能是 approved hotspots 的非空子集，升序、唯一、正整数；
 - 不同 scaffold的native CDR range不同。若一个override字符串对各asset不科学，拆成多个仍可比较的variant，不要假装统一；

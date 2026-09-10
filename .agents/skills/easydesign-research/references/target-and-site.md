@@ -111,6 +111,24 @@
 - membrane orientation、glycan/PTM、缺失 segment；
 - residue mapping 的 source 和 checksum。
 
+### 4.1 Target Identity v2 四层合同
+
+必须分别报告而不能混成一条 sequence：
+
+1. canonical biological identity：accession/isoform/taxon/canonical sequence；
+2. experimental construct identity：PDB/entity/chain、truncation、substitution、fusion/tag；
+3. observed coordinate identity：label/auth/insertion code、missing coordinates；
+4. design scope identity：真正进入 hotspot/design 的序列、范围和逐残基 mapping。
+
+显式 PDB ID 只证明 `source_identity_status=resolved`，不能自动证明 canonical biological identity。
+`exact_native` 与唯一 `exact_subsequence` 在 scope/coordinate checks 通过后可自动使用；engineered
+construct、isoform、ortholog、chimera、多解 alignment、scope edit 或缺坐标必须 human review；
+`mismatch`、无法 mapping 或 scope 冲突 reject。unattended 不能选择“最像”的 construct 静默继续。
+
+Stage 02/03 不得重新猜 mapping，只消费 TargetBundle 0.5 中 checksum-verified mapping。mapping SHA
+变化意味着 site、strategy 与 plan approval 都失效，必须创建新 revision。旧 0.3/0.4 bundle 可以只读，
+但缺失细节必须标为 legacy insufficient，不能补造 canonical/construct relationship。
+
 `knowledge_class: scientific_evidence`：同名蛋白不等于同一个设计对象。isoform、state、construct、assembly 或 chain 任一漂移，都可能把正确 residue 变成错误 site。
 
 对预测结构必须记录 local confidence、跨域 PAE/相对取向不确定性。高局部置信不自动证明多域装配、loop state 或 oligomer 界面正确。

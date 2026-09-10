@@ -77,6 +77,16 @@ smoke；成功后才发布 component receipt。clone 缺少 Python 3.12 时，�
   `disabled`；
 - `query-only` 表示只写 query sequence，`disabled` 才表示空 MSA；任何远程失败都不得
   静默回退；
+- AFO remote-MSA 在独立 helper 进程中执行，先写临时目录，经 AF3 JSON 重载验证后原子
+  发布；失败、中断和不安全 tar 成员均 fail closed。当前 pinned AFO 环境不含 `requests`，
+  helper 提供最小 HTTP compatibility layer；如部署网络要求 HTTPS 代理，只给启动
+  EasyDesign 的进程设置 `EASYDESIGN_AFO_MSA_HTTPS_PROXY=http://host:port`，不得把凭据
+  写入项目配置、manifest 或日志。调用前明确提示外部 provider 会接收 target sequence；
+  成功后必须冻结 provider/endpoint、输入/processed JSON hash、逐 chain A3M identity 和
+  `fallback_used=false` receipt；
+- GPCR Stockholm/A3M 的批量转换、library 生产、模板库扫描、整盘部署 checksum 和独立
+  推理入口不属于 backend；主体只接受已验证的单条 A3M artifact，并在 run input snapshot
+  中保存 source receipt；
 - AF3 JSON v4；target/binder 模板均可使用 checksum 固定的 `precomputed` 0..N 列表，
   target 还可显式使用本次 run 冻结的 `target-structure`；
 - 自动模板搜索和本地模板数据库尚未作为 EasyDesign runtime 组件发布，不得把研究脚本

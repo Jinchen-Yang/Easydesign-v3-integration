@@ -1,0 +1,33 @@
+benchmark:
+  name: easydesign_figure2
+  version: "0.1.0"
+  modes: [controlled, end_to_end]
+
+methods:
+  - id: easydesign_full
+    type: agent_harness
+  - id: plain_codex_same_model
+    type: llm_agent_baseline
+  - id: fixed_pipeline
+    type: deterministic_baseline
+  - id: manual_expert_reference
+    type: human_reference
+    optional: true
+
+protocol:
+  first_pilot:
+    scaffolds: 7
+    candidates_per_scaffold: 40
+    x_policy: explicit_conditions_only
+  scale:
+    default: 50000
+    user_configurable: true
+
+statistics:
+  primary_unit: target_campaign
+  candidate_is_independent_replicate: false
+  confidence_interval: 0.95
+
+expensive_run_gate:
+  require_preflight: true
+  allow_real_gpu_runs: false

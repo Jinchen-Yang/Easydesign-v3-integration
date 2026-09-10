@@ -129,10 +129,19 @@ easydesign strategy freeze workspace/projects/apoe --config workspace/projects/a
 easydesign pilot run workspace/projects/apoe --strategy strategy-r000001 \
   --prediction-backend afo --confirm --detach
 easydesign pilot review workspace/projects/apoe --run PILOT_RUN
+easydesign pilot interpret workspace/projects/apoe --run PILOT_RUN \
+  --input workspace/projects/apoe/interpretation.PILOT_RUN.yaml
+easydesign strategy draft workspace/projects/apoe --from-pilot PILOT_RUN
 ```
 
-Scale and select only from a human promotion receipt. Defaults are 50,000 production candidates and
-Top 200 delivery; legal results are never duplicated or padded.
+Review persists checksum-grounded observations. Interpretation is a separate typed Agent proposal
+that cites those observations, records limitations and alternative explanations, and drives only a
+derived hypothesis state. Follow-up Strategy 1.3 drafts require connected hypothesis, observation,
+and interpretation references; historical events are never overwritten.
+
+Scale and select only from a human promotion receipt. Scale defaults to 50,000 production candidates,
+but any positive integer is legal and is bound into the exact plan, allocation, shards, resources, and
+approval identity. Top 200 is the delivery default; legal results are never duplicated or padded.
 
 Read/validate/color/scan/plan/review/view operations may run directly. Site approval, strategy freeze,
 pilot run/promotion, scale, and selection require explicit researcher confirmation. The viewer is

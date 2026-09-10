@@ -60,8 +60,10 @@ YAML identity 漂移或 backend check 失败全部 fail closed。
 site、crop、CDR 等因素并形成可反证诊断；它们不替代真实结果，也不自动证明因果关系。
 元数据必须整组提供，禁止只填写部分字段。
 
-新项目首轮在 research façade 冻结前额外执行 `PI-FIRST-PILOT-001`：baseline 必须覆盖
-`official-vhh7-v1` 全部七个 scaffold，每个展开 strategy 固定 40 个候选，总数至少 280。
+新项目首轮在 research façade 冻结前额外执行 `PI-FIRST-PILOT-001`：每个显式 experimental
+condition 都必须覆盖 `official-vhh7-v1` 全部七个 scaffold，每个 scaffold 恰好 40 个候选。
+若 condition 数为 X，总数精确为 `7 × 40 × X = 280 × X`；diagnostic 首轮 condition 也不能
+缩量。
 这是首轮产品策略，不把 Stage 03 编译器变成通用科学审批器；已有 Pilot 之后的迭代仍按
 研究者批准的策略和候选预算编译。
 
@@ -74,8 +76,8 @@ CDR override 生成 strategy-local `scaffold.yaml`，保留官方 CIF 与来源�
 - target structure SHA-256 必须与 approved hotspots 完全一致；
 - non-hotspot residue 保持中性，绝不自动输出 `not_binding`；
 - StrategyBundle 0.2 只要求 strategy ID 唯一及 scaffold 有 registry provenance；
-- StrategyBundle 0.3 还保存完整 experiment contract，并由新项目首轮 façade 强制
-  `7 scaffolds × 40 candidates` baseline；
+- StrategyBundle 0.3 还保存完整 experiment contract，并由新项目首轮 façade 对每个显式
+  condition 强制 `7 scaffolds × 40 candidates`；
 - StrategyBundle 0.1 额外要求完整 region × scaffold matrix；
 - 每份 design/scaffold YAML、validation log、bundle、StageManifest 都可校验；
 - 任一 YAML check 失败时不发布部分成功 StrategyBundle；
@@ -109,7 +111,7 @@ Stage 04 只消费 StageManifest 声明且 checksum 正确的 StrategyBundle 和
 ## 完成门槛
 
 - legacy 1/2/3 region matrix 与旧 bundle reader 回归通过；
-- 0.3 experiment contract、首轮七 scaffold × 40、explicit multi-variant、binding subset、
+- 0.3 experiment contract、首轮每 condition 七 scaffold × 40、explicit multi-variant、binding subset、
   crop、CDR override 通过；
 - 原生 YAML 字节 identity 与真实 BoltzGen check 通过；
 - 所有非法输入 fail closed，失败不覆盖历史；

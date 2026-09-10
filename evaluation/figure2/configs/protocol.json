@@ -1,0 +1,18 @@
+{
+  "benchmark_version": "0.1.0",
+  "methods": ["easydesign_full", "plain_codex_same_model", "fixed_pipeline"],
+  "model_id": "gpt-6-astra",
+  "reasoning_effort": "high",
+  "agent_episode_replicates": 3,
+  "campaign_replicates": 3,
+  "first_pilot": {"scaffolds": 7, "candidates_per_scaffold": 40, "x_conditions": 1, "candidate_budget": 280},
+  "controlled": {"shared": ["target", "structure", "site", "condition_manifest", "X", "generation_backend", "candidate_budget", "seed_policy", "independent_evaluator"], "interpretation": "No extra generation is permitted inside the 280-candidate primary endpoint. Redesign uses a separate, equally budgeted follow-up comparison."},
+  "generation": {"backend": "boltzgen", "version": "0.3.2", "commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda", "seed_control": "unsupported-by-pinned-cli", "pairing": "target and replicate block, not common random numbers", "schedule_seed": 20260906},
+  "internal_refold_backend": "openfold3-af3-jax",
+  "independent_evaluator": "protenix-v2-plus-coordinate-geometry",
+  "evaluation_seeds": [11, 29, 47],
+  "threshold_change_policy": "new version and all affected methods rerun; post-unblinding changes exploratory",
+  "statistics": {"unit": "target_x_independent_campaign", "paired_bootstrap_draws": 10000, "bootstrap_seed": 20260906, "ci": 0.95, "target_weight": "equal", "candidate_pseudoreplication": false, "p_values": "not required; if used, two-sided and BH FDR for secondary endpoint family"},
+  "gpu_gate": {"allow_real_gpu_runs": false, "requires": ["preflight", "explicit_gpu_authorization", "approved_frozen_sites", "registered_backends", "independent_evaluator_smoke", "measured_cost_pilot", "equal_budget_queue", "same_model_and_effort_receipts", "baseline_isolation_audit"]},
+  "data_policy": {"raw": "append-only", "missing_values": "blank plus status; never zero-imputed", "zero_generated_yield": "undefined", "partial_evaluation": "missing primary endpoint; report accepted lower bound separately", "existing_scientific_results": "excluded from prospective comparison", "manual_expert": "NOT AVAILABLE", "wet_lab": "NOT AVAILABLE"}
+}

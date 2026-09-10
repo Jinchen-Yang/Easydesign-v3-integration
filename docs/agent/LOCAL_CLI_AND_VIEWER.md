@@ -18,5 +18,6 @@
   名称不是产品身份；本机执行始终由当前 clone 的 `easydesign-workspace.yaml` 定位。
 
 验证至少覆盖：CommandResult 一致性、六类 source、foundation identity、strategy revision、
-显式 variant/crop/binding/CDR/native YAML、独立 pilot、人工 promotion、50k/Top200 确认门、
+显式 variant/crop/binding/not_binding/CDR/native YAML、独立 pilot、人工 promotion、
+默认 50k 但可选任意正整数的 exact-count plan/approval、Top200 确认门、
 worker detach/watch/drain/resume/lost，以及只读 Viewer。

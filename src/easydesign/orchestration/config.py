@@ -71,6 +71,19 @@ class TargetIdentityConfig(BaseModel):
         default=None,
         pattern=r"^[A-Z0-9]{6,10}(?:-[0-9]+)?$",
     )
+    relationship: Literal[
+        "exact_native",
+        "exact_subsequence",
+        "engineered_construct",
+        "isoform",
+        "ortholog",
+        "chimera",
+        "ambiguous",
+        "mismatch",
+        "unresolved",
+    ] | None = None
+    isoform: str | None = Field(default=None, min_length=1, max_length=64)
+    taxon_id: int | None = Field(default=None, ge=1)
 
 
 class FullSequenceScope(BaseModel):
@@ -139,6 +152,7 @@ class PdbIdSourceConfig(BaseModel):
     pdb_id: str = Field(pattern=r"^[0-9][A-Za-z0-9]{3}$")
     chain: str | None = Field(default=None, min_length=1, max_length=16)
     chain_namespace: Literal["auth", "label"] = "auth"
+    identity: TargetIdentityConfig = TargetIdentityConfig()
 
 
 class UniProtSourceConfig(BaseModel):
@@ -212,6 +226,8 @@ class TargetSourceConfig(BaseModel):
     def identity(self) -> TargetIdentityConfig:
         source = self.source
         if isinstance(source, LocalFileSourceConfig):
+            return source.identity
+        if isinstance(source, PdbIdSourceConfig):
             return source.identity
         if isinstance(source, UniProtSourceConfig):
             return TargetIdentityConfig(uniprot_accession=source.accession)
@@ -300,6 +316,13 @@ class PrecomputedProtenixMsaConfig(BaseModel):
     mode: Literal[MsaMode.PRECOMPUTED]
     path: Path
     sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    source_receipt_path: Path | None = None
+
+    @model_validator(mode="after")
+    def require_hash_for_receipt(self) -> Self:
+        if self.source_receipt_path is not None and self.sha256 is None:
+            raise ValueError("带 source receipt 的 precomputed MSA 必须冻结 SHA-256")
+        return self
 
     def resolved_providers(self) -> tuple[ResolvedProtenixMsaProviderConfig, ...]:
         return ()
@@ -1513,6 +1536,7 @@ class LoadedSequenceRunConfig:
     prediction_request: StructurePredictionRequest | None
     msa_execution_plan: tuple[ResolvedProtenixMsaProviderConfig, ...]
     precomputed_msa_path: Path | None = None
+    precomputed_msa_source_receipt_path: Path | None = None
     precomputed_paired_msa_path: Path | None = None
     precomputed_template_path: Path | None = None
     identity_report: dict[str, Any] | None = None
@@ -1555,6 +1579,7 @@ class LoadedRemoteRunConfig:
     source_path: None
     detected_format: TargetInputFormat
     precomputed_msa_path: Path | None = None
+    precomputed_msa_source_receipt_path: Path | None = None
     precomputed_paired_msa_path: Path | None = None
     precomputed_template_path: Path | None = None
 
@@ -1692,6 +1717,28 @@ def _resolve_precomputed_msa_path(
     return resolved
 
 
+def _resolve_precomputed_msa_source_receipt_path(
+    config_path: Path,
+    config: EasyDesignRunConfig,
+    *,
+    source_base_dir: Path | None = None,
+) -> Path | None:
+    prediction = config.structure_prediction
+    if prediction is None or not isinstance(
+        prediction.target_msa,
+        PrecomputedProtenixMsaConfig,
+    ):
+        return None
+    source = prediction.target_msa.source_receipt_path
+    if source is None:
+        return None
+    return _resolve_source_path(
+        config_path,
+        source,
+        source_base_dir=source_base_dir,
+    )
+
+
 def _resolve_precomputed_paired_msa_path(
     config_path: Path,
     config: EasyDesignRunConfig,
@@ -1802,6 +1849,11 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
             precomputed_msa_path=_resolve_precomputed_msa_path(
                 config_path, config, source_base_dir=source_base_dir
             ),
+            precomputed_msa_source_receipt_path=(
+                _resolve_precomputed_msa_source_receipt_path(
+                    config_path, config, source_base_dir=source_base_dir
+                )
+            ),
             precomputed_paired_msa_path=_resolve_precomputed_paired_msa_path(
                 config_path, config, source_base_dir=source_base_dir
             ),
@@ -1819,6 +1871,11 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
                 config_path,
                 config,
                 source_base_dir=source_base_dir,
+            ),
+            precomputed_msa_source_receipt_path=(
+                _resolve_precomputed_msa_source_receipt_path(
+                    config_path, config, source_base_dir=source_base_dir
+                )
             ),
             precomputed_paired_msa_path=_resolve_precomputed_paired_msa_path(
                 config_path,
@@ -1841,6 +1898,11 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
                 config_path,
                 config,
                 source_base_dir=source_base_dir,
+            ),
+            precomputed_msa_source_receipt_path=(
+                _resolve_precomputed_msa_source_receipt_path(
+                    config_path, config, source_base_dir=source_base_dir
+                )
             ),
             precomputed_paired_msa_path=_resolve_precomputed_paired_msa_path(
                 config_path,
@@ -1935,6 +1997,11 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
         config,
         source_base_dir=source_base_dir,
     )
+    precomputed_msa_source_receipt_path = _resolve_precomputed_msa_source_receipt_path(
+        config_path,
+        config,
+        source_base_dir=source_base_dir,
+    )
     precomputed_paired_msa_path = _resolve_precomputed_paired_msa_path(
         config_path,
         config,
@@ -1986,6 +2053,7 @@ def load_run_config(path: Path, *, source_base_dir: Path | None = None) -> Loade
             prediction.resolved_providers() if prediction is not None else ()
         ),
         precomputed_msa_path=precomputed_msa_path,
+        precomputed_msa_source_receipt_path=precomputed_msa_source_receipt_path,
         precomputed_paired_msa_path=precomputed_paired_msa_path,
         precomputed_template_path=precomputed_template_path,
     )

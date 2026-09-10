@@ -1,0 +1,1 @@
+run_id,benchmark_version,method,target_id,benchmark_mode,replicate_id,model_id,reasoning_mode,repo_commit,backend_versions,evaluator_profile_sha256,x_conditions,candidates_expected,candidates_generated,seed_policy,hardware,gpu_hours,wall_time_s,status,failure_reason,plan_sha256,artifact_manifest_sha256

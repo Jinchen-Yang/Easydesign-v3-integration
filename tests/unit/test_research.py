@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import easydesign.orchestration.research as research_module
-from easydesign.core import ConfigurationError, DecisionOption, DecisionRequest
+from easydesign.core import ConfigurationError, DecisionOption, DecisionRequest, sha256_file
 from easydesign.orchestration.application import RunSummary
 from easydesign.orchestration.decisions import publish_decision_request
 from easydesign.orchestration.local_project import (
@@ -18,6 +18,7 @@ from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.research import (
     ProjectDescriptor,
     ResearchStrategy,
+    _append_strategy_research_events,
     _latest_pending_target_run,
     _latest_target_run,
     _site_fragment_from_file,
@@ -26,6 +27,7 @@ from easydesign.orchestration.research import (
     pilot_review,
     project_status,
 )
+from easydesign.orchestration.research_graph import load_research_events
 from easydesign.stages.s03_boltzgen_configuration import SCAFFOLD_IDS
 
 
@@ -100,6 +102,66 @@ def test_agent_native_project_is_compact_and_status_is_the_resume_entry(
     assert "--prediction-backend" not in status.next_actions[0].command
     assert "--prediction-backend" in status.next_actions[0].description
     assert "step" not in status.model_dump_json()
+
+
+def test_target_prepare_freezes_explicit_msa_and_passes_receipt_to_stage01(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path, monkeypatch)
+    target = root / "target.fasta"
+    target.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    a3m = root / "provided.a3m"
+    a3m.write_text(
+        ">query\nACDEFGHIKLMNPQRSTVWY\n>homolog\nACDEFGHIKLMNPQ-STVWY\n",
+        encoding="utf-8",
+    )
+    project = root / "workspace/projects/msa-project"
+    initialize_research_project(project_root=project, target=target)
+    captured: dict[str, object] = {}
+
+    def fake_launch(
+        launch_root: Path,
+        **values: object,
+    ) -> tuple[research_module.CommandResult, SimpleNamespace]:
+        captured.update(values)
+        return (
+            research_module.CommandResult(
+                status="succeeded",
+                phase="prepare",
+                project_id="msa-project",
+                run_id="run-msa",
+            ),
+            SimpleNamespace(
+                status="succeeded",
+                run_id="run-msa",
+                run_root=None,
+            ),
+        )
+
+    monkeypatch.setattr(research_module, "_launch", fake_launch)
+
+    result = research_module.target_prepare(
+        project,
+        prediction_backend="openfold3-af3-jax",
+        msa_a3m=a3m,
+    )
+
+    config = captured["config"]
+    prediction = config.structure_prediction
+    assert prediction is not None
+    assert prediction.target_msa.mode == "precomputed"
+    assert prediction.target_msa.source_receipt_path is not None
+    assert prediction.target_paired_msa.mode == "disabled"
+    assert prediction.target_templates.mode == "disabled"
+    snapshot_a3m = project / prediction.target_msa.path
+    snapshot_receipt = project / prediction.target_msa.source_receipt_path
+    assert snapshot_a3m.read_bytes() == a3m.read_bytes()
+    receipt = json.loads(snapshot_receipt.read_text(encoding="utf-8"))
+    assert receipt["type"] == "precomputed-file"
+    assert receipt["paired_msa"] == "empty"
+    assert receipt["template_mode"] == "disabled"
+    assert {snapshot_a3m, snapshot_receipt}.issubset(result.artifacts)
 
 
 def test_pending_stage01_decision_is_discoverable_before_stage_manifest(
@@ -343,6 +405,57 @@ def test_schema_1_1_rejects_missing_experiment_contract() -> None:
         )
 
 
+def test_strategy_1_2_remains_readable_and_new_hypothesis_fields_are_optional() -> None:
+    payload = _schema_1_1_strategy().model_dump(mode="json")
+    payload.update(
+        {
+            "schema_version": "1.2",
+            "protocol_kind": "first-pilot",
+            "prior_research_event_ids": [],
+        }
+    )
+
+    strategy = ResearchStrategy.model_validate(payload)
+
+    assert strategy.schema_version == "1.2"
+    assert strategy.variants[0].hypothesis_statement is None
+    assert strategy.variants[0].hypothesis_basis is None
+
+
+def test_structured_hypothesis_fields_project_to_distinct_event_content(
+    tmp_path: Path,
+) -> None:
+    strategy = _schema_1_1_strategy().model_copy(
+        update={
+            "variants": (
+                _schema_1_1_strategy()
+                .variants[0]
+                .model_copy(
+                    update={
+                        "hypothesis_statement": "The approved site is permissive.",
+                        "hypothesis_basis": "The site is exposed in the approved structure.",
+                    }
+                ),
+            )
+        }
+    )
+    strategy_path = tmp_path / "strategy-r000001.yaml"
+    strategy_path.write_text("strategy fixture\n", encoding="utf-8")
+
+    _append_strategy_research_events(
+        tmp_path,
+        strategy=strategy,
+        strategy_path=strategy_path,
+        foundation_sha256="a" * 64,
+        plan_sha256_value="b" * 64,
+    )
+    hypothesis = load_research_events(tmp_path)[0]
+
+    assert hypothesis.event_type == "hypothesis"
+    assert hypothesis.statement == "The approved site is permissive."
+    assert hypothesis.mechanism == "The site is exposed in the approved structure."
+
+
 def test_site_proposal_cannot_embed_or_bypass_human_approval(tmp_path: Path) -> None:
     config = tmp_path / "site.yaml"
     config.write_text(
@@ -452,6 +565,128 @@ def test_negative_pilot_review_does_not_offer_illegal_promotion(
 
     result = pilot_review(tmp_path, run_id=run.run_id)
 
-    assert [action.command for action in result.next_actions] == [
-        f"easydesign strategy draft {tmp_path.resolve()} --from-pilot {run.run_id}"
-    ]
+    assert len(result.next_actions) == 1
+    assert "easydesign view" in result.next_actions[0].command
+    assert result.next_actions[0].intent is not None
+    assert result.next_actions[0].intent.action_type == "review-status"
+
+
+def test_completed_zero_pass_pilot_persists_a_scoped_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = tmp_path / "pilot-filter-report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "status": "stopped-no-tier-a",
+                "profile_version": "nanobody-filter-standard-v1.6",
+                "candidate_records": [
+                    {
+                        "candidate_id": "candidate-1",
+                        "strategy_id": "baseline",
+                        "eligible_unique_pass": False,
+                        "hard_gate_decisions": [{"rule_id": "target-ca-rmsd", "passed": False}],
+                    }
+                ],
+                "strategy_summaries": [],
+                "promoted_strategy_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "run-manifest.json"
+    manifest.write_text('{"status":"succeeded"}\n', encoding="utf-8")
+    run = RunSummary(
+        project_id="example",
+        run_id="pilot-zero",
+        path=tmp_path / "run",
+        status="succeeded",
+        latest_manifest=manifest,
+        manifest_revision=5,
+        completed_stages=("05-pilot-filtering",),
+    )
+    monkeypatch.setattr(
+        research_module,
+        "resolve_project_path",
+        lambda path, *, must_exist: path.resolve(),
+    )
+    monkeypatch.setattr(research_module, "_run_by_id", lambda _root, _run_id: run)
+    monkeypatch.setattr(research_module, "_has_internal_stage", lambda _run, number: number == 5)
+
+    def artifact(_root: Path, artifact_id: str) -> tuple[object, Path]:
+        if artifact_id == "pilot-filter-report":
+            return SimpleNamespace(sha256=sha256_file(report)), report
+        raise ConfigurationError("missing fixture artifact")
+
+    monkeypatch.setattr(research_module, "_artifact", artifact)
+
+    result = pilot_review(tmp_path, run_id=run.run_id)
+    events = load_research_events(tmp_path)
+
+    assert len(result.artifacts) == 1
+    assert len(events) == 1
+    assert events[0].event_type == "observation"
+    assert events[0].denominator == 1
+    assert events[0].passing_count == 0
+    assert events[0].claim.assertion_domain == "computational-metric"
+    assert result.next_actions[0].intent is not None
+    assert result.next_actions[0].intent.action_type == "interpret-pilot"
+
+
+def test_operationally_failed_pilot_does_not_become_scientific_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = tmp_path / "pilot-filter-report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "status": "stopped-no-tier-a",
+                "candidate_records": [
+                    {
+                        "candidate_id": "candidate-1",
+                        "strategy_id": "baseline",
+                        "eligible_unique_pass": False,
+                        "hard_gate_decisions": [],
+                    }
+                ],
+                "promoted_strategy_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "run-manifest.json"
+    manifest.write_text('{"status":"failed"}\n', encoding="utf-8")
+    run = RunSummary(
+        project_id="example",
+        run_id="pilot-operational-failure",
+        path=tmp_path / "run",
+        status="failed",
+        latest_manifest=manifest,
+        manifest_revision=5,
+        completed_stages=("05-pilot-filtering",),
+    )
+    monkeypatch.setattr(
+        research_module,
+        "resolve_project_path",
+        lambda path, *, must_exist: path.resolve(),
+    )
+    monkeypatch.setattr(research_module, "_run_by_id", lambda _root, _run_id: run)
+    monkeypatch.setattr(research_module, "_has_internal_stage", lambda _run, number: number == 5)
+    monkeypatch.setattr(
+        research_module,
+        "_artifact",
+        lambda _root, artifact_id: (
+            (SimpleNamespace(sha256=sha256_file(report)), report)
+            if artifact_id == "pilot-filter-report"
+            else (_ for _ in ()).throw(ConfigurationError("missing fixture artifact"))
+        ),
+    )
+
+    result = pilot_review(tmp_path, run_id=run.run_id)
+
+    assert not result.artifacts
+    assert not load_research_events(tmp_path)
+    assert result.next_actions[0].intent is not None
+    assert result.next_actions[0].intent.action_type == "review-status"

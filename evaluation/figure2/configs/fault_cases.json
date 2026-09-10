@@ -1,0 +1,22 @@
+[
+  {"id":"checksum_mismatch","node":"tests/unit/core/test_artifacts.py::test_artifact_detects_same_size_content_change","panel":"g"},
+  {"id":"stale_plan","node":"tests/unit/orchestration/test_research_actions_plans.py::test_plan_sha_is_canonical_and_count_mutation_invalidates_approval","panel":"g"},
+  {"id":"missing_artifact","node":"tests/unit/core/test_artifacts.py::test_artifact_from_file_rejects_missing_file","panel":"g"},
+  {"id":"unsupported_capability","node":"tests/unit/stages/test_s03_strategy_compiler.py::test_capability_manifest_and_explicit_avoid_compile_to_not_binding","panel":"g"},
+  {"id":"partial_result","node":"tests/unit/stages/test_s04_candidate_collection.py::test_collector_requires_metric_original_and_refold_structure","panel":"g"},
+  {"id":"claim_evidence_violation","node":"tests/unit/core/test_claims.py::test_observation_without_evidence_is_rejected","panel":"g"},
+  {"id":"approval_mutation","node":"tests/unit/test_research.py::test_site_proposal_cannot_embed_or_bypass_human_approval","panel":"g"},
+  {"id":"wrong_lineage","node":"tests/unit/orchestration/test_research_interpretation.py::test_follow_up_requires_connected_hypothesis_observation_interpretation","panel":"g"},
+  {"id":"zero_accepted_designs","node":"tests/unit/test_research.py::test_completed_zero_pass_pilot_persists_a_scoped_observation","panel":"g"},
+  {"id":"backend_failure","node":"tests/unit/test_research.py::test_operationally_failed_pilot_does_not_become_scientific_observation","panel":"g"},
+  {"id":"experimental_claim_attempt","node":"tests/unit/core/test_claims.py::test_computational_metric_cannot_be_promoted_to_affinity_observation","panel":"g"},
+  {"id":"invalid_constraint","node":"tests/unit/stages/test_s03_strategy_compiler.py::test_binding_and_avoid_overlap_is_rejected","panel":"g"},
+  {"id":"duplicate_result","node":"tests/unit/orchestration/test_research_interpretation.py::test_duplicate_hypothesis_identity_is_rejected_even_with_new_event_id","panel":"g"},
+  {"id":"evidence_tamper","node":"tests/unit/orchestration/test_research_graph.py::test_observation_requires_real_checksum_verified_artifact","panel":"h"},
+  {"id":"graph_tamper","node":"tests/unit/orchestration/test_research_graph.py::test_predecessor_tamper_is_detected","panel":"h"},
+  {"id":"contradictory_interpretation","node":"tests/unit/orchestration/test_research_interpretation.py::test_interpretation_is_fail_closed_for_invalid_refs_or_effects","panel":"g"},
+  {"id":"immutable_history_replay","node":"tests/unit/orchestration/test_research_interpretation.py::test_full_loop_derives_hypothesis_status_without_rewriting_history","panel":"h"},
+  {"id":"valid_artifact_control","node":"tests/unit/core/test_artifacts.py::test_artifact_from_file_and_verify","panel":"h"},
+  {"id":"graph_reconstruction_control","node":"tests/unit/orchestration/test_research_graph.py::test_competing_hypotheses_are_append_only_and_reconstructable","panel":"h"},
+  {"id":"plan_identity_control","node":"tests/unit/orchestration/test_research_actions_plans.py::test_pilot_plan_sha_is_stable_and_mapping_drift_changes_identity","panel":"h"}
+]

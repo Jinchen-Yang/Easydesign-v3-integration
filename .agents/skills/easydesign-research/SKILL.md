@@ -47,7 +47,9 @@ Target Bundle、residue mapping、HTTP cache/provenance、artifact integrity 和
 分析结束时报告 dossier/report 的精确位置与尚未解决项；不要把“请确认继续”作为只读分析的固定尾声，
 也不要把打开结构页解释为 site approval。
 
-正文引用 `claim:ID` 时，到 [scientific-claims.md](references/scientific-claims.md) 读取对应 claim card。
+正文引用 `claim:ID` 时，可到 [scientific-claims.md](references/scientific-claims.md) 读取 source
+card，但该文件是未获研究者批准的 draft index，只能形成 `external_fact`/hypothesis proposal；
+不得把它当作 live Skill 已批准经验或 current project observation。
 
 ### `strategize`：approved site → pilot experiment
 
@@ -73,6 +75,13 @@ adapter/backend/asset 或进入 expert native path 时，再读取
 先判断数据能否科学比较，再排名。高分不能越过 target integrity、site identity、hard gate 或 missingness。
 
 当 `project status` 返回 `pilot-review-ready` 时，Stage 05 Dashboard 审阅属于本 phase，不再路由到独立结果 Skill。用户明确要求打开/呈现页面时，使用状态输出绑定的 current run 执行 `easydesign view PROJECT --run RUN --report stage05`；若状态警告页面缺失或失败，先用 `easydesign report build PROJECT --run RUN --report stage05` 重建 reporting revision。具体证据身份、display-only 边界和解释合同见 `pilot-diagnosis.md`，不得调用已退役的 wrapper 或脚本。
+
+按状态完成闭环：`pilot-review-ready` 运行 `pilot review` 记录 deterministic Observation；
+`pilot-interpretation-required` 根据 `pilot-diagnosis.md` 起草 project-local typed YAML，再运行
+`pilot interpret --run RUN --input FILE` 记录 Agent-proposed Interpretation；`pilot-interpreted`
+才运行 `strategy draft --from-pilot RUN`。Observation 只写 artifact 事实；Interpretation 写推断、
+替代解释、限制和 suggested next step；hypothesis 当前状态由 reducer 派生；promotion/stop/continue
+仍是研究者 decision。没有完整 Observation 时不得提交 interpretation 或 follow-up strategy。
 
 ### `scale` / `select`
 
@@ -169,7 +178,11 @@ Codex 负责：主动检索证据、比较结构状态、提出 site/strategy �
 - `easydesign scale run ... --confirm`
 - `easydesign select run ... --de-novo-backend <afo|protenix> --target-conditioned-backend <afo|protenix> --confirm`
 
-确认前展示精确 input identity、site/strategy allocation、candidate count、backend/profile、GPU occupancy、disk margin 和主要风险。不得把用户对讨论方案的认可推断成对另一份文件或另一个 revision 的运行批准。
+确认前展示精确 input identity、site/strategy allocation、candidate count、backend/profile、GPU
+occupancy、disk margin、ExecutionPlan SHA 和主要风险。JSON 优先读取 typed `intent`，不要手拼 shell
+quoting；`command` 只是 renderer 生成的兼容显示。`--confirm` 只批准 current exact plan，任何输入、
+mapping、count、allocation 或 backend 变化都必须重新 plan/approve。不得把用户对讨论方案的认可
+推断成对另一份文件或另一个 revision 的运行批准。
 
 ## 6. 运行边界
 
@@ -183,7 +196,9 @@ Codex 负责：主动检索证据、比较结构状态、提出 site/strategy �
 
 科学负结果是已完成证据。保留原 run，区分 `operational failure`、`scientific stop` 和 `empty result`；不得为了得到 winner 覆盖 run、删除 denominator 或静默放宽 threshold。
 
-项目经验先进入 `DECISIONS.md`。提升为 Skill 前必须有 `scope`、evidence run IDs、counterexamples、confidence、reviewer 和 review date，并取得研究者对 repository development 的批准。
+项目 hypothesis/experiment/observation/interpretation/decision 先进入 append-only Research Graph；
+`DECISIONS.md` 只保留人类可读背景，不是唯一事实源。提升为 Skill 前必须有 `scope`、
+evidence run IDs、counterexamples、confidence、reviewer 和 review date，并取得研究者对 repository development 的批准。
 
 ## 8. 交付完成条件
 

@@ -157,6 +157,19 @@ easydesign target prepare workspace/projects/apoe --prediction-backend afo
 easydesign project status workspace/projects/apoe --json
 ```
 
+Pilot 结束后的科研闭环使用独立的 Observation 与 Interpretation：
+
+```bash
+easydesign pilot review workspace/projects/apoe --run PILOT_RUN
+easydesign pilot interpret workspace/projects/apoe --run PILOT_RUN \
+  --input workspace/projects/apoe/interpretation.PILOT_RUN.yaml
+easydesign strategy draft workspace/projects/apoe --from-pilot PILOT_RUN
+```
+
+`pilot review` 只从 checksum-verified artifact 保存实际观察；`pilot interpret` 保存 Agent 提出的
+推断、替代解释、限制和假设状态作用。当前 hypothesis 状态由 append-only Research Graph 派生，
+下一策略必须引用 previous hypothesis、observation 与 interpretation，历史事件不被覆盖。
+
 查看全部命令：
 
 ```bash

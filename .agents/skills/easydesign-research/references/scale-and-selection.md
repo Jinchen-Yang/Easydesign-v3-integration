@@ -19,7 +19,7 @@
 
 合法顺序：
 
-`completed pilot → diagnosis → eligible strategy proposal → user promotion approval → immutable promotion receipt → scale proposal → user scale approval → completed scale → selection analysis → user selection approval`
+`completed pilot → deterministic ObservationEvent → diagnosis → immutable PromotionPlan → exact user approval → promotion receipt → immutable ScaleExecutionPlan → exact user approval → completed scale → SelectionPlan → exact user approval`
 
 任何一步都不能由后一步倒推。例如scale output存在不证明promotion receipt合法；用户批准pilot run不等于批准promotion或scale。
 
@@ -157,7 +157,11 @@ receipt是scale输入身份，不是科学解释本身。若pilot manifest、str
 
 ### 4.3 当前默认
 
-当前默认 v1.6 profile记录production总candidate budget为`50000`，allocation policy为`equal-across-promoted-v1`。这是version-specific product setting，不是科学最优分配定律；以实际scale config/artifact为准。若facade显式接受其他count，该run必须记录user-defined scale identity与单独审批，不能仍声称执行frozen standard 50,000。v1.7 artifact不得仅因数值相同就借用 v1.6 receipt或identity。
+Facade 的产品默认总 candidate budget 是 `50,000`，但用户可选择任意正整数；所有新 plan 均记录
+`user-defined-v1` exact count 和 `equal-across-promoted-v1` allocation。50k 不是科学定律，也不因数值
+相同而自动继承旧 `production-50000` identity。10k、20k、50k、100k 或 custom count 都必须形成
+各自 immutable plan SHA 和 approval；count 改变后旧 approval 立即失效。历史
+`production-50000` artifact 保持只读兼容。
 
 ### 4.4 条件分支
 
@@ -186,6 +190,9 @@ receipt是scale输入身份，不是科学解释本身。若pilot manifest、str
 - pilot显示mode collapse而没有mitigation；
 - selection/实验capacity无法承接输出；
 - 用户未批准exact scale plan。
+
+Plan/approval 还必须绑定 promoted strategy IDs、source pilot manifest SHA、promotion receipt SHA、
+target mapping SHA、total count、精确 allocation、backend/profile 与 GPU/disk preflight summary。
 
 ## 5. Production evidence
 

@@ -41,6 +41,7 @@ from easydesign.orchestration.research import (
     job_resume,
     job_status,
     job_watch,
+    pilot_interpret,
     pilot_plan,
     pilot_promote,
     pilot_review,
@@ -240,9 +241,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     runtime_list.add_argument("component", choices=("afo",))
     _add_json(runtime_list)
-    runtime_jobs = runtime_commands.add_parser(
-        "jobs", help="读取持久 runtime 安装任务"
-    )
+    runtime_jobs = runtime_commands.add_parser("jobs", help="读取持久 runtime 安装任务")
     runtime_jobs.add_argument("--job-id")
     runtime_jobs.add_argument(
         "--watch",
@@ -303,10 +302,20 @@ def _parser() -> argparse.ArgumentParser:
     target_prepare_parser = target_commands.add_parser("prepare")
     target_prepare_parser.add_argument("project", type=Path)
     _add_prediction_backend(target_prepare_parser, required=False)
-    target_prepare_parser.add_argument(
+    target_msa_source = target_prepare_parser.add_mutually_exclusive_group()
+    target_msa_source.add_argument(
         "--prediction-config",
         type=Path,
         help="Stage 1 显式 MSA/template 配置片段；backend 必须与命令一致",
+    )
+    target_msa_source.add_argument(
+        "--msa-library",
+        help="按 canonical sequence SHA-256 从当前 clone 的版本化 MSA library 解析",
+    )
+    target_msa_source.add_argument(
+        "--msa-a3m",
+        type=Path,
+        help="显式提供单条 A3M；必须与 target canonical sequence 完全一致",
     )
     _add_detach(target_prepare_parser)
     _add_json(target_prepare_parser)
@@ -328,9 +337,7 @@ def _parser() -> argparse.ArgumentParser:
     site_scan_parser = site_commands.add_parser("scan")
     site_scan_parser.add_argument("project", type=Path)
     site_scan_parser.add_argument("--method", choices=("sasa", "scannet", "both"), required=True)
-    site_scan_parser.add_argument(
-        "--provider", choices=("auto", "gpcr", "generic"), default="auto"
-    )
+    site_scan_parser.add_argument("--provider", choices=("auto", "gpcr", "generic"), default="auto")
     site_scan_parser.add_argument("--context", type=Path)
     site_scan_parser.add_argument("--offline", action="store_true")
     _add_detach(site_scan_parser)
@@ -356,6 +363,7 @@ def _parser() -> argparse.ArgumentParser:
     strategy_freeze_parser = strategy_commands.add_parser("freeze")
     strategy_freeze_parser.add_argument("project", type=Path)
     strategy_freeze_parser.add_argument("--config", type=Path, required=True)
+    strategy_freeze_parser.add_argument("--plan-sha")
     _add_confirm(strategy_freeze_parser)
     _add_json(strategy_freeze_parser)
 
@@ -367,6 +375,7 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--strategy", required=True)
         _add_prediction_backend(sub, required=True)
         if name == "run":
+            sub.add_argument("--plan-sha")
             _add_confirm(sub)
             _add_detach(sub)
         _add_json(sub)
@@ -374,12 +383,18 @@ def _parser() -> argparse.ArgumentParser:
     pilot_review_parser.add_argument("project", type=Path)
     pilot_review_parser.add_argument("--run", dest="run_id", required=True)
     _add_json(pilot_review_parser)
+    pilot_interpret_parser = pilot_commands.add_parser("interpret")
+    pilot_interpret_parser.add_argument("project", type=Path)
+    pilot_interpret_parser.add_argument("--run", dest="run_id", required=True)
+    pilot_interpret_parser.add_argument("--input", type=Path, required=True)
+    _add_json(pilot_interpret_parser)
     pilot_promote_parser = pilot_commands.add_parser("promote")
     pilot_promote_parser.add_argument("project", type=Path)
     pilot_promote_parser.add_argument("--run", dest="run_id", required=True)
     pilot_promote_parser.add_argument(
         "--strategy", required=True, help="逗号分隔的 StrategyBundle ID"
     )
+    pilot_promote_parser.add_argument("--plan-sha")
     _add_confirm(pilot_promote_parser)
     _add_json(pilot_promote_parser)
 
@@ -391,6 +406,7 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--selection", required=True)
         sub.add_argument("--count", type=int, default=50_000)
         if name == "run":
+            sub.add_argument("--plan-sha")
             _add_confirm(sub)
             _add_detach(sub)
         _add_json(sub)
@@ -405,6 +421,7 @@ def _parser() -> argparse.ArgumentParser:
         _add_prediction_backend(sub, "--de-novo-backend", required=True)
         _add_prediction_backend(sub, "--target-conditioned-backend", required=True)
         if name == "run":
+            sub.add_argument("--plan-sha")
             _add_confirm(sub)
             _add_detach(sub)
         _add_json(sub)
@@ -476,6 +493,7 @@ def _parser() -> argparse.ArgumentParser:
     gpcr_validate = gpcr_commands.add_parser("validate")
     gpcr_validate.add_argument("--bundle", type=Path, required=True)
     _add_json(gpcr_validate)
+
     return parser
 
 
@@ -524,8 +542,7 @@ def _confirmed_runtime_licenses(
     pending = [
         asset
         for asset in payload["assets"]
-        if asset["license_confirmation_required"]
-        and asset["asset_id"] not in accepted
+        if asset["license_confirmation_required"] and asset["asset_id"] not in accepted
     ]
     if not pending or not allow_prompt:
         return accepted
@@ -542,9 +559,7 @@ def _confirmed_runtime_licenses(
 def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
     components = runtime_status().model_dump(mode="json")
     miniforge = miniforge_status(context)
-    components["miniforge"] = (
-        None if miniforge is None else miniforge.model_dump(mode="json")
-    )
+    components["miniforge"] = None if miniforge is None else miniforge.model_dump(mode="json")
     component_assets = {
         asset_id
         for component in LOCAL_RUNTIME_COMPONENTS
@@ -556,9 +571,7 @@ def _runtime_status_payload(context: WorkspaceContext) -> dict[str, Any]:
         if item["environment_id"] in LOCAL_RUNTIME_COMPONENTS
     ]
     components["local_assets"] = [
-        item
-        for item in asset_status(context)["assets"]
-        if item["asset_id"] in component_assets
+        item for item in asset_status(context)["assets"] if item["asset_id"] in component_assets
     ]
     return components
 
@@ -573,17 +586,10 @@ def _print_runtime_status(payload: dict[str, Any]) -> None:
     openfold3 = payload["openfold3"]
     print(
         "OpenFold3: "
-        + (
-            str(openfold3["converted_weight_sha256"])
-            if openfold3 is not None
-            else "not-installed"
-        )
+        + (str(openfold3["converted_weight_sha256"]) if openfold3 is not None else "not-installed")
     )
     for environment in payload["local_environments"]:
-        print(
-            f"Local environment {environment['environment_id']}: "
-            f"{environment['status']}"
-        )
+        print(f"Local environment {environment['environment_id']}: {environment['status']}")
     for asset in payload["local_assets"]:
         print(f"Local asset {asset['asset_id']}: {asset['status']}")
 
@@ -614,9 +620,7 @@ def _format_setup_job_progress(job: SetupJobProjection) -> str:
     if progress is None:
         return f"{job.job_id}: {job.status}; 等待 worker 发布进度"
     total = max(progress.total_steps, 1)
-    fraction = (
-        progress.completed_steps + progress.current_step_fraction
-    ) / total
+    fraction = (progress.completed_steps + progress.current_step_fraction) / total
     if job.status == "succeeded":
         fraction = 1.0
     fraction = max(0.0, min(fraction, 1.0))
@@ -649,10 +653,7 @@ def _print_setup_job(job: SetupJobProjection) -> None:
     if job.error:
         print(f"  error: {job.error}")
     if job.afo is not None:
-        print(
-            "  AFO stable: "
-            f"{job.afo.component.release_id} ({job.afo.status})"
-        )
+        print(f"  AFO stable: {job.afo.component.release_id} ({job.afo.status})")
 
 
 def _watch_setup_job(
@@ -751,9 +752,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 payload = {
                     "component": "afo",
                     "default_channel": "stable",
-                    "releases": [
-                        item.model_dump(mode="json") for item in catalog.releases
-                    ],
+                    "releases": [item.model_dump(mode="json") for item in catalog.releases],
                 }
                 if args.json:
                     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
@@ -831,9 +830,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                     or args.pip_index_url is not None
                     or (args.bundle is not None and args.source != "auto")
                 ):
-                    raise ConfigurationError(
-                        "AFO 不接受 Conda、许可、detach 或 bundle source 参数"
-                    )
+                    raise ConfigurationError("AFO 不接受 Conda、许可、detach 或 bundle source 参数")
                 openfold3_result = install_openfold3_component(
                     selected_bundle,
                     activate=activate,
@@ -895,22 +892,14 @@ def _dispatch(args: argparse.Namespace) -> int:
                         else None
                     )
                     if args.json:
-                        setup_payload: dict[str, Any] = setup_summary.model_dump(
-                            mode="json"
-                        )
+                        setup_payload: dict[str, Any] = setup_summary.model_dump(mode="json")
                         setup_payload["afo"] = (
-                            None
-                            if afo_result is None
-                            else afo_result.model_dump(mode="json")
+                            None if afo_result is None else afo_result.model_dump(mode="json")
                         )
                         print(_json(setup_payload))
                     else:
-                        summary_status = (
-                            "succeeded" if setup_summary.ok else "incomplete"
-                        )
-                        print(
-                            f"组件: {setup_summary.component}\n状态: {summary_status}"
-                        )
+                        summary_status = "succeeded" if setup_summary.ok else "incomplete"
+                        print(f"组件: {setup_summary.component}\n状态: {summary_status}")
                         for environment in setup_summary.environments:
                             print(f"Environment {environment.environment_id}: {environment.status}")
                         for asset in setup_summary.assets:
@@ -927,9 +916,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             profile = activate_openfold3_release(args.release, context=context)
             activation_payload = {"release_id": args.release, "profile": str(profile)}
             print(
-                json.dumps(
-                    activation_payload, ensure_ascii=False, indent=2, sort_keys=True
-                )
+                json.dumps(activation_payload, ensure_ascii=False, indent=2, sort_keys=True)
                 if args.json
                 else f"AFO active release: {args.release}\nProfile: {profile}"
             )
@@ -943,11 +930,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 "active_release_id": None if active is None else active.release_id,
             }
             if args.json:
-                print(
-                    json.dumps(
-                        list_payload, ensure_ascii=False, indent=2, sort_keys=True
-                    )
-                )
+                print(json.dumps(list_payload, ensure_ascii=False, indent=2, sort_keys=True))
             else:
                 for item in catalog.releases:
                     installed_mark = any(
@@ -997,9 +980,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 evidence_path=args.evidence,
             )
             print(
-                json.dumps(
-                    {"report": str(validation_report_path)}, ensure_ascii=False
-                )
+                json.dumps({"report": str(validation_report_path)}, ensure_ascii=False)
                 if args.json
                 else f"OpenFold3 validation report: {validation_report_path}"
             )
@@ -1054,9 +1035,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             print(
                 json.dumps(report_payload, ensure_ascii=False, indent=2, sort_keys=True)
                 if args.json
-                else "\n".join(
-                    f"{key}: {value}" for key, value in report_payload.items()
-                )
+                else "\n".join(f"{key}: {value}" for key, value in report_payload.items())
             )
             return 0
         summary = resolve_project_run(args.project, run_id=args.run_id, required=True)
@@ -1143,9 +1122,11 @@ def _dispatch(args: argparse.Namespace) -> int:
             }
         else:
             supplied = args.bundle.expanduser().resolve(strict=True)
-            if (supplied / "review-manifest.json").is_file() or (
-                supplied / "LATEST"
-            ).is_file() and any(supplied.glob("report-*")):
+            if (
+                (supplied / "review-manifest.json").is_file()
+                or (supplied / "LATEST").is_file()
+                and any(supplied.glob("report-*"))
+            ):
                 manifest = validate_gpcr_review_report(supplied)
             else:
                 manifest = validate_gpcr_analysis_bundle(supplied)
@@ -1177,6 +1158,8 @@ def _dispatch(args: argparse.Namespace) -> int:
                     _prediction_backend(args.prediction_backend),
                 ),
                 prediction_config_path=args.prediction_config,
+                msa_library=args.msa_library,
+                msa_a3m=args.msa_a3m,
                 detach=args.detach,
             )
             if args.target_command == "prepare"
@@ -1209,7 +1192,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         elif args.strategy_command == "validate":
             result = strategy_validate(args.project, config_path=args.config)
         else:
-            result = strategy_freeze(args.project, config_path=args.config, confirm=args.confirm)
+            result = strategy_freeze(
+                args.project,
+                config_path=args.config,
+                confirm=args.confirm,
+                plan_sha=args.plan_sha,
+            )
     elif args.command == "pilot":
         if args.pilot_command == "plan":
             result = pilot_plan(
@@ -1224,9 +1212,16 @@ def _dispatch(args: argparse.Namespace) -> int:
                 prediction_backend=cast(Any, _prediction_backend(args.prediction_backend)),
                 confirm=args.confirm,
                 detach=args.detach,
+                plan_sha=args.plan_sha,
             )
         elif args.pilot_command == "review":
             result = pilot_review(args.project, run_id=args.run_id)
+        elif args.pilot_command == "interpret":
+            result = pilot_interpret(
+                args.project,
+                run_id=args.run_id,
+                input_path=args.input,
+            )
         else:
             result = pilot_promote(
                 args.project,
@@ -1235,6 +1230,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                     item.strip() for item in args.strategy.split(",") if item.strip()
                 ),
                 confirm=args.confirm,
+                plan_sha=args.plan_sha,
             )
     elif args.command == "scale":
         result = (
@@ -1246,6 +1242,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 count=args.count,
                 confirm=args.confirm,
                 detach=args.detach,
+                plan_sha=args.plan_sha,
             )
         )
     elif args.command == "select":
@@ -1272,6 +1269,7 @@ def _dispatch(args: argparse.Namespace) -> int:
                 top=args.top,
                 confirm=args.confirm,
                 detach=args.detach,
+                plan_sha=args.plan_sha,
             )
         )
     elif args.command == "job":
@@ -1306,10 +1304,9 @@ def _dispatch(args: argparse.Namespace) -> int:
             finally:
                 gpcr_server.close()
             return 0
-        if (
-            (direct_report / "report-manifest.json").is_file()
-            and (direct_report / "report.json").is_file()
-        ):
+        if (direct_report / "report-manifest.json").is_file() and (
+            direct_report / "report.json"
+        ).is_file():
             portable = load_model(
                 direct_report / "report.json",
                 ReviewDashboardReport,

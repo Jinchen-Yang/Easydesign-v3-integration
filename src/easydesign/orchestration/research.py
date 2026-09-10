@@ -17,8 +17,14 @@ from easydesign.backends.boltzgen import BoltzGenCheckAdapter
 from easydesign.backends.executors import NvidiaSmiProbe
 from easydesign.core import (
     ArtifactRef,
+    AssertionDomain,
+    ClaimEvidenceRef,
+    ClaimReceipt,
+    ClaimStatus,
+    ClaimType,
     ConfigurationError,
     EasyDesignError,
+    EvidenceKind,
     ExecutionStatus,
     ManifestStateError,
     RunManifest,
@@ -45,6 +51,7 @@ from easydesign.workspace_context import WorkspaceContext
 from .application import RunSummary, list_runs
 from .config import (
     EasyDesignRunConfig,
+    LoadedSequenceRunConfig,
     PredictionBackend,
     Stage02Config,
     Stage03Config,
@@ -71,9 +78,66 @@ from .local_project import (
     publish_config_revision,
     resolve_project_path,
 )
+from .msa_precompute import (
+    MsaInputSnapshot,
+    resolve_explicit_a3m,
+    resolve_library_entry,
+    snapshot_msa_artifact,
+)
 from .profile import load_runtime_profile
 from .project import InitializedProject, initialize_project
+from .research_actions import (
+    ApproveSiteIntent,
+    DraftStrategyIntent,
+    FreezeStrategyIntent,
+    ImmutableInputRef,
+    InterpretPilotIntent,
+    PromotePilotIntent,
+    ReviewPilotIntent,
+    ReviewStatusIntent,
+    RunPilotIntent,
+    RunScaleIntent,
+    RunSelectIntent,
+    render_action,
+)
+from .research_approvals import approve_execution_plan
+from .research_graph import (
+    DecisionEvent,
+    ExperimentEvent,
+    HypothesisEvent,
+    ObservationEvent,
+    append_research_event,
+    find_research_event,
+    load_research_events,
+    research_state_summary,
+)
+from .research_interpretation import (
+    follow_up_research_event_ids,
+    latest_interpretation_for_observation,
+    latest_observation_for_run,
+    load_interpretation_submission,
+    record_interpretation,
+    validate_follow_up_research_refs,
+)
 from .research_models import CommandResult, EvidenceItem, NextAction, ResearchPhase
+from .research_plans import (
+    ExecutionPlan,
+    PilotExecutionPlan,
+    PromotionPlan,
+    ScaleExecutionPlan,
+    SelectionPlan,
+    StrategyFreezePlan,
+    load_current_execution_plan,
+    plan_sha256,
+    publish_execution_plan,
+)
+from .research_protocols import (
+    FIRST_PILOT_CANDIDATES_PER_SCAFFOLD,
+    ExperimentalCondition,
+    FirstPilotProtocolSummary,
+    scale_protocol_summary,
+    validate_first_pilot_protocol,
+)
 from .workspace import load_resolved_run_config
 
 SITE_POINTER = "SITE_CURRENT"
@@ -85,8 +149,6 @@ ExperimentRole = Literal[
     "integrated-alternative",
     "confirmatory",
 ]
-FIRST_PILOT_SCAFFOLD_COUNT = 7
-FIRST_PILOT_CANDIDATES_PER_GROUP = 40
 
 
 class ProjectDescriptor(BaseModel):
@@ -138,6 +200,7 @@ class StrategyVariant(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$")
     hotspot_set_id: str | None = None
     binding_label_seq_ids: tuple[int, ...] | None = None
+    avoid_label_seq_ids: tuple[int, ...] = ()
     scaffold_ids: tuple[str, ...] = SCAFFOLD_IDS
     target_crop: TargetCrop | None = None
     cdr_overrides: tuple[CdrOverride, ...] = ()
@@ -152,6 +215,8 @@ class StrategyVariant(BaseModel):
     evidence_refs: tuple[str, ...] = ()
     changed_factors: tuple[str, ...] = ()
     held_constant: tuple[str, ...] = ()
+    hypothesis_statement: str | None = Field(default=None, min_length=1, max_length=4096)
+    hypothesis_basis: str | None = Field(default=None, min_length=1, max_length=4096)
     rationale: str = Field(min_length=1, max_length=4096)
     expected_result: str = Field(min_length=1, max_length=4096)
     failure_interpretation: str | None = Field(default=None, min_length=1, max_length=4096)
@@ -167,10 +232,19 @@ class StrategyVariant(BaseModel):
             values = tuple(sorted(set(self.binding_label_seq_ids)))
             if values != self.binding_label_seq_ids or any(item < 1 for item in values):
                 raise ValueError("binding_label_seq_ids 必须升序、唯一且为正整数")
+        avoid = tuple(sorted(set(self.avoid_label_seq_ids)))
+        if avoid != self.avoid_label_seq_ids or any(item < 1 for item in avoid):
+            raise ValueError("avoid_label_seq_ids 必须升序、唯一且为正整数")
+        if set(self.binding_label_seq_ids or ()) & set(avoid):
+            raise ValueError("binding 与 avoid residues 不能重叠")
         if self.native_boltzgen_yaml is None:
             if self.hotspot_set_id is None and self.binding_label_seq_ids is None:
                 raise ValueError("普通 variant 必须选择 hotspot_set_id 或 binding residues")
-        elif self.hotspot_set_id is not None or self.binding_label_seq_ids is not None:
+        elif (
+            self.hotspot_set_id is not None
+            or self.binding_label_seq_ids is not None
+            or self.avoid_label_seq_ids
+        ):
             raise ValueError("native BoltzGen variant 不能同时声明 EasyDesign binding 选择")
         elif len(self.scaffold_ids) != 1:
             raise ValueError("native BoltzGen variant 必须声明且仅声明一个 provenance scaffold")
@@ -201,8 +275,10 @@ class StrategyVariant(BaseModel):
 class ResearchStrategy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1.0", "1.1"] = "1.1"
+    schema_version: Literal["1.0", "1.1", "1.2", "1.3"] = "1.3"
     foundation: Literal["current"] | str = "current"
+    protocol_kind: Literal["first-pilot", "follow-up"] | None = None
+    prior_research_event_ids: tuple[str, ...] = ()
     variants: tuple[StrategyVariant, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -210,7 +286,7 @@ class ResearchStrategy(BaseModel):
         ids = [item.id for item in self.variants]
         if len(ids) != len(set(ids)):
             raise ValueError("strategy variant id 不能重复")
-        if self.schema_version == "1.1":
+        if self.schema_version in {"1.1", "1.2", "1.3"}:
             incomplete = [
                 item.id for item in self.variants if not item.has_complete_experiment_contract()
             ]
@@ -218,19 +294,46 @@ class ResearchStrategy(BaseModel):
                 raise ValueError(
                     f"schema 1.1 variant 必须记录完整 experiment contract: {incomplete}"
                 )
+        if self.schema_version in {"1.2", "1.3"}:
+            if self.protocol_kind is None:
+                raise ValueError("schema 1.2+ 必须显式声明 protocol_kind")
+            if self.protocol_kind == "follow-up" and not self.prior_research_event_ids:
+                raise ValueError("follow-up strategy 必须引用 prior research event")
+            if (
+                self.schema_version == "1.3"
+                and self.protocol_kind == "first-pilot"
+                and self.prior_research_event_ids
+            ):
+                raise ValueError("first-pilot Strategy 1.3 不得伪造 prior research lineage")
+        elif self.protocol_kind is not None or self.prior_research_event_ids:
+            raise ValueError("历史 strategy schema 不支持 research protocol metadata")
         return self
 
 
 class PromotionReceipt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     selection_id: str
     project_id: str
     pilot_run_id: str
     pilot_manifest_sha256: str
     strategy_ids: tuple[str, ...] = Field(min_length=1)
     approved_at: datetime
+    plan_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    approval_record_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_plan_binding(self) -> Self:
+        if self.schema_version == "1.1" and (
+            self.plan_sha256 is None or self.approval_record_sha256 is None
+        ):
+            raise ValueError("PromotionReceipt 1.1 必须绑定 plan/approval")
+        if self.schema_version == "1.0" and (
+            self.plan_sha256 is not None or self.approval_record_sha256 is not None
+        ):
+            raise ValueError("PromotionReceipt 1.0 不支持 plan binding")
+        return self
 
 
 def _exclusive_yaml(model: BaseModel | dict[str, Any], path: Path) -> Path:
@@ -371,6 +474,32 @@ def _project_id(root: Path) -> str:
     return load_run_config(project_config_path(root), source_base_dir=root).config.project_id
 
 
+def _site_approval_next_action(
+    root: Path,
+    proposal: Path,
+    *,
+    description: str,
+) -> NextAction:
+    intent = ApproveSiteIntent(
+        project_id=_project_id(root),
+        project_path=root,
+        immutable_input_refs=(
+            ImmutableInputRef(
+                name="site-proposal",
+                path=proposal.relative_to(root).as_posix(),
+                sha256=sha256_file(proposal),
+            ),
+        ),
+        input_path=proposal,
+    )
+    return NextAction(
+        command=render_action(intent),
+        description=description,
+        approval_required=True,
+        intent=intent,
+    )
+
+
 def _runs(root: Path) -> tuple[RunSummary, ...]:
     project_id = _project_id(root)
     values = tuple(
@@ -412,11 +541,35 @@ def _has_internal_stage(summary: RunSummary, number: int) -> bool:
     )
 
 
+def _is_completed_pilot_evidence(run: RunSummary) -> bool:
+    complete_statuses = {
+        "stopped-no-tier-a",
+        "strategies-promoted",
+        "tier-a-selected",
+        "winner-selected",
+    }
+    if run.status != "succeeded" or not _has_internal_stage(run, 5):
+        return False
+    try:
+        _, report_path = _artifact(run.path, "pilot-filter-report")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (ConfigurationError, OSError, ValueError):
+        return False
+    if not isinstance(report, dict):
+        return False
+    records = report.get("candidate_records")
+    return report.get("status") in complete_statuses and isinstance(records, list) and bool(records)
+
+
+def _has_completed_pilot_evidence(root: Path) -> bool:
+    """Recognize follow-up only from complete scientific Stage 05 evidence."""
+
+    return any(_is_completed_pilot_evidence(run) for run in _runs(root))
+
+
 def _latest_target_run(root: Path) -> RunSummary | None:
     candidates = [
-        item
-        for item in _runs(root)
-        if item.status == "succeeded" and _has_internal_stage(item, 1)
+        item for item in _runs(root) if item.status == "succeeded" and _has_internal_stage(item, 1)
     ]
     return candidates[-1] if candidates else None
 
@@ -493,6 +646,7 @@ def project_status(project_root: Path) -> CommandResult:
             phase="prepare",
             project_id=config.project_id,
             evidence=_semantic_evidence(root),
+            research_state=research_state_summary(root),
             warnings=("旧七 YAML 项目只读；拒绝原地迁移。请新建 Agent-native 项目。",),
         )
     descriptor = _descriptor(root)
@@ -505,19 +659,14 @@ def project_status(project_root: Path) -> CommandResult:
     promotion = _read_pointer(root, PROMOTION_POINTER)
     latest = _runs(root)[-1] if _runs(root) else None
     proposed_sites = tuple(
-        item
-        for item in evidence
-        if item.kind == "site-foundation" and item.status == "proposed"
+        item for item in evidence if item.kind == "site-foundation" and item.status == "proposed"
     )
     if selections:
         phase: ResearchPhase = "select"
         status = "completed"
         actions: tuple[NextAction, ...] = (
             NextAction(
-                command=(
-                    f"easydesign view {root} --run {selections[-1].run_id} "
-                    "--report stage07"
-                ),
+                command=(f"easydesign view {root} --run {selections[-1].run_id} --report stage07"),
                 description="打开冻结的 Stage 7 Top-200 与双模式 Review Dashboard。",
             ),
         )
@@ -531,8 +680,7 @@ def project_status(project_root: Path) -> CommandResult:
                     "--target-conditioned-backend <afo|protenix>"
                 ),
                 description=(
-                    "分别选择 de-novo 与 target-conditioned 后端，"
-                    "再核对最终过滤与 Top 200 计划。"
+                    "分别选择 de-novo 与 target-conditioned 后端，再核对最终过滤与 Top 200 计划。"
                 ),
             ),
         )
@@ -542,23 +690,76 @@ def project_status(project_root: Path) -> CommandResult:
         actions = (
             NextAction(
                 command=f"easydesign scale plan {root} --selection {selection_id}",
-                description="核对 50,000 候选资源计划。",
+                description="核对默认 50,000（可改为任意正整数）的候选资源计划。",
             ),
         )
     elif pilot_runs:
         latest_pilot = pilot_runs[-1]
         phase = "pilot"
-        if _has_internal_stage(latest_pilot, 5):
-            status = "pilot-review-ready"
-            actions = (
-                NextAction(
-                    command=(
-                        f"easydesign view {root} --run {latest_pilot.run_id} "
-                        "--report stage05"
+        if _is_completed_pilot_evidence(latest_pilot):
+            observation = latest_observation_for_run(root, latest_pilot.run_id)
+            if observation is None:
+                status = "pilot-review-ready"
+                review_intent = ReviewPilotIntent(
+                    project_id=descriptor.project_id,
+                    project_path=root,
+                    run_id=latest_pilot.run_id,
+                )
+                actions = (
+                    NextAction(
+                        command=render_action(review_intent),
+                        description=(
+                            "读取 checksum-verified Stage 5 诊断并记录 deterministic "
+                            "ObservationEvent。"
+                        ),
+                        intent=review_intent,
                     ),
-                    description="打开 Stage 5 Pilot/Expansion 完整 Review Dashboard。",
-                ),
-            )
+                )
+            else:
+                interpretation = latest_interpretation_for_observation(
+                    root,
+                    observation.event_id,
+                )
+                if interpretation is None:
+                    status = "pilot-interpretation-required"
+                    interpretation_intent = InterpretPilotIntent(
+                        project_id=descriptor.project_id,
+                        project_path=root,
+                        run_id=latest_pilot.run_id,
+                        input_path=root / f"interpretation.{latest_pilot.run_id}.yaml",
+                    )
+                    actions = (
+                        NextAction(
+                            command=render_action(interpretation_intent),
+                            description=(
+                                "由 Agent 提交引用该 Observation 的 typed scientific "
+                                "interpretation。"
+                            ),
+                            intent=interpretation_intent,
+                        ),
+                    )
+                else:
+                    status = "pilot-interpreted"
+                    lineage = follow_up_research_event_ids(
+                        root,
+                        source_run_id=latest_pilot.run_id,
+                    )
+                    draft_intent = DraftStrategyIntent(
+                        project_id=descriptor.project_id,
+                        project_path=root,
+                        source_pilot_run_id=latest_pilot.run_id,
+                        research_event_ids=lineage,
+                    )
+                    actions = (
+                        NextAction(
+                            command=render_action(draft_intent),
+                            description=(
+                                "基于已记录的 Hypothesis→Observation→Interpretation "
+                                "lineage 起草下一策略。"
+                            ),
+                            intent=draft_intent,
+                        ),
+                    )
         else:
             latest_job = LocalStepJobController().latest(descriptor.project_id)
             if (
@@ -570,7 +771,11 @@ def project_status(project_root: Path) -> CommandResult:
                 command = f"easydesign job status {root} --run {latest_pilot.run_id}"
                 description = "读取当前 Pilot 的结构化 job 与 heartbeat 状态。"
             else:
-                status = "pilot-resume-ready"
+                status = (
+                    "pilot-operational-failure"
+                    if latest_pilot.status == "failed"
+                    else "pilot-resume-ready"
+                )
                 command = f"easydesign job resume {root} --run {latest_pilot.run_id}"
                 description = "从最后一个已验证 manifest 继续到 Pilot 过滤边界。"
             actions = (NextAction(command=command, description=description),)
@@ -589,10 +794,10 @@ def project_status(project_root: Path) -> CommandResult:
         phase, status = "prepare", "site-approval-required"
         proposal_paths = sorted(root.glob(f"site-proposal.*.{proposed_sites[-1].identity}.yaml"))
         actions = tuple(
-            NextAction(
-                command=f"easydesign site approve {root} --input {path} --confirm",
+            _site_approval_next_action(
+                root,
+                path,
                 description="审核标准 Stage 02 proposal 后发布不可变 site foundation。",
-                approval_required=True,
             )
             for path in proposal_paths
         )
@@ -650,9 +855,7 @@ def project_status(project_root: Path) -> CommandResult:
             )
 
             gpcr_base = root / "gpcr-site"
-            if (gpcr_base / "LATEST").is_file() or (
-                (gpcr_base / "LATEST.revisions").is_dir()
-            ):
+            if (gpcr_base / "LATEST").is_file() or ((gpcr_base / "LATEST.revisions").is_dir()):
                 gpcr_root = resolve_latest_gpcr_analysis(root)
                 gpcr_manifest = validate_gpcr_analysis_bundle(gpcr_root)
                 gpcr_analysis = json.loads(
@@ -674,8 +877,7 @@ def project_status(project_root: Path) -> CommandResult:
                                 f"--context {context_path}"
                             ),
                             description=(
-                                "填写 GPCR 机制、状态、assay 与 approach clearance "
-                                "后重建 dossier。"
+                                "填写 GPCR 机制、状态、assay 与 approach clearance 后重建 dossier。"
                             ),
                         ),
                         NextAction(
@@ -685,7 +887,10 @@ def project_status(project_root: Path) -> CommandResult:
                     )
                 else:
                     status = "gpcr-site-review-ready"
-                    selection_path = root / f"gpcr-site-selection.{analysis_id}.yaml"
+                    revision = int(gpcr_manifest["revision"])
+                    selection_path = root / (
+                        f"gpcr-site-selection.{analysis_id}.r{revision:06d}.yaml"
+                    )
                     actions = (
                         NextAction(
                             command=f"easydesign view {root} --report gpcr",
@@ -694,8 +899,7 @@ def project_status(project_root: Path) -> CommandResult:
                         NextAction(
                             command=f"easydesign site propose {root} --input {selection_path}",
                             description=(
-                                "填写 1-3 个 primary/backup candidate ID 后投影到"
-                                "标准 A/B/C 区域。"
+                                "填写 1-3 个 primary/backup candidate ID 后投影到标准 A/B/C 区域。"
                             ),
                         ),
                     )
@@ -722,9 +926,7 @@ def project_status(project_root: Path) -> CommandResult:
     )
     if review_run is not None and review_kind is not None:
         stage_dir = (
-            "07-final-filtering-and-selection"
-            if review_kind == "stage07"
-            else "05-pilot-filtering"
+            "07-final-filtering-and-selection" if review_kind == "stage07" else "05-pilot-filtering"
         )
         report_base = review_run.path / "results" / stage_dir / "review-dashboard"
         try:
@@ -767,6 +969,7 @@ def project_status(project_root: Path) -> CommandResult:
         evidence=evidence,
         next_actions=actions,
         warnings=reporting_warnings,
+        research_state=research_state_summary(root),
     )
 
 
@@ -834,9 +1037,7 @@ def _stage01_config_with_backend(
     payload = config.model_dump(mode="python", exclude_none=False)
     if prediction_config is not None:
         if prediction_config.backend != backend:
-            raise ConfigurationError(
-                "--prediction-backend 与 --prediction-config backend 不一致"
-            )
+            raise ConfigurationError("--prediction-backend 与 --prediction-config backend 不一致")
         payload["stage01"]["structure_prediction"] = prediction_config.model_dump(
             mode="python",
             exclude_none=False,
@@ -884,6 +1085,31 @@ def _stage01_config_with_backend(
     return EasyDesignRunConfig.model_validate(payload)
 
 
+def _stage01_config_with_msa_snapshot(
+    root: Path,
+    config: EasyDesignRunConfig,
+    backend: PredictionBackend,
+    snapshot: MsaInputSnapshot,
+) -> EasyDesignRunConfig:
+    """Select one verified A3M with explicit empty paired/template policies."""
+
+    selected = _stage01_config_with_backend(root, config, backend)
+    payload = selected.model_dump(mode="python", exclude_none=False)
+    prediction = selected.structure_prediction
+    assert prediction is not None
+    configured = prediction.model_dump(mode="python", exclude_none=False)
+    configured["target_msa"] = {
+        "mode": "precomputed",
+        "path": snapshot.a3m_path.relative_to(root).as_posix(),
+        "sha256": snapshot.receipt.a3m_sha256,
+        "source_receipt_path": snapshot.receipt_path.relative_to(root).as_posix(),
+    }
+    configured["target_paired_msa"] = {"mode": "disabled"}
+    configured["target_templates"] = {"mode": snapshot.receipt.template_mode}
+    payload["stage01"]["structure_prediction"] = configured
+    return EasyDesignRunConfig.model_validate(payload)
+
+
 def _load_stage01_prediction_config(path: Path) -> StructurePredictionConfig:
     try:
         source = path.expanduser().resolve(strict=True)
@@ -898,6 +1124,7 @@ def _load_stage01_prediction_config(path: Path) -> StructurePredictionConfig:
         ("target_msa", "path"),
         ("target_paired_msa", "path"),
         ("target_templates", "data_path"),
+        ("target_msa", "source_receipt_path"),
     ):
         item = raw.get(field)
         if not isinstance(item, dict) or item.get("mode") != "precomputed":
@@ -908,9 +1135,7 @@ def _load_stage01_prediction_config(path: Path) -> StructurePredictionConfig:
         selected = Path(value).expanduser()
         if not selected.is_absolute():
             try:
-                item[path_key] = str(
-                    (source.parent / selected).resolve(strict=True)
-                )
+                item[path_key] = str((source.parent / selected).resolve(strict=True))
             except OSError as error:
                 raise ConfigurationError(
                     f"Stage 1 precomputed input 无法读取: field={field}, path={value}"
@@ -918,9 +1143,7 @@ def _load_stage01_prediction_config(path: Path) -> StructurePredictionConfig:
     try:
         return StructurePredictionConfig.model_validate(raw)
     except ValidationError as error:
-        raise ConfigurationError(
-            f"Stage 1 prediction config 校验失败: {error}"
-        ) from error
+        raise ConfigurationError(f"Stage 1 prediction config 校验失败: {error}") from error
 
 
 def target_prepare(
@@ -928,8 +1151,12 @@ def target_prepare(
     *,
     prediction_backend: PredictionBackend | None = None,
     prediction_config_path: Path | None = None,
+    msa_library: str | None = None,
+    msa_a3m: Path | None = None,
     detach: bool = False,
 ) -> CommandResult:
+    if sum(value is not None for value in (prediction_config_path, msa_library, msa_a3m)) > 1:
+        raise ConfigurationError("--prediction-config、--msa-library 与 --msa-a3m 只能选择一个")
     root = resolve_project_path(project_root, must_exist=True)
     _descriptor(root)
     pending = _latest_pending_target_run(root)
@@ -967,7 +1194,8 @@ def target_prepare(
                 ),
             ),
         )
-    config = load_run_config(project_config_path(root), source_base_dir=root).config
+    loaded = load_run_config(project_config_path(root), source_base_dir=root)
+    config = loaded.config
     selected_prediction = (
         None
         if prediction_config_path is None
@@ -976,9 +1204,51 @@ def target_prepare(
     selected_backend = (
         prediction_backend
         if prediction_backend is not None
-        else (None if selected_prediction is None else selected_prediction.backend)
+        else (
+            selected_prediction.backend
+            if selected_prediction is not None
+            else (
+                None if config.structure_prediction is None else config.structure_prediction.backend
+            )
+        )
     )
-    if selected_backend is not None:
+    selected_msa: MsaInputSnapshot | None = None
+    if msa_library is not None or msa_a3m is not None:
+        if not isinstance(loaded, LoadedSequenceRunConfig):
+            raise ConfigurationError(
+                "--msa-library/--msa-a3m 需要已物化的本地 FASTA 或裸序列项目；"
+                "远端 UniProt 身份必须先导出 canonical FASTA"
+            )
+        if selected_backend is None:
+            raise ConfigurationError(
+                "--msa-library/--msa-a3m 必须同时选择 --prediction-backend，"
+                "或在项目配置中已有显式 Stage 1 backend"
+            )
+        context = WorkspaceContext.discover()
+        artifact = (
+            resolve_library_entry(
+                context=context,
+                release_id=msa_library,
+                canonical_sequence=loaded.target.sequence,
+            )
+            if msa_library is not None
+            else resolve_explicit_a3m(
+                source=cast(Path, msa_a3m),
+                canonical_sequence=loaded.target.sequence,
+            )
+        )
+        selected_msa = snapshot_msa_artifact(
+            context=context,
+            artifact=artifact,
+            destination_parent=root / "inputs" / "msa-selections",
+        )
+        config = _stage01_config_with_msa_snapshot(
+            root,
+            config,
+            selected_backend,
+            selected_msa,
+        )
+    elif selected_backend is not None:
         config = _stage01_config_with_backend(
             root,
             config,
@@ -995,6 +1265,8 @@ def target_prepare(
         detach=detach,
     )
     artifacts = list(result.artifacts)
+    if selected_msa is not None:
+        artifacts.extend((selected_msa.a3m_path, selected_msa.receipt_path))
     actions: list[NextAction] = []
     if observed.status == "awaiting-human-approval" and observed.run_root is not None:
         decision = root / f"target-decision.{observed.run_id}.yaml"
@@ -1149,10 +1421,10 @@ def _run_site(root: Path, fragment: Stage02Config, *, detach: bool) -> CommandRe
     if observed.status != "detached" and observed.run_root is not None:
         proposals = _export_site_proposals(root, observed.run_root)
     actions = tuple(
-        NextAction(
-            command=f"easydesign site approve {root} --input {path} --confirm",
+        _site_approval_next_action(
+            root,
+            path,
             description=f"在 Viewer 核对 {path.name} 后批准。",
-            approval_required=True,
         )
         for path in proposals
     )
@@ -1241,8 +1513,7 @@ def site_scan(
                 actions.append(
                     NextAction(
                         command=(
-                            f"easydesign site propose {root} "
-                            f"--input {published.selection_path}"
+                            f"easydesign site propose {root} --input {published.selection_path}"
                         ),
                         description="填写并提交 1-3 个 primary/backup candidate ID。",
                     )
@@ -1305,9 +1576,7 @@ def site_propose(
     else:
         if input_path is None:
             raise ConfigurationError("site propose 必须提供 --input 或 --from-pse-colors")
-        fragment = _site_fragment_from_file(
-            input_path.expanduser().resolve(strict=True), root
-        )
+        fragment = _site_fragment_from_file(input_path.expanduser().resolve(strict=True), root)
     return _run_site(root, fragment, detach=detach)
 
 
@@ -1317,18 +1586,17 @@ def site_approve(project_root: Path, *, input_path: Path, confirm: bool) -> Comm
     if not selected.is_relative_to(root):
         raise ConfigurationError("site proposal 必须位于当前项目")
     if not confirm:
+        action = _site_approval_next_action(
+            root,
+            selected,
+            description="发布新的不可变 target/site foundation。",
+        )
         return CommandResult(
             status="confirmation-required",
             phase="prepare",
             project_id=_project_id(root),
             artifacts=(selected,),
-            next_actions=(
-                NextAction(
-                    command=f"easydesign site approve {root} --input {selected} --confirm",
-                    description="发布新的不可变 target/site foundation。",
-                    approval_required=True,
-                ),
-            ),
+            next_actions=(action,),
         )
     runs = [item for item in _runs(root) if item.run_id in selected.name]
     if len(runs) != 1:
@@ -1383,37 +1651,22 @@ def _target_length(summary: RunSummary) -> int:
     return length
 
 
-def _validate_first_pilot_strategy(strategy: ResearchStrategy) -> None:
+def _validate_first_pilot_strategy(
+    strategy: ResearchStrategy,
+) -> FirstPilotProtocolSummary:
     """Enforce the VHH7 coverage product invariant before any first pilot."""
 
-    if (
-        len(SCAFFOLD_IDS) != FIRST_PILOT_SCAFFOLD_COUNT
-        or len(set(SCAFFOLD_IDS)) != FIRST_PILOT_SCAFFOLD_COUNT
-    ):
-        raise ConfigurationError("official-vhh7-v1 registry 必须精确包含 7 个唯一 scaffold")
-    wrong_counts = [
-        item.id for item in strategy.variants if item.candidates != FIRST_PILOT_CANDIDATES_PER_GROUP
-    ]
-    if wrong_counts:
-        raise ConfigurationError(
-            f"首轮每个 experiment group 必须生成 40 candidates: {wrong_counts}"
-        )
-    baseline = tuple(
-        item
-        for item in strategy.variants
-        if item.native_boltzgen_yaml is None
-        and (strategy.schema_version == "1.0" or item.role == "baseline")
+    return validate_first_pilot_protocol(
+        conditions=tuple(
+            ExperimentalCondition(
+                condition_id=item.id,
+                scaffold_ids=item.scaffold_ids,
+                candidates_per_scaffold=item.candidates,
+            )
+            for item in strategy.variants
+        ),
+        official_scaffold_ids=SCAFFOLD_IDS,
     )
-    covered = {scaffold for item in baseline for scaffold in item.scaffold_ids}
-    missing = sorted(set(SCAFFOLD_IDS) - covered)
-    if missing:
-        raise ConfigurationError(
-            f"首轮 baseline 不得预筛 scaffold；缺少 official-vhh7-v1 scaffold: {missing}"
-        )
-    required = FIRST_PILOT_SCAFFOLD_COUNT * FIRST_PILOT_CANDIDATES_PER_GROUP
-    baseline_candidates = sum(item.candidates * len(item.scaffold_ids) for item in baseline)
-    if baseline_candidates < required:
-        raise ConfigurationError(f"首轮 baseline 至少需要 7 scaffolds × 40 = {required} candidates")
 
 
 def load_strategy(project_root: Path, path: Path) -> ResearchStrategy:
@@ -1431,7 +1684,25 @@ def load_strategy(project_root: Path, path: Path) -> ResearchStrategy:
     approved = {item.id: set(item.label_seq_ids) for item in hotspots.hotspot_sets}
     all_approved = set().union(*approved.values())
     target_length = _target_length(foundation)
-    if not any(_has_internal_stage(item, 5) for item in _runs(root)):
+    first_pilot = not _has_completed_pilot_evidence(root)
+    if strategy.schema_version in {"1.2", "1.3"}:
+        if first_pilot and strategy.protocol_kind != "first-pilot":
+            raise ConfigurationError("尚无完成 Stage 05；schema 1.2 必须声明 first-pilot")
+        if not first_pilot and strategy.protocol_kind != "follow-up":
+            raise ConfigurationError("已有完成 Stage 05；新 strategy 必须声明 follow-up")
+        if strategy.schema_version == "1.3" and strategy.protocol_kind == "follow-up":
+            validate_follow_up_research_refs(root, strategy.prior_research_event_ids)
+        else:
+            missing_events = [
+                event_id
+                for event_id in strategy.prior_research_event_ids
+                if find_research_event(root, event_id) is None
+            ]
+            if missing_events:
+                raise ConfigurationError(
+                    f"follow-up 引用的 research event 不存在: {missing_events}"
+                )
+    if first_pilot:
         _validate_first_pilot_strategy(strategy)
     for variant in strategy.variants:
         if variant.native_boltzgen_yaml is not None:
@@ -1448,6 +1719,8 @@ def load_strategy(project_root: Path, path: Path) -> ResearchStrategy:
         selected_residues = set(variant.binding_label_seq_ids or ())
         if selected_residues and not selected_residues.issubset(all_approved):
             raise ConfigurationError("binding subset 包含未批准 residue")
+        if any(item > target_length for item in variant.avoid_label_seq_ids):
+            raise ConfigurationError("avoid residues 超出 frozen target/design scope")
         if variant.target_crop is not None:
             if variant.target_crop.end > target_length:
                 raise ConfigurationError("target crop 超出 Target Bundle sequence_length")
@@ -1487,11 +1760,14 @@ def strategy_draft(
         )
         if pilot is None:
             raise ConfigurationError("--from-pilot 必须引用已完成 pilot")
+        lineage = follow_up_research_event_ids(root, source_run_id=from_pilot)
         resolved, _ = load_resolved_run_config(pilot.path)
         source_revision = resolved.user_config.stage03
         payload = {
-            "schema_version": "1.1",
+            "schema_version": "1.3",
             "foundation": "current",
+            "protocol_kind": "follow-up",
+            "prior_research_event_ids": list(lineage),
             "variants": [],
             "previous_stage03": source_revision.model_dump(mode="json")
             if source_revision
@@ -1503,13 +1779,23 @@ def strategy_draft(
         assert foundation is not None
         hotspot_sets = [item.id for item in _load_hotspots(foundation).hotspot_sets]
         payload = {
-            "schema_version": "1.1",
+            "schema_version": "1.3",
             "foundation": "current",
+            "protocol_kind": "first-pilot",
+            "prior_research_event_ids": [],
             "variants": [
                 {
                     "id": "baseline",
                     "hypothesis_id": "h-baseline-all-scaffolds",
                     "role": "baseline",
+                    "hypothesis_statement": (
+                        "The approved site can support productive VHH engagement across the "
+                        "official seven-scaffold panel."
+                    ),
+                    "hypothesis_basis": (
+                        "The site passed the approved structural evidence review and is tested "
+                        "without scaffold preselection."
+                    ),
                     "evidence_refs": [
                         f"run:{foundation.run_id}",
                         "scaffold-registry:official-vhh7-v1",
@@ -1529,7 +1815,7 @@ def strategy_draft(
                     "scaffold_ids": list(SCAFFOLD_IDS),
                     "target_crop": None,
                     "cdr_overrides": [],
-                    "candidates": FIRST_PILOT_CANDIDATES_PER_GROUP,
+                    "candidates": FIRST_PILOT_CANDIDATES_PER_SCAFFOLD,
                     "native_boltzgen_yaml": None,
                     "native_boltzgen_sha256": None,
                     "rationale": (
@@ -1570,6 +1856,7 @@ def _compiled_strategy_variants(
             variant_id=item.id,
             hotspot_set_id=item.hotspot_set_id,
             binding_label_seq_ids=item.binding_label_seq_ids,
+            avoid_label_seq_ids=item.avoid_label_seq_ids,
             scaffold_ids=item.scaffold_ids,
             target_crop=(
                 None
@@ -1681,11 +1968,41 @@ def strategy_validate(project_root: Path, *, config_path: Path) -> CommandResult
     finally:
         if staging.is_dir():
             shutil.rmtree(staging)
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    freeze_plan = StrategyFreezePlan(
+        project_id=_project_id(root),
+        created_at=_artifact_time(selected_config),
+        foundation_manifest_sha256=foundation_sha,
+        target_mapping_sha256=mapping_sha,
+        backend=f"boltzgen-{capability['version']}",
+        resource_summary={
+            "compiled_strategy_count": len(compiled),
+            "planned_candidates": total,
+            "boltzgen_commit": capability["commit"],
+        },
+        strategy_path=selected_config.relative_to(root).as_posix(),
+        strategy_sha256=sha256_file(selected_config),
+    )
+    plan_path, plan_sha = publish_execution_plan(root, freeze_plan)
+    intent = FreezeStrategyIntent(
+        project_id=_project_id(root),
+        project_path=root,
+        immutable_input_refs=(
+            ImmutableInputRef(
+                name="strategy-config",
+                path=freeze_plan.strategy_path,
+                sha256=freeze_plan.strategy_sha256,
+            ),
+            ImmutableInputRef(name="target-mapping", sha256=mapping_sha),
+        ),
+        strategy_path=selected_config,
+        plan_sha256=plan_sha,
+    )
     return CommandResult(
         status="valid",
         phase="strategize",
         project_id=_project_id(root),
-        artifacts=(selected_config,),
+        artifacts=(selected_config, plan_path),
         evidence=(
             EvidenceItem(
                 kind="strategy-validation",
@@ -1702,45 +2019,70 @@ def strategy_validate(project_root: Path, *, config_path: Path) -> CommandResult
         ),
         next_actions=(
             NextAction(
-                command=(f"easydesign strategy freeze {root} --config {selected_config} --confirm"),
+                command=render_action(intent),
                 description="批准并冻结不可变策略 revision。",
                 approval_required=True,
+                intent=intent,
             ),
         ),
         warnings=("pilot 的不可变 attempt 会再次执行同一 BoltzGen check。",),
     )
 
 
-def strategy_freeze(project_root: Path, *, config_path: Path, confirm: bool) -> CommandResult:
+def strategy_freeze(
+    project_root: Path,
+    *,
+    config_path: Path,
+    confirm: bool,
+    plan_sha: str | None = None,
+) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     strategy = load_strategy(root, config_path)
     selected = (config_path if config_path.is_absolute() else root / config_path).resolve(
         strict=True
     )
     if not confirm:
-        return CommandResult(
-            status="confirmation-required",
-            phase="strategize",
-            project_id=_project_id(root),
-            artifacts=(selected,),
-            next_actions=(
-                NextAction(
-                    command=f"easydesign strategy freeze {root} --config {selected} --confirm",
-                    description="冻结后不可覆盖。",
-                    approval_required=True,
-                ),
-            ),
-        )
+        return strategy_validate(root, config_path=selected)
+    current, plan_path, _ = _current_plan_for_execution(
+        root,
+        plan_type="strategy-freeze",
+        supplied_sha256=plan_sha,
+    )
+    if not isinstance(current, StrategyFreezePlan):
+        raise ManifestStateError("current plan 类型不是 StrategyFreezePlan")
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    if (
+        current.project_id != _project_id(root)
+        or current.strategy_sha256 != sha256_file(selected)
+        or current.strategy_path != selected.relative_to(root).as_posix()
+        or current.foundation_manifest_sha256 != foundation_sha
+        or current.target_mapping_sha256 != mapping_sha
+    ):
+        raise ManifestStateError("strategy/foundation/mapping 已变化；必须重新 validate/approve")
+    approval_path, _ = _approve_current_plan(root, current)
     validation = strategy_validate(root, config_path=selected)
     number = len(tuple((root / "strategies").glob("strategy-r*.yaml"))) + 1
     destination = root / "strategies" / f"strategy-r{number:06d}.yaml"
     _exclusive_yaml(strategy, destination)
     _append_pointer(root, STRATEGY_POINTER, destination.relative_to(root))
+    graph_paths = _append_strategy_research_events(
+        root,
+        strategy=strategy,
+        strategy_path=destination,
+        foundation_sha256=foundation_sha,
+        plan_sha256_value=plan_sha256(current),
+    )
     return CommandResult(
         status="strategy-frozen",
         phase="pilot",
         project_id=_project_id(root),
-        artifacts=(destination, root / STRATEGY_POINTER),
+        artifacts=(
+            destination,
+            root / STRATEGY_POINTER,
+            plan_path,
+            approval_path,
+            *graph_paths,
+        ),
         evidence=validation.evidence,
         next_actions=(
             NextAction(
@@ -1752,6 +2094,83 @@ def strategy_freeze(project_root: Path, *, config_path: Path, confirm: bool) -> 
             ),
         ),
     )
+
+
+def _append_strategy_research_events(
+    root: Path,
+    *,
+    strategy: ResearchStrategy,
+    strategy_path: Path,
+    foundation_sha256: str,
+    plan_sha256_value: str,
+) -> tuple[Path, ...]:
+    """Project a frozen executable strategy into append-only scientific lineage."""
+
+    paths: list[Path] = []
+    emitted_hypotheses: set[str] = set()
+    existing_hypothesis_ids = {
+        event.hypothesis_id
+        for event in load_research_events(root)
+        if isinstance(event, HypothesisEvent)
+    }
+    for variant in strategy.variants:
+        if not variant.has_complete_experiment_contract():
+            continue
+        assert variant.hypothesis_id is not None
+        assert variant.role is not None
+        assert variant.failure_interpretation is not None
+        if (
+            variant.hypothesis_id not in emitted_hypotheses
+            and variant.hypothesis_id not in existing_hypothesis_ids
+        ):
+            claim = ClaimReceipt(
+                claim_id=f"claim-{strategy_path.stem}-{variant.hypothesis_id}",
+                claim_type=ClaimType.HYPOTHESIS,
+                statement=variant.hypothesis_statement or variant.rationale,
+                scope=f"target-foundation:{foundation_sha256}",
+                status=ClaimStatus.PROPOSED,
+                limitations=("Hypothesis is proposed and not an observation.",),
+            )
+            _, event_path = append_research_event(
+                root,
+                HypothesisEvent(
+                    event_id=(f"hypothesis-event-{strategy_path.stem}-{variant.hypothesis_id}"),
+                    author_kind="agent-proposal",
+                    hypothesis_id=variant.hypothesis_id,
+                    target_foundation_sha256=foundation_sha256,
+                    statement=variant.hypothesis_statement or variant.rationale,
+                    mechanism=variant.hypothesis_basis or variant.rationale,
+                    predictions=(variant.expected_result,),
+                    falsifiers=(variant.failure_interpretation,),
+                    source_evidence_refs=variant.evidence_refs,
+                    claim=claim,
+                ),
+            )
+            paths.append(event_path)
+            existing_hypothesis_ids.add(variant.hypothesis_id)
+        emitted_hypotheses.add(variant.hypothesis_id)
+        _, event_path = append_research_event(
+            root,
+            ExperimentEvent(
+                event_id=f"experiment-event-{strategy_path.stem}-{variant.id}",
+                author_kind="agent-proposal",
+                experiment_id=f"experiment-{strategy_path.stem}-{variant.id}",
+                hypothesis_ids=(variant.hypothesis_id,),
+                strategy_revision_sha256=sha256_file(strategy_path),
+                strategy_variant_ids=(variant.id,),
+                changed_factors=variant.changed_factors,
+                held_constant=variant.held_constant,
+                expected_observations=(variant.expected_result,),
+                protocol_identity=(
+                    "first-pilot-vhh7-40-v1"
+                    if strategy.protocol_kind == "first-pilot"
+                    else "follow-up-explicit-v1"
+                ),
+                plan_sha256=plan_sha256_value,
+            ),
+        )
+        paths.append(event_path)
+    return tuple(paths)
 
 
 def _strategy_revision(root: Path, value: str) -> Path:
@@ -1788,6 +2207,36 @@ def _resource_evidence(kind: str, count: int, *, strategies: int) -> EvidenceIte
     )
 
 
+def _foundation_plan_identity(root: Path) -> tuple[str, str]:
+    foundation = _latest_foundation(root)
+    if foundation is None:
+        raise ConfigurationError("execution plan 需要 approved target/site foundation")
+    mapping_ref, _ = _artifact(foundation.path, "residue-mapping")
+    return sha256_file(foundation.latest_manifest), mapping_ref.sha256
+
+
+def _artifact_time(path: Path) -> datetime:
+    return datetime.fromtimestamp(path.stat().st_mtime, UTC)
+
+
+def _current_plan_for_execution(
+    root: Path,
+    *,
+    plan_type: str,
+    supplied_sha256: str | None,
+) -> tuple[ExecutionPlan, Path, str]:
+    plan, path = load_current_execution_plan(root, plan_type)
+    digest = plan_sha256(plan)
+    if supplied_sha256 is not None and supplied_sha256 != digest:
+        raise ManifestStateError("提供的 plan SHA-256 不是 current immutable plan")
+    return plan, path, digest
+
+
+def _approve_current_plan(root: Path, plan: ExecutionPlan) -> tuple[Path, str]:
+    _, _, approval_path = approve_execution_plan(root, plan)
+    return approval_path, plan_sha256(plan)
+
+
 def pilot_plan(
     project_root: Path,
     *,
@@ -1798,20 +2247,66 @@ def pilot_plan(
     path = _strategy_revision(root, strategy_revision)
     strategy = load_strategy(root, path)
     count = sum(item.candidates * max(1, len(item.scaffold_ids)) for item in strategy.variants)
+    first_pilot = not _has_completed_pilot_evidence(root)
+    protocol = _validate_first_pilot_strategy(strategy) if first_pilot else None
+    resource = _resource_evidence("pilot", count, strategies=len(strategy.variants))
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    plan = PilotExecutionPlan(
+        project_id=_project_id(root),
+        created_at=_artifact_time(path),
+        foundation_manifest_sha256=foundation_sha,
+        target_mapping_sha256=mapping_sha,
+        backend=f"boltzgen-0.3.2+{prediction_backend}",
+        resource_summary=resource.metadata,
+        strategy_revision=path.stem,
+        strategy_sha256=sha256_file(path),
+        prediction_backend=str(prediction_backend),
+        protocol=protocol,
+        follow_up_candidate_count=None if first_pilot else count,
+    )
+    plan_path, digest = publish_execution_plan(root, plan)
+    intent = RunPilotIntent(
+        project_id=_project_id(root),
+        project_path=root,
+        immutable_input_refs=(
+            ImmutableInputRef(
+                name="strategy-revision",
+                path=path.relative_to(root).as_posix(),
+                sha256=plan.strategy_sha256,
+            ),
+            ImmutableInputRef(name="target-mapping", sha256=mapping_sha),
+        ),
+        strategy_revision=path.stem,
+        prediction_backend=str(prediction_backend),
+        plan_sha256=digest,
+    )
     return CommandResult(
         status="confirmation-required",
         phase="pilot",
         project_id=_project_id(root),
-        artifacts=(path,),
-        evidence=(_resource_evidence("pilot", count, strategies=len(strategy.variants)),),
+        artifacts=(path, plan_path),
+        evidence=(
+            resource,
+            EvidenceItem(
+                kind="pilot-protocol",
+                identity=(protocol.protocol_id if protocol else "follow-up"),
+                status="planned",
+                metadata=(
+                    protocol.model_dump(mode="json")
+                    if protocol is not None
+                    else {
+                        "protocol_kind": "follow-up",
+                        "total_candidates": count,
+                    }
+                ),
+            ),
+        ),
         next_actions=(
             NextAction(
-                command=(
-                    f"easydesign pilot run {root} --strategy {path.stem} "
-                    f"--prediction-backend {prediction_backend} --confirm"
-                ),
+                command=render_action(intent),
                 description="创建独立 pilot run，执行策略编译、生成、标准过滤和诊断。",
                 approval_required=True,
+                intent=intent,
             ),
         ),
     )
@@ -1855,6 +2350,7 @@ def pilot_run(
     prediction_backend: PredictionBackend,
     confirm: bool,
     detach: bool = False,
+    plan_sha: str | None = None,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     path = _strategy_revision(root, strategy_revision)
@@ -1867,6 +2363,29 @@ def pilot_run(
     foundation = _latest_foundation(root)
     if foundation is None:
         raise ConfigurationError("pilot 需要 approved foundation")
+    current, plan_path, _ = _current_plan_for_execution(
+        root,
+        plan_type="pilot-execution",
+        supplied_sha256=plan_sha,
+    )
+    if not isinstance(current, PilotExecutionPlan):
+        raise ManifestStateError("current plan 类型不是 PilotExecutionPlan")
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    strategy = load_strategy(root, path)
+    first_pilot = not _has_completed_pilot_evidence(root)
+    protocol = _validate_first_pilot_strategy(strategy) if first_pilot else None
+    count = sum(item.candidates * max(1, len(item.scaffold_ids)) for item in strategy.variants)
+    if (
+        current.strategy_revision != path.stem
+        or current.strategy_sha256 != sha256_file(path)
+        or current.prediction_backend != str(prediction_backend)
+        or current.foundation_manifest_sha256 != foundation_sha
+        or current.target_mapping_sha256 != mapping_sha
+        or current.protocol != protocol
+        or current.follow_up_candidate_count != (None if first_pilot else count)
+    ):
+        raise ManifestStateError("pilot inputs/protocol/backend 已变化；必须重新 plan/approve")
+    approval_path, _ = _approve_current_plan(root, current)
     run_id = _new_run_id("pilot")
     result, _ = _launch(
         root,
@@ -1879,7 +2398,7 @@ def pilot_run(
     )
     return result.model_copy(
         update={
-            "artifacts": (*result.artifacts, path),
+            "artifacts": (*result.artifacts, path, plan_path, approval_path),
             "next_actions": (
                 NextAction(
                     command=f"easydesign pilot review {root} --run {run_id}",
@@ -1909,6 +2428,9 @@ def pilot_review(project_root: Path, *, run_id: str) -> CommandResult:
     ]
     promotable_strategy_ids: tuple[str, ...] = ()
     experiment_groups: dict[str, dict[str, Any]] = {}
+    pilot_report_data: dict[str, Any] | None = None
+    pilot_report_path: Path | None = None
+    pilot_report_sha: str | None = None
     try:
         _, strategy_bundle_path = _artifact(run.path, "strategy-bundle")
         strategy_bundle = json.loads(strategy_bundle_path.read_text(encoding="utf-8"))
@@ -1944,6 +2466,9 @@ def pilot_review(project_root: Path, *, run_id: str) -> CommandResult:
         metadata: dict[str, Any] = {"sha256": ref.sha256}
         if artifact_id == "pilot-filter-report":
             report = json.loads(path.read_text(encoding="utf-8"))
+            pilot_report_data = report
+            pilot_report_path = path
+            pilot_report_sha = ref.sha256
             try:
                 _, candidate_index_path = _artifact(run.path, "candidate-index")
                 candidate_index = json.loads(candidate_index_path.read_text(encoding="utf-8"))
@@ -2002,12 +2527,165 @@ def pilot_review(project_root: Path, *, run_id: str) -> CommandResult:
                 metadata=metadata,
             )
         )
-    actions: tuple[NextAction, ...] = (
-        NextAction(
-            command=f"easydesign strategy draft {root} --from-pilot {run_id}",
-            description="根据负结果或诊断创建下一版策略。",
-        ),
+    graph_artifacts: tuple[Path, ...] = ()
+    observation_event_id = f"observation-{run_id}"
+    scientifically_complete_report_statuses = {
+        "stopped-no-tier-a",
+        "strategies-promoted",
+        "tier-a-selected",
+        "winner-selected",
+    }
+    candidate_records_for_observation = (
+        pilot_report_data.get("candidate_records", []) if pilot_report_data is not None else []
     )
+    if (
+        pilot_report_data is not None
+        and pilot_report_path is not None
+        and pilot_report_sha is not None
+        and run.status == "succeeded"
+        and run.latest_manifest.is_file()
+        and pilot_report_data.get("status") in scientifically_complete_report_statuses
+        and isinstance(candidate_records_for_observation, list)
+        and bool(candidate_records_for_observation)
+    ):
+        existing_observation = find_research_event(root, observation_event_id)
+        if existing_observation is None:
+            candidate_records = candidate_records_for_observation
+            unresolved_variant_ids = set(experiment_groups)
+            latest_experiment_ids: list[str] = []
+            for event in reversed(load_research_events(root)):
+                if not isinstance(event, ExperimentEvent):
+                    continue
+                matched = unresolved_variant_ids.intersection(event.strategy_variant_ids)
+                if not matched:
+                    continue
+                latest_experiment_ids.append(event.experiment_id)
+                unresolved_variant_ids.difference_update(matched)
+                if not unresolved_variant_ids:
+                    break
+            linked_experiment_ids = tuple(reversed(latest_experiment_ids))
+            passing_count = sum(
+                1
+                for candidate in candidate_records
+                if isinstance(candidate, dict) and candidate.get("eligible_unique_pass") is True
+            )
+            claim = ClaimReceipt(
+                claim_id=f"claim-{observation_event_id}",
+                claim_type=ClaimType.OBSERVATION,
+                statement=(
+                    f"Stage 05 computational hard gates passed for {passing_count}/"
+                    f"{len(candidate_records)} evaluated candidate records."
+                ),
+                scope=f"pilot-run:{run_id}",
+                assertion_domain=AssertionDomain.COMPUTATIONAL_METRIC,
+                evidence_refs=(
+                    ClaimEvidenceRef(
+                        evidence_id="pilot-filter-report",
+                        sha256=pilot_report_sha,
+                        kind=EvidenceKind.COMPUTATIONAL,
+                        path=str(pilot_report_path.resolve()),
+                    ),
+                ),
+                source_run_ids=(run_id,),
+                analysis_identity=str(
+                    pilot_report_data.get("profile_version", "stage05-filter-profile")
+                ),
+                limitations=("Computational filtering is not affinity or functional evidence.",),
+                status=ClaimStatus.VERIFIED,
+            )
+            _, graph_path = append_research_event(
+                root,
+                ObservationEvent(
+                    event_id=observation_event_id,
+                    author_kind="deterministic-code",
+                    observation_id=observation_event_id,
+                    experiment_ids=linked_experiment_ids,
+                    run_id=run_id,
+                    run_manifest_sha256=sha256_file(run.latest_manifest),
+                    backend_identity=str(
+                        pilot_report_data.get("backend_identity", "stage05-computational")
+                    ),
+                    profile_identity=str(
+                        pilot_report_data.get("profile_version", "stage05-filter-profile")
+                    ),
+                    denominator=len(candidate_records),
+                    passing_count=passing_count,
+                    failure_or_missingness=tuple(
+                        sorted(
+                            {
+                                str(reason)
+                                for candidate in candidate_records
+                                if isinstance(candidate, dict)
+                                for decision in candidate.get("hard_gate_decisions", [])
+                                if isinstance(decision, dict) and decision.get("passed") is False
+                                for reason in [decision.get("rule_id", "unknown")]
+                            }
+                        )
+                    ),
+                    claim=claim,
+                ),
+            )
+            graph_artifacts = (graph_path,)
+        else:
+            graph_artifacts = (existing_observation[1],)
+    observation = latest_observation_for_run(root, run_id)
+    if observation is None:
+        review_status_intent = ReviewStatusIntent(
+            project_id=run.project_id,
+            project_path=root,
+            run_id=run_id,
+            report="stage05",
+        )
+        actions: tuple[NextAction, ...] = (
+            NextAction(
+                command=render_action(review_status_intent),
+                description=(
+                    "当前 run 尚未产生可解释的 scientific Observation；检查缺失、"
+                    "部分输出或 operational failure 后再决定是否重跑。"
+                ),
+                intent=review_status_intent,
+            ),
+        )
+    else:
+        interpretation = latest_interpretation_for_observation(
+            root,
+            observation.event_id,
+        )
+        if interpretation is None:
+            interpretation_intent = InterpretPilotIntent(
+                project_id=run.project_id,
+                project_path=root,
+                run_id=run_id,
+                input_path=root / f"interpretation.{run_id}.yaml",
+            )
+            actions = (
+                NextAction(
+                    command=render_action(interpretation_intent),
+                    description=(
+                        "提交引用 immutable ObservationEvent 的 typed Agent interpretation，"
+                        "显式记录限制、替代解释与下一步。"
+                    ),
+                    intent=interpretation_intent,
+                ),
+            )
+        else:
+            lineage = follow_up_research_event_ids(root, source_run_id=run_id)
+            draft_intent = DraftStrategyIntent(
+                project_id=run.project_id,
+                project_path=root,
+                source_pilot_run_id=run_id,
+                research_event_ids=lineage,
+            )
+            actions = (
+                NextAction(
+                    command=render_action(draft_intent),
+                    description=(
+                        "基于已记录的 Hypothesis→Observation→Interpretation lineage "
+                        "创建下一版策略草稿。"
+                    ),
+                    intent=draft_intent,
+                ),
+            )
     if promotable_strategy_ids:
         actions = (
             *actions,
@@ -2026,13 +2704,81 @@ def pilot_review(project_root: Path, *, run_id: str) -> CommandResult:
         project_id=run.project_id,
         run_id=run.run_id,
         manifest=run.latest_manifest,
+        artifacts=graph_artifacts,
         evidence=tuple(evidence),
         next_actions=actions,
+        research_state=research_state_summary(root),
+    )
+
+
+def pilot_interpret(
+    project_root: Path,
+    *,
+    run_id: str,
+    input_path: Path,
+) -> CommandResult:
+    """Record an Agent interpretation only after deterministic pilot observation."""
+
+    root = resolve_project_path(project_root, must_exist=True)
+    run = _run_by_id(root, run_id)
+    if not _has_internal_stage(run, 5):
+        raise ConfigurationError("pilot interpret 只接受完成内部过滤阶段的 run")
+    observation = latest_observation_for_run(root, run_id)
+    if observation is None:
+        raise ConfigurationError("pilot 尚无可解释的 ObservationEvent；请先运行 pilot review")
+    submission, submission_path = load_interpretation_submission(root, input_path)
+    event, event_path = record_interpretation(
+        root,
+        source_run_id=run_id,
+        submission=submission,
+    )
+    lineage = follow_up_research_event_ids(root, source_run_id=run_id)
+    draft_intent = DraftStrategyIntent(
+        project_id=run.project_id,
+        project_path=root,
+        source_pilot_run_id=run_id,
+        research_event_ids=lineage,
+    )
+    return CommandResult(
+        status="interpretation-recorded",
+        phase="pilot",
+        project_id=run.project_id,
+        run_id=run_id,
+        manifest=run.latest_manifest,
+        artifacts=(event_path,),
+        evidence=(
+            EvidenceItem(
+                kind="scientific-interpretation",
+                identity=event.interpretation_id,
+                status=event.approval_status,
+                path=event_path,
+                metadata={
+                    "input_path": str(submission_path),
+                    "observation_refs": list(event.evidence_event_ids),
+                    "claim_status": event.claim.status.value,
+                },
+            ),
+        ),
+        next_actions=(
+            NextAction(
+                command=render_action(draft_intent),
+                description=(
+                    "使用完整 Hypothesis→Observation→Interpretation lineage 起草下一实验策略。"
+                ),
+                intent=draft_intent,
+            ),
+        ),
+        research_state=research_state_summary(root),
     )
 
 
 def pilot_promote(
-    project_root: Path, *, run_id: str, strategy_ids: tuple[str, ...], confirm: bool
+    project_root: Path,
+    *,
+    run_id: str,
+    strategy_ids: tuple[str, ...],
+    confirm: bool,
+    plan_sha: str | None = None,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     run = _run_by_id(root, run_id)
@@ -2050,25 +2796,60 @@ def pilot_promote(
     known = {item["strategy_id"] for item in bundle.get("strategies", [])}
     if not strategy_ids or not set(strategy_ids).issubset(known):
         raise ConfigurationError("promotion strategy 必须来自 checksum-verified StrategyBundle")
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    proposed_plan = PromotionPlan(
+        project_id=run.project_id,
+        created_at=_artifact_time(run.latest_manifest),
+        foundation_manifest_sha256=foundation_sha,
+        target_mapping_sha256=mapping_sha,
+        backend="boltzgen-0.3.2",
+        resource_summary={},
+        pilot_run_id=run.run_id,
+        pilot_manifest_sha256=sha256_file(run.latest_manifest),
+        strategy_ids=strategy_ids,
+    )
     if not confirm:
+        plan_path, digest = publish_execution_plan(root, proposed_plan)
+        intent = PromotePilotIntent(
+            project_id=run.project_id,
+            project_path=root,
+            immutable_input_refs=(
+                ImmutableInputRef(
+                    name="pilot-manifest",
+                    path=run.latest_manifest.relative_to(run.path).as_posix(),
+                    sha256=proposed_plan.pilot_manifest_sha256,
+                ),
+                ImmutableInputRef(name="target-mapping", sha256=mapping_sha),
+            ),
+            run_id=run_id,
+            strategy_ids=strategy_ids,
+            plan_sha256=digest,
+        )
         return CommandResult(
             status="confirmation-required",
             phase="pilot",
             project_id=run.project_id,
             run_id=run.run_id,
             manifest=run.latest_manifest,
+            artifacts=(plan_path,),
             next_actions=(
                 NextAction(
-                    command=(
-                        f"easydesign pilot promote {root} --run {run_id} "
-                        f"--strategy {','.join(strategy_ids)} --confirm"
-                    ),
+                    command=render_action(intent),
                     description="发布人工 promotion receipt。",
                     approval_required=True,
+                    intent=intent,
                 ),
             ),
         )
-    selection_id = f"selection-{uuid4().hex[:12]}"
+    current, plan_path, _ = _current_plan_for_execution(
+        root,
+        plan_type="promotion",
+        supplied_sha256=plan_sha,
+    )
+    if not isinstance(current, PromotionPlan) or current != proposed_plan:
+        raise ManifestStateError("promotion inputs/strategy selection 已变化；必须重新 plan")
+    approval_path, approved_plan_sha = _approve_current_plan(root, current)
+    selection_id = f"selection-{approved_plan_sha[:12]}"
     receipt = PromotionReceipt(
         selection_id=selection_id,
         project_id=run.project_id,
@@ -2076,20 +2857,58 @@ def pilot_promote(
         pilot_manifest_sha256=sha256_file(run.latest_manifest),
         strategy_ids=strategy_ids,
         approved_at=datetime.now(UTC),
+        plan_sha256=approved_plan_sha,
+        approval_record_sha256=sha256_file(approval_path),
     )
     path = _exclusive_yaml(receipt, root / f"promotion-{selection_id}.yaml")
     _append_pointer(root, PROMOTION_POINTER, path.relative_to(root))
+    decision_claim = ClaimReceipt(
+        claim_id=f"claim-promote-{selection_id}",
+        claim_type=ClaimType.HUMAN_DECISION,
+        statement=f"Human approved promotion of strategies: {', '.join(strategy_ids)}.",
+        scope=f"pilot-run:{run_id}",
+        evidence_refs=(
+            ClaimEvidenceRef(
+                evidence_id="promotion-approval-record",
+                sha256=sha256_file(approval_path),
+                kind=EvidenceKind.HUMAN_RECORD,
+                path=str(approval_path.resolve()),
+            ),
+        ),
+        source_run_ids=(run_id,),
+        limitations=("Promotion is a human decision, not proof of binding or function.",),
+        status=ClaimStatus.HUMAN_APPROVED,
+    )
+    _, graph_path = append_research_event(
+        root,
+        DecisionEvent(
+            event_id=f"decision-promote-{selection_id}",
+            author_kind="human",
+            decision_id=f"promote-{selection_id}",
+            action="promote",
+            decision_record_sha256=sha256_file(approval_path),
+            approved_by="cli-confirmation",
+            resulting_refs=(path.relative_to(root).as_posix(),),
+            claim=decision_claim,
+        ),
+    )
     return CommandResult(
         status="promoted",
         phase="scale",
         project_id=run.project_id,
         run_id=run.run_id,
         manifest=run.latest_manifest,
-        artifacts=(path, root / PROMOTION_POINTER),
+        artifacts=(
+            path,
+            root / PROMOTION_POINTER,
+            plan_path,
+            approval_path,
+            graph_path,
+        ),
         next_actions=(
             NextAction(
                 command=f"easydesign scale plan {root} --selection {selection_id}",
-                description="核对生产资源和 50,000 候选分配。",
+                description="核对默认 50,000（可改为任意正整数）的生产资源分配。",
             ),
         ),
     )
@@ -2117,33 +2936,111 @@ def scale_plan(project_root: Path, *, selection: str, count: int = 50_000) -> Co
     if count < 1:
         raise ConfigurationError("scale count 必须为正整数")
     receipt, path = _promotion(root, selection)
+    protocol = scale_protocol_summary(
+        total_candidate_count=count,
+        strategy_ids=receipt.strategy_ids,
+    )
+    resource = _resource_evidence("scale", count, strategies=len(receipt.strategy_ids))
+    resource = resource.model_copy(
+        update={
+            "metadata": {
+                **resource.metadata,
+                "shard_size": protocol.shard_size,
+                "total_shards": protocol.total_shards,
+                "allocation": [item.model_dump(mode="json") for item in protocol.allocation],
+            }
+        }
+    )
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    plan = ScaleExecutionPlan(
+        project_id=receipt.project_id,
+        created_at=_artifact_time(path),
+        foundation_manifest_sha256=foundation_sha,
+        target_mapping_sha256=mapping_sha,
+        backend="boltzgen-0.3.2",
+        resource_summary=resource.metadata,
+        selection_id=receipt.selection_id,
+        promotion_receipt_sha256=sha256_file(path),
+        source_pilot_manifest_sha256=receipt.pilot_manifest_sha256,
+        protocol=protocol,
+    )
+    plan_path, digest = publish_execution_plan(root, plan)
+    intent = RunScaleIntent(
+        project_id=receipt.project_id,
+        project_path=root,
+        immutable_input_refs=(
+            ImmutableInputRef(
+                name="promotion-receipt",
+                path=path.relative_to(root).as_posix(),
+                sha256=plan.promotion_receipt_sha256,
+            ),
+            ImmutableInputRef(name="target-mapping", sha256=mapping_sha),
+        ),
+        selection_id=receipt.selection_id,
+        candidate_count=count,
+        plan_sha256=digest,
+    )
     return CommandResult(
         status="confirmation-required",
         phase="scale",
         project_id=receipt.project_id,
         run_id=receipt.pilot_run_id,
-        artifacts=(path,),
-        evidence=(_resource_evidence("scale", count, strategies=len(receipt.strategy_ids)),),
+        artifacts=(path, plan_path),
+        evidence=(
+            resource,
+            EvidenceItem(
+                kind="scale-protocol",
+                identity=protocol.profile,
+                status="planned",
+                metadata=protocol.model_dump(mode="json"),
+            ),
+        ),
         next_actions=(
             NextAction(
-                command=(
-                    f"easydesign scale run {root} --selection {receipt.selection_id} "
-                    f"--count {count} --confirm"
-                ),
+                command=render_action(intent),
                 description="创建独立 production run。",
                 approval_required=True,
+                intent=intent,
             ),
         ),
     )
 
 
 def scale_run(
-    project_root: Path, *, selection: str, count: int, confirm: bool, detach: bool = False
+    project_root: Path,
+    *,
+    selection: str,
+    count: int,
+    confirm: bool,
+    detach: bool = False,
+    plan_sha: str | None = None,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     receipt, receipt_path = _promotion(root, selection)
     if not confirm:
         return scale_plan(root, selection=selection, count=count)
+    current, plan_path, _ = _current_plan_for_execution(
+        root,
+        plan_type="scale-execution",
+        supplied_sha256=plan_sha,
+    )
+    if not isinstance(current, ScaleExecutionPlan):
+        raise ManifestStateError("current plan 类型不是 ScaleExecutionPlan")
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    protocol = scale_protocol_summary(
+        total_candidate_count=count,
+        strategy_ids=receipt.strategy_ids,
+    )
+    if (
+        current.selection_id != receipt.selection_id
+        or current.promotion_receipt_sha256 != sha256_file(receipt_path)
+        or current.source_pilot_manifest_sha256 != receipt.pilot_manifest_sha256
+        or current.protocol != protocol
+        or current.foundation_manifest_sha256 != foundation_sha
+        or current.target_mapping_sha256 != mapping_sha
+    ):
+        raise ManifestStateError("scale count/allocation/input 已变化；旧 approval 不可复用")
+    approval_path, _ = _approve_current_plan(root, current)
     pilot = _run_by_id(root, receipt.pilot_run_id)
     resolved, _ = load_resolved_run_config(pilot.path)
     stage02 = resolved.user_config.stage02
@@ -2181,7 +3078,12 @@ def scale_run(
     )
     return result.model_copy(
         update={
-            "artifacts": (*result.artifacts, receipt_path),
+            "artifacts": (
+                *result.artifacts,
+                receipt_path,
+                plan_path,
+                approval_path,
+            ),
             "next_actions": (
                 NextAction(
                     command=(
@@ -2190,8 +3092,7 @@ def scale_run(
                         "--target-conditioned-backend <afo|protenix>"
                     ),
                     description=(
-                        "分别选择 de-novo 与 target-conditioned 后端，"
-                        "再核对最终 Top 200 选择。"
+                        "分别选择 de-novo 与 target-conditioned 后端，再核对最终 Top 200 选择。"
                     ),
                 ),
             ),
@@ -2213,13 +3114,48 @@ def select_plan(
     run = _run_by_id(root, run_id)
     if 6 not in completed_steps(run.path):
         raise ConfigurationError("select 需要完成的 production run")
+    resource = _resource_evidence("select", top, strategies=1)
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    plan = SelectionPlan(
+        project_id=run.project_id,
+        created_at=_artifact_time(run.latest_manifest),
+        foundation_manifest_sha256=foundation_sha,
+        target_mapping_sha256=mapping_sha,
+        backend=f"{de_novo_backend}+{target_conditioned_backend}",
+        resource_summary=resource.metadata,
+        production_run_id=run.run_id,
+        production_manifest_sha256=sha256_file(run.latest_manifest),
+        de_novo_backend=str(de_novo_backend),
+        target_conditioned_backend=str(target_conditioned_backend),
+        top_count=top,
+    )
+    plan_path, digest = publish_execution_plan(root, plan)
+    intent = RunSelectIntent(
+        project_id=run.project_id,
+        project_path=root,
+        immutable_input_refs=(
+            ImmutableInputRef(
+                name="production-manifest",
+                path=run.latest_manifest.relative_to(run.path).as_posix(),
+                sha256=plan.production_manifest_sha256,
+            ),
+            ImmutableInputRef(name="target-mapping", sha256=mapping_sha),
+        ),
+        run_id=run_id,
+        de_novo_backend=str(de_novo_backend),
+        target_conditioned_backend=str(target_conditioned_backend),
+        top_count=top,
+        plan_sha256=digest,
+    )
     return CommandResult(
         status="confirmation-required",
         phase="select",
         project_id=run.project_id,
         run_id=run.run_id,
         manifest=run.latest_manifest,
+        artifacts=(plan_path,),
         evidence=(
+            resource,
             EvidenceItem(
                 kind="selection-plan",
                 identity=f"top-{top}",
@@ -2235,13 +3171,10 @@ def select_plan(
         ),
         next_actions=(
             NextAction(
-                command=(
-                    f"easydesign select run {root} --run {run_id} --top {top} "
-                    f"--de-novo-backend {de_novo_backend} "
-                    f"--target-conditioned-backend {target_conditioned_backend} --confirm"
-                ),
+                command=render_action(intent),
                 description="只交付真实合法候选，不重复、不补齐。",
                 approval_required=True,
+                intent=intent,
             ),
         ),
     )
@@ -2256,6 +3189,7 @@ def select_run(
     top: int,
     confirm: bool,
     detach: bool = False,
+    plan_sha: str | None = None,
 ) -> CommandResult:
     root = resolve_project_path(project_root, must_exist=True)
     if not confirm:
@@ -2267,6 +3201,25 @@ def select_run(
             top=top,
         )
     production = _run_by_id(root, run_id)
+    current, plan_path, _ = _current_plan_for_execution(
+        root,
+        plan_type="selection",
+        supplied_sha256=plan_sha,
+    )
+    if not isinstance(current, SelectionPlan):
+        raise ManifestStateError("current plan 类型不是 SelectionPlan")
+    foundation_sha, mapping_sha = _foundation_plan_identity(root)
+    if (
+        current.production_run_id != production.run_id
+        or current.production_manifest_sha256 != sha256_file(production.latest_manifest)
+        or current.de_novo_backend != str(de_novo_backend)
+        or current.target_conditioned_backend != str(target_conditioned_backend)
+        or current.top_count != top
+        or current.foundation_manifest_sha256 != foundation_sha
+        or current.target_mapping_sha256 != mapping_sha
+    ):
+        raise ManifestStateError("selection inputs/backends/top 已变化；必须重新 plan")
+    approval_path, _ = _approve_current_plan(root, current)
     resolved, _ = load_resolved_run_config(production.path)
     stages: dict[int, BaseModel] = {}
     for number in range(2, 7):
@@ -2292,12 +3245,13 @@ def select_run(
     )
     return result.model_copy(
         update={
+            "artifacts": (*result.artifacts, plan_path, approval_path),
             "next_actions": (
                 NextAction(
                     command=f"easydesign view {root} --run {run_id}",
                     description="只读查看最终 evidence。",
                 ),
-            )
+            ),
         }
     )
 
@@ -2414,6 +3368,7 @@ __all__ = [
     "job_resume",
     "job_status",
     "job_watch",
+    "pilot_interpret",
     "pilot_plan",
     "pilot_promote",
     "pilot_review",

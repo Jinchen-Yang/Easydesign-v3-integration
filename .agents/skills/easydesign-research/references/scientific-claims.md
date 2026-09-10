@@ -1,6 +1,8 @@
-# Scientific claim ledger
+# Draft external-source claim index — not approved live knowledge
 
-正文只使用稳定`claim:ID`。本表保存claim的scope、primary sources、反例和“不支持什么”，防止一条文献被过度外推。`review_date`是证据复核日期，不是论文日期。
+本文件尚未获得研究者 reviewer/approval，因此不是正式 Skill claim ledger。它只保存待审核的
+external-source cards；正文引用稳定 `claim:ID` 时仍必须标为 `external_fact` 或 hypothesis proposal，
+并补 current project evidence。`review_date`只是资料复核日期，不是批准日期。
 
 ## 目录
 
@@ -19,7 +21,9 @@
 - 每次引用claim仍要补current target/project evidence；
 - `does_not_support`中的越界结论明确禁止；
 - source或工具版本变化时更新claim revision，而非静默改义；
-- 本ledger仍是draft，正式提升到live Skill前需记录研究者reviewer与approval；本次Agent核对不能替代研究者批准；
+- 本 index 是 draft；没有 `reviewer`、`approval_date` 和 source snapshot/revision 的 card 不得作为
+  live Skill 已批准经验，也不得伪装成 project observation；
+- 机器可执行的 project claim 使用 typed `ClaimReceipt`；本 Markdown 只是 source 展示层；
 - confidence反映claim本身在scope内的支持，不是current design成功概率。
 
 ## 2. VHH geometry与paratope

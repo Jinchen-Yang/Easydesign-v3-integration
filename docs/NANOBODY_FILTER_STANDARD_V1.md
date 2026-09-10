@@ -165,11 +165,14 @@ S_expand_structure =
 
 10个完整预测中至少1个通过结构门控，才认为该YAML通过扩增验证。多个YAML均通过时，依次按完整target结构通过数量、通过率、通过者的target-aligned binder RMSD升序、`S_expand_structure`均值降序排序；零通过YAML不得进入生产阶段。选出排名最高的单一YAML进入生产阶段。
 
-## 4. 五万条生产筛选
+## 4. 五万条生产筛选（历史 v1 profile）
+
+本节保存历史 `production-50000` 语义，不是当前 façade 的唯一合法规模。Architecture v2
+默认建议 50,000，但新 `user-defined-v1` plan 接受任意正整数并按 exact count 审批。
 
 ### 4.1 序列与 BoltzGen 初筛
 
-对最佳 YAML 生成的 50,000 条候选执行：
+历史 profile 对最佳 YAML 生成的 50,000 条候选执行：
 
 - 去除重复序列
 - 排除未知残基

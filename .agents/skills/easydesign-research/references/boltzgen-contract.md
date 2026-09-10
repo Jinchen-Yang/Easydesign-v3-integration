@@ -23,12 +23,13 @@
 - EasyDesign：`0.1.0.dev1`
 - BoltzGen：`0.3.2`
 - BoltzGen commit：`a3149cf18eeb58648d1abbb27539bd73f746cdda`
+- pinned source-tree SHA-256：`1f9e0b2405e89ac7778ea5b98d5ce4eddf739be0f3ac4c6432378a8811fe7590`
 - strategy profile：`boltzgen-vhh-basic-v1`
 - scaffold registry：`official-vhh7-v1`
 - Stage 05 默认filter：`nanobody-filter-standard-v1.6`
 - Stage 05 默认full-target backend：`protenix-v2`
 - Stage 07 默认final filter：`nanobody-final-v1.5`
-- external research schema：`ResearchStrategy` `1.1`
+- external research schema：新写 `ResearchStrategy` `1.3`；历史 `1.0/1.1/1.2` 可读
 - internal compiled `StrategyBundle`：`0.3`
 - random seed status：`unsupported-by-boltzgen-0.3.2`
 
@@ -43,13 +44,15 @@ current project/run 的自动事实。使用精确字段、asset range、backend
 
 ## 2. 两层 schema
 
-### 2.1 External `ResearchStrategy` 1.1
+### 2.1 External `ResearchStrategy` 1.3
 
 研究者/Agent编写的project config：
 
 ```yaml
-schema_version: "1.1"
+schema_version: "1.3"
 foundation: current
+protocol_kind: first-pilot
+prior_research_event_ids: []
 variants: []
 ```
 
@@ -58,6 +61,7 @@ variants: []
 - `id`
 - `hotspot_set_id` 或 `binding_label_seq_ids`
 - `scaffold_ids`
+- `avoid_label_seq_ids`
 - `target_crop`
 - `cdr_overrides`
 - `candidates`
@@ -66,6 +70,8 @@ variants: []
 - `evidence_refs`
 - `changed_factors`
 - `held_constant`
+- `hypothesis_statement`（optional）
+- `hypothesis_basis`（optional）
 - `rationale`
 - `expected_result`
 - `failure_interpretation`
@@ -75,7 +81,9 @@ variants: []
 - `native_boltzgen_yaml`
 - `native_boltzgen_sha256`
 
-schema `1.1` 要求每个 variant 的 experiment metadata完整；不能只填其中一部分。
+schema `1.3` 要求每个 variant 的 experiment metadata完整并显式区分 first-pilot/follow-up；
+follow-up 必须引用连通的 Hypothesis→Observation→Interpretation Research Graph events。历史 schema
+不被原地改写。
 
 ### 2.2 Internal compiler models
 
@@ -97,6 +105,7 @@ standard adapter当前可表达：
 - approved hotspot set 或其 approved residue 子集；
 - 一个或多个 registry scaffold；
 - target chain `A` 的连续闭区间 crop；
+- 经明确批准、mapping 有坐标的 avoid residue → `not_binding`；
 - 每条CDR至多一个design range与insertion range override；
 - 每展开strategy的candidate count；
 - 完整scientific experiment metadata。
@@ -144,6 +153,7 @@ entities:
 - `binding`使用current target的`label_seq_id`；
 - binding列表升序、唯一、正整数；
 - 未选target residues保持`unmarked`；
+- 只有显式 `avoid_label_seq_ids` 才生成 `not_binding`；其余 non-hotspot residue 保持 neutral；
 - target file/scaffold path由compiler管理；
 - scientific metadata不进入native YAML，而进入manifest/record。
 
@@ -243,11 +253,11 @@ override。不得从scaffold名称推断current target上的性能，也不得�
 
 | 构想/字段 | current standard path | 正确处理 |
 |---|---|---|
-| `not_binding` | 不自动生成/无external field | 作为analysis avoid记录；需要native时单独验证 |
+| `not_binding` | pinned 0.3.2 source 已核实支持 | 只由显式 approved `avoid_label_seq_ids` 生成 |
 | `structure_groups` | asset内部存在，但external strategy不开放 | 不在普通config伪造；expert path需核验backend语义 |
 | explicit random seed | bundle标记unsupported | 不承诺seed reproducibility |
 | 多段/non-contiguous target crop | 不支持 | 保留full或使用经审批native方案 |
-| negative residue constraints | 不支持 | analysis/selection阶段检查off-site |
+| 自动 negative complement | 禁止 | 未选择 residue 保持 neutral，不把 non-hotspot 自动设 avoid |
 | arbitrary chain/assembly selection | standard target chain固定A | 在Target Bundle准备或native expert path解决 |
 | glycan/membrane semantic field | 不支持 | 必须在输入structure/context中真实体现 |
 | arbitrary backend parameter | 未开放 | 先查当前CLI/schema并验证native |
@@ -277,7 +287,8 @@ override。不得从scaffold名称推断current target上的性能，也不得�
 2. 记录原文字节SHA-256；
 3. variant只声明一个provenance scaffold；
 4. 不同时声明`hotspot_set_id`或`binding_label_seq_ids`；
-5. 仍填写完整schema 1.1 experiment metadata；
+5. 仍填写完整 schema 1.3 experiment metadata；单-scaffold native variant 不满足首轮
+   `7 × 40 × X`，因此只能用于带前序 event refs 的 follow-up/expert实验；
 6. Agent/研究者人工检查native YAML引用的target/scaffold/chain/residue；当前native compiler只验证mapping、identity与backend check，不自动证明这些科学语义；
 7. 使用current BoltzGen version/commit运行backend check；
 8. 在limitations中列出EasyDesign不能验证的科学语义；

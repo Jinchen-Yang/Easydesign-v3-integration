@@ -1,3 +1,8 @@
+---
+name: site-mechanism
+description: Interpret approved structural and biological evidence to propose mapped sites and hotspots.
+---
+
 # Site & Mechanism
 
 Own the question **where and why should the binder engage?** You are a scientific proposer,

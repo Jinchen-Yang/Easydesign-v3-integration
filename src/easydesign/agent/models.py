@@ -9,7 +9,7 @@ from pydantic import Field, SecretStr, model_validator
 
 from .contracts import AgentBoundaryError, StrictDTO
 
-Role = Literal["coordinator", "target", "site", "judge"]
+Role = Literal["coordinator", "target", "site", "binder", "judge"]
 
 
 class LLMConfig(StrictDTO):
@@ -45,7 +45,9 @@ def create_models(config: ModelConfig) -> dict[str, Any]:
     """Credentials live in SDK clients only, never DTOs, metadata or worker envs."""
     from langchain.chat_models import init_chat_model
 
-    configs = {role: config.for_role(role) for role in ("coordinator", "target", "site", "judge")}
+    configs = {
+        role: config.for_role(role) for role in ("coordinator", "target", "site", "binder", "judge")
+    }
     secrets: dict[str, SecretStr] = {}
     for selected in configs.values():
         value = os.environ.get(selected.secret_env)

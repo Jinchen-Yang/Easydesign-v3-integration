@@ -92,3 +92,17 @@ async def test_execution_middleware_rejects_hidden_tools_and_foreign_files(bridg
     )
     with pytest.raises(AgentBoundaryError):
         await guard.awrap_tool_call(request, handler)
+
+
+@pytest.mark.parametrize(
+    "name", ["target-intelligence", "evidence-judge", "site-mechanism", "binder-strategy"]
+)
+def test_specialist_skills_are_discoverable_by_installed_framework(name: str) -> None:
+    from importlib import resources
+
+    from deepagents.middleware.skills import _parse_skill_metadata
+
+    path = resources.files("easydesign.agent").joinpath(f"skills/{name}/SKILL.md")
+    metadata = _parse_skill_metadata(path.read_text(), str(path), name)
+    assert metadata is not None
+    assert metadata["name"] == name and metadata["description"]

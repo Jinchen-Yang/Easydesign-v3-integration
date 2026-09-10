@@ -132,6 +132,8 @@ class Phase2Bridge(TargetBridge):
     def prepare_target(self) -> dict[str, Any]:
         current = self.target_run_id()
         if current:
+            if any(j.status in ACTIVE_JOB_STATUSES for j in self._jobs()):
+                return self.get_job_status()
             return self.read_evidence(current)
         return super().prepare_target()
 
@@ -238,7 +240,8 @@ class Phase2Bridge(TargetBridge):
 
     def current_site(self) -> dict[str, Any] | None:
         proposal = self.latest("site-proposal")
-        if proposal is None:
+        invalidation = self.latest("site-invalidated")
+        if proposal is None or (invalidation and invalidation["seq"] >= proposal["seq"]):
             return None
         target = self.target_state()
         facts = self.latest("site-facts")
@@ -280,7 +283,7 @@ class Phase2Bridge(TargetBridge):
         parent = None
         if revision:
             previous_card = self.store.card(self.thread, revision.card_id)
-            if previous_card.gate_type == "site-hotspot":
+            if previous_card.gate_type in {"site-hotspot", "design-specification"}:
                 parent = previous_card.card_id
         payload = {
             "target_binding": target["binding"],
@@ -495,6 +498,12 @@ class Phase2Bridge(TargetBridge):
         }
 
     def scientific_state(self) -> dict[str, Any]:
+        if any(j.status in ACTIVE_JOB_STATUSES for j in self._jobs()):
+            return {
+                "scientific_state": "running",
+                "gate_type": "target-structure",
+                "next_specialist": "target-intelligence",
+            }
         if self.target_run_id() is None:
             return {"scientific_state": "not-prepared", "next_specialist": "target-intelligence"}
         target = self.read_evidence()
@@ -679,7 +688,7 @@ class Phase2Bridge(TargetBridge):
             limitations=list(
                 dict.fromkeys([*assessment.limitations, *proposal["intent"]["uncertainty"]])
             ),
-            warnings=warnings[:8],
+            warnings=warnings,
             alternative=alternative,
             parent_card_id=proposal["parent_card_id"],
             scientific_summary={
@@ -825,6 +834,7 @@ class Phase2Bridge(TargetBridge):
                 "card_id": card.card_id,
                 "outcome": response["outcome"],
                 "warnings": card.warnings,
+                "judge_status": card.judge_status,
                 **matched,
             }
             previous = self.latest("site-approved")

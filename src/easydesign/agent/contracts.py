@@ -103,7 +103,7 @@ class DecisionProposal(StrictDTO):
     gate_type: GateType = "target-structure"
     owner_specialist: str = "target-intelligence"
     judge_status: ScientificStatus = "SUPPORTED"
-    warnings: list[ShortText] = Field(default_factory=list, max_length=8)
+    warnings: list[ShortText] = Field(default_factory=list, max_length=24)
     alternative: ShortText | None = None
     parent_card_id: Identifier | None = None
 
@@ -133,7 +133,7 @@ class DecisionOutcome(StrictDTO):
     human_instruction: ShortText | None = None
     optional_reason: ShortText | None = None
     explicit_acknowledgement: ShortText | None = None
-    recorded_warnings: list[ShortText] = Field(default_factory=list, max_length=8)
+    recorded_warnings: list[ShortText] = Field(default_factory=list, max_length=24)
     source_role: Literal["human-cli"] = "human-cli"
 
     @model_validator(mode="after")

@@ -49,8 +49,8 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--through",
-        choices=("target", "site"),
-        default="site",
+        choices=("target", "site", "design"),
+        default="design",
         help="Scientific scope; target retains the Phase 1 compatibility slice",
     )
     result.add_argument(
@@ -187,6 +187,12 @@ async def run_session(
             if intent["response"] == "revise":
                 execution = store.begin_revision(thread, card.card_id, goal)
                 bridge.failpoint("after_revision_execution_intent")
+            elif intent["response"] in {"approve", "override"}:
+                from .phase2 import Phase2Bridge
+
+                if isinstance(bridge, Phase2Bridge):
+                    execution = store.begin_gate_execution(thread, card.card_id, goal)
+                    bridge.failpoint("after_gate_execution_intent")
             inputs: Any = Command(resume={"card_id": card.card_id, "decision": intent["response"]})
         elif decision is not None:
             if card_id is None:
@@ -453,9 +459,14 @@ def main(argv: list[str] | None = None) -> int:
                 if args.biology_context is not None:
                     raise AgentBoundaryError("Biology context belongs to the Site scope")
             else:
+                from .design import DesignBridge
                 from .phase2 import Phase2Bridge
 
-                phase2 = Phase2Bridge(root, thread, store, through=args.through)
+                phase2 = (
+                    DesignBridge(root, thread, store)
+                    if args.through == "design"
+                    else Phase2Bridge(root, thread, store, through="site")
+                )
                 bridge = phase2
             if args.operation == "status":
                 _display(

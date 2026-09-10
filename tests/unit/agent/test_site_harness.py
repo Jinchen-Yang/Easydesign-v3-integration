@@ -19,7 +19,10 @@ class SiteModel(ScriptedModel):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
-        expected = PHASE2_ALLOWED[self.role] | ({"SiteIntent"} if self.role == "site" else set())
+        outputs = {"site": "SiteIntent", "judge": "JudgeVerdict"}
+        expected = PHASE2_ALLOWED[self.role] | (
+            {outputs[self.role]} if self.role in outputs else set()
+        )
         assert {t.name for t in tools} == expected
         return self
 
@@ -47,14 +50,11 @@ class SiteModel(ScriptedModel):
                 return self.call("SiteIntent", **site_intent(labels).model_dump(mode="json"))
             if not any(n == "read_scientific_evidence" for n, _, _ in named):
                 return self.call("read_scientific_evidence")
-            return AIMessage(
-                content=json.dumps(
-                    {
-                        "verdict": "ready-to-ask",
-                        "reasons": ["The mapped structural hypothesis is reviewable."],
-                        "limitations": ["Function and binding remain experimentally untested."],
-                    }
-                )
+            return self.call(
+                "JudgeVerdict",
+                verdict="ready-to-ask",
+                reasons=["The mapped structural hypothesis is reviewable."],
+                limitations=["Function and binding remain experimentally untested."],
             )
         if self.role == "target":
             return super().answer(messages)
@@ -316,6 +316,46 @@ async def test_invalid_provider_json_repair_is_budgeted_and_has_no_duplicate_job
         len([e for e in events if e["kind"] == "model-call" and e["payload"]["role"] == "site"])
         == 5
     )
+    assert (
+        len(
+            [
+                j
+                for j in site_bridge.controller.list(project_id=site_bridge.project_id)
+                if j.step == 2
+            ]
+        )
+        == 1
+    )
+
+
+class ProseJudge(SiteModel):
+    sent_prose: bool = False
+
+    def answer(self, messages: Any) -> AIMessage:
+        result = super().answer(messages)
+        if (
+            self.role == "judge"
+            and result.tool_calls
+            and result.tool_calls[0]["name"] == "JudgeVerdict"
+            and not self.sent_prose
+        ):
+            self.sent_prose = True
+            return AIMessage(content="The scientific proposal looks reviewable.")
+        return result
+
+
+@pytest.mark.asyncio
+async def test_judge_prose_repaired_within_existing_budget(site_bridge: Any) -> None:
+    models = {role: ProseJudge(role=role) for role in PHASE2_ALLOWED}
+    result = await run_session(site_bridge, scripted_config(), models, "Review the mapped site.")
+    assert result["status"] == "awaiting-human-approval"
+    calls = [
+        e["payload"]
+        for e in site_bridge.store.events(site_bridge.thread)
+        if e["kind"] == "model-call"
+    ]
+    assert sum(c["role"] == "judge" for c in calls) == 4
+    assert site_bridge.approved_site() is None
     assert (
         len(
             [

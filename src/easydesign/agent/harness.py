@@ -1,4 +1,4 @@
-"""One public DeepAgents assembly point, two isolated experts, public LangGraph HITL."""
+"""One public DeepAgents assembly, isolated scientific specialists and LangGraph HITL."""
 
 from __future__ import annotations
 
@@ -26,9 +26,11 @@ from .contracts import (
     TargetAssessment,
     TargetTask,
 )
+from .design import BINDER_EVIDENCE, DesignBridge
+from .design_contracts import BinderIntent
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
-from .phase2_tools import PHASE2_ALLOWED, phase2_tools
+from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
 from .session_store import compact, confined, identity
 from .site_contracts import ScientificTask, SiteIntent
 from .tools import JUDGE_EVIDENCE, TargetBridge, build_tools
@@ -38,6 +40,7 @@ EXCLUDED_TOOLS = frozenset(
 )
 SKILLS = {"target": "target-intelligence", "judge": "evidence-judge"}
 PHASE2_SKILLS = {**SKILLS, "site": "site-mechanism"}
+DESIGN_SKILLS = {**PHASE2_SKILLS, "binder": "binder-strategy"}
 ALLOWED = {
     "coordinator": {
         "task",
@@ -115,6 +118,13 @@ Use scientific questions, evidence, uncertainty and meaningful alternatives in u
 After hotspot-approved, read_scientific_state. Stop if next_specialist=none. Do not launch pilot,
 scale, prediction, filtering or wet-lab work. No shell, arbitrary file writes, repository access,
 Stage agents, workbench or model-invented residue numbering are available.
+When the requested scope is design and the verified next_specialist is binder-strategy, delegate
+it to propose HOW to design against the approved hotspot. Then delegate evidence-judge and
+request_scientific_decision with option_id=design. Gate 3 freezes the specification without pilot.
+Gate 3 revisions normally return to binder-strategy and preserve Target/Site. Only if the trusted
+human revision changes WHERE to bind, call reopen_site_decision with the scientific reason,
+then delegate Site and obtain a fresh Judge/Gate 2 approval before any further Binder work.
+Do not reopen Site for ordinary CDR, crop, arm or pilot-scope changes.
 """
 
 
@@ -125,7 +135,7 @@ def skill_root() -> Path:
 def fingerprint(config: ModelConfig) -> str:
     return identity(
         {
-            "contract": "phase2-site-1",
+            "contract": "phase2-design-1",
             "models": config.model_dump(mode="json"),
             "skills": {
                 str(path.relative_to(skill_root())): path.read_text()
@@ -135,7 +145,13 @@ def fingerprint(config: ModelConfig) -> str:
             "contracts": Path(__file__).with_name("contracts.py").read_text(),
             "tools": Path(__file__).with_name("tools.py").read_text(),
             "phase2": {
-                p.name: p.read_text() for p in sorted(Path(__file__).parent.glob("*site*.py"))
+                p.name: p.read_text()
+                for p in sorted(
+                    [
+                        *Path(__file__).parent.glob("*site*.py"),
+                        *Path(__file__).parent.glob("*design*.py"),
+                    ]
+                )
             },
             "phase2_bridge": Path(__file__).with_name("phase2.py").read_text(),
             "phase2_tools": Path(__file__).with_name("phase2_tools.py").read_text(),
@@ -181,8 +197,23 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         self.current_user_message = current_user_message or goal
         self.execution_id = execution_id
         self.revision = revision
-        self.skills = PHASE2_SKILLS if isinstance(bridge, Phase2Bridge) else SKILLS
-        self.allowed = PHASE2_ALLOWED[role] if isinstance(bridge, Phase2Bridge) else ALLOWED[role]
+        self.structured_output = self.role in {"site", "binder"} or (
+            self.role == "judge" and isinstance(bridge, Phase2Bridge)
+        )
+        self.skills = (
+            DESIGN_SKILLS
+            if isinstance(bridge, DesignBridge)
+            else PHASE2_SKILLS
+            if isinstance(bridge, Phase2Bridge)
+            else SKILLS
+        )
+        self.allowed = (
+            DESIGN_ALLOWED[role]
+            if isinstance(bridge, DesignBridge)
+            else PHASE2_ALLOWED[role]
+            if isinstance(bridge, Phase2Bridge)
+            else ALLOWED[role]
+        )
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         available = [t for t in request.tools if getattr(t, "name", None) in self.allowed]
@@ -206,9 +237,24 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 for message in response.result
                 for call in getattr(message, "invalid_tool_calls", [])
             ]
-            if self.role != "site" or not invalid:
+            schema_name = (
+                {"site": "SiteIntent", "binder": "BinderIntent", "judge": "JudgeVerdict"}.get(
+                    self.role
+                )
+                if self.structured_output
+                else None
+            )
+            malformed_final = False
+            if schema_name and not invalid:
+                for message in response.result:
+                    if isinstance(message, AIMessage) and not message.tool_calls:
+                        try:
+                            parse_assessment(message.text)
+                        except (ValueError, TypeError):
+                            malformed_final = True
+            if schema_name is None or not (invalid or malformed_final):
                 return response
-            if attempt == 2 or any(call.get("name") != "SiteIntent" for call in invalid):
+            if attempt == 2 or any(call.get("name") != schema_name for call in invalid):
                 raise AgentBoundaryError(
                     "Invalid structured scientific output; no proposal submitted"
                 )
@@ -221,9 +267,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 system_message=SystemMessage(
                     content=(
                         request.system_message.text
-                        + "\nThe previous SiteIntent arguments were invalid JSON. "
-                        "Retry SiteIntent with quoted JSON strings. Keep every "
-                        "string under 250 characters; binder_approach is one quoted string. "
+                        + f"\nThe previous {schema_name} output was not valid JSON. "
+                        f"Retry {schema_name} with quoted JSON strings. Keep every "
+                        "string under 250 characters; text fields are quoted strings. "
                         "Do not repeat structure tools or invent additional scientific evidence."
                     )
                 )
@@ -272,7 +318,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 )
             description = args.get("description", "")
             if not isinstance(description, str) or not description or len(description) > 1500:
-                raise AgentBoundaryError("Delegation must contain one bounded question")
+                return ToolMessage(
+                    content=(
+                        "Delegation was not executed: submit one scientific question under 600 "
+                        "characters (hard limit 1500). Do not copy evidence, paths or identities; "
+                        "runtime supplies the bound snapshot, original goal and revision."
+                    ),
+                    status="error",
+                    tool_call_id=request.tool_call["id"],
+                    name=name,
+                )
             evidence = None
             task_type: Any = TargetTask
             extra: dict[str, Any] = {}
@@ -280,6 +335,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if specialist == "site-mechanism":
                     evidence = self.bridge.read_site_evidence()
                     token = SITE_EVIDENCE.set(
+                        EvidenceBinding.model_validate(
+                            {key: evidence[key] for key in EvidenceBinding.model_fields}
+                        )
+                    )
+                elif specialist == "binder-strategy":
+                    assert isinstance(self.bridge, DesignBridge)
+                    evidence = self.bridge.read_design_evidence()
+                    token = BINDER_EVIDENCE.set(
                         EvidenceBinding.model_validate(
                             {key: evidence[key] for key in EvidenceBinding.model_fields}
                         )
@@ -337,6 +400,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if token is not None:
                 if name == "task" and args.get("subagent_type") == "site-mechanism":
                     SITE_EVIDENCE.reset(token)
+                elif name == "task" and args.get("subagent_type") == "binder-strategy":
+                    BINDER_EVIDENCE.reset(token)
                 else:
                     JUDGE_EVIDENCE.reset(token)
 
@@ -355,13 +420,24 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             raise AgentBoundaryError("Specialist produced no assessment")
         parsed = (
             state["structured_response"].model_dump(mode="json")
-            if self.role == "site" and state.get("structured_response") is not None
+            if self.structured_output and state.get("structured_response") is not None
             else parse_assessment(last.text)
         )
         if self.role == "judge":
             result = self.bridge.register_judge(JudgeVerdict.model_validate(parsed)).model_dump(
                 mode="json", exclude={"evidence_refs", "request_identity", "source_role"}
             )
+        elif self.role == "binder":
+            assert isinstance(self.bridge, DesignBridge)
+            proposal = self.bridge.register_design(
+                BinderIntent.model_validate(parsed), self.revision
+            )
+            result = {
+                "status": "design-proposed",
+                "objective": proposal["proposal"]["objective"],
+                "scientific_status": proposal["evaluation"]["status"],
+                "next": "Independent Evidence Judge, then Gate 3",
+            }
         elif self.role == "site":
             assert isinstance(self.bridge, Phase2Bridge)
             proposal = self.bridge.register_site(SiteIntent.model_validate(parsed), self.revision)
@@ -386,7 +462,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 AIMessage(id=last.id, content=self.bridge.store.offload(self.bridge.thread, result))
             ]
         }
-        if self.role == "site":
+        if self.structured_output:
             updates["structured_response"] = result
         return updates
 
@@ -403,7 +479,13 @@ def create_harness(
     technical_details: bool = False,
     revision: DecisionOutcome | None = None,
 ) -> Any:
-    skills = PHASE2_SKILLS if isinstance(bridge, Phase2Bridge) else SKILLS
+    skills = (
+        DESIGN_SKILLS
+        if isinstance(bridge, DesignBridge)
+        else PHASE2_SKILLS
+        if isinstance(bridge, Phase2Bridge)
+        else SKILLS
+    )
     for role in ("coordinator", *skills):
         key = config.for_role(cast(Role, role)).harness_key
         if key not in REGISTERED:
@@ -425,8 +507,17 @@ def create_harness(
 
     specialists: list[SubAgent] = []
     for role, name in skills.items():
+        structured_output = role in {"site", "binder"} or (
+            role == "judge" and isinstance(bridge, Phase2Bridge)
+        )
         schema = (
-            JudgeVerdict if role == "judge" else SiteIntent if role == "site" else TargetAssessment
+            JudgeVerdict
+            if role == "judge"
+            else SiteIntent
+            if role == "site"
+            else BinderIntent
+            if role == "binder"
+            else TargetAssessment
         )
         prompt = (
             f"You are {name}, an isolated EasyDesign specialist. "
@@ -435,9 +526,9 @@ def create_harness(
             "Do not repeat whole evidence tables. Final scientific opinion uses this schema: "
             + compact(schema.model_json_schema())
             + (
-                " Submit the final opinion using the SiteIntent structured output tool. "
-                "binder_approach is one string, not an object. "
-                if role == "site"
+                f" Submit the final opinion using the {schema.__name__} structured output tool. "
+                "All rationale and approach fields are strings, not objects. "
+                if structured_output
                 else " Return ONLY one JSON object with no trailing prose."
             )
         )
@@ -460,8 +551,8 @@ def create_harness(
                 "interrupt_on": {},
             }
         )
-        if role == "site":
-            specialists[-1]["response_format"] = ToolStrategy(SiteIntent)
+        if structured_output:
+            specialists[-1]["response_format"] = ToolStrategy(schema)
     return create_deep_agent(
         model=models["coordinator"],
         system_prompt=(PHASE2_COORDINATOR if isinstance(bridge, Phase2Bridge) else COORDINATOR)
@@ -476,10 +567,24 @@ def create_harness(
         + (
             "\nTechnical details were explicitly requested; verified references may be shown."
             if technical_details
-            else "\nUse a short plain-language final answer: outcome, selected chain, meaningful "
-            "limitations and viewer link. Do not print SHA/checksums, manifest revisions, "
-            "assessment IDs, internal job identifiers or provenance implementation fields. "
-            "When fallback_used is false, no fallback was used; do not speculate that it occurred."
+            else (
+                "\nUse a short final answer (normally under 220 words) in the user's language: "
+                "scientific outcome, selected site or actual frozen design constraints, and "
+                "meaningful uncertainty. Never print internal next_specialist/tool state, SHA, "
+                "assessment IDs, ledger/manifest details. Only give a viewer link if a tool "
+                "actually returned it; no Design Viewer is implemented. Distinguish verified "
+                "official scaffold loop bounds from untested cross-scaffold geometric equivalence. "
+                "The final read_scientific_state frozen_design contains verified actual settings; "
+                "do not call modified CDR3 settings defaults. Preserve warnings without promoting "
+                "an earlier model's contradictory interpretation above verified runtime facts."
+                if isinstance(bridge, Phase2Bridge)
+                else "\nUse a short plain-language final answer: outcome, selected chain, "
+                "meaningful "
+                "limitations and viewer link. Do not print SHA/checksums, manifest revisions, "
+                "assessment IDs, internal job identifiers or provenance implementation fields. "
+                "When fallback_used is false, no fallback was used; "
+                "do not speculate that it occurred."
+            )
         ),
         tools=phase2_tools(bridge, "coordinator")
         if isinstance(bridge, Phase2Bridge)

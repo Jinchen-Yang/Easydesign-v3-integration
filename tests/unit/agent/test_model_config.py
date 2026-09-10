@@ -17,7 +17,7 @@ def test_explicit_factory_and_no_secret_in_config(provider: str, monkeypatch: An
     config = ModelConfig(
         default=LLMConfig(provider=provider, model="test-model", secret_env="TEST_KEY")
     )
-    assert set(create_models(config)) == {"coordinator", "target", "site", "judge"}
+    assert set(create_models(config)) == {"coordinator", "target", "site", "binder", "judge"}
     assert "test-secret" not in config.model_dump_json()
     assert calls[0][1]["max_retries"] == 0
     if provider == "deepseek":
@@ -51,9 +51,12 @@ def test_role_switch_and_unknown_role() -> None:
     config = ModelConfig(default=default, roles={"judge": judge})
     assert config.for_role("target") == default
     assert config.for_role("judge") == judge
+    assert ModelConfig(default=default, roles={"binder": judge}).for_role("binder") == judge
     with pytest.raises(ValidationError):
         ModelConfig.model_validate_json(
-            json.dumps({"default": default.model_dump(), "roles": {"binder": judge.model_dump()}})
+            json.dumps(
+                {"default": default.model_dump(), "roles": {"unregistered": judge.model_dump()}}
+            )
         )
 
 

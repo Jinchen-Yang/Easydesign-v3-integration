@@ -75,3 +75,63 @@ An interrupted CLI can resume with the same thread. Agent checkpoints do not rep
 job status or compute recovery. A thread cannot report completion while its requested scientific
 gate remains unresolved. A completed `--through site` scope has approved hotspots and launches
 no binder generation.
+
+## Binder strategy and Gate 3
+
+The default scope is `--through design`; use it explicitly when starting a new research thread:
+
+```bash
+easydesign-agent start PROJECT --target /absolute/path/target.cif \
+  --models config/llm.yaml --through design \
+  --goal "Select a defensible site and freeze a reviewed VHH design specification; do not generate."
+```
+
+After Gate 2 approval, Binder Strategy decides HOW to design against that approved site.
+It reads the actual seven official VHH template constraints, approved hotspot/context and
+upstream warnings. Its typed intent describes conditioning, excluded positions, target crop,
+CDR settings, approach hypothesis and meaningful experimental arms. It cannot write arbitrary
+backend YAML. The existing compiler produces executable YAML and the existing BoltzGen
+validation service checks it before the independent Judge and Gate 3 review.
+
+A project runtime profile must already contain a working `boltzgen_validation` installation.
+Follow the existing runtime/deployment instructions; a model API key alone does not provide a
+scientific backend. A missing validator is an operational setup error, never a successful
+scientific validation. This phase only needs YAML validation assets, not a generation run.
+
+The existing first-pilot protocol remains all seven official scaffolds × 40 candidates per
+condition. A request to reduce that number is reported as incompatible with the current
+protocol; the Agent cannot silently relax it. CDR overrides must remain within the declared
+CDR loop of every selected official scaffold. These settings are hypotheses for a later pilot,
+not evidence that a binder will bind or adopt the intended geometry.
+
+At Gate 3, the common card displays the design objective, approach, conditioning, exclusions,
+crop/CDR constraints, experimental arms, planned pilot scope, validation result and uncertainty.
+For a local HOW revision, for example:
+
+```bash
+easydesign-agent resume PROJECT --thread THREAD --through design --models config/llm.yaml \
+  --card CARD --decision revise --instruction "Keep the approved target and hotspot; shorten CDR3 exploration within the verified template constraints."
+```
+
+This preserves Target and Hotspot approval and returns to Binder Strategy, compilation and a
+fresh Judge/card. If the instruction changes WHERE to bind, the Coordinator must explicitly
+reopen Site selection. That invalidates the dependent design and requires a new Site proposal,
+Judge and Gate 2 approval; it preserves the approved Target. Changing upstream target identity
+also invalidates Site and Design. Existing configuration/identity guards fail closed if an
+upstream change requires a new preparation context; the model cannot rewrite that identity.
+
+Gate 3 approval calls the existing human plan-approval and strategy-freeze services. It freezes
+an executable scientific specification and stops. It does not start pilot generation, predict
+candidate structures or run filtering. A rejected proposal leaves the project usable. A
+DISCOURAGED design needs explicit warning acknowledgement and rationale; BLOCKED is never
+eligible for override. Upstream override warnings remain visible downstream.
+
+Each ordinary user turn or validated Phase 2 human acceptance/revision has a bounded 32-call
+execution. Empty resume, crash recovery and duplicate responses reuse the persisted execution.
+Thread lifetime usage remains telemetry. The immutable research goal, current user message,
+trusted revision instruction and LangGraph conversation history remain separate.
+
+The runtime explicitly reports whether CDR ranges lie within the declared loop bounds of all
+seven verified official VHH assets. This is a verified compiler-numbering fact, while equivalent
+loop geometry across scaffolds remains unproven. No Design Viewer is added in Phase 2; a report
+must not invent a link or suggest the existing Target Viewer displays the frozen design.

@@ -11,7 +11,8 @@ v3 的主要用户智能位于 **EasyDesign 内部**：`easydesign-agent` 直接
 
 Phase 1 已冻结；Phase 2 在独立 migration 分支推进 Site/Hotspot 与 Design Specification，
 终点是 Gate 3 approved spec，不启动 pilot。当前能力、安装与配置见
-[Agent 指南](docs/AGENT_PHASE1.md)，科学权限以
+[模型安装指南](docs/AGENT_PHASE1.md)、[Phase 2 科学操作](docs/V3_PHASE2_SCIENTIFIC_GUIDE.md)
+与 [Phase 2 closure](docs/PHASE2_CLOSURE.md)，科学权限以
 [v3 decision contract](docs/V3_SCIENTIFIC_DECISION_CONTRACT.md)为准。
 后续开发必须遵循这些 v3 contracts，不能从下文的 v2 操作示例反推 v3 架构。
 
@@ -21,7 +22,7 @@ Phase 1 已冻结；Phase 2 在独立 migration 分支推进 Site/Hotspot 与 De
 v2 的公开流程为 `prepare → strategize → pilot loop → scale → select`；现有科学 kernel、
 worker 与数据契约继续复用。兼容能力的存在不表示 v3 Agent 已开放所有后续阶段。
 
-## 配置一个可用模型（v3 Phase 1）
+## 配置一个可用模型（v3）
 
 在 migration 分支按 [Agent 安装指南](docs/AGENT_PHASE1.md#安装-optional-agent-环境)
 准备独立 Agent 环境。首次使用且 `config/llm.yaml` 不存在时复制标准模板；已有文件直接编辑，

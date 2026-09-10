@@ -67,3 +67,123 @@ def gpcr_like_structure() -> tuple[str, dict[str, Any]]:
         ],
     }
     return "\n".join(rows) + "\nTER\nEND\n", context
+
+
+def configure_offline_validation(monkeypatch, tmp_path):
+    """Only the backend process is mocked; original compiler and validation service still run."""
+    import subprocess
+
+    from easydesign.backends.boltzgen.check import BoltzGenCheckAdapter
+    from easydesign.core import dump_model
+    from easydesign.orchestration.profile import BoltzGenRuntime, RuntimeBackends, RuntimeProfile
+    from easydesign.stages.s03_boltzgen_configuration.models import (
+        BOLTZGEN_COMMIT,
+        BOLTZGEN_VERSION,
+    )
+    from easydesign.workspace_context import WorkspaceContext
+
+    context = WorkspaceContext.discover()
+    local = context.runtime_root / "offline-validator"
+    local.mkdir()
+    profile = RuntimeProfile(
+        profile_id="offline-compiler-test",
+        runs_root=context.runs_root,
+        backends=RuntimeBackends(
+            boltzgen_validation=BoltzGenRuntime(
+                executable=local / "boltzgen",
+                repository_root=local / "source",
+                cache_root=local / "cache",
+            )
+        ),
+    )
+    revision = context.profile_path.with_name(context.profile_path.name + ".revisions")
+    dump_model(profile, revision / "revision-000001.yaml")
+    calls = []
+    monkeypatch.setattr(
+        BoltzGenCheckAdapter,
+        "probe",
+        lambda self: {
+            "version": BOLTZGEN_VERSION,
+            "commit": BOLTZGEN_COMMIT,
+        },
+    )
+
+    def run(self, argv, *, cwd=None):
+        calls.append((argv, cwd))
+        assert argv[1] == "check"
+        assert (cwd / argv[2]).is_file()
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="OFFLINE MOCK: no backend execution", stderr=""
+        )
+
+    monkeypatch.setattr(BoltzGenCheckAdapter, "_run", run)
+    return calls
+
+
+def configure_live_validation():
+    """Use the real installed BoltzGen interpreter with isolated source/cache/profile paths."""
+    import json
+    import os
+    import shutil
+    from pathlib import Path
+
+    from easydesign.backends.boltzgen.check import BoltzGenCheckAdapter
+    from easydesign.core import dump_model
+    from easydesign.orchestration.profile import BoltzGenRuntime, RuntimeBackends, RuntimeProfile
+    from easydesign.workspace_context import WorkspaceContext
+
+    path = os.environ.get("EASYDESIGN_AGENT_BOLTZGEN_RUNTIME")
+    assert path, (
+        "Provide a JSON file naming executable, repository_root and "
+        "cache_root for a real BoltzGen installation"
+    )
+    supplied = json.loads(Path(path).read_text())
+    adapter = BoltzGenCheckAdapter(
+        executable=Path(supplied["executable"]),
+        repository_root=Path(supplied["repository_root"]),
+        cache_root=Path(supplied["cache_root"]),
+        require_generation_assets=False,
+    )
+    from easydesign.agent.tools import scientific_environment
+
+    with scientific_environment():
+        adapter.probe()
+    context = WorkspaceContext.discover()
+    local = context.runtime_root / "live-boltzgen-validation"
+    local.mkdir()
+    executable = local / "boltzgen"
+    # Byte-identical console entry point retains its real installed interpreter.
+    # No model or validator is mocked; all writable check/cache output is fixture-local.
+    shutil.copy2(adapter.executable, executable)
+    source = local / "source"
+    shutil.copytree(adapter.repository_root, source)
+    cache = local / "cache"
+    molecule_source = adapter.artifact_paths().molecule_dataset
+    molecule = cache / molecule_source.relative_to(adapter.cache_root)
+    molecule.parent.mkdir(parents=True)
+    try:
+        os.link(molecule_source, molecule)
+    except OSError:
+        shutil.copy2(molecule_source, molecule)
+    runtime = BoltzGenRuntime(
+        executable=executable,
+        repository_root=source,
+        cache_root=cache,
+        timeout_seconds=300,
+        validation_workers=2,
+        offline_mode=True,
+    )
+    profile = RuntimeProfile(
+        profile_id="real-boltzgen-validation",
+        runs_root=context.runs_root,
+        backends=RuntimeBackends(boltzgen_validation=runtime),
+    )
+    revision = context.profile_path.with_name(context.profile_path.name + ".revisions")
+    dump_model(profile, revision / "revision-000001.yaml")
+    return {
+        "backend": "boltzgen",
+        "version": "0.3.2",
+        "mocked": False,
+        "generation_assets_required": False,
+        "cache_isolated": True,
+    }

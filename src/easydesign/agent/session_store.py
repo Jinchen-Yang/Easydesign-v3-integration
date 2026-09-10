@@ -135,12 +135,15 @@ class SessionStore:
         followup: bool = False,
         revision: DecisionOutcome | None = None,
         steering_resume: bool = False,
+        steering_card_id: str | None = None,
     ) -> dict[str, Any]:
         execution: dict[str, Any] = {
             "execution_id": f"turn-{uuid4().hex}",
             "current_user_message": message,
             "input_kind": "steering-resume" if steering_resume else "message",
         }
+        if steering_card_id is not None:
+            execution["steering_card_id"] = steering_card_id
         if revision is not None:
             execution["revision"] = revision.model_dump(mode="json")
         with self.db:
@@ -167,6 +170,29 @@ class SessionStore:
             current["current_user_message"] if current else goal,
             revision=DecisionOutcome.model_validate(intent["outcome"]),
             steering_resume=True,
+        )
+
+    def begin_gate_execution(self, thread: str, card_id: str, goal: str) -> dict[str, Any]:
+        """A verified Phase 2 human acceptance starts the next bounded execution once."""
+        intent = self.response(thread, card_id)
+        if intent is None or intent["response"] not in {"approve", "override"}:
+            raise AgentBoundaryError("Gate continuation requires a persisted human acceptance")
+        current = self.latest_execution(thread)
+        prior = self.db.execute(
+            "SELECT payload FROM events WHERE thread=? AND kind='agent-execution' "
+            "AND json_extract(payload, '$.steering_card_id')=? ORDER BY seq DESC LIMIT 1",
+            (thread, card_id),
+        ).fetchone()
+        if prior:
+            execution: dict[str, Any] = json.loads(prior[0])
+            if current is None or current["execution_id"] != execution["execution_id"]:
+                raise AgentBoundaryError("An old gate cannot renew a later execution budget")
+            return execution
+        return self.begin_execution(
+            thread,
+            current["current_user_message"] if current else goal,
+            steering_resume=True,
+            steering_card_id=card_id,
         )
 
     def revision_for(self, thread: str, request_identity: str) -> dict[str, Any] | None:

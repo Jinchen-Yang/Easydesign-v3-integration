@@ -1,0 +1,21 @@
+schema_version: "1.0"
+backend: boltzgen
+version: 0.3.2
+commit: a3149cf18eeb58648d1abbb27539bd73f746cdda
+source_tree_sha256: 1f9e0b2405e89ac7778ea5b98d5ce4eddf739be0f3ac4c6432378a8811fe7590
+contract_version: "1"
+supports:
+  binding: true
+  not_binding: true
+  target_crop: true
+  cdr_override: true
+  msa: false
+  template: false
+  multi_chain: false
+known_quirks:
+  - random seed is unsupported by the pinned 0.3.2 CLI contract
+  - unmarked target residues remain neutral; not_binding is never inferred
+validation_sources:
+  - runtime/models/boltzgen/source/a3149cf18eeb/src/boltzgen/data/parse/schema.py:307-309
+  - runtime/models/boltzgen/source/a3149cf18eeb/src/boltzgen/data/parse/schema.py:1062-1100
+  - runtime/models/boltzgen/source/a3149cf18eeb/src/boltzgen/data/const.py:214-219

@@ -84,7 +84,8 @@ def test_build_predicted_target_bundle(tmp_path) -> None:
 
     assert built.bundle.sequence_length == 2
     assert built.bundle.origin == "predicted"
-    assert built.bundle.schema_version == "0.4"
+    assert built.bundle.schema_version == "0.5"
+    assert built.bundle.identity_detail_status == "target-identity-v2"
     assert built.bundle.identity_report is not None
     assert built.bundle.residue_mapping_tsv is not None
     assert built.bundle.coordinate_ensemble is not None
@@ -100,6 +101,12 @@ def test_build_predicted_target_bundle(tmp_path) -> None:
         ResidueMapping,
     )
     assert [entry.amino_acid for entry in mapping.entries] == ["A", "C"]
+    assert [entry.canonical_position for entry in mapping.entries] == [1, 2]
+    identity = json.loads(
+        built.bundle.identity_report.verify(run_root).read_text(encoding="utf-8")
+    )
+    assert identity["schema_version"] == "0.2"
+    assert identity["relationship"] == "exact_native"
     assert json.loads(
         built.bundle.quality_report.verify(run_root).read_text(encoding="utf-8")
     )["backend_version"] == "2.0.0"
@@ -207,3 +214,30 @@ def test_target_bundle_02_loader_accepts_legacy_01_without_annotations(
 
     assert legacy.schema_version == "0.1"
     assert legacy.source_annotations is None
+    assert legacy.identity_detail_status == "legacy-insufficient-identity-detail"
+
+
+def test_target_bundle_04_reader_preserves_legacy_identity_semantics(
+    tmp_path: Path,
+) -> None:
+    built = build_predicted_target_bundle(
+        run_root=tmp_path / "run",
+        attempt_id="attempt-0001",
+        target=normalize_raw_sequence("AC", target_id="target"),
+        product=prediction_product(tmp_path),
+        model_checkpoint_sha256="8" * 64,
+        msa_mode=MsaMode.DISABLED,
+        msa_input_sha256=None,
+        msa_server_mode=None,
+        template_mode=TemplateMode.DISABLED,
+        parameter_profile=PredictionParameterProfile.CUSTOM,
+        resolved_cycle_count=1,
+        resolved_diffusion_step_count=5,
+    )
+    payload = built.bundle.model_dump(mode="python")
+    payload["schema_version"] = "0.4"
+
+    legacy = TargetBundle.model_validate(payload)
+
+    assert legacy.schema_version == "0.4"
+    assert legacy.identity_detail_status == "legacy-evidence-extension"

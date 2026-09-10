@@ -10,7 +10,13 @@ from typing import Any
 
 import gemmi
 
-from easydesign.core import ArtifactRef, ManifestStateError, TargetInputError, dump_model
+from easydesign.core import (
+    ArtifactRef,
+    DesignResidueMapping,
+    ManifestStateError,
+    TargetInputError,
+    dump_model,
+)
 from easydesign.stages.s01_target_preparation.models import (
     BuiltTargetBundle,
     CoordinateEnsemble,
@@ -559,6 +565,7 @@ def _mapping(
     source_chain_id: str,
     source_label_chain_id: str,
     reference_start: int | None,
+    identity_mapping: tuple[DesignResidueMapping, ...] | None = None,
 ) -> ResidueMapping:
     entries: list[ResidueMappingEntry] = []
     model_presence: dict[int, tuple[str, ...]] = {}
@@ -579,6 +586,11 @@ def _mapping(
                 residue_by_label.setdefault(index, residue)
         model_presence[index] = tuple(present)
     for index, amino_acid in enumerate(sequence.sequence, start=1):
+        identity = (
+            None
+            if identity_mapping is None or index > len(identity_mapping)
+            else identity_mapping[index - 1]
+        )
         residue = residue_by_label.get(index)
         original = residue.seqid if residue is not None else None
         entries.append(
@@ -605,7 +617,9 @@ def _mapping(
                     else original.icode
                 ),
                 reference_position=(
-                    None if reference_start is None else reference_start + index - 1
+                    identity.canonical_position
+                    if identity is not None
+                    else None if reference_start is None else reference_start + index - 1
                 ),
                 coordinate_present=bool(model_presence[index]),
                 model_presence=model_presence[index],
@@ -614,10 +628,16 @@ def _mapping(
                     if residue is None
                     else residue.name
                 ),
+                canonical_position=(None if identity is None else identity.canonical_position),
+                canonical_residue=(None if identity is None else identity.canonical_residue),
+                construct_position=(index if identity is None else identity.construct_position),
+                construct_residue=(amino_acid if identity is None else identity.construct_residue),
+                mapping_status=(None if identity is None else identity.mapping_status.value),
+                edit_type=(None if identity is None else identity.edit_type.value),
             )
         )
     return ResidueMapping(
-        schema_version="0.3",
+        schema_version="0.4" if identity_mapping is not None else "0.3",
         target_id=target_id,
         sequence_sha256=sequence.sequence_sha256,
         entries=tuple(entries),
@@ -626,9 +646,10 @@ def _mapping(
 
 def _mapping_tsv(mapping: ResidueMapping) -> str:
     header = (
-        "sequence_index\tamino_acid\tlabel_chain_id\tlabel_seq_id\t"
+        "sequence_index\tamino_acid\tcanonical_position\tcanonical_residue\t"
+        "construct_position\tconstruct_residue\tlabel_chain_id\tlabel_seq_id\t"
         "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
-        "reference_position\tcoordinate_present\tmodel_presence\n"
+        "reference_position\tcoordinate_present\tmapping_status\tedit_type\tmodel_presence\n"
     )
     rows = []
     for entry in mapping.entries:
@@ -637,6 +658,10 @@ def _mapping_tsv(mapping: ResidueMapping) -> str:
                 (
                     str(entry.sequence_index),
                     entry.amino_acid,
+                    "" if entry.canonical_position is None else str(entry.canonical_position),
+                    entry.canonical_residue or "",
+                    "" if entry.construct_position is None else str(entry.construct_position),
+                    entry.construct_residue or "",
                     entry.label_chain_id,
                     str(entry.label_seq_id),
                     entry.source_author_chain_id or "",
@@ -648,6 +673,8 @@ def _mapping_tsv(mapping: ResidueMapping) -> str:
                         else str(entry.reference_position)
                     ),
                     str(entry.coordinate_present).lower(),
+                    entry.mapping_status or "",
+                    entry.edit_type or "",
                     ",".join(entry.model_presence),
                 )
             )
@@ -681,6 +708,7 @@ def build_experimental_target_bundle(
     retrieval_records: list[dict[str, Any]],
     preserve_source_context: bool,
     keep_ligands: tuple[str, ...] = (),
+    identity_mapping: tuple[DesignResidueMapping, ...] | None = None,
 ) -> StructureNormalizationResult:
     """发布 protein-only chain A Target Bundle 0.4 和完整 evidence 投影。"""
 
@@ -730,6 +758,7 @@ def build_experimental_target_bundle(
         source_chain_id=selected_chain,
         source_label_chain_id=chain_info.label_chain_id,
         reference_start=reference_start,
+        identity_mapping=identity_mapping,
     )
     mapping_json = dump_model(mapping, artifact_dir / "residue-mapping.json")
     mapping_tsv = _exclusive_text(
@@ -899,7 +928,12 @@ def build_experimental_target_bundle(
     provenance_ref = ref(provenance_path, "target-provenance", "provenance", "json")
     model_ids = tuple(str(model.num) for model in scoped)
     bundle = TargetBundle(
-        schema_version="0.4",
+        schema_version=(
+            "0.5"
+            if identity_report.get("schema_version") == "0.2"
+            and identity_mapping is not None
+            else "0.4"
+        ),
         target_id=target_id,
         origin=TargetStructureOrigin.EXPERIMENTAL,
         sequence_length=normalized.length,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -257,7 +258,8 @@ def test_remote_msa_can_be_selected_for_only_one_complex_chain(
     assert "unpairedMsa" not in target
     assert target["pairedMsa"] == ""
     assert binder["unpairedMsa"].startswith(">query")
-    assert "--use_msa_server=true" in invocation.argv
+    assert invocation.argv[1].endswith("/openfold3_remote_msa.py")
+    assert "--msa_server_url=https://api.colabfold.com" in invocation.argv
 
 
 def test_complex_request_allows_explicit_no_msa_for_each_chain() -> None:
@@ -333,9 +335,10 @@ def test_remote_msa_and_prediction_are_separate_explicit_invocations() -> None:
         output_dir=Path("/run/prediction"),
     )
 
-    assert "--run_inference=false" in msa.argv
-    assert "--use_msa_server=true" in msa.argv
-    assert "--run_data_pipeline=true" in msa.argv
+    assert msa.argv[1].endswith("/openfold3_remote_msa.py")
+    assert "--msa_server_url=https://api.colabfold.com" in msa.argv
+    assert not any(value.startswith("--run_data_pipeline=") for value in msa.argv)
+    assert not any(value.startswith("--run_inference=") for value in msa.argv)
     assert "--run_inference=true" in prediction.argv
     assert "--use_msa_server=false" in prediction.argv
     assert not any("protenix" in value.lower() for value in prediction.argv)
@@ -357,9 +360,41 @@ def test_collects_remote_msa_artifacts_for_each_requested_chain(
     updated.write_text("{}\n", encoding="utf-8")
     for chain_id, sequence in (("A", "ACDE"), ("B", "FGHI")):
         (msas / f"{chain_id}_unpaired.a3m").write_text(
-            f">query\n{sequence}\n",
+            f">query\n{sequence}\n>hit\n{sequence}\n",
             encoding="utf-8",
         )
+    receipt = {
+        "schema_version": "1.0",
+        "source_type": "remote",
+        "provider": "colabfold-public",
+        "endpoint": "https://api.colabfold.com",
+        "created_at": datetime.now(UTC).isoformat(),
+        "input_json_sha256": hashlib.sha256(input_json.read_bytes()).hexdigest(),
+        "processed_json_sha256": hashlib.sha256(updated.read_bytes()).hexdigest(),
+        "chains": [
+            {
+                "chain_id": chain_id,
+                "canonical_sequence_sha256": hashlib.sha256(sequence.encode()).hexdigest(),
+                "unpaired_msa_path": f"msas/{chain_id}_unpaired.a3m",
+                "unpaired_msa_sha256": hashlib.sha256(
+                    (msas / f"{chain_id}_unpaired.a3m").read_bytes()
+                ).hexdigest(),
+                "unpaired_msa_size_bytes": (
+                    msas / f"{chain_id}_unpaired.a3m"
+                ).stat().st_size,
+                "depth": 2,
+            }
+            for chain_id, sequence in (("A", "ACDE"), ("B", "FGHI"))
+        ],
+        "target_sequence_transmitted": True,
+        "privacy_notice": "external-provider-receives-target-sequence",
+        "fallback_policy": "fail-closed",
+        "fallback_used": False,
+    }
+    (job / "remote-msa-receipt.json").write_text(
+        json.dumps(receipt),
+        encoding="utf-8",
+    )
 
     observed_updated, artifacts = adapter().remote_msa_chain_artifacts(
         input_json=input_json,

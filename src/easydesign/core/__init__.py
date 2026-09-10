@@ -2,6 +2,14 @@
 
 from .artifacts import ArtifactRef
 from .attempts import Attempt, ErrorInfo, ExecutionStatus
+from .claims import (
+    AssertionDomain,
+    ClaimEvidenceRef,
+    ClaimReceipt,
+    ClaimStatus,
+    ClaimType,
+    EvidenceKind,
+)
 from .decisions import (
     DecisionAuthority,
     DecisionOption,
@@ -37,11 +45,37 @@ from .manifests import (
     WorkflowState,
     WorkflowStateType,
 )
+from .msa import (
+    MsaLibraryEntry,
+    MsaLibraryManifest,
+    MsaLibraryProducer,
+    MsaLibrarySource,
+    MsaReleaseReceipt,
+    MsaSourceReceipt,
+    RemoteMsaChainReceipt,
+    RemoteMsaReceipt,
+)
 from .serialization import (
     canonical_json_bytes,
     canonical_model_sha256,
     dump_model,
     load_model,
+)
+from .target_identity import (
+    ALIGNMENT_ALGORITHM,
+    ALIGNMENT_PARAMETERS,
+    CanonicalIdentity,
+    CanonicalIdentityStatus,
+    ConstructRelationship,
+    DesignResidueMapping,
+    DesignScopeIdentity,
+    EditType,
+    ExperimentalConstructIdentity,
+    MappingStatus,
+    ObservedCoordinateIdentity,
+    ReviewRequirement,
+    TargetIdentityReport,
+    resolve_target_identity,
 )
 from .tasks import (
     ProgressSnapshot,
@@ -53,12 +87,22 @@ from .tasks import (
 )
 
 __all__ = [
+    "ALIGNMENT_ALGORITHM",
+    "ALIGNMENT_PARAMETERS",
     "ArtifactIntegrityError",
     "ArtifactNotFoundError",
     "ArtifactRef",
     "Attempt",
+    "AssertionDomain",
     "BackendContractError",
+    "CanonicalIdentity",
+    "CanonicalIdentityStatus",
+    "ClaimEvidenceRef",
+    "ClaimReceipt",
+    "ClaimStatus",
+    "ClaimType",
     "ConfigurationError",
+    "ConstructRelationship",
     "CodeIdentity",
     "CodeIdentitySource",
     "ContractError",
@@ -67,11 +111,27 @@ __all__ = [
     "DecisionRecord",
     "DecisionRequest",
     "DecisionStatus",
+    "DesignResidueMapping",
+    "DesignScopeIdentity",
     "EasyDesignError",
+    "EditType",
     "ErrorInfo",
     "EvidenceStatus",
+    "EvidenceKind",
+    "ExperimentalConstructIdentity",
     "ExecutionStatus",
     "ManifestStateError",
+    "MappingStatus",
+    "MsaLibraryEntry",
+    "MsaLibraryManifest",
+    "MsaLibraryProducer",
+    "MsaLibrarySource",
+    "MsaReleaseReceipt",
+    "MsaSourceReceipt",
+    "ObservedCoordinateIdentity",
+    "RemoteMsaChainReceipt",
+    "RemoteMsaReceipt",
+    "ReviewRequirement",
     "PathPolicyError",
     "PredictionOutputError",
     "ProgressSnapshot",
@@ -84,6 +144,7 @@ __all__ = [
     "WorkflowState",
     "WorkflowStateType",
     "TargetInputError",
+    "TargetIdentityReport",
     "TaskAttemptRecord",
     "TaskEvent",
     "TaskHeartbeat",
@@ -96,6 +157,7 @@ __all__ = [
     "load_model",
     "package_tree_sha256",
     "resolve_code_identity",
+    "resolve_target_identity",
     "sha256_file",
     "verify_sha256",
 ]

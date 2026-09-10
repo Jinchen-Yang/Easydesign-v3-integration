@@ -16,6 +16,7 @@ from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 from easydesign.core import ManifestStateError, sha256_file
 from easydesign.stages.s02_hotspot_discovery import HotspotsFile
 
+from .capabilities import require_boltzgen_capability
 from .models import (
     BOLTZGEN_COMMIT,
     SCAFFOLD_REGISTRY_ID,
@@ -181,6 +182,7 @@ def _strategy_id(region_id: str, scaffold_id: str) -> str:
 def _design_specification(
     *,
     binding_label_seq_ids: tuple[int, ...],
+    avoid_label_seq_ids: tuple[int, ...] = (),
     scaffold_id: str,
     target_crop: tuple[int, int] | None = None,
     scaffold_path: str | None = None,
@@ -188,6 +190,14 @@ def _design_specification(
     target_chain: dict[str, object] = {"id": "A"}
     if target_crop is not None:
         target_chain["res_index"] = f"{target_crop[0]}..{target_crop[1]}"
+    binding_contract: dict[str, object] = {
+        "id": "A",
+        "binding": ",".join(str(value) for value in binding_label_seq_ids),
+    }
+    if avoid_label_seq_ids:
+        binding_contract["not_binding"] = ",".join(
+            str(value) for value in avoid_label_seq_ids
+        )
     return {
         "entities": [
             {
@@ -196,10 +206,7 @@ def _design_specification(
                     "include": [{"chain": target_chain}],
                     "binding_types": [
                         {
-                            "chain": {
-                                "id": "A",
-                                "binding": ",".join(str(value) for value in binding_label_seq_ids),
-                            }
+                            "chain": binding_contract
                         }
                     ],
                 }
@@ -300,6 +307,17 @@ def compile_vhh_strategy_plan(
         labels = variant.binding_label_seq_ids or by_hotspot.get(variant.hotspot_set_id or "", ())
         if not labels or not set(labels).issubset(all_approved):
             raise ManifestStateError("variant binding residues 必须是 approved hotspots 的非空子集")
+        avoid = variant.avoid_label_seq_ids
+        if avoid:
+            require_boltzgen_capability("not_binding")
+        if set(labels).intersection(avoid):
+            raise ManifestStateError("binding 与 approved avoid residues 不能重叠")
+        present = _coordinate_label_seq_ids(target_cif)
+        missing_avoid = sorted(set(avoid) - present)
+        if missing_avoid:
+            raise ManifestStateError(
+                f"avoid residues 必须位于 frozen design scope 且有坐标: {missing_avoid}"
+            )
         crop = (
             None
             if variant.target_crop is None
@@ -307,6 +325,8 @@ def compile_vhh_strategy_plan(
         )
         if crop is not None and any(value < crop[0] or value > crop[1] for value in labels):
             raise ManifestStateError("target crop 未覆盖 binding residues")
+        if crop is not None and any(value < crop[0] or value > crop[1] for value in avoid):
+            raise ManifestStateError("target crop 未覆盖 avoid residues")
         for scaffold_id in variant.scaffold_ids:
             strategy_id = f"{variant.variant_id}-scaffold-{scaffold_id}"
             strategy_dir = artifacts_root / "strategies" / strategy_id
@@ -321,6 +341,7 @@ def compile_vhh_strategy_plan(
                 yaml.safe_dump(
                     _design_specification(
                         binding_label_seq_ids=labels,
+                        avoid_label_seq_ids=avoid,
                         scaffold_id=scaffold_id,
                         target_crop=crop,
                         scaffold_path="scaffold.yaml" if variant_scaffold_path else None,
@@ -341,6 +362,7 @@ def compile_vhh_strategy_plan(
                 crop_strategy="C_full" if crop is None else f"C_{crop[0]}_{crop[1]}",
                 crop_enabled=crop is not None,
                 binding_label_seq_ids=labels,
+                avoid_label_seq_ids=avoid,
                 candidates_per_strategy=variant.candidates_per_strategy,
                 design_specification_path=specification.relative_to(artifacts_root).as_posix(),
                 design_specification_sha256=sha256_file(specification),
@@ -422,11 +444,7 @@ def compile_basic_vhh_matrix(
     candidates_per_strategy: int,
     scaffold_ids: tuple[str, ...] | None = None,
 ) -> tuple[tuple[ScaffoldAsset, ...], tuple[StrategyRecord, ...]]:
-    """Compile the complete region × official VHH scaffold matrix.
-
-    Non-hotspot residues are deliberately absent from ``binding_types``. The
-    compiler never emits ``not_binding``.
-    """
+    """Compile the region × scaffold matrix with non-hotspots left neutral."""
 
     target_hash = sha256_file(target_cif)
     if target_hash != hotspots.target_structure_sha256:

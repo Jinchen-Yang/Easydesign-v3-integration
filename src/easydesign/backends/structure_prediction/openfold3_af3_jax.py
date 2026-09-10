@@ -13,7 +13,9 @@ from easydesign.core import (
     BackendContractError,
     ManifestStateError,
     PredictionOutputError,
+    RemoteMsaReceipt,
     SerializationError,
+    load_model,
     sha256_file,
 )
 
@@ -408,6 +410,20 @@ class OpenFold3Af3JaxAdapter:
         )
 
     @staticmethod
+    def _remote_chain_ids(request: PredictionRequest) -> tuple[str, ...]:
+        if not isinstance(request, ComplexStructurePredictionRequest):
+            return ("A",) if request.has_remote_msa else ()
+        return tuple(
+            chain.chain_id
+            for chain in request.chains
+            if MsaMode.REMOTE
+            in {
+                chain.resolved_unpaired_msa_mode(request.msa_mode),
+                chain.resolved_paired_msa_mode(request.msa_mode),
+            }
+        )
+
+    @staticmethod
     def _chain_feature_metrics(request: PredictionRequest) -> dict[str, str | None]:
         if not isinstance(request, ComplexStructurePredictionRequest):
             return {
@@ -562,6 +578,34 @@ class OpenFold3Af3JaxAdapter:
             raise PredictionOutputError(
                 f"AFO MSA 输出缺失: updated={updated}, missing={missing}"
             )
+        receipt_path = self.remote_msa_receipt_path(input_json, msa_output_dir)
+        try:
+            receipt = load_model(receipt_path, RemoteMsaReceipt)
+        except (ManifestStateError, SerializationError) as error:
+            raise PredictionOutputError("AFO remote MSA receipt 缺失或无效") from error
+        if (
+            receipt.provider != str(self.remote_msa_provider)
+            or receipt.endpoint != self.remote_msa_endpoint
+            or receipt.input_json_sha256 != sha256_file(input_json)
+            or receipt.processed_json_sha256 != sha256_file(updated)
+        ):
+            raise PredictionOutputError("AFO remote MSA receipt provider/input identity 不一致")
+        receipt_chains = {item.chain_id: item for item in receipt.chains}
+        if any(chain_id not in receipt_chains for chain_id in chain_ids):
+            raise PredictionOutputError("AFO remote MSA receipt 缺少请求 chain")
+        job_root = updated.parent.resolve()
+        for chain_id, source in sources.items():
+            chain_receipt = receipt_chains[chain_id]
+            receipt_source = (job_root / chain_receipt.unpaired_msa_path).resolve()
+            if (
+                receipt_source != source.resolve()
+                or not receipt_source.is_relative_to(job_root)
+                or sha256_file(source) != chain_receipt.unpaired_msa_sha256
+                or source.stat().st_size != chain_receipt.unpaired_msa_size_bytes
+            ):
+                raise PredictionOutputError(
+                    f"AFO remote MSA receipt chain={chain_id} identity 不一致"
+                )
         return updated, sources
 
     def version_invocation(self) -> BackendInvocation:
@@ -593,20 +637,22 @@ class OpenFold3Af3JaxAdapter:
     ) -> BackendInvocation:
         if not self._has_remote_msa(request):
             raise BackendContractError("只有 remote MSA 请求可以调用 ColabFold")
+        remote_msa_script = Path(__file__).with_name("openfold3_remote_msa.py").resolve()
+        if not remote_msa_script.is_file():
+            raise BackendContractError(
+                f"AFO remote MSA helper 缺失: {remote_msa_script}"
+            )
         return BackendInvocation(
             backend_name=self.backend_name,
             backend_version=self.backend_version,
             argv=(
                 str(self.python),
-                str(self.runner),
+                str(remote_msa_script),
                 f"--json_path={input_json}",
                 f"--output_dir={output_dir}",
-                "--run_data_pipeline=true",
-                "--run_inference=false",
-                "--use_msa_server=true",
                 f"--msa_server_url={self.msa_server_url}",
-                f"--cache_dir={self.cache_root}",
-                "--force_output_dir=true",
+                f"--provider={self.remote_msa_provider}",
+                f"--chain_ids={','.join(self._remote_chain_ids(request))}",
             ),
             environment=self._environment(),
             timeout_seconds=self.msa_timeout_seconds,
@@ -615,6 +661,10 @@ class OpenFold3Af3JaxAdapter:
     @staticmethod
     def updated_msa_input_path(input_json: Path, msa_output_dir: Path) -> Path:
         return msa_output_dir / input_json.stem / f"{input_json.stem}_data.json"
+
+    @staticmethod
+    def remote_msa_receipt_path(input_json: Path, msa_output_dir: Path) -> Path:
+        return msa_output_dir / input_json.stem / "remote-msa-receipt.json"
 
     def prediction_invocation(
         self,

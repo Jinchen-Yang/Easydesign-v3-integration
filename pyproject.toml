@@ -63,6 +63,7 @@ easydesign = [
   "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.cif",
   "resources/scaffolds/vhh/official_boltzgen_0_3_2/*.txt",
   "resources/filter_profiles/*.yaml",
+  "resources/backend_capabilities/*.yaml",
 ]
 
 [tool.pytest.ini_options]

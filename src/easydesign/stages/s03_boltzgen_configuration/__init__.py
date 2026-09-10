@@ -1,5 +1,12 @@
 """Stage 03 deterministic BoltzGen configuration contracts."""
 
+from .capabilities import (
+    BOLTZGEN_SOURCE_TREE_SHA256,
+    BoltzGenCapabilityManifest,
+    BoltzGenSupports,
+    load_boltzgen_capabilities,
+    require_boltzgen_capability,
+)
 from .compiler import (
     EXPECTED_ASSET_SHA256,
     SCAFFOLD_IDS,
@@ -27,6 +34,9 @@ from .models import (
 __all__ = [
     "BOLTZGEN_COMMIT",
     "BOLTZGEN_VERSION",
+    "BOLTZGEN_SOURCE_TREE_SHA256",
+    "BoltzGenCapabilityManifest",
+    "BoltzGenSupports",
     "EXPECTED_ASSET_SHA256",
     "SCAFFOLD_IDS",
     "SCAFFOLD_REGISTRY_ID",
@@ -43,5 +53,7 @@ __all__ = [
     "compile_basic_vhh_matrix",
     "compile_vhh_strategy_plan",
     "materialize_scaffold_registry",
+    "load_boltzgen_capabilities",
+    "require_boltzgen_capability",
     "write_design_matrix",
 ]

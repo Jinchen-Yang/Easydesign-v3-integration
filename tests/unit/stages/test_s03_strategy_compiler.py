@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+import easydesign.stages.s03_boltzgen_configuration.capabilities as capability_module
 from easydesign.core import ManifestStateError, sha256_file
 from easydesign.stages.s02_hotspot_discovery import (
     AnnotationStatus,
@@ -26,6 +27,8 @@ from easydesign.stages.s03_boltzgen_configuration import (
     TargetCrop,
     compile_basic_vhh_matrix,
     compile_vhh_strategy_plan,
+    load_boltzgen_capabilities,
+    require_boltzgen_capability,
 )
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
@@ -355,3 +358,63 @@ def test_compiler_rejects_approved_hotspot_without_coordinates(
         )
 
     assert not artifacts.exists()
+
+
+def test_capability_manifest_and_explicit_avoid_compile_to_not_binding(
+    tmp_path: Path,
+) -> None:
+    capabilities = load_boltzgen_capabilities()
+    assert capabilities.version == "0.3.2"
+    assert capabilities.supports.not_binding is True
+    with pytest.raises(ManifestStateError, match="不支持 required capability"):
+        require_boltzgen_capability("msa")
+
+    target = tmp_path / "target.cif"
+    _write_target(target)
+    _, strategies = compile_vhh_strategy_plan(
+        target_cif=target,
+        hotspots=_hotspots(target, ("A",)),
+        artifacts_root=tmp_path / "avoid-artifacts",
+        variants=(
+            ExplicitStrategyVariant(
+                variant_id="explicit-avoid",
+                hotspot_set_id="A",
+                scaffold_ids=("7eow",),
+                avoid_label_seq_ids=(3,),
+                candidates_per_strategy=1,
+            ),
+        ),
+    )
+    specification = yaml.safe_load(
+        (
+            tmp_path
+            / "avoid-artifacts"
+            / strategies[0].design_specification_path
+        ).read_text(encoding="utf-8")
+    )
+    contract = specification["entities"][0]["file"]["binding_types"][0]["chain"]
+    assert contract["binding"] == "1,2"
+    assert contract["not_binding"] == "3"
+    assert "4" not in contract["not_binding"]
+
+
+def test_binding_and_avoid_overlap_is_rejected() -> None:
+    with pytest.raises(ValueError, match="不能重叠"):
+        ExplicitStrategyVariant(
+            variant_id="overlap",
+            binding_label_seq_ids=(1,),
+            avoid_label_seq_ids=(1,),
+            scaffold_ids=("7eow",),
+            candidates_per_strategy=1,
+            rationale="invalid overlap",
+            expected_result="reject",
+        )
+
+
+def test_capability_manifest_detects_pinned_version_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(capability_module, "BOLTZGEN_VERSION", "0.3.3")
+
+    with pytest.raises(ManifestStateError, match="capability/version/commit drift"):
+        load_boltzgen_capabilities()

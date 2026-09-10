@@ -45,7 +45,7 @@ class DecisionOption(BaseModel):
 class DecisionRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    schema_version: str = Field(default="0.1", pattern=r"^0\.[12]$")
     decision_id: str = Field(pattern=ID_PATTERN)
     stage_id: str = Field(pattern=r"^0[1-7]-[a-z0-9-]+$")
     gate: str = Field(pattern=ID_PATTERN)
@@ -55,6 +55,8 @@ class DecisionRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4096)
     options: tuple[DecisionOption, ...] = Field(min_length=1)
     source_artifact_sha256: tuple[str, ...] = ()
+    plan_type: str | None = Field(default=None, pattern=ID_PATTERN)
+    plan_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
     @field_validator("created_at")
     @classmethod
@@ -69,13 +71,18 @@ class DecisionRequest(BaseModel):
         for value in self.source_artifact_sha256:
             if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
                 raise ValueError("source_artifact_sha256 必须是小写 SHA-256")
+        if self.schema_version == "0.2":
+            if self.plan_type is None or self.plan_sha256 is None:
+                raise ValueError("DecisionRequest 0.2 必须绑定 execution plan")
+        elif self.plan_type is not None or self.plan_sha256 is not None:
+            raise ValueError("DecisionRequest 0.1 不支持 execution plan identity")
         return self
 
 
 class DecisionRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = Field(default="0.1", pattern=r"^0\.1$")
+    schema_version: str = Field(default="0.1", pattern=r"^0\.[12]$")
     decision_id: str = Field(pattern=ID_PATTERN)
     request_revision: int = Field(ge=1)
     request_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -85,6 +92,8 @@ class DecisionRecord(BaseModel):
     approved_by: str = Field(min_length=1, max_length=256)
     policy_id: str | None = Field(default=None, pattern=ID_PATTERN)
     acknowledgement: str | None = Field(default=None, max_length=4096)
+    plan_type: str | None = Field(default=None, pattern=ID_PATTERN)
+    plan_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
     @field_validator("approved_at")
     @classmethod
@@ -100,4 +109,9 @@ class DecisionRecord(BaseModel):
                 raise ValueError("deterministic-policy 必须记录 policy_id")
         elif self.policy_id is not None:
             raise ValueError("human DecisionRecord 不得伪造 policy_id")
+        if self.schema_version == "0.2":
+            if self.plan_type is None or self.plan_sha256 is None:
+                raise ValueError("DecisionRecord 0.2 必须绑定 execution plan")
+        elif self.plan_type is not None or self.plan_sha256 is not None:
+            raise ValueError("DecisionRecord 0.1 不支持 execution plan identity")
         return self

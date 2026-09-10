@@ -6,7 +6,7 @@ import json
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import gemmi
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
@@ -24,9 +24,12 @@ from easydesign.backends.target_sources import (
 )
 from easydesign.core import (
     ArtifactRef,
+    CanonicalIdentityStatus,
     ManifestStateError,
     PredictionOutputError,
+    TargetIdentityReport,
     dump_model,
+    resolve_target_identity,
     verify_sha256,
 )
 
@@ -202,6 +205,134 @@ def _build_residue_mapping(
     )
 
 
+def _identity_v2(
+    *,
+    target: NormalizedProteinSequence,
+    mapping: ResidueMapping,
+    reference_sequence: str | None,
+    identity_report: dict[str, Any] | None,
+    scope_report: dict[str, Any] | None,
+    source_kind: Literal["prediction", "local-structure"],
+    reference_start: int | None = None,
+) -> TargetIdentityReport:
+    if identity_report is not None and identity_report.get("schema_version") == "0.2":
+        report = TargetIdentityReport.model_validate(identity_report).model_copy(
+            update={"target_id": target.target_id}
+        )
+        if report.design_scope.sequence != target.sequence:
+            raise PredictionOutputError(
+                "Target Identity v2 design scope 与发布 target sequence 不一致"
+            )
+        return report
+    canonical = reference_sequence or target.sequence
+    start_value = reference_start
+    end_value: int | None = None
+    if scope_report is not None:
+        if isinstance(scope_report.get("start"), int):
+            start_value = int(scope_report["start"])
+        if isinstance(scope_report.get("end"), int):
+            end_value = int(scope_report["end"])
+    if start_value is not None and end_value is None:
+        end_value = start_value + target.length - 1
+    legacy_status = None if identity_report is None else identity_report.get("status")
+    canonical_status = (
+        CanonicalIdentityStatus.RESOLVED
+        if reference_sequence is not None and legacy_status == "resolved"
+        else CanonicalIdentityStatus.USER_DECLARED
+    )
+    report = resolve_target_identity(
+        target_id=target.target_id,
+        canonical_sequence=canonical,
+        construct_sequence=target.sequence,
+        canonical_status=canonical_status,
+        source_identity_status="resolved",
+        source_kind=source_kind,
+        accession=(
+            None if identity_report is None else identity_report.get("accession")
+        ),
+        isoform=(None if identity_report is None else identity_report.get("isoform")),
+        taxon_id=(
+            None
+            if identity_report is None
+            else identity_report.get("taxonomy_id", identity_report.get("taxon_id"))
+        ),
+        canonical_scope_start=start_value,
+        canonical_scope_end=end_value,
+        coordinate_present_construct_positions=tuple(
+            item.sequence_index for item in mapping.entries if item.coordinate_present
+        ),
+    )
+    if report.design_scope.sequence != target.sequence:
+        raise PredictionOutputError(
+            "resolved Target Identity v2 design scope 与发布 target sequence 不一致"
+        )
+    return report
+
+
+def _enrich_mapping_with_identity(
+    mapping: ResidueMapping,
+    identity: TargetIdentityReport,
+) -> ResidueMapping:
+    if len(mapping.entries) != len(identity.design_scope.residues):
+        raise PredictionOutputError("Target Identity v2 与 residue mapping 长度不一致")
+    return mapping.model_copy(
+        update={
+            "schema_version": "0.4",
+            "entries": tuple(
+                entry.model_copy(
+                    update={
+                        "canonical_position": resolved.canonical_position,
+                        "canonical_residue": resolved.canonical_residue,
+                        "construct_position": resolved.construct_position,
+                        "construct_residue": resolved.construct_residue,
+                        "reference_position": resolved.canonical_position,
+                        "mapping_status": resolved.mapping_status.value,
+                        "edit_type": resolved.edit_type.value,
+                    }
+                )
+                for entry, resolved in zip(
+                    mapping.entries,
+                    identity.design_scope.residues,
+                    strict=True,
+                )
+            ),
+        }
+    )
+
+
+def _mapping_tsv(mapping: ResidueMapping) -> str:
+    header = (
+        "sequence_index\tamino_acid\tcanonical_position\tcanonical_residue\t"
+        "construct_position\tconstruct_residue\tlabel_chain_id\tlabel_seq_id\t"
+        "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
+        "reference_position\tcoordinate_present\tmapping_status\tedit_type\tmodel_presence\n"
+    )
+    rows = (
+        "\t".join(
+            (
+                str(entry.sequence_index),
+                entry.amino_acid,
+                "" if entry.canonical_position is None else str(entry.canonical_position),
+                entry.canonical_residue or "",
+                "" if entry.construct_position is None else str(entry.construct_position),
+                entry.construct_residue or "",
+                entry.label_chain_id,
+                str(entry.label_seq_id),
+                entry.source_author_chain_id or "",
+                entry.source_author_residue_id or "",
+                entry.insertion_code or "",
+                "" if entry.reference_position is None else str(entry.reference_position),
+                str(entry.coordinate_present).lower(),
+                entry.mapping_status or "",
+                entry.edit_type or "",
+                ",".join(entry.model_presence),
+            )
+        )
+        for entry in mapping.entries
+    )
+    return header + "\n".join(rows) + "\n"
+
+
 def _artifact(
     *,
     run_root: Path,
@@ -242,6 +373,11 @@ def build_predicted_target_bundle(
     msa_query_sha256: str | None = None,
     msa_ticket: str | None = None,
     msa_ticket_status: str | None = None,
+    msa_source_type: Literal["precomputed-library", "precomputed-file"] | None = None,
+    msa_library_schema_version: str | None = None,
+    msa_release_id: str | None = None,
+    msa_library_manifest_sha256: str | None = None,
+    msa_release_receipt_sha256: str | None = None,
     paired_msa_mode: MsaMode = MsaMode.DISABLED,
     paired_msa_input_sha256: str | None = None,
     template_data_sha256: str | None = None,
@@ -360,6 +496,11 @@ def build_predicted_target_bundle(
         msa_query_sha256=msa_query_sha256,
         msa_ticket=msa_ticket,
         msa_ticket_status=msa_ticket_status,
+        msa_source_type=msa_source_type,
+        msa_library_schema_version=msa_library_schema_version,
+        msa_release_id=msa_release_id,
+        msa_library_manifest_sha256=msa_library_manifest_sha256,
+        msa_release_receipt_sha256=msa_release_receipt_sha256,
         paired_msa_mode=paired_msa_mode,
         paired_msa_input_sha256=paired_msa_input_sha256,
         template_mode=template_mode,
@@ -370,49 +511,26 @@ def build_predicted_target_bundle(
         seed=product.seed,
         sample_index=product.sample_index,
     )
-    dump_model(mapping, mapping_json)
-    dump_model(quality, quality_json)
-    dump_model(provenance, provenance_json)
     reference = normalize_raw_sequence(
         reference_sequence or target.sequence,
         target_id=f"{target.target_id}-reference",
         source_label="reference",
     )
-    _exclusive_text(reference.to_fasta(), reference_fasta)
-    _exclusive_text(
-        (
-            "sequence_index\tamino_acid\tlabel_chain_id\tlabel_seq_id\t"
-            "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
-            "reference_position\tmodel_presence\n"
-            + "\n".join(
-                "\t".join(
-                    (
-                        str(entry.sequence_index),
-                        entry.amino_acid,
-                        entry.label_chain_id,
-                        str(entry.label_seq_id),
-                        entry.source_author_chain_id or "",
-                        entry.source_author_residue_id or "",
-                        entry.insertion_code or "",
-                        (
-                            ""
-                            if entry.reference_position is None
-                            else str(entry.reference_position)
-                        ),
-                        ",".join(entry.model_presence),
-                    )
-                )
-                for entry in mapping.entries
-            )
-            + "\n"
-        ),
-        mapping_tsv,
+    identity_v2 = _identity_v2(
+        target=target,
+        mapping=mapping,
+        reference_sequence=(None if reference_sequence is None else reference.sequence),
+        identity_report=identity_report,
+        scope_report=scope_report,
+        source_kind="prediction",
     )
-    identity_payload = identity_report or {
-        "schema_version": "0.1",
-        "status": "explicit-sequence",
-        "identity_resolution": "user-input",
-    }
+    mapping = _enrich_mapping_with_identity(mapping, identity_v2)
+    dump_model(mapping, mapping_json)
+    dump_model(quality, quality_json)
+    dump_model(provenance, provenance_json)
+    _exclusive_text(reference.to_fasta(), reference_fasta)
+    _exclusive_text(_mapping_tsv(mapping), mapping_tsv)
+    identity_payload = identity_v2.model_dump(mode="json")
     scope_payload = scope_report or {
         "schema_version": "0.1",
         "type": "full-sequence",
@@ -496,7 +614,7 @@ def build_predicted_target_bundle(
     )
 
     bundle = TargetBundle(
-        schema_version="0.4",
+        schema_version="0.5",
         target_id=target.target_id,
         origin=TargetStructureOrigin.PREDICTED,
         sequence_length=target.length,
@@ -712,7 +830,7 @@ def build_imported_pse_target_bundle(
     identity_report: dict[str, Any] | None = None,
     retrieval_records: tuple[dict[str, Any], ...] = (),
 ) -> BuiltTargetBundle:
-    """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.4。"""
+    """把严格验证的单 Target PSE 发布为 imported Target Bundle 0.5。"""
 
     resolved_run_root = run_root.resolve()
     artifact_dir = (
@@ -778,6 +896,23 @@ def build_imported_pse_target_bundle(
             )
         ),
     )
+    identity_v2 = _identity_v2(
+        target=target,
+        mapping=mapping,
+        reference_sequence=(None if reference_sequence is None else reference.sequence),
+        identity_report=identity_report,
+        scope_report=(
+            None
+            if reference_start is None
+            else {
+                "start": reference_start,
+                "end": reference_start + target.length - 1,
+            }
+        ),
+        source_kind="local-structure",
+        reference_start=reference_start,
+    )
+    mapping = _enrich_mapping_with_identity(mapping, identity_v2)
     _validate_pse_mapping(mapping, product)
 
     residue_count = len(product.response.residues)
@@ -842,51 +977,10 @@ def build_imported_pse_target_bundle(
     dump_model(quality, quality_json)
     dump_model(provenance, provenance_json)
     dump_model(annotations, annotations_json)
-    _exclusive_text(
-        (
-            "sequence_index\tamino_acid\tlabel_chain_id\tlabel_seq_id\t"
-            "source_auth_chain\tsource_auth_residue\tinsertion_code\t"
-            "reference_position\tmodel_presence\n"
-            + "\n".join(
-                "\t".join(
-                    (
-                        str(entry.sequence_index),
-                        entry.amino_acid,
-                        entry.label_chain_id,
-                        str(entry.label_seq_id),
-                        entry.source_author_chain_id or "",
-                        entry.source_author_residue_id or "",
-                        entry.insertion_code or "",
-                        (
-                            ""
-                            if entry.reference_position is None
-                            else str(entry.reference_position)
-                        ),
-                        ",".join(entry.model_presence),
-                    )
-                )
-                for entry in mapping.entries
-            )
-            + "\n"
-        ),
-        mapping_tsv,
-    )
+    _exclusive_text(_mapping_tsv(mapping), mapping_tsv)
     _exclusive_text(
         json.dumps(
-            {
-                "schema_version": "0.1",
-                **(
-                    identity_report
-                    if identity_report is not None
-                    else {
-                        "schema_version": "0.1",
-                        "status": "structural-only",
-                        "identity_status": "not_requested",
-                        "identity_resolution": "not-requested",
-                        "reference_completeness": "observed-pse-only",
-                    }
-                ),
-            },
+            identity_v2.model_dump(mode="json"),
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
@@ -1013,7 +1107,7 @@ def build_imported_pse_target_bundle(
         attempt_id=attempt_id,
     )
     bundle = TargetBundle(
-        schema_version="0.4",
+        schema_version="0.5",
         target_id=target.target_id,
         origin=TargetStructureOrigin.IMPORTED,
         sequence_length=target.length,

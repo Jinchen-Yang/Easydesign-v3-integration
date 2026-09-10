@@ -51,6 +51,7 @@ class ExplicitStrategyVariant(BaseModel):
     variant_id: str = Field(pattern=ID_PATTERN)
     hotspot_set_id: str | None = None
     binding_label_seq_ids: tuple[int, ...] | None = None
+    avoid_label_seq_ids: tuple[int, ...] = ()
     scaffold_ids: tuple[str, ...] = Field(min_length=1)
     target_crop: TargetCrop | None = None
     cdr_overrides: tuple[CdrOverride, ...] = ()
@@ -74,6 +75,14 @@ class ExplicitStrategyVariant(BaseModel):
             normalized = tuple(sorted(set(self.binding_label_seq_ids)))
             if normalized != self.binding_label_seq_ids or any(value < 1 for value in normalized):
                 raise ValueError("binding residues 必须升序、唯一且为正整数")
+        if tuple(sorted(set(self.avoid_label_seq_ids))) != self.avoid_label_seq_ids or any(
+            value < 1 for value in self.avoid_label_seq_ids
+        ):
+            raise ValueError("avoid residues 必须升序、唯一且为正整数")
+        if self.binding_label_seq_ids is not None and set(
+            self.binding_label_seq_ids
+        ).intersection(self.avoid_label_seq_ids):
+            raise ValueError("binding 与 not_binding/avoid residues 不能重叠")
         cdrs = [item.cdr for item in self.cdr_overrides]
         if len(cdrs) != len(set(cdrs)):
             raise ValueError("同一 CDR 只能覆盖一次")
@@ -158,6 +167,7 @@ class StrategyRecord(BaseModel):
     crop_enabled: bool = False
     target_chain: Literal["A"] = "A"
     binding_label_seq_ids: tuple[int, ...] = Field(min_length=1)
+    avoid_label_seq_ids: tuple[int, ...] = ()
     neutral_residue_policy: Literal["unmarked"] = "unmarked"
     candidates_per_strategy: int = Field(ge=1)
     design_specification_path: str = Field(min_length=1)
@@ -184,6 +194,10 @@ class StrategyRecord(BaseModel):
     def validate_binding_residues(self) -> Self:
         if tuple(sorted(set(self.binding_label_seq_ids))) != self.binding_label_seq_ids:
             raise ValueError("binding_label_seq_ids 必须升序且唯一")
+        if tuple(sorted(set(self.avoid_label_seq_ids))) != self.avoid_label_seq_ids:
+            raise ValueError("avoid_label_seq_ids 必须升序且唯一")
+        if set(self.binding_label_seq_ids).intersection(self.avoid_label_seq_ids):
+            raise ValueError("binding 与 avoid residues 不能重叠")
         _validate_experiment_metadata(self)
         return self
 

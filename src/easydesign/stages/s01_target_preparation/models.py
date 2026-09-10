@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -70,6 +70,22 @@ class ResidueMappingEntry(BaseModel):
     )
     model_presence: tuple[str, ...] = ()
     source_residue_name: str | None = Field(default=None, max_length=8)
+    canonical_position: int | None = Field(default=None, ge=1)
+    canonical_residue: str | None = Field(
+        default=None,
+        pattern=r"^[ACDEFGHIKLMNPQRSTVWY]$",
+    )
+    construct_position: int | None = Field(default=None, ge=1)
+    construct_residue: str | None = Field(
+        default=None,
+        pattern=r"^[ACDEFGHIKLMNPQRSTVWY]$",
+    )
+    mapping_status: Literal[
+        "exact", "unique-aligned", "review-required", "ambiguous", "unresolved"
+    ] | None = None
+    edit_type: Literal[
+        "native", "substitution", "insertion", "deletion", "unresolved", "not-applicable"
+    ] | None = None
 
 
 class ResidueMapping(BaseModel):
@@ -82,7 +98,7 @@ class ResidueMapping(BaseModel):
 
     @model_validator(mode="after")
     def validate_mapping(self) -> Self:
-        if self.schema_version not in {"0.1", "0.2", "0.3"}:
+        if self.schema_version not in {"0.1", "0.2", "0.3", "0.4"}:
             raise ValueError(f"不支持 ResidueMapping schema: {self.schema_version}")
         indices = [entry.sequence_index for entry in self.entries]
         if indices != list(range(1, len(self.entries) + 1)):
@@ -227,7 +243,7 @@ class PseSourceAnnotations(BaseModel):
 class PredictionProvenance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
     source_kind: SequenceSourceKind
     source_label: str
     sequence_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -249,6 +265,21 @@ class PredictionProvenance(BaseModel):
     msa_query_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     msa_ticket: str | None = Field(default=None, min_length=1, max_length=256)
     msa_ticket_status: str | None = Field(default=None, min_length=1, max_length=128)
+    msa_source_type: Literal["precomputed-library", "precomputed-file"] | None = None
+    msa_library_schema_version: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+    )
+    msa_release_id: str | None = Field(default=None, pattern=ID_PATTERN)
+    msa_library_manifest_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
+    msa_release_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
     paired_msa_mode: MsaMode = MsaMode.DISABLED
     paired_msa_input_sha256: str | None = Field(
         default=None,
@@ -312,6 +343,34 @@ class PredictionProvenance(BaseModel):
                     "remote MSA provenance 0.2 "
                     "缺少 provider/endpoint/depth/query/status"
                 )
+        source_values = (
+            self.msa_source_type,
+            self.msa_library_schema_version,
+            self.msa_release_id,
+            self.msa_library_manifest_sha256,
+            self.msa_release_receipt_sha256,
+        )
+        if any(value is not None for value in source_values):
+            if self.msa_mode is not MsaMode.PRECOMPUTED or self.msa_source_type is None:
+                raise ValueError("MSA source provenance 只能绑定 precomputed MSA")
+            if self.msa_source_type == "precomputed-library":
+                required_library = (
+                    self.msa_library_schema_version,
+                    self.msa_release_id,
+                    self.msa_library_manifest_sha256,
+                )
+                if any(value is None for value in required_library):
+                    raise ValueError("precomputed library provenance 缺少 release identity")
+            elif any(
+                value is not None
+                for value in (
+                    self.msa_library_schema_version,
+                    self.msa_release_id,
+                    self.msa_library_manifest_sha256,
+                    self.msa_release_receipt_sha256,
+                )
+            ):
+                raise ValueError("precomputed file provenance 不能声明 library release")
         if self.paired_msa_mode is MsaMode.DISABLED:
             if self.paired_msa_input_sha256 is not None:
                 raise ValueError("disabled paired MSA 不能声明 input SHA-256")
@@ -398,14 +457,18 @@ class TargetBundle(BaseModel):
                 raise ValueError(
                     f"Target Bundle {self.schema_version} 不支持 coordinate_ensemble"
                 )
-        elif self.schema_version in {"0.3", "0.4"}:
+        elif self.schema_version in {"0.3", "0.4", "0.5"}:
             if self.coordinate_ensemble is None:
                 raise ValueError(
                     f"Target Bundle {self.schema_version} 必须声明 coordinate_ensemble"
                 )
         else:
             raise ValueError(f"不支持 Target Bundle schema: {self.schema_version}")
-        if self.schema_version != "0.4" and any(
+        if self.schema_version == "0.5" and (
+            self.identity_report is None or self.residue_mapping_tsv is None
+        ):
+            raise ValueError("Target Bundle 0.5 必须携带 identity-report 与 residue-map TSV")
+        if self.schema_version not in {"0.4", "0.5"} and any(
             artifact is not None
             for artifact in (
                 self.reference_sequence,
@@ -423,6 +486,14 @@ class TargetBundle(BaseModel):
         ):
             raise ValueError("Target Bundle 0.1–0.3 不支持 Stage 01 evidence artifact 扩展")
         return self
+
+    @property
+    def identity_detail_status(self) -> str:
+        if self.schema_version in {"0.1", "0.2", "0.3"}:
+            return "legacy-insufficient-identity-detail"
+        if self.schema_version == "0.4":
+            return "legacy-evidence-extension"
+        return "target-identity-v2"
 
 
 class BuiltTargetBundle(BaseModel):

@@ -58,3 +58,23 @@ def test_reject_does_not_write_scientific_record(bridge: Any) -> None:
     root, _ = bridge.run()
     request, path = load_pending_decision(root)
     assert not (path.parent / f"record.v{request.revision:04d}.json").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["target", "coordinator"])
+async def test_unprepared_inspection_is_read_only(bridge: Any, role: str) -> None:
+    import json
+
+    from easydesign.agent.tools import build_tools
+    from easydesign.core import ConfigurationError
+
+    tool = next(t for t in build_tools(bridge, role) if t.name == "read_target_evidence")
+    result = json.loads(await tool.ainvoke({}))
+    assert result["status"] == "not-prepared"
+    assert result["evidence_refs"] == []
+    assert "evidence_id" not in result and "bundle" not in result
+    assert not bridge._jobs()
+    assert bridge.store.db.execute("SELECT count(*) FROM commands").fetchone()[0] == 0
+    # An explicit invalid run must still fail, not be downgraded to a preparation hint.
+    with pytest.raises(ConfigurationError):
+        await tool.ainvoke({"run_id": "nonexistent-run"})

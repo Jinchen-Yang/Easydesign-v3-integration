@@ -592,6 +592,23 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
         return bridge.store.offload(bridge.thread, result)
 
     async def evidence_tool(run_id: str | None = None) -> str:
+        # A model may inspect before prepare (including alongside its first skill read).
+        # This is an absence of evidence, not a fabricated run or a scientific failure.
+        if role in {"target", "coordinator"} and run_id is None:
+            bridge.validate_project()
+            if resolve_project_run(bridge.project, required=False) is None:
+                return bridge.store.offload(
+                    bridge.thread,
+                    {
+                        "status": "not-prepared",
+                        "project_id": bridge.project_id,
+                        "evidence_refs": [],
+                        "next_action": (
+                            "Target Intelligence should call prepare_target to prepare or "
+                            "reattach, then get_job_status before reading scientific evidence."
+                        ),
+                    },
+                )
         evidence = bridge.read_evidence(run_id)
         if role == "judge" and evidence["evidence_id"] != JUDGE_EVIDENCE.get():
             raise AgentBoundaryError("Judge may read only its delegated evidence snapshot")

@@ -1,7 +1,8 @@
 # EasyDesign v3 Phase 1 实施报告
 
-日期：2026-09-10。**实现与离线验证已完成；真实模型闭环尚待用户配置 API key，
-因此当前不能标记 Phase 1 完全验收通过。工作停留在 Phase 1。**
+日期：2026-09-10。**用户配置凭据后，已补齐 DeepSeek 的真实模型闭环验证，并修复了
+live smoke 发现的“准备前读取证据”问题。最新结果见
+[Phase 1 live 补测报告](V3_PHASE1_LIVE_VALIDATION.md)。工作仍停留在 Phase 1。**
 
 ## 交付位置与兼容范围
 
@@ -108,7 +109,7 @@ provider 管理的别名可能变化，并非不可变权重身份。
 同机暖文件缓存、独立 Python 进程的 harness 导入用时为 6.347 / 6.911 / 6.842 秒，
 包含当时主机负载影响，不是冷机器安装或推理延迟基准。
 
-## 实际验证结果
+## 首次交付验证结果（live 补测前）
 
 `scripts/dev.py verify --mode integration` **通过**（总计 245.957 秒）：结构检查、既有
 Mol* 资源校验、compileall、Ruff 全部通过；mypy 在 169 个源码文件中未发现问题。
@@ -140,11 +141,12 @@ smoke 和 8 项要求独立 PyMOL 环境的既有集成测试；本轮没有为�
 `agent-suite-final.log`、`v2-regression.log`、`verify-integration-2.log`、
 `wheel-smoke-delivery.log`、`integrity-final.json`、`context-final.json`。
 
-## Live smoke 状态与待完成项
+## Live smoke 补测状态
 
-**未运行通过：用户说明尚未配置模型 key。** 最终 provider 契约测试使用 HTTP MockTransport 并
-禁止真实 socket 连接，只证明适配器工具协议；开发期间占位凭据得到的 401 响应不计作模型推理
-或 live smoke 通过。脚本化模型验证也不冒充真实模型闭环。
+首次交付时尚无 key，live smoke 未运行。用户随后安全配置凭据，本次已通过 DeepSeek
+连通性测试及真实模型 Stage 01 闭环；详情与新一轮回归结果见
+[补测报告](V3_PHASE1_LIVE_VALIDATION.md)。OpenAI / Anthropic 仍只有 HTTP mock 适配验证，
+没有使用 DeepSeek key 冒充其他 provider 的真实账号验证。
 
 按 README 配置私有 key 后，在独立 Agent 环境执行：
 
@@ -154,7 +156,7 @@ EASYDESIGN_AGENT_LIVE=1 EASYDESIGN_AGENT_MODEL_CONFIG="$PWD/config/llm.yaml" \
 ```
 
 该显式测试只创建合成双链输入和新测试 workspace，测试程序模拟该 fixture 的人工确认；
-不批准真实研究项目。真实账号的模型可用性、结构化输出遵循和整段模型调用闭环，均需此测试
-成功后才能确认。未配置凭据时不调用免费/匿名替代 endpoint，不扩展 provider 范围。
+不批准真实研究项目。本次已验证当前 DeepSeek 账号、模型配置与合成 fixture 的调用闭环；
+这不代表所有输入或所有 provider 都已完成真实模型测试。不扩展 provider 范围。
 
 本轮不进入 Phase 2，不提前退休 Phase 0 迁移矩阵中的旧科学或产品入口。

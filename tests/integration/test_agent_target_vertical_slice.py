@@ -126,15 +126,27 @@ async def test_live_model_target_slice(tmp_path: Path, monkeypatch: Any) -> None
             user="explicit-live-smoke-synthetic-fixture",
         )
         assert done["status"] == "finished", done
-        assert bridge.read_evidence()["bundle"]["producer_attempt"] == "attempt-0002"
+        evidence = bridge.read_evidence()
+        assert evidence["bundle"]["producer_attempt"] == "attempt-0002"
+        assert evidence["provenance"]["fallback_used"] is False
+        assert evidence["approval_provenance"]["status"] == "not-in-snapshot"
         assert len(bridge._jobs()) == 2
+        events = bridge.store.events(bridge.thread)
+        calls = [event["payload"] for event in events if event["kind"] == "model-call"]
+        assert len({call["execution_id"] for call in calls}) == 1
+        assert len(calls) <= config.max_model_calls
+        assessments = [event["payload"] for event in events if event["kind"] == "judge-assessment"]
+        assert [item["verdict"] for item in assessments] == ["ready-to-ask", "assessed"]
+        assert all(item["source_role"] == "evidence-judge" for item in assessments)
+        assert assessments[-1]["evidence_refs"] == evidence["evidence_refs"]
+        assert assessments[-1]["request_identity"] is None
         print(
             json.dumps(
                 {
                     "live": "passed",
                     "provider": config.default.provider,
                     "model": config.default.model,
-                    "events": bridge.store.events(bridge.thread),
+                    "events": events,
                 },
                 ensure_ascii=False,
             )

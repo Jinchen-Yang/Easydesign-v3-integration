@@ -120,6 +120,11 @@ easydesign-agent resume my-target --thread THREAD_ID --card CARD_ID --decision a
 easydesign-agent status my-target --thread THREAD_ID
 ```
 
+thread 的原始研究目标保持不变；`--message` 是当前澄清消息，与原目标和 LangGraph 对话
+历史分别传给 Agent。普通输出保留科学结果、所选链、局限和可用的 Viewer 入口，省略
+内部 assessment ID、SHA 和 provenance 实现字段。需要检查原始诊断记录时，加
+`--technical-details`（可与 `status`、`resume`、`--stream` 配合使用）。
+
 同一项目只使用一个写入口。旧 CLI 不遵守新 Agent 锁，因此不支持与 Agent 并发写入。
 配置、证据或请求发生漂移时停止。`reconciliation-required` 表示无法证明提交身份，
 请检查报告中的旧 receipt，不能靠再次调用 prepare 重跑。Ctrl-C 只脱离 Agent 观察，
@@ -140,10 +145,19 @@ EASYDESIGN_AGENT_LIVE=1 EASYDESIGN_AGENT_MODEL_CONFIG="$PWD/config/llm.yaml" \
 ```
 
 该 smoke 只使用合成双链结构和独立测试 workspace；测试代码模拟该 fixture 的人工确认，
-不代表批准任何真实研究项目。模型调用上限跨进程持久化，SDK 重试关闭，每次输出 token
-受限；默认总调用数 32。金额随 provider 当前定价及输入 token 变化，并非固定费用承诺。
+不代表批准任何真实研究项目。默认每个用户轮次最多 32 次模型调用，由 Coordinator 和
+两个专家共享；HITL、进程重启与未完成轮次的恢复保留该轮预算。完成或拒绝后，新的
+`--message` 开启新预算；普通 resume 不重置预算。thread lifetime usage 仅用于遥测，
+不作为长会话硬上限。SDK 重试关闭，每次输出 token 受限。金额随 provider 当前定价及
+输入 token 变化，并非固定费用承诺。
 没有凭据时 live smoke 跳过并明确报告，不能据此宣布真实模型闭环通过。
 
 成功结果仍明确显示：canonical biological identity 未确认、reference completeness 未知，
 结构质量不等于亲和力或功能证据。Viewer 验证失败单独报告，不改变科学成功状态。
-Phase 1 完成后停止；不会自动启动后续迁移阶段。
+最终 Judge 只评估其收到的证据快照。completed snapshot 提供经过校验的 provenance
+值，明确的 `fallback_used=false` 表示未使用 fallback；它不包含经过旧 decision service
+验证的审批来源，因此 Judge 不得由 selected chain 推断人工审批链条已独立验证。
+
+Phase 1.1 contract 更新会改变运行时 fingerprint；旧 Phase 1 thread 的 checkpoint 不做迁移，
+恢复时会拒绝不兼容版本，应使用新 thread。既有 scientific job、run 和 decision record 不变。
+Phase 1.1 closure 完成后停止；不会自动启动 Phase 2。

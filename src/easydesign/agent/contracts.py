@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 ShortText = Annotated[str, Field(min_length=1, max_length=1500)]
 Identifier = Annotated[str, Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$")]
@@ -17,6 +17,7 @@ class StrictDTO(BaseModel):
 class TargetTask(StrictDTO):
     question: ShortText
     user_goal: ShortText
+    current_user_message: ShortText
     project_id: Identifier
     run_id: Identifier | None = None
     evidence_id: Identifier | None = None
@@ -33,18 +34,29 @@ class TargetAssessment(StrictDTO):
 
 
 class JudgeVerdict(StrictDTO):
-    """Model-produced fields; runtime supplies assessment ID and source role."""
+    """Scientific opinion only; deterministic bindings never come from the model."""
 
-    evidence_id: Identifier
-    request_identity: str | None = Field(default=None, max_length=64)
-    evidence_refs: list[str] = Field(min_length=1, max_length=64)
     verdict: Literal["ready-to-ask", "insufficient", "reject", "assessed"]
     reasons: list[ShortText] = Field(min_length=1, max_length=8)
     limitations: list[ShortText] = Field(min_length=1, max_length=8)
 
 
-class EvidenceAssessment(JudgeVerdict):
+class EvidenceBinding(StrictDTO):
+    evidence_id: Identifier
+    request_identity: str | None = Field(default=None, max_length=64)
+    evidence_refs: tuple[str, ...] = Field(min_length=1, max_length=64)
+
+
+class EvidenceAssessment(JudgeVerdict, EvidenceBinding):
     assessment_id: Identifier
+    source_role: Literal["evidence-judge"] = "evidence-judge"
+
+
+class TargetProvenance(StrictDTO):
+    origin: ShortText | None = None
+    source: ShortText | None = None
+    selected_chain: ShortText | None = None
+    fallback_used: StrictBool | None = None
 
 
 class ApplyDecision(StrictDTO):

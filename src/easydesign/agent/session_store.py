@@ -119,18 +119,60 @@ class SessionStore:
             )
         ]
 
-    def reserve_model_call(self, thread: str, role: str, maximum: int) -> None:
+    def latest_execution(self, thread: str) -> dict[str, Any] | None:
+        row = self.db.execute(
+            "SELECT payload FROM events WHERE thread=? AND kind='agent-execution' "
+            "ORDER BY seq DESC LIMIT 1",
+            (thread,),
+        ).fetchone()
+        return None if row is None else json.loads(row[0])
+
+    def begin_execution(
+        self, thread: str, message: str, *, followup: bool = False
+    ) -> dict[str, Any]:
+        execution = {"execution_id": f"turn-{uuid4().hex}", "current_user_message": message}
+        with self.db:
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?,?,?)",
+                (thread, "agent-execution", compact(execution)),
+            )
+            if followup:
+                self.db.execute(
+                    "INSERT INTO events(thread,kind,payload) VALUES(?,?,?)",
+                    (thread, "user-followup", compact({"text": message})),
+                )
+        return execution
+
+    def reserve_model_call(self, thread: str, role: str, maximum: int, execution_id: str) -> None:
+        execution = self.latest_execution(thread)
+        if execution is None or execution["execution_id"] != execution_id:
+            raise AgentBoundaryError("Model call is not bound to the current agent execution")
         with self.db:
             count = self.db.execute(
-                "SELECT count(*) FROM events WHERE thread=? AND kind='model-call'", (thread,)
+                "SELECT count(*) FROM events WHERE thread=? AND kind='model-call' "
+                "AND json_extract(payload, '$.execution_id')=?",
+                (thread, execution_id),
             ).fetchone()[0]
             if count >= maximum:
                 raise AgentBoundaryError(
-                    "Session model-call budget exhausted; worker remains detached"
+                    "Current turn model-call budget exhausted; worker remains detached"
                 )
+            lifetime = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? AND kind='model-call'", (thread,)
+            ).fetchone()[0]
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?, 'model-call', ?)",
-                (thread, compact({"role": role, "call": count + 1})),
+                (
+                    thread,
+                    compact(
+                        {
+                            "role": role,
+                            "call": count + 1,
+                            "execution_id": execution_id,
+                            "lifetime_call": lifetime + 1,
+                        }
+                    ),
+                ),
             )
 
     def command(self, command_id: str) -> dict[str, Any] | None:

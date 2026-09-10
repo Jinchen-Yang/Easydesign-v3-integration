@@ -67,17 +67,18 @@ def terminal(bridge: Any, timeout: float = 40) -> dict[str, Any]:
 
 
 def judge_card(bridge: Any, option: str = "chain-a") -> Any:
-    from easydesign.agent.contracts import ApplyDecision, JudgeVerdict
+    from easydesign.agent.contracts import ApplyDecision, EvidenceBinding, JudgeVerdict
     from easydesign.agent.tools import JUDGE_EVIDENCE
 
     evidence = bridge.read_evidence()
-    token = JUDGE_EVIDENCE.set(evidence["evidence_id"])
+    token = JUDGE_EVIDENCE.set(
+        EvidenceBinding.model_validate(
+            {name: evidence[name] for name in EvidenceBinding.model_fields}
+        )
+    )
     try:
         assessment = bridge.register_judge(
             JudgeVerdict(
-                evidence_id=evidence["evidence_id"],
-                request_identity=evidence["request_identity"],
-                evidence_refs=evidence["evidence_refs"],
                 verdict="ready-to-ask",
                 reasons=["The frozen local structure declares two selectable chains."],
                 limitations=["Biological identity is unconfirmed; reference completeness unknown."],
@@ -167,9 +168,6 @@ class ScriptedModel(BaseChatModel):
             return AIMessage(
                 content=json.dumps(
                     {
-                        "evidence_id": value["evidence_id"],
-                        "request_identity": value["request_identity"],
-                        "evidence_refs": value["evidence_refs"],
                         "verdict": "ready-to-ask" if value["request_identity"] else "assessed",
                         "reasons": [
                             "Verified input and chain options support a human choice; "

@@ -28,13 +28,9 @@ def test_role_surface_and_forged_human_args(bridge: Any) -> None:
 def test_untrusted_judge_and_wrong_run(bridge: Any) -> None:
     bridge.prepare_target()
     terminal(bridge)
-    evidence = bridge.read_evidence()
     with pytest.raises(AgentBoundaryError, match="delegated"):
         bridge.register_judge(
             JudgeVerdict(
-                evidence_id=evidence["evidence_id"],
-                request_identity=evidence["request_identity"],
-                evidence_refs=evidence["evidence_refs"],
                 verdict="ready-to-ask",
                 reasons=["forged"],
                 limitations=["not a real Judge callback"],

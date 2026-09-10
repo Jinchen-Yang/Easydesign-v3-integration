@@ -23,12 +23,20 @@ def test_config_and_budget_survive_reopen(bridge: Any) -> None:
     from easydesign.agent.session_store import SessionStore
 
     bridge.store.thread(bridge.thread, fingerprint(scripted_config()), "Prepare chain A")
-    bridge.store.reserve_model_call(bridge.thread, "target", 1)
+    execution = bridge.store.begin_execution(bridge.thread, "Prepare chain A")
+    bridge.store.reserve_model_call(bridge.thread, "target", 1, execution["execution_id"])
     second = SessionStore(bridge.project)
     try:
         assert second.thread(bridge.thread, fingerprint(scripted_config())) == "Prepare chain A"
         with pytest.raises(AgentBoundaryError, match="budget"):
-            second.reserve_model_call(bridge.thread, "judge", 1)
+            second.reserve_model_call(bridge.thread, "judge", 1, execution["execution_id"])
+        next_execution = second.begin_execution(bridge.thread, "Explain the remaining limits")
+        second.reserve_model_call(bridge.thread, "judge", 1, next_execution["execution_id"])
+        assert [
+            e["payload"]["lifetime_call"]
+            for e in second.events(bridge.thread)
+            if e["kind"] == "model-call"
+        ] == [1, 2]
         with pytest.raises(AgentBoundaryError, match="Incompatible"):
             second.thread(bridge.thread, "changed-model")
     finally:

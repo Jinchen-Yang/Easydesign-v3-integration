@@ -9,6 +9,8 @@ default:
 
 # All three roles use default unless an explicit role override is provided.
 roles: {}
+# Shared by coordinator/target/judge within one user turn, including HITL and resume.
+# A follow-up after a completed/rejected turn gets a fresh budget; lifetime is telemetry.
 max_model_calls: 32
 max_input_chars: 60000
 

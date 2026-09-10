@@ -56,9 +56,11 @@ from .contracts import (
     DecisionCard,
     EmptyArguments,
     EvidenceAssessment,
+    EvidenceBinding,
     EvidenceQuery,
     JudgeVerdict,
     ReconciliationRequired,
+    TargetProvenance,
 )
 from .session_store import SessionStore, confined, identity
 
@@ -69,7 +71,7 @@ LIMITATIONS = [
     "Reference completeness is unknown. Chain selection does not confirm biological identity.",
     "Structural preparation and quality are not evidence of affinity or function.",
 ]
-JUDGE_EVIDENCE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+JUDGE_EVIDENCE: contextvars.ContextVar[EvidenceBinding | None] = contextvars.ContextVar(
     "judge_evidence", default=None
 )
 
@@ -372,6 +374,9 @@ class TargetBridge:
                 raise AgentBoundaryError("This slice requires a target identity report")
             report = load_model(bundle.identity_report.verify(root), TargetIdentityReport)
             provenance = json.loads(bundle.provenance.verify(root).read_text())
+            provenance_values = TargetProvenance.model_validate(
+                {name: provenance.get(name) for name in TargetProvenance.model_fields}
+            )
             refs.extend([self._ref(stage_ref), *[self._ref(r) for r in stage.output_artifacts]])
             result.update(
                 bundle={
@@ -387,8 +392,19 @@ class TargetBridge:
                     "auth_chain": report.construct_identity.auth_chain_id,
                     "relationship": str(report.relationship),
                 },
-                provenance={"sha256": bundle.provenance.sha256, "fields": sorted(provenance)},
+                provenance={
+                    "sha256": bundle.provenance.sha256,
+                    **provenance_values.model_dump(mode="json"),
+                },
+                approval_provenance={
+                    "status": "not-in-snapshot",
+                    "limitation": (
+                        "This snapshot does not verify DecisionRecord or human approval lineage. "
+                        "The delivered selected chain is not evidence of who approved it."
+                    ),
+                },
             )
+            result["limitations"] = [*LIMITATIONS, result["approval_provenance"]["limitation"]]
             try:
                 viewer = confined(root, resolve_latest_target_viewer_report(root))
                 result["viewer"] = {"status": "verified", "path": str(viewer / "index.html")}
@@ -404,22 +420,22 @@ class TargetBridge:
         return result
 
     def register_judge(self, verdict: JudgeVerdict) -> EvidenceAssessment:
+        delegated = JUDGE_EVIDENCE.get()
+        if delegated is None:
+            raise AgentBoundaryError("Judge result lacks a runtime-delegated evidence snapshot")
         current = self.read_evidence()
-        if (
-            JUDGE_EVIDENCE.get() != verdict.evidence_id
-            or current["evidence_id"] != verdict.evidence_id
-        ):
-            raise AgentBoundaryError(
-                "Judge result lacks the delegated evidence identity or is stale"
-            )
-        if verdict.request_identity != current["request_identity"] or set(
-            verdict.evidence_refs
-        ) != set(current["evidence_refs"]):
-            raise AgentBoundaryError("Judge result does not bind all current evidence and request")
+        binding = EvidenceBinding.model_validate(
+            {name: current[name] for name in EvidenceBinding.model_fields}
+        )
+        if delegated != binding:
+            raise AgentBoundaryError("Judge result is stale or outside its delegated snapshot")
         if verdict.verdict == "ready-to-ask" and current["status"] != "awaiting-human-approval":
             raise AgentBoundaryError("No pending scientific question to ask")
         assessment = EvidenceAssessment(
-            **verdict.model_dump(), assessment_id=f"judge-{uuid4().hex}"
+            **verdict.model_dump(),
+            **binding.model_dump(),
+            assessment_id=f"judge-{uuid4().hex}",
+            source_role="evidence-judge",
         )
         self.store.save_assessment(self.thread, assessment)
         return assessment
@@ -610,8 +626,12 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                     },
                 )
         evidence = bridge.read_evidence(run_id)
-        if role == "judge" and evidence["evidence_id"] != JUDGE_EVIDENCE.get():
-            raise AgentBoundaryError("Judge may read only its delegated evidence snapshot")
+        if role == "judge":
+            binding = EvidenceBinding.model_validate(
+                {name: evidence[name] for name in EvidenceBinding.model_fields}
+            )
+            if binding != JUDGE_EVIDENCE.get():
+                raise AgentBoundaryError("Judge may read only its delegated evidence snapshot")
         return bridge.store.offload(bridge.thread, evidence)
 
     async def decision_tool(assessment_id: str, option_id: str) -> str:

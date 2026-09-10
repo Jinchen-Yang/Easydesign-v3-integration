@@ -18,7 +18,13 @@ from deepagents.profiles import (
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, ToolMessage
 
-from .contracts import AgentBoundaryError, JudgeVerdict, TargetAssessment, TargetTask
+from .contracts import (
+    AgentBoundaryError,
+    EvidenceBinding,
+    JudgeVerdict,
+    TargetAssessment,
+    TargetTask,
+)
 from .models import ModelConfig
 from .session_store import compact, confined, identity
 from .tools import JUDGE_EVIDENCE, TargetBridge, build_tools
@@ -51,6 +57,11 @@ If the user has no preferred chain, ask which chain they want in a final message
 If the user explicitly requested a chain, use the actual matching eligible option. Only a trusted
 evidence-judge assessment_id with verdict ready-to-ask may be passed to apply_target_decision.
 The runtime displays a real human approval card. Never invent an assessment ID or human approval.
+When the preferred chain is already explicit, confirmation MUST use that runtime card: first read
+the pending evidence, delegate evidence-judge, then call apply_target_decision. Do not finish with
+a prose confirmation question or wait for a chat reply before these calls. The tool interrupts
+before applying anything; requesting the card is not approval. Target recommendations are advisory
+and cannot replace this Judge-to-card sequence.
 After approval, use get_job_status and read_target_evidence.
 Then delegate a final evidence-judge assessment.
 Report the verified target bundle, mapping/provenance, identity limitations and viewer reference.
@@ -59,6 +70,10 @@ A worker failure is not a negative scientific result.
 No Stage 02 onward, site/binder design, storage migration, Workbench or Figure 2 work is available.
 Only read files explicitly referenced by tools; do not call shell or write files.
 Keep your final report concise and in the user's language. Retain all structural-only limitations.
+The research goal is immutable. Treat the current user message as a clarification within that goal,
+not its replacement; previous conversation messages remain context, not new scientific evidence.
+For completed targets, approval lineage is outside the Judge snapshot. Do not ask the final Judge
+to certify human authority or infer approval history from selected_chain.
 """
 
 
@@ -69,7 +84,7 @@ def skill_root() -> Path:
 def fingerprint(config: ModelConfig) -> str:
     return identity(
         {
-            "contract": "phase1-1",
+            "contract": "phase1.1-1",
             "models": config.model_dump(mode="json"),
             "skills": {
                 name: (skill_root() / name / "SKILL.md").read_text() for name in SKILLS.values()
@@ -77,6 +92,8 @@ def fingerprint(config: ModelConfig) -> str:
             "harness": Path(__file__).read_text(),
             "contracts": Path(__file__).with_name("contracts.py").read_text(),
             "tools": Path(__file__).with_name("tools.py").read_text(),
+            "session_store": Path(__file__).with_name("session_store.py").read_text(),
+            "cli": Path(__file__).with_name("cli.py").read_text(),
             "versions": {
                 name: metadata.version(name)
                 for name in (
@@ -103,8 +120,18 @@ def parse_assessment(text: str) -> Any:
 class RoleBoundary(AgentMiddleware[Any, Any, Any]):
     """Schema filtering plus execution checks. Role provenance is a closure, not a model field."""
 
-    def __init__(self, bridge: TargetBridge, role: str, config: ModelConfig, goal: str) -> None:
+    def __init__(
+        self,
+        bridge: TargetBridge,
+        role: str,
+        config: ModelConfig,
+        goal: str,
+        current_user_message: str | None = None,
+        execution_id: str | None = None,
+    ) -> None:
         self.bridge, self.role, self.config, self.goal = bridge, role, config, goal
+        self.current_user_message = current_user_message or goal
+        self.execution_id = execution_id
         self.allowed = ALLOWED[role]
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
@@ -117,8 +144,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         )
         if chars > self.config.max_input_chars:
             raise AgentBoundaryError("Model context budget exceeded; worker remains detached")
+        if self.execution_id is None:
+            raise AgentBoundaryError("Model call requires a persisted agent execution")
         self.bridge.store.reserve_model_call(
-            self.bridge.thread, self.role, self.config.max_model_calls
+            self.bridge.thread, self.role, self.config.max_model_calls, self.execution_id
         )
         return await handler(request.override(tools=available))
 
@@ -161,6 +190,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             task = TargetTask(
                 question=description,
                 user_goal=self.goal,
+                current_user_message=self.current_user_message,
                 project_id=self.bridge.project_id,
                 run_id=None if evidence is None else evidence["run_id"],
                 evidence_id=None if evidence is None else evidence["evidence_id"],
@@ -168,7 +198,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
             payload = task.model_dump(mode="json")
             if evidence is not None:
-                token = JUDGE_EVIDENCE.set(evidence["evidence_id"])
+                token = JUDGE_EVIDENCE.set(
+                    EvidenceBinding.model_validate(
+                        {name: evidence[name] for name in EvidenceBinding.model_fields}
+                    )
+                )
             request = request.override(
                 tool_call={**request.tool_call, "args": {**args, "description": compact(payload)}}
             )
@@ -192,7 +226,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         parsed = parse_assessment(last.text)
         if self.role == "judge":
             result = self.bridge.register_judge(JudgeVerdict.model_validate(parsed)).model_dump(
-                mode="json"
+                mode="json", exclude={"evidence_refs", "request_identity", "source_role"}
             )
         else:
             result = TargetAssessment.model_validate(parsed).model_dump(mode="json")
@@ -205,7 +239,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
 
 
 def create_harness(
-    bridge: TargetBridge, models: dict[str, Any], config: ModelConfig, saver: Any, goal: str
+    bridge: TargetBridge,
+    models: dict[str, Any],
+    config: ModelConfig,
+    saver: Any,
+    goal: str,
+    *,
+    current_user_message: str | None = None,
+    execution_id: str | None = None,
+    technical_details: bool = False,
 ) -> Any:
     for role in ("coordinator", "target", "judge"):
         key = config.for_role(role).harness_key
@@ -242,17 +284,36 @@ def create_harness(
                 "system_prompt": prompt,
                 "tools": build_tools(bridge, role),
                 "skills": [f"/skills/{name}/"],
-                "middleware": [RoleBoundary(bridge, role, config, goal)],
+                "middleware": [
+                    RoleBoundary(bridge, role, config, goal, current_user_message, execution_id)
+                ],
                 "interrupt_on": {},
             }
         )
     return create_deep_agent(
         model=models["coordinator"],
-        system_prompt=COORDINATOR,
+        system_prompt=COORDINATOR
+        + "\nTrusted thread intent: "
+        + compact(
+            {
+                "research_goal": goal,
+                "current_user_message": current_user_message or goal,
+            }
+        )
+        + (
+            "\nTechnical details were explicitly requested; verified references may be shown."
+            if technical_details
+            else "\nUse a short plain-language final answer: outcome, selected chain, meaningful "
+            "limitations and viewer link. Do not print SHA/checksums, manifest revisions, "
+            "assessment IDs, internal job identifiers or provenance implementation fields. "
+            "When fallback_used is false, no fallback was used; do not speculate that it occurred."
+        ),
         tools=build_tools(bridge, "coordinator"),
         subagents=specialists,
         backend=backend,
         checkpointer=saver,
-        middleware=[RoleBoundary(bridge, "coordinator", config, goal)],
+        middleware=[
+            RoleBoundary(bridge, "coordinator", config, goal, current_user_message, execution_id)
+        ],
         name="easydesign-target-agent",
     )

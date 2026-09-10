@@ -8,6 +8,7 @@ import fcntl
 import json
 import os
 import pwd
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -38,6 +39,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--goal", help="Researcher's explicit local target goal")
     result.add_argument("--message", help="New user clarification after a completed/rejected turn")
     result.add_argument(
+        "--technical-details", action="store_true", help="Show diagnostic identities and references"
+    )
+    result.add_argument(
         "--stream", action="store_true", help="Emit bounded progress events to stderr"
     )
     result.add_argument("--target", type=Path, help="Local PDB/mmCIF input for a new project only")
@@ -59,28 +63,57 @@ async def run_session(
     card_id: str | None = None,
     user: str | None = None,
     new_message: str | None = None,
+    technical_details: bool = False,
     emit: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     from langgraph.types import Command
 
-    from .harness import create_harness
+    from .harness import create_harness, fingerprint
 
     store, thread = bridge.store, bridge.thread
+    goal = store.thread(thread, fingerprint(config), goal)
     if new_message is not None and (not new_message.strip() or len(new_message) > 1500):
         raise AgentBoundaryError("A follow-up must contain 1–1500 characters")
     history = store.events(thread)
-    effective_goal = next(
-        (e["payload"]["text"] for e in reversed(history) if e["kind"] == "user-followup"), goal
-    )
+    execution = store.latest_execution(thread)
     cursor = history[-1]["seq"] if history else 0
     path = confined(store.root, store.root / "agent-checkpoints.sqlite")
     for suffix in ("-wal", "-shm", "-journal"):
         confined(store.root, Path(str(path) + suffix))
     execution_config = {"configurable": {"thread_id": thread}, "recursion_limit": 100}
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
-        graph = create_harness(bridge, models, config, saver, new_message or effective_goal)
+
+        def assemble() -> Any:
+            return create_harness(
+                bridge,
+                models,
+                config,
+                saver,
+                goal,
+                current_user_message=execution["current_user_message"] if execution else goal,
+                execution_id=execution["execution_id"] if execution else None,
+                technical_details=technical_details,
+            )
+
+        def execution_input() -> dict[str, Any]:
+            assert execution is not None
+            return {
+                "messages": [
+                    {
+                        "role": "user",
+                        "id": execution["execution_id"],
+                        "content": execution["current_user_message"],
+                    }
+                ]
+            }
+
+        graph = assemble()
         state = await graph.aget_state(execution_config)
+        # The same input ID makes an intent durable even if the process stops before a checkpoint.
+        pending_input = execution is not None and not any(
+            m.id == execution["execution_id"] for m in state.values.get("messages", [])
+        )
         interrupts = [i for task in state.tasks for i in task.interrupts]
         if interrupts:
             if new_message is not None:
@@ -118,22 +151,30 @@ async def run_session(
                 "job": bridge.get_job_status(),
             }
         elif new_message is not None:
-            if state.next:
+            if state.next or pending_input:
                 raise AgentBoundaryError("Recover the unfinished turn before sending a new message")
-            store.event(thread, "user-followup", {"text": new_message})
-            inputs = {"messages": [{"role": "user", "content": new_message}]}
-        elif state.values:
-            if not state.next:
-                messages = state.values.get("messages", [])
-                return {
-                    "status": "finished",
-                    "thread": thread,
-                    "message": messages[-1].text if messages else "",
-                    "job": bridge.get_job_status(),
-                }
+            execution = store.begin_execution(thread, new_message, followup=True)
+            bridge.failpoint("after_execution_intent")
+            inputs = execution_input()
+        elif state.next:
             inputs = None  # Recover interrupted execution with the same saver/thread.
+        elif pending_input:
+            inputs = execution_input()
+        elif state.values:
+            messages = state.values.get("messages", [])
+            return {
+                "status": "finished",
+                "thread": thread,
+                "message": messages[-1].text if messages else "",
+                "job": bridge.get_job_status(),
+            }
         else:
-            inputs = {"messages": [{"role": "user", "content": goal}]}
+            execution = store.begin_execution(thread, goal)
+            bridge.failpoint("after_execution_intent")
+            inputs = execution_input()
+        if execution is None:
+            raise AgentBoundaryError("Checkpoint has no compatible persisted agent execution")
+        graph = assemble()
         async for _update in graph.astream(inputs, execution_config, stream_mode="updates"):
             if emit is not None:
                 for event in store.events(thread):
@@ -160,7 +201,43 @@ async def run_session(
         }
 
 
-def _display(value: dict[str, Any]) -> None:
+def public_text(text: str) -> str:
+    """Keep diagnostics in stored messages; ordinary display omits implementation rows."""
+    rows = [
+        line
+        for line in text.splitlines()
+        if not re.search(
+            r"\b(?:assessment_id|evidence_id|request_identity|producer_attempt|schema_version|"
+            r"fallback_used|sha256|sha-256|checksum)\b",
+            line,
+            re.IGNORECASE,
+        )
+    ]
+    result = "\n".join(rows)
+    result = re.sub(r"\b(?:judge|job)-[a-zA-Z0-9_.-]+\b", "", result)
+    return re.sub(r"\b[0-9a-f]{32,64}\b", "", result, flags=re.IGNORECASE).strip()
+
+
+def public_event(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": event["kind"],
+        **{
+            key: event["payload"][key]
+            for key in ("role", "name", "call", "verdict")
+            if key in event["payload"]
+        },
+    }
+
+
+def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
+    value = dict(value)
+    if not technical_details and value.get("status") != "failed":
+        if "message" in value:
+            value["message"] = public_text(value["message"]) or "处理完成；验证详情已保留。"
+        if "job" in value:
+            value["job"] = {k: v for k, v in value["job"].items() if k in {"status", "phase"}}
+        if "events" in value:
+            value["events"] = [public_event(e) for e in value["events"]]
     if "card" in value:
         card = DecisionCard.model_validate(value["card"])
         selected = next(o for o in card.options if o["option_id"] == card.option_id)
@@ -174,7 +251,9 @@ def _display(value: dict[str, Any]) -> None:
                     {k: o[k] for k in ("label", "description", "eligible")} for o in card.options
                 ],
                 "evidence_refs": [ref.split("#sha256=")[0] for ref in card.evidence_refs],
-                "limitations": card.limitations,
+                "limitations": card.limitations
+                if technical_details
+                else [summary for text in card.limitations if (summary := public_text(text))],
                 "action": card.action,
             },
         }
@@ -188,7 +267,13 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
     local_user = f"uid:{os.getuid()}:{pwd.getpwuid(os.getuid()).pw_name}"
 
     def emit(event: dict[str, Any]) -> None:
-        print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
+        print(
+            json.dumps(
+                event if args.technical_details else public_event(event), ensure_ascii=False
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
 
     result = await run_session(
         bridge,
@@ -199,9 +284,10 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
         card_id=args.card,
         user=local_user,
         new_message=args.message,
+        technical_details=args.technical_details,
         emit=emit if args.stream else None,
     )
-    _display(result)
+    _display(result, technical_details=args.technical_details)
     while args.interactive and result["status"] == "awaiting-human-approval":
         response = (
             (await asyncio.to_thread(input, "approve / reject (Enter to detach): ")).strip().lower()
@@ -219,9 +305,10 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
             decision=response,
             card_id=result["card"]["card_id"],
             user=local_user,
+            technical_details=args.technical_details,
             emit=emit if args.stream else None,
         )
-        _display(result)
+        _display(result, technical_details=args.technical_details)
     return 0
 
 
@@ -270,7 +357,8 @@ def main(argv: list[str] | None = None) -> int:
                         "thread": thread,
                         "events": store.events(thread),
                         "job": bridge.get_job_status(),
-                    }
+                    },
+                    technical_details=args.technical_details,
                 )
                 return 0
             # Separate CLI lifetime lock: scientific commands take the short ledger writer lock.

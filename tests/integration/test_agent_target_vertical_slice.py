@@ -116,6 +116,12 @@ async def test_live_model_target_slice(tmp_path: Path, monkeypatch: Any) -> None
         )
         pending = await run_session(bridge, config, models, goal)
         assert pending["status"] == "awaiting-human-approval", pending
+        # Probe the same deterministic finalization guard against the real live-produced gate.
+        # This consumes no additional model call and cannot convert prose into human authority.
+        attempted_finish = bridge.terminal_result("Please confirm chain A. Finished.")
+        assert attempted_finish["status"] == "incomplete-turn"
+        assert attempted_finish["scientific_state"] == "awaiting-human-approval"
+        assert not bridge.store.response(bridge.thread, pending["card"]["card_id"])
         done = await run_session(
             bridge,
             config,
@@ -144,6 +150,8 @@ async def test_live_model_target_slice(tmp_path: Path, monkeypatch: Any) -> None
             json.dumps(
                 {
                     "live": "passed",
+                    "terminal_guard_probe": attempted_finish,
+                    "final_scientific_state": done["scientific_state"],
                     "provider": config.default.provider,
                     "model": config.default.model,
                     "events": events,

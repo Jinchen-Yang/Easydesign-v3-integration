@@ -20,6 +20,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from .contracts import (
     AgentBoundaryError,
+    DecisionOutcome,
     EvidenceBinding,
     JudgeVerdict,
     TargetAssessment,
@@ -56,6 +57,8 @@ For pending chain selection: explain option differences without claiming a biolo
 If the user has no preferred chain, ask which chain they want in a final message.
 If the user explicitly requested a chain, use the actual matching eligible option. Only a trusted
 evidence-judge assessment_id with verdict ready-to-ask may be passed to apply_target_decision.
+An explicitly DISCOURAGED recommendation, including a negative/reject opinion, can also be put
+on a warning card for human revision or override; it is not permission for ordinary approval.
 The runtime displays a real human approval card. Never invent an assessment ID or human approval.
 When the preferred chain is already explicit, confirmation MUST use that runtime card: first read
 the pending evidence, delegate evidence-judge, then call apply_target_decision. Do not finish with
@@ -74,6 +77,14 @@ The research goal is immutable. Treat the current user message as a clarificatio
 not its replacement; previous conversation messages remain context, not new scientific evidence.
 For completed targets, approval lineage is outside the Judge snapshot. Do not ask the final Judge
 to certify human authority or infer approval history from selected_chain.
+The runtime card accepts APPROVE, REVISE, REJECT and explicit OVERRIDE from a real human.
+After revision-requested, delegate to target-intelligence with the trusted revision instruction,
+reuse valid upstream evidence, then obtain a fresh Judge opinion and a new card at the same gate.
+The instruction can correct a chain preference while the original research goal remains immutable.
+Do not restart the input pipeline or reuse an old assessment as a new proposal. REVISE is not
+project failure; REJECT leaves the scientific gate pending. You cannot manufacture either action.
+Scientific discouragement is an opinion, not a hard constraint: show warnings and the alternative
+on the card; only the human may explicitly override. Missing/ineligible options remain blocked.
 """
 
 
@@ -84,7 +95,7 @@ def skill_root() -> Path:
 def fingerprint(config: ModelConfig) -> str:
     return identity(
         {
-            "contract": "phase1.1-1",
+            "contract": "phase1-final-1",
             "models": config.model_dump(mode="json"),
             "skills": {
                 name: (skill_root() / name / "SKILL.md").read_text() for name in SKILLS.values()
@@ -128,10 +139,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         goal: str,
         current_user_message: str | None = None,
         execution_id: str | None = None,
+        revision: DecisionOutcome | None = None,
     ) -> None:
         self.bridge, self.role, self.config, self.goal = bridge, role, config, goal
         self.current_user_message = current_user_message or goal
         self.execution_id = execution_id
+        self.revision = revision
         self.allowed = ALLOWED[role]
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
@@ -186,18 +199,26 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             description = args.get("description", "")
             if not isinstance(description, str) or not description or len(description) > 1500:
                 raise AgentBoundaryError("Delegation must contain one bounded question")
-            evidence = self.bridge.read_evidence() if specialist == "evidence-judge" else None
+            evidence = (
+                self.bridge.read_evidence()
+                if specialist == "evidence-judge" or self.revision
+                else None
+            )
             task = TargetTask(
                 question=description,
                 user_goal=self.goal,
                 current_user_message=self.current_user_message,
+                current_revision_instruction=self.revision.human_instruction
+                if self.revision
+                else None,
+                revision_of_card_id=self.revision.card_id if self.revision else None,
                 project_id=self.bridge.project_id,
                 run_id=None if evidence is None else evidence["run_id"],
                 evidence_id=None if evidence is None else evidence["evidence_id"],
                 evidence_refs=[] if evidence is None else evidence["evidence_refs"],
             )
             payload = task.model_dump(mode="json")
-            if evidence is not None:
+            if evidence is not None and specialist == "evidence-judge":
                 token = JUDGE_EVIDENCE.set(
                     EvidenceBinding.model_validate(
                         {name: evidence[name] for name in EvidenceBinding.model_fields}
@@ -230,7 +251,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
         else:
             result = TargetAssessment.model_validate(parsed).model_dump(mode="json")
-            self.bridge.store.event(self.bridge.thread, "target-assessment", result)
+            self.bridge.store.event(
+                self.bridge.thread,
+                "target-assessment",
+                {
+                    **result,
+                    "revision_of_card_id": self.revision.card_id if self.revision else None,
+                },
+            )
         return {
             "messages": [
                 AIMessage(id=last.id, content=self.bridge.store.offload(self.bridge.thread, result))
@@ -248,6 +276,7 @@ def create_harness(
     current_user_message: str | None = None,
     execution_id: str | None = None,
     technical_details: bool = False,
+    revision: DecisionOutcome | None = None,
 ) -> Any:
     for role in ("coordinator", "target", "judge"):
         key = config.for_role(role).harness_key
@@ -285,7 +314,9 @@ def create_harness(
                 "tools": build_tools(bridge, role),
                 "skills": [f"/skills/{name}/"],
                 "middleware": [
-                    RoleBoundary(bridge, role, config, goal, current_user_message, execution_id)
+                    RoleBoundary(
+                        bridge, role, config, goal, current_user_message, execution_id, revision
+                    )
                 ],
                 "interrupt_on": {},
             }
@@ -298,6 +329,7 @@ def create_harness(
             {
                 "research_goal": goal,
                 "current_user_message": current_user_message or goal,
+                "current_revision": revision.model_dump(mode="json") if revision else None,
             }
         )
         + (
@@ -313,7 +345,9 @@ def create_harness(
         backend=backend,
         checkpointer=saver,
         middleware=[
-            RoleBoundary(bridge, "coordinator", config, goal, current_user_message, execution_id)
+            RoleBoundary(
+                bridge, "coordinator", config, goal, current_user_message, execution_id, revision
+            )
         ],
         name="easydesign-target-agent",
     )

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .contracts import AgentBoundaryError, DecisionCard, EvidenceAssessment
+from .contracts import AgentBoundaryError, DecisionCard, DecisionOutcome, EvidenceAssessment
 
 
 def compact(value: Any) -> str:
@@ -128,9 +128,21 @@ class SessionStore:
         return None if row is None else json.loads(row[0])
 
     def begin_execution(
-        self, thread: str, message: str, *, followup: bool = False
+        self,
+        thread: str,
+        message: str,
+        *,
+        followup: bool = False,
+        revision: DecisionOutcome | None = None,
+        steering_resume: bool = False,
     ) -> dict[str, Any]:
-        execution = {"execution_id": f"turn-{uuid4().hex}", "current_user_message": message}
+        execution: dict[str, Any] = {
+            "execution_id": f"turn-{uuid4().hex}",
+            "current_user_message": message,
+            "input_kind": "steering-resume" if steering_resume else "message",
+        }
+        if revision is not None:
+            execution["revision"] = revision.model_dump(mode="json")
         with self.db:
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?,?,?)",
@@ -142,6 +154,28 @@ class SessionStore:
                     (thread, "user-followup", compact({"text": message})),
                 )
         return execution
+
+    def begin_revision(self, thread: str, card_id: str, goal: str) -> dict[str, Any]:
+        intent = self.response(thread, card_id)
+        if intent is None or intent["response"] != "revise":
+            raise AgentBoundaryError("Revision requires a persisted human REVISE outcome")
+        current = self.latest_execution(thread)
+        if current and current.get("revision", {}).get("card_id") == card_id:
+            return current
+        return self.begin_execution(
+            thread,
+            current["current_user_message"] if current else goal,
+            revision=DecisionOutcome.model_validate(intent["outcome"]),
+            steering_resume=True,
+        )
+
+    def revision_for(self, thread: str, request_identity: str) -> dict[str, Any] | None:
+        for event in reversed(self.events(thread)):
+            if event["kind"] == "human-response" and event["payload"]["response"] == "revise":
+                card = self.card(thread, event["payload"]["card"])
+                if card.request_identity == request_identity:
+                    return event
+        return None
 
     def reserve_model_call(self, thread: str, role: str, maximum: int, execution_id: str) -> None:
         execution = self.latest_execution(thread)
@@ -247,15 +281,67 @@ class SessionStore:
         row = self.db.execute(
             "SELECT * FROM responses WHERE card=? AND thread=?", (card, thread)
         ).fetchone()
-        return None if row is None else dict(row)
+        if row is None:
+            return None
+        event = self.db.execute(
+            "SELECT payload FROM events WHERE thread=? AND kind='human-response' "
+            "AND json_extract(payload, '$.card')=? ORDER BY seq DESC LIMIT 1",
+            (thread, card),
+        ).fetchone()
+        if event is None:
+            raise AgentBoundaryError("Human response lacks its trusted steering provenance")
+        return {**dict(row), "outcome": json.loads(event[0])["outcome"]}
 
-    def respond(self, thread: str, card: str, response: str, user: str) -> dict[str, Any]:
-        self.card(thread, card)
-        if response not in {"approve", "reject"} or not user.strip():
-            raise AgentBoundaryError("Only an identified human's approve/reject is supported")
+    def respond(
+        self,
+        thread: str,
+        card: str,
+        response: str,
+        user: str,
+        *,
+        human_instruction: str | None = None,
+        optional_reason: str | None = None,
+        explicit_acknowledgement: str | None = None,
+    ) -> dict[str, Any]:
+        proposal = self.card(thread, card)
+        if proposal.gate_type != "target-structure":
+            raise AgentBoundaryError("Only Gate 1 is executable in Phase 1")
+        if response not in {"approve", "revise", "reject", "override"} or not user.strip():
+            raise AgentBoundaryError("A recognized, identified human action is required")
+        if response == "revise" and (not human_instruction or not human_instruction.strip()):
+            raise AgentBoundaryError("REVISE requires a non-empty human instruction")
+        if response == "override" and (
+            not explicit_acknowledgement
+            or not explicit_acknowledgement.strip()
+            or not optional_reason
+            or not optional_reason.strip()
+        ):
+            raise AgentBoundaryError(
+                "OVERRIDE requires explicit acknowledgement and a human rationale"
+            )
+        if response in {"approve", "override"}:
+            if proposal.judge_status == "BLOCKED":
+                raise AgentBoundaryError(
+                    "BLOCKED: revise the input or hard constraint; no override"
+                )
+            if response == "approve" and proposal.judge_status == "DISCOURAGED":
+                raise AgentBoundaryError("Review the warning and use explicit OVERRIDE or REVISE")
+            if response == "override" and proposal.judge_status != "DISCOURAGED":
+                raise AgentBoundaryError("OVERRIDE is only for a warned, discouraged proposal")
+        outcome = DecisionOutcome.model_validate(
+            {
+                "card_id": card,
+                "action": response.upper(),
+                "human_actor": user,
+                "human_instruction": human_instruction,
+                "optional_reason": optional_reason,
+                "explicit_acknowledgement": explicit_acknowledgement,
+                "recorded_warnings": proposal.warnings,
+            }
+        )
         previous = self.response(thread, card)
         if previous is not None:
-            if previous["response"] != response or previous["user"] != user:
+            if previous["outcome"] != outcome.model_dump(mode="json"):
                 raise AgentBoundaryError("Conflicting duplicate response")
             return previous
         with self.db:
@@ -263,7 +349,20 @@ class SessionStore:
                 "INSERT INTO responses(card,thread,response,user) VALUES(?,?,?,?)",
                 (card, thread, response, user),
             )
-        self.event(thread, "human-response", {"card": card, "response": response, "user": user})
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?, 'human-response', ?)",
+                (
+                    thread,
+                    compact(
+                        {
+                            "card": card,
+                            "response": response,
+                            "user": user,
+                            "outcome": outcome.model_dump(mode="json"),
+                        }
+                    ),
+                ),
+            )
         result = self.response(thread, card)
         assert result is not None
         return result

@@ -62,6 +62,8 @@ async def test_same_thread_followups_preserve_goal_and_renew_only_turn_budget(br
         for message in followups:
             done = await run_session(resumed, config, models, goal, new_message=message)
             assert done["status"] == "finished"
+            assert done["scientific_state"] == "succeeded"
+            assert done["job"]["status"] == "succeeded"
             assert (
                 reopened.thread(
                     bridge.thread,

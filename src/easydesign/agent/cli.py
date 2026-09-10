@@ -12,15 +12,18 @@ import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import TypeAdapter
 
-from .contracts import AgentBoundaryError, DecisionCard, Identifier
+from .contracts import AgentBoundaryError, DecisionCard, DecisionOutcome, Identifier
 from .models import ModelConfig
 from .session_store import SessionStore, confined
+
+if TYPE_CHECKING:
+    from .tools import TargetBridge
 
 
 def parser() -> argparse.ArgumentParser:
@@ -46,15 +49,22 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--target", type=Path, help="Local PDB/mmCIF input for a new project only")
     result.add_argument("--card", help="Exact card displayed by the prior process")
-    result.add_argument("--decision", choices=("approve", "reject"))
+    result.add_argument("--decision", choices=("approve", "revise", "reject", "override"))
+    result.add_argument("--instruction", help="Required trusted human instruction for REVISE")
     result.add_argument(
-        "--interactive", action="store_true", help="Read approve/reject from the local terminal"
+        "--reason", help="Optional rejection reason; required rationale for OVERRIDE"
+    )
+    result.add_argument(
+        "--acknowledgement", help="Explicit acknowledgement of displayed OVERRIDE warnings"
+    )
+    result.add_argument(
+        "--interactive", action="store_true", help="Read scientist steering from the local terminal"
     )
     return result
 
 
 async def run_session(
-    bridge: Any,
+    bridge: TargetBridge,
     config: ModelConfig,
     models: dict[str, Any],
     goal: str,
@@ -63,6 +73,9 @@ async def run_session(
     card_id: str | None = None,
     user: str | None = None,
     new_message: str | None = None,
+    human_instruction: str | None = None,
+    optional_reason: str | None = None,
+    explicit_acknowledgement: str | None = None,
     technical_details: bool = False,
     emit: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -73,6 +86,12 @@ async def run_session(
 
     store, thread = bridge.store, bridge.thread
     goal = store.thread(thread, fingerprint(config), goal)
+    if decision is None and any(
+        v is not None for v in (human_instruction, optional_reason, explicit_acknowledgement)
+    ):
+        raise AgentBoundaryError("Steering fields require an explicit decision action")
+    if decision is not None and new_message is not None:
+        raise AgentBoundaryError("Use REVISE with an instruction at the current gate")
     if new_message is not None and (not new_message.strip() or len(new_message) > 1500):
         raise AgentBoundaryError("A follow-up must contain 1–1500 characters")
     history = store.events(thread)
@@ -94,6 +113,9 @@ async def run_session(
                 current_user_message=execution["current_user_message"] if execution else goal,
                 execution_id=execution["execution_id"] if execution else None,
                 technical_details=technical_details,
+                revision=DecisionOutcome.model_validate(execution["revision"])
+                if execution and execution.get("revision")
+                else None,
             )
 
         def execution_input() -> dict[str, Any]:
@@ -111,8 +133,13 @@ async def run_session(
         graph = assemble()
         state = await graph.aget_state(execution_config)
         # The same input ID makes an intent durable even if the process stops before a checkpoint.
-        pending_input = execution is not None and not any(
-            m.id == execution["execution_id"] for m in state.values.get("messages", [])
+        # REVISE is delivered through the pending tool's Command(resume); its ToolMessage
+        # records the trusted outcome in history without inserting a user message between
+        # an AI tool call and its required tool response.
+        pending_input = (
+            execution is not None
+            and execution.get("input_kind") != "steering-resume"
+            and not any(m.id == execution["execution_id"] for m in state.values.get("messages", []))
         )
         interrupts = [i for task in state.tasks for i in task.interrupts]
         if interrupts:
@@ -129,7 +156,15 @@ async def run_session(
                     raise AgentBoundaryError(
                         "Response must bind the currently displayed card and local user"
                     )
-                store.respond(thread, card.card_id, decision, user)
+                store.respond(
+                    thread,
+                    card.card_id,
+                    decision,
+                    user,
+                    human_instruction=human_instruction,
+                    optional_reason=optional_reason,
+                    explicit_acknowledgement=explicit_acknowledgement,
+                )
                 bridge.failpoint("after_response_intent")
             intent = store.response(thread, card.card_id)
             if intent is None:
@@ -138,13 +173,30 @@ async def run_session(
                     "thread": thread,
                     "card": card.model_dump(mode="json"),
                 }
+            if intent["response"] == "revise":
+                execution = store.begin_revision(thread, card.card_id, goal)
+                bridge.failpoint("after_revision_execution_intent")
             inputs: Any = Command(resume={"card_id": card.card_id, "decision": intent["response"]})
         elif decision is not None:
             if card_id is None:
                 raise AgentBoundaryError("A response requires its card")
             prior = store.response(thread, card_id)
-            if prior is None or prior["response"] != decision or prior["user"] != user:
+            if (
+                prior is None
+                or user is None
+                or prior["response"] != decision
+                or prior["user"] != user
+            ):
                 raise AgentBoundaryError("No matching interrupted card; response rejected")
+            store.respond(
+                thread,
+                card_id,
+                decision,
+                user,
+                human_instruction=human_instruction,
+                optional_reason=optional_reason,
+                explicit_acknowledgement=explicit_acknowledgement,
+            )
             return {
                 "status": "already-delivered" if prior["delivered"] else "response-persisted",
                 "thread": thread,
@@ -153,7 +205,15 @@ async def run_session(
         elif new_message is not None:
             if state.next or pending_input:
                 raise AgentBoundaryError("Recover the unfinished turn before sending a new message")
-            execution = store.begin_execution(thread, new_message, followup=True)
+            revision = None
+            if execution and execution.get("revision"):
+                previous = DecisionOutcome.model_validate(execution["revision"])
+                if (
+                    bridge.read_evidence()["request_identity"]
+                    == store.card(thread, previous.card_id).request_identity
+                ):
+                    revision = previous
+            execution = store.begin_execution(thread, new_message, followup=True, revision=revision)
             bridge.failpoint("after_execution_intent")
             inputs = execution_input()
         elif state.next:
@@ -162,12 +222,7 @@ async def run_session(
             inputs = execution_input()
         elif state.values:
             messages = state.values.get("messages", [])
-            return {
-                "status": "finished",
-                "thread": thread,
-                "message": messages[-1].text if messages else "",
-                "job": bridge.get_job_status(),
-            }
+            return bridge.terminal_result(messages[-1].text if messages else "")
         else:
             execution = store.begin_execution(thread, goal)
             bridge.failpoint("after_execution_intent")
@@ -193,12 +248,11 @@ async def run_session(
         messages = state.values.get("messages", [])
         message = messages[-1].text if messages else ""
         store.event(thread, "assistant", {"text": message})
-        return {
-            "status": "finished",
-            "thread": thread,
-            "message": message,
-            "job": bridge.get_job_status(),
-        }
+        result = bridge.terminal_result(message)
+        store.event(
+            thread, "agent-terminal", {k: result[k] for k in ("status", "scientific_state")}
+        )
+        return result
 
 
 def public_text(text: str) -> str:
@@ -255,6 +309,15 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 if technical_details
                 else [summary for text in card.limitations if (summary := public_text(text))],
                 "action": card.action,
+                "gate_type": card.gate_type,
+                "judge_status": card.judge_status,
+                "warnings": card.warnings,
+                "recommended_alternative": card.alternative,
+                "human_actions": ["revise", "reject"]
+                if card.judge_status == "BLOCKED"
+                else ["override", "revise", "reject"]
+                if card.judge_status == "DISCOURAGED"
+                else ["approve", "revise", "reject"],
             },
         }
     print(json.dumps(value, ensure_ascii=False, indent=2), flush=True)
@@ -284,19 +347,36 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
         card_id=args.card,
         user=local_user,
         new_message=args.message,
+        human_instruction=args.instruction,
+        optional_reason=args.reason,
+        explicit_acknowledgement=args.acknowledgement,
         technical_details=args.technical_details,
         emit=emit if args.stream else None,
     )
     _display(result, technical_details=args.technical_details)
     while args.interactive and result["status"] == "awaiting-human-approval":
         response = (
-            (await asyncio.to_thread(input, "approve / reject (Enter to detach): ")).strip().lower()
+            (
+                await asyncio.to_thread(
+                    input, "approve / revise / reject / override (Enter to detach): "
+                )
+            )
+            .strip()
+            .lower()
         )
         if not response:
             break
-        if response not in {"approve", "reject"}:
-            print("Please enter approve or reject.", flush=True)
+        if response not in {"approve", "revise", "reject", "override"}:
+            print("Please enter approve, revise, reject or override.", flush=True)
             continue
+        instruction = acknowledgement = reason = None
+        if response == "revise":
+            instruction = await asyncio.to_thread(input, "Revision instruction: ")
+        if response == "override":
+            acknowledgement = await asyncio.to_thread(input, "Acknowledge the displayed warnings: ")
+            reason = await asyncio.to_thread(input, "Scientific rationale for proceeding: ")
+        if response == "reject":
+            reason = (await asyncio.to_thread(input, "Reason (optional): ")).strip() or None
         result = await run_session(
             bridge,
             config,
@@ -305,6 +385,9 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
             decision=response,
             card_id=result["card"]["card_id"],
             user=local_user,
+            human_instruction=instruction,
+            explicit_acknowledgement=acknowledgement,
+            optional_reason=reason,
             technical_details=args.technical_details,
             emit=emit if args.stream else None,
         )
@@ -331,6 +414,10 @@ def main(argv: list[str] | None = None) -> int:
             raise AgentBoundaryError(
                 "--message is supported on resume after a completed/rejected turn"
             )
+        if args.decision is None and any(
+            v is not None for v in (args.instruction, args.reason, args.acknowledgement)
+        ):
+            raise AgentBoundaryError("Steering fields require --decision")
         if args.goal and len(args.goal) > 1500:
             raise AgentBoundaryError("Please keep the target goal within 1500 characters")
         if args.operation != "start" and args.target is not None:

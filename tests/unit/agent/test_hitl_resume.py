@@ -33,7 +33,7 @@ async def test_real_saver_reopens_same_thread_and_gate(bridge: Any, decision: st
             card_id=pending["card"]["card_id"],
             user="real-test-user",
         )
-        assert result["status"] == "finished", result
+        assert result["status"] == ("finished" if decision == "approve" else "rejected"), result
         assert len(resumed_bridge._jobs()) == (2 if decision == "approve" else 1)
         duplicate = await run_session(
             resumed_bridge,

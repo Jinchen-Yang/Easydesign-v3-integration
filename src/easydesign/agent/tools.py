@@ -54,6 +54,7 @@ from .contracts import (
     AgentBoundaryError,
     ApplyDecision,
     DecisionCard,
+    DecisionOutcome,
     EmptyArguments,
     EvidenceAssessment,
     EvidenceBinding,
@@ -271,6 +272,67 @@ class TargetBridge:
         manifest.config_snapshot.verify(root)
         return root, manifest
 
+    def terminal_result(self, message: str) -> dict[str, Any]:
+        """Graph completion is not scientific completion; inspect authoritative state afresh."""
+        self.validate_project()
+        jobs = self._jobs()  # Original controller returns registered receipts newest first.
+        for candidate in jobs:
+            self._job_valid(candidate)
+        summary = resolve_project_run(self.project, required=False)
+        current = next(
+            (j for j in jobs if summary is None or j.run_id in {None, summary.run_id}), None
+        )
+        job = self._receipt(current) if current else {"status": "no-bound-job", "phase": "prepare"}
+        result = {"thread": self.thread, "job": job}
+        if summary is None:
+            if not jobs:
+                return {
+                    **result,
+                    "status": "finished",
+                    "scientific_state": "not-prepared",
+                    "message": message,
+                }
+            state = "not-prepared"
+        else:
+            evidence = self.read_evidence(summary.run_id)
+            state = evidence["status"]
+            if evidence["request_identity"] is not None:
+                # Only a delivered human rejection closes the proposal, never the science gate.
+                row = self.store.db.execute(
+                    "SELECT id FROM cards WHERE thread=? "
+                    "AND json_extract(payload, '$.request_identity')=? ORDER BY rowid DESC LIMIT 1",
+                    (self.thread, evidence["request_identity"]),
+                ).fetchone()
+                intent = self.store.response(self.thread, row[0]) if row else None
+                rejected = intent and intent["delivered"] and intent["response"] == "reject"
+                return {
+                    **result,
+                    "status": "rejected" if rejected else "incomplete-turn",
+                    "scientific_state": "awaiting-human-approval",
+                    "reason": "unresolved-scientific-gate",
+                    "message": (
+                        "Current proposal rejected; the scientific gate remains pending."
+                        if rejected
+                        else "Scientific approval is still pending. "
+                        "Request a reviewed proposal and a formal decision card."
+                    ),
+                }
+            if state == "succeeded" and not any(j.status in ACTIVE_JOB_STATUSES for j in jobs):
+                return {
+                    **result,
+                    "status": "finished",
+                    "scientific_state": state,
+                    "message": message,
+                }
+        return {
+            **result,
+            "status": "incomplete-turn",
+            "scientific_state": state,
+            "reason": "scientific-not-complete",
+            "message": "Scientific preparation is not complete. Inspect the existing job; "
+            "Agent completion cannot resolve scientific work.",
+        }
+
     @staticmethod
     def _ref(ref: ArtifactRef) -> str:
         return f"{ref.relative_path}#sha256={ref.sha256}"
@@ -442,8 +504,16 @@ class TargetBridge:
 
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
         assessment = self.store.assessment(self.thread, args.assessment_id)
-        if assessment.verdict != "ready-to-ask":
-            raise AgentBoundaryError("Evidence Judge does not support asking for this decision")
+        discouraged = (
+            assessment.recommendation is not None
+            and assessment.recommendation.status == "DISCOURAGED"
+        )
+        if assessment.verdict != "ready-to-ask" and not (
+            assessment.verdict == "reject" and discouraged
+        ):
+            raise AgentBoundaryError(
+                "Judge has not supplied a reviewable question or discouraged proposal"
+            )
         card_id = identity({"assessment": args.assessment_id, "option": args.option_id})
         existing = self.store.db.execute("SELECT id FROM cards WHERE id=?", (card_id,)).fetchone()
         if existing is not None and self.store.response(self.thread, card_id):
@@ -456,7 +526,25 @@ class TargetBridge:
             raise AgentBoundaryError("Evidence/request changed; obtain a new Judge assessment")
         option = next((o for o in current["options"] if o["option_id"] == args.option_id), None)
         if option is None or not option["eligible"]:
-            raise AgentBoundaryError("Option is missing or ineligible")
+            raise AgentBoundaryError(
+                "BLOCKED: Option is missing or ineligible; revise the input or hard constraint."
+            )
+        recommendation = assessment.recommendation
+        if recommendation and recommendation.option_id != args.option_id:
+            raise AgentBoundaryError("Judge recommendation belongs to a different option")
+        revision = self.store.revision_for(self.thread, current["request_identity"])
+        if revision is not None:
+            later = [e for e in self.store.events(self.thread) if e["seq"] > revision["seq"]]
+            if not any(
+                e["kind"] == "target-assessment"
+                and e["payload"].get("revision_of_card_id") == revision["payload"]["card"]
+                for e in later
+            ) or not any(
+                e["kind"] == "judge-assessment"
+                and e["payload"]["assessment_id"] == assessment.assessment_id
+                for e in later
+            ):
+                raise AgentBoundaryError("REVISE requires fresh owner and Judge assessments")
         card = DecisionCard(
             card_id=card_id,
             assessment_id=args.assessment_id,
@@ -469,22 +557,55 @@ class TargetBridge:
             options=current["options"],
             evidence_refs=current["evidence_refs"],
             limitations=list(dict.fromkeys([*LIMITATIONS, *assessment.limitations])),
+            judge_status=recommendation.status if recommendation else "SUPPORTED",
+            warnings=recommendation.warnings if recommendation else [],
+            alternative=recommendation.alternative if recommendation else None,
+            parent_card_id=revision["payload"]["card"] if revision else None,
+            action="Review the warning and alternative; revise, reject or explicitly override."
+            if discouraged
+            else "Review this chain choice; approve, revise or reject the proposal.",
         )
         self.store.save_card(self.thread, card)
         return card
 
     def apply_decision(self, card: DecisionCard) -> dict[str, Any]:
         with self.store.writer():
+            if self.store.card(self.thread, card.card_id) != card:
+                raise AgentBoundaryError("Decision card differs from its trusted runtime copy")
             intent = self.store.response(self.thread, card.card_id)
             if intent is None:
                 raise AgentBoundaryError("No persisted human response; model text is not authority")
-            if intent["response"] == "reject":
+            if intent["response"] in {"reject", "revise"}:
+                current = self.read_evidence(card.run_id)
+                if (
+                    current["evidence_id"] != card.evidence_id
+                    or current["request_identity"] != card.request_identity
+                ):
+                    raise AgentBoundaryError("Stale steering: evidence/request changed")
                 self.store.delivered(self.thread, card.card_id)
+                self.failpoint("after_steering_delivery")
                 return {
-                    "status": "rejected",
+                    "status": "rejected"
+                    if intent["response"] == "reject"
+                    else "revision-requested",
                     "run_id": card.run_id,
                     "scientific_request": "still-pending",
+                    "steering": intent["outcome"],
                 }
+            outcome = DecisionOutcome.model_validate(intent["outcome"])
+            if outcome.action not in {"APPROVE", "OVERRIDE"} or card.judge_status == "BLOCKED":
+                raise AgentBoundaryError("Only an admissible trusted human action can approve")
+            if card.judge_status == "DISCOURAGED" and outcome.action != "OVERRIDE":
+                raise AgentBoundaryError("Discouraged choices require explicit human override")
+            acknowledgement = (
+                "Selected by explicit human override against current "
+                "Evidence Judge recommendation. "
+                + "Full warnings, acknowledgement and human rationale are recorded in the "
+                + f"scientist-steering outcome: {identity(intent['outcome'])}; "
+                f"card: {card.card_id}."
+                if outcome.action == "OVERRIDE"
+                else "Approved through the local agent CLI"
+            )
             current_binding = self.binding()
             root, _ = self.run(card.run_id)
             for reference in card.evidence_refs:
@@ -518,6 +639,7 @@ class TargetBridge:
                     or record.selected_option_ids != (card.option_id,)
                     or record.approved_by != intent["user"]
                     or str(record.authority) != "human"
+                    or record.acknowledgement != acknowledgement
                 ):
                     raise AgentBoundaryError(
                         "Existing scientific record does not match the human response"
@@ -563,7 +685,7 @@ class TargetBridge:
                     "request_path": candidates[0],
                     "selected_option_ids": [card.option_id],
                     "approved_by": intent["user"],
-                    "acknowledgement": "Approved through the local agent CLI",
+                    "acknowledgement": acknowledgement,
                     "plan_type": request.plan_type,
                     "plan_sha256": request.plan_sha256,
                 }
@@ -640,7 +762,7 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
         card = bridge.decision_card(ApplyDecision(assessment_id=assessment_id, option_id=option_id))
         response = interrupt(card.model_dump(mode="json"))
         if not isinstance(response, dict) or set(response) != {"card_id", "decision"}:
-            raise AgentBoundaryError("Only a bound approve/reject response is accepted")
+            raise AgentBoundaryError("Only a bound scientist-steering response is accepted")
         intent = bridge.store.response(bridge.thread, card.card_id)
         if (
             intent is None

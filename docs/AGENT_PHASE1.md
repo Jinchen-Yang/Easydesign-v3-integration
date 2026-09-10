@@ -1,7 +1,9 @@
-# EasyDesign Agent：Phase 1
+# EasyDesign Agent：Phase 1 frozen
 
 `easydesign-agent` 直接调用模型 API，协调 Target Intelligence 和只读 Evidence Judge，
 并复用原来的 target preparation、manifest、DecisionRequest/Record 和 local worker。
+Scientific Approval Gates 和 Scientist Steering 的正式定义见
+[统一 v3 decision contract](V3_SCIENTIFIC_DECISION_CONTRACT.md)。
 v2 的 `easydesign` 命令继续可用。此 migration 分支只支持本地 PDB/mmCIF、review-gated、
 stop-after-target 项目；不进行远端身份检索、结构预测、site/binder 设计或 Stage 02–07。
 
@@ -107,13 +109,37 @@ easydesign-agent start my-target \
 ```bash
 easydesign-agent resume my-target --thread THREAD_ID
 easydesign-agent resume my-target --thread THREAD_ID --card CARD_ID --decision approve
-# 或 --decision reject；拒绝保留原科学请求，不生成批准 record。
+# 或 --decision reject --reason '当前提案不适合研究目标'
+# 拒绝保留原科学请求，不生成批准 record。
 ```
 
-也可加 `--interactive` 在本地终端输入 approve/reject。`approved_by` 来自操作系统用户，
-模型不能提供。只支持 approve/reject；选择变化需要重新评估并产生新卡。
-拒绝当前卡后，使用 `resume --thread THREAD_ID --message '改为准备链 B，请重新评估'`
-提出新选择；审批仍使用新卡，旧响应不会批准新动作。`--stream` 将受限进度事件输出到 stderr。
+在正式卡上可直接选择 REVISE，无需先 Reject 再把修订退化成普通聊天：
+
+```bash
+easydesign-agent resume my-target --thread THREAD_ID --card CARD_ID \
+  --decision revise --instruction '请重新评估 Chain B，并说明为什么原推荐可能不适合我的目标。'
+```
+
+指令和人类身份先持久保存；resume 会交给 Target，保留原目标和有效上游证据，重新 Judge 并出新卡。
+旧卡不会批准新 proposal，修订不会自动重跑 Input。中途退出后只需使用相同 thread 的普通 resume，
+无需重复提交 instruction。新的 card 再选择 APPROVE / REVISE / REJECT。
+
+若 Judge 对一个仍符合硬约束的选择给出 DISCOURAGED，卡会显示 warning 与推荐 alternative。
+普通 approve 被拒绝；研究者明确接受风险时可执行：
+
+```bash
+easydesign-agent resume my-target --thread THREAD_ID --card CARD_ID \
+  --decision override \
+  --acknowledgement '我已阅读卡上的风险提示，并接受这项探索性选择。' \
+  --reason '我希望检验这个仍可执行的科学假设。'
+```
+
+BLOCKED 不能 override；需先修改有关 input/assumption/constraint。人类身份来自本地操作系统，
+模型不能提供。相同卡的重复响应必须完整一致；不能用后来的 action 覆盖旧 outcome。
+也可用 `--interactive` 在终端选择四类 action 并输入所需字段。
+
+普通 `--message` 是完成或拒绝后的澄清/显式重新审阅请求，不是正式科学批准。`--stream` 将
+受限进度事件输出到 stderr。
 `status` 只读会话事件，并通过原控制器观察已绑定 job：
 
 ```bash
@@ -126,7 +152,10 @@ thread 的原始研究目标保持不变；`--message` 是当前澄清消息，�
 `--technical-details`（可与 `status`、`resume`、`--stream` 配合使用）。
 
 同一项目只使用一个写入口。旧 CLI 不遵守新 Agent 锁，因此不支持与 Agent 并发写入。
-配置、证据或请求发生漂移时停止。`reconciliation-required` 表示无法证明提交身份，
+配置、证据或请求发生漂移时停止。
+若 graph 已结束但科学 gate 仍待决，会返回 `incomplete-turn`；拒绝 proposal 则为 `rejected`，
+科学 gate 仍保留。普通聊天确认、已生成的卡或尚未应用的 human intent 不会变成 `finished`。
+可用 `--message` 明确要求重新审阅出卡；程序不自动补审批或启动下一阶段。`reconciliation-required` 表示无法证明提交身份，
 请检查报告中的旧 receipt，不能靠再次调用 prepare 重跑。Ctrl-C 只脱离 Agent 观察，
 不会停止真实科学 worker。Agent replay、科学 run/attempt 和真实 compute recovery 各自独立。
 
@@ -147,7 +176,7 @@ EASYDESIGN_AGENT_LIVE=1 EASYDESIGN_AGENT_MODEL_CONFIG="$PWD/config/llm.yaml" \
 该 smoke 只使用合成双链结构和独立测试 workspace；测试代码模拟该 fixture 的人工确认，
 不代表批准任何真实研究项目。默认每个用户轮次最多 32 次模型调用，由 Coordinator 和
 两个专家共享；HITL、进程重启与未完成轮次的恢复保留该轮预算。完成或拒绝后，新的
-`--message` 开启新预算；普通 resume 不重置预算。thread lifetime usage 仅用于遥测，
+`--message` 或正式 REVISE 开启新预算；同一 revision 的恢复和普通 resume 不重置预算。thread lifetime usage 仅用于遥测，
 不作为长会话硬上限。SDK 重试关闭，每次输出 token 受限。金额随 provider 当前定价及
 输入 token 变化，并非固定费用承诺。
 没有凭据时 live smoke 跳过并明确报告，不能据此宣布真实模型闭环通过。
@@ -158,6 +187,6 @@ EASYDESIGN_AGENT_LIVE=1 EASYDESIGN_AGENT_MODEL_CONFIG="$PWD/config/llm.yaml" \
 值，明确的 `fallback_used=false` 表示未使用 fallback；它不包含经过旧 decision service
 验证的审批来源，因此 Judge 不得由 selected chain 推断人工审批链条已独立验证。
 
-Phase 1.1 contract 更新会改变运行时 fingerprint；旧 Phase 1 thread 的 checkpoint 不做迁移，
+Phase 1 final contract 更新会改变运行时 fingerprint；旧 Phase 1 / 1.1 thread 的 checkpoint 不做迁移，
 恢复时会拒绝不兼容版本，应使用新 thread。既有 scientific job、run 和 decision record 不变。
-Phase 1.1 closure 完成后停止；不会自动启动 Phase 2。
+Phase 1 正式冻结；Gate 2–5 仅有 architecture contract，不会自动启动 Phase 2。

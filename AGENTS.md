@@ -1,5 +1,16 @@
 # EasyDesign 研究 Agent 协议
 
+## Current v3 primary architecture
+
+v3 的用户智能运行于 EasyDesign 自身的 first-class Agent Harness：Design Scientist 委派
+科学 specialist，Evidence Judge 独立审阅，真实人类通过统一 Scientific Gates 提供 steering。
+外部 Codex 不再是 v3 的概念主 runtime；Codex 开发工作必须遵循
+`docs/V3_SCIENTIFIC_DECISION_CONTRACT.md` 与当前 Phase closure/Agent 文档。
+本协议的通用科学与数据底线仍适用；下述 Codex + `easydesign-research` 操作方式仅为
+**V2 compatibility / legacy Codex-driven path**，不得据此重新定义 v3 架构。
+
+## V2 compatibility / legacy Codex-driven path
+
 本文件只定义 EasyDesign 研究 Agent 的行为。EasyDesign 在当前 clone 所在的本地 Linux GPU
 主机执行确定性工具并保存科学证据；仓库根由 `easydesign-workspace.yaml` 定位，禁止硬编码
 主机名、数据盘或 clone 绝对路径。不得调用旧 UI、远程 executor、受管队列或其他 clone 的

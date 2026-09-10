@@ -3,20 +3,23 @@
 [产品理念](docs/PRODUCT_PHILOSOPHY.md) · [开发指南](DEVELOPMENT.md) ·
 [数据安全](DATA_SAFETY.md)
 
-**v3 Phase 1 migration branch：** 新增独立的 `easydesign-agent` 入口，直接调用模型 API，
-保留下文的 v2 `easydesign` 兼容路径。首次使用请按
-[Agent 安装、模型配置与 target 闭环](docs/AGENT_PHASE1.md)准备 optional agent 环境和私有密钥。
-Phase 1 只实现 Target Intelligence、Evidence Judge 与 target preparation，不进入后续设计阶段。
+## Current v3 primary architecture
 
-EasyDesign Local 是一个由 Codex 辅助、研究者批准、在本机 GPU 上执行的蛋白设计工作台。
-公开流程是：
+v3 的主要用户智能位于 **EasyDesign 内部**：`easydesign-agent` 直接调用 Model API，
+由 Design Scientist 协调独立 specialist，通过 Evidence Judge 和科学审批 Gate 与研究者协作。
+外部 Codex 是开发工具及兼容交互入口，不是 v3 的概念主 runtime。
 
-```text
-prepare → strategize → pilot loop → scale → select
-```
+Phase 1 已冻结；Phase 2 在独立 migration 分支推进 Site/Hotspot 与 Design Specification，
+终点是 Gate 3 approved spec，不启动 pilot。当前能力、安装与配置见
+[Agent 指南](docs/AGENT_PHASE1.md)，科学权限以
+[v3 decision contract](docs/V3_SCIENTIFIC_DECISION_CONTRACT.md)为准。
+后续开发必须遵循这些 v3 contracts，不能从下文的 v2 操作示例反推 v3 架构。
 
-EasyDesign 负责确定性工具、任务执行、manifest、checksum 和不可变科学证据；Codex 负责结合
-项目状态与研究经验提出方案；位点、策略、放大和最终交付由研究者批准。
+### V2 compatibility / legacy Codex-driven path
+
+下文 `easydesign` CLI、Codex + `easydesign-research` workflow 继续作为迁移期兼容路径。
+v2 的公开流程为 `prepare → strategize → pilot loop → scale → select`；现有科学 kernel、
+worker 与数据契约继续复用。兼容能力的存在不表示 v3 Agent 已开放所有后续阶段。
 
 ## 配置一个可用模型（v3 Phase 1）
 

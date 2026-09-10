@@ -286,11 +286,15 @@ class TargetBridge:
         result = {"thread": self.thread, "job": job}
         if summary is None:
             if not jobs:
+                # This entry point is a project-bound scientific execution session. A
+                # model's prose cannot discharge that task without preparing its input.
                 return {
                     **result,
-                    "status": "finished",
+                    "status": "incomplete-turn",
                     "scientific_state": "not-prepared",
-                    "message": message,
+                    "reason": "scientific-not-started",
+                    "message": "Target preparation has not started. The supplied project input "
+                    "must be prepared before this scientific task can finish.",
                 }
             state = "not-prepared"
         else:

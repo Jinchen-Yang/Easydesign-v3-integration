@@ -5,6 +5,18 @@
 > `docs/CHARTER.md` 为准；仓库工程规则以 `docs/agent/DEVELOPMENT_AGENT.md` 为准，
 > 源码边界以 `docs/ARCHITECTURE.md` 为准。
 
+## Current v3 primary architecture
+
+当前 v3 的科学认知与主要研究交互位于 EasyDesign 内部，由 first-class Agent Harness、
+独立 specialist、Evidence Judge 与研究者共同完成。外部 Codex 负责开发并可使用兼容路径，
+不再是 v3 的概念主 runtime。知识按 specialist 职责组织；科学事实与执行仍由既有
+kernel 保证。权限、五个 Gate 与 Scientist Steering 以
+[v3 decision contract](V3_SCIENTIFIC_DECISION_CONTRACT.md)为准。
+
+后续 Codex 开发必须遵循当前 v3 contracts。以下旧范式全文保留，明确属于
+**V2 compatibility / legacy Codex-driven path**；其中“Codex 是主要交互界面”等表述
+仅说明迁移期间保留的 v2 工作方式，不代表 v3 的架构方向或新增 runtime 要求。
+
 ## 1. 我们真正要解决的问题
 
 团队原有的蛋白设计流程并不是缺少单个算法，而是缺少一种能够长期复用的研究秩序：

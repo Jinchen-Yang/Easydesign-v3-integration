@@ -1,5 +1,23 @@
 # EasyDesign Local 架构
 
+## Current v3 primary architecture
+
+v3 primary user-facing intelligence lives inside EasyDesign。`easydesign-agent` 的
+Design Scientist 通过公共 DeepAgents Harness 委派独立科学 specialist；LangGraph 只保存
+Agent execution/checkpoint/interrupt/resume，既有 scientific runtime 继续拥有真实科学状态。
+Evidence Judge 独立审阅受绑定的科学证据，研究者经统一 APPROVE/REVISE/REJECT/OVERRIDE
+作决定；模型文本不能解除科学 Gate。详见
+[v3 Scientific Decision Contract](V3_SCIENTIFIC_DECISION_CONTRACT.md)及
+[Agent 使用与实现边界](AGENT_PHASE1.md)。Phase 2 推进到 Gate 3，后续 generation 不在本轮。
+
+外部 Codex 是开发工具及迁移期兼容入口，不是 v3 的主智能 runtime。
+后续代码开发须以 v3 contracts 为架构依据；下面保留的 v2 控制入口和科学执行层说明
+不取代 v3 primary architecture。科学 kernel 不依赖 Agent framework。
+
+## V2 compatibility / legacy Codex-driven path
+
+下述产品模型描述 v2 兼容入口，以及 v3 复用的现有科学执行与数据基础。
+
 ## 产品模型
 
 ```text

@@ -16,6 +16,30 @@ class ChatConfirmationModel(ScriptedModel):
         return super().answer(messages)
 
 
+class NoPreparationModel(ScriptedModel):
+    def answer(self, messages: Any) -> AIMessage:
+        return AIMessage(content="Target preparation is finished.")
+
+
+@pytest.mark.asyncio
+async def test_no_preparation_tool_cannot_finish_a_scientific_request(bridge: Any) -> None:
+    models = {r: NoPreparationModel(role=r) for r in ("coordinator", "target", "judge")}
+    goal = "Prepare the supplied local target structure for design."
+    result = await run_session(bridge, scripted_config(), models, goal)
+    assert result["status"] == "incomplete-turn"
+    assert result["scientific_state"] == "not-prepared"
+    assert result["reason"] == "scientific-not-started"
+    assert not bridge._jobs()
+    assert "finished" not in result["message"]
+    reopened = SessionStore(bridge.project)
+    try:
+        resumed = TargetBridge(bridge.project, bridge.thread, reopened)
+        assert await run_session(resumed, scripted_config(), models, goal) == result
+        assert len([e for e in reopened.events(bridge.thread) if e["kind"] == "model-call"]) == 1
+    finally:
+        reopened.close()
+
+
 @pytest.mark.asyncio
 async def test_prose_confirmation_cannot_finish_an_authoritative_gate(
     bridge: Any, monkeypatch: Any

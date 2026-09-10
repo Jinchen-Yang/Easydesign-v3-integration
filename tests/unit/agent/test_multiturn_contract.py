@@ -147,7 +147,8 @@ async def test_followup_intent_survives_a_crash_before_checkpoint(bridge: Any) -
             bridge, config, models, "Inspect local chain A", new_message="Replace intent"
         )
     done = await run_session(bridge, config, models, "Inspect local chain A")
-    assert done["status"] == "finished"
+    assert done["status"] == "incomplete-turn"
+    assert done["scientific_state"] == "not-prepared"
     assert bridge.store.latest_execution(bridge.thread) == pending_execution
     calls = [e for e in bridge.store.events(bridge.thread) if e["kind"] == "model-call"]
     assert len(calls) == 2

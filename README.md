@@ -3,6 +3,11 @@
 [产品理念](docs/PRODUCT_PHILOSOPHY.md) · [开发指南](DEVELOPMENT.md) ·
 [数据安全](DATA_SAFETY.md)
 
+**v3 Phase 1 migration branch：** 新增独立的 `easydesign-agent` 入口，直接调用模型 API，
+保留下文的 v2 `easydesign` 兼容路径。首次使用请按
+[Agent 安装、模型配置与 target 闭环](docs/AGENT_PHASE1.md)准备 optional agent 环境和私有密钥。
+Phase 1 只实现 Target Intelligence、Evidence Judge 与 target preparation，不进入后续设计阶段。
+
 EasyDesign Local 是一个由 Codex 辅助、研究者批准、在本机 GPU 上执行的蛋白设计工作台。
 公开流程是：
 
@@ -12,6 +17,37 @@ prepare → strategize → pilot loop → scale → select
 
 EasyDesign 负责确定性工具、任务执行、manifest、checksum 和不可变科学证据；Codex 负责结合
 项目状态与研究经验提出方案；位点、策略、放大和最终交付由研究者批准。
+
+## 配置一个可用模型（v3 Phase 1）
+
+在 migration 分支按 [Agent 安装指南](docs/AGENT_PHASE1.md#安装-optional-agent-环境)
+准备独立 Agent 环境。首次使用且 `config/llm.yaml` 不存在时复制标准模板；已有文件直接编辑，
+不要覆盖：
+
+```bash
+cp -n config/llm.template.yaml config/llm.yaml
+export DEEPSEEK_API_KEY="<YOUR_KEY>"
+```
+
+模板默认使用 DeepSeek 官方 API 的 `deepseek-flash`。如需长期保存本机变量：
+
+```bash
+cp -n .env.example .env.local
+chmod 600 .env.local
+# 用编辑器填写 .env.local 中的 key。
+```
+
+程序不会自动读取 `.env.local`，启动前手动加载：
+
+```bash
+set -a
+source .env.local
+set +a
+```
+
+不要把真实 key 提交到 Git。使用 OpenAI 或 Anthropic 时，按
+[模型配置](docs/AGENT_PHASE1.md#配置一个可用模型)同时修改 `provider`、`model` 和 `secret_env`，
+不要只替换环境变量名。Phase 1 的启动、人工确认、进程恢复及可选 live smoke 也见该指南。
 
 ## 从全新机器开始
 

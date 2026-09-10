@@ -19,7 +19,10 @@ def test_uv_files_and_local_distribution_identity_are_committed() -> None:
         project = tomllib.load(handle)["project"]
     assert project["name"] == "easydesign-local"
     assert project["version"] == "0.1.0.dev1"
-    assert project["scripts"] == {"easydesign": "easydesign.cli:main"}
+    assert project["scripts"] == {
+        "easydesign": "easydesign.cli:main",
+        "easydesign-agent": "easydesign.agent.cli:main",
+    }
     assert project["requires-python"] == ">=3.11,<3.13"
     assert project["classifiers"][-1] == "Private :: Do Not Upload"
 

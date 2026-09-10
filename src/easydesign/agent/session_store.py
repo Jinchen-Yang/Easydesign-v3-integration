@@ -1,0 +1,248 @@
+"""Agent history and a minimal command/response ledger, never a compute scheduler."""
+
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from .contracts import AgentBoundaryError, DecisionCard, EvidenceAssessment
+
+
+def compact(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def identity(value: Any) -> str:
+    return hashlib.sha256(compact(value).encode()).hexdigest()
+
+
+def confined(root: Path, path: Path) -> Path:
+    """Reject links even when their current destination is inside the root."""
+    root = root.absolute()
+    path = path.absolute()
+    if not path.is_relative_to(root) or ".." in path.parts:
+        raise AgentBoundaryError("Path escapes its bound root")
+    for parent in (path, *path.parents):
+        if parent.is_symlink():
+            raise AgentBoundaryError("Symlinks are not accepted at the agent boundary")
+        if parent == root:
+            break
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise AgentBoundaryError("Resolved path escapes its bound root")
+    return path
+
+
+class SessionStore:
+    def __init__(self, project_root: Path) -> None:
+        self.project_root = project_root
+        self.root = confined(project_root, project_root / "metadata")
+        self.root.mkdir(mode=0o700, exist_ok=True)
+        self.path = confined(self.root, self.root / "agent.sqlite")
+        # Check SQLite's adjacent mutable files before opening an existing session.
+        for suffix in ("-wal", "-shm", "-journal"):
+            confined(self.root, Path(str(self.path) + suffix))
+        self.db = sqlite3.connect(self.path, timeout=5)
+        os.chmod(self.path, 0o600)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA synchronous=FULL")
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS threads (
+                id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, goal TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS events (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT, thread TEXT NOT NULL,
+                kind TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS commands (
+                id TEXT PRIMARY KEY, thread TEXT NOT NULL, operation TEXT NOT NULL,
+                binding TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS assessments (
+                id TEXT PRIMARY KEY, thread TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS cards (
+                id TEXT PRIMARY KEY, thread TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS responses (
+                card TEXT PRIMARY KEY, thread TEXT NOT NULL, response TEXT NOT NULL,
+                user TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);
+        """)
+        self.db.commit()
+
+    def close(self) -> None:
+        self.db.close()
+
+    @contextmanager
+    def writer(self) -> Iterator[None]:
+        path = confined(self.root, self.root / "agent-writer.lock")
+        with path.open("a") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise AgentBoundaryError("Another agent writer owns this project") from error
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def thread(self, thread_id: str, fingerprint: str, goal: str | None = None) -> str:
+        row = self.db.execute("SELECT * FROM threads WHERE id=?", (thread_id,)).fetchone()
+        if row is not None:
+            if row["fingerprint"] != fingerprint:
+                raise AgentBoundaryError("Incompatible harness/model/skills; create a new thread")
+            if goal is not None and goal != row["goal"]:
+                raise AgentBoundaryError("Thread goal is immutable; use a new thread")
+            return str(row["goal"])
+        if not goal:
+            raise AgentBoundaryError("Unknown thread; start it with an explicit user goal")
+        with self.db:
+            self.db.execute("INSERT INTO threads VALUES(?,?,?)", (thread_id, fingerprint, goal))
+        self.event(thread_id, "user", {"text": goal})
+        return goal
+
+    def event(self, thread: str, kind: str, payload: Any) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?,?,?)",
+                (thread, kind, compact(payload)),
+            )
+
+    def events(self, thread: str) -> list[dict[str, Any]]:
+        return [
+            {"seq": row["seq"], "kind": row["kind"], "payload": json.loads(row["payload"])}
+            for row in self.db.execute(
+                "SELECT * FROM events WHERE thread=? ORDER BY seq", (thread,)
+            )
+        ]
+
+    def reserve_model_call(self, thread: str, role: str, maximum: int) -> None:
+        with self.db:
+            count = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? AND kind='model-call'", (thread,)
+            ).fetchone()[0]
+            if count >= maximum:
+                raise AgentBoundaryError(
+                    "Session model-call budget exhausted; worker remains detached"
+                )
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?, 'model-call', ?)",
+                (thread, compact({"role": role, "call": count + 1})),
+            )
+
+    def command(self, command_id: str) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT * FROM commands WHERE id=?", (command_id,)).fetchone()
+        if row is None:
+            return None
+        return {
+            **dict(row),
+            "binding": json.loads(row["binding"]),
+            "payload": json.loads(row["payload"]),
+        }
+
+    def prepare(
+        self, thread: str, operation: str, binding: dict[str, Any], **payload: Any
+    ) -> dict[str, Any]:
+        command_id = identity(
+            {"project": str(self.project_root), "operation": operation, **binding}
+        )
+        with self.db:
+            self.db.execute(
+                "INSERT OR IGNORE INTO commands VALUES(?,?,?,?,?,?)",
+                (command_id, thread, operation, compact(binding), "prepared", compact(payload)),
+            )
+        result = self.command(command_id)
+        assert result is not None
+        return result
+
+    def update(self, command_id: str, state: str, **values: Any) -> dict[str, Any]:
+        current = self.command(command_id)
+        if current is None:
+            raise AgentBoundaryError("Unknown command")
+        payload = {**current["payload"], **values}
+        with self.db:
+            self.db.execute(
+                "UPDATE commands SET state=?, payload=? WHERE id=?",
+                (state, compact(payload), command_id),
+            )
+        return {**current, "state": state, "payload": payload}
+
+    def save_assessment(self, thread: str, assessment: EvidenceAssessment) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO assessments VALUES(?,?,?)",
+                (assessment.assessment_id, thread, assessment.model_dump_json()),
+            )
+        self.event(thread, "judge-assessment", assessment.model_dump(mode="json"))
+
+    def assessment(self, thread: str, assessment_id: str) -> EvidenceAssessment:
+        row = self.db.execute(
+            "SELECT payload FROM assessments WHERE id=? AND thread=?", (assessment_id, thread)
+        ).fetchone()
+        if row is None:
+            raise AgentBoundaryError("No trusted Evidence Judge result for this thread")
+        return EvidenceAssessment.model_validate_json(row[0])
+
+    def save_card(self, thread: str, card: DecisionCard) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT OR IGNORE INTO cards VALUES(?,?,?)",
+                (card.card_id, thread, card.model_dump_json()),
+            )
+
+    def card(self, thread: str, card_id: str) -> DecisionCard:
+        row = self.db.execute(
+            "SELECT payload FROM cards WHERE id=? AND thread=?", (card_id, thread)
+        ).fetchone()
+        if row is None:
+            raise AgentBoundaryError("Card does not belong to this thread")
+        return DecisionCard.model_validate_json(row[0])
+
+    def response(self, thread: str, card: str) -> dict[str, Any] | None:
+        row = self.db.execute(
+            "SELECT * FROM responses WHERE card=? AND thread=?", (card, thread)
+        ).fetchone()
+        return None if row is None else dict(row)
+
+    def respond(self, thread: str, card: str, response: str, user: str) -> dict[str, Any]:
+        self.card(thread, card)
+        if response not in {"approve", "reject"} or not user.strip():
+            raise AgentBoundaryError("Only an identified human's approve/reject is supported")
+        previous = self.response(thread, card)
+        if previous is not None:
+            if previous["response"] != response or previous["user"] != user:
+                raise AgentBoundaryError("Conflicting duplicate response")
+            return previous
+        with self.db:
+            self.db.execute(
+                "INSERT INTO responses(card,thread,response,user) VALUES(?,?,?,?)",
+                (card, thread, response, user),
+            )
+        self.event(thread, "human-response", {"card": card, "response": response, "user": user})
+        result = self.response(thread, card)
+        assert result is not None
+        return result
+
+    def delivered(self, thread: str, card: str) -> None:
+        with self.db:
+            self.db.execute(
+                "UPDATE responses SET delivered=1 WHERE card=? AND thread=?", (card, thread)
+            )
+
+    def offload(self, thread: str, value: Any, limit: int = 8192) -> str:
+        encoded = compact(value)
+        if len(encoded.encode()) <= limit:
+            return encoded
+        # Only bounded summaries/interpretations, never scientific structure bytes.
+        if len(encoded.encode()) > 256000:
+            raise AgentBoundaryError("Output too large; narrow or paginate the evidence query")
+        directory = confined(self.root, self.root / "agent-work" / thread)
+        directory.mkdir(parents=True, exist_ok=True)
+        name = f"result-{uuid4().hex}.json"
+        path = directory / name
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(encoded)
+        return compact({"status": "offloaded", "ref": f"/{name}", "bytes": len(encoded.encode())})

@@ -1,0 +1,24 @@
+# Copy only when config/llm.yaml does not exist. Never put an API key in this YAML.
+# DeepSeek's official current alias, verified 2026-09-10 (aliases can change upstream).
+default:
+  provider: deepseek
+  model: deepseek-flash
+  secret_env: DEEPSEEK_API_KEY
+  timeout_seconds: 90
+  max_output_tokens: 2048
+
+# All three roles use default unless an explicit role override is provided.
+roles: {}
+max_model_calls: 32
+max_input_chars: 60000
+
+# To use a different provider, change provider, model AND secret_env together.
+# Supported providers in Phase 1: deepseek, openai, anthropic.
+# Example role override (replace the model placeholder with your enabled model):
+# roles:
+#   judge:
+#     provider: anthropic
+#     model: YOUR_ENABLED_ANTHROPIC_MODEL
+#     secret_env: ANTHROPIC_API_KEY
+#     timeout_seconds: 90
+#     max_output_tokens: 2048

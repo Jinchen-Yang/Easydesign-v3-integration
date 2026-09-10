@@ -1,0 +1,60 @@
+from typing import Any
+
+import pytest
+
+from easydesign.agent.contracts import AgentBoundaryError
+from easydesign.core import load_model
+from easydesign.orchestration.decisions import load_pending_decision
+from easydesign.stages.s01_target_preparation.models import TargetBundle
+from tests.agent_support import judge_card, terminal
+
+
+def test_real_gate_then_old_bundle_and_mapping(bridge: Any) -> None:
+    bridge.prepare_target()
+    terminal(bridge)
+    initial = bridge.read_evidence()
+    assert initial["status"] == "awaiting-human-approval"
+    assert [c["auth_chain"] for c in initial["chains"]] == ["A", "B"]
+    assert "bundle" not in initial
+    card = judge_card(bridge)
+    bridge.store.respond(bridge.thread, card.card_id, "approve", "test-human")
+    bridge.apply_decision(card)
+    terminal(bridge)
+    result = bridge.read_evidence()
+    assert result["run_id"] == initial["run_id"]
+    assert result["bundle"]["producer_attempt"] == "attempt-0002"
+    assert result["identity"]["auth_chain"] == "A"
+    assert result["mapping"]["entries"] == 6
+    assert result["viewer"]["status"] == "verified", result["viewer"]
+    root, _ = bridge.run()
+    ref = next(r for r in result["evidence_refs"] if "target-bundle.json#" in r)
+    bundle = load_model(root / ref.split("#")[0], TargetBundle)
+    assert result["bundle"]["sequence_sha256"] == bundle.sequence_sha256
+    assert result["mapping"]["sha256"] == bundle.residue_mapping.sha256
+    assert not (root / "02-hotspot-discovery").exists()
+
+
+def test_tampered_frozen_evidence_is_rejected(bridge: Any) -> None:
+    bridge.prepare_target()
+    terminal(bridge)
+    root, _ = bridge.run()
+    from easydesign.orchestration.workspace import load_resolved_run_config
+
+    resolved, _ = load_resolved_run_config(root)
+    path = resolved.input_snapshot.verify(root)
+    path.write_bytes(path.read_bytes() + b"REMARK tampered fixture\n")
+    with pytest.raises(Exception, match="SHA|大小|Artifact"):
+        bridge.read_evidence()
+
+
+def test_reject_does_not_write_scientific_record(bridge: Any) -> None:
+    bridge.prepare_target()
+    terminal(bridge)
+    card = judge_card(bridge)
+    with pytest.raises(AgentBoundaryError, match="human"):
+        bridge.apply_decision(card)
+    bridge.store.respond(bridge.thread, card.card_id, "reject", "test-human")
+    assert bridge.apply_decision(card)["status"] == "rejected"
+    root, _ = bridge.run()
+    request, path = load_pending_decision(root)
+    assert not (path.parent / f"record.v{request.revision:04d}.json").exists()

@@ -170,8 +170,11 @@ def main() -> int:
         errors.append("distribution 必须是 easydesign-local")
     if project.get("version") != "0.1.0.dev1":
         errors.append("local 产品初始版本必须是 0.1.0.dev1")
-    if project.get("scripts") != {"easydesign": "easydesign.cli:main"}:
-        errors.append("终端入口必须且只能是 easydesign")
+    if project.get("scripts") != {
+        "easydesign": "easydesign.cli:main",
+        "easydesign-agent": "easydesign.agent.cli:main",
+    }:
+        errors.append("终端入口必须保留 easydesign，并提供独立 easydesign-agent")
     if "ui" in project.get("optional-dependencies", {}):
         errors.append("local 产品禁止 FastAPI/Uvicorn UI extra")
     package_data = document.get("tool", {}).get("setuptools", {}).get("package-data", {})

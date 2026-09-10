@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
-        prog="easydesign-agent", description="EasyDesign target agent (Phase 1)"
+        prog="easydesign-agent", description="EasyDesign scientific Agent (v3)"
     )
     result.add_argument("operation", choices=("start", "resume", "status"))
     result.add_argument("project", type=Path)
@@ -46,6 +46,17 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--stream", action="store_true", help="Emit bounded progress events to stderr"
+    )
+    result.add_argument(
+        "--through",
+        choices=("target", "site"),
+        default="site",
+        help="Scientific scope; target retains the Phase 1 compatibility slice",
+    )
+    result.add_argument(
+        "--biology-context",
+        type=Path,
+        help="Explicit local biology/topology context; not writable by a model",
     )
     result.add_argument("--target", type=Path, help="Local PDB/mmCIF input for a new project only")
     result.add_argument("--card", help="Exact card displayed by the prior process")
@@ -145,7 +156,7 @@ async def run_session(
         if interrupts:
             if new_message is not None:
                 raise AgentBoundaryError(
-                    "Reject the current card before proposing a changed selection"
+                    "Use REVISE with a trusted instruction at the current card"
                 )
             if len(interrupts) != 1:
                 raise AgentBoundaryError("Only one scientific decision at a time is supported")
@@ -208,10 +219,7 @@ async def run_session(
             revision = None
             if execution and execution.get("revision"):
                 previous = DecisionOutcome.model_validate(execution["revision"])
-                if (
-                    bridge.read_evidence()["request_identity"]
-                    == store.card(thread, previous.card_id).request_identity
-                ):
+                if bridge.revision_is_current(previous):
                     revision = previous
             execution = store.begin_execution(thread, new_message, followup=True, revision=revision)
             bridge.failpoint("after_execution_intent")
@@ -310,6 +318,7 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 else [summary for text in card.limitations if (summary := public_text(text))],
                 "action": card.action,
                 "gate_type": card.gate_type,
+                "scientific_summary": card.scientific_summary,
                 "judge_status": card.judge_status,
                 "warnings": card.warnings,
                 "recommended_alternative": card.alternative,
@@ -406,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
         from .tools import TargetBridge
 
         config = ModelConfig.model_validate(yaml.safe_load(args.models.read_text()))
+        if args.operation == "status" and args.biology_context is not None:
+            raise AgentBoundaryError("status cannot import biology context")
         if args.operation != "start" and args.thread is None:
             raise AgentBoundaryError("resume/status requires --thread")
         if args.operation == "start" and not args.goal:
@@ -437,7 +448,15 @@ def main(argv: list[str] | None = None) -> int:
         store = SessionStore(root)
         try:
             goal = store.thread(thread, fingerprint(config), args.goal)
-            bridge = TargetBridge(root, thread, store)
+            if args.through == "target":
+                bridge: TargetBridge = TargetBridge(root, thread, store)
+                if args.biology_context is not None:
+                    raise AgentBoundaryError("Biology context belongs to the Site scope")
+            else:
+                from .phase2 import Phase2Bridge
+
+                phase2 = Phase2Bridge(root, thread, store, through=args.through)
+                bridge = phase2
             if args.operation == "status":
                 _display(
                     {
@@ -454,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
                     fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError as error:
                     raise AgentBoundaryError("Another agent CLI owns this project") from error
+                if args.biology_context is not None:
+                    phase2.import_biology(args.biology_context.resolve(strict=True))
                 return asyncio.run(_drive(args, bridge, config, goal))
         finally:
             store.close()

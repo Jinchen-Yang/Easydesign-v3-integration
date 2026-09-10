@@ -304,8 +304,8 @@ class SessionStore:
         explicit_acknowledgement: str | None = None,
     ) -> dict[str, Any]:
         proposal = self.card(thread, card)
-        if proposal.gate_type != "target-structure":
-            raise AgentBoundaryError("Only Gate 1 is executable in Phase 1")
+        if proposal.gate_type not in {"target-structure", "site-hotspot", "design-specification"}:
+            raise AgentBoundaryError("Only Gates 1–3 are executable in Phase 2")
         if response not in {"approve", "revise", "reject", "override"} or not user.strip():
             raise AgentBoundaryError("A recognized, identified human action is required")
         if response == "revise" and (not human_instruction or not human_instruction.strip()):

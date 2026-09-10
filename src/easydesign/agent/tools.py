@@ -337,6 +337,12 @@ class TargetBridge:
             "Agent completion cannot resolve scientific work.",
         }
 
+    def revision_is_current(self, outcome: DecisionOutcome) -> bool:
+        return bool(
+            self.read_evidence()["request_identity"]
+            == self.store.card(self.thread, outcome.card_id).request_identity
+        )
+
     @staticmethod
     def _ref(ref: ArtifactRef) -> str:
         return f"{ref.relative_path}#sha256={ref.sha256}"
@@ -485,11 +491,14 @@ class TargetBridge:
         )
         return result
 
+    def judge_evidence(self) -> dict[str, Any]:
+        return self.read_evidence()
+
     def register_judge(self, verdict: JudgeVerdict) -> EvidenceAssessment:
         delegated = JUDGE_EVIDENCE.get()
         if delegated is None:
             raise AgentBoundaryError("Judge result lacks a runtime-delegated evidence snapshot")
-        current = self.read_evidence()
+        current = self.judge_evidence()
         binding = EvidenceBinding.model_validate(
             {name: current[name] for name in EvidenceBinding.model_fields}
         )

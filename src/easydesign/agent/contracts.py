@@ -98,7 +98,7 @@ class EmptyArguments(StrictDTO):
 
 
 class DecisionProposal(StrictDTO):
-    """Common scientific decision semantics; only Gate 1 has a runtime adapter today."""
+    """Common scientific decision semantics shared by domain-specific adapters."""
 
     gate_type: GateType = "target-structure"
     owner_specialist: str = "target-intelligence"
@@ -120,6 +120,7 @@ class DecisionCard(DecisionProposal):
     options: list[dict[str, object]]
     evidence_refs: list[str]
     limitations: list[str]
+    scientific_summary: dict[str, object] = Field(default_factory=dict)
     action: str = "Approve the selected chain and resume target preparation in the same run."
 
 

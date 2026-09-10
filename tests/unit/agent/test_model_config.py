@@ -17,7 +17,7 @@ def test_explicit_factory_and_no_secret_in_config(provider: str, monkeypatch: An
     config = ModelConfig(
         default=LLMConfig(provider=provider, model="test-model", secret_env="TEST_KEY")
     )
-    assert set(create_models(config)) == {"coordinator", "target", "judge"}
+    assert set(create_models(config)) == {"coordinator", "target", "site", "judge"}
     assert "test-secret" not in config.model_dump_json()
     assert calls[0][1]["max_retries"] == 0
     if provider == "deepseek":

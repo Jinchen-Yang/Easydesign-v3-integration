@@ -35,6 +35,8 @@ def test_cli_entrypoint_restores_in_a_new_process(tmp_path: Path, monkeypatch: A
                 "-c",
                 launcher,
                 *arguments,
+                "--through",
+                "target",
                 "--models",
                 str(config),
                 "--thread",

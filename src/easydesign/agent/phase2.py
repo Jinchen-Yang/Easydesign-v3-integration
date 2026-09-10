@@ -1,0 +1,840 @@
+"""Target -> Site -> Design adapters; scientific jobs and approvals stay in existing services."""
+
+from __future__ import annotations
+
+import contextvars
+import json
+from dataclasses import replace
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml  # type: ignore[import-untyped]
+
+from easydesign.core import (
+    ArtifactRef,
+    StageManifest,
+    canonical_model_sha256,
+    load_model,
+)
+from easydesign.orchestration.config import LoadedStructureRunConfig, load_run_config
+from easydesign.orchestration.hotspots import export_hotspot_review
+from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES, LocalStepJob
+from easydesign.orchestration.local_project import project_config_path, resolve_project_run
+from easydesign.orchestration.research import (
+    _artifact,
+    _latest_foundation,
+    _runs,
+    site_approve,
+    site_propose,
+)
+from easydesign.orchestration.workspace import load_resolved_run_config
+from easydesign.stages.s01_target_preparation.models import TargetBundle
+from easydesign.stages.s02_hotspot_discovery.models import HotspotReviewRequest, HotspotsFile
+
+from .contracts import (
+    AgentBoundaryError,
+    ApplyDecision,
+    DecisionCard,
+    DecisionOutcome,
+    EvidenceBinding,
+    ReconciliationRequired,
+)
+from .session_store import SessionStore, compact, confined, identity
+from .site_contracts import BiologyContext, SiteIntent, SiteQuery
+from .site_evidence import analyze_site_facts, evaluate_site, summarize_site_facts
+from .tools import STAGE, TargetBridge, scientific_environment
+
+SITE_EVIDENCE: contextvars.ContextVar[EvidenceBinding | None] = contextvars.ContextVar(
+    "site_evidence", default=None
+)
+
+
+class Phase2Bridge(TargetBridge):
+    is_phase2 = True
+
+    def __init__(
+        self,
+        project: Path,
+        thread: str,
+        store: SessionStore,
+        *,
+        through: Literal["site", "design"] = "site",
+    ) -> None:
+        super().__init__(project, thread, store)
+        self.through = through
+        prior = next((e for e in store.events(thread) if e["kind"] == "scientific-scope"), None)
+        if prior and prior["payload"]["through"] != through:
+            raise AgentBoundaryError(
+                "Thread scientific scope is immutable; create a new thread to extend it"
+            )
+        if prior is None:
+            store.event(thread, "scientific-scope", {"through": through})
+
+    def validate_project(self) -> LoadedStructureRunConfig:
+        # Original site_propose advances CONFIG_CURRENT to a stop-after-site revision.
+        # Keep Target evidence bound to the original preparation config, while verifying
+        # that the only permitted downstream changes are site config and stop boundary.
+        path = confined(self.project, project_config_path(self.project))
+        loaded = load_run_config(path, source_base_dir=self.project)
+        if not isinstance(loaded, LoadedStructureRunConfig):
+            raise AgentBoundaryError("Phase 2 requires the approved local structure source")
+        if loaded.config.workflow.stop_after_stage == 1:
+            return super().validate_project()
+        if loaded.config.workflow.stop_after_stage != 2:
+            raise AgentBoundaryError("Scientific execution is outside the Phase 2 boundary")
+        targets = []
+        for run in _runs(self.project):
+            resolved, _ = load_resolved_run_config(run.path)
+            if resolved.stop_after_stage == 1:
+                targets.append(resolved.user_config)
+        if not targets:
+            raise AgentBoundaryError("No verified target preparation config precedes this site")
+        target = targets[-1]
+        comparable = loaded.config.model_copy(
+            update={
+                "workflow": loaded.config.workflow.model_copy(update={"stop_after_stage": 1}),
+                "stage02": target.stage02,
+            }
+        )
+        if canonical_model_sha256(comparable) != canonical_model_sha256(target):
+            raise AgentBoundaryError("Upstream target/project configuration changed")
+        confined(self.project, loaded.source_path)
+        return replace(loaded, config=target)
+
+    def latest(self, kind: str) -> dict[str, Any] | None:
+        row = self.store.db.execute(
+            "SELECT seq,thread,payload FROM events WHERE kind=? ORDER BY seq DESC LIMIT 1", (kind,)
+        ).fetchone()
+        return (
+            None
+            if row is None
+            else {"seq": row["seq"], "thread": row["thread"], **json.loads(row["payload"])}
+        )
+
+    def _jobs(self) -> tuple[LocalStepJob, ...]:
+        # Target replay remains strictly attached to original target jobs.
+        return tuple(j for j in super()._jobs() if j.step == 1)
+
+    def target_run_id(self) -> str | None:
+        candidates = []
+        for run in _runs(self.project):
+            resolved, _ = load_resolved_run_config(run.path)
+            if resolved.stop_after_stage == 1:
+                candidates.append(run)
+        return candidates[-1].run_id if candidates else None
+
+    def run(self, run_id: str | None = None) -> Any:
+        return super().run(run_id or self.target_run_id())
+
+    def read_evidence(self, run_id: str | None = None) -> dict[str, Any]:
+        return super().read_evidence(run_id or self.target_run_id())
+
+    def prepare_target(self) -> dict[str, Any]:
+        current = self.target_run_id()
+        if current:
+            return self.read_evidence(current)
+        return super().prepare_target()
+
+    def target_state(self) -> dict[str, Any]:
+        evidence = self.read_evidence()
+        if evidence["status"] != "succeeded" or evidence["request_identity"] is not None:
+            raise AgentBoundaryError("Gate 1 must resolve before Site Intelligence")
+        root, manifest = self.run()
+        ref = next(r for r in manifest.stage_manifest_refs if r.producer_stage == STAGE)
+        stage = load_model(ref.verify(root), StageManifest)
+        bundle_ref = stage.require_output("target-bundle")
+        bundle = load_model(bundle_ref.verify(root), TargetBundle)
+        binding = {
+            "target_structure": bundle.target_structure.sha256,
+            "mapping": bundle.residue_mapping.sha256,
+            "target_bundle": bundle_ref.sha256,
+            "project": self.binding(),
+        }
+        return {
+            "binding": identity(binding),
+            "root": root,
+            "bundle_path": bundle_ref.verify(root),
+            "evidence": evidence,
+        }
+
+    def persist(self, kind: str, payload: Any) -> dict[str, Any]:
+        """One immutable project evidence object, using the existing ArtifactRef validator."""
+        encoded = compact(payload)
+        directory = confined(self.project, self.store.root / "agent-evidence")
+        directory.mkdir(exist_ok=True)
+        path = confined(directory, directory / f"{kind}-{identity(payload)}.json")
+        if path.exists():
+            if path.read_text() != encoded:
+                raise AgentBoundaryError("Immutable scientific evidence changed")
+        else:
+            with path.open("x") as handle:
+                handle.write(encoded)
+        return ArtifactRef.from_file(
+            run_root=self.project,
+            relative_path=path.relative_to(self.project).as_posix(),
+            artifact_id=kind,
+            role="scientific-evidence",
+            file_format="json",
+        ).model_dump(mode="json")
+
+    def document(self, ref: dict[str, Any]) -> Any:
+        artifact = ArtifactRef.model_validate(ref)
+        path = confined(self.project, artifact.verify(self.project))
+        return json.loads(path.read_text())
+
+    def import_biology(self, path: Path) -> None:
+        biology = BiologyContext.model_validate(yaml.safe_load(path.read_text()))
+        value = self.persist("biology-context", biology.model_dump(mode="json"))
+        current = self.latest("biology-context")
+        if current is None or current["ref"] != value:
+            self.store.event(self.thread, "biology-context", {"ref": value})
+
+    def biology(self) -> BiologyContext | None:
+        event = self.latest("biology-context")
+        return None if event is None else BiologyContext.model_validate(self.document(event["ref"]))
+
+    def site_facts(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        target = self.target_state()
+        biology = self.biology()
+        binding = identity(
+            {
+                "target": target["binding"],
+                "biology": biology.model_dump(mode="json") if biology else None,
+            }
+        )
+        previous = self.latest("site-facts")
+        if previous and previous["binding"] == binding:
+            ref = previous["ref"]
+            facts = self.document(ref)
+        else:
+            facts = analyze_site_facts(target["root"], target["bundle_path"], biology)
+            ref = self.persist("site-facts", facts)
+            self.store.event(
+                self.thread,
+                "site-facts",
+                {"binding": binding, "target_binding": target["binding"], "ref": ref},
+            )
+        return target, facts, ref
+
+    def read_site_evidence(self, query: SiteQuery | None = None) -> dict[str, Any]:
+        query = query or SiteQuery()
+        target, facts, ref = self.site_facts()
+        return {
+            "project_id": self.project_id,
+            "run_id": target["evidence"]["run_id"],
+            "evidence_id": ref["sha256"],
+            "request_identity": None,
+            "evidence_refs": [f"project:{ref['relative_path']}#sha256={ref['sha256']}"],
+            "approved_target": {
+                k: target["evidence"][k]
+                for k in ("identity", "bundle", "provenance", "limitations")
+            },
+            **summarize_site_facts(facts, labels=query.label_seq_ids, offset=query.offset),
+        }
+
+    def evaluate_candidate(self, query: SiteQuery) -> dict[str, Any]:
+        target, facts, _ = self.site_facts()
+        return evaluate_site(target["root"], target["bundle_path"], facts, query.label_seq_ids)
+
+    def current_site(self) -> dict[str, Any] | None:
+        proposal = self.latest("site-proposal")
+        if proposal is None:
+            return None
+        target = self.target_state()
+        facts = self.latest("site-facts")
+        biology = self.biology()
+        binding = identity(
+            {
+                "target": target["binding"],
+                "biology": biology.model_dump(mode="json") if biology else None,
+            }
+        )
+        if (
+            proposal["target_binding"] != target["binding"]
+            or not facts
+            or facts["binding"] != binding
+            or proposal["facts_ref"] != facts["ref"]
+        ):
+            return None
+        self.document(proposal["facts_ref"])
+        return proposal
+
+    def register_site(self, intent: SiteIntent, revision: DecisionOutcome | None) -> dict[str, Any]:
+        snapshot = self.read_site_evidence()
+        if SITE_EVIDENCE.get() != EvidenceBinding.model_validate(
+            {k: snapshot[k] for k in EvidenceBinding.model_fields}
+        ):
+            raise AgentBoundaryError("Site proposal lacks its runtime-delegated target snapshot")
+        target, facts, facts_ref = self.site_facts()
+        evaluation = evaluate_site(
+            target["root"], target["bundle_path"], facts, intent.selected_site.hotspot_label_seq_ids
+        )
+        alternatives = [
+            evaluate_site(target["root"], target["bundle_path"], facts, a.hotspot_label_seq_ids)
+            for a in intent.alternatives
+        ]
+        if any(a["status"] == "BLOCKED" for a in alternatives):
+            raise AgentBoundaryError(
+                "An alternative site contains a hard mapping/constraint violation"
+            )
+        parent = None
+        if revision:
+            previous_card = self.store.card(self.thread, revision.card_id)
+            if previous_card.gate_type == "site-hotspot":
+                parent = previous_card.card_id
+        payload = {
+            "target_binding": target["binding"],
+            "facts_ref": facts_ref,
+            "intent": intent.model_dump(mode="json"),
+            "evaluation": evaluation,
+            "alternative_evaluations": alternatives,
+            "parent_card_id": parent,
+            "source_role": "site-mechanism",
+        }
+        proposal_id = identity(payload)
+        old = self.current_site()
+        if old and old["proposal_id"] == proposal_id:
+            return self.site_snapshot(old)
+        payload["proposal_id"] = proposal_id
+        if evaluation["status"] != "BLOCKED":
+            fragment: dict[str, Any] = {
+                "mode": "user-provided",
+                "methods": [],
+                "automatic": None,
+                "annotations": {"uniprot": "off"},
+                "user_regions": {
+                    "source": {
+                        "type": "residue-list",
+                        "numbering": "label",
+                        "regions": [
+                            {
+                                "id": "A",
+                                "residues": [
+                                    str(n)
+                                    for n in sorted(intent.selected_site.hotspot_label_seq_ids)
+                                ],
+                            }
+                        ],
+                    }
+                },
+            }
+            input_path = confined(
+                self.store.root, self.store.root / f"site-intent-{proposal_id}.yaml"
+            )
+            if not input_path.exists():
+                with input_path.open("x") as handle:
+                    yaml.safe_dump(fragment, handle, sort_keys=False)
+            elif yaml.safe_load(input_path.read_text()) != fragment:
+                raise AgentBoundaryError("Site intent changed")
+            with self.store.writer():
+                command = self.store.prepare(
+                    self.thread,
+                    "site-propose",
+                    {"proposal_id": proposal_id},
+                    baseline=[j.job_id for j in self.controller.list(project_id=self.project_id)],
+                )
+                job = None
+                if command["payload"].get("job_id"):
+                    job = self.controller.load(command["payload"]["job_id"])
+                elif command["state"] != "prepared":
+                    matches = []
+                    for candidate in self.controller.list(project_id=self.project_id):
+                        if (
+                            candidate.job_id in command["payload"]["baseline"]
+                            or candidate.step != 2
+                            or candidate.config_path is None
+                        ):
+                            continue
+                        config = load_run_config(
+                            confined(self.project, candidate.config_path),
+                            source_base_dir=self.project,
+                        ).config
+                        if (
+                            config.stage02
+                            and config.stage02.model_dump(mode="json", exclude_none=True)[
+                                "user_regions"
+                            ]["source"]["regions"]
+                            == fragment["user_regions"]["source"]["regions"]
+                        ):
+                            matches.append(candidate)
+                    if len(matches) != 1:
+                        raise ReconciliationRequired(
+                            "Site submission has no unique original job; do not replay"
+                        )
+                    job = matches[0]
+                if job is None:
+                    if any(
+                        j.status in ACTIVE_JOB_STATUSES
+                        for j in self.controller.list(project_id=self.project_id)
+                    ):
+                        raise AgentBoundaryError("An existing scientific writer is active")
+                    self.store.update(command["id"], "dispatching")
+                    with scientific_environment():
+                        result = site_propose(
+                            self.project, input_path=input_path, from_pse_colors=False, detach=False
+                        )
+                    self.failpoint("after_site_dispatch")
+                    if not result.job_id:
+                        raise ReconciliationRequired("Site proposal returned no original job")
+                    job = self.controller.load(result.job_id)
+                if job.project_root != self.project or job.step != 2:
+                    raise AgentBoundaryError("Site job ownership mismatch")
+                self.store.update(command["id"], "submitted", job_id=job.job_id, run_id=job.run_id)
+                if job.status in ACTIVE_JOB_STATUSES:
+                    raise AgentBoundaryError(
+                        "Site work is still running; resume its existing Agent execution"
+                    )
+                if job.status != "awaiting-human-approval" or not job.run_id or not job.run_root:
+                    raise AgentBoundaryError(f"Site computation did not reach review: {job.status}")
+                root = confined(self.context.runs_root, job.run_root)
+                review = confined(
+                    self.project,
+                    self.project / f"site-proposal.agent-{proposal_id}.{job.run_id}.yaml",
+                )
+                if not review.exists():
+                    export_hotspot_review(root, output=review)
+                request = HotspotReviewRequest.model_validate(yaml.safe_load(review.read_text()))
+                payload.update(
+                    run_id=job.run_id,
+                    run_root=str(root),
+                    job_id=job.job_id,
+                    review_ref=ArtifactRef.from_file(
+                        run_root=self.project,
+                        relative_path=review.relative_to(self.project).as_posix(),
+                        artifact_id="site-review",
+                        role="scientific-proposal",
+                        file_format="yaml",
+                    ).model_dump(mode="json"),
+                    request_identity=canonical_model_sha256(request),
+                )
+                self.store.update(command["id"], "completed")
+        else:
+            payload.update(run_id=target["evidence"]["run_id"], request_identity=proposal_id)
+        self.store.event(self.thread, "site-proposal", payload)
+        return self.site_snapshot(payload)
+
+    def site_snapshot(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        facts = self.document(proposal["facts_ref"])
+        ref = proposal["facts_ref"]
+        refs = [f"project:{ref['relative_path']}#sha256={ref['sha256']}"]
+        if proposal.get("review_ref"):
+            review = ArtifactRef.model_validate(proposal["review_ref"])
+            review.verify(self.project)
+            refs.append(f"project:{review.relative_path}#sha256={review.sha256}")
+            root, manifest = super().run(proposal["run_id"])
+            stage_ref = next(
+                r
+                for r in manifest.stage_manifest_refs
+                if r.producer_stage == "02-hotspot-discovery"
+            )
+            stage = load_model(stage_ref.verify(root), StageManifest)
+            for artifact in stage.output_artifacts:
+                confined(root, artifact.verify(root))
+            # Site approval changes this manifest; pending and approved snapshots cannot mix.
+            refs.append(
+                f"run:{proposal['run_id']}:{stage_ref.relative_path}#sha256={stage_ref.sha256}"
+            )
+        selection = SiteIntent.model_validate(proposal["intent"]).selected_site
+        return {
+            "gate_type": "site-hotspot",
+            "project_id": self.project_id,
+            "run_id": proposal["run_id"],
+            "status": "awaiting-human-approval",
+            "request_identity": proposal["request_identity"],
+            "evidence_id": identity({"proposal": proposal["proposal_id"], "refs": refs}),
+            "evidence_refs": refs,
+            "proposal": proposal["intent"],
+            "evaluation": proposal["evaluation"],
+            "alternative_evaluations": proposal["alternative_evaluations"],
+            "scientific_context": summarize_site_facts(
+                facts,
+                labels=[]
+                if proposal["evaluation"]["status"] == "BLOCKED"
+                else selection.hotspot_label_seq_ids,
+            ),
+            "approval_scope": (
+                "Review this proposed site only; not human authority or future binder success."
+            ),
+        }
+
+    def judge_evidence(self) -> dict[str, Any]:
+        target = self.read_evidence()
+        if target["request_identity"] is not None:
+            return target
+        proposal = self.current_site()
+        if proposal is None:
+            raise AgentBoundaryError(
+                "Delegate Site & Mechanism before asking for a Site Judge opinion"
+            )
+        return self.site_snapshot(proposal)
+
+    def approved_site(self) -> dict[str, Any] | None:
+        proposal = self.current_site()
+        approved = self.latest("site-approved")
+        if (
+            proposal is None
+            or approved is None
+            or approved["proposal_id"] != proposal["proposal_id"]
+        ):
+            return None
+        foundation = _latest_foundation(self.project)
+        if foundation is None or foundation.run_id != proposal["run_id"]:
+            return None
+        ref, path = _artifact(foundation.path, "hotspots")
+        if ref.sha256 != approved["hotspots_sha256"]:
+            raise AgentBoundaryError("Approved hotspots changed")
+        hotspots = HotspotsFile.model_validate(yaml.safe_load(path.read_text()))
+        if list(hotspots.hotspot_sets[0].label_seq_ids) != sorted(
+            proposal["intent"]["selected_site"]["hotspot_label_seq_ids"]
+        ):
+            raise AgentBoundaryError("Approved hotspot numbering differs from its proposal")
+        return {
+            **approved,
+            "hotspots": hotspots.model_dump(mode="json"),
+            "foundation_root": str(foundation.path),
+        }
+
+    def scientific_state(self) -> dict[str, Any]:
+        if self.target_run_id() is None:
+            return {"scientific_state": "not-prepared", "next_specialist": "target-intelligence"}
+        target = self.read_evidence()
+        if target["status"] != "succeeded":
+            return {
+                "scientific_state": target["status"],
+                "gate_type": "target-structure",
+                "next_specialist": "target-intelligence",
+            }
+        proposal = self.current_site()
+        approved = self.approved_site()
+        if approved:
+            return {
+                "scientific_state": "hotspot-approved",
+                "gate_type": "site-hotspot",
+                "next_specialist": "none" if self.through == "site" else "binder-strategy",
+                "site": approved,
+            }
+        return {
+            "scientific_state": "awaiting-human-approval" if proposal else "site-not-proposed",
+            "gate_type": "site-hotspot",
+            "next_specialist": "site-mechanism",
+            "proposal": proposal["intent"] if proposal else None,
+        }
+
+    def terminal_result(self, message: str) -> dict[str, Any]:
+        jobs = self.controller.list(project_id=self.project_id)
+        active = any(j.status in ACTIVE_JOB_STATUSES for j in jobs)
+        latest_run = resolve_project_run(self.project, required=False)
+        pending = False
+        if latest_run is not None:
+            _, manifest = super().run(latest_run.run_id)
+            pending = manifest.workflow_state is not None
+        state = self.scientific_state()
+        if active or (pending and state["scientific_state"] == "hotspot-approved"):
+            return {
+                "thread": self.thread,
+                "status": "incomplete-turn",
+                "scientific_state": "awaiting-human-approval" if pending else "running",
+                "reason": "authoritative-scientific-work-pending",
+                "message": (
+                    "The scientific service has unresolved work or approval; a prior "
+                    "approved site cannot complete it."
+                ),
+            }
+        if state["scientific_state"] == "hotspot-approved" and self.through == "site":
+            return {
+                "thread": self.thread,
+                "status": "finished",
+                "scientific_state": "hotspot-approved",
+                "message": message,
+            }
+        if (
+            state["scientific_state"] in {"not-prepared", "queued", "running"}
+            or state.get("gate_type") == "target-structure"
+        ):
+            return super().terminal_result(message)
+        proposal = self.current_site()
+        rejected = False
+        if proposal:
+            row = self.store.db.execute(
+                (
+                    "SELECT id,thread FROM cards WHERE json_extract(payload, "
+                    "'$.evidence_id')=? ORDER BY rowid DESC LIMIT 1"
+                ),
+                (self.site_snapshot(proposal)["evidence_id"],),
+            ).fetchone()
+            response = self.store.response(row["thread"], row["id"]) if row else None
+            rejected = bool(response and response["delivered"] and response["response"] == "reject")
+        return {
+            "thread": self.thread,
+            "status": "proposal-rejected" if rejected else "incomplete-turn",
+            "scientific_state": state["scientific_state"],
+            "gate_type": state.get("gate_type"),
+            "message": "Current proposal was rejected; a new local scientific strategy is needed."
+            if rejected
+            else (
+                "The requested scientific scope is not complete. A reviewed "
+                "Site/Hotspot decision is still required."
+            ),
+        }
+
+    def revision_is_current(self, outcome: DecisionOutcome) -> bool:
+        card = self.store.card(self.thread, outcome.card_id)
+        if card.gate_type == "target-structure":
+            return super().revision_is_current(outcome)
+        current = self.current_site()
+        return bool(current and current["request_identity"] == card.request_identity)
+
+    def decision_card(self, args: ApplyDecision) -> DecisionCard:
+        existing_id = identity({"assessment": args.assessment_id, "option": args.option_id})
+        if self.store.response(self.thread, existing_id) is not None:
+            return self.store.card(self.thread, existing_id)
+        if self.read_evidence()["request_identity"] is not None:
+            return super().decision_card(args)
+        proposal = self.current_site()
+        if proposal is None:
+            raise AgentBoundaryError("No current trusted Site proposal")
+        snapshot = self.site_snapshot(proposal)
+        assessment = self.store.assessment(self.thread, args.assessment_id)
+        if (
+            args.option_id != "site"
+            or assessment.evidence_id != snapshot["evidence_id"]
+            or assessment.request_identity != snapshot["request_identity"]
+        ):
+            raise AgentBoundaryError(
+                "Site Judge assessment is stale or belongs to a different question"
+            )
+        evaluation = proposal["evaluation"]
+        opinion = assessment.recommendation
+        if opinion and opinion.option_id != "site":
+            raise AgentBoundaryError(
+                "Judge recommendation belongs to a different scientific option"
+            )
+        blocked = evaluation["status"] == "BLOCKED"
+        discouraged = (
+            evaluation["status"] == "DISCOURAGED"
+            or proposal["intent"]["recommendation"] == "DISCOURAGED"
+            or (opinion and opinion.status == "DISCOURAGED")
+        )
+        if (
+            not blocked
+            and assessment.verdict != "ready-to-ask"
+            and not (assessment.verdict == "reject" and discouraged)
+        ):
+            raise AgentBoundaryError("Judge has not supplied a reviewable Site question")
+        status: Literal["SUPPORTED", "DISCOURAGED", "BLOCKED"] = (
+            "BLOCKED" if blocked else "DISCOURAGED" if discouraged else "SUPPORTED"
+        )
+        warnings = list(
+            dict.fromkeys(
+                [
+                    *evaluation.get("warnings", []),
+                    *proposal["intent"]["risks"],
+                    *(opinion.warnings if opinion else []),
+                ]
+            )
+        )
+        if blocked:
+            warnings = [evaluation["cause"], evaluation["remedy"]]
+        alternative = opinion.alternative if opinion else None
+        if not alternative and proposal["intent"]["alternatives"]:
+            alternative = (
+                proposal["intent"]["alternatives"][0]["name"]
+                + ": "
+                + proposal["intent"]["alternatives"][0]["rationale"]
+            )
+        if status == "DISCOURAGED" and not alternative:
+            alternative = (
+                "Reassess a more accessible mapped region or supply the missing "
+                "biological/topology evidence before selecting it."
+            )
+        if status == "DISCOURAGED" and not warnings:
+            warnings = [
+                (
+                    "The scientific specialist discourages this exploratory site; review "
+                    "its stated uncertainty."
+                )
+            ]
+        selected = proposal["intent"]["selected_site"]
+        card = DecisionCard(
+            gate_type="site-hotspot",
+            owner_specialist="site-mechanism",
+            judge_status=status,
+            card_id=identity({"assessment": assessment.assessment_id, "option": "site"}),
+            assessment_id=assessment.assessment_id,
+            project_id=self.project_id,
+            run_id=snapshot["run_id"],
+            request_identity=snapshot["request_identity"],
+            evidence_id=snapshot["evidence_id"],
+            question="Which site and hotspot residues should the binder target?",
+            option_id="site",
+            options=[
+                {
+                    "option_id": "site",
+                    "label": selected["name"],
+                    "description": selected["rationale"],
+                    "eligible": not blocked,
+                }
+            ],
+            evidence_refs=snapshot["evidence_refs"],
+            limitations=list(
+                dict.fromkeys([*assessment.limitations, *proposal["intent"]["uncertainty"]])
+            ),
+            warnings=warnings[:8],
+            alternative=alternative,
+            parent_card_id=proposal["parent_card_id"],
+            scientific_summary={
+                "hotspots": evaluation.get("mapped_residues", selected["hotspot_label_seq_ids"]),
+                "evidence": proposal["intent"]["positive_evidence"],
+                "mechanism": proposal["intent"]["mechanistic_rationale"],
+                "accessibility": proposal["intent"]["accessibility_rationale"],
+                "approach": proposal["intent"]["binder_approach"],
+            },
+            action=(
+                "Review this proposed region and structural-only limitations. Approve "
+                "its explicit residue choices, revise, reject, or acknowledge warnings "
+                "and override if discouraged."
+            ),
+        )
+        self.store.save_card(self.thread, card)
+        return card
+
+    def _approved_hotspots_match(
+        self, proposal: dict[str, Any], request: HotspotReviewRequest
+    ) -> dict[str, Any]:
+        foundation = _latest_foundation(self.project)
+        if foundation is None or foundation.run_id != proposal["run_id"]:
+            raise ReconciliationRequired(
+                "Site approval is not fully published by the original scientific service"
+            )
+        normalized_ref, normalized_path = _artifact(foundation.path, "approval-request")
+        observed = HotspotReviewRequest.model_validate(yaml.safe_load(normalized_path.read_text()))
+        hotspots_ref, hotspots_path = _artifact(foundation.path, "hotspots")
+        hotspots = HotspotsFile.model_validate(yaml.safe_load(hotspots_path.read_text()))
+        if (
+            observed != request
+            or hotspots.approval_request_sha256 != normalized_ref.sha256
+            or hotspots.approved_by != request.approved_by
+            or hotspots.approval_authority != "human"
+        ):
+            raise AgentBoundaryError(
+                "Scientific site approval does not match the exact trusted human outcome"
+            )
+        if len(hotspots.hotspot_sets) != 1 or list(
+            hotspots.hotspot_sets[0].label_seq_ids
+        ) != sorted(proposal["intent"]["selected_site"]["hotspot_label_seq_ids"]):
+            raise AgentBoundaryError("Scientific hotspot approval changed the selected residues")
+        return {"hotspots_sha256": hotspots_ref.sha256, "run_id": foundation.run_id}
+
+    def apply_decision(self, card: DecisionCard) -> dict[str, Any]:
+        if card.gate_type == "target-structure":
+            return super().apply_decision(card)
+        if card.gate_type != "site-hotspot":
+            raise AgentBoundaryError("Unsupported scientific gate")
+        with self.store.writer():
+            if self.store.card(self.thread, card.card_id) != card:
+                raise AgentBoundaryError("Card differs from its trusted runtime copy")
+            response = self.store.response(self.thread, card.card_id)
+            if response is None:
+                raise AgentBoundaryError("No trusted human response; model text is not authority")
+            outcome = DecisionOutcome.model_validate(response["outcome"])
+            proposal = self.current_site()
+            if proposal is None or proposal["request_identity"] != card.request_identity:
+                raise AgentBoundaryError(
+                    "Upstream target, context or current Site proposal changed"
+                )
+            if outcome.action in {"REVISE", "REJECT"}:
+                if (
+                    not response["delivered"]
+                    and self.site_snapshot(proposal)["evidence_id"] != card.evidence_id
+                ):
+                    raise AgentBoundaryError("Site evidence changed before steering")
+                self.store.delivered(self.thread, card.card_id)
+                self.failpoint("after_steering_delivery")
+                return {
+                    "status": "revision-requested"
+                    if outcome.action == "REVISE"
+                    else "proposal-rejected",
+                    "owner_specialist": "site-mechanism",
+                    "steering": response["outcome"],
+                    "scientific_gate": "still-pending",
+                }
+            if card.judge_status == "BLOCKED" or proposal["evaluation"]["status"] == "BLOCKED":
+                raise AgentBoundaryError(
+                    "BLOCKED: change the input or hard constraint; override cannot execute it"
+                )
+            if card.judge_status == "DISCOURAGED" and outcome.action != "OVERRIDE":
+                raise AgentBoundaryError("Discouraged site requires explicit human override")
+            review_ref = ArtifactRef.model_validate(proposal["review_ref"])
+            template = HotspotReviewRequest.model_validate(
+                yaml.safe_load(review_ref.verify(self.project).read_text())
+            )
+            rationale = proposal["intent"]["mechanistic_rationale"]
+            if outcome.action == "OVERRIDE":
+                rationale += (
+                    " Selected by explicit human override against current Evidence Judge "
+                    "recommendation. "
+                ) + f"Human outcome: {identity(response['outcome'])}."
+            selections = [
+                s.model_copy(
+                    update={
+                        "biological_rationale": rationale,
+                        "structural_rationale": proposal["intent"]["accessibility_rationale"],
+                    }
+                )
+                for s in template.selections
+            ]
+            request = HotspotReviewRequest.model_validate(
+                {
+                    **template.model_dump(),
+                    "selections": selections,
+                    "approved_by": outcome.human_actor,
+                    "acknowledge_user_provided_regions": True,
+                    "acknowledge_evidence_limitations": True,
+                }
+            )
+            command = self.store.prepare(
+                self.thread,
+                "site-approve",
+                {"card_id": card.card_id, "request": card.request_identity},
+                outcome=response["outcome"],
+            )
+            if command["state"] == "prepared":
+                if self.site_snapshot(proposal)["evidence_id"] != card.evidence_id:
+                    raise AgentBoundaryError("Site snapshot changed before approval")
+                path = confined(
+                    self.project,
+                    self.project / f"site-human.{proposal['run_id']}.{card.card_id}.yaml",
+                )
+                encoded = yaml.safe_dump(
+                    request.model_dump(mode="json"), allow_unicode=True, sort_keys=False
+                )
+                if not path.exists():
+                    with path.open("x") as handle:
+                        handle.write(encoded)
+                elif path.read_text() != encoded:
+                    raise AgentBoundaryError("Human site intent changed")
+                self.store.update(command["id"], "dispatching", request_path=str(path))
+                self.failpoint("before_site_approval")
+                with scientific_environment():
+                    site_approve(self.project, input_path=path, confirm=True)
+                self.failpoint("after_site_approval")
+            matched = self._approved_hotspots_match(proposal, request)
+            approved = {
+                "proposal_id": proposal["proposal_id"],
+                "target_binding": proposal["target_binding"],
+                "card_id": card.card_id,
+                "outcome": response["outcome"],
+                "warnings": card.warnings,
+                **matched,
+            }
+            previous = self.latest("site-approved")
+            if previous is None or previous["card_id"] != card.card_id:
+                self.store.event(self.thread, "site-approved", approved)
+            self.store.update(command["id"], "completed")
+            self.store.delivered(self.thread, card.card_id)
+            return {
+                "status": "hotspot-approved",
+                "site": proposal["intent"]["selected_site"],
+                "warnings": card.warnings,
+                "next_specialist": "none" if self.through == "site" else "binder-strategy",
+            }

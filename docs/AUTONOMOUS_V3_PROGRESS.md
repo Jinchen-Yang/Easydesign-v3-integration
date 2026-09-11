@@ -925,3 +925,24 @@ can become slightly longer due to the explicit provenance envelope; the long-thi
 verifies the intended reduction without changing evidence values.
 Next live143/144 reuse approved Targets under unchanged Pro/low/4096/32/60000configuration.
 Phase2 NOT FROZEN; only Case3 is scientifically accepted.
+
+
+### Total output exhaustion with reasoning (live143/144)
+
+Live143 (`phase2-goldens-20260911T212629333460Z`, soluble) ended after14calls
+(Coordinator3/Site11); live144 (`phase2-goldens-20260911T212629302864Z`, GPCR) after13calls
+(Coordinator4/Site9). Both exhausted the two typed-submission corrections; neither returned a
+SiteProposal or Gate2. The soluble Case3 evidence remains independently accepted. Inspection of
+native SDK response metadata showed stop_reason=max_tokens and output_tokens=4096 for batched
+research replies, whose final tool arguments were truncated to an empty object. Private thinking
+text was not exported. Completed-tool context projection prevented the previous early input
+failures; GPCR's latest sent context was58234chars, still near the unchanged60000 limit.
+
+The next explicitly audited comparison raises only the configured total output cap to8192,
+already supported by LLMConfig, to give reasoning and structured tool arguments room to finish.
+Config SHA786d02de6d7c4f7e43e2a0d79fdf9017fb3e2e07d0c84476b2ba6b08a968cd40
+→e5a5e6e59d516dabda4989cebb336794ef0f24743b34456a662f3d3b6c0a8464.
+Before/after snapshots and model-config-change145.json are retained under the existing runtime
+evidence directory. Model Pro/low, shared32calls and60000input remain unchanged. No source or
+scientific invariant changes accompany this retry; the prior targeted143 tests apply.
+Next live145/146 resume the same independently approved Targets. Phase2 NOT FROZEN.

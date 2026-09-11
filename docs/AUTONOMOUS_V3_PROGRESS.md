@@ -471,3 +471,42 @@ oracle remain unchanged. Source-segment guidance prohibits inferred fusion order
 Targeted098 had32 PASS and one old tool-availability assertion; after updating its prerequisite,
 targeted100:33 PASS (25.24s), mypy101:20 source files PASS. Supplementary display checks102:22 PASS (5.19s), Ruff102 PASS, mypy102:20 files PASS. The complete real pending GPCR scientific facts fit5775 characters after lossless position-range encoding.
 Phase2 remains NOT FROZEN; case3 only has PASS. No new GPU jobs.
+
+
+### Reviewed GPCR Target and scoped evidence-reader recovery (live103/104)
+
+Live103 (`phase2-goldens-20260911T191615175406Z`) reached Site science but exhausted the shared
+four argument repairs: display-only facts_table vs original facts, redundant identical field/path,
+requesting12 list items against max8, then a numeric JSON path index. No Gate2 proposal/PASS.
+The model now sees one path selector; legacy field/fields remain compatible in the actual API.
+Identical redundant selectors normalize to their sole meaning; conflicting selectors still fail.
+Numeric path indices normalize without guessing. Requests up to64 items return at most8/4400chars,
+with exact next_offset. Display facts_table and coordinate-position ranges resolve by lossless
+projection of the same already-authorized/checksum-verified source. Foreign/stale/tampered and
+cross-role/Judge-snapshot errors remain fatal; scientific constraints and32/60000 budgets unchanged.
+
+Live104 (`phase2-goldens-20260911T191615664583Z`) passed independent Gate1 review, snapshot SHA
+1830a040bb2f18ebb830a404c18a2c05f7d72a9be3969fcad83204efb88f8dcd, card
+3ad387fe6a240816013a6605179b8f581db3fc5dc37ff8787c2a16fded3eed6a, run20260911t191632z.
+The scripted validation actor's actual approve response was delivered through existing services;
+resulting canonical/construct/coordinate identity and all493 design rows pass the frozen oracle.
+Chain A has365 conditional canonical rows/128 unmapped; ambiguity is preserved. Gate1 review
+records a non-adopted incidental Judge inference about a missing interval; it is not treated as a
+verified fusion-junction or disorder fact. No biological approval or whole-case PASS is implied.
+
+Its subsequent Site execution exhausted32 calls while paging930 UniProt corpus chunks for
+specific topology features, after acquiring real RCSB/primary paper/GPCRdb context. No Gate2 PASS.
+An explicit optional feature_types filter now selects original UniProt feature indices from the
+verified full record, retaining the exact old chunks and passage IDs without reindexing or
+redownloading. Cursor identity includes the filter; another scope cannot continue the old cursor.
+Acquisition receipts expose source_id (distinct from card_id); verified GPCRdb context points to
+the existing complete receptor-analysis tool instead of generic manual pagination. Existing full
+sources, source-selection scope, source limits and old analysis kernel remain unchanged.
+
+The validation continuation can now reuse either reviewed approved soluble or GPCR Target.
+It rechecks exact card/review hash, delivered actor response, original canonical before/after
+round trip, current authoritative Target oracle and site-not-proposed ownership; it creates a
+compatible new Site thread and never rewrites the old checkpoint, budget, approved input or run.
+Targeted105:37 PASS/4 old RecoveryModel availability assertions failed; those fixture assertions
+were updated for the already-tested reader prerequisite. Mypy105:20 files PASS; Ruff106 PASS.
+Targeted106:47 PASS (15.24s), covering corrected integration fixtures and current reader/source boundaries. Next live107/108 reuse the reviewed soluble/GPCR Targets respectively.

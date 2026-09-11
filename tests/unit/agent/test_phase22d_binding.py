@@ -1,5 +1,6 @@
 """Stable full sources across canonical configuration; current views remain explicitly scoped."""
 
+import json
 from typing import Any
 
 import httpx
@@ -240,3 +241,25 @@ def test_canonical_carry_forward_cannot_hide_source_tampering(acquired: Any) -> 
     (b.project / ref["relative_path"]).write_text("{}")
     with pytest.raises(ArtifactIntegrityError):
         EvidenceCorpus(b).retrieve(focus())
+
+
+def test_explicit_feature_scope_uses_verified_original_types_and_preserves_passages(
+    acquired: Any,
+) -> None:
+    b, calls, _ = acquired
+    corpus = EvidenceCorpus(b)
+    original = {d["source_id"]: d for d in corpus.documents()}["UniProt:P00698"]
+    chunks = b.document(original["corpus_ref"])["chunks"]
+    query = focus().model_copy(update={"feature_types": ["Signal", "Chain"], "page_size": 1})
+    first = corpus.retrieve(query)
+    assert first["matching_chunks"] == 2 and first["next_cursor"]
+    with pytest.raises(StaleEvidenceCursor):
+        corpus.retrieve(
+            query.model_copy(update={"feature_types": ["Chain"], "cursor": first["next_cursor"]})
+        )
+    second = corpus.retrieve(query.model_copy(update={"cursor": first["next_cursor"]}))
+    assert second["next_cursor"] == ""
+    cards = first["cards"] + second["cards"]
+    assert {json.loads(c["passage"])["type"] for c in cards} == {"Signal", "Chain"}
+    assert all(c["passage"] == chunks[c["chunk"]]["text"] for c in cards)
+    assert len(calls) == 2  # Initial two acquired references; no additional source request.

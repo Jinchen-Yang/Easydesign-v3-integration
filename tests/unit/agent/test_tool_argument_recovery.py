@@ -246,3 +246,45 @@ async def test_bad_projection_never_softens_artifact_boundary(bridge: Any, viola
         await guarded_read(bridge, execution, ref=ref, fields="invalid")
     assert not any(e["kind"] == "tool-argument-repair" for e in bridge.store.events(bridge.thread))
     assert not issubclass(InvalidFieldProjection, AgentBoundaryError)
+
+
+@pytest.mark.asyncio
+async def test_unambiguous_path_spellings_and_display_aliases_preserve_source(bridge: Any) -> None:
+    from easydesign.agent.evidence_output import ModelEvidenceScope
+
+    execution = bridge.store.begin_execution(bridge.thread, "Read exact displayed facts")[
+        "execution_id"
+    ]
+    original = {
+        "facts": [
+            {"mapping": {"label_seq_id": i, "canonical_position": i + 18}, "rsasa": i / 20}
+            for i in range(12)
+        ],
+        "large": "x" * 2000,
+    }
+    msg = output_message(
+        bridge,
+        "target",
+        execution,
+        ToolMessage(
+            name="read_site_evidence",
+            content=json.dumps(original),
+            tool_call_id="source",
+        ),
+    )
+    ref = json.loads(msg.content)["full_result"]
+    read = result_tool(bridge, "target")
+    # The former redundant selector error has exactly one possible meaning.
+    page = json.loads(
+        await read.ainvoke({"ref": ref, "field": "facts", "path": ["facts"], "limit": 12})
+    )
+    assert page["value"] == original["facts"][:8] and page["next_offset"] == 8
+    value = json.loads(await read.ainvoke({"ref": ref, "path": ["facts", 5, "mapping"]}))
+    assert value["value"] == original["facts"][5]["mapping"]
+    table = json.loads(await read.ainvoke({"ref": ref, "path": ["facts_table"]}))["value"]
+    assert table["row_count"] == 12
+    assert [r[0] for r in table["rows"]] == list(range(12))
+    with pytest.raises(InvalidFieldProjection, match="mutually exclusive"):
+        await read.ainvoke({"ref": ref, "field": "facts", "path": ["large"]})
+    assert set(ModelEvidenceScope.model_fields) == {"ref", "path", "offset", "limit"}
+    assert not bridge._jobs()

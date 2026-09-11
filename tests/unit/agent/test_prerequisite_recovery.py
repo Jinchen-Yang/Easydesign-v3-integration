@@ -50,7 +50,11 @@ class RecoveryModel(ScriptedModel):
             {output[self.role]} if self.role in output else set()
         )
         names = {t.name for t in tools}
-        assert names <= expected and expected - names <= {"get_job_status", "prepare_target"}
+        assert names <= expected and expected - names <= {
+            "get_job_status",
+            "prepare_target",
+            "read_evidence_result",
+        }
         return self
 
     def answer(self, messages: Any) -> AIMessage:

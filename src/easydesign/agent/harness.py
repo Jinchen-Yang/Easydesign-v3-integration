@@ -34,7 +34,7 @@ from .contracts import (
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
-from .evidence_output import output_message, read_query, verified_result
+from .evidence_output import ModelEvidenceScope, output_message, read_query, verified_result
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
@@ -247,6 +247,20 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # An evidence_id is an identity, not a readable file. Offer scoped
             # navigation only after this role has actually received a registered view.
             available = [t for t in available if t.name != "read_evidence_result"]
+        available = [
+            t.model_copy(
+                update={
+                    "args_schema": ModelEvidenceScope,
+                    "description": "Read one exact path from a full_result already supplied to "
+                    "this role. Use path=['field'] or path=['field',0,'child']. Read only a "
+                    "needed missing fact; complete scientific content is already usable. "
+                    "List offset is within the stored page, never a residue label.",
+                }
+            )
+            if t.name == "read_evidence_result"
+            else t
+            for t in available
+        ]
         if self.role == "target" and not any(
             isinstance(m, ToolMessage) and m.name == "read_file" and m.status != "error"
             for m in request.messages

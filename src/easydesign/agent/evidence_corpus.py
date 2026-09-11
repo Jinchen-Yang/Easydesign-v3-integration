@@ -62,7 +62,18 @@ class SelectEvidence(StrictDTO):
 class RetrieveEvidence(StrictDTO):
     need: EvidenceNeed
     question: ShortText
-    source_id: str = Field(default="", max_length=80)
+    source_id: str = Field(
+        default="",
+        max_length=80,
+        description="Exact Provider:IDENTIFIER source_id from acquisition, never a source card_id.",
+    )
+    feature_types: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Optional exact UniProt feature types, e.g. "
+        "['Topological domain','Transmembrane'] or ['Glycosylation','Disulfide bond']. "
+        "Restrict to these original source annotations; omit for ordinary text research.",
+    )
     cursor: str = Field(
         default="",
         max_length=2000,
@@ -257,6 +268,7 @@ class EvidenceCorpus:
                 "need": request.need,
                 "question": request.question,
                 "source": request.source_id,
+                **({"feature_types": request.feature_types} if request.feature_types else {}),
                 "docs": [c["corpus_ref"] for c in docs],
             }
         )
@@ -275,6 +287,7 @@ class EvidenceCorpus:
                             prior["target_binding"] == identity(self.bridge.binding())
                             and prior["need"] == request.need
                             and prior.get("source_id") == request.source_id
+                            and prior.get("feature_types", []) == request.feature_types
                         )
                         expected_view = identity(
                             {
@@ -283,6 +296,11 @@ class EvidenceCorpus:
                                 "need": request.need,
                                 "question": prior["question"],
                                 "source": request.source_id,
+                                **(
+                                    {"feature_types": request.feature_types}
+                                    if request.feature_types
+                                    else {}
+                                ),
                                 "docs": [c["corpus_ref"] for c in docs],
                             }
                         )
@@ -322,9 +340,24 @@ class EvidenceCorpus:
         hits = []
         for card in docs:
             corpus = self.bridge.document(card["corpus_ref"])
+            feature_locations = None
+            if request.feature_types:
+                if card["provider"] != "UniProt":
+                    continue
+                records = [self.bridge.document(ref) for ref in card["source_refs"]]
+                matching = [v for v in records if v.get("primaryAccession") == card["identifier"]]
+                if len(matching) != 1:
+                    raise AgentBoundaryError("Feature scope requires one verified UniProt record")
+                feature_locations = {
+                    f"features[{i}]"
+                    for i, feature in enumerate(matching[0].get("features", []))
+                    if feature.get("type") in request.feature_types
+                }
             for chunk in corpus["chunks"]:
+                if feature_locations is not None and chunk["location"] not in feature_locations:
+                    continue
                 score = sum(t in (chunk["location"] + " " + chunk["text"]).lower() for t in terms)
-                if score or request.source_id:
+                if score or request.source_id or request.feature_types:
                     hits.append((score, card, chunk))
         hits.sort(key=lambda hit: (-hit[0], hit[1]["card_id"], hit[2]["chunk"]))
         cards = []
@@ -367,6 +400,7 @@ class EvidenceCorpus:
             "topic": next(k for k, v in NEEDS.items() if v == request.need),
             "question": request.question,
             "source_id": request.source_id,
+            "feature_types": request.feature_types,
             "need": request.need,
             "status": "UNRESOLVED",
             "cards": cards,

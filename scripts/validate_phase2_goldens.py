@@ -443,7 +443,7 @@ async def main():
             case = OUT / name
             case.mkdir()
             inherited = None
-            if APPROVED_TARGET and name == "soluble":
+            if APPROVED_TARGET and Path(APPROVED_TARGET).name == name:
                 origin = Path(APPROVED_TARGET).resolve()
                 assert origin.is_relative_to(ROOT / "runtime/tmp/autonomous-v3-20260912")
                 workspace = origin / "workspace-root"
@@ -530,20 +530,21 @@ async def main():
                     identity_report = approved_identity(bridge, truth[name])
                     save(case / "approved-target.json", target, secrets)
                     save(case / "approved-identity-oracle.json", identity_report, secrets)
-                    await independent_review(
-                        case,
-                        "identity-trap",
-                        {
-                            "target": target,
-                            "identity": identity_report,
-                            "truth": truth[name],
-                            "gate1": gate1["card"],
-                        },
-                        secrets,
-                    )
-                    report["cases"].append({"case": "case-3-identity-trap", "status": "PASS"})
-                    active_case = "case-1-soluble"
-                    save(OUT / "report.json", report, secrets)
+                    if name == "soluble":
+                        await independent_review(
+                            case,
+                            "identity-trap",
+                            {
+                                "target": target,
+                                "identity": identity_report,
+                                "truth": truth[name],
+                                "gate1": gate1["card"],
+                            },
+                            secrets,
+                        )
+                        report["cases"].append({"case": "case-3-identity-trap", "status": "PASS"})
+                        active_case = "case-1-soluble"
+                        save(OUT / "report.json", report, secrets)
                     gate2 = await run_session(bridge, config, models, GOALS[name], emit=emit)
                 else:
                     gate1 = await run_session(bridge, config, models, GOALS[name], emit=emit)

@@ -1039,6 +1039,13 @@ def research_tool(bridge: Any, role: str) -> Any:
                 )
                 if k in card
             }
+            view["source_id"] = source_key(card["provider"], card["identifier"])
+            if card["provider"] == "GPCRdb" and card.get("context_ref"):
+                view["available_analysis"] = (
+                    "analyze_receptor_context using this card_id "
+                    "and original auth_chain: obtain complete verified topology, membrane "
+                    "frame, chain graph and mapped candidates before epitope interpretation."
+                )
             if arguments["operation"].endswith("search"):
                 view["snippet"] = card["passage"][:450]
                 view["relevance"] = "Query match only; select before deeper reading"

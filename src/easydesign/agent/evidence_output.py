@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from easydesign.core import ArtifactRef
 
@@ -32,7 +32,36 @@ class ReadEvidenceResult(StrictDTO):
         description="Nested keys or nonnegative list indices in traversal order.",
     )
     offset: int = Field(default=0, ge=0)
-    limit: int = Field(default=4, ge=1, le=8)
+    limit: int = Field(default=4, ge=1, le=64)
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def numeric_path_indices(cls, value: Any) -> Any:
+        return (
+            [str(v) if type(v) is int else v for v in value] if isinstance(value, list) else value
+        )
+
+
+class ModelEvidenceScope(StrictDTO):
+    """One selector in the model surface; old explicit APIs stay compatible."""
+
+    ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
+    path: list[str | int] = Field(
+        min_length=1,
+        max_length=10,
+        description="One exact path: ['facts'] for a field, ['facts',0,'mapping'] for a child. "
+        "Use keys actually supplied. Never an evidence_id or guessed result reference.",
+    )
+    offset: int = Field(
+        default=0, ge=0, description="Index within this list/text, never residue numbering."
+    )
+    limit: int = Field(
+        default=4,
+        ge=1,
+        le=64,
+        description="Requested list items. At most 8 items/4400 characters are returned; "
+        "follow next_offset only when more is needed.",
+    )
 
 
 def preview(value: Any, *, depth: int = 0) -> Any:
@@ -314,6 +343,10 @@ def read_query(arguments: dict[str, Any]) -> ReadEvidenceResult:
         ):
             raise InvalidFieldProjection("Invalid selector or pagination syntax.") from exc
         raise
+    if query.field is not None and query.path is not None and query.fields is None:
+        field_path = [query.field] if isinstance(query.field, str) else query.field
+        if field_path == query.path:
+            query = query.model_copy(update={"field": None})
     if sum(item is not None for item in (query.field, query.fields, query.path)) > 1:
         raise InvalidFieldProjection("Selectors field, fields and path are mutually exclusive.")
     if isinstance(query.field, list) and len(query.field) > 10:
@@ -344,6 +377,25 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
     path = ([query.field] if isinstance(query.field, str) else query.field) or query.path or []
     try:
         for key in path:
+            if isinstance(value, dict) and key not in value:
+                # Display aliases are exact deterministic encodings of this verified
+                # source, not another artifact or a substitute scientific answer.
+                if (
+                    key == "facts_table"
+                    and isinstance(value.get("facts"), list)
+                    and all(
+                        isinstance(row, dict) and isinstance(row.get("mapping"), dict)
+                        for row in value["facts"]
+                    )
+                ):
+                    encoded = site_page_projection({"facts": value["facts"]})
+                    value = {**value, **encoded}
+                elif key in {
+                    "missing_construct_position_count",
+                    "missing_construct_position_ranges_inclusive",
+                    "position_encoding",
+                }:
+                    value = {**value, **target_page_projection(value)}
             if isinstance(value, list):
                 if not re.fullmatch(r"[0-9]+", key):
                     raise ValueError("List indices must be nonnegative integers")
@@ -396,7 +448,7 @@ def result_tool(bridge: Any, role: str) -> Any:
                     }
                 )
             page = []
-            for item in value[query.offset : query.offset + query.limit]:
+            for item in value[query.offset : query.offset + min(query.limit, 8)]:
                 if len(compact([*page, item])) > 4400:
                     break
                 page.append(item)

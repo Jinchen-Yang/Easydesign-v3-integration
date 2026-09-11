@@ -39,7 +39,7 @@ Read `/skills/site-mechanism/references/research.md` for general mechanism and s
 questions. Use `compare_reference_identity` when canonical/construct identity affects the site.
 For a verified GPCR, retrieve GPCRdb with the exact PDB ID when available, then call
 `analyze_receptor_context` on that source card and original auth chain. This reuses the old
-topology, membrane, full source chain-graph and conditional candidate tools. Keep source auth/label
+topology, membrane, full source chain-graph and conditional candidate tools. Use this analysis before manually paging topology annotations. For focused UniProt annotations, use retrieve_evidence feature_types=['Topological domain','Transmembrane'] (or exact PTM feature types) so irrelevant references/keywords do not consume the reading budget. Keep source auth/label
 numbering distinct from the normalized approved target labels; map before proposing.
 
 1. Read `read_site_evidence`. Use the approved label mapping; never invent canonical,

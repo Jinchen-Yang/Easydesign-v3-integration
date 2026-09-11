@@ -9,7 +9,8 @@ Current messages clarify the immutable goal. A literature source is not the user
 
 Research sequence:
 
-1. Resolve accession/species/isoform and construct; use the existing identity comparison tool.
+1. Reuse approved accession/species/construct/mapping. Compare an additional reference only
+   when it changes the scientific question; do not restart Target identity work.
 2. Search same-target structures/complexes and their primary publications. Retrieve the records.
 3. Search independent epitope/mutation, competition/function, state and shielding evidence.
 4. Compare source construct, state, ligand, partner, maturation and assay to this project.

@@ -80,6 +80,22 @@ class FocusedSiteQuery(StrictDTO):
     )
 
 
+class CanonicalMappingQuery(StrictDTO):
+    canonical_positions: list[Annotated[int, Field(strict=True, ge=1)]] = Field(
+        min_length=1,
+        max_length=6,
+        description="Up to six exact canonical positions from verified literature/database "
+        "annotations. Read all corresponding rows in the already approved Target mapping; "
+        "these are not design labels and no new alignment is computed.",
+    )
+
+    @model_validator(mode="after")
+    def unique_positions(self) -> CanonicalMappingQuery:
+        if len(set(self.canonical_positions)) != len(self.canonical_positions):
+            raise ValueError("Canonical positions must be unique")
+        return self
+
+
 class TopologyResidue(StrictDTO):
     label_seq_id: int = Field(ge=1)
     segment: str = Field(pattern=r"^(TM[1-7]|ECL[1-3]|ICL[1-3]|N-term|C-term|ECD)$")

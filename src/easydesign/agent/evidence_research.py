@@ -104,7 +104,9 @@ class ResearchQuery(StrictDTO):
         pattern=r"^[A-Za-z0-9_.-]*$",
         description="primary-record requires PMID digits; primary-fulltext requires an "
         "actual retrieved PMCID starting PMC (never a PMID); uniprot-record an accession; "
-        "structure-record a PDB code. Search uses query instead.",
+        "structure-record a PDB code; gpcrdb-context the exact receptor entry "
+        "(for example adrb2_human), plus optional pdb_id. A PDB code alone is not "
+        "a receptor identifier. Search uses query instead.",
     )
     taxon_id: int | None = Field(default=None, ge=1)
     pdb_id: str | None = Field(default=None, pattern=r"^[0-9][A-Za-z0-9]{3}$")

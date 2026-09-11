@@ -19,7 +19,7 @@ from easydesign.stages.s02_hotspot_discovery.user_regions import normalize_manua
 
 from .contracts import AgentBoundaryError, SiteResidueQueryMismatch
 from .session_store import compact, identity
-from .site_contracts import BiologyContext
+from .site_contracts import BiologyContext, CanonicalMappingQuery
 
 
 def structure_inputs(
@@ -125,6 +125,43 @@ def analyze_site_facts(
     }
 
 
+def canonical_mapping_rows(
+    analysis: dict[str, Any], query: CanonicalMappingQuery
+) -> dict[str, Any]:
+    """Exact lookup in the approved mapping, including unobserved/nonunique rows."""
+    rows = analysis["observed_facts"]["mapping"]
+    observed = {
+        r["residue"]["label_seq_id"] for r in analysis["derived_metrics"]["sasa"]["residues"]
+    }
+    matches = []
+    for position in query.canonical_positions:
+        matched = [r for r in rows if r.get("canonical_position") == position]
+        matches.append(
+            {
+                "canonical_position": position,
+                "mapping_rows": matched,
+                "observed_design_labels": [
+                    r["label_seq_id"] for r in matched if r["label_seq_id"] in observed
+                ],
+                "status": "mapped" if matched else "no-approved-correspondence",
+            }
+        )
+    return {
+        "matches": matches,
+        "limitations": [
+            "Lookup of the already approved mapping only; no alignment, offset inference "
+            "or biological interpretation was performed.",
+            "Preserve every mapping_status/edit_type qualification and model_presence. "
+            "A conditional or ambiguous row is not proof of a unique native correspondence.",
+            "Empty mapping_rows means no correspondence in this approved design scope, "
+            "not absence from the canonical protein. Empty observed_design_labels means "
+            "none of its matched rows has a supplied coordinate-derived SASA row.",
+            "Observed correspondence alone does not establish topology, accessibility, "
+            "a valid hotspot or approval. Evaluate the returned design labels separately.",
+        ],
+    }
+
+
 def summarize_site_facts(
     analysis: dict[str, Any], *, labels: list[int], offset: int = 0
 ) -> dict[str, Any]:
@@ -145,7 +182,8 @@ def summarize_site_facts(
             "are not interchangeable. Do not invent an offset. Observed design-label "
             "inclusive ranges (at most first40 ranges shown): "
             + compact(ranges[:40])
-            + ". Use exact approved mapping/candidate labels for a focused question. "
+            + ". For canonical positions use read_canonical_mapping first; otherwise use exact "
+            "approved mapping/candidate labels for a focused question. "
             "No rows were returned and no hotspot/proposal/approval was changed."
         )
     selected = [r for r in rows if not labels or r["residue"]["label_seq_id"] in labels]

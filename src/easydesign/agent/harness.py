@@ -691,6 +691,25 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 }
                 call_request = call_request.override(model_settings=settings)
             response = await handler(call_request)
+            self.bridge.store.event(
+                self.bridge.thread,
+                "model-response",
+                {
+                    "role": self.role,
+                    "execution_id": self.execution_id,
+                    "responses": [
+                        {
+                            "stop_reason": m.response_metadata.get("stop_reason")
+                            or m.response_metadata.get("finish_reason"),
+                            "usage": m.usage_metadata,
+                            "tool_names": [c["name"] for c in m.tool_calls],
+                            "invalid_tool_names": [c.get("name") for c in m.invalid_tool_calls],
+                        }
+                        for m in response.result
+                        if isinstance(m, AIMessage)
+                    ],
+                },
+            )
             if not self.structured_output:
                 return response
             schema = self.output_schema

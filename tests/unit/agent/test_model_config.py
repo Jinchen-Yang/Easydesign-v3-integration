@@ -303,7 +303,7 @@ def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(monkeypatch: An
         model="deepseek-v4-pro",
         secret_env="TEST_KEY",
         reasoning_effort="low",
-        max_output_tokens=4096,
+        max_output_tokens=16384,
     )
     assert selected.harness_key == "anthropic:deepseek-v4-pro"
     create_models(ModelConfig(default=selected))
@@ -314,7 +314,7 @@ def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(monkeypatch: An
         assert kwargs["base_url"] == "https://api.deepseek.com/anthropic"
         assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
         assert kwargs["output_config"] == {"effort": "low"}
-        assert kwargs["max_tokens"] == 4096
+        assert kwargs["max_tokens"] == 16384
         assert kwargs["max_retries"] == 0
     assert "test-secret" not in selected.model_dump_json()
     for provider in ("openai", "anthropic"):
@@ -375,7 +375,7 @@ async def test_deepseek_thinking_blocks_roundtrip_through_actual_sdk(monkeypatch
             model="deepseek-v4-pro",
             secret_env="TEST_KEY",
             reasoning_effort="low",
-            max_output_tokens=4096,
+            max_output_tokens=16384,
         )
     )
     model = create_models(config)["site"]
@@ -400,6 +400,6 @@ async def test_deepseek_thinking_blocks_roundtrip_through_actual_sdk(monkeypatch
     for request in requests:
         assert request["thinking"]["type"] == "enabled"
         assert request["output_config"] == {"effort": "low"}
-        assert request["max_tokens"] == 4096
+        assert request["max_tokens"] == 16384
     assert "test-secret" not in json.dumps(requests)
     await client.aclose()

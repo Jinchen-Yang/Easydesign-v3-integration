@@ -12,7 +12,7 @@ from .evidence_corpus import corpus_tools
 from .evidence_output import result_tool
 from .evidence_research import identity_comparison_tool, receptor_analysis_tool, research_tool
 from .phase2 import Phase2Bridge
-from .site_contracts import SiteQuery
+from .site_contracts import CanonicalMappingQuery, SiteQuery
 from .target_identity import canonical_tool
 from .tools import JUDGE_EVIDENCE, build_tools
 
@@ -35,6 +35,7 @@ PHASE2_ALLOWED = {
     },
     "site": {
         "read_file",
+        "read_canonical_mapping",
         "read_site_evidence",
         "evaluate_candidate_site",
         "research_evidence",
@@ -196,6 +197,14 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
         ]
     if role == "site":
 
+        async def mapping(canonical_positions: list[int]) -> str:
+            return bridge.store.offload(
+                bridge.thread,
+                bridge.read_canonical_mapping(
+                    CanonicalMappingQuery(canonical_positions=canonical_positions)
+                ),
+            )
+
         async def read(label_seq_ids: list[int] | None = None, offset: int = 0) -> str:
             return bridge.store.offload(
                 bridge.thread,
@@ -215,6 +224,17 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
             *corpus_tools(bridge),
             identity_comparison_tool(bridge),
             receptor_analysis_tool(bridge),
+            StructuredTool.from_function(
+                name="read_canonical_mapping",
+                coroutine=mapping,
+                args_schema=CanonicalMappingQuery,
+                description=(
+                    "Look up canonical annotation positions in the already approved Target "
+                    "mapping before choosing design labels. Returns all exact matching rows, "
+                    "ambiguity/nulls and observed design labels, including missing-coordinate "
+                    "and no-correspondence results. No new alignment or approval."
+                ),
+            ),
             StructuredTool.from_function(
                 name="read_site_evidence",
                 coroutine=read,

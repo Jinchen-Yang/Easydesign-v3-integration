@@ -356,7 +356,12 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
             "judge_binding": judge_binding.model_dump(mode="json") if judge_binding else None,
         },
     )
-    exact_page = message.name in {"retrieve_evidence", "continue_evidence", "read_evidence_result"}
+    exact_page = message.name in {
+        "retrieve_evidence",
+        "continue_evidence",
+        "read_evidence_result",
+        "read_canonical_mapping",
+    }
     projected = scientific_projection(value) if role == "judge" or exact_page else preview(value)
     view_limit = 32000 if role == "judge" else 6000
     if source_artifact is not None:

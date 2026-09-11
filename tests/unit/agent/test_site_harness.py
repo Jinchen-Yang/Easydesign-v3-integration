@@ -325,6 +325,14 @@ async def test_invalid_provider_json_repair_is_budgeted_and_has_no_duplicate_job
     contexts = [e["payload"] for e in events if e["kind"] == "model-context"]
     calls = [e for e in events if e["kind"] == "model-call"]
     assert len(contexts) == len(calls)
+    responses = [e["payload"] for e in events if e["kind"] == "model-response"]
+    assert len(responses) == len(calls)
+    assert any("SiteIntent" in m["invalid_tool_names"] for e in responses for m in e["responses"])
+    assert all(
+        set(m) == {"stop_reason", "usage", "tool_names", "invalid_tool_names"}
+        for e in responses
+        for m in e["responses"]
+    )
     assert any(c["repair_attempt"] == 1 for c in contexts)
     assert all(c["context_chars"] <= c["limit"] for c in contexts)
     assert (

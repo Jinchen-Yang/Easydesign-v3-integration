@@ -946,3 +946,51 @@ Before/after snapshots and model-config-change145.json are retained under the ex
 evidence directory. Model Pro/low, shared32calls and60000input remain unchanged. No source or
 scientific invariant changes accompany this retry; the prior targeted143 tests apply.
 Next live145/146 resume the same independently approved Targets. Phase2 NOT FROZEN.
+
+
+### Canonical lookup, focused instructions and Site output cap (live145/146)
+
+Live145 (`phase2-goldens-20260911T213641992394Z`, soluble) ended at13calls
+(Coordinator2/Site11), still without a valid SiteIntent. Native SDK metadata for the saved
+empty SiteIntent call reports stop_reason=max_tokens, output_tokens8191 and25843private-thinking
+characters (text not exported). Thus8192 remained insufficient for that reasoning plus final
+structured response. Live146 (`phase2-goldens-20260911T213642139020Z`, GPCR) ended at11calls
+(Coordinator2/Site9), exhausting four shared argument/prerequisite repairs. It requested
+canonical296–307 as design labels, omitted the GPCRdb receptor identifier/selection, then tried
+reading the display-only facts_table from its original full_result. Neither reached Gate2;
+these are operational failures, not scientific negative results. Exact Case3 PASS remains valid.
+
+A new read_canonical_mapping Site tool only filters existing approved mapping rows by up to six
+explicit canonical positions. It preserves all matching rows (including nonunique correspondence),
+original qualifiers/nulls/source numbering/model presence and separately lists labels with actual
+coordinate-derived SASA rows. No match differs from matched-but-unobserved. No offset, alignment,
+biological interpretation, hotspot approval or scientific kernel change is introduced. Existing
+ArtifactRef checks and the usual exact-page offload/read path remain authoritative.
+REAL APPROVED DATA lookup147 independently verified soluble53→design35,70→52,146/147→unobserved,
+and GPCR299–304→427–432 with ambiguous mapping preserved. No events, target state or jobs changed.
+Receipt: canonical-lookup147.json. Synthetic tests additionally preserve every row in a multi-match
+case and reject duplicate/nonpositive/boolean/oversized requests.
+
+The Site Skill is condensed from145 to101lines, retaining the scientific constraints/research
+standards while removing duplicate mechanics. This avoids the observed mandatory second tail read
+and reduces repeated prompt overhead. Research references clarify that approved Target identity
+is reused; GPCRdb identifier help explicitly distinguishes receptor entry from pdb_id.
+The model-response event records SDK stop reason, usage and tool names, without private thinking
+or tool arguments, before local submission checks. It is diagnostics in the existing event log,
+not a new checkpoint system or a scientific fact. An exception thrown inside the framework before
+returning a response may still have no such event; native saved response metadata remains useful.
+
+The provider's current official max_tokens documentation permits values beyond16k:
+https://api-docs.deepseek.com/api/create-chat-completion/ (archived deepseek-api-reference147.html).
+LLMConfig's explicit maximum is now16384; its2048default is unchanged. Only the Site role is
+configured to16384 for the next retry. Other roles remain8192, Pro/low and shared32calls/60000input
+are unchanged. Before/after/config-change147 receipts bind
+e5a5e6e59d516dabda4989cebb336794ef0f24743b34456a662f3d3b6c0a8464
+→ff188ad3e25a994df084375565ac81374004773101ae2d7c65444ea92b479938.
+
+Targeted145:21 PASS/2 opt-in-live skips (421.53s), covering Site/Design steering and restart.
+Targeted147:50 PASS/1 FAIL (23.36s); the failure was the actual-SDK test's stale4096assertion
+after requesting16384. Correcting that expectation yielded targeted147b:1 PASS (0.77s).
+The SDK test confirms16384 reaches the actual request and signed blocks round-trip intact.
+Ruff147 PASS; mypy147:8source files PASS. No production/GPU jobs were added.
+Next live147/148 resume the independently approved soluble/GPCR Targets. Phase2 NOT FROZEN.

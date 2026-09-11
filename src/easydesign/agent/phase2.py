@@ -42,8 +42,13 @@ from .contracts import (
 )
 from .evidence_research import EvidenceResearch
 from .session_store import SessionStore, compact, confined, identity
-from .site_contracts import BiologyContext, SiteIntent, SiteQuery
-from .site_evidence import analyze_site_facts, evaluate_site, summarize_site_facts
+from .site_contracts import BiologyContext, CanonicalMappingQuery, SiteIntent, SiteQuery
+from .site_evidence import (
+    analyze_site_facts,
+    canonical_mapping_rows,
+    evaluate_site,
+    summarize_site_facts,
+)
 from .tools import STAGE, TargetBridge, scientific_environment
 
 SITE_EVIDENCE: contextvars.ContextVar[EvidenceBinding | None] = contextvars.ContextVar(
@@ -280,6 +285,15 @@ class Phase2Bridge(TargetBridge):
             "research": {
                 k: v for k, v in EvidenceResearch(self).snapshot().items() if k != "queries"
             },
+        }
+
+    def read_canonical_mapping(self, query: CanonicalMappingQuery) -> dict[str, Any]:
+        target, facts, ref = self.site_facts()
+        return {
+            "target_binding": target["binding"],
+            "source_refs": [ref],
+            "query_scope": "approved-canonical-correspondence",
+            **canonical_mapping_rows(facts, query),
         }
 
     def evaluate_candidate(self, query: SiteQuery) -> dict[str, Any]:

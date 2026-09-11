@@ -19,7 +19,7 @@ class LLMConfig(StrictDTO):
     model: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$")
     secret_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]{1,100}$")
     timeout_seconds: float = Field(default=90, ge=1, le=180)
-    max_output_tokens: int = Field(default=2048, ge=128, le=8192)
+    max_output_tokens: int = Field(default=2048, ge=128, le=16384)
     reasoning_effort: Literal["none", "low", "high", "max"] = "none"
 
     @model_validator(mode="after")

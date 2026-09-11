@@ -115,9 +115,10 @@ research did not occur. Cite actual supplied passages rather than rereading rece
 The acquisition error's evidence_need is exact: select that need before retrying the same
 operation. structure-complex uses PPI_INTERFACE; structure-state uses STRUCTURE_STATE.
 research_evidence saves complete selected sources; its acquisition receipt contains no full text.
-Use retrieve_evidence for the current scientific question, optionally source_id, and continue
-with its cursor only when needed. Keep question/need/source_id identical with a cursor;
-when changing the question or need, omit cursor to start the newly ranked view. Cite the
+Use retrieve_evidence to start a scientific question, optionally source_id and feature_types.
+For another page use continue_evidence(cursor=the_exact_next_cursor) only; runtime restores the
+verified original question, need, source and filter. Do not retype those fields for continuation.
+For a new question use retrieve_evidence with the new need/question/source/filter. Cite the
 returned passage card ID and exact short excerpt.
 Need names: TARGET_IDENTITY, STRUCTURE_STATE, LIGAND_PARTNER, MUTAGENESIS,
 FUNCTIONAL_MECHANISM, KNOWN_EPITOPE, COMPETITION, PPI_INTERFACE, GLYCAN_PTM, CONSERVATION.

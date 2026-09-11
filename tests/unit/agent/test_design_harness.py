@@ -32,6 +32,7 @@ class DesignModel(SiteModel):
             "read_target_evidence",
             "read_evidence_result",
             "analyze_receptor_context",
+            "continue_evidence",
         }
         return self
 

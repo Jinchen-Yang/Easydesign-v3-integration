@@ -740,3 +740,35 @@ offset and was updated for the explicit focused query. Final targeted130b:56 PAS
 including late-read rejection, no approval creation, full row reconstruction, immutable full-result
 retention and permission rejection telemetry. Ruff130b PASS; mypy130b:20 files PASS.
 Next live131/132 reuse the approved soluble/GPCR Target bundles.
+
+
+### Cursor-only source continuation and actual transport finalization (live131/132)
+
+Live131 (`phase2-goldens-20260911T202831612959Z`) received complete focused row tables, but its
+Site owner kept attempting reads after the finalization reserve. Those reads executed nothing;
+the two existing corrections were exhausted at27totalcalls (Coordinator2/Site25). Wire133 uses
+the real LangChain agent/ToolStrategy and installed SDK with HTTP MockTransport, without network:
+the actual request correctly contained only SiteIntent, tool_choice=required, max_tokens2048 and
+thinking disabled. Thus the model's late tool choice, rather than missing client-side schema
+filtering, remains the observed problem. Finalization now sets DeepSeek's documented named
+SiteIntent choice through extra_body while preserving provider settings and output budget. The
+updated wire test proves the exact outgoing named choice and no jobs/proposals. Unknown fields,
+citations, hard facts and independent approval rules remain enforced after response generation.
+Primary transport reference: https://api-docs.deepseek.com/api/create-chat-completion/ .
+
+Live132 (`phase2-goldens-20260911T202832636041Z`) repeatedly used a UniProt cursor on an RCSB
+question, then exhausted the shared four argument repairs. Model retrieval now separates initial
+queries from continue_evidence(cursor): the latter restores need/question/source/filter/page size
+from the existing verified evidence-view artifact and invokes the same corpus reader. No new
+store, pagination algorithm or stale-view reset exists. Legacy RetrieveEvidence remains compatible.
+The model's continuation schema offers exact recently issued cursors only. Foreign/unissued tokens,
+source corruption, changed selection and stale current binding remain rejected; no page/offset
+advances on rejection. Tests verify exact equality with the old valid continuation, no skipped
+passages/new source fetches, extra-field rejection, foreign ownership and changed-selection checks.
+Continuation passages receive the same working-set retention and delivery metrics as initial reads.
+
+Targeted133:67 PASS (14.36s), including the actual SDK wire path. Ruff133 found one description
+line; mypy133 found an overly broad role type in the Site-only provider branch. Both corrected.
+Model-context now records actual offered action names/output schema and counts only the tools
+offered in synthesis mode. Final targeted133b:44 PASS (7.24s); Ruff133b PASS; mypy133b:20 files PASS.
+Next live134/135 reuse the independently approved Target bundles. No Phase2 freeze is claimed.

@@ -243,7 +243,7 @@ for _role in PHASE2_ALLOWED:
     PHASE2_ALLOWED[_role] = PHASE2_ALLOWED[_role] | {"read_evidence_result"}
 PHASE2_ALLOWED["target"] |= {"propose_canonical_identity"}
 for _role in ("target", "site"):
-    PHASE2_ALLOWED[_role] |= {"select_evidence", "retrieve_evidence"}
+    PHASE2_ALLOWED[_role] |= {"select_evidence", "retrieve_evidence", "continue_evidence"}
 DESIGN_ALLOWED.update(PHASE2_ALLOWED)
 DESIGN_ALLOWED["coordinator"] = PHASE2_ALLOWED["coordinator"] | {"reopen_site_decision"}
 DESIGN_ALLOWED["binder"] |= {"read_evidence_result"}

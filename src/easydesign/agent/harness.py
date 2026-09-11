@@ -39,7 +39,7 @@ from .contracts import (
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
-from .evidence_corpus import RetrieveEvidence
+from .evidence_corpus import ContinueEvidence, RetrieveEvidence
 from .evidence_output import ModelEvidenceScope, output_message, read_query, verified_result
 from .evidence_research import EvidenceResearch, ReceptorAnalysis, ResearchQuery
 from .models import ModelConfig, Role
@@ -288,7 +288,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         for message in reversed(request.messages):
             if (
                 not isinstance(message, ToolMessage)
-                or message.name != "retrieve_evidence"
+                or message.name not in {"retrieve_evidence", "continue_evidence"}
                 or message.status == "error"
                 or not isinstance(message.content, str)
             ):
@@ -302,12 +302,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if len(cursors) >= 5:
                 break
         retrieval_schema = RetrieveEvidence.model_json_schema()
-        retrieval_schema["properties"]["cursor"]["enum"] = cursors
+        retrieval_schema["properties"].pop("cursor")
+        continuation_schema = ContinueEvidence.model_json_schema()
+        continuation_schema["properties"]["cursor"]["enum"] = cursors[1:]
         available = [
             t.model_copy(update={"args_schema": retrieval_schema})
             if t.name == "retrieve_evidence"
+            else t.model_copy(update={"args_schema": continuation_schema})
+            if t.name == "continue_evidence"
             else t
             for t in available
+            if t.name != "continue_evidence" or cursors[1:]
         ]
         if self.role == "site" and isinstance(self.bridge, Phase2Bridge):
             receptor_cards = sorted(
@@ -474,12 +479,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 source_ids = {
                     c["source_id"]
                     for i in retained
-                    if messages[i].name == "retrieve_evidence"
+                    if messages[i].name in {"retrieve_evidence", "continue_evidence"}
                     for c in json.loads(messages[i].content).get("cards", [])
                     if c.get("source_id")
                 }
                 for i in reversed(detailed):
-                    if messages[i].name != "retrieve_evidence":
+                    if messages[i].name not in {"retrieve_evidence", "continue_evidence"}:
                         continue
                     value = json.loads(messages[i].content)
                     sources = {c.get("source_id") for c in value.get("cards", [])}
@@ -573,6 +578,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             ).fetchone()[0]
             synthesize = self.role == "site" and self.config.max_model_calls - used <= 8
             call_tools = [] if synthesize else available
+            call_tool_chars = (
+                len(compact([convert_to_openai_tool(SiteIntent)])) if synthesize else tool_chars
+            )
             request = request.override(
                 system_message=SystemMessage(
                     content=base_system
@@ -625,8 +633,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "role": self.role,
                     "execution_id": self.execution_id,
                     "context_chars": chars,
-                    "tool_schema_chars": tool_chars,
-                    "estimated_input_chars_with_schemas": chars + tool_chars,
+                    "tool_schema_chars": call_tool_chars,
+                    "estimated_input_chars_with_schemas": chars + call_tool_chars,
                     "context_metric": "system and message content; tool schemas separately",
                     "limit": self.config.max_input_chars,
                     "message_count": len(request.messages),
@@ -634,9 +642,28 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         len(str(m.content)) for m in request.messages if isinstance(m, ToolMessage)
                     ),
                     "repair_attempt": attempt,
+                    "tool_mode": "site-synthesis" if synthesize else "research",
+                    "offered_action_tools": [t.name for t in call_tools],
+                    "structured_output_tool": self.output_schema.__name__
+                    if self.output_schema
+                    else None,
                 },
             )
-            response = await handler(request.override(tools=call_tools))
+            call_request = request.override(tools=call_tools)
+            if (
+                synthesize
+                and self.config.roles.get("site", self.config.default).provider == "deepseek"
+            ):
+                # ToolStrategy binds generic required. Use the provider's documented
+                # named choice only for finalization, preserving vendor budget/settings.
+                settings = dict(request.model_settings)
+                settings["extra_body"] = {
+                    **(getattr(request.model, "extra_body", None) or {}),
+                    **settings.get("extra_body", {}),
+                    "tool_choice": {"type": "function", "function": {"name": "SiteIntent"}},
+                }
+                call_request = call_request.override(model_settings=settings)
+            response = await handler(call_request)
             if not self.structured_output:
                 return response
             schema = self.output_schema
@@ -671,7 +698,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             diagnostic = ""
             if synthesize and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
-                    "SITE_READING_BUDGET_COMPLETE: no further reading/action was executed. "
+                    "SITE_READING_BUDGET_COMPLETE: rejected "
+                    + compact([c["name"] for c in calls])
+                    + "; no further reading/action was executed. "
                     "Submit only SiteIntent using delivered evidence; preserve material unknowns. "
                     "The original scientific and source checks remain mandatory."
                 )
@@ -981,9 +1010,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             "complete context card before analyzing it. No selection, fetch, "
                             "source or scientific job was created by this invalid request."
                         ) from error
-                if name == "retrieve_evidence":
+                if name in {"retrieve_evidence", "continue_evidence"}:
                     try:
-                        RetrieveEvidence.model_validate(args)
+                        (
+                            ContinueEvidence if name == "continue_evidence" else RetrieveEvidence
+                        ).model_validate(args)
                     except ValidationError as error:
                         raise EvidenceRetrievalQueryMismatch(
                             "Invalid read-only retrieval arguments: "
@@ -1024,7 +1055,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             and isinstance(error, SourceCardArgumentMismatch)
                         )
                         and not (
-                            name == "retrieve_evidence"
+                            name in {"retrieve_evidence", "continue_evidence"}
                             and isinstance(
                                 error,
                                 (
@@ -1083,7 +1114,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 result = output_message(self.bridge, self.role, self.execution_id, result)
             supplied_cards = 0
             if (
-                name in {"retrieve_evidence", "read_evidence_result"}
+                name in {"retrieve_evidence", "continue_evidence", "read_evidence_result"}
                 and isinstance(result, ToolMessage)
                 and isinstance(result.content, str)
                 and result.status != "error"

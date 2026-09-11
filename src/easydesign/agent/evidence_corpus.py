@@ -86,6 +86,15 @@ class RetrieveEvidence(StrictDTO):
     page_size: int = Field(default=2, ge=1, le=3)
 
 
+class ContinueEvidence(StrictDTO):
+    cursor: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="Copy the exact next_cursor for the desired source view. "
+        "Runtime restores its query; never edit or decode it.",
+    )
+
+
 def source_key(provider: str, identifier: str) -> str:
     return f"{provider}:{identifier.upper()}"
 
@@ -250,6 +259,38 @@ class EvidenceCorpus:
         if card["provider"] != "UniProt" or len(matching) != 1:
             raise AgentBoundaryError("Feature scope requires one verified UniProt record")
         return list(matching[0].get("features", []))
+
+    def continue_page(self, request: ContinueEvidence) -> dict[str, Any]:
+        """Continue a verified issued view without model retyping its scientific query."""
+        owned = []
+        for event in reversed(self.bridge.store.events(self.bridge.thread)):
+            if event["kind"] != "evidence-view":
+                continue
+            prior = self.bridge.document(event["payload"]["ref"])
+            if prior["next_cursor"] == request.cursor:
+                # The existing reader independently checks current binding, selection,
+                # source bytes and the exact issued cursor; no stale-view auto-reset.
+                return self.retrieve(
+                    RetrieveEvidence(
+                        need=prior["need"],
+                        question=prior["question"],
+                        source_id=prior["source_id"],
+                        feature_types=prior.get("feature_types", []),
+                        page_size=prior.get("page_size", 2),
+                        cursor=request.cursor,
+                    )
+                )
+            owned.append(prior.get("query_id", "").rsplit("-", 1)[0])
+        try:
+            decoded = json.loads(base64.urlsafe_b64decode(request.cursor))
+        except (ValueError, TypeError):
+            decoded = None
+        if isinstance(decoded, dict) and decoded.get("view") in owned:
+            raise EvidenceRetrievalQueryMismatch(
+                "Unissued cursor for an owned view rejected without reading/advancing. "
+                "Copy its exact returned next_cursor; never reset the encoded offset."
+            )
+        raise AgentBoundaryError("Unknown or foreign continuation cursor")
 
     def retrieve(self, request: RetrieveEvidence) -> dict[str, Any]:
         selected = self.selections()
@@ -433,6 +474,7 @@ class EvidenceCorpus:
         )
         result = {
             "query_id": view + f"-{offset}",
+            "page_size": request.page_size,
             "topic": next(k for k, v in NEEDS.items() if v == request.need),
             "question": request.question,
             "source_id": request.source_id,
@@ -493,7 +535,20 @@ def corpus_tools(bridge: Any) -> list[Any]:
     async def retrieve(**arguments: Any) -> str:
         return compact(EvidenceCorpus(bridge).retrieve(RetrieveEvidence.model_validate(arguments)))
 
+    async def continue_page(**arguments: Any) -> str:
+        return compact(
+            EvidenceCorpus(bridge).continue_page(ContinueEvidence.model_validate(arguments))
+        )
+
     return [
+        StructuredTool.from_function(
+            name="continue_evidence",
+            coroutine=continue_page,
+            args_schema=ContinueEvidence,
+            description="Read the next page of one issued evidence view. Supply only its exact "
+            "next_cursor; runtime restores the same source/question/need/filter and checks "
+            "current authority. For a new question use retrieve_evidence without a cursor.",
+        ),
         StructuredTool.from_function(
             name="select_evidence",
             coroutine=select,

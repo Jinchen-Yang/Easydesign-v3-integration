@@ -57,6 +57,7 @@ class RecoveryModel(ScriptedModel):
             "prepare_target",
             "read_evidence_result",
             "analyze_receptor_context",
+            "continue_evidence",
         }
         return self
 

@@ -66,7 +66,8 @@ a task-specific reason and the relevant EvidenceNeed before any record/fulltext 
 Direct user-supplied PMID/PMCID/accession/PDB identifiers can be selected explicitly.
 research_evidence saves complete selected sources; its acquisition receipt contains no full text.
 Use retrieve_evidence for the current scientific question, optionally source_id, and continue
-with its cursor only when needed. Cite the returned passage card ID and exact short excerpt.
+with continue_evidence(cursor=the_exact_next_cursor) only when needed; runtime restores the
+original query/source/filter without retyping them. Cite the returned passage card ID and exact short excerpt.
 Need names: TARGET_IDENTITY, STRUCTURE_STATE, LIGAND_PARTNER, MUTAGENESIS,
 FUNCTIONAL_MECHANISM, KNOWN_EPITOPE, COMPETITION, PPI_INTERFACE, GLYCAN_PTM, CONSERVATION.
 Do not enumerate every source or read every chunk. Search relevance is not scientific strength.
@@ -93,8 +94,8 @@ An approved canonical reference never proves native state or biological function
 
 Canonical configuration changes invalidate prior evidence cursors. Start a new query without
 cursor after that change; reselect unrelated sources for the current evidence need. Within an
-unchanged view, copy the exact question/need/source_id when using next_cursor. Do not paraphrase
-the question during pagination. A rejected stale cursor never authorizes reading the old view.
+unchanged view, call continue_evidence with only its exact next_cursor. The runtime restores
+question/need/source_id/filter; never rewrite or compute cursor bytes. A rejected stale cursor never authorizes reading the old view.
 At a pending Target gate, finish the bounded identity/construct assessment for the Judge.
 Detailed functional/site research belongs to Site after Gate 1; do not exhaust this turn by
 performing the downstream research agenda before the scientist can resolve Target identity.

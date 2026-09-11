@@ -171,3 +171,66 @@ async def test_real_provider_adapter_preserves_typed_tool_contract(
     assert "provider-test-secret" not in json.dumps(requests)
     sync.close()
     await async_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_site_finalization_filters_the_actual_sdk_tool_payload(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    import json
+
+    import httpx
+    from langchain.agents import create_agent
+    from langchain.agents.structured_output import ToolStrategy
+    from langchain.chat_models import init_chat_model
+    from langchain_core.tools import StructuredTool
+
+    from easydesign.agent.harness import RoleBoundary
+    from easydesign.agent.phase2 import Phase2Bridge
+    from easydesign.agent.phase2_tools import phase2_tools
+    from easydesign.agent.site_contracts import SiteIntent
+
+    requests = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        raise RuntimeError("Captured SDK payload without network")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
+    sync = httpx.Client(transport=httpx.MockTransport(capture))
+
+    def factory(*args: Any, **kwargs: Any) -> Any:
+        return init_chat_model(*args, **kwargs, http_client=sync, http_async_client=client)
+
+    monkeypatch.setattr("langchain.chat_models.init_chat_model", factory)
+    monkeypatch.setenv("TEST_KEY", "wire-test-secret")
+    cfg = ModelConfig(
+        default=LLMConfig(provider="deepseek", model="test-model", secret_env="TEST_KEY")
+    )
+    model = create_models(cfg)["site"]
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Finalize a bounded hypothesis")["execution_id"]
+    for _ in range(cfg.max_model_calls - 8):
+        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
+    boundary = RoleBoundary(b, "site", cfg, "Scientific test", execution_id=eid)
+    site_tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+    graph = create_agent(
+        model,
+        tools=site_tools,
+        response_format=ToolStrategy(SiteIntent, handle_errors=boundary.contract_error),
+        middleware=[boundary],
+        system_prompt="Submit the test hypothesis",
+    )
+    with pytest.raises(Exception, match="Captured SDK payload|Connection error"):
+        await graph.ainvoke(
+            {"messages": [{"role": "user", "content": "Submit the available evidence"}]}
+        )
+    assert len(requests) == 1
+    assert [t["function"]["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
+    assert requests[0]["tool_choice"] == {"type": "function", "function": {"name": "SiteIntent"}}
+    assert requests[0]["max_tokens"] == 2048 and requests[0]["thinking"] == {"type": "disabled"}
+    assert not b._jobs() and b.current_site() is None
+    sync.close()
+    await client.aclose()

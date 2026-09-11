@@ -900,11 +900,15 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
             "/skills/site-mechanism/references/shielding.md",
         }
         retrieval = next(t for t in request.tools if t.name == "retrieve_evidence")
-        cursor_schema = convert_to_openai_tool(retrieval)["function"]["parameters"]["properties"][
+        assert (
             "cursor"
-        ]
+            not in convert_to_openai_tool(retrieval)["function"]["parameters"]["properties"]
+        )
+        continuation = next(t for t in request.tools if t.name == "continue_evidence")
+        cursor_schema = convert_to_openai_tool(continuation)["function"]["parameters"][
+            "properties"
+        ]["cursor"]
         assert set(cursor_schema["enum"]) == {
-            "",
             "exact-source-cursor-0",
             "exact-source-cursor-1",
             "exact-source-cursor-2",
@@ -1393,6 +1397,20 @@ async def test_site_budget_reserve_requests_typed_synthesis_without_creating_app
         == cfg.max_model_calls - 6
     )
 
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+
+    from easydesign.agent.site_contracts import SiteIntent
+
+    contexts = [e["payload"] for e in b.store.events(b.thread) if e["kind"] == "model-context"]
+    assert all(
+        c["offered_action_tools"] == [] and c["structured_output_tool"] == "SiteIntent"
+        for c in contexts
+    )
+    assert all(
+        c["tool_schema_chars"] == len(compact([convert_to_openai_tool(SiteIntent)]))
+        for c in contexts
+    )
+
 
 @pytest.mark.asyncio
 async def test_unknown_model_tool_is_recorded_and_rejected_before_execution(bridge: Any) -> None:
@@ -1429,3 +1447,64 @@ async def test_unknown_model_tool_is_recorded_and_rejected_before_execution(brid
     assert event["payload"]["executed"] is False
     assert event["payload"]["tool_names"] == ["unavailable_scientific_tool"]
     assert not b._jobs() and b.current_site() is None
+
+
+def test_cursor_only_continuation_restores_verified_query_and_retains_hard_boundaries(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    import base64
+
+    from easydesign.agent.contracts import EvidenceRetrievalQueryMismatch, StaleEvidenceCursor
+    from easydesign.agent.evidence_corpus import ContinueEvidence
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.store.begin_execution(b.thread, "Read consecutive source passages")
+    fetches = source_transport(b, monkeypatch)
+    EvidenceResearch(b).acquire(
+        ResearchQuery.model_validate(
+            {**ACQUIRE, "selection_reason": "Read complete assay conditions and counterevidence"}
+        ),
+        role="site",
+    )
+    corpus = EvidenceCorpus(b)
+    query = RetrieveEvidence(
+        need="FUNCTIONAL_MECHANISM",
+        question="assay control",
+        source_id="EuropePMC:PMC123",
+        page_size=3,
+    )
+    first = corpus.retrieve(query)
+    before_fetches = len(fetches)
+    second = corpus.continue_page(ContinueEvidence(cursor=first["next_cursor"]))
+    exact = corpus.retrieve(query.model_copy(update={"cursor": first["next_cursor"]}))
+    assert (
+        second == exact
+        and second["question"] == query.question
+        and second["source_id"] == query.source_id
+    )
+    assert not ({c["card_id"] for c in first["cards"]} & {c["card_id"] for c in second["cards"]})
+    assert len(fetches) == before_fetches and not b._jobs()
+    with pytest.raises(ValidationError):
+        ContinueEvidence(cursor=first["next_cursor"], question="Different")
+    other = EvidenceCorpus(Phase2Bridge(b.project, "foreign-view", b.store))
+    with pytest.raises(AgentBoundaryError, match="foreign"):
+        other.continue_page(ContinueEvidence(cursor=first["next_cursor"]))
+    decoded = json.loads(base64.urlsafe_b64decode(first["next_cursor"]))
+    decoded["offset"] = 100000
+    altered = base64.urlsafe_b64encode(compact(decoded).encode()).decode()
+    count = len([e for e in b.store.events(b.thread) if e["kind"] == "evidence-view"])
+    with pytest.raises(EvidenceRetrievalQueryMismatch, match="Unissued"):
+        corpus.continue_page(ContinueEvidence(cursor=altered))
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "evidence-view"]) == count
+    corpus.select(
+        SelectEvidence(
+            provider="EuropePMC",
+            identifier="PMC123",
+            need=query.need,
+            selection="EXCLUDED",
+            reason="Source no longer selected for this view",
+        )
+    )
+    with pytest.raises(StaleEvidenceCursor):
+        corpus.continue_page(ContinueEvidence(cursor=first["next_cursor"]))
+    assert len(fetches) == before_fetches and not b._jobs()

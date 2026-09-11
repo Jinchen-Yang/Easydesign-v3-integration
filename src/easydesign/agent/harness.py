@@ -237,6 +237,45 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
             raise AgentBoundaryError(f"Unexpected final tool surface for {self.role}")
+        skill_paths = (
+            [f"/skills/{self.skills[self.role]}/SKILL.md"] if self.role in self.skills else []
+        )
+        if self.role == "site":
+            skill_paths.extend(
+                f"/skills/site-mechanism/references/{name}.md"
+                for name in ("research", "membrane", "shielding")
+            )
+        # Filesystem access is a Skill loader, not a scientific artifact reader.
+        # Show the same fixed paths the authority guard permits. Legacy scoped
+        # result-index reads remain compatible, but are not advertised as file IO.
+        available = [t for t in available if t.name != "read_file" or skill_paths]
+        available = [
+            t.model_copy(
+                update={
+                    "description": "Read an allowed Skill instruction page. Scientific evidence "
+                    "is supplied by this role's evidence tools; "
+                    "project references are not file paths.",
+                    "args_schema": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {"type": "string", "enum": skill_paths},
+                            "offset": {"type": "integer", "minimum": 0, "default": 0},
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 120,
+                                "default": 120,
+                            },
+                        },
+                        "required": ["file_path"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+            if t.name == "read_file"
+            else t
+            for t in available
+        ]
         if (
             isinstance(self.bridge, Phase2Bridge)
             and not self.bridge.store.db.execute(

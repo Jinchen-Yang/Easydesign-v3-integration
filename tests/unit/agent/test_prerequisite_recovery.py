@@ -50,6 +50,8 @@ class RecoveryModel(ScriptedModel):
             {output[self.role]} if self.role in output else set()
         )
         names = {t.name for t in tools}
+        if self.role == "coordinator":
+            expected -= {"read_file"}
         assert names <= expected and expected - names <= {
             "get_job_status",
             "prepare_target",

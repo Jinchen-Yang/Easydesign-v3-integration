@@ -565,3 +565,31 @@ failure. Corrected targeted112b is the actual regression run. Ruff112 PASS; mypy
 Protected-baseline recheck: all385 files unchanged. Validation outcome recorded below before retry.
 Targeted112b:40 PASS (49.35s). Next live113/114 reuse the independently approved soluble044 and
 GPCR104 Targets; all source/gate/identity/science oracles remain unchanged.
+
+
+### Skill file surface and object-offset semantics (live113/114)
+
+Live113 (`phase2-goldens-20260911T193948187038Z`) reached real literature/database research and
+then exhausted32calls paging the same facts_table object with offsets12…238. Latest answers were
+now visible; the next defect was a nonzero object offset silently returning the same complete
+object. The scoped reader now rejects nonzero offsets on objects/scalars through the existing
+argument repair budget, names the object's actual keys, and distinguishes rows-list indices from
+another residue-region query. Lists/text retain their original paging semantics; unknown/foreign
+references remain fatal. Regression checks that an object/scalar cannot replay as a successful page
+and that explicit rows-list pagination still returns the correct second row.
+
+Live114 (`phase2-goldens-20260911T193948722244Z`) invented a file path by prefixing a project
+evidence URI during its initial Site call. The existing authority guard correctly rejected it.
+The model-visible read_file schema now lists only each specialist's authorized Skill paths,
+including the three Site references. Coordinator has no authorized Skill file and no longer sees
+this file tool. Scientific reads use existing scoped evidence tools; old authorized result-index
+compatibility and the strict runtime path guard are preserved. No filesystem authority expanded.
+These are separate recoverable engineering defects, not scientific failures or acceptance PASS.
+
+Targeted115:38 PASS/12 old Coordinator tool-surface assertions failed; those fixture assertions
+now explicitly require Coordinator read_file to be absent, preserving strict checks for every
+specialist. Ruff115 found one overlong description line (wrapped without semantic change).
+Mypy115:20 files PASS; Ruff115b PASS; targeted115b:56 PASS (536.48s), including actual Site/Design
+revision, original Gate1 saver recovery and full input-to-frozen-design integration. All385
+protected files remain unchanged. Next live116/117 reuse the reviewed Targets; no new source,
+science-oracle, compute-budget or Gate-policy changes.

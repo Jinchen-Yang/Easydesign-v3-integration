@@ -501,6 +501,15 @@ def result_tool(bridge: Any, role: str) -> Any:
                 query.offset + len(page) if query.offset + len(page) < len(value) else None
             )
         else:
+            if query.offset:
+                raise InvalidFieldProjection(
+                    "Offset applies only to a selected list or text, not this object/scalar. "
+                    "No page was returned. "
+                    + navigation_hint(value)
+                    + " For a table select its rows child, then page within that stored list. "
+                    "A stored facts_table contains only the prior requested residue page; "
+                    "request another region with read_site_evidence and exact label_seq_ids."
+                )
             page, next_offset = value, None
             if len(compact(page)) > 4400:
                 return compact(

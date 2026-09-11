@@ -37,6 +37,11 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
 
     async def handler(request: Any) -> Any:
         names.append({t.name for t in request.tools})
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+
+        skill = next(t for t in request.tools if t.name == "read_file")
+        schema = convert_to_openai_tool(skill)["function"]["parameters"]
+        assert schema["properties"]["file_path"]["enum"] == ["/skills/target-intelligence/SKILL.md"]
         return SimpleNamespace(
             result=[
                 AIMessage(
@@ -876,6 +881,16 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
 
     async def handler(request: Any) -> Any:
         retained = [json.loads(m.content) for m in request.messages if '"full_result"' in m.content]
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+
+        skill = next(t for t in request.tools if t.name == "read_file")
+        schema = convert_to_openai_tool(skill)["function"]["parameters"]
+        assert set(schema["properties"]["file_path"]["enum"]) == {
+            "/skills/site-mechanism/SKILL.md",
+            "/skills/site-mechanism/references/research.md",
+            "/skills/site-mechanism/references/membrane.md",
+            "/skills/site-mechanism/references/shielding.md",
+        }
         assert len(retained) == (6 if scoped_read else 4)
         assert len([x for x in retained if x.get("cards")]) == 3
         assert [x["geometry"] for x in retained if "geometry" in x] == ["geometry-11"]
@@ -935,6 +950,41 @@ async def test_scoped_list_end_distinguishes_index_from_target_residue_number(br
     assert result["status"] == "end-of-scoped-list" and result["total_items"] == 3
     assert result["value"] == [] and result["next_offset"] is None
     assert "not residue numbering" in result["instruction"] and result["full_result"] == ref
+    assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_offset_cannot_silently_repeat_an_object_or_scalar(bridge: Any) -> None:
+    from easydesign.agent.contracts import InvalidFieldProjection
+    from easydesign.agent.evidence_output import result_tool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Read exact geometry")["execution_id"]
+    message = output_message(
+        b,
+        "site",
+        eid,
+        ToolMessage(
+            name="evaluate_candidate_site",
+            tool_call_id="geometry",
+            content=compact(
+                {
+                    "facts_table": {"rows": [[23, None], [25, 0.31]], "row_count": 2},
+                    "spatial_components": 1,
+                    "padding": "x" * 2000,
+                }
+            ),
+        ),
+    )
+    ref = json.loads(message.content)["full_result"]
+    read = result_tool(b, "site")
+    for path in [["facts_table"], ["spatial_components"]]:
+        with pytest.raises(InvalidFieldProjection, match="Offset applies only"):
+            await read.ainvoke({"ref": ref, "path": path, "offset": 12})
+    page = json.loads(
+        await read.ainvoke({"ref": ref, "path": ["facts_table", "rows"], "offset": 1})
+    )
+    assert page["value"] == [[25, 0.31]] and page["next_offset"] is None
     assert not b._jobs()
 
 

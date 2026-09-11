@@ -700,7 +700,7 @@ class TargetBridge:
             option_id=args.option_id,
             options=current["options"],
             evidence_refs=current["evidence_refs"],
-            limitations=list(dict.fromkeys([*LIMITATIONS, *assessment.limitations])),
+            limitations=list(dict.fromkeys([*current["limitations"], *assessment.limitations])),
             judge_status=recommendation.status if recommendation else "SUPPORTED",
             warnings=recommendation.warnings if recommendation else [],
             alternative=recommendation.alternative if recommendation else None,

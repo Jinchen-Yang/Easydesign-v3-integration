@@ -260,7 +260,20 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             retained: set[int] = set()
             scopes: set[str] = set()
             detail_chars = 0
+            if self.role == "judge":
+                snapshots = [
+                    i
+                    for i in detailed
+                    if messages[i].name in {"read_scientific_evidence", "read_target_evidence"}
+                ]
+                if snapshots:
+                    # Independent comparison needs the whole delegated snapshot in
+                    # view together, even after several narrower follow-up reads.
+                    retained.add(snapshots[-1])
+                    detail_chars = len(str(messages[snapshots[-1]].content))
             for i in reversed(detailed):
+                if i in retained:
+                    continue
                 value = json.loads(messages[i].content)
                 scope = compact(
                     {k: value.get(k) for k in ("full_result", "path", "fields", "next_offset")}
@@ -804,6 +817,15 @@ def create_harness(
                 "then read the current identity view. Preparation freezes its inputs and "
                 "cannot later add or replace a canonical reference. Read your Skill before "
                 "starting preparation; never parallelize those dependent operations."
+            )
+        if role == "judge":
+            prompt += (
+                " The complete delegated scientific snapshot remains in your working set. "
+                "Review its actual keys: a Target gate uses hard_facts, identity_evidence, "
+                "options and target_interpretation; Site/Design use their own proposal fields. "
+                "Use a scoped read only for a specific missing fact. Do not enumerate fields "
+                "or reread supplied tables to verify runtime-owned hashes. When the supplied "
+                "facts suffice, submit your independent critique through JudgeVerdict."
             )
         boundary = RoleBoundary(
             bridge, role, config, goal, current_user_message, execution_id, revision

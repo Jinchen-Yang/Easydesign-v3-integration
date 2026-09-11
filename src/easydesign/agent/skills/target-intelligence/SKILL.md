@@ -96,3 +96,12 @@ Detailed functional/site research belongs to Site after Gate 1; do not exhaust t
 performing the downstream research agenda before the scientist can resolve Target identity.
 
 Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share four corrections per execution. Foreign references and integrity/authority errors are fatal.
+
+Interpret distinct difference types literally: canonical-to-construct alignment deletions are
+not missing coordinates. `missing_construct_positions` names sequence residues that exist in
+the construct but lack observed coordinates; it does not mean those positions could not be
+aligned. A supplied `constant_canonical_offset` is proven from every kernel mapping row; use
+it as a fact, then compare source processing annotations. Do not call a known correspondence
+unknown merely because its use still requires human approval. Reference identity, construct
+sequence correspondence, experimental processing, coordinate presence and biological function
+are separate questions with separately supported certainty.

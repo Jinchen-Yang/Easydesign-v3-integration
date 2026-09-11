@@ -144,3 +144,33 @@ Targeted029 25 PASS (6.47s), mypy03020files PASS, Ruff PASS. New regressions ver
 Judge can compare four distinct source fields in the same actual model request, repeated
 reads do not evict distinct fields, checkpoint messages remain unchanged, and all four small
 Target chain facts/options survive the output adapter. No Phase2acceptance claimed.
+
+Live031 again exhausted32calls: Judge enumerated all source fields, including request hashes,
+then cycled among fields after the original complete snapshot was archived. Four recent scopes
+alone did not resolve comparison memory. Judge now pins its latest complete delegated snapshot
+alongside at most three additional scopes within the detail budget. The output marks a fully
+supplied scientific projection as complete, instead of always partial merely because technical
+refs are stored separately. System guidance distinguishes actual Target versus Site/Design keys
+and asks for an independent verdict once the supplied facts suffice. No scientific opinion or
+verdict is manufactured; source-bound criticism and all gates remain mandatory.
+
+Targeted03214PASS, mypy03320filesPASS, RuffPASS. Live034 reached real Gate1 at23modelcalls.
+Independent review receipt gate1-independent-review.json is FAIL, bound to snapshot
+0b38321304ab073b84d7de775a1cb15bd6556bfe33a1b2f451d091a5cbc20291; no fixture approval followed.
+Known147/129/127facts pass, but card wrongly prepended old structural-only unknown-reference
+limitations, and Target/Judge conflated18canonical alignment gaps with2missing coordinates.
+Card now uses the current verified snapshot's limitations. Pending canonical comparison adds
+a compact constant offset only when all existing kernel rows prove one and alignment is not
+ambiguous, plus explicit difference-type semantics. This is an Agent display projection; no
+mapping algorithm, oracle or scientific approval semantics changed.
+
+Miniforge005 installed and verified (official26.3.2-3, SHA848194851a98 prefix). Current-clone
+BoltzGen install035 is running through the existing detached installer; job
+setup-20260911T175319Z-a08e96e89b. AFO bundle036 materialization downloads/verifies the fixed
+5,032,471,381byte stable archive only; no AFO install/inference or GPU job has been launched.
+
+Targeted03717PASS (35.44s): actual cached-source Stage01/decision/bundle tests, gate resume,
+working-set tests, and frozen soluble/GPCR mapping projections. mypy03820filesPASS; RuffPASS.
+AFO bundle036 failed on official-network reachability; bundle039 retries the same exact
+size/SHA through the already configured hf-mirror transport using the existing verified downloader.
+No source catalog, release identity or model bytes changed; download is progressing.

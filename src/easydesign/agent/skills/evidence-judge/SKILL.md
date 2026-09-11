@@ -105,3 +105,9 @@ runtime's two output-contract corrections per execution; do not repeat scientifi
 Runtime owns identity, mapping, coordinate presence, approved constraints and source IDs.
 Interpretation must not contradict these hard facts. Judge independently checks this consistency,
 without re-deriving facts; an explicit contradiction must be rejected before a Gate.
+
+For identity review, challenge conflation of canonical-to-construct sequence differences with
+construct-to-coordinate absence. `missing_construct_positions` means no observed coordinates,
+not unaligned sequence. A non-null `constant_canonical_offset` is runtime-proven for every row;
+a pending human gate does not make that established correspondence unknown. Processing/state
+or experimental provenance may remain uncertain without erasing verified sequence facts.

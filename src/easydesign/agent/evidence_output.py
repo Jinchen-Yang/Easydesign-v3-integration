@@ -176,8 +176,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                 {
                     **(projected if isinstance(projected, dict) else {"view": projected}),
                     "full_result": receipt["ref"],
-                    "partial": True,
+                    "partial": projected != scientific_projection(value),
+                    "scientific_content_complete": projected == scientific_projection(value),
                     "read": (
+                        "Use supplied scientific content directly when complete. "
                         "read_evidence_result(ref, field='key') for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
                         "Use offset/limit for list pages. Full result retained."

@@ -10,7 +10,11 @@ from pydantic import Field
 
 from easydesign.backends.target_sources.structure import inventory_structure
 from easydesign.core import sha256_file
-from easydesign.core.target_identity import ConstructRelationship, resolve_target_identity
+from easydesign.core.target_identity import (
+    ConstructRelationship,
+    TargetIdentityReport,
+    resolve_target_identity,
+)
 from easydesign.orchestration.config import EasyDesignRunConfig
 from easydesign.orchestration.local_project import publish_config_revision, resolve_project_run
 from easydesign.orchestration.stage01_sources import _scope, _uniprot_identity
@@ -23,6 +27,23 @@ from .session_store import compact, confined, identity
 class CanonicalProposal(StrictDTO):
     uniprot_card_id: str = Field(min_length=1, max_length=80)
     reason: ShortText
+
+
+def constant_canonical_offset(report: TargetIdentityReport) -> int | None:
+    """Display an offset only when every existing kernel mapping row proves it."""
+    rows = report.design_scope.residues
+    if report.ambiguities or not rows or any(r.canonical_position is None for r in rows):
+        return None
+    if [r.construct_position for r in rows] != list(
+        range(1, report.construct_identity.sequence_length + 1)
+    ):
+        return None
+    offsets = {
+        r.canonical_position - r.construct_position
+        for r in rows
+        if r.canonical_position is not None
+    }
+    return offsets.pop() if len(offsets) == 1 else None
 
 
 def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]:
@@ -193,12 +214,19 @@ def pending_canonical(
                 "substitutions": len(report.alignment.substitutions) if report.alignment else None,
                 "insertions": len(report.alignment.insertions) if report.alignment else None,
                 "deletions": len(report.alignment.deletions) if report.alignment else None,
+                "constant_canonical_offset": constant_canonical_offset(report),
             }
         )
     return {
         "canonical": metadata,
         "scope": scope,
         "construct_comparisons": comparisons,
+        "difference_semantics": (
+            "deletions are canonical-to-construct alignment gaps. missing_construct_positions "
+            "are construct residues lacking coordinates, not alignment gaps. A non-null "
+            "constant_canonical_offset proves canonical_position=construct_position+offset "
+            "for every construct row; human review does not erase this known correspondence."
+        ),
         "authority": (
             "Unchanged deterministic identity engine; pending human decision, not approval"
         ),

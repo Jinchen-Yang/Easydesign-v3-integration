@@ -190,7 +190,10 @@ def test_explicit_pdb_alias_cannot_silently_change_source_identity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(bridge: Any) -> None:
+@pytest.mark.parametrize("include_snapshot", [False, True])
+async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(
+    bridge: Any, include_snapshot: bool
+) -> None:
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     execution = b.store.begin_execution(b.thread, "Compare complete option facts")
     guard = RoleBoundary(
@@ -215,18 +218,39 @@ async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(brid
         )
     ]
 
+    if include_snapshot:
+        messages.insert(
+            0,
+            ToolMessage(
+                name="read_scientific_evidence",
+                tool_call_id="snapshot",
+                content=compact(
+                    {
+                        "full_result": source,
+                        "complete_snapshot": {
+                            "facts": "all alternatives",
+                            "opinion": "source-bound",
+                            "limitations": ["retained counterevidence"],
+                        },
+                    }
+                ),
+            ),
+        )
+
     class Request(SimpleNamespace):
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
     async def handler(request: Any) -> Any:
         visible = [json.loads(m.content) for m in request.messages]
-        assert [v["path"][0] for v in visible if "value" in v] == [
-            "identity",
-            "interpretation",
-            "options",
-            "hard_facts",
-        ]
+        expected = (
+            ["interpretation", "options", "hard_facts"]
+            if include_snapshot
+            else ["identity", "interpretation", "options", "hard_facts"]
+        )
+        assert [v["path"][0] for v in visible if "value" in v] == expected
+        if include_snapshot:
+            assert visible[0]["complete_snapshot"]["limitations"] == ["retained counterevidence"]
         assert all(v["archived_result"] == source for v in visible if "archived_result" in v)
         assert len(compact(visible)) < 32000
         return SimpleNamespace(
@@ -257,7 +281,10 @@ async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(brid
         handler,
     )
     # Context projection is not a mutation of the checkpoint messages.
-    assert all("value" in json.loads(m.content) for m in messages)
+    assert all(
+        "value" in json.loads(m.content) or "complete_snapshot" in json.loads(m.content)
+        for m in messages
+    )
 
 
 def test_small_target_fact_snapshot_keeps_all_alternative_chains(bridge: Any) -> None:

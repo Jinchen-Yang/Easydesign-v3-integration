@@ -114,6 +114,15 @@ def test_canonical_identity_reuses_existing_decision_and_bundle(
             assert evidence["identity_evidence"]["canonical"]["accession"] == "P12345"
             assert evidence["identity_evidence"]["construct_comparisons"]
             card = judge_card(bridge)
+            assert (
+                "Canonical biological identity is unconfirmed; "
+                "species, isoform and native construct are not established." not in card.limitations
+            )
+            assert (
+                "Reference completeness is unknown. "
+                "Chain selection does not confirm biological identity." not in card.limitations
+            )
+            assert evidence["limitations"][0] in card.limitations
             bridge.store.respond(bridge.thread, card.card_id, "approve", "fixture-scientist")
             bridge.apply_decision(card)
             terminal(bridge)
@@ -187,3 +196,23 @@ def test_canonical_proposal_cannot_replace_scientist_species(
         assert not bridge._jobs()
     finally:
         bridge.store.close()
+
+
+def test_constant_offset_is_projected_from_all_kernel_rows_and_not_ambiguous_counts() -> None:
+    from easydesign.agent.target_identity import constant_canonical_offset
+    from tests.agent_golden_support import golden_truth
+    from tests.unit.agent.test_phase2_golden_spec import resolve
+
+    soluble = resolve(golden_truth()["soluble"])
+    assert constant_canonical_offset(soluble) == 18
+    assert all(
+        r.canonical_position == r.construct_position + 18 for r in soluble.design_scope.residues
+    )
+    # The last two residues are aligned correctly even though their coordinates are absent.
+    assert [
+        (r.construct_position, r.canonical_position)
+        for r in soluble.design_scope.residues
+        if not r.coordinate_present
+    ] == [(128, 146), (129, 147)]
+    gpcr = resolve(golden_truth()["gpcr"])
+    assert gpcr.ambiguities and constant_canonical_offset(gpcr) is None

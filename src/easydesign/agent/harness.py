@@ -235,6 +235,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
             raise AgentBoundaryError(f"Unexpected final tool surface for {self.role}")
+        if (
+            isinstance(self.bridge, Phase2Bridge)
+            and not self.bridge.store.db.execute(
+                "SELECT 1 FROM events WHERE thread=? AND kind='tool-view' "
+                "AND json_extract(payload,'$.role')=? "
+                "AND json_extract(payload,'$.execution_id')=? LIMIT 1",
+                (self.bridge.thread, self.role, self.execution_id),
+            ).fetchone()
+        ):
+            # An evidence_id is an identity, not a readable file. Offer scoped
+            # navigation only after this role has actually received a registered view.
+            available = [t for t in available if t.name != "read_evidence_result"]
         if self.role == "target" and not any(
             isinstance(m, ToolMessage) and m.name == "read_file" and m.status != "error"
             for m in request.messages

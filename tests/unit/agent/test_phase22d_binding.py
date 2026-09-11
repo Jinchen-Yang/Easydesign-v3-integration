@@ -79,13 +79,15 @@ def focus(source: str = "UniProt:P00698") -> RetrieveEvidence:
 
 
 def revise(b: Any, queries: Any) -> None:
-    propose_canonical(
+    assert EvidenceCorpus(b).retrieve(focus())["cards"]
+    result = propose_canonical(
         b,
         CanonicalProposal(
             uniprot_card_id=queries["P00698"]["cards"][0]["card_id"],
             reason="Use the verified supplied accession before deterministic comparison",
         ),
     )
+    assert result["status"] == "canonical-reference-configured"
 
 
 def test_canonical_revision_keeps_exact_source_and_scoped_cards(acquired: Any) -> None:

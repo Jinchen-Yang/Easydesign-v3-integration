@@ -100,17 +100,11 @@ def deposited_polymer_metadata(source: Path) -> dict[str, Any]:
     }
 
 
-def pending_canonical_source_read(bridge: Any) -> str | None:
-    """A canonical config revision requires its selected source in the new evidence view."""
-    events = bridge.store.events(bridge.thread)
-    revisions = [e for e in events if e["kind"] == "canonical-reference-proposal"]
-    if not revisions:
-        return None
-    revision = revisions[-1]
-    source_id: str = "UniProt:" + revision["payload"]["accession"]
+def has_current_identity_view(bridge: Any, source_id: str, *, after_seq: int = 0) -> bool:
+    """Require actual focused passages for this source and current project binding."""
     binding = identity(bridge.binding())
-    for event in reversed(events):
-        if event["seq"] <= revision["seq"]:
+    for event in reversed(bridge.store.events(bridge.thread)):
+        if event["seq"] <= after_seq:
             break
         if event["kind"] == "evidence-view":
             view = bridge.document(event["payload"]["ref"])
@@ -119,8 +113,24 @@ def pending_canonical_source_read(bridge: Any) -> str | None:
                 and c.get("binding_context", {}).get("current_binding") == binding
                 for c in view.get("cards", [])
             ):
-                return None
-    return source_id
+                return True
+    return False
+
+
+def pending_canonical_source_read(bridge: Any) -> str | None:
+    """A canonical config revision requires its selected source in the new evidence view."""
+    revisions = [
+        e for e in bridge.store.events(bridge.thread) if e["kind"] == "canonical-reference-proposal"
+    ]
+    if not revisions:
+        return None
+    revision = revisions[-1]
+    source_id = "UniProt:" + revision["payload"]["accession"]
+    return (
+        None
+        if has_current_identity_view(bridge, source_id, after_seq=revision["seq"])
+        else source_id
+    )
 
 
 def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]:
@@ -184,6 +194,15 @@ def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]
             raise AgentBoundaryError(
                 "Model cannot replace the scientist-configured canonical identity"
             )
+        if not has_current_identity_view(bridge, "UniProt:" + accession):
+            return {
+                "status": "REQUIRES_ACTION",
+                "reason": "Acquisition is a receipt, not a focused reading of the source.",
+                "source_id": "UniProt:" + accession,
+                "next": "Use retrieve_evidence with need=TARGET_IDENTITY, this source_id "
+                "and a focused canonical/construct identity question, then repeat this "
+                "proposal. No configuration was changed; no download is needed.",
+            }
         payload = loaded.config.model_dump(mode="json")
         payload["stage01"]["target"]["source"]["identity"].update(
             uniprot_accession=accession, taxon_id=source_identity["taxonomy_id"]

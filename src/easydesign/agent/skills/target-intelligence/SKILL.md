@@ -35,7 +35,7 @@ If the old worker is still active after bounded observation, report its job ID a
 A pending chain-selection gate is a real scientific question. There is no successful bundle yet:
 compare the frozen source, chain inventory and eligible options. Read deposited_entities from
 the checksum-verified original input when supplied: it links source entity descriptions to
-original auth/label chains. Interpret descriptions as depositor annotations. Do not substitute
+original auth/label chains. Interpret descriptions as depositor annotations. Preserve complete source segments before interpreting fusion order. Do not equate distinct fusion proteins or infer terminal placement from a description. Do not substitute
 chain size or an arbitrary global alignment for that available physical entity evidence.
 Keep the user's preferred chain
 separate from confirmed biological identity. Do not claim that the first or largest chain is correct.

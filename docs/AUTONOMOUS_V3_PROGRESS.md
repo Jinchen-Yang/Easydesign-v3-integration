@@ -444,3 +444,30 @@ and unproven uniqueness. Source segments do not prove native function/state. Jud
 one bounded118-line read. Protected science/oracle unchanged. Targeted093:27 PASS (22.77s),
 mypy09420 PASS. Previous Ruff debt and one additional long line corrected; Ruff095 PASS.
 Next real attempts096/097 continue soluble and GPCR acceptance independently.
+
+
+### Source-view prerequisites and lossless Target display (live096/097)
+
+Live096 (`phase2-goldens-20260911T190530636316Z`) failed before Site science: its first
+specialist call constructed a /result-<evidence_id>.json reference that had never been supplied
+to that role. The authority check correctly rejected it. Scoped-result navigation is now offered
+only after the current role/execution has received a registered tool view. Foreign/stale/tampered
+references remain fatal; no cross-role permission or guessed file alias was introduced.
+
+Live097 (`phase2-goldens-20260911T190530404046Z`) reached GPCR Gate1 but omitted the focused
+UniProt read before canonical proposal. A verified known-source proposal now returns a read-only
+REQUIRES_ACTION diagnostic until actual TARGET_IDENTITY passages for that source/current binding
+exist; no config revision or download occurs on rejection. After-read enforcement remains.
+The independently inspected Gate1 card also FAILS: it labels T4 lysozyme BRIL-type without source
+support, infers terminal fusion order inconsistent with deposited segments, and mistakes a two-item
+preview for complete coordinate missingness. Rejection retained in gate1-content-review-after-failure.json;
+no approval delivered. Null offset/ambiguous correspondence is still not absence of all per-row mapping.
+
+Pending Target display now retains complete depositor segments; large missing-position lists use
+exact inclusive ranges and explicit counts, preserving original full lists offloaded. For the real
+GPCR chainA that is217 missing-coordinate residues, separately from48 canonical alignment deletions.
+This is lossless presentation, not mapping/kernel change. Whole source, original order and frozen
+oracle remain unchanged. Source-segment guidance prohibits inferred fusion order from names.
+Targeted098 had32 PASS and one old tool-availability assertion; after updating its prerequisite,
+targeted100:33 PASS (25.24s), mypy101:20 source files PASS. Supplementary display checks102:22 PASS (5.19s), Ruff102 PASS, mypy102:20 files PASS. The complete real pending GPCR scientific facts fit5775 characters after lossless position-range encoding.
+Phase2 remains NOT FROZEN; case3 only has PASS. No new GPU jobs.

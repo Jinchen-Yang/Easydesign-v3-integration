@@ -70,6 +70,18 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
     assert "get_job_status" in names[-1]
     assert names[-1] - names[0] == {"get_job_status", "prepare_target"}
     assert not b._jobs()
+    assert "read_evidence_result" not in names[-1]
+    raw = ToolMessage(
+        name="read_target_evidence",
+        tool_call_id="view",
+        content=compact({"rows": list(range(1000))}),
+    )
+    output_message(b, "coordinator", execution["execution_id"], raw)
+    await guard.awrap_model_call(request, handler)
+    assert "read_evidence_result" not in names[-1]
+    output_message(b, "target", execution["execution_id"], raw)
+    await guard.awrap_model_call(request, handler)
+    assert "read_evidence_result" in names[-1]
 
 
 def test_passage_pages_fit_adapter_and_cursor_never_skips_or_truncates(
@@ -385,6 +397,16 @@ async def test_coordinator_refreshes_runtime_progress_without_rewriting_history(
     assert not names & {"read_target_evidence", "read_evidence_result"}
     assert seen[-1].messages == historical == request.messages
     assert request.system_message.text == "Coordinate"
+    output_message(
+        b,
+        "coordinator",
+        execution["execution_id"],
+        ToolMessage(
+            name="read_target_evidence",
+            tool_call_id="current-view",
+            content=compact({"rows": list(range(1000))}),
+        ),
+    )
     current.update(scientific_state="hotspot-approved", next_specialist="none")
     await guard.awrap_model_call(request, handler)
     assert '"next_specialist":"none"' in seen[-1].system_message.text

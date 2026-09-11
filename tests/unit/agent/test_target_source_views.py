@@ -87,3 +87,48 @@ def test_canonical_view_prerequisite_needs_current_binding_and_identity_scope(br
     view("TARGET_IDENTITY", current)
     assert pending_canonical_source_read(b) is None
     assert not b._jobs()
+
+
+def test_target_preview_keeps_all_deposited_segments(bridge: Any) -> None:
+    import json
+
+    from langchain_core.messages import ToolMessage
+
+    from easydesign.agent.evidence_output import output_message
+    from easydesign.agent.session_store import compact
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Inspect a multi-origin construct")
+    segments = [
+        {"begin": 9, "end": 238, "organism": "human"},
+        {"begin": 399, "end": 501, "organism": "human"},
+        {"begin": 239, "end": 398, "organism": "phage T4"},
+    ]
+    metadata = {"entities": [{"source_segments": segments}], "authority": "depositor"}
+    value = {"deposited_entities": metadata, "large_mapping": list(range(2000))}
+    result = json.loads(
+        output_message(
+            b,
+            "target",
+            execution["execution_id"],
+            ToolMessage(name="read_target_evidence", tool_call_id="target", content=compact(value)),
+        ).content
+    )
+    assert result["partial"] and len(compact(result)) < 6600
+    assert result["deposited_entities"] == metadata
+    assert result["deposited_entities"]["entities"][0]["source_segments"][2] == segments[2]
+
+
+def test_target_position_ranges_are_lossless_and_distinct_from_alignment_deletions() -> None:
+    from easydesign.agent.evidence_output import target_page_projection
+
+    positions = list(range(1, 31)) + list(range(236, 402)) + list(range(481, 502))
+    value = {"chains": [{"missing_construct_positions": positions, "deletions": 48}]}
+    projected = target_page_projection(value)["chains"][0]
+    assert projected["deletions"] == 48
+    assert projected["missing_construct_position_count"] == len(positions) == 217
+    ranges = projected["missing_construct_position_ranges_inclusive"]
+    assert [p for start, end in ranges for p in range(start, end + 1)] == positions
+    assert value["chains"][0]["missing_construct_positions"] == positions
+    small = {"missing_construct_positions": [128, 129]}
+    assert target_page_projection(small) == small

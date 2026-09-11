@@ -74,6 +74,36 @@ def scientific_projection(value: Any) -> Any:
     return value
 
 
+def target_page_projection(value: Any) -> Any:
+    """Encode complete coordinate-missing position lists as exact inclusive ranges."""
+    if isinstance(value, list):
+        return [target_page_projection(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    result = {k: target_page_projection(v) for k, v in value.items()}
+    positions = value.get("missing_construct_positions")
+    if (
+        isinstance(positions, list)
+        and len(positions) > 16
+        and all(type(p) is int for p in positions)
+        and positions == sorted(set(positions))
+    ):
+        ranges: list[list[int]] = []
+        for p in positions:
+            if ranges and p == ranges[-1][1] + 1:
+                ranges[-1][1] = p
+            else:
+                ranges.append([p, p])
+        del result["missing_construct_positions"]
+        result["missing_construct_position_count"] = len(positions)
+        result["missing_construct_position_ranges_inclusive"] = ranges
+        result["position_encoding"] = (
+            "Exact complete inclusive ranges, not a preview; "
+            "original missing_construct_positions list remains in full_result."
+        )
+    return result
+
+
 def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
     """Losslessly encode a bounded residue page without repeating every column name."""
     projected: dict[str, Any] = scientific_projection(value)
@@ -180,9 +210,22 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     projected = scientific_projection(value) if role == "judge" or exact_page else preview(value)
     view_limit = 32000 if role == "judge" else 6000
     if message.name == "read_target_evidence":
-        complete_facts = scientific_projection(value)
+        complete_facts = target_page_projection(scientific_projection(value))
         if len(compact(complete_facts)) <= view_limit:
             projected = complete_facts
+        elif isinstance(complete_facts, dict) and "deposited_entities" in complete_facts:
+            # Source segments are a single factual inventory. A prefix can hide a
+            # fusion partner and turn a presentation shortcut into false biology.
+            metadata = complete_facts["deposited_entities"]
+            projected["deposited_entities"] = metadata
+            if len(compact(projected)) > view_limit:
+                projected = {"fields": list(complete_facts), "deposited_entities": metadata}
+            if len(compact(projected)) > view_limit:
+                projected = {
+                    "fields": list(complete_facts),
+                    "instruction": "Read deposited_entities in scope before interpreting "
+                    "chain origins; its complete inventory is not shown here.",
+                }
     if message.name == "read_site_evidence" and isinstance(value, dict):
         table_page = site_page_projection(value)
         if len(compact(table_page)) <= view_limit:

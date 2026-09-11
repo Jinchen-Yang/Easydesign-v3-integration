@@ -6,7 +6,7 @@ import gemmi
 import httpx
 import pytest
 
-from easydesign.agent.evidence_corpus import EvidenceCorpus, SelectEvidence
+from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchHttpClient, ResearchQuery
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.target_identity import CanonicalProposal, propose_canonical
@@ -91,6 +91,17 @@ def test_canonical_identity_reuses_existing_decision_and_bundle(
         proposal = CanonicalProposal(
             uniprot_card_id=acquired["cards"][0]["card_id"],
             reason="Propose the verified canonical source; old mapping must review differences",
+        )
+        before = bridge.binding()
+        blocked = propose_canonical(bridge, proposal)
+        assert blocked["status"] == "REQUIRES_ACTION"
+        assert bridge.binding() == before and not bridge._jobs()
+        EvidenceCorpus(bridge).retrieve(
+            RetrieveEvidence(
+                need="TARGET_IDENTITY",
+                source_id="UniProt:P12345",
+                question="Canonical sequence and construct features",
+            )
         )
         result = propose_canonical(bridge, proposal)
         assert result["accession"] == "P12345"

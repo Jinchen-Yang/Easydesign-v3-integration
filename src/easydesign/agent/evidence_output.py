@@ -280,6 +280,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         table_page = site_page_projection(value)
         if len(compact(table_page)) <= view_limit:
             projected = table_page
+    if message.name == "evaluate_candidate_site":
+        complete_evaluation = scientific_projection(value)
+        if len(compact(complete_evaluation)) <= view_limit:
+            projected = complete_evaluation
     if role == "judge" and len(compact(projected)) > view_limit:
         raise AgentBoundaryError(
             "Judge snapshot exceeds the scoped review limit. Narrow the proposal/evidence "

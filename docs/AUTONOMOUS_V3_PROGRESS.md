@@ -537,3 +537,31 @@ large-artifact scope, cross-role rejection and tamper rejection. No new artifact
 
 Targeted109:45 PASS (14.20s); Ruff109 PASS; mypy109:20 files PASS. Next live110/111 reuse reviewed
 approved soluble/GPCR Targets. Phase2 still NOT FROZEN; cases1/2/4/5 incomplete, case3 PASS only.
+
+
+### Latest scoped answers remain visible; invalid read-only labels are repairable (live110/111)
+
+Live110 (`phase2-goldens-20260911T193119565077Z`) used real primary/database passages and
+both candidate evaluations, then exhausted 32 calls while repeatedly inspecting an evaluated
+patch. The checkpoint exposed a working-set defect: four pinned geometry/source pages filled
+all slots, so even the newest successful scoped answer was immediately replaced by an archived
+reference before the next model call. Site now always retains its newest detailed answer,
+latest mapping/evaluation/receptor context, and up to three distinct source pages within the
+unchanged32k detailed/60k input ceilings (at most six preferential Site views). Ordinary recent
+views still fill only four slots. Source selection uses identity/recency, never favorable content;
+complete history and exact artifacts remain unchanged. A fitting candidate evaluation is delivered
+in full instead of an unnecessary list-prefix preview. The regression reproduces a newer scoped
+answer after three source pages plus geometry and checks that adverse evaluation evidence survives.
+
+Live111 (`phase2-goldens-20260911T193119012673Z`) supplied invented design labels10011–10050
+to read_site_evidence and failed before proposing. This read-only mismatch now shares the existing
+four argument/source corrections and returns exact observed-label ranges with explicit numbering
+warnings. No rows or valid hotspot are manufactured; actual proposal evaluation, approved mapping,
+foreign-reference and integrity boundaries remain unchanged. Exhaustion still fails closed.
+Both failed executions remain preserved. No new Site PASS or Phase2 freeze is inferred.
+
+Targeted112 named one nonexistent test path and collected zero tests; retained as an invocation
+failure. Corrected targeted112b is the actual regression run. Ruff112 PASS; mypy112:20 files PASS.
+Protected-baseline recheck: all385 files unchanged. Validation outcome recorded below before retry.
+Targeted112b:40 PASS (49.35s). Next live113/114 reuse the independently approved soluble044 and
+GPCR104 Targets; all source/gate/identity/science oracles remain unchanged.

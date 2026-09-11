@@ -17,8 +17,8 @@ from easydesign.stages.s02_hotspot_discovery.geometry import (
 from easydesign.stages.s02_hotspot_discovery.gpcr.structure_context import analyze_structure
 from easydesign.stages.s02_hotspot_discovery.user_regions import normalize_manual_regions
 
-from .contracts import AgentBoundaryError
-from .session_store import identity
+from .contracts import AgentBoundaryError, SiteResidueQueryMismatch
+from .session_store import compact, identity
 from .site_contracts import BiologyContext
 
 
@@ -132,7 +132,22 @@ def summarize_site_facts(
     rows = metrics["sasa"]["residues"]
     available = {r["residue"]["label_seq_id"] for r in rows}
     if not set(labels).issubset(available):
-        raise AgentBoundaryError("BLOCKED: query contains unmapped or unobserved residues")
+        ranges: list[list[int]] = []
+        for label in sorted(available):
+            if ranges and label == ranges[-1][1] + 1:
+                ranges[-1][1] = label
+            else:
+                ranges.append([label, label])
+        raise SiteResidueQueryMismatch(
+            "BLOCKED read-only query: unmapped or unobserved design labels "
+            + compact(sorted(set(labels) - available))
+            + ". Canonical, source-author, source-label and normalized design numbering "
+            "are not interchangeable. Do not invent an offset. Observed design-label "
+            "inclusive ranges (at most first40 ranges shown): "
+            + compact(ranges[:40])
+            + ". Use exact approved mapping/candidate labels for a focused question. "
+            "No rows were returned and no hotspot/proposal/approval was changed."
+        )
     selected = [r for r in rows if not labels or r["residue"]["label_seq_id"] in labels]
     page = selected[offset : offset + 12]
     mappings = {r["label_seq_id"]: r for r in analysis["observed_facts"]["mapping"]}

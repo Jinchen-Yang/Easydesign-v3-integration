@@ -794,8 +794,9 @@ async def test_known_source_citation_is_repaired_before_site_registration(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("later_sources", [False, True])
+@pytest.mark.parametrize("scoped_read", [False, True])
 async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
-    bridge: Any, later_sources: bool
+    bridge: Any, later_sources: bool, scoped_read: bool
 ) -> None:
     from langchain_core.tools import StructuredTool
 
@@ -841,6 +842,32 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
             + messages[:3]
             + [messages[0].model_copy(update={"tool_call_id": "reread"})]
         )
+    if scoped_read:
+        messages.extend(
+            [
+                ToolMessage(
+                    name="evaluate_candidate_site",
+                    tool_call_id="evaluation",
+                    content=compact(
+                        {
+                            "full_result": "/result-eval.json",
+                            "warnings": ["Keep adverse exposure evidence"],
+                        }
+                    ),
+                ),
+                ToolMessage(
+                    name="read_evidence_result",
+                    tool_call_id="scoped-read",
+                    content=compact(
+                        {
+                            "full_result": "/result-eval.json",
+                            "path": ["spatial_components"],
+                            "value": 2,
+                        }
+                    ),
+                ),
+            ]
+        )
     original = [m.content for m in messages]
 
     class Request(SimpleNamespace):
@@ -849,9 +876,17 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
 
     async def handler(request: Any) -> Any:
         retained = [json.loads(m.content) for m in request.messages if '"full_result"' in m.content]
-        assert len(retained) == 4
+        assert len(retained) == (6 if scoped_read else 4)
         assert len([x for x in retained if x.get("cards")]) == 3
         assert [x["geometry"] for x in retained if "geometry" in x] == ["geometry-11"]
+        if scoped_read:
+            assert json.loads(request.messages[-1].content)["value"] == 2
+            assert json.loads(request.messages[-2].content)["warnings"] == [
+                "Keep adverse exposure evidence"
+            ]
+        assert (
+            sum(len(m.content) for m in request.messages if '"full_result"' in m.content) <= 32000
+        )
         return SimpleNamespace(
             result=[
                 AIMessage(
@@ -935,3 +970,41 @@ async def test_completed_target_cannot_be_redelegated_as_pending_site_work(
         assert value["status"] == "NOT_APPLICABLE" and value["next_specialist"] == "site-mechanism"
     assert len([e for e in b.store.events(b.thread) if e["kind"] == "delegation-prerequisite"]) == 2
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_invalid_site_read_is_bounded_query_repair_without_validating_a_hotspot(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.site_evidence import summarize_site_facts
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Inspect an observed region")["execution_id"]
+    guard = RoleBoundary(b, "site", scripted_config(), "Inspect", execution_id=eid)
+    analysis = {
+        "derived_metrics": {
+            "sasa": {"residues": [{"residue": {"label_seq_id": i}} for i in [23, 24, 25, 394, 395]]}
+        }
+    }
+    before = compact(analysis)
+
+    async def handler(request: Any) -> Any:
+        return summarize_site_facts(analysis, labels=request.tool_call["args"]["label_seq_ids"])
+
+    request = SimpleNamespace(
+        tool_call={
+            "id": "query",
+            "name": "read_site_evidence",
+            "args": {"label_seq_ids": [10011, 10012]},
+        }
+    )
+    for attempt in range(1, 5):
+        result = await guard.awrap_tool_call(request, handler)
+        value = json.loads(result.content)
+        assert result.status == "error" and value["repair_attempt"] == attempt
+        assert value["error_code"] == "OBSERVED_DESIGN_LABEL_REQUIRED"
+        assert "[[23,25],[394,395]]" in value["message"]
+    with pytest.raises(AgentBoundaryError, match="repair budget"):
+        await guard.awrap_tool_call(request, handler)
+    assert compact(analysis) == before and not b._jobs()
+    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0

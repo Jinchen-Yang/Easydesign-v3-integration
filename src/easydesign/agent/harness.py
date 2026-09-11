@@ -27,6 +27,7 @@ from .contracts import (
     InvalidFieldProjection,
     JudgeVerdict,
     ResearchConclusionMismatch,
+    SiteResidueQueryMismatch,
     SourceCardArgumentMismatch,
     SourceSelectionRequired,
     StaleEvidenceCursor,
@@ -350,14 +351,33 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     retained.add(snapshots[-1])
                     detail_chars = len(str(messages[snapshots[-1]].content))
             elif self.role == "site":
+                # The newest answer must reach the model even when older sources
+                # occupy the working set. Otherwise a successful scoped read is
+                # immediately archived and the model keeps asking for unseen facts.
+                if detailed:
+                    retained.add(detailed[-1])
+                    detail_chars = len(str(messages[detailed[-1]].content))
                 # Keep read primary/database passages alongside geometry, so recency
                 # alone cannot evict the evidence needed for mechanistic synthesis.
                 # Use distinct source identities, never scientific favorability/ranking.
-                geometry = [i for i in detailed if messages[i].name == "read_site_evidence"]
-                if geometry:
-                    retained.add(geometry[-1])
-                    detail_chars = len(str(messages[geometry[-1]].content))
-                source_ids: set[str] = set()
+                for tool_name in (
+                    "read_site_evidence",
+                    "evaluate_candidate_site",
+                    "analyze_receptor_context",
+                ):
+                    geometry = [i for i in detailed if messages[i].name == tool_name]
+                    if geometry and geometry[-1] not in retained:
+                        size = len(str(messages[geometry[-1]].content))
+                        if detail_chars + size <= 32000:
+                            retained.add(geometry[-1])
+                            detail_chars += size
+                source_ids = {
+                    c["source_id"]
+                    for i in retained
+                    if messages[i].name == "retrieve_evidence"
+                    for c in json.loads(messages[i].content).get("cards", [])
+                    if c.get("source_id")
+                }
                 for i in reversed(detailed):
                     if messages[i].name != "retrieve_evidence":
                         continue
@@ -368,7 +388,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     if (
                         sources - source_ids
                         and len(source_ids) < 3
-                        and len(retained) < 4
+                        and len(retained) < 6
                         and detail_chars + size <= 32000
                     ):
                         retained.add(i)
@@ -813,6 +833,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if (
                     (
                         name != "read_evidence_result"
+                        and not (
+                            name == "read_site_evidence"
+                            and isinstance(error, SiteResidueQueryMismatch)
+                        )
                         and not (
                             name == "compare_reference_identity"
                             and isinstance(error, SourceCardArgumentMismatch)

@@ -249,6 +249,21 @@ class InvalidFieldProjection(RuntimeError):
         }
 
 
+class SiteResidueQueryMismatch(AgentBoundaryError, InvalidFieldProjection):
+    """Unavailable labels in a read-only query; no hotspot is validated or changed."""
+
+    category = "RECOVERABLE_TOOL_ARGUMENT"
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "OBSERVED_DESIGN_LABEL_REQUIRED",
+            "required_action": "read_site_evidence",
+            "message": str(self),
+        }
+
+
 class SourceCardArgumentMismatch(InvalidFieldProjection):
     """An accession was supplied where a retrieved source-card identity is required."""
 

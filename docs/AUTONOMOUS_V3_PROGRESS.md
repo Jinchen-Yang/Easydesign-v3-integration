@@ -328,3 +328,35 @@ Own pinned uv0.12.3 installed at `runtime/tools/uv-0.12.3` using the existing cl
 Miniforge pip; PyPI download identity is retained in uv070-pip-report.json. AFO071 retries the
 unchanged one-sample installation plan; Python3.12.13 preparation progressed to offline
 wheelhouse installation. AFO064 consumed zero GPU jobs; no production compute authorized.
+
+
+### Focused Site reads, shared budget visibility and real AFO installation smoke
+
+Live075 (`phase2-goldens-20260911T184021Z`) consumed its 32-call execution budget mostly
+reading all residue pages and then revisiting earlier offsets; no scientific Site proposal.
+After the first overview, the Site model's read schema now requires explicit labels for the
+patch/hypothesis being investigated. The original overview, all candidate patches and complete
+scoped results remain available; no runtime candidate choice or ranking changed. Each model
+invocation receives the current shared call count and remaining capacity, without increasing
+any limit or allowing weak/invented evidence. Typed correction diagnostics persist across this
+budget message.
+
+Targeted076: 24 PASS, one restart integration failed because this developer edited the harness
+while that test's two sessions were running (fingerprint correctly rejected incompatibility).
+No stored fingerprint was altered. With stable source, targeted079 is 1 PASS (20.37s).
+Targeted078: 7 PASS for typed correction and durable output-error exhaustion; mypy07720 PASS.
+
+Runner supports explicit single-family diagnostic scopes, still checking the unchanged oracle,
+real review receipts and all required criteria for each selected case. A partial run can only
+report PARTIAL_CASE_SCIENTIFIC_ACCEPTANCE_PASS, never five-case acceptance. Unique microsecond
+output paths allow soluble and GPCR validation to progress independently in isolated projects.
+Live080 continues approved soluble Target toward Site/standard/native; live081 starts GPCR.
+Both are pending, and Phase2 remains NOT FROZEN.
+
+AFO071 completed the exact installed component, offline dependency inventory and real GPU smoke:
+29-residue single chain, seed101, one sample, one recycle, no MSA/templates/data pipeline,
+physical GPU UUID recorded; returncode0 and 72.20-second model inference. Actual CIF chain A has
+29 residues; confidence and input JSONs exist. One installation GPU job total (064 failed before
+GPU; 071 succeeded). Receipt SHA ebe57dc14ef1fd8b5c00956e0698093b94e5425c95f725e66d501ac50d811ef3.
+This is backend installation readiness, not Phase3 target-binder generation/filtering acceptance.
+See AUTONOMOUS_V3_BACKEND_READINESS.md. All protected kernel hashes remain mandatory.

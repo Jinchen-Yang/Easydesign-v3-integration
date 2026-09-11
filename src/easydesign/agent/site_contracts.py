@@ -62,6 +62,16 @@ class SiteQuery(StrictDTO):
     offset: int = Field(default=0, ge=0)
 
 
+class FocusedSiteQuery(SiteQuery):
+    label_seq_ids: list[int] = Field(
+        min_length=1,
+        max_length=40,
+        description="Exact approved target labels for the scientific patch/hypothesis being "
+        "examined. Choose from supplied scan patches or mapped literature evidence. "
+        "Offset pages only within these labels; do not walk the entire protein.",
+    )
+
+
 class TopologyResidue(StrictDTO):
     label_seq_id: int = Field(ge=1)
     segment: str = Field(pattern=r"^(TM[1-7]|ECL[1-3]|ICL[1-3]|N-term|C-term|ECD)$")

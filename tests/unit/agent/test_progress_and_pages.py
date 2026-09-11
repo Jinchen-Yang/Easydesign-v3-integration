@@ -583,3 +583,66 @@ def test_explicit_selection_and_acquisition_share_the_existing_corpus(
     assert len(calls) == 1 and not b._jobs()
     with pytest.raises(AgentBoundaryError):
         worker.acquire(query, role="judge")
+
+
+@pytest.mark.asyncio
+async def test_site_followup_reads_require_focus_and_share_existing_call_budget(
+    bridge: Any,
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Compare mechanistic sites")
+    guard = RoleBoundary(
+        b, "site", scripted_config(), "Compare sites", execution_id=execution["execution_id"]
+    )
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(
+            lambda file_path: "", name="read_file", description="Read Skill"
+        )
+    ]
+    snapshots = []
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(request: Any) -> Any:
+        tool = next(t for t in request.tools if t.name == "read_site_evidence")
+        snapshots.append((tool.args_schema, request.system_message.text))
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "read_site_evidence",
+                            "args": {"label_seq_ids": [1, 2]},
+                            "id": "read",
+                        }
+                    ],
+                )
+            ],
+            structured_response=None,
+        )
+
+    request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Investigate"))
+    await guard.awrap_model_call(request, handler)
+    assert snapshots[0][0].model_validate({}).label_seq_ids == []
+    request = request.override(
+        messages=[
+            ToolMessage(
+                name="read_site_evidence", tool_call_id="overview", content="Overview supplied"
+            )
+        ]
+    )
+    await guard.awrap_model_call(request, handler)
+    with pytest.raises(ValidationError):
+        snapshots[1][0].model_validate({"offset": 8})
+    assert snapshots[1][0].model_validate({"label_seq_ids": [4, 7], "offset": 1}).label_seq_ids == [
+        4,
+        7,
+    ]
+    assert '"used_model_calls":0' in snapshots[0][1]
+    assert '"used_model_calls":1' in snapshots[1][1]
+    assert not b._jobs()

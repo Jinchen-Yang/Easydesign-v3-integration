@@ -38,7 +38,7 @@ from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
 from .session_store import TOOL_REPAIR_LIMIT, compact, confined, identity
-from .site_contracts import ScientificTask, SiteIntent
+from .site_contracts import FocusedSiteQuery, ScientificTask, SiteIntent
 from .target_assessment import (
     HardFactContradiction,
     check_fact_claims,
@@ -249,6 +249,26 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             and self.bridge.get_job_status()["status"] == "no-bound-job"
         ):
             available = [t for t in available if t.name != "get_job_status"]
+        if self.role == "site" and any(
+            isinstance(m, ToolMessage) and m.name == "read_site_evidence" and m.status != "error"
+            for m in request.messages
+        ):
+            # Once the overview exists, use explicitly scoped scientific reads. The
+            # complete durable evidence remains readable through read_evidence_result.
+            # This changes neither candidate ranking nor the proposed residue selection.
+            available = [
+                t.model_copy(
+                    update={
+                        "args_schema": FocusedSiteQuery,
+                        "description": "Read exact approved labels for a scientific "
+                        "patch/hypothesis. The overview and candidate_patches are "
+                        "already supplied. Offset pages within those labels only.",
+                    }
+                )
+                if t.name == "read_site_evidence"
+                else t
+                for t in available
+            ]
         coordinator_state = None
         if self.role == "coordinator" and isinstance(self.bridge, Phase2Bridge):
             coordinator_state = self.bridge.scientific_state()
@@ -351,7 +371,33 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         tool_chars = len(compact(tool_schemas))
         if self.execution_id is None:
             raise AgentBoundaryError("Model call requires a persisted agent execution")
+        from langchain_core.messages import SystemMessage
+
+        base_system = request.system_message.text
         for attempt in range(3):
+            used = self.bridge.store.db.execute(
+                "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "
+                "AND json_extract(payload,'$.execution_id')=?",
+                (self.bridge.thread, self.execution_id),
+            ).fetchone()[0]
+            request = request.override(
+                system_message=SystemMessage(
+                    content=base_system
+                    + "\nCurrent shared execution budget: "
+                    + compact(
+                        {
+                            "used_model_calls": used,
+                            "remaining_including_this_call": self.config.max_model_calls - used,
+                            "total_model_calls": self.config.max_model_calls,
+                        }
+                    )
+                    + ". This budget includes Coordinator, all specialists and independent Judge. "
+                    "Use focused scientific questions, batch independent reads, and leave capacity "
+                    "for typed synthesis, independent review and the Gate. Do not exhaust it by "
+                    "enumerating the target or repeating delivered pages. Missing evidence stays "
+                    "explicitly unresolved; budget pressure never justifies invented support."
+                )
+            )
             chars = len(str(request.system_message)) + sum(
                 len(str(m.content)) for m in request.messages
             )
@@ -470,7 +516,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             request = request.override(
                 system_message=SystemMessage(
                     content=(
-                        request.system_message.text
+                        base_system
                         + "\nCorrection required: "
                         + diagnostic[:6000]
                         + f"\nSubmit a corrected {schema.__name__} tool call. "
@@ -478,6 +524,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                 )
             )
+            base_system = request.system_message.text
         raise AgentBoundaryError("Scientific output could not be validated")
 
     def contract_error(self, error: Any) -> str:

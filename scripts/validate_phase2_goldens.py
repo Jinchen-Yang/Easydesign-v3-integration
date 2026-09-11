@@ -31,10 +31,12 @@ from tests.unit.agent.test_phase22_native import expert_input
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path(os.environ["EASYDESIGN_GOLDEN_SOURCE_ROOT"]).resolve()
-STAMP = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+STAMP = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 OUT = ROOT / "runtime/tmp/autonomous-v3-20260912" / f"phase2-goldens-{STAMP}"
 ACTOR = "scripted-autonomous-validation-actor-not-biological-approval"
 APPROVED_TARGET = os.environ.get("EASYDESIGN_GOLDEN_APPROVED_TARGET")
+CASE_SCOPE = os.environ.get("EASYDESIGN_GOLDEN_CASE_SCOPE", "all")
+assert CASE_SCOPE in {"all", "soluble", "gpcr"}
 GOALS = {
     "soluble": (
         "Develop an inhibitory VHH against hen egg-white lysozyme using 1MEL auth chain L. "
@@ -413,6 +415,7 @@ async def main():
         "model": config.default.model,
         "gate_response_actor": ACTOR,
         "generation_started": False,
+        "case_scope": CASE_SCOPE,
         "cases": [],
         "formal_acceptance": "PENDING",
         "spec_sha256": hashlib.sha256(
@@ -430,6 +433,8 @@ async def main():
             ("soluble", "1MEL", "L", "P00698"),
             ("gpcr", "3P0G", "A", "P07550"),
         ]:
+            if CASE_SCOPE != "all" and name != CASE_SCOPE:
+                continue
             active_case = "case-3-identity-trap" if name == "soluble" else "case-2-gpcr"
             assert (
                 hashlib.sha256((SOURCE / name / f"rcsb-{code}.cif").read_bytes()).hexdigest()
@@ -791,8 +796,15 @@ async def main():
                     "Validation cannot launch compute beyond Stage 02"
                 )
                 store.close()
-        assert len(report["cases"]) == 5 and all(c["status"] == "PASS" for c in report["cases"])
-        report["formal_acceptance"] = "ALL_FIVE_SCIENTIFIC_ACCEPTANCE_PASS"
+        expected_cases = {"all": 5, "soluble": 4, "gpcr": 1}[CASE_SCOPE]
+        assert len(report["cases"]) == expected_cases and all(
+            c["status"] == "PASS" for c in report["cases"]
+        )
+        report["formal_acceptance"] = (
+            "ALL_FIVE_SCIENTIFIC_ACCEPTANCE_PASS"
+            if CASE_SCOPE == "all"
+            else "PARTIAL_CASE_SCIENTIFIC_ACCEPTANCE_PASS"
+        )
     except Exception:
         report["formal_acceptance"] = "VALIDATION_ATTEMPT_FAILED"
         report["error"] = traceback.format_exc()
@@ -810,7 +822,7 @@ async def main():
                 report["cases"].append({"case": unrun, "status": "NOT_RUN_IN_THIS_ATTEMPT"})
     save(OUT / "report.json", report, secrets)
     print(report["formal_acceptance"], OUT, flush=True)
-    return 0 if report["formal_acceptance"].startswith("ALL_FIVE") else 1
+    return 0 if report["formal_acceptance"].endswith("ACCEPTANCE_PASS") else 1
 
 
 if __name__ == "__main__":

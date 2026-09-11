@@ -73,10 +73,16 @@ def create_models(config: ModelConfig) -> dict[str, Any]:
             kwargs["base_url"] = "https://api.anthropic.com"
         if provider == "deepseek":
             provider = "openai"
+            # ChatOpenAI rewrites its max_tokens argument to max_completion_tokens.
+            # DeepSeek expects max_tokens; send that explicit vendor body field.
+            kwargs.pop("max_tokens")
             kwargs.update(
                 base_url="https://api.deepseek.com",
                 use_responses_api=False,
-                extra_body={"thinking": {"type": "disabled"}},
+                extra_body={
+                    "thinking": {"type": "disabled"},
+                    "max_tokens": selected.max_output_tokens,
+                },
             )
         models[role] = init_chat_model(selected.model, model_provider=provider, **kwargs)
     for name in secrets:

@@ -249,6 +249,19 @@ class InvalidFieldProjection(RuntimeError):
         }
 
 
+class ResearchQueryMismatch(InvalidFieldProjection):
+    """Malformed research-tool arguments, before selection/acquisition or network IO."""
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "INVALID_RESEARCH_QUERY",
+            "required_action": "research_evidence",
+            "message": str(self),
+        }
+
+
 class EvidenceRetrievalQueryMismatch(InvalidFieldProjection):
     """Malformed read-only retrieval syntax; no source view was consumed."""
 

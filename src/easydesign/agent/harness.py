@@ -29,6 +29,7 @@ from .contracts import (
     InvalidFieldProjection,
     JudgeVerdict,
     ResearchConclusionMismatch,
+    ResearchQueryMismatch,
     SiteResidueQueryMismatch,
     SourceCardArgumentMismatch,
     SourceSelectionRequired,
@@ -40,6 +41,7 @@ from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
 from .evidence_corpus import RetrieveEvidence
 from .evidence_output import ModelEvidenceScope, output_message, read_query, verified_result
+from .evidence_research import EvidenceResearch, ReceptorAnalysis, ResearchQuery
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
@@ -307,6 +309,26 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             else t
             for t in available
         ]
+        if self.role == "site" and isinstance(self.bridge, Phase2Bridge):
+            receptor_cards = sorted(
+                {
+                    c["card_id"]
+                    for q in EvidenceResearch(self.bridge).snapshot()["queries"]
+                    for c in q["cards"]
+                    if c["provider"] == "GPCRdb" and c.get("context_ref")
+                }
+            )
+            if receptor_cards:
+                receptor_schema = ReceptorAnalysis.model_json_schema()
+                receptor_schema["properties"]["gpcrdb_card_id"]["enum"] = receptor_cards
+                available = [
+                    t.model_copy(update={"args_schema": receptor_schema})
+                    if t.name == "analyze_receptor_context"
+                    else t
+                    for t in available
+                ]
+            else:
+                available = [t for t in available if t.name != "analyze_receptor_context"]
         result_schema = ModelEvidenceScope.model_json_schema()
         if isinstance(self.bridge, Phase2Bridge):
             rows = self.bridge.store.db.execute(
@@ -329,8 +351,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             t.model_copy(
                 update={
                     "args_schema": result_schema,
-                    "description": "Read one exact path from a full_result already supplied to "
-                    "this role. Use path=['field'] or path=['field',0,'child']. Read only a "
+                    "description": "Read a full_result already supplied to this role. "
+                    "Choose fields=['status','warnings'] for top-level siblings OR "
+                    "path=['facts',0,'mapping'] for nested traversal. Read only a "
                     "needed missing fact; complete scientific content is already usable. "
                     "List offset is within the stored page, never a residue label.",
                 }
@@ -904,13 +927,34 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
         try:
             try:
+                if name == "research_evidence":
+                    try:
+                        ResearchQuery.model_validate(args)
+                    except ValidationError as error:
+                        raise ResearchQueryMismatch(
+                            "Invalid research arguments: "
+                            + compact(
+                                error.errors(
+                                    include_input=False, include_url=False, include_context=False
+                                )
+                            )
+                            + ". Record/fulltext/context acquisition requires identifier, "
+                            "not query (which is for search). For gpcrdb-context use the exact "
+                            "receptor identifier and pdb_id when known; wait for a successful "
+                            "complete context card before analyzing it. No selection, fetch, "
+                            "source or scientific job was created by this invalid request."
+                        ) from error
                 if name == "retrieve_evidence":
                     try:
                         RetrieveEvidence.model_validate(args)
                     except ValidationError as error:
                         raise EvidenceRetrievalQueryMismatch(
                             "Invalid read-only retrieval arguments: "
-                            + compact(error.errors(include_input=False, include_url=False))
+                            + compact(
+                                error.errors(
+                                    include_input=False, include_url=False, include_context=False
+                                )
+                            )
                             + ". Use need, question, source_id, feature_types, page_size and "
                             "cursor only. Retrieval has no numeric offset; omit cursor for a "
                             "new view, or use its exact returned cursor with unchanged query. "
@@ -931,6 +975,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if (
                     (
                         name != "read_evidence_result"
+                        and not (
+                            name == "research_evidence" and isinstance(error, ResearchQueryMismatch)
+                        )
                         and not (
                             name == "read_site_evidence"
                             and isinstance(error, SiteResidueQueryMismatch)

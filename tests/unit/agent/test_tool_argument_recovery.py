@@ -286,7 +286,7 @@ async def test_unambiguous_path_spellings_and_display_aliases_preserve_source(br
     assert [r[0] for r in table["rows"]] == list(range(12))
     with pytest.raises(InvalidFieldProjection, match="mutually exclusive"):
         await read.ainvoke({"ref": ref, "field": "facts", "path": ["large"]})
-    assert set(ModelEvidenceScope.model_fields) == {"ref", "path", "offset", "limit"}
+    assert set(ModelEvidenceScope.model_fields) == {"ref", "fields", "path", "offset", "limit"}
     assert not bridge._jobs()
 
 
@@ -331,3 +331,23 @@ async def test_large_existing_receptor_artifact_is_scoped_without_summary_copy(b
     (b.project / ref["relative_path"]).write_text("{}")
     with pytest.raises(ArtifactIntegrityError):
         await result_tool(b, "site").ainvoke({"ref": readable, "path": ["identity"]})
+
+
+def test_model_result_scope_disambiguates_siblings_without_reinterpreting_paths() -> None:
+    from pydantic import ValidationError
+
+    from easydesign.agent.evidence_output import ModelEvidenceScope, read_query, scoped_value
+
+    value = {"hard_constraints": "passed", "status": "evaluated", "warnings": ["State unknown"]}
+    ref = "/result-abcd.json"
+    with pytest.raises(InvalidFieldProjection, match="top-level sibling keys; call fields"):
+        scoped_value(value, read_query({"ref": ref, "path": list(value)}))
+    query = ModelEvidenceScope(ref=ref, fields=list(value))
+    assert scoped_value(value, read_query(query.model_dump(exclude_none=True)))[0] == value
+    with pytest.raises(ValidationError, match="exactly one selector"):
+        ModelEvidenceScope(ref=ref, fields=["status"], path=["warnings"])
+    with pytest.raises(ValidationError, match="exactly one selector"):
+        ModelEvidenceScope(ref=ref)
+    # When a valid nested path also names root keys, traversal retains its meaning.
+    nested = {"a": {"b": "nested"}, "b": "root"}
+    assert scoped_value(nested, read_query({"ref": ref, "path": ["a", "b"]}))[0] == "nested"

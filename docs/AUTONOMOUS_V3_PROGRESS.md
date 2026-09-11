@@ -673,3 +673,34 @@ rejection, valid continuation after rejection, and unchanged source-fetch count.
 
 Targeted124:52 PASS (19.34s); Ruff124 PASS; mypy124:20 files PASS. Next live125/126 reuse the
 approved Targets. Phase2 remains NOT FROZEN; cases1/2/4/5 incomplete, case3 PASS only.
+
+
+### Research prerequisites, result selectors and effective model output budget (live125/126)
+
+Live125 (`phase2-goldens-20260911T201229113546Z`) compared mapped candidate sites but exhausted
+the four shared corrections with sibling keys supplied as a nested path. Model result reads now
+expose two explicit mutually exclusive selectors: fields for root siblings, path for traversal.
+Legacy field remains API-compatible only. An invalid path that names actual root siblings gives
+the exact fields correction; successful nested traversal is never silently reinterpreted.
+
+Live126 (`phase2-goldens-20260911T201228727348Z`) sent gpcrdb-context with query instead of required
+identifier, received a framework error, then attempted analysis without any acquired context.
+Research DTO errors now return a bounded correction before selection/fetch/state mutation, using
+the existing shared four-repair budget. Receptor analysis is offered only after a complete GPCRdb
+context card exists, with its actual card IDs in the model schema; handler identity/context checks
+remain authoritative. No model-generated source ID or fabricated complete context is accepted.
+
+The actual installed ChatOpenAI SDK rewrites max_tokens to max_completion_tokens, which does not
+match DeepSeek's documented request field. Live122 recorded 3078/3140 completion tokens despite
+the configured2048. DeepSeek now receives max_tokens in its vendor extra_body; no model or budget
+is increased. No-network tests inspect the actual HTTP request through the real SDK and verify
+DeepSeek/OpenAI/Anthropic use their respective supported fields. Primary vendor documentation:
+https://api-docs.deepseek.com/api/create-chat-completion/ and
+https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi/ .
+
+Targeted127's first command referenced a nonexistent test filename and collected zero tests.
+Corrected targeted127b:61 PASS/1 FAIL; the new prerequisite test caught non-JSON ValueError context
+in Pydantic diagnostics. Diagnostic serialization now excludes raw exception context while
+retaining exact locations and messages. Targeted127c:62 PASS (16.79s); Ruff127c PASS; mypy127c:20 files PASS.
+Next live128/129 reuse the independently approved Target bundles.
+Phase2 remains NOT FROZEN; cases1/2/4/5 incomplete, case3 independently PASS only.

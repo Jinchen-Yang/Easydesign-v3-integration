@@ -1162,3 +1162,102 @@ def test_site_submission_names_missing_conclusion_and_still_requires_real_resear
     with pytest.raises(ResearchConclusionMismatch, match="NOT_SEARCHED"):
         b.validate_site_research(valid)
     assert not b._jobs() and b.current_site() is None
+
+
+@pytest.mark.asyncio
+async def test_missing_research_identifier_is_bounded_before_any_fetch(bridge: Any) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Acquire receptor context")["execution_id"]
+    guard = RoleBoundary(b, "site", scripted_config(), "Acquire", execution_id=eid)
+    query = {
+        "topic": "state",
+        "operation": "gpcrdb-context",
+        "query": "adrb2_human",
+        "question": "Read the receptor context",
+        "pdb_id": "3P0G",
+    }
+    called = []
+
+    async def handler(request: Any) -> Any:
+        called.append(request.tool_call["args"])
+        return ToolMessage(
+            name="research_evidence",
+            tool_call_id="research",
+            content='{"cards":[],"errors":[],"status":"UNRESOLVED"}',
+        )
+
+    bad = SimpleNamespace(tool_call={"name": "research_evidence", "id": "research", "args": query})
+    for attempt in range(1, 5):
+        result = await guard.awrap_tool_call(bad, handler)
+        diagnostic = json.loads(result.content)
+        assert result.status == "error" and diagnostic["repair_attempt"] == attempt
+        assert (
+            diagnostic["error_code"] == "INVALID_RESEARCH_QUERY"
+            and "requires identifier" in diagnostic["message"]
+        )
+    with pytest.raises(AgentBoundaryError, match="repair budget"):
+        await guard.awrap_tool_call(bad, handler)
+    assert not called and not EvidenceCorpus(b).documents() and not b._jobs()
+    good = SimpleNamespace(
+        tool_call={
+            "name": "research_evidence",
+            "id": "research",
+            "args": {**query, "identifier": "adrb2_human"},
+        }
+    )
+    await guard.awrap_tool_call(good, handler)
+    assert len(called) == 1
+
+
+@pytest.mark.asyncio
+async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.tools import StructuredTool
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Inspect receptor context")["execution_id"]
+    guard = RoleBoundary(b, "site", scripted_config(), "Inspect", execution_id=eid)
+    cards = []
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda self: {"queries": [{"cards": cards}]})
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+    seen = []
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(request: Any) -> Any:
+        analysis = [t for t in request.tools if t.name == "analyze_receptor_context"]
+        seen.append(analysis)
+        if analysis:
+            assert convert_to_openai_tool(analysis[0])["function"]["parameters"]["properties"][
+                "gpcrdb_card_id"
+            ]["enum"] == ["source-context"]
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "read_site_evidence", "args": {}, "id": "inspect"}],
+                )
+            ],
+            structured_response=None,
+        )
+
+    request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Inspect"))
+    await guard.awrap_model_call(request, handler)
+    cards.append({"provider": "GPCRdb", "card_id": "source-incomplete"})
+    await guard.awrap_model_call(request, handler)
+    cards.append(
+        {
+            "provider": "GPCRdb",
+            "card_id": "source-context",
+            "context_ref": {"synthetic_verified_snapshot": True},
+        }
+    )
+    await guard.awrap_model_call(request, handler)
+    assert not seen[0] and not seen[1] and len(seen[2]) == 1
+    assert not b._jobs()

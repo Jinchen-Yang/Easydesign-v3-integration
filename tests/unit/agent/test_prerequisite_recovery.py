@@ -56,6 +56,7 @@ class RecoveryModel(ScriptedModel):
             "get_job_status",
             "prepare_target",
             "read_evidence_result",
+            "analyze_receptor_context",
         }
         return self
 

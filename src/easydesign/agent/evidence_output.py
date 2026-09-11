@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from easydesign.core import ArtifactRef
 
@@ -43,14 +43,21 @@ class ReadEvidenceResult(StrictDTO):
 
 
 class ModelEvidenceScope(StrictDTO):
-    """One selector in the model surface; old explicit APIs stay compatible."""
+    """Explicit sibling or nested projection; legacy field remains API-only."""
 
     ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
-    path: list[str | int] = Field(
+    fields: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=10,
+        description="Top-level sibling keys, e.g. ['status','warnings']. Omit path.",
+    )
+    path: list[str | int] | None = Field(
+        default=None,
         min_length=1,
         max_length=10,
         description="One exact path: ['facts'] for a field, ['facts',0,'mapping'] for a child. "
-        "Use keys actually supplied. Never an evidence_id or guessed result reference.",
+        "Each child is inside its parent. For siblings use fields instead. Omit fields.",
     )
     offset: int = Field(
         default=0, ge=0, description="Index within this list/text, never residue numbering."
@@ -62,6 +69,14 @@ class ModelEvidenceScope(StrictDTO):
         description="Requested list items. At most 8 items/4400 characters are returned; "
         "follow next_offset only when more is needed.",
     )
+
+    @model_validator(mode="after")
+    def one_selector(self) -> ModelEvidenceScope:
+        if (self.fields is None) == (self.path is None):
+            raise ValueError(
+                "Use exactly one selector: fields for siblings OR path for nested keys."
+            )
+        return self
 
 
 def preview(value: Any, *, depth: int = 0) -> Any:
@@ -400,6 +415,7 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
             )
         return {key: value[key] for key in query.fields}, []
     path = ([query.field] if isinstance(query.field, str) else query.field) or query.path or []
+    root_value = value
     try:
         for key in path:
             if isinstance(value, dict) and key not in value:
@@ -428,9 +444,18 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
             else:
                 value = value[key]
     except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise InvalidFieldProjection(
-            "Unknown scoped result field or list index. " + navigation_hint(value)
-        ) from exc
+        hint = navigation_hint(value)
+        if (
+            isinstance(root_value, dict)
+            and len(path) > 1
+            and all(key in root_value for key in path)
+        ):
+            hint += (
+                " These are top-level sibling keys; call fields="
+                + compact(path)
+                + " and omit path."
+            )
+        raise InvalidFieldProjection("Unknown scoped result field or list index. " + hint) from exc
     return value, path
 
 

@@ -31,6 +31,7 @@ class SiteModel(ScriptedModel):
             "prepare_target",
             "read_target_evidence",
             "read_evidence_result",
+            "analyze_receptor_context",
         }
         return self
 

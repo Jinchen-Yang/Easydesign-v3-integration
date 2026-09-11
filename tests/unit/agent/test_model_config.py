@@ -22,7 +22,8 @@ def test_explicit_factory_and_no_secret_in_config(provider: str, monkeypatch: An
     assert calls[0][1]["max_retries"] == 0
     if provider == "deepseek":
         assert calls[0][1]["base_url"] == "https://api.deepseek.com"
-        assert calls[0][1]["extra_body"] == {"thinking": {"type": "disabled"}}
+        assert calls[0][1]["extra_body"] == {"thinking": {"type": "disabled"}, "max_tokens": 2048}
+        assert "max_tokens" not in calls[0][1]
 
 
 @pytest.mark.parametrize(
@@ -160,6 +161,13 @@ async def test_real_provider_adapter_preserves_typed_tool_contract(
     assert response.tool_calls[0]["name"] == "prepare_target"
     assert response.tool_calls[0]["args"] == {}
     assert len(requests) == 1
+    if provider == "deepseek":
+        assert requests[0]["max_tokens"] == config.default.max_output_tokens
+        assert "max_completion_tokens" not in requests[0]
+    elif provider == "openai":
+        assert requests[0]["max_completion_tokens"] == config.default.max_output_tokens
+    else:
+        assert requests[0]["max_tokens"] == config.default.max_output_tokens
     assert "provider-test-secret" not in json.dumps(requests)
     sync.close()
     await async_client.aclose()

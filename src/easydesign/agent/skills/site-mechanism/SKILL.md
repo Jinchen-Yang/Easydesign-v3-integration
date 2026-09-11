@@ -103,3 +103,11 @@ On Gate2 REVISE, reassess locally with valid Target evidence and trusted instruc
 new independent review and Gate2. State any upstream assumption needing correction. Do not
 prepare the target again, choose Binder/CDR strategy, write approvals/actors/IDs/SHAs/bindings or
 YAML. Runtime attaches identities and compiles the proposal; only a Scientist can approve it.
+
+The receptor-candidate-overview is complete for its declared fields: every existing candidate's
+scientific metadata and listed source-residue columns are supplied together, with topology/state/
+membrane context. Use that view directly; do not repeatedly request the entire topology or
+candidates object. Remaining analysis fields are optional focused reads at the supplied source
+paths. Source auth/label IDs are not design IDs; verify chosen canonical correspondences with
+read_canonical_mapping and retain ambiguity. Candidate scores and confidence are kernel heuristics,
+not proof of extracellular VHH access or the desired functional effect.

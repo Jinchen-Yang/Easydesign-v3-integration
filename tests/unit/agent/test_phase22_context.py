@@ -365,3 +365,154 @@ def test_every_source_page_preserves_full_passage_and_feature_inventory(
     assert result["next_cursor"] == value["next_cursor"]
     full = bridge.store.root / "agent-work" / bridge.thread / result["full_result"][1:]
     assert json.loads(full.read_text()) == value
+
+
+def test_binder_reads_complete_bounded_design_snapshot_without_fragmenting_science(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.evidence_output import scientific_projection
+
+    execution = bridge.store.begin_execution(
+        bridge.thread, "Design against approved uncertain site"
+    )
+    value = {
+        "gate_type": "design-specification",
+        "approved_hotspots": [{"label_seq_ids": [35, 52, 62, 63, 101]}],
+        "constraints": {
+            "scaffolds": [
+                {"name": str(i), "cdr_constraints": "immutable framework " * 40} for i in range(7)
+            ]
+        },
+        "site_rationale": {
+            "counterevidence": ["inhibition untested " * 65 + str(i) for i in range(6)]
+        },
+        "upstream_decision": {
+            "action": "OVERRIDE",
+            "warnings": ["buried site " * 30 + str(i) for i in range(6)],
+        },
+        "expert_native": None,
+        "evidence_refs": ["existing:source#sha256=abc"],
+    }
+    before = json.loads(json.dumps(value))
+    message = output_message(
+        bridge,
+        "binder",
+        execution["execution_id"],
+        ToolMessage(
+            content=json.dumps(value), name="read_design_evidence", tool_call_id="complete-design"
+        ),
+    )
+    result = json.loads(message.content)
+    assert 6000 < len(message.content) < 33000
+    assert result["scientific_content_complete"] is True and result["partial"] is False
+    for key, expected in scientific_projection(value).items():
+        assert result[key] == expected
+    assert value == before
+    stored = bridge.store.root / "agent-work" / bridge.thread / result["full_result"][1:]
+    assert json.loads(stored.read_text()) == before
+    # An oversized owner view is explicitly incomplete and retains its complete artifact.
+    oversized = {**value, "extra": "unknown occupancy " * 3000}
+    message = output_message(
+        bridge,
+        "binder",
+        execution["execution_id"],
+        ToolMessage(
+            content=json.dumps(oversized),
+            name="read_design_evidence",
+            tool_call_id="oversized-design",
+        ),
+    )
+    result = json.loads(message.content)
+    assert result["scientific_content_complete"] is False and result["partial"] is True
+    stored = bridge.store.root / "agent-work" / bridge.thread / result["full_result"][1:]
+    assert json.loads(stored.read_text()) == oversized
+
+
+def test_receptor_overview_keeps_every_candidate_and_qualifies_source_numbering() -> None:
+    from copy import deepcopy
+
+    from easydesign.agent.evidence_output import receptor_overview_projection
+
+    candidates = {
+        mode: [
+            {
+                "id": mode + str(i),
+                "confidence": "unresolved",
+                "limitations": ["glycan occupancy unknown"],
+                "approach_checks": {"status": "unresolved"},
+                "evidence": [{"claim": "counterstate uncertainty", "direct": False}],
+                "residues": [
+                    {
+                        "gpcrdb_sequence_number": 180,
+                        "auth_seq_id": 180,
+                        "label_seq_id": 188,
+                        "mapping_status": "exact",
+                        "observed": True,
+                        "amino_acid": "E",
+                        "insertion_code": "",
+                        "alternative_generic_numbers": [
+                            {"scheme": "source-specific", "label": "x"}
+                        ],
+                    },
+                    {
+                        "gpcrdb_sequence_number": 181,
+                        "auth_seq_id": None,
+                        "mapping_status": "missing_coordinates",
+                        "observed": False,
+                    },
+                ],
+            }
+            for i in range(4)
+        ]
+        for mode in ("activate", "inhibit")
+    }
+    value = {
+        "identity": {"accession": "TEST"},
+        "state": {"state": "active"},
+        "membrane": {"confidence": "low"},
+        "warnings": ["unresolved topology"],
+        "avoid": [],
+        "topology": {"mapping_status": "ambiguous", "residues": [{"unmapped": True}]},
+        "candidates": candidates,
+    }
+    original = deepcopy(value)
+    view = receptor_overview_projection(value)
+    assert value == original
+    for mode, items in candidates.items():
+        assert len(view["candidate_overview"][mode]) == len(items)
+        for i, item in enumerate(items):
+            got = view["candidate_overview"][mode][i]
+            for key in item.keys() - {"residues"}:
+                assert got[key] == item[key]
+            assert len(got["residue_records"]) == len(item["residues"])
+            assert got["residue_records"][0]["label_seq_id"] == 188
+            assert got["residue_records"][1]["auth_seq_id"] is None
+            assert "label_seq_id" not in got["residue_records"][1]
+            assert got["full_residues_path"] == ["candidates", mode, i, "residues"]
+    assert view["topology_summary"] == {"mapping_status": "ambiguous"}
+    assert view["warnings"] == value["warnings"] and view["membrane"] == value["membrane"]
+    assert "NOT approved design numbering" in view["scope_limits"]
+    assert "Other residue columns" in view["scope_limits"]
+
+    uniform = deepcopy(value)
+    for items in uniform["candidates"].values():
+        for item in items:
+            item["residues"] = [item["residues"][0], deepcopy(item["residues"][0])]
+    tables = receptor_overview_projection(uniform)
+    for mode, items in uniform["candidates"].items():
+        for i, item in enumerate(items):
+            table = tables["candidate_overview"][mode][i]["residue_table"]
+            for row, original in zip(table["rows"], item["residues"], strict=True):
+                assert dict(zip(table["columns"], row, strict=True)) == {
+                    k: original[k] for k in table["columns"]
+                }
+
+    from easydesign.agent.evidence_output import ReadEvidenceResult, scoped_value
+
+    alias, _ = scoped_value(
+        uniform,
+        ReadEvidenceResult(
+            ref="/result-aabb.json", path=["candidate_overview", "inhibit", 0, "residue_table"]
+        ),
+    )
+    assert alias == tables["candidate_overview"]["inhibit"][0]["residue_table"]

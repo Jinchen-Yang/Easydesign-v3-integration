@@ -397,6 +397,77 @@ def check_binding_roundtrip(bridge, accession):
     }
 
 
+async def run_design_case(project, store, case, kind, config, models, secrets, emit, *, thread):
+    """Run one reviewed Gate3 case on the existing approved Site, without compute."""
+    design = DesignBridge(project, thread, store)
+    if kind == "expert-native":
+        labels = tuple(design.approved_site()["hotspots"]["hotspot_sets"][0]["label_seq_ids"])
+        expert = design.project / "inputs/expert/strategy.yaml"
+        if not expert.exists():
+            expert = expert_input(design, binding=labels)
+        import_native(design, expert)
+    goal = (
+        "Review a VHH design specification on the "
+        "already approved lysozyme hotspot. "
+        "No binding efficacy is established. Keep "
+        "upstream limitations and propose one "
+        "bounded first-pilot condition, all seven "
+        "official scaffolds and 40 candidates each. "
+        "Use full target context. "
+        + (
+            "Use standard structured DesignArm with default scaffold/CDR settings. "
+            if kind == "standard"
+            else "Preserve the imported scientist native YAML "
+            "bytes exactly; use "
+            "strategy_source=expert-native and arms=[]. "
+        )
+        + "Inspect and validate the design, obtain "
+        "independent Judge review and present "
+        "Gate 3. Stop before approval or generation."
+    )
+    try:
+        outcome = await run_session(design, config, models, goal, emit=emit)
+    finally:
+        save(case / (kind + "-metrics.json"), stats(design), secrets)
+    save(case / (kind + "-gate3.json"), outcome, secrets)
+    assert (
+        outcome["status"] == "awaiting-human-approval"
+        and outcome["card"]["gate_type"] == "design-specification"
+    ), outcome
+    assert outcome["card"]["judge_status"] != "BLOCKED", outcome
+    snapshot = design.design_snapshot(design.current_design())
+    assert snapshot["evaluation"]["generation_started"] is False
+    assert snapshot["evaluation"]["compiler_validation"] == "existing compiler and backend passed"
+    save(case / (kind + "-snapshot.json"), snapshot, secrets)
+    save(case / (kind + "-metrics.json"), stats(design), secrets)
+    if kind == "expert-native":
+        native = design.current_design()["native_input"]
+        input_bytes = [
+            (design.project / r["relative_path"]).read_bytes()
+            for r in native["summary"]["input_refs"]
+            if r["relative_path"].endswith(".yaml")
+        ]
+        compiled = [
+            (design.project / r["relative_path"]).read_bytes()
+            for r in design.document(design.current_design()["compiled_ref"])
+            if r["relative_path"].endswith("/design.yaml")
+        ]
+        assert len(compiled) == 7 and all(raw in input_bytes for raw in compiled), (
+            "Native YAML changed"
+        )
+    await independent_review(
+        case,
+        kind + "-gate3",
+        {
+            "card": outcome["card"],
+            "snapshot": snapshot,
+            "judge": judge_record(design, outcome["card"]),
+            "approved_site": design.approved_site(),
+        },
+        secrets,
+    )
+
+
 async def main():
     OUT.mkdir(exist_ok=False)
     config = ModelConfig.model_validate(yaml.safe_load((ROOT / "config/llm.yaml").read_text()))
@@ -764,75 +835,16 @@ async def main():
                     save(case / "backend-validation.json", backend, secrets)
                     for kind in ("standard", "expert-native"):
                         active_case = "case-4-standard" if kind == "standard" else "case-5-native"
-                        design = DesignBridge(project, "live-design-" + kind, store)
-                        if kind == "expert-native":
-                            labels = tuple(
-                                bridge.approved_site()["hotspots"]["hotspot_sets"][0][
-                                    "label_seq_ids"
-                                ]
-                            )
-                            expert = expert_input(design, binding=labels)
-                            import_native(design, expert)
-                        goal = (
-                            "Review a VHH design specification on the "
-                            "already approved lysozyme hotspot. "
-                            "No binding efficacy is established. Keep "
-                            "upstream limitations and propose one "
-                            "bounded first-pilot condition, all seven "
-                            "official scaffolds and 40 candidates each. "
-                            "Use full target context. "
-                            + (
-                                "Use standard structured DesignArm with default "
-                                "scaffold/CDR settings. "
-                                if kind == "standard"
-                                else "Preserve the imported scientist native YAML "
-                                "bytes exactly; use "
-                                "strategy_source=expert-native and arms=[]. "
-                            )
-                            + "Inspect and validate the design, obtain "
-                            "independent Judge review and present "
-                            "Gate 3. Stop before approval or generation."
-                        )
-                        outcome = await run_session(design, config, models, goal, emit=emit)
-                        save(case / (kind + "-gate3.json"), outcome, secrets)
-                        assert (
-                            outcome["status"] == "awaiting-human-approval"
-                            and outcome["card"]["gate_type"] == "design-specification"
-                        ), outcome
-                        assert outcome["card"]["judge_status"] != "BLOCKED", outcome
-                        snapshot = design.design_snapshot(design.current_design())
-                        assert snapshot["evaluation"]["generation_started"] is False
-                        assert (
-                            snapshot["evaluation"]["compiler_validation"]
-                            == "existing compiler and backend passed"
-                        )
-                        save(case / (kind + "-snapshot.json"), snapshot, secrets)
-                        save(case / (kind + "-metrics.json"), stats(design), secrets)
-                        if kind == "expert-native":
-                            native = design.current_design()["native_input"]
-                            input_bytes = [
-                                (design.project / r["relative_path"]).read_bytes()
-                                for r in native["summary"]["input_refs"]
-                                if r["relative_path"].endswith(".yaml")
-                            ]
-                            compiled = [
-                                (design.project / r["relative_path"]).read_bytes()
-                                for r in design.document(design.current_design()["compiled_ref"])
-                                if r["relative_path"].endswith("/design.yaml")
-                            ]
-                            assert len(compiled) == 7 and all(
-                                raw in input_bytes for raw in compiled
-                            ), "Native YAML changed"
-                        await independent_review(
+                        await run_design_case(
+                            project,
+                            store,
                             case,
-                            kind + "-gate3",
-                            {
-                                "card": outcome["card"],
-                                "snapshot": snapshot,
-                                "judge": judge_record(design, outcome["card"]),
-                                "approved_site": bridge.approved_site(),
-                            },
+                            kind,
+                            config,
+                            models,
                             secrets,
+                            emit,
+                            thread="live-design-" + kind,
                         )
                         report["cases"].append({"case": active_case, "status": "PASS"})
                         save(OUT / "report.json", report, secrets)

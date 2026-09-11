@@ -394,6 +394,79 @@ def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
+    """Expose existing candidate reasoning and source-coordinate rows in one scoped view.
+
+    This is a declared field projection of the existing analysis, not a new candidate
+    ranking, mapping, access calculation, or claim of a complete receptor analysis.
+    """
+    fields = ("identity", "state", "structure", "membrane", "warnings", "avoid")
+    result = {key: scientific_projection(value[key]) for key in fields if key in value}
+    topology = value.get("topology")
+    if isinstance(topology, dict):
+        result["topology_summary"] = {
+            key: scientific_projection(item)
+            for key, item in topology.items()
+            if key not in {"residues", "unmapped_residues"}
+        }
+    columns = (
+        "gpcrdb_sequence_number",
+        "amino_acid",
+        "observed_amino_acid",
+        "observed",
+        "auth_asym_id",
+        "auth_seq_id",
+        "label_asym_id",
+        "label_seq_id",
+        "insertion_code",
+        "model_id",
+        "mapping_status",
+        "segment",
+        "membrane_facing",
+        "functional_role",
+    )
+    candidates = value.get("candidates")
+    if isinstance(candidates, dict):
+        overview = {}
+        for mode, items in candidates.items():
+            if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+                overview[mode] = scientific_projection(items)
+                continue
+            overview[mode] = []
+            for index, item in enumerate(items):
+                entry = {k: scientific_projection(v) for k, v in item.items() if k != "residues"}
+                rows = item.get("residues")
+                if isinstance(rows, list) and all(isinstance(row, dict) for row in rows):
+                    records = [{key: row[key] for key in columns if key in row} for row in rows]
+                    if records and all(set(row) == set(records[0]) for row in records):
+                        names = list(records[0])
+                        entry["residue_table"] = {
+                            "columns": names,
+                            "rows": [[row[key] for key in names] for row in records],
+                            "encoding": "Every source member, in order; "
+                            "values follow columns; nulls retained.",
+                        }
+                    else:
+                        entry["residue_records"] = records
+                    entry["full_residues_path"] = ["candidates", mode, index, "residues"]
+                elif "residues" in item:
+                    entry["residues"] = rows
+                overview[mode].append(entry)
+        result["candidate_overview"] = overview
+    result["query_scope"] = "receptor-candidate-overview"
+    result["declared_scope_complete"] = True
+    result["scope_limits"] = (
+        "All candidate non-residue fields and all members in the listed residue columns are "
+        "supplied without reranking. Other residue columns, full topology/residue_regions, "
+        "chain_graph, evidence inventory and provenance remain in full_result. Read a specific "
+        "source path if needed. Source auth/label numbering is NOT approved design numbering; "
+        "use read_canonical_mapping for the approved correspondence and preserve its qualifiers. "
+        "Kernel candidate confidence/hard_gates are scoped heuristics, not full VHH access, "
+        "functional efficacy, or independent scientific approval."
+    )
+    return result
+
+
 def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> Any:
     from langchain_core.messages import ToolMessage
 
@@ -485,15 +558,23 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     complete_projection = (
         judge_snapshot_projection(value) if role == "judge" else scientific_projection(value)
     )
-    projected = complete_projection if role == "judge" or exact_page else preview(value)
-    view_limit = 32000 if role == "judge" else 6000
+    complete_design = role == "binder" and message.name == "read_design_evidence"
+    projected = (
+        complete_projection if role == "judge" or exact_page or complete_design else preview(value)
+    )
+    view_limit = 32000 if role == "judge" or complete_design else 6000
     if source_artifact is not None:
         projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
-        for key in ("identity", "state", "warnings", "avoid"):
-            if key in value:
-                candidate = {**projected, key: scientific_projection(value[key])}
-                if len(compact(candidate)) <= 5500:
-                    projected = candidate
+        overview = {**projected, **receptor_overview_projection(value)}
+        if role == "site" and len(compact(overview)) <= 32000:
+            projected = overview
+            view_limit = 32000
+        else:
+            for key in ("identity", "state", "warnings", "avoid"):
+                if key in value:
+                    candidate = {**projected, key: scientific_projection(value[key])}
+                    if len(compact(candidate)) <= 5500:
+                        projected = candidate
     if message.name == "read_target_evidence":
         complete_facts = target_page_projection(scientific_projection(value))
         if len(compact(complete_facts)) <= view_limit:
@@ -552,7 +633,9 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     "partial": projected != complete_projection,
                     "scientific_content_complete": projected == complete_projection,
                     "read": (
-                        "Use supplied scientific content directly when complete. "
+                        "Use supplied scientific content directly when complete, or the "
+                        "declared fields when declared_scope_complete=true. Other analysis "
+                        "fields are optional scoped reads, not required full-file paging. "
                         "read_evidence_result(ref, path=['key']) for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
                         "Use offset/limit for list pages. Full result retained."
@@ -652,6 +735,10 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
                 ):
                     encoded = site_page_projection({"facts": value["facts"]})
                     value = {**value, **encoded}
+                elif key in {"candidate_overview", "topology_summary"} and isinstance(
+                    value.get("candidates"), dict
+                ):
+                    value = {**value, **receptor_overview_projection(value)}
                 elif key in {
                     "missing_construct_position_count",
                     "missing_construct_position_ranges_inclusive",

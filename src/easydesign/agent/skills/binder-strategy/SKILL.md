@@ -71,3 +71,8 @@ runtime's two output-contract corrections per execution; do not repeat scientifi
 Runtime owns identity, mapping, coordinate presence, approved constraints and source IDs.
 Interpretation must not contradict these hard facts. Judge independently checks this consistency,
 without re-deriving facts; an explicit contradiction must be rejected before a Gate.
+
+When read_design_evidence reports scientific_content_complete=true, the complete bounded design
+evidence is already supplied, including all approved residues, all seven scaffold constraints,
+upstream warnings and Site rationale. Use it directly to formulate and evaluate BinderIntent.
+Do not reread each field or the entire Site research merely to reconstruct that same snapshot.

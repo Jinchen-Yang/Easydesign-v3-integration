@@ -1173,3 +1173,65 @@ OVERRIDE and verified the old Site approval. No new Site job was created. Standa
 Strategy is now running with the real isolated BoltzGen0.3.2 validator, to be followed by a
 separate native expert YAML case. Live154 GPCR continues actual receptor/source/mapping work.
 Cases2/4/5 and full regression remain outstanding. Phase2 NOT FROZEN; Phase3/4 NOT STARTED.
+
+
+### Complete owner views and approved-Site Design continuation (live153/154)
+
+After Case1/3 acceptance and the actual Gate2 warning override, live153's standard Binder
+ended before any proposal at16shared calls (Coordinator2/Binder14), peak sent context58203.
+Repeated reads of one approved design snapshot accumulated beyond60000. The full original
+snapshot was20978chars and its complete scientific projection17878chars, so splitting it
+into many small views was unnecessary. Native Case5 was not run; accepted Target/Site and
+reviews remain intact. No candidate generation or prediction occurred.
+
+Live154 GPCR (`phase2-goldens-20260911T225114966519Z`) ended at20calls
+(Coordinator3/Site17), peak59646. It acquired19source responses and completed the real receptor
+analysis, but repeatedly requested entire topology/candidates objects and reread mapped pages.
+No keyword discovery search, Site proposal or Gate2 was completed. This is a context/navigation
+failure, not evidence against the receptor or a scientific negative result. Both runner PIDs
+were confirmed exited before Agent files changed.
+
+Binder now receives the complete scientific `read_design_evidence` projection when it fits
+32000chars, including every approved hotspot, all seven official scaffold constraints,
+Site rationale, warnings and controls. The existing60000input/32call limits remain unchanged;
+oversized owner data is explicitly partial with its full immutable source retained.
+
+The Site receptor tool now supplies a declared candidate overview with identity/state/membrane/
+topology summary, every candidate's non-residue scientific metadata and every member in explicit
+source-residue columns. Uniform columns are represented as exact tables; missing keys remain
+distinct from present nulls. This is a scoped projection of existing output, not new ranking,
+mapping, topology or accessibility science. Other columns, full topology, chain graph and
+provenance remain available through the same verified artifact reader. The view is explicitly
+partial relative to the complete analysis and complete only for its declared fields. Source
+coordinates are expressly not approved design coordinates; canonical lookup and qualifications
+remain necessary. Display aliases resolve back to this deterministic source projection.
+
+Retained live154 analysis635111chars → declared overview24972chars. All7candidate entries,
+all44members, all non-residue scientific fields and every displayed source-numbering value were
+compared to the original artifact. Receipt `receptor-overview155.json` is a DETERMINISTIC
+PROJECTION CHECK, not new live-model acceptance. Full-VHH approach and efficacy remain unresolved.
+
+The validation runner extracts the same standard/native Gate3 test into a shared function and
+adds an explicit approved-Site continuation entry. It verifies source Case1/3 acceptance, exact
+review hash, stored card/Judge, delivered validation actor response, current applied Site approval,
+unchanged scientific content and original Target mapping. Pending and approved Stage02 manifest
+bindings remain distinct. It starts fresh Design threads without touching prior checkpoints,
+proposal ownership, verdicts or scientific jobs; existing expert inputs are reused unchanged.
+Each Design attempt exports metrics even on failure. No new scheduler/approval system is added.
+The real saved Site passed read-only resume verification at
+`phase2-goldens-20260911T231956503269Z`; no model calls or new jobs were made. An initial driver
+check used the Site thread for a Target-only canonical event lookup; the correct original Target
+thread fixed that ordinary validation defect, with the failed diagnostic retained.
+
+DETERMINISTIC/MOCK targeted155:36 PASS (554.36s), including actual old-service Site approval,
+pre-approval rejection, changed/failed review rejection, complete owner view, strict native
+constraints and design runtime/harness. Earlier isolated draft owner-view test:9 PASS (2.26s).
+Mypy155/155b passed; final table/alias and lint checks are recorded below when complete.
+Protected155:all385 baseline files unchanged. Cases2/4/5 and full regression remain pending;
+Phase2 NOT FROZEN and Phase3/4 NOT STARTED.
+
+Final targeted155b:11 PASS (11.04s), covering exact candidate tables/aliases and the approved-Site
+review recovery guard. Both preserved live processes and the test processes have exited.
+Ruff155c PASS; mypy155b PASS. Next live155 continues only standard/native Design from the actual
+live153 Site approval; live156 reuses the approved GPCR Target with the new candidate overview.
+No model/output/call/input or GPU budgets changed.

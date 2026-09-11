@@ -40,7 +40,13 @@ from .contracts import (
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
 from .evidence_corpus import ContinueEvidence, RetrieveEvidence
-from .evidence_output import ModelEvidenceScope, output_message, read_query, verified_result
+from .evidence_output import (
+    ModelEvidenceScope,
+    output_message,
+    read_query,
+    reasoning_working_view,
+    verified_result,
+)
 from .evidence_research import EvidenceResearch, ReceptorAnalysis, ResearchQuery
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
@@ -621,7 +627,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # Keep the phase transition adjacent to the latest evidence. The original
             # checkpoint stays intact; this is a transient model-input instruction.
             # A beginning-only system addition was repeatedly ignored in long live traces.
-            call_messages = list(request.messages)
+            reasoning = self.config.for_role(cast(Role, self.role)).reasoning_effort != "none"
+            call_messages = (
+                reasoning_working_view(list(request.messages))
+                if reasoning
+                else list(request.messages)
+            )
             if synthesize:
                 call_messages.append(
                     HumanMessage(
@@ -657,6 +668,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ),
                     "repair_attempt": attempt,
                     "tool_mode": "site-synthesis" if synthesize else "research",
+                    "history_projection": "completed-tool-records" if reasoning else "native",
                     "offered_action_tools": [t.name for t in call_tools],
                     "structured_output_tool": self.output_schema.__name__
                     if self.output_schema

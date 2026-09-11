@@ -251,3 +251,54 @@ async def test_scoped_pages_are_not_truncated_again_after_cursor_advance(bridge:
     )
     page = json.loads(rendered.content)
     assert page["value"] == "z" * 3000 and page["next_offset"] == 3000
+
+
+@pytest.mark.parametrize("name", ["retrieve_evidence", "continue_evidence"])
+def test_every_source_page_preserves_full_passage_and_feature_inventory(
+    bridge: Any, name: str
+) -> None:
+    execution = bridge.store.begin_execution(bridge.thread, "Read exact source evidence")
+    passage = "Synthetic primary passage. " * 32 + "Counterevidence: function was not tested."
+    value = {
+        "cards": [
+            {
+                "card_id": "passage-1",
+                "source_id": "UniProt:TEST",
+                "passage": passage,
+                "limitations": [
+                    "unverified binding",
+                    "no assay",
+                    "no efficacy",
+                    "conditional mapping",
+                ],
+            }
+        ],
+        "feature_scope": {
+            "UniProt:TEST": {
+                "available_types": [
+                    "Beta strand",
+                    "Binding site",
+                    "Topological domain",
+                    "Transmembrane",
+                    "Glycosylation",
+                ]
+            }
+        },
+        "next_cursor": "opaque-issued-cursor",
+        "matching_chunks": 8,
+        "question": "Read the scoped source and its counterevidence. " * 12,
+    }
+    rendered = output_message(
+        bridge,
+        "site",
+        execution["execution_id"],
+        ToolMessage(content=json.dumps(value), tool_call_id="read-source", name=name),
+    )
+    result = json.loads(rendered.content)
+    assert len(rendered.content) < 6000
+    assert result["cards"] == value["cards"]
+    assert result["feature_scope"] == value["feature_scope"]
+    assert result["scientific_content_complete"] is True
+    assert result["next_cursor"] == value["next_cursor"]
+    full = bridge.store.root / "agent-work" / bridge.thread / result["full_result"][1:]
+    assert json.loads(full.read_text()) == value

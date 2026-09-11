@@ -43,3 +43,52 @@ def test_config_and_budget_survive_reopen(bridge: Any) -> None:
         second.close()
     assert (skill_root() / "target-intelligence/SKILL.md").is_file()
     assert (skill_root() / "evidence-judge/SKILL.md").is_file()
+
+
+def test_reasoning_view_preserves_evidence_and_user_turns_without_mutating_checkpoint() -> None:
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from easydesign.agent.evidence_output import reasoning_working_view
+
+    user = HumanMessage(content="Find a falsifiable binding hypothesis; no approval.")
+    assistant = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "thinking": "private deliberation " * 1000,
+                "signature": "original-signed-block",
+            }
+        ],
+        tool_calls=[
+            {
+                "id": "read-1",
+                "name": "retrieve_evidence",
+                "args": {"need": "KNOWN_EPITOPE", "question": "scoped source"},
+                "type": "tool_call",
+            }
+        ],
+    )
+    evidence = {
+        "passage": "Exact source quote with counterevidence.",
+        "source_id": "test-source",
+        "mapping": [{"label": 9, "canonical": None, "status": "ambiguous"}],
+        "limitations": ["unknown efficacy", "state mismatch"],
+        "full_result": "/result-aabb.json",
+    }
+    result = ToolMessage(
+        name="retrieve_evidence", tool_call_id="read-1", content=json.dumps(evidence)
+    )
+    second_user = HumanMessage(content="Retain the state mismatch.")
+    messages = [user, assistant, result, second_user]
+    original = [m.model_dump() for m in messages]
+    view = reasoning_working_view(messages)
+    assert [m.model_dump() for m in messages] == original
+    assert view[0] is user and view[-1] is second_user
+    assert "private deliberation" not in str(view) and "original-signed-block" not in str(view)
+    record = json.loads(view[1].content)["runtime_history"]
+    assert record[0]["requested_tools"] == assistant.tool_calls
+    assert record[1]["content"] == evidence
+    assert record[1]["status"] == "success"
+    assert len(str(view)) < len(str(messages)) / 4
+    assert reasoning_working_view([user, assistant]) == [user, assistant]
+    assert reasoning_working_view([user, result]) == [user, result]

@@ -891,3 +891,37 @@ PASS; mypy141b:2 changed source files PASS. Protected-check141:all385 files unch
 Config before/after snapshots and model-config-change141.json retain SHA b72c733d0535cf41fa944c1e4899d3996f0878ef165d7b7f8a4e5c27f29826d7
 →786d02de6d7c4f7e43e2a0d79fdf9017fb3e2e07d0c84476b2ba6b08a968cd40.
 Next live141/142 resume the approved soluble/GPCR Target bundles. Phase2 NOT FROZEN.
+
+
+### Completed-tool working context and exact continuation pages (live141/142)
+
+Live141 (`phase2-goldens-20260911T212007347528Z`, soluble) failed after8calls
+(Coordinator3/Site5); live142 (`phase2-goldens-20260911T212007853969Z`, GPCR) after9calls
+(Coordinator2/Site7). Both began batched source research but reached the unchanged60000input
+boundary while replaying accumulating private reasoning. Soluble's five Site replies alone
+contained15116thinking characters; its last sent context was56175chars before another batch.
+No input cap is raised. These failures do not invalidate the approved Target or imply biology.
+
+For reasoning mode, the existing model-input projection now represents completed assistant/tool
+exchanges as a transient runtime history containing exact action arguments, exact delivered tool
+values (including nulls, counterevidence, failure status and full-result refs) and labeled assistant
+text. Original human turns retain order. Private reasoning is not a scientific fact and is not
+replayed in that working view; original signed blocks remain byte-for-byte in the existing native
+checkpoint. Included signed blocks are never cut or forged. Incomplete/orphan exchanges are
+not projected. No new artifact/checkpoint/workflow or model-authored scientific summary is added.
+The guard counts the actual projected messages, and context metrics identify the projection.
+
+A separate discovered omission affected continue_evidence: it had inherited generic preview
+truncation instead of retrieve_evidence's exact-page path. It now retains complete scoped passages,
+limitations and available feature types. The original corpus/page size/cursor/ownership checks
+are unchanged. Tests compare exact returned values for both initial and continuation pages.
+
+Targeted143:34 PASS (8.40s), including unchanged original messages, complete retained scientific
+payloads, pending-call preservation, exact pages and actual SDK/typed boundaries. mypy143:3files
+PASS. Ruff143 found one overlong presentation string; formatting corrected. A2-call REAL MODEL
+probe143 on SYNTHETIC input accepted the completed-tool working view and submitted an appropriately
+limited final tool conclusion; no scientific acceptance is inferred. Small synthetic histories
+can become slightly longer due to the explicit provenance envelope; the long-thinking regression
+verifies the intended reduction without changing evidence values.
+Next live143/144 reuse approved Targets under unchanged Pro/low/4096/32/60000configuration.
+Phase2 NOT FROZEN; only Case3 is scientifically accepted.

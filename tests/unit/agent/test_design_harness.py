@@ -23,7 +23,8 @@ class DesignModel(SiteModel):
             "judge": "JudgeVerdict",
         }
         expected = DESIGN_ALLOWED[self.role] | ({names[self.role]} if self.role in names else set())
-        assert {t.name for t in tools} == expected
+        names = {t.name for t in tools}
+        assert names <= expected and expected - names <= {"get_job_status"}
         return self
 
     def answer(self, messages: Any) -> AIMessage:

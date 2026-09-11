@@ -9,7 +9,11 @@ import httpx
 import pytest
 from langchain_core.messages import ToolMessage
 
-from easydesign.agent.contracts import AgentBoundaryError, SourceSelectionRequired
+from easydesign.agent.contracts import (
+    AgentBoundaryError,
+    EvidenceCursorQueryMismatch,
+    SourceSelectionRequired,
+)
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, result_tool
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchHttpClient
@@ -62,13 +66,13 @@ def test_source_selection_full_retention_scoped_pagination_and_thread_isolation(
         need="FUNCTIONAL_MECHANISM", question="Y185A assay", source_id="EuropePMC:PMC123"
     )
     first = corpus.retrieve(q)
-    assert len(first["cards"]) == 2 and first["next_cursor"]
+    assert 0 < len(first["cards"]) <= q.page_size and first["next_cursor"]
     assert len(json.dumps(first)) < 6500
     assert first["cards"][0]["location"].startswith("body/Experiment")
     second = corpus.retrieve(q.model_copy(update={"cursor": first["next_cursor"]}))
     assert first["cards"][0]["card_id"] != second["cards"][0]["card_id"]
     assert len(calls) == 1
-    with pytest.raises(AgentBoundaryError, match="another question"):
+    with pytest.raises(EvidenceCursorQueryMismatch, match="exact question"):
         corpus.retrieve(
             q.model_copy(update={"question": "another question", "cursor": first["next_cursor"]})
         )

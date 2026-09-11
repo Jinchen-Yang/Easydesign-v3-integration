@@ -241,5 +241,18 @@ class InvalidFieldProjection(RuntimeError):
         }
 
 
+class EvidenceCursorQueryMismatch(InvalidFieldProjection):
+    """A verified current-thread cursor was used with a reworded question only."""
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "CURSOR_QUERY_MISMATCH",
+            "required_action": "retrieve_evidence",
+            "message": str(self),
+        }
+
+
 class ReconciliationRequired(AgentBoundaryError):
     """An uncertain old-world submission must not be replayed automatically."""

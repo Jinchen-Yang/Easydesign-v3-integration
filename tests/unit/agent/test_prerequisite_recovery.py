@@ -49,7 +49,8 @@ class RecoveryModel(ScriptedModel):
         expected = PHASE2_ALLOWED[self.role] | (
             {output[self.role]} if self.role in output else set()
         )
-        assert {t.name for t in tools} == expected
+        names = {t.name for t in tools}
+        assert names <= expected and expected - names <= {"get_job_status"}
         return self
 
     def answer(self, messages: Any) -> AIMessage:

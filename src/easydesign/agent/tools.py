@@ -870,6 +870,15 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
             raise AgentBoundaryError("Judge cannot invoke operational observation")
         # Bounded observation, never a second scheduler; cancellation only detaches.
         result = bridge.get_job_status()
+        if result["status"] == "no-bound-job":
+            result = {
+                **result,
+                "next_action": (
+                    "No job exists to observe. Do not repeat get_job_status. Target Intelligence "
+                    "must resolve any requested canonical reference using selected verified "
+                    "sources, then call prepare_target. The Coordinator must delegate to Target."
+                ),
+            }
         for _ in range(40):
             if result["status"] not in ACTIVE_JOB_STATUSES:
                 break
@@ -934,7 +943,8 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                 "get_job_status",
                 status_tool,
                 EmptyArguments,
-                "Observe the already-bound job for up to ten seconds; never resubmit.",
+                "Observe an existing bound job for up to ten seconds. Requires a job receipt "
+                "from prepare_target or a Gate response; no-bound-job is not a running job.",
             )
         )
     if role == "target":

@@ -15,7 +15,13 @@ from pydantic import Field
 
 from easydesign.core import ArtifactRef
 
-from .contracts import AgentBoundaryError, ShortText, SourceSelectionRequired, StrictDTO
+from .contracts import (
+    AgentBoundaryError,
+    EvidenceCursorQueryMismatch,
+    ShortText,
+    SourceSelectionRequired,
+    StrictDTO,
+)
 from .session_store import compact, confined, identity
 
 EvidenceNeed = Literal[
@@ -56,7 +62,14 @@ class RetrieveEvidence(StrictDTO):
     need: EvidenceNeed
     question: ShortText
     source_id: str = Field(default="", max_length=80)
-    cursor: str = Field(default="", max_length=2000)
+    cursor: str = Field(
+        default="",
+        max_length=2000,
+        description=(
+            "Opaque next_cursor. Keep need, source_id and question EXACTLY unchanged when "
+            "continuing; omit cursor to ask a new question."
+        ),
+    )
     page_size: int = Field(default=2, ge=1, le=3)
 
 
@@ -250,6 +263,36 @@ class EvidenceCorpus:
         if request.cursor:
             try:
                 decoded = json.loads(base64.urlsafe_b64decode(request.cursor))
+                if decoded.get("view") != view:
+                    for event in reversed(self.bridge.store.events(self.bridge.thread)):
+                        if event["kind"] != "evidence-view":
+                            continue
+                        prior = self.bridge.document(event["payload"]["ref"])
+                        if prior["next_cursor"] != request.cursor:
+                            continue
+                        same_scope = (
+                            prior["target_binding"] == identity(self.bridge.binding())
+                            and prior["need"] == request.need
+                            and prior.get("source_id") == request.source_id
+                        )
+                        expected_view = identity(
+                            {
+                                "thread": self.bridge.thread,
+                                "binding": self.bridge.binding(),
+                                "need": request.need,
+                                "question": prior["question"],
+                                "source": request.source_id,
+                                "docs": [c["corpus_ref"] for c in docs],
+                            }
+                        )
+                        if same_scope and expected_view == decoded["view"]:
+                            raise EvidenceCursorQueryMismatch(
+                                "This verified cursor continues question="
+                                + compact(prior["question"])
+                                + ". Repeat that exact question, need and source_id to continue, "
+                                "or omit cursor to start a new question. No page was delivered."
+                            )
+                        break
                 if (
                     decoded["view"] != view
                     or not isinstance(decoded["offset"], int)
@@ -319,6 +362,7 @@ class EvidenceCorpus:
             "query_id": view + f"-{offset}",
             "topic": next(k for k, v in NEEDS.items() if v == request.need),
             "question": request.question,
+            "source_id": request.source_id,
             "need": request.need,
             "status": "UNRESOLVED",
             "cards": cards,
@@ -339,6 +383,15 @@ class EvidenceCorpus:
                 "Partial source passages; relevance and entailment require owner/Judge review."
             ),
         }
+        # Size the exact page after attaching source/binding metadata. A smaller
+        # page advances its cursor only over delivered cards; no passage is cut.
+        from .evidence_output import scientific_projection
+
+        while len(cards) > 1 and len(compact(scientific_projection(result))) > 4800:
+            cards.pop()
+            result["next_cursor"] = base64.urlsafe_b64encode(
+                compact({"view": view, "offset": offset + len(cards)}).encode()
+            ).decode()
         ref = self.bridge.persist("evidence-view", result)
         execution = self.bridge.store.latest_execution(self.bridge.thread)
         self.bridge.store.event(

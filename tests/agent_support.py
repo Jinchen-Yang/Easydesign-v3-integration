@@ -107,9 +107,8 @@ class ScriptedModel(BaseChatModel):
         from easydesign.agent.harness import ALLOWED
 
         output = {"target": "TargetInterpretation", "judge": "JudgeVerdict"}
-        assert names == ALLOWED[self.role] | (
-            {output[self.role]} if self.role in output else set()
-        ), names
+        expected = ALLOWED[self.role] | ({output[self.role]} if self.role in output else set())
+        assert names <= expected and expected - names <= {"get_job_status"}, names
         return self
 
     def _generate(

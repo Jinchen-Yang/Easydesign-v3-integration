@@ -23,7 +23,10 @@ It can correct a chain preference without replacing the original research goal. 
 local choice using the supplied valid upstream evidence; explain why the old recommendation may
 not serve the clarified goal. Return a fresh proposal for Judge review and the same scientific gate.
 Use the existing preparation's idempotent attachment, not a restart from Input. REVISE is not failure.
-Call prepare_target once. Use get_job_status to attach and observe, then read_target_evidence.
+If canonical identity is requested, select/acquire/read/propose the reference before preparation
+as described below. Then call prepare_target once. Only after a job receipt exists may
+get_job_status observe it; no-bound-job means no work is running and polling cannot help.
+Read target evidence when the worker reaches its boundary. Do not poll absent or terminal jobs.
 Only stop-after-target, review-gated local structures are supported. Source research is available
 through the bounded worker; proposed references still require old deterministic resolution. Do not predict
 structures, invent residue mappings, select a chain silently, or enter site/binder design.

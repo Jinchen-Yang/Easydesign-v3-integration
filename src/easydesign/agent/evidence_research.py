@@ -83,6 +83,20 @@ class ResearchQuery(StrictDTO):
     taxon_id: int | None = Field(default=None, ge=1)
     pdb_id: str | None = Field(default=None, pattern=r"^[0-9][A-Za-z0-9]{3}$")
 
+    @model_validator(mode="before")
+    @classmethod
+    def explicit_structure_alias(cls, value: Any) -> Any:
+        if (
+            isinstance(value, dict)
+            and value.get("operation") == "structure-record"
+            and isinstance(value.get("pdb_id"), str)
+        ):
+            identifier = value.get("identifier")
+            if identifier and str(identifier).upper() != value["pdb_id"].upper():
+                raise ValueError("identifier and pdb_id refer to different structures")
+            return {**value, "identifier": value["pdb_id"].upper()}
+        return value
+
     @model_validator(mode="after")
     def arguments(self) -> ResearchQuery:
         if self.operation.endswith("search") and not self.query.strip():
@@ -917,6 +931,10 @@ def research_tool(bridge: Any, role: str) -> Any:
             "Search literature/structures; "
             "retrieve primary PMID/PMCID, PDB complexes, UniProt or applicable GPCRdb context. "
             "Deep acquisition requires select_evidence first. Full records stay in the corpus; "
+            "Use identifier for the source key (PMID/PMCID/accession/PDB code). "
+            "Selection need must match query topic: identity=TARGET_IDENTITY, "
+            "state=STRUCTURE_STATE, structure-complex=PPI_INTERFACE, "
+            "function=FUNCTIONAL_MECHANISM, epitope=KNOWN_EPITOPE. "
             "use retrieve_evidence for passages and source card IDs in scientific synthesis. "
             "Failures are unresolved, never negative biology. "
             "No arbitrary URLs, shell, scientific approval or target identity mutation."

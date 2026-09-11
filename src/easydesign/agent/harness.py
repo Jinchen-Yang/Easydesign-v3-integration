@@ -22,6 +22,7 @@ from .contracts import (
     AgentBoundaryError,
     DecisionOutcome,
     EvidenceBinding,
+    EvidenceCursorQueryMismatch,
     InvalidFieldProjection,
     JudgeVerdict,
     SourceSelectionRequired,
@@ -231,6 +232,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
             raise AgentBoundaryError(f"Unexpected final tool surface for {self.role}")
+        # An absent job cannot advance by observation. Tool availability follows the
+        # original runtime receipt; this does not schedule work or choose science.
+        if (
+            self.role == "target"
+            and "get_job_status" in self.allowed
+            and self.bridge.get_job_status()["status"] == "no-bound-job"
+        ):
+            available = [t for t in available if t.name != "get_job_status"]
         if isinstance(self.bridge, Phase2Bridge):
             # The checkpoint retains every message. The model sees a working set of
             # recent detailed tool views; older archived results remain addressable.
@@ -549,7 +558,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 result = await handler(request)
             except InvalidFieldProjection as error:
                 if (
-                    name != "read_evidence_result"
+                    (
+                        name != "read_evidence_result"
+                        and not (
+                            name == "retrieve_evidence"
+                            and isinstance(error, EvidenceCursorQueryMismatch)
+                        )
+                    )
                     or not isinstance(self.bridge, Phase2Bridge)
                     or self.execution_id is None
                 ):

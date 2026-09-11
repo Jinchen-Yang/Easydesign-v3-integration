@@ -45,6 +45,11 @@ numbering distinct from the normalized approved target labels; map before propos
    Obtain additional pages/exact residues when needed; missing evidence is not zero.
    facts_table is the complete requested residue page encoded without repeated keys:
    each row follows mapping_columns then metric_columns exactly, including nulls.
+   This Site result uses approved_target.identity / approved_target.hard_facts;
+   it has no top-level chains or identity_evidence fields. Use the keys actually supplied.
+   Existing approved mapping already answers known canonical/construct correspondence;
+   compare_reference_identity is for an additional retrieved reference comparison, using
+   the exact source card_id returned by uniprot-record, never an accession or passage ID.
    Start from the supplied scan patches and focused literature hypotheses, then request
    their exact labels. Do not enumerate the entire target or repeat pages already read.
    Read full_result.facts only if an original object field is specifically needed.

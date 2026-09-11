@@ -25,6 +25,7 @@ from .contracts import (
     EvidenceCursorQueryMismatch,
     InvalidFieldProjection,
     JudgeVerdict,
+    SourceCardArgumentMismatch,
     SourceSelectionRequired,
     StaleEvidenceCursor,
     TargetInterpretation,
@@ -527,7 +528,31 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             ):
                 raise AgentBoundaryError("File is not an allowed skill or bounded result reference")
             if own_result and isinstance(self.bridge, Phase2Bridge):
-                raise AgentBoundaryError("Use read_evidence_result for scoped offload fields")
+                # The filesystem tool can be chosen for a displayed /result-*.json.
+                # Supply only an authorized field index; never invoke the file reader or
+                # return unbounded data. This read-only alias has the same role, execution,
+                # Judge snapshot and checksum checks as the scoped evidence tool.
+                if self.execution_id is None:
+                    raise AgentBoundaryError("Result index requires an execution")
+                value = verified_result(
+                    self.bridge, self.role, path, execution_id=self.execution_id
+                )
+                return ToolMessage(
+                    content=compact(
+                        {
+                            "status": "scoped-result-index",
+                            "full_result": path,
+                            "available_fields": list(value)[:30] if isinstance(value, dict) else [],
+                            "instruction": (
+                                "Use read_evidence_result(ref=full_result, field=<one key>) "
+                                "for evidence. This index contains no scientific field values; "
+                                "read_file reads Skills, not scientific result pages."
+                            ),
+                        }
+                    ),
+                    tool_call_id=request.tool_call["id"],
+                    name=name,
+                )
             if own_result:
                 confined(
                     self.bridge.store.root,
@@ -634,6 +659,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if (
                     (
                         name != "read_evidence_result"
+                        and not (
+                            name == "compare_reference_identity"
+                            and isinstance(error, SourceCardArgumentMismatch)
+                        )
                         and not (
                             name == "retrieve_evidence"
                             and isinstance(

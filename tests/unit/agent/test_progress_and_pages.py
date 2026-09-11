@@ -465,3 +465,94 @@ def test_site_display_page_cannot_skip_rows_hidden_by_size_limit() -> None:
         assert page["next_offset"] == len(delivered)
         offset = page["next_offset"]
     assert delivered == list(range(24))
+
+
+@pytest.mark.asyncio
+async def test_accession_in_source_card_argument_is_bounded_without_exposing_foreign_cards(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.contracts import InvalidFieldProjection
+    from easydesign.agent.evidence_research import ReferenceComparison
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    research = EvidenceResearch(b)
+    execution = b.store.begin_execution(b.thread, "Compare an acquired source")
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Compare an acquired source",
+        execution_id=execution["execution_id"],
+    )
+
+    async def handler(request: Any) -> Any:
+        return research.compare_reference(ReferenceComparison(**request.tool_call["args"]))
+
+    request = SimpleNamespace(
+        tool_call={
+            "name": "compare_reference_identity",
+            "id": "bad",
+            "args": {"uniprot_card_id": "P00698", "auth_chain": "L"},
+        }
+    )
+    for count in range(1, 5):
+        result = await guard.awrap_tool_call(request, handler)
+        payload = json.loads(result.content)
+        assert result.status == "error" and payload["repair_attempt"] == count
+        assert "not an accession" in payload["message"]
+        assert payload["error_code"] == "SOURCE_CARD_REQUIRED"
+        assert payload["required_action"] == "research_evidence"
+    with pytest.raises(AgentBoundaryError, match="repair budget"):
+        await guard.awrap_tool_call(request, handler)
+    with pytest.raises(AgentBoundaryError) as error:
+        research.compare_reference(
+            ReferenceComparison(uniprot_card_id="source-foreign", auth_chain="L")
+        )
+    assert not isinstance(error.value, InvalidFieldProjection)
+    assert not any(e["kind"] == "reference-identity-comparison" for e in b.store.events(b.thread))
+    assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_file_reader_result_alias_only_indexes_current_authorized_artifact(
+    bridge: Any,
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Inspect site")
+    eid = execution["execution_id"]
+    guard = RoleBoundary(b, "site", scripted_config(), "Inspect site", execution_id=eid)
+    message = output_message(
+        b,
+        "site",
+        eid,
+        ToolMessage(
+            name="evaluate_candidate_site",
+            tool_call_id="source",
+            content=compact({"facts": ["private-value" * 200], "mapping": {"observed": True}}),
+        ),
+    )
+    ref = json.loads(message.content)["full_result"]
+    request = SimpleNamespace(
+        tool_call={"name": "read_file", "id": "index", "args": {"file_path": ref}}
+    )
+
+    async def forbidden_handler(request: Any) -> Any:
+        raise AssertionError("Filesystem reader must never receive an evidence path")
+
+    result = await guard.awrap_tool_call(request, forbidden_handler)
+    value = json.loads(result.content)
+    assert value["status"] == "scoped-result-index"
+    assert set(value["available_fields"]) == {"facts", "mapping"}
+    assert "private-value" not in result.content and not b._jobs()
+    foreign_role = RoleBoundary(b, "target", scripted_config(), "Inspect site", execution_id=eid)
+    with pytest.raises(AgentBoundaryError, match="not supplied"):
+        await foreign_role.awrap_tool_call(request, forbidden_handler)
+    path = b.store.root / "agent-work" / b.thread / ref.lstrip("/")
+    original = path.read_bytes()
+    path.write_bytes(original + b" ")
+    with pytest.raises(Exception, match="Artifact .*不一致"):
+        await guard.awrap_tool_call(request, forbidden_handler)
+    path.write_bytes(original)
+    b.store.begin_execution(b.thread, "Another execution")
+    with pytest.raises(AgentBoundaryError, match="current execution"):
+        await guard.awrap_tool_call(request, forbidden_handler)

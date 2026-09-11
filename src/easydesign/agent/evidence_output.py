@@ -385,10 +385,10 @@ def result_tool(bridge: Any, role: str) -> Any:
         coroutine=read,
         args_schema=ReadEvidenceResult,
         description=(
-            "Read a verified full_result supplied to this role/execution. Use exactly one: "
-            "field='identity_evidence' (top-level key), fields=['chains','identity_evidence'] "
-            "(sibling keys), path=['identity_evidence','canonical'] (nested traversal). "
-            "Legacy field=[...] is deprecated and retains nested traversal. "
+            "Read a verified full_result supplied to this role/execution. Choose keys from "
+            "that actual result, not from another gate's schema. Use exactly one of field "
+            "(one top-level key), fields (sibling keys), or path (nested traversal). "
+            "Legacy field=[...] is deprecated and retains nested-path semantics. "
             "Use offset/limit for list pages, offset for text pages. Use focused fields; "
             "do not read the whole artifact sequentially."
         ),

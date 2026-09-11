@@ -241,6 +241,19 @@ class InvalidFieldProjection(RuntimeError):
         }
 
 
+class SourceCardArgumentMismatch(InvalidFieldProjection):
+    """An accession was supplied where a retrieved source-card identity is required."""
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "SOURCE_CARD_REQUIRED",
+            "required_action": "research_evidence",
+            "message": str(self),
+        }
+
+
 class EvidenceCursorQueryMismatch(InvalidFieldProjection):
     """A verified current-thread cursor was used with a reworded question only."""
 

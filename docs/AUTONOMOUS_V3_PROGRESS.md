@@ -273,3 +273,33 @@ assertion and passed. Live054 reached Site in two Coordinator calls, confirming 
 boundary repair. Site then passed a UniProt accession as a source-card ID; the exact source-card
 precondition rejected it before calculation. This ordinary argument mismatch is the next repair.
 Identity-trap remains PASS and no Site/Phase2 acceptance is claimed.
+
+
+### Scoped result navigation and verified runtime preparation (live060, targeted066)
+
+Live060 (`phase2-goldens-20260911T183054Z`) reused the exact approved Gate1 and
+identity-trap snapshot, then performed real Site discovery/acquisition and focused residue
+inspection. It failed when Site used `read_file` for a supplied scientific result reference.
+No Gate2 proposal was accepted. Phase2 is still NOT FROZEN; only golden case3 is PASS.
+
+The Agent now accepts that path as a read-only field-index alias after exactly the same
+role/execution/Judge-snapshot/artifact-integrity verification as `read_evidence_result`.
+It never invokes the filesystem reader or supplies unbounded field values. Foreign, stale
+execution and modified artifacts remain fatal. A UniProt accession used as source-card ID
+has a narrow diagnostic under the existing shared four-repair budget; unknown foreign cards
+remain fatal. Selector help now uses actual field names instead of Target-only examples that
+misled Site. No model/context/recovery budget was increased.
+
+Targeted059: 13 PASS. Targeted061 had a test-launch PYTHONPATH error. Targeted063/065 each
+had one new test-fixture/assertion defect (a synthetic non-table passed under a table tool
+name, then an English regex against a Chinese integrity error). Corrected targeted066:
+33 PASS (9.47s), including scoped-result negative boundaries. Mypy062: 20 files PASS;
+Ruff062 PASS. These are DETERMINISTIC/SYNTHETIC TESTS, not live golden acceptance.
+
+Download recovery049 completed the exact catalog size/SHA verification for all BoltzGen
+assets and the AFO 3.1.4 bundle. No assets or environments were borrowed from another clone.
+BoltzGen final registration068 is in progress. AFO installation064 has a separately saved
+single-GPU/single-sample/one-recycle/no-MSA/no-template 3600-second maximum compute plan;
+it failed before any GPU work because the clone lacks fixed uv 0.12.3. Dependency preparation
+continues; this is installation readiness, not Phase3 pilot acceptance. All old download
+partials, failed setup logs and quarantined staging are retained.

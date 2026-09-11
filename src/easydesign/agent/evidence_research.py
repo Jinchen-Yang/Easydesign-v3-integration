@@ -30,7 +30,7 @@ from easydesign.core import ArtifactRef, BackendContractError
 from easydesign.core.target_identity import resolve_target_identity
 from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, generate_candidates
 
-from .contracts import AgentBoundaryError, ShortText, StrictDTO
+from .contracts import AgentBoundaryError, ShortText, SourceCardArgumentMismatch, StrictDTO
 from .evidence_corpus import NEEDS, EvidenceCorpus, source_key
 from .session_store import compact, confined, identity
 
@@ -133,7 +133,12 @@ class ResearchConclusion(StrictDTO):
 
 
 class ReferenceComparison(StrictDTO):
-    uniprot_card_id: str = Field(min_length=1, max_length=80)
+    uniprot_card_id: str = Field(
+        min_length=1,
+        max_length=80,
+        description="Exact source card_id returned by research_evidence uniprot-record; "
+        "not a UniProt accession and not a passage card_id.",
+    )
     auth_chain: str = Field(min_length=1, max_length=16)
 
 
@@ -484,6 +489,14 @@ class EvidenceResearch:
             None,
         )
         if card is None:
+            if re.fullmatch(r"[A-Z][0-9][A-Z0-9]{3,7}[0-9](?:-[0-9]+)?", request.uniprot_card_id):
+                raise SourceCardArgumentMismatch(
+                    "uniprot_card_id requires the exact source card_id from "
+                    "research_evidence(operation='uniprot-record'), not an accession. "
+                    "Select/acquire the relevant reference first, then use its returned "
+                    "source card_id. No comparison was performed. Reuse existing approved "
+                    "mapping facts when they already answer the question."
+                )
             raise AgentBoundaryError("Reference must be a retrieved UniProt source card")
         records: list[dict[str, Any]] = []
         for ref in card["source_refs"]:

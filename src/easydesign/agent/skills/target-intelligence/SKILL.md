@@ -87,4 +87,12 @@ card for chain-selection, target-identity-review or scope-selection. A construct
 is not necessarily rejection; old mapping and human review decide whether it is usable.
 An approved canonical reference never proves native state or biological function.
 
+Canonical configuration changes invalidate prior evidence cursors. Start a new query without
+cursor after that change; reselect unrelated sources for the current evidence need. Within an
+unchanged view, copy the exact question/need/source_id when using next_cursor. Do not paraphrase
+the question during pagination. A rejected stale cursor never authorizes reading the old view.
+At a pending Target gate, finish the bounded identity/construct assessment for the Judge.
+Detailed functional/site research belongs to Site after Gate 1; do not exhaust this turn by
+performing the downstream research agenda before the scientist can resolve Target identity.
+
 Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.

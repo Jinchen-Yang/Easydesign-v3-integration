@@ -209,6 +209,38 @@ def _uniprot_view(record: dict[str, Any], topic: str) -> dict[str, Any]:
     }
 
 
+def _uniprot_sections(record: dict[str, Any]) -> list[dict[str, str]]:
+    """Keep related source identity facts together before the complete field index."""
+    sequence = record.get("sequence", {}).get("value")
+    identity_section = {
+        "accession": record["primaryAccession"],
+        "organism": record.get("organism"),
+        "protein": record.get("proteinDescription"),
+        "source_sequence_length": len(sequence) if isinstance(sequence, str) else None,
+        "processing_features": [
+            f
+            for f in record.get("features", [])
+            if f.get("type") in {"Signal", "Propeptide", "Chain"}
+        ],
+        "numbering_scope": (
+            "Positions are source UniProt sequence positions, not structure numbering."
+        ),
+    }
+    return [
+        {
+            "location": (
+                "canonical identity / accession species sequence length / "
+                "precursor signal peptide mature chain boundaries"
+            ),
+            "text": compact(identity_section),
+        }
+    ] + [
+        {"location": key + f"[{i}]", "text": compact(value)}
+        for key, values in record.items()
+        for i, value in enumerate(values if isinstance(values, list) else [values])
+    ]
+
+
 def _pdb_view(entry: dict[str, Any], polymers: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "pdb_id": entry.get("rcsb_id"),
@@ -723,13 +755,7 @@ class EvidenceResearch:
                             "protein": row.get("proteinDescription"),
                         }
                     )[:450],
-                    "_sections": [
-                        {"location": key + f"[{i}]", "text": compact(value)}
-                        for key, values in row.items()
-                        for i, value in enumerate(values if isinstance(values, list) else [values])
-                    ]
-                    if q.operation == "uniprot-record"
-                    else [],
+                    "_sections": _uniprot_sections(row) if q.operation == "uniprot-record" else [],
                     "truncated": q.operation.endswith("search"),
                 }
                 for row in records

@@ -38,7 +38,8 @@ Live003 (phase2-goldens-20260911T170453Z) exited with a recoverable query/cursor
 Coordinator2 + Target16 calls, 2 full sources and 7 delivered focused cards; the original
 no-job loop is absent. The Target changed its question while reusing the exact prior cursor.
 Only a verified current-thread, current-source, current-binding cursor with a reworded question
-now receives a bounded argument correction. Foreign/stale/tampered cursors remain fatal.
+now receives a bounded argument correction. Foreign/unknown/tampered cursors remain fatal. Known owned stale cursors are rejected
+without delivering data and receive a bounded instruction to open a current selected view.
 The existing two source/projection corrections per execution are reused. PDB identifier/pdb_id
 aliases are normalized before frozen DTO creation; conflicting explicit identifiers are rejected.
 Tool descriptions clarify evidence need/topic mapping. No successful Golden boundary claimed.
@@ -65,3 +66,26 @@ launch. Preserve requested production plan separately (e.g. 50,000) from tiny ex
 Zero passes and tiny between-arm differences are INCONCLUSIVE, never scientific failure or
 promotion evidence. Larger scientific decision branches use labeled synthetic/precomputed data.
 No production compute, legacy deletion, unapproved real science or wet-lab ordering.
+
+## Evidence navigation refinement
+
+Live009 made Coordinator2/Target7 calls and acquired UniProt + RCSB, then reused an RCSB cursor
+after canonical configuration invalidated its binding. Runtime still refuses that old view;
+a known owned cursor now produces STALE_EVIDENCE_CURSOR and explicit restart/reselection guidance.
+Foreign or unknown cursors and checksum failures cannot use this correction path. The existing
+shared two argument/prerequisite corrections and 32 model calls remain unchanged.
+Targeted011 24 PASS; Ruff and mypy20 PASS.
+
+Live013 made Coordinator2/Target8 calls. It corrected its question/cursor mismatch successfully,
+then tried to read identity_evidence from a source passage page before Target preparation and
+exhausted the shared argument-correction limit. This motivated a source-reading improvement:
+UniProt corpus now includes a deterministic contiguous identity section with actual accession,
+organism, source sequence length, and Signal/Propeptide/Chain annotations in source numbering.
+All original fields, response bytes and evidence references are retained; no structure mapping
+or biological inference is created. Actual retained P00698 summary is 1,150 characters and
+contains canonical 147, Signal1–18, Chain19–147. Targeted014 19 PASS, including exact frozen
+source-feature checks and negative conflicting-source aliases. No scientific oracle changed.
+
+Next: rerun the real Phase 2 cases from this source; independently inspect every Gate snapshot.
+Do not claim Phase 2 frozen until five cases and full regression pass. Miniforge005 continues
+its verified current-worktree download; no GPU jobs have been launched.

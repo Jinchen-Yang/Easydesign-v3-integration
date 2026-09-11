@@ -111,7 +111,9 @@ def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]
             "accession": accession,
             "taxon_id": source_identity["taxonomy_id"],
             "next": (
-                "prepare_target; inspect construct differences and seek Gate 1 where required"
+                "Prior evidence cursors are invalid. Read needed TARGET_IDENTITY passages "
+                "with cursor omitted in the new view, reusing the verified UniProt source. "
+                "Then prepare_target, inspect construct differences and seek Gate 1 where required."
             ),
         }
 

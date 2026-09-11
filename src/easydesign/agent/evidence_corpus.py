@@ -20,6 +20,7 @@ from .contracts import (
     EvidenceCursorQueryMismatch,
     ShortText,
     SourceSelectionRequired,
+    StaleEvidenceCursor,
     StrictDTO,
 )
 from .session_store import compact, confined, identity
@@ -292,7 +293,10 @@ class EvidenceCorpus:
                                 + ". Repeat that exact question, need and source_id to continue, "
                                 "or omit cursor to start a new question. No page was delivered."
                             )
-                        break
+                        raise StaleEvidenceCursor(
+                            "Cursor belongs to another question/thread/evidence view; "
+                            "the known owned view is no longer current"
+                        )
                 if (
                     decoded["view"] != view
                     or not isinstance(decoded["offset"], int)

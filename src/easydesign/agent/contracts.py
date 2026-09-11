@@ -254,5 +254,25 @@ class EvidenceCursorQueryMismatch(InvalidFieldProjection):
         }
 
 
+class StaleEvidenceCursor(AgentBoundaryError, InvalidFieldProjection):
+    """A known owned cursor is refused after its target/source selection changes."""
+
+    category = "RECOVERABLE_TOOL_ARGUMENT"
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "STALE_EVIDENCE_CURSOR",
+            "required_action": "retrieve_evidence",
+            "message": (
+                "The target or selected evidence changed; this old cursor was rejected. "
+                "No stale evidence was delivered. Omit cursor to start a current view, and "
+                "select the source for the current need if the view requires selection. "
+                "A prior selection is not current scientific authority."
+            ),
+        }
+
+
 class ReconciliationRequired(AgentBoundaryError):
     """An uncertain old-world submission must not be replayed automatically."""

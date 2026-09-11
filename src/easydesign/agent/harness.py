@@ -26,6 +26,7 @@ from .contracts import (
     InvalidFieldProjection,
     JudgeVerdict,
     SourceSelectionRequired,
+    StaleEvidenceCursor,
     TargetInterpretation,
     TargetTask,
 )
@@ -562,7 +563,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         name != "read_evidence_result"
                         and not (
                             name == "retrieve_evidence"
-                            and isinstance(error, EvidenceCursorQueryMismatch)
+                            and isinstance(
+                                error, (EvidenceCursorQueryMismatch, StaleEvidenceCursor)
+                            )
                         )
                     )
                     or not isinstance(self.bridge, Phase2Bridge)

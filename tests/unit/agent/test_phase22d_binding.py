@@ -5,7 +5,11 @@ from typing import Any
 import httpx
 import pytest
 
-from easydesign.agent.contracts import AgentBoundaryError, SourceSelectionRequired
+from easydesign.agent.contracts import (
+    AgentBoundaryError,
+    SourceSelectionRequired,
+    StaleEvidenceCursor,
+)
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchHttpClient, ResearchQuery
 from easydesign.agent.phase2 import Phase2Bridge
@@ -92,8 +96,10 @@ def test_canonical_revision_keeps_exact_source_and_scoped_cards(acquired: Any) -
     assert before["cards"] and len(calls) == 2
     revise(b, queries)
     assert before["next_cursor"]
-    with pytest.raises(AgentBoundaryError, match="another question/thread"):
+    with pytest.raises(StaleEvidenceCursor, match="another question/thread") as rejected:
         corpus.retrieve(focus().model_copy(update={"cursor": before["next_cursor"]}))
+    assert rejected.value.result()["error_code"] == "STALE_EVIDENCE_CURSOR"
+    assert "No stale evidence was delivered" in rejected.value.result()["message"]
     after = corpus.retrieve(focus())
     assert after["cards"]
     assert before["cards"][0]["passage"] == after["cards"][0]["passage"]
@@ -131,6 +137,32 @@ def test_canonical_revision_keeps_exact_source_and_scoped_cards(acquired: Any) -
     ids = {c["identifier"] for q in EvidenceResearch(b).snapshot()["queries"] for c in q["cards"]}
     assert ids == {"P00698"}
     assert not b._jobs()
+
+
+def test_identity_passage_keeps_source_lengths_and_processing_coordinates_together(
+    acquired: Any,
+) -> None:
+    import json
+
+    b, _, _ = acquired
+    page = EvidenceCorpus(b).retrieve(
+        RetrieveEvidence(
+            need="TARGET_IDENTITY",
+            source_id="UniProt:P00698",
+            question="What are the precursor and mature chain boundaries, signal peptide range, "
+            "and mature protein residue numbering for hen egg-white lysozyme?",
+        )
+    )
+    first = page["cards"][0]
+    facts = json.loads(first["passage"])
+    truth = golden_truth()["soluble"]
+    assert facts["accession"] == "P00698"
+    assert facts["source_sequence_length"] == len(truth["canonical_sequence"]) == 147
+    assert facts["processing_features"] == [
+        f for f in truth["features"] if f.get("type") in {"Signal", "Propeptide", "Chain"}
+    ]
+    assert "not structure numbering" in facts["numbering_scope"]
+    assert first["source_status"] == "VERIFIED"
 
 
 def test_restart_new_thread_and_new_need_reuse_source_only_after_selection(acquired: Any) -> None:

@@ -84,8 +84,8 @@ async def test_execution_middleware_rejects_hidden_tools_and_foreign_files(bridg
         called.append(request)
 
     request = SimpleNamespace(tool_call={"name": "prepare_target", "args": {}, "id": "bad"})
-    result = await guard.awrap_tool_call(request, handler)
-    assert result.status == "error"
+    with pytest.raises(AgentBoundaryError, match="outside this role"):
+        await guard.awrap_tool_call(request, handler)
     assert not called
     request = SimpleNamespace(
         tool_call={"name": "read_file", "args": {"file_path": "/.env.local"}, "id": "bad"}

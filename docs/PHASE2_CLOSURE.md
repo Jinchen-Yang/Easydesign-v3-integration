@@ -1,37 +1,35 @@
-# Phase 2 acceptance — Phase 2.2 review, 2026-09-11
+# Phase 2 acceptance — Phase 2.2b review, 2026-09-11
 
 **FAIL / NOT FROZEN. Phase 3 and Phase 4 have not started.**
 
-Phase 2.2 implements selected-source corpus/scoped retrieval, trusted canonical-reference
-proposals routed to old Stage 01/Gate 1, and native expert strategy import routed to the existing
-compiler/validator/Judge/Gate 3. Offline tests cover these contracts. The required real-model
-acceptance is still incomplete.
+The source-selection prerequisite is now a typed, bounded correction, separate from fatal
+boundary violations and scientific uncertainty. The real soluble Agent used the correction,
+selected UniProt P00698, retained the complete source and invoked old Stage 01 identity mapping.
+It then terminated while reading pending identity evidence: it supplied sibling JSON field names
+as a single nested field path. That navigation error remains fatal in the scoped reader.
 
-The first soluble live case stopped before Gate 1: Target requested deep UniProt acquisition
-without selecting the source. Runtime correctly refused, but the prerequisite error terminated
-the Agent instead of permitting bounded correction. There were four real model calls and no
-scientific job. The 13,348-character peak is from an early failed path and cannot establish
-end-to-end evidence-context improvement. GPCR and standard/native Gate 3 cases were not run
-after the critical-failure stop.
+There were 11 real model calls, one acquired source (384,043 characters), one corpus document,
+3,062 chunks and a peak input of 18,562 characters. Focused retrieval/Evidence Cards and Judge
+were not reached. The old Stage 01 job awaits human approval; no approved canonical bundle,
+Agent Gate 1 card or Gate 2 was completed. The other real cases were not run after critical stop.
+These measurements do not establish end-to-end evidence-context acceptance.
 
-The full technical closure, measurements, validation ledger, known limits, narrow legacy-facade
-bug exception and next required repair are in **`PHASE22_UNBLOCK_CLOSURE.md`**. The exact CatMaster
-source review is in `PHASE22_CATMASTER_EVIDENCE_PATTERN_REVIEW.md`, and capability statuses are in
-`V2_TO_V3_CAPABILITY_PARITY_MATRIX.md`.
+Final full integration regression 004: **PASS — 736 passed, 11 skipped, 0 failed/error**
+(747 collected, 877.37 s). All 121 Agent unit tests passed, including 6 new recovery tests
+and 9 multi-turn/resume/ownership tests. The skips are eight optional PyMOL and three opt-in
+live tests; the separate real acceptance remains FAIL. Repository/static checks, mypy
+(184 source files) and final2 wheel verification passed.
 
-Final full integration regression 012: **PASS — 730 passed, 11 skipped, 0 failed/error**
-(741 collected, 989.13 s). All 115 Agent unit tests passed, including 9 multi-turn/resume/
-ownership tests and 15 new Phase 2.2 tests. The 11 skips are optional PyMOL and opt-in live
-tests; the separate live acceptance remains FAIL. Repository/static checks, mypy (184 files)
-and final wheel verification passed.
+See **`PHASE22B_RECOVERY_CLOSURE.md`** for the exact failed request, error taxonomy, bounded repair,
+selected_by_user decision, raw metrics, validation/source versions and next required repair.
+`V2_TO_V3_CAPABILITY_PARITY_MATRIX.md` retains consequential PARTIAL entries. Earlier
+`PHASE22_UNBLOCK_CLOSURE.md` and `PHASE21_CLOSURE_20260911.md` are preserved historical reports.
 
-No `easydesign-v3-phase2-frozen` tag was created. Existing Phase 1 frozen and Phase 2 candidate
-tags are unchanged. Production `/data/Easydesign` remains at
-`c93da74660639c095d3de252cddb88a00fd3671d`. Core mapping, stages, backends and old compute recovery
-are unchanged; the separately documented native first-pilot facade bug is the sole non-Agent
-production source exception.
+No `easydesign-v3-phase2-frozen` tag was created. Existing milestones remain unchanged.
+Production `/data/Easydesign` remains at `c93da74660639c095d3de252cddb88a00fd3671d`.
+This Phase 2.2b patch changes only Agent runtime/contracts and tests/docs. It adds no scientific
+kernel, backend, filtering, recovery, identity-engine or native-strategy changes.
 
-Prior reports are preserved: `PHASE21_CLOSURE_20260911.md` and
-`PHASE2_CLOSURE_20260911_BASELINE.md`. Their results are historical, not current acceptance.
-The review deliverable is the full repository and Git history with evidence, not an incremental
-file package. This review commit is not a frozen scientific milestone.
+The deliverable is the complete repository and independent Git history with raw evidence.
+The review commit is not a frozen scientific milestone. Phase 3/4 must wait for complete real
+acceptance and capability parity.

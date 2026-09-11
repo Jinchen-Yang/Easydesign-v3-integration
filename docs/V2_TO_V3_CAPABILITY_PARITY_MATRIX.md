@@ -1,12 +1,11 @@
 # v2 → v3 scientific capability parity
 
-Acceptance audit, Phase 2.2: **FAIL — Phase 2 is not frozen; Phase 3/4 not started.**
-The selected-source corpus, canonical-reference/old Gate 1 adapter and trusted native-expert
-import are implemented. The first real soluble Agent case failed before acquisition/Gate 1:
-an omitted SELECTED prerequisite raised a terminal AgentBoundaryError. The remaining real
-cases were not run after the required critical-failure stop. Four short model calls cannot
-establish end-to-end context improvement or completed scientific capability parity.
-Detailed implementation/test evidence and stop decision: `PHASE22_UNBLOCK_CLOSURE.md`.
+Acceptance audit, Phase 2.2b: **FAIL — Phase 2 is not frozen; Phase 3/4 not started.**
+The real Agent successfully repaired SOURCE_NOT_SELECTED, acquired P00698 and invoked old
+Stage 01 identity mapping. It then passed sibling field names as one nested scoped-result path;
+that navigation error remains fatal. Eleven calls, one retained source and zero focused cards
+cannot establish completed Gate 1/2/3 or end-to-end context parity. Other real cases stopped.
+Detailed evidence and next required repair: `PHASE22B_RECOVERY_CLOSURE.md`.
 
 COMPLETE requires current implementation and acceptance evidence;
 PARTIAL includes unvalidated real-source/model coverage. MISSING is explicit, not retired.
@@ -23,15 +22,15 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; real sources PASS; Agent goldens FAIL | Do not replace original goal with follow-up |
 | Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Site skill; golden pending | Binding is not function; low perturbation is independent |
-| Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | PARTIAL | 2.2 | Six fixture identity/proposal/species/replay cases; real path failed before acquisition | Configured reference is now accepted; real authoritative-bundle completion still unvalidated |
+| Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | PARTIAL | 2.2 | Six fixture identity cases; real P00698 acquisition/proposal reaches old pending decision | Configured reference is accepted; authoritative-bundle approval still uncompleted |
 | Construct/canonical/coordinate/design-scope separation | DS/RS | target-and-site.md; evidence-and-numbering.md | Target + unchanged mapping kernel | PARTIAL | 2.2 | Clean/subsequence/ambiguous-chain/sequence-difference old-service regressions | No replacement mapping; inherited old multi-decision edge cases are not claimed repaired |
 | Author/label/insertion/missing mapping | DS | evidence-and-numbering.md; stages/s01_target_preparation | Existing kernel via Target/Site | COMPLETE | 2.2 | test_source_author_numbering_is_not_invented | No invented canonical offset |
 | Structure/state comparison and counterstate | RS | gpcr-mechanism-and-state.md | Target/Site + Research | PARTIAL | 2.2 | real source/kernel PASS; Agent golden FAIL | Bound ligand alone cannot establish active state |
 | Ligand, partner, assembly and construct context | RS/DS | target-and-site.md; special-target-playbooks.md | Research + Target/Site | PARTIAL | 2.2 | PDB polymer/deposition retrieval | Source identity differs from context transfer |
-| Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | PARTIAL | 2.2 | Old Gate 1 jobs pass offline; actual first live failed before Gate 1 | No first/largest chain heuristic; missing real identity-trap completion |
-| Active literature search | RS | target-and-site.md; scientific-claims.md | Shared EvidenceResearch + selected corpus | PARTIAL | 2.2 | Source/status/corpus tests; real selection-prerequisite recovery FAIL | Bounded EuropePMC discovery; do not auto-select to evade the failure |
+| Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | PARTIAL | 2.2 | Old Gate 1 jobs pass offline; real old decision pending, Agent card not reached | No first/largest chain heuristic; missing real identity-trap completion |
+| Active literature search | RS | target-and-site.md; scientific-claims.md | Shared EvidenceResearch + selected corpus | PARTIAL | 2.2 | Source/status/corpus tests; original selection recovery now passes live | Bounded discovery; final complete Site/primary-literature path remains unvalidated |
 | Primary-source retrieval | RS | evidence-and-numbering.md | EvidenceResearch + focused passages | PARTIAL | 2.2 | Full XML retention, source identity, passage and cursor regressions | Acquisition receipt is not a scientific citation; real workflow not completed |
-| Database search and UniProt evidence | DS/RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch reusing ScientificHttpClient | PARTIAL | 2.2 | Cached source and first-class proposal regression; live acquisition not reached | Scientist species cannot be silently replaced |
+| Database search and UniProt evidence | DS/RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch reusing ScientificHttpClient | PARTIAL | 2.2 | Real UniProt P00698 retained; first-class proposal and old comparison reached | Scientist species cannot be silently replaced |
 | Structure and known complex search | RS/DS | target-and-site.md | EvidenceResearch + RCSB | PARTIAL | 2.2 | bounded PDB search/entry/polymer retrieval | Assembly and physiological context require interpretation |
 | Mutagenesis evidence | RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch + Site | PARTIAL | 2.2 | literature topics + existing GPCRdb adapter | Mutation can affect expression/fold rather than epitope |
 | Competition and known epitope evidence | RS | target-and-site.md | EvidenceResearch + Site | PARTIAL | 2.2 | source-bound conclusions; golden pending | Direct overlap and allostery are distinct |
@@ -59,10 +58,11 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Design arms, comparator and changed/held factors | RS/H | strategy-yaml.md | Binder | PARTIAL | 2.2 | typed arm metadata; parity review pending | Integrated arm cannot identify a single causal factor |
 | First Pilot protocol, seven scaffolds × 40 per condition | DS/RS | boltzgen-contract.md; strategy-yaml.md | Binder + existing protocol validator | COMPLETE | 2.2 | Standard coverage plus native-condition before/after and invalid-coverage tests | Narrow legacy facade bug fixed; exact seven-by-40 scientific invariant preserved |
 | Native BoltzGen YAML compilation and checks | DS | boltzgen-contract.md | Trusted callback + existing compiler/validator | COMPLETE | 2.2 | Phase 2 real check and YAML regression | No LLM-authored runnable YAML |
-| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN |
+| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN after Phase 2.2b stop |
 | Thread-local proposals / project-global approved science | DS/RS | orchestration/research.py | Runtime explicit ownership adapters | COMPLETE | 2.2 | Ownership regressions plus corpus cross-thread and native approval inheritance | Thread evidence views remain separate; approved scientific state remains shared |
-| Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | Real full scientific path unvalidated; short failed trace is not a context benchmark |
-| First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline multi-turn harness PASS; live stopped before Gate 1 | No complete real golden; cannot freeze Phase 2 |
+| Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | COMPLETE | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Only this known prerequisite is repairable; invalid scoped field path remains a separate blocker |
+| Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | One real source retained, but zero focused cards before fatal field navigation; not a complete context benchmark |
+| First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline harness regressions; live stops before Agent Gate 1 card after old pending decision | No complete real golden; cannot freeze Phase 2 |
 | Pilot generation and explicit execution approval | DS/H | pilot-diagnosis.md; orchestration/research_plans.py | Gate 3 + existing job runtime | MISSING | 3 | Phase 3 pending | Old freeze-only approval cannot authorize launch |
 | Prediction and filtering | DS | metric-guide.md; stages/s05_pilot_screen | Existing backend/filter + Agent bridge | MISSING | 3 | real micro pending | No deterministic metric rewrite |
 | Metric provenance, hard gates and missingness | RS/DS | metric-guide.md | Pilot owner/Judge + trusted artifact reader | MISSING | 3 | synthetic meaningful fixture pending | Missing is not zero; preserve fallback values/source |

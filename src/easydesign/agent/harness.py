@@ -23,6 +23,7 @@ from .contracts import (
     DecisionOutcome,
     EvidenceBinding,
     JudgeVerdict,
+    SourceSelectionRequired,
     TargetAssessment,
     TargetTask,
 )
@@ -285,6 +286,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "context_metric": "system and message content; tool schemas separately",
                     "limit": self.config.max_input_chars,
                     "message_count": len(request.messages),
+                    "tool_message_chars": sum(
+                        len(str(m.content)) for m in request.messages if isinstance(m, ToolMessage)
+                    ),
                     "repair_attempt": attempt,
                 },
             )
@@ -336,12 +340,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         name, args = request.tool_call["name"], request.tool_call["args"]
         if name not in self.allowed:
-            return ToolMessage(
-                content="Rejected: tool is outside this role's permissions",
-                status="error",
-                tool_call_id=request.tool_call["id"],
-                name=name,
-            )
+            raise AgentBoundaryError("Rejected: tool is outside this role's permissions")
         token = None
         if name == "read_file":
             path = args.get("file_path", "")
@@ -452,11 +451,64 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 tool_call={**request.tool_call, "args": {**args, "description": compact(payload)}}
             )
         try:
-            result = await handler(request)
-            # Never persist raw provider requests, internal specialist histories or full tool I/O.
-            self.bridge.store.event(self.bridge.thread, "tool", {"role": self.role, "name": name})
+            try:
+                result = await handler(request)
+            except SourceSelectionRequired as error:
+                # Only this proven sequencing error is repairable. Hard boundary and
+                # artifact/authority failures still escape, including from delegated tasks.
+                if (
+                    name != "research_evidence"
+                    or self.role not in {"target", "site"}
+                    or not isinstance(self.bridge, Phase2Bridge)
+                    or self.execution_id is None
+                ):
+                    raise AgentBoundaryError(
+                        "Source-selection repair is outside this role"
+                    ) from error
+                required = error.result()
+                attempt = self.bridge.store.reserve_prerequisite_repair(
+                    self.bridge.thread, self.role, self.execution_id, required["source_id"]
+                )
+                result = ToolMessage(
+                    content=compact({**required, "repair_attempt": attempt, "repair_limit": 2}),
+                    status="error",
+                    tool_call_id=request.tool_call["id"],
+                    name=name,
+                )
+            raw_chars = len(str(result.content)) if isinstance(result, ToolMessage) else None
             if isinstance(self.bridge, Phase2Bridge) and self.execution_id:
                 result = output_message(self.bridge, self.role, self.execution_id, result)
+            supplied_cards = 0
+            if (
+                name in {"retrieve_evidence", "read_evidence_result"}
+                and isinstance(result, ToolMessage)
+                and isinstance(result.content, str)
+            ):
+                value = json.loads(result.content)
+                page = value.get("cards", value.get("value", []))
+                if isinstance(page, dict):
+                    page = page.get("cards", [page])
+                if isinstance(page, list):
+                    supplied_cards = sum(
+                        isinstance(card, dict)
+                        and str(card.get("card_id", "")).startswith("passage-")
+                        for card in page
+                    )
+            # Counts only, never raw provider requests or tool I/O in event telemetry.
+            self.bridge.store.event(
+                self.bridge.thread,
+                "tool",
+                {
+                    "role": self.role,
+                    "name": name,
+                    "execution_id": self.execution_id,
+                    "raw_result_chars": raw_chars,
+                    "focused_cards_in_model_result": supplied_cards,
+                    "model_result_chars": len(str(result.content))
+                    if isinstance(result, ToolMessage)
+                    else None,
+                },
+            )
             return result
         finally:
             if token is not None:

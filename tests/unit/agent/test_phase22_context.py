@@ -9,7 +9,7 @@ import httpx
 import pytest
 from langchain_core.messages import ToolMessage
 
-from easydesign.agent.contracts import AgentBoundaryError
+from easydesign.agent.contracts import AgentBoundaryError, SourceSelectionRequired
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, result_tool
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchHttpClient
@@ -51,7 +51,7 @@ def test_source_selection_full_retention_scoped_pagination_and_thread_isolation(
         ),
     )
     request = query(operation="primary-fulltext", identifier="PMC123")
-    with pytest.raises(AgentBoundaryError, match="Select this source"):
+    with pytest.raises(SourceSelectionRequired, match="Select this source"):
         research.acquire(request, role="site")
     select(research, "PMC123")
     source = research.acquire(request, role="site")["cards"][0]

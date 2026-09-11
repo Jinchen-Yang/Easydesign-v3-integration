@@ -15,7 +15,7 @@ from pydantic import Field
 
 from easydesign.core import ArtifactRef
 
-from .contracts import AgentBoundaryError, ShortText, StrictDTO
+from .contracts import AgentBoundaryError, ShortText, SourceSelectionRequired, StrictDTO
 from .session_store import compact, confined, identity
 
 EvidenceNeed = Literal[
@@ -116,9 +116,7 @@ class EvidenceCorpus:
     def require_selected(self, provider: str, identifier: str, topic: str) -> None:
         key = source_key(provider, identifier) + ":" + NEEDS[topic]
         if self.selections().get(key, {}).get("selection") != "SELECTED":
-            raise AgentBoundaryError(
-                "Select this source for the current evidence need before deep acquisition"
-            )
+            raise SourceSelectionRequired(provider, identifier, NEEDS[topic])
 
     def index(self, card: dict[str, Any], topic: str) -> dict[str, Any]:
         sections = card.pop("_sections", None) or [

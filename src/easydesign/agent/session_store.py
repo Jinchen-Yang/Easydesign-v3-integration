@@ -235,6 +235,45 @@ class SessionStore:
                 ),
             )
 
+    def reserve_prerequisite_repair(
+        self, thread: str, role: str, execution_id: str, source_id: str
+    ) -> int:
+        """At most two selection corrections in the existing persisted execution.
+
+        Restarting a graph or delegating again cannot reset this allowance. Replayed
+        failures also consume it; there is no additional recovery or scheduling state.
+        """
+        execution = self.latest_execution(thread)
+        if execution is None or execution["execution_id"] != execution_id:
+            raise AgentBoundaryError("Prerequisite repair is not bound to the current execution")
+        with self.db:
+            used = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? AND kind='prerequisite-repair' "
+                "AND json_extract(payload, '$.execution_id')=?",
+                (thread, execution_id),
+            ).fetchone()[0]
+            if used >= 2:
+                raise AgentBoundaryError(
+                    "SOURCE_NOT_SELECTED: prerequisite repair budget exhausted (2 per execution); "
+                    "no acquisition was executed. Inspect the source-selection sequence."
+                )
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?, 'prerequisite-repair', ?)",
+                (
+                    thread,
+                    compact(
+                        {
+                            "role": role,
+                            "execution_id": execution_id,
+                            "attempt": used + 1,
+                            "error_code": "SOURCE_NOT_SELECTED",
+                            "source_id": source_id,
+                        }
+                    ),
+                ),
+            )
+        return int(used + 1)
+
     def command(self, command_id: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT * FROM commands WHERE id=?", (command_id,)).fetchone()
         if row is None:

@@ -160,6 +160,37 @@ class DecisionOutcome(StrictDTO):
 class AgentBoundaryError(RuntimeError):
     """A rejected action, incompatible session, or evidence boundary violation."""
 
+    category = "HARD_BOUNDARY_VIOLATION"
+
+
+class SourceSelectionRequired(RuntimeError):
+    """One valid acquisition needs an explicit source selection before any I/O."""
+
+    category = "RECOVERABLE_PREREQUISITE"
+
+    def __init__(self, provider: str, identifier: str, evidence_need: str) -> None:
+        super().__init__("Select this source for the current evidence need before deep acquisition")
+        self.provider = provider
+        self.identifier = identifier
+        self.evidence_need = evidence_need
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "SOURCE_NOT_SELECTED",
+            "required_action": "select_evidence",
+            "provider": self.provider,
+            "identifier": self.identifier,
+            "source_id": f"{self.provider}:{self.identifier.upper()}",
+            "evidence_need": self.evidence_need,
+            "message": (
+                "Acquisition was not executed. If this source is relevant, call select_evidence "
+                "with this provider/identifier, need=evidence_need, selection=SELECTED and your "
+                "scientific reason; then retry acquisition. Otherwise leave it unacquired."
+            ),
+        }
+
 
 class ReconciliationRequired(AgentBoundaryError):
     """An uncertain old-world submission must not be replayed automatically."""

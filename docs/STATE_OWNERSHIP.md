@@ -1,4 +1,4 @@
-# v3 state ownership — Phase 2.2
+# v3 state ownership — Phase 2.2b
 
 Status: ownership regressions passed; overall Phase 2 acceptance failed (see PHASE2_CLOSURE.md). No new scheduler, graph, ORM, schema migration or
 scientific state store is introduced. LangGraph owns conversation execution/checkpoints;
@@ -10,6 +10,7 @@ the existing scientific services own runs, jobs, decisions and approved artifact
 | Current message, clarification, revision | Thread, existing execution/response events | Runtime injects these separately from the original goal |
 | Conversation history, subagent execution | Thread, LangGraph | Context only; not scientific evidence or compute recovery |
 | Model/research call budget | Agent execution within thread | A genuine new user execution renews the budget; replay/resume preserves it; lifetime counts are telemetry |
+| Source-selection prerequisite repairs | Agent execution, existing `prerequisite-repair` events | At most two across roles/delegations; restart and replay cannot reset them; stale executions cannot spend a fresh allowance. No scientific state or job scheduling ownership |
 | Pending Site/Design proposal | Thread, `site-proposal` / `design-proposal` events | `thread_latest`; another conversation cannot replace its pending proposal |
 | Pending decision/card/response/Judge opinion | Thread, existing SessionStore rows | Exact card, snapshot, actor and response binding; no approval from model text |
 | Explicit biology context import | Project, `biology-context` event + existing ArtifactRef | Trusted CLI input is a project scientific assumption, not a chat clarification. Values retain user-supplied authority; coordinates are validated, biological assertions are not automatically verified |

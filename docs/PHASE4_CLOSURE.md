@@ -1,7 +1,7 @@
 # Phase 4 — NOT STARTED
 
 No Phase 4 implementation or acceptance milestone exists for this autonomous attempt.
-Phase 2.2 failed its critical real-model acceptance before Gate 1; the master task
+Phase 2.2b failed its critical real-model acceptance before Gate 1; the master task
 requires stopping before Phase 3. See `PHASE2_CLOSURE.md` for the failure evidence.
 
 No Phase 4 commit or frozen-candidate tag was created. No real GPU micro execution,

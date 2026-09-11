@@ -72,6 +72,8 @@ class DesignBridge(Phase2Bridge):
         site = self.approved_site()
         if site is None:
             raise AgentBoundaryError("Gate 2 must approve hotspots before Binder Strategy")
+        if self.pending_site() is not None:
+            raise AgentBoundaryError("This thread still has its own pending Site proposal")
         target, facts, facts_ref = self.site_facts()
         ref = ArtifactRef.model_validate(facts_ref)
         refs = [
@@ -79,8 +81,7 @@ class DesignBridge(Phase2Bridge):
             f"site:{site['run_id']}:hotspots#sha256={site['hotspots_sha256']}",
             f"project:{ref.relative_path}#sha256={ref.sha256}",
         ]
-        current = self.current_site()
-        assert current is not None
+        current = site["proposal"]
         context = self.read_site_evidence(
             query
             or SiteQuery(label_seq_ids=list(site["hotspots"]["hotspot_sets"][0]["label_seq_ids"]))
@@ -113,7 +114,7 @@ class DesignBridge(Phase2Bridge):
         }
 
     def current_design(self) -> dict[str, Any] | None:
-        proposal = self.latest("design-proposal")
+        proposal = self.thread_latest("design-proposal")
         site = self.approved_site()
         if proposal is None or site is None:
             return None
@@ -149,6 +150,7 @@ class DesignBridge(Phase2Bridge):
         _, facts, _ = self.site_facts()
         parent = revision.card_id if revision else None
         spec = {
+            "owner_thread": self.thread,
             "intent": intent.model_dump(mode="json"),
             "input_binding": binding.evidence_id,
             "parent_card_id": parent,
@@ -292,7 +294,7 @@ class DesignBridge(Phase2Bridge):
         }
 
     def judge_evidence(self) -> dict[str, Any]:
-        if self.approved_site() is None:
+        if self.approved_site() is None or self.pending_site() is not None:
             return super().judge_evidence()
         proposal = self.current_design()
         if proposal is None:
@@ -511,7 +513,7 @@ class DesignBridge(Phase2Bridge):
                 "warnings": card.warnings,
                 **matched,
             }
-            previous = self.latest("design-approved")
+            previous = self.project_latest("design-approved")
             if previous is None or previous["card_id"] != card.card_id:
                 self.store.event(self.thread, "design-approved", approved)
             self.store.update(command["id"], "completed")
@@ -526,27 +528,29 @@ class DesignBridge(Phase2Bridge):
             }
 
     def approved_design(self) -> dict[str, Any] | None:
-        proposal, approved = self.current_design(), self.latest("design-approved")
-        if (
-            proposal is None
-            or approved is None
-            or approved["proposal_id"] != proposal["proposal_id"]
-        ):
+        approved = self.project_latest("design-approved")
+        if approved is None or self.approved_site() is None:
+            return None
+        proposal = self.approved_proposal("design-proposal", approved)
+        if proposal["input_binding"] != self.read_design_evidence()["evidence_id"]:
             return None
         self.design_snapshot(proposal)
         matched = self._frozen_match(proposal, approved["outcome"]["human_actor"])
         if any(matched[k] != approved[k] for k in matched):
             raise AgentBoundaryError("Published design/approval identity changed")
-        return approved
+        return {**approved, "proposal": proposal}
 
     def scientific_state(self) -> dict[str, Any]:
         site = super().scientific_state()
         if site["scientific_state"] != "hotspot-approved":
             return site
         approved = self.approved_design()
-        if approved:
-            proposal = self.current_design()
-            assert proposal is not None
+        local_proposal = self.current_design()
+        local_pending = local_proposal and not self.proposal_was_consumed(
+            local_proposal, "design-approved"
+        )
+        if approved and not local_pending:
+            proposal = approved["proposal"]
             return {
                 "frozen_design": {
                     "binder": proposal["intent"]["binder"],
@@ -594,7 +598,7 @@ class DesignBridge(Phase2Bridge):
         return bool(proposal and proposal["request_identity"] == card.request_identity)
 
     def terminal_result(self, message: str) -> dict[str, Any]:
-        if self.approved_site() is None:
+        if self.approved_site() is None or self.pending_site() is not None:
             return super().terminal_result(message)
         state = self.scientific_state()
         latest_run = resolve_project_run(self.project, required=False)
@@ -605,7 +609,7 @@ class DesignBridge(Phase2Bridge):
             j.status in ACTIVE_JOB_STATUSES
             for j in self.controller.list(project_id=self.project_id)
         )
-        if self.approved_design() and not pending and not active:
+        if state["scientific_state"] == "design-frozen" and not pending and not active:
             return {
                 "thread": self.thread,
                 "status": "finished",
@@ -644,7 +648,7 @@ class DesignBridge(Phase2Bridge):
             raise AgentBoundaryError("Only a Gate 3 revision may reopen the upstream site")
         if self.approved_design() is not None:
             raise AgentBoundaryError("A completed approval is not a new upstream revision request")
-        previous = self.latest("site-invalidated")
+        previous = self.project_latest("site-invalidated")
         if previous is None or previous["source_card"] != card.card_id:
             self.store.event(
                 self.thread,

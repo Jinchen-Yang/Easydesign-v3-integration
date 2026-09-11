@@ -60,6 +60,15 @@ Functional importance is not accessibility; SASA is not binding success. Missing
 or a single conformation cannot establish active-state specificity. Sequence motifs do not prove
 occupancy. Preserve runtime warnings and do not manufacture a membrane frame or binder trajectory.
 
+For research_evidence, review the exact source passages and specialist conclusions attached by
+runtime. Source verification is not scientific entailment. A review/search lead is not direct
+primary evidence; abstract text cannot establish quantitative residue/causal details absent from
+the passage. Challenge identity, construct/state/assay transfer, conflicting evidence and the
+literature-derived versus scan-derived alternatives. NOT_SEARCHED on a material question requires
+acquisition, not a convenient unknown. Source failure is UNRESOLVED, never negative biology.
+Structural-exploration scope cannot establish a verified biological mechanism. Reference alignment
+does not approve canonical identity, and selected_chain cannot certify species, state or authority.
+
 Use option_id=site in an optional recommendation at Gate 2. Scientifically weak but executable
 hypotheses are DISCOURAGED and can be reviewed for explicit human override. Only runtime mapping,
 coordinate or hard-constraint failures establish BLOCKED. Never make human approval claims.

@@ -39,6 +39,7 @@ from .contracts import (
     EvidenceBinding,
     ReconciliationRequired,
 )
+from .evidence_research import EvidenceResearch
 from .session_store import SessionStore, compact, confined, identity
 from .site_contracts import BiologyContext, SiteIntent, SiteQuery
 from .site_evidence import analyze_site_facts, evaluate_site, summarize_site_facts
@@ -101,7 +102,8 @@ class Phase2Bridge(TargetBridge):
         confined(self.project, loaded.source_path)
         return replace(loaded, config=target)
 
-    def latest(self, kind: str) -> dict[str, Any] | None:
+    def project_latest(self, kind: str) -> dict[str, Any] | None:
+        """Project evidence/authority only; pending conversation uses thread_latest."""
         row = self.store.db.execute(
             "SELECT seq,thread,payload FROM events WHERE kind=? ORDER BY seq DESC LIMIT 1", (kind,)
         ).fetchone()
@@ -110,6 +112,46 @@ class Phase2Bridge(TargetBridge):
             if row is None
             else {"seq": row["seq"], "thread": row["thread"], **json.loads(row["payload"])}
         )
+
+    def thread_latest(self, kind: str) -> dict[str, Any] | None:
+        row = self.store.db.execute(
+            "SELECT seq,thread,payload FROM events WHERE kind=? AND thread=? "
+            "ORDER BY seq DESC LIMIT 1",
+            (kind, self.thread),
+        ).fetchone()
+        return (
+            None
+            if row is None
+            else {"seq": row["seq"], "thread": row["thread"], **json.loads(row["payload"])}
+        )
+
+    def approved_proposal(self, kind: str, approval: dict[str, Any]) -> dict[str, Any]:
+        """Resolve the exact historical proposal; never substitute a later conversation."""
+        row = self.store.db.execute(
+            "SELECT seq,thread,payload FROM events WHERE kind=? AND thread=? AND seq<? "
+            "AND json_extract(payload,'$.proposal_id')=? ORDER BY seq DESC LIMIT 1",
+            (kind, approval["thread"], approval["seq"], approval["proposal_id"]),
+        ).fetchone()
+        if row is None:
+            raise AgentBoundaryError("Approved scientific state has no bound owner proposal")
+        return {"seq": row["seq"], "thread": row["thread"], **json.loads(row["payload"])}
+
+    def proposal_was_consumed(self, proposal: dict[str, Any], approval_kind: str) -> bool:
+        # Historical consumption is conversational state, not current scientific authority.
+        return (
+            self.store.db.execute(
+                "SELECT 1 FROM events WHERE kind=? AND thread=? "
+                "AND json_extract(payload,'$.proposal_id')=? LIMIT 1",
+                (approval_kind, proposal["thread"], proposal["proposal_id"]),
+            ).fetchone()
+            is not None
+        )
+
+    def pending_site(self) -> dict[str, Any] | None:
+        proposal = self.current_site()
+        if proposal and not self.proposal_was_consumed(proposal, "site-approved"):
+            return proposal
+        return None
 
     def _jobs(self) -> tuple[LocalStepJob, ...]:
         # Target replay remains strictly attached to original target jobs.
@@ -187,12 +229,12 @@ class Phase2Bridge(TargetBridge):
     def import_biology(self, path: Path) -> None:
         biology = BiologyContext.model_validate(yaml.safe_load(path.read_text()))
         value = self.persist("biology-context", biology.model_dump(mode="json"))
-        current = self.latest("biology-context")
+        current = self.project_latest("biology-context")
         if current is None or current["ref"] != value:
             self.store.event(self.thread, "biology-context", {"ref": value})
 
     def biology(self) -> BiologyContext | None:
-        event = self.latest("biology-context")
+        event = self.project_latest("biology-context")
         return None if event is None else BiologyContext.model_validate(self.document(event["ref"]))
 
     def site_facts(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -204,7 +246,7 @@ class Phase2Bridge(TargetBridge):
                 "biology": biology.model_dump(mode="json") if biology else None,
             }
         )
-        previous = self.latest("site-facts")
+        previous = self.project_latest("site-facts")
         if previous and previous["binding"] == binding:
             ref = previous["ref"]
             facts = self.document(ref)
@@ -232,6 +274,9 @@ class Phase2Bridge(TargetBridge):
                 for k in ("identity", "bundle", "provenance", "limitations")
             },
             **summarize_site_facts(facts, labels=query.label_seq_ids, offset=query.offset),
+            "research": {
+                k: v for k, v in EvidenceResearch(self).snapshot().items() if k != "queries"
+            },
         }
 
     def evaluate_candidate(self, query: SiteQuery) -> dict[str, Any]:
@@ -239,12 +284,15 @@ class Phase2Bridge(TargetBridge):
         return evaluate_site(target["root"], target["bundle_path"], facts, query.label_seq_ids)
 
     def current_site(self) -> dict[str, Any] | None:
-        proposal = self.latest("site-proposal")
-        invalidation = self.latest("site-invalidated")
+        proposal = self.thread_latest("site-proposal")
+        return proposal if proposal and self.site_proposal_is_current(proposal) else None
+
+    def site_proposal_is_current(self, proposal: dict[str, Any]) -> bool:
+        invalidation = self.project_latest("site-invalidated")
         if proposal is None or (invalidation and invalidation["seq"] >= proposal["seq"]):
-            return None
+            return False
         target = self.target_state()
-        facts = self.latest("site-facts")
+        facts = self.project_latest("site-facts")
         biology = self.biology()
         binding = identity(
             {
@@ -258,9 +306,9 @@ class Phase2Bridge(TargetBridge):
             or facts["binding"] != binding
             or proposal["facts_ref"] != facts["ref"]
         ):
-            return None
+            return False
         self.document(proposal["facts_ref"])
-        return proposal
+        return True
 
     def register_site(self, intent: SiteIntent, revision: DecisionOutcome | None) -> dict[str, Any]:
         snapshot = self.read_site_evidence()
@@ -269,6 +317,20 @@ class Phase2Bridge(TargetBridge):
         ):
             raise AgentBoundaryError("Site proposal lacks its runtime-delegated target snapshot")
         target, facts, facts_ref = self.site_facts()
+        research = EvidenceResearch(self).validate_conclusions(intent.research_conclusions)
+        cards = {
+            c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
+        }
+        for site_candidate in [intent.selected_site, *intent.alternatives]:
+            if (
+                site_candidate.origin == "literature-derived"
+                and not site_candidate.evidence_card_ids
+            ):
+                raise AgentBoundaryError("Literature-derived sites require retrieved source cards")
+            if not set(site_candidate.evidence_card_ids).issubset(cards):
+                raise AgentBoundaryError("Site source identifier was not retrieved in this thread")
+            for card_id in site_candidate.evidence_card_ids:
+                research["source_refs"].extend(cards[card_id]["source_refs"])
         evaluation = evaluate_site(
             target["root"], target["bundle_path"], facts, intent.selected_site.hotspot_label_seq_ids
         )
@@ -286,6 +348,7 @@ class Phase2Bridge(TargetBridge):
             if previous_card.gate_type in {"site-hotspot", "design-specification"}:
                 parent = previous_card.card_id
         payload = {
+            "owner_thread": self.thread,
             "target_binding": target["binding"],
             "facts_ref": facts_ref,
             "intent": intent.model_dump(mode="json"),
@@ -293,6 +356,7 @@ class Phase2Bridge(TargetBridge):
             "alternative_evaluations": alternatives,
             "parent_card_id": parent,
             "source_role": "site-mechanism",
+            "research_ref": self.persist("site-research-snapshot", research),
         }
         proposal_id = identity(payload)
         old = self.current_site()
@@ -420,6 +484,13 @@ class Phase2Bridge(TargetBridge):
         facts = self.document(proposal["facts_ref"])
         ref = proposal["facts_ref"]
         refs = [f"project:{ref['relative_path']}#sha256={ref['sha256']}"]
+        research = None
+        if proposal.get("research_ref"):
+            research_ref = proposal["research_ref"]
+            research = self.document(research_ref)
+            for source in research["source_refs"]:
+                confined(self.project, ArtifactRef.model_validate(source).verify(self.project))
+            refs.append(f"project:{research_ref['relative_path']}#sha256={research_ref['sha256']}")
         if proposal.get("review_ref"):
             review = ArtifactRef.model_validate(proposal["review_ref"])
             review.verify(self.project)
@@ -438,6 +509,20 @@ class Phase2Bridge(TargetBridge):
                 f"run:{proposal['run_id']}:{stage_ref.relative_path}#sha256={stage_ref.sha256}"
             )
         selection = SiteIntent.model_validate(proposal["intent"]).selected_site
+        cited_cards = {
+            card_id
+            for candidate in [
+                proposal["intent"]["selected_site"],
+                *proposal["intent"]["alternatives"],
+            ]
+            for card_id in candidate.get("evidence_card_ids", [])
+        }
+        if research:
+            cited_cards.update(
+                e["card_id"]
+                for conclusion in research["conclusions"]
+                for e in conclusion["evidence"]
+            )
         return {
             "gate_type": "site-hotspot",
             "project_id": self.project_id,
@@ -447,6 +532,22 @@ class Phase2Bridge(TargetBridge):
             "evidence_id": identity({"proposal": proposal["proposal_id"], "refs": refs}),
             "evidence_refs": refs,
             "proposal": proposal["intent"],
+            "research_evidence": None
+            if research is None
+            else {
+                "conclusions": research["conclusions"],
+                "authority": research["authority"],
+                "retrieval_status": [
+                    {key: q[key] for key in ("topic", "question", "status", "errors")}
+                    for q in research["source_snapshot"]["queries"]
+                ],
+                "source_cards": [
+                    {key: value for key, value in c.items() if key != "source_refs"}
+                    for q in research["source_snapshot"]["queries"]
+                    for c in q["cards"]
+                    if c["card_id"] in cited_cards
+                ],
+            },
             "evaluation": proposal["evaluation"],
             "alternative_evaluations": proposal["alternative_evaluations"],
             "scientific_context": summarize_site_facts(
@@ -472,13 +573,11 @@ class Phase2Bridge(TargetBridge):
         return self.site_snapshot(proposal)
 
     def approved_site(self) -> dict[str, Any] | None:
-        proposal = self.current_site()
-        approved = self.latest("site-approved")
-        if (
-            proposal is None
-            or approved is None
-            or approved["proposal_id"] != proposal["proposal_id"]
-        ):
+        approved = self.project_latest("site-approved")
+        if approved is None:
+            return None
+        proposal = self.approved_proposal("site-proposal", approved)
+        if not self.site_proposal_is_current(proposal):
             return None
         foundation = _latest_foundation(self.project)
         if foundation is None or foundation.run_id != proposal["run_id"]:
@@ -493,6 +592,7 @@ class Phase2Bridge(TargetBridge):
             raise AgentBoundaryError("Approved hotspot numbering differs from its proposal")
         return {
             **approved,
+            "proposal": proposal,
             "hotspots": hotspots.model_dump(mode="json"),
             "foundation_root": str(foundation.path),
         }
@@ -515,7 +615,7 @@ class Phase2Bridge(TargetBridge):
             }
         proposal = self.current_site()
         approved = self.approved_site()
-        if approved:
+        if approved and self.pending_site() is None:
             return {
                 "scientific_state": "hotspot-approved",
                 "gate_type": "site-hotspot",
@@ -837,7 +937,7 @@ class Phase2Bridge(TargetBridge):
                 "judge_status": card.judge_status,
                 **matched,
             }
-            previous = self.latest("site-approved")
+            previous = self.project_latest("site-approved")
             if previous is None or previous["card_id"] != card.card_id:
                 self.store.event(self.thread, "site-approved", approved)
             self.store.update(command["id"], "completed")

@@ -155,6 +155,7 @@ def fingerprint(config: ModelConfig) -> str:
             },
             "phase2_bridge": Path(__file__).with_name("phase2.py").read_text(),
             "phase2_tools": Path(__file__).with_name("phase2_tools.py").read_text(),
+            "evidence_research": Path(__file__).with_name("evidence_research.py").read_text(),
             "session_store": Path(__file__).with_name("session_store.py").read_text(),
             "cli": Path(__file__).with_name("cli.py").read_text(),
             "versions": {
@@ -292,6 +293,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             own_reference = self.role == "site" and path in {
                 "/skills/site-mechanism/references/membrane.md",
                 "/skills/site-mechanism/references/shielding.md",
+                "/skills/site-mechanism/references/research.md",
             }
             own_result = (
                 path.startswith("/result-") and path.endswith(".json") and path.count("/") == 1

@@ -146,7 +146,7 @@ def test_existing_compiler_and_freeze_service_no_pilot(
     monkeypatch.setattr(bridge, "target_state", lambda: {**target_state, "binding": "new-target"})
     assert bridge.current_site() is None and bridge.approved_site() is None
     assert bridge.current_design() is None and bridge.approved_design() is None
-    assert bridge.latest("design-approved") is not None  # history remains, authority does not
+    assert bridge.project_latest("design-approved") is not None  # history, not authority
 
 
 @pytest.mark.parametrize(

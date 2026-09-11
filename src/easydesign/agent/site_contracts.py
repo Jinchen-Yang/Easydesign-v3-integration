@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from .contracts import ShortText, StrictDTO, TargetTask
+from .evidence_research import ResearchConclusion, ResearchTopic
 
 Labels = Annotated[list[int], Field(min_length=1, max_length=40)]
 
@@ -15,6 +16,9 @@ class SiteSelection(StrictDTO):
     name: ShortText
     hotspot_label_seq_ids: Labels
     rationale: ShortText
+    origin: Literal["scan-derived", "literature-derived"] = "scan-derived"
+    role: Literal["primary", "backup", "avoid", "unresolved"] = "primary"
+    evidence_card_ids: list[str] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def unique_residues(self) -> SiteSelection:
@@ -37,6 +41,20 @@ class SiteIntent(StrictDTO):
     uncertainty: list[ShortText] = Field(min_length=1, max_length=5)
     alternatives: list[SiteSelection] = Field(default_factory=list, max_length=2)
     recommendation: Literal["SUPPORTED", "DISCOURAGED"]
+    scope: Literal["structural-exploration", "mechanistic"] = "structural-exploration"
+    material_questions: list[ResearchTopic] = Field(default_factory=list, max_length=9)
+    research_conclusions: list[ResearchConclusion] = Field(default_factory=list, max_length=9)
+
+    @model_validator(mode="after")
+    def research_scope(self) -> SiteIntent:
+        topics = [c.topic for c in self.research_conclusions]
+        if len(topics) != len(set(topics)):
+            raise ValueError("One current conclusion per scientific topic")
+        if not set(self.material_questions).issubset(topics):
+            raise ValueError("Every material question needs an explicit evidence state")
+        if self.scope == "mechanistic" and not self.material_questions:
+            raise ValueError("Mechanistic site selection requires active evidence research")
+        return self
 
 
 class SiteQuery(StrictDTO):

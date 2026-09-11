@@ -8,6 +8,7 @@ from .contracts import AgentBoundaryError, EmptyArguments, EvidenceBinding, Shor
 from .design import DesignBridge
 from .design_contracts import BinderIntent
 from .design_evidence import evaluate_design
+from .evidence_research import identity_comparison_tool, receptor_analysis_tool, research_tool
 from .phase2 import Phase2Bridge
 from .site_contracts import SiteQuery
 from .tools import JUDGE_EVIDENCE, build_tools
@@ -21,8 +22,22 @@ PHASE2_ALLOWED = {
         "request_scientific_decision",
         "read_scientific_state",
     },
-    "target": {"read_file", "read_target_evidence", "get_job_status", "prepare_target"},
-    "site": {"read_file", "read_site_evidence", "evaluate_candidate_site"},
+    "target": {
+        "read_file",
+        "read_target_evidence",
+        "get_job_status",
+        "prepare_target",
+        "research_evidence",
+        "compare_reference_identity",
+    },
+    "site": {
+        "read_file",
+        "read_site_evidence",
+        "evaluate_candidate_site",
+        "research_evidence",
+        "compare_reference_identity",
+        "analyze_receptor_context",
+    },
     "judge": {"read_file", "read_scientific_evidence"},
 }
 
@@ -42,7 +57,11 @@ def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
     from langchain_core.tools import StructuredTool
 
     if role == "target":
-        return build_tools(bridge, role)
+        return [
+            *build_tools(bridge, role),
+            research_tool(bridge, role),
+            identity_comparison_tool(bridge),
+        ]
     if role == "coordinator":
         result = []
         for tool in build_tools(bridge, role):
@@ -187,6 +206,9 @@ def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
             )
 
         return [
+            research_tool(bridge, role),
+            identity_comparison_tool(bridge),
+            receptor_analysis_tool(bridge),
             StructuredTool.from_function(
                 name="read_site_evidence",
                 coroutine=read,

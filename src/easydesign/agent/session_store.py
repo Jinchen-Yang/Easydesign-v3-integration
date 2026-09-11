@@ -411,5 +411,7 @@ class SessionStore:
         name = f"result-{uuid4().hex}.json"
         path = directory / name
         with path.open("x", encoding="utf-8") as handle:
-            handle.write(encoded)
+            # The existing read_file tool pages by line. A compact single-line source
+            # document can be truncated before its scientific fields become readable.
+            json.dump(value, handle, ensure_ascii=False, indent=2)
         return compact({"status": "offloaded", "ref": f"/{name}", "bytes": len(encoded.encode())})

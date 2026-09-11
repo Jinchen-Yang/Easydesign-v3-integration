@@ -1037,3 +1037,58 @@ The existing source integrity, scoped retrieval, Judge counterevidence and actua
 pass. Ruff149 found one overlong test string; formatting corrected, Ruff149b PASS. mypy149:2source
 files PASS. Model configuration remains Pro/low, Site16384/other8192,32shared calls/60000input.
 Next live149/150 resume the same approved Targets. Phase2 remains NOT FROZEN; only Case3 PASS.
+
+
+### Real Site proposal, lossless Judge view and explicit review recovery (live149/150)
+
+Live149 (`phase2-goldens-20260911T221327117740Z`, soluble) reached a complete real SiteIntent
+and the existing Stage02 proposal job. It used19model calls (Coordinator6/Site12/Judge1),
+peak sent context57663, four searches and five retained source responses. A false-positive
+Agent count check interpreted “canonical 53” and “canonical 70” residue positions as sequence
+lengths. The new pending-repair view preserved the complete rejected opinion; the model corrected
+its wording and successfully submitted. The actual total-context fit reduced67259→55923chars
+without changing source messages. Independent Judge then failed at the32000tool-view limit: the
+complete scientific snapshot was33708chars. Case1 remains FAIL pending independent review;
+Case3 remains PASS. This is a runtime failure, not evidence against lysozyme inhibition.
+
+Live150 (`phase2-goldens-20260911T221327294006Z`, GPCR) ended at17calls
+(Coordinator3/Site14; peak58987), with two searches, nineteen retained source responses, complete
+GPCRdb acquisition and actual receptor analysis. The model repeatedly read `facts` from source
+passage and canonical-mapping results; four shared field/selection corrections were exhausted.
+No GPCR Site proposal or Gate2 was produced. Both owned runner processes are confirmed exited.
+
+The narrow count guard now requires explicit length language or quantity units, and never joins
+separate prose fields into a fictitious statement. It still rejects false canonical/construct/
+observed lengths, including slash-separated alternatives and Chinese length claims. Residue
+positions/ranges do not become length assertions. This is Agent prose preflight, not a mapping
+algorithm or oracle change. Result views now retain their actual stored root-field names and
+previous scope when archived. Generic field examples no longer imply every artifact has `facts`;
+Site guidance distinguishes matches/cards/facts and encourages broadening empty literature queries.
+
+Judge's Site view displays exactly duplicated research conclusions once at an explicit local
+JSON pointer. No unique content is removed. The retained live149 snapshot shrank33708→30895chars
+and an exact reconstruction equaled the original scientific projection. All sources, counterevidence,
+access failures, nulls and limitations remain visible; originals and bindings are unchanged.
+Nonidentical or still-oversized content retains the existing fail-closed guard. Receipt:
+`judge-projection151.json`. No input, repair or model-call budget was raised.
+
+Explicit trusted `transfer_unreviewed_site` recovery moves only the current unreviewed pending
+proposal into a fresh thread after the source Agent has stopped. It verifies the exact same-project
+proposal/Target/facts/research/review and pending original job, refuses existing Judge/Card outcomes
+or a used destination, and atomically records source/destination provenance. The original proposal
+owner/ID/snapshot/job/checkpoint/fingerprint/budgets remain intact. No new scientific job, verdict
+or approval is created. The new thread must obtain independent Judge and the original Gate2
+approval. Replays are idempotent; source current-proposal lookup excludes the transferred proposal.
+This API is not available to the model. The validation runner accepts an explicit failed-case
+resume path and combines actual old Site/new review metrics with per-execution counts preserved.
+
+DETERMINISTIC/MOCK targeted151:51 PASS (90.51s), covering false-count rejection, valid residue
+wording, exact Judge reconstruction, nonidentical counterevidence rejection, transfer isolation/
+idempotence and actual old-service Gate2 approval without another job. Isolated draft151 count
+checks:29 PASS (21.23s). Additional targeted151b:10 PASS (4.75s), including archived field indexes
+and canonical lookup. Ruff151 initially found one long runner string; fixed, Ruff151b PASS.
+Mypy151:4source files PASS. Protected151:all385 baseline files unchanged.
+
+Next live151 resumes live149's completed unreviewed Site proposal for Judge/Gate2 and then
+Binder validation; live152 resumes the independently approved GPCR Target. Configuration stays
+Pro/low, Site16384/other8192,32shared calls/60000input. Phase2 NOT FROZEN; Phase3/4 NOT STARTED.

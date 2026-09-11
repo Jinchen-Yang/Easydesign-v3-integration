@@ -34,17 +34,23 @@ def check_fact_claims(value: Any, evidence: dict[str, Any]) -> None:
             return [s for child in item for s in strings(child)]
         return []
 
-    text = " ".join(strings(value))
+    texts = strings(value)
     findings = []
+    count = r"(\d+(?:/\d+)*)(?![\d/])"
+    units = r"(?:residues?|aa|amino[ -]acids?)\b"
+    canonical = r"\bcanonical(?:[ _-](?:protein|sequence|target|precursor))?"
+    copula = r"\s*(?:(?:is|of|contains|has|comprises|equals)\s*|[=:]\s*)*"
     canonical_patterns = [
-        r"\bcanonical(?:[ _-](?:protein|sequence|target|precursor))?(?:[ _-]length)?"
-        r"\s*(?:(?:is|of|contains|has|comprises|equals|length)\s*|[=:]\s*)*(\d+(?:/\d+)*)",
-        r"\b(\d+(?:/\d+)*)[ -](?:residue|aa|amino[ -]acid)s?\s+canonical\b",
-        r"canonical\s*(?:长度|序列长度|蛋白长度)\s*(?:为|是|：|:|=)?\s*(\d+(?:/\d+)*)",
+        canonical + r"[ _-]length" + copula + count,
+        canonical + copula + count + r"[ -]*" + units,
+        r"\b" + count + r"[ -]" + units + r"\s+canonical\b",
+        r"canonical\s*(?:长度|序列长度|蛋白长度)\s*(?:为|是|：|:|=)?\s*" + count,
     ]
     if facts.canonical_length is not None:
         for pattern in canonical_patterns:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
+            for match in (
+                match for text in texts for match in re.finditer(pattern, text, re.IGNORECASE)
+            ):
                 if any(int(n) != facts.canonical_length for n in match[1].split("/")):
                     findings.append(
                         {
@@ -61,12 +67,18 @@ def check_fact_claims(value: Any, evidence: dict[str, Any]) -> None:
         ):
             if expected is None:
                 continue
-            pattern = (
-                rf"\bchain\s+{re.escape(chain.auth_chain)}\s*[,;:]?\s+"
-                rf"{label}(?:\s+length)?\s*(?:(?:is|has|of|contains)\s*|[=:]\s*)*(\d+)"
-            )
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                if int(match[1]) != expected:
+            prefix = rf"\bchain\s+{re.escape(chain.auth_chain)}\s*[,;:]?\s+{label}"
+            patterns = [
+                prefix + r"\s+length" + copula + count,
+                prefix + copula + count + r"[ -]*" + units,
+            ]
+            for match in (
+                match
+                for pattern in patterns
+                for text in texts
+                for match in re.finditer(pattern, text, re.IGNORECASE)
+            ):
+                if any(int(n) != expected for n in match[1].split("/")):
                     findings.append(
                         {
                             "field": f"chain.{chain.auth_chain}.{label}_length",

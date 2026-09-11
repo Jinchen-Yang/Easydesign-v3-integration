@@ -302,7 +302,95 @@ class Phase2Bridge(TargetBridge):
 
     def current_site(self) -> dict[str, Any] | None:
         proposal = self.thread_latest("site-proposal")
+        transferred = self.thread_latest("site-proposal-transferred")
+        if proposal and transferred and transferred["proposal_id"] == proposal["proposal_id"]:
+            return None
         return proposal if proposal and self.site_proposal_is_current(proposal) else None
+
+    def transfer_unreviewed_site(
+        self, source_thread: str, *, expected_proposal_id: str
+    ) -> dict[str, Any]:
+        """Explicit trusted recovery of a completed Site job into a fresh review thread.
+
+        Not a model tool. The caller must stop the source Agent first. No source
+        checkpoint/fingerprint/budget is changed and no scientific job is relaunched.
+        Reviewed or scientist-responded proposals require ordinary steering instead.
+        """
+        if source_thread == self.thread:
+            raise AgentBoundaryError("Site transfer requires a distinct fresh thread")
+        if not self.store.db.execute(
+            "SELECT 1 FROM threads WHERE id=?", (source_thread,)
+        ).fetchone():
+            raise AgentBoundaryError("Source thread is not in this project")
+        prior = self.thread_latest("site-proposal-received")
+        if prior:
+            current = self.current_site()
+            if (
+                prior["source_thread"] != source_thread
+                or prior["proposal_id"] != expected_proposal_id
+                or current is None
+                or current["proposal_id"] != expected_proposal_id
+            ):
+                raise AgentBoundaryError("Conflicting Site transfer")
+            return self.site_snapshot(current)
+        if self.thread_latest("site-proposal") or self.store.latest_execution(self.thread):
+            raise AgentBoundaryError("Site transfer destination must be a fresh thread")
+        source = Phase2Bridge(self.project, source_thread, self.store)
+        with self.store.writer():
+            if any(
+                j.status in ACTIVE_JOB_STATUSES
+                for j in self.controller.list(project_id=self.project_id)
+            ):
+                raise AgentBoundaryError("An existing scientific writer is active")
+            proposal = source.pending_site()
+            if proposal is None or proposal["proposal_id"] != expected_proposal_id:
+                raise AgentBoundaryError("Source Site proposal is missing, changed or consumed")
+            snapshot = source.site_snapshot(proposal)
+            if proposal["evaluation"]["status"] == "BLOCKED" or not proposal.get("job_id"):
+                raise AgentBoundaryError("Only a completed executable Site proposal can transfer")
+            job = self.controller.load(proposal["job_id"])
+            if (
+                job.project_root != self.project
+                or job.step != 2
+                or job.run_id != proposal["run_id"]
+                or job.status != "awaiting-human-approval"
+            ):
+                raise AgentBoundaryError("Original Site job is not pending review")
+            if (
+                self.store.db.execute(
+                    "SELECT 1 FROM assessments WHERE thread=? "
+                    "AND json_extract(payload,'$.evidence_id')=? LIMIT 1",
+                    (source_thread, snapshot["evidence_id"]),
+                ).fetchone()
+                or self.store.db.execute(
+                    "SELECT 1 FROM cards WHERE thread=? "
+                    "AND json_extract(payload,'$.request_identity')=? LIMIT 1",
+                    (source_thread, proposal["request_identity"]),
+                ).fetchone()
+            ):
+                raise AgentBoundaryError("Reviewed Site proposals require ordinary steering")
+            payload = {k: v for k, v in proposal.items() if k not in {"seq", "thread"}}
+            provenance = {
+                "source_thread": source_thread,
+                "destination_thread": self.thread,
+                "proposal_id": expected_proposal_id,
+                "source_proposal_seq": proposal["seq"],
+                "snapshot_sha256": identity(snapshot),
+                "job_id": proposal["job_id"],
+                "authority": "Unreviewed proposal continuity only; no Judge or Gate approval",
+            }
+            with self.store.db:
+                self.store.db.executemany(
+                    "INSERT INTO events(thread,kind,payload) VALUES(?,?,?)",
+                    [
+                        (source_thread, "site-proposal-transferred", compact(provenance)),
+                        (self.thread, "site-proposal", compact(payload)),
+                        (self.thread, "site-proposal-received", compact(provenance)),
+                    ],
+                )
+        current = self.current_site()
+        assert current is not None
+        return self.site_snapshot(current)
 
     def site_proposal_is_current(self, proposal: dict[str, Any]) -> bool:
         invalidation = self.project_latest("site-invalidated")

@@ -47,3 +47,23 @@ project Site while retaining B's separate draft. A pending proposal is not appro
 Regression: `tests/unit/agent/test_state_ownership.py` covers two pending conversations,
 follow-up/resume, inherited Site evidence for Binder, and project biology invalidation.
 Existing Site/Design replay and steering regressions cover exact old-service authority.
+
+
+## Explicit recovery of an unreviewed Site proposal (2026-09-12)
+
+Pending proposals still do not appear automatically in another conversation. The trusted
+`Phase2Bridge.transfer_unreviewed_site` recovery API is an explicit exception for a stopped
+source Agent whose completed Stage02 proposal has no Judge assessment or Decision Card yet.
+The caller names the source thread and exact proposal ID within the same project. The runtime
+checks current Target/biology/facts, immutable research/review artifacts, original pending job
+and empty destination execution; reviewed/responded proposals must use ordinary steering.
+
+One existing SQLite transaction records source transfer, the exact original proposal in the
+destination and receipt provenance. The original scientific owner, proposal ID, job, snapshot,
+source events/checkpoint, fingerprints and execution budgets remain unchanged. Source current
+proposal lookup then excludes that transferred proposal. New independent Judge review and the
+existing Gate2 service are still mandatory; no approval or hard fact is created by transfer.
+Replay of the same explicit transfer is idempotent; conflicting or stale requests fail closed.
+This is not exposed as an LLM tool. The autonomous validation runner invokes it only for a
+recorded failed attempt after its process has stopped, and reports both threads' actual calls
+and evidence metrics. There is no second scheduler, checkpoint or decision store.

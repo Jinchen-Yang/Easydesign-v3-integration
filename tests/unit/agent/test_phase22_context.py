@@ -214,6 +214,69 @@ def test_oversized_judge_snapshot_cannot_hide_counterevidence(bridge: Any) -> No
         )
 
 
+def test_judge_duplicate_conclusions_are_lossless_and_counterevidence_stays_visible(
+    bridge: Any,
+) -> None:
+    from copy import deepcopy
+
+    from easydesign.agent.evidence_output import judge_snapshot_projection, scientific_projection
+    from easydesign.agent.session_store import compact
+
+    conclusions = [{"claim": "hypothesis " * 600, "status": "UNRESOLVED", "missing": None}]
+    value = {
+        "gate_type": "site-hotspot",
+        "proposal": {"research_conclusions": conclusions},
+        "research_evidence": {
+            "conclusions": deepcopy(conclusions),
+            "contradictory_evidence": [{"passage": "counterevidence " * 1400}],
+            "retrieval_status": [{"status": "UNRESOLVED", "errors": ["access failed"]}],
+        },
+    }
+    unchanged = deepcopy(value)
+    assert len(compact(scientific_projection(value))) > 32000
+    projected = judge_snapshot_projection(value)
+    assert len(compact(projected)) < 32000
+    restored = deepcopy(projected)
+    research = restored["research_evidence"]
+    assert research.pop("conclusions_same_as") == "/proposal/research_conclusions"
+    research.pop("conclusion_encoding")
+    research["conclusions"] = restored["proposal"]["research_conclusions"]
+    assert restored == scientific_projection(value)
+    assert value == unchanged
+    execution = bridge.store.begin_execution(bridge.thread, "Review all unique evidence")
+    result = output_message(
+        bridge,
+        "judge",
+        execution["execution_id"],
+        ToolMessage(content=json.dumps(value), name="read_scientific_evidence", tool_call_id="all"),
+    )
+    visible = json.loads(result.content)
+    assert visible["scientific_content_complete"] is True and visible["partial"] is False
+    assert (
+        visible["research_evidence"]["contradictory_evidence"]
+        == (value["research_evidence"]["contradictory_evidence"])
+    )
+    assert (
+        visible["research_evidence"]["retrieval_status"]
+        == (value["research_evidence"]["retrieval_status"])
+    )
+    stored = bridge.store.root / "agent-work" / bridge.thread / visible["full_result"][1:]
+    assert json.loads(stored.read_text()) == unchanged
+
+    different = deepcopy(value)
+    different["research_evidence"]["conclusions"][0]["missing"] = False
+    assert judge_snapshot_projection(different) == scientific_projection(different)
+    with pytest.raises(AgentBoundaryError, match="must not be silently truncated"):
+        output_message(
+            bridge,
+            "judge",
+            execution["execution_id"],
+            ToolMessage(
+                content=json.dumps(different), name="read_scientific_evidence", tool_call_id="diff"
+            ),
+        )
+
+
 @pytest.mark.asyncio
 async def test_scoped_pages_are_not_truncated_again_after_cursor_advance(bridge: Any) -> None:
     execution = bridge.store.begin_execution(bridge.thread, "Read selected passages")

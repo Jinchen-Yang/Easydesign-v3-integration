@@ -193,10 +193,15 @@ async def test_repeated_bad_submission_exhausts_durable_budget_without_registeri
     [
         "canonical length is 132",
         "canonical protein contains 132 residues",
+        "canonical 132 aa",
+        "canonical_sequence_length: 132",
+        "canonical 长度为132",
         "canonical length = 147/148",
         "132-residue canonical sequence",
         "Chain L construct length is 148",
         "Chain L observed length is 129",
+        "Chain L observed 129 residues",
+        "Chain L construct length = 129/148",
     ],
 )
 def test_known_fact_contradictions_cannot_register(
@@ -208,6 +213,24 @@ def test_known_fact_contradictions_cannot_register(
         register_target(bridge, TargetInterpretation.model_validate(opinion(claim)), None)
     assert evidence["hard_facts"]["canonical_length"] == 147
     assert not any(e["kind"] == "target-assessment" for e in bridge.store.events(bridge.thread))
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The catalytic dyad is at canonical 53 (=Glu35, label 35) and 70 (=Asp52, label 52).",
+        "Canonical 53 and canonical 70 are residue positions, not lengths.",
+        "Canonical 19–147 corresponds to the mature construct.",
+        "Chain L construct 35 maps to canonical 53; chain L observed 35 has coordinates.",
+        {"topic": "canonical", "passage": "53 residues form a separately described fragment."},
+        "The canonical length is 147; chain L construct length is 129 and "
+        "chain L observed length is 127.",
+    ],
+)
+def test_count_guard_does_not_treat_residue_positions_as_sequence_lengths(claim: Any) -> None:
+    from easydesign.agent.target_assessment import check_fact_claims
+
+    check_fact_claims(claim, runtime_evidence())
 
 
 def test_model_cannot_supply_runtime_fields_and_open_interpretation_is_allowed() -> None:

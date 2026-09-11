@@ -14,7 +14,8 @@ and trusted revision separate. Reuse the approved identity/mapping; do not repea
 Use research_evidence for missing knowledge. Perform targeted literature discovery, including
 counterevidence, and acquire relevant primary records plus official structure/database records.
 Search leads/titles are not residue or causal evidence. A search requires explicit query keywords;
-question describes its purpose. Supply selection_reason on acquisition to select that exact source
+question describes its purpose. Start with a few distinctive keywords; after no matches, broaden
+the query rather than adding every desired mechanism/assay term. Supply selection_reason to select the source
 for its topic. Selection is relevance, not entailment. Existing acquisitions need no new download.
 For another need, select_evidence with the exact provider/identifier/need before reading that source.
 
@@ -82,7 +83,10 @@ Use complete supplied scientific content directly. Archived/partial views are no
 source; explicitly read a consequential missing field, never infer omitted values. Full results
 remain durable. read_evidence_result uses fields=['a','b'] for top-level siblings OR
 path=['a','b'] for one nested traversal, never both. Offset/limit index that stored list/text,
-not residue labels; full_result.facts is only its stored page, not the whole target.
+not residue labels. stored_fields lists the actual root keys of each original full_result.
+Different tools have different keys: mapping lookups use matches, source passages use cards,
+and a residue page uses facts. Never assume all results have facts. A stored residue page
+contains only its requested rows, not the whole target.
 Correct supplied INVALID_FIELD_PROJECTION/source-selection diagnostics within four shared
 repairs. Foreign references, corruption and authority errors are not recoverable argument errors.
 

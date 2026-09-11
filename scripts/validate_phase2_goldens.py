@@ -35,6 +35,7 @@ STAMP = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 OUT = ROOT / "runtime/tmp/autonomous-v3-20260912" / f"phase2-goldens-{STAMP}"
 ACTOR = "scripted-autonomous-validation-actor-not-biological-approval"
 APPROVED_TARGET = os.environ.get("EASYDESIGN_GOLDEN_APPROVED_TARGET")
+UNREVIEWED_SITE = os.environ.get("EASYDESIGN_GOLDEN_UNREVIEWED_SITE")
 CASE_SCOPE = os.environ.get("EASYDESIGN_GOLDEN_CASE_SCOPE", "all")
 assert CASE_SCOPE in {"all", "soluble", "gpcr"}
 GOALS = {
@@ -89,8 +90,11 @@ def save(path, value, secrets):
     path.write_text(text)
 
 
-def stats(bridge):
-    events = bridge.store.events(bridge.thread)
+def stats(bridge, *, source_threads=()):
+    threads = list(dict.fromkeys([*source_threads, bridge.thread]))
+    events = sorted(
+        [dict(e, thread=t) for t in threads for e in bridge.store.events(t)], key=lambda e: e["seq"]
+    )
     queries = [
         bridge.document(e["payload"]["ref"]) for e in events if e["kind"] == "evidence-research"
     ]
@@ -117,6 +121,7 @@ def stats(bridge):
     tool_events = [e["payload"] for e in events if e["kind"] == "tool"]
     specialist_tools = [e for e in tool_events if e["role"] != "coordinator"]
     return {
+        "included_threads": threads,
         "search_queries": [q["query"] for q in search_queries],
         "search_query_count": len(search_queries),
         "selection_events": selection_events,
@@ -499,6 +504,7 @@ async def main():
 
             try:
                 inherited_metrics = None
+                continuity_threads = []
                 if inherited is not None:
                     # Reuse approved science through project-global ownership, never edit
                     # an incompatible thread's fingerprint, checkpoint, budget or response.
@@ -541,6 +547,45 @@ async def main():
                     identity_report = approved_identity(bridge, truth[name])
                     save(case / "approved-target.json", target, secrets)
                     save(case / "approved-identity-oracle.json", identity_report, secrets)
+                    if UNREVIEWED_SITE:
+                        source_case = Path(UNREVIEWED_SITE).resolve()
+                        assert source_case.is_relative_to(
+                            ROOT / "runtime/tmp/autonomous-v3-20260912"
+                        )
+                        assert source_case.name == name
+                        source_report = json.loads((source_case.parent / "report.json").read_text())
+                        assert source_report["formal_acceptance"] == "VALIDATION_ATTEMPT_FAILED"
+                        source_info = json.loads(
+                            (source_case / "inherited-target.json").read_text()
+                        )
+                        assert Path(source_info["project"]).resolve() == project.resolve()
+                        source_thread = source_info["continuation_thread"]
+                        source_bridge = Phase2Bridge(project, source_thread, store)
+                        completed_proposal = source_bridge.current_site()
+                        assert completed_proposal is not None
+                        jobs_before = [j.job_id for j in bridge.controller.list(project_id=name)]
+                        snapshot = bridge.transfer_unreviewed_site(
+                            source_thread, expected_proposal_id=completed_proposal["proposal_id"]
+                        )
+                        assert snapshot == source_bridge.site_snapshot(completed_proposal)
+                        assert jobs_before == [
+                            j.job_id for j in bridge.controller.list(project_id=name)
+                        ]
+                        continuity_threads = [source_thread]
+                        save(
+                            case / "inherited-unreviewed-site.json",
+                            {
+                                "origin": str(source_case),
+                                "source_thread": source_thread,
+                                "continuation_thread": bridge.thread,
+                                "proposal_id": completed_proposal["proposal_id"],
+                                "job_id": completed_proposal["job_id"],
+                                "snapshot": snapshot,
+                                "authority": "Completed Site job only; independent Judge "
+                                "and Gate 2 still required",
+                            },
+                            secrets,
+                        )
                     if name == "soluble":
                         await independent_review(
                             case,
@@ -626,7 +671,7 @@ async def main():
                     save(OUT / "report.json", report, secrets)
                 proposal = bridge.current_site()
                 save(case / "site-snapshot.json", bridge.site_snapshot(proposal), secrets)
-                metrics = stats(bridge)
+                metrics = stats(bridge, source_threads=continuity_threads)
                 save(case / "metrics.json", metrics, secrets)
                 assert metrics["peak_context_chars"] < 60000
                 assert metrics["search_query_count"] >= 1, (
@@ -791,7 +836,11 @@ async def main():
                 print(name, "paths passed; content review pending", flush=True)
             finally:
                 try:
-                    save(case / "final-thread-metrics.json", stats(bridge), secrets)
+                    save(
+                        case / "final-thread-metrics.json",
+                        stats(bridge, source_threads=continuity_threads),
+                        secrets,
+                    )
                 except Exception:
                     save(
                         case / "metrics-export-error.json",

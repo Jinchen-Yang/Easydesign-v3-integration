@@ -17,9 +17,12 @@ Coordinator reusing pre-approval progress.
 Its failed report is retained. This is partial acceptance, not five-case completion. Current
 repair supplies concise verified runtime progress and keeps detailed Site work with its owner.
 GPCR live104 also has an independently reviewed, actually approved Gate1 Target and unchanged
-identity oracle. Live129 acquired complete GPCRdb context and ran the existing receptor analysis; no GPCR Gate2
-acceptance is claimed. Current retry ownership, precise failures and targeted regressions through live128/129 are recorded in
-AUTONOMOUS_V3_PROGRESS.md. Cases1/2/4/5 and the Phase2 full regression remain outstanding.
+identity oracle. Live150 again acquired complete GPCRdb context and ran the existing receptor analysis,
+then exhausted scoped-field corrections; no GPCR Gate2 acceptance is claimed. Live149 completed
+a real SiteIntent and the original Stage02 proposal job, but its independent Judge view exceeded
+32000 characters. An exact duplicate conclusion is now represented once, and explicit trusted
+transfer preserves that unreviewed proposal/job for a new review thread after a code repair.
+It transfers no Judge verdict or approval. Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases1/2/4/5 and the Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
 

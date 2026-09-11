@@ -56,8 +56,9 @@ class ModelEvidenceScope(StrictDTO):
         default=None,
         min_length=1,
         max_length=10,
-        description="One exact path: ['facts'] for a field, ['facts',0,'mapping'] for a child. "
-        "Each child is inside its parent. For siblings use fields instead. Omit fields.",
+        description="One exact path of existing keys/indices from this result's stored_fields. "
+        "Each child is inside its parent. Different tools have different root keys. "
+        "For siblings use fields instead. Omit fields.",
     )
     offset: int = Field(
         default=0, ge=0, description="Index within this list/text, never residue numbering."
@@ -195,6 +196,8 @@ def fit_site_working_view(
         replacement = compact(
             {
                 "archived_result": ref,
+                "stored_fields": value.get("stored_fields"),
+                "previous_scope": {k: value[k] for k in ("path", "fields") if k in value},
                 "partial": True,
                 "note": "Earlier complete tool view is retained in this execution's "
                 "verified artifact and checkpoint. Replaced here to fit the total context "
@@ -250,6 +253,35 @@ def scientific_projection(value: Any) -> Any:
     if isinstance(value, list):
         return [scientific_projection(v) for v in value]
     return value
+
+
+def judge_snapshot_projection(value: Any) -> Any:
+    """Show an exactly duplicated Site conclusion once, with an explicit local pointer.
+
+    All unique scientific content remains in the same review view. The immutable
+    original snapshot and its evidence binding are unchanged.
+    """
+    projected = scientific_projection(value)
+    if not isinstance(projected, dict) or projected.get("gate_type") != "site-hotspot":
+        return projected
+    proposal = projected.get("proposal")
+    research = projected.get("research_evidence")
+    if (
+        isinstance(proposal, dict)
+        and isinstance(research, dict)
+        and isinstance(proposal.get("research_conclusions"), list)
+        and research.get("conclusions") == proposal["research_conclusions"]
+        and len(compact(research["conclusions"])) > 256
+        and "conclusions_same_as" not in research
+    ):
+        del research["conclusions"]
+        research["conclusions_same_as"] = "/proposal/research_conclusions"
+        research["conclusion_encoding"] = (
+            "Exact duplicate displayed once at the indicated JSON pointer in this view. "
+            "All conclusions, citations and limitations are present there; nothing omitted. "
+            "The original full_result retains both copies."
+        )
+    return projected
 
 
 def target_page_projection(value: Any) -> Any:
@@ -378,8 +410,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     ):
         # The reader's source is already registered and immutable. Re-offloading its
         # wrapper would change the navigation root from scientific data to {value,...}.
-        verified_result(bridge, role, value["full_result"], execution_id=execution_id)
+        original = verified_result(bridge, role, value["full_result"], execution_id=execution_id)
         projected = scientific_projection(value)
+        if isinstance(original, dict):
+            projected["stored_fields"] = list(original)
         if len(compact(projected)) > (32000 if role == "judge" else 6000):
             projected = {
                 "status": "narrower-scope-required",
@@ -429,7 +463,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         "read_evidence_result",
         "read_canonical_mapping",
     }
-    projected = scientific_projection(value) if role == "judge" or exact_page else preview(value)
+    complete_projection = (
+        judge_snapshot_projection(value) if role == "judge" else scientific_projection(value)
+    )
+    projected = complete_projection if role == "judge" or exact_page else preview(value)
     view_limit = 32000 if role == "judge" else 6000
     if source_artifact is not None:
         projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
@@ -492,8 +529,9 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                 {
                     **(projected if isinstance(projected, dict) else {"view": projected}),
                     "full_result": receipt["ref"],
-                    "partial": projected != scientific_projection(value),
-                    "scientific_content_complete": projected == scientific_projection(value),
+                    "stored_fields": list(value) if isinstance(value, dict) else None,
+                    "partial": projected != complete_projection,
+                    "scientific_content_complete": projected == complete_projection,
                     "read": (
                         "Use supplied scientific content directly when complete. "
                         "read_evidence_result(ref, path=['key']) for one top-level field; "

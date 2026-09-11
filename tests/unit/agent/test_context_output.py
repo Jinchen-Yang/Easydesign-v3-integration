@@ -116,6 +116,8 @@ def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoni
                     content=json.dumps(
                         {
                             "full_result": f"/result-{i + 10:x}.json",
+                            "stored_fields": ["matches", "limitations", "target_binding"],
+                            "path": ["matches"],
                             "source_id": f"synthetic-{i}",
                             "passage": "e" * 4800,
                             "limitations": ["uncertain", "counterevidence retained"],
@@ -148,6 +150,9 @@ def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoni
         assert results[call_id] == json.loads(original_tool.content)
     for a in archived:
         assert any(v.get("archived_result") == a["ref"] and v["partial"] for v in results.values())
+        archived_view = next(v for v in results.values() if v.get("archived_result") == a["ref"])
+        assert archived_view["stored_fields"] == ["matches", "limitations", "target_binding"]
+        assert archived_view["previous_scope"] == {"path": ["matches"]}
     small = [HumanMessage(content="Small goal")]
     same, archive = fit_site_working_view(
         small, reasoning=reasoning, system_chars=100, max_chars=60000, suffix=[]

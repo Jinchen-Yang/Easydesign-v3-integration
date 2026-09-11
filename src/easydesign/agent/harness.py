@@ -550,6 +550,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "content": compact(
                             {
                                 "archived_result": value["full_result"],
+                                "stored_fields": value.get("stored_fields"),
+                                "previous_scope": {
+                                    k: value[k] for k in ("path", "fields") if k in value
+                                },
                                 "partial": True,
                                 "note": (
                                     "Earlier detailed view retained; read only if a fact "

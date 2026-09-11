@@ -179,7 +179,7 @@ def fit_site_working_view(
     The original messages/artifacts are untouched. This is Site's reading context,
     not a reduction of an independent Judge snapshot or a scientific summary.
     """
-    from langchain_core.messages import ToolMessage
+    from langchain_core.messages import AIMessage, ToolMessage
 
     working = list(messages)
 
@@ -231,6 +231,54 @@ def fit_site_working_view(
         view = render()
         if size(view) <= max_chars - min(1000, max_chars // 10):
             break
+    if size(view) > max_chars:
+        # Optional reference pages are already read and remain in the unchanged
+        # checkpoint/Skill filesystem. Keep the main role instructions and newest
+        # requested answer; never archive user files or infer paths from their text.
+        optional_refs = {
+            f"/skills/site-mechanism/references/{name}.md"
+            for name in ("research", "membrane", "shielding")
+        }
+        calls = {
+            call["id"]: call
+            for message in messages
+            if isinstance(message, AIMessage)
+            for call in message.tool_calls
+        }
+        newest = max(
+            (i for i, message in enumerate(working) if isinstance(message, ToolMessage)),
+            default=-1,
+        )
+        for i, message in enumerate(working):
+            if (
+                i == newest
+                or not isinstance(message, ToolMessage)
+                or message.name != "read_file"
+                or message.status != "success"
+            ):
+                continue
+            call: Any = calls.get(message.tool_call_id, {})
+            args = call.get("args", {})
+            path = args.get("file_path")
+            if call.get("name") != "read_file" or path not in optional_refs:
+                continue
+            replacement = compact(
+                {
+                    "archived_skill_reference": path,
+                    "requested_scope": {k: args[k] for k in ("offset", "limit") if k in args},
+                    "instructions_remain_applicable": True,
+                    "note": "Previously read reference remains in the unchanged checkpoint "
+                    "and fingerprint-bound Skill. Use read_file if needed; main role "
+                    "instructions remain present. This is not scientific evidence.",
+                }
+            )
+            if len(replacement) >= len(str(message.content)):
+                continue
+            working[i] = message.model_copy(update={"content": replacement})
+            archived.append({"tool": "read_file", "ref": path})
+            view = render()
+            if size(view) <= max_chars - min(1000, max_chars // 10):
+                break
     # The caller's unchanged hard guard rejects a still-oversized pinned/base context.
     return view, archived
 

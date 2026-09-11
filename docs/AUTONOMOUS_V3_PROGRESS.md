@@ -1251,3 +1251,52 @@ executable and rejects replacement console bytes. Ruff157 PASS. The installation
 uses the actual backend (no YAML check or generation) and records before/after profile SHA in
 `backend-reuse157.json`. Live157 will retry only the pending Design cases from live153's actual
 Site approval. Live156 GPCR remains running on the unchanged Agent fingerprint. Phase2 NOT FROZEN.
+
+
+### Independent Gate3 review rejects factor/absence overclaims; GPCR context repair
+
+Live157 (`phase2-goldens-20260911T232342960993Z`) used the verified existing isolated backend
+and reached a standard Gate3 card after 10 real model calls (Coordinator5/Binder3/Judge2).
+The actual existing compiler and BoltzGen0.3.2 check passed all7 strategies, planned280,
+no generation. Exact approved Target/Site, full target, current hotspot and default scaffold
+constraints were retained. Nevertheless the independent six-section content review is FAIL:
+card353523a3ff253a1af3dd567f366802baa5a7b39b0d0f75ef7b3d7d0a954ffa5b and
+Judge judge-d92e1257ab9549f6891026be5b73e89c accepted a CDR3-only factor narrative, whereas
+actual emitted YAML designs all three CDRs and samples their insertion ranges across seven
+scaffolds. Default constant bounds do not freeze sequences/lengths or isolate CDR3 causality.
+The opinion also inflated limited unproductive function searches to global absence of binding/
+function evidence, despite the structural binding precedent. An unsuccessful small sample must
+not establish failure of a scaffold set. The exact failed review is preserved; Case5 was not run,
+Gate3 was not approved and no compute job was launched. Case1/3 acceptance remains valid.
+
+Binder and independent Judge instructions now explicitly challenge those three consequential
+reasoning errors. The verified design-constraint view explains design.res_index and the three
+insertion ranges without changing scaffold assets, compiler semantics or the frozen first-pilot
+plan. No new keyword-based scientific oracle is added; the actual model must reason from the
+same executable constraints and independent content review must still pass.
+
+Live156 GPCR (`phase2-goldens-20260911T232126182415Z`) delivered the full candidate overview,
+then failed the unchanged60000-character context guard after8calls (Coordinator3/Site5), before
+SiteIntent. Its original26-message native checkpoint was read-only replayed: old projection
+70472→67112chars; the repaired optional-reference projection gives59747chars. The newest
+identity answer and complete24972-character scientific candidate overview remain exact. All
+original messages and the checkpoint SHA remain unchanged. Receipt `context-replay158.json`
+is a DETERMINISTIC PROJECTION REPLAY of real trace data, not live acceptance.
+
+When older scientific-view archival is insufficient, Site may now replace previously read
+optional research/membrane/shielding Skill pages with explicit re-read references. Main role
+instructions, newest requested answer, latest candidate evaluation, user inputs and unknown
+file paths are preserved. Reference instructions remain applicable and fingerprint-bound;
+this changes model input only, not source artifacts/checkpoints or scientific evidence. If the
+remaining context is still too large the original hard guard rejects it. Live156/157 processes
+were confirmed exited before editing Agent/Skills. Targeted tests/lint are running; no model,
+output, call/input or GPU budget changed. Phase2 NOT FROZEN; Phase3/4 NOT STARTED.
+
+
+Targeted158:35 PASS (472.71s), including original-message preservation, exact newest candidate
+answer, main/foreign-file protection, native/reasoning reference archival, owner evidence views,
+old design compilation/freeze and multi-turn harness paths. Ruff158/158b PASS. Initial mypy158
+required a local variable type annotation; annotation-only correction then mypy158b PASS for
+both changed modules. Protected158:all385 baseline files unchanged. Next live158 retries only
+standard/native Design from live153's approved Site; live159 retries only GPCR Site from live104's
+approved Target. Model config and frozen spec/oracle remain unchanged.

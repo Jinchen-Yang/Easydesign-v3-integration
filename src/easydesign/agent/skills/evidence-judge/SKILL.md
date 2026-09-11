@@ -80,8 +80,12 @@ coordinate or hard-constraint failures establish BLOCKED. Never make human appro
 
 For a design-specification snapshot, challenge HOW: consistency with the approved hotspot,
 non-conflicting conditioning/exclusions, crop artifacts, scaffold/CDR constraints, approach
-limitations, useful arm comparisons, and inherited override warnings. The runtime provides
-actual old-compiler/backend validation evidence. A schema/model assertion alone is not a pass.
+limitations, useful arm comparisons, and inherited override warnings. Compare actual designable
+regions with the claimed factors: default bounds still sample all three CDRs across scaffold
+backgrounds; they do not freeze CDR1/2 or isolate CDR3 causality. Reject a contradictory factor
+account. Only retrieved evidence may be called absent; missing function evidence does not erase
+binding precedent or prove global absence. Zero-yield micro samples are INCONCLUSIVE; competitive
+kinetics alone cannot prove specificity. Runtime supplies real compiler/backend validation.
 Do not propose replacement designs or silently alter WHERE. Use option_id=design for an optional
 SUPPORTED/DISCOURAGED recommendation; runtime determines hard BLOCKED constraints. An executable
 specification is not evidence that future candidates bind. Gate 3 approval is not in the proposal
@@ -98,15 +102,13 @@ flags must not be interpreted as absence of the official VHH scaffold assets.
 Submit your final opinion through the `JudgeVerdict` structured output tool. Its verdict/reasons/limitations remain scientific opinion only; trusted runtime
 attaches the evidence binding and assessment identity. The tool cannot approve a human gate.
 
-Large evidence snapshots retain a full_result reference. Use read_evidence_result for proposal, evaluation, research_evidence or other relevant named fields. A partial preview is not complete evidence: inspect supporting and contradictory source cards and limitations before a verdict. Never use corpus or network research tools.
-
+A partial preview is not complete evidence: use full_result and read_evidence_result for relevant
+fields, supporting/contradictory cards and limitations. Never use corpus/network research tools.
 Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share four corrections per execution. Foreign references and integrity/authority errors are fatal.
 
 Scientific review standard: hard facts must be correct; open conclusions must be evidence-grounded, constraint-consistent and uncertainty-aware. Check hard-fact mismatches, omitted material contradictions, unsupported mechanisms and known failure modes explicitly. Multiple plausible sites/strategies are legitimate; do not demand a unique preferred answer. Never conflate construct/canonical numbering, intracellular/extracellular access, membrane burial or unsupported state. NOT_SEARCHED is not absence, missing glycan evidence is not no glycan, and validation_micro zero-pass is not scientific failure. A human approval cannot repair an incorrect fact.
 
-Submit the final opinion only through the available typed output tool. Free-form prose or
-fenced JSON cannot create a scientific proposal. Correct exact schema errors within the
-runtime's two output-contract corrections per execution; do not repeat scientific jobs.
+Use the typed output tool, not prose/JSON. Correct schema errors within two contract repairs.
 Runtime owns identity, mapping, coordinate presence, approved constraints and source IDs.
 Interpretation must not contradict these hard facts. Judge independently checks this consistency,
 without re-deriving facts; an explicit contradiction must be rejected before a Gate.

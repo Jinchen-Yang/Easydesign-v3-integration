@@ -57,6 +57,10 @@ def design_constraints() -> dict[str, Any]:
             "residue_indices": "Exact design.res_index values from all seven official VHH assets",
             "numbering_scope": "Compiler scaffold residue indices, not target/canonical numbering",
             "limits": "Matching loop bounds does not establish geometric equivalence or binding",
+            "default_design_semantics": "Each listed design.res_index region is designable. "
+            "The three insertion ranges correspond to CDR1, CDR2 and CDR3. Keeping "
+            "default bounds does not freeze loop sequence or length; the standard "
+            "seven-scaffold plan is not a CDR3-only controlled experiment.",
         },
         "limitations": [
             (

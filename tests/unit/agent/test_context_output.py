@@ -230,3 +230,93 @@ def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoni
         huge, reasoning=reasoning, system_chars=100, max_chars=60000, suffix=[]
     )
     assert large == huge and not archive
+
+
+@pytest.mark.parametrize("reasoning", [False, True])
+@pytest.mark.parametrize("newest_reference", [False, True])
+def test_optional_skill_pages_fit_without_hiding_current_answer_or_main_instructions(
+    reasoning: bool, newest_reference: bool
+) -> None:
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from easydesign.agent.evidence_output import fit_site_working_view
+
+    messages: list[Any] = [HumanMessage(content="Original research goal " + "g" * 3000)]
+
+    def exchange(name: str, args: dict[str, Any], content: str) -> None:
+        call_id = str(len(messages))
+        messages.extend(
+            [
+                AIMessage(content="", tool_calls=[{"id": call_id, "name": name, "args": args}]),
+                ToolMessage(name=name, tool_call_id=call_id, content=content),
+            ]
+        )
+
+    for path, chars in [
+        ("/skills/site-mechanism/SKILL.md", 9000),
+        ("/skills/site-mechanism/references/research.md", 5500),
+        ("/skills/site-mechanism/references/membrane.md", 1500),
+        ("/skills/site-mechanism/references/shielding.md", 1200),
+        ("/inputs/references/research.md", 600),
+    ]:
+        exchange("read_file", {"file_path": path, "limit": 120}, path + "x" * chars)
+    exchange(
+        "analyze_receptor_context",
+        {},
+        json.dumps(
+            {
+                "full_result": "/result-abcd.json",
+                "candidate_overview": "c" * 25000,
+                "mapping_status": "ambiguous",
+                "glycan_occupancy": None,
+            }
+        ),
+    )
+    if newest_reference:
+        exchange(
+            "read_file",
+            {
+                "file_path": "/skills/site-mechanism/references/research.md",
+                "offset": 0,
+                "limit": 120,
+            },
+            "Freshly requested exact reference " + "r" * 900,
+        )
+    else:
+        exchange("compare_reference_identity", {}, '{"mapping_status":"ambiguous"}')
+    originals = [m.model_dump() for m in messages]
+    suffix = [HumanMessage(content="No approval; unresolved evidence stays unresolved.")]
+    fitted, archived = fit_site_working_view(
+        messages,
+        reasoning=reasoning,
+        system_chars=17000,
+        max_chars=60000,
+        suffix=suffix,
+    )
+    assert archived and 17000 + sum(len(str(m.content)) for m in fitted) < 60000
+    assert [m.model_dump() for m in messages] == originals
+    assert fitted[0] is messages[0] and fitted[-1] is suffix[0]
+    if reasoning:
+        records = json.loads(fitted[1].content)["runtime_history"]
+        results = {r["tool_call_id"]: r["content"] for r in records if r["kind"] == "tool-result"}
+    else:
+        results = {m.tool_call_id: m.content for m in fitted if isinstance(m, ToolMessage)}
+    protected = [messages[2], messages[10], messages[12], messages[-1]]
+    for message in protected:
+        content = message.content
+        if reasoning:
+            try:
+                content = json.loads(content)
+            except ValueError:
+                pass
+        assert results[message.tool_call_id] == content
+    assert all(a["tool"] == "read_file" for a in archived)
+    for a in archived:
+        assert a["ref"] in {
+            "/skills/site-mechanism/references/research.md",
+            "/skills/site-mechanism/references/membrane.md",
+            "/skills/site-mechanism/references/shielding.md",
+        }
+    text = str([m.content for m in fitted])
+    assert "instructions_remain_applicable" in text
+    assert "archived_skill_reference" in text

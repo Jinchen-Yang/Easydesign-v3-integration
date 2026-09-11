@@ -8,7 +8,10 @@ Clone-local locked 0.3.2 environment installed and import probe passed, includin
 build and cuequivariance imports. Source a3149cf18eeb58648d1abbb27539bd73f746cdda, molecule
 dataset and all five weight assets match exact catalog sizes/SHA. Final installation068 returned
 ok=true and registered the existing runtime profile. CLI --help passed in check-readiness053.
-Real YAML check and generation acceptance are still pending in the corresponding golden paths.
+Real standard YAML check passed in live157: seven compiled official-scaffold strategies,
+280 planned candidates, backend0.3.2/sourcea3149cf18eeb, generation_started=false. This is
+backend executability evidence only: the independent Gate3 scientific content review failed
+and remains pending after repair. Native-YAML golden and generation acceptance remain due.
 No BoltzGen generation has been run in this autonomous attempt.
 
 Environment lock: 016440a47ff80466ead66417de866dc463018ca5ac599095c7cf50b22afb2fac.

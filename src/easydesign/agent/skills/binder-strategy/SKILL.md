@@ -28,6 +28,15 @@ explicit human override rationale and the exact current compiler/scaffold constr
 5. Use one arm when one scientific hypothesis is sufficient. Multiple arms must change concrete
    executable factors to discriminate hypotheses. State held-constant factors, expected results
    and what a negative result would mean. Do not merely rename identical experiments.
+   Default design samples all three CDR regions within their official bounds across seven
+   scaffold backgrounds. Constant bounds are policies, not constant sequences or loop lengths.
+   A CDR3-centered hypothesis does not make this a CDR3-only experiment or isolate CDR3 causality.
+   Describe the actual varying factors. A small or zero-yield sample is insufficient evidence
+   against a site/scaffold set; validation_micro is INCONCLUSIVE, never strategy superiority.
+   Bound absence claims to the retrieved evidence: missing function evidence is not proof that
+   none exists. Structural binding precedent is not inhibition or transfer to a new binder.
+   Competitive kinetics alone cannot prove specificity; retain orthogonal integrity/interference
+   controls and distinguish alternative mechanisms without claiming any is uniquely established.
 6. Call `evaluate_design_constraints` on the scientific intent before final submission. It
    checks hard domain constraints; the final trusted callback then runs the actual existing
    compiler and backend validator. You cannot label invalid output executable by persuasion.

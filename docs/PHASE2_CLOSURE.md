@@ -8,7 +8,10 @@ per-attempt evidence are in `AUTONOMOUS_V3_PROGRESS.md`.
 Two real Target Gate1 proposals (soluble044 and GPCR104) passed independent content review,
 received the scripted validation actor response through the trusted human-input path, and
 produced actual verified authoritative Target bundles. Case3 identity trap is independently
-PASS. Cases1/2/4/5 remain incomplete; no Phase2 freeze or Phase3/4 acceptance is claimed.
+PASS. Live153 subsequently independently passed Case1 soluble Gate2 and applied the actual
+Site approval through the scripted validation actor. Cases2/4/5 remain incomplete; live157's
+real standard backend check passed but independent scientific review rejected its factor and
+absence overclaims. No Phase2 freeze or Phase3/4 acceptance is claimed.
 The historical no-bound-job and evidence-page delivery defects below are repaired with targeted
 regressions. A new full regression is due after all five scientific goldens pass.
 

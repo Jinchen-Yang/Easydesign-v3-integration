@@ -25,6 +25,10 @@ transfer preserves that unreviewed proposal/job for a new review thread after a 
 It transfers no Judge verdict or approval. Live153 subsequently obtained independent Judge/Gate2 and six-section Case1 acceptance of the
 bounded DISCOURAGED hypothesis, then applied the old Site approval through the scripted validation
 actor. The exact approved hotspot and all warnings are retained for current Binder validation.
+Live157 reached standard Gate3 with real backend checks passing, but independent review rejected
+its CDR3-only factor narrative and global absence claims; no Design acceptance or approval is
+claimed. Live156 delivered the GPCR candidate overview but exceeded total context; the recorded
+read-only replay fits after archiving optional Skill references, with live acceptance still due.
 Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases2/4/5 and the Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.

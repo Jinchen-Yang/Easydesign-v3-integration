@@ -207,3 +207,69 @@ Live044 started with the exact pending patch (four dirty paths recorded in its l
 then reached a second independently reviewed Gate1 (snapshot6153e13ce99751f554683a47a692d8e75d564561dcd8553e1dd71feee50d512d).
 The actual content receipt scopes ambiguous A/B suggestions as unverified; sample-processing,
 activity and assembly limits remain visible. Scripted response delivered; Site continuation running.
+
+
+## Identity checkpoint and exact Site pages
+
+Live044's post-approval Coordinator reached Site. It acquired real UniProt/RCSB/PMID8784355
+sources and evaluated three mapped candidate patches, but spent its32-call turn traversing
+residue pages and repeated reads. Generic preview was showing only a few rows of each12-row
+page while advancing by12. The full source stayed intact, but this was not usable evidence.
+Site display now encodes all mapping and metric columns in exact tables. Size-aware pages
+advance only by the number of delivered rows. Original dictionaries and source references remain
+available at full_result.facts; no numeric rounding, residue translation or scientific metric change.
+Actual retained page now delivers8 exact rows in5432 characters and next_offset20 from offset12.
+The Site Skill directs focused candidate-label review and active discovery, retaining the
+primary-source, counterevidence and independent-Judge requirements.
+
+Targeted04517 PASS (page + Site runtime); targeted04610 PASS including exact reconstruction,
+null preservation and no skipped rows. Mypy047 exposed annotations in the display helper;
+annotation-only fixes give mypy05020 PASS. Ruff passes. No protected kernel change.
+
+The real acceptance runner can resume from an exact approved Target in the original project.
+It validates the old card and delivered scripted response, prior review snapshot, current
+bundle/oracle and stable source identity before starting a new compatible conversation. Old
+failed checkpoints/fingerprints/budgets are never overwritten. Reports identify original project,
+source thread and continuation thread, with inherited Target metrics kept separately. This is
+validation recovery using existing project-global science, not a second workflow/checkpoint engine.
+
+Live048 (phase2-goldens-20260911T181457Z) accepted case-3-identity-trap after reviewing the
+actual succeeded bundle, all129 rows, exact frozen truth, and independently reading the actual
+old DecisionRecord. Review snapshot:
+d3cb16be5ab48bd8dde7dfcc25d42a381571cc86d3bae7e03e9c54763f99e1fe.
+Canonical147 / construct129 / observed127; missing128–129; canonical=construct+18;
+no substitution/insertion. This is scoped validation acceptance, not efficacy evidence.
+
+That continuation's Coordinator then reread old Target details instead of delegating Site,
+misreading mapping.entries (a count) as an array until four corrections exhausted. In the exact
+site-not-proposed state, the Coordinator now sees its observation/delegation tools without
+Target/detail-reading tools. Full detailed science remains available to Site; pending proposal
+review restores result reading. Current progress explains preserved mapping review-required and
+not-in-snapshot provenance scope separately from whether a gate is pending. No action is scheduled
+or approved by this model surface change. Targeted0521 PASS after fixing a test assertion that
+mistook the static explanatory text for stale dynamic progress; mypy05520 PASS. Site integration
+051 continues; its known fixture-only failure is fixed by052. Live054 resumes the same exact
+approved Target with its previously reviewed identity snapshot; Site acceptance remains pending.
+
+## Current-worktree runtime recovery
+
+BoltzGen035 was interrupted during a very slow sequential download fallback. Environment,
+source and molecule asset are now verified in this clone; real CLI --help probe053 succeeds.
+The Phase2 validator config is runtime/tmp/autonomous-v3-20260912/boltzgen-runtime.json.
+No other clone environment or model was used. Miniforge receipt and BoltzGen environment lock
+016440a47ff80466ead66417de866dc463018ca5ac599095c7cf50b22afb2fac are retained.
+
+AFO039 transport failed after partial progress. CPU download recovery049 reuses exact retained
+HTTPS ranges independently across bounded retries, through the existing strict Content-Range
+reader and final size/SHA publisher. Catalog identities and transport TLS checks are unchanged;
+failed segments no longer cancel successful sibling progress in this development wrapper.
+An existing zero-byte failed diverse-checkpoint segment caused exclusive-create retries; it was
+renamed and retained as .empty-retained049 before retry. No scientific artifact was changed.
+The detached recovery also prepares remaining BoltzGen weights and materializes the fixed AFO
+bundle after checksum validation; it does not install AFO or launch GPU jobs.
+
+Targeted051 completed18 PASS plus the known stale-string test assertion;052 corrected that
+assertion and passed. Live054 reached Site in two Coordinator calls, confirming the owner
+boundary repair. Site then passed a UniProt accession as a source-card ID; the exact source-card
+precondition rejected it before calculation. This ordinary argument mismatch is the next repair.
+Identity-trap remains PASS and no Site/Phase2 acceptance is claimed.

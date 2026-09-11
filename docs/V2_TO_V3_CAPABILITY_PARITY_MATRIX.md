@@ -1,6 +1,6 @@
 # v2 → v3 scientific capability parity
 
-Current autonomous recovery (2026-09-12): **Phase 2 NOT FROZEN; Phase 3/4 not started.**
+Current autonomous recovery (2026-09-12): **Case3 identity-trap PASS; Phase 2 NOT FROZEN; Phase 3/4 not started.**
 Historical Phase 2.2d full suite was 774 PASS / 1 FAIL / 11 skips. That failure and the
 no-bound-job loop were reproduced and repaired. Current targeted evidence is recorded in
 AUTONOMOUS_V3_PROGRESS.md; a new full regression remains due at Phase 2 closure.
@@ -10,9 +10,13 @@ submitted typed Target and independent Judge opinions, and reached Gate 1. Its a
 content review passed. The scripted validation actor's response produced the old authoritative
 target bundle; the unchanged identity oracle subsequently verified P00698 / canonical147 /
 construct129 / observed127, selected auth L = label C, missing128–129 and mapping offset18.
-The run then ended before Site proposal because Coordinator reused pre-approval progress.
+Live048 independently verified the actual old DecisionRecord and accepted the full identity-trap case.
+Live044 reached real Site research and candidate evaluation, then exhausted its budget on
+partially displayed residue pages; exact table/cursor delivery is repaired. Live054 resumes
+from this approved Target for Site acceptance. The original live040 failure was caused by
+Coordinator reusing pre-approval progress.
 Its failed report is retained. This is partial acceptance, not five-case completion. Current
-repair supplies concise verified runtime progress to Coordinator at each model call.
+repair supplies concise verified runtime progress and keeps detailed Site work with its owner.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
 
@@ -36,7 +40,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Author/label/insertion/missing mapping | DS | evidence-and-numbering.md; stages/s01_target_preparation | Existing kernel via Target/Site | COMPLETE | 2.2 | test_source_author_numbering_is_not_invented | No invented canonical offset |
 | Structure/state comparison and counterstate | RS | gpcr-mechanism-and-state.md | Target/Site + Research | PARTIAL | 2.2 | real source/kernel PASS; Agent golden FAIL | Bound ligand alone cannot establish active state |
 | Ligand, partner, assembly and construct context | RS/DS | target-and-site.md; special-target-playbooks.md | Research + Target/Site | PARTIAL | 2.2 | PDB polymer/deposition retrieval | Source identity differs from context transfer |
-| Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | PARTIAL | 2.2 | Live040 real Target/Judge/Gate 1 content PASS and scripted response delivered to old decision service | No first/largest chain heuristic; missing real identity-trap completion |
+| Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | PARTIAL | 2.2 | Live040 real Target/Judge/Gate 1 content PASS and scripted response delivered to old decision service | No first/largest chain heuristic; actual identity-trap accepted in live048, broader GPCR acceptance pending |
 | Active literature search | RS | target-and-site.md; scientific-claims.md | Shared EvidenceResearch + selected corpus | PARTIAL | 2.2 | Source/status/corpus tests; original selection recovery now passes live | Bounded discovery; final complete Site/primary-literature path remains unvalidated |
 | Primary-source retrieval | RS | evidence-and-numbering.md | EvidenceResearch + focused passages | PARTIAL | 2.2 | Full XML retention, source identity, passage and cursor regressions | Acquisition receipt is not a scientific citation; real workflow not completed |
 | Database search and UniProt evidence | DS/RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch reusing ScientificHttpClient | PARTIAL | 2.2 | Real UniProt P00698 retained; first-class proposal and old comparison reached | Scientist species cannot be silently replaced |
@@ -48,7 +52,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | PTM/glycan evidence | RS/DS | special-target-playbooks.md | Research + Site existing features/motifs | PARTIAL | 2.2 | glycan runtime regression | Motif is not occupancy; absent model is not absence |
 | Source verification, strength and scope | DS/RS | evidence-and-numbering.md; scientific-claims.md | Runtime source binding + owner/Judge | PARTIAL | 2.2 | tamper/PMID/passage tests | Source verified does not imply biological entailment |
 | Conflicting and negative evidence | RS | target-and-site.md | EvidenceResearch + owner/Judge | PARTIAL | 2.2 | All bound counterevidence preserved; exact Judge delegation/oversize regressions | Live040 independent Target Judge content reviewed; Site/Design Judge acceptance remains pending |
-| Literature-derived site candidates | RS | target-and-site.md | Site + focused source cards | PARTIAL | 2.2 | Focused-card binding and source-tamper regression | Must independently map residues; real Gate 2 not completed |
+| Literature-derived site candidates | RS | target-and-site.md | Site + focused source cards | PARTIAL | 2.2 | Focused-card binding and source-tamper regression | Must independently map residues; real Site research/geometry reached in live044; Gate 2 not completed |
 | Scan-derived candidate alternatives | DS/RS | target-and-site.md | Site + old SASA/geometry | COMPLETE | 2.2 | test_site_runtime | No new fused winner score |
 | Surface accessibility / SASA / burial | DS/RS | target-and-site.md | Existing Stage 02 kernel via Site | COMPLETE | 2.2 | real deterministic tool regression | SASA is not full-VHH access |
 | Secondary structure and interface geometry | DS/RS | target-and-site.md; vhh-geometry-priors.md | Site + existing structure tools | PARTIAL | 2.2 | SASA/region geometry; broader context pending | Do not infer axes from sequence labels |
@@ -73,7 +77,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Scoped tool-argument semantics and bounded correction | RS/DS | agent/evidence_output.py; harness.py; session_store.py | Authorized owner + runtime | COMPLETE | 2.2c | 11 new projection tests; real field+path rejection → corrected path → exact four-chain result | Explicit selectors, legacy path deprecation, four shared corrections (20260912); no blanket exception recovery |
 | Consequential typed submission and runtime Target facts | DS/RS | agent/harness.py; target_assessment.py; V3_AGENT_CONTRACT_OWNERSHIP.md | Native ToolStrategy + trusted callbacks | PARTIAL | 2.2d | Typed Target and Judge exercised in live040; Gate 1 actual content PASS; downstream acceptance pending | No fenced-text success fallback; two bounded output repairs; independent scientific acceptance still required |
 | Stable source identity and canonical revision binding | DS/RS | agent/evidence_corpus.py; evidence_research.py | Existing project ArtifactRefs/corpus | PARTIAL | 2.2d | Binding/isolation/tamper tests PASS; live040 exact before/after source read verified one acquisition | No second store; current relevance never inferred from source existence |
-| Fixed scientific Golden specification and independent factual oracles | H/DS | PHASE2_GOLDEN_CASE_SPEC.md; tests/agent_golden_support.py | Validation-only reviewer and unchanged kernel | COMPLETE specification / PARTIAL live acceptance | 2.2c | Six fixed-source/negative oracle tests PASS; live040 reached and approved reviewed Gate1; subsequent Site continuation failed; complete rerun pending | Spec is fixed before live; human fixture response cannot override false facts |
+| Fixed scientific Golden specification and independent factual oracles | H/DS | PHASE2_GOLDEN_CASE_SPEC.md; tests/agent_golden_support.py | Validation-only reviewer and unchanged kernel | COMPLETE specification / PARTIAL live acceptance | 2.2c | Six fixed-source/negative oracle tests PASS; live048 actual identity-trap PASS; real Site/Design/GPCR acceptance remains pending | Spec is fixed before live; human fixture response cannot override false facts |
 | Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | Project-durable binding tests PASS; live040 acquired official sources and exact focused cards; Site research acceptance remains pending |
 | First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline typed harness PASS; live040 Target/Judge/Gate1 content PASS; Site continuation under repair | No complete real golden; cannot freeze Phase 2 |
 | Pilot generation and explicit execution approval | DS/H | pilot-diagnosis.md; orchestration/research_plans.py | Gate 3 + existing job runtime | MISSING | 3 | Phase 3 pending | Old freeze-only approval cannot authorize launch |

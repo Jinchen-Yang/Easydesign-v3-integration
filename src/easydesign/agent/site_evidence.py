@@ -151,6 +151,8 @@ def summarize_site_facts(
             }
             for r in page
         ],
+        "offset": offset,
+        "page_total": len(selected),
         "next_offset": offset + len(page) if offset + len(page) < len(selected) else None,
         "mapped_residue_count": len(rows),
         "candidate_patches": [

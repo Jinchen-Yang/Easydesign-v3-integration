@@ -43,6 +43,11 @@ numbering distinct from the normalized approved target labels; map before propos
 1. Read `read_site_evidence`. Use the approved label mapping; never invent canonical,
    construct or author numbering. `canonical_position=null` means unknown, not equal to label.
    Obtain additional pages/exact residues when needed; missing evidence is not zero.
+   facts_table is the complete requested residue page encoded without repeated keys:
+   each row follows mapping_columns then metric_columns exactly, including nulls.
+   Start from the supplied scan patches and focused literature hypotheses, then request
+   their exact labels. Do not enumerate the entire target or repeat pages already read.
+   Read full_result.facts only if an original object field is specifically needed.
 2. Compare real accessible patches and their geometry. Existing SASA and scores are derived
    metrics on the prepared target; exposure does not establish a useful epitope or affinity.
    Candidate pool membership is advisory, not permission to skip local geometry review.
@@ -80,6 +85,10 @@ candidate is not a validated epitope. Treat each limitation as part of the scien
 Search returns shallow leads only. Call select_evidence with SELECTED/DEFERRED/EXCLUDED,
 a task-specific reason and the relevant EvidenceNeed before any record/fulltext acquisition.
 Direct user-supplied PMID/PMCID/accession/PDB identifiers can be selected explicitly.
+Also perform a targeted discovery search for the mechanistic question and counterevidence;
+acquiring only the supplied identifier is not active literature discovery.
+The acquisition error's evidence_need is exact: select that need before retrying the same
+operation. structure-complex uses PPI_INTERFACE; structure-state uses STRUCTURE_STATE.
 research_evidence saves complete selected sources; its acquisition receipt contains no full text.
 Use retrieve_evidence for the current scientific question, optionally source_id, and continue
 with its cursor only when needed. Cite the returned passage card ID and exact short excerpt.

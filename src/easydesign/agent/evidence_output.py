@@ -74,6 +74,42 @@ def scientific_projection(value: Any) -> Any:
     return value
 
 
+def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
+    """Losslessly encode a bounded residue page without repeating every column name."""
+    projected: dict[str, Any] = scientific_projection(value)
+    rows = projected.get("facts", [])
+    if not rows:
+        return projected
+    mapping_columns = list(dict.fromkeys(k for row in rows for k in row["mapping"]))
+    metric_columns = list(dict.fromkeys(k for row in rows for k in row if k != "mapping"))
+    # Missing keys remain distinct from a present null. Runtime rows normally have
+    # one uniform schema; otherwise keep the original representation.
+    if any(
+        set(row["mapping"]) != set(mapping_columns) or set(row) != {"mapping", *metric_columns}
+        for row in rows
+    ):
+        return projected
+    table: dict[str, Any] = {
+        "mapping_columns": mapping_columns,
+        "metric_columns": metric_columns,
+        "rows": [
+            [*[row["mapping"][k] for k in mapping_columns], *[row[k] for k in metric_columns]]
+            for row in rows
+        ],
+        "row_count": len(rows),
+        "encoding": "Values follow mapping_columns then metric_columns; nulls retained.",
+    }
+    result = {k: v for k, v in projected.items() if k != "facts"} | {"facts_table": table}
+    # Unlike a generic preview, a shortened page must advance only over rows that
+    # were actually delivered. Source offsets are supplied by the read-only adapter.
+    if "offset" in projected:
+        while len(compact(result)) > 5500 and len(table["rows"]) > 1:
+            table["rows"].pop()
+            table["row_count"] = len(table["rows"])
+            result["next_offset"] = projected["offset"] + table["row_count"]
+    return result
+
+
 def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> Any:
     from langchain_core.messages import ToolMessage
 
@@ -147,6 +183,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         complete_facts = scientific_projection(value)
         if len(compact(complete_facts)) <= view_limit:
             projected = complete_facts
+    if message.name == "read_site_evidence" and isinstance(value, dict):
+        table_page = site_page_projection(value)
+        if len(compact(table_page)) <= view_limit:
+            projected = table_page
     if role == "judge" and len(compact(projected)) > view_limit:
         raise AgentBoundaryError(
             "Judge snapshot exceeds the scoped review limit. Narrow the proposal/evidence "

@@ -34,6 +34,7 @@ SOURCE = Path(os.environ["EASYDESIGN_GOLDEN_SOURCE_ROOT"]).resolve()
 STAMP = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 OUT = ROOT / "runtime/tmp/autonomous-v3-20260912" / f"phase2-goldens-{STAMP}"
 ACTOR = "scripted-autonomous-validation-actor-not-biological-approval"
+APPROVED_TARGET = os.environ.get("EASYDESIGN_GOLDEN_APPROVED_TARGET")
 GOALS = {
     "soluble": (
         "Develop an inhibitory VHH against hen egg-white lysozyme using 1MEL auth chain L. "
@@ -436,21 +437,34 @@ async def main():
             )
             case = OUT / name
             case.mkdir()
-            workspace = case / "workspace-root"
-            workspace.mkdir()
-            (workspace / "easydesign-workspace.yaml").write_text(
-                'schema_version: "0.1"\nworkspace_id: v3-golden-validation\n'
-            )
+            inherited = None
+            if APPROVED_TARGET and name == "soluble":
+                origin = Path(APPROVED_TARGET).resolve()
+                assert origin.is_relative_to(ROOT / "runtime/tmp/autonomous-v3-20260912")
+                workspace = origin / "workspace-root"
+                assert workspace.is_dir()
+                inherited = origin
+            else:
+                workspace = case / "workspace-root"
+                workspace.mkdir()
+                (workspace / "easydesign-workspace.yaml").write_text(
+                    'schema_version: "0.1"\nworkspace_id: v3-golden-validation\n'
+                )
             os.environ["EASYDESIGN_WORKSPACE"] = str(workspace)
             context = WorkspaceContext.from_root(workspace)
             context.ensure_layout()
-            initialize_runtime_profile(context.profile_path)
             project = context.projects_root / name
-            initialize_research_project(
-                project_root=project, target=SOURCE / name / f"rcsb-{code}.cif"
-            )
+            if inherited is None:
+                initialize_runtime_profile(context.profile_path)
+                initialize_research_project(
+                    project_root=project, target=SOURCE / name / f"rcsb-{code}.cif"
+                )
             store = SessionStore(project)
-            bridge = Phase2Bridge(project, "live-target-site", store)
+            bridge = Phase2Bridge(
+                project,
+                "live-target-site" if inherited is None else "live-site-" + STAMP.lower(),
+                store,
+            )
 
             def emit(event, case=case):
                 if event["kind"] in {
@@ -468,44 +482,105 @@ async def main():
                         handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
             try:
-                gate1 = await run_session(bridge, config, models, GOALS[name], emit=emit)
-                save(case / "gate1.json", gate1, secrets)
-                assert (
-                    gate1["status"] == "awaiting-human-approval"
-                    and gate1["card"]["gate_type"] == "target-structure"
-                ), gate1
-                assert gate1["card"]["option_id"] == f"chain-{chain.lower()}", gate1
-                pending = bridge.read_evidence()
-                save(case / "pending-identity.json", pending, secrets)
-                check_pending_identity(pending, truth[name])
-                binding_check = check_binding_roundtrip(bridge, accession)
-                save(case / "canonical-binding-roundtrip.json", binding_check, secrets)
-                assert pending["hard_facts"]["canonical_length"] == len(
-                    truth[name]["canonical_sequence"]
-                )
-                assert gate1["card"]["scientific_summary"]["hard_facts"] == pending["hard_facts"]
-                await independent_review(
-                    case,
-                    "gate1",
-                    {
-                        "card": gate1["card"],
-                        "pending": pending,
-                        "judge": judge_record(bridge, gate1["card"]),
-                        "truth": truth[name],
-                        "binding_roundtrip": binding_check,
-                    },
-                    secrets,
-                )
-                gate2 = await run_session(
-                    bridge,
-                    config,
-                    models,
-                    GOALS[name],
-                    card_id=gate1["card"]["card_id"],
-                    user=ACTOR,
-                    emit=emit,
-                    **response(gate1["card"]),
-                )
+                inherited_metrics = None
+                if inherited is not None:
+                    # Reuse approved science through project-global ownership, never edit
+                    # an incompatible thread's fingerprint, checkpoint, budget or response.
+                    old_bridge = Phase2Bridge(project, "live-target-site", store)
+                    gate1 = json.loads((inherited / "gate1.json").read_text())
+                    card = old_bridge.store.card(old_bridge.thread, gate1["card"]["card_id"])
+                    assert card.model_dump(mode="json") == gate1["card"]
+                    intent = store.response(old_bridge.thread, card.card_id)
+                    assert intent and intent["delivered"] and intent["user"] == ACTOR
+                    assert intent["response"] in {"approve", "override"}
+                    request = json.loads((inherited / "gate1-review-request.json").read_text())
+                    assert request["evidence"]["card"] == gate1["card"]
+                    saved_review = json.loads(
+                        (inherited / "gate1-independent-review.json").read_text()
+                    )
+                    save(case / "gate1-independent-review.json", saved_review, secrets)
+                    await independent_review(case, "gate1", request["evidence"], secrets)
+                    approved_identity(old_bridge, truth[name])
+                    check_binding_roundtrip(old_bridge, accession)
+                    assert bridge.target_run_id() == card.run_id
+                    assert bridge.scientific_state()["scientific_state"] == "site-not-proposed"
+                    inherited_metrics = stats(old_bridge)
+                    save(case / "inherited-target-metrics.json", inherited_metrics, secrets)
+                    save(
+                        case / "inherited-target.json",
+                        {
+                            "origin": str(inherited),
+                            "project": str(project),
+                            "source_thread": old_bridge.thread,
+                            "continuation_thread": bridge.thread,
+                            "card_id": card.card_id,
+                            "run_id": card.run_id,
+                            "reason": "Developer retry after bounded Site failure; exact approved "
+                            "target reused without pipeline restart or checkpoint rewrite",
+                        },
+                        secrets,
+                    )
+                    save(case / "gate1.json", gate1, secrets)
+                    target = bridge.read_evidence()
+                    identity_report = approved_identity(bridge, truth[name])
+                    save(case / "approved-target.json", target, secrets)
+                    save(case / "approved-identity-oracle.json", identity_report, secrets)
+                    await independent_review(
+                        case,
+                        "identity-trap",
+                        {
+                            "target": target,
+                            "identity": identity_report,
+                            "truth": truth[name],
+                            "gate1": gate1["card"],
+                        },
+                        secrets,
+                    )
+                    report["cases"].append({"case": "case-3-identity-trap", "status": "PASS"})
+                    active_case = "case-1-soluble"
+                    save(OUT / "report.json", report, secrets)
+                    gate2 = await run_session(bridge, config, models, GOALS[name], emit=emit)
+                else:
+                    gate1 = await run_session(bridge, config, models, GOALS[name], emit=emit)
+                    save(case / "gate1.json", gate1, secrets)
+                    assert (
+                        gate1["status"] == "awaiting-human-approval"
+                        and gate1["card"]["gate_type"] == "target-structure"
+                    ), gate1
+                    assert gate1["card"]["option_id"] == f"chain-{chain.lower()}", gate1
+                    pending = bridge.read_evidence()
+                    save(case / "pending-identity.json", pending, secrets)
+                    check_pending_identity(pending, truth[name])
+                    binding_check = check_binding_roundtrip(bridge, accession)
+                    save(case / "canonical-binding-roundtrip.json", binding_check, secrets)
+                    assert pending["hard_facts"]["canonical_length"] == len(
+                        truth[name]["canonical_sequence"]
+                    )
+                    assert (
+                        gate1["card"]["scientific_summary"]["hard_facts"] == pending["hard_facts"]
+                    )
+                    await independent_review(
+                        case,
+                        "gate1",
+                        {
+                            "card": gate1["card"],
+                            "pending": pending,
+                            "judge": judge_record(bridge, gate1["card"]),
+                            "truth": truth[name],
+                            "binding_roundtrip": binding_check,
+                        },
+                        secrets,
+                    )
+                    gate2 = await run_session(
+                        bridge,
+                        config,
+                        models,
+                        GOALS[name],
+                        card_id=gate1["card"]["card_id"],
+                        user=ACTOR,
+                        emit=emit,
+                        **response(gate1["card"]),
+                    )
                 save(case / "gate2.json", gate2, secrets)
                 assert (
                     gate2["status"] == "awaiting-human-approval"
@@ -517,7 +592,7 @@ async def main():
                 save(case / "approved-target.json", target, secrets)
                 identity_report = approved_identity(bridge, truth[name])
                 save(case / "approved-identity-oracle.json", identity_report, secrets)
-                if name == "soluble":
+                if name == "soluble" and inherited is None:
                     await independent_review(
                         case,
                         "identity-trap",
@@ -548,8 +623,15 @@ async def main():
                     metrics["corpus_documents_all_bindings"] > 0
                     and metrics["total_retrieved_raw_chars"] > 0
                 )
-                assert {"target", "site", "judge", "coordinator"} <= set(metrics["calls_by_role"])
-                tools = [e["payload"]["name"] for e in metrics["events"] if e["kind"] == "tool"]
+                target_metrics = inherited_metrics or metrics
+                assert {"target", "site", "judge", "coordinator"} <= (
+                    set(metrics["calls_by_role"]) | set(target_metrics["calls_by_role"])
+                )
+                tools = [
+                    e["payload"]["name"]
+                    for e in [*metrics["events"], *target_metrics["events"]]
+                    if e["kind"] == "tool"
+                ]
                 assert "propose_canonical_identity" in tools and "retrieve_evidence" in tools
                 if name == "soluble":
                     assert "analyze_receptor_context" not in tools

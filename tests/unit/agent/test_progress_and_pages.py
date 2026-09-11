@@ -380,11 +380,88 @@ async def test_coordinator_refreshes_runtime_progress_without_rewriting_history(
     assert '"scientific_state":"site-not-proposed"' in seen[-1].system_message.text
     assert '"next_specialist":"site-mechanism"' in seen[-1].system_message.text
     assert "not-in-summary" not in seen[-1].system_message.text
+    names = {t.name for t in seen[-1].tools}
+    assert "task" in names and "read_scientific_state" in names
+    assert not names & {"read_target_evidence", "read_evidence_result"}
     assert seen[-1].messages == historical == request.messages
     assert request.system_message.text == "Coordinate"
     current.update(scientific_state="hotspot-approved", next_specialist="none")
     await guard.awrap_model_call(request, handler)
     assert '"next_specialist":"none"' in seen[-1].system_message.text
-    assert "site-not-proposed" not in seen[-1].system_message.text
+    assert "read_evidence_result" in {t.name for t in seen[-1].tools}
+    assert '"scientific_state":"site-not-proposed"' not in seen[-1].system_message.text
     assert not b._jobs()
     assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
+
+
+def test_site_page_preserves_all_mapping_and_metric_values_in_compact_table() -> None:
+    from easydesign.agent.evidence_output import site_page_projection
+
+    facts = [
+        {
+            "mapping": {
+                "label_seq_id": i,
+                "canonical_position": i + 18,
+                "source_author_chain_id": "L",
+                "source_author_residue_id": str(i),
+                "insertion_code": None,
+                "mapping_status": "review-required",
+            },
+            "raw_sasa": i * 1.135793,
+            "rsasa": 0.123456789,
+            "surface_eligible": i % 2 == 0,
+            "declared_topology": None,
+        }
+        for i in range(1, 13)
+    ]
+    original = {
+        "facts": facts,
+        "next_offset": 12,
+        "limitations": ["No affinity claim"],
+        "candidate_patches": [{"name": "actual-patch", "label_seq_ids": [2, 4, 6]}],
+    }
+    page = site_page_projection(original)
+    table = page["facts_table"]
+    assert len(table["rows"]) == table["row_count"] == 12
+    reconstructed = []
+    n = len(table["mapping_columns"])
+    for row in table["rows"]:
+        reconstructed.append(
+            {
+                "mapping": dict(zip(table["mapping_columns"], row[:n], strict=True)),
+                **dict(zip(table["metric_columns"], row[n:], strict=True)),
+            }
+        )
+    assert reconstructed == facts
+    assert page["next_offset"] == 12 and page["limitations"] == original["limitations"]
+    assert page["candidate_patches"] == original["candidate_patches"]
+    assert len(compact(page)) < len(compact(original))
+    assert original["facts"] == facts
+    facts[0]["mapping"].pop("canonical_position")
+    assert site_page_projection(original) == scientific_projection(original)
+
+
+def test_site_display_page_cannot_skip_rows_hidden_by_size_limit() -> None:
+    from easydesign.agent.evidence_output import site_page_projection
+
+    rows = [
+        {"mapping": {"label_seq_id": i, "source_author_residue_id": "x" * 500}, "rsasa": i / 30}
+        for i in range(24)
+    ]
+    delivered = []
+    offset = 0
+    while True:
+        raw = {
+            "facts": rows[offset : offset + 12],
+            "offset": offset,
+            "page_total": len(rows),
+            "next_offset": offset + 12 if offset + 12 < len(rows) else None,
+        }
+        page = site_page_projection(raw)
+        assert len(compact(page)) <= 5500
+        delivered.extend(row[0] for row in page["facts_table"]["rows"])
+        if page["next_offset"] is None:
+            break
+        assert page["next_offset"] == len(delivered)
+        offset = page["next_offset"]
+    assert delivered == list(range(24))

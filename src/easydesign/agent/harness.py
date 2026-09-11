@@ -248,6 +248,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             and self.bridge.get_job_status()["status"] == "no-bound-job"
         ):
             available = [t for t in available if t.name != "get_job_status"]
+        coordinator_state = None
+        if self.role == "coordinator" and isinstance(self.bridge, Phase2Bridge):
+            coordinator_state = self.bridge.scientific_state()
+            if coordinator_state["scientific_state"] == "site-not-proposed":
+                # Detailed mapping belongs to Site once Target is approved. Keep
+                # observation/delegation available; do not reread Target as a new gate.
+                available = [
+                    t
+                    for t in available
+                    if t.name not in {"read_target_evidence", "read_evidence_result"}
+                ]
         if isinstance(self.bridge, Phase2Bridge):
             # The checkpoint retains every message. The model sees a working set of
             # recent detailed tool views; older archived results remain addressable.
@@ -307,7 +318,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
 
             # Approval resumes the old tool call and retains earlier scientific views.
             # Refresh only verified progress, never an interpretation or a scheduler.
-            state = self.bridge.scientific_state()
+            assert coordinator_state is not None
+            state = coordinator_state
             progress = {
                 key: state[key]
                 for key in ("scientific_state", "gate_type", "next_specialist")
@@ -320,7 +332,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     + compact(progress)
                     + "\nEarlier pending cards and tool views are historical after delivery. "
                     "Continue the requested scope using this state; read_scientific_state "
-                    "provides its full evidence. Do not ask again for a delivered approval."
+                    "provides its full evidence. Do not ask again for a delivered approval. "
+                    "Mapping review-required is a correspondence qualification, not a pending "
+                    "gate when runtime progress is site-not-proposed. Target's scoped "
+                    "approval_provenance=not-in-snapshot is not a pending approval either. "
+                    "Delegate detailed mapping and site research to Site; do not inspect "
+                    "each mapping entry or source yourself."
                 )
             )
         from langchain_core.utils.function_calling import convert_to_openai_tool

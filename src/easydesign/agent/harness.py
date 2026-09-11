@@ -136,6 +136,8 @@ mapped hotspots. Do not perform its analysis yourself or ask Target to choose si
 After the Site specialist returns, delegate evidence-judge. It reviews the runtime-bound current
 Site proposal, not a description you invent. Then call request_scientific_decision using its
 trusted assessment_id and option_id=site. Only that tool creates a real human interrupt.
+If a current Site proposal already exists, including an explicitly resumed proposal, obtain
+its independent Judge review directly. Do not repeat completed Site creation or preparation.
 Never substitute prose confirmation for a card or claim approval from chat. A warning/reject
 opinion about a testable DISCOURAGED site can be presented for human revision or explicit
 OVERRIDE. Runtime BLOCKED constraints cannot be overridden. Do not manufacture authority.

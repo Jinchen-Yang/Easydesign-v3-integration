@@ -94,6 +94,72 @@ def test_reasoning_view_preserves_evidence_and_user_turns_without_mutating_check
     assert reasoning_working_view([user, result]) == [user, result]
 
 
+def test_repeated_field_indexes_fit_without_archiving_science_and_are_reconstructable() -> None:
+    from copy import deepcopy
+
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from easydesign.agent.evidence_output import fit_site_working_view, reasoning_working_view
+    from easydesign.agent.session_store import compact
+
+    fields = ["verified_source_field_" + str(i) for i in range(20)]
+    messages: list[Any] = [HumanMessage(content="Preserve contradictory findings.")]
+    for i in range(12):
+        messages += [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"id": str(i), "name": "read_evidence_result", "args": {"path": ["state"]}}
+                ],
+            ),
+            ToolMessage(
+                name="read_evidence_result",
+                tool_call_id=str(i),
+                content=compact(
+                    {
+                        "full_result": "/result-aabb.json",
+                        "stored_fields": fields,
+                        "counterevidence": [str(i)],
+                        "value": {"occupancy": None},
+                    }
+                ),
+            ),
+        ]
+    original = [m.model_dump() for m in messages]
+    view = reasoning_working_view(messages)
+    payload = json.loads(view[1].content)
+    restored = deepcopy(payload)
+    indexes = {}
+    originals = {
+        m.tool_call_id: json.loads(m.content) for m in messages if isinstance(m, ToolMessage)
+    }
+    for record in restored["runtime_history"]:
+        if record["kind"] != "tool-result":
+            continue
+        content = record["content"]
+        if "stored_fields_from_tool_call" in content:
+            content["stored_fields"] = indexes[content.pop("stored_fields_from_tool_call")]
+        indexes[record["tool_call_id"]] = content["stored_fields"]
+        assert content == originals[record["tool_call_id"]]
+    assert [m.model_dump() for m in messages] == original
+    compact_chars = sum(len(str(m.content)) for m in view)
+    expanded_chars = len(messages[0].content) + len(compact(restored))
+    assert expanded_chars - compact_chars > 4000
+    system_chars = 60000 - (compact_chars + expanded_chars) // 2
+    fitted, archived = fit_site_working_view(
+        messages, reasoning=True, system_chars=system_chars, max_chars=60000, suffix=[]
+    )
+    assert not archived and system_chars + sum(len(str(m.content)) for m in fitted) < 60000
+    # A later user turn starts an independent record with its own complete field index.
+    following = reasoning_working_view(
+        [*messages, HumanMessage(content="New scope"), *messages[1:3]]
+    )
+    assert (
+        json.loads(following[-1].content)["runtime_history"][1]["content"]["stored_fields"]
+        == fields
+    )
+
+
 @pytest.mark.parametrize("reasoning", [False, True])
 def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoning: bool) -> None:
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage

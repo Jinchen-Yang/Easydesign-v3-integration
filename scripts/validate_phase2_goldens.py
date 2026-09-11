@@ -571,13 +571,24 @@ async def main():
                         assert jobs_before == [
                             j.job_id for j in bridge.controller.list(project_id=name)
                         ]
-                        continuity_threads = [source_thread]
+                        continuity_threads = []
+                        ancestor = source_thread
+                        while ancestor not in continuity_threads:
+                            continuity_threads.append(ancestor)
+                            ancestor_bridge = Phase2Bridge(project, ancestor, store)
+                            received = ancestor_bridge.thread_latest("site-proposal-received")
+                            if received is None:
+                                break
+                            assert received["proposal_id"] == completed_proposal["proposal_id"]
+                            ancestor = received["source_thread"]
                         save(
                             case / "inherited-unreviewed-site.json",
                             {
                                 "origin": str(source_case),
                                 "source_thread": source_thread,
                                 "continuation_thread": bridge.thread,
+                                "source_threads": continuity_threads,
+                                "source_model_configuration": source_report["model_configuration"],
                                 "proposal_id": completed_proposal["proposal_id"],
                                 "job_id": completed_proposal["job_id"],
                                 "snapshot": snapshot,

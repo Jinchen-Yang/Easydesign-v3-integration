@@ -740,10 +740,13 @@ class Phase2Bridge(TargetBridge):
                 "next_specialist": "none" if self.through == "site" else "binder-strategy",
                 "site": approved,
             }
+        revision = (
+            self.store.revision_for(self.thread, proposal["request_identity"]) if proposal else None
+        )
         return {
             "scientific_state": "awaiting-human-approval" if proposal else "site-not-proposed",
             "gate_type": "site-hotspot",
-            "next_specialist": "site-mechanism",
+            "next_specialist": "site-mechanism" if not proposal or revision else "evidence-judge",
             "proposal": proposal["intent"] if proposal else None,
         }
 

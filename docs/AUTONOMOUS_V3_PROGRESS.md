@@ -1092,3 +1092,48 @@ Mypy151:4source files PASS. Protected151:all385 baseline files unchanged.
 Next live151 resumes live149's completed unreviewed Site proposal for Judge/Gate2 and then
 Binder validation; live152 resumes the independently approved GPCR Target. Configuration stays
 Pro/low, Site16384/other8192,32shared calls/60000input. Phase2 NOT FROZEN; Phase3/4 NOT STARTED.
+
+
+### Coordinator routing and repeated field-directory metadata (live151/152)
+
+Live151 (`phase2-goldens-20260911T223547770192Z`, soluble) successfully transferred the exact
+original live149 Site proposal606ec24778f759e845452a4788a560fca234a6520e826e4a9033394c04717376
+and original job-bbb38832cfc2405f into live-site-20260911t223547770192z. No scientific job was
+created. It then ended incomplete after two Coordinator calls: actual SDK stop_reason=max_tokens,
+output8192, with neither text nor tools. The prior19calls remain included in source-thread metrics;
+no Gate2 card or independent acceptance was produced. Case3's exact unchanged snapshot PASS was
+retained. The unreviewed proposal remains current in live151 and is the next recovery source.
+
+The verified next_specialist previously still said Site when an unreviewed proposal already
+existed. It now directs this state to Evidence Judge; existing trusted REVISE outcomes direct
+it back to Site. The Coordinator instructions explicitly cover already-completed/resumed Site
+proposals. Transfer lineage metrics now follow all same-project receipt ancestors, preserving
+actual per-execution calls across repeated engineering recovery rather than losing the first Site
+research measurements. No previous budget, fingerprint or native checkpoint is overwritten.
+
+Only Coordinator is configured without thinking for the next retry; it still uses DeepSeek v4 Pro
+with8192output tokens. Scientific specialists remain Pro/low (Site16384; other8192). The existing
+public OpenAI-format adapter handles this Coordinator role and its actual request metadata observer
+will be present again. Shared32calls/60000input remain unchanged. This is an explicit engineering
+configuration choice, not a scientific oracle change. Before/after/model-config-change153 receipts:
+ff188ad3e25a994df084375565ac81374004773101ae2d7c65444ea92b479938
+→5d3b180249f800642bd084e63f2752b4883abcdf5c170d624a4a9450922e61f3.
+
+Live152 (`phase2-goldens-20260911T223548063652Z`, GPCR) completed receptor analysis and correctly
+used the newly supplied field directories. At17calls (Coordinator3/Site14), its next input was
+77676chars; old whole-result archiving reduced this to60112, still above the60000guard. No oversized
+request was sent and no Site proposal/Gate2 was created. This is not a negative biological result.
+Repeated identical stored_fields lists now occur once per completed-tool history record; later
+instances point to that original tool-call field list. This is navigation-metadata encoding only,
+not removal of scientific data or tool arguments. The original messages remain unchanged.
+Actual retained native checkpoint:65messages,26metadata references; its unbounded history projection
+was112206chars before and108021after. Expanding the references reproduced every original history
+record exactly. This is a deterministic projection check, not an actual sent-context measurement;
+the next live retry verifies the latter. Receipt:context-projection153.json.
+
+Targeted153:37 PASS (50.47s), with the expected framework forced-tool/thinking warning; includes
+complete evidence/argument preservation, field-directory expansion, context fitting, Site transfer,
+REVISE routing and actual SDK tool/adapter contracts. Isolated routing draft:7 PASS (45.90s), two
+pytest import-rewrite warnings. Ruff153 PASS; mypy153:3source files PASS. No production/GPU jobs.
+Next live153 resumes live151's unchanged unreviewed Site; live154 reuses the approved GPCR Target.
+Phase2 NOT FROZEN. Only Case3 is accepted; Phase3/4 NOT STARTED.

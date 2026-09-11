@@ -29,6 +29,7 @@ def test_explicit_site_transfer_preserves_snapshot_jobs_and_original_history(
     old_execution = source.store.latest_execution(source.thread)
     fingerprints = [tuple(r) for r in source.store.db.execute("SELECT * FROM threads ORDER BY id")]
     assert destination.current_site() is None
+    assert source.scientific_state()["next_specialist"] == "evidence-judge"
     result = destination.transfer_unreviewed_site(
         source.thread, expected_proposal_id=proposal["proposal_id"]
     )
@@ -49,6 +50,7 @@ def test_explicit_site_transfer_preserves_snapshot_jobs_and_original_history(
         == snapshot
     )
     assert destination.approved_site() is None
+    assert destination.scientific_state()["next_specialist"] == "evidence-judge"
     assert destination.terminal_result("not approved")["status"] == "incomplete-turn"
 
     # Fresh independent Judge and the original Gate 2 service remain required.
@@ -84,3 +86,19 @@ def test_site_transfer_rejects_unsafe_or_unscoped_continuity(site_bridge: Any, f
         destination.transfer_unreviewed_site(source_thread, expected_proposal_id=expected)
     assert len(source.store.events(destination.thread)) == before
     assert not source.thread_latest("site-proposal-transferred")
+
+
+def test_site_revision_returns_to_site_owner_after_review(site_bridge: Any) -> None:
+    source = site_bridge
+    prepare(source)
+    card = reviewed_card(source)
+    assert source.scientific_state()["next_specialist"] == "evidence-judge"
+    source.store.respond(
+        source.thread,
+        card.card_id,
+        "revise",
+        "synthetic-scientist",
+        human_instruction="Reconsider a distinct exposed patch before returning for review.",
+    )
+    source.apply_decision(card)
+    assert source.scientific_state()["next_specialist"] == "site-mechanism"

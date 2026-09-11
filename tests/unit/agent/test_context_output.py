@@ -92,3 +92,70 @@ def test_reasoning_view_preserves_evidence_and_user_turns_without_mutating_check
     assert len(str(view)) < len(str(messages)) / 4
     assert reasoning_working_view([user, assistant]) == [user, assistant]
     assert reasoning_working_view([user, result]) == [user, result]
+
+
+@pytest.mark.parametrize("reasoning", [False, True])
+def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoning: bool) -> None:
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from easydesign.agent.evidence_output import fit_site_working_view
+
+    user = HumanMessage(content="Trusted original goal " + "g" * 35000)
+    messages = [user]
+    for i in range(6):
+        name = "evaluate_candidate_site" if i == 2 else "retrieve_evidence"
+        messages.extend(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[{"id": str(i), "name": name, "args": {"question": str(i)}}],
+                ),
+                ToolMessage(
+                    name=name,
+                    tool_call_id=str(i),
+                    content=json.dumps(
+                        {
+                            "full_result": f"/result-{i + 10:x}.json",
+                            "source_id": f"synthetic-{i}",
+                            "passage": "e" * 4800,
+                            "limitations": ["uncertain", "counterevidence retained"],
+                            "mapping": {"canonical": None, "status": "ambiguous"},
+                        }
+                    ),
+                ),
+            ]
+        )
+    original = [m.model_dump() for m in messages]
+    suffix = [HumanMessage(content="Runtime phase notice; no scientific approval.")]
+    fitted, archived = fit_site_working_view(
+        messages, reasoning=reasoning, system_chars=5000, max_chars=60000, suffix=suffix
+    )
+    assert archived and 5000 + sum(len(str(m.content)) for m in fitted) < 60000
+    assert [m.model_dump() for m in messages] == original
+    assert fitted[0] is user and fitted[-1] is suffix[0]
+    assert not ({a["ref"] for a in archived} & {"/result-c.json", "/result-f.json"})
+    if reasoning:
+        records = json.loads(fitted[1].content)["runtime_history"]
+        results = {r["tool_call_id"]: r["content"] for r in records if r["kind"] == "tool-result"}
+    else:
+        results = {
+            m.tool_call_id: json.loads(m.content) for m in fitted if isinstance(m, ToolMessage)
+        }
+    for call_id in ["2", "5"]:
+        original_tool = next(
+            m for m in messages if isinstance(m, ToolMessage) and m.tool_call_id == call_id
+        )
+        assert results[call_id] == json.loads(original_tool.content)
+    for a in archived:
+        assert any(v.get("archived_result") == a["ref"] and v["partial"] for v in results.values())
+    small = [HumanMessage(content="Small goal")]
+    same, archive = fit_site_working_view(
+        small, reasoning=reasoning, system_chars=100, max_chars=60000, suffix=[]
+    )
+    assert same == small and not archive
+    # A large immutable human/base context remains oversized for the caller's hard guard.
+    huge = [HumanMessage(content="h" * 61000)]
+    large, archive = fit_site_working_view(
+        huge, reasoning=reasoning, system_chars=100, max_chars=60000, suffix=[]
+    )
+    assert large == huge and not archive

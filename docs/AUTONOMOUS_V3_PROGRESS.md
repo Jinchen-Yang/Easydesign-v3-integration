@@ -994,3 +994,46 @@ after requesting16384. Correcting that expectation yielded targeted147b:1 PASS (
 The SDK test confirms16384 reaches the actual request and signed blocks round-trip intact.
 Ruff147 PASS; mypy147:8source files PASS. No production/GPU jobs were added.
 Next live147/148 resume the independently approved soluble/GPCR Targets. Phase2 NOT FROZEN.
+
+
+### Preserve pending submission repairs and fit total Site context (live147/148)
+
+Live147 (`phase2-goldens-20260911T215005029436Z`, soluble) ended at23calls
+(Coordinator4/Site19; peak sent context50869). It used the new canonical lookup and corrected
+precursor/mature numbering, performed discovery and candidate geometry checks. The first complete
+SiteIntent response used9546output tokens and passed schema parsing; runtime correctly rejected
+an identity research conclusion without that topic's research record. After intervening reads,
+a later response used10990tokens with stop_reason=tool_use but an empty SiteIntent input. That
+response was NOT a max_tokens truncation. Two correction slots were exhausted; no proposal,
+Judge or Gate2 was produced. The final offending runtime diagnostic was lost because the old
+code reserved a repair before logging the rejection; this ordering is now corrected.
+
+Live148 (`phase2-goldens-20260911T215004778505Z`, GPCR) ended at9calls
+(Coordinator2/Site7; peak sent context59183), at the60000input guard after more scoped reads.
+It acquired complete GPCRdb context, invoked the existing receptor analysis and read canonical
+correspondences. It had not yet performed discovery search or produced a Site proposal. Thus
+it remains FAIL, regardless of the acquired source/context volume. Neither failure is biological.
+
+Two local Harness fixes follow these traces. A rejected parsed opinion and its exact diagnostic
+are retained in the existing rejected-submission event and supplied as explicitly unaccepted
+model content on subsequent calls, including after corrective tool reads. The view is scoped to
+role/thread/execution and cleared by successful submission preflight. It conveys no hard facts,
+scientist instruction or approval. This fixes the earlier transient-only correction, which could
+vanish when the model chose a tool action. Every attempt still consumes the same persisted budgets.
+Rejection logging now precedes reserving a correction, so a terminal exhaustion retains its cause.
+
+When Site's actual total request would exceed60000, older complete registered tool views are
+replaced by explicit references to their existing verified artifacts, oldest first. The newest
+answer and latest candidate evaluation remain intact, along with original user turns, tool
+arguments and all native checkpoint messages. The runtime logs before/after counts and archived
+refs. The same hard guard still rejects an oversized pinned/base context. Missing fields remain
+unknown and can be reread; no new source/checkpoint/artifact mechanism or model summary is added.
+Independent Judge snapshots do not use this reduction and retain their existing full-content guard.
+
+Targeted149:38 PASS (29.58s), including a complete mocked submission-rejection → corrective read
+→ persistent diagnostic/opinion → accepted preflight/Gate2 sequence without duplicate proposals,
+plus both reasoning/native total-context fits and exact latest answer/evaluation retention.
+The existing source integrity, scoped retrieval, Judge counterevidence and actual SDK tests also
+pass. Ruff149 found one overlong test string; formatting corrected, Ruff149b PASS. mypy149:2source
+files PASS. Model configuration remains Pro/low, Site16384/other8192,32shared calls/60000input.
+Next live149/150 resume the same approved Targets. Phase2 remains NOT FROZEN; only Case3 PASS.

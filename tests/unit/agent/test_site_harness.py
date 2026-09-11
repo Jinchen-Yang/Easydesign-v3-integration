@@ -389,3 +389,74 @@ async def test_judge_prose_repaired_within_existing_budget(site_bridge: Any) -> 
         )
         == 1
     )
+
+
+class ResearchCorrectionSite(SiteModel):
+    corrective_read: bool = False
+    retained_after_read: bool = False
+
+    def answer(self, messages: Any) -> AIMessage:
+        pending = []
+        if self.role == "site":
+            for m in messages:
+                if isinstance(m, HumanMessage) and '"last_rejected_submission"' in m.text:
+                    pending.append(json.loads(m.text))
+        if pending:
+            assert pending[-1]["last_rejected_submission"]["selected_site"][
+                "hotspot_label_seq_ids"
+            ] == [1, 2, 3]
+            assert "SYNTHETIC research correction" in pending[-1]["diagnostic"]
+            if not self.corrective_read:
+                self.corrective_read = True
+                return self.call("read_site_evidence")
+            self.retained_after_read = True
+        return super().answer(messages)
+
+
+@pytest.mark.asyncio
+async def test_runtime_submission_correction_survives_intervening_tool_round(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.contracts import ResearchConclusionMismatch
+    from easydesign.agent.harness import RoleBoundary
+
+    original = site_bridge.validate_site_research
+    rejected = []
+
+    def preflight(intent: Any) -> Any:
+        if not rejected:
+            rejected.append(intent.model_dump(mode="json"))
+            raise ResearchConclusionMismatch(
+                "SYNTHETIC research correction: inspect the candidate evidence "
+                "before correcting the opinion."
+            )
+        return original(intent)
+
+    monkeypatch.setattr(site_bridge, "validate_site_research", preflight)
+    models = {r: ResearchCorrectionSite(role=r) for r in PHASE2_ALLOWED}
+    result = await run_session(
+        site_bridge, scripted_config(), models, "Assess an exploratory site."
+    )
+    assert result["status"] == "awaiting-human-approval"
+    assert models["site"].corrective_read and models["site"].retained_after_read
+    events = site_bridge.store.events(site_bridge.thread)
+    rejection = next(e["payload"] for e in events if e["kind"] == "rejected-submission")
+    assert rejection["submitted_opinion"] == rejected[0]
+    assert len([e for e in events if e["kind"] == "contract-repair"]) == 1
+    assert len([e for e in events if e["kind"] == "site-proposal"]) == 1
+    guard = RoleBoundary(
+        site_bridge,
+        "site",
+        scripted_config(),
+        "Assess an exploratory site.",
+        execution_id=rejection["execution_id"],
+    )
+    assert guard._pending_submission_context() is None
+    foreign = RoleBoundary(
+        site_bridge,
+        "site",
+        scripted_config(),
+        "Assess an exploratory site.",
+        execution_id="another-execution",
+    )
+    assert foreign._pending_submission_context() is None

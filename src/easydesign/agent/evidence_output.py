@@ -146,6 +146,73 @@ def reasoning_working_view(messages: list[Any]) -> list[Any]:
     return output
 
 
+def fit_site_working_view(
+    messages: list[Any],
+    *,
+    reasoning: bool,
+    system_chars: int,
+    max_chars: int,
+    suffix: list[Any],
+) -> tuple[list[Any], list[dict[str, str]]]:
+    """Fit older whole tool views, preserving the newest answer and candidate evaluation.
+
+    The original messages/artifacts are untouched. This is Site's reading context,
+    not a reduction of an independent Judge snapshot or a scientific summary.
+    """
+    from langchain_core.messages import ToolMessage
+
+    working = list(messages)
+
+    def render() -> list[Any]:
+        return (reasoning_working_view(working) if reasoning else list(working)) + suffix
+
+    def size(view: list[Any]) -> int:
+        return system_chars + sum(len(str(m.content)) for m in view)
+
+    view = render()
+    if size(view) <= max_chars:
+        return view, []
+    detailed = []
+    for i, message in enumerate(working):
+        if not isinstance(message, ToolMessage) or not isinstance(message.content, str):
+            continue
+        try:
+            value = json.loads(message.content)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(value, dict) and value.get("full_result"):
+            detailed.append((i, value))
+    pinned = {detailed[-1][0]} if detailed else set()
+    evaluations = [i for i, _ in detailed if working[i].name == "evaluate_candidate_site"]
+    if evaluations:
+        pinned.add(evaluations[-1])
+    archived = []
+    for i, value in detailed:
+        if i in pinned:
+            continue
+        ref = value["full_result"]
+        record = {"tool": working[i].name or "", "ref": ref}
+        replacement = compact(
+            {
+                "archived_result": ref,
+                "partial": True,
+                "note": "Earlier complete tool view is retained in this execution's "
+                "verified artifact and checkpoint. Replaced here to fit the total context "
+                "budget. Read a consequential missing field explicitly; omitted values "
+                "are not negative evidence or resolved uncertainty.",
+            }
+        )
+        if len(replacement) >= len(str(working[i].content)):
+            continue
+        working[i] = working[i].model_copy(update={"content": replacement})
+        archived.append(record)
+        view = render()
+        if size(view) <= max_chars - min(1000, max_chars // 10):
+            break
+    # The caller's unchanged hard guard rejects a still-oversized pinned/base context.
+    return view, archived
+
+
 def preview(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, dict):
         return {

@@ -42,6 +42,7 @@ from .design_contracts import BinderIntent
 from .evidence_corpus import ContinueEvidence, RetrieveEvidence
 from .evidence_output import (
     ModelEvidenceScope,
+    fit_site_working_view,
     output_message,
     read_query,
     reasoning_working_view,
@@ -242,6 +243,29 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if isinstance(bridge, Phase2Bridge)
             else ALLOWED[role]
         )
+
+    def _pending_submission_context(self) -> dict[str, Any] | None:
+        if self.execution_id is None or not self.structured_output:
+            return None
+        row = self.bridge.store.db.execute(
+            "SELECT kind,payload FROM events WHERE thread=? "
+            "AND kind IN ('rejected-submission','submission-preflight-passed') "
+            "AND json_extract(payload,'$.role')=? "
+            "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
+            (self.bridge.thread, self.role, self.execution_id),
+        ).fetchone()
+        if row is None or row[0] == "submission-preflight-passed":
+            return None
+        value = json.loads(row[1])
+        return {
+            "last_rejected_submission": value.get("submitted_opinion"),
+            "diagnostic": value["diagnostic"],
+            "authority": "Runtime correction of an unaccepted model-authored opinion. "
+            "The opinion is not a hard fact, approved proposal or scientist instruction. "
+            "Correct the diagnosed issue using verified evidence; preserve its other "
+            "supported content and material unknowns. Required read-only research remains "
+            "available within the original execution budget. Do not restart completed work.",
+        }
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         available = [t for t in request.tools if getattr(t, "name", None) in self.allowed]
@@ -633,8 +657,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if reasoning
                 else list(request.messages)
             )
+            context_suffix = []
+            pending_submission = self._pending_submission_context()
+            if pending_submission is not None:
+                context_suffix.append(HumanMessage(content=compact(pending_submission)))
             if synthesize:
-                call_messages.append(
+                context_suffix.append(
                     HumanMessage(
                         content="Runtime phase notice (not a scientist decision or approval): "
                         "The reading phase has ended. Submit SiteIntent now from the "
@@ -643,9 +671,38 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "the runtime and independent Judge may reject an insufficient proposal."
                     )
                 )
+            call_messages.extend(context_suffix)
             chars = len(str(request.system_message)) + sum(
                 len(str(m.content)) for m in call_messages
             )
+            if (
+                self.role == "site"
+                and isinstance(self.bridge, Phase2Bridge)
+                and chars > self.config.max_input_chars
+            ):
+                before_chars = chars
+                call_messages, archived = fit_site_working_view(
+                    list(request.messages),
+                    reasoning=reasoning,
+                    system_chars=len(str(request.system_message)),
+                    max_chars=self.config.max_input_chars,
+                    suffix=context_suffix,
+                )
+                chars = len(str(request.system_message)) + sum(
+                    len(str(m.content)) for m in call_messages
+                )
+                self.bridge.store.event(
+                    self.bridge.thread,
+                    "context-compaction",
+                    {
+                        "role": self.role,
+                        "execution_id": self.execution_id,
+                        "before_chars": before_chars,
+                        "after_chars": chars,
+                        "archived_views": archived,
+                        "original_messages_unchanged": True,
+                    },
+                )
             if chars > self.config.max_input_chars:
                 raise AgentBoundaryError("Model context budget exceeded; worker remains detached")
             self.bridge.store.reserve_model_call(
@@ -803,6 +860,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             },
                         )
                 if not diagnostic:
+                    self.bridge.store.event(
+                        self.bridge.thread,
+                        "submission-preflight-passed",
+                        {"role": self.role, "execution_id": self.execution_id},
+                    )
                     return response
             elif any(isinstance(m, ToolMessage) for m in response.result):
                 # ToolStrategy already returned an exact schema error through the bounded
@@ -815,7 +877,6 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     f"MISSING_TYPED_SUBMISSION: call {schema.__name__}; explanatory prose, "
                     "pure JSON text and fenced JSON are not accepted submissions."
                 )
-            self.contract_error(diagnostic)
             self.bridge.store.event(
                 self.bridge.thread,
                 "rejected-submission",
@@ -823,11 +884,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "role": self.role,
                     "execution_id": self.execution_id,
                     "diagnostic": diagnostic[:6000],
+                    "submitted_opinion": response.structured_response.model_dump(mode="json")
+                    if response.structured_response is not None
+                    else None,
                     "model_text": [
                         m.text[:24000] for m in response.result if isinstance(m, AIMessage)
                     ],
                 },
             )
+            self.contract_error(diagnostic)
             from langchain_core.messages import SystemMessage
 
             request = request.override(

@@ -510,3 +510,30 @@ compatible new Site thread and never rewrites the old checkpoint, budget, approv
 Targeted105:37 PASS/4 old RecoveryModel availability assertions failed; those fixture assertions
 were updated for the already-tested reader prerequisite. Mypy105:20 files PASS; Ruff106 PASS.
 Targeted106:47 PASS (15.24s), covering corrected integration fixtures and current reader/source boundaries. Next live107/108 reuse the reviewed soluble/GPCR Targets respectively.
+
+
+### Existing large analysis artifacts and retained mapping context (live107/108)
+
+Live107 (`phase2-goldens-20260911T192506679890Z`) retrieved the primary abstract, original
+UniProt catalytic features and RCSB entity passages and attempted SiteIntent. It failed a material
+NOT_SEARCHED conclusion after one schema correction. Its rejected draft also contained unsupported
+numbering and access claims; no proposal was registered and no scientific PASS is inferred.
+The latest exact read_site_evidence is now pinned alongside up to three distinct source views
+within the same four-view/32k detail budget. Previously a later fourth source page could evict
+geometry even when three source identities were already pinned. Reordering regression covers it.
+Known evidence-state mismatches (unresearched material topics, false no-evidence/support/conflict
+states) now use the existing two typed-submission corrections. Every missing topic is named;
+relabeling NOT_SEARCHED as UNRESOLVED is still rejected. Unknown source IDs remain fatal before
+status correction, and citation/primary-strength/hard-fact checks still apply.
+
+Live108 (`phase2-goldens-20260911T192505924083Z`) successfully used explicit topology feature
+filtering and reached the actual old receptor analysis at modelcall12. The analysis persisted,
+but its returned chain graph exceeded the generic256KB summary offload ceiling. The tool now
+registers the already-persisted/checksum-verified analysis artifact as a scoped tool view, returning
+only a bounded field index and complete small identity/state/warning fields. It neither copies
+huge science into the summary store nor raises the store/model limits. The unchanged existing
+reader handles on-demand paths, with the same role/execution/integrity constraints; tests verify
+large-artifact scope, cross-role rejection and tamper rejection. No new artifact system or kernel.
+
+Targeted109:45 PASS (14.20s); Ruff109 PASS; mypy109:20 files PASS. Next live110/111 reuse reviewed
+approved soluble/GPCR Targets. Phase2 still NOT FROZEN; cases1/2/4/5 incomplete, case3 PASS only.

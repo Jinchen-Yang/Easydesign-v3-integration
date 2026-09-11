@@ -33,6 +33,7 @@ from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, gene
 from .contracts import (
     AgentBoundaryError,
     EvidenceCitationMismatch,
+    ResearchConclusionMismatch,
     ShortText,
     SourceCardArgumentMismatch,
     StrictDTO,
@@ -692,7 +693,7 @@ class EvidenceResearch:
             "evidence-research",
             {"target_binding": identity(self.bridge.binding()), "ref": result_ref},
         )
-        return {**summary, "card_id": card_id}
+        return {**summary, "card_id": card_id, "analysis_ref": ref}
 
     def client(self, directory: Path) -> ScientificHttpClient:
         return ResearchHttpClient(
@@ -939,30 +940,40 @@ class EvidenceResearch:
         queries = snapshot["queries"]
         cards = {c["card_id"]: c for r in queries for c in r["cards"]}
         used_refs = []
+        if any(use.card_id not in cards for c in conclusions for use in c.evidence):
+            raise AgentBoundaryError("Evidence source identifier was not retrieved in this thread")
+        missing = [
+            c.topic
+            for c in conclusions
+            if c.status == "NOT_SEARCHED" or not any(q["topic"] == c.topic for q in queries)
+        ]
+        if missing:
+            raise ResearchConclusionMismatch(
+                "Material scientific question was NOT_SEARCHED: "
+                + compact(missing)
+                + ". Delegate research for every material topic before resubmission. Merely "
+                "renaming an unresearched question UNRESOLVED does not make it researched."
+            )
         for conclusion in conclusions:
             relevant = [q for q in queries if q["topic"] == conclusion.topic]
-            if not relevant or conclusion.status == "NOT_SEARCHED":
-                raise AgentBoundaryError(
-                    "Material scientific question was NOT_SEARCHED; delegate Evidence Research"
-                )
             if conclusion.status == "SEARCHED_NO_EVIDENCE" and (
                 conclusion.evidence or any(q["errors"] for q in relevant)
             ):
-                raise AgentBoundaryError(
+                raise ResearchConclusionMismatch(
                     "A source failure or cited evidence is not SEARCHED_NO_EVIDENCE"
                 )
             if (
                 conclusion.status in {"VERIFIED", "CONFLICTING_EVIDENCE"}
                 and not conclusion.evidence
             ):
-                raise AgentBoundaryError(
+                raise ResearchConclusionMismatch(
                     "Scientific support/conflict requires source-bound passages"
                 )
             if conclusion.status == "CONFLICTING_EVIDENCE" and not {
                 "supports",
                 "contradicts",
             }.issubset({e.relation for e in conclusion.evidence}):
-                raise AgentBoundaryError(
+                raise ResearchConclusionMismatch(
                     "Conflict requires both supporting and contradicting source passages"
                 )
             if (
@@ -976,7 +987,7 @@ class EvidenceResearch:
                 )
                 < 2
             ):
-                raise AgentBoundaryError(
+                raise ResearchConclusionMismatch(
                     "Cross-source conflict requires distinct source identities"
                 )
             for use in conclusion.evidence:
@@ -1115,7 +1126,7 @@ def receptor_analysis_tool(bridge: Any) -> Any:
         value = EvidenceResearch(bridge).analyze_receptor(
             ReceptorAnalysis(gpcrdb_card_id=gpcrdb_card_id, auth_chain=auth_chain)
         )
-        return str(bridge.store.offload(bridge.thread, value))
+        return compact({"analysis_ref": value["analysis_ref"], "card_id": value["card_id"]})
 
     return StructuredTool.from_function(
         name="analyze_receptor_context",

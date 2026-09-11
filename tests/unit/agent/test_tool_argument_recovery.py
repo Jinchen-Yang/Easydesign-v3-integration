@@ -288,3 +288,46 @@ async def test_unambiguous_path_spellings_and_display_aliases_preserve_source(br
         await read.ainvoke({"ref": ref, "field": "facts", "path": ["large"]})
     assert set(ModelEvidenceScope.model_fields) == {"ref", "path", "offset", "limit"}
     assert not bridge._jobs()
+
+
+@pytest.mark.asyncio
+async def test_large_existing_receptor_artifact_is_scoped_without_summary_copy(bridge: Any) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Inspect receptor geometry")["execution_id"]
+    full = {
+        "identity": {"entry": "TEST"},
+        "state": {"status": "unresolved"},
+        "candidates": [{"labels": [1, 2], "score": 0.3}],
+        "chain_graph": "x" * 300000,
+        "warnings": ["Do not infer efficacy"],
+    }
+    ref = b.persist("research-receptor-analysis", full)
+    with pytest.raises(AgentBoundaryError, match="too large"):
+        b.store.offload(b.thread, full)
+    result = json.loads(
+        output_message(
+            b,
+            "site",
+            eid,
+            ToolMessage(
+                name="analyze_receptor_context",
+                tool_call_id="analysis",
+                content=json.dumps({"analysis_ref": ref}),
+            ),
+        ).content
+    )
+    assert len(json.dumps(result)) < 6600 and result["partial"]
+    assert result["identity"] == full["identity"]
+    readable = result["full_result"]
+    page = json.loads(
+        await result_tool(b, "site").ainvoke({"ref": readable, "path": ["candidates"]})
+    )
+    assert page["value"] == full["candidates"]
+    with pytest.raises(AgentBoundaryError, match="not supplied"):
+        await result_tool(b, "target").ainvoke({"ref": readable, "path": ["identity"]})
+    assert b.document(ref) == full
+    row = b.store.events(b.thread)[-1]
+    assert row["kind"] == "tool-view" and row["payload"]["artifact"] == ref
+    (b.project / ref["relative_path"]).write_text("{}")
+    with pytest.raises(ArtifactIntegrityError):
+        await result_tool(b, "site").ainvoke({"ref": readable, "path": ["identity"]})

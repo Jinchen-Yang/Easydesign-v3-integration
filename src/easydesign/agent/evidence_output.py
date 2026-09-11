@@ -182,6 +182,15 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         value = json.loads(message.content)
     except (ValueError, TypeError):
         value = message.content
+    source_artifact = None
+    if (
+        message.name == "analyze_receptor_context"
+        and isinstance(value, dict)
+        and value.get("analysis_ref")
+    ):
+        source_artifact = ArtifactRef.model_validate(value["analysis_ref"])
+        confined(bridge.project, source_artifact.verify(bridge.project))
+        value = bridge.document(value["analysis_ref"])
     if isinstance(value, dict) and value.get("status") == "offloaded":
         path = confined(
             bridge.store.root,
@@ -204,22 +213,27 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                 "instruction": "Read a narrower source field; this page was not supplied.",
             }
         return message.model_copy(update={"content": compact(projected)})
-    if len(compact(value)) <= 1600:
+    if source_artifact is None and len(compact(value)) <= 1600:
         return message.model_copy(
             update={"content": compact(value) if not isinstance(value, str) else value}
         )
-    receipt = json.loads(bridge.store.offload(bridge.thread, value, limit=0))
-    path = confined(
-        bridge.store.root,
-        bridge.store.root / "agent-work" / bridge.thread / receipt["ref"].lstrip("/"),
-    )
-    ref = ArtifactRef.from_file(
-        run_root=bridge.project,
-        relative_path=path.relative_to(bridge.project).as_posix(),
-        artifact_id="agent-output",
-        role="scientific-evidence",
-        file_format="json",
-    )
+    if source_artifact is not None:
+        # Register the existing verified artifact; do not copy it into the summary store.
+        receipt = {"ref": "/result-" + source_artifact.sha256[:32] + ".json"}
+        ref = source_artifact
+    else:
+        receipt = json.loads(bridge.store.offload(bridge.thread, value, limit=0))
+        path = confined(
+            bridge.store.root,
+            bridge.store.root / "agent-work" / bridge.thread / receipt["ref"].lstrip("/"),
+        )
+        ref = ArtifactRef.from_file(
+            run_root=bridge.project,
+            relative_path=path.relative_to(bridge.project).as_posix(),
+            artifact_id="agent-output",
+            role="scientific-evidence",
+            file_format="json",
+        )
     from .tools import JUDGE_EVIDENCE
 
     judge_binding = JUDGE_EVIDENCE.get() if role == "judge" else None
@@ -238,6 +252,13 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     exact_page = message.name in {"retrieve_evidence", "read_evidence_result"}
     projected = scientific_projection(value) if role == "judge" or exact_page else preview(value)
     view_limit = 32000 if role == "judge" else 6000
+    if source_artifact is not None:
+        projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
+        for key in ("identity", "state", "warnings", "avoid"):
+            if key in value:
+                candidate = {**projected, key: scientific_projection(value[key])}
+                if len(compact(candidate)) <= 5500:
+                    projected = candidate
     if message.name == "read_target_evidence":
         complete_facts = target_page_projection(scientific_projection(value))
         if len(compact(complete_facts)) <= view_limit:

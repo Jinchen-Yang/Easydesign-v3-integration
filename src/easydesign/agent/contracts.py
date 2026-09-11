@@ -192,6 +192,10 @@ class AgentBoundaryError(RuntimeError):
     category = "HARD_BOUNDARY_VIOLATION"
 
 
+class ResearchConclusionMismatch(AgentBoundaryError):
+    """A proposed evidence status conflicts with actual research state, not authority."""
+
+
 class EvidenceCitationMismatch(AgentBoundaryError):
     """A known owned source was cited with the wrong passage or excerpt; no authority granted."""
 

@@ -671,8 +671,9 @@ async def test_site_followup_reads_require_focus_and_share_existing_call_budget(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("defect", ["citation", "not-searched", "false-empty"])
 async def test_known_source_citation_is_repaired_before_site_registration(
-    bridge: Any, monkeypatch: Any
+    bridge: Any, monkeypatch: Any, defect: str
 ) -> None:
     from langchain_core.tools import StructuredTool
 
@@ -723,6 +724,15 @@ async def test_known_source_citation_is_repaired_before_site_registration(
         return intent.model_copy(update={"research_conclusions": [conclusion]})
 
     bad, good = opinion(source["card_id"]), opinion(passage["card_id"])
+    if defect != "citation":
+        change = (
+            {"topic": "state"} if defect == "not-searched" else {"status": "SEARCHED_NO_EVIDENCE"}
+        )
+        bad = good.model_copy(
+            update={
+                "research_conclusions": [good.research_conclusions[0].model_copy(update=change)]
+            }
+        )
     from easydesign.agent.contracts import TargetFacts
 
     monkeypatch.setattr(
@@ -767,7 +777,14 @@ async def test_known_source_citation_is_repaired_before_site_registration(
         handler,
     )
     assert result.structured_response == good and len(seen) == 2
-    assert "CITATION_MISMATCH" in seen[1] and '"used_model_calls":1' in seen[1]
+    diagnostic = (
+        "CITATION_MISMATCH"
+        if defect == "citation"
+        else "NOT_SEARCHED"
+        if defect == "not-searched"
+        else "SEARCHED_NO_EVIDENCE"
+    )
+    assert diagnostic in seen[1] and '"used_model_calls":1' in seen[1]
     assert len([e for e in b.store.events(b.thread) if e["kind"] == "contract-repair"]) == 1
     assert not [e for e in b.store.events(b.thread) if e["kind"] == "site-proposal"]
     with pytest.raises(AgentBoundaryError, match="not retrieved"):
@@ -776,7 +793,10 @@ async def test_known_source_citation_is_repaired_before_site_registration(
 
 
 @pytest.mark.asyncio
-async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(bridge: Any) -> None:
+@pytest.mark.parametrize("later_sources", [False, True])
+async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
+    bridge: Any, later_sources: bool
+) -> None:
     from langchain_core.tools import StructuredTool
 
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
@@ -815,6 +835,12 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(b
                 ),
             )
         )
+    if later_sources:
+        messages = (
+            messages[3:]
+            + messages[:3]
+            + [messages[0].model_copy(update={"tool_call_id": "reread"})]
+        )
     original = [m.content for m in messages]
 
     class Request(SimpleNamespace):
@@ -825,7 +851,7 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(b
         retained = [json.loads(m.content) for m in request.messages if '"full_result"' in m.content]
         assert len(retained) == 4
         assert len([x for x in retained if x.get("cards")]) == 3
-        assert retained[-1]["geometry"] == "geometry-11"
+        assert [x["geometry"] for x in retained if "geometry" in x] == ["geometry-11"]
         return SimpleNamespace(
             result=[
                 AIMessage(

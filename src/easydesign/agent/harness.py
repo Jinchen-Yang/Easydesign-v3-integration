@@ -26,6 +26,7 @@ from .contracts import (
     EvidenceCursorQueryMismatch,
     InvalidFieldProjection,
     JudgeVerdict,
+    ResearchConclusionMismatch,
     SourceCardArgumentMismatch,
     SourceSelectionRequired,
     StaleEvidenceCursor,
@@ -352,6 +353,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 # Keep read primary/database passages alongside geometry, so recency
                 # alone cannot evict the evidence needed for mechanistic synthesis.
                 # Use distinct source identities, never scientific favorability/ranking.
+                geometry = [i for i in detailed if messages[i].name == "read_site_evidence"]
+                if geometry:
+                    retained.add(geometry[-1])
+                    detail_chars = len(str(messages[geometry[-1]].content))
                 source_ids: set[str] = set()
                 for i in reversed(detailed):
                     if messages[i].name != "retrieve_evidence":
@@ -360,7 +365,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     sources = {c.get("source_id") for c in value.get("cards", [])}
                     sources.discard(None)
                     size = len(str(messages[i].content))
-                    if sources - source_ids and len(retained) < 3 and detail_chars + size <= 26000:
+                    if (
+                        sources - source_ids
+                        and len(source_ids) < 3
+                        and len(retained) < 4
+                        and detail_chars + size <= 32000
+                    ):
                         retained.add(i)
                         source_ids.update(sources)
                         detail_chars += size
@@ -534,7 +544,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     response.structured_response.model_dump(mode="json"),
                                     {"hard_facts": facts},
                                 )
-                    except EvidenceCitationMismatch as error:
+                    except (EvidenceCitationMismatch, ResearchConclusionMismatch) as error:
                         diagnostic = str(error)
                     except HardFactContradiction as error:
                         diagnostic = str(error)

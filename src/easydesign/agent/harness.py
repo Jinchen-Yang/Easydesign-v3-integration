@@ -22,6 +22,7 @@ from .contracts import (
     AgentBoundaryError,
     DecisionOutcome,
     EvidenceBinding,
+    InvalidFieldProjection,
     JudgeVerdict,
     SourceSelectionRequired,
     TargetAssessment,
@@ -29,7 +30,7 @@ from .contracts import (
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
-from .evidence_output import output_message
+from .evidence_output import output_message, read_query, verified_result
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
@@ -452,7 +453,35 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
         try:
             try:
+                if name == "read_evidence_result":
+                    # Do this before StructuredTool validation can return an unbudgeted
+                    # schema error. Foreign/tampered references remain fatal even when
+                    # their projection syntax is also wrong.
+                    if self.execution_id is None:
+                        raise AgentBoundaryError("Result read requires an execution")
+                    verified_result(
+                        self.bridge, self.role, args.get("ref"), execution_id=self.execution_id
+                    )
+                    read_query(args)
                 result = await handler(request)
+            except InvalidFieldProjection as error:
+                if (
+                    name != "read_evidence_result"
+                    or not isinstance(self.bridge, Phase2Bridge)
+                    or self.execution_id is None
+                ):
+                    raise AgentBoundaryError("Projection repair is outside this tool") from error
+                attempt = self.bridge.store.reserve_tool_argument_repair(
+                    self.bridge.thread, self.role, self.execution_id
+                )
+                result = ToolMessage(
+                    content=compact(
+                        {**error.result(), "repair_attempt": attempt, "repair_limit": 2}
+                    ),
+                    status="error",
+                    tool_call_id=request.tool_call["id"],
+                    name=name,
+                )
             except SourceSelectionRequired as error:
                 # Only this proven sequencing error is repairable. Hard boundary and
                 # artifact/authority failures still escape, including from delegated tasks.

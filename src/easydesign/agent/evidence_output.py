@@ -3,19 +3,34 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from easydesign.core import ArtifactRef
 
-from .contracts import AgentBoundaryError, StrictDTO
+from .contracts import AgentBoundaryError, InvalidFieldProjection, StrictDTO
 from .session_store import compact, confined
 
 
 class ReadEvidenceResult(StrictDTO):
     ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
-    field: list[str] = Field(default_factory=list, max_length=10)
+    field: str | list[str] | None = Field(
+        default=None,
+        description="One top-level key. Deprecated list form retains nested-path semantics.",
+    )
+    fields: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=10,
+        description="Multiple top-level sibling keys; never a nested path.",
+    )
+    path: list[str] | None = Field(
+        default=None,
+        max_length=10,
+        description="Nested keys or nonnegative list indices in traversal order.",
+    )
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=4, ge=1, le=8)
 
@@ -143,8 +158,9 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     "full_result": receipt["ref"],
                     "partial": True,
                     "read": (
-                        "read_evidence_result(ref, field=[key,...], offset, limit); full resu"
-                        "lt retained"
+                        "read_evidence_result(ref, field='key') for one top-level field; "
+                        "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
+                        "Use offset/limit for list pages. Full result retained."
                     ),
                 }
             )
@@ -152,36 +168,97 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     )
 
 
+def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | None = None) -> Any:
+    """Authorization and integrity precede all recoverable argument diagnostics."""
+    if not isinstance(ref, str) or not re.fullmatch(r"/result-[a-f0-9]+\.json", ref):
+        raise AgentBoundaryError("Invalid scoped result reference")
+    execution = bridge.store.latest_execution(bridge.thread)
+    if execution_id is not None and (
+        execution is None or execution["execution_id"] != execution_id
+    ):
+        raise AgentBoundaryError("Result read is not bound to the current execution")
+    row = bridge.store.db.execute(
+        "SELECT payload FROM events WHERE thread=? AND kind='tool-view' "
+        "AND json_extract(payload,'$.role')=? AND json_extract(payload,'$.ref')=? "
+        "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
+        (bridge.thread, role, ref, execution["execution_id"] if execution else None),
+    ).fetchone()
+    if row is None:
+        raise AgentBoundaryError("Result was not supplied to this role/execution")
+    stored = json.loads(row[0])
+    if role == "judge":
+        from .tools import JUDGE_EVIDENCE
+
+        binding = JUDGE_EVIDENCE.get()
+        if binding is None or stored.get("judge_binding") != binding.model_dump(mode="json"):
+            raise AgentBoundaryError("Result belongs to another delegated Judge snapshot")
+    artifact_path = confined(
+        bridge.project, ArtifactRef.model_validate(stored["artifact"]).verify(bridge.project)
+    )
+    return json.loads(artifact_path.read_text())
+
+
+def read_query(arguments: dict[str, Any]) -> ReadEvidenceResult:
+    try:
+        query = ReadEvidenceResult.model_validate(arguments)
+    except ValidationError as exc:
+        # Called only AFTER verified_result by the harness and read callback.
+        if all(
+            e["loc"] and e["loc"][0] in {"field", "fields", "path", "offset", "limit"}
+            for e in exc.errors()
+        ):
+            raise InvalidFieldProjection("Invalid selector or pagination syntax.") from exc
+        raise
+    if sum(item is not None for item in (query.field, query.fields, query.path)) > 1:
+        raise InvalidFieldProjection("Selectors field, fields and path are mutually exclusive.")
+    if isinstance(query.field, list) and len(query.field) > 10:
+        raise InvalidFieldProjection("A nested path may contain at most ten components.")
+    return query
+
+
+def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]:
+    if query.fields is not None:
+        if (
+            not isinstance(value, dict)
+            or len(set(query.fields)) != len(query.fields)
+            or any(key not in value for key in query.fields)
+        ):
+            raise InvalidFieldProjection(
+                "Sibling projection requires distinct existing object keys."
+            )
+        return {key: value[key] for key in query.fields}, []
+    path = ([query.field] if isinstance(query.field, str) else query.field) or query.path or []
+    try:
+        for key in path:
+            if isinstance(value, list):
+                if not re.fullmatch(r"[0-9]+", key):
+                    raise ValueError("List indices must be nonnegative integers")
+                value = value[int(key)]
+            else:
+                value = value[key]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise InvalidFieldProjection("Unknown scoped result field or list index.") from exc
+    return value, path
+
+
 def result_tool(bridge: Any, role: str) -> Any:
     from langchain_core.tools import StructuredTool
 
     async def read(**arguments: Any) -> str:
-        query = ReadEvidenceResult.model_validate(arguments)
-        execution = bridge.store.latest_execution(bridge.thread)
-        row = bridge.store.db.execute(
-            "SELECT payload FROM events WHERE thread=? AND kind='tool-view' "
-            "AND json_extract(payload,'$.role')=? AND json_extract(payload,'$.ref')=? "
-            "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
-            (bridge.thread, role, query.ref, execution["execution_id"] if execution else None),
-        ).fetchone()
-        if row is None:
-            raise AgentBoundaryError("Result was not supplied to this role/execution")
-        stored = json.loads(row[0])
-        if role == "judge":
-            from .tools import JUDGE_EVIDENCE
-
-            binding = JUDGE_EVIDENCE.get()
-            if binding is None or stored.get("judge_binding") != binding.model_dump(mode="json"):
-                raise AgentBoundaryError("Result belongs to another delegated Judge snapshot")
-        path = confined(
-            bridge.project, ArtifactRef.model_validate(stored["artifact"]).verify(bridge.project)
+        full = verified_result(bridge, role, arguments.get("ref"))
+        query = read_query(arguments)
+        value, selected_path = scoped_value(full, query)
+        selector = {"path": selected_path}
+        if query.fields is not None:
+            selector = {"fields": query.fields}
+        if isinstance(query.field, list):
+            # Preserve meaning and the old response key for existing callers.
+            selector.update(field=query.field)
+        deprecation = (
+            {"deprecation": "field=[...] retains nested traversal; use path=[...] instead."}
+            if isinstance(query.field, list)
+            else {}
         )
-        value = json.loads(path.read_text())
-        try:
-            for field in query.field:
-                value = value[int(field)] if isinstance(value, list) else value[field]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise AgentBoundaryError("Unknown scoped result field") from exc
         page: Any
         if isinstance(value, list):
             page = []
@@ -194,10 +271,11 @@ def result_tool(bridge: Any, role: str) -> Any:
                 return compact(
                     {
                         "status": "narrower-scope-required",
-                        "field": [*query.field, str(query.offset)],
-                        "fields": list(item)[:30] if isinstance(item, dict) else [],
+                        "path": [*selected_path, str(query.offset)],
+                        "available_fields": list(item)[:30] if isinstance(item, dict) else [],
                         "instruction": "Read an item field; no array entries were consumed.",
                         "next_offset": query.offset,
+                        **deprecation,
                     }
                 )
             next_offset = (
@@ -216,21 +294,24 @@ def result_tool(bridge: Any, role: str) -> Any:
                 return compact(
                     {
                         "status": "narrower-scope-required",
-                        "field": query.field,
-                        "fields": list(value)[:30] if isinstance(value, dict) else [],
+                        **selector,
+                        "available_fields": list(value)[:30] if isinstance(value, dict) else [],
                         "instruction": "Read a child field; the full object was not supplied.",
+                        **deprecation,
                     }
                 )
-        return compact({"value": page, "next_offset": next_offset, "field": query.field})
+        return compact({"value": page, "next_offset": next_offset, **selector, **deprecation})
 
     return StructuredTool.from_function(
         name="read_evidence_result",
         coroutine=read,
         args_schema=ReadEvidenceResult,
         description=(
-            "Read a named JSON field or a short list/text page from a full_result"
-            " reference supplied to this role in this execution. For example fiel"
-            "d=['candidate_patches'] then offset. Use focused scientific fields; "
+            "Read a verified full_result supplied to this role/execution. Use exactly one: "
+            "field='identity_evidence' (top-level key), fields=['chains','identity_evidence'] "
+            "(sibling keys), path=['identity_evidence','canonical'] (nested traversal). "
+            "Legacy field=[...] is deprecated and retains nested traversal. "
+            "Use offset/limit for list pages, offset for text pages. Use focused fields; "
             "do not read the whole artifact sequentially."
         ),
     )

@@ -192,5 +192,25 @@ class SourceSelectionRequired(RuntimeError):
         }
 
 
+class InvalidFieldProjection(RuntimeError):
+    """Invalid navigation of an already authorized and verified evidence result."""
+
+    category = "RECOVERABLE_TOOL_ARGUMENT"
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "INVALID_FIELD_PROJECTION",
+            "required_action": "read_evidence_result",
+            "message": (
+                f"{self} Use exactly one selector: field='key' for a top-level field, "
+                "fields=['a','b'] for sibling fields, or path=['a','b'] for nested traversal. "
+                "Legacy field=[...] still means a nested path, never sibling fields. "
+                "Choose existing keys from the supplied view; no evidence was changed."
+            ),
+        }
+
+
 class ReconciliationRequired(AgentBoundaryError):
     """An uncertain old-world submission must not be replayed automatically."""

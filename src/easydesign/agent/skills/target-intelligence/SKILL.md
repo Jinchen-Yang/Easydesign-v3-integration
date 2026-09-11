@@ -75,3 +75,5 @@ ambiguity and mapping requirements. The Coordinator must obtain Judge and a real
 card for chain-selection, target-identity-review or scope-selection. A construct mismatch
 is not necessarily rejection; old mapping and human review decide whether it is usable.
 An approved canonical reference never proves native state or biological function.
+
+Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.

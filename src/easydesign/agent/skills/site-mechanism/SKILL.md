@@ -91,3 +91,5 @@ For a large tool result use read_evidence_result on a relevant named field/list 
 A partial preview is not the complete scientific table. Full results remain durable; never
 page through all raw JSON. Ordinary tool outputs and old detailed views may be reduced to
 references in model context. Re-read a needed field explicitly; do not infer omitted values.
+
+Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.

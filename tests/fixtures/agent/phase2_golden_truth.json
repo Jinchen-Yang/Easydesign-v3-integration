@@ -1,0 +1,856 @@
+{
+  "soluble": {
+    "pdb_id": "1MEL",
+    "auth_chain": "L",
+    "label_chain": "C",
+    "accession": "P00698",
+    "taxon_id": 9031,
+    "canonical_sequence": "MRSLLILVLCFLPLAALGKVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL",
+    "construct_sequence": "KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL",
+    "coordinate_sequence": "KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGC",
+    "coordinate_label_seq_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127
+    ],
+    "structure_sha256": "b82586a12aef8e1c5c53399904cf5c70885e92c6884dce9b9620d128bd9d1de0",
+    "canonical_source_sha256": "cd9677775c87a03dfd0ce44320a8ed7ba80908afa21ac8b674ce9271290f1855",
+    "features": [
+      {
+        "type": "Signal",
+        "location": {
+          "start": {
+            "value": 1,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 18,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "14063294"
+          }
+        ]
+      },
+      {
+        "type": "Chain",
+        "location": {
+          "start": {
+            "value": 19,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 147,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Lysozyme C",
+        "featureId": "PRO_0000018495"
+      }
+    ],
+    "expected": {
+      "canonical_length": 147,
+      "construct_length": 129,
+      "observed_count": 127,
+      "relationship": "exact_subsequence",
+      "mapping_status": "review-required",
+      "review_requirement": "human-required",
+      "substitutions": 0,
+      "insertions": 0,
+      "deletions": 18,
+      "ambiguities": []
+    }
+  },
+  "gpcr": {
+    "pdb_id": "3P0G",
+    "auth_chain": "A",
+    "label_chain": "A",
+    "accession": "P07550",
+    "taxon_id": 9606,
+    "canonical_sequence": "MGQPGNGSAFLLAPNGSHAPDHDVTQERDEVWVVGMGIVMSLIVLAIVFGNVLVITAIAKFERLQTVTNYFITSLACADLVMGLAVVPFGAAHILMKMWTFGNFWCEFWTSIDVLCVTASIETLCVIAVDRYFAITSPFKYQSLLTKNKARVIILMVWIVSGLTSFLPIQMHWYRATHQEAINCYANETCCDFFTNQAYAIASSIVSFYVPLVIMVFVYSRVFQEAKRQLQKIDKSEGRFHVQNLSQVEQDGRTGHGLRRSSKFCLKEHKALKTLGIIMGTFTLCWLPFFIVNIVHVIQDNLIRKEVYILLNWIGYVNSGFNPLIYCRSPDFRIAFQELLCLRRSSLKAYGNGYSSNGNTGEQSGYHVEQEKENKLLCEDLPGTEDFVGHQGTVPSDNIDSQGRNCSTNDSLL",
+    "construct_sequence": "DYKDDDDAMGQPGNGSAFLLAPNRSHAPDHDVTQQRDEVWVVGMGIVMSLIVLAIVFGNVLVITAIAKFERLQTVTNYFITSLACADLVMGLAVVPFGAAHILMKMWTFGNFWCEFWTSIDVLCVTASIETLCVIAVDRYFAITSPFKYQSLLTKNKARVIILMVWIVSGLTSFLPIQMHWYRATHQEAINCYAEETCCDFFTNQAYAIASSIVSFYVPLVIMVFVYSRVFQEAKRQLNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNTNGVITKDEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRMLQQKRWDEAAVNLAKSRWYNQTPNRAKRVITTFRTGTWDAYKFCLKEHKALKTLGIIMGTFTLCWLPFFIVNIVHVIQDNLIRKEVYILLNWIGYVNSGFNPLIYCRSPDFRIAFQELLCLRRSSLKAYGNGYSSNGNTGEQSG",
+    "coordinate_sequence": "DVTQQRDEVWVVGMGIVMSLIVLAIVFGNVLVITAIAKFERLQTVTNYFITSLACADLVMGLAVVPFGAAHILMKMWTFGNFWCEFWTSIDVLCVTASIETLCVIAVDRYFAITSPFKYQSLLTKNKARVIILMVWIVSGLTSFLPIQMHWYRATHQEAINCYAEETCCDFFTNQAYAIASSIVSFYVPLVIMVFVYSRVFQEAKLKEHKALKTLGIIMGTFTLCWLPFFIVNIVHVIQDNLIRKEVYILLNWIGYVNSGFNPLIYCRSPDFRIAFQELLCLRR",
+    "coordinate_label_seq_ids": [
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200,
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230,
+      231,
+      232,
+      233,
+      234,
+      235,
+      402,
+      403,
+      404,
+      405,
+      406,
+      407,
+      408,
+      409,
+      410,
+      411,
+      412,
+      413,
+      414,
+      415,
+      416,
+      417,
+      418,
+      419,
+      420,
+      421,
+      422,
+      423,
+      424,
+      425,
+      426,
+      427,
+      428,
+      429,
+      430,
+      431,
+      432,
+      433,
+      434,
+      435,
+      436,
+      437,
+      438,
+      439,
+      440,
+      441,
+      442,
+      443,
+      444,
+      445,
+      446,
+      447,
+      448,
+      449,
+      450,
+      451,
+      452,
+      453,
+      454,
+      455,
+      456,
+      457,
+      458,
+      459,
+      460,
+      461,
+      462,
+      463,
+      464,
+      465,
+      466,
+      467,
+      468,
+      469,
+      470,
+      471,
+      472,
+      473,
+      474,
+      475,
+      476,
+      477,
+      478,
+      479,
+      480
+    ],
+    "structure_sha256": "ed2be78e33a2d3ba709ecfffa5a084b27407141900663290d3ba849ae033ac88",
+    "canonical_source_sha256": "b1cce2c4c6c235afb7ed2c4af4c5d004ab7e0052371f5d1d3804c2312dd2f050",
+    "features": [
+      {
+        "type": "Chain",
+        "location": {
+          "start": {
+            "value": 1,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 413,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Beta-2 adrenergic receptor",
+        "featureId": "PRO_0000069130"
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 1,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 29,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Extracellular",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 30,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 56,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=1",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 57,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 70,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Cytoplasmic",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 71,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 96,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=2",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 97,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 103,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Extracellular",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 104,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 129,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=3",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 130,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 149,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Cytoplasmic",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 150,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 171,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=4",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 172,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 197,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Extracellular",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 198,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 220,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=5",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 221,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 274,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Cytoplasmic",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 275,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 298,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=6",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 299,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 304,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Extracellular",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      },
+      {
+        "type": "Transmembrane",
+        "location": {
+          "start": {
+            "value": 305,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 326,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Helical; Name=7",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000269",
+            "source": "PubMed",
+            "id": "24056936"
+          },
+          {
+            "evidenceCode": "ECO:0007744",
+            "source": "PDB",
+            "id": "4LDE"
+          }
+        ]
+      },
+      {
+        "type": "Topological domain",
+        "location": {
+          "start": {
+            "value": 327,
+            "modifier": "EXACT"
+          },
+          "end": {
+            "value": 413,
+            "modifier": "EXACT"
+          }
+        },
+        "description": "Cytoplasmic",
+        "evidences": [
+          {
+            "evidenceCode": "ECO:0000305"
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "canonical_length": 413,
+      "construct_length": 501,
+      "observed_count": 284,
+      "relationship": "ambiguous",
+      "mapping_status": "ambiguous",
+      "review_requirement": "human-required",
+      "substitutions": 23,
+      "insertions": 136,
+      "deletions": 48,
+      "ambiguities": [
+        "multiple-equally-optimal-sequence-alignments"
+      ]
+    }
+  }
+}

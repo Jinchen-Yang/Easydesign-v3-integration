@@ -1,11 +1,14 @@
 # v2 → v3 scientific capability parity
 
-Acceptance audit, Phase 2.2b: **FAIL — Phase 2 is not frozen; Phase 3/4 not started.**
-The real Agent successfully repaired SOURCE_NOT_SELECTED, acquired P00698 and invoked old
-Stage 01 identity mapping. It then passed sibling field names as one nested scoped-result path;
-that navigation error remains fatal. Eleven calls, one retained source and zero focused cards
-cannot establish completed Gate 1/2/3 or end-to-end context parity. Other real cases stopped.
-Detailed evidence and next required repair: `PHASE22B_RECOVERY_CLOSURE.md`.
+Acceptance audit, Phase 2.2c: **FAIL — Phase 2 is not frozen; Phase 3/4 not started.**
+Explicit field/fields/path and shared bounded repairs pass offline and actual model correction.
+The real model repaired source selection and conflicting selectors, read deterministic chain
+comparisons, then failed Target's whole-response JSON parser with prose plus fenced JSON.
+Its raw summary also confused canonical/construct lengths. Canonical configuration changed
+source binding; three focused reads returned zero cards. No Judge/Gate1/approved bundle/Gate2.
+Sixteen calls and retained source data do not establish completed scientific context parity.
+Other real cases stopped. See `PHASE22C_SCIENTIFIC_ACCEPTANCE.md` and the pre-live frozen
+`PHASE2_GOLDEN_CASE_SPEC.md`. Recovery COMPLETE does not make the scientific path COMPLETE.
 
 COMPLETE requires current implementation and acceptance evidence;
 PARTIAL includes unvalidated real-source/model coverage. MISSING is explicit, not retired.
@@ -58,11 +61,13 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Design arms, comparator and changed/held factors | RS/H | strategy-yaml.md | Binder | PARTIAL | 2.2 | typed arm metadata; parity review pending | Integrated arm cannot identify a single causal factor |
 | First Pilot protocol, seven scaffolds × 40 per condition | DS/RS | boltzgen-contract.md; strategy-yaml.md | Binder + existing protocol validator | COMPLETE | 2.2 | Standard coverage plus native-condition before/after and invalid-coverage tests | Narrow legacy facade bug fixed; exact seven-by-40 scientific invariant preserved |
 | Native BoltzGen YAML compilation and checks | DS | boltzgen-contract.md | Trusted callback + existing compiler/validator | COMPLETE | 2.2 | Phase 2 real check and YAML regression | No LLM-authored runnable YAML |
-| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN after Phase 2.2b stop |
+| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN after Phase 2.2c stop |
 | Thread-local proposals / project-global approved science | DS/RS | orchestration/research.py | Runtime explicit ownership adapters | COMPLETE | 2.2 | Ownership regressions plus corpus cross-thread and native approval inheritance | Thread evidence views remain separate; approved scientific state remains shared |
-| Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | COMPLETE | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Only this known prerequisite is repairable; invalid scoped field path remains a separate blocker |
-| Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | One real source retained, but zero focused cards before fatal field navigation; not a complete context benchmark |
-| First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline harness regressions; live stops before Agent Gate 1 card after old pending decision | No complete real golden; cannot freeze Phase 2 |
+| Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | COMPLETE | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Shares two corrections with verified scoped-argument repair; both succeeded in live001 |
+| Scoped tool-argument semantics and bounded correction | RS/DS | agent/evidence_output.py; harness.py; session_store.py | Authorized owner + runtime | COMPLETE | 2.2c | 11 new projection tests; real field+path rejection → corrected path → exact four-chain result | Explicit selectors, legacy path deprecation, two shared corrections; no blanket exception recovery |
+| Fixed scientific Golden specification and independent factual oracles | H/DS | PHASE2_GOLDEN_CASE_SPEC.md; tests/agent_golden_support.py | Validation-only reviewer and unchanged kernel | COMPLETE specification / PARTIAL live acceptance | 2.2c | Six fixed-source/negative oracle tests PASS; five-case live acceptance stopped before Gate1 | Spec is fixed before live; human fixture response cannot override false facts |
+| Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | One real source retained; three focused reads return zero cards after binding change; later Target output fails; not end-to-end acceptance |
+| First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline harness PASS; live stops at Target final-output parsing after old pending decision; no Judge or Gate card | No complete real golden; cannot freeze Phase 2 |
 | Pilot generation and explicit execution approval | DS/H | pilot-diagnosis.md; orchestration/research_plans.py | Gate 3 + existing job runtime | MISSING | 3 | Phase 3 pending | Old freeze-only approval cannot authorize launch |
 | Prediction and filtering | DS | metric-guide.md; stages/s05_pilot_screen | Existing backend/filter + Agent bridge | MISSING | 3 | real micro pending | No deterministic metric rewrite |
 | Metric provenance, hard gates and missingness | RS/DS | metric-guide.md | Pilot owner/Judge + trusted artifact reader | MISSING | 3 | synthetic meaningful fixture pending | Missing is not zero; preserve fallback values/source |
@@ -93,5 +98,5 @@ Full audit source inventory: `target-and-site.md`, `evidence-and-numbering.md`,
 `failure-atlas.md`, `vhh-geometry-priors.md`.
 
 Phase 3/4 MISSING rows do not block Phase 2 solely because they belong to later approved phases.
-Any unclosed Prepare/Strategize PARTIAL row is assessed explicitly at Phase 2.2 acceptance;
+Any unclosed Prepare/Strategize PARTIAL row is assessed explicitly at Phase 2.2c acceptance;
 it cannot be silently deferred to Pilot or presented as scientific parity.

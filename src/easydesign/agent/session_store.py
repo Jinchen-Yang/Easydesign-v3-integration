@@ -238,36 +238,64 @@ class SessionStore:
     def reserve_prerequisite_repair(
         self, thread: str, role: str, execution_id: str, source_id: str
     ) -> int:
-        """At most two selection corrections in the existing persisted execution.
+        """Compatibility entry point; selection and argument repairs share one limit."""
+        return self._reserve_repair(
+            thread,
+            role,
+            execution_id,
+            "prerequisite-repair",
+            "SOURCE_NOT_SELECTED",
+            source_id=source_id,
+        )
+
+    def reserve_tool_argument_repair(self, thread: str, role: str, execution_id: str) -> int:
+        return self._reserve_repair(
+            thread, role, execution_id, "tool-argument-repair", "INVALID_FIELD_PROJECTION"
+        )
+
+    def _reserve_repair(
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        kind: str,
+        error_code: str,
+        **details: str,
+    ) -> int:
+        """At most two corrections total in the existing persisted execution.
 
         Restarting a graph or delegating again cannot reset this allowance. Replayed
         failures also consume it; there is no additional recovery or scheduling state.
         """
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
-            raise AgentBoundaryError("Prerequisite repair is not bound to the current execution")
+            raise AgentBoundaryError("Repair is not bound to the current execution")
         with self.db:
             used = self.db.execute(
-                "SELECT count(*) FROM events WHERE thread=? AND kind='prerequisite-repair' "
+                "SELECT count(*) FROM events WHERE thread=? "
+                "AND kind IN ('prerequisite-repair', 'tool-argument-repair') "
                 "AND json_extract(payload, '$.execution_id')=?",
                 (thread, execution_id),
             ).fetchone()[0]
             if used >= 2:
+                label = "prerequisite" if kind == "prerequisite-repair" else "tool argument"
                 raise AgentBoundaryError(
-                    "SOURCE_NOT_SELECTED: prerequisite repair budget exhausted (2 per execution); "
-                    "no acquisition was executed. Inspect the source-selection sequence."
+                    f"{error_code}: {label} "
+                    "repair budget exhausted (2 shared corrections per execution); "
+                    "inspect the tool arguments and prerequisites."
                 )
             self.db.execute(
-                "INSERT INTO events(thread,kind,payload) VALUES(?, 'prerequisite-repair', ?)",
+                "INSERT INTO events(thread,kind,payload) VALUES(?, ?, ?)",
                 (
                     thread,
+                    kind,
                     compact(
                         {
                             "role": role,
                             "execution_id": execution_id,
                             "attempt": used + 1,
-                            "error_code": "SOURCE_NOT_SELECTED",
-                            "source_id": source_id,
+                            "error_code": error_code,
+                            **details,
                         }
                     ),
                 ),

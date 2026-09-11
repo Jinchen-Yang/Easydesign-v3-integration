@@ -62,3 +62,5 @@ verifies target/hotspot, VHH templates, source paths and the old backend schema,
 unchanged YAML to the compiler. Judge and Gate 3 are still mandatory; no Pilot is launched.
 A new expert input can replace an earlier import only after scientist REVISE.
 Large result references support read_evidence_result with named fields; avoid sequential full-file reading.
+
+Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.

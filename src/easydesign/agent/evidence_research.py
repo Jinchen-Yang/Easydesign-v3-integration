@@ -31,7 +31,7 @@ from easydesign.core.target_identity import resolve_target_identity
 from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, generate_candidates
 
 from .contracts import AgentBoundaryError, ShortText, SourceCardArgumentMismatch, StrictDTO
-from .evidence_corpus import NEEDS, EvidenceCorpus, source_key
+from .evidence_corpus import NEEDS, EvidenceCorpus, SelectEvidence, source_key
 from .session_store import compact, confined, identity
 
 EvidenceStatus = Literal[
@@ -78,8 +78,21 @@ class ResearchQuery(StrictDTO):
         "structure-record",
         "gpcrdb-context",
     ]
+    selection_reason: ShortText | None = Field(
+        default=None,
+        description="For record/fulltext acquisition: explicitly SELECT this exact source "
+        "for this query topic with a scientific reason, then acquire it in the same call. "
+        "Omit only if already selected for this exact topic. Not scientific approval.",
+    )
     query: str = Field(default="", max_length=400)
-    identifier: str = Field(default="", max_length=40, pattern=r"^[A-Za-z0-9_.-]*$")
+    identifier: str = Field(
+        default="",
+        max_length=40,
+        pattern=r"^[A-Za-z0-9_.-]*$",
+        description="primary-record requires PMID digits; primary-fulltext requires an "
+        "actual retrieved PMCID starting PMC (never a PMID); uniprot-record an accession; "
+        "structure-record a PDB code. Search uses query instead.",
+    )
     taxon_id: int | None = Field(default=None, ge=1)
     pdb_id: str | None = Field(default=None, pattern=r"^[0-9][A-Za-z0-9]{3}$")
 
@@ -380,7 +393,20 @@ class EvidenceResearch:
                 "structure-record": "RCSB",
                 "gpcrdb-context": "GPCRdb",
             }[query.operation]
-            EvidenceCorpus(self.bridge).require_selected(provider, query.identifier, query.topic)
+            corpus = EvidenceCorpus(self.bridge)
+            if query.selection_reason is not None:
+                corpus.select(
+                    SelectEvidence.model_validate(
+                        {
+                            "provider": provider,
+                            "identifier": query.identifier,
+                            "need": NEEDS[query.topic],
+                            "selection": "SELECTED",
+                            "reason": query.selection_reason,
+                        }
+                    )
+                )
+            corpus.require_selected(provider, query.identifier, query.topic)
         bridge = self.bridge
         execution = bridge.store.latest_execution(bridge.thread)
         if execution is None:
@@ -1005,7 +1031,9 @@ def research_tool(bridge: Any, role: str) -> Any:
             "Delegate a bounded evidence question to the shared Research worker. "
             "Search literature/structures; "
             "retrieve primary PMID/PMCID, PDB complexes, UniProt or applicable GPCRdb context. "
-            "Deep acquisition requires select_evidence first. Full records stay in the corpus; "
+            "For acquisition include selection_reason to explicitly select this source for "
+            "the exact topic and acquire it atomically through the existing corpus. "
+            "Alternatively call select_evidence first. Full records stay in the corpus; "
             "Use identifier for the source key (PMID/PMCID/accession/PDB code). "
             "Selection need must match query topic: identity=TARGET_IDENTITY, "
             "state=STRUCTURE_STATE, structure-complex=PPI_INTERFACE, "

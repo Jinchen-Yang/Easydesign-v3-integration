@@ -556,3 +556,30 @@ async def test_file_reader_result_alias_only_indexes_current_authorized_artifact
     b.store.begin_execution(b.thread, "Another execution")
     with pytest.raises(AgentBoundaryError, match="current execution"):
         await guard.awrap_tool_call(request, forbidden_handler)
+
+
+def test_explicit_selection_and_acquisition_share_the_existing_corpus(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.contracts import SourceSelectionRequired
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.store.begin_execution(b.thread, "Research mechanism")
+    calls = source_transport(b, monkeypatch)
+    worker = EvidenceResearch(b)
+    query = ResearchQuery.model_validate(ACQUIRE)
+    with pytest.raises(SourceSelectionRequired):
+        worker.acquire(query, role="site")
+    assert not calls
+    query = query.model_copy(
+        update={"selection_reason": "Primary mechanistic evidence and its assay controls"}
+    )
+    result = worker.acquire(query, role="site")
+    assert result["cards"] and len(calls) == 1
+    selections = EvidenceCorpus(b).selections()
+    selection = selections["EuropePMC:PMC123:FUNCTIONAL_MECHANISM"]
+    assert selection["selection"] == "SELECTED" and selection["reason"] == query.selection_reason
+    worker.acquire(query, role="site")
+    assert len(calls) == 1 and not b._jobs()
+    with pytest.raises(AgentBoundaryError):
+        worker.acquire(query, role="judge")

@@ -10,7 +10,9 @@ not an execution-stage agent. Target/structure is already approved. Retain the i
 research goal, current message and current trusted revision as separate inputs.
 
 Before mechanistic selection, delegate missing knowledge to `research_evidence`, the shared
-bounded Evidence Research worker. Plan target-specific literature queries for structure/complex,
+bounded Evidence Research worker. For each record acquisition, include selection_reason with
+why this exact source is relevant to your query topic. Runtime records this explicit source
+selection before acquisition in the same call; this avoids separate selection/need mismatches. Plan target-specific literature queries for structure/complex,
 epitope/mutagenesis, competition/function, state/ligand/partner and PTM/glycan where relevant.
 Search is not sufficient: retrieve primary PMID/PMCID records and official UniProt/PDB entries.
 Retrieve GPCRdb only after receptor identity/family evidence supports that specialization.
@@ -87,8 +89,10 @@ candidate is not a validated epitope. Treat each limitation as part of the scien
 
 ## Evidence working set
 
-Search returns shallow leads only. Call select_evidence with SELECTED/DEFERRED/EXCLUDED,
-a task-specific reason and the relevant EvidenceNeed before any record/fulltext acquisition.
+Search returns shallow leads only. For acquisition supply selection_reason explicitly in
+research_evidence; runtime calls the existing selection service for the topic's exact need
+before fetching. Or use select_evidence with SELECTED/DEFERRED/EXCLUDED, a task-specific reason
+and the relevant EvidenceNeed. Selection is local relevance, not proof of the source's claims.
 Direct user-supplied PMID/PMCID/accession/PDB identifiers can be selected explicitly.
 Also perform a targeted discovery search for the mechanistic question and counterevidence;
 acquiring only the supplied identifier is not active literature discovery.
@@ -96,7 +100,9 @@ The acquisition error's evidence_need is exact: select that need before retrying
 operation. structure-complex uses PPI_INTERFACE; structure-state uses STRUCTURE_STATE.
 research_evidence saves complete selected sources; its acquisition receipt contains no full text.
 Use retrieve_evidence for the current scientific question, optionally source_id, and continue
-with its cursor only when needed. Cite the returned passage card ID and exact short excerpt.
+with its cursor only when needed. Keep question/need/source_id identical with a cursor;
+when changing the question or need, omit cursor to start the newly ranked view. Cite the
+returned passage card ID and exact short excerpt.
 Need names: TARGET_IDENTITY, STRUCTURE_STATE, LIGAND_PARTNER, MUTAGENESIS,
 FUNCTIONAL_MECHANISM, KNOWN_EPITOPE, COMPETITION, PPI_INTERFACE, GLYCAN_PTM, CONSERVATION.
 Do not enumerate every source or read every chunk. Search relevance is not scientific strength.

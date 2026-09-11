@@ -303,3 +303,28 @@ single-GPU/single-sample/one-recycle/no-MSA/no-template 3600-second maximum comp
 it failed before any GPU work because the clone lacks fixed uv 0.12.3. Dependency preparation
 continues; this is installation readiness, not Phase3 pilot acceptance. All old download
 partials, failed setup logs and quarantined staging are retained.
+
+
+### Explicit atomic source selection (live069 failure, targeted072, live075)
+
+Live069 (`phase2-goldens-20260911T183805Z`) passed the identical inherited Target/identity
+checks and reached substantive Site research. It used all four source/argument repairs, then
+changed a cursor's question, correctly hitting the existing limit. No Gate2 PASS is claimed.
+`research_evidence` now accepts optional explicit `selection_reason`: the existing corpus
+records SELECTED for the exact source and topic-derived need before the existing acquisition.
+This is an adapter over the same selection/acquisition services, not inferred selection from
+a query or scientific approval. Without that explicit reason, prior selection is still required.
+Cross-role access remains rejected; source replay does not refetch. Help distinguishes PMID
+records from PMCID full text and explains that a new question starts without an old cursor.
+
+Targeted072: 30 PASS (12.38s), including exact selection, no network before selection,
+replay, source boundaries and existing recovery. Mypy073 found two literal-type annotations;
+using the validated DTO entry point corrected them (mypy074: 20 files PASS). Live075 is the
+next real retry, with exact inherited snapshot review; its outcome remains pending.
+
+BoltzGen final installation068 returned `ok=true`: own locked environment, all weights,
+molecules and exact source registered, import probe successful. Still no generation performed.
+Own pinned uv0.12.3 installed at `runtime/tools/uv-0.12.3` using the existing clone-local
+Miniforge pip; PyPI download identity is retained in uv070-pip-report.json. AFO071 retries the
+unchanged one-sample installation plan; Python3.12.13 preparation progressed to offline
+wheelhouse installation. AFO064 consumed zero GPU jobs; no production compute authorized.

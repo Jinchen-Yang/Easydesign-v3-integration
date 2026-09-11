@@ -151,6 +151,25 @@ def target_page_projection(value: Any) -> Any:
 def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
     """Losslessly encode a bounded residue page without repeating every column name."""
     projected: dict[str, Any] = scientific_projection(value)
+    if value.get("query_scope") == "focused-residues":
+        # A focused read answers the requested rows. Repeating the Target assessment,
+        # scan inventory and research receipts can crowd those very rows off the page.
+        # Full original data remains registered; every row and limitation stays exact.
+        projected = {
+            k: projected[k]
+            for k in (
+                "query_scope",
+                "requested_labels",
+                "facts",
+                "offset",
+                "next_offset",
+                "page_total",
+                "mapped_residue_count",
+                "limitations",
+            )
+            if k in projected
+        }
+        projected["context"] = "Approved Target and overview remain in the bound task/full_result."
     rows = projected.get("facts", [])
     if not rows:
         return projected
@@ -181,6 +200,12 @@ def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
             table["rows"].pop()
             table["row_count"] = len(table["rows"])
             result["next_offset"] = projected["offset"] + table["row_count"]
+    if value.get("query_scope") == "focused-residues":
+        result["requested_residue_rows_complete"] = (
+            result.get("next_offset") is None
+            and projected.get("offset", 0) == 0
+            and table["row_count"] == len(set(value.get("requested_labels", [])))
+        )
     return result
 
 
@@ -332,7 +357,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     "scientific_content_complete": projected == scientific_projection(value),
                     "read": (
                         "Use supplied scientific content directly when complete. "
-                        "read_evidence_result(ref, field='key') for one top-level field; "
+                        "read_evidence_result(ref, path=['key']) for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
                         "Use offset/limit for list pages. Full result retained."
                     ),

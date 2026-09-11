@@ -704,3 +704,39 @@ in Pydantic diagnostics. Diagnostic serialization now excludes raw exception con
 retaining exact locations and messages. Targeted127c:62 PASS (16.79s); Ruff127c PASS; mypy127c:20 files PASS.
 Next live128/129 reuse the independently approved Target bundles.
 Phase2 remains NOT FROZEN; cases1/2/4/5 incomplete, case3 independently PASS only.
+
+
+### Complete focused rows and a bounded Site synthesis reserve (live128/129)
+
+Live128 (`phase2-goldens-20260911T202101612210Z`) exhausted32calls (Coordinator3/Site29).
+It repeatedly read already-delivered evaluation fields and applied residue-like offsets to small
+explicit label sets. Full Target/research/scan backgrounds were also repeated in focused reads,
+crowding actual requested residue rows out of the6000-character model view. Focused reads now
+display their exact mapping/metric rows, cursor/counts and all limitations; the complete original
+including approved Target/background remains in the same checksum-verified full_result. A complete
+requested set is explicitly identified. The model's focused query accepts up to12exact labels and
+no offset, so a different region is a new exact label set. The legacy SiteQuery API still supports
+its original40labels and pagination. No mapping, SASA or candidate ranking algorithm changes.
+
+Repeated prompt-only synthesis reminders did not stop this no-progress loop. The existing shared
+32-call guard now reserves the last8calls for SiteIntent finalization and independent review: Site
+sees only its original typed output tool; late read attempts execute nothing and receive the
+existing bounded output-contract correction. This supersedes earlier guidance-only behavior.
+It adds no scheduler, scientific decision or approval. Every material research status, exact
+citation, hard-fact check, independent Judge and Gate requirement remains unchanged; incomplete
+evidence can still fail instead of manufacturing a PASS. No call/context/output budget increases.
+
+Live129 (`phase2-goldens-20260911T202101672174Z`) successfully acquired complete GPCRdb context
+and ran the real existing receptor analysis, then failed at17calls on an out-of-role tool name.
+The original diagnostic omitted the name and the failed model response was not checkpointed;
+its exact cause cannot be claimed diagnosed. Rejections now persist tool names, role/execution and
+executed=false before raising, without arguments/source content. This retains the hard permission
+boundary and makes the next real rejection diagnosable.
+
+Both traces and their valid upstream approvals are preserved. Case3 independently PASS; Phase2
+NOT FROZEN. Phase2/3/4 status documents now distinguish this active user-authorized continuation
+from the superseded historical STOP and installation-only AFO smoke. Targeted130:63 PASS/1 FAIL (52.56s); the old model-schema assertion still supplied
+offset and was updated for the explicit focused query. Final targeted130b:56 PASS (11.90s),
+including late-read rejection, no approval creation, full row reconstruction, immutable full-result
+retention and permission rejection telemetry. Ruff130b PASS; mypy130b:20 files PASS.
+Next live131/132 reuse the approved soluble/GPCR Target bundles.

@@ -47,7 +47,9 @@ numbering distinct from the normalized approved target labels; map before propos
    A non-null canonical_position is a supplied conditional correspondence row even when
    mapping_status says review-required/ambiguous; preserve that qualification without claiming
    no mapping exists. An archived delivered page is not evidence that it was never retrieved.
-   Obtain additional pages/exact residues when needed; missing evidence is not zero.
+   For focused reads request up to twelve exact labels per call, without offset. All
+   requested rows fit a small table; request a different label set for another region.
+   Missing evidence is not zero.
    facts_table is the complete requested residue page encoded without repeated keys:
    each row follows mapping_columns then metric_columns exactly, including nulls.
    This Site result uses approved_target.identity / approved_target.hard_facts;
@@ -60,6 +62,9 @@ numbering distinct from the normalized approved target labels; map before propos
    Read full_result.facts only if an original object field is specifically needed.
    That facts array is only the stored page, not all target residues. Its list offset is
    not a residue label. Use read_site_evidence(label_seq_ids=[...]) for another region.
+   Finish focused research and candidate comparisons before the shared eight-call reserve;
+   runtime then offers only SiteIntent to leave room for independent review and the Gate.
+   This deadline never resolves unknowns or waives source/mapping/constraint checks.
 2. Compare real accessible patches and their geometry. Existing SASA and scores are derived
    metrics on the prepared target; exposure does not establish a useful epitope or affinity.
    Candidate pool membership is advisory, not permission to skip local geometry review.

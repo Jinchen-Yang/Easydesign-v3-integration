@@ -70,13 +70,13 @@ class SiteQuery(StrictDTO):
     offset: int = Field(default=0, ge=0)
 
 
-class FocusedSiteQuery(SiteQuery):
+class FocusedSiteQuery(StrictDTO):
     label_seq_ids: list[int] = Field(
         min_length=1,
-        max_length=40,
-        description="Exact approved target labels for the scientific patch/hypothesis being "
-        "examined. Choose from supplied scan patches or mapped literature evidence. "
-        "Offset pages only within these labels; do not walk the entire protein.",
+        max_length=12,
+        description="Up to twelve exact approved design labels for a scientific patch. "
+        "Choose from supplied scan patches or mapped literature evidence. "
+        "No offset: request another exact label set for more rows.",
     )
 
 

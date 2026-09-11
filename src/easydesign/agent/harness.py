@@ -408,7 +408,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "args_schema": FocusedSiteQuery,
                         "description": "Read exact approved labels for a scientific "
                         "patch/hypothesis. The overview and candidate_patches are "
-                        "already supplied. Offset pages within those labels only.",
+                        "already supplied. Read up to twelve labels at once; "
+                        "request a different exact label set for another region.",
                     }
                 )
                 if t.name == "read_site_evidence"
@@ -570,6 +571,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 "AND json_extract(payload,'$.execution_id')=?",
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
+            synthesize = self.role == "site" and self.config.max_model_calls - used <= 8
+            call_tools = [] if synthesize else available
             request = request.override(
                 system_message=SystemMessage(
                     content=base_system
@@ -586,6 +589,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "for typed synthesis, independent review and the Gate. Do not exhaust it by "
                     "enumerating the target or repeating delivered pages. Missing evidence stays "
                     "explicitly unresolved; budget pressure never justifies invented support."
+                    + (
+                        " Site reading budget is complete. Only the SiteIntent submission tool "
+                        "is offered now. Submit your concise hypothesis with every material "
+                        "unknown, source limitation and meaningful alternative retained. "
+                        "This creates no approval; unchanged research/fact checks and independent "
+                        "Judge can reject insufficient evidence. Do not invent support."
+                        if synthesize
+                        else ""
+                    )
                     + (
                         " Site synthesis is now due: preserve about six calls for independent "
                         "Judge and the Coordinator. Use already delivered source passages and "
@@ -624,21 +636,46 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "repair_attempt": attempt,
                 },
             )
-            response = await handler(request.override(tools=available))
+            response = await handler(request.override(tools=call_tools))
             if not self.structured_output:
                 return response
             schema = self.output_schema
             assert schema is not None
             calls = [call for m in response.result for call in getattr(m, "tool_calls", [])]
-            if any(call["name"] not in self.allowed | {schema.__name__} for call in calls):
-                raise AgentBoundaryError("Rejected: tool is outside this role's permissions")
+            rejected_names = sorted(
+                {
+                    call["name"]
+                    for call in calls
+                    if call["name"] not in self.allowed | {schema.__name__}
+                }
+            )
+            if rejected_names:
+                self.bridge.store.event(
+                    self.bridge.thread,
+                    "rejected-tool-name",
+                    {
+                        "role": self.role,
+                        "execution_id": self.execution_id,
+                        "tool_names": rejected_names,
+                        "executed": False,
+                    },
+                )
+                raise AgentBoundaryError(
+                    "Rejected: tool is outside this role's permissions: " + compact(rejected_names)
+                )
             invalid = [
                 call for m in response.result for call in getattr(m, "invalid_tool_calls", [])
             ]
             if any(call.get("name") != schema.__name__ for call in invalid):
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
-            if invalid:
+            if synthesize and any(call["name"] != schema.__name__ for call in calls):
+                diagnostic = (
+                    "SITE_READING_BUDGET_COMPLETE: no further reading/action was executed. "
+                    "Submit only SiteIntent using delivered evidence; preserve material unknowns. "
+                    "The original scientific and source checks remain mandatory."
+                )
+            elif invalid:
                 diagnostic = "INVALID_STRUCTURED_SUBMISSION: malformed tool JSON: " + compact(
                     invalid
                 )

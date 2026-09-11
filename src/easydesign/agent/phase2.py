@@ -275,6 +275,8 @@ class Phase2Bridge(TargetBridge):
                 for k in ("identity", "bundle", "provenance", "limitations", "hard_facts")
             },
             **summarize_site_facts(facts, labels=query.label_seq_ids, offset=query.offset),
+            "query_scope": "focused-residues" if query.label_seq_ids else "overview",
+            "requested_labels": query.label_seq_ids,
             "research": {
                 k: v for k, v in EvidenceResearch(self).snapshot().items() if k != "queries"
             },

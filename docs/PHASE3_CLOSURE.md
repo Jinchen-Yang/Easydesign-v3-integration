@@ -1,9 +1,11 @@
 # Phase 3 — NOT STARTED
 
-No Phase 3 implementation or acceptance milestone exists for this autonomous attempt.
-Phase 2.2d failed its critical real-model acceptance before Gate 1; the master task
-requires stopping before Phase 3. See `PHASE2_CLOSURE.md` for the failure evidence.
+Autonomous continuation is active under `AUTONOMOUS_V3_ASSIGNMENT_20260912.md`. Phase2
+remains NOT FROZEN: two Target Gate1 approvals and case3 acceptance are preserved while
+Site/Design goldens continue. See `AUTONOMOUS_V3_PROGRESS.md` for current evidence.
 
-No Phase 3 commit or frozen-candidate tag was created. No real GPU micro execution,
-production compute, synthetic scale acceptance, Gate 4/5 approval or wet-lab action is claimed.
-This file records non-execution; it is not a successful closure report.
+No Phase3 implementation or acceptance milestone exists yet. AFO's installation-only
+GPU smoke passed, but no Pilot/Scale scientific result is inferred from it. No production
+compute, Gate4/5 approval, synthetic scale acceptance or wet-lab action is claimed.
+
+This file records current non-execution; it is not a successful closure report.

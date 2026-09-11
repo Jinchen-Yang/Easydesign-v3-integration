@@ -1,3 +1,23 @@
+# Phase 2 autonomous continuation — NOT FROZEN
+
+The user explicitly resumed autonomous Phase2–4 development on2026-09-12. The historical
+stop recorded below is superseded by `AUTONOMOUS_V3_ASSIGNMENT_20260912.md`; ordinary
+implementation failures are being repaired and retried. Current authoritative progress and
+per-attempt evidence are in `AUTONOMOUS_V3_PROGRESS.md`.
+
+Two real Target Gate1 proposals (soluble044 and GPCR104) passed independent content review,
+received the scripted validation actor response through the trusted human-input path, and
+produced actual verified authoritative Target bundles. Case3 identity trap is independently
+PASS. Cases1/2/4/5 remain incomplete; no Phase2 freeze or Phase3/4 acceptance is claimed.
+The historical no-bound-job and evidence-page delivery defects below are repaired with targeted
+regressions. A new full regression is due after all five scientific goldens pass.
+
+The installation-only AFO GPU smoke passed separately; it is not Pilot evidence. No generation
+or prediction is run by the Phase2 goldens. Current compute receipts are linked from
+`AUTONOMOUS_V3_BACKEND_READINESS.md`.
+
+## Historical Phase2.2d closure (preserved)
+
 # Phase 2 acceptance — Phase 2.2d review, 2026-09-12
 
 **FAIL / NOT FROZEN. Phase 3 and Phase 4 have not started.**

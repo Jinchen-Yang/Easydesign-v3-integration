@@ -673,7 +673,7 @@ async def test_site_followup_reads_require_focus_and_share_existing_call_budget(
     await guard.awrap_model_call(request, handler)
     with pytest.raises(ValidationError):
         snapshots[1][0].model_validate({"offset": 8})
-    assert snapshots[1][0].model_validate({"label_seq_ids": [4, 7], "offset": 1}).label_seq_ids == [
+    assert snapshots[1][0].model_validate({"label_seq_ids": [4, 7]}).label_seq_ids == [
         4,
         7,
     ]
@@ -1261,3 +1261,171 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
     await guard.awrap_model_call(request, handler)
     assert not seen[0] and not seen[1] and len(seen[2]) == 1
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_focused_residue_rows_fit_without_repeating_large_approved_background(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.evidence_output import verified_result
+    from easydesign.agent.site_contracts import FocusedSiteQuery
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Compare exact residues")["execution_id"]
+    rows = [
+        {
+            "mapping": {
+                "label_seq_id": i,
+                "canonical_position": i + 18,
+                "source_author_chain_id": "L",
+                "source_author_residue_id": str(i),
+                "mapping_status": "review-required",
+                "insertion_code": None,
+            },
+            "rsasa": 0.6,
+            "raw_sasa": 52.83,
+            "declared_topology": None,
+        }
+        for i in range(1, 13)
+    ]
+    original = {
+        "query_scope": "focused-residues",
+        "requested_labels": list(range(1, 13)),
+        "facts": rows,
+        "offset": 0,
+        "next_offset": None,
+        "page_total": 12,
+        "approved_target": {"large_verified_background": "x" * 9000},
+        "candidate_patches": [{"other_patch": "y" * 7000}],
+        "limitations": ["Conditional mapping; no binding or efficacy claim"],
+    }
+    message = output_message(
+        b,
+        "site",
+        eid,
+        ToolMessage(name="read_site_evidence", content=compact(original), tool_call_id="focused"),
+    )
+    page = json.loads(message.content)
+    assert page["requested_residue_rows_complete"] and page["facts_table"]["row_count"] == 12
+    assert page["next_offset"] is None and page["limitations"] == original["limitations"]
+    assert len(compact(page)) < 6000 and "approved_target" not in page
+    table = page["facts_table"]
+    n = len(table["mapping_columns"])
+    restored = [
+        {
+            "mapping": dict(zip(table["mapping_columns"], r[:n], strict=True)),
+            **dict(zip(table["metric_columns"], r[n:], strict=True)),
+        }
+        for r in table["rows"]
+    ]
+    assert restored == rows and verified_result(b, "site", page["full_result"]) == original
+    assert set(FocusedSiteQuery.model_fields) == {"label_seq_ids"}
+    with pytest.raises(ValidationError):
+        FocusedSiteQuery(label_seq_ids=list(range(1, 14)))
+    with pytest.raises(ValidationError):
+        FocusedSiteQuery(label_seq_ids=[1, 2], offset=1)
+    assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_site_budget_reserve_requests_typed_synthesis_without_creating_approval(
+    bridge: Any,
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Bounded site research")["execution_id"]
+    guard = RoleBoundary(b, "site", cfg, "Research", execution_id=eid)
+    for _ in range(cfg.max_model_calls - 8):
+        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+
+    attempts = []
+
+    async def handler(request: Any) -> Any:
+        attempts.append(request)
+        assert request.tools == []  # ToolStrategy adds the existing SiteIntent output separately.
+        assert "Only the SiteIntent submission tool" in request.system_message.text
+        if len(attempts) == 1:
+            return SimpleNamespace(
+                result=[
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "read_site_evidence",
+                                "args": {"label_seq_ids": [1, 2]},
+                                "id": "late-read",
+                            }
+                        ],
+                    )
+                ],
+                structured_response=None,
+            )
+        # A schema error is still delivered through the existing correction path, not a Gate.
+        return SimpleNamespace(
+            result=[
+                ToolMessage(
+                    name="SiteIntent",
+                    tool_call_id="invalid",
+                    content="Missing material evidence conclusion",
+                    status="error",
+                )
+            ],
+            structured_response=None,
+        )
+
+    await guard.awrap_model_call(
+        Request(tools=tools, messages=[], system_message=SystemMessage(content="Research")), handler
+    )
+    assert b.current_site() is None and not b._jobs()
+    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
+    assert (
+        len([e for e in b.store.events(b.thread) if e["kind"] == "model-call"])
+        == cfg.max_model_calls - 6
+    )
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_tool_is_recorded_and_rejected_before_execution(bridge: Any) -> None:
+    from langchain_core.tools import StructuredTool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Diagnose malformed tool choice")["execution_id"]
+    guard = RoleBoundary(b, "site", scripted_config(), "Research", execution_id=eid)
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(request: Any) -> Any:
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "unavailable_scientific_tool", "id": "bad", "args": {}}],
+                )
+            ],
+            structured_response=None,
+        )
+
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+    with pytest.raises(AgentBoundaryError, match="unavailable_scientific_tool"):
+        await guard.awrap_model_call(
+            Request(tools=tools, messages=[], system_message=SystemMessage(content="Research")),
+            handler,
+        )
+    event = [e for e in b.store.events(b.thread) if e["kind"] == "rejected-tool-name"][-1]
+    assert event["payload"]["executed"] is False
+    assert event["payload"]["tool_names"] == ["unavailable_scientific_tool"]
+    assert not b._jobs() and b.current_site() is None

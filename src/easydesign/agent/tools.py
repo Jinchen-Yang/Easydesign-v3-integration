@@ -953,7 +953,11 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                 "prepare_target",
                 prepare_target_tool,
                 EmptyArguments,
-                "Prepare only this bound local target, or reattach its existing command.",
+                "Prepare this bound local target, or reattach its existing command. "
+                "Read your Skill first. If the user requests canonical identity, "
+                "acquire/read the verified source "
+                "and propose_canonical_identity BEFORE preparation; preparation freezes the "
+                "reference inputs. Never start it concurrently with those prerequisites.",
             )
         )
     if role == "coordinator":

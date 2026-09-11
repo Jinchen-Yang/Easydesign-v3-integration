@@ -41,8 +41,8 @@ Pure JSON text and fenced JSON do not submit proposals. Incidental prose accompa
 typed tool call is not authoritative and is replaced by the callback's runtime result. Invalid
 schema submissions get exact schema diagnostics through the framework; malformed tool JSON or
 missing typed submission gets a narrowly bounded correction. Two output-contract corrections
-are shared across roles in one persisted execution, separately from the already existing two
-source/projection corrections. Every attempt also consumes the unchanged model-call budget.
+are shared across roles in one persisted execution, separately from four shared source/projection corrections (20260912 bounded recovery update;
+historical Phase 2.2d used two). Every attempt also consumes the unchanged model-call budget.
 Restart or redelegation cannot reset either allowance. No scheduler or schema migration is added.
 
 ## Target facts and scientific consistency

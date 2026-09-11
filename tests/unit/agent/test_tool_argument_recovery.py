@@ -165,7 +165,33 @@ async def guarded_read(bridge: Any, execution: str, **args: Any) -> Any:
 
 
 @pytest.mark.asyncio
-async def test_shared_two_repairs_survive_restart_resume_and_reset_only_for_followup(
+async def test_rendered_projection_keeps_original_navigation_root_and_actionable_keys(
+    bridge: Any,
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Inspect distinct source fields")["execution_id"]
+    ref = offload(b, execution)
+    first = json.loads((await guarded_read(b, execution, ref=ref, field="long_text")).content)
+    assert first["full_result"] == ref and first["value"] == "x" * 3000
+    second = json.loads(
+        (await guarded_read(b, execution, ref=first["full_result"], field="options")).content
+    )
+    assert second["value"] == SNAPSHOT["options"] and second["full_result"] == ref
+    invalid = await guarded_read(b, execution, ref=second["full_result"], field="proposal")
+    error = json.loads(invalid.content)
+    assert invalid.status == "error"
+    assert '"identity_evidence"' in error["message"] and '"options"' in error["message"]
+    assert '"long_text"' in error["message"] and "xxxxx" not in error["message"]
+    repaired = json.loads(
+        (await guarded_read(b, execution, ref=ref, field="identity_evidence")).content
+    )
+    assert repaired["value"] == SNAPSHOT["identity_evidence"]
+    # A read of the original source must not register the reader wrapper as a new artifact.
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "tool-view"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_shared_four_repairs_survive_restart_resume_and_reset_only_for_followup(
     bridge: Any,
 ) -> None:
     bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
@@ -177,6 +203,12 @@ async def test_shared_two_repairs_survive_restart_resume_and_reset_only_for_foll
     reopened = SessionStore(bridge.project)
     try:
         resumed = Phase2Bridge(bridge.project, bridge.thread, reopened)
+        assert (
+            reopened.reserve_prerequisite_repair(bridge.thread, "target", execution, "RCSB:1MEL")
+            == 3
+        )
+        error = json.loads((await guarded_read(resumed, execution, ref=ref, field=KEYS)).content)
+        assert error["repair_attempt"] == error["repair_limit"] == 4
         with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
             await guarded_read(resumed, execution, ref=ref, field=KEYS)
         with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):

@@ -264,6 +264,45 @@ def _pdb_view(entry: dict[str, Any], polymers: list[dict[str, Any]]) -> dict[str
     }
 
 
+def _pdb_sections(view: dict[str, Any]) -> list[dict[str, str]]:
+    """Index source entities separately so a passage does not splice different chains."""
+    sections = []
+    for polymer in view["polymers"]:
+        identifiers = polymer.get("identity") or {}
+        sections.append(
+            {
+                "location": "structure polymer entity identity / chain inventory / "
+                + str(polymer["entity_id"]),
+                "text": compact(
+                    {
+                        "pdb_id": view["pdb_id"],
+                        "entity_id": polymer["entity_id"],
+                        "description": (polymer.get("description") or {}).get("pdbx_description"),
+                        "auth_asym_ids": identifiers.get("auth_asym_ids"),
+                        "asym_ids": identifiers.get("asym_ids"),
+                        "reference_sequence_identifiers": identifiers.get(
+                            "reference_sequence_identifiers"
+                        ),
+                        "scope": (
+                            "Deposited source identifiers; "
+                            "canonical mapping requires the target bundle."
+                        ),
+                    }
+                ),
+            }
+        )
+        for name, value in polymer.items():
+            sections.append(
+                {"location": f"polymer {polymer['entity_id']} / {name}", "text": compact(value)}
+            )
+    sections.extend(
+        {"location": name, "text": compact(value)}
+        for name, value in view.items()
+        if name != "polymers"
+    )
+    return sections
+
+
 class EvidenceResearch:
     """One synchronous bounded worker, shared by Target and Site typed tools."""
 
@@ -803,10 +842,7 @@ class EvidenceResearch:
                     "primary_eligible": True,
                     "evidence_level": "deposition-and-polymer-entities",
                     "passage": compact(_pdb_view(entry, polymers)),
-                    "_sections": [
-                        {"location": name, "text": compact(value)}
-                        for name, value in _pdb_view(entry, polymers).items()
-                    ],
+                    "_sections": _pdb_sections(_pdb_view(entry, polymers)),
                     "truncated": False,
                     "limitations": [
                         "Deposited assembly and partners are not proof of physiological context."

@@ -92,7 +92,7 @@ A partial preview is not the complete scientific table. Full results remain dura
 page through all raw JSON. Ordinary tool outputs and old detailed views may be reduced to
 references in model context. Re-read a needed field explicitly; do not infer omitted values.
 
-Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.
+Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share four corrections per execution. Foreign references and integrity/authority errors are fatal.
 
 Submit the final opinion only through the available typed output tool. Free-form prose or
 fenced JSON cannot create a scientific proposal. Correct exact schema errors within the

@@ -89,3 +89,41 @@ source-feature checks and negative conflicting-source aliases. No scientific ora
 Next: rerun the real Phase 2 cases from this source; independently inspect every Gate snapshot.
 Do not claim Phase 2 frozen until five cases and full regression pass. Miniforge005 continues
 its verified current-worktree download; no GPU jobs have been launched.
+
+## Bounded recovery update after live016
+
+Live016 (phase2-goldens-20260911T173516Z) delivered the coherent UniProt source summary.
+Two concurrent acquisitions without prior selection consumed both shared corrections in one
+model turn; a later reworded RCSB cursor then exhausted the allowance (Coordinator2/Target8).
+The shared source/argument allowance is now four, persisted across roles/restarts within the
+same execution. Output-contract allowance remains two; model calls32 and context60000 remain.
+This is measured bounded Harness tuning authorized by the current assignment, not a scientific
+contract change. Foreign references, integrity failures and unknown cursors remain fatal.
+RCSB corpus sections now expose individual source entity chain inventories and individual
+polymer fields; complete response bytes and all original view fields remain retained. This
+avoids mixing distinct entities into one arbitrary JSON fragment. No canonical mapping is inferred.
+Historical reports describing two corrections remain historical. Current parity rows are updated.
+
+Targeted018 32 PASS (14.55s), mypy01920files PASS. Live020
+(phase2-goldens-20260911T174016Z) reached actual typed Target submission and independent Judge
+but exhausted the four shared corrections at modelcall21: after reading sibling fields,
+read_evidence_result was itself re-offloaded and its full_result pointed to a wrapper instead
+of the original snapshot. The Judge repeatedly requested source fields from that wrapper.
+Scoped reads now retain their verified original navigation root. Invalid selectors report
+actual available keys after authorization/integrity checks. No limit increase follows this failure.
+
+Targeted021 21 PASS (4.51s), mypy02220files PASS, including sequential reads through the
+returned original reference, actual key diagnostics and unchanged cross-role/thread/Judge-scope
+rejection tests. Live023 started with these changes. No Phase acceptance claimed yet.
+
+Live023 failed earlier: Target called prepare_target concurrently with its initial Skill read,
+then tried to configure the requested canonical source after a structural-only run had started.
+The existing immutable-input boundary correctly rejected retargeting; failed run retained.
+Target preparation is now omitted from the initial model surface until the own-Skill read has
+returned. The preparation tool and Target system prompt state the canonical-before-prepare
+prerequisite directly, before progressive Skill loading. No existing scientific run is retargeted.
+
+Targeted024 was a command-path error (nonexistent test_harness.py; no tests ran).
+Corrected targeted026 is 22 PASS (6.77s), mypy02520files PASS, Ruff PASS.
+Protected385file hashes match the starting baseline. Additional Site/Design/Target integration
+and a fresh live attempt follow this checkpoint; full phase freeze remains pending.

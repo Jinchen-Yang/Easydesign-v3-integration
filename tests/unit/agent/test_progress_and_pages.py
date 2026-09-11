@@ -58,12 +58,17 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
     request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Inspect"))
     await guard.awrap_model_call(request, handler)
     assert "get_job_status" not in names[-1]
-    assert "prepare_target" in names[-1] and "select_evidence" in names[-1]
+    assert "prepare_target" not in names[-1] and "select_evidence" in names[-1]
     assert not b._jobs()
+    request = request.override(
+        messages=[ToolMessage(name="read_file", tool_call_id="skill", content="Loaded own Skill")]
+    )
+    await guard.awrap_model_call(request, handler)
+    assert "prepare_target" in names[-1] and "get_job_status" not in names[-1]
     monkeypatch.setattr(b, "get_job_status", lambda: {"status": "running", "job_id": "bound"})
     await guard.awrap_model_call(request, handler)
     assert "get_job_status" in names[-1]
-    assert names[-1] - names[0] == {"get_job_status"}
+    assert names[-1] - names[0] == {"get_job_status", "prepare_target"}
     assert not b._jobs()
 
 
@@ -151,7 +156,7 @@ async def test_reworded_question_is_bounded_repair_but_foreign_cursor_is_fatal(
     request = SimpleNamespace(
         tool_call={"name": "retrieve_evidence", "id": "mismatch", "args": changed.model_dump()}
     )
-    for attempt in (1, 2):
+    for attempt in (1, 2, 3, 4):
         response = await guard.awrap_tool_call(request, handler)
         value = json.loads(response.content)
         assert response.status == "error" and value["error_code"] == "CURSOR_QUERY_MISMATCH"

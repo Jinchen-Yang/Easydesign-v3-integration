@@ -93,6 +93,22 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
             bridge.store.root / "agent-work" / bridge.thread / value["ref"].lstrip("/"),
         )
         value = json.loads(path.read_text())
+    if (
+        message.name == "read_evidence_result"
+        and isinstance(value, dict)
+        and value.get("full_result")
+    ):
+        # The reader's source is already registered and immutable. Re-offloading its
+        # wrapper would change the navigation root from scientific data to {value,...}.
+        verified_result(bridge, role, value["full_result"], execution_id=execution_id)
+        projected = scientific_projection(value)
+        if len(compact(projected)) > (32000 if role == "judge" else 6000):
+            projected = {
+                "status": "narrower-scope-required",
+                "full_result": value["full_result"],
+                "instruction": "Read a narrower source field; this page was not supplied.",
+            }
+        return message.model_copy(update={"content": compact(projected)})
     if len(compact(value)) <= 1600:
         return message.model_copy(
             update={"content": compact(value) if not isinstance(value, str) else value}
@@ -216,6 +232,14 @@ def read_query(arguments: dict[str, Any]) -> ReadEvidenceResult:
     return query
 
 
+def navigation_hint(value: Any) -> str:
+    if isinstance(value, dict):
+        return "Available object keys: " + compact(list(value)[:30])[:2000]
+    if isinstance(value, list):
+        return f"This is a list of {len(value)} items; use a nonnegative index within its length."
+    return "This is a scalar; read this value without an additional child selector."
+
+
 def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]:
     if query.fields is not None:
         if (
@@ -224,7 +248,8 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
             or any(key not in value for key in query.fields)
         ):
             raise InvalidFieldProjection(
-                "Sibling projection requires distinct existing object keys."
+                "Sibling projection requires distinct existing object keys. "
+                + navigation_hint(value)
             )
         return {key: value[key] for key in query.fields}, []
     path = ([query.field] if isinstance(query.field, str) else query.field) or query.path or []
@@ -237,7 +262,9 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
             else:
                 value = value[key]
     except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise InvalidFieldProjection("Unknown scoped result field or list index.") from exc
+        raise InvalidFieldProjection(
+            "Unknown scoped result field or list index. " + navigation_hint(value)
+        ) from exc
     return value, path
 
 
@@ -248,6 +275,7 @@ def result_tool(bridge: Any, role: str) -> Any:
         full = verified_result(bridge, role, arguments.get("ref"))
         query = read_query(arguments)
         value, selected_path = scoped_value(full, query)
+        source = {"full_result": query.ref}
         selector = {"path": selected_path}
         if query.fields is not None:
             selector = {"fields": query.fields}
@@ -275,6 +303,7 @@ def result_tool(bridge: Any, role: str) -> Any:
                         "available_fields": list(item)[:30] if isinstance(item, dict) else [],
                         "instruction": "Read an item field; no array entries were consumed.",
                         "next_offset": query.offset,
+                        **source,
                         **deprecation,
                     }
                 )
@@ -297,10 +326,13 @@ def result_tool(bridge: Any, role: str) -> Any:
                         **selector,
                         "available_fields": list(value)[:30] if isinstance(value, dict) else [],
                         "instruction": "Read a child field; the full object was not supplied.",
+                        **source,
                         **deprecation,
                     }
                 )
-        return compact({"value": page, "next_offset": next_offset, **selector, **deprecation})
+        return compact(
+            {"value": page, "next_offset": next_offset, **selector, **deprecation, **source}
+        )
 
     return StructuredTool.from_function(
         name="read_evidence_result",

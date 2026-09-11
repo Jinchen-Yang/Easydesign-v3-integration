@@ -84,6 +84,91 @@ def select(worker: Any, identifier: str, need: str = "FUNCTIONAL_MECHANISM") -> 
     )
 
 
+def test_rcsb_chain_inventory_keeps_entities_separate_and_preserves_sources(
+    research: Any, monkeypatch: Any
+) -> None:
+    import json
+
+    entry = {
+        "rcsb_id": "1ABC",
+        "rcsb_entry_container_identifiers": {"polymer_entity_ids": ["1", "2"]},
+    }
+    entities = {
+        str(i): {
+            "rcsb_id": f"1ABC_{i}",
+            "rcsb_polymer_entity": {"pdbx_description": description},
+            "rcsb_polymer_entity_container_identifiers": {
+                "asym_ids": [label],
+                "auth_asym_ids": [auth],
+            },
+            "entity_poly": {"pdbx_seq_one_letter_code_can": "A" * (100 + i)},
+        }
+        for i, description, label, auth in [
+            (1, "Synthetic target", "C", "L"),
+            (2, "Synthetic partner", "A", "H"),
+        ]
+    }
+    responses = []
+
+    def handler(request: Any) -> Any:
+        body = (
+            entry
+            if "/entry/" in request.url.path
+            else entities[request.url.path.rsplit("/", 1)[-1]]
+        )
+        response = httpx.Response(200, json=body)
+        responses.append(response.content)
+        return response
+
+    monkeypatch.setattr(
+        research,
+        "client",
+        lambda directory: ResearchHttpClient(
+            evidence_dir=directory,
+            max_attempts=1,
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        ),
+    )
+    corpus = EvidenceCorpus(research.bridge)
+    corpus.select(
+        SelectEvidence(
+            provider="RCSB",
+            identifier="1ABC",
+            need="PPI_INTERFACE",
+            selection="SELECTED",
+            reason="Inspect distinct synthetic partner chains",
+        )
+    )
+    acquired = research.acquire(
+        ResearchQuery(
+            operation="structure-record",
+            identifier="1ABC",
+            topic="structure-complex",
+            question="Inspect polymer chain inventory",
+        ),
+        role="target",
+    )
+    page = corpus.retrieve(
+        RetrieveEvidence(
+            need="PPI_INTERFACE",
+            source_id="RCSB:1ABC",
+            question="polymer entity identity chain inventory",
+            page_size=3,
+        )
+    )
+    # Ranked inventory passages are complete source objects, with no partner/target splice.
+    facts = [json.loads(card["passage"]) for card in page["cards"]]
+    assert len(facts) == 2
+    assert {f["entity_id"]: (f["auth_asym_ids"], f["asym_ids"]) for f in facts} == {
+        "1ABC_1": (["L"], ["C"]),
+        "1ABC_2": (["H"], ["A"]),
+    }
+    assert all("mapping requires" in f["scope"] for f in facts)
+    refs = acquired["cards"][0]["source_refs"]
+    saved = [(research.bridge.project / ref["relative_path"]).read_bytes() for ref in refs]
+    assert all(raw in saved for raw in responses)
+
+
 def read_primary(worker: Any, identifier: str) -> dict[str, Any]:
     select(worker, identifier)
     worker.acquire(query(operation="primary-record", identifier=identifier), role="site")

@@ -36,7 +36,7 @@ from .evidence_output import output_message, read_query, verified_result
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
-from .session_store import compact, confined, identity
+from .session_store import TOOL_REPAIR_LIMIT, compact, confined, identity
 from .site_contracts import ScientificTask, SiteIntent
 from .target_assessment import (
     HardFactContradiction,
@@ -233,6 +233,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
             raise AgentBoundaryError(f"Unexpected final tool surface for {self.role}")
+        if self.role == "target" and not any(
+            isinstance(m, ToolMessage) and m.name == "read_file" and m.status != "error"
+            for m in request.messages
+        ):
+            # Preparation fixes the run's identity inputs. Do not offer it in the
+            # initial call that is still loading those prerequisites from the Skill.
+            available = [t for t in available if t.name != "prepare_target"]
         # An absent job cannot advance by observation. Tool availability follows the
         # original runtime receipt; this does not schedule work or choose science.
         if (
@@ -577,7 +584,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 )
                 result = ToolMessage(
                     content=compact(
-                        {**error.result(), "repair_attempt": attempt, "repair_limit": 2}
+                        {
+                            **error.result(),
+                            "repair_attempt": attempt,
+                            "repair_limit": TOOL_REPAIR_LIMIT,
+                        }
                     ),
                     status="error",
                     tool_call_id=request.tool_call["id"],
@@ -600,7 +611,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     self.bridge.thread, self.role, self.execution_id, required["source_id"]
                 )
                 result = ToolMessage(
-                    content=compact({**required, "repair_attempt": attempt, "repair_limit": 2}),
+                    content=compact(
+                        {**required, "repair_attempt": attempt, "repair_limit": TOOL_REPAIR_LIMIT}
+                    ),
                     status="error",
                     tool_call_id=request.tool_call["id"],
                     name=name,
@@ -769,6 +782,14 @@ def create_harness(
             "as authoritative data in your interpretation. "
             "Judge independently compares opinions with facts."
         )
+        if role == "target" and isinstance(bridge, Phase2Bridge):
+            prompt += (
+                " Before prepare_target, resolve any canonical reference requested by the "
+                "user: select/acquire/read the official source, propose_canonical_identity, "
+                "then read the current identity view. Preparation freezes its inputs and "
+                "cannot later add or replace a canonical reference. Read your Skill before "
+                "starting preparation; never parallelize those dependent operations."
+            )
         boundary = RoleBoundary(
             bridge, role, config, goal, current_user_message, execution_id, revision
         )

@@ -50,7 +50,7 @@ class RecoveryModel(ScriptedModel):
             {output[self.role]} if self.role in output else set()
         )
         names = {t.name for t in tools}
-        assert names <= expected and expected - names <= {"get_job_status"}
+        assert names <= expected and expected - names <= {"get_job_status", "prepare_target"}
         return self
 
     def answer(self, messages: Any) -> AIMessage:
@@ -198,7 +198,7 @@ async def test_repair_limit_survives_restart_but_not_a_new_execution(
     with pytest.raises(AgentBoundaryError, match="prerequisite repair budget exhausted"):
         await inspect_with_harness(bridge, repeat=True)
     repairs = [e for e in bridge.store.events(bridge.thread) if e["kind"] == "prerequisite-repair"]
-    assert [e["payload"]["attempt"] for e in repairs] == [1, 2]
+    assert [e["payload"]["attempt"] for e in repairs] == [1, 2, 3, 4]
     assert not requests and not EvidenceCorpus(bridge).selections() and not bridge._jobs()
     reopened = SessionStore(bridge.project)
     try:

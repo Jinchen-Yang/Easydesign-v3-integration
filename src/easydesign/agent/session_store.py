@@ -15,6 +15,8 @@ from uuid import uuid4
 
 from .contracts import AgentBoundaryError, DecisionCard, DecisionOutcome, EvidenceAssessment
 
+TOOL_REPAIR_LIMIT = 4
+
 
 def compact(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -295,7 +297,7 @@ class SessionStore:
         error_code: str,
         **details: str,
     ) -> int:
-        """At most two corrections total in the existing persisted execution.
+        """At most four tool corrections total in the existing persisted execution.
 
         Restarting a graph or delegating again cannot reset this allowance. Replayed
         failures also consume it; there is no additional recovery or scheduling state.
@@ -310,11 +312,12 @@ class SessionStore:
                 "AND json_extract(payload, '$.execution_id')=?",
                 (thread, execution_id),
             ).fetchone()[0]
-            if used >= 2:
+            if used >= TOOL_REPAIR_LIMIT:
                 label = "prerequisite" if kind == "prerequisite-repair" else "tool argument"
                 raise AgentBoundaryError(
                     f"{error_code}: {label} "
-                    "repair budget exhausted (2 shared corrections per execution); "
+                    f"repair budget exhausted ({TOOL_REPAIR_LIMIT} shared corrections "
+                    "per execution); "
                     "inspect the tool arguments and prerequisites."
                 )
             self.db.execute(

@@ -24,7 +24,7 @@ class SiteModel(ScriptedModel):
             {outputs[self.role]} if self.role in outputs else set()
         )
         names = {t.name for t in tools}
-        assert names <= expected and expected - names <= {"get_job_status"}
+        assert names <= expected and expected - names <= {"get_job_status", "prepare_target"}
         return self
 
     def answer(self, messages: Any) -> AIMessage:

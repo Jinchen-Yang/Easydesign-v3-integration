@@ -74,3 +74,20 @@ request bindings or arbitrary YAML; runtime attaches identities and compiles you
 
 A motif is not occupancy. A structure is not a state-specific binding result. A geometric
 candidate is not a validated epitope. Treat each limitation as part of the scientific proposal.
+
+## Evidence working set
+
+Search returns shallow leads only. Call select_evidence with SELECTED/DEFERRED/EXCLUDED,
+a task-specific reason and the relevant EvidenceNeed before any record/fulltext acquisition.
+Direct user-supplied PMID/PMCID/accession/PDB identifiers can be selected explicitly.
+research_evidence saves complete selected sources; its acquisition receipt contains no full text.
+Use retrieve_evidence for the current scientific question, optionally source_id, and continue
+with its cursor only when needed. Cite the returned passage card ID and exact short excerpt.
+Need names: TARGET_IDENTITY, STRUCTURE_STATE, LIGAND_PARTNER, MUTAGENESIS,
+FUNCTIONAL_MECHANISM, KNOWN_EPITOPE, COMPETITION, PPI_INTERFACE, GLYCAN_PTM, CONSERVATION.
+Do not enumerate every source or read every chunk. Search relevance is not scientific strength.
+Keep supporting and contradictory evidence; report access failures as UNRESOLVED.
+For a large tool result use read_evidence_result on a relevant named field/list page.
+A partial preview is not the complete scientific table. Full results remain durable; never
+page through all raw JSON. Ordinary tool outputs and old detailed views may be reduced to
+references in model context. Re-read a needed field explicitly; do not infer omitted values.

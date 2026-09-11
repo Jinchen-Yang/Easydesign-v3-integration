@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from easydesign.agent.contracts import AgentBoundaryError
+from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import (
     EvidenceResearch,
     ResearchConclusion,
@@ -69,6 +70,32 @@ def query(topic: str = "function", **kwargs: Any) -> ResearchQuery:
     )
 
 
+def select(worker: Any, identifier: str, need: str = "FUNCTIONAL_MECHANISM") -> None:
+    EvidenceCorpus(worker.bridge).select(
+        SelectEvidence.model_validate(
+            {
+                "provider": "EuropePMC",
+                "identifier": identifier,
+                "need": need,
+                "selection": "SELECTED",
+                "reason": "Inspect primary experimental report",
+            }
+        )
+    )
+
+
+def read_primary(worker: Any, identifier: str) -> dict[str, Any]:
+    select(worker, identifier)
+    worker.acquire(query(operation="primary-record", identifier=identifier), role="site")
+    return EvidenceCorpus(worker.bridge).retrieve(
+        RetrieveEvidence(
+            need="FUNCTIONAL_MECHANISM",
+            question="enzyme inhibition",
+            source_id="EuropePMC:" + identifier,
+        )
+    )["cards"][0]
+
+
 def test_not_searched_empty_search_and_network_failure_are_distinct(
     research: Any, monkeypatch: Any
 ) -> None:
@@ -115,8 +142,10 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
         },
     )
     result = research.acquire(query(), role="site")
-    card = result["cards"][0]
-    assert card["source_verified"] and card["source_refs"]
+    assert result["cards"][0]["primary_eligible"] is False
+    card = read_primary(research, "12345")
+    source_card = research.snapshot()["queries"][1]["cards"][0]
+    assert card["source_verified"] and source_card["source_refs"]
     use = {
         "card_id": card["card_id"],
         "excerpt": "inhibited enzyme activity in a purified assay",
@@ -153,7 +182,7 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
             [conclusion.model_copy(update={"status": "CONFLICTING_EVIDENCE"})]
         )
     # Persisted query snapshots do not excuse tampering with original source artifacts.
-    path = research.bridge.project / card["source_refs"][0]["relative_path"]
+    path = research.bridge.project / source_card["source_refs"][0]["relative_path"]
     path.write_text("tampered")
     with pytest.raises(ArtifactIntegrityError):
         research.snapshot()
@@ -163,6 +192,7 @@ def test_wrong_pmid_and_review_never_become_primary_evidence(
     research: Any, monkeypatch: Any
 ) -> None:
     transport(research, monkeypatch, {"resultList": {"result": [{"id": "999", "source": "MED"}]}})
+    select(research, "12345")
     result = research.acquire(query(operation="primary-record", identifier="12345"), role="target")
     assert result["status"] == "UNRESOLVED" and "identity mismatch" in result["errors"][0]
     transport(
@@ -302,9 +332,11 @@ def test_fulltext_binds_enclosing_article_not_citations(
             client=httpx.Client(transport=httpx.MockTransport(handler)),
         ),
     )
+    select(research, "PMC123")
     result = research.acquire(query(operation="primary-fulltext", identifier="PMC123"), role="site")
     assert not result["errors"]
     assert result["cards"][0]["primary_eligible"] is eligible
     assert "Measured inhibition" in result["cards"][0]["passage"]
+    select(research, "PMC999")
     wrong = research.acquire(query(operation="primary-fulltext", identifier="PMC999"), role="site")
     assert wrong["status"] == "UNRESOLVED" and "identity mismatch" in wrong["errors"][0]

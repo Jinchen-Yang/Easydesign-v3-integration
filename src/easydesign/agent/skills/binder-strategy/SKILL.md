@@ -52,3 +52,13 @@ do not call it an unverified human guess or require an unrelated target/canonica
 It does not establish cross-scaffold structural alignment, geometric equivalence or binding.
 Only the four supported scientific intent controls are exposed here; unrelated backend feature
 flags must not be interpreted as absence of the official VHH scaffold assets.
+
+## Expert native strategy
+
+If read_design_evidence exposes expert_native, preserve the scientist's imported specification.
+Set strategy_source=expert-native and arms=[]; give only your scientific opinion/rationale and
+uncertainty. Do not rewrite native YAML or replace it with standard arms. Trusted runtime
+verifies target/hotspot, VHH templates, source paths and the old backend schema, then passes
+unchanged YAML to the compiler. Judge and Gate 3 are still mandatory; no Pilot is launched.
+A new expert input can replace an earlier import only after scientist REVISE.
+Large result references support read_evidence_result with named fields; avoid sequential full-file reading.

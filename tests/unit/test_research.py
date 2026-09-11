@@ -690,3 +690,60 @@ def test_operationally_failed_pilot_does_not_become_scientific_observation(
     assert not load_research_events(tmp_path)
     assert result.next_actions[0].intent is not None
     assert result.next_actions[0].intent.action_type == "review-status"
+
+
+def test_native_first_pilot_groups_same_hypothesis_without_relaxing_coverage() -> None:
+    from easydesign.orchestration.research import StrategyVariant
+
+    variants = tuple(
+        StrategyVariant(
+            id=f"native-{s}",
+            scaffold_ids=(s,),
+            native_boltzgen_yaml=Path(f"{s}.yaml"),
+            native_boltzgen_sha256="a" * 64,
+            hypothesis_id="native-condition",
+            role="baseline",
+            evidence_refs=("approved:site",),
+            changed_factors=("scaffold",),
+            held_constant=("site",),
+            rationale="Explore the same condition across all VHH scaffolds",
+            expected_result="Compare scaffold tolerance",
+            failure_interpretation="No site-level attribution",
+        )
+        for s in SCAFFOLD_IDS
+    )
+    strategy = ResearchStrategy(
+        schema_version="1.3", protocol_kind="first-pilot", variants=variants
+    )
+    summary = _validate_first_pilot_strategy(strategy)
+    assert summary.experimental_condition_count == 1 and summary.total_candidates == 280
+    with pytest.raises(ConfigurationError):
+        _validate_first_pilot_strategy(strategy.model_copy(update={"variants": variants[:-1]}))
+    with pytest.raises(ConfigurationError):
+        _validate_first_pilot_strategy(
+            strategy.model_copy(
+                update={
+                    "variants": variants
+                    + (variants[0].model_copy(update={"id": "duplicate-scaffold"}),)
+                }
+            )
+        )
+    with pytest.raises(ConfigurationError):
+        _validate_first_pilot_strategy(
+            strategy.model_copy(
+                update={
+                    "variants": (variants[0].model_copy(update={"candidates": 39}), *variants[1:])
+                }
+            )
+        )
+    with pytest.raises(ConfigurationError):
+        _validate_first_pilot_strategy(
+            strategy.model_copy(
+                update={
+                    "variants": (
+                        variants[0].model_copy(update={"held_constant": ("different-site",)}),
+                        *variants[1:],
+                    )
+                }
+            )
+        )

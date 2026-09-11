@@ -135,3 +135,55 @@ The runtime explicitly reports whether CDR ranges lie within the declared loop b
 seven verified official VHH assets. This is a verified compiler-numbering fact, while equivalent
 loop geometry across scaffolds remains unproven. No Design Viewer is added in Phase 2; a report
 must not invent a link or suggest the existing Target Viewer displays the frozen design.
+
+## Phase 2.2 evidence and canonical identity
+
+Evidence owners first discover candidates, then select, defer or exclude a source for a named
+protein-design evidence need. Only selected sources are acquired deeply. Complete response
+bytes and derived section/chunk indexes remain in the existing project evidence artifacts.
+`retrieve_evidence` supplies a few source-bound passages for the current question, with a
+query-bound continuation cursor. `read_evidence_result` opens a named field or short page from
+an offloaded tool result. A preview is partial; omitted values are not negative evidence.
+Selections and current views belong to the thread. Another thread may select and retrieve
+project evidence independently without inheriting the first thread's pending conclusions.
+
+For a local construct with a known UniProt reference, state the accession and identity question
+in the original goal before preparation. Target Intelligence can retrieve the official record
+and propose the verified reference; runtime copies accession/species into the existing config
+revision service. The unchanged Stage 01 mapping and decision services determine chain/scope
+ambiguity and whether Gate 1 is required. The model cannot supply a residue map or silently
+retarget an already prepared project. Canonical reference approval does not verify native state,
+physiological mechanism or efficacy.
+
+Full source records do not enter conversation as tool text. The input guard remains 60,000
+characters, with per-call telemetry and separate tool-schema character counts. Judge views
+preserve every item in the delegated scientific projection, including cited contradictions;
+a projection over 32,000 characters is rejected for narrowing rather than silently dropping
+support or counterevidence. The Judge cannot read another delegation's archived result.
+
+## Scientist-provided native strategy
+
+Standard structured DesignArm remains available. Once Gate 2 is approved, an expert can instead
+supply a project-local legacy ResearchStrategy whose variants cite native BoltzGen YAML:
+
+```bash
+easydesign-agent start PROJECT --through design --models config/llm.yaml \
+  --native-strategy /absolute/path/PROJECT/inputs/expert/strategy.yaml \
+  --goal "Review the supplied native VHH strategy against the approved hotspot; preserve the YAML and request Gate 3."
+```
+
+The imported strategy must cite the current approved foundation. Each native variant declares
+one official scaffold and the source checksum using the existing strategy schema. For the
+first pilot, seven variants share one explicit hypothesis/condition, one per official scaffold,
+with 40 candidates each and coherent changed/held experimental factors. Missing or duplicate
+coverage is rejected. The Agent receives scientific summaries and returns its opinion; it does
+not rewrite the source YAML. Replacement requires a scientist REVISE.
+
+Supported native inputs contain one frozen prepared target and one VHH scaffold. Target chain,
+explicit numeric crop and binding/avoid labels must fit the approved mapping and hotspot.
+Compiler asset paths are accepted; other inputs must be stable absolute project-local paths.
+An expert scaffold YAML must retain the declared official structure, chain and framework, with
+bounded loop design/exclusion/insertion settings. The original compiler and real backend schema
+validator still run. Unknown or incompatible target/scaffold directives cannot bypass these
+checks. Runtime keeps and verifies all source bytes through Judge review and Gate 3. Approval
+freezes the specification only; it does not authorize generation or prediction.

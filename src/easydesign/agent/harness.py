@@ -28,6 +28,7 @@ from .contracts import (
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
+from .evidence_output import output_message
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
@@ -101,6 +102,7 @@ current messages or trusted revision instructions. Delegate science to the ownin
 Each task description MUST be one short scientific question, under 600 characters. Do not
 copy evidence, IDs, paths, schemas, user goals or tool instructions into it: the trusted runtime
 automatically supplies these. Never invent specialist tool names or request repository access.
+Use the verified next_specialist field to continue. Never repeat Target after target-ready.
 If target preparation is missing, delegate target-intelligence; for a chain decision ask the
 independent evidence-judge, then request_scientific_decision with the exact eligible chain option.
 Once Gate 1 is resolved, delegate site-mechanism to interpret real tools/evidence and propose
@@ -156,6 +158,10 @@ def fingerprint(config: ModelConfig) -> str:
             "phase2_bridge": Path(__file__).with_name("phase2.py").read_text(),
             "phase2_tools": Path(__file__).with_name("phase2_tools.py").read_text(),
             "evidence_research": Path(__file__).with_name("evidence_research.py").read_text(),
+            "evidence_corpus": Path(__file__).with_name("evidence_corpus.py").read_text(),
+            "evidence_output": Path(__file__).with_name("evidence_output.py").read_text(),
+            "target_identity": Path(__file__).with_name("target_identity.py").read_text(),
+            "native_strategy": Path(__file__).with_name("native_strategy.py").read_text(),
             "session_store": Path(__file__).with_name("session_store.py").read_text(),
             "cli": Path(__file__).with_name("cli.py").read_text(),
             "versions": {
@@ -221,16 +227,66 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
             raise AgentBoundaryError(f"Unexpected final tool surface for {self.role}")
-        chars = len(str(request.system_message)) + sum(
-            len(str(m.content)) for m in request.messages
-        )
-        if chars > self.config.max_input_chars:
-            raise AgentBoundaryError("Model context budget exceeded; worker remains detached")
+        if isinstance(self.bridge, Phase2Bridge):
+            # The checkpoint retains every message. The model sees a working set of
+            # recent detailed tool views; older archived results remain addressable.
+            detailed = [
+                i
+                for i, m in enumerate(request.messages)
+                if isinstance(m, ToolMessage) and '"full_result"' in str(m.content)
+            ]
+            messages = list(request.messages)
+            retained = 1 if self.role == "judge" else 4
+            for i in detailed[:-retained]:
+                value = json.loads(messages[i].content)
+                messages[i] = messages[i].model_copy(
+                    update={
+                        "content": compact(
+                            {
+                                "archived_result": value["full_result"],
+                                "partial": True,
+                                "note": (
+                                    "Earlier detailed view retained; retrieve a field when needed."
+                                ),
+                            }
+                        )
+                    }
+                )
+            request = request.override(messages=messages)
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+
+        tool_schemas = [convert_to_openai_tool(t) for t in available]
+        if self.structured_output:
+            output_schema = {"site": SiteIntent, "binder": BinderIntent, "judge": JudgeVerdict}[
+                self.role
+            ]
+            tool_schemas.append(convert_to_openai_tool(output_schema))
+        tool_chars = len(compact(tool_schemas))
         if self.execution_id is None:
             raise AgentBoundaryError("Model call requires a persisted agent execution")
         for attempt in range(3):
+            chars = len(str(request.system_message)) + sum(
+                len(str(m.content)) for m in request.messages
+            )
+            if chars > self.config.max_input_chars:
+                raise AgentBoundaryError("Model context budget exceeded; worker remains detached")
             self.bridge.store.reserve_model_call(
                 self.bridge.thread, self.role, self.config.max_model_calls, self.execution_id
+            )
+            self.bridge.store.event(
+                self.bridge.thread,
+                "model-context",
+                {
+                    "role": self.role,
+                    "execution_id": self.execution_id,
+                    "context_chars": chars,
+                    "tool_schema_chars": tool_chars,
+                    "estimated_input_chars_with_schemas": chars + tool_chars,
+                    "context_metric": "system and message content; tool schemas separately",
+                    "limit": self.config.max_input_chars,
+                    "message_count": len(request.messages),
+                    "repair_attempt": attempt,
+                },
             )
             response = await handler(request.override(tools=available))
             invalid = [
@@ -304,6 +360,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 and not (self.role in self.skills and path == expected)
             ):
                 raise AgentBoundaryError("File is not an allowed skill or bounded result reference")
+            if own_result and isinstance(self.bridge, Phase2Bridge):
+                raise AgentBoundaryError("Use read_evidence_result for scoped offload fields")
             if own_result:
                 confined(
                     self.bridge.store.root,
@@ -397,6 +455,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             result = await handler(request)
             # Never persist raw provider requests, internal specialist histories or full tool I/O.
             self.bridge.store.event(self.bridge.thread, "tool", {"role": self.role, "name": name})
+            if isinstance(self.bridge, Phase2Bridge) and self.execution_id:
+                result = output_message(self.bridge, self.role, self.execution_id, result)
             return result
         finally:
             if token is not None:
@@ -525,13 +585,14 @@ def create_harness(
             f"You are {name}, an isolated EasyDesign specialist. "
             f"Read /skills/{name}/SKILL.md first. "
             "Use only your available typed tools. Keep text fields concise (under 300 characters). "
-            "Do not repeat whole evidence tables. Final scientific opinion uses this schema: "
-            + compact(schema.model_json_schema())
+            "Do not repeat whole evidence tables. "
             + (
-                f" Submit the final opinion using the {schema.__name__} structured output tool. "
+                f"Submit the final opinion using the {schema.__name__} structured output tool. "
                 "All rationale and approach fields are strings, not objects. "
                 if structured_output
-                else " Return ONLY one JSON object with no trailing prose."
+                else "Final opinion schema: "
+                + compact(schema.model_json_schema())
+                + " Return ONLY one JSON object with no trailing prose."
             )
         )
         specialists.append(

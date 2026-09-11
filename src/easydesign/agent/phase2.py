@@ -330,6 +330,10 @@ class Phase2Bridge(TargetBridge):
             if not set(site_candidate.evidence_card_ids).issubset(cards):
                 raise AgentBoundaryError("Site source identifier was not retrieved in this thread")
             for card_id in site_candidate.evidence_card_ids:
+                if cards[card_id].get("corpus_ref"):
+                    raise AgentBoundaryError(
+                        "Cite a focused passage, not a full source acquisition receipt"
+                    )
                 research["source_refs"].extend(cards[card_id]["source_refs"])
         evaluation = evaluate_site(
             target["root"], target["bundle_path"], facts, intent.selected_site.hotspot_label_seq_ids

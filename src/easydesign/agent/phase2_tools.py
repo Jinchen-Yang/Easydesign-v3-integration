@@ -8,9 +8,12 @@ from .contracts import AgentBoundaryError, EmptyArguments, EvidenceBinding, Shor
 from .design import DesignBridge
 from .design_contracts import BinderIntent
 from .design_evidence import evaluate_design
+from .evidence_corpus import corpus_tools
+from .evidence_output import result_tool
 from .evidence_research import identity_comparison_tool, receptor_analysis_tool, research_tool
 from .phase2 import Phase2Bridge
 from .site_contracts import SiteQuery
+from .target_identity import canonical_tool
 from .tools import JUDGE_EVIDENCE, build_tools
 
 PHASE2_ALLOWED = {
@@ -53,13 +56,15 @@ class ReopenSite(StrictDTO):
     reason: ShortText
 
 
-def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
+def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
     from langchain_core.tools import StructuredTool
 
     if role == "target":
         return [
             *build_tools(bridge, role),
+            canonical_tool(bridge),
             research_tool(bridge, role),
+            *corpus_tools(bridge),
             identity_comparison_tool(bridge),
         ]
     if role == "coordinator":
@@ -207,6 +212,7 @@ def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
 
         return [
             research_tool(bridge, role),
+            *corpus_tools(bridge),
             identity_comparison_tool(bridge),
             receptor_analysis_tool(bridge),
             StructuredTool.from_function(
@@ -215,7 +221,7 @@ def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
                 args_schema=SiteQuery,
                 description=(
                     "Read approved target mapping, existing SASA/geometry, declared biology"
-                    " and limitations. At most 40 residues per page; optional exact labels "
+                    " and limitations. At most 12 residues per page; optional exact labels "
                     "or offset. Does not approve a site."
                 ),
             ),
@@ -231,3 +237,17 @@ def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
             ),
         ]
     raise AgentBoundaryError("Unknown Phase 2 specialist")
+
+
+for _role in PHASE2_ALLOWED:
+    PHASE2_ALLOWED[_role] = PHASE2_ALLOWED[_role] | {"read_evidence_result"}
+PHASE2_ALLOWED["target"] |= {"propose_canonical_identity"}
+for _role in ("target", "site"):
+    PHASE2_ALLOWED[_role] |= {"select_evidence", "retrieve_evidence"}
+DESIGN_ALLOWED.update(PHASE2_ALLOWED)
+DESIGN_ALLOWED["coordinator"] = PHASE2_ALLOWED["coordinator"] | {"reopen_site_decision"}
+DESIGN_ALLOWED["binder"] |= {"read_evidence_result"}
+
+
+def phase2_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
+    return [*_scientific_tools(bridge, role), result_tool(bridge, role)]

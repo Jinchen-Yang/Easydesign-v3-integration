@@ -53,6 +53,7 @@ from .contracts import (
 )
 from .design_contracts import BinderIntent
 from .design_evidence import design_constraints, evaluate_design, strategy_from_intent
+from .native_strategy import native_input
 from .phase2 import Phase2Bridge
 from .session_store import SessionStore, confined, identity
 from .site_contracts import SiteQuery
@@ -86,9 +87,13 @@ class DesignBridge(Phase2Bridge):
             query
             or SiteQuery(label_seq_ids=list(site["hotspots"]["hotspot_sets"][0]["label_seq_ids"]))
         )
+        native = native_input(self)
         binding = identity(
             {"target": target["binding"], "hotspot": site["hotspots_sha256"], "facts": facts_ref}
         )
+        if native:
+            native_ref = native["strategy_ref"]
+            refs.append(f"project:{native_ref['relative_path']}#sha256={native_ref['sha256']}")
         return {
             "gate_type": "design-specification",
             "project_id": self.project_id,
@@ -109,6 +114,16 @@ class DesignBridge(Phase2Bridge):
                 "acknowledgement": site["outcome"]["explicit_acknowledgement"],
                 "authority": "verified old hotspot approval; no design approval yet",
             },
+            "expert_native": None
+            if native is None
+            else {
+                "variants": native["summary"]["variants"],
+                "source_bytes": (
+                    "Scientist supplied; preserve unchanged. Choose strategy_source=exper"
+                    "t-native and arms=[]"
+                ),
+                "planned_candidates": native["summary"]["planned_candidates"],
+            },
             "constraints": design_constraints(),
             "limitations": facts["limitations"],
         }
@@ -120,6 +135,9 @@ class DesignBridge(Phase2Bridge):
             return None
         evidence = self.read_design_evidence()
         if proposal["input_binding"] != evidence["evidence_id"]:
+            return None
+        native = native_input(self)
+        if proposal.get("native_input_id") != (native["input_id"] if native else None):
             return None
         self.document(proposal["spec_ref"])
         return proposal
@@ -149,12 +167,20 @@ class DesignBridge(Phase2Bridge):
         assert site is not None
         _, facts, _ = self.site_facts()
         parent = revision.card_id if revision else None
+        native = native_input(self)
+        if intent.strategy_source == "expert-native" and native is None:
+            raise AgentBoundaryError("No trusted expert native strategy was imported")
+        if native and intent.strategy_source != "expert-native":
+            raise AgentBoundaryError(
+                "Preserve scientist-provided native strategy; do not substitute generated arms"
+            )
         spec = {
             "owner_thread": self.thread,
             "intent": intent.model_dump(mode="json"),
             "input_binding": binding.evidence_id,
             "parent_card_id": parent,
             "source_role": "binder-strategy",
+            **({"native_input_id": native["input_id"]} if native else {}),
         }
         spec_id = identity(spec)
         previous = self.current_design()
@@ -181,17 +207,35 @@ class DesignBridge(Phase2Bridge):
             directory.mkdir(exist_ok=True)
             strategy_path = directory / "strategy.yaml"
             try:
-                strategy = strategy_from_intent(intent, site, evidence["evidence_refs"])
+                strategy = (
+                    load_strategy(
+                        self.project,
+                        ArtifactRef.model_validate(native["strategy_ref"]).verify(self.project),
+                    )
+                    if native
+                    else strategy_from_intent(intent, site, evidence["evidence_refs"])
+                )
+                if native:
+                    proposal["native_input"] = native
+                    evaluation["planned_candidates"] = native["summary"]["planned_candidates"]
+                    evaluation["planned_strategy_count"] = len(strategy.variants)
+                    evaluation["arm_count"] = len({v.hypothesis_id for v in strategy.variants})
                 text = yaml.safe_dump(
                     strategy.model_dump(mode="json"), allow_unicode=True, sort_keys=False
                 )
+                if native:
+                    text = (
+                        ArtifactRef.model_validate(native["strategy_ref"])
+                        .verify(self.project)
+                        .read_text()
+                    )
                 if not strategy_path.exists():
                     with strategy_path.open("x") as handle:
                         handle.write(text)
                 elif strategy_path.read_text() != text:
                     raise AgentBoundaryError("Immutable design intent changed")
                 load_strategy(self.project, strategy_path)
-                explicit, native = _compiled_strategy_variants(self.project, strategy)
+                explicit, native_variants = _compiled_strategy_variants(self.project, strategy)
                 root = Path(site["foundation_root"])
                 _, target_cif = _artifact(root, "target-structure")
                 _, hotspots_path = _artifact(root, "hotspots")
@@ -212,7 +256,7 @@ class DesignBridge(Phase2Bridge):
                         hotspots=hotspots,
                         artifacts_root=compiled_root,
                         variants=explicit,
-                        native_variants=native,
+                        native_variants=native_variants,
                     )
                     compiled_refs = [
                         self._project_ref(
@@ -271,6 +315,14 @@ class DesignBridge(Phase2Bridge):
             ref = ArtifactRef.model_validate(proposal[key])
             confined(self.project, ref.verify(self.project))
             refs.append(f"project:{ref.relative_path}#sha256={ref.sha256}")
+        if proposal.get("native_input"):
+            for entry in [
+                proposal["native_input"]["strategy_ref"],
+                *proposal["native_input"]["summary"]["input_refs"],
+            ]:
+                native_ref = ArtifactRef.model_validate(entry)
+                confined(self.project, native_ref.verify(self.project))
+                refs.append(f"project:{native_ref.relative_path}#sha256={native_ref.sha256}")
         if "compiled_ref" in proposal:
             for entry in self.document(proposal["compiled_ref"]):
                 ref = ArtifactRef.model_validate(entry)
@@ -284,6 +336,7 @@ class DesignBridge(Phase2Bridge):
             "evidence_id": identity({"proposal": proposal["proposal_id"], "refs": refs}),
             "evidence_refs": refs,
             "proposal": spec["intent"],
+            "native_specification": proposal.get("native_input", {}).get("summary"),
             "evaluation": proposal["evaluation"],
             "backend_validation": proposal.get("backend_validation", []),
             "upstream": self.read_design_evidence(),
@@ -379,7 +432,11 @@ class DesignBridge(Phase2Bridge):
                 "approach": intent.approach_rationale,
                 "target_context": intent.context_rationale,
                 "scaffold_cdr_constraints": intent.scaffold_cdr_rationale,
-                "design_arms": [a.model_dump(mode="json") for a in intent.arms],
+                "design_arms": (
+                    proposal["native_input"]["summary"]["variants"]
+                    if proposal.get("native_input")
+                    else [a.model_dump(mode="json") for a in intent.arms]
+                ),
                 "pilot_scope": {
                     "candidates_per_arm": 280,
                     "planned_candidates": evaluation["planned_candidates"],

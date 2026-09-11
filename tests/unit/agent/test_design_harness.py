@@ -181,6 +181,7 @@ async def test_gate3_reject_and_binder_cannot_change_site(design_bridge: Any) ->
     assert {t.name for t in phase2_tools(bridge, "binder")} == {
         "read_design_evidence",
         "evaluate_design_constraints",
+        "read_evidence_result",
     }
 
 

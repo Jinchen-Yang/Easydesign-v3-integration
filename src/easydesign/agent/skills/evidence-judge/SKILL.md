@@ -93,3 +93,5 @@ flags must not be interpreted as absence of the official VHH scaffold assets.
 When the `JudgeVerdict` structured output tool is available, submit your final opinion through
 that tool. Its verdict/reasons/limitations remain scientific opinion only; trusted runtime
 attaches the evidence binding and assessment identity. The tool cannot approve a human gate.
+
+Large evidence snapshots retain a full_result reference. Use read_evidence_result for proposal, evaluation, research_evidence or other relevant named fields. A partial preview is not complete evidence: inspect supporting and contradictory source cards and limitations before a verdict. Never use corpus or network research tools.

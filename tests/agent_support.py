@@ -152,7 +152,7 @@ class ScriptedModel(BaseChatModel):
                         "observed_facts": ["Frozen local structure was inspected."],
                         "unresolved_identity": ["Canonical identity unconfirmed"],
                         "selectable_options": [o["option_id"] for o in value.get("options", [])],
-                        "evidence_refs": value["evidence_refs"],
+                        "evidence_refs": value.get("evidence_refs", []),
                         "limitations": value["limitations"],
                         "recommended_action": "Ask the user to confirm chain A"
                         if value.get("options")

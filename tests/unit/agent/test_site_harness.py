@@ -312,6 +312,11 @@ async def test_invalid_provider_json_repair_is_budgeted_and_has_no_duplicate_job
     assert result["status"] == "awaiting-human-approval"
     assert models["site"].malformed_once
     events = site_bridge.store.events(site_bridge.thread)
+    contexts = [e["payload"] for e in events if e["kind"] == "model-context"]
+    calls = [e for e in events if e["kind"] == "model-call"]
+    assert len(contexts) == len(calls)
+    assert any(c["repair_attempt"] == 1 for c in contexts)
+    assert all(c["context_chars"] <= c["limit"] for c in contexts)
     assert (
         len([e for e in events if e["kind"] == "model-call" and e["payload"]["role"] == "site"])
         == 5

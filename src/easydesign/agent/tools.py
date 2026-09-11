@@ -127,7 +127,9 @@ class TargetBridge:
             raise AgentBoundaryError(
                 "Existing project must already be review-gated and stop after target preparation"
             )
-        if config.structure_prediction is not None or source.identity.uniprot_accession is not None:
+        if config.structure_prediction is not None or (
+            source.identity.uniprot_accession is not None and not getattr(self, "is_phase2", False)
+        ):
             raise AgentBoundaryError(
                 "Remote identity lookup and prediction are outside this vertical slice"
             )
@@ -386,7 +388,10 @@ class TargetBridge:
         if manifest.workflow_state is not None:
             request, path = load_pending_decision(root)
             confined(root, path)
-            if request.stage_id != STAGE or request.gate != "chain-selection":
+            allowed_gates = {"chain-selection"}
+            if getattr(self, "is_phase2", False):
+                allowed_gates |= {"target-identity-review", "scope-selection"}
+            if request.stage_id != STAGE or request.gate not in allowed_gates:
                 raise AgentBoundaryError(
                     "Only the existing target chain-selection gate is supported"
                 )
@@ -415,6 +420,15 @@ class TargetBridge:
                     for c in inventory.chains
                 ],
             )
+            if getattr(self, "is_phase2", False):
+                from .target_identity import pending_canonical
+
+                canonical, canonical_refs = pending_canonical(self, root, source, request)
+                refs.extend(canonical_refs)
+                result["identity_evidence"] = canonical
+                result["decision_kind"] = request.gate
+                if canonical:
+                    result["limitations"] = canonical.get("limitations", [])
         elif manifest.status is ExecutionStatus.SUCCEEDED:
             stage_refs = [r for r in manifest.stage_manifest_refs if r.producer_stage == STAGE]
             if len(stage_refs) != 1 or len(manifest.stage_manifest_refs) != 1:
@@ -463,6 +477,9 @@ class TargetBridge:
                     "biological_identity_status": str(report.biological_identity_status),
                     "auth_chain": report.construct_identity.auth_chain_id,
                     "relationship": str(report.relationship),
+                    "canonical": report.canonical.model_dump(mode="json"),
+                    "mapping_status": str(report.design_scope.mapping_status),
+                    "ambiguities": list(report.ambiguities),
                 },
                 provenance={
                     "sha256": bundle.provenance.sha256,
@@ -477,6 +494,19 @@ class TargetBridge:
                 },
             )
             result["limitations"] = [*LIMITATIONS, result["approval_provenance"]["limitation"]]
+            if (
+                getattr(self, "is_phase2", False)
+                and str(report.biological_identity_status) == "resolved"
+            ):
+                result["limitations"] = [
+                    (
+                        "Canonical reference identity is resolved; construct/state/native equ"
+                        "ivalence is separate."
+                    ),
+                    "Structural preparation does not establish affinity or function.",
+                    *list(report.ambiguities),
+                    result["approval_provenance"]["limitation"],
+                ]
             try:
                 viewer = confined(root, resolve_latest_target_viewer_report(root))
                 result["viewer"] = {"status": "verified", "path": str(viewer / "index.html")}

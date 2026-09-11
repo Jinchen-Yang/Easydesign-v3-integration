@@ -29,18 +29,23 @@ class DesignArm(StrictDTO):
 
 
 class BinderIntent(StrictDTO):
+    strategy_source: Literal["standard", "expert-native"] = "standard"
     binder: Literal["VHH"]
     objective: ShortText
     approach_rationale: ShortText
     context_rationale: ShortText
     scaffold_cdr_rationale: ShortText
-    arms: list[DesignArm] = Field(min_length=1, max_length=3)
+    arms: list[DesignArm] = Field(default_factory=list, max_length=3)
     risks: list[ShortText] = Field(default_factory=list, max_length=5)
     uncertainty: list[ShortText] = Field(min_length=1, max_length=5)
     recommendation: Literal["SUPPORTED", "DISCOURAGED"]
 
     @model_validator(mode="after")
     def distinct_arms(self) -> BinderIntent:
+        if (self.strategy_source == "standard") != bool(self.arms):
+            raise ValueError(
+                "Standard requires arms; expert-native must preserve imported arms unchanged"
+            )
         names = [arm.name for arm in self.arms]
         if len(names) != len(set(names)):
             raise ValueError("Design arm names must be distinct")

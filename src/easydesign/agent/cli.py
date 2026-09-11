@@ -58,6 +58,14 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         help="Explicit local biology/topology context; not writable by a model",
     )
+    result.add_argument(
+        "--native-strategy",
+        type=Path,
+        help=(
+            "Scientist-provided project-local ResearchStrategy with native YAML v"
+            "ariants; requires approved Gate 2"
+        ),
+    )
     result.add_argument("--target", type=Path, help="Local PDB/mmCIF input for a new project only")
     result.add_argument("--card", help="Exact card displayed by the prior process")
     result.add_argument("--decision", choices=("approve", "revise", "reject", "override"))
@@ -421,6 +429,12 @@ def main(argv: list[str] | None = None) -> int:
         from .tools import TargetBridge
 
         config = ModelConfig.model_validate(yaml.safe_load(args.models.read_text()))
+        if args.native_strategy is not None and (
+            args.operation == "status" or args.through != "design"
+        ):
+            raise AgentBoundaryError(
+                "Native strategy import requires start/resume with --through design"
+            )
         if args.operation == "status" and args.biology_context is not None:
             raise AgentBoundaryError("status cannot import biology context")
         if args.operation != "start" and args.thread is None:
@@ -486,6 +500,10 @@ def main(argv: list[str] | None = None) -> int:
                     raise AgentBoundaryError("Another agent CLI owns this project") from error
                 if args.biology_context is not None:
                     phase2.import_biology(args.biology_context.resolve(strict=True))
+                if args.native_strategy is not None:
+                    from .native_strategy import import_native
+
+                    import_native(bridge, args.native_strategy.resolve(strict=True))
                 return asyncio.run(_drive(args, bridge, config, goal))
         finally:
             store.close()

@@ -1656,15 +1656,46 @@ def _validate_first_pilot_strategy(
 ) -> FirstPilotProtocolSummary:
     """Enforce the VHH7 coverage product invariant before any first pilot."""
 
-    return validate_first_pilot_protocol(
-        conditions=tuple(
-            ExperimentalCondition(
-                condition_id=item.id,
-                scaffold_ids=item.scaffold_ids,
-                candidates_per_scaffold=item.candidates,
+    conditions = []
+    native_conditions: dict[str, list[StrategyVariant]] = {}
+    for item in strategy.variants:
+        if item.native_boltzgen_yaml is None:
+            conditions.append(
+                ExperimentalCondition(
+                    condition_id=item.id,
+                    scaffold_ids=item.scaffold_ids,
+                    candidates_per_scaffold=item.candidates,
+                )
             )
-            for item in strategy.variants
-        ),
+        else:
+            if not item.hypothesis_id or not item.has_complete_experiment_contract():
+                raise ConfigurationError(
+                    "Native first-pilot condition requires explicit experiment identity"
+                )
+            native_conditions.setdefault(item.hypothesis_id, []).append(item)
+    for condition_id, variants in native_conditions.items():
+        first = variants[0]
+        coherent = (
+            "candidates",
+            "role",
+            "changed_factors",
+            "held_constant",
+            "hypothesis_statement",
+            "hypothesis_basis",
+        )
+        if any(any(getattr(v, key) != getattr(first, key) for key in coherent) for v in variants):
+            raise ConfigurationError(
+                "Native scaffold variants disagree on the experimental condition"
+            )
+        conditions.append(
+            ExperimentalCondition(
+                condition_id=condition_id,
+                scaffold_ids=tuple(s for v in variants for s in v.scaffold_ids),
+                candidates_per_scaffold=first.candidates,
+            )
+        )
+    return validate_first_pilot_protocol(
+        conditions=tuple(conditions),
         official_scaffold_ids=SCAFFOLD_IDS,
     )
 

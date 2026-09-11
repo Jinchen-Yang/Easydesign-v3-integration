@@ -134,7 +134,7 @@ def summarize_site_facts(
     if not set(labels).issubset(available):
         raise AgentBoundaryError("BLOCKED: query contains unmapped or unobserved residues")
     selected = [r for r in rows if not labels or r["residue"]["label_seq_id"] in labels]
-    page = selected[offset : offset + 40]
+    page = selected[offset : offset + 12]
     mappings = {r["label_seq_id"]: r for r in analysis["observed_facts"]["mapping"]}
     biology = analysis["declared_biology"]
     topology = {r["label_seq_id"]: r["segment"] for r in biology["topology"]} if biology else {}

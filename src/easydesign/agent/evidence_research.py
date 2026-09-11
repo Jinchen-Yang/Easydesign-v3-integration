@@ -31,7 +31,8 @@ from easydesign.core.target_identity import resolve_target_identity
 from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, generate_candidates
 
 from .contracts import AgentBoundaryError, ShortText, StrictDTO
-from .session_store import confined, identity
+from .evidence_corpus import NEEDS, EvidenceCorpus
+from .session_store import compact, confined, identity
 
 EvidenceStatus = Literal[
     "NOT_SEARCHED", "SEARCHED_NO_EVIDENCE", "CONFLICTING_EVIDENCE", "UNRESOLVED", "VERIFIED"
@@ -46,6 +47,7 @@ ResearchTopic = Literal[
     "state",
     "ligand-partner",
     "ptm-glycan",
+    "conservation",
 ]
 TOPICS: tuple[str, ...] = (
     "identity",
@@ -57,6 +59,7 @@ TOPICS: tuple[str, ...] = (
     "state",
     "ligand-partner",
     "ptm-glycan",
+    "conservation",
 )
 HOSTS = {"www.ebi.ac.uk", "rest.uniprot.org", "search.rcsb.org", "data.rcsb.org", "gpcrdb.org"}
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
@@ -224,7 +227,10 @@ class EvidenceResearch:
     def snapshot(self) -> dict[str, Any]:
         binding = identity(self.bridge.binding())
         rows = self.bridge.store.db.execute(
-            "SELECT payload FROM events WHERE thread=? AND kind='evidence-research' ORDER BY seq",
+            (
+                "SELECT payload FROM events WHERE thread=? AND kind IN ('evidence-res"
+                "earch','evidence-view') ORDER BY seq"
+            ),
             (self.bridge.thread,),
         )
         latest: dict[str, Any] = {}
@@ -265,6 +271,15 @@ class EvidenceResearch:
     def acquire(self, query: ResearchQuery, *, role: str) -> dict[str, Any]:
         if role not in {"target", "site"}:
             raise AgentBoundaryError("Only Target or Site may delegate Evidence Research")
+        if not query.operation.endswith("search"):
+            provider = {
+                "primary-record": "EuropePMC",
+                "primary-fulltext": "EuropePMC",
+                "uniprot-record": "UniProt",
+                "structure-record": "RCSB",
+                "gpcrdb-context": "GPCRdb",
+            }[query.operation]
+            EvidenceCorpus(self.bridge).require_selected(provider, query.identifier, query.topic)
         bridge = self.bridge
         execution = bridge.store.latest_execution(bridge.thread)
         if execution is None:
@@ -311,7 +326,12 @@ class EvidenceResearch:
         with self.client(directory) as client:
             try:
                 cards = self.retrieve(client, query)
-                result["cards"] = [self.card(client, card, i) for i, card in enumerate(cards)]
+                result["cards"] = [
+                    EvidenceCorpus(bridge).index(self.card(client, card, i), query.topic)
+                    if not query.operation.endswith("search")
+                    else self.card(client, card, i)
+                    for i, card in enumerate(cards)
+                ]
                 result["status"] = "UNRESOLVED" if cards else "SEARCHED_NO_EVIDENCE"
             except (
                 BackendContractError,
@@ -560,15 +580,16 @@ class EvidenceResearch:
                         "year": row.get("pubYear"),
                         "journal": row.get("journalInfo", {}).get("journal", {}).get("title"),
                         "publication_types": types,
-                        "primary_eligible": bool(abstract)
+                        "primary_eligible": q.operation == "primary-record"
+                        and bool(abstract)
                         and not any(
                             excluded in str(t).lower()
                             for t in types
                             for excluded in ("review", "editorial", "comment", "meta-analysis")
                         ),
                         "evidence_level": "abstract" if abstract else "bibliographic-lead",
-                        "passage": abstract[:14000],
-                        "truncated": len(abstract) > 14000,
+                        "passage": abstract if q.operation == "primary-record" else abstract[:450],
+                        "truncated": q.operation == "literature-search" and len(abstract) > 450,
                     }
                 )
             return cards
@@ -589,14 +610,25 @@ class EvidenceResearch:
             body = root.find("body")
             if body is None:
                 raise BackendContractError("Primary full text body unavailable")
-            paragraphs = [_text(" ".join(p.itertext())) for p in body.findall(".//p")]
-            # Query selects passages in a downloaded primary document; never a search snippet.
-            terms = [t.lower() for t in q.query.split() if len(t) >= 3]
-            ranked = sorted(
-                enumerate(paragraphs),
-                key=lambda pair: (-sum(t in pair[1].lower() for t in terms), pair[0]),
-            )
-            passage = "\n".join(text for _, text in ranked[:8])[:16000]
+            sections = []
+
+            def visit(element: Any, location: str) -> None:
+                title = element.find("title")
+                if title is not None:
+                    location += "/" + _text(" ".join(title.itertext()))
+                for i, child in enumerate(element):
+                    if child.tag in {"p", "table-wrap", "fig"}:
+                        sections.append(
+                            {
+                                "location": f"{location}/{child.tag}[{i}]",
+                                "text": _text(" ".join(child.itertext())),
+                            }
+                        )
+                    elif child.tag == "sec":
+                        visit(child, location)
+
+            visit(body, "body")
+            passage = "\n".join(s["text"] for s in sections)
             return [
                 {
                     "provider": "EuropePMC",
@@ -607,7 +639,8 @@ class EvidenceResearch:
                     "publication_type": root.attrib.get("article-type", "unknown"),
                     "evidence_level": "primary-fulltext-excerpts",
                     "passage": passage,
-                    "truncated": True,
+                    "_sections": sections,
+                    "truncated": False,
                 }
             ]
         if q.operation in {"uniprot-search", "uniprot-record"}:
@@ -624,10 +657,27 @@ class EvidenceResearch:
                 {
                     "provider": "UniProt",
                     "identifier": row["primaryAccession"],
-                    "primary_eligible": True,
-                    "evidence_level": "official-database",
-                    "passage": json.dumps(_uniprot_view(row, q.topic), ensure_ascii=False)[:24000],
-                    "truncated": True,
+                    "primary_eligible": q.operation == "uniprot-record",
+                    "evidence_level": "official-database"
+                    if q.operation == "uniprot-record"
+                    else "database-lead",
+                    "passage": compact(_uniprot_view(row, q.topic))
+                    if q.operation == "uniprot-record"
+                    else compact(
+                        {
+                            "accession": row["primaryAccession"],
+                            "organism": row.get("organism"),
+                            "protein": row.get("proteinDescription"),
+                        }
+                    )[:450],
+                    "_sections": [
+                        {"location": key + f"[{i}]", "text": compact(value)}
+                        for key, values in row.items()
+                        for i, value in enumerate(values if isinstance(values, list) else [values])
+                    ]
+                    if q.operation == "uniprot-record"
+                    else [],
+                    "truncated": q.operation.endswith("search"),
                 }
                 for row in records
             ]
@@ -673,8 +723,12 @@ class EvidenceResearch:
                     "identifier": code,
                     "primary_eligible": True,
                     "evidence_level": "deposition-and-polymer-entities",
-                    "passage": json.dumps(_pdb_view(entry, polymers), ensure_ascii=False)[:30000],
-                    "truncated": True,
+                    "passage": compact(_pdb_view(entry, polymers)),
+                    "_sections": [
+                        {"location": name, "text": compact(value)}
+                        for name, value in _pdb_view(entry, polymers).items()
+                    ],
+                    "truncated": False,
                     "limitations": [
                         "Deposited assembly and partners are not proof of physiological context."
                     ],
@@ -691,9 +745,12 @@ class EvidenceResearch:
                 "identifier": q.identifier,
                 "primary_eligible": True,
                 "evidence_level": "curated-receptor-context",
-                "passage": json.dumps(projection, ensure_ascii=False)[:30000],
+                "passage": compact(projection),
+                "_sections": [
+                    {"location": name, "text": compact(value)} for name, value in projection.items()
+                ],
                 "context_ref": self.bridge.persist("research-gpcrdb-context", projection),
-                "truncated": True,
+                "truncated": False,
                 "status": context.status,
             }
         ]
@@ -747,6 +804,10 @@ class EvidenceResearch:
                 card = cards.get(use.card_id)
                 if card is None or _text(use.excerpt) not in _text(card["passage"]):
                     raise AgentBoundaryError("Evidence claim is not bound to a retrieved passage")
+                if card.get("corpus_ref"):
+                    raise AgentBoundaryError(
+                        "Use a focused retrieved passage, not the acquisition receipt"
+                    )
                 if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
                     raise AgentBoundaryError(
                         "A discovery lead/review cannot become direct primary evidence"
@@ -770,16 +831,43 @@ def research_tool(bridge: Any, role: str) -> Any:
         result = EvidenceResearch(bridge).acquire(
             ResearchQuery.model_validate(arguments), role=role
         )
-        # Keep integrity records in the source artifact. The owner receives addressable passages.
-        view = {
-            k: v
-            for k, v in result.items()
-            if k not in {"retrieval_records", "target_binding", "query_id"}
-        }
-        view["cards"] = [
-            {k: v for k, v in c.items() if k != "source_refs"} for c in result["cards"]
-        ]
-        return str(bridge.store.offload(bridge.thread, view))
+        # The raw source and complete index remain in existing project artifacts.
+        # Return only leads or acquisition receipts, never a record/full text.
+        cards = []
+        for card in result["cards"]:
+            view = {
+                k: card[k]
+                for k in (
+                    "card_id",
+                    "provider",
+                    "identifier",
+                    "title",
+                    "year",
+                    "doi",
+                    "pmcid",
+                    "evidence_level",
+                    "chunk_count",
+                    "need",
+                )
+                if k in card
+            }
+            if arguments["operation"].endswith("search"):
+                view["snippet"] = card["passage"][:450]
+                view["relevance"] = "Query match only; select before deeper reading"
+            cards.append(view)
+        return compact(
+            {
+                "status": result["status"],
+                "topic": result["topic"],
+                "need": NEEDS[result["topic"]],
+                "cards": cards,
+                "errors": result["errors"],
+                "next": (
+                    "Select relevant sources before acquisition; retrieve_evidence reads "
+                    "focused local passages."
+                ),
+            }
+        )
 
     return StructuredTool.from_function(
         name="research_evidence",
@@ -789,7 +877,8 @@ def research_tool(bridge: Any, role: str) -> Any:
             "Delegate a bounded evidence question to the shared Research worker. "
             "Search literature/structures; "
             "retrieve primary PMID/PMCID, PDB complexes, UniProt or applicable GPCRdb context. "
-            "Use source card IDs and exact passages in scientific synthesis. "
+            "Deep acquisition requires select_evidence first. Full records stay in the corpus; "
+            "use retrieve_evidence for passages and source card IDs in scientific synthesis. "
             "Failures are unresolved, never negative biology. "
             "No arbitrary URLs, shell, scientific approval or target identity mutation."
         ),

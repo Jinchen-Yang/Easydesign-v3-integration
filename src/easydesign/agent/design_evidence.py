@@ -59,7 +59,10 @@ def design_constraints() -> dict[str, Any]:
             "limits": "Matching loop bounds does not establish geometric equivalence or binding",
         },
         "limitations": [
-            "No arbitrary native YAML, scaffold substitution, new modality or backend parameters.",
+            (
+                "Native expert input requires trusted import, approved target/hotspot"
+                " binding and backend validation."
+            ),
             "A crop/avoid list is not docking clearance or a simulated glycan/membrane barrier.",
             "Fixed first-pilot coverage can be reduced only by choosing fewer meaningful arms.",
             (

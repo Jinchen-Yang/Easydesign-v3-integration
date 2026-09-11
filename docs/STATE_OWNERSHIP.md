@@ -1,4 +1,4 @@
-# v3 state ownership — Phase 2.1
+# v3 state ownership — Phase 2.2
 
 Status: ownership regressions passed; overall Phase 2 acceptance failed (see PHASE2_CLOSURE.md). No new scheduler, graph, ORM, schema migration or
 scientific state store is introduced. LangGraph owns conversation execution/checkpoints;
@@ -15,6 +15,11 @@ the existing scientific services own runs, jobs, decisions and approved artifact
 | Explicit biology context import | Project, `biology-context` event + existing ArtifactRef | Trusted CLI input is a project scientific assumption, not a chat clarification. Values retain user-supplied authority; coordinates are validated, biological assertions are not automatically verified |
 | Deterministic Site facts | Project evidence, `site-facts` | Content keyed to Target and adopted biology; all consumers verify ArtifactRef |
 | Research queries, discovery and pending conclusions | Thread, existing events + ArtifactRef | Source bytes are durable project evidence; a thread's search agenda and interpretation are local. Retrieval cannot alter canonical identity or topology |
+| Durable source corpus and chunks | Project, existing ArtifactRefs/events | Complete raw responses remain durable; selected retrieval can reuse same-binding sources from another thread |
+| Evidence selection/current passages/tool views | Thread/execution, existing events | Explicit source/need selection; query-bound cursor; exact pages; no other thread's pending reasoning |
+| Judge offload view | Exact runtime delegation within thread/execution | Full result bytes verified; previous proposal's result cannot satisfy the current snapshot |
+| Canonical reference proposal | Trusted runtime + existing config revisions | Source record verified; configured species/accession protected; proposal is not approval and does not replace the mapper |
+| Expert native input | Scientist CLI input + thread import event | Gate 2 required; source bytes/constraints verified; Binder cannot rewrite the supplied YAML; approved output becomes project-global |
 | Approved Target/Structure | Project, original Stage 01 manifest/decision services | Shared only through existing verified Target Bundle/mapping; chain approval alone is not canonical identity confirmation |
 | Approved Site/Hotspot | Project, old site foundation and exact `site-approved` receipt | `project_latest` approval resolves its exact historical owner proposal, never the requesting thread's latest draft; old hotspot bytes/numbering/foundation are revalidated |
 | Approved Design | Project, old frozen strategy/plan/approval | Exact approved owner proposal and input binding are revalidated; any thread can consume valid approved science |

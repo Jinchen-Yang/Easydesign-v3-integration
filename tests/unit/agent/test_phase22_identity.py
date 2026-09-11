@@ -1,0 +1,189 @@
+"""Real old Stage 01 jobs against deterministic cached UniProt fixtures."""
+
+from typing import Any
+
+import gemmi
+import httpx
+import pytest
+
+from easydesign.agent.evidence_corpus import EvidenceCorpus, SelectEvidence
+from easydesign.agent.evidence_research import EvidenceResearch, ResearchHttpClient, ResearchQuery
+from easydesign.agent.phase2 import Phase2Bridge
+from easydesign.agent.target_identity import CanonicalProposal, propose_canonical
+from easydesign.orchestration.config import EasyDesignRunConfig
+from easydesign.orchestration.local_project import publish_config_revision
+from tests.agent_support import judge_card, make_project, terminal
+
+
+@pytest.mark.parametrize(
+    "canonical,chains,complete_coordinates,expected_gate",
+    [
+        ("AGSLVK", "A", True, None),
+        ("MAGSLVK", "A", False, "target-identity-review"),
+        ("MAGSLVK", "A", True, None),
+        ("AGSLVK", "AB", True, "chain-selection"),
+        ("AGTLVK", "A", True, "target-identity-review"),
+    ],
+)
+def test_canonical_identity_reuses_existing_decision_and_bundle(
+    tmp_path: Any,
+    monkeypatch: Any,
+    canonical: str,
+    chains: str,
+    complete_coordinates: bool,
+    expected_gate: str | None,
+) -> None:
+    old = make_project(tmp_path, monkeypatch, chains=chains)
+    record = {
+        "primaryAccession": "P12345",
+        "entryType": "UniProtKB reviewed (Swiss-Prot)",
+        "organism": {"taxonId": 9606},
+        "sequence": {"value": canonical},
+        "features": [],
+    }
+    config = old.validate_project().config.model_dump(mode="json")
+    # A clean canonical match also needs deposited sequence/coordinate labels.
+    # The generic PDB fixture intentionally has neither; use a complete mmCIF.
+    if complete_coordinates:
+        source = old.validate_project().config.target.source.path
+        structure = gemmi.read_structure(str(old.project / source))
+        structure.setup_entities()
+        for entity in structure.entities:
+            entity.full_sequence = ["ALA", "GLY", "SER", "LEU", "VAL", "LYS"]
+        structure.assign_label_seq_id()
+        complete = old.project / "canonical-input.cif"
+        complete.write_text(structure.make_mmcif_document().as_string())
+        config["stage01"]["target"]["source"].update(path=str(complete), format="auto")
+    config["workflow"]["cache_mode"] = "offline"
+    publish_config_revision(old.project, EasyDesignRunConfig.model_validate(config))
+    bridge = Phase2Bridge(old.project, old.thread, old.store)
+    bridge.store.begin_execution(bridge.thread, "Resolve the construct against canonical identity")
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "client",
+        lambda self, directory: ResearchHttpClient(
+            evidence_dir=directory,
+            max_attempts=1,
+            client=httpx.Client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json=record))
+            ),
+        ),
+    )
+    try:
+        EvidenceCorpus(bridge).select(
+            SelectEvidence(
+                provider="UniProt",
+                identifier="P12345",
+                need="TARGET_IDENTITY",
+                selection="SELECTED",
+                reason="Verify canonical identity before preparation",
+            )
+        )
+        acquired = EvidenceResearch(bridge).acquire(
+            ResearchQuery(
+                topic="identity",
+                question="Which canonical sequence is this construct from?",
+                operation="uniprot-record",
+                identifier="P12345",
+            ),
+            role="target",
+        )
+        proposal = CanonicalProposal(
+            uniprot_card_id=acquired["cards"][0]["card_id"],
+            reason="Propose the verified canonical source; old mapping must review differences",
+        )
+        result = propose_canonical(bridge, proposal)
+        assert result["accession"] == "P12345"
+        assert propose_canonical(bridge, proposal)["accession"] == "P12345"
+        assert (
+            len(
+                [
+                    e
+                    for e in bridge.store.events(bridge.thread)
+                    if e["kind"] == "canonical-reference-proposal"
+                ]
+            )
+            == 1
+        )
+        assert not bridge._jobs()  # A reference proposal is not scientific authority.
+        bridge.prepare_target()
+        terminal(bridge)
+        evidence = bridge.read_evidence()
+        if expected_gate:
+            assert evidence["decision_kind"] == expected_gate
+            assert evidence["identity_evidence"]["canonical"]["accession"] == "P12345"
+            assert evidence["identity_evidence"]["construct_comparisons"]
+            card = judge_card(bridge)
+            bridge.store.respond(bridge.thread, card.card_id, "approve", "fixture-scientist")
+            bridge.apply_decision(card)
+            terminal(bridge)
+            evidence = bridge.read_evidence()
+        assert evidence["status"] == "succeeded"
+        assert evidence["identity"]["biological_identity_status"] == "resolved"
+        assert evidence["identity"]["canonical"]["accession"] == "P12345"
+        assert not any("identity is unconfirmed" in t for t in evidence["limitations"])
+        assert bridge.target_state()["evidence"]["identity"] == evidence["identity"]
+        assert not any(j.step > 1 for j in bridge.controller.list(project_id=bridge.project_id))
+    finally:
+        bridge.store.close()
+
+
+def test_canonical_proposal_cannot_replace_scientist_species(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.contracts import AgentBoundaryError
+
+    old = make_project(tmp_path, monkeypatch, chains="A")
+    config = old.validate_project().config.model_dump(mode="json")
+    config["stage01"]["target"]["source"]["identity"]["taxon_id"] = 9606
+    publish_config_revision(old.project, EasyDesignRunConfig.model_validate(config))
+    bridge = Phase2Bridge(old.project, old.thread, old.store)
+    bridge.store.begin_execution(bridge.thread, "Verify the declared human target")
+    record = {
+        "primaryAccession": "P12345",
+        "organism": {"taxonId": 10090},
+        "sequence": {"value": "AGSLVK"},
+        "features": [],
+    }
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "client",
+        lambda self, directory: ResearchHttpClient(
+            evidence_dir=directory,
+            max_attempts=1,
+            client=httpx.Client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json=record))
+            ),
+        ),
+    )
+    try:
+        EvidenceCorpus(bridge).select(
+            SelectEvidence(
+                provider="UniProt",
+                identifier="P12345",
+                need="TARGET_IDENTITY",
+                selection="SELECTED",
+                reason="Verify reference species",
+            )
+        )
+        acquired = EvidenceResearch(bridge).acquire(
+            ResearchQuery(
+                topic="identity",
+                question="Is this the declared species?",
+                operation="uniprot-record",
+                identifier="P12345",
+            ),
+            role="target",
+        )
+        with pytest.raises(AgentBoundaryError, match="scientist-configured species"):
+            propose_canonical(
+                bridge,
+                CanonicalProposal(
+                    uniprot_card_id=acquired["cards"][0]["card_id"],
+                    reason="Inspect source mismatch",
+                ),
+            )
+        assert bridge.validate_project().config.target.source.identity.taxon_id == 9606
+        assert not bridge._jobs()
+    finally:
+        bridge.store.close()

@@ -751,3 +751,105 @@ async def test_known_source_citation_is_repaired_before_site_registration(
     with pytest.raises(AgentBoundaryError, match="not retrieved"):
         b.validate_site_research(opinion("foreign-source"))
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(bridge: Any) -> None:
+    from langchain_core.tools import StructuredTool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Compare mechanism and geometry")
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Compare mechanism and geometry",
+        execution_id=execution["execution_id"],
+    )
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+    messages = []
+    for i, source in enumerate(["UniProt:TEST", "EuropePMC:123", "RCSB:TEST"]):
+        messages.append(
+            ToolMessage(
+                name="retrieve_evidence",
+                tool_call_id=f"source{i}",
+                content=compact(
+                    {
+                        "full_result": f"/result-{i:x}.json",
+                        "cards": [{"source_id": source, "passage": f"evidence-{i} " * 200}],
+                    }
+                ),
+            )
+        )
+    for i in range(12):
+        messages.append(
+            ToolMessage(
+                name="read_site_evidence",
+                tool_call_id=f"geometry{i}",
+                content=compact(
+                    {"full_result": f"/result-{i + 10:x}.json", "geometry": f"geometry-{i}"}
+                ),
+            )
+        )
+    original = [m.content for m in messages]
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(request: Any) -> Any:
+        retained = [json.loads(m.content) for m in request.messages if '"full_result"' in m.content]
+        assert len(retained) == 4
+        assert len([x for x in retained if x.get("cards")]) == 3
+        assert retained[-1]["geometry"] == "geometry-11"
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "evaluate_candidate_site",
+                            "args": {"label_seq_ids": [1, 2]},
+                            "id": "check",
+                        }
+                    ],
+                )
+            ],
+            structured_response=None,
+        )
+
+    await guard.awrap_model_call(
+        Request(
+            tools=tools, messages=messages, system_message=SystemMessage(content="Investigate")
+        ),
+        handler,
+    )
+    assert [m.content for m in messages] == original
+
+
+@pytest.mark.asyncio
+async def test_scoped_list_end_distinguishes_index_from_target_residue_number(bridge: Any) -> None:
+    from easydesign.agent.evidence_output import result_tool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Read a page")["execution_id"]
+    msg = output_message(
+        b,
+        "site",
+        eid,
+        ToolMessage(
+            name="evaluate_candidate_site",
+            tool_call_id="source",
+            content=compact({"facts": [1, 2, 3], "padding": "x" * 2000}),
+        ),
+    )
+    ref = json.loads(msg.content)["full_result"]
+    result = json.loads(
+        await result_tool(b, "site").ainvoke({"ref": ref, "field": "facts", "offset": 33})
+    )
+    assert result["status"] == "end-of-scoped-list" and result["total_items"] == 3
+    assert result["value"] == [] and result["next_offset"] is None
+    assert "not residue numbering" in result["instruction"] and result["full_result"] == ref
+    assert not b._jobs()

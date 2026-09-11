@@ -55,6 +55,8 @@ numbering distinct from the normalized approved target labels; map before propos
    Start from the supplied scan patches and focused literature hypotheses, then request
    their exact labels. Do not enumerate the entire target or repeat pages already read.
    Read full_result.facts only if an original object field is specifically needed.
+   That facts array is only the stored page, not all target residues. Its list offset is
+   not a residue label. Use read_site_evidence(label_seq_ids=[...]) for another region.
 2. Compare real accessible patches and their geometry. Existing SASA and scores are derived
    metrics on the prepared target; exposure does not establish a useful epitope or affinity.
    Candidate pool membership is advisory, not permission to skip local geometry review.
@@ -96,6 +98,12 @@ and the relevant EvidenceNeed. Selection is local relevance, not proof of the so
 Direct user-supplied PMID/PMCID/accession/PDB identifiers can be selected explicitly.
 Also perform a targeted discovery search for the mechanistic question and counterevidence;
 acquiring only the supplied identifier is not active literature discovery.
+A literature-search needs query with explicit search keywords as well as question; question
+alone does not execute a search. Use a few focused sources and meaningful candidate checks,
+then synthesize; exhaustive source or residue enumeration is not required.
+The latest read passages from distinct sources remain available alongside current geometry.
+Earlier full_result research status is a historical snapshot, not evidence that later successful
+research did not occur. Cite actual supplied passages rather than rereading receipt metadata.
 The acquisition error's evidence_need is exact: select that need before retrying the same
 operation. structure-complex uses PPI_INTERFACE; structure-state uses STRUCTURE_STATE.
 research_evidence saves complete selected sources; its acquisition receipt contains no full text.

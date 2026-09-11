@@ -335,6 +335,23 @@ def result_tool(bridge: Any, role: str) -> Any:
         )
         page: Any
         if isinstance(value, list):
+            if query.offset >= len(value):
+                return compact(
+                    {
+                        "status": "end-of-scoped-list",
+                        "value": [],
+                        "next_offset": None,
+                        "total_items": len(value),
+                        "requested_offset": query.offset,
+                        "instruction": "Offset indexes this scoped list, not residue numbering "
+                        "or the whole target. For another target region call "
+                        "read_site_evidence with its exact label_seq_ids. "
+                        "Repeating this out-of-range offset provides no new evidence.",
+                        **selector,
+                        **deprecation,
+                        **source,
+                    }
+                )
             page = []
             for item in value[query.offset : query.offset + query.limit]:
                 if len(compact([*page, item])) > 4400:

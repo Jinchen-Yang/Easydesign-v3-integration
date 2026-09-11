@@ -250,6 +250,24 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             and self.bridge.get_job_status()["status"] == "no-bound-job"
         ):
             available = [t for t in available if t.name != "get_job_status"]
+        if self.role == "target" and isinstance(self.bridge, Phase2Bridge):
+            from langchain_core.messages import SystemMessage
+
+            from .target_identity import pending_canonical_source_read
+
+            needed_source = pending_canonical_source_read(self.bridge)
+            if needed_source is not None:
+                available = [t for t in available if t.name != "prepare_target"]
+                request = request.override(
+                    system_message=SystemMessage(
+                        content=request.system_message.text
+                        + "\nCurrent canonical configuration changed. Before preparing, retrieve "
+                        "the selected source in this new view using retrieve_evidence with "
+                        "need=TARGET_IDENTITY, source_id=" + needed_source + ", a focused identity "
+                        "question, and no old cursor. Source bytes are already acquired; do not "
+                        "download again. This verifies current-view evidence, not a new approval."
+                    )
+                )
         if self.role == "site" and any(
             isinstance(m, ToolMessage) and m.name == "read_site_evidence" and m.status != "error"
             for m in request.messages
@@ -304,6 +322,22 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     # view together, even after several narrower follow-up reads.
                     retained.add(snapshots[-1])
                     detail_chars = len(str(messages[snapshots[-1]].content))
+            elif self.role == "site":
+                # Keep read primary/database passages alongside geometry, so recency
+                # alone cannot evict the evidence needed for mechanistic synthesis.
+                # Use distinct source identities, never scientific favorability/ranking.
+                source_ids: set[str] = set()
+                for i in reversed(detailed):
+                    if messages[i].name != "retrieve_evidence":
+                        continue
+                    value = json.loads(messages[i].content)
+                    sources = {c.get("source_id") for c in value.get("cards", [])}
+                    sources.discard(None)
+                    size = len(str(messages[i].content))
+                    if sources - source_ids and len(retained) < 3 and detail_chars + size <= 26000:
+                        retained.add(i)
+                        source_ids.update(sources)
+                        detail_chars += size
             for i in reversed(detailed):
                 if i in retained:
                     continue

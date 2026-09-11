@@ -426,7 +426,9 @@ class TargetBridge:
                 ],
             )
             if getattr(self, "is_phase2", False):
-                from .target_identity import pending_canonical
+                from .target_identity import deposited_polymer_metadata, pending_canonical
+
+                result["deposited_entities"] = deposited_polymer_metadata(source)
 
                 canonical, canonical_refs = pending_canonical(self, root, source, request)
                 refs.extend(canonical_refs)

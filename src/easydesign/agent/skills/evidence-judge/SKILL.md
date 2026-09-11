@@ -111,3 +111,12 @@ construct-to-coordinate absence. `missing_construct_positions` means no observed
 not unaligned sequence. A non-null `constant_canonical_offset` is runtime-proven for every row;
 a pending human gate does not make that established correspondence unknown. Processing/state
 or experimental provenance may remain uncertain without erasing verified sequence facts.
+
+
+Compare like quantities: full construct length and observed coordinate count may differ without
+contradiction. Missing construct coordinates are not sequence deletions. An optimal global
+alignment exists even between unrelated chains; it cannot establish homology or entity identity.
+Use supplied deposited_entities annotations for original chain/entity descriptions and keep
+canonical reference identity distinct. The existence of a canonical reference for the project
+does not certify every eligible chain as that biological molecule. Request missing evidence,
+but do not call supplied depositor annotations unknown or infer entity identity from size alone.

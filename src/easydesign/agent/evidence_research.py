@@ -90,7 +90,13 @@ class ResearchQuery(StrictDTO):
         "for this query topic with a scientific reason, then acquire it in the same call. "
         "Omit only if already selected for this exact topic. Not scientific approval.",
     )
-    query: str = Field(default="", max_length=400)
+    query: str = Field(
+        default="",
+        max_length=400,
+        description="REQUIRED for any search "
+        "operation: explicit database search keywords/syntax. The scientific "
+        "question is separate and does not execute a search. Omit for records.",
+    )
     identifier: str = Field(
         default="",
         max_length=40,

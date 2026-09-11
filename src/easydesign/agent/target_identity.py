@@ -46,6 +46,67 @@ def constant_canonical_offset(report: TargetIdentityReport) -> int | None:
     return offsets.pop() if len(offsets) == 1 else None
 
 
+def deposited_polymer_metadata(source: Path) -> dict[str, Any]:
+    """Project depositor annotations from the caller's verified frozen input; no alignment."""
+    rows: list[dict[str, Any]] = []
+    if source.suffix.lower() in {".cif", ".mmcif"}:
+        import gemmi
+
+        block = gemmi.cif.read_file(str(source)).sole_block()
+        entities = block.get_mmcif_category("_entity.")
+        polymers = block.get_mmcif_category("_entity_poly.")
+        asym = block.get_mmcif_category("_struct_asym.")
+        descriptions = dict(zip(entities.get("id", []), entities.get("pdbx_description", [])))
+        labels = list(zip(asym.get("id", []), asym.get("entity_id", [])))
+        types = polymers.get("type", [])
+        all_strands = polymers.get("pdbx_strand_id", [])
+        for i, entity in enumerate(polymers.get("entity_id", [])):
+            strands = all_strands[i] if i < len(all_strands) else None
+            rows.append(
+                {
+                    "entity_id": entity,
+                    "deposited_description": descriptions.get(entity),
+                    "polymer_type": types[i] if i < len(types) else None,
+                    "source_label_chain_ids": [
+                        label for label, parent in labels if parent == entity
+                    ],
+                    "source_auth_chain_ids": [x.strip() for x in strands.split(",")]
+                    if isinstance(strands, str) and strands not in {"?", "."}
+                    else [],
+                }
+            )
+    return {
+        "status": "reported" if rows else "not-reported-in-input",
+        "authority": "Depositor annotations in the checksum-verified frozen input. "
+        "Descriptions are source annotations, not identities inferred from alignment "
+        "and not proof of biological state, processing or function.",
+        "entities": rows,
+    }
+
+
+def pending_canonical_source_read(bridge: Any) -> str | None:
+    """A canonical config revision requires its selected source in the new evidence view."""
+    events = bridge.store.events(bridge.thread)
+    revisions = [e for e in events if e["kind"] == "canonical-reference-proposal"]
+    if not revisions:
+        return None
+    revision = revisions[-1]
+    source_id: str = "UniProt:" + revision["payload"]["accession"]
+    binding = identity(bridge.binding())
+    for event in reversed(events):
+        if event["seq"] <= revision["seq"]:
+            break
+        if event["kind"] == "evidence-view":
+            view = bridge.document(event["payload"]["ref"])
+            if view.get("need") == "TARGET_IDENTITY" and any(
+                c.get("source_id") == source_id
+                and c.get("binding_context", {}).get("current_binding") == binding
+                for c in view.get("cards", [])
+            ):
+                return None
+    return source_id
+
+
 def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]:
     """Configure a verified reference before preparation; this is not an approval."""
     with bridge.store.writer():

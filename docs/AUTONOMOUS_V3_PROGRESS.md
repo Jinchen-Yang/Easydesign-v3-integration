@@ -385,3 +385,37 @@ entity annotations explicitly describe entity1/A as Beta-2 adrenergic receptor, 
 entity2/B as Camelid Antibody Fragment; these should be surfaced as depositor annotations,
 not replaced by chain-size guesses or global-alignment claims. The frozen oracle is unchanged
 and is not suspected; the errors are Agent evidence presentation/interpretation.
+
+
+### Current-source prerequisites and durable scientific working set (live085 recovery)
+
+Live085 (`phase2-goldens-20260911T185111542914Z`) exhausted32 model calls after losing earlier
+passages from its four-view working set, repeatedly reading old Site fields and mistaking a
+12-item stored facts page for a whole-target array (offsets25/33). It did retrieve the primary
+8784355 abstract and official sources, but no proposal/acceptance followed. No PASS inferred.
+Site now keeps the latest passages from up to three distinct source identities alongside the
+current geometric view, within the same four-view/32k-detail and60k-context limits. Selection is
+by recency/source identity, never whether evidence is favorable. Original checkpoints unchanged.
+Out-of-range scoped list reads explicitly return list length and distinguish list indices from
+residue labels; search-query field help now states that question is not the executable query.
+
+Pending Target evidence includes entity descriptions/auth-label associations read from the
+checksum-verified original mmCIF. These are labeled depositor annotations, not alignment-derived
+biological identities. Approved Target snapshots are unaffected. After canonical configuration
+changes, prepare_target is not offered until focused TARGET_IDENTITY cards from that exact
+source have been read in the current binding; no repeat acquisition or new gate is required.
+Target/Judge guidance separates construct length, coordinate coverage, alignment diagnostics
+and physical entity annotations. No kernel, oracle or Gate semantics changed.
+
+Targeted086:14 PASS (23.53s) for source projection, current-view prerequisites, identity/binding.
+Targeted088:37 PASS (48.24s) for working memory, pagination, source arguments and Site runtime.
+Mypy087/089 found one return annotation; fixed without behavior change, mypy09020 PASS.
+Real frozen-source projection090 verifies exact GPCR entity annotations with input SHA unchanged.
+Next live retries091/092 will cover soluble Site and GPCR respectively; still Phase2 NOT FROZEN.
+
+
+The pre-commit Ruff check found three non-behavioral issues (one101-character diagnostic line,
+two zip calls needing explicit strict=False). Live091/092 were already launched by the wrapper
+with that tested source. Preserve their exact fingerprint while they run; commit this engineering
+state with the lint debt explicitly recorded, then apply those equivalent style fixes once the
+sessions are complete. This is not a Phase freeze and no Ruff PASS is claimed for this checkpoint.

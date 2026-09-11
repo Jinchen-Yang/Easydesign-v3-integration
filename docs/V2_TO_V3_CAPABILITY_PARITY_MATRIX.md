@@ -1,6 +1,6 @@
 # v2 → v3 scientific capability parity
 
-Current autonomous recovery (2026-09-12): **Case3 identity-trap PASS; Phase 2 NOT FROZEN; Phase 3/4 not started.**
+Current autonomous recovery (2026-09-12): **Cases1 soluble Gate2 and3 identity-trap PASS; Phase2 NOT FROZEN; Phase3/4 not started.**
 Historical Phase 2.2d full suite was 774 PASS / 1 FAIL / 11 skips. That failure and the
 no-bound-job loop were reproduced and repaired. Current targeted evidence is recorded in
 AUTONOMOUS_V3_PROGRESS.md; a new full regression remains due at Phase 2 closure.
@@ -22,7 +22,10 @@ then exhausted scoped-field corrections; no GPCR Gate2 acceptance is claimed. Li
 a real SiteIntent and the original Stage02 proposal job, but its independent Judge view exceeded
 32000 characters. An exact duplicate conclusion is now represented once, and explicit trusted
 transfer preserves that unreviewed proposal/job for a new review thread after a code repair.
-It transfers no Judge verdict or approval. Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases1/2/4/5 and the Phase2 full regression remain outstanding.
+It transfers no Judge verdict or approval. Live153 subsequently obtained independent Judge/Gate2 and six-section Case1 acceptance of the
+bounded DISCOURAGED hypothesis, then applied the old Site approval through the scripted validation
+actor. The exact approved hotspot and all warnings are retained for current Binder validation.
+Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases2/4/5 and the Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
 

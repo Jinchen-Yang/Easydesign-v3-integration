@@ -1137,3 +1137,39 @@ REVISE routing and actual SDK tool/adapter contracts. Isolated routing draft:7 P
 pytest import-rewrite warnings. Ruff153 PASS; mypy153:3source files PASS. No production/GPU jobs.
 Next live153 resumes live151's unchanged unreviewed Site; live154 reuses the approved GPCR Target.
 Phase2 NOT FROZEN. Only Case3 is accepted; Phase3/4 NOT STARTED.
+
+
+### Soluble Gate2 independent acceptance (live153; Design/GPCR still running)
+
+Live153 (`phase2-goldens-20260911T225114819732Z`) preserved original Site proposal
+606ec24778f759e845452a4788a560fca234a6520e826e4a9033394c04717376 and original Stage02 job,
+then obtained the actual independent Judge and Gate2 card
+242b9eafc3f7efb59a9129d3f7cc691ec2d9ca8795a441c0f2d75c164b0aa9be.
+The complete lossless Judge view was read successfully. Independent six-section scientific
+review accepted Case1 at snapshot256c230d607e022a3f0edc19e8a9300991f7c927b8076a765e53c7c4782028d9.
+Case3's unchanged identity-trap review remains PASS. This is REAL MODEL / REAL SOURCES /
+EXISTING DETERMINISTIC SERVICES acceptance; no binding/inhibition experiment was performed.
+
+All primary design labels35/52/62/63/101 (E/D/W/W/D) are observed and correctly mapped to
+canonical53/70/80/81/119, source authL/labelC, normalized designA. Primary literature-derived
+cleft insertion and scan-derived rim entry blockade44/46/48/62/101 remain distinct hypotheses.
+The card stays DISCOURAGED: buried E35/D52/W63 and spatial components are explicitly retained;
+no full-body clearance, dynamics or residue-level epitope proof is claimed. The verified primary
+abstract supports a regional protruding-CDR3 precedent, not inhibition. Enzyme titration with
+substrate dependence, fold-integrity and interference controls make the hypothesis testable.
+The independent review explicitly qualifies two prose overgeneralizations: competitive kinetics
+alone do not uniquely prove specificity, and direct catalytic-dyad contact is not universally
+required for inhibition. Neither is accepted as a hard fact; orthogonal controls and the card's
+uncertainty about sufficiency of cleft occlusion remain necessary.
+
+Site/review lineage records actual19+2+6model calls (Coordinator12/Site12/Judge3), peak supplied
+context57663 under60000, four searches, five acquired source responses, three retained corpus
+documents and five focused cards. Empty narrow function/epitope searches mean no evidence was
+retrieved in this run, not literature-wide absence. The six-section review is retained at
+`soluble/gate2-independent-review.json` in the live153 evidence directory.
+
+The existing trusted human-input path then applied the validation actor's explicit warning
+OVERRIDE and verified the old Site approval. No new Site job was created. Standard Binder
+Strategy is now running with the real isolated BoltzGen0.3.2 validator, to be followed by a
+separate native expert YAML case. Live154 GPCR continues actual receptor/source/mapping work.
+Cases2/4/5 and full regression remain outstanding. Phase2 NOT FROZEN; Phase3/4 NOT STARTED.

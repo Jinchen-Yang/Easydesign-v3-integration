@@ -37,6 +37,7 @@ from .contracts import (
     DecisionCard,
     DecisionOutcome,
     EvidenceBinding,
+    EvidenceCitationMismatch,
     ReconciliationRequired,
 )
 from .evidence_research import EvidenceResearch
@@ -310,16 +311,8 @@ class Phase2Bridge(TargetBridge):
         self.document(proposal["facts_ref"])
         return True
 
-    def register_site(self, intent: SiteIntent, revision: DecisionOutcome | None) -> dict[str, Any]:
-        snapshot = self.read_site_evidence()
-        if SITE_EVIDENCE.get() != EvidenceBinding.model_validate(
-            {k: snapshot[k] for k in EvidenceBinding.model_fields}
-        ):
-            raise AgentBoundaryError("Site proposal lacks its runtime-delegated target snapshot")
-        target, facts, facts_ref = self.site_facts()
-        from .target_assessment import check_fact_claims
-
-        check_fact_claims(intent.model_dump(mode="json"), target["evidence"])
+    def validate_site_research(self, intent: SiteIntent) -> dict[str, Any]:
+        """Read-only citation preflight; no scientific proposal is registered here."""
         research = EvidenceResearch(self).validate_conclusions(intent.research_conclusions)
         cards = {
             c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
@@ -334,10 +327,23 @@ class Phase2Bridge(TargetBridge):
                 raise AgentBoundaryError("Site source identifier was not retrieved in this thread")
             for card_id in site_candidate.evidence_card_ids:
                 if cards[card_id].get("corpus_ref"):
-                    raise AgentBoundaryError(
+                    raise EvidenceCitationMismatch(
                         "Cite a focused passage, not a full source acquisition receipt"
                     )
                 research["source_refs"].extend(cards[card_id]["source_refs"])
+        return research
+
+    def register_site(self, intent: SiteIntent, revision: DecisionOutcome | None) -> dict[str, Any]:
+        snapshot = self.read_site_evidence()
+        if SITE_EVIDENCE.get() != EvidenceBinding.model_validate(
+            {k: snapshot[k] for k in EvidenceBinding.model_fields}
+        ):
+            raise AgentBoundaryError("Site proposal lacks its runtime-delegated target snapshot")
+        target, facts, facts_ref = self.site_facts()
+        from .target_assessment import check_fact_claims
+
+        check_fact_claims(intent.model_dump(mode="json"), target["evidence"])
+        research = self.validate_site_research(intent)
         evaluation = evaluate_site(
             target["root"], target["bundle_path"], facts, intent.selected_site.hotspot_label_seq_ids
         )

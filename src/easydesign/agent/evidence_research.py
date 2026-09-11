@@ -30,7 +30,13 @@ from easydesign.core import ArtifactRef, BackendContractError
 from easydesign.core.target_identity import resolve_target_identity
 from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, generate_candidates
 
-from .contracts import AgentBoundaryError, ShortText, SourceCardArgumentMismatch, StrictDTO
+from .contracts import (
+    AgentBoundaryError,
+    EvidenceCitationMismatch,
+    ShortText,
+    SourceCardArgumentMismatch,
+    StrictDTO,
+)
 from .evidence_corpus import NEEDS, EvidenceCorpus, SelectEvidence, source_key
 from .session_store import compact, confined, identity
 
@@ -130,8 +136,21 @@ class ResearchQuery(StrictDTO):
 
 
 class EvidenceUse(StrictDTO):
-    card_id: str = Field(min_length=1, max_length=80)
-    excerpt: str = Field(min_length=12, max_length=700)
+    card_id: str = Field(
+        min_length=1,
+        max_length=80,
+        description="Exact focused passage "
+        "card_id returned by retrieve_evidence; never a search lead or "
+        "research_evidence acquisition card. No invented IDs.",
+    )
+    excerpt: str = Field(
+        min_length=12,
+        max_length=700,
+        description="Exact short verbatim "
+        "substring of that retrieved passage. Do not paraphrase, quote a "
+        "title/receipt, or describe unavailable text. Record access limits "
+        "in limitations with evidence=[] instead.",
+    )
     claim: ShortText
     relation: Literal["supports", "contradicts", "scope-limit"]
     strength: Literal["E1", "E2", "E3", "E4"]
@@ -956,11 +975,19 @@ class EvidenceResearch:
                 )
             for use in conclusion.evidence:
                 card = cards.get(use.card_id)
-                if card is None or _text(use.excerpt) not in _text(card["passage"]):
-                    raise AgentBoundaryError("Evidence claim is not bound to a retrieved passage")
-                if card.get("corpus_ref"):
+                if card is None:
                     raise AgentBoundaryError(
-                        "Use a focused retrieved passage, not the acquisition receipt"
+                        "Evidence source identifier was not retrieved in this thread"
+                    )
+                if card.get("corpus_ref") or _text(use.excerpt) not in _text(card["passage"]):
+                    raise EvidenceCitationMismatch(
+                        "CITATION_MISMATCH for known source " + use.card_id + ": "
+                        "Use the exact focused retrieved passage card_id from retrieve_evidence and "
+                        "a verbatim substring of its passage, not a search/acquisition "
+                        "receipt or paraphrase. Correct every citation in this submission. "
+                        "For unread/unavailable sources, put the access limit in limitations "
+                        "with evidence=[] and UNRESOLVED; do not invent quotes or support. "
+                        "Read-only passage retrieval is permitted before resubmission."
                     )
                 if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
                     raise AgentBoundaryError(

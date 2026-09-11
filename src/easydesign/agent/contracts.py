@@ -192,6 +192,10 @@ class AgentBoundaryError(RuntimeError):
     category = "HARD_BOUNDARY_VIOLATION"
 
 
+class EvidenceCitationMismatch(AgentBoundaryError):
+    """A known owned source was cited with the wrong passage or excerpt; no authority granted."""
+
+
 class SourceSelectionRequired(RuntimeError):
     """One valid acquisition needs an explicit source selection before any I/O."""
 

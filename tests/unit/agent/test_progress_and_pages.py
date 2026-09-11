@@ -646,3 +646,108 @@ async def test_site_followup_reads_require_focus_and_share_existing_call_budget(
     assert '"used_model_calls":0' in snapshots[0][1]
     assert '"used_model_calls":1' in snapshots[1][1]
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_known_source_citation_is_repaired_before_site_registration(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    from easydesign.agent.evidence_corpus import RetrieveEvidence
+    from easydesign.agent.evidence_research import ResearchConclusion
+    from tests.unit.agent.test_site_runtime import site_intent
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Explain source support")
+    source_transport(b, monkeypatch)
+    worker = EvidenceResearch(b)
+    acquired = worker.acquire(
+        ResearchQuery.model_validate(
+            {**ACQUIRE, "selection_reason": "Inspect direct assay evidence"}
+        ),
+        role="site",
+    )
+    source = acquired["cards"][0]
+    page = EvidenceCorpus(b).retrieve(
+        RetrieveEvidence(
+            need="FUNCTIONAL_MECHANISM",
+            question="assay inhibition",
+            source_id="EuropePMC:PMC123",
+            page_size=1,
+        )
+    )
+    passage = page["cards"][0]
+
+    def opinion(card_id: str) -> Any:
+        intent = site_intent()
+        conclusion = ResearchConclusion.model_validate(
+            {
+                "topic": "function",
+                "status": "VERIFIED",
+                "limitations": ["Synthetic controlled assay only"],
+                "evidence": [
+                    {
+                        "card_id": card_id,
+                        "excerpt": "The assay showed inhibition under controlled conditions.",
+                        "claim": "The assay reports inhibition in its specified conditions.",
+                        "relation": "supports",
+                        "strength": "E2",
+                        "transfer_limit": "No in vivo extrapolation",
+                    }
+                ],
+            }
+        )
+        return intent.model_copy(update={"research_conclusions": [conclusion]})
+
+    bad, good = opinion(source["card_id"]), opinion(passage["card_id"])
+    from easydesign.agent.contracts import TargetFacts
+
+    monkeypatch.setattr(
+        b,
+        "target_submission_evidence",
+        lambda: {"hard_facts": TargetFacts().model_dump(mode="json")},
+    )
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Explain source support",
+        execution_id=execution["execution_id"],
+    )
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    seen = []
+
+    async def handler(request: Any) -> Any:
+        seen.append(request.system_message.text)
+        value = bad if len(seen) == 1 else good
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "SiteIntent", "args": value.model_dump(mode="json"), "id": "final"}
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    result = await guard.awrap_model_call(
+        Request(tools=tools, messages=[], system_message=SystemMessage(content="Investigate")),
+        handler,
+    )
+    assert result.structured_response == good and len(seen) == 2
+    assert "CITATION_MISMATCH" in seen[1] and '"used_model_calls":1' in seen[1]
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "contract-repair"]) == 1
+    assert not [e for e in b.store.events(b.thread) if e["kind"] == "site-proposal"]
+    with pytest.raises(AgentBoundaryError, match="not retrieved"):
+        b.validate_site_research(opinion("foreign-source"))
+    assert not b._jobs()

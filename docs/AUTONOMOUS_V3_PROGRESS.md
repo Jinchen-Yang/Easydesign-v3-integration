@@ -360,3 +360,28 @@ physical GPU UUID recorded; returncode0 and 72.20-second model inference. Actual
 GPU; 071 succeeded). Receipt SHA ebe57dc14ef1fd8b5c00956e0698093b94e5425c95f725e66d501ac50d811ef3.
 This is backend installation readiness, not Phase3 target-binder generation/filtering acceptance.
 See AUTONOMOUS_V3_BACKEND_READINESS.md. All protected kernel hashes remain mandatory.
+
+
+### Real Site submission binding and GPCR content review (live080/081)
+
+Live080 (`phase2-goldens-20260911T184511700924Z`) reached a typed SiteIntent at modelcall24
+with actual candidate evaluations, but used search/acquisition card IDs and paraphrased receipt
+text as excerpts. Existing citation validation rejected it before proposal registration. No
+Gate2 PASS. Known-owned-source citation mismatches now enter the existing two typed-submission
+corrections before the registration callback; foreign card IDs and integrity failures remain
+fatal. The exact existing source and citation checks run again at registration. Field descriptions
+explicitly require a focused passage card ID and verbatim excerpt; unavailable/unread sources
+belong in limitations, never invented quotes. No scientific threshold or budget relaxed.
+Targeted082 had two fixture/message-compatibility defects; corrected targeted084:31 PASS
+(9.97s), mypy08320 PASS. Live085 is the next soluble retry.
+
+Live081 (`phase2-goldens-20260911T184511658340Z`) actually reached GPCR Gate1, but failed the
+required before/after canonical-binding focused-read assertion: Target omitted the after-read.
+The independently inspected card also FAILS scientific review: Judge treats construct501 vs
+observed284 as a contradiction (these are different quantities), and overinterprets an arbitrary
+optimal alignment of chainB to the receptor reference. No response/approval was delivered.
+`gpcr/gate1-content-review-after-failure.json` preserves the rejection. Verified frozen mmCIF
+entity annotations explicitly describe entity1/A as Beta-2 adrenergic receptor, Lysozyme and
+entity2/B as Camelid Antibody Fragment; these should be surfaced as depositor annotations,
+not replaced by chain-size guesses or global-alignment claims. The frozen oracle is unchanged
+and is not suspected; the errors are Agent evidence presentation/interpretation.

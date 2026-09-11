@@ -22,6 +22,7 @@ from .contracts import (
     AgentBoundaryError,
     DecisionOutcome,
     EvidenceBinding,
+    EvidenceCitationMismatch,
     EvidenceCursorQueryMismatch,
     InvalidFieldProjection,
     JudgeVerdict,
@@ -452,6 +453,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                 else:
                     try:
+                        if self.role == "site":
+                            assert isinstance(self.bridge, Phase2Bridge)
+                            self.bridge.validate_site_research(response.structured_response)
                         if self.role == "target":
                             check_interpretation(
                                 response.structured_response,
@@ -470,6 +474,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     response.structured_response.model_dump(mode="json"),
                                     {"hard_facts": facts},
                                 )
+                    except EvidenceCitationMismatch as error:
+                        diagnostic = str(error)
                     except HardFactContradiction as error:
                         diagnostic = str(error)
                         self.bridge.store.event(

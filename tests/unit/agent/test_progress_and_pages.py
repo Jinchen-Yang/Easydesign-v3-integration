@@ -853,3 +853,37 @@ async def test_scoped_list_end_distinguishes_index_from_target_residue_number(br
     assert result["value"] == [] and result["next_offset"] is None
     assert "not residue numbering" in result["instruction"] and result["full_result"] == ref
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_completed_target_cannot_be_redelegated_as_pending_site_work(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Continue after Target approval")["execution_id"]
+    monkeypatch.setattr(
+        b,
+        "scientific_state",
+        lambda: {"scientific_state": "site-not-proposed", "next_specialist": "site-mechanism"},
+    )
+    guard = RoleBoundary(
+        b, "coordinator", scripted_config(), "Continue after Target approval", execution_id=eid
+    )
+
+    async def handler(request: Any) -> Any:
+        raise AssertionError("Inapplicable specialist must not execute")
+
+    for specialist in ("target-intelligence", "evidence-judge"):
+        request = SimpleNamespace(
+            tool_call={
+                "name": "task",
+                "id": specialist,
+                "args": {"subagent_type": specialist, "description": "Continue research"},
+            }
+        )
+        result = await guard.awrap_tool_call(request, handler)
+        assert result.status == "error"
+        value = json.loads(result.content)
+        assert value["status"] == "NOT_APPLICABLE" and value["next_specialist"] == "site-mechanism"
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "delegation-prerequisite"]) == 2
+    assert not b._jobs()

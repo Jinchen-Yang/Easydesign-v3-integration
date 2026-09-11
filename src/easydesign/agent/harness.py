@@ -654,6 +654,37 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 raise AgentBoundaryError(
                     "Only the registered scientific specialists can be delegated"
                 )
+            if isinstance(self.bridge, Phase2Bridge):
+                progress = self.bridge.scientific_state()
+                if (
+                    progress.get("scientific_state") == "site-not-proposed"
+                    and specialist != "site-mechanism"
+                ):
+                    self.bridge.store.event(
+                        self.bridge.thread,
+                        "delegation-prerequisite",
+                        {
+                            "execution_id": self.execution_id,
+                            "requested_specialist": specialist,
+                            "scientific_state": "site-not-proposed",
+                            "next_specialist": "site-mechanism",
+                        },
+                    )
+                    return ToolMessage(
+                        content=compact(
+                            {
+                                "status": "NOT_APPLICABLE",
+                                "scientific_state": "site-not-proposed",
+                                "next_specialist": "site-mechanism",
+                                "message": "Target is already approved; Site has no proposal. "
+                                "Delegate the requested Site question to site-mechanism. "
+                                "No upstream work or premature Judge delegation was executed.",
+                            }
+                        ),
+                        status="error",
+                        tool_call_id=request.tool_call["id"],
+                        name=name,
+                    )
             description = args.get("description", "")
             if not isinstance(description, str) or not description or len(description) > 1500:
                 return ToolMessage(

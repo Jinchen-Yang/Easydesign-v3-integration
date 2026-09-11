@@ -988,7 +988,8 @@ class EvidenceResearch:
                 if card.get("corpus_ref") or _text(use.excerpt) not in _text(card["passage"]):
                     raise EvidenceCitationMismatch(
                         "CITATION_MISMATCH for known source " + use.card_id + ": "
-                        "Use the exact focused retrieved passage card_id from retrieve_evidence and "
+                        "Use the exact focused retrieved passage card_id from retrieve_evidence "
+                        "and "
                         "a verbatim substring of its passage, not a search/acquisition "
                         "receipt or paraphrase. Correct every citation in this submission. "
                         "For unread/unavailable sources, put the access limit in limitations "

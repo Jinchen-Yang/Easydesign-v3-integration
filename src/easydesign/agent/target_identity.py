@@ -56,8 +56,23 @@ def deposited_polymer_metadata(source: Path) -> dict[str, Any]:
         entities = block.get_mmcif_category("_entity.")
         polymers = block.get_mmcif_category("_entity_poly.")
         asym = block.get_mmcif_category("_struct_asym.")
-        descriptions = dict(zip(entities.get("id", []), entities.get("pdbx_description", [])))
-        labels = list(zip(asym.get("id", []), asym.get("entity_id", [])))
+        descriptions = dict(
+            zip(entities.get("id", []), entities.get("pdbx_description", []), strict=False)
+        )
+        labels = list(zip(asym.get("id", []), asym.get("entity_id", []), strict=False))
+        source_annotations = block.get_mmcif_category("_entity_src_gen.")
+        segments: dict[str, list[dict[str, Any]]] = {}
+        for i, entity in enumerate(source_annotations.get("entity_id", [])):
+            annotation = {}
+            for key in (
+                "pdbx_beg_seq_num",
+                "pdbx_end_seq_num",
+                "pdbx_gene_src_scientific_name",
+                "pdbx_gene_src_ncbi_taxonomy_id",
+            ):
+                values = source_annotations.get(key, [])
+                annotation[key] = values[i] if i < len(values) else None
+            segments.setdefault(entity, []).append(annotation)
         types = polymers.get("type", [])
         all_strands = polymers.get("pdbx_strand_id", [])
         for i, entity in enumerate(polymers.get("entity_id", [])):
@@ -66,6 +81,7 @@ def deposited_polymer_metadata(source: Path) -> dict[str, Any]:
                 {
                     "entity_id": entity,
                     "deposited_description": descriptions.get(entity),
+                    "deposited_source_segments": segments.get(entity, []),
                     "polymer_type": types[i] if i < len(types) else None,
                     "source_label_chain_ids": [
                         label for label, parent in labels if parent == entity
@@ -276,6 +292,13 @@ def pending_canonical(
                 "insertions": len(report.alignment.insertions) if report.alignment else None,
                 "deletions": len(report.alignment.deletions) if report.alignment else None,
                 "constant_canonical_offset": constant_canonical_offset(report),
+                "design_scope_row_count": len(report.design_scope.residues),
+                "design_scope_mapped_rows": sum(
+                    row.canonical_position is not None for row in report.design_scope.residues
+                ),
+                "design_scope_unmapped_rows": sum(
+                    row.canonical_position is None for row in report.design_scope.residues
+                ),
             }
         )
     return {
@@ -286,7 +309,11 @@ def pending_canonical(
             "deletions are canonical-to-construct alignment gaps. missing_construct_positions "
             "are construct residues lacking coordinates, not alignment gaps. A non-null "
             "constant_canonical_offset proves canonical_position=construct_position+offset "
-            "for every construct row; human review does not erase this known correspondence."
+            "for every construct row; human review does not erase this known correspondence. "
+            "A null constant offset does not mean no mapping exists: inspect the mapped and "
+            "unmapped design-scope row counts. These are the old engine's chosen alignment "
+            "rows; ambiguity means uniqueness is unproven, not that all rows are absent. "
+            "Approval cannot make an ambiguous mapping unique or fill unmapped insertions."
         ),
         "authority": (
             "Unchanged deterministic identity engine; pending human decision, not approval"

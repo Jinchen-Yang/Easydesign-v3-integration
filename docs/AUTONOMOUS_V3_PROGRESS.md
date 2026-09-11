@@ -419,3 +419,28 @@ two zip calls needing explicit strict=False). Live091/092 were already launched 
 with that tested source. Preserve their exact fingerprint while they run; commit this engineering
 state with the lint debt explicitly recorded, then apply those equivalent style fixes once the
 sessions are complete. This is not a Phase freeze and no Ruff PASS is claimed for this checkpoint.
+
+
+### Conditional mappings and inapplicable delegation (live091/092)
+
+Live091 (`phase2-goldens-20260911T185808993592Z`) incorrectly redelegated approved Target work;
+the Target then attempted another role's Skill, correctly rejected by the file boundary. The
+Coordinator now receives NOT_APPLICABLE if it delegates upstream Target/premature Judge while
+trusted state is site-not-proposed; only the pending scientific owner can work there. This is
+existing state/role enforcement, not automatic scientific selection or a second scheduler.
+
+Live092 (`phase2-goldens-20260911T185808864699Z`) reached Gate1 and passed the canonical
+before/after source round trip with one acquisition. Entity and construct/coordinate distinctions
+were improved. Independent content review nevertheless FAILS its assertion that null constant
+offset means no residue-level correspondence exists. No human/scripted approval was delivered.
+The current read-only projection exposes the old engine's actual counts: chainA design493 rows,
+365 with canonical positions and128 unmapped, still ambiguous/no proven global offset; chainB126
+mapped rows in its arbitrary alignment, not biological receptor identity. Depositor source segments
+are retained with original mmCIF field names, source organism and source position annotations.
+They are not canonical/design renumbering. Verification retained in gpcr-mapping-projection093.json.
+
+Target/Judge explicitly separate absence of a global offset, existing conditional per-row mapping
+and unproven uniqueness. Source segments do not prove native function/state. Judge Skill fits in
+one bounded118-line read. Protected science/oracle unchanged. Targeted093:27 PASS (22.77s),
+mypy09420 PASS. Previous Ruff debt and one additional long line corrected; Ruff095 PASS.
+Next real attempts096/097 continue soluble and GPCR acceptance independently.

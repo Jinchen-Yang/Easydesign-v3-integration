@@ -109,3 +109,9 @@ it as a fact, then compare source processing annotations. Do not call a known co
 unknown merely because its use still requires human approval. Reference identity, construct
 sequence correspondence, experimental processing, coordinate presence and biological function
 are separate questions with separately supported certainty.
+
+A null constant_canonical_offset does not erase per-row mappings. Use the supplied design-scope
+mapped/unmapped counts and ambiguity status: rows come from the existing chosen alignment;
+uniqueness remains unproven when ambiguous, and approval does not fill unmapped insertions.
+Deposited source segments, when present, are the original _entity_src_gen annotations. Keep
+their deposited sequence positions separate from canonical and normalized design numbering.

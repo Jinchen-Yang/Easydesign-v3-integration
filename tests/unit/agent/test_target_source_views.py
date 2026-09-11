@@ -42,6 +42,7 @@ D 3
         {
             "entity_id": "1",
             "deposited_description": "Receptor, fusion partner",
+            "deposited_source_segments": [],
             "polymer_type": "polypeptide(L)",
             "source_label_chain_ids": ["A", "C"],
             "source_auth_chain_ids": ["R", "S"],
@@ -49,6 +50,7 @@ D 3
         {
             "entity_id": "2",
             "deposited_description": "Antibody fragment",
+            "deposited_source_segments": [],
             "polymer_type": "polypeptide(L)",
             "source_label_chain_ids": ["B"],
             "source_auth_chain_ids": ["N"],

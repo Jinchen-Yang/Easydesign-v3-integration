@@ -397,7 +397,8 @@ async def main():
     config = ModelConfig.model_validate(yaml.safe_load((ROOT / "config/llm.yaml").read_text()))
     assert config.max_input_chars == 60000 and config.max_model_calls == 32
     secrets = [os.environ.get(c.secret_env, "") for c in [config.default, *config.roles.values()]]
-    assert config.default.model == "deepseek-flash" and not config.roles
+    # Provider/model are explicit engineering configuration, not scientific oracles.
+    # Record the complete configuration below; never silently switch on a failure.
     assert (
         hashlib.sha256((ROOT / "docs/PHASE2_GOLDEN_CASE_SPEC.md").read_bytes()).hexdigest()
         == "96ead11b3f071dce05780dd1f6fba6ee353d2346aa5a53438ac4ef0e8a850a49"

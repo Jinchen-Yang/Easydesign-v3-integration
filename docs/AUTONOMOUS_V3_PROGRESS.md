@@ -812,3 +812,35 @@ found one further old empty-page assertion (7PASS/1FAIL); corrected along with t
 context test. Final136d:13 PASS (8.47s). Ruff136d PASS; mypy136b:20files PASS.
 Next live137/138 use the recorded4096output configuration and whitelisted wire observer.
 Phase2 NOT FROZEN; cases1/2/4/5 incomplete, case3 independently PASS only.
+
+
+### Explicit model comparison after verified named-tool rejection (live137/138)
+
+Live137 (`phase2-goldens-20260911T210449158524Z`, soluble) and live138
+(`phase2-goldens-20260911T210449491657Z`, GPCR) failed at27shared calls. The actual HTTP
+metadata proves each of the three finalization requests offered only SiteIntent and named it
+in tool_choice, with thinking disabled and max_tokens4096. Responses still requested old
+reading/evaluation tools. No such late action executed; two bounded corrections were exhausted.
+The GPCR trace also failed to use the supplied receptor-analysis workflow and over-read topology.
+These are operational/model behavior failures, not scientific negative results or Phase2 PASS.
+
+A read-only provider capability check139 returned deepseek-flash and deepseek-v4-pro. A bounded
+2-call REAL MODEL test on explicitly SYNTHETIC evidence confirmed both can honor a named final
+submission after an old tool call in a short conversation; this does not certify long-context
+robustness or scientific acceptance. Receipts: model-capability139.json and model-probe139.json.
+Official model/tool references: https://api-docs.deepseek.com/updates/ and
+https://api-docs.deepseek.com/guides/tool_calls/ .
+
+The next real retries explicitly select deepseek-v4-pro, non-thinking,4096output, with no role
+overrides. This is an engineering configuration change authorized by the autonomous assignment,
+not a silent fallback or a change to the scientific input/oracle. The runner's old Flash-only
+assertion was a historical setup restriction rather than a frozen requirement; it now accepts
+the already strict explicit ModelConfig and records all actual settings. Shared32calls and
+60000input remain fixed. Before/after config snapshots and model-config-change139.json are saved
+in the existing evidence directory. Config SHA1e0f04e2f422ac93bd862d2d19f0a57ef46c8749a67b4b8852d26a88b921ef1a
+becomes b72c733d0535cf41fa944c1e4899d3996f0878ef165d7b7f8a4e5c27f29826d7.
+Independent Judge, hard-fact/source checks, five Gates and micro compute limits are unchanged.
+Phase2 remains NOT FROZEN. Valid Target approvals and exact Case3 acceptance remain reusable.
+
+Targeted139:18 PASS (3.47s), covering provider configuration/actual SDK payload and frozen golden
+spec assertions. Ruff139 PASS. Next live139/140 resume the approved soluble/GPCR Target bundles.

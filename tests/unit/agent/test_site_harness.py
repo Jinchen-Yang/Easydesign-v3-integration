@@ -19,7 +19,7 @@ class SiteModel(ScriptedModel):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
-        outputs = {"site": "SiteIntent", "judge": "JudgeVerdict"}
+        outputs = {"target": "TargetInterpretation", "site": "SiteIntent", "judge": "JudgeVerdict"}
         expected = PHASE2_ALLOWED[self.role] | (
             {outputs[self.role]} if self.role in outputs else set()
         )

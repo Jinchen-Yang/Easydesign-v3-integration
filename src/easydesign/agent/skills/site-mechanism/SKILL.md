@@ -59,7 +59,7 @@ numbering distinct from the normalized approved target labels; map before propos
    state or state specificity from solvent exposure, an assay goal, or one conformation.
 6. Propose meaningful alternatives when real mapped alternatives exist. Compare strengths,
    risks and uncertainty in each alternative's rationale; never manufacture three sites.
-7. Return the small SiteIntent JSON required by runtime. Positive evidence, mechanistic
+7. Submit through the SiteIntent tool required by runtime. Positive evidence, mechanistic
    rationale, accessibility, approach and uncertainty must answer this research question.
    Choose SUPPORTED only within the evidence's actual scope; poor access, missing membrane
    orientation or shielding risk is DISCOURAGED but testable. A failed mapping or explicit
@@ -93,3 +93,10 @@ page through all raw JSON. Ordinary tool outputs and old detailed views may be r
 references in model context. Re-read a needed field explicitly; do not infer omitted values.
 
 Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.
+
+Submit the final opinion only through the available typed output tool. Free-form prose or
+fenced JSON cannot create a scientific proposal. Correct exact schema errors within the
+runtime's two output-contract corrections per execution; do not repeat scientific jobs.
+Runtime owns identity, mapping, coordinate presence, approved constraints and source IDs.
+Interpretation must not contradict these hard facts. Judge independently checks this consistency,
+without re-deriving facts; an explicit contradiction must be rejected before a Gate.

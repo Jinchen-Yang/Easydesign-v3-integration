@@ -63,17 +63,14 @@ class ProjectionModel(RecoveryModel):
             self.repairs.append(error)
             return self.call("read_evidence_result", ref=self.result_ref, fields=KEYS)
         self.observed.update(json.loads(last.content)["value"])
-        return AIMessage(
-            content=json.dumps(
-                {
-                    "observed_facts": ["Read the bound snapshot"],
-                    "unresolved_identity": ["No canonical target was approved"],
-                    "selectable_options": [],
-                    "evidence_refs": [],
-                    "limitations": ["Synthetic evidence does not establish biological validity"],
-                    "recommended_action": "Report the scoped evidence only",
-                }
-            )
+        return self.call(
+            "TargetInterpretation",
+            **{
+                "interpretation": ["Read the bound snapshot"],
+                "unresolved_identity": ["No canonical target was approved"],
+                "limitations": ["Synthetic evidence does not establish biological validity"],
+                "recommended_action": "Report the scoped evidence only",
+            },
         )
 
 

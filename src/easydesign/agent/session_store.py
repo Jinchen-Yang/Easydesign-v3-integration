@@ -253,6 +253,39 @@ class SessionStore:
             thread, role, execution_id, "tool-argument-repair", "INVALID_FIELD_PROJECTION"
         )
 
+    def reserve_contract_repair(
+        self, thread: str, role: str, execution_id: str, diagnostic: str
+    ) -> int:
+        """Two output-contract corrections per execution, persisted across delegations/replay."""
+        execution = self.latest_execution(thread)
+        if execution is None or execution["execution_id"] != execution_id:
+            raise AgentBoundaryError("Contract repair is outside the current execution")
+        with self.db:
+            count = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? AND kind='contract-repair' "
+                "AND json_extract(payload,'$.execution_id')=?",
+                (thread, execution_id),
+            ).fetchone()[0]
+            if count >= 2:
+                raise AgentBoundaryError(
+                    "Structured contract repair budget exhausted (2 per execution)"
+                )
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
+                (
+                    thread,
+                    compact(
+                        {
+                            "role": role,
+                            "execution_id": execution_id,
+                            "attempt": count + 1,
+                            "diagnostic": diagnostic[:6000],
+                        }
+                    ),
+                ),
+            )
+        return int(count) + 1
+
     def _reserve_repair(
         self,
         thread: str,

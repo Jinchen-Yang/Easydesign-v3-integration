@@ -37,9 +37,14 @@ assessment and present the runtime approval card. Do not recommend a separate ch
 before Judge review; the runtime card is the confirmation mechanism.
 Single-chain inputs may finish directly; do not invent an approval gate.
 
-Return TargetAssessment JSON with observed_facts, unresolved_identity, selectable_options,
-evidence_refs, limitations and recommended_action. Use returned refs when present; if a compact
-view omits them, return evidence_refs=[] and let trusted runtime retain the source binding.
+Submit only through the TargetInterpretation tool: interpretation, unresolved_identity,
+limitations, recommended_option (optional eligible option ID), and recommended_action.
+Runtime supplies hard_facts, all source identities, options and mapping. Do not regenerate
+lengths/chain facts as authoritative fields or restate entire factual tables in prose. The UI
+uses runtime facts directly. Explain biological implications, alternatives and uncertainty.
+HARD_FACT_CONTRADICTION requires correction; it cannot be sent to Gate approval.
+Free text, pure JSON text or fenced JSON is not a submission. On a schema diagnostic, correct
+only the typed submission; two persisted output-contract corrections per execution are allowed.
 Never return raw PDB/mmCIF coordinates, full sequences, logs, or invented scientific artifacts.
 
 For structural-only inputs, retain limitations: canonical biological identity is unconfirmed and
@@ -70,6 +75,9 @@ When the task supplies a UniProt accession or requires resolving canonical ident
 that selected UniProt record before prepare_target. Use propose_canonical_identity with the
 acquisition card. Runtime binds accession/species; do not invent mappings. Already configured
 references are preserved. Existing Target science cannot be silently retargeted.
+Read focused TARGET_IDENTITY passages about precursor/mature/engineered differences before
+proposing the reference; after the canonical revision, retrieve the needed passages again in
+the current view. The same verified source remains available without another download.
 Then prepare_target and inspect identity_evidence: canonical/construct lengths, edits,
 ambiguity and mapping requirements. The Coordinator must obtain Judge and a real Gate 1
 card for chain-selection, target-identity-review or scope-selection. A construct mismatch

@@ -350,6 +350,8 @@ class TargetBridge:
         return f"{ref.relative_path}#sha256={ref.sha256}"
 
     def read_evidence(self, run_id: str | None = None) -> dict[str, Any]:
+        from .contracts import TargetFacts
+
         self.validate_project()
         root, manifest = self.run(run_id)
         resolved, config_path = load_resolved_run_config(root)
@@ -415,7 +417,10 @@ class TargetBridge:
                         "residue_count": c.residue_count,
                         "sequence_sha": identity(c.sequence),
                         "model_count": len(c.model_ids),
-                        "canonical_residue_count": c.canonical_residue_count,
+                        "observed_amino_acid_count": c.canonical_residue_count,
+                        "construct_length": len(c.deposited_sequence)
+                        if c.deposited_sequence
+                        else None,
                     }
                     for c in inventory.chains
                 ],
@@ -429,6 +434,39 @@ class TargetBridge:
                 result["decision_kind"] = request.gate
                 if canonical:
                     result["limitations"] = canonical.get("limitations", [])
+            canonical = result.get("identity_evidence", {}).get("canonical", {})
+            comparisons = {
+                c["auth_chain"]: c
+                for c in result.get("identity_evidence", {}).get("construct_comparisons", [])
+            }
+            result["hard_facts"] = TargetFacts.model_validate(
+                dict(
+                    canonical_accession=canonical.get("accession"),
+                    canonical_length=canonical.get("sequence_length"),
+                    chains=[
+                        {
+                            "auth_chain": c["auth_chain"],
+                            "label_chain": c["label_chain"],
+                            "construct_length": comparisons.get(c["auth_chain"], {}).get(
+                                "construct_length", c["construct_length"]
+                            ),
+                            "observed_length": comparisons.get(c["auth_chain"], {}).get(
+                                "observed_length", c["observed_amino_acid_count"]
+                            ),
+                            "mapping_status": comparisons.get(c["auth_chain"], {}).get(
+                                "mapping_status"
+                            ),
+                            "relationship": comparisons.get(c["auth_chain"], {}).get(
+                                "relationship"
+                            ),
+                            "missing_construct_positions": comparisons.get(c["auth_chain"], {}).get(
+                                "missing_construct_positions", []
+                            ),
+                        }
+                        for c in result["chains"]
+                    ],
+                )
+            ).model_dump(mode="json")
         elif manifest.status is ExecutionStatus.SUCCEEDED:
             stage_refs = [r for r in manifest.stage_manifest_refs if r.producer_stage == STAGE]
             if len(stage_refs) != 1 or len(manifest.stage_manifest_refs) != 1:
@@ -494,6 +532,26 @@ class TargetBridge:
                 },
             )
             result["limitations"] = [*LIMITATIONS, result["approval_provenance"]["limitation"]]
+            result["hard_facts"] = TargetFacts.model_validate(
+                dict(
+                    canonical_accession=report.canonical.accession,
+                    canonical_length=report.canonical.sequence_length,
+                    selected_chain=report.construct_identity.auth_chain_id,
+                    chains=[
+                        {
+                            "auth_chain": report.construct_identity.auth_chain_id or "unknown",
+                            "label_chain": report.construct_identity.label_chain_id,
+                            "construct_length": report.construct_identity.sequence_length,
+                            "observed_length": len(report.observed.observed_construct_positions),
+                            "missing_construct_positions": list(
+                                report.observed.missing_construct_positions
+                            ),
+                            "mapping_status": str(report.design_scope.mapping_status),
+                            "relationship": str(report.relationship),
+                        }
+                    ],
+                )
+            ).model_dump(mode="json")
             if (
                 getattr(self, "is_phase2", False)
                 and str(report.biological_identity_status) == "resolved"
@@ -519,7 +577,45 @@ class TargetBridge:
         result["evidence_id"] = identity(
             {"run": manifest.run_id, "refs": refs, "request": result["request_identity"]}
         )
+        result.setdefault("hard_facts", TargetFacts().model_dump(mode="json"))
+        result["source_evidence_id"] = result["evidence_id"]
+        # Bind an owner interpretation only to the exact verified source snapshot.
+        # Historical prose never becomes current facts or a new Judge approval.
+        for event in reversed(self.store.events(self.thread)):
+            if (
+                event["kind"] == "target-assessment"
+                and event["payload"].get("source_evidence_id") == result["source_evidence_id"]
+            ):
+                from .contracts import TargetInterpretation
+                from .target_assessment import check_interpretation
+
+                opinion = TargetInterpretation.model_validate(event["payload"]["interpretation"])
+                check_interpretation(opinion, result)
+                result["target_interpretation"] = opinion.model_dump(mode="json")
+                result["evidence_id"] = identity(
+                    {
+                        "source": result["source_evidence_id"],
+                        "opinion": result["target_interpretation"],
+                    }
+                )
+                break
         return result
+
+    def target_submission_evidence(self) -> dict[str, Any]:
+        from .contracts import TargetFacts
+
+        # Source research can legitimately finish before a scientific job exists.
+        # Such a submission has no inferred sequence/mapping facts and cannot open a Gate.
+        if not self._jobs():
+            self.validate_project()
+            return {
+                "hard_facts": TargetFacts().model_dump(mode="json"),
+                "source_evidence_id": identity(self.binding()),
+                "evidence_refs": [],
+                "options": [],
+                "status": "not-prepared",
+            }
+        return self.read_evidence()
 
     def judge_evidence(self) -> dict[str, Any]:
         return self.read_evidence()
@@ -536,6 +632,11 @@ class TargetBridge:
             raise AgentBoundaryError("Judge result is stale or outside its delegated snapshot")
         if verdict.verdict == "ready-to-ask" and current["status"] != "awaiting-human-approval":
             raise AgentBoundaryError("No pending scientific question to ask")
+        from .target_assessment import check_fact_claims
+
+        facts = current.get("hard_facts", current.get("target_facts"))
+        if facts is not None and verdict.verdict in {"ready-to-ask", "assessed"}:
+            check_fact_claims(verdict.model_dump(mode="json"), {"hard_facts": facts})
         assessment = EvidenceAssessment(
             **verdict.model_dump(),
             **binding.model_dump(),
@@ -604,6 +705,10 @@ class TargetBridge:
             warnings=recommendation.warnings if recommendation else [],
             alternative=recommendation.alternative if recommendation else None,
             parent_card_id=revision["payload"]["card"] if revision else None,
+            scientific_summary={
+                "hard_facts": current["hard_facts"],
+                "interpretation": current.get("target_interpretation"),
+            },
             action="Review the warning and alternative; revise, reject or explicitly override."
             if discouraged
             else "Review this chain choice; approve, revise or reject the proposal.",

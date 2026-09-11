@@ -1,14 +1,15 @@
 # v2 → v3 scientific capability parity
 
-Acceptance audit, Phase 2.2c: **FAIL — Phase 2 is not frozen; Phase 3/4 not started.**
-Explicit field/fields/path and shared bounded repairs pass offline and actual model correction.
-The real model repaired source selection and conflicting selectors, read deterministic chain
-comparisons, then failed Target's whole-response JSON parser with prose plus fenced JSON.
-Its raw summary also confused canonical/construct lengths. Canonical configuration changed
-source binding; three focused reads returned zero cards. No Judge/Gate1/approved bundle/Gate2.
-Sixteen calls and retained source data do not establish completed scientific context parity.
-Other real cases stopped. See `PHASE22C_SCIENTIFIC_ACCEPTANCE.md` and the pre-live frozen
-`PHASE2_GOLDEN_CASE_SPEC.md`. Recovery COMPLETE does not make the scientific path COMPLETE.
+Current Phase 2.2d result: FAIL / NOT FROZEN. Full suite:774PASS/1FAIL/11skip; Agent159PASS/1FAIL. Target exhausted its32-call execution in repeated no-bound-job reads before source acquisition. New contract and binding changes have targeted offline coverage; full regression exposes a6,091-character focused page reduced to an instruction with0 delivered cards. Current real acceptance did not exercise the new contracts. No Phase 3/4 progression. See PHASE22D_AGENT_CONTRACT_CLOSURE.md.
+
+Acceptance audit, Phase 2.2d: **FAIL — Phase 2 is not frozen; Phase 3/4 not started.**
+Native typed contracts, runtime Target facts and stable source binding have deterministic coverage.
+The current real model run made32 calls(Coordinator 2/Target 30), repeatedly polled no-bound-job and
+stopped at the execution budget. It acquired no source, created no job and reached no final
+submission/Judge/Gate. All consequential real-science acceptance remains incomplete.
+Historical Phase 2.2c demonstrated actual source/projection correction before its separate final
+parser failure; that evidence is retained in PHASE22C_SCIENTIFIC_ACCEPTANCE.md. It does not prove
+the new typed/binding paths. See PHASE22D_AGENT_CONTRACT_CLOSURE.md and unchanged Golden spec.
 
 COMPLETE requires current implementation and acceptance evidence;
 PARTIAL includes unvalidated real-source/model coverage. MISSING is explicit, not retired.
@@ -61,13 +62,15 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Design arms, comparator and changed/held factors | RS/H | strategy-yaml.md | Binder | PARTIAL | 2.2 | typed arm metadata; parity review pending | Integrated arm cannot identify a single causal factor |
 | First Pilot protocol, seven scaffolds × 40 per condition | DS/RS | boltzgen-contract.md; strategy-yaml.md | Binder + existing protocol validator | COMPLETE | 2.2 | Standard coverage plus native-condition before/after and invalid-coverage tests | Narrow legacy facade bug fixed; exact seven-by-40 scientific invariant preserved |
 | Native BoltzGen YAML compilation and checks | DS | boltzgen-contract.md | Trusted callback + existing compiler/validator | COMPLETE | 2.2 | Phase 2 real check and YAML regression | No LLM-authored runnable YAML |
-| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN after Phase 2.2c stop |
+| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN after Phase 2.2d stop |
 | Thread-local proposals / project-global approved science | DS/RS | orchestration/research.py | Runtime explicit ownership adapters | COMPLETE | 2.2 | Ownership regressions plus corpus cross-thread and native approval inheritance | Thread evidence views remain separate; approved scientific state remains shared |
-| Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | COMPLETE | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Shares two corrections with verified scoped-argument repair; both succeeded in live001 |
+| Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | PARTIAL end-to-end | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Shares two corrections with verified scoped-argument repair; both succeeded in historical Phase 2.2c live001; current22d did not exercise them; full007 recovery fixture selects/acquires successfully but delivers0focusedcards |
 | Scoped tool-argument semantics and bounded correction | RS/DS | agent/evidence_output.py; harness.py; session_store.py | Authorized owner + runtime | COMPLETE | 2.2c | 11 new projection tests; real field+path rejection → corrected path → exact four-chain result | Explicit selectors, legacy path deprecation, two shared corrections; no blanket exception recovery |
-| Fixed scientific Golden specification and independent factual oracles | H/DS | PHASE2_GOLDEN_CASE_SPEC.md; tests/agent_golden_support.py | Validation-only reviewer and unchanged kernel | COMPLETE specification / PARTIAL live acceptance | 2.2c | Six fixed-source/negative oracle tests PASS; five-case live acceptance stopped before Gate1 | Spec is fixed before live; human fixture response cannot override false facts |
-| Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | One real source retained; three focused reads return zero cards after binding change; later Target output fails; not end-to-end acceptance |
-| First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline harness PASS; live stops at Target final-output parsing after old pending decision; no Judge or Gate card | No complete real golden; cannot freeze Phase 2 |
+| Consequential typed submission and runtime Target facts | DS/RS | agent/harness.py; target_assessment.py; V3_AGENT_CONTRACT_OWNERSHIP.md | Native ToolStrategy + trusted callbacks | PARTIAL | 2.2d | Final contract tests and source-bound Judge regressions PASS; real final submission NOT EXERCISED | No fenced-text success fallback; two bounded output repairs; independent scientific acceptance still required |
+| Stable source identity and canonical revision binding | DS/RS | agent/evidence_corpus.py; evidence_research.py | Existing project ArtifactRefs/corpus | PARTIAL | 2.2d | Four new binding/isolation/tamper tests PASS; real before/after checkpoint NOT REACHED | No second store; current relevance never inferred from source existence |
+| Fixed scientific Golden specification and independent factual oracles | H/DS | PHASE2_GOLDEN_CASE_SPEC.md; tests/agent_golden_support.py | Validation-only reviewer and unchanged kernel | COMPLETE specification / PARTIAL live acceptance | 2.2c | Six fixed-source/negative oracle tests PASS; five-case live acceptance stopped in a no-job polling loop before Gate1 | Spec is fixed before live; human fixture response cannot override false facts |
+| Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | Project-durable binding tests PASS; current real run acquired no source/cards before budget stop; prior22c source evidence remains historical, not current acceptance |
+| First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline typed harness PASS; live Target no-job polling exhausts32-call budget; no source/job/Judge/Gate card | No complete real golden; cannot freeze Phase 2 |
 | Pilot generation and explicit execution approval | DS/H | pilot-diagnosis.md; orchestration/research_plans.py | Gate 3 + existing job runtime | MISSING | 3 | Phase 3 pending | Old freeze-only approval cannot authorize launch |
 | Prediction and filtering | DS | metric-guide.md; stages/s05_pilot_screen | Existing backend/filter + Agent bridge | MISSING | 3 | real micro pending | No deterministic metric rewrite |
 | Metric provenance, hard gates and missingness | RS/DS | metric-guide.md | Pilot owner/Judge + trusted artifact reader | MISSING | 3 | synthetic meaningful fixture pending | Missing is not zero; preserve fallback values/source |
@@ -98,5 +101,5 @@ Full audit source inventory: `target-and-site.md`, `evidence-and-numbering.md`,
 `failure-atlas.md`, `vhh-geometry-priors.md`.
 
 Phase 3/4 MISSING rows do not block Phase 2 solely because they belong to later approved phases.
-Any unclosed Prepare/Strategize PARTIAL row is assessed explicitly at Phase 2.2c acceptance;
+Any unclosed Prepare/Strategize PARTIAL row is assessed explicitly at Phase 2.2d acceptance;
 it cannot be silently deferred to Pilot or presented as scientific parity.

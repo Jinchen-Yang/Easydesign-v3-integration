@@ -271,6 +271,10 @@ async def run_session(
         message = messages[-1].text if messages else ""
         store.event(thread, "assistant", {"text": message})
         result = bridge.terminal_result(message)
+        if result["status"] == "finished":
+            from .target_assessment import present_target
+
+            result = present_target(result, bridge.target_submission_evidence())
         store.event(
             thread, "agent-terminal", {k: result[k] for k in ("status", "scientific_state")}
         )

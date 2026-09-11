@@ -271,7 +271,7 @@ class Phase2Bridge(TargetBridge):
             "evidence_refs": [f"project:{ref['relative_path']}#sha256={ref['sha256']}"],
             "approved_target": {
                 k: target["evidence"][k]
-                for k in ("identity", "bundle", "provenance", "limitations")
+                for k in ("identity", "bundle", "provenance", "limitations", "hard_facts")
             },
             **summarize_site_facts(facts, labels=query.label_seq_ids, offset=query.offset),
             "research": {
@@ -317,6 +317,9 @@ class Phase2Bridge(TargetBridge):
         ):
             raise AgentBoundaryError("Site proposal lacks its runtime-delegated target snapshot")
         target, facts, facts_ref = self.site_facts()
+        from .target_assessment import check_fact_claims
+
+        check_fact_claims(intent.model_dump(mode="json"), target["evidence"])
         research = EvidenceResearch(self).validate_conclusions(intent.research_conclusions)
         cards = {
             c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
@@ -528,6 +531,7 @@ class Phase2Bridge(TargetBridge):
                 for e in conclusion["evidence"]
             )
         return {
+            "target_facts": self.read_evidence()["hard_facts"],
             "gate_type": "site-hotspot",
             "project_id": self.project_id,
             "run_id": proposal["run_id"],

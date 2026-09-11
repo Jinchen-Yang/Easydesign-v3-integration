@@ -64,3 +64,10 @@ A new expert input can replace an earlier import only after scientist REVISE.
 Large result references support read_evidence_result with named fields; avoid sequential full-file reading.
 
 Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share two corrections per execution. Foreign references and integrity/authority errors are fatal.
+
+Submit the final opinion only through the available typed output tool. Free-form prose or
+fenced JSON cannot create a scientific proposal. Correct exact schema errors within the
+runtime's two output-contract corrections per execution; do not repeat scientific jobs.
+Runtime owns identity, mapping, coordinate presence, approved constraints and source IDs.
+Interpretation must not contradict these hard facts. Judge independently checks this consistency,
+without re-deriving facts; an explicit contradiction must be rejected before a Gate.

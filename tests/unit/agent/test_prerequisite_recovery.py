@@ -45,7 +45,7 @@ class RecoveryModel(ScriptedModel):
     repairs: list[dict[str, Any]] = Field(default_factory=list)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
-        output = {"site": "SiteIntent", "judge": "JudgeVerdict"}
+        output = {"target": "TargetInterpretation", "site": "SiteIntent", "judge": "JudgeVerdict"}
         expected = PHASE2_ALLOWED[self.role] | (
             {output[self.role]} if self.role in output else set()
         )
@@ -104,21 +104,18 @@ class RecoveryModel(ScriptedModel):
                 question="assay control",
                 source_id="EuropePMC:PMC123",
             )
-        return AIMessage(
-            content=json.dumps(
-                {
-                    "observed_facts": [
-                        "No reliable evidence found"
-                        if self.empty_search
-                        else "A focused assay passage was retrieved"
-                    ],
-                    "unresolved_identity": ["No biological target identity was approved"],
-                    "selectable_options": [],
-                    "evidence_refs": [],
-                    "limitations": ["Source inspection alone cannot establish target efficacy"],
-                    "recommended_action": "Limit the conclusion to available evidence",
-                }
-            )
+        return self.call(
+            "TargetInterpretation",
+            **{
+                "interpretation": [
+                    "No reliable evidence found"
+                    if self.empty_search
+                    else "A focused assay passage was retrieved"
+                ],
+                "unresolved_identity": ["No biological target identity was approved"],
+                "limitations": ["Source inspection alone cannot establish target efficacy"],
+                "recommended_action": "Limit the conclusion to available evidence",
+            },
         )
 
 

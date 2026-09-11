@@ -25,7 +25,7 @@ from .contracts import (
     InvalidFieldProjection,
     JudgeVerdict,
     SourceSelectionRequired,
-    TargetAssessment,
+    TargetInterpretation,
     TargetTask,
 )
 from .design import BINDER_EVIDENCE, DesignBridge
@@ -36,6 +36,12 @@ from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
 from .session_store import compact, confined, identity
 from .site_contracts import ScientificTask, SiteIntent
+from .target_assessment import (
+    HardFactContradiction,
+    check_fact_claims,
+    check_interpretation,
+    register_target,
+)
 from .tools import JUDGE_EVIDENCE, TargetBridge, build_tools
 
 EXCLUDED_TOOLS = frozenset(
@@ -163,6 +169,7 @@ def fingerprint(config: ModelConfig) -> str:
             "evidence_corpus": Path(__file__).with_name("evidence_corpus.py").read_text(),
             "evidence_output": Path(__file__).with_name("evidence_output.py").read_text(),
             "target_identity": Path(__file__).with_name("target_identity.py").read_text(),
+            "target_assessment": Path(__file__).with_name("target_assessment.py").read_text(),
             "native_strategy": Path(__file__).with_name("native_strategy.py").read_text(),
             "session_store": Path(__file__).with_name("session_store.py").read_text(),
             "cli": Path(__file__).with_name("cli.py").read_text(),
@@ -178,15 +185,6 @@ def fingerprint(config: ModelConfig) -> str:
             },
         }
     )
-
-
-def parse_assessment(text: str) -> Any:
-    if len(text.encode()) > 24000:
-        raise AgentBoundaryError("Specialist assessment exceeds the bounded contract")
-    text = text.strip()
-    if text.startswith("```json") and text.endswith("```"):
-        text = text[7:-3].strip()
-    return json.loads(text)
 
 
 class RoleBoundary(AgentMiddleware[Any, Any, Any]):
@@ -206,9 +204,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         self.current_user_message = current_user_message or goal
         self.execution_id = execution_id
         self.revision = revision
-        self.structured_output = self.role in {"site", "binder"} or (
-            self.role == "judge" and isinstance(bridge, Phase2Bridge)
-        )
+        self.structured_output = self.role != "coordinator"
+        self.output_schema = {
+            "target": TargetInterpretation,
+            "site": SiteIntent,
+            "binder": BinderIntent,
+            "judge": JudgeVerdict,
+        }.get(role)
         self.skills = (
             DESIGN_SKILLS
             if isinstance(bridge, DesignBridge)
@@ -259,9 +261,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
 
         tool_schemas = [convert_to_openai_tool(t) for t in available]
         if self.structured_output:
-            output_schema = {"site": SiteIntent, "binder": BinderIntent, "judge": JudgeVerdict}[
-                self.role
-            ]
+            output_schema = self.output_schema
+            assert output_schema is not None
             tool_schemas.append(convert_to_openai_tool(output_schema))
         tool_chars = len(compact(tool_schemas))
         if self.execution_id is None:
@@ -294,49 +295,131 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             response = await handler(request.override(tools=available))
-            invalid = [
-                call
-                for message in response.result
-                for call in getattr(message, "invalid_tool_calls", [])
-            ]
-            schema_name = (
-                {"site": "SiteIntent", "binder": "BinderIntent", "judge": "JudgeVerdict"}.get(
-                    self.role
-                )
-                if self.structured_output
-                else None
-            )
-            malformed_final = False
-            if schema_name and not invalid:
-                for message in response.result:
-                    if isinstance(message, AIMessage) and not message.tool_calls:
-                        try:
-                            parse_assessment(message.text)
-                        except (ValueError, TypeError):
-                            malformed_final = True
-            if schema_name is None or not (invalid or malformed_final):
+            if not self.structured_output:
                 return response
-            if attempt == 2 or any(call.get("name") != schema_name for call in invalid):
-                raise AgentBoundaryError(
-                    "Invalid structured scientific output; no proposal submitted"
+            schema = self.output_schema
+            assert schema is not None
+            calls = [call for m in response.result for call in getattr(m, "tool_calls", [])]
+            if any(call["name"] not in self.allowed | {schema.__name__} for call in calls):
+                raise AgentBoundaryError("Rejected: tool is outside this role's permissions")
+            invalid = [
+                call for m in response.result for call in getattr(m, "invalid_tool_calls", [])
+            ]
+            if any(call.get("name") != schema.__name__ for call in invalid):
+                raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
+            diagnostic = ""
+            if invalid:
+                diagnostic = "INVALID_STRUCTURED_SUBMISSION: malformed tool JSON: " + compact(
+                    invalid
                 )
-            # ToolStrategy handles schema errors after JSON parsing. Provider-invalid JSON
-            # arrives separately as invalid_tool_calls; repair only this data-output protocol.
-            # Every retry reserves the same execution budget, with no scientific side effect.
+            elif response.structured_response is not None:
+                # LangChain parsed the typed submission. The runtime validates known facts
+                # before the callback can persist it or the Coordinator can see it.
+                if len(calls) != 1:
+                    diagnostic = (
+                        "INVALID_STRUCTURED_SUBMISSION: submit one final opinion "
+                        "without concurrent action tools."
+                    )
+                else:
+                    try:
+                        if self.role == "target":
+                            check_interpretation(
+                                response.structured_response,
+                                self.bridge.target_submission_evidence(),
+                            )
+                        elif self.role != "judge":
+                            check_fact_claims(
+                                response.structured_response.model_dump(mode="json"),
+                                self.bridge.target_submission_evidence(),
+                            )
+                        elif response.structured_response.verdict in {"ready-to-ask", "assessed"}:
+                            snapshot = self.bridge.judge_evidence()
+                            facts = snapshot.get("hard_facts", snapshot.get("target_facts"))
+                            if facts is not None:
+                                check_fact_claims(
+                                    response.structured_response.model_dump(mode="json"),
+                                    {"hard_facts": facts},
+                                )
+                    except HardFactContradiction as error:
+                        diagnostic = str(error)
+                        self.bridge.store.event(
+                            self.bridge.thread,
+                            "scientific-consistency-finding",
+                            {
+                                "role": self.role,
+                                "execution_id": self.execution_id,
+                                "code": "HARD_FACT_CONTRADICTION",
+                                "findings": error.findings,
+                                "rejected_submission": response.structured_response.model_dump(
+                                    mode="json"
+                                ),
+                            },
+                        )
+                if not diagnostic:
+                    return response
+            elif any(isinstance(m, ToolMessage) for m in response.result):
+                # ToolStrategy already returned an exact schema error through the bounded
+                # error callback. Let the framework deliver it and continue its native loop.
+                return response
+            elif any(getattr(m, "tool_calls", []) for m in response.result):
+                return response
+            else:
+                diagnostic = (
+                    f"MISSING_TYPED_SUBMISSION: call {schema.__name__}; explanatory prose, "
+                    "pure JSON text and fenced JSON are not accepted submissions."
+                )
+            self.contract_error(diagnostic)
+            self.bridge.store.event(
+                self.bridge.thread,
+                "rejected-submission",
+                {
+                    "role": self.role,
+                    "execution_id": self.execution_id,
+                    "diagnostic": diagnostic[:6000],
+                    "model_text": [
+                        m.text[:24000] for m in response.result if isinstance(m, AIMessage)
+                    ],
+                },
+            )
             from langchain_core.messages import SystemMessage
 
             request = request.override(
                 system_message=SystemMessage(
                     content=(
                         request.system_message.text
-                        + f"\nThe previous {schema_name} output was not valid JSON. "
-                        f"Retry {schema_name} with quoted JSON strings. Keep every "
-                        "string under 250 characters; text fields are quoted strings. "
-                        "Do not repeat structure tools or invent additional scientific evidence."
+                        + "\nCorrection required: "
+                        + diagnostic[:6000]
+                        + f"\nSubmit a corrected {schema.__name__} tool call. "
+                        "No scientific work was repeated."
                     )
                 )
             )
         raise AgentBoundaryError("Scientific output could not be validated")
+
+    def contract_error(self, error: Any) -> str:
+        from langchain.agents.structured_output import (
+            MultipleStructuredOutputsError,
+            StructuredOutputValidationError,
+        )
+
+        if not isinstance(
+            error, (str, MultipleStructuredOutputsError, StructuredOutputValidationError)
+        ):
+            raise error
+        if self.execution_id is None:
+            raise AgentBoundaryError("Structured correction requires an execution")
+        diagnostic = str(error)
+        self.bridge.store.reserve_contract_repair(
+            self.bridge.thread,
+            self.role,
+            self.execution_id,
+            diagnostic,
+        )
+        return (
+            "INVALID_STRUCTURED_SUBMISSION: "
+            + diagnostic[:6000]
+            + " Correct only the final typed submission."
+        )
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         name, args = request.tool_call["name"], request.tool_call["args"]
@@ -561,11 +644,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         )
         if last is None:
             raise AgentBoundaryError("Specialist produced no assessment")
-        parsed = (
-            state["structured_response"].model_dump(mode="json")
-            if self.structured_output and state.get("structured_response") is not None
-            else parse_assessment(last.text)
-        )
+        structured = state.get("structured_response")
+        if (
+            structured is None
+            or self.output_schema is None
+            or not isinstance(structured, self.output_schema)
+        ):
+            raise AgentBoundaryError("Specialist must finish through its typed submission tool")
+        parsed = structured.model_dump(mode="json")
         if self.role == "judge":
             result = self.bridge.register_judge(JudgeVerdict.model_validate(parsed)).model_dump(
                 mode="json", exclude={"evidence_refs", "request_identity", "source_role"}
@@ -591,14 +677,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 "next": "Independent Evidence Judge review, then Gate 2",
             }
         else:
-            result = TargetAssessment.model_validate(parsed).model_dump(mode="json")
-            self.bridge.store.event(
-                self.bridge.thread,
-                "target-assessment",
-                {
-                    **result,
-                    "revision_of_card_id": self.revision.card_id if self.revision else None,
-                },
+            result = register_target(
+                self.bridge, TargetInterpretation.model_validate(parsed), self.revision
             )
         updates: dict[str, Any] = {
             "messages": [
@@ -650,9 +730,7 @@ def create_harness(
 
     specialists: list[SubAgent] = []
     for role, name in skills.items():
-        structured_output = role in {"site", "binder"} or (
-            role == "judge" and isinstance(bridge, Phase2Bridge)
-        )
+        structured_output = True
         schema = (
             JudgeVerdict
             if role == "judge"
@@ -660,21 +738,21 @@ def create_harness(
             if role == "site"
             else BinderIntent
             if role == "binder"
-            else TargetAssessment
+            else TargetInterpretation
         )
         prompt = (
             f"You are {name}, an isolated EasyDesign specialist. "
             f"Read /skills/{name}/SKILL.md first. "
             "Use only your available typed tools. Keep text fields concise (under 300 characters). "
             "Do not repeat whole evidence tables. "
-            + (
-                f"Submit the final opinion using the {schema.__name__} structured output tool. "
-                "All rationale and approach fields are strings, not objects. "
-                if structured_output
-                else "Final opinion schema: "
-                + compact(schema.model_json_schema())
-                + " Return ONLY one JSON object with no trailing prose."
-            )
+            + f"Submit the final opinion using the {schema.__name__} structured output tool. "
+            "All rationale and approach fields are strings, not objects. "
+            "Runtime owns hard facts; do not reproduce sequence lengths, mappings or identities "
+            "as authoritative data in your interpretation. "
+            "Judge independently compares opinions with facts."
+        )
+        boundary = RoleBoundary(
+            bridge, role, config, goal, current_user_message, execution_id, revision
         )
         specialists.append(
             {
@@ -687,16 +765,14 @@ def create_harness(
                 if isinstance(bridge, Phase2Bridge)
                 else build_tools(bridge, role),
                 "skills": [f"/skills/{name}/"],
-                "middleware": [
-                    RoleBoundary(
-                        bridge, role, config, goal, current_user_message, execution_id, revision
-                    )
-                ],
+                "middleware": [boundary],
                 "interrupt_on": {},
             }
         )
         if structured_output:
-            specialists[-1]["response_format"] = ToolStrategy(schema)
+            specialists[-1]["response_format"] = ToolStrategy(
+                schema, handle_errors=boundary.contract_error
+            )
     return create_deep_agent(
         model=models["coordinator"],
         system_prompt=(PHASE2_COORDINATOR if isinstance(bridge, Phase2Bridge) else COORDINATOR)

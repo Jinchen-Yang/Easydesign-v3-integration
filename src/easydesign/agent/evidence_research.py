@@ -31,7 +31,7 @@ from easydesign.core.target_identity import resolve_target_identity
 from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, generate_candidates
 
 from .contracts import AgentBoundaryError, ShortText, StrictDTO
-from .evidence_corpus import NEEDS, EvidenceCorpus
+from .evidence_corpus import NEEDS, EvidenceCorpus, source_key
 from .session_store import compact, confined, identity
 
 EvidenceStatus = Literal[
@@ -228,22 +228,33 @@ class EvidenceResearch:
         binding = identity(self.bridge.binding())
         rows = self.bridge.store.db.execute(
             (
-                "SELECT payload FROM events WHERE thread=? AND kind IN ('evidence-res"
+                "SELECT kind,payload FROM events WHERE thread=? AND kind IN ('evidence-res"
                 "earch','evidence-view') ORDER BY seq"
             ),
             (self.bridge.thread,),
         )
         latest: dict[str, Any] = {}
         for row in rows:
-            event = json.loads(row[0])
-            if event["target_binding"] == binding:
-                result = self.bridge.document(event["ref"])
-                for card in result["cards"]:
-                    for ref in card["source_refs"]:
-                        confined(
-                            self.bridge.project,
-                            ArtifactRef.model_validate(ref).verify(self.bridge.project),
-                        )
+            event = json.loads(row[1])
+            result = self.bridge.document(event["ref"])
+            corpus = EvidenceCorpus(self.bridge)
+            cards = [
+                corpus.source_view(card, event["target_binding"])
+                for card in result["cards"]
+                if event["target_binding"] == binding
+                or (
+                    row[0] == "evidence-research"
+                    and card.get("corpus_ref")
+                    and corpus.current_relation(
+                        source_key(card["provider"], card["identifier"]),
+                        event["target_binding"],
+                        card["source_refs"],
+                    )
+                    == "current-canonical-reference"
+                )
+            ]
+            if event["target_binding"] == binding or cards:
+                result = {**result, "cards": cards, "target_binding": binding}
                 latest[result["query_id"]] = result
         results = list(latest.values())
         return {
@@ -290,6 +301,34 @@ class EvidenceResearch:
         for previous in self.snapshot()["queries"]:
             if previous["query_id"] == query_id and not previous["errors"]:
                 return dict(previous)  # Replay does not refetch or consume network budget.
+        # A full verified source is project durable, independent of the question/topic.
+        # Selection above is still required. Reuse exact source/corpus bytes, not old claims.
+        if not query.operation.endswith("search"):
+            candidates = [
+                c
+                for c in EvidenceCorpus(bridge).documents()
+                if c["provider"] == provider and c["identifier"].upper() == query.identifier.upper()
+            ]
+            if candidates:
+                reused = {
+                    "query_id": query_id,
+                    "topic": query.topic,
+                    "question": query.question,
+                    "query": query.model_dump(mode="json"),
+                    "cards": [candidates[-1]],
+                    "errors": [],
+                    "status": "UNRESOLVED",
+                    "target_binding": target_binding,
+                    "source_role": "evidence-research",
+                    "reused_verified_source": True,
+                }
+                ref = bridge.persist("evidence-research", reused)
+                bridge.store.event(
+                    bridge.thread,
+                    "evidence-research",
+                    {"target_binding": target_binding, "ref": ref},
+                )
+                return reused
         used = bridge.store.db.execute(
             "SELECT COUNT(*) FROM events WHERE thread=? AND kind='research-reservation' "
             "AND json_extract(payload,'$.execution_id')=?",

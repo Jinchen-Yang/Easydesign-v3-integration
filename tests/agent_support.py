@@ -106,7 +106,10 @@ class ScriptedModel(BaseChatModel):
         names = {t.name for t in tools}
         from easydesign.agent.harness import ALLOWED
 
-        assert names == ALLOWED[self.role], names
+        output = {"target": "TargetInterpretation", "judge": "JudgeVerdict"}
+        assert names == ALLOWED[self.role] | (
+            {output[self.role]} if self.role in output else set()
+        ), names
         return self
 
     def _generate(
@@ -146,36 +149,28 @@ class ScriptedModel(BaseChatModel):
             if not evidence:
                 return self.call("read_target_evidence")
             value = json.loads(evidence[-1].content)
-            return AIMessage(
-                content=json.dumps(
-                    {
-                        "observed_facts": ["Frozen local structure was inspected."],
-                        "unresolved_identity": ["Canonical identity unconfirmed"],
-                        "selectable_options": [o["option_id"] for o in value.get("options", [])],
-                        "evidence_refs": value.get("evidence_refs", []),
-                        "limitations": value["limitations"],
-                        "recommended_action": "Ask the user to confirm chain A"
-                        if value.get("options")
-                        else "Report the target bundle",
-                    }
-                )
+            return self.call(
+                "TargetInterpretation",
+                interpretation=["Frozen local structure supports a bounded structural assessment."],
+                unresolved_identity=["Canonical identity unconfirmed"],
+                limitations=value["limitations"],
+                recommended_action="Ask the user to confirm chain A"
+                if value.get("options")
+                else "Report the target bundle",
             )
         if self.role == "judge":
             evidence = [m for n, _, m in named if n == "read_target_evidence"]
             if not evidence:
                 return self.call("read_target_evidence")
             value = json.loads(evidence[-1].content)
-            return AIMessage(
-                content=json.dumps(
-                    {
-                        "verdict": "ready-to-ask" if value["request_identity"] else "assessed",
-                        "reasons": [
-                            "Verified input and chain options support a human choice; "
-                            "the actual biological identity is still unknown."
-                        ],
-                        "limitations": value["limitations"],
-                    }
-                )
+            return self.call(
+                "JudgeVerdict",
+                verdict="ready-to-ask" if value["request_identity"] else "assessed",
+                reasons=[
+                    "Verified input and chain options support a human choice; "
+                    "biological identity remains unknown."
+                ],
+                limitations=value["limitations"],
             )
         delegated = [(c["args"]["subagent_type"], m) for n, c, m in named if n == "task"]
         if not delegated:

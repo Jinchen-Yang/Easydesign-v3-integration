@@ -163,6 +163,9 @@ class DesignBridge(Phase2Bridge):
             raise AgentBoundaryError(
                 "Binder intent lacks its runtime-delegated approved Site snapshot"
             )
+        from .target_assessment import check_fact_claims
+
+        check_fact_claims(intent.model_dump(mode="json"), self.read_evidence())
         site = self.approved_site()
         assert site is not None
         _, facts, _ = self.site_facts()
@@ -328,6 +331,7 @@ class DesignBridge(Phase2Bridge):
                 ref = ArtifactRef.model_validate(entry)
                 confined(self.project, ref.verify(self.project))
         return {
+            "target_facts": self.read_evidence()["hard_facts"],
             "gate_type": "design-specification",
             "project_id": self.project_id,
             "run_id": proposal["run_id"],

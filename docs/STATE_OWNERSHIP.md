@@ -1,4 +1,4 @@
-# v3 state ownership — Phase 2.2c
+# v3 state ownership — Phase 2.2d
 
 Status: ownership regressions passed; overall Phase 2 acceptance failed (see PHASE2_CLOSURE.md). No new scheduler, graph, ORM, schema migration or
 scientific state store is introduced. LangGraph owns conversation execution/checkpoints;
@@ -11,12 +11,14 @@ the existing scientific services own runs, jobs, decisions and approved artifact
 | Conversation history, subagent execution | Thread, LangGraph | Context only; not scientific evidence or compute recovery |
 | Model/research call budget | Agent execution within thread | A genuine new user execution renews the budget; replay/resume preserves it; lifetime counts are telemetry |
 | Source-selection and scoped-argument repairs | Agent execution, existing `prerequisite-repair` / `tool-argument-repair` events | Two total shared across error categories/roles/delegations; restart and replay cannot reset; stale executions cannot spend a fresh allowance. Role, artifact integrity and Judge binding remain hard constraints; no scientific job scheduling ownership |
+| Structured-output corrections | Agent execution, existing contract-repair events | Two total across roles/redelegations; restart cannot reset; separate from the source/projection allowance |
+| Target facts and interpretation | Verified kernel/source facts plus thread Target interpretation event | Runtime attaches facts/refs/options; changed interpretation invalidates old Judge binding |
 | Pending Site/Design proposal | Thread, `site-proposal` / `design-proposal` events | `thread_latest`; another conversation cannot replace its pending proposal |
 | Pending decision/card/response/Judge opinion | Thread, existing SessionStore rows | Exact card, snapshot, actor and response binding; no approval from model text |
 | Explicit biology context import | Project, `biology-context` event + existing ArtifactRef | Trusted CLI input is a project scientific assumption, not a chat clarification. Values retain user-supplied authority; coordinates are validated, biological assertions are not automatically verified |
 | Deterministic Site facts | Project evidence, `site-facts` | Content keyed to Target and adopted biology; all consumers verify ArtifactRef |
 | Research queries, discovery and pending conclusions | Thread, existing events + ArtifactRef | Source bytes are durable project evidence; a thread's search agenda and interpretation are local. Retrieval cannot alter canonical identity or topology |
-| Durable source corpus and chunks | Project, existing ArtifactRefs/events | Complete raw responses remain durable; selected retrieval can reuse same-binding sources from another thread |
+| Durable source corpus and chunks | Project, existing ArtifactRefs/events | Complete raw responses remain durable; corpus existence is independent of current binding; exact verified canonical revision can carry only its chosen UniProt source; other thread/need reuse requires explicit selection |
 | Evidence selection/current passages/tool views | Thread/execution, existing events | Explicit source/need selection; query-bound cursor; exact pages; no other thread's pending reasoning |
 | Judge offload view | Exact runtime delegation within thread/execution | Full result bytes verified; previous proposal's result cannot satisfy the current snapshot |
 | Canonical reference proposal | Trusted runtime + existing config revisions | Source record verified; configured species/accession protected; proposal is not approval and does not replace the mapper |

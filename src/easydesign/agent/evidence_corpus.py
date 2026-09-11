@@ -91,6 +91,62 @@ class EvidenceCorpus:
     def __init__(self, bridge: Any) -> None:
         self.bridge = bridge
 
+    def current_relation(self, source_id: str, acquired_binding: str, refs: Any = None) -> str:
+        """Only the exact verified canonical proposal can carry its source across a revision.
+
+        Other old sources remain durable, but need an explicit current selection. This is
+        one existing event relation, not transitive binding inference or a new graph store.
+        """
+        current = identity(self.bridge.binding())
+        if acquired_binding == current:
+            return "current-state-selection"
+        rows = self.bridge.store.db.execute(
+            "SELECT payload FROM events WHERE kind='canonical-reference-proposal' ORDER BY seq"
+        )
+        for row in rows:
+            event = json.loads(row[0])
+            if (
+                event["prior_binding"] == acquired_binding
+                and event["target_binding"] == current
+                and source_id == source_key("UniProt", event["accession"])
+                and (refs is None or refs == event["source_refs"])
+            ):
+                records = [self.bridge.document(ref) for ref in event["source_refs"]]
+                if not any(r.get("primaryAccession") == event["accession"] for r in records):
+                    raise AgentBoundaryError("Canonical binding source identity changed")
+                return "current-canonical-reference"
+        return "historical-target"
+
+    def source_view(self, card: dict[str, Any], acquired_binding: str) -> dict[str, Any]:
+        acquired_binding = card.get("binding_context", {}).get("acquired_binding", acquired_binding)
+        for ref in card["source_refs"]:
+            confined(
+                self.bridge.project, ArtifactRef.model_validate(ref).verify(self.bridge.project)
+            )
+        source_id = source_key(card["provider"], card["identifier"])
+        return {
+            **card,
+            "source_id": source_id,
+            "source_status": "VERIFIED"
+            if card.get("corpus_ref") or card["card_id"].startswith("passage-")
+            else "VERIFIED_DERIVATION"
+            if card["evidence_level"].startswith("deterministic-")
+            else "DISCOVERY_LEAD",
+            "project_evidence_id": identity(
+                {
+                    "project": self.bridge.project.name,
+                    "source": source_id,
+                    "refs": card["source_refs"],
+                }
+            ),
+            "binding_context": {
+                "acquired_binding": acquired_binding,
+                "current_binding": identity(self.bridge.binding()),
+                "relation": self.current_relation(source_id, acquired_binding, card["source_refs"]),
+                "relevance": "unresolved; selection is not entailment or target equivalence",
+            },
+        }
+
     def selections(self) -> dict[str, Any]:
         binding = identity(self.bridge.binding())
         rows = self.bridge.store.db.execute(
@@ -100,7 +156,11 @@ class EvidenceCorpus:
         result = {}
         for row in rows:
             value = json.loads(row[0])
-            if value["target_binding"] == binding:
+            if (
+                value["target_binding"] == binding
+                or self.current_relation(value["source_id"], value["target_binding"])
+                == "current-canonical-reference"
+            ):
                 result[value["source_id"] + ":" + value["need"]] = value
         return result
 
@@ -141,12 +201,9 @@ class EvidenceCorpus:
         rows = self.bridge.store.db.execute(
             "SELECT payload FROM events WHERE kind='evidence-research' ORDER BY seq"
         )
-        binding = identity(self.bridge.binding())
         documents = {}
         for row in rows:
             event = json.loads(row[0])
-            if event["target_binding"] != binding:
-                continue
             value = self.bridge.document(event["ref"])
             for card in value["cards"]:
                 if not card.get("corpus_ref"):
@@ -156,20 +213,25 @@ class EvidenceCorpus:
                         self.bridge.project,
                         ArtifactRef.model_validate(ref).verify(self.bridge.project),
                     )
-                documents[card["corpus_ref"]["sha256"]] = card
+                documents[card["corpus_ref"]["sha256"]] = self.source_view(
+                    card, event["target_binding"]
+                )
         return list(documents.values())
 
     def retrieve(self, request: RetrieveEvidence) -> dict[str, Any]:
         selected = self.selections()
-        docs = [
+        candidates = [
             c
             for c in self.documents()
-            if c["need"] == request.need
-            and (
+            if (
                 not request.source_id
                 or source_key(c["provider"], c["identifier"]) == request.source_id
             )
-            and selected.get(
+        ]
+        docs = [
+            c
+            for c in candidates
+            if selected.get(
                 source_key(c["provider"], c["identifier"]) + ":" + request.need, {}
             ).get("selection")
             == "SELECTED"
@@ -220,6 +282,7 @@ class EvidenceCorpus:
         hits.sort(key=lambda hit: (-hit[0], hit[1]["card_id"], hit[2]["chunk"]))
         cards = []
         for _, source, chunk in hits[offset : offset + request.page_size]:
+            selection = selected[source["source_id"] + ":" + request.need]
             cards.append(
                 {
                     **{
@@ -230,6 +293,14 @@ class EvidenceCorpus:
                     "card_id": "passage-"
                     + identity({"source": source["corpus_ref"], "chunk": chunk["chunk"]})[:24],
                     "source_id": source_key(source["provider"], source["identifier"]),
+                    "need": request.need,
+                    "selection_provenance": {
+                        "thread": self.bridge.thread,
+                        "need": selection["need"],
+                        "reason": selection["reason"],
+                        "selection": selection["selection"],
+                        "selected_binding": selection["target_binding"],
+                    },
                     "passage": chunk["text"],
                     "location": chunk["location"],
                     "chunk": chunk["chunk"],
@@ -251,6 +322,15 @@ class EvidenceCorpus:
             "need": request.need,
             "status": "UNRESOLVED",
             "cards": cards,
+            "source_scope": {
+                "project_documents": len(candidates),
+                "selected_documents": len(docs),
+                "selection_required": bool(candidates and not docs),
+                "note": (
+                    "Selection is per thread and evidence need; "
+                    "an empty view is not absence of source evidence."
+                ),
+            },
             "errors": [],
             "matching_chunks": len(hits),
             "next_cursor": cursor,

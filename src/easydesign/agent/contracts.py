@@ -26,13 +26,42 @@ class TargetTask(StrictDTO):
     evidence_refs: list[str] = Field(default_factory=list, max_length=64)
 
 
-class TargetAssessment(StrictDTO):
-    observed_facts: list[ShortText] = Field(max_length=12)
+class TargetInterpretation(StrictDTO):
+    """Model opinion only. Runtime attaches identity, facts, options and source refs."""
+
+    interpretation: list[ShortText] = Field(min_length=1, max_length=8)
     unresolved_identity: list[ShortText] = Field(max_length=8)
-    selectable_options: list[Identifier] = Field(max_length=32)
-    evidence_refs: list[str] = Field(max_length=64)
     limitations: list[ShortText] = Field(min_length=1, max_length=8)
+    recommended_option: Identifier | None = None
     recommended_action: ShortText
+
+
+class TargetChainFacts(StrictDTO):
+    auth_chain: str
+    label_chain: str | None = None
+    construct_length: int | None = Field(default=None, ge=1)
+    observed_length: int = Field(ge=0)
+    mapping_status: str | None = None
+    relationship: str | None = None
+    missing_construct_positions: list[int] = Field(default_factory=list)
+
+
+class TargetFacts(StrictDTO):
+    canonical_accession: str | None = None
+    canonical_length: int | None = Field(default=None, ge=1)
+    chains: list[TargetChainFacts] = Field(default_factory=list, max_length=32)
+    selected_chain: str | None = None
+    authority: str = "Verified source and unchanged deterministic identity/mapping services"
+
+
+class TargetAssessment(StrictDTO):
+    """Runtime-produced envelope, never exposed as a model submission schema."""
+
+    hard_facts: TargetFacts
+    interpretation: TargetInterpretation
+    source_evidence_id: str
+    evidence_refs: list[str]
+    selectable_options: list[str]
 
 
 GateType = Literal[

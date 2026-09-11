@@ -141,6 +141,7 @@ def pending_canonical(
         )
     path, record = records[-1]
     observed_accession, canonical, metadata = _uniprot_identity(record)
+    metadata = {**metadata, "sequence_length": len(canonical)}
     if observed_accession != accession or (
         declared.taxon_id and metadata["taxonomy_id"] != declared.taxon_id
     ):
@@ -182,6 +183,9 @@ def pending_canonical(
                 "mapping_status": str(report.design_scope.mapping_status),
                 "canonical_length": report.canonical.sequence_length,
                 "construct_length": report.construct_identity.sequence_length,
+                "label_chain": chain.label_chain_id,
+                "observed_length": len(report.observed.observed_construct_positions),
+                "missing_construct_positions": list(report.observed.missing_construct_positions),
                 "design_length": len(report.design_scope.sequence),
                 "ambiguities": list(report.ambiguities),
                 "substitutions": len(report.alignment.substitutions) if report.alignment else None,

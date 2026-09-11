@@ -1125,3 +1125,40 @@ async def test_invalid_site_read_is_bounded_query_repair_without_validating_a_ho
         await guard.awrap_tool_call(request, handler)
     assert compact(analysis) == before and not b._jobs()
     assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
+
+
+def test_site_submission_names_missing_conclusion_and_still_requires_real_research(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.contracts import ResearchConclusionMismatch
+    from easydesign.agent.site_contracts import SiteIntent
+    from tests.unit.agent.test_site_runtime import site_intent
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    value = site_intent([1, 2]).model_dump(mode="json")
+    value.update(
+        scope="mechanistic",
+        material_questions=["epitope", "state"],
+        research_conclusions=[
+            {
+                "topic": "state",
+                "status": "UNRESOLVED",
+                "evidence": [],
+                "limitations": ["State remains unknown"],
+            }
+        ],
+    )
+    with pytest.raises(ValidationError, match="Missing research_conclusions for topics: epitope"):
+        SiteIntent.model_validate(value)
+    value["research_conclusions"].append(
+        {
+            "topic": "epitope",
+            "status": "UNRESOLVED",
+            "evidence": [],
+            "limitations": ["Epitope remains unknown"],
+        }
+    )
+    valid = SiteIntent.model_validate(value)
+    with pytest.raises(ResearchConclusionMismatch, match="NOT_SEARCHED"):
+        b.validate_site_research(valid)
+    assert not b._jobs() and b.current_site() is None

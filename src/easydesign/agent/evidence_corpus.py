@@ -18,6 +18,7 @@ from easydesign.core import ArtifactRef
 from .contracts import (
     AgentBoundaryError,
     EvidenceCursorQueryMismatch,
+    EvidenceRetrievalQueryMismatch,
     ShortText,
     SourceSelectionRequired,
     StaleEvidenceCursor,
@@ -283,13 +284,32 @@ class EvidenceCorpus:
         if request.cursor:
             try:
                 decoded = json.loads(base64.urlsafe_b64decode(request.cursor))
+                if not isinstance(decoded, dict):
+                    raise ValueError("invalid cursor object")
+                prior_view = None
+                issued = False
+                owned_view = False
+                for event in reversed(self.bridge.store.events(self.bridge.thread)):
+                    if event["kind"] != "evidence-view":
+                        continue
+                    prior = self.bridge.document(event["payload"]["ref"])
+                    if prior["next_cursor"] == request.cursor:
+                        prior_view, issued = prior, True
+                        break
+                    if prior.get("query_id", "").rsplit("-", 1)[0] == decoded.get("view"):
+                        owned_view = True
+                if not issued:
+                    if owned_view:
+                        raise EvidenceRetrievalQueryMismatch(
+                            "The cursor names a verified view in this thread but its bytes/offset "
+                            "were never issued. The altered token is rejected; no page was read "
+                            "or advanced. Omit cursor for a new question, or copy an exact "
+                            "returned next_cursor. Never decode and reset its offset."
+                        )
+                    raise ValueError("unknown or foreign cursor")
                 if decoded.get("view") != view:
-                    for event in reversed(self.bridge.store.events(self.bridge.thread)):
-                        if event["kind"] != "evidence-view":
-                            continue
-                        prior = self.bridge.document(event["payload"]["ref"])
-                        if prior["next_cursor"] != request.cursor:
-                            continue
+                    if prior_view is not None:
+                        prior = prior_view
                         same_scope = (
                             prior["target_binding"] == identity(self.bridge.binding())
                             and prior["need"] == request.need

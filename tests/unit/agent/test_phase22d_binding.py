@@ -1,5 +1,6 @@
 """Stable full sources across canonical configuration; current views remain explicitly scoped."""
 
+import base64
 import json
 from typing import Any
 
@@ -8,6 +9,7 @@ import pytest
 
 from easydesign.agent.contracts import (
     AgentBoundaryError,
+    EvidenceRetrievalQueryMismatch,
     SourceSelectionRequired,
     StaleEvidenceCursor,
 )
@@ -289,3 +291,27 @@ async def test_acquisition_receipt_exposes_literal_types_without_refetching(acqu
     )
     assert result["cards"][0]["feature_types_available"] == ["Chain", "Signal"]
     assert len(calls) == 2 and not b._jobs()
+
+
+def test_altered_owned_cursor_returns_no_evidence_and_foreign_view_stays_fatal(
+    acquired: Any,
+) -> None:
+    b, calls, _ = acquired
+    corpus = EvidenceCorpus(b)
+    query = focus().model_copy(update={"feature_types": ["Signal", "Chain"], "page_size": 1})
+    first = corpus.retrieve(query)
+    decoded = json.loads(base64.urlsafe_b64decode(first["next_cursor"]))
+    decoded["offset"] = 0
+    altered = base64.urlsafe_b64encode(json.dumps(decoded).encode()).decode()
+    before = len(b.store.events(b.thread))
+    for question in [query.question, "A new annotation question"]:
+        with pytest.raises(EvidenceRetrievalQueryMismatch, match="never issued"):
+            corpus.retrieve(query.model_copy(update={"cursor": altered, "question": question}))
+    assert len(b.store.events(b.thread)) == before
+    decoded["view"] = "0" * 64
+    foreign = base64.urlsafe_b64encode(json.dumps(decoded).encode()).decode()
+    with pytest.raises(AgentBoundaryError, match="another question/thread"):
+        corpus.retrieve(query.model_copy(update={"cursor": foreign}))
+    second = corpus.retrieve(query.model_copy(update={"cursor": first["next_cursor"]}))
+    assert second["cards"][0]["card_id"] != first["cards"][0]["card_id"]
+    assert not second["next_cursor"] and len(calls) == 2 and not b._jobs()

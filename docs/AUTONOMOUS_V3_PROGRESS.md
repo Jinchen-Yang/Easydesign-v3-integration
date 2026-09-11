@@ -646,3 +646,30 @@ threads and checkpoints are untouched; metadata choices are no new artifact/auth
 Targeted121:55 PASS (12.41s), including argument recovery and hard tool boundaries; Ruff121 PASS;
 mypy121:20 files PASS. Next live122/123 reuse independently approved soluble044/GPCR104.
 Phase2 NOT FROZEN; cases1/2/4/5 remain incomplete, case3 remains independently accepted only.
+
+
+### Exact missing-topic diagnostics and rejected owned-cursor transcription (live122/123)
+
+Live122 (`phase2-goldens-20260911T200516649739Z`) now reached repeated real SiteIntent submissions
+at29totalcalls. The DTO rejected missing epitope/state conclusions, but its generic error did not
+name them; the correction added unrelated NOT_SEARCHED topics while still omitting epitope. The
+unchanged requirement now names every missing topic and exact research_conclusions fields. It does
+not manufacture research, remove material questions or increase the two-repair budget. A regression
+verifies that syntactically completed unknown conclusions still fail the real NOT_SEARCHED check.
+The rejected opinion also overstated mapping ignorance and confused archived with never-retrieved
+pages; Site instructions explicitly preserve supplied non-null conditional mapping rows and their
+ambiguity qualification. No scientific PASS is inferred from this invalid draft.
+
+Live123 (`phase2-goldens-20260911T200516579799Z`) manually reset an owned view's encoded cursor to
+offset0 when changing its question, despite exact choices in the model schema. Cursor handling now
+explicitly requires an issued token even when its decoded view otherwise matches (previously that
+same-view case could accept a fabricated offset). An unissued token whose view is proven by a
+checksum-verified evidence-view artifact in this thread returns a bounded read-only syntax repair,
+with no page, no advancement and no evidence-view event. Unknown/foreign views and corrupt evidence
+remain fatal. This deliberately distinguishes a malformed owned read request from source/artifact
+integrity or authority failure; it never accepts an altered token. Original cursors, paging identity,
+source bytes and stores remain unchanged. Tests cover zero state/data advancement, foreign-view
+rejection, valid continuation after rejection, and unchanged source-fetch count.
+
+Targeted124:52 PASS (19.34s); Ruff124 PASS; mypy124:20 files PASS. Next live125/126 reuse the
+approved Targets. Phase2 remains NOT FROZEN; cases1/2/4/5 incomplete, case3 PASS only.

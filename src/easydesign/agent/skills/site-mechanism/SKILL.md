@@ -44,6 +44,9 @@ numbering distinct from the normalized approved target labels; map before propos
 
 1. Read `read_site_evidence`. Use the approved label mapping; never invent canonical,
    construct or author numbering. `canonical_position=null` means unknown, not equal to label.
+   A non-null canonical_position is a supplied conditional correspondence row even when
+   mapping_status says review-required/ambiguous; preserve that qualification without claiming
+   no mapping exists. An archived delivered page is not evidence that it was never retrieved.
    Obtain additional pages/exact residues when needed; missing evidence is not zero.
    facts_table is the complete requested residue page encoded without repeated keys:
    each row follows mapping_columns then metric_columns exactly, including nulls.

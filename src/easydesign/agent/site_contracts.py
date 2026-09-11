@@ -51,7 +51,15 @@ class SiteIntent(StrictDTO):
         if len(topics) != len(set(topics)):
             raise ValueError("One current conclusion per scientific topic")
         if not set(self.material_questions).issubset(topics):
-            raise ValueError("Every material question needs an explicit evidence state")
+            missing = sorted(set(self.material_questions) - set(topics))
+            raise ValueError(
+                "Every material question needs an explicit evidence state. Missing "
+                "research_conclusions for topics: "
+                + ", ".join(missing)
+                + ". Add a conclusion with the exact topic, actual research status, "
+                "evidence and limitations for each. Keep material questions explicit; "
+                "do not add unrelated unsearched topics or invent source support."
+            )
         if self.scope == "mechanistic" and not self.material_questions:
             raise ValueError("Mechanistic site selection requires active evidence research")
         return self

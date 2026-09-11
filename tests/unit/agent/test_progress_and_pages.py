@@ -187,3 +187,109 @@ def test_explicit_pdb_alias_cannot_silently_change_source_identity() -> None:
             identifier="3P0G",
             pdb_id="1MEL",
         )
+
+
+@pytest.mark.asyncio
+async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(bridge: Any) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Compare complete option facts")
+    guard = RoleBoundary(
+        b, "judge", scripted_config(), "Compare facts", execution_id=execution["execution_id"]
+    )
+    source = "/result-" + "a" * 32 + ".json"
+    messages = [
+        ToolMessage(
+            name="read_evidence_result",
+            tool_call_id=str(i),
+            content=compact(
+                {
+                    "full_result": source,
+                    "path": [field],
+                    "value": {"scientific_fact": field},
+                    "next_offset": None,
+                }
+            ),
+        )
+        for i, field in enumerate(
+            ["old", "options", "identity", "interpretation", "options", "hard_facts"]
+        )
+    ]
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(request: Any) -> Any:
+        visible = [json.loads(m.content) for m in request.messages]
+        assert [v["path"][0] for v in visible if "value" in v] == [
+            "identity",
+            "interpretation",
+            "options",
+            "hard_facts",
+        ]
+        assert all(v["archived_result"] == source for v in visible if "archived_result" in v)
+        assert len(compact(visible)) < 32000
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "read_scientific_evidence",
+                            "args": {},
+                            "id": "review",
+                        }
+                    ],
+                )
+            ],
+            structured_response=None,
+        )
+
+    from langchain_core.tools import StructuredTool
+
+    tools = phase2_tools(b, "judge") + [
+        StructuredTool.from_function(
+            lambda file_path: "", name="read_file", description="Read own Skill"
+        )
+    ]
+    await guard.awrap_model_call(
+        Request(tools=tools, messages=messages, system_message=SystemMessage(content="Review")),
+        handler,
+    )
+    # Context projection is not a mutation of the checkpoint messages.
+    assert all("value" in json.loads(m.content) for m in messages)
+
+
+def test_small_target_fact_snapshot_keeps_all_alternative_chains(bridge: Any) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Compare chain alternatives")
+    chains = [
+        {
+            "auth_chain": name,
+            "relationship": "exact_subsequence",
+            "construct_length": 129,
+            "observed_length": 127,
+            "missing_construct_positions": [128, 129],
+        }
+        for name in ["A", "B", "L", "M"]
+    ]
+    facts = {
+        "hard_facts": {"canonical_accession": "P00698", "canonical_length": 147, "chains": chains},
+        "options": [
+            {
+                "option_id": "chain-" + c["auth_chain"].lower(),
+                "description": "Retain every eligible alternative " * 8,
+            }
+            for c in chains
+        ],
+    }
+    rendered = json.loads(
+        output_message(
+            b,
+            "target",
+            execution["execution_id"],
+            ToolMessage(content=compact(facts), name="read_target_evidence", tool_call_id="facts"),
+        ).content
+    )
+    assert rendered["hard_facts"] == facts["hard_facts"]
+    assert rendered["options"] == facts["options"]

@@ -257,8 +257,22 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if isinstance(m, ToolMessage) and '"full_result"' in str(m.content)
             ]
             messages = list(request.messages)
-            retained = 1 if self.role == "judge" else 4
-            for i in detailed[:-retained]:
+            retained: set[int] = set()
+            scopes: set[str] = set()
+            detail_chars = 0
+            for i in reversed(detailed):
+                value = json.loads(messages[i].content)
+                scope = compact(
+                    {k: value.get(k) for k in ("full_result", "path", "fields", "next_offset")}
+                )
+                size = len(str(messages[i].content))
+                if scope not in scopes and len(retained) < 4 and detail_chars + size <= 32000:
+                    retained.add(i)
+                    scopes.add(scope)
+                    detail_chars += size
+            for i in detailed:
+                if i in retained:
+                    continue
                 value = json.loads(messages[i].content)
                 messages[i] = messages[i].model_copy(
                     update={
@@ -267,7 +281,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                 "archived_result": value["full_result"],
                                 "partial": True,
                                 "note": (
-                                    "Earlier detailed view retained; retrieve a field when needed."
+                                    "Earlier detailed view retained; read only if a fact "
+                                    "is missing from the current supplied fields."
                                 ),
                             }
                         )

@@ -143,6 +143,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     exact_page = message.name in {"retrieve_evidence", "read_evidence_result"}
     projected = scientific_projection(value) if role == "judge" or exact_page else preview(value)
     view_limit = 32000 if role == "judge" else 6000
+    if message.name == "read_target_evidence":
+        complete_facts = scientific_projection(value)
+        if len(compact(complete_facts)) <= view_limit:
+            projected = complete_facts
     if role == "judge" and len(compact(projected)) > view_limit:
         raise AgentBoundaryError(
             "Judge snapshot exceeds the scoped review limit. Narrow the proposal/evidence "

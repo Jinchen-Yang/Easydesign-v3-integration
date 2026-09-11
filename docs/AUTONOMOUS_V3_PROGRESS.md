@@ -127,3 +127,20 @@ Targeted024 was a command-path error (nonexistent test_harness.py; no tests ran)
 Corrected targeted026 is 22 PASS (6.77s), mypy02520files PASS, Ruff PASS.
 Protected385file hashes match the starting baseline. Additional Site/Design/Target integration
 and a fresh live attempt follow this checkpoint; full phase freeze remains pending.
+
+Live027 reached Target submission and Judge, but exhausted32modelcalls through repeated Judge
+reads of options/identity/interpretation/hard_facts. The one-detailed-view Judge window discarded
+all but the last field of every batch, forcing repeated rereading. The working set now keeps up
+to four distinct scopes (duplicate reads archived), with32000total detailed characters and the
+unchanged60000input ceiling. It changes model context only; checkpoints/artifacts are intact.
+Also, the actual6126character Target result has a5350character scientific projection, so the
+complete four-chain fact table can be supplied within6000. Use that complete projection rather
+than the generic recursive list preview which had hidden chainM behind the first few rows.
+The live Target incorrectly called L the only exact_subsequence option; this attempt is NOT a
+scientific pass. The full oracle, Judge and subsequent independent review remain required.
+
+Relevant028 20 PASS/3 opt-in LIVE SKIP (52.62s); independent live031 is running.
+Targeted029 25 PASS (6.47s), mypy03020files PASS, Ruff PASS. New regressions verify that
+Judge can compare four distinct source fields in the same actual model request, repeated
+reads do not evict distinct fields, checkpoint messages remain unchanged, and all four small
+Target chain facts/options survive the output adapter. No Phase2acceptance claimed.

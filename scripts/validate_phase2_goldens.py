@@ -420,6 +420,10 @@ async def main():
         "type": "REAL MODEL / REAL SOURCE / EXISTING DETERMINISTIC SERVICES",
         "model": config.default.model,
         "model_configuration": config.model_dump(mode="json"),
+        "model_adapters": {r: config.for_role(r).adapter_provider for r in models},
+        "http_observation_roles": [
+            r for r in models if config.for_role(r).adapter_provider == "openai"
+        ],
         "gate_response_actor": ACTOR,
         "generation_started": False,
         "case_scope": CASE_SCOPE,

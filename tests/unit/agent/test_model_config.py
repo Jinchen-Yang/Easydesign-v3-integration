@@ -174,12 +174,16 @@ async def test_real_provider_adapter_preserves_typed_tool_contract(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning", ["none", "low"])
 async def test_site_finalization_filters_the_actual_sdk_tool_payload(
-    bridge: Any, monkeypatch: Any
+    bridge: Any, monkeypatch: Any, reasoning: Any
 ) -> None:
     import json
 
-    import httpx
+    if reasoning == "low":
+        import httpx2 as httpx
+    else:
+        import httpx
     from langchain.agents import create_agent
     from langchain.agents.structured_output import ToolStrategy
     from langchain.chat_models import init_chat_model
@@ -199,13 +203,27 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
     sync = httpx.Client(transport=httpx.MockTransport(capture))
 
-    def factory(*args: Any, **kwargs: Any) -> Any:
-        return init_chat_model(*args, **kwargs, http_client=sync, http_async_client=client)
+    if reasoning == "low":
+        import anthropic
 
-    monkeypatch.setattr("langchain.chat_models.init_chat_model", factory)
+        original = anthropic.AsyncClient
+        monkeypatch.setattr(
+            anthropic, "AsyncClient", lambda **kwargs: original(**{**kwargs, "http_client": client})
+        )
+    else:
+
+        def factory(*args: Any, **kwargs: Any) -> Any:
+            return init_chat_model(*args, **kwargs, http_client=sync, http_async_client=client)
+
+        monkeypatch.setattr("langchain.chat_models.init_chat_model", factory)
     monkeypatch.setenv("TEST_KEY", "wire-test-secret")
     cfg = ModelConfig(
-        default=LLMConfig(provider="deepseek", model="test-model", secret_env="TEST_KEY")
+        default=LLMConfig(
+            provider="deepseek",
+            model="test-model",
+            secret_env="TEST_KEY",
+            reasoning_effort=reasoning,
+        )
     )
     model = create_models(cfg)["site"]
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
@@ -228,9 +246,22 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
             {"messages": [{"role": "user", "content": "Submit the available evidence"}]}
         )
     assert len(requests) == 1
-    assert [t["function"]["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
-    assert requests[0]["tool_choice"] == {"type": "function", "function": {"name": "SiteIntent"}}
-    assert requests[0]["max_tokens"] == 2048 and requests[0]["thinking"] == {"type": "disabled"}
+    if reasoning == "none":
+        assert [t["function"]["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
+        assert requests[0]["tool_choice"] == {
+            "type": "function",
+            "function": {"name": "SiteIntent"},
+        }
+        assert requests[0]["thinking"] == {"type": "disabled"}
+    else:
+        assert [t["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
+        assert requests[0]["thinking"]["type"] == "enabled"
+        assert requests[0].get("tool_choice", {"type": "auto"}) == {"type": "auto"}
+    assert requests[0]["max_tokens"] == 2048
+    last = requests[0]["messages"][-1]
+    assert last["role"] == "user"
+    assert "Runtime phase notice" in str(last["content"])
+    assert "unknowns" in str(last["content"])
     assert not b._jobs() and b.current_site() is None
     sync.close()
     await client.aclose()
@@ -259,3 +290,116 @@ def test_transport_metadata_excludes_credentials_messages_and_tool_arguments() -
     result = request_metadata("site", body)
     assert result["tool_names"] == ["SiteIntent"] and result["max_tokens"] == 4096
     assert result["message_count"] == 1 and "private" not in json.dumps(result)
+
+
+def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(monkeypatch: Any) -> None:
+    calls = []
+    monkeypatch.setenv("TEST_KEY", "test-secret-never-persist")
+    monkeypatch.setattr(
+        "langchain.chat_models.init_chat_model", lambda *a, **k: calls.append((a, k)) or object()
+    )
+    selected = LLMConfig(
+        provider="deepseek",
+        model="deepseek-v4-pro",
+        secret_env="TEST_KEY",
+        reasoning_effort="low",
+        max_output_tokens=4096,
+    )
+    assert selected.harness_key == "anthropic:deepseek-v4-pro"
+    create_models(ModelConfig(default=selected))
+    assert len(calls) == 5
+    for args, kwargs in calls:
+        assert args == ("deepseek-v4-pro",)
+        assert kwargs["model_provider"] == "anthropic"
+        assert kwargs["base_url"] == "https://api.deepseek.com/anthropic"
+        assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+        assert kwargs["output_config"] == {"effort": "low"}
+        assert kwargs["max_tokens"] == 4096
+        assert kwargs["max_retries"] == 0
+    assert "test-secret" not in selected.model_dump_json()
+    for provider in ("openai", "anthropic"):
+        with pytest.raises(ValidationError, match="verified only for DeepSeek"):
+            LLMConfig(
+                provider=provider, model="test", secret_env="TEST_KEY", reasoning_effort="low"
+            )
+
+
+@pytest.mark.asyncio
+async def test_deepseek_thinking_blocks_roundtrip_through_actual_sdk(monkeypatch: Any) -> None:
+    import anthropic
+    import httpx2 as httpx
+    from langchain_core.messages import ToolMessage
+
+    requests = []
+    reasoning = {
+        "type": "thinking",
+        "thinking": "Synthetic reasoning marker.",
+        "signature": "test-signature",
+    }
+
+    def transport(request: Any) -> Any:
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "id": f"message-{len(requests)}",
+                "type": "message",
+                "role": "assistant",
+                "model": "deepseek-v4-pro",
+                "content": [
+                    reasoning,
+                    {
+                        "type": "tool_use",
+                        "id": f"call-{len(requests)}",
+                        "name": "read_evidence",
+                        "input": {},
+                    },
+                ],
+                "stop_reason": "tool_use",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 10, "output_tokens": 20},
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+    original = anthropic.AsyncClient
+    monkeypatch.setattr(
+        anthropic, "AsyncClient", lambda **kwargs: original(**{**kwargs, "http_client": client})
+    )
+    monkeypatch.setenv("TEST_KEY", "test-secret-never-persist")
+    config = ModelConfig(
+        default=LLMConfig(
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            secret_env="TEST_KEY",
+            reasoning_effort="low",
+            max_output_tokens=4096,
+        )
+    )
+    model = create_models(config)["site"]
+    tool = {
+        "name": "read_evidence",
+        "description": "Read synthetic evidence",
+        "input_schema": {"type": "object", "properties": {}},
+    }
+    bound = model.bind_tools([tool], tool_choice="auto")
+    first = await bound.ainvoke("Read the synthetic evidence")
+    assert first.content[0] == reasoning
+    await bound.ainvoke(
+        [
+            ("human", "Read the synthetic evidence"),
+            first,
+            ToolMessage(tool_call_id="call-1", content="Synthetic result"),
+        ]
+    )
+    assert len(requests) == 2
+    assert requests[1]["messages"][1]["content"][0] == reasoning
+    assert requests[1]["messages"][2]["content"][0]["tool_use_id"] == "call-1"
+    for request in requests:
+        assert request["thinking"]["type"] == "enabled"
+        assert request["output_config"] == {"effort": "low"}
+        assert request["max_tokens"] == 4096
+    assert "test-secret" not in json.dumps(requests)
+    await client.aclose()

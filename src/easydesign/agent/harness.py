@@ -16,7 +16,7 @@ from deepagents.profiles import (
     register_harness_profile,
 )
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 
 from .contracts import (
@@ -618,8 +618,22 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                 )
             )
+            # Keep the phase transition adjacent to the latest evidence. The original
+            # checkpoint stays intact; this is a transient model-input instruction.
+            # A beginning-only system addition was repeatedly ignored in long live traces.
+            call_messages = list(request.messages)
+            if synthesize:
+                call_messages.append(
+                    HumanMessage(
+                        content="Runtime phase notice (not a scientist decision or approval): "
+                        "The reading phase has ended. Submit SiteIntent now from the "
+                        "evidence already delivered. Do not call previous reading tools. "
+                        "Keep unknowns, conflicting evidence and alternatives explicit; "
+                        "the runtime and independent Judge may reject an insufficient proposal."
+                    )
+                )
             chars = len(str(request.system_message)) + sum(
-                len(str(m.content)) for m in request.messages
+                len(str(m.content)) for m in call_messages
             )
             if chars > self.config.max_input_chars:
                 raise AgentBoundaryError("Model context budget exceeded; worker remains detached")
@@ -637,7 +651,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "estimated_input_chars_with_schemas": chars + call_tool_chars,
                     "context_metric": "system and message content; tool schemas separately",
                     "limit": self.config.max_input_chars,
-                    "message_count": len(request.messages),
+                    "message_count": len(call_messages),
                     "tool_message_chars": sum(
                         len(str(m.content)) for m in request.messages if isinstance(m, ToolMessage)
                     ),
@@ -649,10 +663,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     else None,
                 },
             )
-            call_request = request.override(tools=call_tools)
+            call_request = request.override(tools=call_tools, messages=call_messages)
             if (
                 synthesize
-                and self.config.roles.get("site", self.config.default).provider == "deepseek"
+                and self.config.for_role("site").provider == "deepseek"
+                and self.config.for_role("site").reasoning_effort == "none"
             ):
                 # ToolStrategy binds generic required. Use the provider's documented
                 # named choice only for finalization, preserving vendor budget/settings.

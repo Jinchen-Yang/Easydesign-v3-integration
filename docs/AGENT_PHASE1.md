@@ -91,7 +91,12 @@ max_input_chars: 60000
 Anthropic 则设 `provider: anthropic`、该账户可用的模型名与 `ANTHROPIC_API_KEY`。
 可在 `roles` 下对 `coordinator`、`target`、`judge` 单独覆盖同样的配置。
 Phase 1 不实现 OAuth、OpenRouter、Gemini 或用户自定义 endpoint；未知字段明确拒绝。
-DeepSeek 使用官方固定 endpoint 和非 thinking 工具调用，避免未验证的 reasoning 消息回传。
+DeepSeek 默认使用官方固定 endpoint 和非 thinking 工具调用。20260912 的自主开发扩展
+允许显式配置 `reasoning_effort: low`（或 high/max）：通过现有 Anthropic 适配器连接
+`https://api.deepseek.com/anthropic`，完整回传原始 thinking blocks。默认为 none；
+不自动 fallback，不改变科学权限。SDK 两轮回传测试和真实合成输入 probe 已验证该协议，
+科学验收仍以对应 live case 为准。60000 输入字符计数包含实际 thinking 消息内容。
+供应商忽略 Anthropic 的 budget_tokens；实际输出边界由 max_output_tokens 约束。
 
 ## 运行与恢复
 

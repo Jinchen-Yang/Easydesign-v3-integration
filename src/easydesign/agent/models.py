@@ -20,17 +20,25 @@ class LLMConfig(StrictDTO):
     secret_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]{1,100}$")
     timeout_seconds: float = Field(default=90, ge=1, le=180)
     max_output_tokens: int = Field(default=2048, ge=128, le=8192)
+    reasoning_effort: Literal["none", "low", "high", "max"] = "none"
 
     @model_validator(mode="after")
     def no_provider_prefix(self) -> LLMConfig:
         if ":" in self.model:
             raise ValueError("Specify provider separately from the model name")
+        if self.reasoning_effort != "none" and self.provider != "deepseek":
+            raise ValueError("Reasoning mode is currently verified only for DeepSeek")
         return self
 
     @property
+    def adapter_provider(self) -> str:
+        if self.provider == "deepseek":
+            return "anthropic" if self.reasoning_effort != "none" else "openai"
+        return self.provider
+
+    @property
     def harness_key(self) -> str:
-        provider = "openai" if self.provider == "deepseek" else self.provider
-        return f"{provider}:{self.model}"
+        return f"{self.adapter_provider}:{self.model}"
 
 
 class ModelConfig(StrictDTO):
@@ -98,7 +106,17 @@ def create_models(
             kwargs["base_url"] = "https://api.openai.com/v1"
         elif provider == "anthropic":
             kwargs["base_url"] = "https://api.anthropic.com"
-        if provider == "deepseek":
+        if provider == "deepseek" and selected.reasoning_effort != "none":
+            # The existing Anthropic adapter preserves signed thinking blocks through
+            # tool rounds. ChatOpenAI drops DeepSeek reasoning_content on round-trip.
+            # Both formats use the same provider/account at an explicitly fixed endpoint.
+            provider = "anthropic"
+            kwargs.update(
+                base_url="https://api.deepseek.com/anthropic",
+                thinking={"type": "enabled", "budget_tokens": 1024},
+                output_config={"effort": selected.reasoning_effort},
+            )
+        elif provider == "deepseek":
             provider = "openai"
             # ChatOpenAI rewrites its max_tokens argument to max_completion_tokens.
             # DeepSeek expects max_tokens; send that explicit vendor body field.

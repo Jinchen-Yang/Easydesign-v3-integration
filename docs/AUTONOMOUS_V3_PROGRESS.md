@@ -844,3 +844,50 @@ Phase2 remains NOT FROZEN. Valid Target approvals and exact Case3 acceptance rem
 
 Targeted139:18 PASS (3.47s), covering provider configuration/actual SDK payload and frozen golden
 spec assertions. Ruff139 PASS. Next live139/140 resume the approved soluble/GPCR Target bundles.
+
+
+### Reasoning-safe provider format and adjacent synthesis instruction (live139/140)
+
+The explicit Pro/non-thinking comparison did not solve the long-history loop. Live139
+(`phase2-goldens-20260911T211234899432Z`, soluble) ended at27calls (Coordinator4/Site23),
+including repeated invalid PMID-to-fulltext requests; live140
+(`phase2-goldens-20260911T211234684818Z`, GPCR) ended at27calls (Coordinator3/Site24),
+mostly rereading Target fields with no completed Site research. Both preserved failures remain
+operational/model findings, not scientific negatives. Neither Site is approved.
+
+The installed ChatOpenAI adapter does not round-trip DeepSeek's reasoning_content. Merely
+turning thinking on in that format would therefore be incorrect. Instead the same existing
+public init_chat_model factory can use the already-installed Anthropic adapter with DeepSeek's
+fixed official /anthropic endpoint. It preserves native thinking/signature blocks in messages
+and checkpoints through ordinary tool rounds. No dependency, private patch, provider account,
+workflow, approval or scientific kernel changes are required. LLMConfig now has an explicit
+reasoning_effort (none default, or low/high/max for DeepSeek); non-DeepSeek reasoning values are
+rejected until verified. Default non-thinking behavior is retained. HTTP request observations
+remain available only for the old OpenAI-format adapter; reports explicitly list adapter and
+http_observation_roles. Native SDK round-trip tests verify the new format without mislabeling
+pre-SDK events as HTTP telemetry.
+
+REAL MODEL thinking-probe141 used exactly2calls on explicitly SYNTHETIC input, preserving the
+first thinking block into a subsequent tool-result round and returning the final evidence-limited
+typed conclusion. Receipt includes only block types/tool arguments/usage, not reasoning text.
+No scientific acceptance follows from that probe. Vendor reference (archived HTML139):
+https://api-docs.deepseek.com/guides/anthropic_api/ ; thinking/effort reference:
+https://api-docs.deepseek.com/guides/thinking_mode/ . The vendor ignores budget_tokens; max_tokens
+remains the actual total output cap. The framework intentionally drops forced tool_choice in
+thinking mode; typed output remains required by the existing bounded submission checks.
+
+Site finalization additionally appends a short transient runtime control message immediately after
+the latest delivered evidence. Earlier beginning-only phase notices were ignored by both models.
+The original checkpoint remains untouched, and the added message is included in the unchanged
+60000-character budget. It offers no new evidence and cannot resolve unknowns or approve a Gate.
+Next retries use explicitly configured Pro/low reasoning with4096output,32shared calls and
+60000input. No production compute is authorized or used.
+
+
+Targeted141:28 PASS (18.89s); targeted141b:26 PASS (7.44s), including actual SDK tool payload
+for both formats, exact thinking/signature round-trip and latest runtime phase notice. The one
+expected framework warning explains that forced choice is dropped in thinking mode. Ruff141b
+PASS; mypy141b:2 changed source files PASS. Protected-check141:all385 files unchanged.
+Config before/after snapshots and model-config-change141.json retain SHA b72c733d0535cf41fa944c1e4899d3996f0878ef165d7b7f8a4e5c27f29826d7
+→786d02de6d7c4f7e43e2a0d79fdf9017fb3e2e07d0c84476b2ba6b08a968cd40.
+Next live141/142 resume the approved soluble/GPCR Target bundles. Phase2 NOT FROZEN.

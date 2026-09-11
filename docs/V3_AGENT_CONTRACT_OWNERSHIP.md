@@ -3,6 +3,12 @@
 Phase 2.2d implementation audit, baseline `4df3b2bd19f72a39f67ad40c3874b30323f0aafb`.
 This is an ownership specification, not a declaration that real scientific acceptance passed.
 
+Autonomous continuation update (20260912): model selection and optional reasoning are now
+explicit audited configuration. DeepSeek reasoning uses the already-installed Anthropic adapter
+and fixed official endpoint, preserving native thinking blocks across tool rounds. The historical
+non-thinking adapter description below describes its baseline. No scientific ownership, typed
+submission, Judge or Gate semantics change. See `AUTONOMOUS_V3_PROGRESS.md`.
+
 **Trusted runtime owns scientific facts. Specialists own scientific interpretation.
 Evidence Judge owns independent critique. Scientists own consequential decisions.**
 

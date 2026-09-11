@@ -174,3 +174,36 @@ working-set tests, and frozen soluble/GPCR mapping projections. mypy03820filesPA
 AFO bundle036 failed on official-network reachability; bundle039 retries the same exact
 size/SHA through the already configured hf-mirror transport using the existing verified downloader.
 No source catalog, release identity or model bytes changed; download is progressing.
+
+
+## Gate 1 content and authoritative identity reached; continuation repair
+
+Live040 (phase2-goldens-20260911T175824Z, HEAD87f5d2a) reached Gate 1 with actual
+TargetInterpretation and independent JudgeVerdict. Review snapshot
+fdb46db15844fb1654d930e9503b4c0cb2166b704111490fc6b01896f5c2aeed passed all six
+content-review sections. The trusted scripted validation actor approved card6c1d1c688fd2efd3b0e5cc3fb909c22e0fc71234861acb4a382fec3b26082623.
+Old Stage01 attempt0002 succeeded. The unchanged approved_identity oracle verified the actual
+bundle and row mappings after the runner failure; exact report retained as
+soluble/approved-identity-oracle-after-failure.json. No goldens have been declared fully accepted.
+
+The resumed Coordinator polled the completed job then repeated its earlier pending-chain text;
+runtime truth was site-not-proposed / next_specialist=site-mechanism. The failed run report is
+preserved. Coordinator now receives only the three verified progress fields at each model call,
+with old messages retained and no new workflow state or scheduler. Independent science stays in
+owning specialists. The progress summary cannot authorize a card, job, or gate transition.
+
+Miniforge005 succeeded, official installer SHA
+848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c.
+BoltzGen installer035 uses this worktree's locked environment and asset receipts; installation
+continues with existing mirror fallback. AFO039 downloads the frozen3.1.4 archive through an
+existing configured equivalent mirror after official transport failure; fixed size/hash unchanged.
+These are CPU installation/download operations; no GPU scientific job has launched.
+
+Validation of the progress refresh: targeted041 completed with15 PASS and one new fixture failure
+(the test omitted Coordinator's required read_file tool). Correcting that fixture gives
+ targeted0421 PASS; existing Gate1/2/3 restart, rejection and upstream revision integration cases
+all passed in041. Mypy04320 files PASS; Ruff PASS; all385 protected hashes unchanged.
+Live044 started with the exact pending patch (four dirty paths recorded in its launch receipt),
+then reached a second independently reviewed Gate1 (snapshot6153e13ce99751f554683a47a692d8e75d564561dcd8553e1dd71feee50d512d).
+The actual content receipt scopes ambiguous A/B suggestions as unverified; sample-processing,
+activity and assembly limits remain visible. Scripted response delivered; Site continuation running.

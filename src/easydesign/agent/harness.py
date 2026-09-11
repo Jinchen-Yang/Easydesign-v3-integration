@@ -302,6 +302,27 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     }
                 )
             request = request.override(messages=messages)
+        if self.role == "coordinator" and isinstance(self.bridge, Phase2Bridge):
+            from langchain_core.messages import SystemMessage
+
+            # Approval resumes the old tool call and retains earlier scientific views.
+            # Refresh only verified progress, never an interpretation or a scheduler.
+            state = self.bridge.scientific_state()
+            progress = {
+                key: state[key]
+                for key in ("scientific_state", "gate_type", "next_specialist")
+                if key in state
+            }
+            request = request.override(
+                system_message=SystemMessage(
+                    content=request.system_message.text
+                    + "\nCurrent verified runtime progress (supersedes historical progress): "
+                    + compact(progress)
+                    + "\nEarlier pending cards and tool views are historical after delivery. "
+                    "Continue the requested scope using this state; read_scientific_state "
+                    "provides its full evidence. Do not ask again for a delivered approval."
+                )
+            )
         from langchain_core.utils.function_calling import convert_to_openai_tool
 
         tool_schemas = [convert_to_openai_tool(t) for t in available]

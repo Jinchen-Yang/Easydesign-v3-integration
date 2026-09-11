@@ -320,3 +320,71 @@ def test_small_target_fact_snapshot_keeps_all_alternative_chains(bridge: Any) ->
     )
     assert rendered["hard_facts"] == facts["hard_facts"]
     assert rendered["options"] == facts["options"]
+
+
+@pytest.mark.asyncio
+async def test_coordinator_refreshes_runtime_progress_without_rewriting_history(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Continue through Site review")
+    guard = RoleBoundary(
+        b,
+        "coordinator",
+        scripted_config(),
+        "Continue through Site review",
+        execution_id=execution["execution_id"],
+    )
+
+    class Request(SimpleNamespace):
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    seen = []
+
+    async def handler(request: Any) -> Any:
+        seen.append(request)
+        return SimpleNamespace(result=[AIMessage(content="Observed current progress")])
+
+    tools = phase2_tools(b, "coordinator")
+    tools.append(
+        StructuredTool.from_function(
+            lambda description, subagent_type: "", name="task", description="Delegate science"
+        )
+    )
+    tools.append(
+        StructuredTool.from_function(
+            lambda file_path: "", name="read_file", description="Read own Skill"
+        )
+    )
+    historical = [
+        ToolMessage(
+            name="read_target_evidence",
+            tool_call_id="old",
+            content='{"selected_chain":null,"status":"pending"}',
+        )
+    ]
+    request = Request(
+        tools=tools, messages=historical, system_message=SystemMessage(content="Coordinate")
+    )
+    current = {
+        "scientific_state": "site-not-proposed",
+        "gate_type": "site-hotspot",
+        "next_specialist": "site-mechanism",
+        "private_payload": "not-in-summary",
+    }
+    monkeypatch.setattr(b, "scientific_state", lambda: current)
+    await guard.awrap_model_call(request, handler)
+    assert '"scientific_state":"site-not-proposed"' in seen[-1].system_message.text
+    assert '"next_specialist":"site-mechanism"' in seen[-1].system_message.text
+    assert "not-in-summary" not in seen[-1].system_message.text
+    assert seen[-1].messages == historical == request.messages
+    assert request.system_message.text == "Coordinate"
+    current.update(scientific_state="hotspot-approved", next_specialist="none")
+    await guard.awrap_model_call(request, handler)
+    assert '"next_specialist":"none"' in seen[-1].system_message.text
+    assert "site-not-proposed" not in seen[-1].system_message.text
+    assert not b._jobs()
+    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0

@@ -12,11 +12,14 @@ target bundle; the unchanged identity oracle subsequently verified P00698 / cano
 construct129 / observed127, selected auth L = label C, missing128–129 and mapping offset18.
 Live048 independently verified the actual old DecisionRecord and accepted the full identity-trap case.
 Live044 reached real Site research and candidate evaluation, then exhausted its budget on
-partially displayed residue pages; exact table/cursor delivery is repaired. Live054 resumes
-from this approved Target for Site acceptance. The original live040 failure was caused by
+partially displayed residue pages; exact table/cursor delivery is repaired. Current Site retries reuse this exact approved Target without restarting preparation. The original live040 failure was caused by
 Coordinator reusing pre-approval progress.
 Its failed report is retained. This is partial acceptance, not five-case completion. Current
 repair supplies concise verified runtime progress and keeps detailed Site work with its owner.
+GPCR live104 also has an independently reviewed, actually approved Gate1 Target and unchanged
+identity oracle. Live120 reached mapped Site reads; no GPCR Gate2 acceptance is claimed. Current
+retry ownership, precise failures and targeted regressions through live119/120 are recorded in
+AUTONOMOUS_V3_PROGRESS.md. Cases1/2/4/5 and the Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
 

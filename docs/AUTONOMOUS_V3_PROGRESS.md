@@ -623,3 +623,26 @@ alter offsets or rewrite checkpoints. Targeted118:53 PASS (17.28s); after this m
 targeted118b:46 PASS (8.70s). Ruff118 overlong metadata line and mypy118b message-content union were
 corrected without changing scientific behavior; Ruff118c PASS, mypy118c:20 files PASS.
 Next live119/120 reuse approved soluble044/GPCR104. Phase2 remains NOT FROZEN; only case3 PASS.
+
+
+### Copyable owned result handles and bounded synthesis guidance (live119/120)
+
+Live119 (`phase2-goldens-20260911T200009943741Z`) used literal UniProt feature filters and real
+research, then exhausted32calls re-reading source/search pages without a SiteIntent. The Site
+prompt now explicitly targets a concise reviewable hypothesis, with meaningful alternatives and
+all material unresolved conclusions. At10remaining shared calls it reminds the owner to reserve
+about6for independent Judge/Coordinator and synthesize from delivered evidence, researching only
+facts that affect executability. This is reasoning guidance, not a new scheduler, forced verdict,
+waiver of scientific checks or increase to any budget. Model tools remain available.
+
+Live120 (`phase2-goldens-20260911T200009567228Z`) reached mapped GPCR residue reads at21totalcalls,
+then invented /result-c1f9e3a2f7144553a7e27ea8917e8fdf.json; it was absent from all16registered
+views in that thread. The concurrent second ref was valid. The first reference correctly failed
+its ownership check; no foreign data was read. The model now sees up to32exact recent result refs
+from its own role/execution in the existing registry, instead of only a hexadecimal pattern.
+Actual reads retain independent role/execution/Judge-binding/checksum checks. Earlier sources,
+threads and checkpoints are untouched; metadata choices are no new artifact/authority system.
+
+Targeted121:55 PASS (12.41s), including argument recovery and hard tool boundaries; Ruff121 PASS;
+mypy121:20 files PASS. Next live122/123 reuse independently approved soluble044/GPCR104.
+Phase2 NOT FROZEN; cases1/2/4/5 remain incomplete, case3 remains independently accepted only.

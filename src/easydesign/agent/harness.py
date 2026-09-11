@@ -307,22 +307,28 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             else t
             for t in available
         ]
-        if (
-            isinstance(self.bridge, Phase2Bridge)
-            and not self.bridge.store.db.execute(
-                "SELECT 1 FROM events WHERE thread=? AND kind='tool-view' "
+        result_schema = ModelEvidenceScope.model_json_schema()
+        if isinstance(self.bridge, Phase2Bridge):
+            rows = self.bridge.store.db.execute(
+                "SELECT json_extract(payload,'$.ref') FROM events "
+                "WHERE thread=? AND kind='tool-view' "
                 "AND json_extract(payload,'$.role')=? "
-                "AND json_extract(payload,'$.execution_id')=? LIMIT 1",
+                "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 32",
                 (self.bridge.thread, self.role, self.execution_id),
-            ).fetchone()
-        ):
-            # An evidence_id is an identity, not a readable file. Offer scoped
-            # navigation only after this role has actually received a registered view.
-            available = [t for t in available if t.name != "read_evidence_result"]
+            ).fetchall()
+            refs = list(dict.fromkeys(row[0] for row in rows))
+            if refs:
+                # Copy exact role/execution-owned handles. The read-time authority,
+                # current Judge binding and checksum checks remain independent.
+                result_schema["properties"]["ref"]["enum"] = refs
+            else:
+                # An evidence_id is an identity, not a readable file. Offer scoped
+                # navigation only after this role receives a registered view.
+                available = [t for t in available if t.name != "read_evidence_result"]
         available = [
             t.model_copy(
                 update={
-                    "args_schema": ModelEvidenceScope,
+                    "args_schema": result_schema,
                     "description": "Read one exact path from a full_result already supplied to "
                     "this role. Use path=['field'] or path=['field',0,'child']. Read only a "
                     "needed missing fact; complete scientific content is already usable. "
@@ -557,6 +563,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "for typed synthesis, independent review and the Gate. Do not exhaust it by "
                     "enumerating the target or repeating delivered pages. Missing evidence stays "
                     "explicitly unresolved; budget pressure never justifies invented support."
+                    + (
+                        " Site synthesis is now due: preserve about six calls for independent "
+                        "Judge and the Coordinator. Use already delivered source passages and "
+                        "candidate evaluations to submit a concise SiteIntent. Investigate only "
+                        "a missing fact that changes whether the hypothesis is executable. "
+                        "Represent remaining mechanistic/access/assay uncertainty explicitly; "
+                        "do not claim it resolved or omit a material research conclusion."
+                        if self.role == "site" and self.config.max_model_calls - used <= 10
+                        else ""
+                    )
                 )
             )
             chars = len(str(request.system_message)) + sum(
@@ -1159,6 +1175,16 @@ def create_harness(
                 "Use a scoped read only for a specific missing fact. Do not enumerate fields "
                 "or reread supplied tables to verify runtime-owned hashes. When the supplied "
                 "facts suffice, submit your independent critique through JudgeVerdict."
+            )
+        if role == "site":
+            prompt += (
+                " Work toward a reviewable, constraint-consistent hypothesis with meaningful "
+                "alternatives, rather than exhaustive residue/source enumeration. Read primary "
+                "passages and evaluate the needed mapped patches, then synthesize SiteIntent. "
+                "A source's limited epitope/assay detail stays an explicit limitation; searching "
+                "more bibliography does not itself resolve it. Use concise evidence claims and "
+                "exact short excerpts so the entire typed opinion fits the output budget. "
+                "Never invent missing facts or skip required checks to finish."
             )
         boundary = RoleBoundary(
             bridge, role, config, goal, current_user_message, execution_id, revision

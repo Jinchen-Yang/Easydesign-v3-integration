@@ -30,6 +30,7 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
         b, "target", scripted_config(), "Inspect target", execution_id=execution["execution_id"]
     )
     names: list[set[str]] = []
+    own_ref = None
 
     class Request(SimpleNamespace):
         def override(self, **kwargs: Any) -> Any:
@@ -42,6 +43,10 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
         skill = next(t for t in request.tools if t.name == "read_file")
         schema = convert_to_openai_tool(skill)["function"]["parameters"]
         assert schema["properties"]["file_path"]["enum"] == ["/skills/target-intelligence/SKILL.md"]
+        if "read_evidence_result" in names[-1]:
+            reader = next(t for t in request.tools if t.name == "read_evidence_result")
+            schema = convert_to_openai_tool(reader)["function"]["parameters"]
+            assert schema["properties"]["ref"]["enum"] == [own_ref]
         return SimpleNamespace(
             result=[
                 AIMessage(
@@ -84,7 +89,9 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
     output_message(b, "coordinator", execution["execution_id"], raw)
     await guard.awrap_model_call(request, handler)
     assert "read_evidence_result" not in names[-1]
-    output_message(b, "target", execution["execution_id"], raw)
+    own_ref = json.loads(output_message(b, "target", execution["execution_id"], raw).content)[
+        "full_result"
+    ]
     await guard.awrap_model_call(request, handler)
     assert "read_evidence_result" in names[-1]
 

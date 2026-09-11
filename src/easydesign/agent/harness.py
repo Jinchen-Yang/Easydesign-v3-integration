@@ -17,6 +17,7 @@ from deepagents.profiles import (
 )
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, ToolMessage
+from pydantic import ValidationError
 
 from .contracts import (
     AgentBoundaryError,
@@ -24,6 +25,7 @@ from .contracts import (
     EvidenceBinding,
     EvidenceCitationMismatch,
     EvidenceCursorQueryMismatch,
+    EvidenceRetrievalQueryMismatch,
     InvalidFieldProjection,
     JudgeVerdict,
     ResearchConclusionMismatch,
@@ -36,6 +38,7 @@ from .contracts import (
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
+from .evidence_corpus import RetrieveEvidence
 from .evidence_output import ModelEvidenceScope, output_message, read_query, verified_result
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
@@ -273,6 +276,34 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 }
             )
             if t.name == "read_file"
+            else t
+            for t in available
+        ]
+        # Offer exact recently returned opaque cursors, so the model copies bytes
+        # instead of fabricating numeric offsets inside them. Runtime scope and
+        # integrity checks still independently reject altered/foreign cursors.
+        cursors = [""]
+        for message in reversed(request.messages):
+            if (
+                not isinstance(message, ToolMessage)
+                or message.name != "retrieve_evidence"
+                or message.status == "error"
+                or not isinstance(message.content, str)
+            ):
+                continue
+            try:
+                cursor = json.loads(message.content).get("next_cursor")
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if isinstance(cursor, str) and cursor not in cursors:
+                cursors.append(cursor)
+            if len(cursors) >= 5:
+                break
+        retrieval_schema = RetrieveEvidence.model_json_schema()
+        retrieval_schema["properties"]["cursor"]["enum"] = cursors
+        available = [
+            t.model_copy(update={"args_schema": retrieval_schema})
+            if t.name == "retrieve_evidence"
             else t
             for t in available
         ]
@@ -857,6 +888,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
         try:
             try:
+                if name == "retrieve_evidence":
+                    try:
+                        RetrieveEvidence.model_validate(args)
+                    except ValidationError as error:
+                        raise EvidenceRetrievalQueryMismatch(
+                            "Invalid read-only retrieval arguments: "
+                            + compact(error.errors(include_input=False, include_url=False))
+                            + ". Use need, question, source_id, feature_types, page_size and "
+                            "cursor only. Retrieval has no numeric offset; omit cursor for a "
+                            "new view, or use its exact returned cursor with unchanged query. "
+                            "No source passage was returned or consumed."
+                        ) from error
                 if name == "read_evidence_result":
                     # Do this before StructuredTool validation can return an unbudgeted
                     # schema error. Foreign/tampered references remain fatal even when
@@ -883,7 +926,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         and not (
                             name == "retrieve_evidence"
                             and isinstance(
-                                error, (EvidenceCursorQueryMismatch, StaleEvidenceCursor)
+                                error,
+                                (
+                                    EvidenceCursorQueryMismatch,
+                                    StaleEvidenceCursor,
+                                    EvidenceRetrievalQueryMismatch,
+                                ),
                             )
                         )
                     )
@@ -938,6 +986,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 name in {"retrieve_evidence", "read_evidence_result"}
                 and isinstance(result, ToolMessage)
                 and isinstance(result.content, str)
+                and result.status != "error"
             ):
                 value = json.loads(result.content)
                 page = value.get("cards", value.get("value", []))

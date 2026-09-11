@@ -243,6 +243,13 @@ class EvidenceCorpus:
                 )
         return list(documents.values())
 
+    def uniprot_features(self, card: dict[str, Any]) -> list[dict[str, Any]]:
+        records = [self.bridge.document(ref) for ref in card["source_refs"]]
+        matching = [v for v in records if v.get("primaryAccession") == card["identifier"]]
+        if card["provider"] != "UniProt" or len(matching) != 1:
+            raise AgentBoundaryError("Feature scope requires one verified UniProt record")
+        return list(matching[0].get("features", []))
+
     def retrieve(self, request: RetrieveEvidence) -> dict[str, Any]:
         selected = self.selections()
         candidates = [
@@ -338,19 +345,28 @@ class EvidenceCorpus:
             "what",
         }
         hits = []
+        feature_scope = {}
         for card in docs:
             corpus = self.bridge.document(card["corpus_ref"])
             feature_locations = None
             if request.feature_types:
                 if card["provider"] != "UniProt":
                     continue
-                records = [self.bridge.document(ref) for ref in card["source_refs"]]
-                matching = [v for v in records if v.get("primaryAccession") == card["identifier"]]
-                if len(matching) != 1:
-                    raise AgentBoundaryError("Feature scope requires one verified UniProt record")
+                features = self.uniprot_features(card)
+                available_types = sorted(
+                    {feature["type"] for feature in features if feature.get("type")}
+                )
+                feature_scope[card["source_id"]] = {
+                    "available_types": available_types,
+                    "unmatched_requested_types": sorted(
+                        set(request.feature_types) - set(available_types)
+                    ),
+                    "note": "Literal source types only; "
+                    "an unmatched filter is not biological absence.",
+                }
                 feature_locations = {
                     f"features[{i}]"
-                    for i, feature in enumerate(matching[0].get("features", []))
+                    for i, feature in enumerate(features)
                     if feature.get("type") in request.feature_types
                 }
             for chunk in corpus["chunks"]:
@@ -401,6 +417,7 @@ class EvidenceCorpus:
             "question": request.question,
             "source_id": request.source_id,
             "feature_types": request.feature_types,
+            **({"feature_scope": feature_scope} if feature_scope else {}),
             "need": request.need,
             "status": "UNRESOLVED",
             "cards": cards,

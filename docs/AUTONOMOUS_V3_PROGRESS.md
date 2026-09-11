@@ -593,3 +593,33 @@ Mypy115:20 files PASS; Ruff115b PASS; targeted115b:56 PASS (536.48s), including 
 revision, original Gate1 saver recovery and full input-to-frozen-design integration. All385
 protected files remain unchanged. Next live116/117 reuse the reviewed Targets; no new source,
 science-oracle, compute-budget or Gate-policy changes.
+
+
+### Retrieval syntax diagnostics and literal annotation types (live116/117)
+
+Live116 (`phase2-goldens-20260911T195349549131Z`) successfully compared actual mapped candidate
+evaluations, then supplied an unissued cursor while changing the question. Its cursor encoded
+offset4; this exact source view had returned offsets1,3,5 only. The foreign/altered cursor boundary
+correctly failed closed and remains unchanged. No proposal/Gate2 PASS is inferred. UniProt's full
+record contains thousands of reference chunks; targeted annotations should use the existing literal
+feature filter. Acquisition receipts now list available types from the verified original record,
+not from a hard-coded answer. A filter miss names the unmatched types and explicitly does not mean
+biological absence. Exact old chunks, passage IDs, complete sources and cursor identity persist.
+Site Skill describes this existing selector and forbids constructing opaque cursors.
+
+Live117 (`phase2-goldens-20260911T195349601679Z`) recovered one real owned stale cursor, then
+passed unsupported offset=0 to retrieve_evidence. Framework validation returned plain error text,
+which passage-count telemetry incorrectly parsed as JSON. Retrieval DTO validation now happens
+before dispatch, with schema-only errors consuming the existing four argument/source repairs;
+no source view is consumed. Error-status tool messages are not parsed as successful passage pages.
+Regression covers both the live syntax defect and plain framework error handling, four-repair
+exhaustion, no source/job creation, literal feature-type miss and exact-source receipt reuse.
+Source/identity/integrity/unknown-cursor failures still escape; there is no blanket exception retry.
+
+The model-visible cursor field now offers empty/start-new plus at most four exact recent cursor
+strings actually supplied to this role. This is a copying aid; the unchanged runtime independently
+checks query, thread, current binding and source selection. It does not accept unissued cursors,
+alter offsets or rewrite checkpoints. Targeted118:53 PASS (17.28s); after this model-surface addition,
+targeted118b:46 PASS (8.70s). Ruff118 overlong metadata line and mypy118b message-content union were
+corrected without changing scientific behavior; Ruff118c PASS, mypy118c:20 files PASS.
+Next live119/120 reuse approved soluble044/GPCR104. Phase2 remains NOT FROZEN; only case3 PASS.

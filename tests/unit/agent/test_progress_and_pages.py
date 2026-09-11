@@ -827,6 +827,7 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
                     {
                         "full_result": f"/result-{i:x}.json",
                         "cards": [{"source_id": source, "passage": f"evidence-{i} " * 200}],
+                        "next_cursor": f"exact-source-cursor-{i}",
                     }
                 ),
             )
@@ -890,6 +891,16 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
             "/skills/site-mechanism/references/research.md",
             "/skills/site-mechanism/references/membrane.md",
             "/skills/site-mechanism/references/shielding.md",
+        }
+        retrieval = next(t for t in request.tools if t.name == "retrieve_evidence")
+        cursor_schema = convert_to_openai_tool(retrieval)["function"]["parameters"]["properties"][
+            "cursor"
+        ]
+        assert set(cursor_schema["enum"]) == {
+            "",
+            "exact-source-cursor-0",
+            "exact-source-cursor-1",
+            "exact-source-cursor-2",
         }
         assert len(retained) == (6 if scoped_read else 4)
         assert len([x for x in retained if x.get("cards")]) == 3
@@ -986,6 +997,55 @@ async def test_offset_cannot_silently_repeat_an_object_or_scalar(bridge: Any) ->
     )
     assert page["value"] == [[25, 0.31]] and page["next_offset"] is None
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_retrieval_offset_uses_bounded_repair_and_framework_error_is_not_json(
+    bridge: Any,
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Read focused source evidence")["execution_id"]
+    guard = RoleBoundary(b, "site", scripted_config(), "Inspect", execution_id=eid)
+    invoked = []
+    query = {
+        "need": "TARGET_IDENTITY",
+        "question": "Read source topology",
+        "source_id": "UniProt:TEST",
+    }
+
+    async def handler(request: Any) -> Any:
+        invoked.append(request.tool_call["args"])
+        return ToolMessage(
+            name="retrieve_evidence",
+            tool_call_id="read",
+            status="error",
+            content="Framework tool argument error: no evidence returned",
+        )
+
+    bad = SimpleNamespace(
+        tool_call={"name": "retrieve_evidence", "id": "read", "args": {**query, "offset": 0}}
+    )
+    first = await guard.awrap_tool_call(bad, handler)
+    diagnostic = json.loads(first.content)
+    assert (
+        diagnostic["error_code"] == "INVALID_RETRIEVAL_QUERY" and diagnostic["repair_attempt"] == 1
+    )
+    assert not invoked
+    good = SimpleNamespace(tool_call={"name": "retrieve_evidence", "id": "read", "args": query})
+    result = await guard.awrap_tool_call(good, handler)
+    assert (
+        result.status == "error"
+        and result.content == "Framework tool argument error: no evidence returned"
+    )
+    assert invoked == [query]
+    for attempt in range(2, 5):
+        assert (
+            json.loads((await guard.awrap_tool_call(bad, handler)).content)["repair_attempt"]
+            == attempt
+        )
+    with pytest.raises(AgentBoundaryError, match="repair budget"):
+        await guard.awrap_tool_call(bad, handler)
+    assert not b._jobs() and not EvidenceCorpus(b).documents()
 
 
 @pytest.mark.asyncio

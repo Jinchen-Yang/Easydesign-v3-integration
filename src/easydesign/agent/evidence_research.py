@@ -1051,6 +1051,16 @@ def research_tool(bridge: Any, role: str) -> Any:
                 if k in card
             }
             view["source_id"] = source_key(card["provider"], card["identifier"])
+            if card["provider"] == "UniProt" and arguments["operation"] == "uniprot-record":
+                features = EvidenceCorpus(bridge).uniprot_features(card)
+                view["feature_types_available"] = sorted(
+                    {f["type"] for f in features if f.get("type")}
+                )
+                view["focused_annotation_read"] = (
+                    "For processing, active sites, topology or PTMs, retrieve_evidence with "
+                    "the relevant literal feature_types above instead of paging references. "
+                    "Omit the filter for narrative questions. Type presence is not entailment."
+                )
             if card["provider"] == "GPCRdb" and card.get("context_ref"):
                 view["available_analysis"] = (
                     "analyze_receptor_context using this card_id "

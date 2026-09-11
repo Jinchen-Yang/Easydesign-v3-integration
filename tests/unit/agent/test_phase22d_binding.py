@@ -262,4 +262,30 @@ def test_explicit_feature_scope_uses_verified_original_types_and_preserves_passa
     cards = first["cards"] + second["cards"]
     assert {json.loads(c["passage"])["type"] for c in cards} == {"Signal", "Chain"}
     assert all(c["passage"] == chunks[c["chunk"]]["text"] for c in cards)
+    mismatch = corpus.retrieve(query.model_copy(update={"feature_types": ["Signal peptide"]}))
+    assert not mismatch["cards"]
+    scope = mismatch["feature_scope"]["UniProt:P00698"]
+    assert set(scope["available_types"]) == {"Signal", "Chain"}
+    assert scope["unmatched_requested_types"] == ["Signal peptide"]
+    assert "not biological absence" in scope["note"]
     assert len(calls) == 2  # Initial two acquired references; no additional source request.
+
+
+@pytest.mark.asyncio
+async def test_acquisition_receipt_exposes_literal_types_without_refetching(acquired: Any) -> None:
+    from easydesign.agent.evidence_research import research_tool
+
+    b, calls, _ = acquired
+    result = json.loads(
+        await research_tool(b, "site").ainvoke(
+            {
+                "topic": "identity",
+                "operation": "uniprot-record",
+                "identifier": "P00698",
+                "question": "Read source processing annotations",
+                "selection_reason": "Inspect literal annotation types",
+            }
+        )
+    )
+    assert result["cards"][0]["feature_types_available"] == ["Chain", "Signal"]
+    assert len(calls) == 2 and not b._jobs()

@@ -114,6 +114,10 @@ returned passage card ID and exact short excerpt.
 Need names: TARGET_IDENTITY, STRUCTURE_STATE, LIGAND_PARTNER, MUTAGENESIS,
 FUNCTIONAL_MECHANISM, KNOWN_EPITOPE, COMPETITION, PPI_INTERFACE, GLYCAN_PTM, CONSERVATION.
 Do not enumerate every source or read every chunk. Search relevance is not scientific strength.
+For UniProt annotation questions, use feature_types from the acquisition receipt (for example
+Signal, Chain or Active site when present); generic text search also includes bibliography chunks.
+Keep cursor bytes unchanged. If changing the question or filter, omit cursor; never compute offsets
+inside an opaque cursor or construct a replacement cursor yourself.
 Keep supporting and contradictory evidence; report access failures as UNRESOLVED.
 For a large tool result use read_evidence_result on a relevant named field/list page.
 A partial preview is not the complete scientific table. Full results remain durable; never

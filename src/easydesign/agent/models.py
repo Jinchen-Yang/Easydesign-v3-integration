@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+from collections.abc import Callable
 from typing import Any, Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -41,7 +43,32 @@ class ModelConfig(StrictDTO):
         return self.roles.get(role, self.default)
 
 
-def create_models(config: ModelConfig) -> dict[str, Any]:
+def request_metadata(role: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Validation transport metadata only; never messages, headers or tool arguments."""
+    return {
+        "role": role,
+        **{
+            key: body[key]
+            for key in (
+                "model",
+                "tool_choice",
+                "thinking",
+                "max_tokens",
+                "max_completion_tokens",
+                "stream",
+            )
+            if key in body
+        },
+        "tool_names": [t.get("function", t).get("name") for t in body.get("tools", [])],
+        "message_count": len(body.get("messages", [])),
+    }
+
+
+def create_models(
+    config: ModelConfig,
+    *,
+    request_observer: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Credentials live in SDK clients only, never DTOs, metadata or worker envs."""
     from langchain.chat_models import init_chat_model
 
@@ -84,6 +111,13 @@ def create_models(config: ModelConfig) -> dict[str, Any]:
                     "max_tokens": selected.max_output_tokens,
                 },
             )
+        if request_observer is not None and provider == "openai":
+            import httpx
+
+            async def observe(request: httpx.Request, current_role: str = role) -> None:
+                request_observer(request_metadata(current_role, json.loads(request.content)))
+
+            kwargs["http_async_client"] = httpx.AsyncClient(event_hooks={"request": [observe]})
         models[role] = init_chat_model(selected.model, model_provider=provider, **kwargs)
     for name in secrets:
         os.environ.pop(name, None)

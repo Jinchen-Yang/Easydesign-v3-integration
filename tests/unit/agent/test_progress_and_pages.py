@@ -1508,3 +1508,50 @@ def test_cursor_only_continuation_restores_verified_query_and_retains_hard_bound
     with pytest.raises(StaleEvidenceCursor):
         corpus.continue_page(ContinueEvidence(cursor=first["next_cursor"]))
     assert len(fetches) == before_fetches and not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_acquired_source_for_another_need_is_not_reported_as_empty_evidence(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Read known epitope evidence")["execution_id"]
+    fetches = source_transport(b, monkeypatch)
+    EvidenceResearch(b).acquire(
+        ResearchQuery.model_validate(
+            {**ACQUIRE, "selection_reason": "Read primary functional evidence"}
+        ),
+        role="site",
+    )
+    corpus = EvidenceCorpus(b)
+    query = RetrieveEvidence(
+        need="KNOWN_EPITOPE", question="assay control", source_id="EuropePMC:PMC123"
+    )
+    guard = RoleBoundary(b, "site", scripted_config(), "Compare epitope", execution_id=eid)
+
+    async def handler(request: Any) -> Any:
+        return ToolMessage(
+            name="retrieve_evidence", tool_call_id="read", content=compact(corpus.retrieve(query))
+        )
+
+    request = SimpleNamespace(
+        tool_call={"name": "retrieve_evidence", "id": "read", "args": query.model_dump()}
+    )
+    result = await guard.awrap_tool_call(request, handler)
+    diagnostic = json.loads(result.content)
+    assert result.status == "error" and diagnostic["error_code"] == "SOURCE_NOT_SELECTED"
+    assert diagnostic["evidence_need"] == "KNOWN_EPITOPE" and "not absence" in diagnostic["message"]
+    assert not [e for e in b.store.events(b.thread) if e["kind"] == "evidence-view"]
+    assert len(fetches) == 1
+    corpus.select(
+        SelectEvidence(
+            provider="EuropePMC",
+            identifier="PMC123",
+            need="KNOWN_EPITOPE",
+            selection="SELECTED",
+            reason="Assess the same primary source for epitope limitations",
+        )
+    )
+    result = await guard.awrap_tool_call(request, handler)
+    assert result.status == "success" and json.loads(result.content)["cards"]
+    assert len(fetches) == 1 and not b._jobs()

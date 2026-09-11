@@ -234,3 +234,28 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     assert not b._jobs() and b.current_site() is None
     sync.close()
     await client.aclose()
+
+
+def test_transport_metadata_excludes_credentials_messages_and_tool_arguments() -> None:
+    import json
+
+    from easydesign.agent.models import request_metadata
+
+    body = {
+        "model": "model-name",
+        "max_tokens": 4096,
+        "thinking": {"type": "disabled"},
+        "tool_choice": {"type": "function", "function": {"name": "SiteIntent"}},
+        "tools": [
+            {
+                "type": "function",
+                "function": {"name": "SiteIntent", "parameters": {"secret": "schema-private"}},
+            }
+        ],
+        "messages": [{"role": "user", "content": "private-source-text"}],
+        "api_key": "credential-private",
+        "headers": {"authorization": "credential-private"},
+    }
+    result = request_metadata("site", body)
+    assert result["tool_names"] == ["SiteIntent"] and result["max_tokens"] == 4096
+    assert result["message_count"] == 1 and "private" not in json.dumps(result)

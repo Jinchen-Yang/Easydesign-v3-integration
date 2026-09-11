@@ -128,7 +128,8 @@ def test_canonical_revision_keeps_exact_source_and_scoped_cards(acquired: Any) -
     )
     assert replayed["reused_verified_source"] and len(calls) == 2
     assert replayed["cards"][0]["corpus_ref"] == documents["UniProt:P00698"]["corpus_ref"]
-    assert not corpus.retrieve(focus("UniProt:P12345"))["cards"]
+    with pytest.raises(SourceSelectionRequired):
+        corpus.retrieve(focus("UniProt:P12345"))
     with pytest.raises(SourceSelectionRequired):
         EvidenceResearch(b).acquire(
             ResearchQuery(
@@ -181,7 +182,9 @@ def test_restart_new_thread_and_new_need_reuse_source_only_after_selection(acqui
         q = RetrieveEvidence(
             need="STRUCTURE_STATE", question="Signal Chain", source_id="UniProt:P00698"
         )
-        assert corpus.documents() and not corpus.retrieve(q)["cards"]
+        assert corpus.documents()
+        with pytest.raises(SourceSelectionRequired):
+            corpus.retrieve(q)
         corpus.select(
             SelectEvidence(
                 provider="UniProt",
@@ -202,7 +205,8 @@ def test_restart_new_thread_and_new_need_reuse_source_only_after_selection(acqui
         )
         assert result["reused_verified_source"] and len(calls) == 2
         assert corpus.retrieve(q)["cards"]
-        assert not corpus.retrieve(focus())["cards"]  # No identity selection in this thread.
+        with pytest.raises(SourceSelectionRequired):  # No identity selection in this thread.
+            corpus.retrieve(focus())
     finally:
         store.close()
 

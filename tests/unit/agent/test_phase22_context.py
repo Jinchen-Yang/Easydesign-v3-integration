@@ -81,7 +81,9 @@ def test_source_selection_full_retention_scoped_pagination_and_thread_isolation(
     b.persist = lambda kind, payload: Phase2Bridge.persist(b, kind, payload)
     b.document = lambda ref: Phase2Bridge.document(b, ref)
     other = EvidenceCorpus(b)
-    assert other.documents() and not other.retrieve(q)["cards"]
+    assert other.documents()
+    with pytest.raises(SourceSelectionRequired):
+        other.retrieve(q)
     other.select(
         SelectEvidence(
             provider="EuropePMC",

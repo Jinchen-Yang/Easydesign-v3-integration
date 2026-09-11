@@ -408,11 +408,17 @@ async def main():
         ).hexdigest()
         == "2e367355d197d541df7f77b87f6b505659a81997dc79db7a97a0b0e0ff3258c9"
     )
-    models = create_models(config)
+
+    def observe_request(metadata):
+        with (OUT / "model-wire-metadata.jsonl").open("a") as handle:
+            handle.write(json.dumps({"at": datetime.now(UTC).isoformat(), **metadata}) + "\n")
+
+    models = create_models(config, request_observer=observe_request)
     truth = golden_truth()
     report = {
         "type": "REAL MODEL / REAL SOURCE / EXISTING DETERMINISTIC SERVICES",
         "model": config.default.model,
+        "model_configuration": config.model_dump(mode="json"),
         "gate_response_actor": ACTOR,
         "generation_started": False,
         "case_scope": CASE_SCOPE,

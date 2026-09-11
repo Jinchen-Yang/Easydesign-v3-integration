@@ -772,3 +772,43 @@ line; mypy133 found an overly broad role type in the Site-only provider branch. 
 Model-context now records actual offered action names/output schema and counts only the tools
 offered in synthesis mode. Final targeted133b:44 PASS (7.24s); Ruff133b PASS; mypy133b:20 files PASS.
 Next live134/135 reuse the independently approved Target bundles. No Phase2 freeze is claimed.
+
+
+### Effective wire diagnostics, retrieval prerequisites and bounded output configuration (live134/135)
+
+Live134 (`phase2-goldens-20260911T205449967205Z`) exercised cursor-only continuation successfully
+but still requested an old read during finalization, then produced a truncated SiteIntent. Its
+unregistered draft also treated a KNOWN_EPITOPE view with no selected source as absent evidence
+and understated already-approved mapping. No scientific acceptance is claimed. Live135
+(`phase2-goldens-20260911T205450943074Z`) also used successful continuations but exhausted two
+output repairs on further read requests at27calls. Named-choice behavior must be checked at the
+actual transport, not inferred only from the successful no-network wire test.
+
+The validation runner now requests a narrowly whitelisted HTTP metadata observer from the model
+factory: role/model, actual tool names/choice, thinking/output fields, stream flag and message
+count only. It writes model-wire-metadata.jsonl in that attempt's existing evidence directory.
+No messages, headers, credentials, raw sources or tool arguments are logged. The default factory
+behavior remains unchanged without an observer; no authority or artifact/checkpoint system is added.
+
+An acquired specific source without selection for the requested need now raises the existing
+SOURCE_NOT_SELECTED prerequisite before any passage/view is produced. The Site/Target guard
+allows its existing bounded correction for retrieval as well as acquisition, with an explicit
+not-absence message and no refetch requirement. Existing exact/stale cursor behavior is retained.
+
+Inspection of the standing contracts confirms2048 was a historical configuration default, not a
+frozen scientific invariant. Following observed real JSON truncation, this authorized worktree's
+ignored config/llm.yaml now uses max_output_tokens4096. Library defaults and all provider choices
+remain unchanged. DeepSeekFlash/no role overrides,32shared calls,60000input chars, frozen oracles
+and validation_micro compute are preserved. This supersedes the earlier self-imposed decision
+not to adjust the output limit. Before/after configuration and a change receipt are preserved as
+model-config-before136.yaml, model-config-after136.yaml and model-config-change136.json under
+runtime/tmp/autonomous-v3-20260912. Config SHA changed763c907c7b9ed9ff8933d138a0f938dd6da5ac9a26c758ac5ba3445aa884d87c
+to1e0f04e2f422ac93bd862d2d19f0a57ef46c8749a67b4b8852d26a88b921ef1a.
+The runner now records the actual non-secret model configuration in every pre-live/report artifact.
+
+Targeted136:21 PASS (7.20s); Ruff136 and mypy136:20files PASS. Retrieval-focused136b:51 PASS/2 FAIL (19.96s); the old isolation tests expected empty
+pages for unselected sources. These now assert explicit prerequisite rejection. Follow-up136c
+found one further old empty-page assertion (7PASS/1FAIL); corrected along with the equivalent
+context test. Final136d:13 PASS (8.47s). Ruff136d PASS; mypy136b:20files PASS.
+Next live137/138 use the recorded4096output configuration and whitelisted wire observer.
+Phase2 NOT FROZEN; cases1/2/4/5 incomplete, case3 independently PASS only.

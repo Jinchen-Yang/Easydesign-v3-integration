@@ -1089,7 +1089,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 # Only this proven sequencing error is repairable. Hard boundary and
                 # artifact/authority failures still escape, including from delegated tasks.
                 if (
-                    name != "research_evidence"
+                    name not in {"research_evidence", "retrieve_evidence", "continue_evidence"}
                     or self.role not in {"target", "site"}
                     or not isinstance(self.bridge, Phase2Bridge)
                     or self.execution_id is None
@@ -1098,6 +1098,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "Source-selection repair is outside this role"
                     ) from error
                 required = error.result()
+                if name != "research_evidence":
+                    required["message"] = (
+                        "This source is acquired but not selected for the requested evidence_need. "
+                        "No passage was read and this is not absence of scientific evidence. "
+                        "If relevant, select_evidence with the supplied provider/identifier, "
+                        "need=evidence_need, selection=SELECTED and your reason; then retry the "
+                        "retrieval. No new acquisition is required."
+                    )
                 attempt = self.bridge.store.reserve_prerequisite_repair(
                     self.bridge.thread, self.role, self.execution_id, required["source_id"]
                 )

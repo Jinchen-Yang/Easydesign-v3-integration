@@ -310,6 +310,11 @@ class EvidenceCorpus:
             ).get("selection")
             == "SELECTED"
         ]
+        if not request.cursor and request.source_id and candidates and not docs:
+            # An acquired source selected for another need is not an empty evidence
+            # search. Ask for an explicit relevance choice before reading any passage.
+            source = candidates[0]
+            raise SourceSelectionRequired(source["provider"], source["identifier"], request.need)
         view = identity(
             {
                 "thread": self.bridge.thread,

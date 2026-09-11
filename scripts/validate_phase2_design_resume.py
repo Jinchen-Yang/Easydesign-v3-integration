@@ -165,6 +165,7 @@ async def main():
                 with (case / "progress.jsonl").open("a") as handle:
                     handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
+        active_case = "design-validator-initialization"
         models = golden.create_models(config, request_observer=observe_request)
         golden.save(case / "backend-validation.json", golden.configure_live_validation(), secrets)
         for kind in ("standard", "expert-native"):

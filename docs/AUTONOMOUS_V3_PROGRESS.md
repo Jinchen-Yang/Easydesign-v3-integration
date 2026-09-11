@@ -1235,3 +1235,19 @@ review recovery guard. Both preserved live processes and the test processes have
 Ruff155c PASS; mypy155b PASS. Next live155 continues only standard/native Design from the actual
 live153 Site approval; live156 reuses the approved GPCR Target with the new candidate overview.
 No model/output/call/input or GPU budgets changed.
+
+
+### Reuse the already installed validation backend (live155)
+
+Live155 (`phase2-goldens-20260911T232126002200Z`) verified the actual approved Site and its
+independent review, then stopped before any model call because the validation helper tried to
+recreate the already existing isolated BoltzGen directory from live153. No scientific state or
+prior backend data was overwritten. The helper now reuses only the exact current fixture
+profile/paths, verifies console bytes plus real version/source commit/molecule-data identities,
+and preserves the existing profile bytes. A mismatched runtime is rejected instead of replaced.
+
+Targeted157:1 PASS (1.85s), MOCK backend probe only, proves repeated setup preserves profile/
+executable and rejects replacement console bytes. Ruff157 PASS. The installation-reuse check
+uses the actual backend (no YAML check or generation) and records before/after profile SHA in
+`backend-reuse157.json`. Live157 will retry only the pending Design cases from live153's actual
+Site approval. Live156 GPCR remains running on the unchanged Agent fingerprint. Phase2 NOT FROZEN.

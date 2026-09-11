@@ -147,9 +147,40 @@ def configure_live_validation():
     from easydesign.agent.tools import scientific_environment
 
     with scientific_environment():
-        adapter.probe()
+        expected_identity = adapter.probe()
     context = WorkspaceContext.discover()
     local = context.runtime_root / "live-boltzgen-validation"
+    if local.exists():
+        from easydesign.core import sha256_file
+        from easydesign.orchestration.profile import load_runtime_profile
+
+        loaded = load_runtime_profile(context.profile_path)
+        current = loaded.profile.backends.boltzgen_validation
+        assert loaded.profile.profile_id == "real-boltzgen-validation" and current is not None
+        assert current.executable == local / "boltzgen"
+        assert current.repository_root == local / "source" and current.cache_root == local / "cache"
+        assert current.offline_mode and loaded.profile.runs_root == context.runs_root
+        assert sha256_file(current.executable) == sha256_file(adapter.executable)
+        existing = BoltzGenCheckAdapter(
+            executable=current.executable,
+            repository_root=current.repository_root,
+            cache_root=current.cache_root,
+            require_generation_assets=False,
+            offline_mode=current.offline_mode,
+        )
+        with scientific_environment():
+            actual_identity = existing.probe()
+        for key in ("version", "commit", "molecule_dataset_sha256"):
+            assert actual_identity[key] == expected_identity[key], key
+        return {
+            "backend": "boltzgen",
+            "version": actual_identity["version"],
+            "mocked": False,
+            "generation_assets_required": False,
+            "cache_isolated": True,
+            "reused_verified_runtime": True,
+            "profile_sha256": loaded.identity.sha256,
+        }
     local.mkdir()
     executable = local / "boltzgen"
     # Byte-identical console entry point retains its real installed interpreter.

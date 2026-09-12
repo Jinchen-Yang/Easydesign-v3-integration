@@ -1583,3 +1583,45 @@ Launch165 source/Skills were committed atc8dbe8f4; its new test_repair_rounds.py
 untracked and omitted by git diff --name-only, then immediately committed65d14d82 without source
 changes. `launch-code-provenance165.json` records the exact supplement; the original launch
 receipt is preserved. Future launcher receipts explicitly record untracked files as well.
+
+
+### Exact receptor display references and short-page admission (166/167)
+
+Live166 (`phase2-goldens-20260912T010829793245Z`) corrected batch and source-selection
+diagnostics and acquired all four required sources, but failed after Coordinator2/Site8 calls.
+Its receptor analysis was correctly executed alone. The working view still reached62694chars
+(after68453 before final archival), so its first model delivery was refused. No SiteIntent/Gate2.
+The short membrane reference plus four acquisition requests had been conservatively rejected
+as36000chars; actual known Skill size can safely avoid that unnecessary correction/extra history.
+All source/checkpoint evidence is retained; no scientific or oracle acceptance is inferred.
+Related scripted Site harness166:10 PASS in127.09s; one separate opt-in live API test SKIPPED.
+The actual GPCR golden is separately FAILED, not replaced by that skipped test.
+
+Admission now computes each allowlisted Site Skill's full text size plus line-number/wrapper
+margin; foreign paths are never opened for estimation. Receptor analysis still reserves32000,
+other tools6000 each, final model input60000 and shared32calls unchanged. A short reference plus
+four receipts is admitted; analysis plus another read is still rejected before scientific work.
+
+The receptor display now replaces only exactly repeated values with explicit local JSON pointers
+(value_same_as) to full values in the SAME complete tool view. All unique source values remain
+present. This affects the full displayed overview only: raw analysis, scoped candidate aliases,
+all non-residue fields, seven candidates/44members, numbering and kernel outputs are unchanged.
+A reserved-field collision keeps the ordinary unencoded representation. There is no new summary,
+scientific priority, candidate filter or cross-artifact pointer. Existing source refs/ownership and
+archival remain authoritative. The source view can be expanded mechanically and compared exactly.
+
+`receptor-display-replay167.json` replays the actual failed166 checkpoint read-only: its original
+62694-character terminal working view becomes59501 with the unchanged60000limit and complete
+newest analysis retained. Every value expands exactly; all7candidates/44members match; original
+635111-byte analysis SHAa8a94c7d44d5f5e8b77e88db7b86c0e91c5247b63c00fef1a119133d5f942975 is
+unchanged. Display24972→20364chars. This is DETERMINISTIC REPLAY, not live acceptance. Historical
+Skill wording is retained in that checkpoint; the fresh Skill adds a small explanatory delta.
+
+Targeted167 initially31PASS/1FAIL exposed a new test calling result_tool with a nonexistent third
+argument, corrected to its actual two-argument API. Mypy initially found the native ToolCall vs
+plain-dict annotation; fixed using the public ToolCall type. Targeted167b32PASS in7.76s includes
+whole latest-batch delivery, exact display expansion, unchanged source/scoped reads, reserved-field
+collision, source/projection recovery and admission boundaries. A final wording clarification
+uses in-the-same-view (JSON serialization can reorder keys); targeted167c7PASS in2.01s.
+Ruff167b PASS; mypy167b PASS2source modules. Protected167:all385baseline files unchanged.
+Next fresh live167 from approved GPCRTarget104. Cases1/3/4/5 stay accepted; Phase2 not frozen.

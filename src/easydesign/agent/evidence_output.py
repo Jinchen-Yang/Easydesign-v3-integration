@@ -550,6 +550,52 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def receptor_display_projection(value: dict[str, Any]) -> dict[str, Any]:
+    """Display exact repeated values once, without changing the scoped source aliases."""
+    original = receptor_overview_projection(value)
+    reserved = {"value_same_as", "value_encoding"}
+
+    def collision(item: Any) -> bool:
+        if isinstance(item, dict):
+            return bool(reserved & item.keys()) or any(collision(v) for v in item.values())
+        return isinstance(item, list) and any(collision(v) for v in item)
+
+    if collision(original):
+        return original
+    seen: dict[str, str] = {}
+    repeated = False
+
+    def pack(item: Any, path: str) -> Any:
+        nonlocal repeated
+        key = compact(item)
+        if isinstance(item, (str, list, dict)) and len(key) >= 80:
+            if key in seen:
+                pointer = {"value_same_as": seen[key]}
+                if len(compact(pointer)) + 20 < len(key):
+                    repeated = True
+                    return pointer
+            else:
+                seen[key] = path
+        if isinstance(item, dict):
+            return {
+                k: pack(v, path + "/" + k.replace("~", "~0").replace("/", "~1"))
+                for k, v in item.items()
+            }
+        if isinstance(item, list):
+            return [pack(v, path + "/" + str(i)) for i, v in enumerate(item)]
+        return item
+
+    displayed: dict[str, Any] = pack(original, "")
+    if repeated:
+        displayed["value_encoding"] = (
+            "A one-field value_same_as object means the exact value at that JSON pointer "
+            "in THIS SAME tool view. All unique values, candidate members, evidence "
+            "and limitations are present; expand the pointer, do not infer an omitted value. "
+            "Scoped candidate_overview reads return ordinary expanded values."
+        )
+    return displayed if len(compact(displayed)) < len(compact(original)) else original
+
+
 def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> Any:
     from langchain_core.messages import ToolMessage
 
@@ -649,7 +695,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     view_limit = 32000 if role == "judge" or complete_design else 6000
     if source_artifact is not None:
         projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
-        overview = {**projected, **receptor_overview_projection(value)}
+        overview = {**projected, **receptor_display_projection(value)}
         if role == "site" and len(compact(overview)) <= 32000:
             projected = overview
             view_limit = 32000

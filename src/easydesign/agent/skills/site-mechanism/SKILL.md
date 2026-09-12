@@ -106,7 +106,8 @@ YAML. Runtime attaches identities and compiles the proposal; only a Scientist ca
 
 The receptor-candidate-overview is complete for its declared fields: every existing candidate's
 scientific metadata and listed source-residue columns are supplied together, with topology/state/
-membrane context. Use that view directly; do not repeatedly request the entire topology or
+membrane context. value_same_as points to an exact value in the same tool view;
+all unique scientific values remain present. Expand those pointers. Use that view directly; do not repeatedly request the entire topology or
 candidates object. If that view was archived, projection_aliases remain readable: use
 fields=['state','membrane','topology_summary'] for context and
 path=['candidate_overview', MODE, INDEX] for one candidate. Do not page topology.residues

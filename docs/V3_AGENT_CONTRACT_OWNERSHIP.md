@@ -54,11 +54,16 @@ remains recorded and explicit source selection is still mandatory. Replaying tha
 retains its attempt; a new model message consumes a new round. Legacy events without a batch
 identity each count once. Restart or redelegation cannot reset either allowance. No scheduler or schema migration is added.
 
-Site first-delivery admission reserves32k for complete receptor analysis,12k for a Skill read,
-and6k per bounded evidence page. Multi-call batches above32k are rejected before scientific
+Site first-delivery admission reserves32k for complete receptor analysis, the exact allowlisted
+Skill text plus line/wrapper margin for Skill reads, and6k per bounded evidence page. Multi-call batches above32k are rejected before scientific
 handlers with TOOL_BATCH_TOO_LARGE, sharing the same repair-round ledger. The model chooses
 smaller batches; runtime neither schedules a continuation nor drops unconsumed answers. The
 final60k input guard remains independent and authority/integrity failures remain fatal.
+
+Complete receptor display uses explicit local value_same_as JSON pointers only for exact repeated
+values. Every unique scientific value remains in that same tool view and expands to the exact
+ordinary overview. Raw analysis and scoped candidate aliases stay unchanged/expanded; reserved
+source-field collisions use the ordinary representation. No scientific selection or summary.
 
 ## Target facts and scientific consistency
 

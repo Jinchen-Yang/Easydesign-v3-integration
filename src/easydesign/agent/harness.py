@@ -16,7 +16,7 @@ from deepagents.profiles import (
     register_harness_profile,
 )
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 from pydantic import ValidationError
 
 from .contracts import (
@@ -975,11 +975,32 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         message = self.native_tool_batch(request)
         if message is None or len(message.tool_calls) <= 1:
             return
+
         # Match the complete receptor-view cap and reserve space for Skill text and
         # bounded evidence pages. This admission ceiling does not replace the final
         # 60k input guard or discard any first-delivery answer. No tool is auto-queued.
-        ceilings = {"analyze_receptor_context": 32000, "read_file": 12000}
-        total = sum(ceilings.get(c["name"], 6000) for c in message.tool_calls)
+        def allowance(call: ToolCall) -> int:
+            if call["name"] == "analyze_receptor_context":
+                return 32000
+            if call["name"] != "read_file":
+                return 6000
+            path = call["args"].get("file_path")
+            own_paths = {
+                "/skills/site-mechanism/SKILL.md",
+                *{
+                    f"/skills/site-mechanism/references/{name}.md"
+                    for name in ("research", "membrane", "shielding")
+                },
+            }
+            if not isinstance(path, str) or path not in own_paths:
+                return 12000  # Authorization still runs independently for that call.
+            page = Path(__file__).parent / str(path).lstrip("/")
+            text = page.read_text()
+            # Entire known Skill page plus line-number overhead and wrapper margin.
+            # Do not penalize a short reference as though it were the full main Skill.
+            return len(text) + 16 * len(text.splitlines()) + 512
+
+        total = sum(allowance(c) for c in message.tool_calls)
         if total > 32000:
             raise ToolBatchTooLarge(
                 f"This batch's conservative output allowance is {total} characters, above "

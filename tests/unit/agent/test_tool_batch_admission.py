@@ -90,3 +90,43 @@ async def test_oversized_batch_does_not_soften_authority_errors(bridge: Any, for
     with pytest.raises(AgentBoundaryError):
         await guard.awrap_tool_call(request(call, calls, "foreign"), forbidden)
     assert not any(e["kind"] == "tool-argument-repair" for e in bridge.store.events(bridge.thread))
+
+
+@pytest.mark.asyncio
+async def test_short_reference_and_four_receipts_are_not_oversized(bridge: Any) -> None:
+    bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = bridge.store.begin_execution(bridge.thread, "Inspect receptor")["execution_id"]
+    guard = RoleBoundary(bridge, "site", scripted_config(), "Inspect", execution_id=execution)
+    calls = [
+        {
+            "id": "reference",
+            "name": "read_file",
+            "args": {"file_path": "/skills/site-mechanism/references/membrane.md"},
+            "type": "tool_call",
+        },
+        *[
+            {
+                "id": f"receipt-{n}",
+                "name": "research_evidence",
+                "type": "tool_call",
+                "args": {
+                    "operation": "primary-record",
+                    "identifier": "21228869",
+                    "topic": "function",
+                    "question": "What was measured?",
+                },
+            }
+            for n in range(4)
+        ],
+    ]
+    executed = []
+
+    async def handler(req: Any) -> ToolMessage:
+        executed.append(req.tool_call["id"])
+        return ToolMessage(content='{"status":"fixture"}', tool_call_id=req.tool_call["id"])
+
+    await asyncio.gather(
+        *[guard.awrap_tool_call(request(c, calls, "small-pages"), handler) for c in calls]
+    )
+    assert set(executed) == {c["id"] for c in calls}
+    assert not any(e["kind"] == "tool-argument-repair" for e in bridge.store.events(bridge.thread))

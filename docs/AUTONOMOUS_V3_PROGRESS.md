@@ -1492,3 +1492,25 @@ existed but were not discoverable after archival. Staged scoped sibling/path nav
 exact source/member comparisons; original635111-byte analysis SHA unchanged. This replay is
 DETERMINISTIC diagnostic evidence, not GPCR live acceptance. Next synchronize the narrow repair,
 run targeted context tests and retry GPCR from its accepted Target104.
+
+
+### Receptor projection navigation repair validated (164)
+
+Expose existing candidate_overview/topology_summary as separately declared projection_aliases,
+not fabricated stored source keys. Preserve this small navigation list in both working-view
+archival passes and scoped tool responses. Sibling fields now resolve the same exact aliases
+as nested paths. Oversized receptor requests explain the usable topology summary and individual
+candidate path. Raw topology/residue arrays remain at their original verified paths; there is
+no new ranking, mapping, geometry or scientific summary. Alias descriptions are added only to
+receptor responses, avoiding unrelated-tool context inflation. Site Skill directs focused
+recovery of an archived overview rather than rebuilding it by paging from residue zero.
+
+Targeted164:23 PASS (6.94s), including exact oversized-read recovery, all candidate counterevidence,
+unaltered source data, alias navigation retained after both archival passes, complete parallel
+answers and prior context/source tests. Related164b:15 PASS (4.48s), including real harness
+argument recovery, legacy selector semantics, lossless pagination, process/resume accounting
+and foreign/tampered evidence rejection. Ruff164 PASS; mypy164 PASS2source modules. All385
+protected baseline files remain unchanged. No live process was running during source sync.
+Next live164 starts a new GPCR Site execution from accepted Target104, preserving all previous
+failed evidence and avoiding Target preparation. Existing32calls/60000chars are unchanged.
+Cases1/3/4/5 stay accepted; GPCR scientific acceptance and Phase2 full regression remain due.

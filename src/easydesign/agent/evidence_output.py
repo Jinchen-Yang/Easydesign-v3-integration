@@ -50,13 +50,15 @@ class ModelEvidenceScope(StrictDTO):
         default=None,
         min_length=1,
         max_length=10,
-        description="Top-level sibling keys, e.g. ['status','warnings']. Omit path.",
+        description="Top-level sibling keys or declared projection_aliases, "
+        "e.g. ['state','membrane','topology_summary']. Omit path.",
     )
     path: list[str | int] | None = Field(
         default=None,
         min_length=1,
         max_length=10,
-        description="One exact path of existing keys/indices from this result's stored_fields. "
+        description="One exact path from stored_fields or declared projection_aliases, then "
+        "existing child keys/indices. "
         "Each child is inside its parent. Different tools have different root keys. "
         "For siblings use fields instead. Omit fields.",
     )
@@ -233,6 +235,7 @@ def fit_site_working_view(
             {
                 "archived_result": ref,
                 "stored_fields": value.get("stored_fields"),
+                **alias_navigation(value),
                 "previous_scope": {k: value[k] for k in ("path", "fields") if k in value},
                 "partial": True,
                 "note": "Earlier complete tool view is retained in this execution's "
@@ -460,6 +463,20 @@ def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def alias_navigation(value: Any, *, source: bool = False) -> dict[str, Any]:
+    """Advertise exact readable projections separately from stored source keys."""
+    if not isinstance(value, dict):
+        return {}
+    aliases = value.get("projection_aliases", [])
+    if source:
+        aliases = []
+        if isinstance(value.get("candidates"), dict):
+            aliases.append("candidate_overview")
+            if isinstance(value.get("topology"), dict):
+                aliases.append("topology_summary")
+    return {"projection_aliases": aliases} if aliases else {}
+
+
 def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     """Expose existing candidate reasoning and source-coordinate rows in one scoped view.
 
@@ -572,6 +589,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         projected = scientific_projection(value)
         if isinstance(original, dict):
             projected["stored_fields"] = list(original)
+            projected.update(alias_navigation(original, source=True))
         if len(compact(projected)) > (32000 if role == "judge" else 6000):
             projected = {
                 "status": "narrower-scope-required",
@@ -696,6 +714,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     **(projected if isinstance(projected, dict) else {"view": projected}),
                     "full_result": receipt["ref"],
                     "stored_fields": list(value) if isinstance(value, dict) else None,
+                    **alias_navigation(value, source=True),
                     "partial": projected != complete_projection,
                     "scientific_content_complete": projected == complete_projection,
                     "read": (
@@ -705,6 +724,13 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                         "read_evidence_result(ref, path=['key']) for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
                         "Use offset/limit for list pages. Full result retained."
+                        + (
+                            " Read projection_aliases as paths or sibling fields. "
+                            "topology_summary excludes per-residue arrays; candidate_overview "
+                            "preserves every candidate/member in the declared columns."
+                            if alias_navigation(value, source=True)
+                            else ""
+                        )
                     ),
                 }
             )
@@ -766,7 +792,15 @@ def read_query(arguments: dict[str, Any]) -> ReadEvidenceResult:
 
 def navigation_hint(value: Any) -> str:
     if isinstance(value, dict):
-        return "Available object keys: " + compact(list(value)[:30])[:2000]
+        return (
+            "Available object keys: "
+            + compact(list(value)[:30])[:2000]
+            + (
+                "; readable projection aliases: " + compact(alias_navigation(value, source=True))
+                if alias_navigation(value, source=True)
+                else ""
+            )
+        )
     if isinstance(value, list):
         return f"This is a list of {len(value)} items; use a nonnegative index within its length."
     return "This is a scalar; read this value without an additional child selector."
@@ -774,16 +808,15 @@ def navigation_hint(value: Any) -> str:
 
 def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]:
     if query.fields is not None:
-        if (
-            not isinstance(value, dict)
-            or len(set(query.fields)) != len(query.fields)
-            or any(key not in value for key in query.fields)
-        ):
+        if not isinstance(value, dict) or len(set(query.fields)) != len(query.fields):
             raise InvalidFieldProjection(
                 "Sibling projection requires distinct existing object keys. "
                 + navigation_hint(value)
             )
-        return {key: value[key] for key in query.fields}, []
+        return {
+            key: scoped_value(value, ReadEvidenceResult(ref=query.ref, path=[key]))[0]
+            for key in query.fields
+        }, []
     path = ([query.field] if isinstance(query.field, str) else query.field) or query.path or []
     root_value = value
     try:
@@ -840,7 +873,7 @@ def result_tool(bridge: Any, role: str) -> Any:
         full = verified_result(bridge, role, arguments.get("ref"))
         query = read_query(arguments)
         value, selected_path = scoped_value(full, query)
-        source = {"full_result": query.ref}
+        source = {"full_result": query.ref, **alias_navigation(full, source=True)}
         selector = {"path": selected_path}
         if query.fields is not None:
             selector = {"fields": query.fields}
@@ -916,7 +949,16 @@ def result_tool(bridge: Any, role: str) -> Any:
                         "status": "narrower-scope-required",
                         **selector,
                         "available_fields": list(value)[:30] if isinstance(value, dict) else [],
-                        "instruction": "Read a child field; the full object was not supplied.",
+                        "instruction": (
+                            "Read a child field; the full object was not supplied. "
+                            "For receptor topology metadata use path=['topology_summary']; "
+                            "state/membrane can be read with fields=['state','membrane',"
+                            "'topology_summary']. For one candidate use "
+                            "path=['candidate_overview', MODE, INDEX]. Full residue arrays "
+                            "remain available at their original paths."
+                            if alias_navigation(full, source=True)
+                            else "Read a child field; the full object was not supplied."
+                        ),
                         **source,
                         **deprecation,
                     }

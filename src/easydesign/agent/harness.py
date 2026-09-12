@@ -42,6 +42,7 @@ from .design_contracts import BinderIntent
 from .evidence_corpus import ContinueEvidence, RetrieveEvidence
 from .evidence_output import (
     ModelEvidenceScope,
+    alias_navigation,
     fit_site_working_view,
     latest_tool_result_indices,
     output_message,
@@ -555,6 +556,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             {
                                 "archived_result": value["full_result"],
                                 "stored_fields": value.get("stored_fields"),
+                                **alias_navigation(value),
                                 "previous_scope": {
                                     k: value[k] for k in ("path", "fields") if k in value
                                 },

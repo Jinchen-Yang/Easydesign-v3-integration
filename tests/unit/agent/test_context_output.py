@@ -183,6 +183,7 @@ def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoni
                         {
                             "full_result": f"/result-{i + 10:x}.json",
                             "stored_fields": ["matches", "limitations", "target_binding"],
+                            "projection_aliases": ["candidate_overview", "topology_summary"],
                             "path": ["matches"],
                             "source_id": f"synthetic-{i}",
                             "passage": "e" * 4800,
@@ -219,6 +220,7 @@ def test_site_context_fit_retains_newest_answer_evaluation_and_originals(reasoni
         archived_view = next(v for v in results.values() if v.get("archived_result") == a["ref"])
         assert archived_view["stored_fields"] == ["matches", "limitations", "target_binding"]
         assert archived_view["previous_scope"] == {"path": ["matches"]}
+        assert archived_view["projection_aliases"] == ["candidate_overview", "topology_summary"]
     small = [HumanMessage(content="Small goal")]
     same, archive = fit_site_working_view(
         small, reasoning=reasoning, system_chars=100, max_chars=60000, suffix=[]

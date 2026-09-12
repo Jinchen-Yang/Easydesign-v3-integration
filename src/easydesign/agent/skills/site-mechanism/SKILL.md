@@ -107,7 +107,9 @@ YAML. Runtime attaches identities and compiles the proposal; only a Scientist ca
 The receptor-candidate-overview is complete for its declared fields: every existing candidate's
 scientific metadata and listed source-residue columns are supplied together, with topology/state/
 membrane context. Use that view directly; do not repeatedly request the entire topology or
-candidates object. Remaining analysis fields are optional focused reads at the supplied source
-paths. Source auth/label IDs are not design IDs; verify chosen canonical correspondences with
+candidates object. If that view was archived, projection_aliases remain readable: use
+fields=['state','membrane','topology_summary'] for context and
+path=['candidate_overview', MODE, INDEX] for one candidate. Do not page topology.residues
+from zero to reconstruct an already supplied overview. Other source fields are focused reads. Source auth/label IDs are not design IDs; verify chosen canonical correspondences with
 read_canonical_mapping and retain ambiguity. Candidate scores and confidence are kernel heuristics,
 not proof of extracellular VHH access or the desired functional effect.

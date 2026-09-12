@@ -516,3 +516,87 @@ def test_receptor_overview_keeps_every_candidate_and_qualifies_source_numbering(
         ),
     )
     assert alias == tables["candidate_overview"]["inhibit"][0]["residue_table"]
+
+
+@pytest.mark.asyncio
+async def test_receptor_aliases_remain_discoverable_after_oversized_read(bridge: Any) -> None:
+    from easydesign.agent.evidence_output import receptor_overview_projection, verified_result
+
+    execution = bridge.store.begin_execution(bridge.thread, "Read membrane context")
+    value = {
+        "state": {"assignment": "active", "source": "verified context"},
+        "membrane": {"confidence": "high", "limitations": ["No full binder simulation"]},
+        "topology": {
+            "mapping_status": "conditional",
+            "warnings": ["Full-construct alignment remains ambiguous"],
+            "residues": [{"amino_acid": "A", "evidence": "large" * 1200}],
+            "unmapped_residues": [{"position": 1, "observed": False}],
+        },
+        "candidates": {
+            "inhibit": [
+                {
+                    "name": "Synthetic extracellular hypothesis",
+                    "counterevidence": ["Active-state stabilization could increase signaling"],
+                    "limitations": ["Glycan occupancy unresolved"],
+                    "residues": [
+                        {
+                            "gpcrdb_sequence_number": 180,
+                            "label_seq_id": 188,
+                            "observed": True,
+                            "mapping_status": "conditional",
+                        },
+                        {
+                            "gpcrdb_sequence_number": 181,
+                            "label_seq_id": None,
+                            "observed": False,
+                            "mapping_status": "missing_coordinates",
+                        },
+                    ],
+                }
+            ]
+        },
+    }
+    original = json.dumps(value, sort_keys=True)
+    source = output_message(
+        bridge,
+        "site",
+        execution["execution_id"],
+        ToolMessage(content=json.dumps(value), tool_call_id="source", name="read_site_evidence"),
+    )
+    source_view = json.loads(source.content)
+    aliases = ["candidate_overview", "topology_summary"]
+    assert source_view["projection_aliases"] == aliases
+    assert not set(aliases) & set(source_view["stored_fields"])
+    ref = source_view["full_result"]
+    read = result_tool(bridge, "site")
+
+    def render(raw: str) -> dict:
+        return json.loads(
+            output_message(
+                bridge,
+                "site",
+                execution["execution_id"],
+                ToolMessage(content=raw, tool_call_id="page", name="read_evidence_result"),
+            ).content
+        )
+
+    too_big = render(await read.ainvoke({"ref": ref, "fields": ["state", "membrane", "topology"]}))
+    assert too_big["status"] == "narrower-scope-required" and "value" not in too_big
+    assert too_big["projection_aliases"] == aliases
+    assert "topology_summary" in too_big["instruction"]
+    got = render(
+        await read.ainvoke({"ref": ref, "fields": ["state", "membrane", "topology_summary"]})
+    )
+    expected = receptor_overview_projection(value)
+    assert got["value"] == {key: expected[key] for key in ["state", "membrane", "topology_summary"]}
+    candidate = render(
+        await read.ainvoke({"ref": ref, "path": ["candidate_overview", "inhibit", 0]})
+    )
+    assert candidate["value"] == expected["candidate_overview"]["inhibit"][0]
+    assert (
+        candidate["value"]["counterevidence"]
+        == value["candidates"]["inhibit"][0]["counterevidence"]
+    )
+    assert len(json.dumps(candidate)) <= 6000
+    assert json.dumps(verified_result(bridge, "site", ref), sort_keys=True) == original
+    assert json.dumps(value, sort_keys=True) == original

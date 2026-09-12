@@ -48,6 +48,7 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
                 {
                     "full_result": f"/result-{int(call_id):x}.json",
                     "stored_fields": ["cards", "facts"],
+                    "projection_aliases": ["candidate_overview", "topology_summary"],
                     "cards": [{"source_id": source, "passage": "p" * chars}],
                     "facts": {"mapping_status": "ambiguous", "glycan_occupancy": None},
                 }
@@ -116,6 +117,10 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
                 for m in projected.messages
                 if isinstance(m, ToolMessage)
             }
+        archived = [v for v in results.values() if isinstance(v, dict) and "archived_result" in v]
+        assert archived and all(
+            v["projection_aliases"] == ["candidate_overview", "topology_summary"] for v in archived
+        )
         for message in latest:
             expected = json.loads(message.content)
             delivered = results[message.tool_call_id]

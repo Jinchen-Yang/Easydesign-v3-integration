@@ -56,7 +56,10 @@ prediction. Its default diagnostic expansion is100, so merely setting initial ge
 is not a sufficient compute bound. Configuration requires expansion total strictly greater than
 Stage04's required count (minimum2 if that count is1), and top-N cannot exceed that expansion.
 Actual ceilings must cover both prediction branches and every possible downstream expansion.
-These are source-inspection findings; no candidate/batch/GPU execution budget has been approved.
+These are source-inspection findings. Concrete candidate/batch/GPU ceilings remain to be chosen
+and validated under the user's existing micro-only authorization. Validation-only scripted
+Scientist responses are authorized by the autonomous assignment; they need concrete runtime
+receipts, not another chat confirmation or a claim of biological approval.
 
 If initial filtering finds no TierA, the old kernel writes stopped-no-tier-a and returns before
 those expansion/AFO branches. Software success with zero eligible candidates at validation_micro

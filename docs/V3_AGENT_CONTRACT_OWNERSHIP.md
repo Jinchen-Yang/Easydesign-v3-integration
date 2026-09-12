@@ -54,6 +54,12 @@ remains recorded and explicit source selection is still mandatory. Replaying tha
 retains its attempt; a new model message consumes a new round. Legacy events without a batch
 identity each count once. Restart or redelegation cannot reset either allowance. No scheduler or schema migration is added.
 
+Site first-delivery admission reserves32k for complete receptor analysis,12k for a Skill read,
+and6k per bounded evidence page. Multi-call batches above32k are rejected before scientific
+handlers with TOOL_BATCH_TOO_LARGE, sharing the same repair-round ledger. The model chooses
+smaller batches; runtime neither schedules a continuation nor drops unconsumed answers. The
+final60k input guard remains independent and authority/integrity failures remain fatal.
+
 ## Target facts and scientific consistency
 
 `TargetInterpretation` contains no hard-fact, evidence-ID or source-reference fields.

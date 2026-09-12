@@ -68,8 +68,8 @@ never exposure or one structure alone. User-supplied biology remains labeled as 
 
 For a verified GPCR, acquire gpcrdb-context with identifier=exact_receptor_entry and pdb_id when
 known. The PDB code alone is not the receptor identifier. After a complete context card arrives,
-call analyze_receptor_context with that card_id and original auth chain before manually paging
-topology. Read /skills/site-mechanism/references/membrane.md for this branch. Distinguish original
+call analyze_receptor_context alone, with that card_id and original auth chain, before paging
+topology. Split TOOL_BATCH_TOO_LARGE diagnostics into smaller reads; no tool in that batch ran. Read /skills/site-mechanism/references/membrane.md for this branch. Distinguish original
 source auth/label numbering from approved design labels. Preserve membrane orientation, state,
 ligand, fusion/partner, full assembly and extracellular-delivery limitations. Intracellular
 binding is not an extracellular epitope. Unresolved membrane geometry stays unresolved.

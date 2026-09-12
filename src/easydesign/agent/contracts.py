@@ -249,6 +249,19 @@ class InvalidFieldProjection(RuntimeError):
         }
 
 
+class ToolBatchTooLarge(InvalidFieldProjection):
+    """An unexecuted native tool batch cannot fit its first complete delivery."""
+
+    def result(self) -> dict[str, str]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "TOOL_BATCH_TOO_LARGE",
+            "required_action": "split_tool_batch",
+            "message": str(self),
+        }
+
+
 class ResearchQueryMismatch(InvalidFieldProjection):
     """Malformed research-tool arguments, before selection/acquisition or network IO."""
 

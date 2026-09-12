@@ -1549,3 +1549,37 @@ permissions were not relaxed. A mypy local-variable union was also corrected. Ta
 25 PASS in11.90s, including actual harness recovery and foreign/tampered reference rejection.
 Ruff165b PASS; mypy165b PASS2source modules. Next fresh live165 reuses approved GPCRTarget104
 with these bounded recovery semantics; previous scientific calculations/evidence stay intact.
+
+
+### Oversized first-delivery batch admission (live165 / repair166)
+
+Live165 (`phase2-goldens-20260912T005949431856Z`) failed after Coordinator3/Site3 calls,
+before SiteIntent or Gate2. Four explicitly selected sources were acquired. Its next batch
+combined complete receptor analysis26231chars, three successful passage pages4901/5223/3921,
+a1579-character Skill reference and a643-character missing-selection diagnostic. These42498
+new characters plus the required working context exceeded60000 before another model call.
+All new answers were correctly pinned; dropping them before first delivery would be data loss.
+The new correction-round semantics worked (the missing source/need used attempt1), but did not
+address aggregate output size. No scientific acceptance; all original checkpoints are retained.
+An incidental Nb35 premise in a retrieval question was not accepted as a source fact; future
+GPCR review must verify the actual nanobody identity/interface against primary evidence.
+
+Site middleware now admits native tool batches before any scientific handler: complete receptor
+analysis reserves32000 output characters, Skill reads12000 and bounded result pages6000 each.
+A multi-call batch above32000 gets explicit TOOL_BATCH_TOO_LARGE diagnostics requesting split
+reads, with receptor analysis alone. The whole batch is rejected; no evidence is selected for
+the model, no queued work or automatic tool retry is created, and no answer is silently dropped.
+All diagnostics share the existing four-round repair ledger. The final60000input and32call
+guards remain unchanged. Role/file/scoped-reference checks still reject authority violations.
+This is interface admission, not a scientific calculation, mapping, ranking or scheduling change.
+
+Targeted166:14 PASS in8.90s, covering public native ToolCallRequest parallel rejection with zero
+handler calls, exact response delivery after splitting, one correction round, role/file/foreign
+reference refusal, prior complete-batch archival behavior and source-selection recovery.
+Ruff166 PASS; mypy166 PASS2source modules. Case1/3/4/5 acceptance remains valid. GPCR and final
+full regression remain required before Phase2 freeze. Fresh live166 reuses approved Target104.
+
+Launch165 source/Skills were committed atc8dbe8f4; its new test_repair_rounds.py was initially
+untracked and omitted by git diff --name-only, then immediately committed65d14d82 without source
+changes. `launch-code-provenance165.json` records the exact supplement; the original launch
+receipt is preserved. Future launcher receipts explicitly record untracked files as well.

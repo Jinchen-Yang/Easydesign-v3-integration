@@ -36,6 +36,7 @@ from .contracts import (
     StaleEvidenceCursor,
     TargetInterpretation,
     TargetTask,
+    ToolBatchTooLarge,
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
@@ -944,18 +945,49 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             + " Correct only the final typed submission."
         )
 
-    def repair_round_id(self, request: Any) -> str | None:
-        """Identify the current native model batch, never a model-supplied repair token."""
+    def native_tool_batch(self, request: Any) -> AIMessage | None:
+        """Read the current native batch; the model cannot supply an admission token."""
         state = getattr(request, "state", None)
         messages = state.get("messages", []) if isinstance(state, dict) else []
         for message in reversed(messages):
             if not isinstance(message, AIMessage) or not message.tool_calls:
                 continue
-            ids = [call["id"] for call in message.tool_calls]
-            if request.tool_call["id"] not in ids:
-                return None
-            return identity({"message_id": message.id, "tool_call_ids": ids})
+            return (
+                message
+                if request.tool_call["id"] in {call["id"] for call in message.tool_calls}
+                else None
+            )
         return None
+
+    def repair_round_id(self, request: Any) -> str | None:
+        """Identify the current native model batch, never a model-supplied repair token."""
+        message = self.native_tool_batch(request)
+        if message is None:
+            return None
+        return identity(
+            {"message_id": message.id, "tool_call_ids": [c["id"] for c in message.tool_calls]}
+        )
+
+    def admit_tool_batch(self, request: Any) -> None:
+        """Reject oversized Site reads before their handlers, without choosing evidence."""
+        if self.role != "site":
+            return
+        message = self.native_tool_batch(request)
+        if message is None or len(message.tool_calls) <= 1:
+            return
+        # Match the complete receptor-view cap and reserve space for Skill text and
+        # bounded evidence pages. This admission ceiling does not replace the final
+        # 60k input guard or discard any first-delivery answer. No tool is auto-queued.
+        ceilings = {"analyze_receptor_context": 32000, "read_file": 12000}
+        total = sum(ceilings.get(c["name"], 6000) for c in message.tool_calls)
+        if total > 32000:
+            raise ToolBatchTooLarge(
+                f"This batch's conservative output allowance is {total} characters, above "
+                "the 32000 batch limit. Split it into smaller batches; call "
+                "analyze_receptor_context alone. No handler in this oversized batch was "
+                "executed and no scientific answer was consumed. This is an input-size "
+                "diagnostic, not missing scientific evidence."
+            )
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         name, args = request.tool_call["name"], request.tool_call["args"]
@@ -1172,11 +1204,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         self.bridge, self.role, args.get("ref"), execution_id=self.execution_id
                     )
                     read_query(args)
+                self.admit_tool_batch(request)
                 result = await handler(request)
             except InvalidFieldProjection as error:
                 if (
                     (
                         name != "read_evidence_result"
+                        and not (self.role == "site" and isinstance(error, ToolBatchTooLarge))
                         and not (
                             name == "research_evidence" and isinstance(error, ResearchQueryMismatch)
                         )

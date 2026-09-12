@@ -1,6 +1,6 @@
 # v2 → v3 scientific capability parity
 
-Current autonomous recovery (2026-09-12): **Cases1 soluble Gate2,3 identity-trap and4 standard Design PASS; Phase2 NOT FROZEN; Phase3/4 not started.**
+Current autonomous recovery (2026-09-12): **Cases1 soluble Gate2,3 identity-trap,4 standard Design and5 native Design PASS; Phase2 NOT FROZEN; Phase3/4 not started.**
 Historical Phase 2.2d full suite was 774 PASS / 1 FAIL / 11 skips. That failure and the
 no-bound-job loop were reproduced and repaired. Current targeted evidence is recorded in
 AUTONOMOUS_V3_PROGRESS.md; a new full regression remains due at Phase 2 closure.
@@ -33,9 +33,9 @@ oversized terminal histories are still rejected. Fresh live acceptance remains d
 Live162 then passed standard Design Case4 after the exact failed160 Gate3 received a trusted
 validation-actor REVISE and fresh Judge/content review. The original10calls plus revision8calls
 are retained; this is explicit Scientist steering, not unassisted first-attempt acceptance.
-Native Case5 is running separately. GPCR161 failed the context guard after repeated topology
+Native163 passed Case5 after explicit REVISE, exact YAML byte checks and independent review. GPCR161 failed the context guard after repeated topology
 reads; its analysis/evaluations remain preserved. No GPCR Site acceptance is claimed.
-Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases2/5 and Phase2 full regression remain outstanding.
+Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Case2 and Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
 
@@ -52,7 +52,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 
 | Legacy capability | Legacy owner | Legacy source/path | v3 owner | Status | Required phase | Evidence/test | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; Cases1/3 real PASS; Cases2/5 pending | Do not replace original goal with follow-up |
+| Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; Cases1/3 real PASS; Case2 pending | Do not replace original goal with follow-up |
 | Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Case1 enzyme assay/control review PASS; standard Design live162 PASS after REVISE; GPCR pending | Binding is not function; low perturbation is independent |
 | Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | PARTIAL | 2.2 | Six fixture identity cases; real P00698 acquisition/proposal reaches old pending decision | Live040 scripted approval produced an authoritative bundle verified by the unchanged oracle; complete five-case rerun remains pending |
 | Construct/canonical/coordinate/design-scope separation | DS/RS | target-and-site.md; evidence-and-numbering.md | Target + unchanged mapping kernel | PARTIAL | 2.2 | Clean/subsequence/ambiguous-chain/sequence-difference old-service regressions | No replacement mapping; inherited old multi-decision edge cases are not claimed repaired |
@@ -90,7 +90,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Design arms, comparator and changed/held factors | RS/H | strategy-yaml.md | Binder | PARTIAL | 2.2 | typed arm metadata; parity review pending | Integrated arm cannot identify a single causal factor |
 | First Pilot protocol, seven scaffolds × 40 per condition | DS/RS | boltzgen-contract.md; strategy-yaml.md | Binder + existing protocol validator | COMPLETE | 2.2 | Standard coverage plus native-condition before/after and invalid-coverage tests | Narrow legacy facade bug fixed; exact seven-by-40 scientific invariant preserved |
 | Native BoltzGen YAML compilation and checks | DS | boltzgen-contract.md | Trusted callback + existing compiler/validator | COMPLETE | 2.2 | Phase 2 real check and YAML regression | No LLM-authored runnable YAML |
-| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | PARTIAL | 2.2 | Native bytes/constraints/Gate 3/shared-approval offline regressions | First-class import exists; required live model/backend Gate 3 rerun NOT RUN after Phase 2.2d stop |
+| Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | COMPLETE | 2.2 | Native bytes/constraints/Gate3/shared-approval regressions; live163 Case5 PASS after REVISE | Exact original/compiled YAML bytes and comments, real backend checks and independent content review; no generation |
 | Thread-local proposals / project-global approved science | DS/RS | orchestration/research.py | Runtime explicit ownership adapters | COMPLETE | 2.2 | Ownership regressions plus corpus cross-thread and native approval inheritance | Thread evidence views remain separate; approved scientific state remains shared |
 | Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | PARTIAL end-to-end | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Shares four persisted corrections with verified scoped-argument repair (20260912 recovery update; formerly two); current recovery runs deliver exact focused cards; repeated stale/query errors remain bounded and fail closed |
 | Scoped tool-argument semantics and bounded correction | RS/DS | agent/evidence_output.py; harness.py; session_store.py | Authorized owner + runtime | COMPLETE | 2.2c | 11 new projection tests; real field+path rejection → corrected path → exact four-chain result | Explicit selectors, legacy path deprecation, four shared corrections (20260912); no blanket exception recovery |

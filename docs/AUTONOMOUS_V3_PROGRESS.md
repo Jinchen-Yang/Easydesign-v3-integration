@@ -1453,3 +1453,42 @@ Targeted163:4 PASS in94.09s (both standard/native exact review binding, Site app
 and native byte-preserving import/Judge/Gate/shared approval). Ruff163 PASS. This is a
 validation script extension, not a new Agent/Gate/checkpoint engine. Agent/Skills stay unchanged
 while native163 applies the trusted correction; local GPCR navigation repair remains unsynced.
+
+
+### Native Design accepted after exact REVISE (live163)
+
+Live163 (`phase2-goldens-20260912T002508961160Z`) retained Cases1/3/4 and independently
+passed native Case5. New card58b3f3cc7087ebb2da5cca803c2022b417f1603e0305ae6160f004003bfafbee
+has failed card20af29724c0b0e5576e85af61cfabb7ce2ecb842c7a407b37e8e1fdfec611ea4 as parent;
+fresh Judge judge-08e080a22b1f43b1b9a2e63919be91c8. Review snapshot
+367d2ccdcb2a256b200eb15b7756eea8edc091ac1995137b101046f19c5630d0; receipt SHA
+3d64c4a73b044685781e9efc790498297d777e1e6f439c6ae744c098a8f553a0.
+
+Source-bound absence statements, between-variant scaffold versus within-variant CDR sampling,
+insertion-count semantics, micro INCONCLUSIVE and competing explanations are now explicit.
+Competitive kinetics is expressly a hypothesis test, not unique specificity proof. Original
+hotspots/full context/all7native variants/40each/280planned and scientific warnings are retained.
+Judge's broad final cannot-certify-approval caveat is recorded as an authority limitation, not
+as invalidation of the verified Site approval; its own reason3 and the owner correctly retain
+upstream Site OVERRIDE and pending Gate3, independently checked by the runtime and root review.
+No Gate3 approval, generation, prediction or biological efficacy is claimed.
+
+`native-revision-byte-audit.json` verifies all7 original YAML SHA values and expert comments,
+identical native input refs before/after revision, and only1 native-strategy-input event.
+The runner also matches all7 compiled design.yaml bytes to the original imports. Real backend
+0.3.2 check passes7variants/7strategies/280planned; native strategy SHA
+747535765efe59e1410fb271fa04eca33823222fba13ca5254976f990d964388. Thread totals:
+Coordinator9/Binder6/Judge4; original9calls + revision10calls; peak56142chars. One overlong
+Coordinator delegation was rejected and corrected through the existing bounded path. This is
+real explicit Scientist steering, not unassisted first-attempt acceptance. Protected163 confirms
+all385 baseline files unchanged. Case2 GPCR and full regression remain; Phase2 NOT FROZEN.
+
+The local GPCR navigation draft was replayed read-only against actual source161 before sync:
+`receptor-navigation163.json` and `receptor-projection-replay164.json`. Raw state+membrane+
+topology request is425805chars; existing state+membrane+topology_summary is1485chars. Each of
+7complete candidate projections is2732–3302chars, with all44 members and every candidate
+non-residue field exactly retained, including limitations/counterevidence. These aliases already
+existed but were not discoverable after archival. Staged scoped sibling/path navigation passes
+exact source/member comparisons; original635111-byte analysis SHA unchanged. This replay is
+DETERMINISTIC diagnostic evidence, not GPCR live acceptance. Next synchronize the narrow repair,
+run targeted context tests and retry GPCR from its accepted Target104.

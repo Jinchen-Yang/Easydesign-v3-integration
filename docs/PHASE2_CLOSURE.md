@@ -12,8 +12,9 @@ PASS. Live153 subsequently independently passed Case1 soluble Gate2 and applied 
 Site approval through the scripted validation actor. Live162 independently passed standard Design
 Case4 after an explicit validation-actor REVISE of failed160. It preserves the exact Target/Site,
 all7scaffolds/40each/280planned and full context, with actual compiler/backend checks and fresh
-Judge/content review. No Gate3 approval or generation. Cases2/5 remain incomplete; GPCR161
-failed bounded context and native Case5 is running. No Phase2 freeze or Phase3/4 acceptance.
+Judge/content review. No Gate3 approval or generation. Native163 also passed Case5 after explicit REVISE with exact
+source/compiled YAML bytes, real backend checks and fresh independent content review. Case2
+GPCR remains incomplete after161 bounded-context failure. No Phase2 freeze or Phase3/4 acceptance.
 The historical no-bound-job and evidence-page delivery defects below are repaired with targeted
 regressions. A new full regression is due after all five scientific goldens pass.
 

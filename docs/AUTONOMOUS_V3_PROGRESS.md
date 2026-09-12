@@ -2053,3 +2053,39 @@ receptor correspondence, foreign/unresolved identity rejection, exact projection
 specific Handoff diagnostics, Dossier evidence/isolation/resume, existing Site geometry/gates/
 overrides and source-numbering preservation. No full regression is claimed. The next real176
 retry uses approved GPCRTarget104 and unchanged debug model/32calls/60ksoft/100khard settings.
+
+Live176 launched clean from c5fa6fb2c8b99b438a3d05958e6dae3d2e16e49f and has delivered the
+approved_design_mapping view through the actual GPCR tool. A supplementary test exercises
+that same tool→persistent evidence→model view wiring with synthetic sources. Checks176b first
+failed because the new synthetic source fixture omitted the existing required entry_name,
+not because production behavior failed. The fixture was corrected; checks176c passed1/1 in
+4.00s, including original candidate preservation, source-facts provenance and full mapping
+delivery. Only this test and progress documentation changed after live176launch; production
+source remains identical to its launch commit. Live176 scientific acceptance is still pending.
+
+Live176 reached its real fresh synthesis boundary: Dossier836efec92084fbc5a170be1dd4d22ee8292e5f4a8500ef102db0f75ea0d34d9d
+contains62318characters and13focused passages. The first synthesis input is83826characters,
+two messages, zero tool-message/history characters, below the unchanged100khard guard and
+above the60ksoft target. The readonly dossier176-boundary-audit.json verifies every focused
+passage byte and22candidate mapping rows against original verified artifacts. Two Handoff
+corrections were needed: canonical labels in the core-pore candidate despite correct mapping
+prose, then stopping_reason longer than1500characters. Mapping was corrected to actual design
+414/418/450 and the independent TM-pore correspondence417/433/436/437/440/444; valid ECL2 labels
+were retained. No global shift was applied. This boundary result is not Case2 acceptance.
+The decision questions/stopping rationale remain fallible opinions. In particular, targeted
+search adequacy for the forbidden functional effect and any unsupported claim that further
+inquiry cannot change the ranking require independent scientific review.
+
+Live176 subsequently failed at its first isolated SiteIntent: the returned arguments were
+empty, with seven required fields missing. The existing two shared contract corrections had
+already been used by Handoff, so this error ended the attempt. Coordinator3/Site24 total27
+calls include9native summaries; peak input98528characters occurred during Handoff correction,
+not isolated synthesis. No Site proposal, independent Judge or Gate2 was produced. The framework
+parser raised before existing model-response telemetry, so this final response's stop reason
+and token usage are unavailable; output-token exhaustion is a hypothesis, not a finding.
+live176-research-policy-audit.json and the complete original report preserve this failed result.
+Next work simplifies the synthesis prompt to scientific interpretation/submission only (the
+existing fresh stage still received the entire Research Skill), records schema-error metadata
+before a repair-budget exception, and sharpens goal-relevant adverse-effect inquiry without
+requiring a binder modality in every query. No new model, research mode, compression codec,
+kernel change or scientific acceptance is implied.

@@ -1,5 +1,6 @@
 """Synthetic nonuniform numbering, missingness and source-identity regression."""
 
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -95,3 +96,71 @@ def test_candidate_mapping_rejects_foreign_or_unresolved_identity(
         receptor_candidate_mapping(
             facts, receptor, approved_accession=accession, approved_auth_chain=chain
         )
+
+
+def test_receptor_tool_persists_and_delivers_approved_correspondence(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.messages import ToolMessage
+
+    import easydesign.agent.evidence_research as module
+    from easydesign.agent.evidence_output import output_message
+    from easydesign.agent.evidence_research import EvidenceResearch, ReceptorAnalysis
+
+    facts, receptor = examples()
+    receptor["identity"]["entry_name"] = "synthetic"
+    receptor.update(topology={}, membrane={}, state={}, chain_graph={}, warnings=[], avoid=[])
+    context = site_bridge.persist(
+        "synthetic-gpcr-source",
+        {"identity": {"status": "resolved", "entry_name": "synthetic"}, "topology": {}},
+    )
+    fact_ref = site_bridge.persist("synthetic-site-facts", facts)
+    target, _, _ = site_bridge.site_facts()
+    target = deepcopy(target)
+    target["evidence"]["hard_facts"].update(canonical_accession="SYNTHETIC", selected_chain="A")
+    monkeypatch.setattr(site_bridge, "site_facts", lambda: (target, facts, fact_ref))
+    monkeypatch.setattr(module, "analyze_structure", lambda *args: {})
+    monkeypatch.setattr(module, "generate_candidates", lambda *args: deepcopy(receptor))
+    worker = EvidenceResearch(site_bridge)
+    monkeypatch.setattr(
+        worker,
+        "snapshot",
+        lambda: {
+            "queries": [
+                {
+                    "cards": [
+                        {
+                            "card_id": "synthetic-source",
+                            "provider": "GPCRdb",
+                            "context_ref": context,
+                            "source_refs": [context],
+                        }
+                    ]
+                }
+            ]
+        },
+    )
+    result = worker.analyze_receptor(
+        ReceptorAnalysis(gpcrdb_card_id="synthetic-source", auth_chain="A")
+    )
+    stored = site_bridge.document(result["analysis_ref"])
+    assert stored["candidates"] == receptor["candidates"]
+    event = site_bridge.thread_latest("evidence-research")
+    card = site_bridge.document(event["ref"])["cards"][0]
+    assert fact_ref in card["source_refs"]
+    assert not card["primary_eligible"]
+    message = output_message(
+        site_bridge,
+        "site",
+        "synthetic-receptor-execution",
+        ToolMessage(
+            name="analyze_receptor_context",
+            tool_call_id="synthetic-receptor-tool",
+            content=json.dumps({"analysis_ref": result["analysis_ref"]}),
+        ),
+    )
+    supplied = json.loads(message.content)
+    table = supplied["approved_design_mapping"]["facts_table"]
+    assert table["row_count"] == 5
+    assert table["rows"][1][table["mapping_columns"].index("label_seq_id")] == 148
+    assert supplied["candidate_overview"]["inhibit"][0]["id"] == "synthetic-candidate"

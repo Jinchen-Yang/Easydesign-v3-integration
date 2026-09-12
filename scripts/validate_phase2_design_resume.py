@@ -56,14 +56,15 @@ def reviewed_site(bridge, request, review):
     return approved
 
 
-def reviewed_design_revision(bridge, request, review):
-    """Bind a developer-authored failed review to the existing trusted REVISE path."""
+def reviewed_design(bridge, request, review, *, decision):
+    """Verify an exact pending Design and its independent review without changing state."""
     binding = hashlib.sha256(
         json.dumps(request["evidence"], sort_keys=True, default=str).encode()
     ).hexdigest()
     assert request["snapshot_sha256"] == review["snapshot_sha256"] == binding
     assert review["reviewer"] == "development-scientific-content-review"
-    assert review["Decision"] == "FAIL"
+    assert decision in {"PASS", "FAIL"}
+    assert review["Decision"] == decision
     sections = [
         "Hard Facts",
         "Scientific Interpretation",
@@ -74,18 +75,24 @@ def reviewed_design_revision(bridge, request, review):
     ]
     assert request["required_review_sections"] == sections
     assert all(review.get(section) for section in sections)
-    instruction = review.get("revision_instruction")
-    assert isinstance(instruction, str) and len(instruction.strip()) >= 20
     evidence = request["evidence"]
     card = bridge.store.card(bridge.thread, evidence["card"]["card_id"])
     assert card.gate_type == "design-specification"
     assert card.model_dump(mode="json") == evidence["card"]
     assert golden.judge_record(bridge, evidence["card"]) == evidence["judge"]
     proposal = bridge.current_design()
-    assert proposal and proposal["intent"]["strategy_source"] == "standard"
+    assert proposal and proposal["intent"]["strategy_source"] in {"standard", "expert-native"}
     assert bridge.design_snapshot(proposal) == evidence["snapshot"]
     assert bridge.approved_site() == evidence["approved_site"]
     assert bridge.store.response(bridge.thread, card.card_id) is None
+    return card
+
+
+def reviewed_design_revision(bridge, request, review):
+    """Bind a failed review to the existing trusted REVISE path; no decision is applied here."""
+    card = reviewed_design(bridge, request, review, decision="FAIL")
+    instruction = review.get("revision_instruction")
+    assert isinstance(instruction, str) and len(instruction.strip()) >= 20
     return {
         "decision": "revise",
         "card_id": card.card_id,
@@ -203,8 +210,11 @@ async def main():
                 with (case / "progress.jsonl").open("a") as handle:
                     handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-        standard_revision = None
+        design_revision = None
         revision_thread = None
+        revision_kind = os.environ.get("EASYDESIGN_GOLDEN_REVISE_KIND", "standard")
+        assert revision_kind in {"standard", "expert-native"}
+        accepted_standard = None
         if os.environ.get("EASYDESIGN_GOLDEN_REVISE_DESIGN"):
             active_case = "design-revision-verification"
             revision_case = Path(os.environ["EASYDESIGN_GOLDEN_REVISE_DESIGN"]).resolve()
@@ -213,7 +223,9 @@ async def main():
             previous = json.loads((revision_case.parent / "report.json").read_text())
             assert previous["formal_acceptance"] == "VALIDATION_ATTEMPT_FAILED"
             assert any(
-                c["case"] == "case-4-standard" and c["status"] == "FAIL" for c in previous["cases"]
+                c["case"] == ("case-4-standard" if revision_kind == "standard" else "case-5-native")
+                and c["status"] == "FAIL"
+                for c in previous["cases"]
             )
             assert previous["model_configuration"] == config.model_dump(mode="json")
             assert previous["spec_sha256"] == report["spec_sha256"]
@@ -221,11 +233,42 @@ async def main():
             previous_info = json.loads((revision_case / "inherited-target.json").read_text())
             assert Path(previous_info["project"]).resolve() == project
             revision_thread = previous_info["continuation_thread"]
-            request = json.loads((revision_case / "standard-gate3-review-request.json").read_text())
-            review = json.loads(
-                (revision_case / "standard-gate3-independent-review.json").read_text()
+            if revision_kind == "expert-native":
+                accepted = next(c for c in previous["cases"] if c["case"] == "case-4-standard")
+                assert accepted["status"] == "PASS"
+                standard_thread = accepted["thread"]
+                standard_request = json.loads(
+                    (revision_case / "standard-gate3-review-request.json").read_text()
+                )
+                standard_review = json.loads(
+                    (revision_case / "standard-gate3-independent-review.json").read_text()
+                )
+                reviewed_design(
+                    golden.DesignBridge(project, standard_thread, store),
+                    standard_request,
+                    standard_review,
+                    decision="PASS",
+                )
+                accepted_standard = {
+                    **accepted,
+                    "acceptance": "inherited exact pending Design and independent review",
+                    "source_case": str(revision_case),
+                }
+                for suffix in ("review-request", "independent-review"):
+                    name = f"standard-gate3-{suffix}.json"
+                    golden.save(
+                        case / name, json.loads((revision_case / name).read_text()), secrets
+                    )
+                metrics = json.loads((revision_case / "expert-native-metrics.json").read_text())
+                assert len(metrics["included_threads"]) == 1
+                revision_thread = metrics["included_threads"][0]
+            request = json.loads(
+                (revision_case / f"{revision_kind}-gate3-review-request.json").read_text()
             )
-            standard_revision = reviewed_design_revision(
+            review = json.loads(
+                (revision_case / f"{revision_kind}-gate3-independent-review.json").read_text()
+            )
+            design_revision = reviewed_design_revision(
                 golden.DesignBridge(project, revision_thread, store), request, review
             )
             golden.save(
@@ -234,7 +277,8 @@ async def main():
                     "origin": str(revision_case),
                     "thread": revision_thread,
                     "review_snapshot_sha256": review["snapshot_sha256"],
-                    "steering": standard_revision,
+                    "steering": design_revision,
+                    "kind": revision_kind,
                     "authority": "Scripted validation actor exercises existing Gate3 REVISE; "
                     "no approval, new gate, checkpoint reset or scientific-input change.",
                 },
@@ -246,7 +290,20 @@ async def main():
         for kind in ("standard", "expert-native"):
             active_case = "case-4-standard" if kind == "standard" else "case-5-native"
             thread = "live-design-" + kind + "-" + golden.STAMP.lower()
-            if kind == "standard" and revision_thread:
+            if accepted_standard and kind == "standard":
+                report["cases"].append(accepted_standard)
+                golden.save(
+                    case / "inherited-target.json",
+                    {
+                        **info,
+                        "continuation_thread": accepted_standard["thread"],
+                        "approved_site_origin": str(origin),
+                    },
+                    secrets,
+                )
+                golden.save(golden.OUT / "report.json", report, secrets)
+                continue
+            if kind == revision_kind and revision_thread:
                 thread = revision_thread
             if kind == "standard":
                 golden.save(
@@ -268,7 +325,7 @@ async def main():
                 secrets,
                 emit,
                 thread=thread,
-                steering=standard_revision if kind == "standard" else None,
+                steering=design_revision if kind == revision_kind else None,
             )
             assert jobs_before == [j.job_id for j in bridge.controller.list(project_id="soluble")]
             report["cases"].append({"case": active_case, "status": "PASS", "thread": thread})

@@ -1427,3 +1427,29 @@ first-delivery loss; repeated raw topology reads still accumulated. Existing com
 topology projection aliases were not listed in stored_fields or archived navigation. A local
 navigation-only repair is staged pending completion of live162, so no active Agent/Skill
 fingerprint is changed. No mapping, receptor algorithm, oracle or Gate change is required.
+
+
+### Native Case5 interpretation correction; retain accepted Case4
+
+Live162 reached native Gate3 card20af29724c0b0e5576e85af61cfabb7ce2ecb842c7a407b37e8e1fdfec611ea4
+in separate threadlive-design-expert-native-20260912t001103284678z. Exact native YAML byte
+checks and all7 real backend validations passed, but content review FAIL: Judge's warning says
+"No inhibition or kinetic evidence exists", exceeding the actual bounded retrieval. The native
+specification otherwise retains the seven official variants/one condition,40each/280planned,
+full approved Target/Site, insertion-count semantics and DISCOURAGED access warnings.
+The failed review (snapshot3b3dc192acce740b1791016af67cb49ec424aef078d34f8c0182830e50e2a9c0,
+receipt64d2788423e32c5d186dce7a3ecc2edadedca95e5cba05565908f2685d6830da) preserves exact
+corrective instructions: scoped evidence absence, between-variant scaffold factor versus
+within-variant CDR sampling, INCONCLUSIVE micro, alternative explanations and controls. No
+Gate3 approval/generation. Standard Case4 remains accepted and gets no rerun.
+
+The existing validation-only REVISE runner now accepts either standard or expert-native Design.
+It independently verifies an accepted pending standard card/review before inheriting Case4,
+then binds the exact failed native review to its original thread. Native REVISE does not reimport
+or rewrite the scientist input. Current Target/Site/card/Judge/snapshot and hashes must still
+match. Read-only actual-state verification passed for both standard PASS and native FAIL
+(`design-revision-verify163.json`); neither card had a response and no state was changed.
+Targeted163:4 PASS in94.09s (both standard/native exact review binding, Site approval recovery,
+and native byte-preserving import/Judge/Gate/shared approval). Ruff163 PASS. This is a
+validation script extension, not a new Agent/Gate/checkpoint engine. Agent/Skills stay unchanged
+while native163 applies the trusted correction; local GPCR navigation repair remains unsynced.

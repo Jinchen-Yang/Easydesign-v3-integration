@@ -402,7 +402,7 @@ async def run_design_case(
 ):
     """Run one reviewed Gate3 case on the existing approved Site, without compute."""
     design = DesignBridge(project, thread, store)
-    if kind == "expert-native":
+    if kind == "expert-native" and not steering:
         labels = tuple(design.approved_site()["hotspots"]["hotspot_sets"][0]["label_seq_ids"])
         expert = design.project / "inputs/expert/strategy.yaml"
         if not expert.exists():

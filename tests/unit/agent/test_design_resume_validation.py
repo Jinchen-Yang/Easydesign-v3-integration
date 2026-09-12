@@ -71,16 +71,25 @@ def test_reviewed_site_resume_checks_exact_preapproval_content_and_applied_gate(
         reviewed_site(bridge, changed, review)
 
 
+@pytest.mark.parametrize("kind", ["standard", "expert-native"])
 def test_failed_design_review_can_only_steer_the_exact_unanswered_pending_card(
-    design_bridge: Any, monkeypatch: Any, tmp_path: Any
+    design_bridge: Any, monkeypatch: Any, tmp_path: Any, kind: str
 ) -> None:
     monkeypatch.setenv("EASYDESIGN_GOLDEN_SOURCE_ROOT", str(tmp_path))
-    from scripts.validate_phase2_design_resume import reviewed_design_revision
+    from scripts.validate_phase2_design_resume import reviewed_design, reviewed_design_revision
     from tests.unit.agent.test_design_runtime import binder_intent, design_card, propose_design
 
     golden = importlib.import_module("scripts.validate_phase2_goldens")
     bridge = design_bridge
-    propose_design(bridge, binder_intent())
+    intent = binder_intent()
+    if kind == "expert-native":
+        from easydesign.agent.native_strategy import import_native
+        from tests.unit.agent.test_phase22_native import expert_input
+
+        path = expert_input(bridge)
+        import_native(bridge, path)
+        intent = intent.model_copy(update={"strategy_source": kind, "arms": []})
+    propose_design(bridge, intent)
     card = design_card(bridge)
     request = {
         "evidence": {
@@ -111,6 +120,7 @@ def test_failed_design_review_can_only_steer_the_exact_unanswered_pending_card(
         "revision_instruction": "Clarify the existing scientific explanation; retain all bounds.",
     }
     jobs_before = [j.job_id for j in bridge.controller.list(project_id=bridge.project_id)]
+    assert reviewed_design(bridge, request, review | {"Decision": "PASS"}, decision="PASS") == card
     steering = reviewed_design_revision(bridge, request, review)
     assert steering == {
         "decision": "revise",

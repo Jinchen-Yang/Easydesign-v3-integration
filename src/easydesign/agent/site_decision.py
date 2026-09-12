@@ -229,7 +229,7 @@ def compile_site_decision(dossier: dict[str, Any], decision: SiteDecision) -> Si
         ],
         recommendation=decision.recommendation,
         scope="mechanistic" if conclusions else "structural-exploration",
-        material_questions=[conclusion.topic for conclusion in conclusions],
+        material_questions=list(dict.fromkeys(conclusion.topic for conclusion in conclusions)),
         research_conclusions=conclusions,
     )
     return intent

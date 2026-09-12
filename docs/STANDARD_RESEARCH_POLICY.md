@@ -33,7 +33,9 @@ No new Research Planner, Sufficiency Agent, workflow subsystem or Fast/Deep mode
 - Runtime activity reports actual inquiry counts and literature searches; it does not display
   all unsearched taxonomy categories as tasks.
 - Existing query receipts expose their original query_id. ResearchConclusion can bind those
-  actual queries across topic labels; runtime verifies ownership/existence and exact source
+  actual queries across topic labels; distinct questions may share a topic and retain separate
+  statuses. Runtime never merges VERIFIED and UNRESOLVED questions to satisfy taxonomy uniqueness.
+  It verifies ownership/existence and exact source
   citations. Topic-indexed legacy conclusions remain supported. Cross-topic reuse is a relevance
   judgment for the scientific owner/Judge, not automatic proof of entailment.
 - SiteResearchHandoff carries at most6decision_questions, candidate comparisons, actual
@@ -69,7 +71,8 @@ bytes and Judge visibility, source tampering, unchanged mapping and isolated res
 These scripted/synthetic tests do not establish scientific Case2 acceptance. Real GPCR validation
 must independently pass exact identity/numbering, relevant primary evidence, contradiction check,
 credible candidate comparison, honest uncertainty and Judge review without known science errors.
-Full regression and Phase2 freeze follow only after that PASS, then the original Phase3→4 task.
+Full regression and Phase2 freeze follow only after that PASS and accepted-case revalidation.
+The current assignment stops after Phase2 freeze for human review; no Phase3 work is authorized.
 
 
 ### Approved candidate correspondence

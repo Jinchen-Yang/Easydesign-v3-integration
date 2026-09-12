@@ -125,3 +125,9 @@ construct-to-coordinate absence. `missing_construct_positions` means no observed
 not unaligned sequence. A non-null `constant_canonical_offset` is runtime-proven for every row;
 a pending human gate does not make that established correspondence unknown. Processing/state
 or experimental provenance may remain uncertain without erasing verified sequence facts.
+
+At Site review, an incorrect stated fact remains an error inside a DISCOURAGED hypothesis or an
+uncertainty statement. UNRESOLVED cannot erase an amino-acid identity or correspondence already
+supplied by runtime. Explain inconsistencies and scientific implications without re-enumerating
+residue identities or inventing replacement facts. Check stopping sufficiency for major functional
+risk as well as ranking: unchanged sidedness ranking alone does not settle adverse-effect evidence.

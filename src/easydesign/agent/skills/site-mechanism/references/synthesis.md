@@ -3,7 +3,10 @@
 Research is complete. Return one concise SiteDecision using only supplied candidate IDs.
 Runtime owns membership, chain, residue numbering, mapping, geometry and evidence binding and
 will hydrate the authoritative SiteIntent. Do not regenerate residue arrays, mapping tables,
-evidence IDs or a research-topic checklist. Do not search, call scientific tools or reopen Gate 1.
+evidence IDs or a research-topic checklist. This also applies to explanatory prose: refer to
+supplied candidate IDs/regions and interpret the implications without re-enumerating residue
+identities, numbering conversions or numerical geometry facts. Runtime attaches those facts.
+Do not search, call scientific tools or reopen Gate 1.
 
 Choose the candidate most defensible for the user's biological objective and delivery route.
 Research preferences, stopping rationale and interpretations are fallible opinions, not facts.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from .contracts import (
     AgentBoundaryError,
@@ -67,15 +67,6 @@ class SiteResearchHandoff(StrictDTO):
     )
     research_notes: list[ShortText] = Field(default_factory=list, max_length=4)
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)
-
-    @model_validator(mode="after")
-    def distinct_decision_topics(self) -> SiteResearchHandoff:
-        topics = [q.topic for q in self.decision_questions]
-        if len(topics) != len(set(topics)):
-            raise ValueError(
-                "Combine related questions within one topic; do not repeat research conclusions."
-            )
-        return self
 
 
 def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str, Any]:

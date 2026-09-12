@@ -1,9 +1,12 @@
 # Phase 2 autonomous continuation — NOT FROZEN
 
-The user explicitly resumed autonomous Phase2–4 development on2026-09-12. The historical
-stop recorded below is superseded by `AUTONOMOUS_V3_ASSIGNMENT_20260912.md`; ordinary
-implementation failures are being repaired and retried. Current authoritative progress and
-per-attempt evidence are in `AUTONOMOUS_V3_PROGRESS.md`.
+The current authoritative assignment is `PHASE2_FINAL_ASSIGNMENT_20260912.md`: complete and
+freeze Phase2 only, then STOP for human review. Phase3/4 are not authorized by this assignment.
+Ordinary implementation failures are being repaired and retried. Current progress and per-attempt
+evidence are in `AUTONOMOUS_V3_PROGRESS.md`. The bounded SiteDecision replay is documented in
+`PHASE2_SITE_DECISION_REPLAY_20260913.md`; contract success is not scientific Golden acceptance.
+Live178 on a69d2930 failed during Handoff validation before Dossier/SiteDecision/Judge/Gate2.
+Its accepted Target and Cases1/3/4/5 remain preserved; Phase2 is still NOT FROZEN.
 
 Two real Target Gate1 proposals (soluble044 and GPCR104) passed independent content review,
 received the scripted validation actor response through the trusted human-input path, and

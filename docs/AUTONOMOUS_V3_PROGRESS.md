@@ -2244,3 +2244,48 @@ No new research or original checkpoint mutation. Judge returned ready-to-ask/DIS
 missed errors inherited from old177 opinions, including canonicalD192 versus cysteine claims and
 inadequate contradiction-search sufficiency. This is contract PASS only, not scientific Case2
 acceptance. The next live GPCR uses the approved104 Target and current research policy.
+
+### Live178 failure and question-granularity repair — 2026-09-13
+
+Live178 ran from clean a69d2930 with approved104 Target reuse. It failed before a dossier or
+SiteDecision: first Handoff quoted onlyN187E (below the12-character citation minimum), second
+Handoff had distinct questions sharing function/epitope topics, and third used cursor-view IDs
+instead of complete issued query_ids. Two existing repairs were exhausted; no limits were raised.
+The final rejection is saved as live178-rejected-handoff-4421.json, with full attempt artifacts in
+phase2-goldens-20260912T165406307044Z and audit inlive178-audit.json. Coordinator3/Site25 calls
+include10native summaries; peak85,932input characters. All28calls have deduplicated outcome usage:
+337,262input/126,898output tokens including reasoning. No Dossier, Judge, Gate2 or scientific PASS.
+
+The one-conclusion-per-taxonomy rule was a design error for decision questions. Handoff and
+SiteIntent now permit distinct questions with the same topic, retaining every individual status,
+source citation, query binding and limitation. Runtime deduplicates only the material topic index.
+No status merging/averaging, new planner or generic repair engine was introduced. All per-question
+source validation and material coverage remain mandatory. Unknown query IDs are still rejected;
+the diagnostic now returns actual complete IDs and explains page suffixes. No cursor decoding,
+alias mapping or silent ID correction was added.
+
+Research instructions now emphasize immediate existing receptor analysis before raw topology
+pagination, reuse of a selected source's returned retrieval_need across consequential questions,
+and reading meaningful activating/agonistic antibody/autoantibody evidence when activation is
+forbidden. This does not prescribe a paper or winning site. Removed obsolete instructions telling
+Research to merge topics and emit SiteIntent. Final narrative interprets candidate facts without
+re-enumerating residues/mapping/numeric geometry; runtime still owns the facts. Judge instructions
+clarify that DISCOURAGED/UNRESOLVED cannot excuse contradiction of a supplied fact, and a stable
+sidedness ranking does not settle major functional risk. Model configuration is unchanged.
+
+Supplemental old-evidence Judge replay decision179-judge-runtime-facts-20260912T165845Z received
+full canonical/design facts verified identical to the original immutable dossier; it still missed
+D192/cysteine and adverse-effect sufficiency issues. Its independent-content-audit.json records
+scientific FAIL. Fact delivery was not the sole cause. The reusable replay reader now includes
+that explicit candidate fact table. The old source remains unaccepted, and no receipt was rewritten.
+
+checks180a: Ruff PASS, mypy23 PASS,19targeted tests PASS in58.97s. The new test verifies two distinct
+same-topic questions retain VERIFIED and UNRESOLVED independently through runtime hydration and
+Judge snapshot delivery, while incomplete/unknown query IDs still fail and return actual IDs.
+Existing citation/contradiction/source integrity, native restart and submission correction pass.
+No full regression or Phase3 work was started. Next: final targeted checks, saved-evidence replay,
+then another real GPCR attempt with the same approved Target and stronger stopping discipline.
+
+checks180b: 7 targeted submission/Golden-spec tests PASS in1.87s. Protected audit180
+verified385baseline files unchanged, unchanged Golden oracle and unchanged model config.
+Ruff/mypy and git diff --check pass. This is an engineering checkpoint, not Case2 acceptance.

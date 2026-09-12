@@ -53,8 +53,6 @@ class SiteIntent(StrictDTO):
     @model_validator(mode="after")
     def research_scope(self) -> SiteIntent:
         topics = [c.topic for c in self.research_conclusions]
-        if len(topics) != len(set(topics)):
-            raise ValueError("One current conclusion per scientific topic")
         if not set(self.material_questions).issubset(topics):
             missing = sorted(set(self.material_questions) - set(topics))
             raise ValueError(

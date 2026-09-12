@@ -190,6 +190,19 @@ async def main():
             "gate_type": "site-hotspot",
             "target_facts": bridge.read_evidence()["hard_facts"],
             "runtime_status": dossier["runtime_status"],
+            "runtime_candidate_facts": {
+                "trusted_residue_facts": dossier["trusted_residue_facts"],
+                "candidates": [
+                    {
+                        "candidate_id": c["candidate_id"],
+                        "name": c["research_hypothesis"]["name"],
+                        "design_labels": c["research_hypothesis"]["hotspot_label_seq_ids"],
+                        "location": c["location"],
+                    }
+                    for c in dossier["candidate_comparison"]
+                ],
+                "authority": "Verified approved canonical/design correspondence and topology.",
+            },
             "proposal": intent.model_dump(mode="json"),
             "evaluation": bridge.evaluate_candidate(
                 SiteQuery(label_seq_ids=intent.selected_site.hotspot_label_seq_ids)

@@ -13,7 +13,8 @@ and trusted revision separate. Reuse the approved identity/mapping; do not repea
 
 Standard Research seeks **decision sufficiency, not literature completeness**. From the
 biological objective, approved Target and Gate 2, form usually 3-6 decision-critical questions.
-The topic taxonomy indexes evidence; it is not a checklist to complete. Ask only what could
+The topic taxonomy indexes evidence; it is not a checklist or a one-question-per-topic rule.
+Distinct questions may share a topic while retaining different evidence states. Ask only what could
 change site ranking, a hard constraint or the major risk assessment. Typical questions concern
 whole-binder access, goal-relevant mechanism/function, consequential state/ligand/partner or
 membrane/glycan/disulfide constraints, known antibody/epitope/competition evidence, and a real
@@ -21,8 +22,11 @@ scientific distinction between candidate A/B/C. Combine related issues; do not e
 just because a database advertises more annotation types.
 
 Start from the approved Target and supplied candidate facts. For a verified GPCR, first obtain
-its GPCRdb context and run analyze_receptor_context to get the membrane-aware candidate facts
-and approved mapping. Generic surface clusters do not establish extracellular access; do not
+its GPCRdb context and immediately run analyze_receptor_context to get complete topology,
+membrane-aware candidate facts and approved mapping. Do this before raw GPCRdb residue/topology
+pagination: those partial pages should not reconstruct the analysis the existing kernel provides.
+Use follow-up database retrieval for consequential gaps at the actual compared candidates.
+Generic surface clusters do not establish extracellular access; do not
 spend the inquiry budget detailing them before the receptor analysis. Once the relevant candidate's
 access/topology question is answered, stop that source's pagination; unrelated loop/helix or
 bibliography coverage is not required. Spend the next inquiry on a remaining decision gap.
@@ -40,7 +44,10 @@ the same mechanistic risk, with explicit modality/valency/species transfer limit
 Supply selection_reason to acquire a selected source atomically. Selection is relevance, not
 entailment; reuse existing acquisitions. A relevant query can inform several topics using its
 returned query_id; do not repeat the same inquiry merely to fill another taxonomy category.
-For another retrieval need, select_evidence with the exact provider/identifier/need.
+Reuse the selected source's returned retrieval_need for relevant follow-up questions; the
+question carries the scientific purpose and can inform another decision topic. There is no need
+to create a new taxonomy selection for every annotation. If changing retrieval_need, explicitly
+select_evidence with the exact provider/identifier/need first; never invent new need enum values.
 
 Read focused passages with retrieve_evidence(need, question, source_id, feature_types). For UniProt
 annotations, select literal feature_types shown in its receipt rather than paging bibliography.
@@ -61,8 +68,11 @@ Stop policy:
    functional effect? Include the user's forbidden effect, rather than only the preferred
    epitope's geometry. Use a short target-plus-effect query without requiring the exact binder
    format. Unrelated hits do not establish saturation until a sensible broader check. Read a
-   strong relevant lead, including adverse findings. If it changes the
-   recommendation, update the comparison and resolve only the new consequential issue.
+   strong relevant lead, including adverse findings. For an unwanted activation effect, include
+   agonistic/activating antibody or autoantibody evidence; do not narrow the search solely to
+   the exact phrase constitutive activation or to the future binder format. Preserve valency,
+   receptor/species and assay transfer limits. If it changes the recommendation or a major risk,
+   update the comparison and resolve only the new consequential issue.
 3. Ask: is more searching reasonably likely to change Gate 2 ranking, a hard constraint or a
    major risk? If no, STOP RESEARCH and submit SiteResearchHandoff now. Remaining call budget,
    a next_cursor, an unread source section or an unfilled taxonomy topic is not a reason to
@@ -80,9 +90,10 @@ CONFLICTING_EVIDENCE preserves support and contradiction. UNRESOLVED preserves i
 transfer limits. An unperformed inquiry cannot be relabeled as performed; peripheral unsearched
 issues belong in remaining uncertainty, not an expanding material-topic task list.
 
-In synthesis, use scope=mechanistic for biological goals and address the decision-critical
-questions in SiteIntent. Merge conclusions sharing a topic; reuse relevant query_ids even when
-that query was indexed under another topic. Do not add a conclusion for every available topic.
+Keep distinct decision questions and their VERIFIED/UNRESOLVED/conflicting states separate,
+even when they share a topic. Do not merge away an adverse-effect uncertainty because another
+function question is supported. Runtime preserves these assessments when hydrating SiteIntent;
+final synthesis only makes the small SiteDecision. Reuse relevant issued query_ids across topics.
 The existing source/quote/primary-eligibility checks and independent Judge remain mandatory.
 Read /skills/site-mechanism/references/research.md only for consequential mechanism reasoning.
 

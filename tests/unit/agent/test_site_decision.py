@@ -159,3 +159,89 @@ def test_comparison_requires_ids_but_does_not_recommend_avoid_candidates() -> No
     assert intent.selected_site.hotspot_label_seq_ids == [414]
     assert intent.alternatives[0].hotspot_label_seq_ids == [418]
     assert intent.alternatives[0].role == "avoid"
+
+
+def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_bridge: Any) -> None:
+    from easydesign.agent.session_store import identity
+    from easydesign.agent.site_dossier import SiteResearchHandoff, site_dossier
+    from tests.unit.agent.test_site_dossier import decision_scope
+
+    b = site_bridge
+    text = "SYNTHETIC assay supports binding, without establishing absence of activation."
+    source = b.persist("synthetic-source", {"text": text})
+    query_id = "synthetic-binding-view-0"
+    query = {
+        "query_id": query_id,
+        "topic": "function",
+        "question": "SYNTHETIC binding evidence",
+        "status": "VERIFIED",
+        "cards": [
+            {
+                "card_id": "passage-synthetic-binding",
+                "provider": "EuropePMC",
+                "identifier": "synthetic-binding",
+                "passage": text,
+                "source_refs": [source],
+                "evidence_level": "primary-abstract",
+                "primary_eligible": True,
+                "limitations": ["SYNTHETIC fixture only."],
+            }
+        ],
+        "errors": [],
+    }
+    ref = b.persist("evidence-research", query)
+    b.store.event(b.thread, "evidence-view", {"target_binding": identity(b.binding()), "ref": ref})
+    selection = decision_scope(b, handoff(), "function", query_id)
+    first = selection.decision_questions[0].model_dump(mode="json")
+    first.update(
+        question="SYNTHETIC is binding supported?",
+        status="VERIFIED",
+        query_ids=[query_id],
+        evidence=[
+            {
+                "card_id": "passage-synthetic-binding",
+                "excerpt": text,
+                "claim": "SYNTHETIC binding support only, not an adverse-effect assessment.",
+                "relation": "supports",
+                "strength": "E3",
+                "transfer_limit": "SYNTHETIC fixture, not biological acceptance.",
+            }
+        ],
+    )
+    second = selection.decision_questions[0].model_dump(mode="json")
+    second.update(
+        question="SYNTHETIC could engagement activate the target?",
+        query_ids=selection.contradiction_search_query_ids,
+    )
+    selection = SiteResearchHandoff.model_validate(
+        {**selection.model_dump(mode="json"), "decision_questions": [first, second]}
+    )
+    token = bind(b)
+    try:
+        execution = b.store.begin_execution(b.thread, "SYNTHETIC separate decision questions")
+        dossier = persist_dossier(b, selection, execution["execution_id"])
+        chosen = decision(dossier["candidate_comparison"][0]["candidate_id"])
+        intent = hydrate_site_decision(b, chosen, execution["execution_id"])
+        assert intent.material_questions == ["function"]
+        assert [q.status for q in intent.research_conclusions] == ["VERIFIED", "UNRESOLVED"]
+        assert intent.research_conclusions[0].evidence[0].excerpt == text
+        assert not intent.research_conclusions[1].evidence
+        snapshot = b.register_site(intent, None)
+        questions = snapshot["research_evidence"]["decision_basis"]["decision_questions"]
+        assert [q["question"] for q in questions] == [first["question"], second["question"]]
+        assert [q["status"] for q in questions] == ["VERIFIED", "UNRESOLVED"]
+        bad = selection.model_copy(
+            update={
+                "decision_questions": [
+                    selection.decision_questions[0].model_copy(
+                        update={"query_ids": ["synthetic-binding-view"]}
+                    ),
+                    selection.decision_questions[1],
+                ]
+            }
+        )
+        with pytest.raises(AgentBoundaryError, match="Available query_ids") as error:
+            site_dossier(b, bad)
+        assert query_id in str(error.value)
+    finally:
+        SITE_EVIDENCE.reset(token)

@@ -160,7 +160,9 @@ class EvidenceUse(StrictDTO):
         min_length=12,
         max_length=700,
         description="Exact short verbatim "
-        "substring of that retrieved passage. Do not paraphrase, quote a "
+        "substring (12-700 characters) of that retrieved passage, with enough surrounding "
+        "context for the claim; a lone short mutation symbol is not sufficient. Do not "
+        "paraphrase, quote a "
         "title/receipt, or describe unavailable text. Record access limits "
         "in limitations with evidence=[] instead.",
     )
@@ -177,7 +179,9 @@ class ResearchConclusion(StrictDTO):
         max_length=6,
         description="Exact returned query_id values for the evidence questions actually "
         "investigated. Topics index sources, not mandatory separate research tasks. A "
-        "relevant query may inform more than one conclusion; explain transfer in limitations.",
+        "relevant query may inform more than one conclusion; explain transfer in limitations. "
+        "Copy the complete issued query_id, including any page suffix. A cursor's internal "
+        "view ID is not a query_id; never decode a cursor to construct one.",
     )
     status: EvidenceStatus
     evidence: list[EvidenceUse] = Field(default_factory=list, max_length=6)
@@ -977,7 +981,11 @@ class EvidenceResearch:
         unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
         if unknown:
             raise ResearchConclusionMismatch(
-                "Unknown evidence query IDs: " + compact(sorted(unknown))
+                "Unknown evidence query IDs: "
+                + compact(sorted(unknown))
+                + ". Copy complete issued query_id values, including page suffixes; "
+                "do not derive them from cursors. Available query_ids: "
+                + compact(sorted(query_by_id))
             )
         for conclusion in conclusions:
             relevant = (

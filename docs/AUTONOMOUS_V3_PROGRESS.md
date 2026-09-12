@@ -1753,3 +1753,32 @@ Final targeted170h:6PASS48.01s, including the latest bound-dossier submission ch
 Site revision/restart/correction. Broader agent170 remains running with failures to inspect;
 no full-regression PASS is claimed. The next GPCR run uses the committed boundary and
 unchanged local Pro/high Site debugging model.
+
+
+### Boundary regression and resumability (171)
+
+Production boundary source is committed as6fa828fec14cd5d947d10dc44d95cb24f9a01d07,
+with engineering tag checkpoint/easydesign-v3-site-context-boundary-20260912. This is not
+Phase2 closure. Live171 began before that commit because a staged-deletion pathspec caused
+an initial git-add failure and the launch helper was mistakenly allowed to continue. Its
+original launch receipt remains unchanged. live171-source-commit-binding.json proves all18
+existing/new changed source files equal the later commit bytes and predate launch; the deleted
+obsolete test was already removed. No production source changed during the live run.
+
+Broad agent170 completed251PASS/18FAIL in1000.37s. One Design restart failure reflects source
+fingerprint changes during that test run; two used the old scripted Site submission contract.
+After adapting the fake model, design170 completed3PASS174.70s, including complete Gate1–3
+and upstream Site revision. The other15 failures were test-request adapters missing the new
+model profile field. After that adapter correction, pages171 showed30PASS/4FAIL: four old
+assertions still expected custom history fitting. Updated them to require all native observations
+and adverse facts to remain intact, consistent with delegation to framework memory; the actual
+framework summary/offload test separately verifies eviction without altering the raw trace.
+Final pages171b:39PASS28.92s, including all progress/page tests and dossier tests.
+
+New interruption test crashes after durable dossier persistence and before synthesis, reopens
+the existing SessionStore/checkpoint, and reaches Gate2 with the same execution budget and
+same dossier ref, no repeated research and no duplicate Target job. resume170:1PASS14.54s;
+also included in the39-test suite. These are deterministic/scripted tests, not scientific PASS.
+Live171 uses the same Pro/high Site debugging configuration and native summary accounting.
+Scientific Case2 and mandatory final full regression remain pending; accepted Cases1/3/4/5
+and protected scientific kernel remain unchanged.

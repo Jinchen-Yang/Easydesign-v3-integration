@@ -170,3 +170,49 @@ async def test_framework_summary_preserves_trace_and_consumes_shared_budget(
     assert len([e for e in events if e["kind"] == "model-call"]) == 2
     assert len([e for e in events if e["kind"] == "framework-summary-call"]) == 1
     assert len([e for e in events if e["kind"] == "framework-summary-response"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_resume_between_durable_dossier_and_synthesis_reuses_research(
+    site_bridge: Any,
+    monkeypatch: Any,
+) -> None:
+    from easydesign.agent import harness
+    from easydesign.agent.cli import run_session
+    from easydesign.agent.phase2 import Phase2Bridge
+    from easydesign.agent.phase2_tools import PHASE2_ALLOWED
+    from easydesign.agent.session_store import SessionStore
+    from tests.unit.agent.test_command_recovery import Crash
+    from tests.unit.agent.test_site_harness import SiteModel
+
+    models = {role: SiteModel(role=role) for role in PHASE2_ALLOWED}
+    original = harness.persist_dossier
+
+    def interrupt_after_persistence(*args: Any, **kwargs: Any) -> Any:
+        original(*args, **kwargs)
+        raise Crash("SYNTHETIC interruption after durable dossier")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(harness, "persist_dossier", interrupt_after_persistence)
+        with pytest.raises(Crash):
+            await run_session(
+                site_bridge, scripted_config(), models, "Review a structural hypothesis."
+            )
+    assert site_bridge.current_site() is None
+    before = site_bridge.store.latest_execution(site_bridge.thread)
+    assert len(models["site"].tasks) == 1
+    first = site_bridge.thread_latest("site-evidence-dossier")
+    reopened = SessionStore(site_bridge.project)
+    try:
+        resumed = Phase2Bridge(site_bridge.project, site_bridge.thread, reopened)
+        result = await run_session(
+            resumed, scripted_config(), models, "Review a structural hypothesis."
+        )
+        assert result["status"] == "awaiting-human-approval"
+        assert result["card"]["gate_type"] == "site-hotspot"
+        assert len(models["site"].tasks) == 1
+        assert resumed.store.latest_execution(resumed.thread) == before
+        assert resumed.thread_latest("site-evidence-dossier")["ref"] == first["ref"]
+        assert len(resumed._jobs()) == 1
+    finally:
+        reopened.close()

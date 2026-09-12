@@ -33,6 +33,8 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
     own_ref = None
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -262,6 +264,8 @@ async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(
         )
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -363,6 +367,8 @@ async def test_coordinator_refreshes_runtime_progress_without_rewriting_history(
     )
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -638,6 +644,8 @@ async def test_site_followup_reads_require_focus_and_share_existing_call_budget(
     snapshots = []
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -764,6 +772,8 @@ async def test_known_source_citation_is_repaired_before_site_registration(
     ]
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -807,7 +817,7 @@ async def test_known_source_citation_is_repaired_before_site_registration(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("later_sources", [False, True])
 @pytest.mark.parametrize("scoped_read", [False, True])
-async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
+async def test_site_boundary_preserves_native_history_for_framework_memory(
     bridge: Any, later_sources: bool, scoped_read: bool
 ) -> None:
     from langchain_core.tools import StructuredTool
@@ -884,6 +894,8 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
     original = [m.content for m in messages]
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -913,17 +925,19 @@ async def test_site_keeps_distinct_source_passages_when_geometry_views_advance(
             "exact-source-cursor-1",
             "exact-source-cursor-2",
         }
-        assert len(retained) == (6 if scoped_read else 4)
-        assert len([x for x in retained if x.get("cards")]) == 3
-        assert [x["geometry"] for x in retained if "geometry" in x] == ["geometry-11"]
+        # Generic history fitting belongs to DeepAgents, not RoleBoundary. Raw
+        # observations (including duplicates/adverse facts) must survive unchanged.
+        assert [m.content for m in request.messages] == original
+        assert len(retained) == len(messages)
+        assert len([x for x in retained if x.get("cards")]) == (4 if later_sources else 3)
+        assert [x["geometry"] for x in retained if "geometry" in x] == [
+            f"geometry-{i}" for i in range(12)
+        ]
         if scoped_read:
             assert json.loads(request.messages[-1].content)["value"] == 2
             assert json.loads(request.messages[-2].content)["warnings"] == [
                 "Keep adverse exposure evidence"
             ]
-        assert (
-            sum(len(m.content) for m in request.messages if '"full_result"' in m.content) <= 32000
-        )
         return SimpleNamespace(
             result=[
                 AIMessage(
@@ -1231,6 +1245,8 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
     seen = []
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -1345,6 +1361,8 @@ async def test_site_budget_reserve_requests_typed_synthesis_without_creating_app
         b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 
@@ -1421,6 +1439,8 @@ async def test_unknown_model_tool_is_recorded_and_rejected_before_execution(brid
     guard = RoleBoundary(b, "site", scripted_config(), "Research", execution_id=eid)
 
     class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
         def override(self, **kwargs: Any) -> Any:
             return Request(**{**vars(self), **kwargs})
 

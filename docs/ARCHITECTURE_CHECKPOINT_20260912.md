@@ -89,4 +89,4 @@ Run GPCR Case 2 with real sources/model and independently review its scientific 
 Then full regression; freeze Phase 2 only when all five accepted cases and parity checks pass.
 Continue original Phase 3/4 micro-compute assignment without resetting valid earlier work.
 
-This checkpoint does not claim an implementation, new Golden PASS or Phase closure.
+This engineering checkpoint does not claim a new Golden PASS or Phase closure.

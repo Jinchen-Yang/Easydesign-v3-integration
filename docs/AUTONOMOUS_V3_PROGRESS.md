@@ -2190,3 +2190,19 @@ Its independent Judge result is a contract critique, not a registered Gate or Go
 checks178g (final semantic projection/Skill adjustment): Ruff PASS, mypy23 PASS,
 2 focused tests PASS in20.55s (runtime candidate hydration and bounded submission correction).
 This completes the pre-replay engineering checkpoint; real-model replay and Case2 remain pending.
+
+### Saved-evidence replay178a — bounded decision comparison correction
+
+The first real-model replay on ec110399 returned a typed SiteDecision but omitted all
+alternative IDs despite three available candidates. Runtime rejected it before hydration:
+"Compare at least one supplied alternative candidate". The replay reader saved the dossier
+but not this decision before validation; no scientific acceptance is claimed and its original
+log remains. The schema and synthesis instructions now explain that compared alternatives
+include rejected/avoid candidates and do not imply recommendation. Runtime still enforces
+nonempty alternatives for a multi-candidate dossier. Replay now saves each small raw decision
+and usage before hydration so any subsequent failure remains reviewable. No model/budget,
+research evidence or source checkpoint was changed. The new focused test checks rejection and
+preservation of a compared candidate's avoid role.
+
+checks179a: Ruff PASS, mypy23 PASS,9 SiteDecision tests PASS in15.58s.
+The original runtime comparison requirement and scientific acceptance criteria remain unchanged.

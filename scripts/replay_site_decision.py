@@ -120,12 +120,13 @@ async def main():
                     "dossier": working,
                 },
             )
+            save(out, f"decision-{trial + 1}.json", decision.model_dump(mode="json"))
+            save(out, f"usage-{trial + 1}.json", usage)
+            print("SYNTHESIS_REPLAY", trial + 1, compact(usage), flush=True)
             intent = compile_site_decision(dossier, decision)
             bridge.validate_site_research(intent)
-            save(out, f"decision-{trial + 1}.json", decision.model_dump(mode="json"))
             save(out, f"intent-{trial + 1}.json", intent.model_dump(mode="json"))
             results.append(usage)
-            print("SYNTHESIS_REPLAY", trial + 1, compact(usage), flush=True)
         mapping = bridge.read_canonical_mapping(CanonicalMappingQuery(canonical_positions=[286]))
         matched = mapping["matches"][0]
         assert matched["observed_design_labels"] == [414], matched

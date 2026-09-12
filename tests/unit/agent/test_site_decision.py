@@ -9,7 +9,12 @@ from pydantic import ValidationError
 
 from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.phase2 import SITE_EVIDENCE
-from easydesign.agent.site_decision import SiteDecision, decision_working_set, hydrate_site_decision
+from easydesign.agent.site_decision import (
+    SiteDecision,
+    compile_site_decision,
+    decision_working_set,
+    hydrate_site_decision,
+)
 from easydesign.agent.site_dossier import persist_dossier
 from tests.unit.agent.test_site_dossier import bind, handoff
 
@@ -114,3 +119,33 @@ def test_real_adapter_hydration_preserves_candidates_and_scoped_facts(site_bridg
 def test_whitespace_is_not_a_nonempty_scientific_decision() -> None:
     with pytest.raises(ValidationError):
         SiteDecision.model_validate({**decision().model_dump(), "why_selected": "   "})
+
+
+def test_comparison_requires_ids_but_does_not_recommend_avoid_candidates() -> None:
+    def candidate(candidate_id: str, label: int, role: str) -> dict[str, Any]:
+        return {
+            "candidate_id": candidate_id,
+            "research_hypothesis": {
+                "name": "SYNTHETIC " + candidate_id,
+                "hotspot_label_seq_ids": [label],
+                "rationale": "SYNTHETIC comparison fixture",
+                "role": role,
+                "origin": "scan-derived",
+                "evidence_card_ids": [],
+            },
+        }
+
+    dossier = {
+        "candidate_comparison": [
+            candidate("site-synthetic", 414, "primary"),
+            candidate("site-rejected", 418, "avoid"),
+        ],
+        "decision_questions": [],
+    }
+    with pytest.raises(AgentBoundaryError, match="Compare at least one"):
+        compile_site_decision(dossier, decision())
+    selected = decision().model_copy(update={"alternative_candidate_ids": ["site-rejected"]})
+    intent = compile_site_decision(dossier, selected)
+    assert intent.selected_site.hotspot_label_seq_ids == [414]
+    assert intent.alternatives[0].hotspot_label_seq_ids == [418]
+    assert intent.alternatives[0].role == "avoid"

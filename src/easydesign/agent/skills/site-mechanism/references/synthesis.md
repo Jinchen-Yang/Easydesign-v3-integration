@@ -7,7 +7,10 @@ evidence IDs or a research-topic checklist. Do not search, call scientific tools
 
 Choose the candidate most defensible for the user's biological objective and delivery route.
 Research preferences, stopping rationale and interpretations are fallible opinions, not facts.
-Compare meaningful alternatives; a kernel score or name does not choose a winner. Explain why
+Include at least one other supplied candidate ID in alternative_candidate_ids when multiple
+candidates exist, including rejected/avoid options: comparing them does not recommend them.
+Use an empty list only when the dossier supplies a single candidate. A kernel score or name
+does not choose a winner. Explain why
 the evidence favors your selection and what would falsify it. A qualified DISCOURAGED hypothesis
 is valid; insufficient mechanistic evidence must remain explicit rather than become certainty.
 

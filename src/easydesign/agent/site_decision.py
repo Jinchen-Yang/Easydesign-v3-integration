@@ -24,7 +24,13 @@ class SiteDecision(StrictDTO):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     selected_candidate_id: CandidateId
-    alternative_candidate_ids: list[CandidateId] = Field(default_factory=list, max_length=2)
+    alternative_candidate_ids: list[CandidateId] = Field(
+        default_factory=list,
+        max_length=2,
+        description="IDs of supplied candidates used in the comparison, including rejected/avoid "
+        "options. Required nonempty when more than one candidate is supplied; comparison does "
+        "not recommend these alternatives. Empty only when the dossier has one candidate.",
+    )
     recommendation: Literal["SUPPORTED", "DISCOURAGED"]
     why_selected: DecisionText
     mechanistic_rationale: DecisionText

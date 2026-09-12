@@ -77,7 +77,9 @@ derived artifact in the existing project store, not a second corpus or hard-fact
 
 Fresh synthesis receives the original goal, current trusted revision and dossier, with the
 typed SiteIntent submission surface. It does not inherit research/tool/thinking history.
-Existing source, citation, mapping and hard-fact checks still validate its output. Independent
+Existing source, citation, mapping and hard-fact checks still validate its output. Verified GPCR
+kernel cards remain citable as non-primary computational context, preserving the original Site
+contract; source acquisition receipts are not passage citations. Independent
 Judge continues to receive its own verified scientific snapshot, not a research summary.
 
 ## Verification required before acceptance

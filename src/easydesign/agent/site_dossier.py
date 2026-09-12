@@ -26,7 +26,13 @@ class SiteResearchHandoff(StrictDTO):
     """Candidate questions and notes are research opinions, never hard facts or approval."""
 
     candidates: list[SiteSelection] = Field(min_length=1, max_length=3)
-    material_questions: list[ResearchTopic] = Field(default_factory=list, max_length=9)
+    material_questions: list[ResearchTopic] = Field(
+        default_factory=list,
+        max_length=9,
+        description="Material topics actually queried in this research stage, using the exact "
+        "topic names from research_evidence. Put still-unsearched questions in "
+        "unresolved_questions; never relabel them as researched.",
+    )
     research_notes: list[ShortText] = Field(default_factory=list, max_length=6)
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)
 
@@ -42,23 +48,42 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
     missing = [
         topic for topic in handoff.material_questions if research["topics"][topic] == "NOT_SEARCHED"
     ]
-    if missing:
-        raise ResearchConclusionMismatch(
-            "Research handoff contains unsearched material topics: " + compact(missing)
-        )
     cards = {c["card_id"]: c for q in research["queries"] for c in q["cards"]}
     # Include ALL focused passages, including counterevidence, irrespective of the
     # researcher's candidate choices. Acquisition bodies remain in the corpus.
     passages = [c for key, c in cards.items() if key.startswith("passage-")]
     passage_ids = {c["card_id"] for c in passages}
+    # Existing Site validation permits verified kernel cards as computational
+    # evidence. They remain non-primary and cannot stand in for a publication.
+    citable_ids = passage_ids | {
+        c["card_id"] for c in cards.values() if c["provider"] == "EasyDesign GPCR kernel"
+    }
+    unknown_citations = {
+        key for c in handoff.candidates for key in c.evidence_card_ids if key not in citable_ids
+    }
+    if missing or unknown_citations:
+        raise ResearchConclusionMismatch(
+            "Research handoff evidence mismatch: "
+            + compact(
+                {
+                    "unsearched_material_topics": missing,
+                    "actually_queried_topics": [
+                        key
+                        for key, status in research["topics"].items()
+                        if status != "NOT_SEARCHED"
+                    ],
+                    "unknown_or_acquisition_citations": sorted(unknown_citations),
+                    "citable_passage_or_kernel_card_ids": sorted(citable_ids),
+                    "instruction": "Keep unsearched questions explicitly unresolved. Cite only "
+                    "supplied passages or verified kernel context; kernel cards are not primary "
+                    "literature. This handoff is not scientific acceptance.",
+                }
+            )
+        )
     candidates = []
     for candidate in handoff.candidates:
         if candidate.origin == "literature-derived" and not candidate.evidence_card_ids:
             raise ResearchConclusionMismatch("Literature-derived candidates need focused citations")
-        if not set(candidate.evidence_card_ids).issubset(passage_ids):
-            raise ResearchConclusionMismatch(
-                "Candidate citations must identify retrieved focused passages"
-            )
         labels = candidate.hotspot_label_seq_ids
         evaluation = bridge.evaluate_candidate(candidate_query(labels))
         if evaluation["status"] == "BLOCKED":
@@ -85,6 +110,8 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         receptor.append(
             {
                 "card_id": card["card_id"],
+                "evidence_level": card["evidence_level"],
+                "primary_eligible": card["primary_eligible"],
                 "source_refs": card["source_refs"],
                 **{
                     key: value[key]
@@ -223,5 +250,10 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
         for candidate in [intent.selected_site, *intent.alternatives]
         for card in candidate.evidence_card_ids
     )
-    if not cited.issubset({card["card_id"] for card in dossier["focused_passages"]}):
-        raise EvidenceCitationMismatch("Cite exact focused passages supplied in this dossier")
+    citable = {
+        card["card_id"] for card in [*dossier["focused_passages"], *dossier["receptor_context"]]
+    }
+    if not cited.issubset(citable):
+        raise EvidenceCitationMismatch(
+            "Cite exact passages or kernel context supplied in this dossier"
+        )

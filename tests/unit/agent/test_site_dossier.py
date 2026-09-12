@@ -14,7 +14,12 @@ from easydesign.agent.context_policy import context_usage, research_memory
 from easydesign.agent.contracts import AgentBoundaryError, EvidenceBinding
 from easydesign.agent.phase2 import SITE_EVIDENCE
 from easydesign.agent.session_store import identity
-from easydesign.agent.site_dossier import SiteResearchHandoff, persist_dossier, site_dossier
+from easydesign.agent.site_dossier import (
+    SiteResearchHandoff,
+    persist_dossier,
+    site_dossier,
+    validate_dossier_intent,
+)
 from easydesign.core import ArtifactIntegrityError
 from tests.agent_support import scripted_config
 
@@ -101,6 +106,98 @@ def test_dossier_rejects_missing_or_stale_delegation(site_bridge: Any) -> None:
         SITE_EVIDENCE.reset(token)
 
 
+def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge: Any) -> None:
+    import json
+
+    from easydesign.agent.contracts import EvidenceCitationMismatch, ResearchConclusionMismatch
+    from tests.unit.agent.test_site_runtime import site_intent
+
+    b = site_bridge
+    kernel = {
+        "identity": {"scope": "SYNTHETIC receptor fixture"},
+        "state": {"state": "unknown"},
+        "membrane": {"status": "unresolved"},
+        "warnings": ["Synthetic evidence, not a real receptor analysis."],
+        "avoid": [],
+        "chain_graph": {"edges": []},
+        "topology": {"status": "unresolved", "residues": [], "unmapped_residues": []},
+    }
+    source = b.persist("synthetic-kernel", kernel)
+    card = {
+        "card_id": "receptor-synthetic",
+        "provider": "EasyDesign GPCR kernel",
+        "identifier": "SYNTHETIC",
+        "passage": json.dumps(kernel),
+        "source_refs": [source],
+        "source_verified": True,
+        "evidence_level": "deterministic-structure-analysis",
+        "primary_eligible": False,
+        "does_not_support": ["Binding efficacy or primary literature evidence"],
+    }
+    query = {
+        "query_id": "synthetic-kernel-query",
+        "topic": "state",
+        "status": "UNRESOLVED",
+        "question": "Synthetic structural state",
+        "cards": [card],
+        "errors": [],
+    }
+    ref = b.persist("evidence-research", query)
+    b.store.event(
+        b.thread, "evidence-research", {"target_binding": identity(b.binding()), "ref": ref}
+    )
+    selection = handoff()
+    selection = selection.model_copy(
+        update={
+            "candidates": [
+                selection.candidates[0].model_copy(update={"evidence_card_ids": [card["card_id"]]})
+            ],
+            "material_questions": ["state"],
+        }
+    )
+    token = bind(b)
+    try:
+        dossier = persist_dossier(b, selection, "synthetic-execution")
+        assert dossier["receptor_context"][0]["primary_eligible"] is False
+        assert dossier["receptor_context"][0]["state"] == kernel["state"]
+        intent = site_intent([1, 2, 3])
+        intent = intent.model_copy(
+            update={
+                "selected_site": intent.selected_site.model_copy(
+                    update={"evidence_card_ids": [card["card_id"]]}
+                )
+            }
+        )
+        validate_dossier_intent(b, intent, "synthetic-execution")
+        b.validate_site_research(intent)
+        selection = selection.model_copy(
+            update={
+                "material_questions": ["function"],
+                "candidates": [
+                    selection.candidates[0].model_copy(
+                        update={"evidence_card_ids": ["source-unread"]}
+                    )
+                ],
+            }
+        )
+        with pytest.raises(ResearchConclusionMismatch) as error:
+            site_dossier(b, selection)
+        assert '"unsearched_material_topics":["function"]' in str(error.value)
+        assert '"actually_queried_topics":["state"]' in str(error.value)
+        assert '"unknown_or_acquisition_citations":["source-unread"]' in str(error.value)
+        intent = intent.model_copy(
+            update={
+                "selected_site": intent.selected_site.model_copy(
+                    update={"evidence_card_ids": ["source-unread"]}
+                )
+            }
+        )
+        with pytest.raises(EvidenceCitationMismatch):
+            validate_dossier_intent(b, intent, "synthetic-execution")
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
 def test_soft_working_target_and_model_aware_hard_guard() -> None:
     config = scripted_config()
     model = SimpleNamespace(profile=None)
@@ -170,6 +267,8 @@ async def test_framework_summary_preserves_trace_and_consumes_shared_budget(
     assert len([e for e in events if e["kind"] == "model-call"]) == 2
     assert len([e for e in events if e["kind"] == "framework-summary-call"]) == 1
     assert len([e for e in events if e["kind"] == "framework-summary-response"]) == 1
+    summary_event = next(e for e in events if e["kind"] == "framework-summary-response")
+    assert summary_event["payload"]["latency_seconds"] >= 0
 
 
 @pytest.mark.asyncio

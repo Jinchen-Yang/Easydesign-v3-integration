@@ -1782,3 +1782,46 @@ also included in the39-test suite. These are deterministic/scripted tests, not s
 Live171 uses the same Pro/high Site debugging configuration and native summary accounting.
 Scientific Case2 and mandatory final full regression remain pending; accepted Cases1/3/4/5
 and protected scientific kernel remain unchanged.
+
+
+### Live171 failure diagnosis and native-memory follow-up (172)
+
+Live171 FAILED, preserving its entire source/checkpoint history at
+phase2-goldens-20260912T030738254502Z. Coordinator2/Site23 =25shared calls included9native
+framework summaries (76112input/72039output provider tokens for summaries). Peak actual
+content plus tool arguments/schemas75284characters,4soft-target overruns; the100k hard guard
+did not fire. No Dossier/SiteIntent/Judge/Gate2 was published. Nine summary calls and repeated
+UniProt/RCSB pagination consumed research capacity; PMID21228869 and a targeted functional
+literature search were never performed. Candidate geometry alone is not scientific acceptance.
+
+Three handoffs were rejected: first four unqueried material topics, then two more unqueried
+topics, then a verified receptor kernel card rejected by the new passage-only citation check.
+The last finding is a boundary regression: the existing Site contract permits kernel cards as
+non-primary computational evidence. Restore that exact permission in the dossier and label its
+evidence level/primary eligibility, while still rejecting acquisition receipts/foreign IDs and
+retaining all original conclusion validation. Report topic/citation mismatches together with
+actual queried topics, so a correction does not have to guess missing runtime information.
+
+The Site Skill still described direct SiteIntent submission and an old fixed reserve, conflicting
+with the new research handoff. Update it to distinguish research handoff from isolated synthesis
+and to cover primary/mechanistic questions before repeatedly continuing one database view.
+Use the public DeepAgents token-based keep parameter (one quarter of its trigger) instead of
+four messages: large atomic tool batches can otherwise survive repeated summarizations. This
+is native framework configuration, not a new history compressor. Add summary latency telemetry.
+No model/provider/reasoning/32-call/soft60k/hard100k configuration change. A Pro success, if any,
+will still not establish product model policy. Source/Skill edits began only after171exited.
+
+make check171 passed, including repository/assets/compileall/Ruff and mypy187sourcefiles.
+Targeted172 first collected no tests because two test IDs were mistyped; corrected172b is the
+actual regression run. No test PASS is inferred from that failed collection. Targeted outcomes
+and the next real retry follow after checks complete. Phase2 remains NOT FROZEN.
+
+
+Follow-up verification172:12PASS/1FAIL70.90s; the only failure was the new test assigning to
+an intentionally frozen DTO. Replaced assignment with immutable model copies; that test then
+passed1/1in5.65s. Thus all13targeted cases are verified, including original computational-card
+citation semantics, rejection of unknown citations/unsearched topics, retained counterevidence,
+source tampering, framework summary accounting/latency, hard/soft context guards, restart and
+isolated synthesis corrections. Ruff PASS and mypy22Agent modules PASS. Protected172checks
+all385baseline files unchanged. Next live172 starts from a clean committed tree with unchanged
+local model configuration and approved GPCRTarget104; Case2 remains unaccepted pending its result.

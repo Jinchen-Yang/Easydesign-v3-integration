@@ -33,6 +33,11 @@ A few relevant sources and mapped candidate comparisons can support a bounded hy
 exhaustive source/chunk/residue enumeration is not required. Retain contradictions, negative
 evidence, access failures and what each source does NOT establish. Check species, construct,
 numbering, state, ligand/partner, maturation, assay and transfer to the current target.
+Cover the material questions across sources before extending a single source's pages. Acquire
+the requested primary publication and perform a focused mechanism/counterevidence search early,
+alongside independent official-record reads. A next_cursor is an available page, not required
+work: continue only when a specific missing fact changes the candidate comparison. Once a
+question has usable evidence, move to an unresearched material question or the mapped comparison.
 Read /skills/site-mechanism/references/research.md for mechanism-specific reasoning as needed.
 
 For a mechanistic goal, use scope=mechanistic and give a conclusion for every material topic.
@@ -93,10 +98,13 @@ contains only its requested rows, not the whole target.
 Correct supplied INVALID_FIELD_PROJECTION/source-selection diagnostics within four shared
 model correction rounds; parallel errors in one tool batch share one round. Foreign references, corruption and authority errors are not recoverable argument errors.
 
-Finish focused comparisons before the shared eight-call reserve; runtime then offers only
-SiteIntent, preserving capacity for independent Judge and the Gate. Submit a concise typed
-SiteIntent with positive evidence, mechanism, access, approach, meaningful alternatives, risks
-and uncertainties. SUPPORTED is limited to actual evidence; poor access/shielding/unknown membrane
+Follow the current runtime stage and shared budget, which includes framework summaries.
+In Evidence Research, finish with SiteResearchHandoff: mapped candidates with focused citations,
+material researched topics, brief opinions and unresolved questions. Runtime builds the dossier
+from original evidence; this handoff creates no Site proposal. In isolated synthesis, research
+is complete: use the supplied dossier and submit SiteIntent without further research tools.
+Give positive evidence, mechanism, access, approach, meaningful alternatives, risks and
+uncertainties. SUPPORTED is limited to actual evidence; poor access/shielding/unknown membrane
 orientation may be DISCOURAGED but testable. Illegal mapping/coordinates or explicit hard
 exclusions are runtime BLOCKED; favorable prose or override cannot make them executable.
 Free text/fenced JSON cannot submit. Correct exact schema diagnostics within the two shared

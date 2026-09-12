@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 from deepagents.middleware.summarization import (
@@ -57,6 +58,7 @@ class SummaryAccounting(AsyncCallbackHandler):
     ):
         self.bridge, self.config, self.role = bridge, config, role
         self.execution_id, self.model = execution_id, model
+        self._started: dict[str, float] = {}
 
     async def on_chat_model_start(
         self, serialized: Any, messages: list[list[Any]], **kwargs: Any
@@ -73,14 +75,17 @@ class SummaryAccounting(AsyncCallbackHandler):
                 "framework-summary-call",
                 {"role": self.role, "execution_id": self.execution_id, **usage},
             )
+        self._started[str(kwargs.get("run_id"))] = perf_counter()
 
     async def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        started = self._started.pop(str(kwargs.get("run_id")), None)
         self.bridge.store.event(
             self.bridge.thread,
             "framework-summary-response",
             {
                 "role": self.role,
                 "execution_id": self.execution_id,
+                "latency_seconds": perf_counter() - started if started is not None else None,
                 "usage": [
                     getattr(getattr(g, "message", None), "usage_metadata", None)
                     for batch in response.generations
@@ -107,7 +112,10 @@ def research_memory(
         model=summary_model,
         backend=backend,
         trigger=("tokens", trigger),
-        keep=("messages", 4),
+        # Native token retention preserves complete tool transactions. A message
+        # count can retain several large batches and immediately trigger another
+        # summary; leave headroom for actual research within the shared call budget.
+        keep=("tokens", max(200, trigger // 4)),
         trim_tokens_to_summarize=config.hard_input_chars // 4,
         summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
         "This is fallible research working memory, not verified source evidence, a Site "

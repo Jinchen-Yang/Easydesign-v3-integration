@@ -483,6 +483,7 @@ class Phase2Bridge(TargetBridge):
             dossier = self.document(dossier_event["ref"])
             research["decision_basis"] = {
                 "decision_questions": dossier["decision_questions"],
+                "evidence_card_ids": [c["card_id"] for c in dossier["focused_passages"]],
                 **dossier["research_opinions"],
                 "authority": "Researcher opinions and stopping rationale, not approval. "
                 "Judge must independently assess the sufficiency and contrary evidence.",
@@ -493,6 +494,8 @@ class Phase2Bridge(TargetBridge):
                 c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
             }
             research["source_refs"].append(dossier_event["ref"])
+            for card in dossier["focused_passages"]:
+                research["source_refs"].extend(cards[card["card_id"]]["source_refs"])
             for question in dossier["decision_questions"]:
                 for use in question["evidence"]:
                     research["source_refs"].extend(cards[use["card_id"]]["source_refs"])
@@ -689,6 +692,7 @@ class Phase2Bridge(TargetBridge):
                 for e in conclusion["evidence"]
             )
         if research and research.get("decision_basis"):
+            cited_cards.update(research["decision_basis"].get("evidence_card_ids", []))
             cited_cards.update(
                 e["card_id"]
                 for question in research["decision_basis"]["decision_questions"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .contracts import (
     AgentBoundaryError,
@@ -68,6 +68,15 @@ class SiteResearchHandoff(StrictDTO):
     research_notes: list[ShortText] = Field(default_factory=list, max_length=4)
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)
 
+    @model_validator(mode="after")
+    def distinct_decision_topics(self) -> SiteResearchHandoff:
+        topics = [q.topic for q in self.decision_questions]
+        if len(topics) != len(set(topics)):
+            raise ValueError(
+                "Combine related questions within one topic; do not repeat research conclusions."
+            )
+        return self
+
 
 def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str, Any]:
     """Rehydrate exact evidence, never summarize model/tool history or select by sentiment."""
@@ -78,10 +87,23 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
     target, facts, facts_ref = bridge.site_facts()
     research = EvidenceResearch(bridge).snapshot()
     cards = {c["card_id"]: c for q in research["queries"] for c in q["cards"]}
-    # Include ALL focused passages, including counterevidence, irrespective of the
-    # researcher's candidate choices. Acquisition bodies remain in the corpus.
-    passages = [c for key, c in cards.items() if key.startswith("passage-")]
-    passage_ids = {c["card_id"] for c in passages}
+    all_passages = [c for key, c in cards.items() if key.startswith("passage-")]
+    passage_ids = {c["card_id"] for c in all_passages}
+    cited = {use.card_id for q in handoff.decision_questions for use in q.evidence}
+    cited.update(key for candidate in handoff.candidates for key in candidate.evidence_card_ids)
+    # Decision-bound official passages plus read primary publication passages.
+    # Retain the latter independently of sentiment/citation selection, so an
+    # unmentioned opposing experiment cannot disappear. Database pagination and
+    # full acquisition records stay in the verified corpus, not this working set.
+    passages = [
+        c
+        for c in all_passages
+        if c["card_id"] in cited
+        or (
+            c.get("provider", "").replace(" ", "").lower() == "europepmc"
+            and c.get("primary_eligible")
+        )
+    ]
     # Existing Site validation permits verified kernel cards as computational
     # evidence. They remain non-primary and cannot stand in for a publication.
     citable_ids = passage_ids | {
@@ -126,7 +148,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "Acquisition is not discovery. Available search IDs: " + compact(sorted(searches))
         )
     EvidenceResearch(bridge).validate_conclusions(list(handoff.decision_questions))
-    candidates = []
+    candidates: list[dict[str, Any]] = []
     residue_facts = {}
     for candidate in handoff.candidates:
         if candidate.origin == "literature-derived" and not candidate.evidence_card_ids:
@@ -161,15 +183,35 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             residue_facts[row["mapping"]["label_seq_id"]] = row
         candidates.append(
             {
+                "candidate_id": "site-"
+                + identity(
+                    {
+                        "target_binding": target["binding"],
+                        "labels": sorted(labels),
+                        "name": candidate.name,
+                    }
+                )[:16],
                 "research_hypothesis": candidate.model_dump(mode="json"),
                 "deterministic_evaluation": evaluation,
             }
         )
     receptor = []
+    topology_by_canonical: dict[int, Any] = {}
     for card in cards.values():
         if card["provider"] != "EasyDesign GPCR kernel":
             continue
         value = json.loads(card["passage"])
+        hard_facts = target["evidence"]["hard_facts"]
+        if value["identity"].get("accession") == hard_facts.get("canonical_accession") and value[
+            "identity"
+        ].get("receptor_chain") == hard_facts.get("selected_chain"):
+            topology_by_canonical.update(
+                {
+                    row["gpcrdb_sequence_number"]: row
+                    for row in value["topology"]["residues"]
+                    if row.get("gpcrdb_sequence_number") is not None
+                }
+            )
         receptor.append(
             {
                 "card_id": card["card_id"],
@@ -198,8 +240,25 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 "remains in the original verified kernel artifact.",
             }
         )
+    for runtime_candidate in candidates:
+        mappings = [
+            residue_facts[label]["mapping"]
+            for label in runtime_candidate["research_hypothesis"]["hotspot_label_seq_ids"]
+        ]
+        positions = [row["canonical_position"] for row in mappings]
+        runtime_candidate["location"] = {
+            "canonical_positions": positions,
+            "segments": list(
+                dict.fromkeys(
+                    topology_by_canonical.get(position, {}).get("segment", "unresolved")
+                    for position in positions
+                )
+            ),
+            "source": "Approved Target correspondence joined to the same-receptor/chain "
+            "kernel topology; unknowns retained.",
+        }
     return {
-        "kind": "site-evidence-dossier-v4",
+        "kind": "site-evidence-dossier-v5",
         "project_id": bridge.project_id,
         "owner_thread": bridge.thread,
         "target_binding": target["binding"],
@@ -226,6 +285,13 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             )
         },
         "decision_questions": [q.model_dump(mode="json") for q in handoff.decision_questions],
+        "evidence_selection": {
+            "read_focused_passages": len(all_passages),
+            "decision_passages": len(passages),
+            "policy": "Decision-cited official evidence plus read primary publication passages, "
+            "including uncited opposition. No sentiment filtering. All other exact source "
+            "records remain in the durable Evidence Store.",
+        },
         "candidate_comparison": candidates,
         "trusted_residue_facts": site_page_projection(
             {"facts": [residue_facts[key] for key in sorted(residue_facts)]}
@@ -290,8 +356,9 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         "authority": "Runtime rehydrated original verified artifacts and deterministic facts. "
         "Decision assessments, stopping rationale and candidate preferences are unaccepted model "
         "opinions for independent review. Questions express decision scope, not a completeness "
-        "checklist; unresolved evidence can suffice for a qualified next step. All focused "
-        "passages and all search/access outcomes are included without ranking by support. "
+        "checklist; unresolved evidence can suffice for a qualified next step. Decision-bound "
+        "official passages and read primary publication passages are included without ranking "
+        "by support; other source pages remain durable. All search/access outcomes remain. "
         "Exact passage text and scientific qualifiers are unchanged; repeated cache, selection "
         "and source-reference metadata remain in the verified durable research artifacts. "
         "Candidate hypotheses use the common trusted_residue_facts table by existing design "

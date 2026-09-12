@@ -20,12 +20,18 @@ membrane/glycan/disulfide constraints, known antibody/epitope/competition eviden
 scientific distinction between candidate A/B/C. Combine related issues; do not expand the list
 just because a database advertises more annotation types.
 
-Start from the approved Target and supplied candidate facts. Once the relevant candidate's
+Start from the approved Target and supplied candidate facts. For a verified GPCR, first obtain
+its GPCRdb context and run analyze_receptor_context to get the membrane-aware candidate facts
+and approved mapping. Generic surface clusters do not establish extracellular access; do not
+spend the inquiry budget detailing them before the receptor analysis. Once the relevant candidate's
 access/topology question is answered, stop that source's pagination; unrelated loop/helix or
 bibliography coverage is not required. Spend the next inquiry on a remaining decision gap.
 
 Use research_evidence for those missing facts. Query keywords execute the search; question
-states the decision it informs. Acquire requested and relevant primary records plus the few
+states the decision it informs. Europe PMC ANDs bare terms and does not expand synonyms by
+default. Use a short target plus one decisive concept, with parenthesized OR for alternative
+names/effects. A long list of desirable terms is an intersection, not broad semantic search.
+Acquire requested and relevant primary records plus the few
 necessary official structure/database records. Search titles are leads, not residue or causal
 evidence. If matches are empty or irrelevant, make one sensible broader query; do not keep
 adding desired terms. Search the target and decisive effect first. Do not require all synonyms
@@ -137,10 +143,12 @@ model correction rounds; parallel errors in one tool batch share one round. Fore
 
 Follow the current runtime stage and shared budget, which includes framework summaries.
 In Evidence Research, finish with SiteResearchHandoff: mapped candidates with focused citations,
-decision_questions, actual contradiction-search IDs, stopping_reason and unresolved questions. Runtime builds the dossier
-from original evidence; this handoff creates no Site proposal. In isolated synthesis, research
+decision_questions, actual contradiction-search IDs, stopping_reason and unresolved questions. Runtime builds the dossier from decision-critical original evidence, read primary passages
+(including opposition) and selected candidate facts; this handoff creates no Site proposal. In isolated synthesis, research
 is complete: the runtime supplies references/synthesis.md and the dossier, then accepts only
-SiteIntent. The research workflow above is not part of that fresh stage's instructions.
+SiteDecision: choose runtime candidate IDs and explain the science. Runtime hydrates exact
+SiteIntent membership/mapping/evidence bindings. The research workflow above is not part of
+that fresh stage's instructions.
 Give positive evidence, mechanism, access, approach, meaningful alternatives, risks and
 uncertainties. SUPPORTED is limited to actual evidence; poor access/shielding/unknown membrane
 orientation may be DISCOURAGED but testable. Illegal mapping/coordinates or explicit hard

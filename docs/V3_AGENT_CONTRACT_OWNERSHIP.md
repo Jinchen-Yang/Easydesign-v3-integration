@@ -3,14 +3,25 @@
 Phase 2.2d implementation audit, baseline `4df3b2bd19f72a39f67ad40c3874b30323f0aafb`.
 This is an ownership specification, not a declaration that real scientific acceptance passed.
 
-Architecture checkpoint update (20260912): the user authorized the context boundary in
-`ARCHITECTURE_CHECKPOINT_20260912.md`. Site now composes Evidence Research, a runtime-built
-Dossier and fresh isolated synthesis using public DeepAgents/LangGraph. Research summaries
-are fallible working memory; exact source passages, source failures, mapping/state facts and
-candidate evaluations are rehydrated from the existing verified artifact store. Synthesis
-receives no research messages or research summarization event and only offers SiteIntent.
-Its labels and citations must be present in the current dossier; the existing source/fact
-checks and independent Judge remain mandatory. No new scheduler, store or decision system.
+Phase 2 final closure update (20260913, under validation): the authoritative scope is
+`PHASE2_FINAL_ASSIGNMENT_20260912.md`. Stop after Phase 2 freeze; do not enter Phase 3.
+Research remains agentic. Runtime assembles an immutable Dossier with stable candidate IDs,
+exact authoritative membership/mapping and decision-scoped original evidence. A fresh LangChain
+structured inference returns only `SiteDecision`: ID selection/comparison, recommendation,
+scientific rationale, approach, risks and uncertainty. It cannot submit chains, residue arrays,
+number conversions, SASA or regenerated evidence identities. Runtime hydrates the existing
+SiteIntent from exact candidate definitions and validated research relations, then the separate
+Evidence Judge critiques it. Source/fact checks remain mandatory. The saved original Dossier
+retains the full candidate facts needed for hydration; the final inference receives a semantic
+scientific projection, with no Research/tool history or duplicated metadata forms.
+
+Decision-bound official passages and already-read primary publication passages are retained,
+including uncited opposing experiments; remaining database pages/full acquisition bodies stay in
+the existing durable store. The Judge receives the scoped passages independently of final
+citation repetition. Research preferences, conclusions and stopping claims remain fallible
+opinions; source verification never certifies scientific entailment. No new scheduler, store,
+planner, sufficiency agent or repair subsystem is introduced. The small decision shares the
+existing bounded schema-correction and global model-call accounting.
 
 DeepAgents handles research summarization and original-history offloading. Auxiliary summary
 calls share the persisted model-call budget. The former Site whole-history fitting and
@@ -63,7 +74,8 @@ Pure JSON text and fenced JSON do not submit proposals. Incidental prose accompa
 typed tool call is not authoritative and is replaced by the callback's runtime result. Invalid
 schema submissions get exact schema diagnostics through the framework; malformed tool JSON or
 missing typed submission gets a narrowly bounded correction. Two output-contract corrections
-are shared across roles in one persisted execution, separately from four shared source/projection correction rounds (20260912 bounded recovery update;
+are allowed per runtime-selected typed contract in one persisted execution (the global call
+budget remains shared across roles), separately from four shared source/projection correction rounds (20260912 bounded recovery update;
 historical Phase 2.2d used two). Every attempt also consumes the unchanged model-call budget.
 Errors within one native parallel tool batch share its runtime-derived round; every diagnostic
 remains recorded and explicit source selection is still mandatory. Replaying that exact batch

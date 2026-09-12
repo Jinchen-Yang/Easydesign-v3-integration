@@ -96,7 +96,11 @@ class ResearchQuery(StrictDTO):
         max_length=400,
         description="REQUIRED for any search "
         "operation: explicit database search keywords/syntax. The scientific "
-        "question is separate and does not execute a search. Omit for records.",
+        "question is separate and does not execute a search. Literature search uses Europe "
+        "PMC: bare terms are ANDed and synonym expansion is off. Use a short target plus "
+        "one decisive concept; put alternative names/effects in parenthesized OR groups. "
+        "Do not AND all binder formats or every desired outcome. Irrelevant hits require "
+        "one sensible reformulation, not a claim of absence. Omit for records.",
     )
     identifier: str = Field(
         default="",

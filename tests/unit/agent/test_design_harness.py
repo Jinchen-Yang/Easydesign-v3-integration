@@ -20,7 +20,7 @@ class DesignModel(SiteModel):
             return super().bind_tools(tools, **kwargs)
         names = {
             "target": "TargetInterpretation",
-            "site": "SiteIntent",
+            "site": "SiteDecision",
             "binder": "BinderIntent",
             "judge": "JudgeVerdict",
         }

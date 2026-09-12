@@ -205,11 +205,11 @@ def test_schema_failure_metadata_survives_exhausted_budget_without_reasoning_tex
     boundary.contract_error("SYNTHETIC prior correction 2")
     message = AIMessage(
         content=[{"type": "thinking", "thinking": "SYNTHETIC_PRIVATE_SENTINEL", "signature": "x"}],
-        tool_calls=[{"name": "SiteIntent", "args": {}, "id": "synthetic-empty"}],
+        tool_calls=[{"name": "SiteDecision", "args": {}, "id": "synthetic-empty"}],
         response_metadata={"stop_reason": stop_reason},
         usage_metadata={"input_tokens": 100, "output_tokens": 200, "total_tokens": 300},
     )
-    error = StructuredOutputValidationError("SiteIntent", ValueError("Required fields"), message)
+    error = StructuredOutputValidationError("SiteDecision", ValueError("Required fields"), message)
     with pytest.raises(AgentBoundaryError, match="contract repair budget"):
         boundary.contract_error(error)
     event = b.thread_latest("structured-output-error")
@@ -240,13 +240,13 @@ def test_fresh_synthesis_corrections_are_separate_but_persist_and_share_call_lim
     for _ in range(2):
         research.contract_error("SYNTHETIC Handoff correction")
     for _ in range(2):
-        synthesis.contract_error("SYNTHETIC SiteIntent correction")
+        synthesis.contract_error("SYNTHETIC SiteDecision correction")
     for boundary in (research, synthesis):
         with pytest.raises(AgentBoundaryError, match="contract repair budget"):
             boundary.contract_error("Still invalid")
     reopened = SessionStore(b.project)
     try:
-        for contract in ("SiteResearchHandoff", "SiteIntent"):
+        for contract in ("SiteResearchHandoff", "SiteDecision"):
             with pytest.raises(AgentBoundaryError, match="contract repair budget"):
                 reopened.reserve_contract_repair(
                     b.thread, "site", eid, "SYNTHETIC restart", contract=contract

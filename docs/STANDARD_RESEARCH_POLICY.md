@@ -42,13 +42,16 @@ No new Research Planner, Sufficiency Agent, workflow subsystem or Fast/Deep mode
   snapshot requires them and an actual literature-search receipt. The runtime proves the search
   occurred; its scientific adequacy, timing relative to the provisional ranking and saturation
   claim remain reviewable opinions, not deterministic certificates.
-- Dossier v4 places decision questions beside approved Target/candidate hard facts and exact
-  focused passages. All already-read focused passages, including uncited opposition, remain;
-  full acquisition bodies/bibliographies stay in the durable corpus. Bounded purposeful reading
-  provides the compact scope; no sentiment filter drops disagreeing evidence.
-- Fresh synthesis gets the original goal/current trusted revision plus the dossier, without
-  research/tool/thinking history. It must address the decision-critical questions and can reuse
-  their actual query IDs; it does not expand to unrelated taxonomy coverage.
+- Dossier v5 contains stable runtime candidate IDs, exact candidate facts and decision questions.
+  It retains decision-cited official passages plus read primary publication passages, including
+  uncited opposition; other database pages/full acquisition bodies remain in the durable corpus.
+  Scientific working-set projection preserves candidate distinctions, scoped evidence, source
+  provenance and uncertainty, without duplicate mapping/evidence forms or a topic checklist.
+- Fresh synthesis gets the original goal/current trusted revision plus this working set, without
+  research/tool/thinking history. It submits a small SiteDecision: candidate IDs, recommendation,
+  scientific selection/comparison, mechanism, approach, risks and uncertainty. Runtime hydrates
+  exact membership, mapping and validated evidence relations into authoritative SiteIntent;
+  the model does not regenerate those facts, citations or research conclusions.
 - The independent Judge receives the research stopping basis and its cited contrary evidence
   even when final SiteIntent omits that citation. Source artifacts and the derived dossier ref
   are verified through existing immutable evidence refs. No automatic approval follows.

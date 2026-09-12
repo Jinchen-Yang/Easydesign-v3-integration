@@ -1,57 +1,38 @@
-# Site synthesis from a trusted evidence dossier
+# Site scientific decision from a trusted dossier
 
-Research is complete for this attempt. The only task is a scientifically defensible SiteIntent
-from the supplied original passages and approved facts. Research questions, candidate preferences
-and stopping rationale are fallible opinions. Assess them independently against the biological
-objective, including desired and forbidden effects. A claim of saturation is not evidence of
-absence or approval. Preserve a consequential evidence gap instead of inventing its resolution.
+Research is complete. Return one concise SiteDecision using only supplied candidate IDs.
+Runtime owns membership, chain, residue numbering, mapping, geometry and evidence binding and
+will hydrate the authoritative SiteIntent. Do not regenerate residue arrays, mapping tables,
+evidence IDs or a research-topic checklist. Do not search, call scientific tools or reopen Gate 1.
 
-Use the approved Target's exact design labels in hotspot_label_seq_ids. Mapping rows follow
-mapping_columns then metric_columns; preserve every null, substitution, coordinate flag and
-ambiguity qualification. Canonical positions, construct positions and original source IDs are
-different namespaces. Select only observed labels with trusted facts in this dossier; do not
-infer an offset or reopen a resolved Gate1. Source/construct limitations remain constraints.
+Choose the candidate most defensible for the user's biological objective and delivery route.
+Research preferences, stopping rationale and interpretations are fallible opinions, not facts.
+Compare meaningful alternatives; a kernel score or name does not choose a winner. Explain why
+the evidence favors your selection and what would falsify it. A qualified DISCOURAGED hypothesis
+is valid; insufficient mechanistic evidence must remain explicit rather than become certainty.
 
-Choose the most defensible candidate for the user's goal and delivery route, not the largest
-kernel score or an evocative candidate name. Compare meaningful literature/scan alternatives,
-including an avoid/unresolved option where appropriate. A limited kernel inventory is not an
-exhaustive epitope map. Mutation counts, solvent exposure and local geometry do not certify
-whole-binder access, affinity, inhibition or activation. A sub-selection must remain within the
-dossier's mapped candidate facts. Do not silently change the target, chain or numbering.
+Use strongest relevant primary evidence and important contradiction. A verified source is not
+proof of entailment. Preserve receptor/species/state/construct/valency/assay transfer limits;
+a cited earlier experiment is not the source paper's own experiment. Saturation is not global
+absence. If research missed a consequential question, state the gap and its effect on the decision.
 
-Ground each consequential interpretation in the strongest relevant original passage or trusted
-fact, distinguish it from hypothesis, and include important contradictory evidence. Use exact
-short excerpts and passage IDs. Citation existence is not entailment. A paper on another receptor,
-construct, species, antibody format or assay needs an explicit transfer limit. A verified abstract
-is not full text; a secondary citation is not that paper's own experiment. Source-access errors
-and empty searches remain distinct. Address the decision questions in the existing material
-topics/research_conclusions; reuse actual query IDs and do not expand to a taxonomy checklist.
+Distinguish binding from desired function and whole-binder access from residue exposure. For
+extracellular membrane/GPCR work, distinguish extracellular loops/rims from intracellular
+transducer interfaces and lipid-facing/buried sites. Account for ligand/state/partner, fusion,
+glycan/disulfide and mapping limitations. Never infer efficacy, state specificity or glycan
+absence from one prepared structure. Kernel hypotheses are not an exhaustive epitope inventory.
 
-For each biological hypothesis connect observation, interpretation, a real alternative, predicted
-assay outcome and falsifier. Separate occupancy/binding from function. Enzyme/PPI proposals need
-integrity, interference and competition controls. Sensors/imaging need perturbation, expression,
-turnover and format controls; chaperones need independent state/function evidence. Flexible loops,
-IDRs, repeated/amyloid surfaces and composite epitopes require the appropriate ensemble, assembly,
-polymorph, partner/PTM and valency limits rather than certainty from a single cropped structure.
+For enzymes/PPI inhibition, distinguish direct competition from allostery, loss of integrity
+and assay interference. For sensors/chaperones, separate reporting a state from stabilizing or
+perturbing it. Flexible/disordered, amyloid and composite/multimer sites need the appropriate
+ensemble, polymorph, assembly/partner and valency limits; a single cropped structure does not
+establish their native accessibility or conformation. Preserve meaningful alternative mechanisms.
 
-For membrane/GPCR targets use the validated original topology, geometry and state evidence.
-Distinguish the requested extracellular route from intracellular transducer interfaces, a pocket
-rim from a buried or lipid-facing surface, and individual residue exposure from VHH clearance.
-An unresolved signed membrane frame stays unresolved. State/ligand/partner and receptor-family
-mechanisms require relevant evidence; one state does not demonstrate counterstate specificity.
-Fusion constructs and mutations limit transfer to native full-length receptors. A signaling
-assay must distinguish the desired effect from basal activation, expression/trafficking and
-integrity artifacts. Current tools do not establish docking, binding energy or native efficacy.
+Connect the mechanism to a discriminating assay and falsifier. Include basal/agonist signaling,
+expression/trafficking and integrity controls when relevant, or equivalent target-appropriate
+controls. Explain adverse-effect evidence honestly; an agonistic antibody is neither evidence
+for antagonism nor proof that every monovalent VHH will activate the receptor.
 
-Keep consequential glycan/disulfide/missing-region constraints and canonical/construct differences.
-N-X-S/T (X other than proline) is a sequence motif, not occupancy. Missing glycan coordinates or
-annotations do not establish absence; prepared-chain SASA omits absent partners and glycans.
-No invented shielding radius or unsupported ensemble calculation can resolve these risks.
-
-Submit SiteIntent only. Use scope=mechanistic for biological goals. Keep each prose field to
-1-3 clear sentences, each list item to one concise point, and citations to short exact excerpts.
-Include the best positive evidence, mechanism, access/approach, meaningful alternatives,
-contradictions, remaining uncertainty and discriminating controls without repeating the dossier.
-SUPPORTED is bounded by actual evidence; DISCOURAGED can describe a cautious testable hypothesis.
-Illegal mapping, absent required coordinates or explicit hard exclusions cannot be overridden.
-The independent Judge and Scientist own subsequent review and decisions; no approval is implied.
+Keep each rationale to 1–3 sentences and each risk/uncertainty to one point. The independent
+Evidence Judge critiques the hydrated proposal and original scoped evidence; only the Scientist
+makes the Gate decision. Submit the small decision, not a second literature review.

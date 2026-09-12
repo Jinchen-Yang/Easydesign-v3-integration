@@ -2121,3 +2121,72 @@ configuration unchanged. The next real retry uses approved GPCRTarget104; Case2 
 Checks177c also passed make check: repository/assets, compilation, whole-repository Ruff and
 mypy187source files. This does not replace the fresh full test/web regression required after
 Case2scientific acceptance. No Phase3/4 implementation or compute was started during this fix.
+
+
+## Phase 2 final closure scope and SiteDecision implementation — 2026-09-12 (in progress)
+
+The user's new authoritative assignment is `PHASE2_FINAL_ASSIGNMENT_20260912.md`.
+Only complete/freeze Phase 2, then STOP for review. Phase 3, Pilot Generation, Scale,
+Workbench, storage overhaul, legacy orchestration deletion and Figure 2 are out of scope.
+Accepted Cases 1/3/4/5, their snapshots, milestones and the deterministic kernel stay intact.
+
+Live177 on f52d505b failed after creating the original Dossier v4. Two fresh synthesis calls
+used all 16,384 output tokens; the second submitted empty SiteIntent arguments. Native schema
+recovery then carried that failed response and reached 143,827 input characters, triggering the
+unchanged 100k guard. No valid SiteIntent, independent Judge or Gate2 scientific PASS occurred.
+The accepted source was exported for collaborator review and the local178 draft was preserved
+separately; it was not applied wholesale. No higher model/reasoning/context limit was selected.
+
+Implementation under targeted validation replaces final model SiteIntent with a small
+SiteDecision: candidate IDs, scientific choice/comparison, rationale, approach, risks and
+uncertainty. Runtime gives candidates stable IDs and hydrates their exact membership, mapping
+and original research/evidence relations. The model does not regenerate number arrays, chain,
+SASA, evidence IDs or topic conclusions. Synthesis uses LangChain create_agent with only the
+structured decision tool; Research continues to use DeepAgents/native summarization. Existing
+bounded contract corrections and shared call budget are retained; no new repair subsystem.
+
+Dossier v5 selects decision-cited official passages and read primary publication passages,
+including uncited opposition, without sentiment filtering. Detailed acquisition/database pages
+stay durable. The final scientific projection avoids duplicate candidate mapping/metadata;
+the immutable dossier still retains facts for trusted hydration. The independent Judge receives
+all selected source passages and original decision-critical assessments, even when final
+scientific judgment does not repeat a citation. Model preferences/stopping claims remain opinions.
+
+Read-only replay of live177's exact saved evidence produced a 58,834-character runtime Dossier
+and a 33,992-character decision working set (original78,376). Selected passages:3 of19, with
+original source text retained; no new research/provider call. Runtime topology identifies the
+third candidate as ICL2/TM4/TM5/TM6, not purely intracellular loops. Source workspace and SQLite
+were opened read-only; the real project is the existing approved104 workspace shared by these
+continuation threads, not a new live177 workspace. No original evidence/checkpoint was modified.
+These are engineering observations, not scientific acceptance or completion of the new replay.
+
+Early checks178a/b/c caught formatting/type-annotation issues and stopped before pytest. Those
+issues were repaired. checks178d passed Ruff/mypy23 and is the first targeted pytest run for
+this implementation. Next: complete targeted tests, bounded real-model saved-evidence replay
+(A decision, B nonidentity hydration, C independent critique, D native restart reuse), then a new
+real GPCR run. Full regression is deferred until all five scientific cases pass/revalidate.
+
+
+### Targeted SiteDecision verification — 2026-09-13
+
+checks178d:24 passed/1 failed (192.92s). The failure was a test assertion still expecting the
+old model-authored selected_site residue array in a correction; the live runtime had correctly
+retained only the new small SiteDecision. The test now checks the raw ID decision separately
+from its runtime-hydrated [1,2,3] membership. checks178e stopped on replay-script line formatting.
+checks178f: Ruff PASS, mypy23 PASS,47 targeted tests PASS in344.51s. Coverage includes the small
+contract, whitespace/forbidden fact fields, nonidentity hydration, native Dossier restart,
+persistent output correction, and shared Target/Site/Judge/Binder steering and recovery.
+These are deterministic/scripted results, not a real GPCR Golden PASS or full regression.
+385 protected files and the Golden oracle SHA2e367355d197d541df7f77b87f6b505659a81997dc79db7a97a0b0e0ff3258c9
+remain unchanged. The model config SHA remains a713d84d4ac6c3926a14adfcef47a6710a61e35664e5778b8671fa7f870e3ab2.
+
+The decision projection explicitly scopes legacy prepared-target evaluator limitations: absence
+of its optional BiologyContext does not negate independently retrieved receptor topology/state.
+General enzyme/PPI, sensor/chaperone, disordered/amyloid and composite-assembly reasoning remains
+in the synthesis Skill. The forthcoming saved-evidence replay shares the live SiteDecision
+schema, prompt and model config, uses no Research tools and writes no source-project data.
+Its independent Judge result is a contract critique, not a registered Gate or Golden acceptance.
+
+checks178g (final semantic projection/Skill adjustment): Ruff PASS, mypy23 PASS,
+2 focused tests PASS in20.55s (runtime candidate hydration and bounded submission correction).
+This completes the pre-replay engineering checkpoint; real-model replay and Case2 remain pending.

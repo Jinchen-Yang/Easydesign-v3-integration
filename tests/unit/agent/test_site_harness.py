@@ -20,16 +20,20 @@ class SiteModel(ScriptedModel):
     offered: set[str] = Field(default_factory=set)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
-        outputs = {"target": "TargetInterpretation", "site": "SiteIntent", "judge": "JudgeVerdict"}
+        outputs = {
+            "target": "TargetInterpretation",
+            "site": "SiteDecision",
+            "judge": "JudgeVerdict",
+        }
         expected = PHASE2_ALLOWED[self.role] | (
             {outputs[self.role]} if self.role in outputs else set()
         )
         names = {t.name for t in tools}
         self.offered = names
         if self.role == "site":
-            assert names <= PHASE2_ALLOWED["site"] | {"SiteResearchHandoff", "SiteIntent"}
-            if "SiteIntent" in names:
-                assert names == {"SiteIntent"}
+            assert names <= PHASE2_ALLOWED["site"] | {"SiteResearchHandoff", "SiteDecision"}
+            if "SiteDecision" in names:
+                assert names == {"SiteDecision"}
             return self
         if self.role == "coordinator":
             expected -= {"read_file"}
@@ -53,24 +57,27 @@ class SiteModel(ScriptedModel):
         named = [(c.get("name"), c, m) for c, m in results]
         if self.role in {"site", "judge"}:
             human = next(m for m in messages if isinstance(m, HumanMessage))
-            if self.role == "site" and "SiteIntent" in self.offered:
+            if self.role == "site" and "SiteDecision" in self.offered:
                 payload = json.loads(human.text)
                 assert "dossier" in payload and "runtime_history" not in payload
                 assert "Verified research activity" not in messages[0].text
-                assert "Site synthesis from a trusted evidence dossier" in messages[0].text
+                assert "Site scientific decision from a trusted dossier" in messages[0].text
                 assert "Use research_evidence" not in messages[0].text
                 assert "continue_evidence(cursor=" not in messages[0].text
                 assert "Stop policy:" not in messages[0].text
-                assert all(m.name == "SiteIntent" for m in messages if isinstance(m, ToolMessage))
+                assert all(m.name == "SiteDecision" for m in messages if isinstance(m, ToolMessage))
                 assert all(
-                    c["name"] == "SiteIntent"
+                    c["name"] == "SiteDecision"
                     for m in messages
                     if isinstance(m, AIMessage)
                     for c in m.tool_calls
                 )
-                candidate = payload["dossier"]["candidate_comparison"][0]
-                labels = candidate["research_hypothesis"]["hotspot_label_seq_ids"]
-                return self.call("SiteIntent", **site_intent(labels).model_dump(mode="json"))
+                from tests.unit.agent.test_site_decision import decision
+
+                candidate = payload["dossier"]["candidates"][0]
+                return self.call(
+                    "SiteDecision", **decision(candidate["candidate_id"]).model_dump(mode="json")
+                )
             if self.role == "site":
                 assert "Verified research activity" in messages[0].text
                 assert '"literature_discovery":[]' in messages[0].text
@@ -283,10 +290,10 @@ class CorrectableSiteModel(SiteModel):
             self.role == "site"
             and not self.malformed_once
             and result.tool_calls
-            and result.tool_calls[0]["name"] == "SiteIntent"
+            and result.tool_calls[0]["name"] == "SiteDecision"
         ):
             self.malformed_once = True
-            result.tool_calls[0]["args"]["binder_approach"] = {"rationale": "wrong field type"}
+            result.tool_calls[0]["args"]["approach_rationale"] = {"rationale": "wrong field type"}
         return result
 
 
@@ -331,14 +338,14 @@ class InvalidJsonSiteModel(SiteModel):
             self.role == "site"
             and not self.malformed_once
             and result.tool_calls
-            and result.tool_calls[0]["name"] == "SiteIntent"
+            and result.tool_calls[0]["name"] == "SiteDecision"
         ):
             self.malformed_once = True
             return AIMessage(
                 content="",
                 invalid_tool_calls=[
                     {
-                        "name": "SiteIntent",
+                        "name": "SiteDecision",
                         "args": '{"binder_approach": unquoted}',
                         "id": "bad-site-json",
                         "error": "Invalid JSON",
@@ -364,7 +371,7 @@ async def test_invalid_provider_json_repair_is_budgeted_and_has_no_duplicate_job
     assert len(contexts) == len(calls)
     responses = [e["payload"] for e in events if e["kind"] == "model-response"]
     assert len(responses) == len(calls)
-    assert any("SiteIntent" in m["invalid_tool_names"] for e in responses for m in e["responses"])
+    assert any("SiteDecision" in m["invalid_tool_names"] for e in responses for m in e["responses"])
     assert all(
         set(m) == {"stop_reason", "usage", "tool_names", "invalid_tool_names"}
         for e in responses
@@ -439,14 +446,21 @@ class ResearchCorrectionSite(SiteModel):
                 if isinstance(m, HumanMessage) and '"last_rejected_submission"' in m.text:
                     pending.append(json.loads(m.text))
         if pending:
-            assert pending[-1]["last_rejected_submission"]["selected_site"][
-                "hotspot_label_seq_ids"
-            ] == [1, 2, 3]
+            opinion = pending[-1]["last_rejected_submission"]
+            dossier = json.loads(
+                next(
+                    m.text
+                    for m in messages
+                    if isinstance(m, HumanMessage) and '"dossier"' in m.text
+                )
+            )["dossier"]
+            assert opinion["selected_candidate_id"] == dossier["candidates"][0]["candidate_id"]
+            assert "selected_site" not in opinion
             assert "SYNTHETIC research correction" in pending[-1]["diagnostic"]
             if not self.corrective_read:
                 self.corrective_read = True
                 # Synthesis rereads its supplied dossier; no research tool is offered.
-                assert self.offered == {"SiteIntent"}
+                assert self.offered == {"SiteDecision"}
             self.retained_after_read = True
         return super().answer(messages)
 
@@ -479,7 +493,9 @@ async def test_runtime_submission_correction_keeps_isolated_dossier(
     assert models["site"].corrective_read and models["site"].retained_after_read
     events = site_bridge.store.events(site_bridge.thread)
     rejection = next(e["payload"] for e in events if e["kind"] == "rejected-submission")
-    assert rejection["submitted_opinion"] == rejected[0]
+    assert "selected_candidate_id" in rejection["submitted_opinion"]
+    assert "selected_site" not in rejection["submitted_opinion"]
+    assert rejected[0]["selected_site"]["hotspot_label_seq_ids"] == [1, 2, 3]
     assert len([e for e in events if e["kind"] == "contract-repair"]) == 1
     assert len([e for e in events if e["kind"] == "site-proposal"]) == 1
     guard = RoleBoundary(

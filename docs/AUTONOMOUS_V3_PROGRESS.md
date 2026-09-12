@@ -1660,3 +1660,18 @@ round-trip, original user/checkpoint preservation, incomplete native transaction
 receptor encoding isolation, whole latest-batch delivery, scoped aliases and source boundaries.
 Ruff168 PASS; mypy168 PASS2source modules. Fresh live168 again reuses approved GPCRTarget104.
 Cases1/3/4/5 stay accepted; Case2 and final full regression remain due. Phase2 NOT FROZEN.
+
+
+### Related Site harness verification (168)
+
+The related scripted Site harness completed:10 PASS in123.05s (`site-harness168.log`).
+This is deterministic/scripted harness coverage, not GPCR scientific acceptance. Live168
+remains in progress from the unchanged Agent sourcea103ed00. It has acquired the primary
+abstract and official records; the attempted PMC3058308 full text returned404 and remains an
+explicit access limitation. Repeated scoped reads and the initially rejected GPCRdb acquisition
+are still under observation. No SiteIntent/Gate2 acceptance is inferred from partial progress.
+
+A stale developer-side SSH multiplex connection delayed inspection; a separate direct SSH
+connection succeeded, and the local read-only helper now uses direct SSH. No server Agent,
+scientific job, data, checkpoint or remote runtime was restarted or changed for this transport
+repair. Source/Skill fingerprints remain unchanged during live168.

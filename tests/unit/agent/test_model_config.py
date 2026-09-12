@@ -174,13 +174,13 @@ async def test_real_provider_adapter_preserves_typed_tool_contract(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reasoning", ["none", "low"])
+@pytest.mark.parametrize("reasoning", ["none", "low", "high"])
 async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     bridge: Any, monkeypatch: Any, reasoning: Any
 ) -> None:
     import json
 
-    if reasoning == "low":
+    if reasoning != "none":
         import httpx2 as httpx
     else:
         import httpx
@@ -203,7 +203,7 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
     sync = httpx.Client(transport=httpx.MockTransport(capture))
 
-    if reasoning == "low":
+    if reasoning != "none":
         import anthropic
 
         original = anthropic.AsyncClient
@@ -256,6 +256,7 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     else:
         assert [t["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
         assert requests[0]["thinking"]["type"] == "enabled"
+        assert requests[0]["output_config"] == {"effort": reasoning}
         assert requests[0].get("tool_choice", {"type": "auto"}) == {"type": "auto"}
     assert requests[0]["max_tokens"] == 2048
     last = requests[0]["messages"][-1]
@@ -292,7 +293,10 @@ def test_transport_metadata_excludes_credentials_messages_and_tool_arguments() -
     assert result["message_count"] == 1 and "private" not in json.dumps(result)
 
 
-def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(monkeypatch: Any) -> None:
+@pytest.mark.parametrize("effort", ["low", "high"])
+def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(
+    monkeypatch: Any, effort: Any
+) -> None:
     calls = []
     monkeypatch.setenv("TEST_KEY", "test-secret-never-persist")
     monkeypatch.setattr(
@@ -302,7 +306,7 @@ def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(monkeypatch: An
         provider="deepseek",
         model="deepseek-v4-pro",
         secret_env="TEST_KEY",
-        reasoning_effort="low",
+        reasoning_effort=effort,
         max_output_tokens=16384,
     )
     assert selected.harness_key == "anthropic:deepseek-v4-pro"
@@ -313,14 +317,14 @@ def test_deepseek_reasoning_uses_existing_roundtrip_safe_adapter(monkeypatch: An
         assert kwargs["model_provider"] == "anthropic"
         assert kwargs["base_url"] == "https://api.deepseek.com/anthropic"
         assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
-        assert kwargs["output_config"] == {"effort": "low"}
+        assert kwargs["output_config"] == {"effort": effort}
         assert kwargs["max_tokens"] == 16384
         assert kwargs["max_retries"] == 0
     assert "test-secret" not in selected.model_dump_json()
     for provider in ("openai", "anthropic"):
         with pytest.raises(ValidationError, match="verified only for DeepSeek"):
             LLMConfig(
-                provider=provider, model="test", secret_env="TEST_KEY", reasoning_effort="low"
+                provider=provider, model="test", secret_env="TEST_KEY", reasoning_effort=effort
             )
 
 

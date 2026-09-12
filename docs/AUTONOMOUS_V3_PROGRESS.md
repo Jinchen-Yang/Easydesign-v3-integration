@@ -1675,3 +1675,32 @@ A stale developer-side SSH multiplex connection delayed inspection; a separate d
 connection succeeded, and the local read-only helper now uses direct SSH. No server Agent,
 scientific job, data, checkpoint or remote runtime was restarted or changed for this transport
 repair. Source/Skill fingerprints remain unchanged during live168.
+
+
+### Repeated scalar reads and explicit Site reasoning experiment (168/169)
+
+Live168 (`phase2-goldens-20260912T014139653529Z`) FAILED after Coordinator3/Site19calls.
+Its last three scoped answers were retained, but92601chars only reduced to67477 after ordinary
+archival and exact history references. The unchanged60000guard correctly refused the next
+model request. No SiteIntent/Gate2 and no GPCR scientific acceptance. The native model repeatedly
+requested matching_chunks (integer values1/8/27) with different limits and repeatedly reread
+candidate_patches/mapping snapshots. GPCRdb was initially in a rejected batch; a later retry
+without selection_reason received SOURCE_NOT_SELECTED, but the model did not complete that
+prerequisite or receptor analysis. A false Gs-heterotrimer premise in source questions is not
+accepted as a verified3P0G fact. All failed sources, tool outputs and checkpoints remain.
+
+The Site Skill now explicitly distinguishes the matching_chunks count from cards/next_cursor
+and tells the owner not to reread an unchanged stored value. The next experiment uses the same
+DeepSeekV4Pro native thinking adapter with Site effort **high**, replacing **low**; Coordinator
+and other roles are unchanged. This is an explicit recorded engineering choice, not a hidden
+provider/model fallback. Model output16384, input60000 and shared32calls remain unchanged.
+`model-config169.json` preserves exact old/new configurations and hashes; new configuration SHA
+cbcb92de6e402e9ecb7b184570eeee0bc39924aa5452b723e65cf5d083e04294. Existing per-case accepted
+reports retain their own exact model configuration. They are not relabeled as high-effort runs.
+
+Targeted169:35 PASS in6.74s. The actual SDK-payload regression now covers both low/high effort,
+including the SiteIntent-only finalization tool set and explicit output_config effort, without
+network calls. Existing history/source/argument contracts remain covered. Two expected native
+thinking/forced-tool warnings are retained; runtime uses the supported auto-tool request.
+Ruff169 PASS. Protected169:all385baseline files unchanged. Fresh live169 reuses approved
+GPCRTarget104; no Target preparation or scientific kernel work is repeated. Phase2 NOT FROZEN.

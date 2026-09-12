@@ -23,7 +23,10 @@ Read focused passages with retrieve_evidence(need, question, source_id, feature_
 annotations, select literal feature_types shown in its receipt rather than paging bibliography.
 Continue only a needed page with continue_evidence(cursor=exact_next_cursor); it restores the
 original verified question/need/source/filter. For a different question start a new retrieval.
-Never edit/decode/rebuild cursors. Cite exact returned passage card IDs and short excerpts.
+Never edit/decode/rebuild cursors. matching_chunks is an integer count, not passage text or a
+list. Read cards for the returned page or continue_evidence for its next_cursor; changing a
+count's offset/limit does not reveal evidence. Do not repeatedly request the same stored value.
+Cite exact returned passage card IDs and short excerpts.
 Source IDs, source acquisition card IDs and focused passage card IDs are different identifiers.
 
 A few relevant sources and mapped candidate comparisons can support a bounded hypothesis;

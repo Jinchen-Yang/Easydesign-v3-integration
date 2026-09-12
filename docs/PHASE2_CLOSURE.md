@@ -14,7 +14,7 @@ Case4 after an explicit validation-actor REVISE of failed160. It preserves the e
 all7scaffolds/40each/280planned and full context, with actual compiler/backend checks and fresh
 Judge/content review. No Gate3 approval or generation. Native163 also passed Case5 after explicit REVISE with exact
 source/compiled YAML bytes, real backend checks and fresh independent content review. Case2
-GPCR remains incomplete after166 context failure; repair167 adds exact repeated-value display and short-page admission. No Phase2 freeze or Phase3/4 acceptance.
+GPCR remains incomplete after167 late-history context failure; repair168 shares exact repeated history values. No Phase2 freeze or Phase3/4 acceptance.
 The historical no-bound-job and evidence-page delivery defects below are repaired with targeted
 regressions. A new full regression is due after all five scientific goldens pass.
 

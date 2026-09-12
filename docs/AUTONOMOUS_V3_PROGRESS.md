@@ -1625,3 +1625,38 @@ collision, source/projection recovery and admission boundaries. A final wording 
 uses in-the-same-view (JSON serialization can reorder keys); targeted167c7PASS in2.01s.
 Ruff167b PASS; mypy167b PASS2source modules. Protected167:all385baseline files unchanged.
 Next fresh live167 from approved GPCRTarget104. Cases1/3/4/5 stay accepted; Phase2 not frozen.
+
+
+### Late completed-history value references (live167 /168)
+
+Live167 (`phase2-goldens-20260912T012118550748Z`) delivered the complete receptor analysis into
+real subsequent model calls (58664chars), and actually used the new state/membrane/topology
+aliases. It later repeated scalar matching_chunks reads, incorrectly indexed that count once,
+and reread residue-region/topology views. The fourth shared repair round handled that scalar
+argument error. It finally requested real individual inhibit/activate candidate_overview entries,
+but their first delivery failed at60158chars after ordinary archival (71289before); Coordinator3/
+Site16calls. No SiteIntent/Gate2. This is a later context failure, not a scientific rejection.
+The successful first-analysis and alias behaviors do not constitute GPCR case acceptance.
+
+Only if Site's reasoning working history remains oversized after existing whole-view archival,
+the same exact-value reference encoder now shares repeated historical values inside that one
+history message. history_value_same_as points to the exact value at a local JSON pointer;
+history_encoding explicitly states the scope and complete-value semantics. All unique action
+arguments, answers, errors, limits, source qualifications and nulls stay in the same message.
+Original user turns and checkpoints are unchanged. Existing receptor display encodings remain
+untouched within their own tool view; reserved-field collisions retain unencoded data. There
+is no model-generated summary, new artifact/checkpoint/store, auto-retry, scientific selection
+or scheduling. Native/non-reasoning input behavior remains unchanged. Telemetry records when
+this last-resort exact history encoding is used; the60000hard guard still applies afterward.
+
+`history-reference-replay168.json` replays the actual60-message failed167 checkpoint with the
+original and repaired fitters:60158→56080chars at the same3602system chars. Every working-history
+value expands exactly; all3latest answers match their originals after the already-existing field
+index interning is expanded. Human turns, scientific archival choices and original checkpoint
+messages are unchanged. This is DETERMINISTIC REPLAY, not real model acceptance.
+
+Targeted168:28 PASS in7.15s, including large repeated diagnostics with full scientific payload
+round-trip, original user/checkpoint preservation, incomplete native transactions, existing
+receptor encoding isolation, whole latest-batch delivery, scoped aliases and source boundaries.
+Ruff168 PASS; mypy168 PASS2source modules. Fresh live168 again reuses approved GPCRTarget104.
+Cases1/3/4/5 stay accepted; Case2 and final full regression remain due. Phase2 NOT FROZEN.

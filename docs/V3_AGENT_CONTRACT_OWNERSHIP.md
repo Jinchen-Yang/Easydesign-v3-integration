@@ -65,6 +65,13 @@ values. Every unique scientific value remains in that same tool view and expands
 ordinary overview. Raw analysis and scoped candidate aliases stay unchanged/expanded; reserved
 source-field collisions use the ordinary representation. No scientific selection or summary.
 
+If Site reasoning history still exceeds the input cap after whole-view archival, exact repeated
+historical values may use history_value_same_as pointers within that one working-history message.
+Every unique value remains present and mechanically expands to the original working view. User
+turns, checkpoint records, latest answers and scientific archival choices do not change. Existing
+encoded receptor views retain their own local scope. Incomplete exchanges and native/non-reasoning
+input behavior are unchanged; telemetry identifies this encoding and the60k guard still applies.
+
 ## Target facts and scientific consistency
 
 `TargetInterpretation` contains no hard-fact, evidence-ID or source-reference fields.

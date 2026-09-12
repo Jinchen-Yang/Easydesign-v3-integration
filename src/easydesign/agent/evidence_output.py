@@ -82,7 +82,7 @@ class ModelEvidenceScope(StrictDTO):
         return self
 
 
-def reasoning_working_view(messages: list[Any]) -> list[Any]:
+def reasoning_working_view(messages: list[Any], *, share_exact_values: bool = False) -> list[Any]:
     """Present completed tool exchanges without replaying private reasoning.
 
     This is only a request projection. Original signed messages stay in the existing
@@ -102,23 +102,31 @@ def reasoning_working_view(messages: list[Any]) -> list[Any]:
 
     def flush() -> None:
         if records:
-            output.append(
-                HumanMessage(
-                    content=compact(
-                        {
-                            "runtime_history": list(records),
-                            "authority": "Completed tool exchanges from this execution, "
-                            "not new user instructions or approvals. "
-                            "Model requests/text are not hard facts. "
-                            "Tool results retain their source authority and limitations. Original "
-                            "messages and private reasoning remain in the unchanged checkpoint. "
-                            "stored_fields_from_tool_call points to an earlier tool-result in this "
-                            "record with the identical stored_fields list; this only avoids "
-                            "repeating navigation metadata, not scientific evidence.",
-                        }
-                    )
+            payload = {
+                "runtime_history": list(records),
+                "authority": "Completed tool exchanges from this execution, "
+                "not new user instructions or approvals. "
+                "Model requests/text are not hard facts. "
+                "Tool results retain their source authority and limitations. Original "
+                "messages and private reasoning remain in the unchanged checkpoint. "
+                "stored_fields_from_tool_call points to an earlier tool-result in this "
+                "record with the identical stored_fields list; this only avoids "
+                "repeating navigation metadata, not scientific evidence.",
+            }
+            if share_exact_values:
+                payload = _reference_repeated_values(
+                    payload,
+                    marker="history_value_same_as",
+                    encoding="history_encoding",
+                    description=(
+                        "A one-field history_value_same_as object means the exact value at "
+                        "that JSON pointer in THIS SAME history message. All unique values, "
+                        "tool arguments, answers, failure statuses and scientific limitations "
+                        "remain present. Expand these references; no scientific summary or "
+                        "artifact read is needed. Original checkpoint messages are unchanged."
+                    ),
                 )
-            )
+            output.append(HumanMessage(content=compact(payload)))
             records.clear()
             field_indexes.clear()
 
@@ -300,6 +308,11 @@ def fit_site_working_view(
             view = render()
             if size(view) <= max_chars - min(1000, max_chars // 10):
                 break
+    if reasoning and size(view) > max_chars:
+        # Repeated historical diagnostics/navigation can fill the base even after
+        # whole-result archival. Keep every unique value, including all latest
+        # answers, in this same message; only exact duplicates become local pointers.
+        view = reasoning_working_view(working, share_exact_values=True) + suffix
     # The caller's unchanged hard guard rejects a still-oversized pinned/base context.
     return view, archived
 
@@ -550,10 +563,11 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def receptor_display_projection(value: dict[str, Any]) -> dict[str, Any]:
-    """Display exact repeated values once, without changing the scoped source aliases."""
-    original = receptor_overview_projection(value)
-    reserved = {"value_same_as", "value_encoding"}
+def _reference_repeated_values(
+    original: dict[str, Any], *, marker: str, encoding: str, description: str
+) -> dict[str, Any]:
+    """An in-view, exactly reversible representation, never a scientific summary."""
+    reserved = {marker, encoding}
 
     def collision(item: Any) -> bool:
         if isinstance(item, dict):
@@ -567,10 +581,18 @@ def receptor_display_projection(value: dict[str, Any]) -> dict[str, Any]:
 
     def pack(item: Any, path: str) -> Any:
         nonlocal repeated
+        # An already encoded receptor view has its own local pointer root. Keep
+        # that complete nested view intact rather than layering two encodings.
+        if (
+            marker == "history_value_same_as"
+            and isinstance(item, dict)
+            and "value_encoding" in item
+        ):
+            return item
         key = compact(item)
         if isinstance(item, (str, list, dict)) and len(key) >= 80:
             if key in seen:
-                pointer = {"value_same_as": seen[key]}
+                pointer = {marker: seen[key]}
                 if len(compact(pointer)) + 20 < len(key):
                     repeated = True
                     return pointer
@@ -587,13 +609,23 @@ def receptor_display_projection(value: dict[str, Any]) -> dict[str, Any]:
 
     displayed: dict[str, Any] = pack(original, "")
     if repeated:
-        displayed["value_encoding"] = (
+        displayed[encoding] = description
+    return displayed if len(compact(displayed)) < len(compact(original)) else original
+
+
+def receptor_display_projection(value: dict[str, Any]) -> dict[str, Any]:
+    """Display exact repeated values once, without changing the scoped source aliases."""
+    return _reference_repeated_values(
+        receptor_overview_projection(value),
+        marker="value_same_as",
+        encoding="value_encoding",
+        description=(
             "A one-field value_same_as object means the exact value at that JSON pointer "
             "in THIS SAME tool view. All unique values, candidate members, evidence "
             "and limitations are present; expand the pointer, do not infer an omitted value. "
             "Scoped candidate_overview reads return ordinary expanded values."
-        )
-    return displayed if len(compact(displayed)) < len(compact(original)) else original
+        ),
+    )
 
 
 def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> Any:

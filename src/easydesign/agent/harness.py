@@ -712,6 +712,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "after_chars": chars,
                         "archived_views": archived,
                         "original_messages_unchanged": True,
+                        "exact_history_value_references": any(
+                            isinstance(m, HumanMessage) and '"history_encoding":' in str(m.content)
+                            for m in call_messages
+                        ),
                     },
                 )
             if chars > self.config.max_input_chars:
@@ -737,6 +741,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "repair_attempt": attempt,
                     "tool_mode": "site-synthesis" if synthesize else "research",
                     "history_projection": "completed-tool-records" if reasoning else "native",
+                    "exact_history_value_references": any(
+                        isinstance(m, HumanMessage) and '"history_encoding":' in str(m.content)
+                        for m in call_messages
+                    ),
                     "offered_action_tools": [t.name for t in call_tools],
                     "structured_output_tool": self.output_schema.__name__
                     if self.output_schema

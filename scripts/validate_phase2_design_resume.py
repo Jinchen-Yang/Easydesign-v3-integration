@@ -56,6 +56,44 @@ def reviewed_site(bridge, request, review):
     return approved
 
 
+def reviewed_design_revision(bridge, request, review):
+    """Bind a developer-authored failed review to the existing trusted REVISE path."""
+    binding = hashlib.sha256(
+        json.dumps(request["evidence"], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    assert request["snapshot_sha256"] == review["snapshot_sha256"] == binding
+    assert review["reviewer"] == "development-scientific-content-review"
+    assert review["Decision"] == "FAIL"
+    sections = [
+        "Hard Facts",
+        "Scientific Interpretation",
+        "Evidence",
+        "Uncertainty",
+        "Alternatives",
+        "Decision",
+    ]
+    assert request["required_review_sections"] == sections
+    assert all(review.get(section) for section in sections)
+    instruction = review.get("revision_instruction")
+    assert isinstance(instruction, str) and len(instruction.strip()) >= 20
+    evidence = request["evidence"]
+    card = bridge.store.card(bridge.thread, evidence["card"]["card_id"])
+    assert card.gate_type == "design-specification"
+    assert card.model_dump(mode="json") == evidence["card"]
+    assert golden.judge_record(bridge, evidence["card"]) == evidence["judge"]
+    proposal = bridge.current_design()
+    assert proposal and proposal["intent"]["strategy_source"] == "standard"
+    assert bridge.design_snapshot(proposal) == evidence["snapshot"]
+    assert bridge.approved_site() == evidence["approved_site"]
+    assert bridge.store.response(bridge.thread, card.card_id) is None
+    return {
+        "decision": "revise",
+        "card_id": card.card_id,
+        "user": golden.ACTOR,
+        "human_instruction": instruction,
+    }
+
+
 async def main():
     origin = Path(os.environ["EASYDESIGN_GOLDEN_APPROVED_SITE"]).resolve()
     assert origin.name == "soluble"
@@ -165,12 +203,51 @@ async def main():
                 with (case / "progress.jsonl").open("a") as handle:
                     handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
+        standard_revision = None
+        revision_thread = None
+        if os.environ.get("EASYDESIGN_GOLDEN_REVISE_DESIGN"):
+            active_case = "design-revision-verification"
+            revision_case = Path(os.environ["EASYDESIGN_GOLDEN_REVISE_DESIGN"]).resolve()
+            assert revision_case.name == "soluble"
+            assert revision_case.is_relative_to(golden.ROOT / "runtime/tmp/autonomous-v3-20260912")
+            previous = json.loads((revision_case.parent / "report.json").read_text())
+            assert previous["formal_acceptance"] == "VALIDATION_ATTEMPT_FAILED"
+            assert any(
+                c["case"] == "case-4-standard" and c["status"] == "FAIL" for c in previous["cases"]
+            )
+            assert previous["model_configuration"] == config.model_dump(mode="json")
+            assert previous["spec_sha256"] == report["spec_sha256"]
+            assert previous["oracle_sha256"] == report["oracle_sha256"]
+            previous_info = json.loads((revision_case / "inherited-target.json").read_text())
+            assert Path(previous_info["project"]).resolve() == project
+            revision_thread = previous_info["continuation_thread"]
+            request = json.loads((revision_case / "standard-gate3-review-request.json").read_text())
+            review = json.loads(
+                (revision_case / "standard-gate3-independent-review.json").read_text()
+            )
+            standard_revision = reviewed_design_revision(
+                golden.DesignBridge(project, revision_thread, store), request, review
+            )
+            golden.save(
+                case / "inherited-design-revision.json",
+                {
+                    "origin": str(revision_case),
+                    "thread": revision_thread,
+                    "review_snapshot_sha256": review["snapshot_sha256"],
+                    "steering": standard_revision,
+                    "authority": "Scripted validation actor exercises existing Gate3 REVISE; "
+                    "no approval, new gate, checkpoint reset or scientific-input change.",
+                },
+                secrets,
+            )
         active_case = "design-validator-initialization"
         models = golden.create_models(config, request_observer=observe_request)
         golden.save(case / "backend-validation.json", golden.configure_live_validation(), secrets)
         for kind in ("standard", "expert-native"):
             active_case = "case-4-standard" if kind == "standard" else "case-5-native"
             thread = "live-design-" + kind + "-" + golden.STAMP.lower()
+            if kind == "standard" and revision_thread:
+                thread = revision_thread
             if kind == "standard":
                 golden.save(
                     case / "inherited-target.json",
@@ -191,6 +268,7 @@ async def main():
                 secrets,
                 emit,
                 thread=thread,
+                steering=standard_revision if kind == "standard" else None,
             )
             assert jobs_before == [j.job_id for j in bridge.controller.list(project_id="soluble")]
             report["cases"].append({"case": active_case, "status": "PASS", "thread": thread})

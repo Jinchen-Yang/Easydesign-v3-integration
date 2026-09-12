@@ -1360,3 +1360,34 @@ all385 baseline files unchanged. The CDR insertion-vs-loop, evidence scope and u
 wording repair is included. Next live160 retries standard/native Design from acceptedSite153;
 live161 retries GPCR Site from acceptedTarget104. Same model configuration,32calls,60000input,
 formal7x40 Design intent and micro-only future compute constraint. Phase2 NOT FROZEN.
+
+
+### Exercise the existing Scientist REVISE path after exact Design content review
+
+Live160 (`phase2-goldens-20260912T000018423827Z`) reached a third standard Gate3 with real
+backend validation passed. Insertion counts versus final loop lengths and three-CDR sampling
+are now explicit, and Judge scopes absent epitope evidence correctly. Its independent review
+is still FAIL (snapshotdc3a9238420cbb3acef1757106396bf5116bd4cd92fd1f7b7a62dbe8285cfb6d):
+the owner calls the empty cdr_template_validation list a performed override-range validation,
+negative-result wording overstates causal discrimination, Judge calls inferred cleftTrp63 a
+catalytic residue, and verified upstream Site authority is conflated with pending Design authority.
+The actual default asset checks/compiler pass, hotspot/counts and no-generation boundary remain
+valid. The review preserves explicit corrective instructions without changing scientific inputs.
+
+The validation runner now optionally uses that exact failed, unanswered Gate3 card for the
+existing trusted REVISE action by the explicitly labeled scripted validation actor. It checks
+review/snapshot SHA, all six sections, stored card/Judge, current design and approved Site,
+source project/config/spec/oracle and absence of an earlier response. This read-only verification
+creates no decision; actual steering goes through run_session's existing human-input interface.
+A revised result must have the original parent_card_id and a fresh independent content review.
+Old cards/checkpoints/inputs are retained, and no new approval/decision/recovery system is added.
+It is an explicit validation Scientist turn, with its own existing execution accounting, not an
+invisible budget reset or a claim that the original failed model answer passed.
+
+Actual pendingDesign160 passed verification-only (`design-revision-verify162.json`): no model
+calls, no decision applied, no new job. Targeted162:3 PASS (114.58s), including exact failed-review
+binding, rejecting changed current evidence/existing responses, and the existing Gate3 revision/
+process-restart test that preserves Target/Site/goal. Ruff162 PASS. Only validation scripts/tests
+and this report changed while GPCRlive161 runs; Agent/Skill/model fingerprint is unchanged.
+Next live162 will apply the captured review instruction through REVISE, then recheck standard
+Gate3 and native Case5 if standard passes. No approval or generation. Phase2 NOT FROZEN.

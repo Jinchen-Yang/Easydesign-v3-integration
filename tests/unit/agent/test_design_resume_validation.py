@@ -69,3 +69,69 @@ def test_reviewed_site_resume_checks_exact_preapproval_content_and_applied_gate(
     changed["evidence"]["site"]["proposal"]["mechanistic_rationale"] = "Changed after review"
     with pytest.raises(AssertionError):
         reviewed_site(bridge, changed, review)
+
+
+def test_failed_design_review_can_only_steer_the_exact_unanswered_pending_card(
+    design_bridge: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    monkeypatch.setenv("EASYDESIGN_GOLDEN_SOURCE_ROOT", str(tmp_path))
+    from scripts.validate_phase2_design_resume import reviewed_design_revision
+    from tests.unit.agent.test_design_runtime import binder_intent, design_card, propose_design
+
+    golden = importlib.import_module("scripts.validate_phase2_goldens")
+    bridge = design_bridge
+    propose_design(bridge, binder_intent())
+    card = design_card(bridge)
+    request = {
+        "evidence": {
+            "card": card.model_dump(mode="json"),
+            "snapshot": bridge.design_snapshot(bridge.current_design()),
+            "judge": golden.judge_record(bridge, card.model_dump(mode="json")),
+            "approved_site": bridge.approved_site(),
+        },
+        "required_review_sections": [
+            "Hard Facts",
+            "Scientific Interpretation",
+            "Evidence",
+            "Uncertainty",
+            "Alternatives",
+            "Decision",
+        ],
+    }
+    request["snapshot_sha256"] = hashlib.sha256(
+        json.dumps(request["evidence"], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    review = {
+        k: "SYNTHETIC review fixture; no biological judgment"
+        for k in request["required_review_sections"]
+    } | {
+        "Decision": "FAIL",
+        "reviewer": "development-scientific-content-review",
+        "snapshot_sha256": request["snapshot_sha256"],
+        "revision_instruction": "Clarify the existing scientific explanation; retain all bounds.",
+    }
+    jobs_before = [j.job_id for j in bridge.controller.list(project_id=bridge.project_id)]
+    steering = reviewed_design_revision(bridge, request, review)
+    assert steering == {
+        "decision": "revise",
+        "card_id": card.card_id,
+        "user": golden.ACTOR,
+        "human_instruction": review["revision_instruction"],
+    }
+    assert bridge.store.response(bridge.thread, card.card_id) is None
+    assert jobs_before == [j.job_id for j in bridge.controller.list(project_id=bridge.project_id)]
+    for invalid in (review | {"Decision": "PASS"}, review | {"revision_instruction": ""}):
+        with pytest.raises(AssertionError):
+            reviewed_design_revision(bridge, request, invalid)
+    changed = deepcopy(request)
+    changed["evidence"]["snapshot"]["proposal"]["objective"] = "Changed after actual review"
+    changed["snapshot_sha256"] = hashlib.sha256(
+        json.dumps(changed["evidence"], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    with pytest.raises(AssertionError):
+        reviewed_design_revision(
+            bridge, changed, review | {"snapshot_sha256": changed["snapshot_sha256"]}
+        )
+    bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")
+    with pytest.raises(AssertionError):
+        reviewed_design_revision(bridge, request, review)

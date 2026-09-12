@@ -397,7 +397,9 @@ def check_binding_roundtrip(bridge, accession):
     }
 
 
-async def run_design_case(project, store, case, kind, config, models, secrets, emit, *, thread):
+async def run_design_case(
+    project, store, case, kind, config, models, secrets, emit, *, thread, steering=None
+):
     """Run one reviewed Gate3 case on the existing approved Site, without compute."""
     design = DesignBridge(project, thread, store)
     if kind == "expert-native":
@@ -426,7 +428,7 @@ async def run_design_case(project, store, case, kind, config, models, secrets, e
         "Gate 3. Stop before approval or generation."
     )
     try:
-        outcome = await run_session(design, config, models, goal, emit=emit)
+        outcome = await run_session(design, config, models, goal, emit=emit, **(steering or {}))
     finally:
         save(case / (kind + "-metrics.json"), stats(design), secrets)
     save(case / (kind + "-gate3.json"), outcome, secrets)
@@ -435,6 +437,9 @@ async def run_design_case(project, store, case, kind, config, models, secrets, e
         and outcome["card"]["gate_type"] == "design-specification"
     ), outcome
     assert outcome["card"]["judge_status"] != "BLOCKED", outcome
+    if steering:
+        assert steering["decision"] == "revise"
+        assert outcome["card"]["parent_card_id"] == steering["card_id"]
     snapshot = design.design_snapshot(design.current_design())
     assert snapshot["evaluation"]["generation_started"] is False
     assert snapshot["evaluation"]["compiler_validation"] == "existing compiler and backend passed"

@@ -11,13 +11,23 @@ and trusted revision separate. Reuse the approved identity/mapping; do not repea
 
 ## Research and evidence
 
-Use research_evidence for missing knowledge. Perform targeted literature discovery, including
-counterevidence, and acquire relevant primary records plus official structure/database records.
-Search leads/titles are not residue or causal evidence. A search requires explicit query keywords;
-question describes its purpose. Start with a few distinctive keywords; after no matches, broaden
-the query rather than adding every desired mechanism/assay term. Supply selection_reason to select the source
-for its topic. Selection is relevance, not entailment. Existing acquisitions need no new download.
-For another need, select_evidence with the exact provider/identifier/need before reading that source.
+Standard Research seeks **decision sufficiency, not literature completeness**. From the
+biological objective, approved Target and Gate 2, form usually 3-6 decision-critical questions.
+The topic taxonomy indexes evidence; it is not a checklist to complete. Ask only what could
+change site ranking, a hard constraint or the major risk assessment. Typical questions concern
+whole-binder access, goal-relevant mechanism/function, consequential state/ligand/partner or
+membrane/glycan/disulfide constraints, known antibody/epitope/competition evidence, and a real
+scientific distinction between candidate A/B/C. Combine related issues; do not expand the list
+just because a database advertises more annotation types.
+
+Use research_evidence for those missing facts. Query keywords execute the search; question
+states the decision it informs. Acquire requested and relevant primary records plus the few
+necessary official structure/database records. Search titles are leads, not residue or causal
+evidence. If no matches, make one sensible broader query; do not keep adding desired terms.
+Supply selection_reason to acquire a selected source atomically. Selection is relevance, not
+entailment; reuse existing acquisitions. A relevant query can inform several topics using its
+returned query_id; do not repeat the same inquiry merely to fill another taxonomy category.
+For another retrieval need, select_evidence with the exact provider/identifier/need.
 
 Read focused passages with retrieve_evidence(need, question, source_id, feature_types). For UniProt
 annotations, select literal feature_types shown in its receipt rather than paging bibliography.
@@ -29,23 +39,36 @@ count's offset/limit does not reveal evidence. Do not repeatedly request the sam
 Cite exact returned passage card IDs and short excerpts.
 Source IDs, source acquisition card IDs and focused passage card IDs are different identifiers.
 
-A few relevant sources and mapped candidate comparisons can support a bounded hypothesis;
-exhaustive source/chunk/residue enumeration is not required. Retain contradictions, negative
-evidence, access failures and what each source does NOT establish. Check species, construct,
-numbering, state, ligand/partner, maturation, assay and transfer to the current target.
-Cover the material questions across sources before extending a single source's pages. Acquire
-the requested primary publication and perform a focused mechanism/counterevidence search early,
-alongside independent official-record reads. A next_cursor is an available page, not required
-work: continue only when a specific missing fact changes the candidate comparison. Once a
-question has usable evidence, move to an unresearched material question or the mapped comparison.
-Read /skills/site-mechanism/references/research.md for mechanism-specific reasoning as needed.
+Stop policy:
 
-For a mechanistic goal, use scope=mechanistic and give a conclusion for every material topic.
-NOT_SEARCHED requires research before proposing. SEARCHED_NO_EVIDENCE requires an adequate
-completed search, never an HTTP failure. UNRESOLVED means incomplete/relevance-limited evidence;
-CONFLICTING_EVIDENCE needs both sides. VERIFIED is a scoped opinion supported by passages,
-not certified identity or experimental efficacy. Structural exploration cannot claim a verified
-biological mechanism. Preserve material unknowns; do not add irrelevant unsearched topics.
+1. Obtain initial candidate facts and a provisional ranking from enough relevant primary and
+   official evidence. Reuse approved identity and supplied kernel facts.
+2. Then perform one targeted contradiction or meaningful-alternative literature search: what
+   evidence would reverse the ranking, invalidate an access assumption or reveal the forbidden
+   functional effect? Read a strong relevant lead, including adverse findings. If it changes the
+   recommendation, update the comparison and resolve only the new consequential issue.
+3. Ask: is more searching reasonably likely to change Gate 2 ranking, a hard constraint or a
+   major risk? If no, STOP RESEARCH and submit SiteResearchHandoff now. Remaining call budget,
+   a next_cursor, an unread source section or an unfilled taxonomy topic is not a reason to
+   continue. A negative/unchanged check can establish bounded saturation, never global absence.
+4. If an important issue remains unresolved after reasonable inquiry, state its effect on the
+   decision, the missing evidence and the next discriminating experiment. UNRESOLVED is a legal
+   stopping state; it may warrant DISCOURAGED or insufficient evidence, not endless retrieval.
+
+Record decision_questions with their actual query_ids, statuses, strongest relevant supporting
+and important opposing/scoping passage citations, and decision_impact. Cite exact excerpts.
+Record contradiction_search_query_ids and stopping_reason, including whether ranking changed.
+VERIFIED is scoped source support, never certified efficacy. SEARCHED_NO_EVIDENCE needs an
+actual adequate search without access failure; it does not mean no literature exists.
+CONFLICTING_EVIDENCE preserves support and contradiction. UNRESOLVED preserves inquiry/access/
+transfer limits. An unperformed inquiry cannot be relabeled as performed; peripheral unsearched
+issues belong in remaining uncertainty, not an expanding material-topic task list.
+
+In synthesis, use scope=mechanistic for biological goals and address the decision-critical
+questions in SiteIntent. Merge conclusions sharing a topic; reuse relevant query_ids even when
+that query was indexed under another topic. Do not add a conclusion for every available topic.
+The existing source/quote/primary-eligibility checks and independent Judge remain mandatory.
+Read /skills/site-mechanism/references/research.md only for consequential mechanism reasoning.
 
 ## Mapped candidate comparison
 
@@ -101,7 +124,7 @@ model correction rounds; parallel errors in one tool batch share one round. Fore
 
 Follow the current runtime stage and shared budget, which includes framework summaries.
 In Evidence Research, finish with SiteResearchHandoff: mapped candidates with focused citations,
-material researched topics, brief opinions and unresolved questions. Runtime builds the dossier
+decision_questions, actual contradiction-search IDs, stopping_reason and unresolved questions. Runtime builds the dossier
 from original evidence; this handoff creates no Site proposal. In isolated synthesis, research
 is complete: use the supplied dossier and submit SiteIntent without further research tools.
 Give positive evidence, mechanism, access, approach, meaningful alternatives, risks and

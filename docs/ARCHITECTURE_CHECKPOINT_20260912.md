@@ -128,3 +128,15 @@ research notes. Read-only same-evidence replay of live173 reduces102,949→70,39
 preserving all44fact rows and all17passages exactly; expected first synthesis is89,123characters.
 This neither repairs its flawed biological hypotheses nor supplies a Golden PASS. The native
 framework summary prompt requests bounded working memory; no custom history compression is added.
+
+
+## Standard Research stopping policy (175)
+
+The next user-authorized step shifts research from taxonomy coverage to decision sufficiency.
+See STANDARD_RESEARCH_POLICY.md. Use the existing Site Handoff to record a few decisive questions,
+actual contradiction-search query IDs and a stopping rationale; no extra planner/agent/subsystem.
+Relevant source queries can inform more than one indexed topic. The dossier remains a verified
+scientific projection with original focused passages and hard facts; full source bodies remain
+durable. Its research assessments and saturation claim are fallible opinions for the independent
+Judge, which receives critical opposing citations even when final SiteIntent omits them.60ksoft/
+100khard, framework memory/isolation, current local debug model and all frozen science remain.

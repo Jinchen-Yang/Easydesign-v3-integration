@@ -277,6 +277,17 @@ class Phase2Bridge(TargetBridge):
     ) -> dict[str, Any]:
         query = query or SiteQuery()
         target, facts, ref = self.site_facts()
+        activity = EvidenceResearch(self).snapshot()
+        research_status = (
+            {
+                "queried_topics": {
+                    k: v for k, v in activity["topics"].items() if v != "NOT_SEARCHED"
+                },
+                "authority": activity["authority"] + " Topic labels are not a research checklist.",
+            }
+            if isinstance(query, FocusedSiteQuery)
+            else {k: v for k, v in activity.items() if k != "queries"}
+        )
         return {
             "project_id": self.project_id,
             "run_id": target["evidence"]["run_id"],
@@ -297,9 +308,7 @@ class Phase2Bridge(TargetBridge):
             ),
             "query_scope": "focused-residues" if query.label_seq_ids else "overview",
             "requested_labels": query.label_seq_ids,
-            "research": {
-                k: v for k, v in EvidenceResearch(self).snapshot().items() if k != "queries"
-            },
+            "research": research_status,
         }
 
     def read_canonical_mapping(self, query: CanonicalMappingQuery) -> dict[str, Any]:
@@ -463,6 +472,30 @@ class Phase2Bridge(TargetBridge):
 
         check_fact_claims(intent.model_dump(mode="json"), target["evidence"])
         research = self.validate_site_research(intent)
+        dossier_event = self.thread_latest("site-evidence-dossier")
+        execution = self.store.latest_execution(self.thread)
+        if (
+            dossier_event
+            and execution
+            and dossier_event["execution_id"] == execution["execution_id"]
+            and dossier_event["target_binding"] == target["binding"]
+        ):
+            dossier = self.document(dossier_event["ref"])
+            research["decision_basis"] = {
+                "decision_questions": dossier["decision_questions"],
+                **dossier["research_opinions"],
+                "authority": "Researcher opinions and stopping rationale, not approval. "
+                "Judge must independently assess the sufficiency and contrary evidence.",
+            }
+            # Keep decision-critical opposing evidence visible to Judge even if the
+            # final SiteIntent does not cite it. Existing refs verify all originals.
+            cards = {
+                c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
+            }
+            research["source_refs"].append(dossier_event["ref"])
+            for question in dossier["decision_questions"]:
+                for use in question["evidence"]:
+                    research["source_refs"].extend(cards[use["card_id"]]["source_refs"])
         evaluation = evaluate_site(
             target["root"], target["bundle_path"], facts, intent.selected_site.hotspot_label_seq_ids
         )
@@ -655,6 +688,12 @@ class Phase2Bridge(TargetBridge):
                 for conclusion in research["conclusions"]
                 for e in conclusion["evidence"]
             )
+        if research and research.get("decision_basis"):
+            cited_cards.update(
+                e["card_id"]
+                for question in research["decision_basis"]["decision_questions"]
+                for e in question["evidence"]
+            )
         return {
             "target_facts": self.read_evidence()["hard_facts"],
             "gate_type": "site-hotspot",
@@ -670,6 +709,11 @@ class Phase2Bridge(TargetBridge):
             else {
                 "conclusions": research["conclusions"],
                 "authority": research["authority"],
+                **(
+                    {"decision_basis": research["decision_basis"]}
+                    if research.get("decision_basis")
+                    else {}
+                ),
                 "retrieval_status": [
                     {key: q[key] for key in ("topic", "question", "status", "errors")}
                     for q in research["source_snapshot"]["queries"]

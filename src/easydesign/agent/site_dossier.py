@@ -16,25 +16,49 @@ from .contracts import (
     StrictDTO,
 )
 from .evidence_output import site_page_projection
-from .evidence_research import TOPICS, EvidenceResearch, ResearchTopic
+from .evidence_research import EvidenceResearch, ResearchConclusion
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .session_store import compact, identity
 from .site_contracts import SiteIntent, SiteSelection
 from .site_evidence import summarize_site_facts
 
 
+class DecisionEvidenceQuestion(ResearchConclusion):
+    """A Gate-specific question and fallible assessment, not another planner or agent."""
+
+    question: ShortText
+    decision_impact: ShortText = Field(
+        description="Current finding and how it changes candidate ranking, a hard constraint "
+        "or major risk. State consequential unresolved limits; uncertainty is a valid result."
+    )
+
+
 class SiteResearchHandoff(StrictDTO):
-    """Candidate questions and notes are research opinions, never hard facts or approval."""
+    """Bounded decision evidence and stopping rationale; never scientific approval."""
 
     candidates: list[SiteSelection] = Field(min_length=1, max_length=3)
-    material_questions: list[ResearchTopic] = Field(
+    decision_questions: list[DecisionEvidenceQuestion] = Field(
         default_factory=list,
-        max_length=len(TOPICS),
-        description="Material topics actually queried in this research stage, using the exact "
-        "topic names from research_evidence. Put still-unsearched questions in "
-        "unresolved_questions; never relabel them as researched.",
+        max_length=6,
+        description="Usually 3-6 questions derived from the biological objective, approved "
+        "Target and Gate 2. Include investigated access, mechanism, candidate differences "
+        "and consequential constraints; not all taxonomy topics. Empty only for purely "
+        "structural exploration with no external research. Bind actual queries and passages.",
     )
-    research_notes: list[ShortText] = Field(default_factory=list, max_length=6)
+    contradiction_search_query_ids: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Exact query_id of the targeted literature search challenging the "
+        "initial ranking or testing a meaningful alternative. Record an actual search, "
+        "not a named-paper acquisition. Required when decision_questions are present.",
+    )
+    stopping_reason: ShortText = Field(
+        description="Why further Standard Research is unlikely to change the Gate 2 ranking, "
+        "hard constraints or main risks after the contradiction/alternative check. State "
+        "whether ranking changed, remaining uncertainties and the next discriminating test. "
+        "An unresolved question does not require endless searching or justify approval.",
+    )
+    research_notes: list[ShortText] = Field(default_factory=list, max_length=4)
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)
 
 
@@ -46,9 +70,6 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         raise AgentBoundaryError("Site dossier lacks its runtime-delegated Target binding")
     target, facts, facts_ref = bridge.site_facts()
     research = EvidenceResearch(bridge).snapshot()
-    missing = [
-        topic for topic in handoff.material_questions if research["topics"][topic] == "NOT_SEARCHED"
-    ]
     cards = {c["card_id"]: c for q in research["queries"] for c in q["cards"]}
     # Include ALL focused passages, including counterevidence, irrespective of the
     # researcher's candidate choices. Acquisition bodies remain in the corpus.
@@ -62,12 +83,11 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
     unknown_citations = {
         key for c in handoff.candidates for key in c.evidence_card_ids if key not in citable_ids
     }
-    if missing or unknown_citations:
+    if unknown_citations:
         raise ResearchConclusionMismatch(
             "Research handoff evidence mismatch: "
             + compact(
                 {
-                    "unsearched_material_topics": missing,
                     "actually_queried_topics": [
                         key
                         for key, status in research["topics"].items()
@@ -81,6 +101,24 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 }
             )
         )
+    if research["queries"] and not handoff.decision_questions:
+        raise ResearchConclusionMismatch(
+            "Research needs a few decision-critical questions and a stopping reason; "
+            "do not enumerate every taxonomy topic."
+        )
+    searches = {
+        q["query_id"]: q
+        for q in research["queries"]
+        if q.get("query", {}).get("operation") == "literature-search"
+    }
+    if (handoff.decision_questions and not handoff.contradiction_search_query_ids) or not set(
+        handoff.contradiction_search_query_ids
+    ).issubset(searches):
+        raise ResearchConclusionMismatch(
+            "Bind an actual targeted contradiction/alternative literature search query_id. "
+            "Acquisition is not discovery. Available search IDs: " + compact(sorted(searches))
+        )
+    EvidenceResearch(bridge).validate_conclusions(list(handoff.decision_questions))
     candidates = []
     residue_facts = {}
     for candidate in handoff.candidates:
@@ -139,7 +177,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             }
         )
     return {
-        "kind": "site-evidence-dossier-v3",
+        "kind": "site-evidence-dossier-v4",
         "project_id": bridge.project_id,
         "owner_thread": bridge.thread,
         "target_binding": target["binding"],
@@ -165,6 +203,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 "sequence_motifs",
             )
         },
+        "decision_questions": [q.model_dump(mode="json") for q in handoff.decision_questions],
         "candidate_comparison": candidates,
         "trusted_residue_facts": site_page_projection(
             {"facts": [residue_facts[key] for key in sorted(residue_facts)]}
@@ -223,9 +262,13 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             for c in cards.values()
             if c.get("corpus_ref")
         ],
-        "research_opinions": handoff.model_dump(mode="json", exclude={"candidates"}),
+        "research_opinions": handoff.model_dump(
+            mode="json", exclude={"candidates", "decision_questions"}
+        ),
         "authority": "Runtime rehydrated original verified artifacts and deterministic facts. "
-        "Research notes and candidate preferences are unaccepted model opinions. All focused "
+        "Decision assessments, stopping rationale and candidate preferences are unaccepted model "
+        "opinions for independent review. Questions express decision scope, not a completeness "
+        "checklist; unresolved evidence can suffice for a qualified next step. All focused "
         "passages and all search/access outcomes are included without ranking by support. "
         "Exact passage text and scientific qualifiers are unchanged; repeated cache, selection "
         "and source-reference metadata remain in the verified durable research artifacts. "
@@ -274,6 +317,13 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
     dossier = bridge.document(event["ref"])
     if dossier["target_binding"] != bridge.target_state()["binding"]:
         raise AgentBoundaryError("Site synthesis dossier has a stale Target binding")
+    critical_topics = {q["topic"] for q in dossier["decision_questions"]}
+    if not critical_topics.issubset(intent.material_questions):
+        raise ResearchConclusionMismatch(
+            "SiteIntent must address the dossier's decision-critical questions (including "
+            "unresolved/contradictory findings), without adding unrelated taxonomy tasks: "
+            + compact(sorted(critical_topics))
+        )
     facts = dossier["trusted_residue_facts"]
     if "facts_table" in facts:
         table = facts["facts_table"]

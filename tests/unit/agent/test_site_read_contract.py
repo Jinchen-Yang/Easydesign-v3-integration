@@ -43,6 +43,9 @@ async def test_site_patch_returns_all_requested_rows_and_rejects_stale_offset(
     ]
     ref = b.persist("synthetic-forty-row-evidence", facts)
     monkeypatch.setattr(b, "site_facts", lambda: (target, facts, ref))
+    activity = b.read_site_evidence(FocusedSiteQuery())["research"]
+    assert activity["queried_topics"] == {} and "topics" not in activity
+    assert "NOT_SEARCHED" not in json.dumps(activity)
     read = next(t for t in phase2_tools(b, "site") if t.name == "read_site_evidence")
     raw = await read.ainvoke({"label_seq_ids": list(range(1, 41))})
     shown = output_message(

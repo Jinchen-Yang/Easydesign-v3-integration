@@ -69,8 +69,15 @@ For research_evidence, review the exact source passages and specialist conclusio
 runtime. Source verification is not scientific entailment. A review/search lead is not direct
 primary evidence; abstract text cannot establish quantitative residue/causal details absent from
 the passage. Challenge identity, construct/state/assay transfer, conflicting evidence and the
-literature-derived versus scan-derived alternatives. NOT_SEARCHED on a material question requires
-acquisition, not a convenient unknown. Source failure is UNRESOLVED, never negative biology.
+literature-derived versus scan-derived alternatives. Review the supplied decision_basis: the few
+Gate-critical questions, actual targeted contradiction/alternative search and stopping rationale.
+Judge sufficiency for this decision, not literature completeness. Evidence queries can inform
+several topics; verify their query_ids and relevance instead of demanding separate acquisition
+for every taxonomy label. A genuinely unperformed consequential inquiry needs investigation;
+a reasonably investigated UNRESOLVED question can support a qualified next step. Challenge any
+missing evidence likely to change ranking, hard constraints or major risk, but do not require
+perfect answers or exhaustive annotation coverage. Source failure is UNRESOLVED, never negative
+biology. Stopping rationale is an opinion to challenge, not proof of saturation or approval.
 Structural-exploration scope cannot establish a verified biological mechanism. Reference alignment
 does not approve canonical identity, and selected_chain cannot certify species, state or authority.
 

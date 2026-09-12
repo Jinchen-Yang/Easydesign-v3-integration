@@ -526,7 +526,7 @@ class EvidenceCorpus:
                 "cards_supplied": len(cards),
             },
         )
-        return {k: v for k, v in result.items() if k not in {"target_binding", "query_id"}} | {
+        return {k: v for k, v in result.items() if k != "target_binding"} | {
             "cards": [{k: v for k, v in c.items() if k != "source_refs"} for c in cards]
         }
 

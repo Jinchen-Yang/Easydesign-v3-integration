@@ -70,7 +70,8 @@ class SiteModel(ScriptedModel):
             if self.role == "site":
                 assert "Verified research activity" in messages[0].text
                 assert '"literature_discovery":[]' in messages[0].text
-                assert '"function":"NOT_SEARCHED"' in messages[0].text
+                assert '"inquiry_count":0' in messages[0].text
+                assert "NOT_SEARCHED" not in messages[0].text
             task = ScientificTask.model_validate_json(human.text)
             if not results:
                 self.tasks.append(task.model_dump())
@@ -85,7 +86,8 @@ class SiteModel(ScriptedModel):
                 return self.call(
                     "SiteResearchHandoff",
                     candidates=[site_intent(labels).selected_site.model_dump(mode="json")],
-                    material_questions=[],
+                    decision_questions=[],
+                    stopping_reason="SYNTHETIC structural exploration; no functional claim.",
                     research_notes=["SYNTHETIC structural hypothesis for boundary verification."],
                     unresolved_questions=["Function and binding are untested."],
                 )

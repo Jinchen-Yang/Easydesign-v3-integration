@@ -425,3 +425,65 @@ def test_fulltext_binds_enclosing_article_not_citations(
     select(research, "PMC999")
     wrong = research.acquire(query(operation="primary-fulltext", identifier="PMC999"), role="site")
     assert wrong["status"] == "UNRESOLVED" and "identity mismatch" in wrong["errors"][0]
+
+
+@pytest.mark.asyncio
+async def test_explicit_query_binding_reuses_cross_topic_evidence_without_taxonomy_search(
+    research: Any,
+    monkeypatch: Any,
+) -> None:
+    import json
+
+    from easydesign.agent.evidence_research import research_tool
+
+    calls = transport(research, monkeypatch)
+    # The tool constructs a fresh worker; give it the same synthetic transport.
+    monkeypatch.setattr(
+        EvidenceResearch, "client", lambda _self, directory: research.client(directory)
+    )
+    tool = research_tool(research.bridge, "site")
+    result = json.loads(await tool.ainvoke(query().model_dump(mode="json")))
+    assert result["query_id"] == research.snapshot()["queries"][0]["query_id"]
+    conclusion = ResearchConclusion(
+        topic="epitope",
+        query_ids=[result["query_id"]],
+        status="UNRESOLVED",
+        limitations=[
+            "SYNTHETIC functional search informs epitope uncertainty; the answer stays unresolved."
+        ],
+    )
+    verified = research.validate_conclusions([conclusion])
+    assert len(calls) == 1
+    assert verified["source_snapshot"]["topics"]["epitope"] == "NOT_SEARCHED"
+    assert verified["conclusions"][0]["query_ids"] == [result["query_id"]]
+    with pytest.raises(AgentBoundaryError, match="Unknown evidence query"):
+        research.validate_conclusions(
+            [conclusion.model_copy(update={"query_ids": ["foreign-query"]})]
+        )
+    with pytest.raises(AgentBoundaryError, match="NOT_SEARCHED"):
+        research.validate_conclusions([conclusion.model_copy(update={"query_ids": []})])
+
+
+def test_acquisition_is_not_an_empty_search_and_failed_search_can_remain_unresolved(
+    research: Any,
+    monkeypatch: Any,
+) -> None:
+    calls = transport(research, monkeypatch)
+    select(research, "12345")
+    acquisition = research.acquire(
+        query(operation="primary-record", identifier="12345"), role="site"
+    )
+    c = ResearchConclusion(
+        topic="function",
+        status="SEARCHED_NO_EVIDENCE",
+        query_ids=[acquisition["query_id"]],
+        limitations=["SYNTHETIC acquisition only."],
+    )
+    with pytest.raises(AgentBoundaryError, match="not SEARCHED_NO_EVIDENCE"):
+        research.validate_conclusions([c])
+    transport(research, monkeypatch, status=503)
+    failed = research.acquire(query(query="synthetic opposing evidence"), role="site")
+    c = c.model_copy(update={"query_ids": [failed["query_id"]], "status": "UNRESOLVED"})
+    result = research.validate_conclusions([c])
+    assert result["conclusions"][0]["status"] == "UNRESOLVED"
+    assert len(calls) == 1

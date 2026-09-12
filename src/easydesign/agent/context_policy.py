@@ -121,8 +121,11 @@ def research_memory(
         trim_tokens_to_summarize=config.hard_input_chars // 4,
         summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
         "Keep this working summary within 1200 words. Retain the current scientific questions, "
-        "competing hypotheses, consequential findings/unknowns and exact identifiers needed "
-        "for the next research actions. Do not reproduce full tool bodies, residue tables, "
+        "provisional ranking, contradiction-check result, consequential findings/unknowns "
+        "and exact query/passage identifiers needed "
+        "for a decision or the next necessary inquiry. Preserve why more search would or would not "
+        "change ranking, constraints or major risk; do not expand a topic checklist. "
+        "Do not reproduce full tool bodies, residue tables, "
         "sequences, schemas or Skill text: their original verified artifacts are durable and "
         "are rehydrated independently for final synthesis. "
         "This is fallible research working memory, not verified source evidence, a Site "

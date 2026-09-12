@@ -369,9 +369,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             research = EvidenceResearch(self.bridge).snapshot()
             if self.site_stage == "research":
                 research_progress = {
-                    "topics": research["topics"],
+                    "inquiry_count": len(research["queries"]),
                     "literature_discovery": [
-                        {"question": q["question"], "status": q["status"], "errors": q["errors"]}
+                        {key: q[key] for key in ("query_id", "question", "status", "errors")}
                         for q in research["queries"]
                         if q.get("query", {}).get("operation") == "literature-search"
                     ],
@@ -584,10 +584,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 "\nVerified research activity (source actions, not scientific conclusions): "
                 + compact(research_progress)
                 + "\nAn acquired named publication is not literature discovery. Cover the "
-                "material mechanism and counterevidence questions before further source "
+                "few decisive mechanism/counterevidence questions before further source "
                 "pagination; read relevant primary passages for any claims. A retrieved "
-                "topic can still be scientifically unresolved. Missing topics and failed "
-                "access must remain explicit; do not turn them into negative evidence."
+                "question may remain unresolved. This is an activity record, not a "
+                "topic checklist. Once the decision-critical questions have usable evidence or "
+                "explicit uncertainty, compare candidates and do one targeted contradiction/"
+                "alternative search. STOP RESEARCH when further searching is unlikely to change "
+                "ranking, hard constraints or major risks. Submit the handoff immediately; "
+                "do not spend remaining calls filling annotation topics or optional pages."
             )
         for attempt in range(3):
             used = self.bridge.store.db.execute(
@@ -1453,10 +1457,15 @@ def create_site_pipeline(
         model=model,
         system_prompt="You are EasyDesign Site Evidence Research. Read the site-mechanism "
         "Skill and do its scientific source/structure research. Submit SiteResearchHandoff, "
-        "not SiteIntent: a few mapped candidate hypotheses, material researched topics, "
-        "brief research notes and unresolved questions. Runtime will rehydrate ALL focused "
+        "not SiteIntent: a few mapped candidate hypotheses, decision_questions, "
+        "a decision stopping reason and unresolved questions. Runtime will rehydrate ALL focused "
         "passages, search failures and deterministic candidate facts into a dossier for a "
-        "fresh synthesis agent. Finish the handoff once sufficient bounded evidence exists; "
+        "fresh synthesis agent. Standard Research seeks decision sufficiency, not literature "
+        "completeness. Form usually 3-6 questions from the biological goal, approved Target "
+        "and Gate 2. After initial candidate ranking, perform one targeted contradiction/"
+        "alternative search. Stop when more searching is unlikely to change ranking, hard "
+        "constraints or major risk; explicit UNRESOLVED findings are legitimate. "
+        "Finish the handoff immediately once this decision evidence is sufficient; "
         "do not write the final Site conclusion or enumerate every residue. For mechanistic "
         "goals actively research the material mechanism/state/access/alternative questions. "
         "Use actual verified source passages, preserve contradictory evidence and distinguish "
@@ -1485,7 +1494,10 @@ def create_site_pipeline(
         "consider contrary evidence, preserve access/state/mapping/glycan limitations, and "
         "propose a discriminating functional assay with artifact controls. Use concise "
         "strings, exact short excerpts and exact passage card IDs. Research opinions are "
-        "fallible; runtime facts own identity/numbering. Insufficient evidence stays "
+        "fallible; runtime facts own identity/numbering. Address the dossier decision_questions, "
+        "including the contradiction check; reuse their query_ids in research_conclusions "
+        "when relevant. Do not expand to every taxonomy topic or ask for a complete review. "
+        "The goal is a defensible next decision with explicit risks. Insufficient evidence stays "
         "unresolved, never invented. No approval is implied.\n\n"
         + (skill_root() / "site-mechanism/SKILL.md").read_text(),
         tools=[],

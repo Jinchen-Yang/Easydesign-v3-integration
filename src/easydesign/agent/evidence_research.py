@@ -168,6 +168,13 @@ class EvidenceUse(StrictDTO):
 
 class ResearchConclusion(StrictDTO):
     topic: ResearchTopic
+    query_ids: list[str] = Field(
+        default_factory=list,
+        max_length=6,
+        description="Exact returned query_id values for the evidence questions actually "
+        "investigated. Topics index sources, not mandatory separate research tasks. A "
+        "relevant query may inform more than one conclusion; explain transfer in limitations.",
+    )
     status: EvidenceStatus
     evidence: list[EvidenceUse] = Field(default_factory=list, max_length=6)
     limitations: list[ShortText] = Field(min_length=1, max_length=4)
@@ -944,25 +951,36 @@ class EvidenceResearch:
         used_refs = []
         if any(use.card_id not in cards for c in conclusions for use in c.evidence):
             raise AgentBoundaryError("Evidence source identifier was not retrieved in this thread")
-        missing = [
-            c.topic
-            for c in conclusions
-            if c.status == "NOT_SEARCHED" or not any(q["topic"] == c.topic for q in queries)
-        ]
-        if missing:
+        query_by_id = {q["query_id"]: q for q in queries}
+        unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
+        if unknown:
             raise ResearchConclusionMismatch(
-                "Material scientific question was NOT_SEARCHED: "
-                + compact(missing)
-                + ". Delegate research for every material topic before resubmission. Merely "
-                "renaming an unresearched question UNRESOLVED does not make it researched."
+                "Unknown evidence query IDs: " + compact(sorted(unknown))
             )
         for conclusion in conclusions:
-            relevant = [q for q in queries if q["topic"] == conclusion.topic]
+            relevant = (
+                [query_by_id[key] for key in conclusion.query_ids]
+                if conclusion.query_ids
+                else [q for q in queries if q["topic"] == conclusion.topic]
+            )
+            if conclusion.status == "NOT_SEARCHED" or not relevant:
+                raise ResearchConclusionMismatch(
+                    "Material scientific question was NOT_SEARCHED: "
+                    + conclusion.topic
+                    + ". Bind the actual relevant query_ids, including cross-topic evidence, "
+                    "or perform one consequential missing inquiry. Do not traverse unrelated "
+                    "taxonomy topics or relabel an unperformed inquiry as completed."
+                )
             if conclusion.status == "SEARCHED_NO_EVIDENCE" and (
-                conclusion.evidence or any(q["errors"] for q in relevant)
+                conclusion.evidence
+                or any(q["errors"] for q in relevant)
+                or not any(
+                    q.get("query", {}).get("operation", "").endswith("search") for q in relevant
+                )
             ):
                 raise ResearchConclusionMismatch(
-                    "A source failure or cited evidence is not SEARCHED_NO_EVIDENCE"
+                    "A source failure, cited evidence or acquisition without a search "
+                    "is not SEARCHED_NO_EVIDENCE"
                 )
             if (
                 conclusion.status in {"VERIFIED", "CONFLICTING_EVIDENCE"}
@@ -1080,6 +1098,7 @@ def research_tool(bridge: Any, role: str) -> Any:
             cards.append(view)
         return compact(
             {
+                "query_id": result["query_id"],
                 "status": result["status"],
                 "topic": result["topic"],
                 "need": NEEDS[result["topic"]],

@@ -1939,3 +1939,48 @@ binding/citation/tamper/counterevidence, soft/hard limits, framework summary acc
 progress/pages and full Site harness revision/restart/correction behavior. All385protected
 files remain unchanged (protected174.json), as do the Golden oracle and local model config.
 Commit the engineering checkpoint before live174 from the same approved GPCRTarget104.
+
+
+### User pause, collaborator export and Standard Research resumption (175)
+
+Latest completed source checkpoint is aa26e1803b617b5c20efdd8bca1fa51404a6c2bc, tagged
+checkpoint/easydesign-v3-site-dossier-boundary-20260912. Live174 started from that clean source
+at phase2-goldens-20260912T050405106429Z using approved GPCRTarget104. The user then requested
+pause/export. Only its validator PID3896786 receivedSIGINT; it exited without a scientific
+PASS/FAIL or backend termination. USER_PAUSE_FOR_COLLABORATOR_174_20260912.json records this.
+The59,407,154-byte collaborator ZIP contains all875tracked files, current branch history and16tags,
+plus review evidence. SHA256a55c766eda0ed835f13772632f3e49ad94de4a8b216daf16d21b3524bad62485;
+all3350payload hashes and the Git bundle in an empty repository verified. Sources and accepted
+milestones were not changed by export. Raw environments/models/scientific runs/Agent DBs remain
+on the server, outside that documented review-package scope.
+
+The user explicitly resumed with a Standard Research decision-sufficiency policy. The new
+architecture-resume175.json supersedes the pause prospectively; the original pause/export remain
+intact. No migration restart, rollback, model escalation or new subsystem is authorized/needed.
+The policy is documented in STANDARD_RESEARCH_POLICY.md. Changes use the existing Skill, typed
+Handoff, source query receipts, Dossier and independent Judge. Full taxonomy is no longer a
+per-call todo list. A meaningful unresolved result can stop bounded inquiry; actual query binding
+permits source reuse across topic labels without repeating acquisition. Missing/fabricated query
+IDs, unsupported quotes/primary claims and absent actual contradiction searches remain rejected.
+The stopping assertion is a reviewable scientific opinion, never approval or automatic proof
+of saturation. All focused source passages remain; entire primary records remain offloaded.
+
+Checks175/175b stopped at Ruff string-length findings; no tests ran in those invocations. The
+strings were formatted/shortened with no change of scientific meaning. Checks175c Ruff and mypy
+22Agent modules passed; targeted regression is running. No live175 or Phase2 closure is claimed
+until actual results below. Accepted Cases1/3/4/5 and the existing architecture checkpoint remain.
+
+Checks175c completed67PASS/1FAIL in203.16s. The new query-receipt test's tool creates a fresh
+EvidenceResearch worker, while its mock transport was attached only to the fixture instance;
+its spy recorded0calls rather than1. Corrected the fixture to bind the same synthetic transport
+to the fresh worker. No scientific source or acceptance was changed to make that assertion pass.
+Checks175d then passed5/5 in40.13s: corrected actual-tool query receipt/cross-topic reuse, both
+Site read-contract tests, retained opposing evidence/Judge/source-tamper behavior, and complete
+Site revision/restart. All68targeted cases have therefore been verified across these runs.
+
+The final follow-up also removes unsearched topic entries from the actual Site overview (legacy
+internal snapshot access remains intact) and aligns independent Judge instructions with bounded
+decision sufficiency, cross-topic evidence reuse and explicit unresolved states. Final Ruff and
+mypy22modules passed. protected175.json verifies all385baseline files, Golden oracle and local
+model-config SHA unchanged; git diff check passed. The next real GPCR retry will use the clean
+committed checkpoint and approvedTarget104. No new scientific Golden PASS or Phase2 freeze yet.

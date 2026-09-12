@@ -16,6 +16,7 @@ from easydesign.agent.phase2 import SITE_EVIDENCE
 from easydesign.agent.session_store import identity
 from easydesign.agent.site_contracts import SiteQuery
 from easydesign.agent.site_dossier import (
+    DecisionEvidenceQuestion,
     SiteResearchHandoff,
     persist_dossier,
     site_dossier,
@@ -34,7 +35,46 @@ def handoff() -> SiteResearchHandoff:
                 "rationale": "Test the scientific boundary, not biological efficacy.",
             }
         ],
+        stopping_reason="SYNTHETIC structural exploration only; no functional claim.",
         unresolved_questions=["No actual binding or functional experiment was performed."],
+    )
+
+
+def decision_scope(
+    bridge: Any, selection: SiteResearchHandoff, topic: str, query_id: str
+) -> SiteResearchHandoff:
+    search = {
+        "query_id": "synthetic-contradiction-search",
+        "topic": topic,
+        "question": "SYNTHETIC could a competing mechanism invalidate the current ranking?",
+        "query": {"operation": "literature-search", "query": "synthetic alternative mechanism"},
+        "status": "SEARCHED_NO_EVIDENCE",
+        "cards": [],
+        "errors": [],
+    }
+    ref = bridge.persist("evidence-research", search)
+    bridge.store.event(
+        bridge.thread,
+        "evidence-research",
+        {"target_binding": identity(bridge.binding()), "ref": ref},
+    )
+    question = DecisionEvidenceQuestion.model_validate(
+        {
+            "topic": topic,
+            "query_ids": list(dict.fromkeys([query_id, search["query_id"]])),
+            "question": "SYNTHETIC does the available evidence distinguish candidate mechanisms?",
+            "status": "UNRESOLVED",
+            "evidence": [],
+            "limitations": ["SYNTHETIC bounded evidence does not establish biological efficacy."],
+            "decision_impact": "SYNTHETIC ranking provisional; no need for more topics.",
+        }
+    )
+    return selection.model_copy(
+        update={
+            "decision_questions": [question],
+            "contradiction_search_query_ids": [search["query_id"]],
+            "stopping_reason": "SYNTHETIC check done; function remains unresolved.",
+        }
     )
 
 
@@ -94,7 +134,26 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
         selection = selection.model_copy(
             update={"candidates": [*selection.candidates, alternative]}
         )
-        dossier = persist_dossier(b, selection, "synthetic-execution")
+        selection = decision_scope(b, selection, "function", query["query_id"])
+        critical = selection.decision_questions[0]
+        critical = DecisionEvidenceQuestion.model_validate(
+            {
+                **critical.model_dump(mode="json"),
+                "evidence": [
+                    {
+                        "card_id": "passage-opposition",
+                        "excerpt": "evidence contradicting hypothesis A.",
+                        "claim": "SYNTHETIC opposing result must reach the independent Judge.",
+                        "relation": "contradicts",
+                        "strength": "E3",
+                        "transfer_limit": "Synthetic boundary test only.",
+                    }
+                ],
+            }
+        )
+        selection = selection.model_copy(update={"decision_questions": [critical]})
+        execution = b.store.begin_execution(b.thread, "SYNTHETIC decision sufficiency boundary")
+        dossier = persist_dossier(b, selection, execution["execution_id"])
         assert len(dossier["candidate_comparison"]) == 2
         table = dossier["trusted_residue_facts"]["facts_table"]
         n = len(table["mapping_columns"])
@@ -132,7 +191,42 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
         assert source_path.read_bytes() == before
         event = b.store.events(b.thread)[-1]["payload"]
         assert b.document(event["ref"]) == dossier
+        from easydesign.agent.evidence_research import ResearchConclusion
+        from tests.unit.agent.test_site_runtime import site_intent
+
+        intent = site_intent([1, 2, 3])
+        with pytest.raises(AgentBoundaryError, match="decision-critical"):
+            validate_dossier_intent(b, intent, execution["execution_id"])
+        intent = intent.model_copy(
+            update={
+                "scope": "mechanistic",
+                "material_questions": ["function"],
+                "research_conclusions": [
+                    ResearchConclusion(
+                        topic="function",
+                        status="UNRESOLVED",
+                        query_ids=[query["query_id"]],
+                        limitations=["SYNTHETIC no final functional conclusion."],
+                    )
+                ],
+            }
+        )
+        validate_dossier_intent(b, intent, execution["execution_id"])
+        snapshot = b.register_site(intent, None)
+        assert (
+            snapshot["research_evidence"]["decision_basis"]["stopping_reason"]
+            == selection.stopping_reason
+        )
+        assert "passage-opposition" in {
+            c["card_id"] for c in snapshot["research_evidence"]["source_cards"]
+        }
+        assert not intent.research_conclusions[
+            0
+        ].evidence  # Judge did not depend on final citation selection.
+        assert b.approved_site() is None
         source_path.write_text("SYNTHETIC integrity failure")
+        with pytest.raises(ArtifactIntegrityError):
+            b.site_snapshot(b.current_site())
         with pytest.raises(ArtifactIntegrityError):
             site_dossier(b, handoff())
     finally:
@@ -198,9 +292,9 @@ def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge
             "candidates": [
                 selection.candidates[0].model_copy(update={"evidence_card_ids": [card["card_id"]]})
             ],
-            "material_questions": ["state"],
         }
     )
+    selection = decision_scope(b, selection, "state", query["query_id"])
     token = bind(b)
     try:
         dossier = persist_dossier(b, selection, "synthetic-execution")
@@ -214,11 +308,25 @@ def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge
                 )
             }
         )
+        from easydesign.agent.evidence_research import ResearchConclusion
+
+        intent = intent.model_copy(
+            update={
+                "material_questions": ["state"],
+                "research_conclusions": [
+                    ResearchConclusion(
+                        topic="state",
+                        status="UNRESOLVED",
+                        query_ids=[query["query_id"]],
+                        limitations=["SYNTHETIC computational state, not functional efficacy."],
+                    )
+                ],
+            }
+        )
         validate_dossier_intent(b, intent, "synthetic-execution")
         b.validate_site_research(intent)
         selection = selection.model_copy(
             update={
-                "material_questions": ["function"],
                 "candidates": [
                     selection.candidates[0].model_copy(
                         update={"evidence_card_ids": ["source-unread"]}
@@ -228,7 +336,6 @@ def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge
         )
         with pytest.raises(ResearchConclusionMismatch) as error:
             site_dossier(b, selection)
-        assert '"unsearched_material_topics":["function"]' in str(error.value)
         assert '"actually_queried_topics":["state"]' in str(error.value)
         assert '"unknown_or_acquisition_citations":["source-unread"]' in str(error.value)
         intent = intent.model_copy(
@@ -363,3 +470,29 @@ async def test_resume_between_durable_dossier_and_synthesis_reuses_research(
         assert len(resumed._jobs()) == 1
     finally:
         reopened.close()
+
+
+def test_research_handoff_requires_real_contradiction_inquiry_but_accepts_unresolved(
+    site_bridge: Any,
+) -> None:
+    from easydesign.agent.contracts import ResearchConclusionMismatch
+
+    b = site_bridge
+    selection = decision_scope(b, handoff(), "function", "synthetic-contradiction-search")
+    token = bind(b)
+    try:
+        with pytest.raises(ResearchConclusionMismatch, match="decision-critical"):
+            site_dossier(b, handoff())
+        with pytest.raises(ResearchConclusionMismatch, match="actual targeted"):
+            site_dossier(b, selection.model_copy(update={"contradiction_search_query_ids": []}))
+        with pytest.raises(ResearchConclusionMismatch, match="actual targeted"):
+            site_dossier(
+                b, selection.model_copy(update={"contradiction_search_query_ids": ["invented-id"]})
+            )
+        result = site_dossier(b, selection)
+        assert result["decision_questions"][0]["status"] == "UNRESOLVED"
+        assert result["decision_questions"][0]["query_ids"] == ["synthetic-contradiction-search"]
+        assert result["research_opinions"]["stopping_reason"] == selection.stopping_reason
+        assert b.current_site() is None
+    finally:
+        SITE_EVIDENCE.reset(token)

@@ -7,19 +7,23 @@ General protein reasoning is the default: exact identity/mapping, biological goa
 forbidden effects, assay/readout, structure context, accessible geometry and credible alternatives.
 Current messages clarify the immutable goal. A literature source is not the user's approval.
 
-Research sequence:
+Standard Research sequence (decision sufficiency, not a literature review):
 
-1. Reuse approved accession/species/construct/mapping. Compare an additional reference only
-   when it changes the scientific question; do not restart Target identity work.
-2. Search same-target structures/complexes and their primary publications. Retrieve the records.
-3. Search independent epitope/mutation, competition/function, state and shielding evidence.
-4. Compare source construct, state, ligand, partner, maturation and assay to this project.
-5. Separate direct current-context E1, scoped-transfer E2, computational E3 and hypothesis E4.
-6. Retain counterevidence, negative results and retrieval failures. Unknown is not not-searched.
-7. Map any literature residues through the approved coordinate mapping. Author integer alone is
-   insufficient: chain, insertion code, precursor/mature offsets and missing positions matter.
-8. Compare literature-derived and scan-derived sites, with different primary/backup hypotheses
-   and explicit avoid/unresolved regions. A full binder must have a plausible access route.
+1. Reuse approved identity/mapping; form usually 3-6 questions that can change this Gate's
+   ranking, hard constraints or major risk. The table below is a conditional reasoning aid,
+   not a set of required searches. Do not mechanically traverse every evidence topic.
+2. Read the few necessary primary/official records and candidate facts, with exact source,
+   construct/state/assay transfer limits. Prefer strongest relevant evidence over page count.
+3. Map literature positions through the approved mapping. Compare initial literature/scan
+   candidates and meaningful alternatives, including full-binder access and hard constraints.
+4. Make one focused contradiction/alternative literature search against the initial ranking.
+   Read important opposing evidence. If it changes the recommendation, update the comparison.
+5. Stop when additional inquiry is unlikely to change ranking, a hard constraint or major
+   risk. Explicit unresolved issues after reasonable inquiry are valid; say what experiment
+   could discriminate them. Do not fill unused calls or unread annotation pages.
+6. Handoff decision_questions, exact query/passage citations, contradiction-search query IDs,
+   stopping reason and consequential uncertainty. Full sources stay durable; fresh synthesis
+   receives the trusted dossier, without research/tool history. No stopping claim is approval.
 
 For each mechanism state observation, interpretation, alternative, predicted assay result and
 falsifier. Do not turn exposure, contact, curated state or a high model score into efficacy.

@@ -8,10 +8,12 @@ Clone-local locked 0.3.2 environment installed and import probe passed, includin
 build and cuequivariance imports. Source a3149cf18eeb58648d1abbb27539bd73f746cdda, molecule
 dataset and all five weight assets match exact catalog sizes/SHA. Final installation068 returned
 ok=true and registered the existing runtime profile. CLI --help passed in check-readiness053.
-Real standard YAML check passed in live157: seven compiled official-scaffold strategies,
-280 planned candidates, backend0.3.2/sourcea3149cf18eeb, generation_started=false. This is
-backend executability evidence only: the independent Gate3 scientific content review failed
-and remains pending after repair. Native-YAML golden and generation acceptance remain due.
+Real standard YAML checks passed in live157/158/160/162; standard Gate3 Case4 independently
+passed in live162 after explicit validation-actor REVISE. Native checks and Case5 independently
+passed in live163 after REVISE, preserving all seven original/compiled YAML byte sequences.
+Both retain seven official-scaffold variants,280 planned candidates, backend0.3.2/sourcea3149cf18eeb,
+and generation_started=false. These accepted engineering/scientific review boundaries do not
+approve or launch a Pilot. See AUTONOMOUS_V3_PROGRESS.md and the two accepted Gate3 checkpoint tags.
 No BoltzGen generation has been run in this autonomous attempt.
 
 Environment lock: 016440a47ff80466ead66417de866dc463018ca5ac599095c7cf50b22afb2fac.
@@ -39,3 +41,32 @@ Earlier AFO064 failed before GPU because pinned uv was missing. Own uv0.12.3 was
 under runtime/tools with its pip download report retained. All failed/quarantined staging and
 network-recovery evidence are retained. Total GPU jobs for installation:1. Production jobs:0.
 No other checkout's environment/model assets or running GPU processes were changed.
+
+
+## Read-only execution review before Phase3 (not an execution plan)
+
+The legacy pilot_run validates and executes the full frozen strategy. Its default first Pilot
+is280 candidates; it must not be called unchanged for validation_micro. A future thin Agent
+adapter must bind the formal scientific plan and the exact smaller validation configuration to
+Gate3, preserve existing immutable ExecutionPlan/DecisionRecord and LocalStepJob recovery, and
+verify both before dispatch. No Phase3 adapter or micro execution is implemented yet.
+
+The existing Stage05 v1.7 path can expand a TierA strategy before de-novo and target-conditioned
+prediction. Its default diagnostic expansion is100, so merely setting initial generation to1
+is not a sufficient compute bound. Configuration requires expansion total strictly greater than
+Stage04's required count (minimum2 if that count is1), and top-N cannot exceed that expansion.
+Actual ceilings must cover both prediction branches and every possible downstream expansion.
+These are source-inspection findings; no candidate/batch/GPU execution budget has been approved.
+
+If initial filtering finds no TierA, the old kernel writes stopped-no-tier-a and returns before
+those expansion/AFO branches. Software success with zero eligible candidates at validation_micro
+must be interpreted as INCONCLUSIVE/insufficient evidence, not site/design failure, superiority,
+or scientific promotion. An additional representative backend test, if necessary, must be
+reported separately and bound to its real input; the installation-only29-aa AFO test cannot stand
+in for target-binder prediction or the Pilot loop. No threshold or prediction semantics change.
+
+The legacy Stage06 manual authorization contract can acknowledge a Stage05 scientific stop and
+non-eligibility, but that does not create TierA promotion evidence. Any future tiny scale-mode
+validation must use explicit Gate4 authority with honest validation-only scope. Synthetic50k
+selection/competition evidence must remain separate from real tiny backend output. Phase4 has
+not started, and no wet-lab ordering or production compute is authorized.

@@ -78,7 +78,7 @@ unchanged YAML to the compiler. Judge and Gate 3 are still mandatory; no Pilot i
 A new expert input can replace an earlier import only after scientist REVISE.
 Large result references support read_evidence_result with named fields; avoid sequential full-file reading.
 
-Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share four corrections per execution. Foreign references and integrity/authority errors are fatal.
+Scoped result selectors: `field="key"` reads one top-level field; `fields=["a","b"]` reads sibling fields; `path=["a","b"]` traverses nested keys (or nonnegative list indices). Use only one selector. Legacy `field=[...]` still means a nested path and is deprecated. On `INVALID_FIELD_PROJECTION`, correct the selector using the supplied field names; source-selection and argument repairs share four model correction rounds per execution; errors from one parallel batch share a round. Foreign references and integrity/authority errors are fatal.
 
 Submit the final opinion only through the available typed output tool. Free-form prose or
 fenced JSON cannot create a scientific proposal. Correct exact schema errors within the

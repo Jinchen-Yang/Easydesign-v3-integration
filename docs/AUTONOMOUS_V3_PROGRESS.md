@@ -1514,3 +1514,38 @@ protected baseline files remain unchanged. No live process was running during so
 Next live164 starts a new GPCR Site execution from accepted Target104, preserving all previous
 failed evidence and avoiding Target preparation. Existing32calls/60000chars are unchanged.
 Cases1/3/4/5 stay accepted; GPCR scientific acceptance and Phase2 full regression remain due.
+
+
+### Parallel prerequisite errors need one model correction opportunity (live164)
+
+Live164 (`phase2-goldens-20260912T003308980376Z`) failed after Coordinator3/Site5calls,
+before the repaired navigation could be used in reasoning. In one native tool batch the Site
+requested four not-yet-selected sources; all4 diagnostics exhausted the old four-error allowance.
+It then explicitly selected/acquired all4 correctly, but later requested UniProt for two newly
+unselected evidence needs. The fifth diagnostic aborted the batch before a new correction
+opportunity. No Gate2/SiteIntent or GPCR acceptance. Complete sources/receptor analysis and all
+failed checkpoints remain; prior Cases1/3/4/5 are unchanged.
+
+The Agent ledger now budgets four **model correction rounds**, shared across roles/categories.
+Each current native AI message/tool-call batch has an ID derived from its runtime message and
+call IDs (not a model tool argument). All recoverable errors in that batch reuse its attempt,
+while each diagnostic still has its existing append-only event. Explicit source/need selection
+is still required, and no rejected tool executes implicitly. A new model message consumes a
+new round; replay of the exact batch preserves its round across process restart. Legacy events
+without a batch ID each count once. Stale execution, role/source/artifact authority and the
+32model-call/60000context guards are unchanged. No table/schema or scheduler is introduced.
+
+`repair-round-replay165.json` applies the proposed identity calculation read-only to actual164
+native messages: its first four-source batch uses one correction round; the later new-need
+batch is a second. This is metadata replay, not live scientific acceptance. Public ToolCallRequest
+regression verifies five distinct missing-source diagnostics are delivered in one round with
+zero HTTP requests and zero implicit selections, plus a real new message spending another.
+Ledger tests cover shared categories, roles, old events, restart, replay, exhaustion and follow-up.
+
+Targeted165 initially24PASS/1FAIL exposed an old domain-boundary test whose malformed research
+arguments were intercepted before its intended HTTP guard. The test now supplies valid research
+arguments so it actually reaches and verifies the disallowed-domain rejection; production
+permissions were not relaxed. A mypy local-variable union was also corrected. Targeted165b:
+25 PASS in11.90s, including actual harness recovery and foreign/tampered reference rejection.
+Ruff165b PASS; mypy165b PASS2source modules. Next fresh live165 reuses approved GPCRTarget104
+with these bounded recovery semantics; previous scientific calculations/evidence stay intact.

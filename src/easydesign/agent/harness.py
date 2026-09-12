@@ -944,6 +944,19 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             + " Correct only the final typed submission."
         )
 
+    def repair_round_id(self, request: Any) -> str | None:
+        """Identify the current native model batch, never a model-supplied repair token."""
+        state = getattr(request, "state", None)
+        messages = state.get("messages", []) if isinstance(state, dict) else []
+        for message in reversed(messages):
+            if not isinstance(message, AIMessage) or not message.tool_calls:
+                continue
+            ids = [call["id"] for call in message.tool_calls]
+            if request.tool_call["id"] not in ids:
+                return None
+            return identity({"message_id": message.id, "tool_call_ids": ids})
+        return None
+
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         name, args = request.tool_call["name"], request.tool_call["args"]
         if name not in self.allowed:
@@ -1192,7 +1205,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 ):
                     raise AgentBoundaryError("Projection repair is outside this tool") from error
                 attempt = self.bridge.store.reserve_tool_argument_repair(
-                    self.bridge.thread, self.role, self.execution_id
+                    self.bridge.thread,
+                    self.role,
+                    self.execution_id,
+                    round_id=self.repair_round_id(request),
                 )
                 result = ToolMessage(
                     content=compact(
@@ -1200,6 +1216,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             **error.result(),
                             "repair_attempt": attempt,
                             "repair_limit": TOOL_REPAIR_LIMIT,
+                            "repair_unit": "model-tool-batch",
                         }
                     ),
                     status="error",
@@ -1228,11 +1245,20 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "retrieval. No new acquisition is required."
                     )
                 attempt = self.bridge.store.reserve_prerequisite_repair(
-                    self.bridge.thread, self.role, self.execution_id, required["source_id"]
+                    self.bridge.thread,
+                    self.role,
+                    self.execution_id,
+                    required["source_id"],
+                    round_id=self.repair_round_id(request),
                 )
                 result = ToolMessage(
                     content=compact(
-                        {**required, "repair_attempt": attempt, "repair_limit": TOOL_REPAIR_LIMIT}
+                        {
+                            **required,
+                            "repair_attempt": attempt,
+                            "repair_limit": TOOL_REPAIR_LIMIT,
+                            "repair_unit": "model-tool-batch",
+                        }
                     ),
                     status="error",
                     tool_call_id=request.tool_call["id"],

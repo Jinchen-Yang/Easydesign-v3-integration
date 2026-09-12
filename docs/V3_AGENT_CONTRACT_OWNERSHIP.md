@@ -47,9 +47,12 @@ Pure JSON text and fenced JSON do not submit proposals. Incidental prose accompa
 typed tool call is not authoritative and is replaced by the callback's runtime result. Invalid
 schema submissions get exact schema diagnostics through the framework; malformed tool JSON or
 missing typed submission gets a narrowly bounded correction. Two output-contract corrections
-are shared across roles in one persisted execution, separately from four shared source/projection corrections (20260912 bounded recovery update;
+are shared across roles in one persisted execution, separately from four shared source/projection correction rounds (20260912 bounded recovery update;
 historical Phase 2.2d used two). Every attempt also consumes the unchanged model-call budget.
-Restart or redelegation cannot reset either allowance. No scheduler or schema migration is added.
+Errors within one native parallel tool batch share its runtime-derived round; every diagnostic
+remains recorded and explicit source selection is still mandatory. Replaying that exact batch
+retains its attempt; a new model message consumes a new round. Legacy events without a batch
+identity each count once. Restart or redelegation cannot reset either allowance. No scheduler or schema migration is added.
 
 ## Target facts and scientific consistency
 

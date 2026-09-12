@@ -238,7 +238,13 @@ class SessionStore:
             )
 
     def reserve_prerequisite_repair(
-        self, thread: str, role: str, execution_id: str, source_id: str
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        source_id: str,
+        *,
+        round_id: str | None = None,
     ) -> int:
         """Compatibility entry point; selection and argument repairs share one limit."""
         return self._reserve_repair(
@@ -248,11 +254,19 @@ class SessionStore:
             "prerequisite-repair",
             "SOURCE_NOT_SELECTED",
             source_id=source_id,
+            **({"round_id": round_id} if round_id else {}),
         )
 
-    def reserve_tool_argument_repair(self, thread: str, role: str, execution_id: str) -> int:
+    def reserve_tool_argument_repair(
+        self, thread: str, role: str, execution_id: str, *, round_id: str | None = None
+    ) -> int:
         return self._reserve_repair(
-            thread, role, execution_id, "tool-argument-repair", "INVALID_FIELD_PROJECTION"
+            thread,
+            role,
+            execution_id,
+            "tool-argument-repair",
+            "INVALID_FIELD_PROJECTION",
+            **({"round_id": round_id} if round_id else {}),
         )
 
     def reserve_contract_repair(
@@ -297,29 +311,42 @@ class SessionStore:
         error_code: str,
         **details: str,
     ) -> int:
-        """At most four tool corrections total in the existing persisted execution.
+        """Four shared model correction rounds; every diagnostic remains an event.
 
-        Restarting a graph or delegating again cannot reset this allowance. Replayed
-        failures also consume it; there is no additional recovery or scheduling state.
+        Errors from one native tool batch share its runtime-derived round identity.
+        A replay of that batch retains its attempt; a new model message spends another.
+        Legacy calls without a round identity each spend one, preserving old ledgers.
         """
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
             raise AgentBoundaryError("Repair is not bound to the current execution")
         with self.db:
-            used = self.db.execute(
-                "SELECT count(*) FROM events WHERE thread=? "
+            rows = self.db.execute(
+                "SELECT seq,payload FROM events WHERE thread=? "
                 "AND kind IN ('prerequisite-repair', 'tool-argument-repair') "
-                "AND json_extract(payload, '$.execution_id')=?",
+                "AND json_extract(payload, '$.execution_id')=? ORDER BY seq",
                 (thread, execution_id),
-            ).fetchone()[0]
-            if used >= TOOL_REPAIR_LIMIT:
-                label = "prerequisite" if kind == "prerequisite-repair" else "tool argument"
-                raise AgentBoundaryError(
-                    f"{error_code}: {label} "
-                    f"repair budget exhausted ({TOOL_REPAIR_LIMIT} shared corrections "
-                    "per execution); "
-                    "inspect the tool arguments and prerequisites."
+            ).fetchall()
+            rounds: dict[tuple[str, str], int] = {}
+            for seq, raw in rows:
+                prior = json.loads(raw)
+                key = (
+                    (prior["role"], prior["round_id"])
+                    if prior.get("round_id")
+                    else ("legacy-event", str(seq))
                 )
+                rounds.setdefault(key, int(prior["attempt"]))
+            current_key = (role, details["round_id"]) if details.get("round_id") else None
+            attempt = rounds.get(current_key) if current_key is not None else None
+            if attempt is None:
+                if len(rounds) >= TOOL_REPAIR_LIMIT:
+                    label = "prerequisite" if kind == "prerequisite-repair" else "tool argument"
+                    raise AgentBoundaryError(
+                        f"{error_code}: {label} repair budget exhausted "
+                        f"({TOOL_REPAIR_LIMIT} shared correction rounds per execution); "
+                        "inspect the tool arguments and prerequisites."
+                    )
+                attempt = len(rounds) + 1
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?, ?, ?)",
                 (
@@ -329,14 +356,14 @@ class SessionStore:
                         {
                             "role": role,
                             "execution_id": execution_id,
-                            "attempt": used + 1,
+                            "attempt": attempt,
                             "error_code": error_code,
                             **details,
                         }
                     ),
                 ),
             )
-        return int(used + 1)
+        return attempt
 
     def command(self, command_id: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT * FROM commands WHERE id=?", (command_id,)).fetchone()

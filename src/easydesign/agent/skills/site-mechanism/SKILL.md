@@ -88,7 +88,7 @@ Different tools have different keys: mapping lookups use matches, source passage
 and a residue page uses facts. Never assume all results have facts. A stored residue page
 contains only its requested rows, not the whole target.
 Correct supplied INVALID_FIELD_PROJECTION/source-selection diagnostics within four shared
-repairs. Foreign references, corruption and authority errors are not recoverable argument errors.
+model correction rounds; parallel errors in one tool batch share one round. Foreign references, corruption and authority errors are not recoverable argument errors.
 
 Finish focused comparisons before the shared eight-call reserve; runtime then offers only
 SiteIntent, preserving capacity for independent Judge and the Gate. Submit a concise typed

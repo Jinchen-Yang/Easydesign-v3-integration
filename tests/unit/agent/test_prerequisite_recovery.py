@@ -261,7 +261,11 @@ async def test_hard_violations_never_become_prerequisite_repairs(
     request = SimpleNamespace(
         tool_call={
             "name": name,
-            "args": {"file_path": "/foreign-project/private.json"},
+            # The domain test must reach its HTTP boundary. Invalid research arguments
+            # are a separate recoverable error and never invoke the handler below.
+            "args": ACQUIRE
+            if violation == "disallowed-domain"
+            else {"file_path": "/foreign-project/private.json"},
             "id": "forbidden",
         }
     )

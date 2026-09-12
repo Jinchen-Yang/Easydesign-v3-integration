@@ -1984,3 +1984,72 @@ decision sufficiency, cross-topic evidence reuse and explicit unresolved states.
 mypy22modules passed. protected175.json verifies all385baseline files, Golden oracle and local
 model-config SHA unchanged; git diff check passed. The next real GPCR retry will use the clean
 committed checkpoint and approvedTarget104. No new scientific Golden PASS or Phase2 freeze yet.
+
+
+Additional175 validation: the broader Target/Design/context set in checks175e finished with
+31PASS/1FAIL in367.56s. The remaining failure was an obsolete source-numbering projection
+assertion: checkpoint174 deliberately renamed deposited receptor label/auth identifiers to
+source_label_seq_id/source_auth_seq_id. The test now verifies these explicit source names,
+retains canonical180 versus source-label188, preserves every original value/null and asserts
+that an unqualified label_seq_id is absent. No production implementation changed for this fix.
+Checks175f passed the corrected regression (1/1 in1.87s); all32cases in that broader set are
+verified across175e/f. Checks175g make check passed repository/assets/compileall/Ruff and
+mypy187source files. These targeted/static checks do not replace the full Phase2 freeze suite.
+
+Live175 launched from clean48372766479c46569760961798ea6b5438018fd4 with the unchanged Pro debug
+configuration and approved GPCRTarget104. The source/milestone is bound by the immutable launch
+receipt. The subsequent test-only update above does not change its production source. The
+run's real contradiction search discovered the ECL2 autoantibody paper PMID29483909 and
+acquired PMC5816038 full text into the durable store; its focused Discussion passage includes
+both the paper's own autoantibody account and a citation to earlier monoclonal-antibody work.
+These evidence scopes must remain distinct in final scientific review. The run is pending;
+no scientific PASS, Gate2 approval or Phase2 freeze is inferred from retrieval alone.
+
+
+### Live175 outcome and candidate correspondence repair (176)
+
+Live175 failed before the Dossier: Coordinator3/Site22 total25 shared model calls including
+7native summaries; peak68296input characters including schemas. It acquired relevant original
+source material, performed2targeted contradiction searches and delivered the PMC5816038
+Discussion passage, but did not produce an accepted Handoff.9focused views were persisted.
+The first Handoff correctly used ECL2 design180/183/184/190/191/192/193/194, but used canonical
+TM positions286/290/322 etc. as design labels in backups. Those backup positions were not
+observed in the prepared design scope. The generic rejection omitted candidate identity;
+the next model response incorrectly shifted every candidate by+8, including the previously
+valid primary. Two bounded corrections were exhausted; the final response lacked the required
+typed submission. No SiteIntent/Judge/Gate2 or approval was produced.
+
+The unaccepted draft also incorrectly stated that N-E-T was not an N-X-S/T sequon and called
+ECL2 the only VHH-reachable epitope. Neither is accepted scientific evidence. Model opinions
+are still fallible; fragment accessibility, mutation-record counts and a limited kernel
+candidate inventory cannot certify complete epitope space or a VHH's functional effect.
+The original failures, raw sources, model/tool events and rejected opinions remain preserved
+in the175attempt; live175-research-policy-audit.json records the diagnosis.
+
+176 adds a protein-specific correspondence projection at the existing GPCR evidence boundary.
+It first matches accession and original receptor chain to the approved Target, then uses the
+existing canonical_mapping_rows lookup to attach every corresponding approved Target row for
+all kernel candidate positions. Original kernel outputs, source coordinates and candidate
+opinions remain intact. No alignment, offset, new scientific score, planner or research mode
+is introduced. The existing Site fact-table projection displays the exact rows, including
+nulls, model presence, ambiguous/nonunique correspondence and sequence substitutions. The
+underlying facts artifact is added to the original source provenance. Dossier synthesis still
+receives its selected candidate facts; it does not inherit the entire Research tool history.
+A blocked Handoff now identifies the candidate and unobserved/unmapped labels rather than
+encouraging a blind change to all candidates. The Standard policy further states that a
+candidate's answered topology question is not a reason to page other loops/helices, and
+clarifies that kernel mutation counts/inventory alone cannot rank biological relevance.
+
+Read-only replay of the actual175kernel and approved facts joins all34candidate positions with
+all34exact mapping rows. The supplied view is30088characters using the existing fact-table
+representation (not a new encoding). It visibly distinguishes canonical180→design180 versus
+canonical286→design414,290→418 and322→450, with every ambiguous qualifier retained. This is
+artifact replay, not a new live PASS. receptor-overview176-replay-audit.json binds the original
+635111byte kernel artifact and718906byte facts artifact. protected176.json confirms all385
+protected files, Golden oracle and ignored model configuration unchanged.
+
+Checks176 passed Ruff, mypy22Agent modules and21targeted tests in83.08s: nonuniform/nonunique
+receptor correspondence, foreign/unresolved identity rejection, exact projection, candidate-
+specific Handoff diagnostics, Dossier evidence/isolation/resume, existing Site geometry/gates/
+overrides and source-numbering preservation. No full regression is claimed. The next real176
+retry uses approved GPCRTarget104 and unchanged debug model/32calls/60ksoft/100khard settings.

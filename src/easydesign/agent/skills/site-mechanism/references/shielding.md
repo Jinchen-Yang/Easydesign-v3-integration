@@ -1,6 +1,7 @@
 # Glycan / PTM / missing-region constraints
 
-The existing N-X-S/T detector provides sequence-motif warnings only. Motif absence does not
+The existing N-X-S/T detector (X can be any residue except proline) provides sequence-motif
+warnings only. Keep canonical sequence and engineered construct sequence distinct. Motif absence does not
 prove glycan absence; motif presence does not prove occupancy or a modeled glycan shield.
 Separate supplied experimental annotations, observed structural coordinates and inferred risk.
 No glycan ensemble or occupancy calculation is available in this slice.

@@ -344,6 +344,8 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     """
     fields = ("identity", "state", "structure", "membrane", "warnings", "avoid")
     result = {key: scientific_projection(value[key]) for key in fields if key in value}
+    if "approved_design_mapping" in value:
+        result["approved_design_mapping"] = site_page_projection(value["approved_design_mapping"])
     topology = value.get("topology")
     if isinstance(topology, dict):
         result["topology_summary"] = {
@@ -419,7 +421,8 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
         "are original structure identifiers; gpcrdb_sequence_number is the receptor reference "
         "position. Neither is an approved design label. Read a specific "
         "source path if needed. Source auth/label numbering is NOT approved design numbering; "
-        "use read_canonical_mapping for the approved correspondence and preserve its qualifiers. "
+        "use approved_design_mapping or read_canonical_mapping for the approved correspondence "
+        "and preserve its qualifiers. Never infer a global offset. "
         "Kernel candidate confidence/hard_gates are scoped heuristics, not full VHH access, "
         "functional efficacy, or independent scientific approval."
     )

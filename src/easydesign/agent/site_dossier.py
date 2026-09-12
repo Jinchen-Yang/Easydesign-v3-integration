@@ -127,8 +127,23 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         labels = candidate.hotspot_label_seq_ids
         evaluation = bridge.evaluate_candidate(candidate_query(labels))
         if evaluation["status"] == "BLOCKED":
+            observed = {
+                row["residue"]["label_seq_id"]
+                for row in facts["derived_metrics"]["sasa"]["residues"]
+            }
             raise ResearchConclusionMismatch(
-                "Research candidate is hard-invalid: " + compact(evaluation)
+                "Research candidate is hard-invalid: "
+                + compact(
+                    {
+                        "candidate": candidate.name,
+                        "submitted_design_labels": labels,
+                        "unobserved_or_unmapped_labels": sorted(set(labels) - observed),
+                        "evaluation": evaluation,
+                        "instruction": "Correct this candidate using the approved mapping. "
+                        "Do not shift other candidates or infer a global numbering offset. "
+                        "Kernel canonical/source positions are not design labels.",
+                    }
+                )
             )
         rows = [
             row

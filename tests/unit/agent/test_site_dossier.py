@@ -246,6 +246,28 @@ def test_dossier_rejects_missing_or_stale_delegation(site_bridge: Any) -> None:
         SITE_EVIDENCE.reset(token)
 
 
+def test_handoff_rejection_identifies_bad_backup_without_shifting_primary(site_bridge: Any) -> None:
+    selection = handoff()
+    payload = selection.model_dump(mode="json")
+    payload["candidates"].append(
+        {
+            "name": "Synthetic invalid backup",
+            "role": "backup",
+            "hotspot_label_seq_ids": [999],
+            "rationale": "Deliberately invalid synthetic numbering, not scientific evidence.",
+        }
+    )
+    token = bind(site_bridge)
+    try:
+        with pytest.raises(AgentBoundaryError, match="Synthetic invalid backup") as error:
+            site_dossier(site_bridge, SiteResearchHandoff.model_validate(payload))
+        assert '"unobserved_or_unmapped_labels":[999]' in str(error.value)
+        assert "Do not shift other candidates" in str(error.value)
+        assert selection.candidates[0].hotspot_label_seq_ids == [1, 2, 3]
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
 def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge: Any) -> None:
     import json
 

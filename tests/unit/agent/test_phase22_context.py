@@ -485,9 +485,11 @@ def test_receptor_overview_keeps_every_candidate_and_qualifies_source_numbering(
             for key in item.keys() - {"residues"}:
                 assert got[key] == item[key]
             assert len(got["residue_records"]) == len(item["residues"])
-            assert got["residue_records"][0]["label_seq_id"] == 188
-            assert got["residue_records"][1]["auth_seq_id"] is None
-            assert "label_seq_id" not in got["residue_records"][1]
+            assert got["residue_records"][0]["source_label_seq_id"] == 188
+            assert got["residue_records"][1]["source_auth_seq_id"] is None
+            assert "source_label_seq_id" not in got["residue_records"][1]
+            assert "label_seq_id" not in got["residue_records"][0]
+            assert got["residue_records"][0]["gpcrdb_sequence_number"] == 180
             assert got["full_residues_path"] == ["candidates", mode, i, "residues"]
     assert view["topology_summary"] == {"mapping_status": "ambiguous"}
     assert view["warnings"] == value["warnings"] and view["membrane"] == value["membrane"]
@@ -504,7 +506,7 @@ def test_receptor_overview_keeps_every_candidate_and_qualifies_source_numbering(
             table = tables["candidate_overview"][mode][i]["residue_table"]
             for row, original in zip(table["rows"], item["residues"], strict=True):
                 assert dict(zip(table["columns"], row, strict=True)) == {
-                    k: original[k] for k in table["columns"]
+                    k: original[k.removeprefix("source_")] for k in table["columns"]
                 }
 
     from easydesign.agent.evidence_output import ReadEvidenceResult, scoped_value

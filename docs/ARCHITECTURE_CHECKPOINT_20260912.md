@@ -140,3 +140,15 @@ scientific projection with original focused passages and hard facts; full source
 durable. Its research assessments and saturation claim are fallible opinions for the independent
 Judge, which receives critical opposing citations even when final SiteIntent omits them.60ksoft/
 100khard, framework memory/isolation, current local debug model and all frozen science remain.
+
+
+###176: runtime candidate correspondence after live175
+
+Live175 discovered relevant counterevidence but failed typed Handoff mapping before Dossier;
+peak68296characters stayed within the existing100kguard. A candidate-specific exact approved
+Target lookup now accompanies GPCR hypotheses, preserving source labels, canonical positions,
+prepared design labels and every ambiguity/missingness qualification. It reuses the existing
+Site fact-table view and original ArtifactRefs; the scientific kernel is unchanged. Blocked
+Handoff diagnostics identify the offending candidate. Standard source pagination stops after
+answering that candidate's question. No model/config change, new agent or message compression.
+All previous accepted milestones remain. Full scientific Case2 acceptance is still required.

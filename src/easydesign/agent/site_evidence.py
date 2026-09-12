@@ -162,6 +162,68 @@ def canonical_mapping_rows(
     }
 
 
+def receptor_candidate_mapping(
+    facts: dict[str, Any],
+    receptor: dict[str, Any],
+    *,
+    approved_accession: str | None,
+    approved_auth_chain: str | None,
+) -> dict[str, Any]:
+    """Join candidate canonical positions to existing Target rows, without alignment."""
+    source = receptor["identity"]
+    if (
+        not approved_accession
+        or source.get("accession") != approved_accession
+        or not approved_auth_chain
+        or source.get("receptor_chain") != approved_auth_chain
+    ):
+        raise AgentBoundaryError(
+            "GPCR candidate reference/chain differs from the approved Target; "
+            "canonical correspondences cannot be transferred between targets."
+        )
+    positions = sorted(
+        {
+            row["gpcrdb_sequence_number"]
+            for candidates in receptor["candidates"].values()
+            for candidate in candidates
+            for row in candidate["residues"]
+            if row.get("gpcrdb_sequence_number") is not None
+        }
+    )
+    matches = [
+        match
+        for start in range(0, len(positions), 6)
+        for match in canonical_mapping_rows(
+            facts, CanonicalMappingQuery(canonical_positions=positions[start : start + 6])
+        )["matches"]
+    ]
+    return {
+        "canonical_accession": approved_accession,
+        "source_auth_chain": approved_auth_chain,
+        "requested_canonical_positions": positions,
+        "unmapped_canonical_positions": [
+            match["canonical_position"] for match in matches if not match["mapping_rows"]
+        ],
+        "facts": [
+            {
+                "mapping": row,
+                "coordinate_observed": row["label_seq_id"] in match["observed_design_labels"],
+            }
+            for match in matches
+            for row in match["mapping_rows"]
+        ],
+        "limitations": [
+            "Exact lookup in the approved Target mapping, not a new alignment or offset. "
+            "Each label_seq_id is an approved design label; source receptor labels are separate.",
+            "All matching rows, nulls, edit_type, mapping_status and model_presence are retained. "
+            "Conditional/nonunique correspondence remains conditional; unobserved rows "
+            "are not valid coordinate-backed hotspots.",
+            "Candidate inventory and mutation-record counts do not establish the only possible "
+            "epitope, whole-VHH access, functional efficacy or a preferred ranking.",
+        ],
+    }
+
+
 def summarize_site_facts(
     analysis: dict[str, Any], *, labels: list[int], offset: int = 0, limit: int = 12
 ) -> dict[str, Any]:

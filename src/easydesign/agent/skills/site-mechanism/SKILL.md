@@ -20,6 +20,10 @@ membrane/glycan/disulfide constraints, known antibody/epitope/competition eviden
 scientific distinction between candidate A/B/C. Combine related issues; do not expand the list
 just because a database advertises more annotation types.
 
+Start from the approved Target and supplied candidate facts. Once the relevant candidate's
+access/topology question is answered, stop that source's pagination; unrelated loop/helix or
+bibliography coverage is not required. Spend the next inquiry on a remaining decision gap.
+
 Use research_evidence for those missing facts. Query keywords execute the search; question
 states the decision it informs. Acquire requested and relevant primary records plus the few
 necessary official structure/database records. Search titles are leads, not residue or causal
@@ -78,7 +82,8 @@ requested patch, with no offset. Omit labels for the overview. facts_table
 rows follow mapping_columns then metric_columns, with every null retained. A canonical null is
 unknown; a non-null conditional row remains a correspondence with its mapping qualification.
 Design labels, construct positions, canonical positions and source author IDs are distinct.
-For canonical annotation positions call read_canonical_mapping first; it returns all matching
+For canonical annotation positions use the supplied approved_design_mapping or call
+read_canonical_mapping; these return all matching
 rows, observed design labels and unmapped/missing-coordinate cases. Preserve every qualification.
 Map literature positions through those supplied rows; never infer equality or a global offset.
 compare_reference_identity is only for an additional retrieved reference; it requires the exact
@@ -91,6 +96,8 @@ Evaluate selected hotspot labels with evaluate_candidate_site before submission.
 exposure and local geometry; SASA/heuristic scores do not establish epitope usefulness or affinity.
 A residue may be exposed while a whole VHH cannot approach. No docking, dynamics or affinity
 calculation is available here: state approach/clearance as hypotheses and identify missing tests.
+Kernel candidates are a limited hypothesis set, not an exhaustive list of accessible epitopes.
+Mutation-record counts alone do not rank functional relevance or whole-binder accessibility.
 
 For each biological proposal connect desired/forbidden effects, observation, interpretation,
 alternative, discriminating assay and falsifier. Enzyme inhibition needs integrity/interference

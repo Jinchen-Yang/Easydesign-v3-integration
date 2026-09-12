@@ -67,3 +67,16 @@ These scripted/synthetic tests do not establish scientific Case2 acceptance. Rea
 must independently pass exact identity/numbering, relevant primary evidence, contradiction check,
 credible candidate comparison, honest uncertainty and Judge review without known science errors.
 Full regression and Phase2 freeze follow only after that PASS, then the original Phase3→4 task.
+
+
+### Approved candidate correspondence
+
+GPCR candidate canonical/source positions are not approved design labels. The existing
+receptor-analysis evidence now includes approved_design_mapping, an exact lookup against the
+current approved Target, after matching canonical accession and original chain. It preserves
+all corresponding rows and scientific qualifications; it never infers an offset or silently
+selects one of several correspondences. This is EasyDesign-specific hard-fact ownership.
+DeepAgents still owns research history summarization; no new generic context subsystem is added.
+A bounded candidate inventory or mutation-record count is not exhaustive epitope knowledge.
+Stop source pagination once the candidate-specific question is answered, preserving meaningful
+uncertainty and contradictory evidence. The original records remain durable and traceable.

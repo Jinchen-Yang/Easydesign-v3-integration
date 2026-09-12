@@ -663,6 +663,23 @@ class EvidenceResearch:
         path = self.bridge.validate_project().source_path
         analysis = analyze_structure(path, request.auth_chain, context["topology"])
         candidates = generate_candidates(analysis, context)
+        from .site_evidence import receptor_candidate_mapping
+
+        target, facts, facts_ref = self.bridge.site_facts()
+        hard_facts = target["evidence"]["hard_facts"]
+        candidates = {
+            **candidates,
+            "approved_design_mapping": {
+                **receptor_candidate_mapping(
+                    facts,
+                    candidates,
+                    approved_accession=hard_facts["canonical_accession"],
+                    approved_auth_chain=hard_facts["selected_chain"],
+                ),
+                "target_binding": target["binding"],
+                "source_refs": [facts_ref],
+            },
+        }
         ref = self.bridge.persist("research-receptor-analysis", candidates)
         summary = {
             "identity": candidates["identity"],
@@ -673,6 +690,7 @@ class EvidenceResearch:
             "candidates": candidates["candidates"],
             "warnings": candidates["warnings"],
             "avoid": candidates["avoid"],
+            "approved_design_mapping": candidates["approved_design_mapping"],
         }
         card_id = "receptor-" + ref["sha256"][:24]
         result = {
@@ -691,7 +709,7 @@ class EvidenceResearch:
                     "evidence_level": "deterministic-structure-analysis",
                     "passage": json.dumps(summary),
                     "source_verified": True,
-                    "source_refs": [*card["source_refs"], ref],
+                    "source_refs": [*card["source_refs"], facts_ref, ref],
                     "does_not_support": ["Automatic site approval or binding efficacy"],
                 }
             ],

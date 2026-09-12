@@ -1300,3 +1300,63 @@ required a local variable type annotation; annotation-only correction then mypy1
 both changed modules. Protected158:all385 baseline files unchanged. Next live158 retries only
 standard/native Design from live153's approved Site; live159 retries only GPCR Site from live104's
 approved Target. Model config and frozen spec/oracle remain unchanged.
+
+
+### Standard Gate3 second independent review (live158)
+
+Live158 (`phase2-goldens-20260911T234323971865Z`) reached standard Gate3 after9 real calls
+(Coordinator4/Binder3/Judge2), peak48715 system/message characters. Actual default three-CDR
+and scaffold sampling is now described correctly; zero/low yield remains INCONCLUSIVE. Real
+backend validation again passed7strategies/280planned/no generation. The independent review
+nevertheless remains FAIL, snapshot35ad6c1ff1ebc9cd423c8e26afdf87f124481d6a0c6f7f1993382a1892b24dd4:
+
+- Card820ba978a02b18ed04abcac27b36afa4eff3bfbeed2e599dbeb51c052df7667d treats CDR insertion
+  counts as final loop lengths and argues that “12–14-residue CDR3” ranges permit the tip. The
+  unchanged legacy boltzgen-contract explicitly distinguishes design.res_index, insertion
+  counts and final loop length. This existing semantic warning was missing from v3 guidance.
+- Proposal/Judge/card say “No residue-level epitope exists”; the evidence establishes only that
+  a residue-resolved interface was not established in the retrieved evidence, not nonexistence.
+- Judge judge-e918967153984f5e9c6e7bb4cf6e056d says upstream Site override lineage is outside
+  verified scope, although the supplied upstream_decision explicitly verifies that old approval.
+  The pending Gate3 and the verified prior Site override must remain separate.
+
+The failed six-section review and complete emitted design remain preserved; native Case5 was
+not run, no Gate3 approval or generation occurred. Cases1/3 stay accepted. The next local draft
+adds the existing insertion-count semantic distinction, scopes every unknown including epitopes,
+and distinguishes verified upstream Site authority from pending Design authority. It will be
+synced only after active GPCRlive159 exits, preserving that execution's Agent/Skill fingerprint.
+No kernel/oracle or scientific Gate change is required. Phase2 NOT FROZEN.
+
+
+### Preserve every newly returned parallel answer (live159)
+
+Live159 (`phase2-goldens-20260911T234324135660Z`) progressed through research, receptor
+analysis, primary/database passages, glycan/topology inspection and approved canonical lookup,
+then failed the60000-character guard after19calls (Coordinator3/Site16), before SiteIntent.
+Its final projection was85629→64823chars. The early optional-reference fix worked, but repeated
+reads accumulated because another delivery bug hid answers before their first model consumption.
+
+`batch-delivery159.json` compares the exact native checkpoint with the actual first projection:
+a3103-character canonical mapping answer from a4-tool batch became a295-character archived
+reference while the other3answers remained. Prior examples also hid candidate patches/mapping
+in batch positions preceding the last result. Source/checkpoint bytes remain intact, but this is
+not usable delivery. The old policy pinned only the latest single answer. Both working-set and
+total-budget projections now pin every matching result of the latest AI tool-call batch using
+its actual tool_call_ids, including current Skill reads; latest candidate evaluation is retained.
+Old read-only views can still be archived, and irreducible oversize input still fails the guard.
+
+`batch-replay160.json` is DETERMINISTIC REPLAY, not live acceptance. At historical tool batches
+9–14, previously hidden answers are now all present, at58514/58629/58712/58177/58297/58979chars.
+The already bloated histories at batches15/16 remain over budget (67633/76182); they are honestly
+rejected rather than silently losing requested answers. The fix must prevent repeated unseen
+reads in a fresh Site execution; no claim is made that the old terminal context now fits.
+A first diagnostic replay encountered an empty initial checkpoint and was corrected to skip it;
+no checkpoint/state was changed. Live158/159 were confirmed exited before source synchronization.
+
+Targeted160:24 PASS (48.28s), including actual RoleBoundary middleware for native/reasoning
+parallel batches, all prior context/projection tests, existing compiler/freeze and submission
+correction after a tool round. Ruff160 PASS; mypy160 PASS for3changed modules. Protected160:
+all385 baseline files unchanged. The CDR insertion-vs-loop, evidence scope and upstream-approval
+wording repair is included. Next live160 retries standard/native Design from acceptedSite153;
+live161 retries GPCR Site from acceptedTarget104. Same model configuration,32calls,60000input,
+formal7x40 Design intent and micro-only future compute constraint. Phase2 NOT FROZEN.

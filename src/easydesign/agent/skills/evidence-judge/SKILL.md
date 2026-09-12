@@ -83,13 +83,13 @@ non-conflicting conditioning/exclusions, crop artifacts, scaffold/CDR constraint
 limitations, useful arm comparisons, and inherited override warnings. Compare actual designable
 regions with the claimed factors: default bounds still sample all three CDRs across scaffold
 backgrounds; they do not freeze CDR1/2 or isolate CDR3 causality. Reject a contradictory factor
-account. Only retrieved evidence may be called absent; missing function evidence does not erase
-binding precedent or prove global absence. Zero-yield micro samples are INCONCLUSIVE; competitive
-kinetics alone cannot prove specificity. Runtime supplies real compiler/backend validation.
+account. cdr_insertion_ranges count inserted residues, NOT final CDR loop lengths: reject their conflation or inferred reach.
+"Not established in this evidence" is not "does not exist", including residue-level epitopes. Missing function evidence does not erase binding precedent.
+Zero-yield micro samples are INCONCLUSIVE; competitive kinetics alone cannot prove specificity. Runtime supplies real compiler/backend validation.
 Do not propose replacement designs or silently alter WHERE. Use option_id=design for an optional
 SUPPORTED/DISCOURAGED recommendation; runtime determines hard BLOCKED constraints. An executable
 specification is not evidence that future candidates bind. Gate 3 approval is not in the proposal
-snapshot and cannot be inferred. Normal limitations do not automatically require discouragement.
+snapshot and cannot be inferred. Explicit upstream_decision authority verifies the prior Site override; do not call it unknown. Normal limitations need not be DISCOURAGED.
 
 The scaffold evidence comes from runtime-verified official VHH assets, with explicit compiler
 residue indices. `cdr_template_validation` states whether a requested range lies inside the

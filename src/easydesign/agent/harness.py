@@ -43,6 +43,7 @@ from .evidence_corpus import ContinueEvidence, RetrieveEvidence
 from .evidence_output import (
     ModelEvidenceScope,
     fit_site_working_view,
+    latest_tool_result_indices,
     output_message,
     read_query,
     reasoning_working_view,
@@ -488,12 +489,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     retained.add(snapshots[-1])
                     detail_chars = len(str(messages[snapshots[-1]].content))
             elif self.role == "site":
-                # The newest answer must reach the model even when older sources
-                # occupy the working set. Otherwise a successful scoped read is
-                # immediately archived and the model keeps asking for unseen facts.
+                # All answers in the latest parallel batch must reach their first
+                # model read. Pinning only its last answer hides successful earlier
+                # results and causes repeated reads of never-delivered evidence.
+                retained.update(set(detailed) & latest_tool_result_indices(messages))
                 if detailed:
                     retained.add(detailed[-1])
-                    detail_chars = len(str(messages[detailed[-1]].content))
+                detail_chars = sum(len(str(messages[i].content)) for i in retained)
                 # Keep read primary/database passages alongside geometry, so recency
                 # alone cannot evict the evidence needed for mechanistic synthesis.
                 # Use distinct source identities, never scientific favorability/ranking.

@@ -25,10 +25,11 @@ transfer preserves that unreviewed proposal/job for a new review thread after a 
 It transfers no Judge verdict or approval. Live153 subsequently obtained independent Judge/Gate2 and six-section Case1 acceptance of the
 bounded DISCOURAGED hypothesis, then applied the old Site approval through the scripted validation
 actor. The exact approved hotspot and all warnings are retained for current Binder validation.
-Live157 reached standard Gate3 with real backend checks passing, but independent review rejected
-its CDR3-only factor narrative and global absence claims; no Design acceptance or approval is
-claimed. Live156 delivered the GPCR candidate overview but exceeded total context; the recorded
-read-only replay fits after archiving optional Skill references, with live acceptance still due.
+Live157/158 reached standard Gate3 with real backend checks passing, but independent review
+rejected factor/absence and insertion-count-vs-final-loop claims; no Design acceptance/approval
+is claimed. Live159 GPCR exposed first-delivery loss inside parallel tool batches. The runtime
+now preserves every latest-batch answer; prior duplicate-reading histories remain retained and
+oversized terminal histories are still rejected. Fresh live acceptance remains due.
 Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases2/4/5 and the Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
@@ -46,16 +47,16 @@ The claim index is not approved project knowledge; its sources require fresh ver
 
 | Legacy capability | Legacy owner | Legacy source/path | v3 owner | Status | Required phase | Evidence/test | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; real sources PASS; Agent goldens FAIL | Do not replace original goal with follow-up |
-| Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Site skill; golden pending | Binding is not function; low perturbation is independent |
+| Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; Cases1/3 real PASS; Cases2/4/5 pending | Do not replace original goal with follow-up |
+| Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Case1 enzyme assay/control review PASS; GPCR/Design pending | Binding is not function; low perturbation is independent |
 | Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | PARTIAL | 2.2 | Six fixture identity cases; real P00698 acquisition/proposal reaches old pending decision | Live040 scripted approval produced an authoritative bundle verified by the unchanged oracle; complete five-case rerun remains pending |
 | Construct/canonical/coordinate/design-scope separation | DS/RS | target-and-site.md; evidence-and-numbering.md | Target + unchanged mapping kernel | PARTIAL | 2.2 | Clean/subsequence/ambiguous-chain/sequence-difference old-service regressions | No replacement mapping; inherited old multi-decision edge cases are not claimed repaired |
 | Author/label/insertion/missing mapping | DS | evidence-and-numbering.md; stages/s01_target_preparation | Existing kernel via Target/Site | COMPLETE | 2.2 | test_source_author_numbering_is_not_invented | No invented canonical offset |
 | Structure/state comparison and counterstate | RS | gpcr-mechanism-and-state.md | Target/Site + Research | PARTIAL | 2.2 | real source/kernel PASS; Agent golden FAIL | Bound ligand alone cannot establish active state |
 | Ligand, partner, assembly and construct context | RS/DS | target-and-site.md; special-target-playbooks.md | Research + Target/Site | PARTIAL | 2.2 | PDB polymer/deposition retrieval | Source identity differs from context transfer |
 | Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | PARTIAL | 2.2 | Live040 real Target/Judge/Gate 1 content PASS and scripted response delivered to old decision service | No first/largest chain heuristic; actual identity-trap accepted in live048, broader GPCR acceptance pending |
-| Active literature search | RS | target-and-site.md; scientific-claims.md | Shared EvidenceResearch + selected corpus | PARTIAL | 2.2 | Source/status/corpus tests; original selection recovery now passes live | Bounded discovery; final complete Site/primary-literature path remains unvalidated |
-| Primary-source retrieval | RS | evidence-and-numbering.md | EvidenceResearch + focused passages | PARTIAL | 2.2 | Full XML retention, source identity, passage and cursor regressions | Acquisition receipt is not a scientific citation; real workflow not completed |
+| Active literature search | RS | target-and-site.md; scientific-claims.md | Shared EvidenceResearch + selected corpus | PARTIAL | 2.2 | Source/status/corpus tests; original selection recovery now passes live | Case1 live153 passed with4 bounded searches and5 focused cards; GPCR still pending |
+| Primary-source retrieval | RS | evidence-and-numbering.md | EvidenceResearch + focused passages | PARTIAL | 2.2 | Full XML retention, source identity, passage and cursor regressions | Case1 retained primary abstract and real database passages through Gate2; full-text absence remains explicit; GPCR pending |
 | Database search and UniProt evidence | DS/RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch reusing ScientificHttpClient | PARTIAL | 2.2 | Real UniProt P00698 retained; first-class proposal and old comparison reached | Scientist species cannot be silently replaced |
 | Structure and known complex search | RS/DS | target-and-site.md | EvidenceResearch + RCSB | PARTIAL | 2.2 | bounded PDB search/entry/polymer retrieval | Assembly and physiological context require interpretation |
 | Mutagenesis evidence | RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch + Site | PARTIAL | 2.2 | literature topics + existing GPCRdb adapter | Mutation can affect expression/fold rather than epitope |
@@ -64,8 +65,8 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | State-dependent evidence | RS | gpcr-mechanism-and-state.md | EvidenceResearch + Target/Site | PARTIAL | 2.2 | real source/kernel PASS; Agent golden FAIL | Sensor/stabilizer/competitor/artifact hypotheses separate |
 | PTM/glycan evidence | RS/DS | special-target-playbooks.md | Research + Site existing features/motifs | PARTIAL | 2.2 | glycan runtime regression | Motif is not occupancy; absent model is not absence |
 | Source verification, strength and scope | DS/RS | evidence-and-numbering.md; scientific-claims.md | Runtime source binding + owner/Judge | PARTIAL | 2.2 | tamper/PMID/passage tests | Source verified does not imply biological entailment |
-| Conflicting and negative evidence | RS | target-and-site.md | EvidenceResearch + owner/Judge | PARTIAL | 2.2 | All bound counterevidence preserved; exact Judge delegation/oversize regressions | Live040 independent Target Judge content reviewed; Site/Design Judge acceptance remains pending |
-| Literature-derived site candidates | RS | target-and-site.md | Site + focused source cards | PARTIAL | 2.2 | Focused-card binding and source-tamper regression | Must independently map residues; real Site research/geometry reached in live044; Gate 2 not completed |
+| Conflicting and negative evidence | RS | target-and-site.md | EvidenceResearch + owner/Judge | PARTIAL | 2.2 | All bound counterevidence preserved; exact Judge delegation/oversize regressions | Case1 independent Site/Judge review PASS; GPCR pending and live157 Design content FAIL retained |
+| Literature-derived site candidates | RS | target-and-site.md | Site + focused source cards | PARTIAL | 2.2 | Focused-card binding and source-tamper regression | Case1 live153 independently accepted actual literature/scan comparison and mapped Gate2; GPCR pending |
 | Scan-derived candidate alternatives | DS/RS | target-and-site.md | Site + old SASA/geometry | COMPLETE | 2.2 | test_site_runtime | No new fused winner score |
 | Surface accessibility / SASA / burial | DS/RS | target-and-site.md | Existing Stage 02 kernel via Site | COMPLETE | 2.2 | real deterministic tool regression | SASA is not full-VHH access |
 | Secondary structure and interface geometry | DS/RS | target-and-site.md; vhh-geometry-priors.md | Site + existing structure tools | PARTIAL | 2.2 | SASA/region geometry; broader context pending | Do not infer axes from sequence labels |

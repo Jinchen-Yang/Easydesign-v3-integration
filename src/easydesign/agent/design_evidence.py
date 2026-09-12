@@ -58,7 +58,10 @@ def design_constraints() -> dict[str, Any]:
             "numbering_scope": "Compiler scaffold residue indices, not target/canonical numbering",
             "limits": "Matching loop bounds does not establish geometric equivalence or binding",
             "default_design_semantics": "Each listed design.res_index region is designable. "
-            "The three insertion ranges correspond to CDR1, CDR2 and CDR3. Keeping "
+            "The three insertion ranges are design_insertions.num_residues for CDR1, "
+            "CDR2 and CDR3: counts of inserted residues, NOT final CDR loop lengths. "
+            "Final loop length also depends on the retained/excluded template residues; "
+            "neither insertion count nor design.res_index establishes geometric reach. Keeping "
             "default bounds does not freeze loop sequence or length; the standard "
             "seven-scaffold plan is not a CDR3-only controlled experiment.",
         },

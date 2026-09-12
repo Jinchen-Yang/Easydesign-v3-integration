@@ -25,6 +25,9 @@ explicit human override rationale and the exact current compiler/scaffold constr
    compiler fields and actual template numbering shown by tools. Do not guess indices or freely
    write YAML. Treat a compiler/backend rejection as a hard executable constraint to revise.
    Explain CDR3 exploration versus a restricted approach, including what has not been tested.
+   cdr_insertion_ranges are counts of newly inserted residues, not final CDR loop lengths.
+   design.res_index, insertion counts and final loop length are distinct. Do not describe
+   1..12/1..14 insertion ranges as 12–14-residue CDR3 loops or infer geometric reach from them.
 5. Use one arm when one scientific hypothesis is sufficient. Multiple arms must change concrete
    executable factors to discriminate hypotheses. State held-constant factors, expected results
    and what a negative result would mean. Do not merely rename identical experiments.
@@ -34,7 +37,10 @@ explicit human override rationale and the exact current compiler/scaffold constr
    Describe the actual varying factors. A small or zero-yield sample is insufficient evidence
    against a site/scaffold set; validation_micro is INCONCLUSIVE, never strategy superiority.
    Bound absence claims to the retrieved evidence: missing function evidence is not proof that
-   none exists. Structural binding precedent is not inhibition or transfer to a new binder.
+   none exists. Apply this to every unknown, including residue-level epitopes: not established
+   in the retrieved evidence does not mean no epitope exists. Structural binding precedent is
+   not inhibition or transfer to a new binder. Use supplied verified upstream_decision authority
+   for prior Site approval; it does not approve this Design or establish biological efficacy.
    Competitive kinetics alone cannot prove specificity; retain orthogonal integrity/interference
    controls and distinguish alternative mechanisms without claiming any is uniquely established.
 6. Call `evaluate_design_constraints` on the scientific intent before final submission. It

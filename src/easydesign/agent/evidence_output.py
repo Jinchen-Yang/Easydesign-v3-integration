@@ -166,6 +166,22 @@ def reasoning_working_view(messages: list[Any]) -> list[Any]:
     return output
 
 
+def latest_tool_result_indices(messages: list[Any]) -> set[int]:
+    """Every answer from the latest tool-call batch must reach its first model read."""
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if isinstance(message, AIMessage) and message.tool_calls:
+            call_ids = {call["id"] for call in message.tool_calls}
+            return {
+                i
+                for i, result in enumerate(messages)
+                if i > index and isinstance(result, ToolMessage) and result.tool_call_id in call_ids
+            }
+    return set()
+
+
 def fit_site_working_view(
     messages: list[Any],
     *,
@@ -202,7 +218,8 @@ def fit_site_working_view(
             continue
         if isinstance(value, dict) and value.get("full_result"):
             detailed.append((i, value))
-    pinned = {detailed[-1][0]} if detailed else set()
+    latest_batch = latest_tool_result_indices(working)
+    pinned = latest_batch | ({detailed[-1][0]} if detailed else set())
     evaluations = [i for i, _ in detailed if working[i].name == "evaluate_candidate_site"]
     if evaluations:
         pinned.add(evaluations[-1])
@@ -252,6 +269,7 @@ def fit_site_working_view(
         for i, message in enumerate(working):
             if (
                 i == newest
+                or i in latest_batch
                 or not isinstance(message, ToolMessage)
                 or message.name != "read_file"
                 or message.status != "success"

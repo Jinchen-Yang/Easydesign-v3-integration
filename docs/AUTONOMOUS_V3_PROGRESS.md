@@ -2206,3 +2206,31 @@ preservation of a compared candidate's avoid role.
 
 checks179a: Ruff PASS, mypy23 PASS,9 SiteDecision tests PASS in15.58s.
 The original runtime comparison requirement and scientific acceptance criteria remain unchanged.
+
+### Replay178b findings and final projection simplification
+
+Saved-evidence replay on15869819 produced two first-call valid SiteDecisions with runtime
+hydration:3,879/3,489public characters;63.48/62.08seconds;11,451input tokens each and5,461/5,524
+output tokens including provider reasoning. Actual canonical286 hydrated todesign414, with
+conditional mapping preserved. No research was repeated. The independent Judge call returned
+an empty JudgeVerdict and failed native parsing; the reader had disabled its normal native
+schema correction. No Judge assessment, Gate2 or scientific PASS was produced.
+
+Scientific audit of those decisions found adoption of errors in the old, unaccepted177 research
+opinions: candidate designation attributed to GPCRdb, unsupported reduction of activation risk,
+C192 treated as a cysteine despite runtime D192, and in one decision a resolved Gate1 called
+unresolved. The current evidence remains incomplete for the forbidden functional effect. These
+are not repaired by accepting a small valid JSON or by changing the Golden oracle.
+
+The synthesis working projection now omits preliminary researcher rankings/rationale, duplicate
+impact summaries and research stopping narrative. Original questions/status, source-grounded
+interpretations, direct supporting/contradictory passages, candidate facts and unresolved
+questions remain. The complete Handoff/opinions stay in the immutable dossier and independent
+Judge evidence; no evidence was deleted or sentiment-filtered. This removes duplicated opinions
+from the scientific-choice input rather than adding a fact-regeneration/repair engine. The
+replay reader now enables native ToolStrategy schema feedback under the same three-step bound,
+and prints only provider outcome metadata before parsing, never private reasoning text.
+
+checks179b: Ruff PASS, mypy23 PASS,17 SiteDecision/Dossier tests PASS in41.33s, including
+source/contradiction preservation and exclusion of stale preliminary narrative from synthesis.
+Partial replay audit is preserved inruntime/tmp/autonomous-v3-20260912/replay178b-audit.json.

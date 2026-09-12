@@ -103,7 +103,17 @@ def test_real_adapter_hydration_preserves_candidates_and_scoped_facts(site_bridg
         intent = hydrate_site_decision(b, chosen, execution["execution_id"])
         assert intent.selected_site.hotspot_label_seq_ids == [1, 2, 3]
         assert b.current_site() is None
+        dossier["candidate_comparison"][0]["research_hypothesis"]["rationale"] = (
+            "SYNTHETIC stale preliminary candidate preference"
+        )
+        dossier["research_opinions"]["research_notes"] = ["SYNTHETIC stale research narrative"]
         working = decision_working_set(dossier)
+        assert "stale preliminary" not in str(working)
+        assert "stale research narrative" not in str(working)
+        assert (
+            working["unresolved_research_questions"]
+            == dossier["research_opinions"]["unresolved_questions"]
+        )
         assert working["candidates"][0]["candidate_id"] == chosen.selected_candidate_id
         assert "trusted_residue_facts" not in working
         assert "research_outcomes" not in working

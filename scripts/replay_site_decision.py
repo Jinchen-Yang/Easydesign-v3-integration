@@ -18,6 +18,7 @@ from time import perf_counter
 import yaml
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage
 
 from easydesign.agent.contracts import EvidenceBinding, JudgeVerdict
@@ -34,17 +35,40 @@ def save(out, name, value):
     (out / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
+class ReplayUsage(BaseCallbackHandler):
+    """Persist provider outcome metadata even if native structured parsing fails."""
+
+    def on_llm_end(self, response, **kwargs):
+        for batch in response.generations:
+            for generation in batch:
+                message = getattr(generation, "message", None)
+                if isinstance(message, AIMessage):
+                    print(
+                        "MODEL_OUTCOME",
+                        compact(
+                            {
+                                "stop_reason": message.response_metadata.get("stop_reason")
+                                or message.response_metadata.get("finish_reason"),
+                                "usage": message.usage_metadata,
+                                "tool_names": [c["name"] for c in message.tool_calls],
+                            }
+                        ),
+                        flush=True,
+                    )
+
+
 async def inference(model, schema, prompt, payload):
     agent = create_agent(
         model=model,
         tools=[],
         system_prompt=prompt,
-        response_format=ToolStrategy(schema, handle_errors=False),
+        response_format=ToolStrategy(schema, handle_errors=True),
     )
     started = perf_counter()
     state = await asyncio.wait_for(
         agent.ainvoke(
-            {"messages": [HumanMessage(content=compact(payload))]}, {"recursion_limit": 3}
+            {"messages": [HumanMessage(content=compact(payload))]},
+            {"recursion_limit": 3, "callbacks": [ReplayUsage()]},
         ),
         timeout=360,
     )

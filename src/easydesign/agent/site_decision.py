@@ -73,8 +73,6 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
             {
                 "candidate_id": candidate["candidate_id"],
                 "name": hypothesis["name"],
-                "research_preference": hypothesis["role"],
-                "research_rationale": hypothesis["rationale"],
                 "origin": hypothesis["origin"],
                 "location": candidate.get("location", {"topology": "unresolved"}),
                 "residue_facts": [
@@ -113,7 +111,6 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
             {
                 "question": q["question"],
                 "status": q["status"],
-                "decision_impact": q["decision_impact"],
                 "limitations": q["limitations"],
                 "evidence_interpretations": [
                     {
@@ -148,15 +145,16 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
             }
             for card in dossier["focused_passages"]
         ],
-        "research_stopping_assessment": dossier["research_opinions"],
+        "unresolved_research_questions": dossier["research_opinions"]["unresolved_questions"],
         "access_failures": [
             {"question": q["question"], "errors": q["errors"]}
             for q in dossier["research_outcomes"]
             if q.get("errors")
         ],
         "authority": "Runtime owns exact candidate membership, chain, canonical/design mapping "
-        "and evidence bindings. Choose candidate IDs only. Research preferences, evidence "
-        "interpretations and stopping claims are fallible opinions; assess independently. "
+        "and evidence bindings. Choose candidate IDs only. Candidate names, research question "
+        "assessments, evidence interpretations and unresolved-question premises are fallible "
+        "opinions; assess them against the current runtime facts and actual source passages. "
         "A source passage supports only its actual claim and scope. No approval is implied.",
     }
 

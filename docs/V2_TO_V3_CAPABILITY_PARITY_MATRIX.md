@@ -5,39 +5,25 @@ Historical Phase 2.2d full suite was 774 PASS / 1 FAIL / 11 skips. That failure 
 no-bound-job loop were reproduced and repaired. Current targeted evidence is recorded in
 AUTONOMOUS_V3_PROGRESS.md; a new full regression remains due at Phase 2 closure.
 
-Live040 acquired real official sources, retained focused evidence across canonical binding,
-submitted typed Target and independent Judge opinions, and reached Gate 1. Its actual Gate 1
-content review passed. The scripted validation actor's response produced the old authoritative
-target bundle; the unchanged identity oracle subsequently verified P00698 / canonical147 /
-construct129 / observed127, selected auth L = label C, missing128–129 and mapping offset18.
-Live048 independently verified the actual old DecisionRecord and accepted the full identity-trap case.
-Live044 reached real Site research and candidate evaluation, then exhausted its budget on
-partially displayed residue pages; exact table/cursor delivery is repaired. Current Site retries reuse this exact approved Target without restarting preparation. The original live040 failure was caused by
-Coordinator reusing pre-approval progress.
-Its failed report is retained. This is partial acceptance, not five-case completion. Current
-repair supplies concise verified runtime progress and keeps detailed Site work with its owner.
-GPCR live104 also has an independently reviewed, actually approved Gate1 Target and unchanged
-identity oracle. Live150 again acquired complete GPCRdb context and ran the existing receptor analysis,
-then exhausted scoped-field corrections; no GPCR Gate2 acceptance is claimed. Live149 completed
-a real SiteIntent and the original Stage02 proposal job, but its independent Judge view exceeded
-32000 characters. An exact duplicate conclusion is now represented once, and explicit trusted
-transfer preserves that unreviewed proposal/job for a new review thread after a code repair.
-It transfers no Judge verdict or approval. Live153 subsequently obtained independent Judge/Gate2 and six-section Case1 acceptance of the
-bounded DISCOURAGED hypothesis, then applied the old Site approval through the scripted validation
-actor. The exact approved hotspot and all warnings are retained for current Binder validation.
-Live157/158 reached standard Gate3 with real backend checks passing, but independent review
-rejected factor/absence and insertion-count-vs-final-loop claims; no Design acceptance/approval
-is claimed. Live159 GPCR exposed first-delivery loss inside parallel tool batches. The runtime
-now preserves every latest-batch answer; prior duplicate-reading histories remain retained and
-oversized terminal histories are still rejected. Fresh live acceptance remains due.
-Live162 then passed standard Design Case4 after the exact failed160 Gate3 received a trusted
-validation-actor REVISE and fresh Judge/content review. The original10calls plus revision8calls
-are retained; this is explicit Scientist steering, not unassisted first-attempt acceptance.
-Native163 passed Case5 after explicit REVISE, exact YAML byte checks and independent review. GPCR161 failed the context guard after repeated topology
-reads; its analysis/evaluations remain preserved. No GPCR Site acceptance is claimed.
-Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Case2 and Phase2 full regression remain outstanding.
-The original Phase 2.2d and earlier reports remain historical evidence; see
-PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
+Accepted real milestones: Target044 and GPCRTarget104 produced independently reviewed,
+actually approved canonical bundles. Case3 identity-trap048 independently verified the old
+DecisionRecord and147/129/127precursor/construct/observed mapping. Case1 Site153 passed content
+review and received a scripted validation-actor OVERRIDE through the actual old Site service.
+Case4 standard162 and Case5 native163 passed after explicit Scientist REVISE, fresh independent
+Judge/content review and real BoltzGen YAML checks. Their Gate3 cards remain pending; no
+generation or prediction was started by any Phase2 golden. These are separate accepted
+snapshots, not one uninterrupted five-case run or experimental proof of binder efficacy.
+
+Case2 GPCR remains incomplete. Live168 exceeded the unchanged context cap after repeated
+scalar/scoped reads. Live169 explicitly trials Site high reasoning effort on the same model,
+with the same32calls/60000chars, and reuses approved Target104. Both prior failures and accepted
+case-specific model configurations remain retained. Case2, the final parity audit and full
+regression are still required before Phase2 freezes.
+
+Earlier runtime/recovery failures and their repairs are recorded in
+[AUTONOMOUS_V3_PROGRESS.md](AUTONOMOUS_V3_PROGRESS.md); historical Phase2.2d findings remain in
+[PHASE22D_AGENT_CONTRACT_CLOSURE.md](PHASE22D_AGENT_CONTRACT_CLOSURE.md). Protected kernel/source
+verification continues to cover all385baseline files. No legacy capability is retired.
 
 COMPLETE requires current implementation and acceptance evidence;
 PARTIAL includes unvalidated real-source/model coverage. MISSING is explicit, not retired.
@@ -54,12 +40,12 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; Cases1/3 real PASS; Case2 pending | Do not replace original goal with follow-up |
 | Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Case1 enzyme assay/control review PASS; standard Design live162 PASS after REVISE; GPCR pending | Binding is not function; low perturbation is independent |
-| Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | PARTIAL | 2.2 | Six fixture identity cases; real P00698 acquisition/proposal reaches old pending decision | Live040 scripted approval produced an authoritative bundle verified by the unchanged oracle; complete five-case rerun remains pending |
-| Construct/canonical/coordinate/design-scope separation | DS/RS | target-and-site.md; evidence-and-numbering.md | Target + unchanged mapping kernel | PARTIAL | 2.2 | Clean/subsequence/ambiguous-chain/sequence-difference old-service regressions | No replacement mapping; inherited old multi-decision edge cases are not claimed repaired |
+| Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | COMPLETE | 2.2 | Fixed-source identity oracles; accepted real Target044/104 and Case3 trap048 | Actual old approvals and authoritative bundles; verified accessions/taxa and source sequences. |
+| Construct/canonical/coordinate/design-scope separation | DS/RS | target-and-site.md; evidence-and-numbering.md | Target + unchanged mapping kernel | COMPLETE | 2.2 | Accepted real147/129/127soluble and413/501/284GPCR identity reviews plus fixed-source oracles | GPCR global alignment remains ambiguous; diagnostic edits are not asserted engineered biological mutations. |
 | Author/label/insertion/missing mapping | DS | evidence-and-numbering.md; stages/s01_target_preparation | Existing kernel via Target/Site | COMPLETE | 2.2 | test_source_author_numbering_is_not_invented | No invented canonical offset |
 | Structure/state comparison and counterstate | RS | gpcr-mechanism-and-state.md | Target/Site + Research | PARTIAL | 2.2 | real source/kernel PASS; Agent golden FAIL | Bound ligand alone cannot establish active state |
 | Ligand, partner, assembly and construct context | RS/DS | target-and-site.md; special-target-playbooks.md | Research + Target/Site | PARTIAL | 2.2 | PDB polymer/deposition retrieval | Source identity differs from context transfer |
-| Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | PARTIAL | 2.2 | Live040 real Target/Judge/Gate 1 content PASS and scripted response delivered to old decision service | No first/largest chain heuristic; actual identity-trap accepted in live048, broader GPCR acceptance pending |
+| Target ambiguity handling | DS/H/RS | evidence-and-numbering.md | Target/Judge/Gate 1 | COMPLETE | 2.2 | Accepted Target044/104 independent Judge/content reviews and actual old human-input responses | Conditional mapping remains qualified after approval; no first/largest-chain heuristic. |
 | Active literature search | RS | target-and-site.md; scientific-claims.md | Shared EvidenceResearch + selected corpus | PARTIAL | 2.2 | Source/status/corpus tests; original selection recovery now passes live | Case1 live153 passed with4 bounded searches and5 focused cards; GPCR still pending |
 | Primary-source retrieval | RS | evidence-and-numbering.md | EvidenceResearch + focused passages | PARTIAL | 2.2 | Full XML retention, source identity, passage and cursor regressions | Case1 retained primary abstract and real database passages through Gate2; full-text absence remains explicit; GPCR pending |
 | Database search and UniProt evidence | DS/RS | target-and-site.md; gpcrdb-contract.md | EvidenceResearch reusing ScientificHttpClient | PARTIAL | 2.2 | Real UniProt P00698 retained; first-class proposal and old comparison reached | Scientist species cannot be silently replaced |
@@ -87,7 +73,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Hotspot conditioning, explicit avoid and neutral residues | DS/RS | strategy-yaml.md | Binder + old compiler | COMPLETE | 2.2 | design constraint tests | Non-hotspot is neutral, not implicitly forbidden |
 | Crop reasoning and full-target confirmation | RS/DS | vhh-geometry-priors.md | Binder / later Pilot | PARTIAL | 2.2 / 3 | compiler tests; scientific loop pending | Crop cannot delete genuine shielding to fabricate accessibility |
 | CDR/scaffold identity and actual asset ranges | RS/DS | boltzgen-contract.md; vhh-geometry-priors.md | Binder + old compiler/validator | COMPLETE | 2.2 | Phase 2 real BoltzGen check | Insertion count differs from final CDR length |
-| Design arms, comparator and changed/held factors | RS/H | strategy-yaml.md | Binder | PARTIAL | 2.2 | typed arm metadata; parity review pending | Integrated arm cannot identify a single causal factor |
+| Design arms, comparator and changed/held factors | RS/H | strategy-yaml.md | Binder | COMPLETE | 2.2 | Standard162 and native163 scientific content reviews; exact first-pilot/native compilation checks | Scaffolds vary between variants; all3CDRs vary within variants. Integrated variation does not identify single-factor causality. |
 | First Pilot protocol, seven scaffolds × 40 per condition | DS/RS | boltzgen-contract.md; strategy-yaml.md | Binder + existing protocol validator | COMPLETE | 2.2 | Standard coverage plus native-condition before/after and invalid-coverage tests | Narrow legacy facade bug fixed; exact seven-by-40 scientific invariant preserved |
 | Native BoltzGen YAML compilation and checks | DS | boltzgen-contract.md | Trusted callback + existing compiler/validator | COMPLETE | 2.2 | Phase 2 real check and YAML regression | No LLM-authored runnable YAML |
 | Native expert path when standard cannot express science | DS/RS/H | strategy-yaml.md; boltzgen-contract.md | Trusted scientist import + Binder + old compiler/Judge/Gate 3 | COMPLETE | 2.2 | Native bytes/constraints/Gate3/shared-approval regressions; live163 Case5 PASS after REVISE | Exact original/compiled YAML bytes and comments, real backend checks and independent content review; no generation |
@@ -95,7 +81,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Source-selection prerequisite recovery | RS/DS | agent/evidence_corpus.py; harness.py; session_store.py | Target/Site + trusted runtime | PARTIAL end-to-end | 2.2b | Actual model corrects SOURCE_NOT_SELECTED then selects/acquires; offline bounded/restart/hard-error cases | Shares four persisted corrections with verified scoped-argument repair (20260912 recovery update; formerly two); current recovery runs deliver exact focused cards; repeated stale/query errors remain bounded and fail closed |
 | Scoped tool-argument semantics and bounded correction | RS/DS | agent/evidence_output.py; harness.py; session_store.py | Authorized owner + runtime | COMPLETE | 2.2c | 11 new projection tests; real field+path rejection → corrected path → exact four-chain result | Explicit selectors, legacy path deprecation, four shared corrections (20260912); no blanket exception recovery |
 | Consequential typed submission and runtime Target facts | DS/RS | agent/harness.py; target_assessment.py; V3_AGENT_CONTRACT_OWNERSHIP.md | Native ToolStrategy + trusted callbacks | PARTIAL | 2.2d | Typed Target and Judge exercised in live040; Gate 1 actual content PASS; downstream acceptance pending | No fenced-text success fallback; two bounded output repairs; independent scientific acceptance still required |
-| Stable source identity and canonical revision binding | DS/RS | agent/evidence_corpus.py; evidence_research.py | Existing project ArtifactRefs/corpus | PARTIAL | 2.2d | Binding/isolation/tamper tests PASS; live040 exact before/after source read verified one acquisition | No second store; current relevance never inferred from source existence |
+| Stable source identity and canonical revision binding | DS/RS | agent/evidence_corpus.py; evidence_research.py | Existing project ArtifactRefs/corpus | COMPLETE | 2.2d | Binding/isolation/tamper regressions and real044/104 before/after focused retrieval checks | Existing project corpus and ArtifactRefs; no redownload for canonical rebinding or inferred source relevance. |
 | Fixed scientific Golden specification and independent factual oracles | H/DS | PHASE2_GOLDEN_CASE_SPEC.md; tests/agent_golden_support.py | Validation-only reviewer and unchanged kernel | COMPLETE specification / PARTIAL live acceptance | 2.2c | Six fixed-source/negative oracle tests PASS; live048 actual identity-trap PASS; real Site/Design/GPCR acceptance remains pending | Spec is fixed before live; human fixture response cannot override false facts |
 | Full evidence retention, scoped consumption and pagination | RS/DS | CatMaster review; existing ArtifactRef | EvidenceCorpus + tool-owned views | PARTIAL | 2.2 | Large-source retention, independent thread views and exact cursor tests PASS | Project-durable binding tests PASS; live040 acquired official sources and exact focused cards; Site research acceptance remains pending |
 | First-class Target/Site/Design through Gate 1/2/3 | RS/DS/H | existing decision and research services | Coordinator + owners + independent Judge | PARTIAL | 2.2 | Offline typed harness PASS; live040 Target/Judge/Gate1 content PASS; Site continuation under repair | No complete real golden; cannot freeze Phase 2 |

@@ -169,7 +169,12 @@ Consequential instances of any of these are FAIL:
 Case 1/2 record search queries/results, selected/deferred/excluded sources, full sources acquired,
 corpus docs/chunks, focused retrievals, unique and delivered Evidence Cards, raw source characters,
 post-adapter specialist tool characters, model calls by role/execution and peak input characters.
-Sources must reach focused retrieval, cards and Gate 2 with `max_input_chars=60000` unchanged.
+User-authorized engineering revision, 2026-09-12: `max_input_chars=60000` is a soft working-set
+target, with a separate configurable hard guard (initially 100000 characters, plus a
+model-profile-aware approximate token guard). Record target overruns explicitly. Final Site
+synthesis must receive a runtime-built evidence dossier in a fresh isolated context rather
+than the research/tool history. See `ARCHITECTURE_CHECKPOINT_20260912.md`. All scientific facts,
+source inputs, known-failure conditions and Gate acceptance criteria above remain unchanged.
 A short failed trace is not context-architecture acceptance. Full-source retention alone is not
 proof of an adequate scientific search or that supporting/contradictory evidence was considered.
 

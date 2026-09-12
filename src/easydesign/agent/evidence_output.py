@@ -82,7 +82,7 @@ class ModelEvidenceScope(StrictDTO):
         return self
 
 
-def reasoning_working_view(messages: list[Any], *, share_exact_values: bool = False) -> list[Any]:
+def reasoning_working_view(messages: list[Any]) -> list[Any]:
     """Present completed tool exchanges without replaying private reasoning.
 
     This is only a request projection. Original signed messages stay in the existing
@@ -113,19 +113,6 @@ def reasoning_working_view(messages: list[Any], *, share_exact_values: bool = Fa
                 "record with the identical stored_fields list; this only avoids "
                 "repeating navigation metadata, not scientific evidence.",
             }
-            if share_exact_values:
-                payload = _reference_repeated_values(
-                    payload,
-                    marker="history_value_same_as",
-                    encoding="history_encoding",
-                    description=(
-                        "A one-field history_value_same_as object means the exact value at "
-                        "that JSON pointer in THIS SAME history message. All unique values, "
-                        "tool arguments, answers, failure statuses and scientific limitations "
-                        "remain present. Expand these references; no scientific summary or "
-                        "artifact read is needed. Original checkpoint messages are unchanged."
-                    ),
-                )
             output.append(HumanMessage(content=compact(payload)))
             records.clear()
             field_indexes.clear()
@@ -174,147 +161,6 @@ def reasoning_working_view(messages: list[Any], *, share_exact_values: bool = Fa
             output.append(message)
     flush()
     return output
-
-
-def latest_tool_result_indices(messages: list[Any]) -> set[int]:
-    """Every answer from the latest tool-call batch must reach its first model read."""
-    from langchain_core.messages import AIMessage, ToolMessage
-
-    for index in range(len(messages) - 1, -1, -1):
-        message = messages[index]
-        if isinstance(message, AIMessage) and message.tool_calls:
-            call_ids = {call["id"] for call in message.tool_calls}
-            return {
-                i
-                for i, result in enumerate(messages)
-                if i > index and isinstance(result, ToolMessage) and result.tool_call_id in call_ids
-            }
-    return set()
-
-
-def fit_site_working_view(
-    messages: list[Any],
-    *,
-    reasoning: bool,
-    system_chars: int,
-    max_chars: int,
-    suffix: list[Any],
-) -> tuple[list[Any], list[dict[str, str]]]:
-    """Fit older whole tool views, preserving the newest answer and candidate evaluation.
-
-    The original messages/artifacts are untouched. This is Site's reading context,
-    not a reduction of an independent Judge snapshot or a scientific summary.
-    """
-    from langchain_core.messages import AIMessage, ToolMessage
-
-    working = list(messages)
-
-    def render() -> list[Any]:
-        return (reasoning_working_view(working) if reasoning else list(working)) + suffix
-
-    def size(view: list[Any]) -> int:
-        return system_chars + sum(len(str(m.content)) for m in view)
-
-    view = render()
-    if size(view) <= max_chars:
-        return view, []
-    detailed = []
-    for i, message in enumerate(working):
-        if not isinstance(message, ToolMessage) or not isinstance(message.content, str):
-            continue
-        try:
-            value = json.loads(message.content)
-        except (ValueError, TypeError):
-            continue
-        if isinstance(value, dict) and value.get("full_result"):
-            detailed.append((i, value))
-    latest_batch = latest_tool_result_indices(working)
-    pinned = latest_batch | ({detailed[-1][0]} if detailed else set())
-    evaluations = [i for i, _ in detailed if working[i].name == "evaluate_candidate_site"]
-    if evaluations:
-        pinned.add(evaluations[-1])
-    archived = []
-    for i, value in detailed:
-        if i in pinned:
-            continue
-        ref = value["full_result"]
-        record = {"tool": working[i].name or "", "ref": ref}
-        replacement = compact(
-            {
-                "archived_result": ref,
-                "stored_fields": value.get("stored_fields"),
-                **alias_navigation(value),
-                "previous_scope": {k: value[k] for k in ("path", "fields") if k in value},
-                "partial": True,
-                "note": "Earlier complete tool view is retained in this execution's "
-                "verified artifact and checkpoint. Replaced here to fit the total context "
-                "budget. Read a consequential missing field explicitly; omitted values "
-                "are not negative evidence or resolved uncertainty.",
-            }
-        )
-        if len(replacement) >= len(str(working[i].content)):
-            continue
-        working[i] = working[i].model_copy(update={"content": replacement})
-        archived.append(record)
-        view = render()
-        if size(view) <= max_chars - min(1000, max_chars // 10):
-            break
-    if size(view) > max_chars:
-        # Optional reference pages are already read and remain in the unchanged
-        # checkpoint/Skill filesystem. Keep the main role instructions and newest
-        # requested answer; never archive user files or infer paths from their text.
-        optional_refs = {
-            f"/skills/site-mechanism/references/{name}.md"
-            for name in ("research", "membrane", "shielding")
-        }
-        calls = {
-            call["id"]: call
-            for message in messages
-            if isinstance(message, AIMessage)
-            for call in message.tool_calls
-        }
-        newest = max(
-            (i for i, message in enumerate(working) if isinstance(message, ToolMessage)),
-            default=-1,
-        )
-        for i, message in enumerate(working):
-            if (
-                i == newest
-                or i in latest_batch
-                or not isinstance(message, ToolMessage)
-                or message.name != "read_file"
-                or message.status != "success"
-            ):
-                continue
-            call: Any = calls.get(message.tool_call_id, {})
-            args = call.get("args", {})
-            path = args.get("file_path")
-            if call.get("name") != "read_file" or path not in optional_refs:
-                continue
-            replacement = compact(
-                {
-                    "archived_skill_reference": path,
-                    "requested_scope": {k: args[k] for k in ("offset", "limit") if k in args},
-                    "instructions_remain_applicable": True,
-                    "note": "Previously read reference remains in the unchanged checkpoint "
-                    "and fingerprint-bound Skill. Use read_file if needed; main role "
-                    "instructions remain present. This is not scientific evidence.",
-                }
-            )
-            if len(replacement) >= len(str(message.content)):
-                continue
-            working[i] = message.model_copy(update={"content": replacement})
-            archived.append({"tool": "read_file", "ref": path})
-            view = render()
-            if size(view) <= max_chars - min(1000, max_chars // 10):
-                break
-    if reasoning and size(view) > max_chars:
-        # Repeated historical diagnostics/navigation can fill the base even after
-        # whole-result archival. Keep every unique value, including all latest
-        # answers, in this same message; only exact duplicates become local pointers.
-        view = reasoning_working_view(working, share_exact_values=True) + suffix
-    # The caller's unchanged hard guard rejects a still-oversized pinned/base context.
-    return view, archived
 
 
 def preview(value: Any, *, depth: int = 0) -> Any:
@@ -581,14 +427,6 @@ def _reference_repeated_values(
 
     def pack(item: Any, path: str) -> Any:
         nonlocal repeated
-        # An already encoded receptor view has its own local pointer root. Keep
-        # that complete nested view intact rather than layering two encodings.
-        if (
-            marker == "history_value_same_as"
-            and isinstance(item, dict)
-            and "value_encoding" in item
-        ):
-            return item
         key = compact(item)
         if isinstance(item, (str, list, dict)) and len(key) >= 80:
             if key in seen:

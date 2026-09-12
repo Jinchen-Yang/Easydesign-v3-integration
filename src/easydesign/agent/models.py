@@ -46,6 +46,13 @@ class ModelConfig(StrictDTO):
     roles: dict[Role, LLMConfig] = Field(default_factory=dict)
     max_model_calls: int = Field(default=32, ge=1, le=100)
     max_input_chars: int = Field(default=60000, ge=4000, le=120000)
+    hard_input_chars: int = Field(default=100000, ge=4000, le=400000)
+
+    @model_validator(mode="after")
+    def working_set_below_guard(self) -> ModelConfig:
+        if self.max_input_chars > self.hard_input_chars:
+            raise ValueError("Working-set target cannot exceed the hard context guard")
+        return self
 
     def for_role(self, role: Role) -> LLMConfig:
         return self.roles.get(role, self.default)

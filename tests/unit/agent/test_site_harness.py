@@ -17,6 +17,7 @@ from tests.unit.agent.test_site_runtime import site_intent
 
 class SiteModel(ScriptedModel):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
+    offered: set[str] = Field(default_factory=set)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
         outputs = {"target": "TargetInterpretation", "site": "SiteIntent", "judge": "JudgeVerdict"}
@@ -24,6 +25,12 @@ class SiteModel(ScriptedModel):
             {outputs[self.role]} if self.role in outputs else set()
         )
         names = {t.name for t in tools}
+        self.offered = names
+        if self.role == "site":
+            assert names <= PHASE2_ALLOWED["site"] | {"SiteResearchHandoff", "SiteIntent"}
+            if "SiteIntent" in names:
+                assert names == {"SiteIntent"}
+            return self
         if self.role == "coordinator":
             expected -= {"read_file"}
         assert names <= expected and expected - names <= {
@@ -46,6 +53,19 @@ class SiteModel(ScriptedModel):
         named = [(c.get("name"), c, m) for c, m in results]
         if self.role in {"site", "judge"}:
             human = next(m for m in messages if isinstance(m, HumanMessage))
+            if self.role == "site" and "SiteIntent" in self.offered:
+                payload = json.loads(human.text)
+                assert "dossier" in payload and "runtime_history" not in payload
+                assert all(m.name == "SiteIntent" for m in messages if isinstance(m, ToolMessage))
+                assert all(
+                    c["name"] == "SiteIntent"
+                    for m in messages
+                    if isinstance(m, AIMessage)
+                    for c in m.tool_calls
+                )
+                candidate = payload["dossier"]["candidate_comparison"][0]
+                labels = candidate["research_hypothesis"]["hotspot_label_seq_ids"]
+                return self.call("SiteIntent", **site_intent(labels).model_dump(mode="json"))
             task = ScientificTask.model_validate_json(human.text)
             if not results:
                 self.tasks.append(task.model_dump())
@@ -57,7 +77,13 @@ class SiteModel(ScriptedModel):
                     return self.call("read_site_evidence")
                 if not any(n == "evaluate_candidate_site" for n, _, _ in named):
                     return self.call("evaluate_candidate_site", label_seq_ids=labels)
-                return self.call("SiteIntent", **site_intent(labels).model_dump(mode="json"))
+                return self.call(
+                    "SiteResearchHandoff",
+                    candidates=[site_intent(labels).selected_site.model_dump(mode="json")],
+                    material_questions=[],
+                    research_notes=["SYNTHETIC structural hypothesis for boundary verification."],
+                    unresolved_questions=["Function and binding are untested."],
+                )
             if not any(n == "read_scientific_evidence" for n, _, _ in named):
                 return self.call("read_scientific_evidence")
             return self.call(
@@ -337,7 +363,7 @@ async def test_invalid_provider_json_repair_is_budgeted_and_has_no_duplicate_job
     assert all(c["context_chars"] <= c["limit"] for c in contexts)
     assert (
         len([e for e in events if e["kind"] == "model-call" and e["payload"]["role"] == "site"])
-        == 5
+        == 6
     )
     assert (
         len(
@@ -408,13 +434,14 @@ class ResearchCorrectionSite(SiteModel):
             assert "SYNTHETIC research correction" in pending[-1]["diagnostic"]
             if not self.corrective_read:
                 self.corrective_read = True
-                return self.call("read_site_evidence")
+                # Synthesis rereads its supplied dossier; no research tool is offered.
+                assert self.offered == {"SiteIntent"}
             self.retained_after_read = True
         return super().answer(messages)
 
 
 @pytest.mark.asyncio
-async def test_runtime_submission_correction_survives_intervening_tool_round(
+async def test_runtime_submission_correction_keeps_isolated_dossier(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
     from easydesign.agent.contracts import ResearchConclusionMismatch

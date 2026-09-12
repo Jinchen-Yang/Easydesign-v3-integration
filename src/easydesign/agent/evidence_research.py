@@ -1048,11 +1048,16 @@ def research_tool(bridge: Any, role: str) -> Any:
                     "pmcid",
                     "evidence_level",
                     "chunk_count",
-                    "need",
                 )
                 if k in card
             }
             view["source_id"] = source_key(card["provider"], card["identifier"])
+            if "need" in card:
+                view["original_acquisition_need"] = card["need"]
+            if not arguments["operation"].endswith("search"):
+                # acquire() checked explicit current selection before reusing source bytes.
+                # A cached card's original need is provenance, not today's retrieval scope.
+                view["retrieval_need"] = NEEDS[result["topic"]]
             if card["provider"] == "UniProt" and arguments["operation"] == "uniprot-record":
                 features = EvidenceCorpus(bridge).uniprot_features(card)
                 view["feature_types_available"] = sorted(
@@ -1081,8 +1086,9 @@ def research_tool(bridge: Any, role: str) -> Any:
                 "cards": cards,
                 "errors": result["errors"],
                 "next": (
-                    "Select relevant sources before acquisition; retrieve_evidence reads "
-                    "focused local passages."
+                    "Select relevant search leads before acquisition. For acquired cards, "
+                    "retrieve_evidence uses their retrieval_need; original_acquisition_need "
+                    "is historical provenance. Select explicitly before using another need."
                 ),
             }
         )

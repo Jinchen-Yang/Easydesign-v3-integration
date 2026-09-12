@@ -1704,3 +1704,52 @@ network calls. Existing history/source/argument contracts remain covered. Two ex
 thinking/forced-tool warnings are retained; runtime uses the supported auto-tool request.
 Ruff169 PASS. Protected169:all385baseline files unchanged. Fresh live169 reuses approved
 GPCRTarget104; no Target preparation or scientific kernel work is repeated. Phase2 NOT FROZEN.
+
+
+### User-authorized architecture checkpoint and isolated Site synthesis (170)
+
+The user resumed after the collaborator archive and explicitly preserved accepted Cases1/3/4/5.
+The60k character cap is now a soft working-set target; a separate configurable100k guard and
+model-profile token check replace it. This amendment changes an engineering condition, not
+scientific truth. The original spec remains in historical commits/reports; revised spec SHA
+434e442aa98206f92d72219833d05167d7775580679dfc70820657632fbbfb3d
+was frozen before the next live run. Machine-readable truth SHA remains
+2e367355d197d541df7f77b87f6b505659a81997dc79db7a97a0b0e0ff3258c9.
+
+Read-only comparison against the requested DeepAgents, LangGraph, LangChain and CatMaster
+checkouts is recorded in ARCHITECTURE_CHECKPOINT_20260912.md (commitd7ae7496). No dependency
+upgrade. Public DeepAgents isolated compiled subagents and the existing LangGraph saver compose
+Research → runtime Dossier → fresh Site synthesis. No research messages/private summary event
+cross into synthesis. Research uses native DeepAgents summarization/history offload, with
+auxiliary calls charged to the existing32-call ledger. Final synthesis only offers SiteIntent;
+its labels/citations must exist in the bound dossier, then original source/fact checks and
+independent Judge apply. No new scientific decision, artifact store, scheduler or kernel.
+
+The dossier contains all retrieved focused passages regardless of support/opposition, all
+search/access outcomes, exact Target facts, candidate facts/evaluations and receptor context.
+Chain interfaces are declared aggregate projections; full contact pairs remain in kernel refs.
+Research notes remain unaccepted opinions. No candidate ranking or scientific conclusion is
+created by the assembly. The existing40-label SiteSelection limit is preserved; runtime joins
+its ordinary fact pages without imposing a smaller scientific cap.
+
+Removed the old Site whole-history fitting and historical-value pointers and their superseded
+unit tests. Existing scientific artifact readers/projections remain for research and Judge.
+The previously unapplied receipt fix now distinguishes original acquisition need from current
+retrieval need, without altering source bytes or automatic selection. Local Pro/high Site
+configuration remains debug-only; context-config170.json records only the explicit100k guard.
+No model default decision or uncontrolled model escalation.
+
+Targeted170 initially exposed an assembly-before-execution lifecycle assertion; allowed graph
+construction without a budget while refusing actual model/dossier calls without one. The
+dossier graph node is async to preserve SessionStore thread ownership. Source snapshots and
+scientific workers were unaffected. Targeted170d:13PASS/1FAIL (JSON tuple/list roundtrip only);
+returning the verified persisted dossier fixed that. Targeted170f:9PASS12.78s for context,
+source integrity and framework summary accounting. The10 Site harness cases in170d passed,
+including revision/restart and correction. Ruff source/Agent tests passes; mypy22 Agent source
+files passes. Protected170:385files unchanged. Relevant Agent regression and final changed-path
+checks are still running. No new GPCR live acceptance, Phase2 freeze or Phase3/4 execution yet.
+
+Final targeted170h:6PASS48.01s, including the latest bound-dossier submission checks and
+Site revision/restart/correction. Broader agent170 remains running with failures to inspect;
+no full-regression PASS is claimed. The next GPCR run uses the committed boundary and
+unchanged local Pro/high Site debugging model.

@@ -1,0 +1,118 @@
+"""Framework-owned working memory; runtime-owned limits and usage accounting."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from deepagents.middleware.summarization import (
+    DEEPAGENTS_DEFAULT_SUMMARY_PROMPT,
+    SummarizationMiddleware,
+)
+from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.messages.utils import count_tokens_approximately
+
+from .contracts import AgentBoundaryError
+from .models import ModelConfig, Role
+from .session_store import compact
+
+
+def context_usage(
+    model: Any, config: ModelConfig, role: Role, messages: list[Any], tool_chars: int = 0
+) -> dict[str, Any]:
+    argument_chars = sum(
+        len(compact(m.tool_calls)) for m in messages if getattr(m, "tool_calls", None)
+    )
+    chars = sum(len(str(m.content)) for m in messages) + argument_chars + tool_chars
+    tokens = int(count_tokens_approximately(messages)) + (tool_chars + 3) // 4
+    profile = getattr(model, "profile", None) or {}
+    maximum = profile.get("max_input_tokens")
+    token_limit = (
+        max(1, maximum - config.for_role(role).max_output_tokens)
+        if isinstance(maximum, int) and maximum > 0
+        else None
+    )
+    usage = {
+        "input_chars_with_schemas": chars,
+        "tool_call_argument_chars": argument_chars,
+        "soft_target_chars": config.max_input_chars,
+        "hard_limit_chars": config.hard_input_chars,
+        "soft_target_exceeded": chars > config.max_input_chars,
+        "estimated_input_tokens": tokens,
+        "model_profile_token_guard": token_limit,
+        "token_metric": "LangChain approximate count; not provider billing tokens",
+    }
+    if chars > config.hard_input_chars or (token_limit is not None and tokens > token_limit):
+        raise AgentBoundaryError("Model hard context guard exceeded: " + compact(usage))
+    return usage
+
+
+class SummaryAccounting(AsyncCallbackHandler):
+    """Count the framework's auxiliary calls in the same persisted execution budget."""
+
+    run_inline = True
+    raise_error = True
+
+    def __init__(
+        self, bridge: Any, config: ModelConfig, role: Role, execution_id: str | None, model: Any
+    ):
+        self.bridge, self.config, self.role = bridge, config, role
+        self.execution_id, self.model = execution_id, model
+
+    async def on_chat_model_start(
+        self, serialized: Any, messages: list[list[Any]], **kwargs: Any
+    ) -> None:
+        if self.execution_id is None:
+            raise AgentBoundaryError("Framework summary requires a persisted execution")
+        for batch in messages:
+            usage = context_usage(self.model, self.config, self.role, batch)
+            self.bridge.store.reserve_model_call(
+                self.bridge.thread, self.role, self.config.max_model_calls, self.execution_id
+            )
+            self.bridge.store.event(
+                self.bridge.thread,
+                "framework-summary-call",
+                {"role": self.role, "execution_id": self.execution_id, **usage},
+            )
+
+    async def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        self.bridge.store.event(
+            self.bridge.thread,
+            "framework-summary-response",
+            {
+                "role": self.role,
+                "execution_id": self.execution_id,
+                "usage": [
+                    getattr(getattr(g, "message", None), "usage_metadata", None)
+                    for batch in response.generations
+                    for g in batch
+                ],
+            },
+        )
+
+
+def research_memory(
+    bridge: Any, config: ModelConfig, model: Any, backend: Any, execution_id: str | None
+) -> SummarizationMiddleware:
+    # A public model copy preserves the provider, adapter and reasoning settings.
+    summary_model = model.model_copy(
+        update={"callbacks": [SummaryAccounting(bridge, config, "site", execution_id, model)]}
+    )
+    profile_limit = (getattr(model, "profile", None) or {}).get("max_input_tokens")
+    trigger = config.max_input_chars // 4
+    if isinstance(profile_limit, int) and profile_limit > 0:
+        trigger = min(
+            trigger, max(1000, (profile_limit - config.for_role("site").max_output_tokens) // 2)
+        )
+    return SummarizationMiddleware(
+        model=summary_model,
+        backend=backend,
+        trigger=("tokens", trigger),
+        keep=("messages", 4),
+        trim_tokens_to_summarize=config.hard_input_chars // 4,
+        summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
+        "This is fallible research working memory, not verified source evidence, a Site "
+        "proposal or approval. Preserve source/card identifiers, failed access, opposing "
+        "evidence, numbering qualifications and unresolved questions. Never infer missing "
+        "facts or turn a failed search into global absence. Final synthesis receives a "
+        "separate runtime-built dossier from original verified artifacts, not this summary.",
+    )

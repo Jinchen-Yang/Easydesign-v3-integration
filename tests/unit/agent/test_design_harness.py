@@ -16,6 +16,8 @@ from tests.unit.agent.test_site_harness import SiteModel
 
 class DesignModel(SiteModel):
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+        if self.role == "site":
+            return super().bind_tools(tools, **kwargs)
         names = {
             "target": "TargetInterpretation",
             "site": "SiteIntent",

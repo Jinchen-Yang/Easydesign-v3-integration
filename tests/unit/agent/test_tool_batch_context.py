@@ -38,7 +38,7 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
         "Inspect every requested answer.",
         execution_id=execution["execution_id"],
     )
-    messages: list[Any] = [HumanMessage(content="Original goal " + "g" * 18000)]
+    messages: list[Any] = [HumanMessage(content="Original goal " + "g" * 4000)]
 
     def result(name: str, call_id: str, chars: int, source: str) -> ToolMessage:
         return ToolMessage(
@@ -106,21 +106,12 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
 
     async def handler(projected: Any) -> Any:
         received.append(projected)
-        if reasoning:
-            records = json.loads(projected.messages[1].content)["runtime_history"]
-            results = {
-                r["tool_call_id"]: r["content"] for r in records if r["kind"] == "tool-result"
-            }
-        else:
-            results = {
-                m.tool_call_id: json.loads(m.content)
-                for m in projected.messages
-                if isinstance(m, ToolMessage)
-            }
-        archived = [v for v in results.values() if isinstance(v, dict) and "archived_result" in v]
-        assert archived and all(
-            v["projection_aliases"] == ["candidate_overview", "topology_summary"] for v in archived
-        )
+        results = {
+            m.tool_call_id: json.loads(m.content)
+            for m in projected.messages
+            if isinstance(m, ToolMessage)
+        }
+        assert not any("archived_result" in v for v in results.values())
         for message in latest:
             expected = json.loads(message.content)
             delivered = results[message.tool_call_id]
@@ -144,6 +135,7 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
     assert len(received) == 1
     assert [m.model_dump() for m in messages] == original
     events = site_bridge.store.events(site_bridge.thread)
-    assert any(e["kind"] == "context-compaction" for e in events)
+    assert not any(e["kind"] == "context-compaction" for e in events)
     context = [e["payload"] for e in events if e["kind"] == "model-context"]
-    assert len(context) == 1 and context[0]["context_chars"] <= 60000
+    assert len(context) == 1 and 60000 < context[0]["context_chars"] <= 100000
+    assert context[0]["soft_target_exceeded"] and context[0]["history_projection"] == "native"

@@ -14,8 +14,12 @@ Case4 after an explicit validation-actor REVISE of failed160. It preserves the e
 all7scaffolds/40each/280planned and full context, with actual compiler/backend checks and fresh
 Judge/content review. No Gate3 approval or generation. Native163 also passed Case5 after explicit REVISE with exact
 source/compiled YAML bytes, real backend checks and fresh independent content review. Case2
-GPCR remains incomplete after168 repeated scalar/history reads exceeded the unchanged context cap;
-169 explicitly trials Site high reasoning effort and clarifies passage navigation. No Phase2 freeze or Phase3/4 acceptance.
+GPCR remains incomplete. Live169 was interrupted at the user's request for a collaborator archive,
+not classified as a scientific PASS/FAIL. The user subsequently resumed with the architecture
+checkpoint in `ARCHITECTURE_CHECKPOINT_20260912.md`: preserve accepted cases, separate durable
+evidence research from isolated Site synthesis, make60k a soft target, and retain explicit model
+selection discipline. Boundary implementation and relevant regression are in progress; no new
+GPCR acceptance, Phase2 freeze or Phase3/4 acceptance is claimed.
 The historical no-bound-job and evidence-page delivery defects below are repaired with targeted
 regressions. A new full regression is due after all five scientific goldens pass.
 

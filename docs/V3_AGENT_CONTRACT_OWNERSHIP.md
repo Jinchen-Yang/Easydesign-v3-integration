@@ -3,11 +3,27 @@
 Phase 2.2d implementation audit, baseline `4df3b2bd19f72a39f67ad40c3874b30323f0aafb`.
 This is an ownership specification, not a declaration that real scientific acceptance passed.
 
-Autonomous continuation update (20260912): model selection and optional reasoning are now
-explicit audited configuration. DeepSeek reasoning uses the already-installed Anthropic adapter
-and fixed official endpoint, preserving native thinking blocks across tool rounds. The historical
-non-thinking adapter description below describes its baseline. No scientific ownership, typed
-submission, Judge or Gate semantics change. See `AUTONOMOUS_V3_PROGRESS.md`.
+Architecture checkpoint update (20260912): the user authorized the context boundary in
+`ARCHITECTURE_CHECKPOINT_20260912.md`. Site now composes Evidence Research, a runtime-built
+Dossier and fresh isolated synthesis using public DeepAgents/LangGraph. Research summaries
+are fallible working memory; exact source passages, source failures, mapping/state facts and
+candidate evaluations are rehydrated from the existing verified artifact store. Synthesis
+receives no research messages or research summarization event and only offers SiteIntent.
+Its labels and citations must be present in the current dossier; the existing source/fact
+checks and independent Judge remain mandatory. No new scheduler, store or decision system.
+
+DeepAgents handles research summarization and original-history offloading. Auxiliary summary
+calls share the persisted model-call budget. The former Site whole-history fitting and
+history-value pointer mechanism have been removed. The historical implementation details below
+are retained for earlier reports, not current Site behavior. `max_input_chars=60000` is now a
+soft working-set target; `hard_input_chars=100000` is separately configurable, with an additional
+approximate token guard when the selected model exposes a context profile. Tool schemas and
+call arguments count in the hard character guard. Scientific oracle fixtures and accepted
+milestones are unchanged; the Golden spec records the user-authorized engineering amendment.
+
+Explicit DeepSeek Pro/reasoning settings are local debugging configuration, not a product
+model-policy decision. Product selection requires controlled same-evidence/prompt/tools/runtime
+comparison if a model-policy change is proposed. See the checkpoint for required metrics.
 
 **Trusted runtime owns scientific facts. Specialists own scientific interpretation.
 Evidence Judge owns independent critique. Scientists own consequential decisions.**

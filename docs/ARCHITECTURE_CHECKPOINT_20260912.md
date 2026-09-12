@@ -1,6 +1,7 @@
 # Site context boundary checkpoint — 2026-09-12
 
-Status: architecture review complete; implementation and new live acceptance pending.
+Status: architecture review and initial implementation complete; targeted boundary tests pass.
+Broader regression and new GPCR live acceptance remain pending.
 Resume baseline: `522a519037b5a332b6946899b37210292dc2351e`.
 The user explicitly resumed autonomous work with this checkpoint. Preserve accepted Cases
 1/3/4/5 and all milestone tags. Case 2 remains unaccepted; Phase 2 is not frozen.

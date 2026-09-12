@@ -319,3 +319,50 @@ def test_altered_owned_cursor_returns_no_evidence_and_foreign_view_stays_fatal(
     second = corpus.retrieve(query.model_copy(update={"cursor": first["next_cursor"]}))
     assert second["cards"][0]["card_id"] != first["cards"][0]["card_id"]
     assert not second["next_cursor"] and len(calls) == 2 and not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_reused_receipt_distinguishes_current_selection_from_acquisition_history(
+    acquired: Any,
+) -> None:
+    from easydesign.agent.evidence_research import research_tool
+    from easydesign.core import ArtifactRef
+
+    b, calls, queries = acquired
+    original = json.loads(json.dumps(queries["P00698"]["cards"][0]))
+    refs = [original["corpus_ref"], *original["source_refs"]]
+    source_bytes = {
+        ArtifactRef.model_validate(ref).verify(b.project): ArtifactRef.model_validate(ref)
+        .verify(b.project)
+        .read_bytes()
+        for ref in refs
+    }
+    other = Phase2Bridge(b.project, "same-source-different-purpose", b.store)
+    other.store.begin_execution(other.thread, "Read an existing source for a new evidence need")
+    corpus = EvidenceCorpus(other)
+    with pytest.raises(SourceSelectionRequired):
+        corpus.retrieve(focus())
+    result = json.loads(
+        await research_tool(other, "site").ainvoke(
+            {
+                "topic": "state",
+                "operation": "uniprot-record",
+                "identifier": "P00698",
+                "question": "Read the retained Chain and Signal annotations as context",
+                "selection_reason": "Inspect existing source context for this separate question",
+            }
+        )
+    )
+    card = result["cards"][0]
+    assert result["need"] == card["retrieval_need"] == "STRUCTURE_STATE"
+    assert card["original_acquisition_need"] == "TARGET_IDENTITY"
+    assert "need" not in card
+    assert card["card_id"] == original["card_id"]
+    page = corpus.retrieve(focus().model_copy(update={"need": card["retrieval_need"]}))
+    assert page["cards"]
+    # Historical source purpose cannot grant the new thread another current selection.
+    with pytest.raises(SourceSelectionRequired):
+        corpus.retrieve(focus())
+    assert queries["P00698"]["cards"][0] == original
+    assert all(path.read_bytes() == data for path, data in source_bytes.items())
+    assert len(calls) == 2 and not b._jobs()

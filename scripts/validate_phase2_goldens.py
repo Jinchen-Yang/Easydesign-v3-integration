@@ -218,6 +218,23 @@ def stats(bridge, *, source_threads=()):
             e["payload"]["cards_supplied"] for e in events if e["kind"] == "evidence-view"
         ),
         "context_per_call": contexts,
+        "framework_summary_calls": [
+            e["payload"] for e in events if e["kind"] == "framework-summary-call"
+        ],
+        "framework_summary_usage": [
+            e["payload"] for e in events if e["kind"] == "framework-summary-response"
+        ],
+        "site_dossiers": [e["payload"] for e in events if e["kind"] == "site-evidence-dossier"],
+        "soft_target_overrun_calls": sum(c.get("soft_target_exceeded", False) for c in contexts),
+        "site_context_by_stage": {
+            stage: [c for c in contexts if c.get("site_stage") == stage]
+            for stage in ("research", "synthesis")
+        },
+        "model_responses_usage_latency": [
+            e["payload"] for e in events if e["kind"] == "model-response"
+        ],
+        "cost_status": "Usage retained; currency cost unavailable "
+        "without verified pricing for the run.",
         "peak_context_chars": max((c["context_chars"] for c in contexts), default=0),
         "peak_estimated_input_chars_with_schemas": max(
             (c.get("estimated_input_chars_with_schemas", c["context_chars"]) for c in contexts),
@@ -482,7 +499,7 @@ async def main():
     # Record the complete configuration below; never silently switch on a failure.
     assert (
         hashlib.sha256((ROOT / "docs/PHASE2_GOLDEN_CASE_SPEC.md").read_bytes()).hexdigest()
-        == "96ead11b3f071dce05780dd1f6fba6ee353d2346aa5a53438ac4ef0e8a850a49"
+        == "434e442aa98206f92d72219833d05167d7775580679dfc70820657632fbbfb3d"
     )
     assert (
         hashlib.sha256(
@@ -760,7 +777,7 @@ async def main():
                 save(case / "site-snapshot.json", bridge.site_snapshot(proposal), secrets)
                 metrics = stats(bridge, source_threads=continuity_threads)
                 save(case / "metrics.json", metrics, secrets)
-                assert metrics["peak_context_chars"] < 60000
+                assert metrics["peak_context_chars"] <= config.hard_input_chars
                 assert metrics["search_query_count"] >= 1, (
                     "Active discovery search was not performed"
                 )

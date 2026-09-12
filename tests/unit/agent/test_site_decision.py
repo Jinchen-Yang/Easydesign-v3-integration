@@ -122,6 +122,19 @@ def test_real_adapter_hydration_preserves_candidates_and_scoped_facts(site_bridg
         snap = b.register_site(intent, None)
         assert snap["proposal"]["selected_site"]["hotspot_label_seq_ids"] == [1, 2, 3]
         assert snap["target_facts"] == b.read_evidence()["hard_facts"]
+        # Judge receives the verified dossier's facts for every candidate, even
+        # though the legacy prepared-chain summary covers only the selected site.
+        saved = b.document(b.thread_latest("site-evidence-dossier")["ref"])
+        actual = snap["site_dossier_facts"]
+        assert actual["trusted_residue_facts"] == saved["trusted_residue_facts"]
+        assert actual["receptor_context"] == saved["receptor_context"]
+        assert actual["runtime_status"] == saved["runtime_status"]
+        assert actual["candidates"][0]["location"] == saved["candidate_comparison"][0]["location"]
+        assert actual["candidates"][0]["design_labels"] == [1, 2, 3]
+        proposal = b.current_site()
+        for changed in ({"owner_thread": "foreign-owner"}, {"target_binding": "stale-target"}):
+            with pytest.raises(AgentBoundaryError, match="differs from proposal Target or owner"):
+                b.site_snapshot({**proposal, **changed})
     finally:
         SITE_EVIDENCE.reset(token)
 

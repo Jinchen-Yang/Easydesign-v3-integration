@@ -198,29 +198,77 @@ async def test_judge_projection_retains_counterevidence_and_exact_delegation(bri
         JUDGE_EVIDENCE.reset(token)
 
 
-def test_oversized_judge_snapshot_cannot_hide_counterevidence(bridge: Any) -> None:
-    execution = bridge.store.begin_execution(bridge.thread, "Challenge evidence")
-    value = {"contradictory_evidence": [{"passage": "counterevidence " * 4000}]}
-    with pytest.raises(AgentBoundaryError, match="must not be silently truncated"):
-        output_message(
-            bridge,
-            "judge",
-            execution["execution_id"],
-            ToolMessage(
-                content=json.dumps(value),
-                name="read_scientific_evidence",
-                tool_call_id="large-judge",
-            ),
-        )
-
-
-def test_judge_duplicate_conclusions_are_lossless_and_counterevidence_stays_visible(
+@pytest.mark.asyncio
+async def test_large_judge_snapshot_keeps_counterevidence_and_uses_shared_hard_guard(
     bridge: Any,
 ) -> None:
+    from langchain.agents.middleware.types import ModelRequest
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+    from langchain_core.tools import StructuredTool
+
+    from easydesign.agent.harness import RoleBoundary
+    from easydesign.agent.tools import build_tools
+    from tests.agent_support import ScriptedModel, scripted_config
+
+    execution = bridge.store.begin_execution(bridge.thread, "Challenge complete evidence")
+    value = {"contradictory_evidence": [{"passage": "counterevidence " * 4000}]}
+    shown = output_message(
+        bridge,
+        "judge",
+        execution["execution_id"],
+        ToolMessage(
+            content=json.dumps(value), name="read_scientific_evidence", tool_call_id="large-judge"
+        ),
+    )
+    visible = json.loads(shown.content)
+    assert visible["contradictory_evidence"] == value["contradictory_evidence"]
+    assert visible["scientific_content_complete"] and not visible["partial"]
+    assert len(shown.content) > 32000
+    stored = bridge.store.root / "agent-work" / bridge.thread / visible["full_result"][1:]
+    assert json.loads(stored.read_text()) == value
+
+    config = scripted_config()
+    guard = RoleBoundary(
+        bridge, "judge", config, "Independent critique", execution_id=execution["execution_id"]
+    )
+    messages = [
+        HumanMessage(content="Original scientific objective"),
+        AIMessage(
+            content="",
+            tool_calls=[{"id": "large-judge", "name": "read_scientific_evidence", "args": {}}],
+        ),
+        shown,
+    ]
+    calls = []
+
+    async def forbidden_handler(request: Any) -> Any:
+        calls.append(request)
+        raise AssertionError("A request above the hard guard must not reach a model")
+
+    with pytest.raises(AgentBoundaryError, match="hard context guard"):
+        await guard.awrap_model_call(
+            ModelRequest(
+                model=ScriptedModel(role="judge"),
+                tools=[
+                    *build_tools(bridge, "judge"),
+                    StructuredTool.from_function(
+                        lambda file_path: "SYNTHETIC unused Skill loader",
+                        name="read_file",
+                        description="Synthetic Skill loader; handler must never run.",
+                    ),
+                ],
+                messages=messages,
+                system_message=SystemMessage(content="x" * 50000),
+            ),
+            forbidden_handler,
+        )
+    assert not calls
+
+
+def test_judge_does_not_encode_duplicate_or_conflicting_conclusions(bridge: Any) -> None:
     from copy import deepcopy
 
-    from easydesign.agent.evidence_output import judge_snapshot_projection, scientific_projection
-    from easydesign.agent.session_store import compact
+    from easydesign.agent.evidence_output import scientific_projection
 
     conclusions = [{"claim": "hypothesis " * 600, "status": "UNRESOLVED", "missing": None}]
     value = {
@@ -232,49 +280,32 @@ def test_judge_duplicate_conclusions_are_lossless_and_counterevidence_stays_visi
             "retrieval_status": [{"status": "UNRESOLVED", "errors": ["access failed"]}],
         },
     }
-    unchanged = deepcopy(value)
-    assert len(compact(scientific_projection(value))) > 32000
-    projected = judge_snapshot_projection(value)
-    assert len(compact(projected)) < 32000
-    restored = deepcopy(projected)
-    research = restored["research_evidence"]
-    assert research.pop("conclusions_same_as") == "/proposal/research_conclusions"
-    research.pop("conclusion_encoding")
-    research["conclusions"] = restored["proposal"]["research_conclusions"]
-    assert restored == scientific_projection(value)
-    assert value == unchanged
-    execution = bridge.store.begin_execution(bridge.thread, "Review all unique evidence")
-    result = output_message(
-        bridge,
-        "judge",
-        execution["execution_id"],
-        ToolMessage(content=json.dumps(value), name="read_scientific_evidence", tool_call_id="all"),
+    execution = bridge.store.begin_execution(
+        bridge.thread, "Review all evidence without pointer encoding"
     )
-    visible = json.loads(result.content)
-    assert visible["scientific_content_complete"] is True and visible["partial"] is False
-    assert (
-        visible["research_evidence"]["contradictory_evidence"]
-        == (value["research_evidence"]["contradictory_evidence"])
-    )
-    assert (
-        visible["research_evidence"]["retrieval_status"]
-        == (value["research_evidence"]["retrieval_status"])
-    )
-    stored = bridge.store.root / "agent-work" / bridge.thread / visible["full_result"][1:]
-    assert json.loads(stored.read_text()) == unchanged
-
-    different = deepcopy(value)
-    different["research_evidence"]["conclusions"][0]["missing"] = False
-    assert judge_snapshot_projection(different) == scientific_projection(different)
-    with pytest.raises(AgentBoundaryError, match="must not be silently truncated"):
-        output_message(
+    for conflict in [False, True]:
+        original = deepcopy(value)
+        if conflict:
+            original["research_evidence"]["conclusions"][0]["missing"] = False
+        result = output_message(
             bridge,
             "judge",
             execution["execution_id"],
             ToolMessage(
-                content=json.dumps(different), name="read_scientific_evidence", tool_call_id="diff"
+                content=json.dumps(original),
+                name="read_scientific_evidence",
+                tool_call_id=str(conflict),
             ),
         )
+        visible = json.loads(result.content)
+        assert visible["scientific_content_complete"] and not visible["partial"]
+        full_result = visible.pop("full_result")
+        visible.pop("scientific_content_complete")
+        visible.pop("partial")
+        assert visible == scientific_projection(original)
+        assert "conclusions_same_as" not in visible["research_evidence"]
+        stored = bridge.store.root / "agent-work" / bridge.thread / full_result[1:]
+        assert json.loads(stored.read_text()) == original
 
 
 @pytest.mark.asyncio

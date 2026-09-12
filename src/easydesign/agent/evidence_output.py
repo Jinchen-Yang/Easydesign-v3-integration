@@ -202,35 +202,6 @@ def scientific_projection(value: Any) -> Any:
     return value
 
 
-def judge_snapshot_projection(value: Any) -> Any:
-    """Show an exactly duplicated Site conclusion once, with an explicit local pointer.
-
-    All unique scientific content remains in the same review view. The immutable
-    original snapshot and its evidence binding are unchanged.
-    """
-    projected = scientific_projection(value)
-    if not isinstance(projected, dict) or projected.get("gate_type") != "site-hotspot":
-        return projected
-    proposal = projected.get("proposal")
-    research = projected.get("research_evidence")
-    if (
-        isinstance(proposal, dict)
-        and isinstance(research, dict)
-        and isinstance(proposal.get("research_conclusions"), list)
-        and research.get("conclusions") == proposal["research_conclusions"]
-        and len(compact(research["conclusions"])) > 256
-        and "conclusions_same_as" not in research
-    ):
-        del research["conclusions"]
-        research["conclusions_same_as"] = "/proposal/research_conclusions"
-        research["conclusion_encoding"] = (
-            "Exact duplicate displayed once at the indicated JSON pointer in this view. "
-            "All conclusions, citations and limitations are present there; nothing omitted. "
-            "The original full_result retains both copies."
-        )
-    return projected
-
-
 def target_page_projection(value: Any) -> Any:
     """Encode complete coordinate-missing position lists as exact inclusive ranges."""
     if isinstance(value, list):
@@ -518,14 +489,33 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         "read_evidence_result",
         "read_canonical_mapping",
     }
-    complete_projection = (
-        judge_snapshot_projection(value) if role == "judge" else scientific_projection(value)
-    )
+    complete_projection = scientific_projection(value)
+    if role == "judge":
+        # Judge receives the complete scientific snapshot. The shared model-input
+        # hard guard includes Skill text, history and schemas; a second per-tool
+        # cap must not reject valid reviews or motivate lossy evidence compression.
+        return message.model_copy(
+            update={
+                "content": compact(
+                    {
+                        **complete_projection,
+                        "full_result": receipt["ref"],
+                        "partial": False,
+                        "scientific_content_complete": True,
+                    }
+                    if isinstance(complete_projection, dict)
+                    else {
+                        "view": complete_projection,
+                        "full_result": receipt["ref"],
+                        "partial": False,
+                        "scientific_content_complete": True,
+                    }
+                )
+            }
+        )
     complete_design = role == "binder" and message.name == "read_design_evidence"
-    projected = (
-        complete_projection if role == "judge" or exact_page or complete_design else preview(value)
-    )
-    view_limit = 32000 if role == "judge" or complete_design else 6000
+    projected = complete_projection if exact_page or complete_design else preview(value)
+    view_limit = 32000 if complete_design else 6000
     if source_artifact is not None:
         projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
         overview = {**projected, **receptor_overview_projection(value)}
@@ -565,11 +555,6 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         complete_evaluation = scientific_projection(value)
         if len(compact(complete_evaluation)) <= view_limit:
             projected = complete_evaluation
-    if role == "judge" and len(compact(projected)) > view_limit:
-        raise AgentBoundaryError(
-            "Judge snapshot exceeds the scoped review limit. Narrow the proposal/evidence "
-            "question; supporting or contradictory evidence must not be silently truncated."
-        )
     if exact_page and len(compact(projected)) > view_limit:
         projected = {
             "fields": list(value) if isinstance(value, dict) else [],

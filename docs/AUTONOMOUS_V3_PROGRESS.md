@@ -2289,3 +2289,55 @@ then another real GPCR attempt with the same approved Target and stronger stoppi
 checks180b: 7 targeted submission/Golden-spec tests PASS in1.87s. Protected audit180
 verified385baseline files unchanged, unchanged Golden oracle and unchanged model config.
 Ruff/mypy and git diff --check pass. This is an engineering checkpoint, not Case2 acceptance.
+
+### Live179 completed SiteDecision; Judge input boundary repair — 2026-09-13
+
+49bd7127 retained all protected385files, the oracle and model configuration. Its saved177
+replay again produced two first-call SiteDecisions (3192/3508public characters), exact286->414
+hydration and one first-call JudgeVerdict, using29183working-set characters. Old evidence
+scientific defects remained; independent-content-audit.json explicitly records no Golden PASS.
+
+The fresh real GPCR live179 reused approved104 Target and found/read the relevant agonistic
+patient-autoantibody primary Results evidence (PMC5816038), including ECL2 peptide competition.
+It also acquired verified GPCRdb/UniProt/RCSB/Nb80 evidence and existing receptor analysis.
+Research Handoff first exhausted16384output tokens, then succeeded through one existing typed
+repair. A54121character durable dossier with5scoped passages was created; fresh isolated
+SiteDecision completed first-call at37229input characters and runtime hydrated exact candidate
+membership. The model selected the scan-derived N-terminal/TM1 patch as DISCOURAGED. This is
+not scientific acceptance: candidate database attribution, whole-VHH access, N-term/TM1
+classification and unsupported lack-of-risk claims still require independent critique.
+
+The run ended at Judge read_scientific_evidence: an obsolete32000character local tool limit
+rejected a54521character projected snapshot. No JudgeVerdict or Gate2. C4/S23/J1=28calls,
+including9native summaries; peak74972input characters. Provider usage299338input/118665output
+(including reasoning) tokens is retained inlive179-audit.json. Original artifacts and the
+completed unreviewed Site job remain inphase2-goldens-20260912T173738388639Z/gpcr.
+
+The output adapter now delivers the complete Judge scientific snapshot to the existing shared
+model-input hard guard, which accounts for Skill/history/schema overhead. Removed the obsolete
+per-snapshot32000cap and the duplicate-conclusion JSON-pointer encoding; no new compression,
+alias or guard was added and the configured100000hard limit remains unchanged. Source bytes
+and scoped-source authorization remain verified. Oversized full model input must still fail
+before inference, with no truncation of counterevidence.
+
+A separate factual delivery gap was found: legacy Site snapshot showed selected prepared-chain
+facts, but did not pass the dossier's all-candidate mapping/topology and independent receptor
+state/frame to Judge. The bridge now reads the exact dossier ArtifactRef already bound in the
+proposal's source manifest, verifies original owner and Target, and supplies those runtime facts.
+It does not regenerate them or change candidate membership. This also works for explicit
+unreviewed-Site transfer while preserving original ownership; older accepted proposals without
+a dossier retain their existing scientific payload. Current live179 Judge projection is68695
+characters including all candidate facts and all original scientific conclusions/passages.
+
+checks181a Ruff PASS and mypy23 PASS; pytest launch initially lackedPYTHONPATH=src:., corrected
+inchecks181b. Targeted tests/review continuation pending. Phase2 remains not frozen; no Phase3.
+
+checks181b:28targeted PASS; one new guard test failed because its synthetic request omitted the
+required Judge tool surface. Corrected the test fixture (no product relaxation); isolated181d
+now PASS in2.03s and confirms oversized complete input cannot reach the model. Source, scoped
+query, contradiction retention, native dossier hydration and unreviewed transfer tests passed.
+
+181e actual-adapter test PASS in7.79s, including explicit rejection of changed dossier owner or
+Target binding. Protected181-precommit verifies385unchanged baseline files plus unchanged
+Golden oracle/model config; git diff --check and final Ruff PASS. Next use existing explicit
+unreviewed-Site continuation from179 to run independent Judge without new research or Site jobs.

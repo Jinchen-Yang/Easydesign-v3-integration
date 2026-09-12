@@ -653,12 +653,47 @@ class Phase2Bridge(TargetBridge):
         ref = proposal["facts_ref"]
         refs = [f"project:{ref['relative_path']}#sha256={ref['sha256']}"]
         research = None
+        dossier_context = None
         if proposal.get("research_ref"):
             research_ref = proposal["research_ref"]
             research = self.document(research_ref)
             for source in research["source_refs"]:
                 confined(self.project, ArtifactRef.model_validate(source).verify(self.project))
             refs.append(f"project:{research_ref['relative_path']}#sha256={research_ref['sha256']}")
+            dossier_refs = {
+                source["sha256"]: source
+                for source in research["source_refs"]
+                if source["artifact_id"] == "site-evidence-dossier"
+            }
+            if len(dossier_refs) > 1:
+                raise AgentBoundaryError("Site proposal binds conflicting evidence dossiers")
+            if dossier_refs:
+                dossier = self.document(next(iter(dossier_refs.values())))
+                if (
+                    dossier["target_binding"] != proposal["target_binding"]
+                    or dossier["owner_thread"] != proposal["owner_thread"]
+                ):
+                    raise AgentBoundaryError("Site dossier differs from proposal Target or owner")
+                dossier_context = {
+                    "runtime_status": dossier["runtime_status"],
+                    "trusted_residue_facts": dossier["trusted_residue_facts"],
+                    "receptor_context": dossier["receptor_context"],
+                    "candidates": [
+                        {
+                            "candidate_id": candidate["candidate_id"],
+                            "name": candidate["research_hypothesis"]["name"],
+                            "design_labels": candidate["research_hypothesis"][
+                                "hotspot_label_seq_ids"
+                            ],
+                            "location": candidate["location"],
+                        }
+                        for candidate in dossier["candidate_comparison"]
+                    ],
+                    "authority": "Exact approved mapping, current Gate status and existing kernel "
+                    "topology/state. Candidate names and research classifications are fallible "
+                    "hypotheses; a kernel-generated candidate is not a database-endorsed epitope. "
+                    "Sequence overlap, surface exposure and full-binder access are distinct.",
+                }
         if proposal.get("review_ref"):
             review = ArtifactRef.model_validate(proposal["review_ref"])
             review.verify(self.project)
@@ -700,6 +735,7 @@ class Phase2Bridge(TargetBridge):
             )
         return {
             "target_facts": self.read_evidence()["hard_facts"],
+            **({"site_dossier_facts": dossier_context} if dossier_context is not None else {}),
             "gate_type": "site-hotspot",
             "project_id": self.project_id,
             "run_id": proposal["run_id"],

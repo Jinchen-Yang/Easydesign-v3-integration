@@ -364,11 +364,30 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             for t in available
             if t.name != "continue_evidence" or cursors[1:]
         ]
+        research_progress = None
         if self.role == "site" and isinstance(self.bridge, Phase2Bridge):
+            research = EvidenceResearch(self.bridge).snapshot()
+            if self.site_stage == "research":
+                research_progress = {
+                    "topics": research["topics"],
+                    "literature_discovery": [
+                        {"question": q["question"], "status": q["status"], "errors": q["errors"]}
+                        for q in research["queries"]
+                        if q.get("query", {}).get("operation") == "literature-search"
+                    ],
+                    "focused_passage_count": len(
+                        {
+                            c["card_id"]
+                            for q in research["queries"]
+                            for c in q["cards"]
+                            if c["card_id"].startswith("passage-")
+                        }
+                    ),
+                }
             receptor_cards = sorted(
                 {
                     c["card_id"]
-                    for q in EvidenceResearch(self.bridge).snapshot()["queries"]
+                    for q in research["queries"]
                     for c in q["cards"]
                     if c["provider"] == "GPCRdb" and c.get("context_ref")
                 }
@@ -581,6 +600,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         from langchain_core.messages import SystemMessage
 
         base_system = request.system_message.text
+        if research_progress is not None:
+            base_system += (
+                "\nVerified research activity (source actions, not scientific conclusions): "
+                + compact(research_progress)
+                + "\nAn acquired named publication is not literature discovery. Cover the "
+                "material mechanism and counterevidence questions before further source "
+                "pagination; read relevant primary passages for any claims. A retrieved "
+                "topic can still be scientifically unresolved. Missing topics and failed "
+                "access must remain explicit; do not turn them into negative evidence."
+            )
         for attempt in range(3):
             used = self.bridge.store.db.execute(
                 "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "

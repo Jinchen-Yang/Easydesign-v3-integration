@@ -56,6 +56,7 @@ class SiteModel(ScriptedModel):
             if self.role == "site" and "SiteIntent" in self.offered:
                 payload = json.loads(human.text)
                 assert "dossier" in payload and "runtime_history" not in payload
+                assert "Verified research activity" not in messages[0].text
                 assert all(m.name == "SiteIntent" for m in messages if isinstance(m, ToolMessage))
                 assert all(
                     c["name"] == "SiteIntent"
@@ -66,6 +67,10 @@ class SiteModel(ScriptedModel):
                 candidate = payload["dossier"]["candidate_comparison"][0]
                 labels = candidate["research_hypothesis"]["hotspot_label_seq_ids"]
                 return self.call("SiteIntent", **site_intent(labels).model_dump(mode="json"))
+            if self.role == "site":
+                assert "Verified research activity" in messages[0].text
+                assert '"literature_discovery":[]' in messages[0].text
+                assert '"function":"NOT_SEARCHED"' in messages[0].text
             task = ScientificTask.model_validate_json(human.text)
             if not results:
                 self.tasks.append(task.model_dump())

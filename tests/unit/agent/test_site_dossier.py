@@ -55,6 +55,14 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
             "passage": text,
             "source_refs": [source],
             "source_verified": True,
+            "selection_provenance": {"reason": "SYNTHETIC control metadata"},
+            "binding_context": {
+                "acquired_binding": "SYNTHETIC hash",
+                "relation": "current-state-selection",
+                "relevance": "unresolved",
+            },
+            "partial": True,
+            "limitations": ["Abstract only; no quantitative efficacy data."],
             "evidence_level": "primary-abstract",
             "primary_eligible": True,
             "does_not_support": ["Binding efficacy or exact epitope"],
@@ -78,8 +86,35 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
     before = source_path.read_bytes()
     token = bind(b)
     try:
-        dossier = persist_dossier(b, handoff(), "synthetic-execution")
+        selection = handoff()
+        alternative = selection.candidates[0].model_copy(
+            update={"name": "SYNTHETIC competing mechanism at shared residues"}
+        )
+        selection = selection.model_copy(
+            update={"candidates": [*selection.candidates, alternative]}
+        )
+        dossier = persist_dossier(b, selection, "synthetic-execution")
+        assert len(dossier["candidate_comparison"]) == 2
+        assert [r["mapping"]["label_seq_id"] for r in dossier["trusted_residue_facts"]] == [1, 2, 3]
+        assert (
+            dossier["candidate_comparison"][0]["deterministic_evaluation"]
+            == (dossier["candidate_comparison"][1]["deterministic_evaluation"])
+        )
         assert {c["passage"] for c in dossier["focused_passages"]} == {c["passage"] for c in cards}
+        from easydesign.agent.evidence_research import EvidenceResearch
+
+        verified_cards = EvidenceResearch(b).snapshot()["queries"][0]["cards"]
+        for projected, original in zip(dossier["focused_passages"], verified_cards, strict=True):
+            assert projected["limitations"] == original["limitations"]
+            assert projected["does_not_support"] == original["does_not_support"]
+            assert projected["primary_eligible"] == original["primary_eligible"]
+            assert projected["evidence_level"] == original["evidence_level"]
+            assert projected["partial"] is True
+            assert projected["source_id"] == original["source_id"]
+            assert projected["binding_context"] == {
+                key: original["binding_context"][key] for key in ("relation", "relevance")
+            }
+            assert "source_refs" not in projected and "selection_provenance" not in projected
         assert dossier["research_outcomes"][0]["errors"] == query["errors"]
         assert dossier["approved_target"] == b.read_site_evidence()["approved_target"]
         assert b.current_site() is None and b.approved_site() is None
@@ -219,7 +254,9 @@ async def test_framework_summary_preserves_trace_and_consumes_shared_budget(
     bridge: Any,
     tmp_path: Path,
 ) -> None:
-    config = scripted_config().model_copy(update={"max_input_chars": 4000})
+    config = scripted_config().model_copy(
+        update={"max_input_chars": 4000, "hard_input_chars": 30000}
+    )
     execution = bridge.store.begin_execution(bridge.thread, "Synthetic framework summary")
     model = FakeListChatModel(
         responses=["Fallible synthetic working memory; sources remain authoritative."]

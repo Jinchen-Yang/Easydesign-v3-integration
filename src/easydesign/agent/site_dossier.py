@@ -15,7 +15,7 @@ from .contracts import (
     ShortText,
     StrictDTO,
 )
-from .evidence_research import EvidenceResearch, ResearchTopic
+from .evidence_research import TOPICS, EvidenceResearch, ResearchTopic
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .session_store import compact, identity
 from .site_contracts import SiteIntent, SiteSelection
@@ -28,7 +28,7 @@ class SiteResearchHandoff(StrictDTO):
     candidates: list[SiteSelection] = Field(min_length=1, max_length=3)
     material_questions: list[ResearchTopic] = Field(
         default_factory=list,
-        max_length=9,
+        max_length=len(TOPICS),
         description="Material topics actually queried in this research stage, using the exact "
         "topic names from research_evidence. Put still-unsearched questions in "
         "unresolved_questions; never relabel them as researched.",
@@ -81,6 +81,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             )
         )
     candidates = []
+    residue_facts = {}
     for candidate in handoff.candidates:
         if candidate.origin == "literature-derived" and not candidate.evidence_card_ids:
             raise ResearchConclusionMismatch("Literature-derived candidates need focused citations")
@@ -95,10 +96,11 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             for offset in range(0, len(labels), 12)
             for row in summarize_site_facts(facts, labels=labels, offset=offset)["facts"]
         ]
+        for row in rows:
+            residue_facts[row["mapping"]["label_seq_id"]] = row
         candidates.append(
             {
                 "research_hypothesis": candidate.model_dump(mode="json"),
-                "trusted_residue_facts": rows,
                 "deterministic_evaluation": evaluation,
             }
         )
@@ -137,7 +139,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             }
         )
     return {
-        "kind": "site-evidence-dossier-v1",
+        "kind": "site-evidence-dossier-v2",
         "project_id": bridge.project_id,
         "owner_thread": bridge.thread,
         "target_binding": target["binding"],
@@ -156,12 +158,41 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             )
         },
         "candidate_comparison": candidates,
+        "trusted_residue_facts": [residue_facts[key] for key in sorted(residue_facts)],
         "receptor_context": receptor,
-        "focused_passages": passages,
+        "focused_passages": [
+            {
+                **{
+                    key: value
+                    for key, value in card.items()
+                    if key
+                    not in {
+                        "binding_context",
+                        "cache_status",
+                        "project_evidence_id",
+                        "retrieved_at",
+                        "selection_provenance",
+                        "source_refs",
+                    }
+                },
+                **(
+                    {
+                        "binding_context": {
+                            key: value
+                            for key, value in card["binding_context"].items()
+                            if key not in {"acquired_binding", "current_binding"}
+                        }
+                    }
+                    if card.get("binding_context")
+                    else {}
+                ),
+            }
+            for card in passages
+        ],
         "research_outcomes": [
             {
                 key: q[key]
-                for key in ("query_id", "topic", "question", "status", "errors")
+                for key in ("query_id", "topic", "question", "query", "status", "errors")
                 if key in q
             }
             for q in research["queries"]
@@ -183,10 +214,14 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             for c in cards.values()
             if c.get("corpus_ref")
         ],
-        "research_opinions": handoff.model_dump(mode="json"),
+        "research_opinions": handoff.model_dump(mode="json", exclude={"candidates"}),
         "authority": "Runtime rehydrated original verified artifacts and deterministic facts. "
         "Research notes and candidate preferences are unaccepted model opinions. All focused "
         "passages and all search/access outcomes are included without ranking by support. "
+        "Exact passage text and scientific qualifiers are unchanged; repeated cache, selection "
+        "and source-reference metadata remain in the verified durable research artifacts. "
+        "Candidate hypotheses use the common trusted_residue_facts table by existing design "
+        "label; repeating a label does not create independent evidence. "
         "Source retrieval status is not scientific entailment. Missing evidence stays "
         "unresolved. No approval is created.",
     }
@@ -227,11 +262,7 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
     dossier = bridge.document(event["ref"])
     if dossier["target_binding"] != bridge.target_state()["binding"]:
         raise AgentBoundaryError("Site synthesis dossier has a stale Target binding")
-    available = {
-        row["mapping"]["label_seq_id"]
-        for candidate in dossier["candidate_comparison"]
-        for row in candidate["trusted_residue_facts"]
-    }
+    available = {row["mapping"]["label_seq_id"] for row in dossier["trusted_residue_facts"]}
     selected = {
         label
         for candidate in [intent.selected_site, *intent.alternatives]

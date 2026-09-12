@@ -103,7 +103,9 @@ def research_memory(
         update={"callbacks": [SummaryAccounting(bridge, config, "site", execution_id, model)]}
     )
     profile_limit = (getattr(model, "profile", None) or {}).get("max_input_tokens")
-    trigger = config.max_input_chars // 4
+    # The soft target is telemetry, not a demand to summarize each crossing.
+    # Use framework memory between the working target and the independent guard.
+    trigger = (config.max_input_chars + config.hard_input_chars) // 8
     if isinstance(profile_limit, int) and profile_limit > 0:
         trigger = min(
             trigger, max(1000, (profile_limit - config.for_role("site").max_output_tokens) // 2)
@@ -115,7 +117,7 @@ def research_memory(
         # Native token retention preserves complete tool transactions. A message
         # count can retain several large batches and immediately trigger another
         # summary; leave headroom for actual research within the shared call budget.
-        keep=("tokens", max(200, trigger // 4)),
+        keep=("tokens", max(200, min(trigger // 4, config.max_input_chars // 16))),
         trim_tokens_to_summarize=config.hard_input_chars // 4,
         summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
         "This is fallible research working memory, not verified source evidence, a Site "

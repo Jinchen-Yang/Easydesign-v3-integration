@@ -1825,3 +1825,50 @@ source tampering, framework summary accounting/latency, hard/soft context guards
 isolated synthesis corrections. Ruff PASS and mypy22Agent modules PASS. Protected172checks
 all385baseline files unchanged. Next live172 starts from a clean committed tree with unchanged
 local model configuration and approved GPCRTarget104; Case2 remains unaccepted pending its result.
+
+
+### Live172 dossier-size diagnosis and source-preserving simplification (173)
+
+Live172 FAILED before the first isolated synthesis provider call. Research handoff and durable
+Dossier persistence succeeded at phase2-goldens-20260912T034003605890Z, using clean commit
+d9cb7554ff3d6f26b87717c931579b0309cc9582. Coordinator 2 / Site 22 = 24 shared calls include
+10 native summaries. Actual research peak was 94,755 characters. The fresh synthesis request
+was 127,570 characters and hit the unchanged 100,000-character guard. No SiteIntent, independent
+Judge, Gate 2 or new scientific acceptance was created. There was no research-history leak.
+PMID 21228869 was acquired and read as abstract evidence, but no literature-discovery search or
+full-text access attempt occurred. Repeated UniProt continuation still dominated the research.
+
+The durable dossier was 108,782 characters: 23 focused passages contained only 8,326 characters
+of actual source text. Redundant source/control metadata and repeated candidate residue facts
+accounted for much of the remaining size. Dossier v2 retains exact text, every scientific
+qualifier, source relation/relevance, counterevidence, access outcomes, trusted target facts,
+and unchanged deterministic candidate evaluations. Full cache/selection/reference metadata
+remain in the verified durable research artifacts; synthesis has no file-reading authority.
+A single trusted residue table uses existing design labels for all candidates. Candidate
+opinions occur once and remain explicitly unaccepted. All ten material ResearchTopics fit the
+handoff schema. Source originals and all accepted milestones are unchanged.
+
+Read-only replay of the same live172 handoff produces a 74,448-character dossier. Exact passage
+bytes and serialized deterministic evaluations are unchanged (dossier173-replay-audit.json).
+This is an engineering replay, not a repaired scientific result: those candidate hypotheses
+remain unaccepted and the missing discovery search is still missing. A new real run is required.
+
+Native DeepAgents summarization now triggers between the soft target and hard guard (about
+20k approximate tokens at default settings), with a bounded native token tail. Crossing 60k
+alone is not an architecture violation or immediate summarization demand. The model/provider,
+reasoning settings, 32-call budget and 100k guard are unchanged. A short runtime research-activity
+notice derives from the existing verified snapshot and distinguishes acquired records from
+literature discovery and unresolved topics. It does not create evidence, plan research, infer
+entailment, select candidates, or waive scientific review.
+
+Ruff and mypy (22 Agent modules) passed. targeted173: 12 passed / 1 failed in 71.62 seconds;
+the added evidence-projection test compared raw fixture metadata with runtime-derived source
+relations. Its corrected assertions verify scientific content against the verified original
+cards, preserving the runtime's relation instead of assuming one. Follow-up results are recorded
+below before the next live launch. No full-regression or Phase 2 closure is claimed.
+
+Follow-up targeted173b: 2 passed in 34.55 seconds, including the corrected evidence preservation
+test and complete Site revision/restart with research-activity stage isolation assertions. All
+13 targeted cases are verified across these runs. Final Ruff and git diff checks passed;
+protected173.json confirms all 385 protected files unchanged. Live173 will start from the
+committed tree with the same approved GPCR Target104 and unchanged local debugging model.

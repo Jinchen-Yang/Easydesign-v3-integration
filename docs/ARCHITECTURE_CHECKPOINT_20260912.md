@@ -70,7 +70,7 @@ graph, execution infrastructure or additional storage systems.
 Research submits a bounded selection of source cards and candidate patches plus explicitly
 non-authoritative notes. Runtime revalidates current Target binding and exact sources, then
 assembles the dossier from existing evidence artifacts: trusted target/mapping/state facts,
-selected exact passages, deterministic candidate evaluations, search/access outcomes,
+all retrieved exact passages, deterministic candidate evaluations, search/access outcomes,
 limitations and alternatives. Model notes are labeled opinions. Missing or contradictory
 evidence cannot disappear merely because it was omitted by the researcher. The dossier is a
 derived artifact in the existing project store, not a second corpus or hard-fact producer.
@@ -92,3 +92,21 @@ Then full regression; freeze Phase 2 only when all five accepted cases and parit
 Continue original Phase 3/4 micro-compute assignment without resetting valid earlier work.
 
 This engineering checkpoint does not claim a new Golden PASS or Phase closure.
+
+
+## Dossier v2 engineering follow-up
+
+The first live handoff exposed a large dossier, despite correctly isolated research history.
+Normalize shared residue facts using existing design labels and omit repeated cache/selection/
+reference-control metadata from the model-facing passage view. Preserve exact source text,
+evidence levels, access/scientific limitations and runtime source relation/relevance. Full
+original artifacts and their verification remain in the existing store. Candidate hypotheses
+and deterministic evaluations remain separate from evidence and each appears once.
+
+Native summarization starts between the soft working target and independent hard guard;
+60k alone does not require summarization. Research progress is read from existing evidence
+snapshots, explicitly separating named-record acquisition, literature discovery and unresolved
+material topics. No added scheduler, source store, history alias/pointer or scientific kernel.
+Read-only replay reduced live172's dossier from 108,782 to 74,448 characters without changing
+passage bytes or candidate evaluations. This does not fix its inadequate scientific research
+or establish Case 2 acceptance. Fresh real validation and full regression remain required.

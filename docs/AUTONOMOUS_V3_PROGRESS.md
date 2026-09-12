@@ -1391,3 +1391,39 @@ process-restart test that preserves Target/Site/goal. Ruff162 PASS. Only validat
 and this report changed while GPCRlive161 runs; Agent/Skill/model fingerprint is unchanged.
 Next live162 will apply the captured review instruction through REVISE, then recheck standard
 Gate3 and native Case5 if standard passes. No approval or generation. Phase2 NOT FROZEN.
+
+
+### Standard Design accepted after trusted Gate3 REVISE (live162)
+
+Live162 (`phase2-goldens-20260912T001103284678Z`) resumes the exact standard160 thread and
+applies the explicit validation-actor REVISE. Its new card
+a6c8d40581289c1a4aac2b3e939d37ff0b526b5f3ea4ee6029f9bdc88cbb9bfa has the original
+45979beebd41b78bd18d2cf2ecff4e91c6aec5a07c48a5b04e2b2eebb0b423f4 as parent. The fresh
+Judge judge-afffb9b53b9c49ffb4d8120f7d5d5197 and independent six-section review pass the revised
+Design. Review snapshot5a58cb7e0f51813795b5dffb1a69cc40223724ad0305e7c7d3935c0904845a57;
+receipt SHA3e2bc214f9ea8e832d9e2819fab82f19e047397248b068f93a6f8eaf1692ab97.
+
+The exact approved Target/Site, one arm/all7scaffolds/40each/full target and unchanged hotspot
+are retained. The owner accurately distinguishes insertion counts from loop lengths, all3CDR
+sampling from a CDR3-only experiment, empty custom-override validation from official-asset
+checks, catalytic Glu35/Asp52 from inferred Trp63 lining, and verified prior Site override from
+pending Design approval. Negative micro yield is INCONCLUSIVE with competing explanations.
+Actual compiler/BoltzGen0.3.2 check passes7strategies/280planned; strategy SHA
+da64195d47ece5d539493234b60b7cd620208a8631a7d2ed0e9789a95ec5b2b0. No generation.
+
+Root review preserves the accepted Site qualification: competitive kinetics alone is not unique
+proof of specificity; orthogonal integrity/interference controls remain necessary. Direct dyad
+contact is one proposed route, not a universal condition of inhibition. This is a testable,
+DISCOURAGED exploratory Design, not evidence of successful binding, inhibition or permission to
+launch compute. The actual card stays awaiting-human-approval. Case4 is PASS after explicit
+Scientist steering, not unassisted first-attempt acceptance. Across the original and revision
+executions: Coordinator8/Binder6/Judge4; initial10calls + revision8calls, peak51420chars.
+Case1/3 acceptance is retained. Separate native Case5 is now running; Phase2 is NOT FROZEN.
+
+Live161 GPCR (`phase2-goldens-20260912T000018691957Z`) independently failed the unchanged
+context guard after Coordinator3/Site17calls, with real research/receptor analysis and two
+candidate evaluations retained but no SiteIntent/Gate2. The parallel-answer fix prevented
+first-delivery loss; repeated raw topology reads still accumulated. Existing complete candidate/
+topology projection aliases were not listed in stored_fields or archived navigation. A local
+navigation-only repair is staged pending completion of live162, so no active Agent/Skill
+fingerprint is changed. No mapping, receptor algorithm, oracle or Gate change is required.

@@ -1,6 +1,6 @@
 # v2 → v3 scientific capability parity
 
-Current autonomous recovery (2026-09-12): **Cases1 soluble Gate2 and3 identity-trap PASS; Phase2 NOT FROZEN; Phase3/4 not started.**
+Current autonomous recovery (2026-09-12): **Cases1 soluble Gate2,3 identity-trap and4 standard Design PASS; Phase2 NOT FROZEN; Phase3/4 not started.**
 Historical Phase 2.2d full suite was 774 PASS / 1 FAIL / 11 skips. That failure and the
 no-bound-job loop were reproduced and repaired. Current targeted evidence is recorded in
 AUTONOMOUS_V3_PROGRESS.md; a new full regression remains due at Phase 2 closure.
@@ -30,7 +30,12 @@ rejected factor/absence and insertion-count-vs-final-loop claims; no Design acce
 is claimed. Live159 GPCR exposed first-delivery loss inside parallel tool batches. The runtime
 now preserves every latest-batch answer; prior duplicate-reading histories remain retained and
 oversized terminal histories are still rejected. Fresh live acceptance remains due.
-Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases2/4/5 and the Phase2 full regression remain outstanding.
+Live162 then passed standard Design Case4 after the exact failed160 Gate3 received a trusted
+validation-actor REVISE and fresh Judge/content review. The original10calls plus revision8calls
+are retained; this is explicit Scientist steering, not unassisted first-attempt acceptance.
+Native Case5 is running separately. GPCR161 failed the context guard after repeated topology
+reads; its analysis/evaluations remain preserved. No GPCR Site acceptance is claimed.
+Detailed evidence is in AUTONOMOUS_V3_PROGRESS.md. Cases2/5 and Phase2 full regression remain outstanding.
 The original Phase 2.2d and earlier reports remain historical evidence; see
 PHASE22D_AGENT_CONTRACT_CLOSURE.md and AUTONOMOUS_V3_PROGRESS.md.
 
@@ -47,8 +52,8 @@ The claim index is not approved project knowledge; its sources require fresh ver
 
 | Legacy capability | Legacy owner | Legacy source/path | v3 owner | Status | Required phase | Evidence/test | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; Cases1/3 real PASS; Cases2/4/5 pending | Do not replace original goal with follow-up |
-| Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Case1 enzyme assay/control review PASS; GPCR/Design pending | Binding is not function; low perturbation is independent |
+| Biological goal, desired and forbidden effect | RS/H | target-and-site.md; special-target-playbooks.md | Target/Site + immutable research goal | PARTIAL | 2.2 | multiturn contract; Cases1/3 real PASS; Cases2/5 pending | Do not replace original goal with follow-up |
+| Assay/readout, success/falsifier, controls | RS/H | target-and-site.md | Site/Binder | PARTIAL | 2.2 | Case1 enzyme assay/control review PASS; standard Design live162 PASS after REVISE; GPCR pending | Binding is not function; low perturbation is independent |
 | Canonical target/species/isoform identity | DS/RS/H | evidence-and-numbering.md; core/target_identity.py | Target proposal + old identity/decision service | PARTIAL | 2.2 | Six fixture identity cases; real P00698 acquisition/proposal reaches old pending decision | Live040 scripted approval produced an authoritative bundle verified by the unchanged oracle; complete five-case rerun remains pending |
 | Construct/canonical/coordinate/design-scope separation | DS/RS | target-and-site.md; evidence-and-numbering.md | Target + unchanged mapping kernel | PARTIAL | 2.2 | Clean/subsequence/ambiguous-chain/sequence-difference old-service regressions | No replacement mapping; inherited old multi-decision edge cases are not claimed repaired |
 | Author/label/insertion/missing mapping | DS | evidence-and-numbering.md; stages/s01_target_preparation | Existing kernel via Target/Site | COMPLETE | 2.2 | test_source_author_numbering_is_not_invented | No invented canonical offset |
@@ -78,7 +83,7 @@ The claim index is not approved project knowledge; its sources require fresh ver
 | Hotspot selection and exact review | DS/RS/H | strategy-yaml.md; orchestration/research.py | Site/Judge/Gate 2 + old site service | COMPLETE | 2.2 | Site approval/revision/override/replay | Final scientific authority stays human |
 | GPCR conditional family heuristics | RS | gpcr-family-rules.json; gpcr-family-playbooks.md | Site after verified relevance | PARTIAL | 2.2 | real GPCR/family audit pending | Priors generate hypotheses; cannot pick winner |
 | Special targets: enzyme/IDR/amyloid/multimer/imaging/chaperone | RS | special-target-playbooks.md | Target/Site/Binder | PARTIAL | 2.2 | skill parity audit | Conditional context and representation limits must remain visible |
-| Binder modality / VHH strategy | RS/H | strategy-yaml.md; vhh-geometry-priors.md | Binder | COMPLETE | 2.2 | design runtime/harness | Current supported modality remains VHH |
+| Binder modality / VHH strategy | RS/H | strategy-yaml.md; vhh-geometry-priors.md | Binder | COMPLETE | 2.2 | design runtime/harness; Case4 live162 content/backend PASS after REVISE | Current supported modality remains VHH |
 | Hotspot conditioning, explicit avoid and neutral residues | DS/RS | strategy-yaml.md | Binder + old compiler | COMPLETE | 2.2 | design constraint tests | Non-hotspot is neutral, not implicitly forbidden |
 | Crop reasoning and full-target confirmation | RS/DS | vhh-geometry-priors.md | Binder / later Pilot | PARTIAL | 2.2 / 3 | compiler tests; scientific loop pending | Crop cannot delete genuine shielding to fabricate accessibility |
 | CDR/scaffold identity and actual asset ranges | RS/DS | boltzgen-contract.md; vhh-geometry-priors.md | Binder + old compiler/validator | COMPLETE | 2.2 | Phase 2 real BoltzGen check | Insertion count differs from final CDR length |

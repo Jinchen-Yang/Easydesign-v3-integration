@@ -2234,3 +2234,13 @@ and prints only provider outcome metadata before parsing, never private reasonin
 checks179b: Ruff PASS, mypy23 PASS,17 SiteDecision/Dossier tests PASS in41.33s, including
 source/contradiction preservation and exclusion of stale preliminary narrative from synthesis.
 Partial replay audit is preserved inruntime/tmp/autonomous-v3-20260912/replay178b-audit.json.
+
+### Replay178c complete; next real GPCR validation
+
+See PHASE2_SITE_DECISION_REPLAY_20260913.md for actual replayA/B/C/D results and scientific audit.
+29d0647b produced two first-call decisions and one first-call independent JudgeVerdict, with
+29,183-character synthesis working set and exact canonical286 -> design414 runtime hydration.
+No new research or original checkpoint mutation. Judge returned ready-to-ask/DISCOURAGED but
+missed errors inherited from old177 opinions, including canonicalD192 versus cysteine claims and
+inadequate contradiction-search sufficiency. This is contract PASS only, not scientific Case2
+acceptance. The next live GPCR uses the approved104 Target and current research policy.

@@ -152,3 +152,25 @@ Site fact-table view and original ArtifactRefs; the scientific kernel is unchang
 Handoff diagnostics identify the offending candidate. Standard source pagination stops after
 answering that candidate's question. No model/config change, new agent or message compression.
 All previous accepted milestones remain. Full scientific Case2 acceptance is still required.
+
+###177: isolate synthesis instructions and output-contract recovery
+
+Live176 reached fresh synthesis with a62318character dossier,13exact focused passages and22exact
+candidate mapping rows. First synthesis input83826characters/two messages carried no Research
+tool history. A subsequent empty SiteIntent failed after Handoff had spent both shared output
+corrections. This is a successful boundary observation within a failed scientific attempt.
+
+The fresh stage now receives the dedicated scientific synthesis reference, excluding Research
+acquisition/pagination instructions. It retains mapping, source entailment/contradiction,
+mechanism, delivery/access, state/partner/glycan/construct limitations and discriminating assays.
+Standard inquiry explicitly includes the user's forbidden effect; irrelevant results prompt
+one sensible broadening without forcing all binder-format synonyms into a single query.
+
+The existing durable correction counter now permits two corrections per runtime-selected typed
+contract/execution, so Handoff cannot exhaust a fresh SiteIntent's corrections. The same32shared
+model calls still bound all stages/roles/framework summaries, and legacy unscoped repairs count
+conservatively. This adds no retry engine or history mechanism. A schema-error event preserves
+provider stop/usage metadata before a budget exception, without private reasoning content.
+Existing DeepAgents summarization still replaces the default middleware by name; no duplicate
+summary middleware or framework fork is introduced. protected177.json confirms all385protected
+files, oracle and model configuration unchanged. No new Golden PASS or Phase2freeze is claimed.

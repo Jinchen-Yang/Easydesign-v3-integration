@@ -57,6 +57,10 @@ class SiteModel(ScriptedModel):
                 payload = json.loads(human.text)
                 assert "dossier" in payload and "runtime_history" not in payload
                 assert "Verified research activity" not in messages[0].text
+                assert "Site synthesis from a trusted evidence dossier" in messages[0].text
+                assert "Use research_evidence" not in messages[0].text
+                assert "continue_evidence(cursor=" not in messages[0].text
+                assert "Stop policy:" not in messages[0].text
                 assert all(m.name == "SiteIntent" for m in messages if isinstance(m, ToolMessage))
                 assert all(
                     c["name"] == "SiteIntent"

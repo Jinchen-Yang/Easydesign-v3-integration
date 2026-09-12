@@ -270,21 +270,33 @@ class SessionStore:
         )
 
     def reserve_contract_repair(
-        self, thread: str, role: str, execution_id: str, diagnostic: str
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        diagnostic: str,
+        *,
+        contract: str | None = None,
     ) -> int:
-        """Two output-contract corrections per execution, persisted across delegations/replay."""
+        """Two corrections per typed contract/execution, durable across delegation/replay.
+
+        Legacy unscoped records count against every contract. All calls still consume
+        the independent execution-wide model-call budget.
+        """
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
             raise AgentBoundaryError("Contract repair is outside the current execution")
         with self.db:
             count = self.db.execute(
                 "SELECT count(*) FROM events WHERE thread=? AND kind='contract-repair' "
-                "AND json_extract(payload,'$.execution_id')=?",
-                (thread, execution_id),
+                "AND json_extract(payload,'$.execution_id')=? "
+                "AND (? IS NULL OR json_extract(payload,'$.contract') IS NULL "
+                "OR json_extract(payload,'$.contract')=?)",
+                (thread, execution_id, contract, contract),
             ).fetchone()[0]
             if count >= 2:
                 raise AgentBoundaryError(
-                    "Structured contract repair budget exhausted (2 per execution)"
+                    "Structured contract repair budget exhausted (2 per contract per execution)"
                 )
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
@@ -294,6 +306,7 @@ class SessionStore:
                         {
                             "role": role,
                             "execution_id": execution_id,
+                            "contract": contract,
                             "attempt": count + 1,
                             "diagnostic": diagnostic[:6000],
                         }

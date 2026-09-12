@@ -2089,3 +2089,35 @@ existing fresh stage still received the entire Research Skill), records schema-e
 before a repair-budget exception, and sharpens goal-relevant adverse-effect inquiry without
 requiring a binder modality in every query. No new model, research mode, compression codec,
 kernel change or scientific acceptance is implied.
+
+###177: scientific synthesis prompt and bounded contract isolation
+
+The fresh synthesis stage now receives a dedicated57-line scientific reference, not the
+Research Skill's acquisition/pagination/Handoff steps. It preserves exact mapping, source
+entailment and contradictory evidence, desired/forbidden effects, full-binder access,
+state/ligand/partner/construct/glycan limits, candidate comparison and discriminating assays.
+Handoff fields describe actual mapped design labels and concise decision/stopping statements.
+The Standard contradiction check includes the user's forbidden functional effect; empty or
+irrelevant results warrant one sensible broadening without requiring all binder modalities.
+No Golden-specific paper ID or preferred residue set was inserted.
+
+Existing contract corrections are now persisted per runtime-owned typed schema, two each per
+execution; Handoff corrections cannot exhaust a fresh SiteIntent's opportunities. All still
+consume the original32shared model calls, including framework summaries and other roles.
+Legacy unscoped repair records count conservatively against every contract. Reopening a store
+does not reset the per-contract count. There is no new retry engine or scientific override.
+Structured schema errors now preserve provider stop reason/usage and submitted arguments before
+any correction-budget exception, excluding private reasoning. Successful recovery also records
+the ordinary model-response, so these two representations must not be cost-counted twice.
+
+Checks177 passed18targeted tests in74.77s before the contract-counter scoping change.
+Checks177b then passed the full three targeted contract/Dossier/Site-harness files:50tests in
+192.42s, plus Ruff and mypy22modules. These counts overlap and are not a full regression.
+They verify isolated prompts/restart, source/mapping integrity, ordinary schema recovery,
+failure telemetry at exhausted budgets, persistent per-contract limits and unchanged total
+call limit. protected177.json confirms all385protected files, Golden oracle and debug model
+configuration unchanged. The next real retry uses approved GPCRTarget104; Case2 is still pending.
+
+Checks177c also passed make check: repository/assets, compilation, whole-repository Ruff and
+mypy187source files. This does not replace the fresh full test/web regression required after
+Case2scientific acceptance. No Phase3/4 implementation or compute was started during this fix.

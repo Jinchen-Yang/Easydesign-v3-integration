@@ -36,7 +36,13 @@ class DecisionEvidenceQuestion(ResearchConclusion):
 class SiteResearchHandoff(StrictDTO):
     """Bounded decision evidence and stopping rationale; never scientific approval."""
 
-    candidates: list[SiteSelection] = Field(min_length=1, max_length=3)
+    candidates: list[SiteSelection] = Field(
+        min_length=1,
+        max_length=3,
+        description="Order a few mapped hypotheses by provisional preference for the user's "
+        "objective and delivery constraints. Kernel names/scores do not choose the primary. "
+        "An inaccessible or adverse-effect hypothesis can be an avoid/unresolved comparison.",
+    )
     decision_questions: list[DecisionEvidenceQuestion] = Field(
         default_factory=list,
         max_length=6,
@@ -56,7 +62,8 @@ class SiteResearchHandoff(StrictDTO):
         description="Why further Standard Research is unlikely to change the Gate 2 ranking, "
         "hard constraints or main risks after the contradiction/alternative check. State "
         "whether ranking changed, remaining uncertainties and the next discriminating test. "
-        "An unresolved question does not require endless searching or justify approval.",
+        "An unresolved question does not require endless searching or justify approval. "
+        "Use 2-4 short sentences, at most 1500 characters; do not repeat the candidate inventory.",
     )
     research_notes: list[ShortText] = Field(default_factory=list, max_length=4)
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)

@@ -27,7 +27,10 @@ bibliography coverage is not required. Spend the next inquiry on a remaining dec
 Use research_evidence for those missing facts. Query keywords execute the search; question
 states the decision it informs. Acquire requested and relevant primary records plus the few
 necessary official structure/database records. Search titles are leads, not residue or causal
-evidence. If no matches, make one sensible broader query; do not keep adding desired terms.
+evidence. If matches are empty or irrelevant, make one sensible broader query; do not keep
+adding desired terms. Search the target and decisive effect first. Do not require all synonyms
+or the eventual binder format together: antibody, autoantibody and nanobody evidence may inform
+the same mechanistic risk, with explicit modality/valency/species transfer limits.
 Supply selection_reason to acquire a selected source atomically. Selection is relevance, not
 entailment; reuse existing acquisitions. A relevant query can inform several topics using its
 returned query_id; do not repeat the same inquiry merely to fill another taxonomy category.
@@ -49,7 +52,10 @@ Stop policy:
    official evidence. Reuse approved identity and supplied kernel facts.
 2. Then perform one targeted contradiction or meaningful-alternative literature search: what
    evidence would reverse the ranking, invalidate an access assumption or reveal the forbidden
-   functional effect? Read a strong relevant lead, including adverse findings. If it changes the
+   functional effect? Include the user's forbidden effect, rather than only the preferred
+   epitope's geometry. Use a short target-plus-effect query without requiring the exact binder
+   format. Unrelated hits do not establish saturation until a sensible broader check. Read a
+   strong relevant lead, including adverse findings. If it changes the
    recommendation, update the comparison and resolve only the new consequential issue.
 3. Ask: is more searching reasonably likely to change Gate 2 ranking, a hard constraint or a
    major risk? If no, STOP RESEARCH and submit SiteResearchHandoff now. Remaining call budget,
@@ -133,13 +139,15 @@ Follow the current runtime stage and shared budget, which includes framework sum
 In Evidence Research, finish with SiteResearchHandoff: mapped candidates with focused citations,
 decision_questions, actual contradiction-search IDs, stopping_reason and unresolved questions. Runtime builds the dossier
 from original evidence; this handoff creates no Site proposal. In isolated synthesis, research
-is complete: use the supplied dossier and submit SiteIntent without further research tools.
+is complete: the runtime supplies references/synthesis.md and the dossier, then accepts only
+SiteIntent. The research workflow above is not part of that fresh stage's instructions.
 Give positive evidence, mechanism, access, approach, meaningful alternatives, risks and
 uncertainties. SUPPORTED is limited to actual evidence; poor access/shielding/unknown membrane
 orientation may be DISCOURAGED but testable. Illegal mapping/coordinates or explicit hard
 exclusions are runtime BLOCKED; favorable prose or override cannot make them executable.
-Free text/fenced JSON cannot submit. Correct exact schema diagnostics within the two shared
-output corrections; budget pressure never resolves uncertainty or waives factual/source checks.
+Free text/fenced JSON cannot submit. Each typed contract permits two persisted output corrections
+within the same shared model-call budget; budget pressure never resolves uncertainty or waives
+factual/source checks.
 
 On Gate2 REVISE, reassess locally with valid Target evidence and trusted instructions, then obtain
 new independent review and Gate2. State any upstream assumption needing correction. Do not

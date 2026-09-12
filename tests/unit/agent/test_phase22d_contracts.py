@@ -188,6 +188,78 @@ async def test_repeated_bad_submission_exhausts_durable_budget_without_registeri
         reopened.close()
 
 
+@pytest.mark.parametrize("stop_reason", ["max_tokens", "end_turn"])
+def test_schema_failure_metadata_survives_exhausted_budget_without_reasoning_text(
+    bridge: Any, stop_reason: str
+) -> None:
+    from langchain.agents.structured_output import StructuredOutputValidationError
+
+    from easydesign.agent.harness import RoleBoundary
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "SYNTHETIC empty synthesis diagnostic")["execution_id"]
+    boundary = RoleBoundary(
+        b, "site", scripted_config(), "SYNTHETIC evidence", execution_id=eid, site_stage="synthesis"
+    )
+    boundary.contract_error("SYNTHETIC prior correction 1")
+    boundary.contract_error("SYNTHETIC prior correction 2")
+    message = AIMessage(
+        content=[{"type": "thinking", "thinking": "SYNTHETIC_PRIVATE_SENTINEL", "signature": "x"}],
+        tool_calls=[{"name": "SiteIntent", "args": {}, "id": "synthetic-empty"}],
+        response_metadata={"stop_reason": stop_reason},
+        usage_metadata={"input_tokens": 100, "output_tokens": 200, "total_tokens": 300},
+    )
+    error = StructuredOutputValidationError("SiteIntent", ValueError("Required fields"), message)
+    with pytest.raises(AgentBoundaryError, match="contract repair budget"):
+        boundary.contract_error(error)
+    event = b.thread_latest("structured-output-error")
+    assert event["site_stage"] == "synthesis" and event["execution_id"] == eid
+    assert event["stop_reason"] == stop_reason
+    assert event["usage"] == message.usage_metadata
+    assert event["tool_calls"] == message.tool_calls
+    assert "SYNTHETIC_PRIVATE_SENTINEL" not in str(event)
+    assert "do not count this usage twice" in event["usage_scope"]
+    assert len([e for e in b.store.events(b.thread) if e["kind"] == "contract-repair"]) == 2
+    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
+
+
+def test_fresh_synthesis_corrections_are_separate_but_persist_and_share_call_limit(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.harness import RoleBoundary
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "SYNTHETIC isolated contract corrections")[
+        "execution_id"
+    ]
+    config = scripted_config()
+    research = RoleBoundary(b, "site", config, "SYNTHETIC", execution_id=eid, site_stage="research")
+    synthesis = RoleBoundary(
+        b, "site", config, "SYNTHETIC", execution_id=eid, site_stage="synthesis"
+    )
+    for _ in range(2):
+        research.contract_error("SYNTHETIC Handoff correction")
+    for _ in range(2):
+        synthesis.contract_error("SYNTHETIC SiteIntent correction")
+    for boundary in (research, synthesis):
+        with pytest.raises(AgentBoundaryError, match="contract repair budget"):
+            boundary.contract_error("Still invalid")
+    reopened = SessionStore(b.project)
+    try:
+        for contract in ("SiteResearchHandoff", "SiteIntent"):
+            with pytest.raises(AgentBoundaryError, match="contract repair budget"):
+                reopened.reserve_contract_repair(
+                    b.thread, "site", eid, "SYNTHETIC restart", contract=contract
+                )
+        for _ in range(config.max_model_calls):
+            reopened.reserve_model_call(b.thread, "site", config.max_model_calls, eid)
+        with pytest.raises(AgentBoundaryError, match="model-call budget"):
+            reopened.reserve_model_call(b.thread, "judge", config.max_model_calls, eid)
+    finally:
+        reopened.close()
+    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize(
     "claim",
     [

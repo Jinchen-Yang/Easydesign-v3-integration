@@ -80,3 +80,26 @@ DeepAgents still owns research history summarization; no new generic context sub
 A bounded candidate inventory or mutation-record count is not exhaustive epitope knowledge.
 Stop source pagination once the candidate-specific question is answered, preserving meaningful
 uncertainty and contradictory evidence. The original records remain durable and traceable.
+
+### Synthesis instructions and bounded submission recovery
+
+Live176 demonstrated the real boundary with a62318character dossier and83826character first
+isolated synthesis input, preserving13focused passages and22approved candidate mapping rows.
+It then failed on an empty SiteIntent after two Handoff corrections; it did not pass Case2.
+The fresh stage now receives only references/synthesis.md's scientific interpretation and
+submission criteria, rather than the whole Research Skill with acquisition/pagination steps.
+The graph, durable dossier, source checks and independent Judge remain the same.
+
+Queries begin with the target and decisive effect. Empty or irrelevant hits warrant one
+sensible broadening; requiring antibody AND nanobody AND a precise mechanism can exclude
+consequential evidence. The contradiction check includes the user's forbidden functional
+effect, with antibody/autoantibody/modality/species transfer limits. No specific Golden paper,
+residue set or preferred answer is inserted. Handoff remains concise and its array must contain
+actual mapped design labels, not canonical values explained correctly only in prose.
+
+The existing persisted correction counter is scoped to the runtime-selected typed contract:
+two corrections each for Handoff and SiteIntent, across delegations/restarts, under the same
+unchanged32model-call total. Legacy unscoped corrections count conservatively against every
+contract. No model-supplied scope, new retry engine or fresh overall execution budget is created.
+Schema-error metadata is recorded before a correction-budget exception, without reasoning text;
+its usage duplicates model-response when recovery returns and must not be summed twice.

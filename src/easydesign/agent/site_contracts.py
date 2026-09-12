@@ -14,7 +14,12 @@ Labels = Annotated[list[int], Field(min_length=1, max_length=40)]
 
 class SiteSelection(StrictDTO):
     name: ShortText
-    hotspot_label_seq_ids: Labels
+    hotspot_label_seq_ids: Labels = Field(
+        description="Exact approved Target design labels, taken from the supplied mapping's "
+        "label_seq_id column. Canonical positions, construct positions and original source "
+        "labels are different namespaces. Put the mapped values in this array, not only in "
+        "the rationale; never apply an inferred offset."
+    )
     rationale: ShortText
     origin: Literal["scan-derived", "literature-derived"] = "scan-derived"
     role: Literal["primary", "backup", "avoid", "unresolved"] = "primary"

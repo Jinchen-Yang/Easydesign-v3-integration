@@ -120,6 +120,11 @@ def research_memory(
         keep=("tokens", max(200, min(trigger // 4, config.max_input_chars // 16))),
         trim_tokens_to_summarize=config.hard_input_chars // 4,
         summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
+        "Keep this working summary within 1200 words. Retain the current scientific questions, "
+        "competing hypotheses, consequential findings/unknowns and exact identifiers needed "
+        "for the next research actions. Do not reproduce full tool bodies, residue tables, "
+        "sequences, schemas or Skill text: their original verified artifacts are durable and "
+        "are rehydrated independently for final synthesis. "
         "This is fallible research working memory, not verified source evidence, a Site "
         "proposal or approval. Preserve source/card identifiers, failed access, opposing "
         "evidence, numbering qualifications and unresolved questions. Never infer missing "

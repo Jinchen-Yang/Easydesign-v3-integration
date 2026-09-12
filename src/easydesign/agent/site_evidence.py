@@ -163,7 +163,7 @@ def canonical_mapping_rows(
 
 
 def summarize_site_facts(
-    analysis: dict[str, Any], *, labels: list[int], offset: int = 0
+    analysis: dict[str, Any], *, labels: list[int], offset: int = 0, limit: int = 12
 ) -> dict[str, Any]:
     metrics = analysis["derived_metrics"]
     rows = metrics["sasa"]["residues"]
@@ -187,7 +187,7 @@ def summarize_site_facts(
             "No rows were returned and no hotspot/proposal/approval was changed."
         )
     selected = [r for r in rows if not labels or r["residue"]["label_seq_id"] in labels]
-    page = selected[offset : offset + 12]
+    page = selected[offset : offset + limit]
     mappings = {r["label_seq_id"]: r for r in analysis["observed_facts"]["mapping"]}
     biology = analysis["declared_biology"]
     topology = {r["label_seq_id"]: r["segment"] for r in biology["topology"]} if biology else {}

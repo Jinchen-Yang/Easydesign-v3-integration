@@ -12,7 +12,7 @@ from .evidence_corpus import corpus_tools
 from .evidence_output import result_tool
 from .evidence_research import identity_comparison_tool, receptor_analysis_tool, research_tool
 from .phase2 import Phase2Bridge
-from .site_contracts import CanonicalMappingQuery, SiteQuery
+from .site_contracts import CanonicalMappingQuery, FocusedSiteQuery, SiteQuery
 from .target_identity import canonical_tool
 from .tools import JUDGE_EVIDENCE, build_tools
 
@@ -205,12 +205,10 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
                 ),
             )
 
-        async def read(label_seq_ids: list[int] | None = None, offset: int = 0) -> str:
+        async def read(label_seq_ids: list[int] | None = None) -> str:
             return bridge.store.offload(
                 bridge.thread,
-                bridge.read_site_evidence(
-                    SiteQuery(label_seq_ids=label_seq_ids or [], offset=offset)
-                ),
+                bridge.read_site_evidence(FocusedSiteQuery(label_seq_ids=label_seq_ids or [])),
             )
 
         async def evaluate(label_seq_ids: list[int], offset: int = 0) -> str:
@@ -238,11 +236,12 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
             StructuredTool.from_function(
                 name="read_site_evidence",
                 coroutine=read,
-                args_schema=SiteQuery,
+                args_schema=FocusedSiteQuery,
                 description=(
-                    "Read approved target mapping, existing SASA/geometry, declared biology"
-                    " and limitations. At most 12 residues per page; optional exact labels "
-                    "or offset. Does not approve a site."
+                    "Read approved Target mapping, existing SASA/geometry, declared biology "
+                    "and limitations. Omit labels for the overview; otherwise supply up to "
+                    "40 exact design labels and receive the complete requested patch. "
+                    "No pagination offset, inferred numbering, or Site approval."
                 ),
             ),
             StructuredTool.from_function(

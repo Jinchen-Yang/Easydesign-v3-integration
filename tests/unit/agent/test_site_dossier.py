@@ -14,6 +14,7 @@ from easydesign.agent.context_policy import context_usage, research_memory
 from easydesign.agent.contracts import AgentBoundaryError, EvidenceBinding
 from easydesign.agent.phase2 import SITE_EVIDENCE
 from easydesign.agent.session_store import identity
+from easydesign.agent.site_contracts import SiteQuery
 from easydesign.agent.site_dossier import (
     SiteResearchHandoff,
     persist_dossier,
@@ -95,7 +96,17 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
         )
         dossier = persist_dossier(b, selection, "synthetic-execution")
         assert len(dossier["candidate_comparison"]) == 2
-        assert [r["mapping"]["label_seq_id"] for r in dossier["trusted_residue_facts"]] == [1, 2, 3]
+        table = dossier["trusted_residue_facts"]["facts_table"]
+        n = len(table["mapping_columns"])
+        restored = [
+            {
+                "mapping": dict(zip(table["mapping_columns"], row[:n], strict=True)),
+                **dict(zip(table["metric_columns"], row[n:], strict=True)),
+            }
+            for row in table["rows"]
+        ]
+        assert restored == b.read_site_evidence(SiteQuery(label_seq_ids=[1, 2, 3]))["facts"]
+        assert dossier["runtime_status"]["target_gate"] == "resolved"
         assert (
             dossier["candidate_comparison"][0]["deterministic_evaluation"]
             == (dossier["candidate_comparison"][1]["deterministic_evaluation"])

@@ -308,7 +308,7 @@ def site_page_projection(value: dict[str, Any]) -> dict[str, Any]:
     result = {k: v for k, v in projected.items() if k != "facts"} | {"facts_table": table}
     # Unlike a generic preview, a shortened page must advance only over rows that
     # were actually delivered. Source offsets are supplied by the read-only adapter.
-    if "offset" in projected:
+    if "offset" in projected and value.get("query_scope") != "focused-residues":
         while len(compact(result)) > 5500 and len(table["rows"]) > 1:
             table["rows"].pop()
             table["row_count"] = len(table["rows"])
@@ -379,7 +379,22 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
                 entry = {k: scientific_projection(v) for k, v in item.items() if k != "residues"}
                 rows = item.get("residues")
                 if isinstance(rows, list) and all(isinstance(row, dict) for row in rows):
-                    records = [{key: row[key] for key in columns if key in row} for row in rows]
+                    source_identifiers = {
+                        "auth_asym_id",
+                        "auth_seq_id",
+                        "label_asym_id",
+                        "label_seq_id",
+                        "insertion_code",
+                        "model_id",
+                    }
+                    records = [
+                        {
+                            ("source_" + key if key in source_identifiers else key): row[key]
+                            for key in columns
+                            if key in row
+                        }
+                        for row in rows
+                    ]
                     if records and all(set(row) == set(records[0]) for row in records):
                         names = list(records[0])
                         entry["residue_table"] = {
@@ -400,70 +415,15 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     result["scope_limits"] = (
         "All candidate non-residue fields and all members in the listed residue columns are "
         "supplied without reranking. Other residue columns, full topology/residue_regions, "
-        "chain_graph, evidence inventory and provenance remain in full_result. Read a specific "
+        "chain_graph, evidence inventory and provenance remain in full_result. source_* columns "
+        "are original structure identifiers; gpcrdb_sequence_number is the receptor reference "
+        "position. Neither is an approved design label. Read a specific "
         "source path if needed. Source auth/label numbering is NOT approved design numbering; "
         "use read_canonical_mapping for the approved correspondence and preserve its qualifiers. "
         "Kernel candidate confidence/hard_gates are scoped heuristics, not full VHH access, "
         "functional efficacy, or independent scientific approval."
     )
     return result
-
-
-def _reference_repeated_values(
-    original: dict[str, Any], *, marker: str, encoding: str, description: str
-) -> dict[str, Any]:
-    """An in-view, exactly reversible representation, never a scientific summary."""
-    reserved = {marker, encoding}
-
-    def collision(item: Any) -> bool:
-        if isinstance(item, dict):
-            return bool(reserved & item.keys()) or any(collision(v) for v in item.values())
-        return isinstance(item, list) and any(collision(v) for v in item)
-
-    if collision(original):
-        return original
-    seen: dict[str, str] = {}
-    repeated = False
-
-    def pack(item: Any, path: str) -> Any:
-        nonlocal repeated
-        key = compact(item)
-        if isinstance(item, (str, list, dict)) and len(key) >= 80:
-            if key in seen:
-                pointer = {marker: seen[key]}
-                if len(compact(pointer)) + 20 < len(key):
-                    repeated = True
-                    return pointer
-            else:
-                seen[key] = path
-        if isinstance(item, dict):
-            return {
-                k: pack(v, path + "/" + k.replace("~", "~0").replace("/", "~1"))
-                for k, v in item.items()
-            }
-        if isinstance(item, list):
-            return [pack(v, path + "/" + str(i)) for i, v in enumerate(item)]
-        return item
-
-    displayed: dict[str, Any] = pack(original, "")
-    if repeated:
-        displayed[encoding] = description
-    return displayed if len(compact(displayed)) < len(compact(original)) else original
-
-
-def receptor_display_projection(value: dict[str, Any]) -> dict[str, Any]:
-    """Display exact repeated values once, without changing the scoped source aliases."""
-    return _reference_repeated_values(
-        receptor_overview_projection(value),
-        marker="value_same_as",
-        encoding="value_encoding",
-        description=(
-            "A one-field value_same_as object means the exact value at that JSON pointer "
-            "in THIS SAME tool view. All unique values, candidate members, evidence "
-            "and limitations are present; expand the pointer, do not infer an omitted value. "
-            "Scoped candidate_overview reads return ordinary expanded values."
-        ),
-    )
 
 
 def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> Any:
@@ -565,7 +525,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     view_limit = 32000 if role == "judge" or complete_design else 6000
     if source_artifact is not None:
         projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
-        overview = {**projected, **receptor_display_projection(value)}
+        overview = {**projected, **receptor_overview_projection(value)}
         if role == "site" and len(compact(overview)) <= 32000:
             projected = overview
             view_limit = 32000
@@ -593,6 +553,8 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     "chain origins; its complete inventory is not shown here.",
                 }
     if message.name == "read_site_evidence" and isinstance(value, dict):
+        if role == "site" and value.get("query_scope") == "focused-residues":
+            view_limit = 32000
         table_page = site_page_projection(value)
         if len(compact(table_page)) <= view_limit:
             projected = table_page

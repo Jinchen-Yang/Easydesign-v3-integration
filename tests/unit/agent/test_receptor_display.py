@@ -1,4 +1,4 @@
-"""Reference encoding preserves every supplied scientific value and source alias."""
+"""Plain receptor views preserve scientific values and existing scoped source access."""
 
 import copy
 import json
@@ -9,30 +9,12 @@ from langchain_core.messages import ToolMessage
 
 from easydesign.agent.evidence_output import (
     output_message,
-    receptor_display_projection,
     receptor_overview_projection,
     result_tool,
     verified_result,
 )
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.session_store import compact
-
-
-def expanded(view: dict[str, Any]) -> dict[str, Any]:
-    def unpack(item: Any) -> Any:
-        if isinstance(item, dict) and set(item) == {"value_same_as"}:
-            node: Any = view
-            for part in item["value_same_as"].split("/")[1:]:
-                key = part.replace("~1", "/").replace("~0", "~")
-                node = node[int(key)] if isinstance(node, list) else node[key]
-            return unpack(node)
-        if isinstance(item, dict):
-            return {k: unpack(v) for k, v in item.items() if k != "value_encoding"}
-        if isinstance(item, list):
-            return [unpack(v) for v in item]
-        return item
-
-    return unpack(view)
 
 
 def receptor() -> dict[str, Any]:
@@ -50,7 +32,13 @@ def receptor() -> dict[str, Any]:
                     "a/b~c": evidence,
                     "classification": "primary" if n == 0 else "backup",
                     "residues": [
-                        {"gpcrdb_sequence_number": n * 10 + j, "amino_acid": "C", "observed": True}
+                        {
+                            "gpcrdb_sequence_number": n * 10 + j,
+                            "amino_acid": "C",
+                            "observed": True,
+                            "auth_seq_id": n * 10 + j,
+                            "label_seq_id": n * 10 + j + 8,
+                        }
                         for j in range(1, 5)
                     ],
                 }
@@ -61,16 +49,20 @@ def receptor() -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_complete_display_expands_exactly_and_scoped_reads_stay_plain(bridge: Any) -> None:
+async def test_complete_display_and_scoped_reads_preserve_plain_scientific_values(
+    bridge: Any,
+) -> None:
     bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     execution = bridge.store.begin_execution(bridge.thread, "Inspect receptor")["execution_id"]
     source = receptor()
     before = copy.deepcopy(source)
     original = receptor_overview_projection(source)
-    view = receptor_display_projection(source)
-    assert "value_encoding" in view and len(compact(view)) < len(compact(original))
-    assert expanded(view) == original
     assert source == before
+    table = original["candidate_overview"]["inhibit"][0]["residue_table"]
+    assert "label_seq_id" not in table["columns"]
+    first = dict(zip(table["columns"], table["rows"][0], strict=True))
+    assert first["gpcrdb_sequence_number"] == first["source_auth_seq_id"] == 1
+    assert first["source_label_seq_id"] == 9
     artifact = bridge.persist("display-test-analysis", source)
     result = output_message(
         bridge,
@@ -84,7 +76,8 @@ async def test_complete_display_expands_exactly_and_scoped_reads_stay_plain(brid
     )
     shown = json.loads(result.content)
     assert shown["declared_scope_complete"] is True
-    assert expanded(shown)["candidate_overview"] == original["candidate_overview"]
+    assert shown["candidate_overview"] == original["candidate_overview"]
+    assert "value_encoding" not in shown and "value_same_as" not in compact(shown)
     assert verified_result(bridge, "site", shown["full_result"], execution_id=execution) == before
     read = result_tool(bridge, "site")
     for index in range(4):
@@ -97,7 +90,7 @@ async def test_complete_display_expands_exactly_and_scoped_reads_stay_plain(brid
         assert "value_same_as" not in compact(response["value"])
 
 
-def test_reserved_source_field_keeps_unencoded_view() -> None:
+def test_source_fields_are_not_interpreted_as_custom_reference_syntax() -> None:
     source = receptor()
     source["state"]["value_same_as"] = "A source field, not an encoding reference"
-    assert receptor_display_projection(source) == receptor_overview_projection(source)
+    assert receptor_overview_projection(source)["state"] == source["state"]

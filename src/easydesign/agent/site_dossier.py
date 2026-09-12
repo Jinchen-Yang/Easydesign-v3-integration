@@ -15,6 +15,7 @@ from .contracts import (
     ShortText,
     StrictDTO,
 )
+from .evidence_output import site_page_projection
 from .evidence_research import TOPICS, EvidenceResearch, ResearchTopic
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .session_store import compact, identity
@@ -114,7 +115,6 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 "card_id": card["card_id"],
                 "evidence_level": card["evidence_level"],
                 "primary_eligible": card["primary_eligible"],
-                "source_refs": card["source_refs"],
                 **{
                     key: value[key]
                     for key in ("identity", "state", "membrane", "warnings", "avoid")
@@ -135,17 +135,25 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 },
                 "scope": "State/geometry context from original kernel; candidate labels use "
                 "the approved Target mapping above. Full per-residue receptor analysis "
-                "remains in source_refs.",
+                "remains in the original verified kernel artifact.",
             }
         )
     return {
-        "kind": "site-evidence-dossier-v2",
+        "kind": "site-evidence-dossier-v3",
         "project_id": bridge.project_id,
         "owner_thread": bridge.thread,
         "target_binding": target["binding"],
         "evidence_binding": binding.model_dump(mode="json"),
         "facts_ref": facts_ref,
         "approved_target": overview["approved_target"],
+        "runtime_status": {
+            "target_gate": "resolved",
+            "target_run_id": bridge.target_run_id(),
+            "authority": "The runtime verified target_state before creating this dossier: "
+            "Target preparation succeeded and Gate 1 has no pending request. Conditional "
+            "mapping and source limitations remain scientific constraints; fallible research "
+            "notes cannot reopen Gate 1 or create Site approval.",
+        },
         "scientific_context": {
             key: overview[key]
             for key in (
@@ -158,7 +166,9 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             )
         },
         "candidate_comparison": candidates,
-        "trusted_residue_facts": [residue_facts[key] for key in sorted(residue_facts)],
+        "trusted_residue_facts": site_page_projection(
+            {"facts": [residue_facts[key] for key in sorted(residue_facts)]}
+        ),
         "receptor_context": receptor,
         "focused_passages": [
             {
@@ -207,7 +217,6 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                     "evidence_level",
                     "primary_eligible",
                     "does_not_support",
-                    "source_refs",
                 )
                 if key in c
             }
@@ -221,7 +230,10 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         "Exact passage text and scientific qualifiers are unchanged; repeated cache, selection "
         "and source-reference metadata remain in the verified durable research artifacts. "
         "Candidate hypotheses use the common trusted_residue_facts table by existing design "
-        "label; repeating a label does not create independent evidence. "
+        "label; table values follow mapping_columns then metric_columns, with nulls and "
+        "qualifications preserved. Original-structure source identifiers and receptor canonical "
+        "positions are separate namespaces from these design labels. Repeating a label does "
+        "not create independent evidence. "
         "Source retrieval status is not scientific entailment. Missing evidence stays "
         "unresolved. No approval is created.",
     }
@@ -262,7 +274,13 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
     dossier = bridge.document(event["ref"])
     if dossier["target_binding"] != bridge.target_state()["binding"]:
         raise AgentBoundaryError("Site synthesis dossier has a stale Target binding")
-    available = {row["mapping"]["label_seq_id"] for row in dossier["trusted_residue_facts"]}
+    facts = dossier["trusted_residue_facts"]
+    if "facts_table" in facts:
+        table = facts["facts_table"]
+        label_column = table["mapping_columns"].index("label_seq_id")
+        available = {row[label_column] for row in table["rows"]}
+    else:
+        available = {row["mapping"]["label_seq_id"] for row in facts["facts"]}
     selected = {
         label
         for candidate in [intent.selected_site, *intent.alternatives]

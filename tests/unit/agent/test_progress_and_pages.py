@@ -1341,7 +1341,7 @@ async def test_focused_residue_rows_fit_without_repeating_large_approved_backgro
     assert restored == rows and verified_result(b, "site", page["full_result"]) == original
     assert set(FocusedSiteQuery.model_fields) == {"label_seq_ids"}
     with pytest.raises(ValidationError):
-        FocusedSiteQuery(label_seq_ids=list(range(1, 14)))
+        FocusedSiteQuery(label_seq_ids=list(range(1, 42)))
     with pytest.raises(ValidationError):
         FocusedSiteQuery(label_seq_ids=[1, 2], offset=1)
     assert not b._jobs()

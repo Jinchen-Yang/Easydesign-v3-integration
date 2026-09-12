@@ -1872,3 +1872,70 @@ test and complete Site revision/restart with research-activity stage isolation a
 13 targeted cases are verified across these runs. Final Ruff and git diff checks passed;
 protected173.json confirms all 385 protected files unchanged. Live173 will start from the
 committed tree with the same approved GPCR Target104 and unchanged local debugging model.
+
+
+### Live173 and the exact-label / dossier boundary repair (174)
+
+Live173 FAILED at the first isolated synthesis guard, from clean commit
+19ab14d4afb8b9b8182feae5520db812e8d20238. The original run, source artifacts and checkpoints
+remain at phase2-goldens-20260912T041849166747Z. Coordinator3 / Site21 =24shared calls included
+9native summaries; actual research peak85,879characters. The102,949-character durable Dossier
+produced121,737characters of first synthesis input. The100k guard rejected it before a provider
+call; no SiteIntent, independent Judge or Gate2 was published. Cases1/3/4/5 remain accepted.
+
+There was real research progress: two literature-discovery searches and actual focused reads
+of PMID29483909, in addition to PMID21228869 and official receptor/structure records. No full-text
+attempt occurred in this run. PMID29483909 supplies relevant agonistic-autoantibody counterevidence,
+but its human polyclonal/bivalent IgG3, peptide/SPR and neonatal rat cardiomyocyte evidence cannot
+establish an exact three-dimensional epitope, a designed VHH's efficacy or human causal benefit.
+The four-person nonselective immunoadsorption pilot is not a VHH intervention. These qualifications
+must survive independent synthesis and review.
+
+The handoff still mixed raw structure labels with design labels: its alleged canonical180–194
+ECL2 patch included design198–202, and its23–34 backup crossed the N-terminal/TM1 boundary.
+Those unaccepted model opinions are preserved, not silently corrected or accepted by the replay.
+Runtime target_state already verifies resolved Gate1; stale research notes cannot reopen that
+Gate. The dossier now explicitly identifies this verified runtime state without creating approval.
+
+A tool contract defect compounded research confusion. The advertised Site read schema changed
+when native summarization removed an earlier ToolMessage, while the executing tool still accepted
+legacy offsets. A new12-label request with offset24 returned zero facts as a successful read.
+Site now has one stable actual tool schema: omit labels for overview, or request up to40exact
+approved labels and receive all requested rows without an offset. Legacy internal bridge
+pagination remains compatible. Focused output never silently drops rows to meet a preview size.
+Raw receptor candidate source identifiers now have explicit source_* names, distinct from approved
+design labels; their original values and kernel artifacts are unchanged. Removed the repeated-value
+pointer display encoding; plain receptor JSON fits the existing output limit. No new aliases,
+history compressor, scheduler, evidence store or scientific algorithm were added.
+
+Dossier v3 reuses the existing residue fact-table representation and omits redundant control
+source refs from model-facing source/kernel inventories. Original refs stay in verified durable
+artifacts. Read-only replay of the SAME live173 handoff reduced102,949→70,395characters; all44
+fact rows, all17focused passages, every serialized candidate evaluation/opinion and all research
+outcomes are exactly equal. Projected first synthesis input89,123characters is below100k; this is
+an engineering projection, not a provider call or scientific PASS. Full evidence is in
+runtime/tmp/autonomous-v3-20260912/dossier174-replay-audit.json and dossier174-replay.json.
+An initial replay assertion compared in-memory coordinate tuples against persisted JSON lists;
+serialized comparison confirms unchanged values, with no production change needed.
+
+Native DeepAgents' public summary prompt now requests a1200-word working summary with exact
+needed identifiers, consequential findings/unknowns and counterevidence, leaving full source
+bodies/tables/Skills in durable artifacts. This is framework configuration, not custom message
+compression. Provider/model/reasoning,32shared calls,60ksoft target and100khard guard are unchanged.
+The product template still selects Flash; no model policy or controlled A/B conclusion is claimed.
+Live173 recorded306,488input /144,594output tokens including20,992cache-read input, with1624.59s
+summed response latency. Nine summaries consumed84,741output tokens. The recorded-response list
+estimate is$0.475185304, including$0.225145580for summaries, using the archived official offpeak
+pricing snapshot; these are not invoices. See live173-context-cost-audit.json.
+
+Checks174 Ruff and mypy22Agent modules passed. Initial pytest collection failed because the
+invocation omitted PYTHONPATH and named a nonexistent harness test; no tests ran in that command.
+The corrected checks174b run and protected-file verification are recorded below before live174.
+Phase2 remains NOT FROZEN; Phase3/4 execution has not started.
+
+Corrected checks174b:54PASS in174.61s, covering exact40-row reads/offset rejection, stable
+schemas across native summary boundaries, plain receptor values/source namespaces, dossier
+binding/citation/tamper/counterevidence, soft/hard limits, framework summary accounting,
+progress/pages and full Site harness revision/restart/correction behavior. All385protected
+files remain unchanged (protected174.json), as do the Golden oracle and local model config.
+Commit the engineering checkpoint before live174 from the same approved GPCRTarget104.

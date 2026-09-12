@@ -110,3 +110,21 @@ material topics. No added scheduler, source store, history alias/pointer or scie
 Read-only replay reduced live172's dossier from 108,782 to 74,448 characters without changing
 passage bytes or candidate evaluations. This does not fix its inadequate scientific research
 or establish Case 2 acceptance. Fresh real validation and full regression remain required.
+
+
+## Stable reads and dossier v3
+
+Native summary eviction must not change a tool's advertised or executed argument contract.
+Site exact-label reads now return one bounded complete patch of up to40labels, with no offset;
+legacy internal bridge pagination is retained. Full facts are still persisted before projection.
+Receptor candidate source identifiers explicitly use the source namespace; their numeric values
+are not approved design labels. Remove repeated-value display pointers and use ordinary JSON.
+
+The derived dossier reuses the existing fact table and keeps source-control refs in verified
+durable artifacts rather than repeating them in every inventory/card. Exact focused passages,
+adverse findings, scientific qualifiers, search outcomes and deterministic evaluations remain.
+Runtime Gate1 resolution is explicitly separate from conditional scientific mapping and fallible
+research notes. Read-only same-evidence replay of live173 reduces102,949→70,395characters while
+preserving all44fact rows and all17passages exactly; expected first synthesis is89,123characters.
+This neither repairs its flawed biological hypotheses nor supplies a Golden PASS. The native
+framework summary prompt requests bounded working memory; no custom history compression is added.

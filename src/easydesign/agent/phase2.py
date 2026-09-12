@@ -42,7 +42,13 @@ from .contracts import (
 )
 from .evidence_research import EvidenceResearch
 from .session_store import SessionStore, compact, confined, identity
-from .site_contracts import BiologyContext, CanonicalMappingQuery, SiteIntent, SiteQuery
+from .site_contracts import (
+    BiologyContext,
+    CanonicalMappingQuery,
+    FocusedSiteQuery,
+    SiteIntent,
+    SiteQuery,
+)
 from .site_evidence import (
     analyze_site_facts,
     canonical_mapping_rows,
@@ -266,7 +272,9 @@ class Phase2Bridge(TargetBridge):
             )
         return target, facts, ref
 
-    def read_site_evidence(self, query: SiteQuery | None = None) -> dict[str, Any]:
+    def read_site_evidence(
+        self, query: SiteQuery | FocusedSiteQuery | None = None
+    ) -> dict[str, Any]:
         query = query or SiteQuery()
         target, facts, ref = self.site_facts()
         return {
@@ -279,7 +287,14 @@ class Phase2Bridge(TargetBridge):
                 k: target["evidence"][k]
                 for k in ("identity", "bundle", "provenance", "limitations", "hard_facts")
             },
-            **summarize_site_facts(facts, labels=query.label_seq_ids, offset=query.offset),
+            **summarize_site_facts(
+                facts,
+                labels=query.label_seq_ids,
+                offset=query.offset if isinstance(query, SiteQuery) else 0,
+                limit=max(12, len(query.label_seq_ids))
+                if isinstance(query, FocusedSiteQuery)
+                else 12,
+            ),
             "query_scope": "focused-residues" if query.label_seq_ids else "overview",
             "requested_labels": query.label_seq_ids,
             "research": {

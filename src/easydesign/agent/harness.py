@@ -55,7 +55,7 @@ from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
 from .session_store import TOOL_REPAIR_LIMIT, compact, confined, identity
-from .site_contracts import FocusedSiteQuery, ScientificTask, SiteIntent
+from .site_contracts import ScientificTask, SiteIntent
 from .site_dossier import (
     SiteResearchHandoff,
     persist_dossier,
@@ -469,27 +469,6 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "download again. This verifies current-view evidence, not a new approval."
                     )
                 )
-        if self.role == "site" and any(
-            isinstance(m, ToolMessage) and m.name == "read_site_evidence" and m.status != "error"
-            for m in request.messages
-        ):
-            # Once the overview exists, use explicitly scoped scientific reads. The
-            # complete durable evidence remains readable through read_evidence_result.
-            # This changes neither candidate ranking nor the proposed residue selection.
-            available = [
-                t.model_copy(
-                    update={
-                        "args_schema": FocusedSiteQuery,
-                        "description": "Read exact approved labels for a scientific "
-                        "patch/hypothesis. The overview and candidate_patches are "
-                        "already supplied. Read up to twelve labels at once; "
-                        "request a different exact label set for another region.",
-                    }
-                )
-                if t.name == "read_site_evidence"
-                else t
-                for t in available
-            ]
         coordinator_state = None
         if self.role == "coordinator" and isinstance(self.bridge, Phase2Bridge):
             coordinator_state = self.bridge.scientific_state()

@@ -72,11 +72,12 @@ class SiteQuery(StrictDTO):
 
 class FocusedSiteQuery(StrictDTO):
     label_seq_ids: list[int] = Field(
-        min_length=1,
-        max_length=12,
-        description="Up to twelve exact approved design labels for a scientific patch. "
-        "Choose from supplied scan patches or mapped literature evidence. "
-        "No offset: request another exact label set for more rows.",
+        default_factory=list,
+        max_length=40,
+        description="Omit for the approved Target and scan overview. Otherwise provide the "
+        "complete exact design-label set for a scientific patch (up to forty); all requested "
+        "rows are returned together. Use mapped literature or supplied scan labels. "
+        "No offset: each request identifies its own complete label set.",
     )
 
 

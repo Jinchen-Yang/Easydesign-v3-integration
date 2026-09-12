@@ -50,7 +50,8 @@ biological mechanism. Preserve material unknowns; do not add irrelevant unsearch
 ## Mapped candidate comparison
 
 Use the supplied scan overview and literature hypotheses to choose focused residue reads.
-read_site_evidence accepts up to twelve exact approved design labels, no offset. facts_table
+read_site_evidence accepts up to forty exact approved design labels and returns the complete
+requested patch, with no offset. Omit labels for the overview. facts_table
 rows follow mapping_columns then metric_columns, with every null retained. A canonical null is
 unknown; a non-null conditional row remains a correspondence with its mapping qualification.
 Design labels, construct positions, canonical positions and source author IDs are distinct.
@@ -117,9 +118,8 @@ YAML. Runtime attaches identities and compiles the proposal; only a Scientist ca
 
 The receptor-candidate-overview is complete for its declared fields: every existing candidate's
 scientific metadata and listed source-residue columns are supplied together, with topology/state/
-membrane context. value_same_as points to an exact value in the same tool view;
-all unique scientific values remain present. Expand those pointers. Use that view directly; do not repeatedly request the entire topology or
-candidates object. If that view was archived, projection_aliases remain readable: use
+membrane context. Candidate/member values are ordinary JSON values; no pointer expansion is
+required. Use that view directly. For a consequential missing source field, use
 fields=['state','membrane','topology_summary'] for context and
 path=['candidate_overview', MODE, INDEX] for one candidate. Do not page topology.residues
 from zero to reconstruct an already supplied overview. Other source fields are focused reads. Source auth/label IDs are not design IDs; verify chosen canonical correspondences with

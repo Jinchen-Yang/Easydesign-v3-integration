@@ -196,6 +196,7 @@ def fingerprint(config: ModelConfig) -> str:
                 )
             },
             "site_dossier": Path(__file__).with_name("site_dossier.py").read_text(),
+            "judge_packet": Path(__file__).with_name("judge_packet.py").read_text(),
             "context_policy": Path(__file__).with_name("context_policy.py").read_text(),
             "phase2_bridge": Path(__file__).with_name("phase2.py").read_text(),
             "phase2_tools": Path(__file__).with_name("phase2_tools.py").read_text(),
@@ -811,7 +812,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             )
                         elif response.structured_response.verdict in {"ready-to-ask", "assessed"}:
                             snapshot = self.bridge.judge_evidence()
-                            facts = snapshot.get("hard_facts", snapshot.get("target_facts"))
+                            from .judge_packet import validate_judge_corrections
+
+                            validate_judge_corrections(response.structured_response, snapshot)
+                            facts = snapshot.get(
+                                "hard_facts",
+                                snapshot.get(
+                                    "target_facts",
+                                    snapshot.get("approved_target", {}).get("hard_facts"),
+                                ),
+                            )
                             if facts is not None:
                                 check_fact_claims(
                                     response.structured_response.model_dump(mode="json"),
@@ -1602,7 +1612,13 @@ def create_harness(
             prompt += (
                 " The complete delegated scientific snapshot remains in your working set. "
                 "Review its actual keys: a Target gate uses hard_facts, identity_evidence, "
-                "options and target_interpretation; Site/Design use their own proposal fields. "
+                "options and target_interpretation. A Site review packet uses approved_target, "
+                "residue_facts, candidate_facts, final_site_decision, decision_evidence and "
+                "downstream_validation; it is the authoritative working view. Gate 2 protects "
+                "the scientific floor: qualify unsupported overstatements explicitly, retain "
+                "downstream unknowns, and allow a reasonable site to reach human review. "
+                "Hard factual contradictions still require reject. "
+                "Design uses its proposal fields. "
                 "Use a scoped read only for a specific missing fact. Do not enumerate fields "
                 "or reread supplied tables to verify runtime-owned hashes. When the supplied "
                 "facts suffice, submit your independent critique through JudgeVerdict."

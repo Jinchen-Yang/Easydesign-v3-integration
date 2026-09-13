@@ -199,10 +199,11 @@ def test_unperformed_whole_vhh_validation_remains_unresolved_at_judge(site_bridg
         assert (
             snapshot["site_dossier_facts"]["approach_validation"] == dossier["approach_validation"]
         )
-        # Judge must receive the calculation boundary and explicit rejection instruction,
+        # Judge must receive the calculation boundary and explicit qualification instruction,
         # rather than a deterministic parser purporting to prove arbitrary scientific prose.
         prompt = (skill_root() / "evidence-judge/SKILL.md").read_text()
-        assert "Reject any\nabsolute impossibility/feasibility claim" in prompt
+        assert "site_claim_corrections" in prompt
+        assert "without automatically blocking" in prompt
         assert "point exposure or pore geometry" in prompt
         assert "reference_annotations" in prompt
         assert "distinct" in prompt.lower()

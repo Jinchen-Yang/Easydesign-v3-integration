@@ -118,6 +118,8 @@ class DesignBridge(Phase2Bridge):
             "upstream_decision": {
                 "action": site["outcome"]["action"],
                 "warnings": site["warnings"],
+                "limitations": site.get("limitations", []),
+                "judge_review": site.get("judge_review", {}),
                 "human_rationale": site["outcome"]["optional_reason"],
                 "acknowledgement": site["outcome"]["explicit_acknowledgement"],
                 "authority": "verified old hotspot approval; no design approval yet",

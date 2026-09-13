@@ -673,7 +673,7 @@ class Phase2Bridge(TargetBridge):
         self.store.event(self.thread, "site-proposal", payload)
         return self.site_snapshot(payload)
 
-    def site_snapshot(self, proposal: dict[str, Any]) -> dict[str, Any]:
+    def site_snapshot(self, proposal: dict[str, Any], *, for_judge: bool = False) -> dict[str, Any]:
         from .site_decision import candidate_name
 
         facts = self.document(proposal["facts_ref"])
@@ -756,7 +756,7 @@ class Phase2Bridge(TargetBridge):
             ]
             for card_id in candidate.get("evidence_card_ids", [])
         }
-        return {
+        snapshot = {
             "target_facts": self.read_evidence()["hard_facts"],
             **({"site_dossier_facts": dossier_context} if dossier_context is not None else {}),
             "gate_type": "site-hotspot",
@@ -806,6 +806,27 @@ class Phase2Bridge(TargetBridge):
                 "Review this proposed site only; not human authority or future binder success."
             ),
         }
+        if for_judge and dossier is not None:
+            from .judge_packet import build_judge_packet
+
+            decision = None
+            for event in self.store.events(proposal["owner_thread"]):
+                if event["kind"] != "site-decision":
+                    continue
+                value = event["payload"]
+                if value["hydrated_intent_sha256"] == identity(proposal["intent"]):
+                    if value["dossier_ref"]["sha256"] not in dossier_refs:
+                        raise AgentBoundaryError("SiteDecision binds a different evidence dossier")
+                    decision = value["decision"]
+            owner = self.store.db.execute(
+                "SELECT goal FROM threads WHERE id=?", (proposal["owner_thread"],)
+            ).fetchone()
+            if owner is None:
+                raise AgentBoundaryError("Site proposal has no bound user objective")
+            return build_judge_packet(
+                snapshot, dossier, facts, goal=owner["goal"], decision=decision
+            )
+        return snapshot
 
     def judge_evidence(self) -> dict[str, Any]:
         target = self.read_evidence()
@@ -816,7 +837,7 @@ class Phase2Bridge(TargetBridge):
             raise AgentBoundaryError(
                 "Delegate Site & Mechanism before asking for a Site Judge opinion"
             )
-        return self.site_snapshot(proposal)
+        return self.site_snapshot(proposal, for_judge=True)
 
     def approved_site(self) -> dict[str, Any] | None:
         approved = self.project_latest("site-approved")
@@ -972,6 +993,7 @@ class Phase2Bridge(TargetBridge):
             evaluation["status"] == "DISCOURAGED"
             or proposal["intent"]["recommendation"] == "DISCOURAGED"
             or (opinion and opinion.status == "DISCOURAGED")
+            or bool(assessment.site_claim_corrections)
         )
         if not blocked and assessment.verdict != "ready-to-ask":
             raise AgentBoundaryError("Judge has not supplied a reviewable Site question")
@@ -984,6 +1006,10 @@ class Phase2Bridge(TargetBridge):
                     *evaluation.get("warnings", []),
                     *proposal["intent"]["risks"],
                     *(opinion.warnings if opinion else []),
+                    *(
+                        f"Judge qualification of ‘{c.claim}’: {c.qualification}"
+                        for c in assessment.site_claim_corrections
+                    ),
                 ]
             )
         )
@@ -1042,6 +1068,15 @@ class Phase2Bridge(TargetBridge):
                 "mechanism": proposal["intent"]["mechanistic_rationale"],
                 "accessibility": proposal["intent"]["accessibility_rationale"],
                 "approach": proposal["intent"]["binder_approach"],
+                "interpretation_scope": "Unapproved specialist hypotheses; independent Judge "
+                "qualifications below apply to their interpretation, not to runtime hard facts.",
+                "independent_review": {
+                    "reasons": assessment.reasons,
+                    "limitations": assessment.limitations,
+                    "claim_corrections": [
+                        c.model_dump(mode="json") for c in assessment.site_claim_corrections
+                    ],
+                },
             },
             action=(
                 "Review this proposed region and structural-only limitations. Approve "
@@ -1180,6 +1215,8 @@ class Phase2Bridge(TargetBridge):
                 "outcome": response["outcome"],
                 "warnings": card.warnings,
                 "judge_status": card.judge_status,
+                "limitations": card.limitations,
+                "judge_review": card.scientific_summary.get("independent_review", {}),
                 **matched,
             }
             previous = self.project_latest("site-approved")

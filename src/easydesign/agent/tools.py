@@ -636,7 +636,13 @@ class TargetBridge:
             raise AgentBoundaryError("No pending scientific question to ask")
         from .target_assessment import check_fact_claims
 
-        facts = current.get("hard_facts", current.get("target_facts"))
+        facts = current.get(
+            "hard_facts",
+            current.get("target_facts", current.get("approved_target", {}).get("hard_facts")),
+        )
+        from .judge_packet import validate_judge_corrections
+
+        validate_judge_corrections(verdict, current)
         if facts is not None and verdict.verdict in {"ready-to-ask", "assessed"}:
             check_fact_claims(verdict.model_dump(mode="json"), {"hard_facts": facts})
         assessment = EvidenceAssessment(

@@ -1,5 +1,13 @@
 # EasyDesign v3 consequential Agent contract ownership
 
+Current Gate 2 amendment (2026-09-13, validation pending):
+[Judge consolidation](PHASE2_JUDGE_GATE2_CONSOLIDATION_20260913.md). The current dossier-backed
+Judge reads one `JudgeReviewPacket`, preserving exact facts and all scoped source passages.
+Non-blocking Site overclaims receive explicit `site_claim_corrections`; original SiteDecision
+bytes remain unchanged. Corrections/limitations follow the warned human card into Design.
+Hard contradictions still block. Downstream whole-binder/function validation can remain
+unresolved at hotspot selection. Phase 2 is not frozen.
+
 Current consolidation contract (2026-09-13, validation pending):
 [authority audit](PHASE2_AUTHORITY_CONSOLIDATION_20260913.md) and
 [user assignment](PHASE2_CONSOLIDATION_ASSIGNMENT_20260913.md).

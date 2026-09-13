@@ -89,19 +89,43 @@ class OptionRecommendation(StrictDTO):
         return self
 
 
+class SiteClaimCorrection(StrictDTO):
+    """Independent qualification of an overstatement, never a replacement hard fact."""
+
+    claim: str = Field(
+        min_length=1,
+        max_length=500,
+        description="Exact excerpt from the current Site interpretation.",
+    )
+    qualification: str = Field(
+        min_length=1,
+        max_length=800,
+        description="Corrected, evidence-proportionate interpretation and remaining risk or "
+        "downstream validation. Do not waive a factual error or hard constraint.",
+    )
+
+
 class JudgeVerdict(StrictDTO):
     """Scientific opinion only; deterministic bindings never come from the model."""
 
     verdict: Literal["ready-to-ask", "insufficient", "reject", "assessed"] = Field(
-        description="Check claims about BOTH the selected option and alternatives. Use reject "
-        "when any material factual premise or categorical mechanism/access claim needs "
-        "correction; ready-to-ask with a warning does not correct it. Use insufficient for "
-        "missing consequential evidence, ready-to-ask for a sound pending question, assessed "
-        "only for a completed Target-only bundle."
+        description="Check selected and alternative claims. Reject hard factual contradictions "
+        "or invalid sites. At Site Gate 2, correctable overstatement and unperformed downstream "
+        "binder validation alone do not require reject: use ready-to-ask with explicit "
+        "site_claim_corrections, risks and limitations if the hotspot remains reasonable. "
+        "Use insufficient only when missing evidence prevents a meaningful decision at the "
+        "current Gate. assessed is only for a completed Target-only bundle."
     )
     reasons: list[ShortText] = Field(min_length=1, max_length=8)
     limitations: list[ShortText] = Field(min_length=1, max_length=8)
     recommendation: OptionRecommendation | None = None
+    site_claim_corrections: list[SiteClaimCorrection] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Site Gate 2 only: explicit non-blocking corrections to unsupported "
+        "absolute access/causal claims. Preserve original claims for audit; these independent "
+        "qualifications accompany the human card and downstream warnings. Empty if unnecessary.",
+    )
 
 
 class EvidenceBinding(StrictDTO):

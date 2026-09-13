@@ -1,5 +1,14 @@
 # EasyDesign v3 Scientific Decision Contract — Phase 1 freeze
 
+当前 Phase 2 Gate 2 补充（2026-09-13，尚未冻结）：
+[Judge / Gate 2 契约审计](PHASE2_JUDGE_GATE2_CONSOLIDATION_20260913.md)。
+Gate 2 保护早期位点选择的科学底线，不要求完整 VHH 的后续功能和空间验证已完成。
+硬事实错误、无效位点或显式约束冲突仍阻断；可纠正的科学夸大通过
+`site_claim_corrections` 保留原断言和独立限定，随 warnings/limitations 进入人工卡片及下游。
+合理位点可在风险、未知项明确的前提下获得 `ready-to-ask`；有警告的 DISCOURAGED 仍需
+显式 OVERRIDE。当前 Site adapter 的 `reject/insufficient` 不能通过 DISCOURAGED 自动
+变为 readiness。下文 Phase 1 的历史实现说明不覆盖此 Gate 2 规则，五 Gate 架构不变。
+
 本文件是 v3 的正式 Scientific Approval Gate 与 Scientist Steering contract。
 它细化 v3 architecture contract 的 human approval 原则；研究者批准科学问题及 consequential
 行动，技术 artifact、manifest、SHA 与 request binding 由 trusted runtime 校验。

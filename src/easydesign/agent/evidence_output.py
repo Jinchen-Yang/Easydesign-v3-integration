@@ -521,6 +521,10 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     }
     complete_projection = scientific_projection(value)
     if role == "judge":
+        if isinstance(value, dict) and value.get("kind") == "site-judge-review-packet-v1":
+            # The packet already has one scientific representation. Preserve its exact
+            # source provenance too; no generic metadata stripping or preview is needed.
+            complete_projection = value
         # Judge receives the complete scientific snapshot. The shared model-input
         # hard guard includes Skill text, history and schemas; a second per-tool
         # cap must not reject valid reviews or motivate lossy evidence compression.

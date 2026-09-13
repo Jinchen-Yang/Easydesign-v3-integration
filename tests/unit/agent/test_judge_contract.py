@@ -33,6 +33,7 @@ def test_judge_only_authors_opinion_and_cannot_supply_authority() -> None:
         "reasons",
         "limitations",
         "recommendation",
+        "site_claim_corrections",
     }
     for field in (
         "evidence_id",

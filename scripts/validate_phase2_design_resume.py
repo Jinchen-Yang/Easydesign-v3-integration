@@ -123,7 +123,9 @@ async def main():
     config = golden.ModelConfig.model_validate(
         yaml.safe_load((golden.ROOT / "config/llm.yaml").read_text())
     )
-    assert config.max_input_chars == 60000 and config.max_model_calls == 32
+    assert (
+        config.max_input_chars == 60000 and config.max_model_calls == golden.PHASE2_MODEL_CALL_LIMIT
+    )
     secrets = [os.environ.get(c.secret_env, "") for c in [config.default, *config.roles.values()]]
     golden.OUT.mkdir(exist_ok=False)
     case = golden.OUT / "soluble"

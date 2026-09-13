@@ -15,7 +15,7 @@ pytest.importorskip("deepagents")
 
 from easydesign.agent.cli import run_session
 from easydesign.agent.design import DesignBridge
-from easydesign.agent.models import ModelConfig, create_models
+from easydesign.agent.models import PHASE2_MODEL_CALL_LIMIT, ModelConfig, create_models
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.session_store import SessionStore
 from tests.agent_phase2_support import configure_live_validation
@@ -31,7 +31,7 @@ async def test_live_model_design_cdr_revision(tmp_path: Path, monkeypatch: Any) 
     config = ModelConfig.model_validate(
         yaml.safe_load(Path(os.environ["EASYDESIGN_AGENT_MODEL_CONFIG"]).read_text())
     )
-    assert config.max_model_calls == 32
+    assert config.max_model_calls == PHASE2_MODEL_CALL_LIMIT
     target = make_project(tmp_path, monkeypatch, chains="A")
     target.prepare_target()
     terminal(target)
@@ -130,7 +130,7 @@ async def test_live_model_design_cdr_revision(tmp_path: Path, monkeypatch: Any) 
         events = bridge.store.events(bridge.thread)
         calls = [e["payload"] for e in events if e["kind"] == "model-call"]
         executions = Counter(c["execution_id"] for c in calls)
-        assert max(executions.values()) <= 32
+        assert max(executions.values()) <= config.max_model_calls
         assert {c["role"] for c in calls} == {"coordinator", "binder", "judge"}
         result = {
             "live": "passed",

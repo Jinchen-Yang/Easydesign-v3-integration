@@ -386,7 +386,9 @@ async def test_framework_summary_preserves_trace_and_consumes_shared_budget(
 
     async def handler(request: Any) -> Any:
         received.extend(request.messages)
-        bridge.store.reserve_model_call(bridge.thread, "site", 32, execution["execution_id"])
+        bridge.store.reserve_model_call(
+            bridge.thread, "site", config.max_model_calls, execution["execution_id"]
+        )
         return ModelResponse(result=[AIMessage(content="Synthetic response")])
 
     result = await middleware.awrap_model_call(

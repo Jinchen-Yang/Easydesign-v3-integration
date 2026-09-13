@@ -30,7 +30,8 @@ class RecordingModel(ScriptedModel):
 
 @pytest.mark.asyncio
 async def test_same_thread_followups_preserve_goal_and_renew_only_turn_budget(bridge: Any) -> None:
-    config = scripted_config()
+    # A deliberately smaller test ceiling makes lifetime usage exceed one turn.
+    config = scripted_config().model_copy(update={"max_model_calls": 24})
     models = {r: RecordingModel(role=r) for r in ("coordinator", "target", "judge")}
     goal = "Prepare local chain A as a structural target; biological identity stays unconfirmed."
     pending = await run_session(bridge, config, models, goal)

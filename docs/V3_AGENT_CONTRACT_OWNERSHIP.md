@@ -1,5 +1,8 @@
 # EasyDesign v3 consequential Agent contract ownership
 
+Current Phase 2 execution budget is **64**, shared across all roles and framework summaries.
+See [budget and native summary policy](PHASE2_BUDGET64_20260913.md); the 100k guard and scientific ownership below remain unchanged.
+
 Current Gate 2 amendment (2026-09-13, validation pending):
 [Judge consolidation](PHASE2_JUDGE_GATE2_CONSOLIDATION_20260913.md). The current dossier-backed
 Judge reads one `JudgeReviewPacket`, preserving exact facts and all scoped source passages.

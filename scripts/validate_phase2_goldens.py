@@ -18,7 +18,7 @@ import yaml
 from easydesign.agent.cli import run_session
 from easydesign.agent.design import DesignBridge
 from easydesign.agent.evidence_corpus import EvidenceCorpus
-from easydesign.agent.models import ModelConfig, create_models
+from easydesign.agent.models import PHASE2_MODEL_CALL_LIMIT, ModelConfig, create_models
 from easydesign.agent.native_strategy import import_native
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.session_store import SessionStore
@@ -493,7 +493,7 @@ async def run_design_case(
 async def main():
     OUT.mkdir(exist_ok=False)
     config = ModelConfig.model_validate(yaml.safe_load((ROOT / "config/llm.yaml").read_text()))
-    assert config.max_input_chars == 60000 and config.max_model_calls == 32
+    assert config.max_input_chars == 60000 and config.max_model_calls == PHASE2_MODEL_CALL_LIMIT
     secrets = [os.environ.get(c.secret_env, "") for c in [config.default, *config.roles.values()]]
     # Provider/model are explicit engineering configuration, not scientific oracles.
     # Record the complete configuration below; never silently switch on a failure.

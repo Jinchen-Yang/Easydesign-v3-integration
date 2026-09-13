@@ -103,12 +103,14 @@ async def test_target_slice_and_checkpoint_size(tmp_path: Path, monkeypatch: Any
 )
 async def test_live_model_target_slice(tmp_path: Path, monkeypatch: Any) -> None:
     from easydesign.agent.cli import run_session
-    from easydesign.agent.models import ModelConfig, create_models
+    from easydesign.agent.models import PHASE2_MODEL_CALL_LIMIT, ModelConfig, create_models
 
     path = os.environ.get("EASYDESIGN_AGENT_MODEL_CONFIG")
     assert path, "Set EASYDESIGN_AGENT_MODEL_CONFIG to the private model config path"
     config = ModelConfig.model_validate(yaml.safe_load(Path(path).read_text()))
-    assert config.max_model_calls <= 32, "Live smoke permits at most 32 API calls"
+    assert config.max_model_calls <= PHASE2_MODEL_CALL_LIMIT, (
+        "Live smoke shares the Phase 2 ceiling"
+    )
     bridge = make_project(tmp_path, monkeypatch)
     try:
         models = create_models(config)

@@ -7,11 +7,12 @@ default:
   timeout_seconds: 90
   max_output_tokens: 2048
 
-# All three roles use default unless an explicit role override is provided.
+# All roles use default unless an explicit role override is provided.
 roles: {}
-# Shared by coordinator/target/judge within one user turn, including HITL and resume.
-# A follow-up after a completed/rejected turn gets a fresh budget; lifetime is telemetry.
-max_model_calls: 32
+# Shared execution default comes from ModelConfig: 64 in Phase 2.
+# Coordinator, all specialists and framework summaries consume the same ledger.
+# Restart/resume preserves it; an accepted Gate or new user turn starts one new budget.
+# Omit max_model_calls to use that single runtime default.
 max_input_chars: 60000
 
 # To use a different provider, change provider, model AND secret_env together.

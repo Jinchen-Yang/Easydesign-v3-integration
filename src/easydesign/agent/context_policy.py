@@ -113,7 +113,14 @@ def research_memory(
     return SummarizationMiddleware(
         model=summary_model,
         backend=backend,
-        trigger=("tokens", trigger),
+        # Native AND/OR trigger clauses provide a small hysteresis: after a
+        # summary, accumulate more conversation before summarizing again unless
+        # the high-water threshold needs the headroom. The original checkpoint
+        # event supplies the effective history, including after restart.
+        trigger=[
+            {"tokens": trigger, "messages": 12},
+            ("tokens", trigger + trigger // 8),
+        ],
         # Native token retention preserves complete tool transactions. A message
         # count can retain several large batches and immediately trigger another
         # summary; leave headroom for actual research within the shared call budget.

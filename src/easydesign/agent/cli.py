@@ -119,7 +119,12 @@ async def run_session(
     path = confined(store.root, store.root / "agent-checkpoints.sqlite")
     for suffix in ("-wal", "-shm", "-journal"):
         confined(store.root, Path(str(path) + suffix))
-    execution_config = {"configurable": {"thread_id": thread}, "recursion_limit": 100}
+    # One model/tool round takes two graph steps; orchestration adds a few more.
+    # The persisted model-call ledger remains the shared, stricter execution fuse.
+    execution_config = {
+        "configurable": {"thread_id": thread},
+        "recursion_limit": max(100, 2 * config.max_model_calls + 10),
+    }
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
 
         def assemble() -> Any:

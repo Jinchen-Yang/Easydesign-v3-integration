@@ -89,7 +89,9 @@ async def test_site_read_schema_is_stable_before_and_after_history_summarization
     tools = [
         *phase2_tools(b, "site"),
         StructuredTool.from_function(
-            lambda: None, name="read_file", description="Synthetic Skill loader; never executed."
+            lambda file_path: None,
+            name="read_file",
+            description="Synthetic Skill loader; never executed.",
         ),
     ]
     schemas = []
@@ -140,3 +142,154 @@ async def test_site_read_schema_is_stable_before_and_after_history_summarization
     assert schemas[0]["properties"]["label_seq_ids"]["maxItems"] == 40
     assert FocusedSiteQuery().label_seq_ids == []
     assert b.current_site() is None
+
+
+@pytest.mark.asyncio
+async def test_site_overview_is_complete_without_a_residue_pagination_trap(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    execution = b.store.begin_execution(b.thread, "SYNTHETIC candidate overview")
+    legacy = b.read_site_evidence(SiteQuery())
+    read = next(t for t in phase2_tools(b, "site") if t.name == "read_site_evidence")
+    raw = await read.ainvoke({})
+    result = json.loads(raw)
+    assert result["candidate_patches"] == legacy["candidate_patches"]
+    assert result["approved_target"] == legacy["approved_target"]
+    assert result["limitations"] == legacy["limitations"]
+    assert result["query_scope"] == "overview" and result["declared_scope_complete"]
+    assert not {"facts", "offset", "next_offset", "page_total"}.intersection(result)
+    shown = output_message(
+        b,
+        "site",
+        execution["execution_id"],
+        ToolMessage(name=read.name, content=raw, tool_call_id="overview"),
+    )
+    view = json.loads(shown.content)
+    assert view["scientific_content_complete"] and view["declared_scope_complete"]
+    assert not view["partial"] and "facts_table" not in view
+    assert view["candidate_patches"] == result["candidate_patches"]
+    # The independent focused read still supplies all exact requested mapping rows.
+    labels = [row["mapping"]["label_seq_id"] for row in legacy["facts"]][:3]
+    focused = json.loads(await read.ainvoke({"label_seq_ids": labels}))
+    assert [row["mapping"]["label_seq_id"] for row in focused["facts"]] == labels
+    assert b.current_site() is None
+
+
+def test_receptor_candidates_supply_runtime_design_membership_without_source_offset() -> None:
+    from easydesign.agent.evidence_output import receptor_overview_projection
+
+    source = {
+        "candidates": {
+            "inhibit": [
+                {
+                    "id": "inhibit.synthetic",
+                    "residues": [
+                        {"gpcrdb_sequence_number": 286, "label_seq_id": 294, "auth_seq_id": 901},
+                        {"gpcrdb_sequence_number": 287, "label_seq_id": 295, "auth_seq_id": 902},
+                        {"gpcrdb_sequence_number": 999, "label_seq_id": 1007, "auth_seq_id": 1901},
+                        {"gpcrdb_sequence_number": None, "label_seq_id": 1008, "auth_seq_id": 1902},
+                    ],
+                }
+            ]
+        },
+        "approved_design_mapping": {
+            "facts": [
+                {
+                    "mapping": {
+                        "canonical_position": 286,
+                        "label_seq_id": 414,
+                        "mapping_status": "ambiguous",
+                    },
+                    "coordinate_observed": True,
+                },
+                {
+                    "mapping": {
+                        "canonical_position": 287,
+                        "label_seq_id": 415,
+                        "mapping_status": "ambiguous",
+                    },
+                    "coordinate_observed": False,
+                },
+                {
+                    "mapping": {
+                        "canonical_position": 294,
+                        "label_seq_id": 422,
+                        "mapping_status": "ambiguous",
+                    },
+                    "coordinate_observed": True,
+                },
+            ]
+        },
+    }
+    before = copy.deepcopy(source)
+    candidate = receptor_overview_projection(source)["candidate_overview"]["inhibit"][0]
+    mapping = candidate["approved_design_membership"]
+    assert mapping["hotspot_label_seq_ids"] == [414]
+    assert mapping["unobserved_or_unmapped_canonical_positions"] == [287, 999]
+    assert mapping["source_members_without_canonical_position"] == 1
+    assert mapping["mapping_statuses"] == ["ambiguous"]
+    assert candidate["id"] == "inhibit.synthetic"
+    columns = candidate["residue_table"]["columns"]
+    assert candidate["residue_table"]["rows"][0][columns.index("source_label_seq_id")] == 294
+    assert source == before
+
+
+def test_complete_receptor_membership_is_not_replaced_by_a_tool_size_preview(
+    site_bridge: Any,
+) -> None:
+    from easydesign.agent.context_policy import context_usage
+    from easydesign.agent.contracts import AgentBoundaryError
+    from easydesign.agent.evidence_output import receptor_overview_projection
+
+    bridge = site_bridge
+    execution = bridge.store.begin_execution(bridge.thread, "SYNTHETIC complete receptor view")
+    value = {
+        "identity": {"accession": "SYNTHETIC", "receptor_chain": "A"},
+        "candidates": {
+            "inhibit": [
+                {
+                    "id": "inhibit.synthetic",
+                    "counterevidence": ["Important synthetic counterevidence " * 1050],
+                    "residues": [{"gpcrdb_sequence_number": 286, "label_seq_id": 294}],
+                }
+            ]
+        },
+        "approved_design_mapping": {
+            "facts": [
+                {
+                    "mapping": {
+                        "canonical_position": 286,
+                        "label_seq_id": 414,
+                        "mapping_status": "conditional",
+                    },
+                    "coordinate_observed": True,
+                }
+            ]
+        },
+    }
+    ref = bridge.persist("synthetic-receptor-analysis", value)
+    shown = output_message(
+        bridge,
+        "site",
+        execution["execution_id"],
+        ToolMessage(
+            name="analyze_receptor_context",
+            content=json.dumps({"analysis_ref": ref}),
+            tool_call_id="complete-receptor",
+        ),
+    )
+    page = json.loads(shown.content)
+    assert len(shown.content) > 32000 and page["declared_scope_complete"]
+    assert page["candidate_overview"] == receptor_overview_projection(value)["candidate_overview"]
+    candidate = page["candidate_overview"]["inhibit"][0]
+    assert candidate["approved_design_membership"]["hotspot_label_seq_ids"] == [414]
+    assert candidate["counterevidence"] == value["candidates"]["inhibit"][0]["counterevidence"]
+    stored = verified_result(
+        bridge, "site", page["full_result"], execution_id=execution["execution_id"]
+    )
+    assert stored == value
+    # Retaining the complete answer never bypasses final model admission.
+    config = scripted_config().model_copy(update={"hard_input_chars": 32000})
+    with pytest.raises(AgentBoundaryError, match="hard context guard"):
+        context_usage(ScriptedModel(role="site"), config, "site", [shown])

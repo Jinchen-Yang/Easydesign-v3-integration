@@ -90,9 +90,18 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
     ]
     messages.extend(latest)
     original = [m.model_dump() for m in messages]
+
+    def skill_loader(file_path: str) -> None:
+        pass
+
+    def placeholder() -> None:
+        pass
+
     tools = [
         StructuredTool.from_function(
-            lambda: None, name=name, description="SYNTHETIC context-only placeholder; not executed."
+            skill_loader if name == "read_file" else placeholder,
+            name=name,
+            description="SYNTHETIC context-only placeholder; not executed.",
         )
         for name in guard.allowed
     ]

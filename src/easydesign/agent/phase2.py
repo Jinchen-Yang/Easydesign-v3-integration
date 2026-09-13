@@ -288,7 +288,7 @@ class Phase2Bridge(TargetBridge):
             if isinstance(query, FocusedSiteQuery)
             else {k: v for k, v in activity.items() if k != "queries"}
         )
-        return {
+        result = {
             "project_id": self.project_id,
             "run_id": target["evidence"]["run_id"],
             "evidence_id": ref["sha256"],
@@ -310,6 +310,21 @@ class Phase2Bridge(TargetBridge):
             "requested_labels": query.label_seq_ids,
             "research": research_status,
         }
+        if isinstance(query, FocusedSiteQuery) and not query.label_seq_ids:
+            # An overview is not the first page of a whole-target residue table.
+            # Exact residue rows are a separate, explicitly requested scientific read.
+            for key in ("facts", "offset", "page_total", "next_offset"):
+                result.pop(key)
+            result["declared_scope_complete"] = True
+            result["scope_limits"] = (
+                "Complete prepared-target candidate overview, not complete biological evidence. "
+                "No residue rows were requested. Use read_site_evidence with exact candidate "
+                "design labels for mapping/exposure, or read_canonical_mapping for literature "
+                "positions. Missing declared biology does not negate independently retrieved "
+                "receptor context. For a verified GPCR obtain its context and kernel analysis "
+                "before interpreting scan patches; do not page this overview for topology."
+            )
+        return result
 
     def read_canonical_mapping(self, query: CanonicalMappingQuery) -> dict[str, Any]:
         target, facts, ref = self.site_facts()

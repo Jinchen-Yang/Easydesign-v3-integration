@@ -1,184 +1,115 @@
 ---
 name: site-mechanism
-description: Interpret approved structural and biological evidence to propose mapped sites and hotspots.
+description: Research decision-critical evidence for mapped binding-site hypotheses.
 ---
+# Site research
 
-# Site & Mechanism
+Own **where and why should the binder engage?** Runtime owns facts and mapping; Scientists own
+approval. Keep the immutable biological goal, current clarification and trusted revision separate.
+Target is approved. Reuse its identity and mapping; do not reopen Gate 1 or redo Target research.
 
-Own **where and why should the binder engage?** Propose science; runtime owns hard facts and
-Scientists own decisions. Target is already approved. Keep the immutable goal, current message
-and trusted revision separate. Reuse the approved identity/mapping; do not repeat Target work.
+Standard Research seeks **decision sufficiency, not literature completeness**. Form usually 3–6
+questions that could change Gate 2 ranking, a hard constraint or a major risk: accessibility,
+goal-relevant mechanism, meaningful candidate differences, consequential state/partner/PTM context,
+and known antibody/epitope or competition evidence. The taxonomy indexes evidence, not required
+work. Several questions may share one topic. Do not add questions to cover advertised annotations.
 
-## Research and evidence
+## Work in this order
 
-Standard Research seeks **decision sufficiency, not literature completeness**. From the
-biological objective, approved Target and Gate 2, form usually 3-6 decision-critical questions.
-The topic taxonomy indexes evidence; it is not a checklist or a one-question-per-topic rule.
-Distinct questions may share a topic while retaining different evidence states. Ask only what could
-change site ranking, a hard constraint or the major risk assessment. Typical questions concern
-whole-binder access, goal-relevant mechanism/function, consequential state/ligand/partner or
-membrane/glycan/disulfide constraints, known antibody/epitope/competition evidence, and a real
-scientific distinction between candidate A/B/C. Combine related issues; do not expand the list
-just because a database advertises more annotation types.
+1. Read the approved Target/candidate overview once. It is a complete overview, not the first
+   residue page. For a verified GPCR, acquire its gpcrdb-context (receptor entry plus pdb_id) and
+   immediately call analyze_receptor_context with its card_id and original auth chain. This
+   supplies the existing kernel's topology, signed membrane frame and candidate inventory.
+   Do not reconstruct those facts by paging raw topology or repeatedly reading the overview.
+2. Use that context to identify a provisional comparison. Read the strongest primary evidence
+   for the intended or forbidden functional effect early. A kernel score, mode name, source
+   annotation count or exposure metric cannot select the winner. Compare a literature-derived
+   hypothesis with a meaningful scan-derived alternative; avoid options remain comparisons.
+3. Check only consequential source gaps at those candidates. Once topology/state/access is
+   supplied, move to the unresolved mechanism or adverse-effect question. Do not finish all
+   helices, loops, binding-site annotations or bibliography before reading functional evidence.
+4. Make one targeted contradiction/alternative literature search against the provisional choice.
+   Include the forbidden effect, without requiring the exact future binder format. Activating
+   antibody/autoantibody evidence may reveal risk even for a planned monovalent VHH; preserve
+   modality, valency, species and assay transfer limits. Read a strong relevant lead. For empty
+   or irrelevant results make one sensible broader query, rather than declaring global absence.
+5. Stop when further inquiry is unlikely to change ranking, constraints or major risk, and
+   remaining uncertainties are explicit. Update ranking if the contradiction matters; resolve
+   only the new consequential gap. A next_cursor, unused calls or an unfilled topic is not a
+   reason to continue. Reasonably searched UNRESOLVED is a valid scientific result.
+6. Submit the concise SiteResearchHandoff. It preserves evidence and provisional opinions;
+   fresh isolated synthesis makes the final small SiteDecision from the runtime-built dossier.
 
-Start from the approved Target and supplied candidate facts. For a verified GPCR, first obtain
-its GPCRdb context and immediately run analyze_receptor_context to get complete topology,
-membrane-aware candidate facts and approved mapping. Do this before raw GPCRdb residue/topology
-pagination: those partial pages should not reconstruct the analysis the existing kernel provides.
-Use follow-up database retrieval for consequential gaps at the actual compared candidates.
-Generic surface clusters do not establish extracellular access; do not
-spend the inquiry budget detailing them before the receptor analysis. Once the relevant candidate's
-access/topology question is answered, stop that source's pagination; unrelated loop/helix or
-bibliography coverage is not required. Spend the next inquiry on a remaining decision gap.
+## Source operations
 
-Use research_evidence for those missing facts. Query keywords execute the search; question
-states the decision it informs. Europe PMC ANDs bare terms and does not expand synonyms by
-default. Use a short target plus one decisive concept, with parenthesized OR for alternative
-names/effects. A long list of desirable terms is an intersection, not broad semantic search.
-Acquire requested and relevant primary records plus the few
-necessary official structure/database records. Search titles are leads, not residue or causal
-evidence. If matches are empty or irrelevant, make one sensible broader query; do not keep
-adding desired terms. Search the target and decisive effect first. Do not require all synonyms
-or the eventual binder format together: antibody, autoantibody and nanobody evidence may inform
-the same mechanistic risk, with explicit modality/valency/species transfer limits.
-Supply selection_reason to acquire a selected source atomically. Selection is relevance, not
-entailment; reuse existing acquisitions. A relevant query can inform several topics using its
-returned query_id; do not repeat the same inquiry merely to fill another taxonomy category.
-Reuse the selected source's returned retrieval_need for relevant follow-up questions; the
-question carries the scientific purpose and can inform another decision topic. There is no need
-to create a new taxonomy selection for every annotation. If changing retrieval_need, explicitly
-select_evidence with the exact provider/identifier/need first; never invent new need enum values.
+research_evidence search operations execute the explicit query, not the question text. Europe
+PMC ANDs bare words and does not expand synonyms: use a short target plus one decisive concept,
+with parenthesized OR alternatives. Search titles/snippets are leads, not verified residue or
+causal evidence. Acquire a relevant primary record/full text before making claims from it.
 
-Read focused passages with retrieve_evidence(need, question, source_id, feature_types). For UniProt
-annotations, select literal feature_types shown in its receipt rather than paging bibliography.
-Continue only a needed page with continue_evidence(cursor=exact_next_cursor); it restores the
-original verified question/need/source/filter. For a different question start a new retrieval.
-Never edit/decode/rebuild cursors. matching_chunks is an integer count, not passage text or a
-list. Read cards for the returned page or continue_evidence for its next_cursor; changing a
-count's offset/limit does not reveal evidence. Do not repeatedly request the same stored value.
-Cite exact returned passage card IDs and short excerpts.
-Source IDs, source acquisition card IDs and focused passage card IDs are different identifiers.
+For acquisition, include selection_reason to SELECT and acquire that source atomically, unless
+already selected for that exact need. Reuse durable acquisitions and the returned retrieval_need;
+a follow-up question may inform another decision topic without another taxonomy selection.
+Changing need requires explicit select_evidence first. Do not invent need values or source IDs.
 
-Stop policy:
+Read focused passages with retrieve_evidence(need, question, source_id, feature_types). For
+UniProt use literal relevant feature_types from its receipt; select only the constraints needed
+for current candidates. continue_evidence(cursor=exact_next_cursor) continues the same verified
+question/source/filter. Never reconstruct cursors. matching_chunks is a count, not evidence.
+Full original sources stay durable. A missing or unread full text is not evidence of absence.
 
-1. Obtain initial candidate facts and a provisional ranking from enough relevant primary and
-   official evidence. Reuse approved identity and supplied kernel facts.
-2. Then perform one targeted contradiction or meaningful-alternative literature search: what
-   evidence would reverse the ranking, invalidate an access assumption or reveal the forbidden
-   functional effect? Include the user's forbidden effect, rather than only the preferred
-   epitope's geometry. Use a short target-plus-effect query without requiring the exact binder
-   format. Unrelated hits do not establish saturation until a sensible broader check. Read a
-   strong relevant lead, including adverse findings. For an unwanted activation effect, include
-   agonistic/activating antibody or autoantibody evidence; do not narrow the search solely to
-   the exact phrase constitutive activation or to the future binder format. Preserve valency,
-   receptor/species and assay transfer limits. If it changes the recommendation or a major risk,
-   update the comparison and resolve only the new consequential issue.
-3. Ask: is more searching reasonably likely to change Gate 2 ranking, a hard constraint or a
-   major risk? If no, STOP RESEARCH and submit SiteResearchHandoff now. Remaining call budget,
-   a next_cursor, an unread source section or an unfilled taxonomy topic is not a reason to
-   continue. A negative/unchanged check can establish bounded saturation, never global absence.
-4. If an important issue remains unresolved after reasonable inquiry, state its effect on the
-   decision, the missing evidence and the next discriminating experiment. UNRESOLVED is a legal
-   stopping state; it may warrant DISCOURAGED or insufficient evidence, not endless retrieval.
+## Authoritative candidate facts
 
-Record decision_questions with their actual query_ids, statuses, strongest relevant supporting
-and important opposing/scoping passage citations, and decision_impact. Cite exact excerpts.
-Record contradiction_search_query_ids and stopping_reason, including whether ranking changed.
-VERIFIED is scoped source support, never certified efficacy. SEARCHED_NO_EVIDENCE needs an
-actual adequate search without access failure; it does not mean no literature exists.
-CONFLICTING_EVIDENCE preserves support and contradiction. UNRESOLVED preserves inquiry/access/
-transfer limits. An unperformed inquiry cannot be relabeled as performed; peripheral unsearched
-issues belong in remaining uncertainty, not an expanding material-topic task list.
+For a kernel candidate, copy the exact hotspot_label_seq_ids from its approved_design_membership.
+These are runtime-derived design labels; do not copy source_label_seq_id or source auth numbers.
+For a literature region, use read_canonical_mapping; never infer equality or a global offset.
+An unknown/conditional correspondence remains qualified. No coordinate means no executable hotspot.
+Use read_site_evidence with up to forty exact design labels for a complete focused patch, and
+evaluate_candidate_site for the chosen labels. A table's rows follow its declared columns, with
+nulls retained. Source identifiers and canonical/construct/design numbering are distinct.
 
-Keep distinct decision questions and their VERIFIED/UNRESOLVED/conflicting states separate,
-even when they share a topic. Do not merge away an adverse-effect uncertainty because another
-function question is supported. Runtime preserves these assessments when hydrating SiteIntent;
-final synthesis only makes the small SiteDecision. Reuse relevant issued query_ids across topics.
-The existing source/quote/primary-eligibility checks and independent Judge remain mandatory.
-Read /skills/site-mechanism/references/research.md only for consequential mechanism reasoning.
+Keep topology annotation, spatial membrane region, point exposure and whole-VHH access separate.
+A TM segment can contain an extracellular-facing surface. Kernel mode names/confidence are
+computational hypotheses, not curated epitopes or demonstrated functional effects. Mutation
+records may report folding/expression effects rather than a causal epitope. Scan candidates are
+not an exhaustive epitope inventory. Exact numbering cannot turn a weak mechanism into evidence.
 
-## Mapped candidate comparison
+For consequential mechanism details read references/research.md; for verified membrane targets
+read references/membrane.md; for shielding/PTM questions read references/shielding.md. General
+protein reasoning remains the default. Preserve ligand/state/partner/assembly/construct context.
+No docking, dynamics or whole-binder clearance is performed here. Missing glycan coordinates do
+not imply absence; sequons do not establish occupancy. Avoiding a known activating epitope does
+not establish no activation, and avoiding disulfides does not establish intact trafficking.
+Connect the proposed effect to an assay and falsifier with engagement, integrity/expression and
+assay-sensitivity controls. Binding is not function; a null response can also mean failed binding.
 
-Use the supplied scan overview and literature hypotheses to choose focused residue reads.
-read_site_evidence accepts up to forty exact approved design labels and returns the complete
-requested patch, with no offset. Omit labels for the overview. facts_table
-rows follow mapping_columns then metric_columns, with every null retained. A canonical null is
-unknown; a non-null conditional row remains a correspondence with its mapping qualification.
-Design labels, construct positions, canonical positions and source author IDs are distinct.
-For canonical annotation positions use the supplied approved_design_mapping or call
-read_canonical_mapping; these return all matching
-rows, observed design labels and unmapped/missing-coordinate cases. Preserve every qualification.
-Map literature positions through those supplied rows; never infer equality or a global offset.
-compare_reference_identity is only for an additional retrieved reference; it requires the exact
-uniprot-record source card_id. It does not approve or replace the existing Target mapping.
+## Handoff and authority
 
-Compare literature-derived and scan-derived candidates, marking origin and primary/backup/
-avoid/unresolved role. Literature-derived sites cite focused source cards. A backup should test
-a different plausible mechanism or approach, not a cosmetic residue shift. Never invent options.
-Evaluate selected hotspot labels with evaluate_candidate_site before submission. Check components,
-exposure and local geometry; SASA/heuristic scores do not establish epitope usefulness or affinity.
-A residue may be exposed while a whole VHH cannot approach. No docking, dynamics or affinity
-calculation is available here: state approach/clearance as hypotheses and identify missing tests.
-Kernel candidates are a limited hypothesis set, not an exhaustive list of accessible epitopes.
-Mutation-record counts alone do not rank functional relevance or whole-binder accessibility.
+Provide at most three meaningfully distinct candidates with exact supplied design labels,
+provisional primary/backup/avoid roles, honest origins and concise rationales. Cite exact focused
+passage IDs; a source/acquisition ID is not a passage. Preserve the strongest supporting evidence,
+important opposition and transfer limits. A source's verified identity does not prove entailment.
 
-For each biological proposal connect desired/forbidden effects, observation, interpretation,
-alternative, discriminating assay and falsifier. Enzyme inhibition needs integrity/interference
-controls; a passive sensor needs sensing/stabilization/competition/format alternatives and
-independent perturbation controls. State specificity needs relevant state/counterstate evidence,
-never exposure or one structure alone. User-supplied biology remains labeled as user-supplied.
+For each decision_question bind the actual query_ids, including cross-topic queries. The question
+is the scientific unit; topic is only an index. VERIFIED needs scoped support; SEARCHED_NO_EVIDENCE
+needs an adequate actual search without access failure; CONFLICTING_EVIDENCE retains support and
+opposition; UNRESOLVED retains missing evidence or transfer limits. Do not call an unperformed
+inquiry performed. Short exact excerpts must meet the citation schema, rather than abbreviating a
+source down to an isolated residue token. Keep distinct evidence states even for one shared topic.
 
-For a verified GPCR, acquire gpcrdb-context with identifier=exact_receptor_entry and pdb_id when
-known. The PDB code alone is not the receptor identifier. After a complete context card arrives,
-call analyze_receptor_context alone, with that card_id and original auth chain, before paging
-topology. Split TOOL_BATCH_TOO_LARGE diagnostics into smaller reads; no tool in that batch ran. Read /skills/site-mechanism/references/membrane.md for this branch. Distinguish original
-source auth/label numbering from approved design labels. Preserve membrane orientation, state,
-ligand, fusion/partner, full assembly and extracellular-delivery limitations. Intracellular
-binding is not an extracellular epitope. Unresolved membrane geometry stays unresolved.
-For PTM/glycan questions read /skills/site-mechanism/references/shielding.md. A motif is not
-occupancy; absent coordinates/annotations are not absence of glycans, partners or shielding.
+Include actual contradiction_search_query_ids, a 2–4 sentence stopping_reason, and meaningful
+unresolved_questions with their decision impact or next discriminating test. Do not repeat the
+full candidate inventory or create a literature review. Budget pressure never certifies sufficiency
+or waives source/fact checks; an insufficient Handoff may be rejected.
 
-## Working context and submission
+Use already delivered complete views. read_evidence_result uses fields for top-level siblings OR
+path for nested traversal; use only names actually listed in stored_fields. A stored patch contains
+its requested rows, not the whole target. Correct source/argument diagnostics within the existing
+four shared rounds; integrity and foreign-reference errors remain fatal. Each typed submission
+has two bounded corrections. Only the structured tool submits; free text/fenced JSON does not.
 
-Earlier full_result outputs are historical snapshots, not proof that later research was absent.
-Use complete supplied scientific content directly. Archived/partial views are not the whole
-source; explicitly read a consequential missing field, never infer omitted values. Full results
-remain durable. read_evidence_result uses fields=['a','b'] for top-level siblings OR
-path=['a','b'] for one nested traversal, never both. Offset/limit index that stored list/text,
-not residue labels. stored_fields lists the actual root keys of each original full_result.
-Different tools have different keys: mapping lookups use matches, source passages use cards,
-and a residue page uses facts. Never assume all results have facts. A stored residue page
-contains only its requested rows, not the whole target.
-Correct supplied INVALID_FIELD_PROJECTION/source-selection diagnostics within four shared
-model correction rounds; parallel errors in one tool batch share one round. Foreign references, corruption and authority errors are not recoverable argument errors.
-
-Follow the current runtime stage and shared budget, which includes framework summaries.
-In Evidence Research, finish with SiteResearchHandoff: mapped candidates with focused citations,
-decision_questions, actual contradiction-search IDs, stopping_reason and unresolved questions. Runtime builds the dossier from decision-critical original evidence, read primary passages
-(including opposition) and selected candidate facts; this handoff creates no Site proposal. In isolated synthesis, research
-is complete: the runtime supplies references/synthesis.md and the dossier, then accepts only
-SiteDecision: choose runtime candidate IDs and explain the science. Runtime hydrates exact
-SiteIntent membership/mapping/evidence bindings. The research workflow above is not part of
-that fresh stage's instructions.
-Give positive evidence, mechanism, access, approach, meaningful alternatives, risks and
-uncertainties. SUPPORTED is limited to actual evidence; poor access/shielding/unknown membrane
-orientation may be DISCOURAGED but testable. Illegal mapping/coordinates or explicit hard
-exclusions are runtime BLOCKED; favorable prose or override cannot make them executable.
-Free text/fenced JSON cannot submit. Each typed contract permits two persisted output corrections
-within the same shared model-call budget; budget pressure never resolves uncertainty or waives
-factual/source checks.
-
-On Gate2 REVISE, reassess locally with valid Target evidence and trusted instructions, then obtain
-new independent review and Gate2. State any upstream assumption needing correction. Do not
-prepare the target again, choose Binder/CDR strategy, write approvals/actors/IDs/SHAs/bindings or
-YAML. Runtime attaches identities and compiles the proposal; only a Scientist can approve it.
-
-The receptor-candidate-overview is complete for its declared fields: every existing candidate's
-scientific metadata and listed source-residue columns are supplied together, with topology/state/
-membrane context. Candidate/member values are ordinary JSON values; no pointer expansion is
-required. Use that view directly. For a consequential missing source field, use
-fields=['state','membrane','topology_summary'] for context and
-path=['candidate_overview', MODE, INDEX] for one candidate. Do not page topology.residues
-from zero to reconstruct an already supplied overview. Other source fields are focused reads. Source auth/label IDs are not design IDs; verify chosen canonical correspondences with
-read_canonical_mapping and retain ambiguity. Candidate scores and confidence are kernel heuristics,
-not proof of extracellular VHH access or the desired functional effect.
+On a trusted Gate 2 REVISE, reassess locally with valid Target evidence and obtain new independent
+review. Do not prepare Target again, choose Binder/CDR strategy, author executable YAML or write
+approvals/actors/IDs/SHAs. Runtime builds Dossier and authoritative SiteIntent; Judge critiques it;
+only the Scientist can approve Gate 2. Final synthesis receives its own instructions and no Research
+history or research tools.

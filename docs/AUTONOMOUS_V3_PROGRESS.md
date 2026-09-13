@@ -2445,3 +2445,75 @@ both selected and alternative options; no schema field, agent, generic loop or b
 SiteDecision risk guidance explicitly addresses forbidden effects rather than equating avoidance
 of a known risk factor with safety. checks184a Ruff/mypy23 PASS and6targeted Judge/hydration/native
 restart tests PASS in27.85s. Next replay uses the same verified saved179 evidence.
+
+## 2026-09-13 — replay184 readiness and live185 Research failure
+
+Replay184 on `77fb04e4` used the same saved179 evidence and current trusted Dossier. Both
+SiteDecision trials were non-empty and valid on the first response (4,063/4,120 public
+characters; 72.26/94.28 s); runtime hydration retained canonical286 → design414. Independent
+Judge returned the correct `site` option and ready-to-ask/DISCOURAGED with consequential limits.
+The second decision distinguished extracellular-facing TM surface from whole-VHH clearance,
+kept pore access unresolved, and required engagement/integrity/expression/assay controls before
+interpreting a null response. The durable `independent-readiness-review.json` records readiness
+for a fresh live validation, **not Golden acceptance**. No Gate was created by replay.
+
+A scientific clarification to earlier developer review language: N-term/TM1 segment membership
+alone does not contradict an extracellular-facing spatial surface. Existing kernel per-member
+regions establish this distinction. The historical live180 FAIL receipt remains immutable and
+has other material premise/interpretation failures; that overbroad segment-only rationale must
+not be reused as an oracle. No fixed Golden truth or kernel fact was changed.
+
+Fresh live185 ran clean `77fb04e4`, reusing approved Target104. It ended before Dossier/SiteDecision
+with 28 shared calls (Coordinator3/Site25), including10 native framework summaries; peak input
+80,801 characters including schemas. The first Handoff exhausted16,384 output tokens and was
+empty; its second had two too-short source excerpts; its third omitted cross-topic query IDs
+and exhausted the existing two contract corrections. Original report and
+`phase2-goldens-20260913T021244063971Z/gpcr/development-diagnosis.json` retain the failure.
+No SiteIntent, Judge assessment or Gate2 was produced. The attempted Research opinion also
+copied original structure labels instead of approved design labels and overclaimed function/
+glycan occupancy. These were never accepted scientific state.
+
+The trace showed repeated overview/fact reads and broad UniProt pagination before decisive
+adverse-effect primary evidence was read. A single literature search was performed, but its
+leads were not acquired/read as primary risk evidence. This is not decision sufficiency.
+
+## 2026-09-13 — explicit Research overview and approved candidate membership
+
+The Site tool's empty-label query now returns a complete candidate overview without a misleading
+first residue page/cursor. Exact requested residue reads and legacy internal pagination remain
+available. The receptor candidate view directly associates each existing kernel candidate with
+its approved design hotspot labels, using the already supplied canonical/Target correspondence;
+unobserved/unmapped positions and conditional mapping status remain explicit. Original source
+identifiers and records are retained. No new alignment, geometry, candidate score or winner is
+computed. Research no longer needs to convert a kernel candidate's source labels itself.
+
+The existing declared receptor view is delivered intact instead of falling back to a partial
+preview when it exceeds the old32k per-tool threshold. The shared100k model-input guard still
+checks the complete request with history and schemas. No limit/model/reasoning configuration,
+new compression/alias mechanism, scientific kernel or Golden oracle was introduced or changed.
+The Research Skill was shortened and reordered around early functional evidence, provisional
+comparison, targeted contradiction, consequential gaps and explicit stopping/Handoff.
+
+Validation receipts under `runtime/tmp/autonomous-v3-20260912/`:
+
+- `targeted186a`: Ruff and mypy23 PASS;35 tests PASS, one stale synthetic Skill-loader schema
+  failed. The test fixture was corrected to expose its real `file_path` argument.
+- `targeted186b`: Ruff and mypy23 PASS;14 PASS, three test-fixture failures (new test used Target
+  rather than Site bridge, and two old batch cases had the same empty Skill-loader schema).
+  Source implementations were unchanged while this suite ran. The fixture-only corrections
+  passed separately: `targeted186c`1 PASS and `targeted186d`2 PASS.
+- Coverage includes exact40-row reads, nonidentity membership with unmapped/unobserved decoys,
+  original source preservation, complete large receptor evidence plus hard-guard rejection,
+  unchanged native history delivery, typed Site submission and restart/Dossier reuse.
+- `preflight186-read-only.json`: real saved179 overview5,237 chars without a residue cursor;
+  exact ECL2 design180/183/184/190–194 and pore design93/113/417/433/436/437/440/444.
+  The current synthesis working set is byte-equivalent under canonical JSON to replay184,
+  still36,275 chars, SHA256 `625c36068401c3b93267e33d4f877b03be264f9eec9dfc10180428c27036660a`.
+  Thus the tested A/B/C inference payload is unchanged; no additional model calls were needed
+  for these Research-only read changes. Source project was read-only.
+- `protected186-precommit.json`: all385 protected files, fixed oracle and model configuration
+  unchanged. All four accepted request/receipt file hashes were independently rechecked.
+
+Cases1/3/4/5 remain accepted. Case2 still needs a real PASS, followed by accepted-case current
+contract revalidation and the latest full regression. Phase2 remains NOT FROZEN; Phase3/4 remain
+out of scope. These are engineering checkpoints, not formal scientific acceptance.

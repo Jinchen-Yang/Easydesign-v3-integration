@@ -193,6 +193,7 @@ class DecisionOutcome(StrictDTO):
     action: DecisionAction
     human_actor: ShortText
     human_instruction: ShortText | None = None
+    revision_gate: GateType | None = None
     optional_reason: ShortText | None = None
     explicit_acknowledgement: ShortText | None = None
     recorded_warnings: list[ShortText] = Field(default_factory=list, max_length=24)
@@ -207,6 +208,8 @@ class DecisionOutcome(StrictDTO):
                 raise ValueError("REVISE requires a human_instruction")
         elif self.human_instruction is not None:
             raise ValueError("Only REVISE accepts a human_instruction")
+        if self.revision_gate is not None and self.action != "REVISE":
+            raise ValueError("Only REVISE accepts an explicit revision Gate")
         if self.action == "OVERRIDE":
             if not self.explicit_acknowledgement or not self.explicit_acknowledgement.strip():
                 raise ValueError("OVERRIDE requires explicit acknowledgement of the warnings")

@@ -71,6 +71,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--decision", choices=("approve", "revise", "reject", "override"))
     result.add_argument("--instruction", help="Required trusted human instruction for REVISE")
     result.add_argument(
+        "--revision-gate",
+        choices=("target-structure", "site-hotspot", "design-specification"),
+        help="Explicit revision target; default is the current Gate. Gate 3 may return to Site.",
+    )
+    result.add_argument(
         "--reason", help="Optional rejection reason; required rationale for OVERRIDE"
     )
     result.add_argument(
@@ -93,6 +98,7 @@ async def run_session(
     user: str | None = None,
     new_message: str | None = None,
     human_instruction: str | None = None,
+    revision_gate: Any = None,
     optional_reason: str | None = None,
     explicit_acknowledgement: str | None = None,
     technical_details: bool = False,
@@ -106,7 +112,8 @@ async def run_session(
     store, thread = bridge.store, bridge.thread
     goal = store.thread(thread, fingerprint(config), goal)
     if decision is None and any(
-        v is not None for v in (human_instruction, optional_reason, explicit_acknowledgement)
+        v is not None
+        for v in (human_instruction, revision_gate, optional_reason, explicit_acknowledgement)
     ):
         raise AgentBoundaryError("Steering fields require an explicit decision action")
     if decision is not None and new_message is not None:
@@ -186,6 +193,7 @@ async def run_session(
                     decision,
                     user,
                     human_instruction=human_instruction,
+                    revision_gate=revision_gate,
                     optional_reason=optional_reason,
                     explicit_acknowledgement=explicit_acknowledgement,
                 )
@@ -224,6 +232,7 @@ async def run_session(
                 decision,
                 user,
                 human_instruction=human_instruction,
+                revision_gate=revision_gate,
                 optional_reason=optional_reason,
                 explicit_acknowledgement=explicit_acknowledgement,
             )
@@ -248,8 +257,16 @@ async def run_session(
         elif pending_input:
             inputs = execution_input()
         elif state.values:
-            messages = state.values.get("messages", [])
-            return bridge.terminal_result(messages[-1].text if messages else "")
+            from .control_flow import next_action
+            from .phase2 import Phase2Bridge
+
+            if isinstance(bridge, Phase2Bridge) and next_action(bridge).tool is not None:
+                # Resume unfinished authorized work in the SAME execution, including a
+                # formerly ended graph. No new intent, approval or model budget.
+                inputs = {"messages": []}
+            else:
+                messages = state.values.get("messages", [])
+                return bridge.terminal_result(messages[-1].text if messages else "")
         else:
             execution = store.begin_execution(thread, goal)
             bridge.failpoint("after_execution_intent")
@@ -380,6 +397,7 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
         user=local_user,
         new_message=args.message,
         human_instruction=args.instruction,
+        revision_gate=args.revision_gate,
         optional_reason=args.reason,
         explicit_acknowledgement=args.acknowledgement,
         technical_details=args.technical_details,
@@ -401,9 +419,23 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
         if response not in {"approve", "revise", "reject", "override"}:
             print("Please enter approve, revise, reject or override.", flush=True)
             continue
-        instruction = acknowledgement = reason = None
+        instruction = acknowledgement = reason = revision_gate = None
         if response == "revise":
             instruction = await asyncio.to_thread(input, "Revision instruction: ")
+            if result["card"]["gate_type"] == "design-specification":
+                destination = (
+                    (
+                        await asyncio.to_thread(
+                            input, "Revise design or return to site selection? (design / site): "
+                        )
+                    )
+                    .strip()
+                    .lower()
+                )
+                if destination not in {"", "design", "site"}:
+                    print("Please choose design or site; no decision was applied.", flush=True)
+                    continue
+                revision_gate = "site-hotspot" if destination == "site" else None
         if response == "override":
             acknowledgement = await asyncio.to_thread(input, "Acknowledge the displayed warnings: ")
             reason = await asyncio.to_thread(input, "Scientific rationale for proceeding: ")
@@ -418,6 +450,7 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
             card_id=result["card"]["card_id"],
             user=local_user,
             human_instruction=instruction,
+            revision_gate=revision_gate,
             explicit_acknowledgement=acknowledgement,
             optional_reason=reason,
             technical_details=args.technical_details,
@@ -455,7 +488,8 @@ def main(argv: list[str] | None = None) -> int:
                 "--message is supported on resume after a completed/rejected turn"
             )
         if args.decision is None and any(
-            v is not None for v in (args.instruction, args.reason, args.acknowledgement)
+            v is not None
+            for v in (args.instruction, args.revision_gate, args.reason, args.acknowledgement)
         ):
             raise AgentBoundaryError("Steering fields require --decision")
         if args.goal and len(args.goal) > 1500:

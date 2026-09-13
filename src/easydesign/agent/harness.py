@@ -131,42 +131,13 @@ on the card; only the human may explicitly override. Missing/ineligible options 
 """
 
 
-PHASE2_COORDINATOR = """You are EasyDesign's Design Scientist. Work only on the bound project.
-Use read_scientific_state for verified progress; the immutable research goal is not replaced by
-current messages or trusted revision instructions. Delegate science to the owning specialist.
-Each task description MUST be one short scientific question, under 600 characters. Do not
-copy evidence, IDs, paths, schemas, user goals or tool instructions into it: the trusted runtime
-automatically supplies these. Never invent specialist tool names or request repository access.
-Use the verified next_specialist field to continue. Never repeat Target after target-ready.
-If target preparation is missing, delegate target-intelligence; for a chain decision ask the
-independent evidence-judge, then request_scientific_decision with the exact eligible chain option.
-Once Gate 1 is resolved, delegate site-mechanism to interpret real tools/evidence and propose
-mapped hotspots. Do not perform its analysis yourself or ask Target to choose sites.
-After the Site specialist returns, delegate evidence-judge. It reviews the runtime-bound current
-Site proposal, not a description you invent. Only a ready-to-ask Site verdict permits
-request_scientific_decision using its trusted assessment_id and option_id=site. Only that tool
-creates a real human interrupt. A reject/insufficient Site critique requires you to report the
-remaining scientific objection and leave the proposal pending; do not turn it into readiness,
-repeat an already completed Judge review, or manufacture a human revision.
-If a current Site proposal already exists, including an explicitly resumed proposal, obtain
-its independent Judge review directly. Do not repeat completed Site creation or preparation.
-Never substitute prose confirmation for a reviewable card or claim approval from chat.
-A ready-to-ask DISCOURAGED site can be presented with warnings for human revision or explicit
-OVERRIDE. Runtime BLOCKED constraints cannot be overridden. Do not manufacture authority.
-On revision-requested, return to the named owner with the trusted revision instruction and
-valid upstream evidence. Site revisions preserve Target; get a fresh Site and Judge proposal,
-then a new Gate 2 card. A rejection stops this proposal without making the project a failure.
-Use scientific questions, evidence, uncertainty and meaningful alternatives in user output.
-After hotspot-approved, read_scientific_state. Stop if next_specialist=none. Do not launch pilot,
-scale, prediction, filtering or wet-lab work. No shell, arbitrary file writes, repository access,
-Stage agents, workbench or model-invented residue numbering are available.
-When the requested scope is design and the verified next_specialist is binder-strategy, delegate
-it to propose HOW to design against the approved hotspot. Then delegate evidence-judge and
-request_scientific_decision with option_id=design. Gate 3 freezes the specification without pilot.
-Gate 3 revisions normally return to binder-strategy and preserve Target/Site. Only if the trusted
-human revision changes WHERE to bind, call reopen_site_decision with the scientific reason,
-then delegate Site and obtain a fresh Judge/Gate 2 approval before any further Binder work.
-Do not reopen Site for ordinary CDR, crop, arm or pilot-scope changes.
+PHASE2_COORDINATOR = """EasyDesign runtime Coordinator.
+RuntimeCoordinator dispatches the first unfinished authorized action from verified state.
+This role does not invoke a model to select workflow stages. Existing tools retain their
+role checks, exact scientific bindings and native Scientist Gate interrupts. Specialists
+reason within the dispatched stage; independent Judge opinions never authorize approval.
+Completed scope, scientific rejection, operational waiting and invalid bindings remain distinct.
+No Pilot, Scale, Final Selection or wet-lab execution is enabled in this Phase 2 harness.
 """
 
 
@@ -207,6 +178,7 @@ def fingerprint(config: ModelConfig) -> str:
             "target_assessment": Path(__file__).with_name("target_assessment.py").read_text(),
             "native_strategy": Path(__file__).with_name("native_strategy.py").read_text(),
             "session_store": Path(__file__).with_name("session_store.py").read_text(),
+            "control_flow": Path(__file__).with_name("control_flow.py").read_text(),
             "cli": Path(__file__).with_name("cli.py").read_text(),
             "versions": {
                 name: metadata.version(name)
@@ -461,17 +433,6 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "download again. This verifies current-view evidence, not a new approval."
                     )
                 )
-        coordinator_state = None
-        if self.role == "coordinator" and isinstance(self.bridge, Phase2Bridge):
-            coordinator_state = self.bridge.scientific_state()
-            if coordinator_state["scientific_state"] == "site-not-proposed":
-                # Detailed mapping belongs to Site once Target is approved. Keep
-                # observation/delegation available; do not reread Target as a new gate.
-                available = [
-                    t
-                    for t in available
-                    if t.name not in {"read_target_evidence", "read_evidence_result"}
-                ]
         if isinstance(self.bridge, Phase2Bridge) and self.role in {"target", "binder"}:
             # The checkpoint retains every message. The model sees a working set of
             # recent detailed tool views; older archived results remain addressable.
@@ -520,33 +481,6 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     }
                 )
             request = request.override(messages=messages)
-        if self.role == "coordinator" and isinstance(self.bridge, Phase2Bridge):
-            from langchain_core.messages import SystemMessage
-
-            # Approval resumes the old tool call and retains earlier scientific views.
-            # Refresh only verified progress, never an interpretation or a scheduler.
-            assert coordinator_state is not None
-            state = coordinator_state
-            progress = {
-                key: state[key]
-                for key in ("scientific_state", "gate_type", "next_specialist")
-                if key in state
-            }
-            request = request.override(
-                system_message=SystemMessage(
-                    content=request.system_message.text
-                    + "\nCurrent verified runtime progress (supersedes historical progress): "
-                    + compact(progress)
-                    + "\nEarlier pending cards and tool views are historical after delivery. "
-                    "Continue the requested scope using this state; read_scientific_state "
-                    "provides its full evidence. Do not ask again for a delivered approval. "
-                    "Mapping review-required is a correspondence qualification, not a pending "
-                    "gate when runtime progress is site-not-proposed. Target's scoped "
-                    "approval_provenance=not-in-snapshot is not a pending approval either. "
-                    "Delegate detailed mapping and site research to Site; do not inspect "
-                    "each mapping entry or source yourself."
-                )
-            )
         tool_schemas = [convert_to_openai_tool(t) for t in available]
         if self.structured_output:
             output_schema = self.output_schema
@@ -1397,6 +1331,90 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         return updates
 
 
+class RuntimeCoordinator(RoleBoundary):
+    """Dispatch trusted actions through the existing graph, without model selection."""
+
+    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+        from langchain.agents.middleware.types import ModelResponse
+
+        from .control_flow import next_action
+
+        assert isinstance(self.bridge, Phase2Bridge)
+        action = next_action(self.bridge)
+        call_id = (
+            "runtime-"
+            + identity(
+                {
+                    "execution": self.execution_id,
+                    "action": action.action_id,
+                }
+            )[:32]
+        )
+        completed = any(
+            isinstance(m, ToolMessage) and m.tool_call_id == call_id for m in request.messages
+        )
+        # Repeated dispatch with unchanged authoritative state cannot spin or recreate
+        # scientific work. Observation can resume once in each invocation after waiting.
+        if action.tool == "get_job_status":
+            completed = getattr(self, "observed_worker", False)
+            self.observed_worker = True
+        if action.tool is None or completed:
+            message = action.message or (
+                "Scientific work remains incomplete. The previous action has not produced "
+                "the required verified result; inspect its status before continuing."
+            )
+            return ModelResponse(result=[AIMessage(content=message)])
+        if self.execution_id is None:
+            raise AgentBoundaryError("Runtime dispatch requires a persisted execution")
+        self.bridge.store.event(
+            self.bridge.thread,
+            "runtime-dispatch",
+            {
+                "execution_id": self.execution_id,
+                "action_id": action.action_id,
+                "stage": action.stage,
+                "binding": action.binding,
+                "tool": action.tool,
+                "specialist": action.arguments.get("subagent_type"),
+                "authority": "verified-runtime-state",
+                "model_call": False,
+            },
+        )
+        self.bridge.failpoint("before_runtime_dispatch_checkpoint")
+        return ModelResponse(
+            result=[
+                AIMessage(
+                    content="",
+                    additional_kwargs={"runtime_action": action.action_id},
+                    tool_calls=[{"id": call_id, "name": action.tool, "args": action.arguments}],
+                )
+            ]
+        )
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        from .control_flow import next_action
+
+        assert isinstance(self.bridge, Phase2Bridge)
+        call = request.tool_call
+        # Gate interrupts must replay their original bound tool to deliver/reconcile the
+        # persisted human outcome. Its existing adapter revalidates every authority edge.
+        if call["name"] != "request_scientific_decision":
+            action = next_action(self.bridge)
+            if call["name"] != action.tool or call["args"] != action.arguments:
+                # A child published its result before the parent's tool checkpoint. Read
+                # current authority and complete this historical call without repeating it.
+                return ToolMessage(
+                    content=compact(
+                        {"status": "already-completed-or-invalidated", "next_stage": action.stage}
+                    ),
+                    name=call["name"],
+                    tool_call_id=call["id"],
+                )
+        result = await super().awrap_tool_call(request, handler)
+        self.bridge.failpoint("after_runtime_action_before_checkpoint")
+        return result
+
+
 def site_synthesis_prompt() -> str:
     """One shared scientific decision prompt for the live stage and bounded replay."""
     return (
@@ -1494,11 +1512,7 @@ def create_site_pipeline(
         name="site-isolated-synthesis",
     )
 
-    async def dossier_boundary(state: Any) -> dict[str, Any]:
-        if execution_id is None:
-            raise AgentBoundaryError("Dossier assembly requires a persisted execution")
-        selection = SiteResearchHandoff.model_validate(state["structured_response"])
-        dossier = persist_dossier(bridge, selection, execution_id)
+    def synthesis_input(dossier: dict[str, Any]) -> dict[str, Any]:
         intent = {
             "original_goal": goal,
             "current_user_message": current_user_message or goal,
@@ -1509,11 +1523,47 @@ def create_site_pipeline(
         # checkpoints and original corpus/trace stay in their existing stores.
         return {"messages": [HumanMessage(content=compact(intent))], "structured_response": None}
 
+    async def dossier_boundary(state: Any) -> dict[str, Any]:
+        if execution_id is None:
+            raise AgentBoundaryError("Dossier assembly requires a persisted execution")
+        selection = SiteResearchHandoff.model_validate(state["structured_response"])
+        return synthesis_input(persist_dossier(bridge, selection, execution_id))
+
+    def current_dossier() -> dict[str, Any] | None:
+        event = bridge.thread_latest("site-evidence-dossier")
+        if event is None or execution_id is None or event["execution_id"] != execution_id:
+            return None
+        dossier = bridge.document(event["ref"])
+        if (
+            dossier["owner_thread"] != bridge.thread
+            or dossier["target_binding"] != bridge.target_state()["binding"]
+            or EvidenceBinding.model_validate(dossier["evidence_binding"]) != SITE_EVIDENCE.get()
+        ):
+            raise AgentBoundaryError("Saved Dossier has stale evidence or foreign ownership")
+        return cast(dict[str, Any], dossier)
+
+    async def reuse_dossier(state: Any) -> dict[str, Any]:
+        dossier = current_dossier()
+        if dossier is None:
+            raise AgentBoundaryError("No current Dossier to resume")
+        return synthesis_input(dossier)
+
+    async def enter_site(state: Any) -> str:
+        # SessionStore belongs to the asyncio caller; a synchronous branch would
+        # move SQLite access into the framework's executor thread.
+        return "reuse-dossier" if current_dossier() is not None else "research"
+
     graph = StateGraph(SiteStageState)
     graph.add_node("research", research)
     graph.add_node("dossier", dossier_boundary)
     graph.add_node("synthesis", synthesis)
-    graph.add_edge(START, "research")
+    graph.add_node("reuse-dossier", reuse_dossier)
+    graph.add_conditional_edges(
+        START,
+        enter_site,
+        {"reuse-dossier": "reuse-dossier", "research": "research"},
+    )
+    graph.add_edge("reuse-dossier", "synthesis")
     graph.add_edge("research", "dossier")
     graph.add_edge("dossier", "synthesis")
     graph.add_edge("synthesis", END)
@@ -1685,7 +1735,7 @@ def create_harness(
         backend=backend,
         checkpointer=saver,
         middleware=[
-            RoleBoundary(
+            (RuntimeCoordinator if isinstance(bridge, Phase2Bridge) else RoleBoundary)(
                 bridge, "coordinator", config, goal, current_user_message, execution_id, revision
             )
         ],

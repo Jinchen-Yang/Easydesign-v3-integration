@@ -734,25 +734,48 @@ class DesignBridge(Phase2Bridge):
             "message": "The current Design Specification is not frozen; Gate 3 remains unresolved.",
         }
 
+    def site_revision_applied(self, card_id: str) -> bool:
+        return (
+            self.store.db.execute(
+                "SELECT 1 FROM events WHERE kind='site-invalidated' "
+                "AND json_extract(payload,'$.source_card')=? LIMIT 1",
+                (card_id,),
+            ).fetchone()
+            is not None
+        )
+
     def reopen_site(self, reason: str) -> dict[str, Any]:
         execution = self.store.latest_execution(self.thread)
         if not execution or not execution.get("revision"):
             raise AgentBoundaryError("Reopening a site requires a trusted human REVISE outcome")
         outcome = DecisionOutcome.model_validate(execution["revision"])
         card = self.store.card(self.thread, outcome.card_id)
-        if card.gate_type != "design-specification" or outcome.action != "REVISE":
-            raise AgentBoundaryError("Only a Gate 3 revision may reopen the upstream site")
-        if self.approved_design() is not None:
-            raise AgentBoundaryError("A completed approval is not a new upstream revision request")
-        previous = self.project_latest("site-invalidated")
-        if previous is None or previous["source_card"] != card.card_id:
+        if (
+            card.gate_type != "design-specification"
+            or outcome.action != "REVISE"
+            or outcome.revision_gate != "site-hotspot"
+        ):
+            raise AgentBoundaryError(
+                "Reopening Site requires an explicit Scientist Site revision target"
+            )
+        if not self.site_revision_applied(card.card_id):
+            intent = self.store.response(self.thread, card.card_id)
+            if not intent or not intent["delivered"] or not self.revision_is_current(outcome):
+                raise AgentBoundaryError(
+                    "Site revision requires current, delivered Scientist steering"
+                )
+            if self.approved_design() is not None:
+                raise AgentBoundaryError(
+                    "A completed approval is not a new upstream revision request"
+                )
             self.store.event(
                 self.thread,
                 "site-invalidated",
                 {
                     "source_card": card.card_id,
                     "human_instruction": outcome.human_instruction,
-                    "reason": reason,
+                    "reason": outcome.human_instruction,
+                    "reported_reason": reason,
                     "target_binding": self.target_state()["binding"],
                 },
             )

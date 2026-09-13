@@ -1,5 +1,12 @@
 # EasyDesign v3 Scientific Decision Contract — Phase 1 freeze
 
+当前 Phase 2 流程权限补充（2026-09-13，验证中）：
+[控制流权限审计](V3_CONTROL_FLOW_AUTHORITY.md)。Phase 2 运行时直接派发当前范围内
+尚未完成且获授权的动作；模型文字不能重开已完成 Gate，也不能用提前结束阻止接续。
+Gate 3 REVISE 默认回到 Design；需要回到 Site 时，Scientist 必须通过可信入口明确设置
+`--revision-gate site-hotspot`。新字段只作用于 REVISE，历史 outcome 的缺省值表示原 Gate。
+重启不重置预算、不重做已验证的阶段。未启用的 Gate 4/5 仍不可执行，Phase 3 未开启。
+
 当前 Phase 2 Gate 2 补充（2026-09-13，尚未冻结）：
 [Judge / Gate 2 契约审计](PHASE2_JUDGE_GATE2_CONSOLIDATION_20260913.md)。
 Gate 2 保护早期位点选择的科学底线，不要求完整 VHH 的后续功能和空间验证已完成。

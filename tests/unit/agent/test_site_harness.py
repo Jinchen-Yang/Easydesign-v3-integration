@@ -111,7 +111,17 @@ class SiteModel(ScriptedModel):
                 limitations=["Function and binding remain experimentally untested."],
             )
         if self.role == "target":
-            return super().answer(messages)
+            result = super().answer(messages)
+            for call in result.tool_calls:
+                if call["name"] == "TargetInterpretation":
+                    evidence = next(
+                        json.loads(m.content)
+                        for m in reversed(messages)
+                        if isinstance(m, ToolMessage) and m.name == "read_target_evidence"
+                    )
+                    if evidence.get("options"):
+                        call["args"]["recommended_option"] = "chain-a"
+            return result
         if not results:
             return self.call("read_scientific_state")
         decisions = [

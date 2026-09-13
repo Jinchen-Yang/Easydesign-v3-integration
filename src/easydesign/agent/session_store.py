@@ -469,6 +469,7 @@ class SessionStore:
         user: str,
         *,
         human_instruction: str | None = None,
+        revision_gate: Any = None,
         optional_reason: str | None = None,
         explicit_acknowledgement: str | None = None,
     ) -> dict[str, Any]:
@@ -479,6 +480,16 @@ class SessionStore:
             raise AgentBoundaryError("A recognized, identified human action is required")
         if response == "revise" and (not human_instruction or not human_instruction.strip()):
             raise AgentBoundaryError("REVISE requires a non-empty human instruction")
+        if revision_gate is not None and (
+            response != "revise"
+            or not (
+                revision_gate == proposal.gate_type
+                or (
+                    proposal.gate_type == "design-specification" and revision_gate == "site-hotspot"
+                )
+            )
+        ):
+            raise AgentBoundaryError("Revision target is outside this Gate's authorized scope")
         if response == "override" and (
             not explicit_acknowledgement
             or not explicit_acknowledgement.strip()
@@ -503,6 +514,7 @@ class SessionStore:
                 "action": response.upper(),
                 "human_actor": user,
                 "human_instruction": human_instruction,
+                "revision_gate": revision_gate,
                 "optional_reason": optional_reason,
                 "explicit_acknowledgement": explicit_acknowledgement,
                 "recorded_warnings": proposal.warnings,
@@ -510,7 +522,7 @@ class SessionStore:
         )
         previous = self.response(thread, card)
         if previous is not None:
-            if previous["outcome"] != outcome.model_dump(mode="json"):
+            if DecisionOutcome.model_validate(previous["outcome"]) != outcome:
                 raise AgentBoundaryError("Conflicting duplicate response")
             return previous
         with self.db:

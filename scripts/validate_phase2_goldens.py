@@ -246,6 +246,23 @@ def stats(bridge, *, source_threads=()):
     }
 
 
+def assert_runtime_dispatch(events, *, site_reused=False):
+    """Engineering coverage: current runtime dispatch and actual specialist entry."""
+    roles = {e["payload"]["role"] for e in events if e["kind"] == "model-call"}
+    required_roles = {"judge"} if site_reused else {"site", "judge"}
+    assert required_roles <= roles
+    assert "coordinator" not in roles, "Workflow selection called the Coordinator model"
+    dispatched = {
+        e["payload"].get("specialist")
+        for e in events
+        if e["kind"] == "runtime-dispatch"
+        and e["payload"].get("authority") == "verified-runtime-state"
+        and e["payload"].get("model_call") is False
+    }
+    required_dispatch = {"evidence-judge"} if site_reused else {"site-mechanism", "evidence-judge"}
+    assert required_dispatch <= dispatched
+
+
 def response(card):
     assert card["judge_status"] != "BLOCKED", card
     if card["judge_status"] == "DISCOURAGED":
@@ -790,8 +807,11 @@ async def main():
                     and metrics["total_retrieved_raw_chars"] > 0
                 )
                 target_metrics = inherited_metrics or metrics
-                assert {"target", "site", "judge", "coordinator"} <= (
+                assert {"target", "site", "judge"} <= (
                     set(metrics["calls_by_role"]) | set(target_metrics["calls_by_role"])
+                )
+                assert_runtime_dispatch(
+                    store.events(bridge.thread), site_reused=bool(inherited and UNREVIEWED_SITE)
                 )
                 tools = [
                     e["payload"]["name"]

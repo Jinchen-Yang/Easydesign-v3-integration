@@ -220,6 +220,7 @@ async def test_gate3_upstream_site_revision_invalidates_design(design_bridge: An
         human_instruction=(
             "Please reopen site selection: use mapped residues 4–6 as the new hotspot."
         ),
+        revision_gate="site-hotspot",
     )
     assert revised["status"] == "awaiting-human-approval", revised
     assert revised["card"]["gate_type"] == "site-hotspot"

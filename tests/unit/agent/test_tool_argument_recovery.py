@@ -17,7 +17,7 @@ from easydesign.agent.phase2_tools import PHASE2_ALLOWED
 from easydesign.agent.session_store import SessionStore
 from easydesign.core import ArtifactIntegrityError
 from tests.agent_support import scripted_config
-from tests.unit.agent.test_prerequisite_recovery import RecoveryModel
+from tests.unit.agent.test_prerequisite_recovery import RecoveryModel, assert_inspection_stopped
 
 KEYS = ["chains", "identity_evidence", "options", "limitations"]
 SNAPSHOT = {
@@ -101,7 +101,7 @@ async def test_actual_harness_corrects_projection_and_preserves_facts(
     result = await graph.ainvoke(
         {"messages": [HumanMessage(content=goal)]}, {"configurable": {"thread_id": bridge.thread}}
     )
-    assert result["messages"][-1].text.startswith("Evidence inspection ended")
+    assert_inspection_stopped(bridge, result)
     assert models["target"].observed == {key: SNAPSHOT[key] for key in KEYS}
     assert len(models["target"].repairs) == 1
     repairs = [e for e in bridge.store.events(bridge.thread) if e["kind"] == "tool-argument-repair"]

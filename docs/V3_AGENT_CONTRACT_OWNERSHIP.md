@@ -1,5 +1,13 @@
 # EasyDesign v3 consequential Agent contract ownership
 
+Current control-flow amendment (2026-09-13, under validation):
+[workflow authority](V3_CONTROL_FLOW_AUTHORITY.md). The Phase 2 Coordinator dispatches
+runtime-authorized actions through the existing native graph without a stage-selection
+model call. The first unfinished action respects scope, current evidence, delivered Gate
+outcomes and completed work. Gate 3 rollback to Site requires an explicit Scientist
+revision target. Historical prompt-only routing notes below are superseded; specialist
+scientific reasoning, Judge standards, budget and protected kernel remain unchanged.
+
 Current Phase 2 execution budget is **64**, shared across all roles and framework summaries.
 See [budget and native summary policy](PHASE2_BUDGET64_20260913.md); the 100k guard and scientific ownership below remain unchanged.
 

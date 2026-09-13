@@ -67,15 +67,7 @@ class RecoveryModel(ScriptedModel):
             (calls[m.tool_call_id]["name"], m) for m in messages if isinstance(m, ToolMessage)
         ]
         if self.role == "coordinator":
-            if not results:
-                return self.call(
-                    "task",
-                    subagent_type="target-intelligence",
-                    description="Inspect the requested source and its limitations.",
-                )
-            return AIMessage(
-                content="Evidence inspection ended; no target or design approval was issued."
-            )
+            raise AssertionError("Evidence inspection must use runtime-authorized dispatch")
         assert self.role == "target"
         if not results:
             return self.call("read_file", file_path="/skills/target-intelligence/SKILL.md")
@@ -173,6 +165,19 @@ async def inspect_with_harness(bridge: Any, *, repeat: bool = False, empty: bool
     return result, models, execution
 
 
+def assert_inspection_stopped(bridge: Any, result: Any) -> None:
+    assert not result["messages"][-1].tool_calls
+    assert bridge.scientific_state()["scientific_state"] == "not-prepared"
+    events = bridge.store.events(bridge.thread)
+    dispatches = [e["payload"] for e in events if e["kind"] == "runtime-dispatch"]
+    assert len(dispatches) == 1
+    assert dispatches[0]["specialist"] == "target-intelligence"
+    assert dispatches[0]["authority"] == "verified-runtime-state"
+    assert not any(
+        e["kind"] == "model-call" and e["payload"]["role"] == "coordinator" for e in events
+    )
+
+
 @pytest.mark.asyncio
 async def test_harness_repairs_selection_then_acquires_and_reads_durable_source(
     bridge: Any, monkeypatch: Any
@@ -180,7 +185,7 @@ async def test_harness_repairs_selection_then_acquires_and_reads_durable_source(
     bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     requests = source_transport(bridge, monkeypatch)
     result, models, execution = await inspect_with_harness(bridge)
-    assert result["messages"][-1].text.startswith("Evidence inspection ended")
+    assert_inspection_stopped(bridge, result)
     assert len(models["target"].repairs) == 1 and len(requests) == 1
     events = bridge.store.events(bridge.thread)
     repairs = [e for e in events if e["kind"] == "prerequisite-repair"]
@@ -291,7 +296,7 @@ async def test_no_evidence_is_a_nonfatal_scientific_state(bridge: Any, monkeypat
     bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     requests = source_transport(bridge, monkeypatch, empty=True)
     result, models, _ = await inspect_with_harness(bridge, empty=True)
-    assert result["messages"][-1].text.startswith("Evidence inspection ended")
+    assert_inspection_stopped(bridge, result)
     research = EvidenceResearch(bridge)
     assert research.snapshot()["topics"]["function"] == "SEARCHED_NO_EVIDENCE"
     conclusion = ResearchAssessment(

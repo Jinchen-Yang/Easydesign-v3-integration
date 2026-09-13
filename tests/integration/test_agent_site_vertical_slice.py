@@ -102,7 +102,10 @@ async def test_live_model_site_revision(tmp_path: Path, monkeypatch: Any) -> Non
         calls = [e["payload"] for e in events if e["kind"] == "model-call"]
         executions = Counter(c["execution_id"] for c in calls)
         assert max(executions.values()) <= config.max_model_calls
-        assert {c["role"] for c in calls} == {"coordinator", "site", "judge"}
+        assert {c["role"] for c in calls} == {"site", "judge"}
+        dispatches = [e["payload"] for e in events if e["kind"] == "runtime-dispatch"]
+        assert {d["specialist"] for d in dispatches} >= {"site-mechanism", "evidence-judge"}
+        assert all(d["authority"] == "verified-runtime-state" for d in dispatches)
         result = {
             "live": "passed",
             "gate": 2,

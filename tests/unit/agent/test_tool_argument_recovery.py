@@ -344,10 +344,123 @@ def test_model_result_scope_disambiguates_siblings_without_reinterpreting_paths(
         scoped_value(value, read_query({"ref": ref, "path": list(value)}))
     query = ModelEvidenceScope(ref=ref, fields=list(value))
     assert scoped_value(value, read_query(query.model_dump(exclude_none=True)))[0] == value
-    with pytest.raises(ValidationError, match="exactly one selector"):
+    with pytest.raises(ValidationError, match="at most one selector"):
         ModelEvidenceScope(ref=ref, fields=["status"], path=["warnings"])
-    with pytest.raises(ValidationError, match="exactly one selector"):
-        ModelEvidenceScope(ref=ref)
+    assert ModelEvidenceScope(ref=ref).fields is None
     # When a valid nested path also names root keys, traversal retains its meaning.
     nested = {"a": {"b": "nested"}, "b": "root"}
     assert scoped_value(nested, read_query({"ref": ref, "path": ["a", "b"]}))[0] == "nested"
+
+
+@pytest.mark.asyncio
+async def test_saved_result_navigation_distinguishes_counts_cards_and_source_pagination(
+    bridge: Any,
+) -> None:
+    from easydesign.agent.evidence_output import ModelEvidenceScope
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Inspect saved retrieval and residue results")[
+        "execution_id"
+    ]
+    source = {
+        "status": "RETRIEVED",
+        "query_id": "saved-query",
+        "matching_chunks": 15,
+        "next_cursor": "opaque-original-cursor",
+        "errors": [],
+        "cards": [{"card_id": "passage-A", "passage": "Exact counterevidence. " * 90}],
+    }
+    rendered = json.loads(
+        output_message(
+            b,
+            "target",
+            eid,
+            ToolMessage(
+                name="retrieve_evidence", tool_call_id="source", content=json.dumps(source)
+            ),
+        ).content
+    )
+    ref = rendered["full_result"]
+    nav = rendered["navigation"]
+    assert nav["field_types"]["matching_chunks"] == "integer"
+    assert nav["field_types"]["cards"] == "array"
+    assert "facts" not in nav["field_types"]
+    assert nav["array_lengths"]["cards"] == 1
+    assert nav["retrieval_page"]["continue"] == {
+        "tool": "continue_evidence",
+        "arguments": {"cursor": source["next_cursor"]},
+    }
+    assert rendered["cards"] == source["cards"]
+    args = ModelEvidenceScope(ref=ref).model_dump(exclude_none=True)
+    inspected = json.loads((await guarded_read(b, eid, **args)).content)
+    assert inspected["status"] == "result-navigation" and "value" not in inspected
+    assert inspected["navigation"] == nav and "Exact counterevidence" not in json.dumps(inspected)
+    read = result_tool(b, "target")
+    page = json.loads(await read.ainvoke({"ref": ref, "path": ["cards"]}))
+    assert page["value"] == source["cards"] and page["next_offset"] is None
+    # The end of a stored page is not the end of retrieval; its cursor stays separate.
+    again = json.loads((await guarded_read(b, eid, ref=ref)).content)
+    assert (
+        again["navigation"]["retrieval_page"]["continue"]["arguments"]["cursor"]
+        == source["next_cursor"]
+    )
+    for selector in ({"path": ["facts"]}, {"fields": ["status", "warnings"]}):
+        with pytest.raises(InvalidFieldProjection):
+            await read.ainvoke({"ref": ref, **selector})
+    with pytest.raises(InvalidFieldProjection, match="Selected type: integer") as error:
+        await read.ainvoke({"ref": ref, "path": ["matching_chunks"], "offset": 2})
+    assert '"cards":"array"' in str(error.value)
+    assert not [e for e in b.store.events(b.thread) if "repair" in e["kind"]]
+    assert not b._jobs()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("violation", ["role", "execution", "tamper"])
+async def test_navigation_without_selector_still_requires_current_verified_artifact(
+    bridge: Any, violation: str
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    eid = b.store.begin_execution(b.thread, "Inspect")["execution_id"]
+    ref = offload(b, eid, role="site" if violation == "role" else "target")
+    if violation == "execution":
+        b.store.begin_execution(b.thread, "Follow-up", followup=True)
+    elif violation == "tamper":
+        row = next(e["payload"] for e in b.store.events(b.thread) if e["kind"] == "tool-view")
+        (b.project / row["artifact"]["relative_path"]).write_text("{}")
+    with pytest.raises((AgentBoundaryError, ArtifactIntegrityError)):
+        await result_tool(b, "target").ainvoke({"ref": ref})
+    assert not [e for e in b.store.events(b.thread) if "repair" in e["kind"]]
+
+
+class NavigationModel(ProjectionModel):
+    def answer(self, messages: Any) -> AIMessage:
+        reads = [
+            m for m in messages if isinstance(m, ToolMessage) and m.name == "read_evidence_result"
+        ]
+        if self.role != "coordinator" and reads and reads[-1].status == "success":
+            value = json.loads(reads[-1].content)
+            if value.get("status") == "result-navigation":
+                assert value["navigation"]["field_types"]["chains"] == "array"
+                assert value["navigation"]["field_types"]["identity_evidence"] == "object"
+                assert "value" not in value
+                return self.call("read_evidence_result", ref=self.result_ref, fields=KEYS)
+        return super().answer(messages)
+
+
+@pytest.mark.asyncio
+async def test_actual_harness_can_inspect_then_read_without_guessing_schema(bridge: Any) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    goal = "Inspect the existing evidence only"
+    eid = b.store.begin_execution(b.thread, goal)["execution_id"]
+    ref = offload(b, eid)
+    models = {
+        role: NavigationModel(role=role, result_ref=ref, bad_selector={}) for role in PHASE2_ALLOWED
+    }
+    graph = create_harness(b, models, scripted_config(), MemorySaver(), goal, execution_id=eid)
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content=goal)]}, {"configurable": {"thread_id": b.thread}}
+    )
+    assert_inspection_stopped(b, result)
+    assert models["target"].observed == {key: SNAPSHOT[key] for key in KEYS}
+    assert not [e for e in b.store.events(b.thread) if "repair" in e["kind"]]
+    assert not b._jobs()

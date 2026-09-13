@@ -43,9 +43,13 @@ class ReadEvidenceResult(StrictDTO):
 
 
 class ModelEvidenceScope(StrictDTO):
-    """Explicit sibling or nested projection with unambiguous pagination."""
+    """Inspect a result's types first, then select an explicit scoped value."""
 
-    ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
+    ref: str = Field(
+        pattern=r"^/result-[a-f0-9]+\.json$",
+        description="Exact supplied result. Omit fields/path to inspect its field types and "
+        "navigation without reading source content; do this when its schema is unknown.",
+    )
     fields: list[str] | None = Field(
         default=None,
         min_length=1,
@@ -75,9 +79,10 @@ class ModelEvidenceScope(StrictDTO):
 
     @model_validator(mode="after")
     def one_selector(self) -> ModelEvidenceScope:
-        if (self.fields is None) == (self.path is None):
+        if self.fields is not None and self.path is not None:
             raise ValueError(
-                "Use exactly one selector: fields for siblings OR path for nested keys."
+                "Use at most one selector: fields for siblings OR path for nested keys. "
+                "Omit both to inspect the result's field types."
             )
         return self
 
@@ -307,6 +312,56 @@ def alias_navigation(value: Any, *, source: bool = False) -> dict[str, Any]:
     return {"projection_aliases": aliases} if aliases else {}
 
 
+def result_navigation(value: Any) -> dict[str, Any]:
+    """Bounded structural metadata from the verified object, without scientific inference."""
+
+    def kind(item: Any) -> str:
+        if item is None:
+            return "null"
+        return {
+            dict: "object",
+            list: "array",
+            str: "text",
+            bool: "boolean",
+            int: "integer",
+            float: "number",
+        }[type(item)]
+
+    result: dict[str, Any] = {"value_type": kind(value)}
+    if isinstance(value, dict):
+        keys = list(value)[:30]
+        result.update(
+            field_types={key: kind(value[key]) for key in keys},
+            array_lengths={key: len(value[key]) for key in keys if isinstance(value[key], list)},
+            field_count=len(value),
+            field_index_complete=len(keys) == len(value),
+            **alias_navigation(value, source=True),
+        )
+        if (
+            isinstance(value.get("cards"), list)
+            and type(value.get("matching_chunks")) is int
+            and isinstance(value.get("query_id"), str)
+            and isinstance(value.get("next_cursor"), str)
+        ):
+            result["retrieval_page"] = {
+                "stored_cards": len(value["cards"]),
+                "matching_chunk_count": value["matching_chunks"],
+                "cards_path": ["cards"],
+                "continue": {
+                    "tool": "continue_evidence",
+                    "arguments": {"cursor": value["next_cursor"]},
+                }
+                if value["next_cursor"]
+                else None,
+                "instruction": "cards contains only this saved retrieval page. matching_chunks "
+                "is a count, not an array. Read cards here; use the exact continuation cursor "
+                "for further source passages. A saved-page offset cannot retrieve later pages.",
+            }
+    elif isinstance(value, (list, str)):
+        result["length"] = len(value)
+    return result
+
+
 def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     """Expose existing candidate reasoning and source-coordinate rows in one scoped view.
 
@@ -476,6 +531,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                 "full_result": value["full_result"],
                 "instruction": "Read a narrower source field; this page was not supplied.",
             }
+        projected["navigation"] = result_navigation(original)
         return message.model_copy(update={"content": compact(projected)})
     if source_artifact is None and len(compact(value)) <= 1600:
         return message.model_copy(
@@ -619,6 +675,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     **(projected if isinstance(projected, dict) else {"view": projected}),
                     "full_result": receipt["ref"],
                     "stored_fields": list(value) if isinstance(value, dict) else None,
+                    "navigation": result_navigation(value),
                     **alias_navigation(value, source=True),
                     "partial": projected != complete_projection,
                     "scientific_content_complete": projected == complete_projection,
@@ -626,6 +683,8 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                         "Use supplied scientific content directly when complete, or the "
                         "declared fields when declared_scope_complete=true. Other analysis "
                         "fields are optional scoped reads, not required full-file paging. "
+                        "If field types are unknown, call read_evidence_result(ref) with no "
+                        "selector to inspect navigation; do not guess another tool's fields. "
                         "read_evidence_result(ref, path=['key']) for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
                         "Use offset/limit for list pages. Full result retained."
@@ -694,6 +753,8 @@ def navigation_hint(value: Any) -> str:
         return (
             "Available object keys: "
             + compact(list(value)[:30])[:2000]
+            + "; field types: "
+            + compact(result_navigation(value)["field_types"])[:2000]
             + (
                 "; readable projection aliases: " + compact(alias_navigation(value, source=True))
                 if alias_navigation(value, source=True)
@@ -771,6 +832,18 @@ def result_tool(bridge: Any, role: str) -> Any:
     async def read(**arguments: Any) -> str:
         full = verified_result(bridge, role, arguments.get("ref"))
         query = read_query(arguments)
+        if all(item is None for item in (query.field, query.fields, query.path)):
+            if query.offset:
+                raise InvalidFieldProjection("Choose a list/text path before using an offset.")
+            return compact(
+                {
+                    "status": "result-navigation",
+                    "full_result": query.ref,
+                    "navigation": result_navigation(full),
+                    "instruction": "No source content was read. Select an existing typed field; "
+                    "use path for one field/nested traversal or fields for siblings.",
+                }
+            )
         value, selected_path = scoped_value(full, query)
         source = {"full_result": query.ref, **alias_navigation(full, source=True)}
         selector = {"path": selected_path}
@@ -826,10 +899,12 @@ def result_tool(bridge: Any, role: str) -> Any:
                 raise InvalidFieldProjection(
                     "Offset applies only to a selected list or text, not this object/scalar. "
                     "No page was returned. "
-                    + navigation_hint(value)
-                    + " For a table select its rows child, then page within that stored list. "
-                    "A stored facts_table contains only the prior requested residue page; "
-                    "request another region with read_site_evidence and exact label_seq_ids."
+                    + "Selected type: "
+                    + result_navigation(value)["value_type"]
+                    + ". "
+                    + navigation_hint(full)
+                    + " Call read_evidence_result(ref) without selectors for typed navigation "
+                    "and any retrieval continuation. Then select an actual list/text field."
                 )
             page, next_offset = value, None
             if len(compact(page)) > 4400:
@@ -859,7 +934,8 @@ def result_tool(bridge: Any, role: str) -> Any:
         args_schema=ReadEvidenceResult,
         description=(
             "Read a verified full_result supplied to this role/execution. Choose keys from "
-            "that actual result, not from another gate's schema. Use exactly one of field "
+            "that actual result, not from another gate's schema. With only ref, inspect "
+            "its field types/navigation without source content. Otherwise use one of field "
             "(one top-level key), fields (sibling keys), or path (nested traversal). "
             "Use offset/limit for list pages, offset for text pages. Use focused fields; "
             "do not read the whole artifact sequentially."

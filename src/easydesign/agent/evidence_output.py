@@ -10,12 +10,14 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 
 from easydesign.core import ArtifactRef
 
-from .contracts import AgentBoundaryError, InvalidFieldProjection, StrictDTO
+from .contracts import AgentBoundaryError, InvalidFieldProjection, StrictDTO, UnknownEvidenceResult
 from .session_store import compact, confined
+
+RESULT_REF_PATTERN = r"^(?:/result-[a-f0-9]+\.json|result:[1-9][0-9]{0,17})$"
 
 
 class ReadEvidenceResult(StrictDTO):
-    ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
+    ref: str = Field(pattern=RESULT_REF_PATTERN)
     field: str | None = Field(
         default=None,
         description="One top-level key for internal readers; model uses fields or path.",
@@ -46,8 +48,9 @@ class ModelEvidenceScope(StrictDTO):
     """Inspect a result's types first, then select an explicit scoped value."""
 
     ref: str = Field(
-        pattern=r"^/result-[a-f0-9]+\.json$",
-        description="Exact supplied result. Omit fields/path to inspect its field types and "
+        pattern=RESULT_REF_PATTERN,
+        description="Exact supplied result or short result:N handle from runtime navigation. "
+        "Prefer the short handle when offered. Omit fields/path to inspect its field types and "
         "navigation without reading source content; do this when its schema is unknown.",
     )
     fields: list[str] | None = Field(
@@ -498,6 +501,16 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         value = json.loads(message.content)
     except (ValueError, TypeError):
         value = message.content
+    if (
+        message.status == "error"
+        and message.name == "read_evidence_result"
+        and isinstance(value, dict)
+        and value.get("error_code") == "UNKNOWN_EVIDENCE_RESULT"
+        and len(compact(value)) <= 6000
+    ):
+        # This bounded runtime catalog is repair feedback, not a scientific result.
+        # Do not mint another result ID just to explain how to recover a result ID.
+        return message
     source_artifact = None
     if (
         message.name == "analyze_receptor_context"
@@ -704,13 +717,29 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
 
 def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | None = None) -> Any:
     """Authorization and integrity precede all recoverable argument diagnostics."""
-    if not isinstance(ref, str) or not re.fullmatch(r"/result-[a-f0-9]+\.json", ref):
+    if not isinstance(ref, str) or not re.fullmatch(RESULT_REF_PATTERN, ref):
         raise AgentBoundaryError("Invalid scoped result reference")
     execution = bridge.store.latest_execution(bridge.thread)
     if execution_id is not None and (
         execution is None or execution["execution_id"] != execution_id
     ):
         raise AgentBoundaryError("Result read is not bound to the current execution")
+    handle = ref.startswith("result:")
+    if handle:
+        issued = bridge.store.db.execute(
+            "SELECT thread,payload FROM events WHERE seq=? AND kind='tool-view'",
+            (int(ref.split(":", 1)[1]),),
+        ).fetchone()
+        if issued is not None:
+            payload = json.loads(issued[1])
+            if (
+                issued[0] != bridge.thread
+                or payload.get("role") != role
+                or execution is None
+                or payload.get("execution_id") != execution["execution_id"]
+            ):
+                raise AgentBoundaryError("Result handle belongs to another role/thread/execution")
+            ref = payload["ref"]
     row = bridge.store.db.execute(
         "SELECT payload FROM events WHERE thread=? AND kind='tool-view' "
         "AND json_extract(payload,'$.role')=? AND json_extract(payload,'$.ref')=? "
@@ -718,7 +747,32 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
         (bridge.thread, role, ref, execution["execution_id"] if execution else None),
     ).fetchone()
     if row is None:
-        raise AgentBoundaryError("Result was not supplied to this role/execution")
+        known = bridge.store.db.execute(
+            "SELECT 1 FROM events WHERE kind='tool-view' "
+            "AND json_extract(payload,'$.ref')=? LIMIT 1",
+            (ref,),
+        ).fetchone()
+        unregistered = bridge.store.root / "agent-work" / bridge.thread / ref[1:]
+        if (
+            known
+            or execution is None
+            or role not in {"target", "site"}
+            or (not handle and (unregistered.exists() or unregistered.is_symlink()))
+        ):
+            raise AgentBoundaryError("Result was not supplied to this role/execution")
+        # No fuzzy matching or implicit reads. A mistyped, never-issued ID can be
+        # repaired using only IDs already supplied to this role and execution.
+        recent = bridge.store.db.execute(
+            "SELECT json_extract(payload,'$.ref') AS ref, MAX(seq) AS issuance FROM events "
+            "WHERE thread=? AND kind='tool-view' AND json_extract(payload,'$.role')=? "
+            "AND json_extract(payload,'$.execution_id')=? "
+            "GROUP BY ref ORDER BY MAX(seq) DESC LIMIT 21",
+            (bridge.thread, role, execution["execution_id"]),
+        ).fetchall()
+        raise UnknownEvidenceResult(
+            [{"ref": f"result:{r[1]}", "original_ref": r[0]} for r in recent[:20]],
+            more_available=len(recent) > 20,
+        )
     stored = json.loads(row[0])
     if role == "judge":
         from .tools import JUDGE_EVIDENCE

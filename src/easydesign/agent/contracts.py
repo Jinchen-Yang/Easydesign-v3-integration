@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -355,6 +355,33 @@ class ResearchQueryMismatch(InvalidFieldProjection):
             "error_code": "INVALID_RESEARCH_QUERY",
             "required_action": "research_evidence",
             "message": str(self),
+        }
+
+
+class UnknownEvidenceResult(InvalidFieldProjection):
+    """An unissued reference returns navigation only, never evidence or authority."""
+
+    def __init__(self, handles: list[dict[str, str]], *, more_available: bool) -> None:
+        super().__init__("Unknown result reference; no source content was read.")
+        self.handles = handles
+        self.more_available = more_available
+
+    def result(self) -> dict[str, Any]:
+        return {
+            "status": "REQUIRES_ACTION",
+            "category": self.category,
+            "error_code": "UNKNOWN_EVIDENCE_RESULT",
+            "required_action": "read_evidence_result",
+            "available_result_refs": [h["original_ref"] for h in self.handles],
+            "available_result_handles": self.handles,
+            "more_results_available": self.more_available,
+            "message": str(self)
+            + " Use a short handle from available_result_handles as ref='result:N', "
+            "instead of retyping the long ID. Handles identify immutable issuance records "
+            "in this project; only the current role and execution can read them. "
+            "The list contains recent owned references only, not suggested replacements. "
+            "If the needed result is absent, repeat its original scientific read. "
+            "Do not reconstruct IDs from memory; every new read still checks authority and hash.",
         }
 
 

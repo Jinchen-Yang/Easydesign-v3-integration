@@ -678,6 +678,9 @@ class Phase2Bridge(TargetBridge):
                     raise AgentBoundaryError("Site dossier differs from proposal Target or owner")
                 dossier_context = {
                     "runtime_status": dossier["runtime_status"],
+                    "approach_validation": dossier.get(
+                        "approach_validation", {"status": "not-supplied"}
+                    ),
                     "trusted_residue_facts": dossier["trusted_residue_facts"],
                     "receptor_context": dossier["receptor_context"],
                     "candidates": [

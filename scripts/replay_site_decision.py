@@ -195,6 +195,7 @@ async def main():
             "gate_type": "site-hotspot",
             "target_facts": bridge.read_evidence()["hard_facts"],
             "runtime_status": dossier["runtime_status"],
+            "approach_validation": dossier["approach_validation"],
             "runtime_candidate_facts": {
                 "trusted_residue_facts": dossier["trusted_residue_facts"],
                 "candidates": [

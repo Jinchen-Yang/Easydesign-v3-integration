@@ -92,7 +92,13 @@ class OptionRecommendation(StrictDTO):
 class JudgeVerdict(StrictDTO):
     """Scientific opinion only; deterministic bindings never come from the model."""
 
-    verdict: Literal["ready-to-ask", "insufficient", "reject", "assessed"]
+    verdict: Literal["ready-to-ask", "insufficient", "reject", "assessed"] = Field(
+        description="Check claims about BOTH the selected option and alternatives. Use reject "
+        "when any material factual premise or categorical mechanism/access claim needs "
+        "correction; ready-to-ask with a warning does not correct it. Use insufficient for "
+        "missing consequential evidence, ready-to-ask for a sound pending question, assessed "
+        "only for a completed Target-only bundle."
+    )
     reasons: list[ShortText] = Field(min_length=1, max_length=8)
     limitations: list[ShortText] = Field(min_length=1, max_length=8)
     recommendation: OptionRecommendation | None = None

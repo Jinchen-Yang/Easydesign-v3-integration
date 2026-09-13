@@ -2421,3 +2421,27 @@ checks183b Ruff PASS, mypy23 PASS,25targeted tests PASS in54.84s, including exac
 geometry joins, wrong-chain/insertion/model decoys, source binding and native restart. Preflight183
 rebuilt the real179 dossier read-only, verified all28candidate geometry rows and explicit rejection
 of a foreign kernel Target binding; working set35913characters. Original source bytes remain intact.
+
+### Replay183 and explicit calculation scope — 2026-09-13
+
+Replay183 on3debf523 used35913working-set characters and exact kernel per-member geometry.
+Two first-call decisions completed in103.50/47.88s (3222/3793public characters;12258input tokens
+each), and286->414 runtime hydration passed. Judge returned the correct Gate option=site after
+one max_tokens continuation (8192then5958output tokens,147.80s), but did not reject categorical
+whole-VHH inaccessibility inferred from point exposure. It recognized a faulty original research
+glycan inference yet allowed that as a limitation. independent-content-audit.json records scientific
+FAIL; none of these replay results constitutes a Golden acceptance. Exact positions improved:
+the second output no longer invented a cytoplasmic pocket component, explicitly preserved IgG/VHH
+transfer limits and unknown effect direction, and warned that avoiding an agonistic epitope does
+not guarantee neutrality. The unsupported categorical access claim still needs correction.
+
+Current dossier adds an explicit approach_validation=not-performed statement of the existing
+prepared-target evaluator's scope: it performs point exposure/geometry, not whole-VHH docking or
+CDR/framework steric clearance. This is a runtime fact about what was executed, not a new
+calculation, physical hard constraint or verdict on feasibility. Independent physical/experimental
+constraints retain their own scope. Both synthesis and Judge receive this status. JudgeVerdict's
+existing verdict field now documents the requirement to reject unsupported categorical claims in
+both selected and alternative options; no schema field, agent, generic loop or budget was added.
+SiteDecision risk guidance explicitly addresses forbidden effects rather than equating avoidance
+of a known risk factor with safety. checks184a Ruff/mypy23 PASS and6targeted Judge/hydration/native
+restart tests PASS in27.85s. Next replay uses the same verified saved179 evidence.

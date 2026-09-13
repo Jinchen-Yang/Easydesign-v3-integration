@@ -46,7 +46,12 @@ class SiteDecision(StrictDTO):
         "observed residue exposure from untested whole-binder access."
     )
     alternative_comparison: DecisionText
-    major_risks: list[DecisionPoint] = Field(default_factory=list, max_length=4)
+    major_risks: list[DecisionPoint] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Address the user's forbidden effects as well as failure to achieve the "
+        "goal. Avoiding a known risk factor does not establish safety or absence of that risk.",
+    )
     uncertainty: list[DecisionPoint] = Field(min_length=1, max_length=4)
 
     @model_validator(mode="after")
@@ -123,6 +128,7 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
         "scientific_context": dossier["scientific_context"],
         "candidates": candidates,
         "receptor_context": dossier["receptor_context"],
+        "approach_validation": dossier.get("approach_validation", {"status": "not-supplied"}),
         "decision_questions": [
             {
                 "question": q["question"],

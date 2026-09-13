@@ -310,6 +310,13 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         }
     return {
         "kind": "site-evidence-dossier-v5",
+        "approach_validation": {
+            "status": "not-performed",
+            "scope": "Existing prepared-target evaluation supplies point exposure/geometry. "
+            "It does not perform whole-VHH CDR/framework docking or steric clearance. "
+            "These metrics support relative access concerns, not categorical impossibility "
+            "or feasibility. Independent physical/experimental constraints retain their scope.",
+        },
         "project_id": bridge.project_id,
         "owner_thread": bridge.thread,
         "target_binding": target["binding"],

@@ -9,7 +9,7 @@ identities, numbering conversions or numerical geometry facts. Runtime attaches 
 Do not search, call scientific tools or reopen Gate 1.
 
 Choose the candidate most defensible for the user's biological objective and delivery route.
-Research preferences, stopping rationale and interpretations are fallible opinions, not facts.
+Use the supplied decision-question scope, authoritative runtime facts and scoped source evidence.
 Include at least one other supplied candidate ID in alternative_candidate_ids when multiple
 candidates exist, including rejected/avoid options: comparing them does not recommend them.
 Use an empty list only when the dossier supplies a single candidate. A kernel score or name

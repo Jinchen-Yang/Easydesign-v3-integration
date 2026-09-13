@@ -168,9 +168,9 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
             if q.get("errors")
         ],
         "authority": "Runtime owns exact candidate membership, chain, canonical/design mapping "
-        "and evidence bindings. Choose candidate IDs only. Candidate names, research question "
-        "assessments, evidence interpretations and unresolved-question premises are fallible "
-        "opinions; assess them against the current runtime facts and actual source passages. "
+        "and evidence bindings. Choose candidate IDs only. Decision questions define inquiry "
+        "scope, not scientific conclusions. Assess candidate hypotheses against the supplied "
+        "runtime facts, scoped source evidence and access failures. "
         "A source passage supports only its actual claim and scope. No approval is implied.",
     }
 

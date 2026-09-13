@@ -61,7 +61,7 @@ of ineligibility, but the evidence must still support a meaningful question.
 ## Site / Hotspot
 
 Review the authoritative SiteIntent, site_dossier_facts (or runtime_candidate_facts in replay),
-scoped source passages, evaluations and research opinions. The bound dossier contains current
+scoped source passages, evaluations, decision questions and retrieval status. The bound dossier contains current
 canonical/design correspondence and receptor topology/state. Legacy prepared-chain evaluations
 have their own annotation scope: an absent annotation there does not negate an independently
 supplied membrane frame or verified correspondence. Preserve genuine limits in both sources.
@@ -88,14 +88,14 @@ receptor integrity/expression and assay sensitivity. Check the alternative of fa
 A null result with those controls can support a bounded assay-specific conclusion, not universal
 inertness. Challenge mechanisms and falsifiers against the actual biological objective.
 
-Review decision_basis: the few consequential questions, actual contradiction/alternative search,
-remaining uncertainties and stopping rationale. Research should stop when further searching is
-unlikely to change ranking, hard constraints or major risks. Reasonably searched UNRESOLVED is
-valid; an unperformed consequential inquiry is different. Queries can inform multiple topics;
-do not demand a search per taxonomy label. Access failure is unresolved, never negative biology.
-Question statuses and stopping opinions are claims to assess, not proof of sufficiency. A ranking
-that stays the same does not by itself settle adverse-effect risk. Require enough evidence for
-the current Gate decision, not literature completeness.
+Review research_evidence.decision_questions and retrieval_status against the authoritative runtime
+facts and scoped source_cards, including contradictory or adverse evidence. Assess whether the
+current SiteIntent preserves consequential uncertainty and has enough evidence for this Gate.
+Reasonably searched UNRESOLVED is valid; an unperformed consequential inquiry is different.
+Queries can inform multiple topics; do not demand a search per taxonomy label. Retrieval status
+does not prove scientific entailment or sufficiency. Access failure is unresolved, never negative
+biology. A ranking that stays the same does not by itself settle adverse-effect risk. Require
+decision sufficiency, not literature completeness.
 
 ## Design specification
 
@@ -117,8 +117,8 @@ competitive kinetics alone does not prove specificity.
 ## Reading and submission
 
 A partial preview is not complete evidence. Use full_result and read_evidence_result for relevant
-facts, source cards and limitations. field selects a top-level key, fields selects sibling keys,
-and path traverses nested keys/list indices; use only one selector. On INVALID_FIELD_PROJECTION
+facts, source cards and limitations. fields selects top-level sibling keys, and path traverses
+nested keys/list indices; use only one selector. On INVALID_FIELD_PROJECTION
 correct the selector using supplied names. Argument/source-selection repairs share four rounds
 per execution; errors in one parallel batch share a round. Integrity and foreign-reference errors
 are fatal. Do not use network/corpus research tools. Submit the typed JudgeVerdict tool, not prose
@@ -136,7 +136,7 @@ against selected membership. A contradictory exclusion cannot be waived by a war
 Do not propose an unverified fourth candidate in prose; recommend review of an upstream
 hypothesis if the supplied alternatives are inadequate.
 
-Assess the current SiteDecision interpretation, not a copied preliminary Research verdict.
-The retained decision_basis records fallible Research opinions for provenance and sufficiency
-review. If current synthesis has corrected a Research premise, do not reintroduce that premise
-as your own factual conclusion or require the current proposal to inherit it.
+Assess the current SiteDecision interpretation in the hydrated SiteIntent against supplied runtime
+facts and scoped evidence. Preliminary Research opinions remain in the durable Dossier for audit;
+they are not supplied as Judge authority. Do not invent or reintroduce a prior Research premise
+or require the current proposal to inherit it.

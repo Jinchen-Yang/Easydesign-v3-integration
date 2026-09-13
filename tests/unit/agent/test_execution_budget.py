@@ -264,6 +264,159 @@ async def test_large_completed_batch_is_summarized_before_guard_without_losing_t
         store.close()
 
 
+@pytest.mark.asyncio
+async def test_complete_agent_summary_keeps_new_tool_results_and_checkpoint_tail(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    import deepagents.graph as factory
+    from deepagents.middleware.summarization import SummarizationMiddleware
+    from langchain.agents.middleware.types import AgentMiddleware
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langchain_core.tools import tool
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    class ContinuationModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+            return self
+
+        def _generate(
+            self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+        ) -> Any:
+            if any(isinstance(c, SummaryAccounting) for c in self.callbacks or []):
+                return ChatResult(
+                    generations=[
+                        ChatGeneration(
+                            message=AIMessage(
+                                content=(
+                                    "Synthetic summary: source-A counterevidence "
+                                    "remains unresolved."
+                                )
+                            )
+                        )
+                    ]
+                )
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    @tool
+    def read_new_evidence() -> str:
+        """Read a synthetic source after summary creation."""
+        return "NEW-SOURCE: exposure does not establish whole-binder accessibility."
+
+    config = scripted_config()
+    project = tmp_path / "project"
+    project.mkdir()
+    store = SessionStore(project)
+    bridge = SimpleNamespace(store=store, thread="assembled-research-memory")
+    eid = store.begin_execution(bridge.thread, "Synthetic assembled memory")["execution_id"]
+    received: list[list[Any]] = []
+
+    class Boundary(AgentMiddleware):
+        async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+            received.append(list(request.messages))
+            context_usage(
+                request.model, config, "site", [request.system_message, *request.messages]
+            )
+            calls = {
+                call["id"]
+                for m in request.messages
+                if isinstance(m, AIMessage)
+                for call in m.tool_calls
+            }
+            assert all(
+                m.tool_call_id in calls for m in request.messages if isinstance(m, ToolMessage)
+            ), "Summary split a tool transaction"
+            store.reserve_model_call(bridge.thread, "site", config.max_model_calls, eid)
+            return await handler(request)
+
+    model = ContinuationModel(
+        responses=[
+            AIMessage(
+                content="Read the next source",
+                tool_calls=[{"name": "read_new_evidence", "args": {}, "id": "fresh-call"}],
+            ),
+            AIMessage(content="New evidence retained; access remains uncertain."),
+            AIMessage(content="Checkpoint follow-up retains the same source."),
+        ]
+    )
+    backend = FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True)
+    memory = research_memory(bridge, config, model, backend, eid)
+    original_factory = factory.create_agent
+    assembled = []
+
+    def capture_factory(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("name") == "research-memory-regression":
+            assembled.extend(kwargs["middleware"])
+        return original_factory(*args, **kwargs)
+
+    monkeypatch.setattr(factory, "create_agent", capture_factory)
+    graph = factory.create_deep_agent(
+        model=model,
+        tools=[read_new_evidence],
+        backend=backend,
+        middleware=[memory, Boundary()],
+        checkpointer=InMemorySaver(),
+        system_prompt="Synthetic research context. " + "s" * 30000,
+        name="research-memory-regression",
+    )
+    messages = history(4, 40000)
+    messages.extend(
+        [
+            AIMessage(
+                content=[
+                    {"type": "thinking", "thinking": "synthetic " * 6000, "signature": "test"}
+                ],
+                tool_calls=[{"name": "read_evidence", "args": {}, "id": "large"}],
+            ),
+            ToolMessage(
+                content="source-A counterevidence: " + "x" * 22000,
+                tool_call_id="large",
+                name="read_evidence",
+            ),
+        ]
+    )
+    for i, message in enumerate(messages):
+        message.id = f"initial-{i}"
+    original = [m.model_dump() for m in messages]
+    run_config = {"configurable": {"thread_id": bridge.thread}}
+    try:
+        result = await graph.ainvoke({"messages": messages}, run_config)
+        assert len(received) == 2
+        assert any(
+            isinstance(m, ToolMessage)
+            and m.tool_call_id == "fresh-call"
+            and m.content.startswith("NEW-SOURCE:")
+            for m in received[-1]
+        )
+        assert [m for m in assembled if isinstance(m, SummarizationMiddleware)] == [memory]
+        event = (await graph.aget_state(run_config)).values["_summarization_event"]
+        assert event["cutoff_index"] == len(messages)
+        archive = tmp_path / "history" / event["file_path"].lstrip("/")
+        saved = archive.read_bytes()
+        assert b"source-A counterevidence" in saved
+        assert [m.model_dump() for m in messages] == original
+        store.close()
+        bridge.store = store = SessionStore(project)
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Continue from checkpoint.")]}, run_config
+        )
+        assert received[-1] == [
+            event["summary_message"],
+            *result["messages"][event["cutoff_index"] :],
+            received[-1][-1],
+        ]
+        assert received[-1][-1].content == "Continue from checkpoint."
+        assert any(
+            isinstance(m, ToolMessage) and m.tool_call_id == "fresh-call" for m in received[-1]
+        )
+        assert archive.read_bytes() == saved
+        events = store.events(bridge.thread)
+        assert sum(e["kind"] == "framework-summary-call" for e in events) == 1
+        assert sum(e["kind"] == "model-call" for e in events) == 4
+    finally:
+        store.close()
+
+
 @pytest.mark.parametrize("tail_kind", ["missing", "duplicate", "orphan", "new-user-message"])
 def test_tail_retention_does_not_hide_incomplete_calls_or_new_user_input(
     tmp_path: Path, tail_kind: str

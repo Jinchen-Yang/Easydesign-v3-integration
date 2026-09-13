@@ -105,6 +105,12 @@ class ResearchMemory(SummarizationMiddleware):
     Native history offload, checkpoint events and model accounting remain unchanged.
     """
 
+    @property
+    def name(self) -> str:
+        # DeepAgents replaces middleware by name. Preserve its single summary
+        # slot: two wrappers would apply the shared checkpoint cutoff twice.
+        return "SummarizationMiddleware"
+
     def __init__(self, model: Any, *, retained_tokens: int, **kwargs: Any) -> None:
         super().__init__(model=model, keep=("tokens", retained_tokens), **kwargs)
         self.retained_tokens = retained_tokens

@@ -32,3 +32,16 @@ Validation separates the saved-checkpoint compaction replay from a new frozen fr
 exam. Regression covers the actual oversized-batch shape, source/counterevidence history
 retention, incomplete transaction protection, shared call accounting and restart. A
 successful summary or continued model call alone is not scientific acceptance.
+
+The subsequent `e2c0e39` fresh exam exposed a separate integration defect: the new
+subclass inherited its own class name, while DeepAgents substitutes middleware by
+name. The default and custom summary layers both remained active and applied the
+same persisted cutoff twice. Fresh tool results disappeared from model requests;
+the provider eventually rejected an orphan tool result. This attempt also failed;
+its original evidence and frozen source remain preserved.
+
+The subclass now preserves the framework's `SummarizationMiddleware` name so that
+exactly one summary layer owns the checkpoint event. An assembled DeepAgents graph
+regression exercises an oversized complete batch, a new tool call after summary,
+and checkpoint continuation with the same source result still visible. Direct
+summary tests alone did not cover this factory substitution boundary.

@@ -12,7 +12,7 @@ from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from easydesign.agent.context_policy import SummaryAccounting, research_memory
+from easydesign.agent.context_policy import SummaryAccounting, context_usage, research_memory
 from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.models import PHASE2_MODEL_CALL_LIMIT, ModelConfig
 from easydesign.agent.session_store import SessionStore
@@ -193,6 +193,104 @@ async def test_native_summary_checkpoint_reopen_keeps_cutoff_and_small_tail(tmp_
         assert {c["execution_id"] for c in calls} == {eid}
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_large_completed_batch_is_summarized_before_guard_without_losing_trace(
+    tmp_path: Path,
+) -> None:
+    config = scripted_config()
+    project = tmp_path / "project"
+    project.mkdir()
+    store = SessionStore(project)
+    bridge = SimpleNamespace(store=store, thread="large-completed-batch")
+    eid = store.begin_execution(bridge.thread, "Synthetic large batch")["execution_id"]
+    model = FakeListChatModel(
+        responses=["Synthetic memory: preserve source-A counterevidence and unresolved access."]
+    )
+    backend = FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True)
+    messages = history(4, 40000)
+    batch = [
+        AIMessage(
+            content=[{"type": "thinking", "thinking": "synthetic " * 6000, "signature": "test"}],
+            tool_calls=[
+                {"name": "read_evidence", "args": {}, "id": f"large-{i}"} for i in range(6)
+            ],
+        ),
+        *[
+            ToolMessage(
+                content=f"source-A counterevidence {i}: " + "x" * 3800,
+                name="read_evidence",
+                tool_call_id=f"large-{i}",
+            )
+            for i in range(6)
+        ],
+    ]
+    messages.extend(batch)
+    original = [message.model_dump() for message in messages]
+    system = SystemMessage(content="Synthetic runtime context. " + "s" * 30000)
+    with pytest.raises(AgentBoundaryError, match="hard context guard"):
+        context_usage(model, config, "site", [system, *batch])
+    received = []
+
+    async def handler(request: Any) -> Any:
+        received.append(request.messages)
+        context_usage(model, config, "site", [request.system_message, *request.messages])
+        store.reserve_model_call(bridge.thread, "site", config.max_model_calls, eid)
+        return ModelResponse(result=[AIMessage(content="Synthetic continuation")])
+
+    try:
+        result = await research_memory(bridge, config, model, backend, eid).awrap_model_call(
+            ModelRequest(
+                model=model,
+                system_message=system,
+                messages=messages,
+                state={"messages": messages},
+                tools=[],
+            ),
+            handler,
+        )
+        event = result.command.update["_summarization_event"]
+        assert event["cutoff_index"] == len(messages)
+        assert received == [[event["summary_message"]]]
+        archive = tmp_path / "history" / event["file_path"].lstrip("/")
+        for i in range(6):
+            assert f"source-A counterevidence {i}: " + "x" * 3800 in archive.read_text()
+        assert [message.model_dump() for message in messages] == original
+        events = store.events(bridge.thread)
+        assert sum(e["kind"] == "framework-summary-call" for e in events) == 1
+        assert sum(e["kind"] == "model-call" for e in events) == 2
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("tail_kind", ["missing", "duplicate", "orphan", "new-user-message"])
+def test_tail_retention_does_not_hide_incomplete_calls_or_new_user_input(
+    tmp_path: Path, tail_kind: str
+) -> None:
+    messages: list[Any] = [
+        AIMessage(
+            content="synthetic " * 6000,
+            tool_calls=[{"name": "read", "args": {}, "id": "a"}],
+        ),
+        ToolMessage(content="Source result", tool_call_id="a"),
+    ]
+    if tail_kind == "missing":
+        messages.pop()
+    elif tail_kind == "duplicate":
+        messages.append(ToolMessage(content="Duplicate result", tool_call_id="a"))
+    elif tail_kind == "orphan":
+        messages.append(ToolMessage(content="Unpaired result", tool_call_id="b"))
+    else:
+        messages.append(HumanMessage(content="A new explicit constraint must remain visible."))
+    memory = research_memory(
+        SimpleNamespace(),
+        scripted_config(),
+        FakeListChatModel(responses=["unused"]),
+        FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True),
+        "unused",
+    )
+    assert memory._determine_cutoff_index(messages) < len(messages)
 
 
 @pytest.mark.asyncio

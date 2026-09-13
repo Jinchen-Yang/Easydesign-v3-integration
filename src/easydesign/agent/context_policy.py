@@ -10,6 +10,7 @@ from deepagents.middleware.summarization import (
     SummarizationMiddleware,
 )
 from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from .contracts import AgentBoundaryError
@@ -95,6 +96,54 @@ class SummaryAccounting(AsyncCallbackHandler):
         )
 
 
+class ResearchMemory(SummarizationMiddleware):
+    """Let native summarization include a completed batch that exceeds tail retention.
+
+    The framework moves a cutoff backward to keep tool calls and results together.
+    A single large reasoning/tool batch can therefore exceed the requested keep budget.
+    Once every result is present, that whole batch can instead join the native summary.
+    Native history offload, checkpoint events and model accounting remain unchanged.
+    """
+
+    def __init__(self, model: Any, *, retained_tokens: int, **kwargs: Any) -> None:
+        super().__init__(model=model, keep=("tokens", retained_tokens), **kwargs)
+        self.retained_tokens = retained_tokens
+
+    def _create_summary(self, messages_to_summarize: list[Any]) -> str:
+        from .evidence_output import reasoning_working_view
+
+        return super()._create_summary(reasoning_working_view(messages_to_summarize))
+
+    async def _acreate_summary(self, messages_to_summarize: list[Any]) -> str:
+        from .evidence_output import reasoning_working_view
+
+        # Summary input is a transcript, not a signed provider conversation. Reuse
+        # the lossless tool-record projection; private reasoning stays in the
+        # original checkpoint/offload, while source results and public text remain.
+        return await super()._acreate_summary(reasoning_working_view(messages_to_summarize))
+
+    def _determine_cutoff_index(self, messages: list[Any]) -> int:
+        cutoff = super()._determine_cutoff_index(messages)
+        tail = messages[cutoff:]
+        if not tail or not isinstance(tail[0], AIMessage):
+            return cutoff
+        calls = [call["id"] for call in tail[0].tool_calls]
+        if (
+            not calls
+            or tail[0].invalid_tool_calls
+            or not all(isinstance(message, ToolMessage) for message in tail[1:])
+        ):
+            return cutoff
+        results = [message.tool_call_id for message in tail[1:]]
+        if (
+            len(calls) == len(results) == len(set(calls))
+            and set(calls) == set(results)
+            and self.token_counter(tail) > self.retained_tokens
+        ):
+            return len(messages)
+        return cutoff
+
+
 def research_memory(
     bridge: Any, config: ModelConfig, model: Any, backend: Any, execution_id: str | None
 ) -> SummarizationMiddleware:
@@ -110,7 +159,7 @@ def research_memory(
         trigger = min(
             trigger, max(1000, (profile_limit - config.for_role("site").max_output_tokens) // 2)
         )
-    return SummarizationMiddleware(
+    return ResearchMemory(
         model=summary_model,
         backend=backend,
         # Native AND/OR trigger clauses provide a small hysteresis: after a
@@ -124,7 +173,7 @@ def research_memory(
         # Native token retention preserves complete tool transactions. A message
         # count can retain several large batches and immediately trigger another
         # summary; leave headroom for actual research within the shared call budget.
-        keep=("tokens", max(200, min(trigger // 4, config.max_input_chars // 16))),
+        retained_tokens=max(200, min(trigger // 4, config.max_input_chars // 16)),
         trim_tokens_to_summarize=config.hard_input_chars // 4,
         summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
         "Keep this working summary within 1200 words. Retain the current scientific questions, "

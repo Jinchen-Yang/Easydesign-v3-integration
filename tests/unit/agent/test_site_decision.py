@@ -258,3 +258,56 @@ def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_b
         assert query_id in str(error.value)
     finally:
         SITE_EVIDENCE.reset(token)
+
+
+def test_runtime_candidate_name_cannot_promote_research_claim(site_bridge: Any) -> None:
+    from easydesign.agent.site_decision import candidate_name
+
+    b = site_bridge
+    execution = b.store.begin_execution(b.thread, "SYNTHETIC candidate naming boundary")
+    token = bind(b)
+    try:
+        dossier = persist_dossier(b, handoff(), execution["execution_id"])
+        candidate = dossier["candidate_comparison"][0]
+        original_id = candidate["candidate_id"]
+        candidate["research_hypothesis"]["name"] = "SYNTHETIC database-proven inert epitope"
+        candidate["location"]["segments"] = ["extracellular", "transmembrane"]
+        original = deepcopy(dossier)
+        chosen = decision(original_id)
+        working = decision_working_set(dossier)
+        intent = compile_site_decision(dossier, chosen)
+        assert "database-proven" not in str(working)
+        assert "database-proven" not in intent.selected_site.name
+        assert intent.selected_site.name == candidate_name(candidate)
+        assert intent.selected_site.hotspot_label_seq_ids == [1, 2, 3]
+        assert working["candidates"][0]["location"]["segments"] == [
+            "extracellular",
+            "transmembrane",
+        ]
+        assert working["candidates"][0]["candidate_id"] == original_id
+        assert dossier == original
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_coordinator_reads_progress_without_becoming_site_reviewer(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    import json
+
+    from easydesign.agent.phase2_tools import _scientific_tools
+
+    b = site_bridge
+    current = {
+        "scientific_state": "awaiting-human-approval",
+        "gate_type": "site-hotspot",
+        "next_specialist": "evidence-judge",
+        "proposal": {"rationale": "SYNTHETIC specialist interpretation"},
+    }
+    original = deepcopy(current)
+    monkeypatch.setattr(b, "scientific_state", lambda: current)
+    tool = next(t for t in _scientific_tools(b, "coordinator") if t.name == "read_scientific_state")
+    shown = json.loads(await tool.ainvoke({}))
+    assert shown == {k: v for k, v in original.items() if k != "proposal"}
+    assert current == original

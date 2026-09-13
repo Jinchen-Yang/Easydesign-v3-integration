@@ -86,7 +86,9 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
             result.append(tool)
 
         async def state() -> str:
-            value = bridge.scientific_state()
+            value = {
+                key: item for key, item in bridge.scientific_state().items() if key != "proposal"
+            }
             if "site" in value:
                 value["site"] = {
                     "selected": value["site"]["hotspots"]["hotspot_sets"],
@@ -100,7 +102,9 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
                 coroutine=state,
                 args_schema=EmptyArguments,
                 description=(
-                    "Read verified target/site approval state and the current scientific question."
+                    "Read verified approval state and next specialist. Delegate to that "
+                    "specialist; the independent Judge receives the full proposal and "
+                    "scoped scientific evidence."
                 ),
             )
         )

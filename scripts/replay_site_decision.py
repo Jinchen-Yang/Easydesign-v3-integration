@@ -27,7 +27,12 @@ from easydesign.agent.models import ModelConfig, create_models
 from easydesign.agent.phase2 import SITE_EVIDENCE, Phase2Bridge
 from easydesign.agent.session_store import SessionStore, compact, identity
 from easydesign.agent.site_contracts import CanonicalMappingQuery, SiteQuery
-from easydesign.agent.site_decision import SiteDecision, compile_site_decision, decision_working_set
+from easydesign.agent.site_decision import (
+    SiteDecision,
+    candidate_name,
+    compile_site_decision,
+    decision_working_set,
+)
 from easydesign.agent.site_dossier import SiteResearchHandoff, site_dossier
 
 
@@ -195,7 +200,7 @@ async def main():
                 "candidates": [
                     {
                         "candidate_id": c["candidate_id"],
-                        "name": c["research_hypothesis"]["name"],
+                        "name": candidate_name(c),
                         "design_labels": c["research_hypothesis"]["hotspot_label_seq_ids"],
                         "location": c["location"],
                     }

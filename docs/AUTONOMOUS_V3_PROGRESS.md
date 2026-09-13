@@ -2341,3 +2341,51 @@ query, contradiction retention, native dossier hydration and unreviewed transfer
 Target binding. Protected181-precommit verifies385unchanged baseline files plus unchanged
 Golden oracle/model config; git diff --check and final Ruff PASS. Next use existing explicit
 unreviewed-Site continuation from179 to run independent Judge without new research or Site jobs.
+
+### Live180 scientific rejection and interpretation boundary — 2026-09-13
+
+Live180 ran clean be849be4 and used the explicit unreviewed-Site transfer from live179.
+No new research, synthesis or Site job was created. Independent Judge returned ready-to-ask /
+DISCOURAGED and a Gate2 card, but the external scientific audit rejected the content. All28
+candidate members have correct exact design/canonical/source mapping; the narrative incorrectly
+called the mixed N-term/TM1 candidate wholly extracellular, treated avoiding known ECL2/disulfide
+risk as absence of activation/trafficking risk, and promoted kernel mode labels to GPCRdb epitope
+curation. Judge repeated known mapping/frame facts as unknown and failed to challenge a null
+functional assay being treated as proof of inertness without verified engagement/controls.
+
+The original run timed out waiting for review during a user interruption; its failed report is
+preserved. A subsequent explicit FAIL receipt at phase2-goldens-20260912T180911229106Z/gpcr/
+gate2-independent-review.json records the late audit and does not rewrite the report or accepted
+snapshots. C12/J2=14 new calls; Judge second input94135characters, within the unchanged100k guard.
+Repeated Coordinator proposal reads caused unnecessary orchestration calls.
+
+Current changes keep scientific interpretation separate from runtime facts. Candidate display
+names now use the existing stable ID plus the verified topology segments. Original researcher
+names remain immutable in the dossier, but a name such as "GPCRdb inhibit" is not propagated as
+an authoritative site name. Exact IDs/membership, evidence binding, original question states and
+counterevidence remain intact. Synthesis field guidance distinguishes relative risk, mixed topology,
+sequence difference versus experimental origin, whole-binder access and controlled null assays.
+Judge guidance is consolidated around factual consistency before evidence-grounded open judgment;
+DISCOURAGED/UNRESOLVED cannot excuse a contradiction. No new model, scientific agent, generic
+repair mechanism, history encoding or numerical context target was introduced.
+
+The Coordinator state tool now supplies progress and next-specialist state without the full
+unaccepted proposal. The underlying bridge state and approved/frozen summaries are unchanged;
+Judge receives the full proposal and bound evidence directly. Receptor output explicitly states
+that kernel candidate modes are computational hypotheses, not GPCRdb-curated antibody epitopes.
+Next validation uses saved179 evidence, not the older177 corpus, before another real GPCR run.
+
+182 validation: Ruff PASS; mypy23 PASS. Initial formatting/type diagnostics were fixed. The first
+pytest command named a nonexistent generic test file and collected none; corrected without product
+changes. checks182d was deliberately interrupted after21PASS/2FAIL because it loaded obsolete
+Design routing: one Site restart correctly detected a source fingerprint change during the test,
+and old Design routing exhausted the unchanged call budget. Original output/fixtures are retained.
+The Design state now reports evidence-judge for an existing unreviewed proposal, and binder-strategy
+for absent proposals or trusted revision, matching the actual next action without inspecting prose.
+
+On fixed source, checks182f passes all5Design harness cases in240.85s; checks182h passes12Site
+restart/context cases in27.42s. checks182e passes4Judge contracts plus native Dossier restart in20.03s;
+checks182g independently passes the typed Site repair in13.14s. Candidate naming/provenance and
+Coordinator progress tests passed in182d; exact nonidentity hydration and binding/tamper tests
+also passed. Protected182-precommit verifies385baseline files, oracle and model configuration
+unchanged. No real model ran during edits. Next: the existing179 Dossier replay on this checkpoint.

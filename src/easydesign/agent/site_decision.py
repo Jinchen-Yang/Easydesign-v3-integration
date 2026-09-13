@@ -32,11 +32,18 @@ class SiteDecision(StrictDTO):
         "not recommend these alternatives. Empty only when the dossier has one candidate.",
     )
     recommendation: Literal["SUPPORTED", "DISCOURAGED"]
-    why_selected: DecisionText
-    mechanistic_rationale: DecisionText
+    why_selected: DecisionText = Field(
+        description="Relative scientific preference among the supplied candidates. Avoiding one "
+        "known adverse-effect epitope or constraint does not establish absence of that risk."
+    )
+    mechanistic_rationale: DecisionText = Field(
+        description="Evidence-grounded mechanism and falsifier. A null functional response is "
+        "interpretable only after target engagement and relevant assay controls are established."
+    )
     approach_rationale: DecisionText = Field(
         description="Scientific access/whole-binder approach interpretation and its limits; "
-        "runtime supplies the underlying geometry."
+        "runtime supplies the underlying geometry. Preserve mixed topology and distinguish "
+        "observed residue exposure from untested whole-binder access."
     )
     alternative_comparison: DecisionText
     major_risks: list[DecisionPoint] = Field(default_factory=list, max_length=4)
@@ -48,6 +55,13 @@ class SiteDecision(StrictDTO):
         if len(ids) != len(set(ids)):
             raise ValueError("Select each candidate at most once")
         return self
+
+
+def candidate_name(candidate: dict[str, Any]) -> str:
+    """Identify a runtime candidate by its existing ID and verified location, not a claim."""
+    segments = candidate.get("location", {}).get("segments", [])
+    location = "/".join(segments)
+    return f"{candidate['candidate_id']}" + (f" ({location})" if location else "")
 
 
 def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
@@ -72,8 +86,10 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
         candidates.append(
             {
                 "candidate_id": candidate["candidate_id"],
-                "name": hypothesis["name"],
-                "origin": hypothesis["origin"],
+                "name": candidate_name(candidate),
+                "research_declared_origin": hypothesis["origin"],
+                "origin_scope": "Research classification, not proof of an experimentally "
+                "established epitope. Assess the actual bound evidence below.",
                 "location": candidate.get("location", {"topology": "unresolved"}),
                 "residue_facts": [
                     {
@@ -201,6 +217,7 @@ def compile_site_decision(dossier: dict[str, Any], decision: SiteDecision) -> Si
         return SiteSelection.model_validate(
             {
                 **original,
+                "name": candidate_name(candidates[candidate_id]),
                 "role": "primary"
                 if primary
                 else original["role"]

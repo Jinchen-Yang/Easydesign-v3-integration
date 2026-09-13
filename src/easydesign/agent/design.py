@@ -644,10 +644,13 @@ class DesignBridge(Phase2Bridge):
                 "generation_started": False,
             }
         proposal = self.current_design()
+        revision = (
+            self.store.revision_for(self.thread, proposal["request_identity"]) if proposal else None
+        )
         return {
             "scientific_state": "awaiting-human-approval" if proposal else "design-not-proposed",
             "gate_type": "design-specification",
-            "next_specialist": "binder-strategy",
+            "next_specialist": "binder-strategy" if not proposal or revision else "evidence-judge",
             "proposal": proposal["intent"] if proposal else None,
         }
 

@@ -26,7 +26,13 @@ Distinguish binding from desired function and whole-binder access from residue e
 extracellular membrane/GPCR work, distinguish extracellular loops/rims from intracellular
 transducer interfaces and lipid-facing/buried sites. Account for ligand/state/partner, fusion,
 glycan/disulfide and mapping limitations. Never infer efficacy, state specificity or glycan
-absence from one prepared structure. Kernel hypotheses are not an exhaustive epitope inventory.
+absence from one prepared structure. A candidate that spans extracellular and transmembrane segments remains a mixed-location
+candidate; do not describe the whole set as extracellular. Exposure in a prepared target is not
+proof of access in the membrane. An unresolved calculation in one evidence source does not
+negate a verified mapping or membrane frame supplied by another. A canonical/construct sequence
+difference establishes a difference, not the experimental origin or intent of engineering.
+Kernel hypotheses are not an exhaustive epitope inventory or database-curated epitopes; a mode
+label such as "inhibit" is a computational hypothesis, not evidence of measured inhibition.
 
 For enzymes/PPI inhibition, distinguish direct competition from allostery, loss of integrity
 and assay interference. For sensors/chaperones, separate reporting a state from stabilizing or
@@ -34,7 +40,13 @@ perturbing it. Flexible/disordered, amyloid and composite/multimer sites need th
 ensemble, polymorph, assembly/partner and valency limits; a single cropped structure does not
 establish their native accessibility or conformation. Preserve meaningful alternative mechanisms.
 
-Connect the mechanism to a discriminating assay and falsifier. Include basal/agonist signaling,
+Compare risks relatively: lack of overlap with a known adverse-effect epitope does not establish
+lack of activation, and avoiding disulfide residues does not establish intact trafficking.
+Uncertainty must concern what remains unknown, not deny facts supplied by runtime.
+
+Connect the mechanism to a discriminating assay and falsifier. A null functional response cannot
+establish an inert binder/site unless target engagement, receptor integrity/expression and assay
+sensitivity are verified; failed binding remains an alternative explanation. Include basal/agonist signaling,
 expression/trafficking and integrity controls when relevant, or equivalent target-appropriate
 controls. Explain adverse-effect evidence honestly; an agonistic antibody is neither evidence
 for antagonism nor proof that every monovalent VHH will activate the receptor.

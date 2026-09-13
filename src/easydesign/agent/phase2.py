@@ -649,6 +649,8 @@ class Phase2Bridge(TargetBridge):
         return self.site_snapshot(payload)
 
     def site_snapshot(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        from .site_decision import candidate_name
+
         facts = self.document(proposal["facts_ref"])
         ref = proposal["facts_ref"]
         refs = [f"project:{ref['relative_path']}#sha256={ref['sha256']}"]
@@ -681,7 +683,7 @@ class Phase2Bridge(TargetBridge):
                     "candidates": [
                         {
                             "candidate_id": candidate["candidate_id"],
-                            "name": candidate["research_hypothesis"]["name"],
+                            "name": candidate_name(candidate),
                             "design_labels": candidate["research_hypothesis"][
                                 "hotspot_label_seq_ids"
                             ],

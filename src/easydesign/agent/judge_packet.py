@@ -203,6 +203,7 @@ def build_judge_packet(
     *,
     goal: str,
     decision: dict[str, Any] | None = None,
+    canonical: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Project already verified artifacts. Every scoped passage/qualifier remains unchanged."""
     intent = snapshot["proposal"]
@@ -260,7 +261,7 @@ def build_judge_packet(
                 },
             }
         )
-    return JudgeReviewPacket(
+    packet = JudgeReviewPacket(
         **{key: snapshot[key] for key in EvidenceBinding.model_fields},
         project_id=snapshot["project_id"],
         run_id=snapshot["run_id"],
@@ -302,3 +303,16 @@ def build_judge_packet(
             "Keep current uncertainty and structural risk explicit; never infer success.",
         },
     ).model_dump(mode="json")
+
+    from .site_fact_integrity import add_fact_references
+
+    packet["avoid_design_labels"] = sorted(
+        set(intent.get("avoid_label_seq_ids", []))
+        | {
+            label
+            for feature in (facts.get("declared_biology") or {}).get("features", [])
+            if feature["kind"] == "exclude"
+            for label in feature["label_seq_ids"]
+        }
+    )
+    return add_fact_references(packet, canonical)

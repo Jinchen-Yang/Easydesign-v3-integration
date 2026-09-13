@@ -808,6 +808,7 @@ class Phase2Bridge(TargetBridge):
         }
         if for_judge and dossier is not None:
             from .judge_packet import build_judge_packet
+            from .site_fact_integrity import canonical_reference
 
             decision = None
             for event in self.store.events(proposal["owner_thread"]):
@@ -824,7 +825,12 @@ class Phase2Bridge(TargetBridge):
             if owner is None:
                 raise AgentBoundaryError("Site proposal has no bound user objective")
             return build_judge_packet(
-                snapshot, dossier, facts, goal=owner["goal"], decision=decision
+                snapshot,
+                dossier,
+                facts,
+                goal=owner["goal"],
+                decision=decision,
+                canonical=canonical_reference(self, dossier),
             )
         return snapshot
 
@@ -982,6 +988,10 @@ class Phase2Bridge(TargetBridge):
             raise AgentBoundaryError(
                 "Site Judge assessment is stale or belongs to a different question"
             )
+        from .site_fact_integrity import fact_paths, render_fact, render_judge
+
+        judge_packet = self.site_snapshot(proposal, for_judge=True)
+        rendered = render_judge(assessment, judge_packet)
         evaluation = proposal["evaluation"]
         opinion = assessment.recommendation
         if opinion and opinion.option_id != "site":
@@ -1005,17 +1015,18 @@ class Phase2Bridge(TargetBridge):
                 [
                     *evaluation.get("warnings", []),
                     *proposal["intent"]["risks"],
-                    *(opinion.warnings if opinion else []),
+                    *((rendered["recommendation"] or {}).get("warnings", [])),
                     *(
-                        f"Judge qualification of ‘{c.claim}’: {c.qualification}"
-                        for c in assessment.site_claim_corrections
+                        f"Judge qualification of unaccepted Site claim ‘{c['claim']}’: "
+                        f"{c['qualification']}"
+                        for c in rendered["site_claim_corrections"]
                     ),
                 ]
             )
         )
         if blocked:
             warnings = [evaluation["cause"], evaluation["remedy"]]
-        alternative = opinion.alternative if opinion else None
+        alternative = (rendered["recommendation"] or {}).get("alternative")
         if not alternative and proposal["intent"]["alternatives"]:
             alternative = (
                 proposal["intent"]["alternatives"][0]["name"]
@@ -1057,7 +1068,7 @@ class Phase2Bridge(TargetBridge):
             ],
             evidence_refs=snapshot["evidence_refs"],
             limitations=list(
-                dict.fromkeys([*assessment.limitations, *proposal["intent"]["uncertainty"]])
+                dict.fromkeys([*rendered["limitations"], *proposal["intent"]["uncertainty"]])
             ),
             warnings=warnings,
             alternative=alternative,
@@ -1071,11 +1082,24 @@ class Phase2Bridge(TargetBridge):
                 "interpretation_scope": "Unapproved specialist hypotheses; independent Judge "
                 "qualifications below apply to their interpretation, not to runtime hard facts.",
                 "independent_review": {
-                    "reasons": assessment.reasons,
-                    "limitations": assessment.limitations,
-                    "claim_corrections": [
-                        c.model_dump(mode="json") for c in assessment.site_claim_corrections
-                    ],
+                    "reasons": rendered["reasons"],
+                    "limitations": rendered["limitations"],
+                    "claim_corrections": rendered["site_claim_corrections"],
+                    **(
+                        {
+                            "runtime_facts": {
+                                key: {"rendered": render_fact(judge_packet, key), **ref}
+                                for key, ref in fact_paths(judge_packet).items()
+                            },
+                            "fact_binding": judge_packet["evidence_id"],
+                            "sequence_mapping_scope": judge_packet["peptide_reference"],
+                            "fact_scope": "Runtime-rendered facts; source passages, scopes, exact "
+                            "tables and raw Judge opinion remain in the bound evidence audit. "
+                            "Scientific interpretation is not deterministic verification.",
+                        }
+                        if "fact_references" in judge_packet
+                        else {}
+                    ),
                 },
             },
             action=(

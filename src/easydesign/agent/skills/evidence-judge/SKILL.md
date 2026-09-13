@@ -87,6 +87,16 @@ Scientific distinctions:
 - Preserve strongest opposition and material uncertainty. Retrieval status is not sufficiency;
   no search-per-taxonomy requirement. Judge evidence strength against the current objective.
 
+## Site hard-fact output references
+
+For a Site packet with fact_references, follow fact_reference_contract: cite
+[fact:REVISION:kind:index], using fact_revision and a zero-based collection index.
+Runtime renders numbers, sequences, chain/source IDs and topology; never retype them
+outside tokens. All opinion fields follow this grammar except exact correction.claim
+quotations. Keep scientific meaning, uncertainty and verdict independent. Source records
+expand source_group through decision_evidence.source_metadata; all original qualifiers
+are retained. Target/Design output contracts remain unchanged.
+
 ## Target identity and mapping
 
 Keep canonical reference, deposited entity, construct sequence and observed coordinates distinct.

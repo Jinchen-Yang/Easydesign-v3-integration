@@ -92,7 +92,9 @@ def test_packet_has_one_fact_owner_and_preserves_opposition_and_uncertainty(pack
     before = {key: deepcopy(case[key]) for key in ["snapshot", "dossier", "facts", "decision"]}
     # bridge is mutable state; compare the pure scientific inputs only.
     result = packet(case)
-    assert result["decision_evidence"]["source_passages"] == dossier["focused_passages"]
+    from easydesign.agent.site_fact_integrity import expand_source_passages
+
+    assert expand_source_passages(result) == dossier["focused_passages"]
     assert result["residue_facts"] == dossier["trusted_residue_facts"]
     assert result["final_site_decision"]["interpretation"] == case["decision"]
     for candidate, original in zip(

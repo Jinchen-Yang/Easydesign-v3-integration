@@ -745,7 +745,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                 response.structured_response.model_dump(mode="json"),
                                 self.bridge.target_submission_evidence(),
                             )
-                        elif response.structured_response.verdict in {"ready-to-ask", "assessed"}:
+                        elif self.role == "judge":
                             snapshot = self.bridge.judge_evidence()
                             from .judge_packet import (
                                 validate_judge_corrections,
@@ -754,6 +754,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
 
                             validate_judge_stage(response.structured_response, snapshot)
                             validate_judge_corrections(response.structured_response, snapshot)
+                            from .site_fact_integrity import validate_fact_references
+
+                            validate_fact_references(response.structured_response, snapshot)
                             facts = snapshot.get(
                                 "hard_facts",
                                 snapshot.get(
@@ -761,7 +764,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     snapshot.get("approved_target", {}).get("hard_facts"),
                                 ),
                             )
-                            if facts is not None:
+                            if facts is not None and response.structured_response.verdict in {
+                                "ready-to-ask",
+                                "assessed",
+                            }:
                                 check_fact_claims(
                                     response.structured_response.model_dump(mode="json"),
                                     {"hard_facts": facts},

@@ -30,6 +30,7 @@ from .contracts import (
     EvidenceCursorQueryMismatch,
     EvidenceRetrievalQueryMismatch,
     InvalidFieldProjection,
+    JudgeStageMismatch,
     JudgeVerdict,
     ResearchConclusionMismatch,
     ResearchQueryMismatch,
@@ -746,8 +747,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             )
                         elif response.structured_response.verdict in {"ready-to-ask", "assessed"}:
                             snapshot = self.bridge.judge_evidence()
-                            from .judge_packet import validate_judge_corrections
+                            from .judge_packet import (
+                                validate_judge_corrections,
+                                validate_judge_stage,
+                            )
 
+                            validate_judge_stage(response.structured_response, snapshot)
                             validate_judge_corrections(response.structured_response, snapshot)
                             facts = snapshot.get(
                                 "hard_facts",
@@ -761,7 +766,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     response.structured_response.model_dump(mode="json"),
                                     {"hard_facts": facts},
                                 )
-                    except (EvidenceCitationMismatch, ResearchConclusionMismatch) as error:
+                    except (
+                        EvidenceCitationMismatch,
+                        ResearchConclusionMismatch,
+                        JudgeStageMismatch,
+                    ) as error:
                         diagnostic = str(error)
                     except HardFactContradiction as error:
                         diagnostic = str(error)

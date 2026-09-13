@@ -632,16 +632,15 @@ class TargetBridge:
         )
         if delegated != binding:
             raise AgentBoundaryError("Judge result is stale or outside its delegated snapshot")
-        if verdict.verdict == "ready-to-ask" and current["status"] != "awaiting-human-approval":
-            raise AgentBoundaryError("No pending scientific question to ask")
         from .target_assessment import check_fact_claims
 
         facts = current.get(
             "hard_facts",
             current.get("target_facts", current.get("approved_target", {}).get("hard_facts")),
         )
-        from .judge_packet import validate_judge_corrections
+        from .judge_packet import validate_judge_corrections, validate_judge_stage
 
+        validate_judge_stage(verdict, current)
         validate_judge_corrections(verdict, current)
         if facts is not None and verdict.verdict in {"ready-to-ask", "assessed"}:
             check_fact_claims(verdict.model_dump(mode="json"), {"hard_facts": facts})

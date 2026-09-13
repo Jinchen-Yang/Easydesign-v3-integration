@@ -6,7 +6,13 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from .contracts import AgentBoundaryError, EvidenceBinding, JudgeVerdict, ResearchConclusionMismatch
+from .contracts import (
+    AgentBoundaryError,
+    EvidenceBinding,
+    JudgeStageMismatch,
+    JudgeVerdict,
+    ResearchConclusionMismatch,
+)
 from .site_authority import sequence_topology
 from .site_decision import SiteDecision, compile_site_decision
 
@@ -131,6 +137,37 @@ def validate_candidate_facts(
     if excluded.intersection(intent["selected_site"]["hotspot_label_seq_ids"]):
         raise AgentBoundaryError(
             "HARD_FACT_CONTRADICTION: selected hotspot violates avoid constraint"
+        )
+
+
+def validate_judge_stage(verdict: JudgeVerdict, snapshot: dict[str, Any]) -> None:
+    """Validate stage meaning before persistence; never rewrite a scientific opinion."""
+    pending = (
+        snapshot.get("status") == "awaiting-human-approval"
+        and snapshot.get("request_identity") is not None
+    )
+    completed_target = (
+        snapshot.get("status") == "succeeded"
+        and snapshot.get("request_identity") is None
+        and snapshot.get("gate_type") in {None, "target-structure"}
+        and bool(snapshot.get("bundle"))
+    )
+    if verdict.verdict == "assessed" and not completed_target:
+        raise JudgeStageMismatch(
+            "JUDGE_STAGE_MISMATCH: assessed is only valid for a verified completed "
+            "Target-only bundle without a pending question. Current Gate: "
+            + str(snapshot.get("gate_type", "target-structure"))
+            + ", status: "
+            + str(snapshot.get("status"))
+            + ". For a pending Gate, use ready-to-ask only if scientifically reviewable; "
+            "use insufficient or reject when warranted. Preserve reasons, evidence and "
+            "limitations; no Scientist approval or stage completion is implied."
+        )
+    if verdict.verdict == "ready-to-ask" and not pending:
+        raise JudgeStageMismatch(
+            "JUDGE_STAGE_MISMATCH: No pending scientific question to ask. "
+            "Use assessed only for a verified completed Target-only bundle; "
+            "do not create or infer a Scientist Gate or approval."
         )
 
 

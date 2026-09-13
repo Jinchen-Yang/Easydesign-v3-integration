@@ -1691,6 +1691,30 @@ def create_harness(
         boundary = RoleBoundary(
             bridge, role, config, goal, current_user_message, execution_id, revision
         )
+        if role == "judge" and isinstance(bridge, Phase2Bridge):
+            from .site_judge import create_site_aware_judge
+
+            legacy_judge = create_deep_agent(
+                model=models[role],
+                system_prompt=prompt,
+                tools=phase2_tools(bridge, role),
+                skills=[f"/skills/{name}/"],
+                backend=backend,
+                middleware=[boundary],
+                response_format=ToolStrategy(schema, handle_errors=boundary.contract_error),
+                name="existing-target-design-judge",
+            )
+            specialists.append(
+                {
+                    "name": name,
+                    "description": "Independent review of the current scientific proposal.",
+                    "mode": "isolated",
+                    "runnable": create_site_aware_judge(
+                        bridge, models[role], config, execution_id, legacy_judge
+                    ),
+                }
+            )
+            continue
         specialists.append(
             {
                 "name": name,

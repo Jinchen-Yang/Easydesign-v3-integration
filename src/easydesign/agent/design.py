@@ -404,6 +404,8 @@ class DesignBridge(Phase2Bridge):
         if proposal is None:
             raise AgentBoundaryError("No current Design Specification")
         snapshot = self.design_snapshot(proposal)
+        if args.assessment_id is None:
+            raise AgentBoundaryError("A completed Judge assessment is required at this Gate")
         assessment = self.store.assessment(self.thread, args.assessment_id)
         if (
             assessment.evidence_id != snapshot["evidence_id"]

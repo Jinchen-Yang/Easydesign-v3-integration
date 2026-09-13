@@ -274,7 +274,8 @@ def validate_fact_references(verdict: JudgeVerdict, packet: dict[str, Any]) -> N
                 "for all numeric, "
                 "peptide, chain, source and topology facts; runtime renders the exact values. "
                 "Keep scientific reasoning and uncertainty in words, with no factual literals. "
-                "Do not change scientific verdict just to satisfy this output grammar."
+                "Do not change scientific verdict just to satisfy this output grammar. "
+                + f"Unbound opinion text requiring correction: {text[:350]!r}"
             )
         expanded = _TOKEN.sub(lambda m: render_fact(packet, m[1]), text)
         limit = 800 if text in [c.qualification for c in verdict.site_claim_corrections] else 1500

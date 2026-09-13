@@ -504,9 +504,9 @@ class SessionStore:
                 raise AgentBoundaryError(
                     "BLOCKED: revise the input or hard constraint; no override"
                 )
-            if response == "approve" and proposal.judge_status == "DISCOURAGED":
+            if response == "approve" and proposal.judge_status in {"DISCOURAGED", None}:
                 raise AgentBoundaryError("Review the warning and use explicit OVERRIDE or REVISE")
-            if response == "override" and proposal.judge_status != "DISCOURAGED":
+            if response == "override" and proposal.judge_status not in {"DISCOURAGED", None}:
                 raise AgentBoundaryError("OVERRIDE is only for a warned, discouraged proposal")
         outcome = DecisionOutcome.model_validate(
             {

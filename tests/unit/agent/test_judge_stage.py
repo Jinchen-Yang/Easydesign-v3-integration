@@ -33,12 +33,13 @@ class WrongStageJudge(DesignModel):
         result = super().answer(messages)
         if self.role == "judge":
             for call in result.tool_calls:
-                if call["name"] == "JudgeVerdict":
+                if call["name"] in {"JudgeVerdict", "SiteJudgeVerdict", "RecoverySiteJudgeVerdict"}:
                     self.judge_submissions += 1
-                    call["args"]["recommendation"] = {
-                        "option_id": self.judged_option,
-                        "status": "SUPPORTED",
-                    }
+                    if call["name"] == "JudgeVerdict":
+                        call["args"]["recommendation"] = {
+                            "option_id": self.judged_option,
+                            "status": "SUPPORTED",
+                        }
                     if self.judge_submissions == 1 or self.repeat_bad:
                         call["args"]["verdict"] = "assessed"
         return result
@@ -78,9 +79,17 @@ async def test_actual_harness_repairs_wrong_stage_before_card_without_approval(
     accepted = [e for e in events if e["kind"] == "judge-assessment"]
     repairs = [e for e in events if e["kind"] == "contract-repair"]
     assert len(rejected) == len(accepted) == len(repairs) == 1
-    assert "JUDGE_STAGE_MISMATCH" in rejected[0]["payload"]["diagnostic"]
-    assert rejected[0]["payload"]["submitted_opinion"]["verdict"] == "assessed"
-    assert rejected[0]["payload"]["submitted_opinion"]["recommendation"]["status"] == "SUPPORTED"
+    if gate == "site-hotspot":
+        assert rejected[0]["payload"]["diagnostic"] == "MISSING_OR_INVALID_TYPED_SUBMISSION"
+        schema_error = next(e for e in events if e["kind"] == "structured-output-error")
+        assert schema_error["payload"]["tool_calls"][0]["args"]["verdict"] == "assessed"
+        assert "ready-to-ask" in schema_error["payload"]["diagnostic"]
+    else:
+        assert "JUDGE_STAGE_MISMATCH" in rejected[0]["payload"]["diagnostic"]
+        assert rejected[0]["payload"]["submitted_opinion"]["verdict"] == "assessed"
+        assert (
+            rejected[0]["payload"]["submitted_opinion"]["recommendation"]["status"] == "SUPPORTED"
+        )
     assert accepted[0]["payload"]["verdict"] == "ready-to-ask"
     assert rejected[0]["seq"] < repairs[0]["seq"] < accepted[0]["seq"]
     assert not any(e["kind"] == "human-response" for e in events)

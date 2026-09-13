@@ -1,5 +1,12 @@
 # EasyDesign v3 consequential Agent contract ownership
 
+Current Gate 2 availability amendment (2026-09-14, under validation):
+[normal Judge repair and explicit unavailable review](PHASE2_JUDGE_RESILIENCE_20260914.md).
+A dossier-backed Site Judge uses a compact normal/recovery contract with the existing bound
+assessment and repair ledger. Classified exhausted operational failures can produce a clearly
+unreviewed Scientist card; no Judge assessment or recommendation is synthesized. Normal-path
+real-model acceptance remains independently required. Other Gates retain their policy.
+
 Current control-flow amendment (2026-09-13, under validation):
 [workflow authority](V3_CONTROL_FLOW_AUTHORITY.md). The Phase 2 Coordinator dispatches
 runtime-authorized actions through the existing native graph without a stage-selection

@@ -210,6 +210,18 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
             ):
                 assessment = candidate
                 break
+    if assessment is None and gate == "site-hotspot":
+        from .site_review_availability import checked_failure, matching_failure
+
+        unavailable = matching_failure(bridge, snapshot)
+        if unavailable:
+            checked_failure(bridge, snapshot, unavailable["record_id"])
+            return RuntimeAction(
+                "scientist-gate",
+                binding,
+                "request_scientific_decision",
+                {"review_failure_id": unavailable["record_id"], "option_id": "site"},
+            )
     if assessment is None:
         return _task(
             "judge",

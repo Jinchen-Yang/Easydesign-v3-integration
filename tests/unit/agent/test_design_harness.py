@@ -16,7 +16,10 @@ from tests.unit.agent.test_site_harness import SiteModel
 
 class DesignModel(SiteModel):
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
-        if self.role == "site":
+        if self.role == "site" or (
+            self.role == "judge"
+            and {t.name for t in tools} <= {"SiteJudgeVerdict", "RecoverySiteJudgeVerdict"}
+        ):
             return super().bind_tools(tools, **kwargs)
         names = {
             "target": "TargetInterpretation",
@@ -26,6 +29,7 @@ class DesignModel(SiteModel):
         }
         expected = DESIGN_ALLOWED[self.role] | ({names[self.role]} if self.role in names else set())
         names = {t.name for t in tools}
+        self.offered = names
         if self.role == "coordinator":
             expected -= {"read_file"}
         assert names <= expected and expected - names <= {

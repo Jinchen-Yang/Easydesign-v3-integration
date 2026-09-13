@@ -147,8 +147,17 @@ class TargetProvenance(StrictDTO):
 
 
 class ApplyDecision(StrictDTO):
-    assessment_id: Identifier
+    assessment_id: Identifier | None = None
     option_id: Identifier
+    review_failure_id: Identifier | None = None
+
+    @model_validator(mode="after")
+    def one_review_record(self) -> ApplyDecision:
+        if (self.assessment_id is None) == (self.review_failure_id is None):
+            raise ValueError("Provide exactly one assessment or review failure record")
+        if self.review_failure_id is not None and self.option_id != "site":
+            raise ValueError("Review unavailability belongs only to Site Gate 2")
+        return self
 
 
 class EvidenceQuery(StrictDTO):
@@ -164,7 +173,7 @@ class DecisionProposal(StrictDTO):
 
     gate_type: GateType = "target-structure"
     owner_specialist: str = "target-intelligence"
-    judge_status: ScientificStatus = "SUPPORTED"
+    judge_status: ScientificStatus | None = "SUPPORTED"
     warnings: list[ShortText] = Field(default_factory=list, max_length=24)
     alternative: ShortText | None = None
     parent_card_id: Identifier | None = None
@@ -172,7 +181,7 @@ class DecisionProposal(StrictDTO):
 
 class DecisionCard(DecisionProposal):
     card_id: Identifier
-    assessment_id: Identifier
+    assessment_id: Identifier | None
     project_id: Identifier
     run_id: Identifier
     request_identity: str
@@ -184,6 +193,22 @@ class DecisionCard(DecisionProposal):
     limitations: list[str]
     scientific_summary: dict[str, object] = Field(default_factory=dict)
     action: str = "Approve the selected chain and resume target preparation in the same run."
+
+    @model_validator(mode="after")
+    def review_identity(self) -> DecisionCard:
+        if self.assessment_id is None:
+            review = self.scientific_summary.get("independent_review", {})
+            if (
+                self.gate_type != "site-hotspot"
+                or self.judge_status is not None
+                or not isinstance(review, dict)
+                or review.get("availability") != "unavailable"
+                or not review.get("failure_record_id")
+            ):
+                raise ValueError("Missing assessment requires an explicit Site review failure")
+        elif self.judge_status is None:
+            raise ValueError("A completed Judge assessment requires its scientific status")
+        return self
 
 
 class DecisionOutcome(StrictDTO):

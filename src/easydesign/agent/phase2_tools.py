@@ -77,7 +77,8 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
                         "name": "request_scientific_decision",
                         "description": (
                             "Present the current scientific decision using its trusted Judge "
-                            "assessment. Use actual chain option IDs at Gate 1, option_id=site at "
+                            "assessment, or a verified unavailable-review record at Gate 2. "
+                            "Use actual chain option IDs at Gate 1, option_id=site at "
                             "Gate 2 and option_id=design at Gate 3. "
                             "Human steering interrupts before execution."
                         ),

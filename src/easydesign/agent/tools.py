@@ -657,6 +657,8 @@ class TargetBridge:
         return assessment
 
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
+        if args.assessment_id is None:
+            raise AgentBoundaryError("A completed Judge assessment is required at this Gate")
         assessment = self.store.assessment(self.thread, args.assessment_id)
         discouraged = (
             assessment.recommendation is not None
@@ -923,10 +925,18 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                 raise AgentBoundaryError("Judge may read only its delegated evidence snapshot")
         return bridge.store.offload(bridge.thread, evidence)
 
-    async def decision_tool(assessment_id: str, option_id: str) -> str:
+    async def decision_tool(
+        option_id: str, assessment_id: str | None = None, review_failure_id: str | None = None
+    ) -> str:
         if role != "coordinator":
             raise AgentBoundaryError("Only coordinator can present a decision")
-        card = bridge.decision_card(ApplyDecision(assessment_id=assessment_id, option_id=option_id))
+        card = bridge.decision_card(
+            ApplyDecision(
+                assessment_id=assessment_id,
+                option_id=option_id,
+                review_failure_id=review_failure_id,
+            )
+        )
         response = interrupt(card.model_dump(mode="json"))
         if not isinstance(response, dict) or set(response) != {"card_id", "decision"}:
             raise AgentBoundaryError("Only a bound scientist-steering response is accepted")

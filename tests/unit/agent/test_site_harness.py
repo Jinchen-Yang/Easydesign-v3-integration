@@ -20,6 +20,11 @@ class SiteModel(ScriptedModel):
     offered: set[str] = Field(default_factory=set)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+        names = {t.name for t in tools}
+        if self.role == "judge" and names <= {"SiteJudgeVerdict", "RecoverySiteJudgeVerdict"}:
+            assert len(names) == 1
+            self.offered = names
+            return self
         outputs = {
             "target": "TargetInterpretation",
             "site": "SiteDecision",
@@ -57,6 +62,19 @@ class SiteModel(ScriptedModel):
         named = [(c.get("name"), c, m) for c, m in results]
         if self.role in {"site", "judge"}:
             human = next(m for m in messages if isinstance(m, HumanMessage))
+            if self.role == "judge" and self.offered <= {
+                "SiteJudgeVerdict",
+                "RecoverySiteJudgeVerdict",
+            }:
+                payload = json.loads(human.text)
+                assert "candidate_facts" in payload and "final_site_decision" in payload
+                return self.call(
+                    next(iter(self.offered)),
+                    verdict="ready-to-ask",
+                    recommendation="SUPPORTED",
+                    reasons=["The mapped structural hypothesis is reviewable."],
+                    uncertainties=["Function and binding remain experimentally untested."],
+                )
             if self.role == "site" and "SiteDecision" in self.offered:
                 payload = json.loads(human.text)
                 assert "dossier" in payload and "runtime_history" not in payload
@@ -413,7 +431,7 @@ class ProseJudge(SiteModel):
         if (
             self.role == "judge"
             and result.tool_calls
-            and result.tool_calls[0]["name"] == "JudgeVerdict"
+            and result.tool_calls[0]["name"] in {"JudgeVerdict", "SiteJudgeVerdict"}
             and not self.sent_prose
         ):
             self.sent_prose = True
@@ -431,7 +449,7 @@ async def test_judge_prose_repaired_within_existing_budget(site_bridge: Any) -> 
         for e in site_bridge.store.events(site_bridge.thread)
         if e["kind"] == "model-call"
     ]
-    assert sum(c["role"] == "judge" for c in calls) == 4
+    assert sum(c["role"] == "judge" for c in calls) == 2
     assert site_bridge.approved_site() is None
     assert (
         len(

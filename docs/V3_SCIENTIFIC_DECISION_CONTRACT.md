@@ -1,5 +1,12 @@
 # EasyDesign v3 Scientific Decision Contract — Phase 1 freeze
 
+当前 Gate 2 工程修订（2026-09-14，验收中）：
+[Judge 正常路径修复与显式不可用审查](PHASE2_JUDGE_RESILIENCE_20260914.md)。
+有 Dossier 的 Gate 2 在独立审查因已分类技术故障耗尽修复次数后，可以显示明确标注
+“审查未完成”的 Scientist 卡片。必须保留全部硬事实校验与风险；不得伪造 assessment
+或 ready-to-ask。继续仍需人类确认缺失审查并填写理由，已有负面意见不得被降级覆盖。
+Judge 正常完成审查与安全降级是两项独立验收，后者不能替代前者；Phase 2 尚未冻结。
+
 当前 Phase 2 流程权限补充（2026-09-13，验证中）：
 [控制流权限审计](V3_CONTROL_FLOW_AUTHORITY.md)。Phase 2 运行时直接派发当前范围内
 尚未完成且获授权的动作；模型文字不能重开已完成 Gate，也不能用提前结束阻止接续。

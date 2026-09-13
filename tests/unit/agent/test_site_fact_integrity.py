@@ -276,7 +276,11 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
             result = super().answer(messages)
             if self.role == "judge":
                 for call in result.tool_calls:
-                    if call["name"] == "JudgeVerdict":
+                    if call["name"] in {
+                        "JudgeVerdict",
+                        "SiteJudgeVerdict",
+                        "RecoverySiteJudgeVerdict",
+                    }:
                         self.submissions += 1
                         if self.submissions == 1 or repeat_bad:
                             call["args"]["reasons"] = [
@@ -286,7 +290,7 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
 
     models = {role: FactModel(role=role) for role in PHASE2_ALLOWED}
     if repeat_bad:
-        with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+        with pytest.raises(AgentBoundaryError, match="unresolved substantive findings"):
             await run_session(
                 site_bridge, scripted_config(), models, "SYNTHETIC review a structural site."
             )

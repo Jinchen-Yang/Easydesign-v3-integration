@@ -970,7 +970,11 @@ class Phase2Bridge(TargetBridge):
         return bool(current and current["request_identity"] == card.request_identity)
 
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
-        existing_id = identity({"assessment": args.assessment_id, "option": args.option_id})
+        existing_id = (
+            identity({"assessment": args.assessment_id, "option": args.option_id})
+            if args.assessment_id
+            else identity({"review_failure": args.review_failure_id, "option": args.option_id})
+        )
         if self.store.response(self.thread, existing_id) is not None:
             return self.store.card(self.thread, existing_id)
         if self.read_evidence()["request_identity"] is not None:
@@ -979,11 +983,15 @@ class Phase2Bridge(TargetBridge):
         if proposal is None:
             raise AgentBoundaryError("No current trusted Site proposal")
         snapshot = self.site_snapshot(proposal)
-        assessment = self.store.assessment(self.thread, args.assessment_id)
-        if (
-            args.option_id != "site"
-            or assessment.evidence_id != snapshot["evidence_id"]
-            or assessment.request_identity != snapshot["request_identity"]
+        assessment = (
+            self.store.assessment(self.thread, args.assessment_id) if args.assessment_id else None
+        )
+        if args.option_id != "site" or (
+            assessment is not None
+            and (
+                assessment.evidence_id != snapshot["evidence_id"]
+                or assessment.request_identity != snapshot["request_identity"]
+            )
         ):
             raise AgentBoundaryError(
                 "Site Judge assessment is stale or belongs to a different question"
@@ -991,9 +999,24 @@ class Phase2Bridge(TargetBridge):
         from .site_fact_integrity import fact_paths, render_fact, render_judge
 
         judge_packet = self.site_snapshot(proposal, for_judge=True)
-        rendered = render_judge(assessment, judge_packet)
+        failure = None
+        if assessment is None:
+            from .site_review_availability import checked_failure
+
+            assert args.review_failure_id is not None
+            failure = checked_failure(self, judge_packet, args.review_failure_id)
+        rendered = (
+            render_judge(assessment, judge_packet)
+            if assessment is not None
+            else {
+                "reasons": [],
+                "limitations": [],
+                "recommendation": None,
+                "site_claim_corrections": [],
+            }
+        )
         evaluation = proposal["evaluation"]
-        opinion = assessment.recommendation
+        opinion = assessment.recommendation if assessment is not None else None
         if opinion and opinion.option_id != "site":
             raise AgentBoundaryError(
                 "Judge recommendation belongs to a different scientific option"
@@ -1003,13 +1026,15 @@ class Phase2Bridge(TargetBridge):
             evaluation["status"] == "DISCOURAGED"
             or proposal["intent"]["recommendation"] == "DISCOURAGED"
             or (opinion and opinion.status == "DISCOURAGED")
-            or bool(assessment.site_claim_corrections)
+            or bool(assessment and assessment.site_claim_corrections)
         )
-        if not blocked and assessment.verdict != "ready-to-ask":
+        if assessment is not None and not blocked and assessment.verdict != "ready-to-ask":
             raise AgentBoundaryError("Judge has not supplied a reviewable Site question")
         status: Literal["SUPPORTED", "DISCOURAGED", "BLOCKED"] = (
             "BLOCKED" if blocked else "DISCOURAGED" if discouraged else "SUPPORTED"
         )
+        if failure and blocked:
+            raise AgentBoundaryError("BLOCKED Site cannot use review unavailability to proceed")
         warnings = list(
             dict.fromkeys(
                 [
@@ -1045,13 +1070,17 @@ class Phase2Bridge(TargetBridge):
                     "its stated uncertainty."
                 )
             ]
+        if failure:
+            from .site_review_availability import REVIEW_WARNING
+
+            warnings.insert(0, REVIEW_WARNING)
         selected = proposal["intent"]["selected_site"]
         card = DecisionCard(
             gate_type="site-hotspot",
             owner_specialist="site-mechanism",
-            judge_status=status,
-            card_id=identity({"assessment": assessment.assessment_id, "option": "site"}),
-            assessment_id=assessment.assessment_id,
+            judge_status=None if failure else status,
+            card_id=existing_id,
+            assessment_id=assessment.assessment_id if assessment else None,
             project_id=self.project_id,
             run_id=snapshot["run_id"],
             request_identity=snapshot["request_identity"],
@@ -1082,6 +1111,16 @@ class Phase2Bridge(TargetBridge):
                 "interpretation_scope": "Unapproved specialist hypotheses; independent Judge "
                 "qualifications below apply to their interpretation, not to runtime hard facts.",
                 "independent_review": {
+                    **(
+                        {
+                            "availability": "unavailable",
+                            "failure_record_id": failure["record_id"],
+                            "source_role": "verified-runtime",
+                            "warning": warnings[0],
+                        }
+                        if failure
+                        else {}
+                    ),
                     "reasons": rendered["reasons"],
                     "limitations": rendered["limitations"],
                     "claim_corrections": rendered["site_claim_corrections"],
@@ -1103,9 +1142,14 @@ class Phase2Bridge(TargetBridge):
                 },
             },
             action=(
-                "Review this proposed region and structural-only limitations. Approve "
-                "its explicit residue choices, revise, reject, or acknowledge warnings "
-                "and override if discouraged."
+                "Independent review did not complete. Review the original Site evidence, revise, "
+                "reject, or acknowledge the missing review and provide a rationale to continue."
+                if failure
+                else (
+                    "Review this proposed region and structural-only limitations. Approve "
+                    "its explicit residue choices, revise, reject, or acknowledge warnings "
+                    "and override if discouraged."
+                )
             ),
         )
         self.store.save_card(self.thread, card)
@@ -1171,12 +1215,22 @@ class Phase2Bridge(TargetBridge):
                     "steering": response["outcome"],
                     "scientific_gate": "still-pending",
                 }
+            if card.assessment_id is None:
+                from .site_review_availability import checked_failure
+
+                review = card.scientific_summary["independent_review"]
+                assert isinstance(review, dict)
+                checked_failure(
+                    self, self.site_snapshot(proposal, for_judge=True), review["failure_record_id"]
+                )
             if card.judge_status == "BLOCKED" or proposal["evaluation"]["status"] == "BLOCKED":
                 raise AgentBoundaryError(
                     "BLOCKED: change the input or hard constraint; override cannot execute it"
                 )
-            if card.judge_status == "DISCOURAGED" and outcome.action != "OVERRIDE":
-                raise AgentBoundaryError("Discouraged site requires explicit human override")
+            if card.judge_status in {"DISCOURAGED", None} and outcome.action != "OVERRIDE":
+                raise AgentBoundaryError(
+                    "Discouraged or unreviewed site requires explicit human acknowledgement"
+                )
             review_ref = ArtifactRef.model_validate(proposal["review_ref"])
             template = HotspotReviewRequest.model_validate(
                 yaml.safe_load(review_ref.verify(self.project).read_text())
@@ -1184,8 +1238,9 @@ class Phase2Bridge(TargetBridge):
             rationale = proposal["intent"]["mechanistic_rationale"]
             if outcome.action == "OVERRIDE":
                 rationale += (
-                    " Selected by explicit human override against current Evidence Judge "
-                    "recommendation. "
+                    " Selected by explicit human decision with Judge review unavailable. "
+                    if card.assessment_id is None
+                    else " Selected by explicit human override against Judge recommendation. "
                 ) + f"Human outcome: {identity(response['outcome'])}."
             selections = [
                 s.model_copy(

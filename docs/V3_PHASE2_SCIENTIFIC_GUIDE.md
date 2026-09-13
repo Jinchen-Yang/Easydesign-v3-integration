@@ -1,5 +1,11 @@
 # Phase 2 scientific interaction
 
+Current Gate 2 review availability policy (2026-09-14, under validation):
+[Judge resilience](PHASE2_JUDGE_RESILIENCE_20260914.md). A runtime-validated proposal may reach
+a clearly marked Scientist review card after independent review is technically unavailable.
+Continuation requires acknowledgement and a human rationale. Hard contradictions and valid
+negative reviews remain blocking; an unavailable review is never reported as a successful Judge.
+
 The v3 `easydesign-agent` entry point owns model calls, isolated specialists and human interrupts.
 The v2 `easydesign` CLI and scientific services remain available as the compatibility path.
 Use an explicitly configured model (`config/llm.template.yaml`); never put credentials in a goal,

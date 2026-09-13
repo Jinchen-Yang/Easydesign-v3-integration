@@ -365,7 +365,7 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 "human_actions": ["revise", "reject"]
                 if card.judge_status == "BLOCKED"
                 else ["override", "revise", "reject"]
-                if card.judge_status == "DISCOURAGED"
+                if card.judge_status in {"DISCOURAGED", None}
                 else ["approve", "revise", "reject"],
             },
         }

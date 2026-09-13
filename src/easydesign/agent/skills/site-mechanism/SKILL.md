@@ -47,10 +47,14 @@ PMC ANDs bare words and does not expand synonyms: use a short target plus one de
 with parenthesized OR alternatives. Search titles/snippets are leads, not verified residue or
 causal evidence. Acquire a relevant primary record/full text before making claims from it.
 
-For acquisition, include selection_reason to SELECT and acquire that source atomically, unless
-already selected for that exact need. Reuse durable acquisitions and the returned retrieval_need;
-a follow-up question may inform another decision topic without another taxonomy selection.
-Changing need requires explicit select_evidence first. Do not invent need values or source IDs.
+For every new source/need, include selection_reason in research_evidence acquisition or in
+retrieve_evidence with exact source_id: this explicitly SELECTS that source for that need and
+performs the operation in one call. When unsure of the prior selection, include the reason again;
+do not spend a call guessing whether another need's selection applies. Separate select_evidence
+remains available for SELECTED/DEFERRED/EXCLUDED decisions. Never batch a separate selection and
+its dependent read/acquisition together. Reuse durable acquisitions and returned retrieval_need;
+a follow-up question may inform another decision topic without changing its retrieval need.
+Do not invent need values or source IDs. Selection is your relevance decision, not approval.
 
 Read focused passages with retrieve_evidence(need, question, source_id, feature_types). For
 UniProt use literal relevant feature_types from its receipt; select only the constraints needed

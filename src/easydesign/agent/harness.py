@@ -1204,7 +1204,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "No passage was read and this is not absence of scientific evidence. "
                         "If relevant, select_evidence with the supplied provider/identifier, "
                         "need=evidence_need, selection=SELECTED and your reason; then retry the "
-                        "retrieval. No new acquisition is required."
+                        "retrieval. For a new retrieve_evidence query with exact source_id, "
+                        "instead include selection_reason to select and read in one call. "
+                        "No new acquisition is required."
                     )
                 attempt = self.bridge.store.reserve_prerequisite_repair(
                     self.bridge.thread,

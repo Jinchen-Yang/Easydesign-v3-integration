@@ -11,7 +11,7 @@ import json
 import re
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from easydesign.core import ArtifactRef
 
@@ -68,6 +68,13 @@ class RetrieveEvidence(StrictDTO):
         max_length=80,
         description="Exact Provider:IDENTIFIER source_id from acquisition, never a source card_id.",
     )
+    selection_reason: ShortText | None = Field(
+        default=None,
+        description="For a new query with exact source_id: explicitly SELECT this acquired "
+        "source for need with your scientific reason, then read it in the same call. "
+        "Include when changing need or unsure of its selection. Omit only when already "
+        "selected for this exact need. Not scientific approval; not allowed with cursor.",
+    )
     feature_types: list[str] = Field(
         default_factory=list,
         max_length=8,
@@ -84,6 +91,16 @@ class RetrieveEvidence(StrictDTO):
         ),
     )
     page_size: int = Field(default=2, ge=1, le=3)
+
+    @model_validator(mode="after")
+    def explicit_selection_scope(self) -> RetrieveEvidence:
+        if self.selection_reason is not None:
+            if not self.selection_reason.strip() or not self.source_id or self.cursor:
+                raise ValueError(
+                    "selection_reason needs a nonblank reason, exact source_id and a new "
+                    "query without cursor; use continue_evidence for an issued cursor"
+                )
+        return self
 
 
 class ContinueEvidence(StrictDTO):
@@ -293,7 +310,6 @@ class EvidenceCorpus:
         raise AgentBoundaryError("Unknown or foreign continuation cursor")
 
     def retrieve(self, request: RetrieveEvidence) -> dict[str, Any]:
-        selected = self.selections()
         candidates = [
             c
             for c in self.documents()
@@ -302,6 +318,28 @@ class EvidenceCorpus:
                 or source_key(c["provider"], c["identifier"]) == request.source_id
             )
         ]
+        if request.selection_reason is not None:
+            # documents() verifies original ArtifactRefs before any selection mutation.
+            # Only the exact named, already acquired source is selected; no discovery,
+            # inferred relevance, cross-need propagation or automatic approval occurs.
+            if not candidates:
+                raise EvidenceRetrievalQueryMismatch(
+                    "Atomic selection requires an exact acquired source_id. No source was "
+                    "selected or acquired. Use an acquisition receipt's source_id."
+                )
+            for candidate in candidates:
+                self.bridge.document(candidate["corpus_ref"])
+            source = candidates[0]
+            self.select(
+                SelectEvidence(
+                    provider=source["provider"],
+                    identifier=source["identifier"],
+                    need=request.need,
+                    selection="SELECTED",
+                    reason=request.selection_reason,
+                )
+            )
+        selected = self.selections()
         docs = [
             c
             for c in candidates
@@ -572,7 +610,10 @@ def corpus_tools(bridge: Any) -> list[Any]:
             description=(
                 "Find focused source passages for one evidence need/question in the l"
                 "ocal selected corpus. Optional source_id confines reading (e.g. UniP"
-                "rot:P07550). Returns at most 3 chunks with location and continuation"
+                "rot:P07550). Include selection_reason with an exact source_id to select "
+                "and read atomically, especially when changing need or unsure of prior "
+                "selection. Without it, the exact source/need must already be SELECTED. "
+                "Returns at most 3 chunks with location and continuation"
                 " cursor; use cursor for the next page. Full sources stay durable out"
                 "side conversation."
             ),

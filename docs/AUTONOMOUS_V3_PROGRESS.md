@@ -2517,3 +2517,50 @@ Validation receipts under `runtime/tmp/autonomous-v3-20260912/`:
 Cases1/3/4/5 remain accepted. Case2 still needs a real PASS, followed by accepted-case current
 contract revalidation and the latest full regression. Phase2 remains NOT FROZEN; Phase3/4 remain
 out of scope. These are engineering checkpoints, not formal scientific acceptance.
+
+## 2026-09-13 — live186 failure and complete Research contract diagnostics
+
+Live186 on clean `87379370` failed before Dossier/SiteDecision/Judge/Gate 2. Its immutable
+receipt/report and `gpcr/development-diagnosis.json` remain under
+`runtime/tmp/autonomous-v3-20260912/phase2-goldens-20260913T023948094313Z`.
+It used Coordinator 3 + Site 22 shared calls, including six native summaries; peak input
+including schemas was 65,382 characters. Runtime-provided candidate design membership was
+copied correctly. PMID 21228869 and both abstract chunks of PMID 34025634 were actually read;
+the latter supports an agonistic-autoantibody risk, but does not identify the epitope.
+Its full text was not read. Three initial SOURCE_NOT_SELECTED errors occurred in one shared
+recovery round; later acquisition used the supported selection path. No claim that this run
+was free of source-selection errors is warranted.
+
+The final handoff had several independent contract errors. Serial validation revealed only
+incorrect query IDs, then an unsupported source-conflict status, then a misquoted passage,
+exhausting the unchanged two corrections. Two VERIFIED questions also lacked bound citations,
+which the prior fail-fast sequence had not yet reached. The quotation changed the delivered
+`β 2-agAAb` spacing to `β2-agAAb`; the validator correctly did not accept a changed quote.
+Fallible Research opinions also overstated topology as whole-VHH inaccessibility and missing
+glycan coordinates as clearance. These are unaccepted opinions, not runtime hard facts or
+accepted Golden conclusions.
+
+`EvidenceResearch.validate_conclusions` now reports independent query/status/citation errors
+in one pass. A quote mismatch includes its exact already-read focused passage, allowing the
+existing typed correction to repair it after the research tool window closes. Artifact integrity,
+foreign source identity and primary-source eligibility still fail closed. Quotes, statuses,
+IDs and source binding are not automatically rewritten or accepted. The source-evidence status
+schema now states the existing VERIFIED/conflict requirements explicitly. No extra correction
+round, retry mechanism, research agent, history encoding, model upgrade or context limit was
+introduced. SiteDecision, hydration, scientific kernel and Judge policy are unchanged.
+
+Verification:
+
+- Ruff PASS; mypy PASS (23 source files).
+- `targeted187a.log`: lint/type checks passed, but direct pytest entrypoint failed to import the
+  repository `tests` package; no tests ran. Corrected invocation is `python -m pytest`.
+- `targeted187b.log`: **62 passed in 48.61 s** across evidence research, Dossier, prerequisite
+  recovery and progress/paging. Tests verify simultaneous feedback, unchanged original opinions,
+  continued foreign-reference rejection and source-tampering rejection.
+- `preflight187-read-only.json`: all three original live186 submissions remain rejected;
+  first-attempt feedback now contains all observed problems in 3,725 characters, inside the
+  existing 6,000-character diagnostic boundary. No source project or checkpoint was written.
+- `protected187-precommit.json`: all 385 protected baseline files, Golden truth, model config,
+  accepted Cases 1/3/4/5 request/receipt hashes and milestone tags remain unchanged.
+
+Phase 2 remains **4/5 accepted**. No GPCR PASS, formal Phase 2 freeze, or Phase 3 work is claimed.

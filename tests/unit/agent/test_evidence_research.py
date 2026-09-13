@@ -266,6 +266,38 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
         research.validate_conclusions(
             [conclusion.model_copy(update={"status": "CONFLICTING_EVIDENCE"})]
         )
+    # One invalid submission can have independent ID, status and quotation errors.
+    # Report them together within the same bounded correction, without accepting or
+    # rewriting the opinion. The already-read original passage makes quote repair possible
+    # even when discovery tools are no longer offered.
+    invalid = conclusion.model_copy(
+        update={
+            "query_ids": ["truncated-query"],
+            "status": "CONFLICTING_EVIDENCE",
+            "evidence": [
+                conclusion.evidence[0].model_copy(update={"excerpt": "did not inhibit activity"})
+            ],
+        }
+    )
+    unsupported = conclusion.model_copy(update={"evidence": []})
+    before = [item.model_dump(mode="json") for item in [invalid, unsupported]]
+    with pytest.raises(AgentBoundaryError) as rejected:
+        research.validate_conclusions([invalid, unsupported])
+    diagnostic = str(rejected.value)
+    assert "Unknown evidence query IDs" in diagnostic
+    assert "conclusion[0] (function): Conflict requires both supporting" in diagnostic
+    assert "conclusion[1] (function): Scientific support/conflict requires" in diagnostic
+    assert "CITATION_MISMATCH" in diagnostic
+    assert card["passage"] in diagnostic
+    assert result["query_id"] in diagnostic
+    assert before == [item.model_dump(mode="json") for item in [invalid, unsupported]]
+    # Integrity/foreign identity errors still fail immediately, rather than being
+    # converted into an ordinary correctable opinion problem.
+    foreign = invalid.model_copy(
+        update={"evidence": [invalid.evidence[0].model_copy(update={"card_id": "foreign-passage"})]}
+    )
+    with pytest.raises(AgentBoundaryError, match="not retrieved in this thread"):
+        research.validate_conclusions([foreign, unsupported])
     # Persisted query snapshots do not excuse tampering with original source artifacts.
     path = research.bridge.project / source_card["source_refs"][0]["relative_path"]
     path.write_text("tampered")

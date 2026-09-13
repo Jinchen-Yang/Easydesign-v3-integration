@@ -183,7 +183,14 @@ class ResearchConclusion(StrictDTO):
         "Copy the complete issued query_id, including any page suffix. A cursor's internal "
         "view ID is not a query_id; never decode a cursor to construct one.",
     )
-    status: EvidenceStatus
+    status: EvidenceStatus = Field(
+        description="VERIFIED requires scoped source-bound evidence, not claims hidden in "
+        "limitations. CONFLICTING_EVIDENCE requires both supporting and contradicting "
+        "passages from distinct sources. Evidence challenging a computational hypothesis "
+        "alone is not a source-vs-source conflict: preserve that evidence and use UNRESOLVED "
+        "when direction or transfer remains uncertain. SEARCHED_NO_EVIDENCE requires an "
+        "actual search without source failure."
+    )
     evidence: list[EvidenceUse] = Field(default_factory=list, max_length=6)
     limitations: list[ShortText] = Field(min_length=1, max_length=4)
 
@@ -979,23 +986,26 @@ class EvidenceResearch:
             raise AgentBoundaryError("Evidence source identifier was not retrieved in this thread")
         query_by_id = {q["query_id"]: q for q in queries}
         unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
+        errors = []
+        citation_errors = []
         if unknown:
-            raise ResearchConclusionMismatch(
+            errors.append(
                 "Unknown evidence query IDs: "
                 + compact(sorted(unknown))
                 + ". Copy complete issued query_id values, including page suffixes; "
-                "do not derive them from cursors. Available query_ids: "
-                + compact(sorted(query_by_id))
+                "do not derive them from cursors."
             )
-        for conclusion in conclusions:
+        for index, conclusion in enumerate(conclusions):
+            scope = f"conclusion[{index}] ({conclusion.topic}): "
             relevant = (
-                [query_by_id[key] for key in conclusion.query_ids]
+                [query_by_id[key] for key in conclusion.query_ids if key in query_by_id]
                 if conclusion.query_ids
                 else [q for q in queries if q["topic"] == conclusion.topic]
             )
             if conclusion.status == "NOT_SEARCHED" or not relevant:
-                raise ResearchConclusionMismatch(
-                    "Material scientific question was NOT_SEARCHED: "
+                errors.append(
+                    scope
+                    + "Material scientific question was NOT_SEARCHED: "
                     + conclusion.topic
                     + ". Bind the actual relevant query_ids, including cross-topic evidence, "
                     "or perform one consequential missing inquiry. Do not traverse unrelated "
@@ -1008,23 +1018,21 @@ class EvidenceResearch:
                     q.get("query", {}).get("operation", "").endswith("search") for q in relevant
                 )
             ):
-                raise ResearchConclusionMismatch(
-                    "A source failure, cited evidence or acquisition without a search "
+                errors.append(
+                    scope + "A source failure, cited evidence or acquisition without a search "
                     "is not SEARCHED_NO_EVIDENCE"
                 )
             if (
                 conclusion.status in {"VERIFIED", "CONFLICTING_EVIDENCE"}
                 and not conclusion.evidence
             ):
-                raise ResearchConclusionMismatch(
-                    "Scientific support/conflict requires source-bound passages"
-                )
+                errors.append(scope + "Scientific support/conflict requires source-bound passages")
             if conclusion.status == "CONFLICTING_EVIDENCE" and not {
                 "supports",
                 "contradicts",
             }.issubset({e.relation for e in conclusion.evidence}):
-                raise ResearchConclusionMismatch(
-                    "Conflict requires both supporting and contradicting source passages"
+                errors.append(
+                    scope + "Conflict requires both supporting and contradicting source passages"
                 )
             if (
                 conclusion.status == "CONFLICTING_EVIDENCE"
@@ -1037,9 +1045,7 @@ class EvidenceResearch:
                 )
                 < 2
             ):
-                raise ResearchConclusionMismatch(
-                    "Cross-source conflict requires distinct source identities"
-                )
+                errors.append(scope + "Cross-source conflict requires distinct source identities")
             for use in conclusion.evidence:
                 card = cards.get(use.card_id)
                 if card is None:
@@ -1047,21 +1053,33 @@ class EvidenceResearch:
                         "Evidence source identifier was not retrieved in this thread"
                     )
                 if card.get("corpus_ref") or _text(use.excerpt) not in _text(card["passage"]):
-                    raise EvidenceCitationMismatch(
-                        "CITATION_MISMATCH for known source " + use.card_id + ": "
-                        "Use the exact focused retrieved passage card_id from retrieve_evidence "
-                        "and "
-                        "a verbatim substring of its passage, not a search/acquisition "
-                        "receipt or paraphrase. Correct every citation in this submission. "
-                        "For unread/unavailable sources, put the access limit in limitations "
-                        "with evidence=[] and UNRESOLVED; do not invent quotes or support. "
-                        "Read-only passage retrieval is permitted before resubmission."
+                    citation_errors.append(
+                        scope + "CITATION_MISMATCH for known source " + use.card_id + ": "
+                        "Use a verbatim substring of the exact focused retrieved passage, "
+                        "including its spacing, not a paraphrase or acquisition receipt. "
+                        "For unread/unavailable sources retain the access limit and UNRESOLVED; "
+                        "do not invent support."
+                        + (
+                            " This is an acquisition receipt, not a focused passage."
+                            if card.get("corpus_ref")
+                            else " Exact already-read passage: " + compact(card["passage"])
+                        )
                     )
                 if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
                     raise AgentBoundaryError(
                         "A discovery lead/review cannot become direct primary evidence"
                     )
                 used_refs.extend(card["source_refs"])
+        if errors or citation_errors:
+            # Validate the whole opinion in one pass. Serial first-error feedback spent
+            # the unchanged two corrections on independent mistakes in the same DTO.
+            # Integrity/source-identity failures above remain fatal; nothing is accepted,
+            # normalized, inferred or rewritten on the model's behalf.
+            diagnostic = "\n".join(errors + citation_errors)
+            if unknown:
+                diagnostic += "\nAvailable complete query_ids: " + compact(sorted(query_by_id))
+            error_type = ResearchConclusionMismatch if errors else EvidenceCitationMismatch
+            raise error_type(diagnostic)
         return {
             "source_snapshot": snapshot,
             "conclusions": [c.model_dump(mode="json") for c in conclusions],

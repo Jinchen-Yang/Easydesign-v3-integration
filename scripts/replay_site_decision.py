@@ -237,6 +237,10 @@ async def main():
             {"user_goal": goal, "evidence": judge_evidence},
         )
         save(out, "judge.json", judge.model_dump(mode="json"))
+        if judge.recommendation is not None:
+            assert judge.recommendation.option_id == "site", (
+                "Judge recommendation must address the Site Gate option"
+            )
         report = {
             "kind": "REAL_MODEL_CONTRACT_REPLAY_NOT_GOLDEN_ACCEPTANCE",
             "source_thread": thread,

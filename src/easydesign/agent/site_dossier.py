@@ -69,6 +69,44 @@ class SiteResearchHandoff(StrictDTO):
     unresolved_questions: list[ShortText] = Field(min_length=1, max_length=6)
 
 
+def candidate_membrane_facts(
+    mappings: list[dict[str, Any]], analyses: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Join existing kernel geometry by exact deposited identity, never design-label arithmetic."""
+    result = []
+    for analysis in analyses:
+        regions = analysis["residue_regions"]
+        for mapping in mappings:
+            for region in regions:
+                source = region["residue"]
+                if (
+                    source["auth_asym_id"] != mapping["source_author_chain_id"]
+                    or str(source["auth_seq_id"]) != mapping["source_author_residue_id"]
+                    or (source.get("insertion_code") or "") != (mapping.get("insertion_code") or "")
+                    or str(source["model_id"]) not in mapping["model_presence"]
+                    or source["hetero_flag"] != "ATOM"
+                ):
+                    continue
+                result.append(
+                    {
+                        "canonical_position": mapping["canonical_position"],
+                        "source_model": str(source["model_id"]),
+                        "kernel_card_id": analysis["card_id"],
+                        **{
+                            key: region[key]
+                            for key in (
+                                "region",
+                                "protein_segment",
+                                "axial_distance",
+                                "radial_distance",
+                                "pore_lining",
+                            )
+                        },
+                    }
+                )
+    return result
+
+
 def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str, Any]:
     """Rehydrate exact evidence, never summarize model/tool history or select by sentiment."""
     overview = bridge.read_site_evidence()
@@ -187,12 +225,27 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             }
         )
     receptor = []
+    membrane_analyses = []
     topology_by_canonical: dict[int, Any] = {}
     for card in cards.values():
         if card["provider"] != "EasyDesign GPCR kernel":
             continue
         value = json.loads(card["passage"])
         hard_facts = target["evidence"]["hard_facts"]
+        analysis_refs = {
+            ref["sha256"]: ref
+            for ref in card["source_refs"]
+            if ref["artifact_id"] == "research-receptor-analysis"
+        }
+        if len(analysis_refs) > 1:
+            raise AgentBoundaryError("Receptor evidence binds conflicting kernel analyses")
+        if analysis_refs:
+            analysis = bridge.document(next(iter(analysis_refs.values())))
+            if analysis["approved_design_mapping"]["target_binding"] != target["binding"]:
+                raise AgentBoundaryError("Receptor geometry belongs to a different approved Target")
+            membrane_analyses.append(
+                {"card_id": card["card_id"], "residue_regions": analysis["residue_regions"]}
+            )
         if value["identity"].get("accession") == hard_facts.get("canonical_accession") and value[
             "identity"
         ].get("receptor_chain") == hard_facts.get("selected_chain"):
@@ -247,6 +300,13 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             ),
             "source": "Approved Target correspondence joined to the same-receptor/chain "
             "kernel topology; unknowns retained.",
+            "membrane_geometry": candidate_membrane_facts(mappings, membrane_analyses),
+            "geometry_scope": "Copied existing kernel region/axial/radial facts for exact source "
+            "chain, author residue, insertion code and model in the approved mapping. Empty means "
+            "not supplied. Topology segment annotations, signed spatial region and whole-VHH "
+            "approach are different: an extracellular TM surface is possible, and point geometry "
+            "does not establish framework/CDR clearance. Do not recalculate geometry from "
+            "centroids.",
         }
     return {
         "kind": "site-evidence-dossier-v5",

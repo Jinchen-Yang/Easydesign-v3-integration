@@ -2389,3 +2389,35 @@ checks182g independently passes the typed Site repair in13.14s. Candidate naming
 Coordinator progress tests passed in182d; exact nonidentity hydration and binding/tamper tests
 also passed. Protected182-precommit verifies385baseline files, oracle and model configuration
 unchanged. No real model ran during edits. Next: the existing179 Dossier replay on this checkpoint.
+
+### Saved179 replay182 and exact membrane fact delivery — 2026-09-13
+
+Replay182 on9b2e1f7a used the immutable179 dossier (54121characters), no research or source-project
+writes. Two first-call SiteDecisions used28367working-set characters,3497/4035public output chars,
+64.15/92.35s and9902input tokens each. Runtime286->414 hydration passed. Judge returned typed output
+after one max_tokens continuation (8192then6159output tokens;134.65s), but returned a candidate ID
+instead of Gate option=site and excused an incorrect cytoplasmic-sidedness statement as an
+imprecision. The independent-content-audit.json records scientific FAIL. Its original report's
+TestC contract PASS describes DTO parsing only, not Gate validity; replay now additionally checks
+the actual Site option before reporting success. No scientific Golden or source receipt changed.
+
+The original research-receptor-analysis ArtifactRef contains per-residue region/axial/radial
+geometry that its old card summary omitted. Dossier assembly now verifies that exact bound
+artifact and approved Target, then joins only candidate members by original chain/author ID,
+insertion code and observed model. The copied fields are existing kernel facts, not a new
+calculation, alignment, ranking or hard constraint. Foreign Target bindings reject. Empty supplied
+geometry remains unknown. Topology annotation, signed spatial region and full-VHH approach remain
+distinct; a TM-segment residue can have an extracellular-facing surface. Original179 data identify
+the pocket candidate as outer_pore, not cytoplasmic; point geometry does not prove a viable or
+impossible VHH approach. Source/canonical topology annotation and kernel geometric classifications
+remain separately visible rather than silently reconciled.
+
+Judge instructions now stop after decisive actionable errors instead of exhaustively enumerating
+faults, and require rejection of an incorrect alternative-sidedness claim even if ranking stays
+unchanged. Typed recommendation documentation specifies Gate IDs rather than region IDs. Source
+non-overlap with a glycosylation site cannot establish no spatial shielding. No budget/model change.
+
+checks183b Ruff PASS, mypy23 PASS,25targeted tests PASS in54.84s, including exact nonidentity source
+geometry joins, wrong-chain/insertion/model decoys, source binding and native restart. Preflight183
+rebuilt the real179 dossier read-only, verified all28candidate geometry rows and explicit rejection
+of a foreign kernel Target binding; working set35913characters. Original source bytes remain intact.

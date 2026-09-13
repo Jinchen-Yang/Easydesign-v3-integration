@@ -74,7 +74,10 @@ DecisionAction = Literal["APPROVE", "REVISE", "REJECT", "OVERRIDE"]
 class OptionRecommendation(StrictDTO):
     """A scientific opinion about one option; only runtime can establish hard blocks."""
 
-    option_id: Identifier
+    option_id: Identifier = Field(
+        description="Scientific Gate option ID: use 'site' for Site/Hotspot, 'design' for Design, "
+        "or an actual supplied chain option for Target. Never use a candidate/site-region ID."
+    )
     status: Literal["SUPPORTED", "DISCOURAGED"]
     warnings: list[ShortText] = Field(default_factory=list, max_length=4)
     alternative: ShortText | None = None

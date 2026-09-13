@@ -518,3 +518,56 @@ def test_research_handoff_requires_real_contradiction_inquiry_but_accepts_unreso
         assert b.current_site() is None
     finally:
         SITE_EVIDENCE.reset(token)
+
+
+def test_membrane_facts_use_exact_source_identity_not_design_or_canonical_numbers() -> None:
+    from copy import deepcopy
+
+    from easydesign.agent.site_dossier import candidate_membrane_facts
+
+    mapping = {
+        "label_seq_id": 414,
+        "canonical_position": 286,
+        "source_author_chain_id": "A",
+        "source_author_residue_id": "901",
+        "insertion_code": "B",
+        "model_presence": ["2"],
+    }
+    region = {
+        "residue": {
+            "auth_asym_id": "A",
+            "auth_seq_id": 901,
+            "insertion_code": "B",
+            "model_id": "2",
+            "hetero_flag": "ATOM",
+        },
+        "region": "outer_pore",
+        "protein_segment": "TM6",
+        "axial_distance": 9.25,
+        "radial_distance": 5.5,
+        "pore_lining": True,
+    }
+    decoys = []
+    for change in (
+        {"auth_seq_id": 414},
+        {"auth_seq_id": 286},
+        {"auth_asym_id": "B"},
+        {"insertion_code": ""},
+        {"model_id": "1"},
+        {"hetero_flag": "HETATM:LIG"},
+    ):
+        decoy = deepcopy(region)
+        decoy["residue"].update(change)
+        decoy["region"] = "SYNTHETIC wrong source must not cross the boundary"
+        decoys.append(decoy)
+    analyses = [{"card_id": "SYNTHETIC kernel", "residue_regions": [*decoys, region]}]
+    original = deepcopy(analyses)
+    rows = candidate_membrane_facts([mapping], analyses)
+    assert len(rows) == 1
+    assert rows[0]["canonical_position"] == 286
+    assert rows[0]["region"] == "outer_pore"
+    assert rows[0]["axial_distance"] == 9.25
+    assert rows[0]["source_model"] == "2"
+    assert "label_seq_id" not in rows[0]
+    assert analyses == original
+    assert candidate_membrane_facts([mapping], []) == []

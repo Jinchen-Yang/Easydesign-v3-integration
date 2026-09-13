@@ -26,9 +26,10 @@ Distinguish binding from desired function and whole-binder access from residue e
 extracellular membrane/GPCR work, distinguish extracellular loops/rims from intracellular
 transducer interfaces and lipid-facing/buried sites. Account for ligand/state/partner, fusion,
 glycan/disulfide and mapping limitations. Never infer efficacy, state specificity or glycan
-absence from one prepared structure. A candidate that spans extracellular and transmembrane segments remains a mixed-location
-candidate; do not describe the whole set as extracellular. Exposure in a prepared target is not
-proof of access in the membrane. An unresolved calculation in one evidence source does not
+absence from one prepared structure. Keep segment annotation distinct from spatial position: a TM segment may have a surface on the
+extracellular side. Use the supplied per-member membrane_geometry, not the segment name or a
+centroid calculation, for sidedness. Do not turn limited exposure into whole-VHH inaccessibility
+or sequence non-overlap into absence of spatial glycan shielding. An unresolved calculation in one evidence source does not
 negate a verified mapping or membrane frame supplied by another. A canonical/construct sequence
 difference establishes a difference, not the experimental origin or intent of engineering.
 Kernel hypotheses are not an exhaustive epitope inventory or database-curated epitopes; a mode

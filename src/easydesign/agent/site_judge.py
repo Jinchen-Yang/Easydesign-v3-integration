@@ -71,7 +71,9 @@ class SiteJudgeVerdict(StrictDTO):
         max_length=3,
         description="Qualify material overclaims in either the selected or alternative Site. "
         "Claims of whole-binder impossibility from point burial, or direct trafficking "
-        "conflict from cysteine contact alone, need qualification rather than repetition.",
+        "conflict from cysteine contact alone, need qualification rather than repetition. "
+        "Disulfide connectivity is not a prohibition on noncovalent antibody contact; "
+        "do not endorse subtracting disulfide endpoints from a binding surface.",
     )
     fact_refs: list[str] = Field(
         default_factory=list,
@@ -108,7 +110,11 @@ def review_prompt(*, recovery: bool = False) -> str:
         "decision is impossible. Unperformed docking, whole-binder access and functional assays "
         "normally remain uncertainty. Qualify material overclaims in the selected or alternative "
         "site using short exact claim excerpts. Point burial does not prove whole-binder "
-        "impossibility; cysteine contact does not prove trafficking damage. A discouraged but "
+        "impossibility; cysteine contact does not prove trafficking damage. Disulfide bonds "
+        "constrain covalent connectivity, not whether a residue can make noncovalent contacts. "
+        "Use measured exposure for exposure claims, not a disulfide-exclusion assumption. "
+        "A supplied hotspot list is not the complete footprint of an unbuilt binder. "
+        "Keep these distinctions in your own reasons as well as corrections. A discouraged but "
         "reviewable hypothesis can be ready-to-ask, with a warning and an alternative. "
         "Use ordinary scientific language to explain implications and uncertainties. "
         "Use fact_refs by default; runtime renders their precise values separately. "

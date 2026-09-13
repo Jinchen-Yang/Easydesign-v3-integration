@@ -59,6 +59,10 @@ makes the Gate decision. Submit the small decision, not a second literature revi
 Official annotation facts are not Research hypotheses. Distinct disulfide bonds with disjoint
 endpoints are compatible; do not manufacture a conflict merely because two bonds are listed.
 Only evidence supporting different partners for the same endpoint can raise that ambiguity.
+Disulfide connectivity constrains covalent changes, not noncovalent antibody contacts. Do not
+subtract disulfide endpoints from an epitope or call their side chains unavailable on that basis.
+Use the supplied exposure measurements for exposure claims. A hotspot list is not the complete
+footprint of a future binder; neither its size nor disulfide membership establishes affinity.
 Use reference_annotations and candidate sequence_topology for canonical domains; a Research name
 or scan label cannot turn an annotated intracellular region into an extracellular loop.
 When approach_validation is not-performed, whole-VHH feasibility remains UNRESOLVED. Reject any

@@ -55,6 +55,11 @@ access concern requiring later clearance validation. Example: cysteine contact d
 an expression/trafficking artifact; qualify the causal claim and retain structural risk. These
 can proceed without automatically blocking a reasonable site. Avoiding artifacts as a goal
 is not an implicit prohibition on every cysteine contact; an explicit residue exclusion is.
+Disulfide connectivity does not exclude noncovalent antibody contact. Qualify claims that bonded
+cysteines are consumed or unavailable as contact residues; use measured exposure rather than
+subtracting disulfide endpoints. A hotspot list is not a complete future binder footprint, and
+neither its size nor disulfide membership establishes affinity. Keep these distinctions in your
+own reasons and recommendations, not only in corrections of the specialist's prose.
 When approach_validation is not-performed, qualify absolute access claims based only on
 point exposure or pore geometry; do not require later-stage proof to select a hotspot.
 

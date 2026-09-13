@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import ConfigDict, Field, model_validator
 
 from .contracts import ResearchConclusionMismatch, StrictDTO
-from .evidence_research import ResearchConclusion
 from .site_contracts import SiteIntent, SiteSelection
 
 if TYPE_CHECKING:
@@ -30,6 +29,14 @@ class SiteDecision(StrictDTO):
         description="IDs of supplied candidates used in the comparison, including rejected/avoid "
         "options. Required nonempty when more than one candidate is supplied; comparison does "
         "not recommend these alternatives. Empty only when the dossier has one candidate.",
+    )
+    avoid_residue_ids: list[CandidateId] = Field(
+        default_factory=list,
+        max_length=40,
+        description="IDs from the dossier residue_constraints to exclude from the selected "
+        "hotspot. Declare every proposed residue avoidance here; prose alone is not a constraint. "
+        "Exclusions never subtract residues from a candidate or change its membership. "
+        "Do not select a hotspot containing an excluded member. Empty means no such exclusion.",
     )
     recommendation: Literal["SUPPORTED", "DISCOURAGED"]
     why_selected: DecisionText = Field(
@@ -128,22 +135,10 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
         "scientific_context": dossier["scientific_context"],
         "candidates": candidates,
         "receptor_context": dossier["receptor_context"],
-        "approach_validation": dossier.get("approach_validation", {"status": "not-supplied"}),
-        "decision_questions": [
-            {
-                "question": q["question"],
-                "status": q["status"],
-                "limitations": q["limitations"],
-                "evidence_interpretations": [
-                    {
-                        key: use[key]
-                        for key in ("claim", "relation", "strength", "transfer_limit", "excerpt")
-                    }
-                    for use in q["evidence"]
-                ],
-            }
-            for q in dossier["decision_questions"]
-        ],
+        "approach_validation": dossier["approach_validation"],
+        "reference_annotations": dossier["reference_annotations"],
+        "residue_constraints": dossier["residue_constraints"],
+        "decision_questions": [{"question": q["question"]} for q in dossier["decision_questions"]],
         "evidence": [
             {
                 key: value
@@ -167,7 +162,6 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
             }
             for card in dossier["focused_passages"]
         ],
-        "unresolved_research_questions": dossier["research_opinions"]["unresolved_questions"],
         "access_failures": [
             {"question": q["question"], "errors": q["errors"]}
             for q in dossier["research_outcomes"]
@@ -224,21 +218,25 @@ def compile_site_decision(dossier: dict[str, Any], decision: SiteDecision) -> Si
             {
                 **original,
                 "name": candidate_name(candidates[candidate_id]),
-                "role": "primary"
-                if primary
-                else original["role"]
-                if original["role"] in {"avoid", "unresolved"}
-                else "backup",
+                "role": "primary" if primary else "backup",
                 "rationale": decision.why_selected if primary else decision.alternative_comparison,
             }
         )
 
-    conclusions = [
-        ResearchConclusion.model_validate(
-            {key: value for key, value in q.items() if key in ResearchConclusion.model_fields}
-        )
-        for q in dossier["decision_questions"]
+    constraints = {c["residue_id"]: c["design_label"] for c in dossier["residue_constraints"]}
+    if not set(decision.avoid_residue_ids).issubset(constraints):
+        raise ResearchConclusionMismatch("Choose only supplied residue constraint IDs")
+    excluded = sorted({constraints[key] for key in decision.avoid_residue_ids})
+    selected_labels = candidates[decision.selected_candidate_id]["research_hypothesis"][
+        "hotspot_label_seq_ids"
     ]
+    if set(excluded) & set(selected_labels):
+        raise ResearchConclusionMismatch(
+            "Selected hotspot conflicts with declared avoid-residue constraint: "
+            + str(sorted(set(excluded) & set(selected_labels)))
+            + ". Choose a compatible supplied candidate or revise the exclusion; "
+            "a warning or human override cannot satisfy mutually exclusive constraints."
+        )
     intent = SiteIntent(
         selected_site=selection(decision.selected_candidate_id, True),
         positive_evidence=[decision.why_selected],
@@ -251,8 +249,7 @@ def compile_site_decision(dossier: dict[str, Any], decision: SiteDecision) -> Si
             selection(candidate_id, False) for candidate_id in decision.alternative_candidate_ids
         ],
         recommendation=decision.recommendation,
-        scope="mechanistic" if conclusions else "structural-exploration",
-        material_questions=list(dict.fromkeys(conclusion.topic for conclusion in conclusions)),
-        research_conclusions=conclusions,
+        scope="mechanistic" if dossier["decision_questions"] else "structural-exploration",
+        avoid_label_seq_ids=excluded,
     )
     return intent

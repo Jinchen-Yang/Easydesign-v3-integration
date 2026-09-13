@@ -456,7 +456,21 @@ class Phase2Bridge(TargetBridge):
 
     def validate_site_research(self, intent: SiteIntent) -> dict[str, Any]:
         """Read-only citation preflight; no scientific proposal is registered here."""
-        research = EvidenceResearch(self).validate_conclusions(intent.research_conclusions)
+        from .site_dossier import DecisionEvidenceQuestion
+
+        event = self.thread_latest("site-evidence-dossier")
+        execution = self.store.latest_execution(self.thread)
+        questions = []
+        if event and execution and event["execution_id"] == execution["execution_id"]:
+            dossier = self.document(event["ref"])
+            if dossier["target_binding"] != self.target_state()["binding"]:
+                raise AgentBoundaryError("Site dossier has a stale Target binding")
+            questions = [
+                DecisionEvidenceQuestion.model_validate(q) for q in dossier["decision_questions"]
+            ]
+        elif intent.scope == "mechanistic":
+            raise AgentBoundaryError("Mechanistic Site requires its current execution dossier")
+        research = EvidenceResearch(self).validate_questions(questions)
         cards = {
             c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
         }
@@ -496,19 +510,15 @@ class Phase2Bridge(TargetBridge):
             and dossier_event["target_binding"] == target["binding"]
         ):
             dossier = self.document(dossier_event["ref"])
-            research["decision_basis"] = {
-                "decision_questions": dossier["decision_questions"],
-                "evidence_card_ids": [c["card_id"] for c in dossier["focused_passages"]],
-                **dossier["research_opinions"],
-                "authority": "Researcher opinions and stopping rationale, not approval. "
-                "Judge must independently assess the sufficiency and contrary evidence.",
-            }
             # Keep decision-critical opposing evidence visible to Judge even if the
             # final SiteIntent does not cite it. Existing refs verify all originals.
             cards = {
                 c["card_id"]: c for q in research["source_snapshot"]["queries"] for c in q["cards"]
             }
             research["source_refs"].append(dossier_event["ref"])
+            research["source_refs"].extend(
+                a["source_ref"] for a in dossier["reference_annotations"]
+            )
             for card in dossier["focused_passages"]:
                 research["source_refs"].extend(cards[card["card_id"]]["source_refs"])
             for question in dossier["decision_questions"]:
@@ -670,6 +680,7 @@ class Phase2Bridge(TargetBridge):
         ref = proposal["facts_ref"]
         refs = [f"project:{ref['relative_path']}#sha256={ref['sha256']}"]
         research = None
+        dossier = None
         dossier_context = None
         if proposal.get("research_ref"):
             research_ref = proposal["research_ref"]
@@ -693,6 +704,8 @@ class Phase2Bridge(TargetBridge):
                     raise AgentBoundaryError("Site dossier differs from proposal Target or owner")
                 dossier_context = {
                     "runtime_status": dossier["runtime_status"],
+                    "reference_annotations": dossier.get("reference_annotations", []),
+                    "residue_constraints": dossier.get("residue_constraints", []),
                     "approach_validation": dossier.get(
                         "approach_validation", {"status": "not-supplied"}
                     ),
@@ -731,7 +744,10 @@ class Phase2Bridge(TargetBridge):
             refs.append(
                 f"run:{proposal['run_id']}:{stage_ref.relative_path}#sha256={stage_ref.sha256}"
             )
-        selection = SiteIntent.model_validate(proposal["intent"]).selected_site
+        # Historical immutable proposals remain readable without revalidating obsolete DTOs.
+        from .site_contracts import SiteSelection
+
+        selection = SiteSelection.model_validate(proposal["intent"]["selected_site"])
         cited_cards = {
             card_id
             for candidate in [
@@ -740,19 +756,6 @@ class Phase2Bridge(TargetBridge):
             ]
             for card_id in candidate.get("evidence_card_ids", [])
         }
-        if research:
-            cited_cards.update(
-                e["card_id"]
-                for conclusion in research["conclusions"]
-                for e in conclusion["evidence"]
-            )
-        if research and research.get("decision_basis"):
-            cited_cards.update(research["decision_basis"].get("evidence_card_ids", []))
-            cited_cards.update(
-                e["card_id"]
-                for question in research["decision_basis"]["decision_questions"]
-                for e in question["evidence"]
-            )
         return {
             "target_facts": self.read_evidence()["hard_facts"],
             **({"site_dossier_facts": dossier_context} if dossier_context is not None else {}),
@@ -767,22 +770,28 @@ class Phase2Bridge(TargetBridge):
             "research_evidence": None
             if research is None
             else {
-                "conclusions": research["conclusions"],
                 "authority": research["authority"],
-                **(
-                    {"decision_basis": research["decision_basis"]}
-                    if research.get("decision_basis")
-                    else {}
-                ),
+                "decision_questions": [
+                    {"question": q["question"]} for q in dossier["decision_questions"]
+                ]
+                if dossier
+                else [],
                 "retrieval_status": [
                     {key: q[key] for key in ("topic", "question", "status", "errors")}
                     for q in research["source_snapshot"]["queries"]
                 ],
                 "source_cards": [
                     {key: value for key, value in c.items() if key != "source_refs"}
-                    for q in research["source_snapshot"]["queries"]
-                    for c in q["cards"]
-                    if c["card_id"] in cited_cards
+                    for c in (
+                        dossier["focused_passages"]
+                        if dossier
+                        else [
+                            c
+                            for q in research["source_snapshot"]["queries"]
+                            for c in q["cards"]
+                            if c["card_id"] in cited_cards
+                        ]
+                    )
                 ],
             },
             "evaluation": proposal["evaluation"],
@@ -964,11 +973,7 @@ class Phase2Bridge(TargetBridge):
             or proposal["intent"]["recommendation"] == "DISCOURAGED"
             or (opinion and opinion.status == "DISCOURAGED")
         )
-        if (
-            not blocked
-            and assessment.verdict != "ready-to-ask"
-            and not (assessment.verdict == "reject" and discouraged)
-        ):
+        if not blocked and assessment.verdict != "ready-to-ask":
             raise AgentBoundaryError("Judge has not supplied a reviewable Site question")
         status: Literal["SUPPORTED", "DISCOURAGED", "BLOCKED"] = (
             "BLOCKED" if blocked else "DISCOURAGED" if discouraged else "SUPPORTED"

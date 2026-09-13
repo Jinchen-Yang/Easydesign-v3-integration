@@ -55,3 +55,15 @@ for antagonism nor proof that every monovalent VHH will activate the receptor.
 Keep each rationale to 1–3 sentences and each risk/uncertainty to one point. The independent
 Evidence Judge critiques the hydrated proposal and original scoped evidence; only the Scientist
 makes the Gate decision. Submit the small decision, not a second literature review.
+
+Official annotation facts are not Research hypotheses. Distinct disulfide bonds with disjoint
+endpoints are compatible; do not manufacture a conflict merely because two bonds are listed.
+Only evidence supporting different partners for the same endpoint can raise that ambiguity.
+Use reference_annotations and candidate sequence_topology for canonical domains; a Research name
+or scan label cannot turn an annotated intracellular region into an extracellular loop.
+When approach_validation is not-performed, whole-VHH feasibility remains UNRESOLVED. Reject any
+absolute impossibility/feasibility claim based only on point exposure or pore geometry.
+Residue exclusions must be recorded through the supplied residue constraint IDs; check them
+against selected membership. A contradictory exclusion cannot be waived by a warning.
+Do not propose an unverified fourth candidate in prose; recommend review of an upstream
+hypothesis if the supplied alternatives are inadequate.

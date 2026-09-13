@@ -17,7 +17,7 @@ from deepagents.profiles import (
 )
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ValidationError
 
@@ -39,7 +39,6 @@ from .contracts import (
     StaleEvidenceCursor,
     TargetInterpretation,
     TargetTask,
-    ToolBatchTooLarge,
 )
 from .design import BINDER_EVIDENCE, DesignBridge
 from .design_contracts import BinderIntent
@@ -57,7 +56,7 @@ from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
 from .session_store import TOOL_REPAIR_LIMIT, compact, confined, identity
-from .site_contracts import ScientificTask, SiteIntent
+from .site_contracts import ScientificTask
 from .site_decision import SiteDecision, decision_working_set, hydrate_site_decision
 from .site_dossier import (
     SiteResearchHandoff,
@@ -144,12 +143,15 @@ independent evidence-judge, then request_scientific_decision with the exact elig
 Once Gate 1 is resolved, delegate site-mechanism to interpret real tools/evidence and propose
 mapped hotspots. Do not perform its analysis yourself or ask Target to choose sites.
 After the Site specialist returns, delegate evidence-judge. It reviews the runtime-bound current
-Site proposal, not a description you invent. Then call request_scientific_decision using its
-trusted assessment_id and option_id=site. Only that tool creates a real human interrupt.
+Site proposal, not a description you invent. Only a ready-to-ask Site verdict permits
+request_scientific_decision using its trusted assessment_id and option_id=site. Only that tool
+creates a real human interrupt. A reject/insufficient Site critique requires you to report the
+remaining scientific objection and leave the proposal pending; do not turn it into readiness,
+repeat an already completed Judge review, or manufacture a human revision.
 If a current Site proposal already exists, including an explicitly resumed proposal, obtain
 its independent Judge review directly. Do not repeat completed Site creation or preparation.
-Never substitute prose confirmation for a card or claim approval from chat. A warning/reject
-opinion about a testable DISCOURAGED site can be presented for human revision or explicit
+Never substitute prose confirmation for a reviewable card or claim approval from chat.
+A ready-to-ask DISCOURAGED site can be presented with warnings for human revision or explicit
 OVERRIDE. Runtime BLOCKED constraints cannot be overridden. Do not manufacture authority.
 On revision-requested, return to the named owner with the trusted revision instruction and
 valid upstream evidence. Site revisions preserve Target; get a fresh Site and Judge proposal,
@@ -236,18 +238,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         self.bridge, self.role, self.config, self.goal = bridge, role, config, goal
         self.current_user_message = current_user_message or goal
         self.execution_id = execution_id
-        self.site_stage = site_stage
+        self.site_stage = "research" if role == "site" and site_stage is None else site_stage
         self.revision = revision
         self.structured_output = self.role != "coordinator"
         self.output_schema = {
             "target": TargetInterpretation,
-            "site": SiteIntent,
+            "site": SiteResearchHandoff,
             "binder": BinderIntent,
             "judge": JudgeVerdict,
         }.get(role)
-        if site_stage == "research":
+        if self.site_stage == "research":
             self.output_schema = SiteResearchHandoff
-        elif site_stage == "synthesis":
+        elif self.site_stage == "synthesis":
             self.output_schema = SiteDecision
         self.skills = (
             DESIGN_SKILLS
@@ -290,8 +292,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         }
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        submission_schema = self.output_schema or SiteIntent
-        submission_name = submission_schema.__name__
+        submission_name = self.output_schema.__name__ if self.output_schema else ""
         available = [t for t in request.tools if getattr(t, "name", None) in self.allowed]
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
@@ -470,7 +471,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     for t in available
                     if t.name not in {"read_target_evidence", "read_evidence_result"}
                 ]
-        if isinstance(self.bridge, Phase2Bridge) and self.role != "site":
+        if isinstance(self.bridge, Phase2Bridge) and self.role in {"target", "binder"}:
             # The checkpoint retains every message. The model sees a working set of
             # recent detailed tool views; older archived results remain addressable.
             detailed = [
@@ -482,17 +483,6 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             retained: set[int] = set()
             scopes: set[str] = set()
             detail_chars = 0
-            if self.role == "judge":
-                snapshots = [
-                    i
-                    for i in detailed
-                    if messages[i].name in {"read_scientific_evidence", "read_target_evidence"}
-                ]
-                if snapshots:
-                    # Independent comparison needs the whole delegated snapshot in
-                    # view together, even after several narrower follow-up reads.
-                    retained.add(snapshots[-1])
-                    detail_chars = len(str(messages[snapshots[-1]].content))
             for i in reversed(detailed):
                 if i in retained:
                     continue
@@ -587,15 +577,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 "AND json_extract(payload,'$.execution_id')=?",
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
-            synthesize = self.site_stage == "synthesis" or (
-                self.role == "site" and self.config.max_model_calls - used <= 10
-            )
+            synthesize = self.site_stage == "synthesis"
             call_tools = [] if synthesize else available
-            call_tool_chars = (
-                len(compact([convert_to_openai_tool(submission_schema)]))
-                if synthesize
-                else tool_chars
-            )
+            if synthesize:
+                assert self.output_schema is not None
+                call_tool_chars = len(compact([convert_to_openai_tool(self.output_schema)]))
+            else:
+                call_tool_chars = tool_chars
             request = request.override(
                 system_message=SystemMessage(
                     content=base_system
@@ -778,9 +766,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if any(call.get("name") != schema.__name__ for call in invalid):
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
+            repair_already_counted = False
             if synthesize and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
-                    "SITE_READING_BUDGET_COMPLETE: rejected "
+                    "SITE_SYNTHESIS_BOUNDARY: rejected "
                     + compact([c["name"] for c in calls])
                     + "; no further reading/action was executed. "
                     f"Submit only {schema.__name__} using delivered evidence; "
@@ -806,12 +795,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             if self.site_stage == "research":
                                 site_dossier(self.bridge, response.structured_response)
                             else:
-                                if self.site_stage == "synthesis":
-                                    intent = hydrate_site_decision(
-                                        self.bridge, response.structured_response, self.execution_id
-                                    )
-                                else:
-                                    intent = response.structured_response
+                                intent = hydrate_site_decision(
+                                    self.bridge, response.structured_response, self.execution_id
+                                )
                                 self.bridge.validate_site_research(intent)
                         if self.role == "target":
                             check_interpretation(
@@ -856,9 +842,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                     return response
             elif any(isinstance(m, ToolMessage) for m in response.result):
-                # ToolStrategy already returned an exact schema error through the bounded
-                # error callback. Let the framework deliver it and continue its native loop.
-                return response
+                if not synthesize:
+                    return response
+                # ToolStrategy has already recorded/reserved this schema correction.
+                # Isolated synthesis keeps its original evidence input even when native
+                # parsing fails; unfinished model output cannot become working evidence.
+                diagnostic = "\n".join(
+                    str(m.content) for m in response.result if isinstance(m, ToolMessage)
+                )[:6000]
+                repair_already_counted = True
             elif any(getattr(m, "tool_calls", []) for m in response.result):
                 return response
             else:
@@ -881,7 +873,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ],
                 },
             )
-            self.contract_error(diagnostic)
+            if not repair_already_counted:
+                self.contract_error(diagnostic)
             from langchain_core.messages import SystemMessage
 
             request = request.override(
@@ -967,48 +960,6 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         return identity(
             {"message_id": message.id, "tool_call_ids": [c["id"] for c in message.tool_calls]}
         )
-
-    def admit_tool_batch(self, request: Any) -> None:
-        """Reject oversized Site reads before their handlers, without choosing evidence."""
-        if self.role != "site" or self.site_stage is not None:
-            return
-        message = self.native_tool_batch(request)
-        if message is None or len(message.tool_calls) <= 1:
-            return
-
-        # Match the complete receptor-view cap and reserve space for Skill text and
-        # bounded evidence pages. This admission ceiling does not replace the final
-        # 60k input guard or discard any first-delivery answer. No tool is auto-queued.
-        def allowance(call: ToolCall) -> int:
-            if call["name"] == "analyze_receptor_context":
-                return 32000
-            if call["name"] != "read_file":
-                return 6000
-            path = call["args"].get("file_path")
-            own_paths = {
-                "/skills/site-mechanism/SKILL.md",
-                *{
-                    f"/skills/site-mechanism/references/{name}.md"
-                    for name in ("research", "membrane", "shielding")
-                },
-            }
-            if not isinstance(path, str) or path not in own_paths:
-                return 12000  # Authorization still runs independently for that call.
-            page = Path(__file__).parent / str(path).lstrip("/")
-            text = page.read_text()
-            # Entire known Skill page plus line-number overhead and wrapper margin.
-            # Do not penalize a short reference as though it were the full main Skill.
-            return len(text) + 16 * len(text.splitlines()) + 512
-
-        total = sum(allowance(c) for c in message.tool_calls)
-        if total > 32000:
-            raise ToolBatchTooLarge(
-                f"This batch's conservative output allowance is {total} characters, above "
-                "the 32000 batch limit. Split it into smaller batches; call "
-                "analyze_receptor_context alone. No handler in this oversized batch was "
-                "executed and no scientific answer was consumed. This is an input-size "
-                "diagnostic, not missing scientific evidence."
-            )
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         name, args = request.tool_call["name"], request.tool_call["args"]
@@ -1222,13 +1173,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         self.bridge, self.role, args.get("ref"), execution_id=self.execution_id
                     )
                     read_query(args)
-                self.admit_tool_batch(request)
                 result = await handler(request)
             except InvalidFieldProjection as error:
                 if (
                     (
                         name != "read_evidence_result"
-                        and not (self.role == "site" and isinstance(error, ToolBatchTooLarge))
                         and not (
                             name == "research_evidence" and isinstance(error, ResearchQueryMismatch)
                         )
@@ -1401,12 +1350,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             }
         elif self.role == "site":
             assert isinstance(self.bridge, Phase2Bridge)
-            intent = (
-                hydrate_site_decision(
-                    self.bridge, SiteDecision.model_validate(parsed), self.execution_id
-                )
-                if self.site_stage == "synthesis"
-                else SiteIntent.model_validate(parsed)
+            intent = hydrate_site_decision(
+                self.bridge, SiteDecision.model_validate(parsed), self.execution_id
             )
             if self.site_stage == "synthesis":
                 self.bridge.store.event(
@@ -1630,8 +1575,6 @@ def create_harness(
         schema = (
             JudgeVerdict
             if role == "judge"
-            else SiteIntent
-            if role == "site"
             else BinderIntent
             if role == "binder"
             else TargetInterpretation
@@ -1663,16 +1606,6 @@ def create_harness(
                 "Use a scoped read only for a specific missing fact. Do not enumerate fields "
                 "or reread supplied tables to verify runtime-owned hashes. When the supplied "
                 "facts suffice, submit your independent critique through JudgeVerdict."
-            )
-        if role == "site":
-            prompt += (
-                " Work toward a reviewable, constraint-consistent hypothesis with meaningful "
-                "alternatives, rather than exhaustive residue/source enumeration. Read primary "
-                "passages and evaluate the needed mapped patches, then synthesize SiteIntent. "
-                "A source's limited epitope/assay detail stays an explicit limitation; searching "
-                "more bibliography does not itself resolve it. Use concise evidence claims and "
-                "exact short excerpts so the entire typed opinion fits the output budget. "
-                "Never invent missing facts or skip required checks to finish."
             )
         boundary = RoleBoundary(
             bridge, role, config, goal, current_user_message, execution_id, revision

@@ -1,5 +1,14 @@
 # Standard Research: evidence sufficient for the decision
 
+Current consolidation contract (2026-09-13, validation pending):
+[authority audit](PHASE2_AUTHORITY_CONSOLIDATION_20260913.md) and
+[user assignment](PHASE2_CONSOLIDATION_ASSIGNMENT_20260913.md).
+Current SiteIntent contains runtime-hydrated final interpretation and memberships, not
+material_questions/research_conclusions. Research questions require explicit query IDs;
+topic-based fallback and forced legacy finalization are removed. Historical implementation
+notes below retain their original context and do not override this current contract.
+Phase 2 is not frozen.
+
 User-authorized policy update, 2026-09-12. Preserve all accepted milestones and the current
 Architecture Checkpoint. Phase2 remains not frozen; Cases1/3/4/5 are accepted and GPCR Case2
 requires a fresh scientific PASS before full regression and Phase2 closure.

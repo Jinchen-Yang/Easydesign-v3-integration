@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from easydesign.agent.contracts import AgentBoundaryError, InvalidFieldProjection
 from easydesign.agent.evidence_output import output_message, result_tool
@@ -120,10 +120,10 @@ async def test_explicit_selectors_legacy_traversal_and_lossless_pagination(bridg
     assert projection["value"] == {key: SNAPSHOT[key] for key in KEYS}
     path = ["identity_evidence", "canonical"]
     nested = json.loads(await read.ainvoke({"ref": ref, "path": path}))
-    legacy = json.loads(await read.ainvoke({"ref": ref, "field": path}))
-    assert nested["value"] == legacy["value"] == SNAPSHOT["identity_evidence"]["canonical"]
-    assert legacy["field"] == path and "deprecation" in legacy and "deprecation" not in nested
-    with pytest.raises(InvalidFieldProjection):
+    assert nested["value"] == SNAPSHOT["identity_evidence"]["canonical"]
+    with pytest.raises(ValidationError):
+        await read.ainvoke({"ref": ref, "field": path})
+    with pytest.raises(ValidationError):
         await read.ainvoke({"ref": ref, "field": KEYS})  # Never silently treat as siblings.
     for selector in (
         {"fields": ["chains", "absent"]},
@@ -274,10 +274,10 @@ async def test_unambiguous_path_spellings_and_display_aliases_preserve_source(br
     )
     ref = json.loads(msg.content)["full_result"]
     read = result_tool(bridge, "target")
-    # The former redundant selector error has exactly one possible meaning.
-    page = json.loads(
+    # One explicit selector has one meaning; redundant spellings are not normalized.
+    with pytest.raises(InvalidFieldProjection, match="mutually exclusive"):
         await read.ainvoke({"ref": ref, "field": "facts", "path": ["facts"], "limit": 12})
-    )
+    page = json.loads(await read.ainvoke({"ref": ref, "path": ["facts"], "limit": 12}))
     assert page["value"] == original["facts"][:8] and page["next_offset"] == 8
     value = json.loads(await read.ainvoke({"ref": ref, "path": ["facts", 5, "mapping"]}))
     assert value["value"] == original["facts"][5]["mapping"]

@@ -10,7 +10,7 @@ from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import (
     EvidenceResearch,
-    ResearchConclusion,
+    ResearchAssessment,
     ResearchHttpClient,
     ResearchQuery,
 )
@@ -193,10 +193,10 @@ def test_not_searched_empty_search_and_network_failure_are_distinct(
     result = research.acquire(query("competition"), role="site")
     assert result["status"] == "UNRESOLVED" and result["errors"]
     with pytest.raises(AgentBoundaryError, match="source failure"):
-        research.validate_conclusions(
+        research.validate_questions(
             [
-                ResearchConclusion(
-                    topic="competition",
+                ResearchAssessment(
+                    query_ids=[result["query_id"]],
                     status="SEARCHED_NO_EVIDENCE",
                     limitations=["Service failed"],
                 )
@@ -239,17 +239,17 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
         "strength": "E1",
         "transfer_limit": "Synthetic fixture, no claim about a real target",
     }
-    conclusion = ResearchConclusion.model_validate(
+    conclusion = ResearchAssessment.model_validate(
         {
-            "topic": "function",
+            "query_ids": [q["query_id"] for q in research.snapshot()["queries"]],
             "status": "VERIFIED",
             "evidence": [use],
             "limitations": ["Only the reported assay"],
         }
     )
-    assert research.validate_conclusions([conclusion])["source_refs"]
+    assert research.validate_questions([conclusion])["source_refs"]
     with pytest.raises(AgentBoundaryError, match="retrieved passage"):
-        research.validate_conclusions(
+        research.validate_questions(
             [
                 conclusion.model_copy(
                     update={
@@ -263,7 +263,7 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
             ]
         )
     with pytest.raises(AgentBoundaryError, match="both supporting"):
-        research.validate_conclusions(
+        research.validate_questions(
             [conclusion.model_copy(update={"status": "CONFLICTING_EVIDENCE"})]
         )
     # One invalid submission can have independent ID, status and quotation errors.
@@ -282,11 +282,11 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
     unsupported = conclusion.model_copy(update={"evidence": []})
     before = [item.model_dump(mode="json") for item in [invalid, unsupported]]
     with pytest.raises(AgentBoundaryError) as rejected:
-        research.validate_conclusions([invalid, unsupported])
+        research.validate_questions([invalid, unsupported])
     diagnostic = str(rejected.value)
     assert "Unknown evidence query IDs" in diagnostic
-    assert "conclusion[0] (function): Conflict requires both supporting" in diagnostic
-    assert "conclusion[1] (function): Scientific support/conflict requires" in diagnostic
+    assert "question[0]: Conflict requires both supporting" in diagnostic
+    assert "question[1]: Scientific support/conflict requires" in diagnostic
     assert "CITATION_MISMATCH" in diagnostic
     assert card["passage"] in diagnostic
     assert result["query_id"] in diagnostic
@@ -297,7 +297,7 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
         update={"evidence": [invalid.evidence[0].model_copy(update={"card_id": "foreign-passage"})]}
     )
     with pytest.raises(AgentBoundaryError, match="not retrieved in this thread"):
-        research.validate_conclusions([foreign, unsupported])
+        research.validate_questions([foreign, unsupported])
     # Persisted query snapshots do not excuse tampering with original source artifacts.
     path = research.bridge.project / source_card["source_refs"][0]["relative_path"]
     path.write_text("tampered")
@@ -332,9 +332,9 @@ def test_wrong_pmid_and_review_never_become_primary_evidence(
     )
     review = research.acquire(query(query="different review search"), role="site")["cards"][0]
     assert review["primary_eligible"] is False
-    conclusion = ResearchConclusion.model_validate(
+    conclusion = ResearchAssessment.model_validate(
         {
-            "topic": "function",
+            "query_ids": [q["query_id"] for q in research.snapshot()["queries"]],
             "status": "VERIFIED",
             "limitations": ["Review is a discovery lead"],
             "evidence": [
@@ -350,7 +350,7 @@ def test_wrong_pmid_and_review_never_become_primary_evidence(
         }
     )
     with pytest.raises(AgentBoundaryError, match="discovery lead/review"):
-        research.validate_conclusions([conclusion])
+        research.validate_questions([conclusion])
     with pytest.raises(AgentBoundaryError, match="Only Target or Site"):
         research.acquire(query(), role="coordinator")
     with pytest.raises(ValueError):
@@ -372,10 +372,12 @@ def test_request_ceiling_is_per_execution_and_resume_does_not_reset_it(
 
 def test_material_not_searched_question_requires_acquisition(research: Any) -> None:
     with pytest.raises(AgentBoundaryError, match="NOT_SEARCHED"):
-        research.validate_conclusions(
+        research.validate_questions(
             [
-                ResearchConclusion(
-                    topic="epitope", status="UNRESOLVED", limitations=["Not yet searched"]
+                ResearchAssessment(
+                    query_ids=["unissued-query"],
+                    status="UNRESOLVED",
+                    limitations=["Not yet searched"],
                 )
             ]
         )
@@ -476,24 +478,24 @@ async def test_explicit_query_binding_reuses_cross_topic_evidence_without_taxono
     tool = research_tool(research.bridge, "site")
     result = json.loads(await tool.ainvoke(query().model_dump(mode="json")))
     assert result["query_id"] == research.snapshot()["queries"][0]["query_id"]
-    conclusion = ResearchConclusion(
-        topic="epitope",
+    conclusion = ResearchAssessment(
         query_ids=[result["query_id"]],
         status="UNRESOLVED",
         limitations=[
             "SYNTHETIC functional search informs epitope uncertainty; the answer stays unresolved."
         ],
     )
-    verified = research.validate_conclusions([conclusion])
+    verified = research.validate_questions([conclusion])
     assert len(calls) == 1
     assert verified["source_snapshot"]["topics"]["epitope"] == "NOT_SEARCHED"
-    assert verified["conclusions"][0]["query_ids"] == [result["query_id"]]
+    assert verified["source_snapshot"]["queries"][0]["query_id"] == result["query_id"]
+    assert "conclusions" not in verified
     with pytest.raises(AgentBoundaryError, match="Unknown evidence query"):
-        research.validate_conclusions(
+        research.validate_questions(
             [conclusion.model_copy(update={"query_ids": ["foreign-query"]})]
         )
     with pytest.raises(AgentBoundaryError, match="NOT_SEARCHED"):
-        research.validate_conclusions([conclusion.model_copy(update={"query_ids": []})])
+        research.validate_questions([conclusion.model_copy(update={"query_ids": []})])
 
 
 def test_acquisition_is_not_an_empty_search_and_failed_search_can_remain_unresolved(
@@ -505,17 +507,20 @@ def test_acquisition_is_not_an_empty_search_and_failed_search_can_remain_unresol
     acquisition = research.acquire(
         query(operation="primary-record", identifier="12345"), role="site"
     )
-    c = ResearchConclusion(
-        topic="function",
+    c = ResearchAssessment(
         status="SEARCHED_NO_EVIDENCE",
         query_ids=[acquisition["query_id"]],
         limitations=["SYNTHETIC acquisition only."],
     )
     with pytest.raises(AgentBoundaryError, match="not SEARCHED_NO_EVIDENCE"):
-        research.validate_conclusions([c])
+        research.validate_questions([c])
     transport(research, monkeypatch, status=503)
     failed = research.acquire(query(query="synthetic opposing evidence"), role="site")
     c = c.model_copy(update={"query_ids": [failed["query_id"]], "status": "UNRESOLVED"})
-    result = research.validate_conclusions([c])
-    assert result["conclusions"][0]["status"] == "UNRESOLVED"
+    result = research.validate_questions([c])
+    assert any(
+        q["query_id"] == failed["query_id"] and q["errors"]
+        for q in result["source_snapshot"]["queries"]
+    )
+    assert c.status == "UNRESOLVED" and "conclusions" not in result
     assert len(calls) == 1

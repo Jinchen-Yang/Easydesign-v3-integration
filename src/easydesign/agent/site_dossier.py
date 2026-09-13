@@ -16,14 +16,14 @@ from .contracts import (
     StrictDTO,
 )
 from .evidence_output import site_page_projection
-from .evidence_research import EvidenceResearch, ResearchConclusion
+from .evidence_research import EvidenceResearch, ResearchAssessment
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .session_store import compact, identity
 from .site_contracts import SiteIntent, SiteSelection
 from .site_evidence import summarize_site_facts
 
 
-class DecisionEvidenceQuestion(ResearchConclusion):
+class DecisionEvidenceQuestion(ResearchAssessment):
     """A Gate-specific question and fallible assessment, not another planner or agent."""
 
     question: ShortText
@@ -128,6 +128,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         c
         for c in all_passages
         if c["card_id"] in cited
+        or c.get("provider", "").lower() == "uniprot"
         or (
             c.get("provider", "").replace(" ", "").lower() == "europepmc"
             and c.get("primary_eligible")
@@ -176,7 +177,14 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "Bind an actual targeted contradiction/alternative literature search query_id. "
             "Acquisition is not discovery. Available search IDs: " + compact(sorted(searches))
         )
-    EvidenceResearch(bridge).validate_conclusions(list(handoff.decision_questions))
+    EvidenceResearch(bridge).validate_questions(list(handoff.decision_questions))
+    memberships = [
+        tuple(sorted(candidate.hotspot_label_seq_ids)) for candidate in handoff.candidates
+    ]
+    if len(memberships) != len(set(memberships)):
+        raise ResearchConclusionMismatch(
+            "Duplicate physical candidate membership; compare distinct sites"
+        )
     candidates: list[dict[str, Any]] = []
     residue_facts = {}
     for candidate in handoff.candidates:
@@ -217,7 +225,6 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                     {
                         "target_binding": target["binding"],
                         "labels": sorted(labels),
-                        "name": candidate.name,
                     }
                 )[:16],
                 "research_hypothesis": candidate.model_dump(mode="json"),
@@ -284,6 +291,9 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 "remains in the original verified kernel artifact.",
             }
         )
+    from .site_authority import reference_annotations, sequence_topology
+
+    annotations = reference_annotations(bridge, research, overview["approved_target"])
     for runtime_candidate in candidates:
         mappings = [
             residue_facts[label]["mapping"]
@@ -292,6 +302,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         positions = [row["canonical_position"] for row in mappings]
         runtime_candidate["location"] = {
             "canonical_positions": positions,
+            "sequence_topology": sequence_topology(positions, annotations),
             "segments": list(
                 dict.fromkeys(
                     topology_by_canonical.get(position, {}).get("segment", "unresolved")
@@ -309,9 +320,21 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "centroids.",
         }
     return {
-        "kind": "site-evidence-dossier-v5",
+        "kind": "site-evidence-dossier-v6",
+        "reference_annotations": annotations,
+        "residue_constraints": [
+            {
+                "residue_id": "residue-"
+                + identity({"target": target["binding"], "label": label})[:16],
+                "design_label": label,
+                "canonical_position": row["mapping"]["canonical_position"],
+                "canonical_residue": row["mapping"]["canonical_residue"],
+            }
+            for label, row in sorted(residue_facts.items())
+        ],
         "approach_validation": {
             "status": "not-performed",
+            "scientific_status": "UNRESOLVED",
             "scope": "Existing prepared-target evaluation supplies point exposure/geometry. "
             "It does not perform whole-VHH CDR/framework docking or steric clearance. "
             "These metrics support relative access concerns, not categorical impossibility "
@@ -464,20 +487,13 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
     dossier = bridge.document(event["ref"])
     if dossier["target_binding"] != bridge.target_state()["binding"]:
         raise AgentBoundaryError("Site synthesis dossier has a stale Target binding")
-    critical_topics = {q["topic"] for q in dossier["decision_questions"]}
-    if not critical_topics.issubset(intent.material_questions):
-        raise ResearchConclusionMismatch(
-            "SiteIntent must address the dossier's decision-critical questions (including "
-            "unresolved/contradictory findings), without adding unrelated taxonomy tasks: "
-            + compact(sorted(critical_topics))
-        )
     facts = dossier["trusted_residue_facts"]
     if "facts_table" in facts:
         table = facts["facts_table"]
         label_column = table["mapping_columns"].index("label_seq_id")
         available = {row[label_column] for row in table["rows"]}
     else:
-        available = {row["mapping"]["label_seq_id"] for row in facts["facts"]}
+        raise AgentBoundaryError("Current Site dossier requires its runtime fact table")
     selected = {
         label
         for candidate in [intent.selected_site, *intent.alternatives]
@@ -489,13 +505,10 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
             + compact(sorted(available))
         )
     cited = {
-        use.card_id for conclusion in intent.research_conclusions for use in conclusion.evidence
-    }
-    cited.update(
         card
         for candidate in [intent.selected_site, *intent.alternatives]
         for card in candidate.evidence_card_ids
-    )
+    }
     citable = {
         card["card_id"] for card in [*dossier["focused_passages"], *dossier["receptor_context"]]
     }

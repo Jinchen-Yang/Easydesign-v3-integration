@@ -65,6 +65,7 @@ def test_runtime_hydrates_nonidentity_mapping_without_model_conversion() -> None
             }
         ],
         "decision_questions": [],
+        "residue_constraints": [],
         "focused_passages": [],
         "receptor_context": [],
         "trusted_residue_facts": {
@@ -110,10 +111,9 @@ def test_real_adapter_hydration_preserves_candidates_and_scoped_facts(site_bridg
         working = decision_working_set(dossier)
         assert "stale preliminary" not in str(working)
         assert "stale research narrative" not in str(working)
-        assert (
-            working["unresolved_research_questions"]
-            == dossier["research_opinions"]["unresolved_questions"]
-        )
+        assert "unresolved_research_questions" not in working
+        assert all(set(q) == {"question"} for q in working["decision_questions"])
+        assert working["approach_validation"]["scientific_status"] == "UNRESOLVED"
         assert working["candidates"][0]["candidate_id"] == chosen.selected_candidate_id
         assert "trusted_residue_facts" not in working
         assert "research_outcomes" not in working
@@ -164,6 +164,7 @@ def test_comparison_requires_ids_but_does_not_recommend_avoid_candidates() -> No
             candidate("site-rejected", 418, "avoid"),
         ],
         "decision_questions": [],
+        "residue_constraints": [],
     }
     with pytest.raises(AgentBoundaryError, match="Compare at least one"):
         compile_site_decision(dossier, decision())
@@ -171,7 +172,7 @@ def test_comparison_requires_ids_but_does_not_recommend_avoid_candidates() -> No
     intent = compile_site_decision(dossier, selected)
     assert intent.selected_site.hotspot_label_seq_ids == [414]
     assert intent.alternatives[0].hotspot_label_seq_ids == [418]
-    assert intent.alternatives[0].role == "avoid"
+    assert intent.alternatives[0].role == "backup"
 
 
 def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_bridge: Any) -> None:
@@ -235,14 +236,14 @@ def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_b
         dossier = persist_dossier(b, selection, execution["execution_id"])
         chosen = decision(dossier["candidate_comparison"][0]["candidate_id"])
         intent = hydrate_site_decision(b, chosen, execution["execution_id"])
-        assert intent.material_questions == ["function"]
-        assert [q.status for q in intent.research_conclusions] == ["VERIFIED", "UNRESOLVED"]
-        assert intent.research_conclusions[0].evidence[0].excerpt == text
-        assert not intent.research_conclusions[1].evidence
+        assert "material_questions" not in intent.model_dump()
+        assert "research_conclusions" not in intent.model_dump()
+        assert [q["status"] for q in dossier["decision_questions"]] == ["VERIFIED", "UNRESOLVED"]
+        assert dossier["decision_questions"][0]["evidence"][0]["excerpt"] == text
         snapshot = b.register_site(intent, None)
-        questions = snapshot["research_evidence"]["decision_basis"]["decision_questions"]
+        questions = snapshot["research_evidence"]["decision_questions"]
         assert [q["question"] for q in questions] == [first["question"], second["question"]]
-        assert [q["status"] for q in questions] == ["VERIFIED", "UNRESOLVED"]
+        assert all(set(q) == {"question"} for q in questions)
         bad = selection.model_copy(
             update={
                 "decision_questions": [
@@ -253,7 +254,7 @@ def test_distinct_questions_share_a_topic_without_merging_evidence_states(site_b
                 ]
             }
         )
-        with pytest.raises(AgentBoundaryError, match="Available query_ids") as error:
+        with pytest.raises(AgentBoundaryError, match="Available complete query_ids") as error:
             site_dossier(b, bad)
         assert query_id in str(error.value)
     finally:

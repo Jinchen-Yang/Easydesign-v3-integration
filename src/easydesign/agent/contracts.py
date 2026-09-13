@@ -252,22 +252,8 @@ class InvalidFieldProjection(RuntimeError):
             "message": (
                 f"{self} Use exactly one selector: field='key' for a top-level field, "
                 "fields=['a','b'] for sibling fields, or path=['a','b'] for nested traversal. "
-                "Legacy field=[...] still means a nested path, never sibling fields. "
                 "Choose existing keys from the supplied view; no evidence was changed."
             ),
-        }
-
-
-class ToolBatchTooLarge(InvalidFieldProjection):
-    """An unexecuted native tool batch cannot fit its first complete delivery."""
-
-    def result(self) -> dict[str, str]:
-        return {
-            "status": "REQUIRES_ACTION",
-            "category": self.category,
-            "error_code": "TOOL_BATCH_TOO_LARGE",
-            "required_action": "split_tool_batch",
-            "message": str(self),
         }
 
 

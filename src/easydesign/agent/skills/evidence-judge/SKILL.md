@@ -123,3 +123,20 @@ correct the selector using supplied names. Argument/source-selection repairs sha
 per execution; errors in one parallel batch share a round. Integrity and foreign-reference errors
 are fatal. Do not use network/corpus research tools. Submit the typed JudgeVerdict tool, not prose
 or JSON; at most two contract repairs. No private transcript or structure bytes in your response.
+
+Official annotation facts are not Research hypotheses. Distinct disulfide bonds with disjoint
+endpoints are compatible; do not manufacture a conflict merely because two bonds are listed.
+Only evidence supporting different partners for the same endpoint can raise that ambiguity.
+Use reference_annotations and candidate sequence_topology for canonical domains; a Research name
+or scan label cannot turn an annotated intracellular region into an extracellular loop.
+When approach_validation is not-performed, whole-VHH feasibility remains UNRESOLVED. Reject any
+absolute impossibility/feasibility claim based only on point exposure or pore geometry.
+Residue exclusions must be recorded through the supplied residue constraint IDs; check them
+against selected membership. A contradictory exclusion cannot be waived by a warning.
+Do not propose an unverified fourth candidate in prose; recommend review of an upstream
+hypothesis if the supplied alternatives are inadequate.
+
+Assess the current SiteDecision interpretation, not a copied preliminary Research verdict.
+The retained decision_basis records fallible Research opinions for provenance and sufficiency
+review. If current synthesis has corrected a Research premise, do not reintroduce that premise
+as your own factual conclusion or require the current proposal to inherit it.

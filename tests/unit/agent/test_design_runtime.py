@@ -11,7 +11,7 @@ from easydesign.agent.contracts import (
 )
 from easydesign.agent.design import BINDER_EVIDENCE, DesignBridge
 from easydesign.agent.design_contracts import BinderIntent
-from easydesign.agent.session_store import SessionStore
+from easydesign.agent.session_store import SessionStore, identity
 from easydesign.agent.tools import JUDGE_EVIDENCE
 
 
@@ -105,6 +105,30 @@ def test_binder_and_judge_require_delegated_snapshot(design_bridge: Any) -> None
     assert bridge.current_design() is None
 
 
+def test_approved_site_exclusions_bind_and_survive_downstream_compilation(
+    design_bridge, monkeypatch
+):
+    from copy import deepcopy
+
+    bridge = design_bridge
+    original = bridge.read_design_evidence()["evidence_id"]
+    approved = deepcopy(bridge.approved_site())
+    approved["proposal"]["intent"]["avoid_label_seq_ids"] = [5]
+    monkeypatch.setattr(bridge, "approved_site", lambda: approved)
+    current = bridge.read_design_evidence()
+    assert current["evidence_id"] != original
+    assert current["approved_exclusions"] == [5]
+    result = propose_design(bridge)
+    assert result["evaluation"]["status"] == "SUPPORTED", result["evaluation"]
+    proposal = bridge.current_design()
+    specification = bridge.document(proposal["spec_ref"])
+    assert specification["intent"]["arms"][0]["avoid_label_seq_ids"] == [5]
+    strategy = yaml.safe_load(
+        (bridge.project / proposal["strategy_ref"]["relative_path"]).read_text()
+    )
+    assert all(variant["avoid_label_seq_ids"] == [5] for variant in strategy["variants"])
+
+
 def test_existing_compiler_and_freeze_service_no_pilot(
     design_bridge: Any, monkeypatch: Any
 ) -> None:
@@ -114,6 +138,10 @@ def test_existing_compiler_and_freeze_service_no_pilot(
     assert set(constraints["supports"]) == {"binding", "not_binding", "target_crop", "cdr_override"}
     original_target = bridge.target_state()["binding"]
     original_site = bridge.approved_site()["hotspots_sha256"]
+    target, _, facts_ref = bridge.site_facts()
+    assert bridge.read_design_evidence()["evidence_id"] == identity(
+        {"target": target["binding"], "hotspot": original_site, "facts": facts_ref}
+    )
     result = propose_design(bridge, binder_intent(name="Focused-HotspotA"))
     assert result["evaluation"]["status"] == "SUPPORTED", result["evaluation"]
     assert result["evaluation"]["compiled_strategy_count"] == 7

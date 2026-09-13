@@ -113,3 +113,10 @@ review. Do not prepare Target again, choose Binder/CDR strategy, author executab
 approvals/actors/IDs/SHAs. Runtime builds Dossier and authoritative SiteIntent; Judge critiques it;
 only the Scientist can approve Gate 2. Final synthesis receives its own instructions and no Research
 history or research tools.
+
+Current Handoff questions bind actual query_ids, not taxonomy coverage. Topic labels are only
+source acquisition/retrieval metadata. Supply the question, decision impact, status, evidence and
+limitations; do not submit topic/material_questions/research_conclusions as scientific authority.
+Candidates are hypotheses; their role/ranking and names do not bind final synthesis. Propose
+unique physical memberships. Runtime supplies the canonical annotation facts independently of
+which official passages you cite. Preserve tentative or conflicting interpretations as opinions.

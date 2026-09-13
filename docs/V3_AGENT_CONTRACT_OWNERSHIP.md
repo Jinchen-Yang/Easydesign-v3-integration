@@ -1,5 +1,14 @@
 # EasyDesign v3 consequential Agent contract ownership
 
+Current consolidation contract (2026-09-13, validation pending):
+[authority audit](PHASE2_AUTHORITY_CONSOLIDATION_20260913.md) and
+[user assignment](PHASE2_CONSOLIDATION_ASSIGNMENT_20260913.md).
+Current SiteIntent contains runtime-hydrated final interpretation and memberships, not
+material_questions/research_conclusions. Research questions require explicit query IDs;
+topic-based fallback and forced legacy finalization are removed. Historical implementation
+notes below retain their original context and do not override this current contract.
+Phase 2 is not frozen.
+
 Phase 2.2d implementation audit, baseline `4df3b2bd19f72a39f67ad40c3874b30323f0aafb`.
 This is an ownership specification, not a declaration that real scientific acceptance passed.
 

@@ -126,15 +126,15 @@ async def test_output_offload_has_role_bound_scoped_read_and_verifies_bytes(brid
     assert json.loads(full.read_text()) == value
     result = json.loads(
         await result_tool(bridge, "site").ainvoke(
-            {"ref": view["full_result"], "field": ["rows"], "offset": 45, "limit": 5}
+            {"ref": view["full_result"], "path": ["rows"], "offset": 45, "limit": 5}
         )
     )
     assert result["value"][0]["residue"] == 45 and result["next_offset"] is None
     with pytest.raises(AgentBoundaryError, match="not supplied"):
-        await result_tool(bridge, "judge").ainvoke({"ref": view["full_result"], "field": ["rows"]})
+        await result_tool(bridge, "judge").ainvoke({"ref": view["full_result"], "path": ["rows"]})
     full.write_text("{}")
     with pytest.raises(ArtifactIntegrityError):
-        await result_tool(bridge, "site").ainvoke({"ref": view["full_result"], "field": ["rows"]})
+        await result_tool(bridge, "site").ainvoke({"ref": view["full_result"], "path": ["rows"]})
 
 
 @pytest.mark.asyncio
@@ -174,14 +174,14 @@ async def test_judge_projection_retains_counterevidence_and_exact_delegation(bri
         assert "evidence_refs" not in view
         original = json.loads(
             await result_tool(bridge, "judge").ainvoke(
-                {"ref": view["full_result"], "field": ["contradictory_evidence"], "limit": 5}
+                {"ref": view["full_result"], "path": ["contradictory_evidence"], "limit": 5}
             )
         )
         remainder = json.loads(
             await result_tool(bridge, "judge").ainvoke(
                 {
                     "ref": view["full_result"],
-                    "field": ["contradictory_evidence"],
+                    "path": ["contradictory_evidence"],
                     "offset": original["next_offset"],
                     "limit": 5,
                 }
@@ -192,7 +192,7 @@ async def test_judge_projection_retains_counterevidence_and_exact_delegation(bri
         JUDGE_EVIDENCE.set(binding.model_copy(update={"evidence_id": "proposal-two"}))
         with pytest.raises(AgentBoundaryError, match="another delegated"):
             await result_tool(bridge, "judge").ainvoke(
-                {"ref": view["full_result"], "field": ["supporting_evidence"]}
+                {"ref": view["full_result"], "path": ["supporting_evidence"]}
             )
     finally:
         JUDGE_EVIDENCE.reset(token)
@@ -320,7 +320,7 @@ async def test_scoped_pages_are_not_truncated_again_after_cursor_advance(bridge:
     )
     ref = json.loads(source.content)["full_result"]
     read = result_tool(bridge, "site")
-    raw = await read.ainvoke({"ref": ref, "field": ["rows"], "limit": 8})
+    raw = await read.ainvoke({"ref": ref, "path": ["rows"], "limit": 8})
     rendered = output_message(
         bridge,
         "site",
@@ -332,11 +332,11 @@ async def test_scoped_pages_are_not_truncated_again_after_cursor_advance(bridge:
     assert page["value"] == value["rows"][: page["next_offset"]]
     following = json.loads(
         await read.ainvoke(
-            {"ref": ref, "field": ["rows"], "offset": page["next_offset"], "limit": 8}
+            {"ref": ref, "path": ["rows"], "offset": page["next_offset"], "limit": 8}
         )
     )
     assert following["value"][0] == value["rows"][page["next_offset"]]
-    raw = await read.ainvoke({"ref": ref, "field": ["text"]})
+    raw = await read.ainvoke({"ref": ref, "path": ["text"]})
     rendered = output_message(
         bridge,
         "site",

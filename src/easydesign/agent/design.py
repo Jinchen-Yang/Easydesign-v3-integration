@@ -88,9 +88,16 @@ class DesignBridge(Phase2Bridge):
             or SiteQuery(label_seq_ids=list(site["hotspots"]["hotspot_sets"][0]["label_seq_ids"]))
         )
         native = native_input(self)
-        binding = identity(
-            {"target": target["binding"], "hotspot": site["hotspots_sha256"], "facts": facts_ref}
-        )
+        exclusions = current["intent"].get("avoid_label_seq_ids", [])
+        inputs = {
+            "target": target["binding"],
+            "hotspot": site["hotspots_sha256"],
+            "facts": facts_ref,
+        }
+        # An empty exclusion adds no constraint and preserves accepted input identity.
+        if exclusions:
+            inputs["site_exclusions"] = sorted(exclusions)
+        binding = identity(inputs)
         if native:
             native_ref = native["strategy_ref"]
             refs.append(f"project:{native_ref['relative_path']}#sha256={native_ref['sha256']}")
@@ -103,6 +110,7 @@ class DesignBridge(Phase2Bridge):
             "evidence_refs": refs,
             "approved_hotspots": site["hotspots"]["hotspot_sets"],
             "site_rationale": current["intent"],
+            "approved_exclusions": exclusions,
             "site_evidence": context["facts"],
             "next_offset": context.get("next_offset"),
             "biology": context["biology"],
@@ -169,6 +177,21 @@ class DesignBridge(Phase2Bridge):
         site = self.approved_site()
         assert site is not None
         _, facts, _ = self.site_facts()
+        upstream_avoid = set(evidence["approved_exclusions"])
+        intent = intent.model_copy(
+            update={
+                "arms": [
+                    arm.model_copy(
+                        update={
+                            "avoid_label_seq_ids": sorted(
+                                upstream_avoid | set(arm.avoid_label_seq_ids)
+                            )
+                        }
+                    )
+                    for arm in intent.arms
+                ]
+            }
+        )
         parent = revision.card_id if revision else None
         native = native_input(self)
         if intent.strategy_source == "expert-native" and native is None:
@@ -219,6 +242,13 @@ class DesignBridge(Phase2Bridge):
                     else strategy_from_intent(intent, site, evidence["evidence_refs"])
                 )
                 if native:
+                    if any(
+                        not upstream_avoid.issubset(variant.avoid_label_seq_ids)
+                        for variant in strategy.variants
+                    ):
+                        raise AgentBoundaryError(
+                            "Native strategy omits approved Site residue exclusions"
+                        )
                     proposal["native_input"] = native
                     evaluation["planned_candidates"] = native["summary"]["planned_candidates"]
                     evaluation["planned_strategy_count"] = len(strategy.variants)

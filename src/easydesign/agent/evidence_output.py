@@ -16,9 +16,9 @@ from .session_store import compact, confined
 
 class ReadEvidenceResult(StrictDTO):
     ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
-    field: str | list[str] | None = Field(
+    field: str | None = Field(
         default=None,
-        description="One top-level key. Deprecated list form retains nested-path semantics.",
+        description="One top-level key for internal readers; model uses fields or path.",
     )
     fields: list[str] | None = Field(
         default=None,
@@ -43,7 +43,7 @@ class ReadEvidenceResult(StrictDTO):
 
 
 class ModelEvidenceScope(StrictDTO):
-    """Explicit sibling or nested projection; legacy field remains API-only."""
+    """Explicit sibling or nested projection with unambiguous pagination."""
 
     ref: str = Field(pattern=r"^/result-[a-f0-9]+\.json$")
     fields: list[str] | None = Field(
@@ -470,7 +470,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         if isinstance(original, dict):
             projected["stored_fields"] = list(original)
             projected.update(alias_navigation(original, source=True))
-        if len(compact(projected)) > (32000 if role == "judge" else 6000):
+        if role != "judge" and len(compact(projected)) > 6000:
             projected = {
                 "status": "narrower-scope-required",
                 "full_result": value["full_result"],
@@ -580,12 +580,14 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                 }
     if message.name == "read_site_evidence" and isinstance(value, dict):
         if role == "site" and value.get("query_scope") == "focused-residues":
-            view_limit = 32000
+            view_limit = len(compact(site_page_projection(value)))
         table_page = site_page_projection(value)
         if len(compact(table_page)) <= view_limit:
             projected = table_page
     if message.name == "evaluate_candidate_site":
         complete_evaluation = scientific_projection(value)
+        if role == "site":
+            view_limit = len(compact(complete_evaluation))
         if len(compact(complete_evaluation)) <= view_limit:
             projected = complete_evaluation
     if exact_page and len(compact(projected)) > view_limit:
@@ -678,14 +680,8 @@ def read_query(arguments: dict[str, Any]) -> ReadEvidenceResult:
         ):
             raise InvalidFieldProjection("Invalid selector or pagination syntax.") from exc
         raise
-    if query.field is not None and query.path is not None and query.fields is None:
-        field_path = [query.field] if isinstance(query.field, str) else query.field
-        if field_path == query.path:
-            query = query.model_copy(update={"field": None})
     if sum(item is not None for item in (query.field, query.fields, query.path)) > 1:
         raise InvalidFieldProjection("Selectors field, fields and path are mutually exclusive.")
-    if isinstance(query.field, list) and len(query.field) > 10:
-        raise InvalidFieldProjection("A nested path may contain at most ten components.")
     return query
 
 
@@ -716,7 +712,7 @@ def scoped_value(value: Any, query: ReadEvidenceResult) -> tuple[Any, list[str]]
             key: scoped_value(value, ReadEvidenceResult(ref=query.ref, path=[key]))[0]
             for key in query.fields
         }, []
-    path = ([query.field] if isinstance(query.field, str) else query.field) or query.path or []
+    path = [query.field] if query.field is not None else query.path or []
     root_value = value
     try:
         for key in path:
@@ -776,14 +772,6 @@ def result_tool(bridge: Any, role: str) -> Any:
         selector = {"path": selected_path}
         if query.fields is not None:
             selector = {"fields": query.fields}
-        if isinstance(query.field, list):
-            # Preserve meaning and the old response key for existing callers.
-            selector.update(field=query.field)
-        deprecation = (
-            {"deprecation": "field=[...] retains nested traversal; use path=[...] instead."}
-            if isinstance(query.field, list)
-            else {}
-        )
         page: Any
         if isinstance(value, list):
             if query.offset >= len(value):
@@ -799,7 +787,6 @@ def result_tool(bridge: Any, role: str) -> Any:
                         "read_site_evidence with its exact label_seq_ids. "
                         "Repeating this out-of-range offset provides no new evidence.",
                         **selector,
-                        **deprecation,
                         **source,
                     }
                 )
@@ -818,7 +805,6 @@ def result_tool(bridge: Any, role: str) -> Any:
                         "instruction": "Read an item field; no array entries were consumed.",
                         "next_offset": query.offset,
                         **source,
-                        **deprecation,
                     }
                 )
             next_offset = (
@@ -859,12 +845,9 @@ def result_tool(bridge: Any, role: str) -> Any:
                             else "Read a child field; the full object was not supplied."
                         ),
                         **source,
-                        **deprecation,
                     }
                 )
-        return compact(
-            {"value": page, "next_offset": next_offset, **selector, **deprecation, **source}
-        )
+        return compact({"value": page, "next_offset": next_offset, **selector, **source})
 
     return StructuredTool.from_function(
         name="read_evidence_result",
@@ -874,7 +857,6 @@ def result_tool(bridge: Any, role: str) -> Any:
             "Read a verified full_result supplied to this role/execution. Choose keys from "
             "that actual result, not from another gate's schema. Use exactly one of field "
             "(one top-level key), fields (sibling keys), or path (nested traversal). "
-            "Legacy field=[...] is deprecated and retains nested-path semantics. "
             "Use offset/limit for list pages, offset for text pages. Use focused fields; "
             "do not read the whole artifact sequentially."
         ),

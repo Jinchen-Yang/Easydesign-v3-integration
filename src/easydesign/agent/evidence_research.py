@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -172,10 +173,9 @@ class EvidenceUse(StrictDTO):
     transfer_limit: ShortText
 
 
-class ResearchConclusion(StrictDTO):
-    topic: ResearchTopic
+class ResearchAssessment(StrictDTO):
     query_ids: list[str] = Field(
-        default_factory=list,
+        min_length=1,
         max_length=6,
         description="Exact returned query_id values for the evidence questions actually "
         "investigated. Topics index sources, not mandatory separate research tasks. A "
@@ -186,7 +186,8 @@ class ResearchConclusion(StrictDTO):
     status: EvidenceStatus = Field(
         description="VERIFIED requires scoped source-bound evidence, not claims hidden in "
         "limitations. CONFLICTING_EVIDENCE requires both supporting and contradicting "
-        "passages from distinct sources. Evidence challenging a computational hypothesis "
+        "passages with incompatible claims in the same scope. Different source IDs alone "
+        "do not prove conflict. Evidence challenging a computational hypothesis "
         "alone is not a source-vs-source conflict: preserve that evidence and use UNRESOLVED "
         "when direction or transfer remains uncertain. SEARCHED_NO_EVIDENCE requires an "
         "actual search without source failure."
@@ -977,7 +978,7 @@ class EvidenceResearch:
             }
         ]
 
-    def validate_conclusions(self, conclusions: list[ResearchConclusion]) -> dict[str, Any]:
+    def validate_questions(self, conclusions: Sequence[ResearchAssessment]) -> dict[str, Any]:
         snapshot = self.snapshot()
         queries = snapshot["queries"]
         cards = {c["card_id"]: c for r in queries for c in r["cards"]}
@@ -996,18 +997,13 @@ class EvidenceResearch:
                 "do not derive them from cursors."
             )
         for index, conclusion in enumerate(conclusions):
-            scope = f"conclusion[{index}] ({conclusion.topic}): "
-            relevant = (
-                [query_by_id[key] for key in conclusion.query_ids if key in query_by_id]
-                if conclusion.query_ids
-                else [q for q in queries if q["topic"] == conclusion.topic]
-            )
+            scope = f"question[{index}]: "
+            relevant = [query_by_id[key] for key in conclusion.query_ids if key in query_by_id]
             if conclusion.status == "NOT_SEARCHED" or not relevant:
                 errors.append(
                     scope
-                    + "Material scientific question was NOT_SEARCHED: "
-                    + conclusion.topic
-                    + ". Bind the actual relevant query_ids, including cross-topic evidence, "
+                    + "Decision question was NOT_SEARCHED. Bind the actual relevant query_ids, "
+                    "including cross-topic evidence, "
                     "or perform one consequential missing inquiry. Do not traverse unrelated "
                     "taxonomy topics or relabel an unperformed inquiry as completed."
                 )
@@ -1034,18 +1030,6 @@ class EvidenceResearch:
                 errors.append(
                     scope + "Conflict requires both supporting and contradicting source passages"
                 )
-            if (
-                conclusion.status == "CONFLICTING_EVIDENCE"
-                and len(
-                    {
-                        (cards[e.card_id]["provider"], cards[e.card_id]["identifier"])
-                        for e in conclusion.evidence
-                        if e.card_id in cards
-                    }
-                )
-                < 2
-            ):
-                errors.append(scope + "Cross-source conflict requires distinct source identities")
             for use in conclusion.evidence:
                 card = cards.get(use.card_id)
                 if card is None:
@@ -1082,7 +1066,6 @@ class EvidenceResearch:
             raise error_type(diagnostic)
         return {
             "source_snapshot": snapshot,
-            "conclusions": [c.model_dump(mode="json") for c in conclusions],
             "source_refs": used_refs,
             "authority": (
                 "Source binding verified; scientific conclusions remain specialist opinions "

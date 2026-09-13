@@ -60,7 +60,6 @@ def decision_scope(
     )
     question = DecisionEvidenceQuestion.model_validate(
         {
-            "topic": topic,
             "query_ids": list(dict.fromkeys([query_id, search["query_id"]])),
             "question": "SYNTHETIC does the available evidence distinguish candidate mechanisms?",
             "status": "UNRESOLVED",
@@ -129,7 +128,7 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
     try:
         selection = handoff()
         alternative = selection.candidates[0].model_copy(
-            update={"name": "SYNTHETIC competing mechanism at shared residues"}
+            update={"name": "SYNTHETIC competing mechanism", "hotspot_label_seq_ids": [1, 2, 4]}
         )
         selection = selection.model_copy(
             update={"candidates": [*selection.candidates, alternative]}
@@ -164,12 +163,9 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
             }
             for row in table["rows"]
         ]
-        assert restored == b.read_site_evidence(SiteQuery(label_seq_ids=[1, 2, 3]))["facts"]
+        assert restored == b.read_site_evidence(SiteQuery(label_seq_ids=[1, 2, 3, 4]))["facts"]
         assert dossier["runtime_status"]["target_gate"] == "resolved"
-        assert (
-            dossier["candidate_comparison"][0]["deterministic_evaluation"]
-            == (dossier["candidate_comparison"][1]["deterministic_evaluation"])
-        )
+        assert len({c["candidate_id"] for c in dossier["candidate_comparison"]}) == 2
         assert {c["passage"] for c in dossier["focused_passages"]} == {c["passage"] for c in cards}
         from easydesign.agent.evidence_research import EvidenceResearch
 
@@ -191,38 +187,20 @@ def test_dossier_keeps_opposing_passages_failures_and_original_bytes(site_bridge
         assert source_path.read_bytes() == before
         event = b.store.events(b.thread)[-1]["payload"]
         assert b.document(event["ref"]) == dossier
-        from easydesign.agent.evidence_research import ResearchConclusion
         from tests.unit.agent.test_site_runtime import site_intent
 
         intent = site_intent([1, 2, 3])
-        with pytest.raises(AgentBoundaryError, match="decision-critical"):
-            validate_dossier_intent(b, intent, execution["execution_id"])
-        intent = intent.model_copy(
-            update={
-                "scope": "mechanistic",
-                "material_questions": ["function"],
-                "research_conclusions": [
-                    ResearchConclusion(
-                        topic="function",
-                        status="UNRESOLVED",
-                        query_ids=[query["query_id"]],
-                        limitations=["SYNTHETIC no final functional conclusion."],
-                    )
-                ],
-            }
-        )
         validate_dossier_intent(b, intent, execution["execution_id"])
         snapshot = b.register_site(intent, None)
+        assert "decision_basis" not in snapshot["research_evidence"]
         assert (
-            snapshot["research_evidence"]["decision_basis"]["stopping_reason"]
+            b.document(event["ref"])["research_opinions"]["stopping_reason"]
             == selection.stopping_reason
         )
         assert "passage-opposition" in {
             c["card_id"] for c in snapshot["research_evidence"]["source_cards"]
         }
-        assert not intent.research_conclusions[
-            0
-        ].evidence  # Judge did not depend on final citation selection.
+        assert "research_conclusions" not in intent.model_dump()
         assert b.approved_site() is None
         source_path.write_text("SYNTHETIC integrity failure")
         with pytest.raises(ArtifactIntegrityError):
@@ -330,21 +308,7 @@ def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge
                 )
             }
         )
-        from easydesign.agent.evidence_research import ResearchConclusion
 
-        intent = intent.model_copy(
-            update={
-                "material_questions": ["state"],
-                "research_conclusions": [
-                    ResearchConclusion(
-                        topic="state",
-                        status="UNRESOLVED",
-                        query_ids=[query["query_id"]],
-                        limitations=["SYNTHETIC computational state, not functional efficacy."],
-                    )
-                ],
-            }
-        )
         validate_dossier_intent(b, intent, "synthetic-execution")
         b.validate_site_research(intent)
         selection = selection.model_copy(

@@ -267,7 +267,7 @@ def test_context_change_invalidates_site_without_repreparing_target(
     assert len(bridge._jobs()) == 1
 
 
-def test_negative_judge_is_discouragement_not_a_mapping_block(site_bridge: Any) -> None:
+def test_discouraged_ready_hypothesis_is_not_a_mapping_block(site_bridge: Any) -> None:
     bridge = site_bridge
     propose(bridge)
     snapshot = bridge.judge_evidence()
@@ -278,7 +278,7 @@ def test_negative_judge_is_discouragement_not_a_mapping_block(site_bridge: Any) 
         assessment = bridge.register_judge(
             JudgeVerdict.model_validate(
                 {
-                    "verdict": "reject",
+                    "verdict": "ready-to-ask",
                     "reasons": ["Functional relevance is weak."],
                     "limitations": ["Only structural accessibility is supported."],
                     "recommendation": {

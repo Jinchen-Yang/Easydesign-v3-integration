@@ -187,12 +187,10 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     from langchain.agents import create_agent
     from langchain.agents.structured_output import ToolStrategy
     from langchain.chat_models import init_chat_model
-    from langchain_core.tools import StructuredTool
 
     from easydesign.agent.harness import RoleBoundary
     from easydesign.agent.phase2 import Phase2Bridge
-    from easydesign.agent.phase2_tools import phase2_tools
-    from easydesign.agent.site_contracts import SiteIntent
+    from easydesign.agent.site_decision import SiteDecision
 
     requests = []
 
@@ -230,14 +228,14 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     eid = b.store.begin_execution(b.thread, "Finalize a bounded hypothesis")["execution_id"]
     for _ in range(cfg.max_model_calls - 8):
         b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
-    boundary = RoleBoundary(b, "site", cfg, "Scientific test", execution_id=eid)
-    site_tools = phase2_tools(b, "site") + [
-        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
-    ]
+    boundary = RoleBoundary(
+        b, "site", cfg, "Scientific test", execution_id=eid, site_stage="synthesis"
+    )
+    site_tools = []
     graph = create_agent(
         model,
         tools=site_tools,
-        response_format=ToolStrategy(SiteIntent, handle_errors=boundary.contract_error),
+        response_format=ToolStrategy(SiteDecision, handle_errors=boundary.contract_error),
         middleware=[boundary],
         system_prompt="Submit the test hypothesis",
     )
@@ -247,14 +245,14 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
         )
     assert len(requests) == 1
     if reasoning == "none":
-        assert [t["function"]["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
+        assert [t["function"]["name"] for t in requests[0]["tools"]] == ["SiteDecision"]
         assert requests[0]["tool_choice"] == {
             "type": "function",
-            "function": {"name": "SiteIntent"},
+            "function": {"name": "SiteDecision"},
         }
         assert requests[0]["thinking"] == {"type": "disabled"}
     else:
-        assert [t["name"] for t in requests[0]["tools"]] == ["SiteIntent"]
+        assert [t["name"] for t in requests[0]["tools"]] == ["SiteDecision"]
         assert requests[0]["thinking"]["type"] == "enabled"
         assert requests[0]["output_config"] == {"effort": reasoning}
         assert requests[0].get("tool_choice", {"type": "auto"}) == {"type": "auto"}

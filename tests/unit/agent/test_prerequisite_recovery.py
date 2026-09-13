@@ -14,7 +14,7 @@ from easydesign.agent.contracts import AgentBoundaryError, SourceSelectionRequir
 from easydesign.agent.evidence_corpus import EvidenceCorpus
 from easydesign.agent.evidence_research import (
     EvidenceResearch,
-    ResearchConclusion,
+    ResearchAssessment,
     ResearchHttpClient,
     ResearchQuery,
 )
@@ -294,11 +294,11 @@ async def test_no_evidence_is_a_nonfatal_scientific_state(bridge: Any, monkeypat
     assert result["messages"][-1].text.startswith("Evidence inspection ended")
     research = EvidenceResearch(bridge)
     assert research.snapshot()["topics"]["function"] == "SEARCHED_NO_EVIDENCE"
-    conclusion = ResearchConclusion(
-        topic="function",
+    conclusion = ResearchAssessment(
+        query_ids=[q["query_id"] for q in research.snapshot()["queries"]],
         status="SEARCHED_NO_EVIDENCE",
         limitations=["The bounded search found no reliable evidence"],
     )
-    research.validate_conclusions([conclusion])
+    research.validate_questions([conclusion])
     assert len(requests) == 1 and not models["target"].repairs
     assert not issubclass(SourceSelectionRequired, AgentBoundaryError)

@@ -7,7 +7,6 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from .contracts import ShortText, StrictDTO, TargetTask
-from .evidence_research import ResearchConclusion, ResearchTopic
 
 Labels = Annotated[list[int], Field(min_length=1, max_length=40)]
 
@@ -35,7 +34,7 @@ class SiteSelection(StrictDTO):
 
 
 class SiteIntent(StrictDTO):
-    """The specialist proposes meaning and mapped labels; runtime owns the binding."""
+    """Runtime hydration of the SiteDecision; research opinions live only in its dossier."""
 
     selected_site: SiteSelection
     positive_evidence: list[ShortText] = Field(min_length=1, max_length=5)
@@ -47,24 +46,12 @@ class SiteIntent(StrictDTO):
     alternatives: list[SiteSelection] = Field(default_factory=list, max_length=2)
     recommendation: Literal["SUPPORTED", "DISCOURAGED"]
     scope: Literal["structural-exploration", "mechanistic"] = "structural-exploration"
-    material_questions: list[ResearchTopic] = Field(default_factory=list, max_length=9)
-    research_conclusions: list[ResearchConclusion] = Field(default_factory=list, max_length=9)
+    avoid_label_seq_ids: list[int] = Field(default_factory=list, max_length=40)
 
     @model_validator(mode="after")
-    def research_scope(self) -> SiteIntent:
-        topics = [c.topic for c in self.research_conclusions]
-        if not set(self.material_questions).issubset(topics):
-            missing = sorted(set(self.material_questions) - set(topics))
-            raise ValueError(
-                "Every material question needs an explicit evidence state. Missing "
-                "research_conclusions for topics: "
-                + ", ".join(missing)
-                + ". Add a conclusion with the exact topic, actual research status, "
-                "evidence and limitations for each. Keep material questions explicit; "
-                "do not add unrelated unsearched topics or invent source support."
-            )
-        if self.scope == "mechanistic" and not self.material_questions:
-            raise ValueError("Mechanistic site selection requires active evidence research")
+    def exclusion_constraints(self) -> SiteIntent:
+        if set(self.selected_site.hotspot_label_seq_ids) & set(self.avoid_label_seq_ids):
+            raise ValueError("Selected hotspot conflicts with declared avoid-residue constraint")
         return self
 
 

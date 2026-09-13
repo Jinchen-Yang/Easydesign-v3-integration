@@ -1,4 +1,4 @@
-"""Oversized first-delivery batches never execute scientific tools or lose answers."""
+"""Native tool batches retain complete delivery; the shared model guard owns input admission."""
 
 import asyncio
 import json
@@ -25,7 +25,9 @@ def request(call: dict[str, Any], calls: list[dict[str, Any]], batch: str) -> To
 
 
 @pytest.mark.asyncio
-async def test_split_batch_preserves_complete_first_delivery_and_shared_round(bridge: Any) -> None:
+async def test_native_batch_preserves_complete_first_delivery_without_local_budget(
+    bridge: Any,
+) -> None:
     bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     execution = bridge.store.begin_execution(bridge.thread, "Inspect receptor")["execution_id"]
     guard = RoleBoundary(bridge, "site", scripted_config(), "Inspect", execution_id=execution)
@@ -51,20 +53,12 @@ async def test_split_batch_preserves_complete_first_delivery_and_shared_round(br
     answers = await asyncio.gather(
         *[guard.awrap_tool_call(request(c, calls, "batch-1"), handler) for c in calls]
     )
-    assert executed == []
-    assert all(a.status == "error" for a in answers)
-    errors = [json.loads(a.content) for a in answers]
-    assert {e["error_code"] for e in errors} == {"TOOL_BATCH_TOO_LARGE"}
-    assert {e["repair_attempt"] for e in errors} == {1}
-    assert all(e["required_action"] == "split_tool_batch" for e in errors)
-    for n, call in enumerate(calls):
-        result = await guard.awrap_tool_call(request(call, [call], f"split-{n}"), handler)
-        assert result.status == "success"
-        assert json.loads(result.content)["scientific_fact"] == "all retained"
-    assert executed == ["analysis", "skill"]
+    assert set(executed) == {"analysis", "skill"}
+    assert all(a.status == "success" for a in answers)
+    assert all(json.loads(a.content)["scientific_fact"] == "all retained" for a in answers)
     events = bridge.store.events(bridge.thread)
-    assert len([e for e in events if e["kind"] == "tool-argument-repair"]) == 2
-    assert len([e for e in events if e["kind"] == "tool"]) == 4
+    assert not [e for e in events if e["kind"] == "tool-argument-repair"]
+    assert len([e for e in events if e["kind"] == "tool"]) == 2
 
 
 @pytest.mark.asyncio

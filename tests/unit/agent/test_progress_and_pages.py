@@ -217,13 +217,14 @@ def test_explicit_pdb_alias_cannot_silently_change_source_identity() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("include_snapshot", [False, True])
-async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(
-    bridge: Any, include_snapshot: bool
+@pytest.mark.parametrize("role", ["judge", "coordinator"])
+async def test_judge_retains_complete_current_evidence_under_shared_input_policy(
+    bridge: Any, include_snapshot: bool, role: str
 ) -> None:
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     execution = b.store.begin_execution(b.thread, "Compare complete option facts")
     guard = RoleBoundary(
-        b, "judge", scripted_config(), "Compare facts", execution_id=execution["execution_id"]
+        b, role, scripted_config(), "Compare facts", execution_id=execution["execution_id"]
     )
     source = "/result-" + "a" * 32 + ".json"
     messages = [
@@ -234,7 +235,7 @@ async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(
                 {
                     "full_result": source,
                     "path": [field],
-                    "value": {"scientific_fact": field},
+                    "value": {"scientific_fact": field, "evidence": "x" * 6000},
                     "next_offset": None,
                 }
             ),
@@ -271,16 +272,12 @@ async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(
 
     async def handler(request: Any) -> Any:
         visible = [json.loads(m.content) for m in request.messages]
-        expected = (
-            ["interpretation", "options", "hard_facts"]
-            if include_snapshot
-            else ["identity", "interpretation", "options", "hard_facts"]
-        )
+        expected = ["old", "options", "identity", "interpretation", "options", "hard_facts"]
         assert [v["path"][0] for v in visible if "value" in v] == expected
         if include_snapshot:
             assert visible[0]["complete_snapshot"]["limitations"] == ["retained counterevidence"]
-        assert all(v["archived_result"] == source for v in visible if "archived_result" in v)
-        assert len(compact(visible)) < 32000
+        assert not any("archived_result" in v for v in visible)
+        assert 32000 < len(compact(visible)) < 60000
         return SimpleNamespace(
             result=[
                 AIMessage(
@@ -299,10 +296,13 @@ async def test_judge_can_compare_distinct_fields_in_one_bounded_working_set(
 
     from langchain_core.tools import StructuredTool
 
-    tools = phase2_tools(b, "judge") + [
+    tools = [
         StructuredTool.from_function(
-            lambda file_path: "", name="read_file", description="Read own Skill"
+            lambda file_path: "",
+            name=name,
+            description="SYNTHETIC context-only tool; never executed",
         )
+        for name in guard.allowed
     ]
     await guard.awrap_model_call(
         Request(tools=tools, messages=messages, system_message=SystemMessage(content="Review")),
@@ -698,8 +698,7 @@ async def test_known_source_citation_is_repaired_before_site_registration(
     from langchain_core.tools import StructuredTool
 
     from easydesign.agent.evidence_corpus import RetrieveEvidence
-    from easydesign.agent.evidence_research import ResearchConclusion
-    from tests.unit.agent.test_site_runtime import site_intent
+    from easydesign.agent.evidence_research import ResearchAssessment
 
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     execution = b.store.begin_execution(b.thread, "Explain source support")
@@ -723,10 +722,9 @@ async def test_known_source_citation_is_repaired_before_site_registration(
     passage = page["cards"][0]
 
     def opinion(card_id: str) -> Any:
-        intent = site_intent()
-        conclusion = ResearchConclusion.model_validate(
+        return ResearchAssessment.model_validate(
             {
-                "topic": "function",
+                "query_ids": [page["query_id"]],
                 "status": "VERIFIED",
                 "limitations": ["Synthetic controlled assay only"],
                 "evidence": [
@@ -741,18 +739,25 @@ async def test_known_source_citation_is_repaired_before_site_registration(
                 ],
             }
         )
-        return intent.model_copy(update={"research_conclusions": [conclusion]})
 
     bad, good = opinion(source["card_id"]), opinion(passage["card_id"])
     if defect != "citation":
         change = (
-            {"topic": "state"} if defect == "not-searched" else {"status": "SEARCHED_NO_EVIDENCE"}
+            {"query_ids": []} if defect == "not-searched" else {"status": "SEARCHED_NO_EVIDENCE"}
         )
-        bad = good.model_copy(
-            update={
-                "research_conclusions": [good.research_conclusions[0].model_copy(update=change)]
-            }
+        bad = good.model_copy(update=change)
+    # Source-assessment validation belongs at Handoff, not in final SiteIntent.
+    from tests.unit.agent.test_site_dossier import handoff
+
+    original_good, original_bad = good, bad
+    good, bad = handoff(), handoff().model_copy(update={"stopping_reason": "SYNTHETIC bad source"})
+
+    def validate_handoff(_bridge: Any, value: Any) -> Any:
+        return worker.validate_questions(
+            [original_bad if value.stopping_reason == bad.stopping_reason else original_good]
         )
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate_handoff)
     from easydesign.agent.contracts import TargetFacts
 
     monkeypatch.setattr(
@@ -787,7 +792,11 @@ async def test_known_source_citation_is_repaired_before_site_registration(
                 AIMessage(
                     content="",
                     tool_calls=[
-                        {"name": "SiteIntent", "args": value.model_dump(mode="json"), "id": "final"}
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": "final",
+                        }
                     ],
                 )
             ],
@@ -810,7 +819,7 @@ async def test_known_source_citation_is_repaired_before_site_registration(
     assert len([e for e in b.store.events(b.thread) if e["kind"] == "contract-repair"]) == 1
     assert not [e for e in b.store.events(b.thread) if e["kind"] == "site-proposal"]
     with pytest.raises(AgentBoundaryError, match="not retrieved"):
-        b.validate_site_research(opinion("foreign-source"))
+        worker.validate_questions([opinion("foreign-source")])
     assert not b._jobs()
 
 
@@ -1145,40 +1154,16 @@ async def test_invalid_site_read_is_bounded_query_repair_without_validating_a_ho
     assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
 
 
-def test_site_submission_names_missing_conclusion_and_still_requires_real_research(
-    bridge: Any,
-) -> None:
-    from easydesign.agent.contracts import ResearchConclusionMismatch
+def test_site_submission_rejects_obsolete_topic_authority(bridge: Any) -> None:
     from easydesign.agent.site_contracts import SiteIntent
     from tests.unit.agent.test_site_runtime import site_intent
 
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     value = site_intent([1, 2]).model_dump(mode="json")
-    value.update(
-        scope="mechanistic",
-        material_questions=["epitope", "state"],
-        research_conclusions=[
-            {
-                "topic": "state",
-                "status": "UNRESOLVED",
-                "evidence": [],
-                "limitations": ["State remains unknown"],
-            }
-        ],
-    )
-    with pytest.raises(ValidationError, match="Missing research_conclusions for topics: epitope"):
-        SiteIntent.model_validate(value)
-    value["research_conclusions"].append(
-        {
-            "topic": "epitope",
-            "status": "UNRESOLVED",
-            "evidence": [],
-            "limitations": ["Epitope remains unknown"],
-        }
-    )
-    valid = SiteIntent.model_validate(value)
-    with pytest.raises(ResearchConclusionMismatch, match="NOT_SEARCHED"):
-        b.validate_site_research(valid)
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        SiteIntent.model_validate({**value, "material_questions": ["epitope"]})
+    with pytest.raises(AgentBoundaryError, match="current execution dossier"):
+        b.validate_site_research(SiteIntent.model_validate({**value, "scope": "mechanistic"}))
     assert not b._jobs() and b.current_site() is None
 
 
@@ -1348,9 +1333,7 @@ async def test_focused_residue_rows_fit_without_repeating_large_approved_backgro
 
 
 @pytest.mark.asyncio
-async def test_site_budget_reserve_requests_typed_synthesis_without_creating_approval(
-    bridge: Any,
-) -> None:
+async def test_research_uses_shared_budget_without_legacy_forced_synthesis(bridge: Any) -> None:
     from langchain_core.tools import StructuredTool
 
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
@@ -1370,63 +1353,30 @@ async def test_site_budget_reserve_requests_typed_synthesis_without_creating_app
         StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
     ]
 
-    attempts = []
-
     async def handler(request: Any) -> Any:
-        attempts.append(request)
-        assert request.tools == []  # ToolStrategy adds the existing SiteIntent output separately.
-        assert "Only the SiteIntent submission tool" in request.system_message.text
-        if len(attempts) == 1:
-            return SimpleNamespace(
-                result=[
-                    AIMessage(
-                        content="",
-                        tool_calls=[
-                            {
-                                "name": "read_site_evidence",
-                                "args": {"label_seq_ids": [1, 2]},
-                                "id": "late-read",
-                            }
-                        ],
-                    )
-                ],
-                structured_response=None,
-            )
-        # A schema error is still delivered through the existing correction path, not a Gate.
+        assert "read_site_evidence" in {tool.name for tool in request.tools}
+        assert "Only the SiteIntent submission tool" not in request.system_message.text
         return SimpleNamespace(
             result=[
-                ToolMessage(
-                    name="SiteIntent",
-                    tool_call_id="invalid",
-                    content="Missing material evidence conclusion",
-                    status="error",
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "read_site_evidence", "args": {}, "id": "current-read"}],
                 )
             ],
             structured_response=None,
         )
 
-    await guard.awrap_model_call(
-        Request(tools=tools, messages=[], system_message=SystemMessage(content="Research")), handler
-    )
+    request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Research"))
+    await guard.awrap_model_call(request, handler)
+    for _ in range(7):
+        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
+    with pytest.raises(AgentBoundaryError, match="budget"):
+        await guard.awrap_model_call(request, handler)
     assert b.current_site() is None and not b._jobs()
     assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
     assert (
         len([e for e in b.store.events(b.thread) if e["kind"] == "model-call"])
-        == cfg.max_model_calls - 6
-    )
-
-    from langchain_core.utils.function_calling import convert_to_openai_tool
-
-    from easydesign.agent.site_contracts import SiteIntent
-
-    contexts = [e["payload"] for e in b.store.events(b.thread) if e["kind"] == "model-context"]
-    assert all(
-        c["offered_action_tools"] == [] and c["structured_output_tool"] == "SiteIntent"
-        for c in contexts
-    )
-    assert all(
-        c["tool_schema_chars"] == len(compact([convert_to_openai_tool(SiteIntent)]))
-        for c in contexts
+        == cfg.max_model_calls
     )
 
 

@@ -1,4 +1,4 @@
-"""Runtime facts and reference-only Judge text; deterministic fixtures, no provider calls."""
+"""Runtime facts, structured consistency and free scientific prose; no provider calls."""
 
 from copy import deepcopy
 from hashlib import sha256
@@ -10,12 +10,15 @@ from pydantic import ValidationError
 from easydesign.agent.contracts import (
     ApplyDecision,
     EvidenceBinding,
+    JudgeFactClaim,
     JudgeVerdict,
     ResearchConclusionMismatch,
 )
 from easydesign.agent.site_fact_integrity import (
     add_fact_references,
     canonical_reference,
+    fact_paths,
+    fact_value,
     peptide_occurrences,
     render_judge,
     validate_fact_references,
@@ -170,31 +173,126 @@ def test_overlap_mapping_topology_exclusions_motifs_and_provenance_are_runtime_o
     "field", ["reasons", "limitations", "warnings", "alternative", "qualification"]
 )
 @pytest.mark.parametrize(
-    "bad",
+    "text",
     [
-        "AINCYANETCCD, ~184-196",
-        "canonical 286 means design 286",
-        "the candidate contains 200",
-        "the region is extracellular",
+        "The extracellular candidate still has uncertain whole-VHH accessibility.",
+        "ECL2 and TM6 topology do not establish intracellular or extracellular access.",
+        "AINCYANETCCD (181–192) is indirect evidence; 2 assays cannot prove transfer.",
+        "残基编号和跨膜拓扑不等同于整个 VHH 的可达性。",
     ],
 )
-def test_wrong_fact_literals_cannot_leak_through_any_judge_channel(field, bad):
+def test_normal_scientific_language_is_preserved_in_every_opinion_field(field, text):
     p = fact_packet()
     raw = verdict("The risk is indirect.").model_dump()
     if field in {"reasons", "limitations"}:
-        raw[field] = [bad]
+        raw[field] = [text]
     elif field == "qualification":
-        raw["site_claim_corrections"] = [{"claim": "quoted old claim", "qualification": bad}]
+        raw["site_claim_corrections"] = [{"claim": "quoted old claim", "qualification": text}]
     else:
         raw["recommendation"] = {
             "option_id": "site",
             "status": "SUPPORTED",
-            **({"warnings": [bad]} if field == "warnings" else {"alternative": bad}),
+            **({"warnings": [text]} if field == "warnings" else {"alternative": text}),
         }
     original = deepcopy(raw)
-    with pytest.raises(ResearchConclusionMismatch, match="JUDGE_FACT_REFERENCE"):
-        render_judge(JudgeVerdict.model_validate(raw), p)
+    parsed = JudgeVerdict.model_validate(raw)
+    assert render_judge(parsed, p) == parsed.model_dump(mode="json")
     assert raw == original
+
+
+@pytest.mark.parametrize(
+    "kind,index,path,bad",
+    [
+        ("peptide", 0, ["canonical_occurrences"], [[184, 196]]),
+        ("peptide", 0, ["sequence"], "AINCYAEETCCD"),
+        ("mapping", 3, ["label_seq_id"], 286),
+        ("mapping", 3, ["canonical_position"], 414),
+        ("mapping", 3, ["label_chain_id"], "B"),
+        ("candidate", 0, ["design_labels"], [183, 192, 200, 414]),
+        ("topology", 0, ["sequence_topology", 0, "annotations", 0, "description"], "Extracellular"),
+        ("topology", 0, ["segments"], ["ECL2"]),
+        ("exclusions", 0, [], []),
+        ("overlap", 0, ["occurrences", 0, "members", 0, "canonical_position"], 184),
+        ("target", 0, ["auth_chain"], "B"),
+        ("source", 0, ["source_verified"], False),
+        ("mapping", 3, ["canonical_position"], "286"),
+        ("mapping", 3, ["canonical_position"], 286.0),
+        ("source", 0, ["source_verified"], 1),
+    ],
+)
+def test_structured_fact_conflicts_reject_without_changing_facts(kind, index, path, bad):
+    p = fact_packet()
+    original = deepcopy(p)
+    key = f"{p['fact_revision']}:{kind}:{index}"
+    expected = fact_value(p, key)
+    for part in path:
+        expected = expected[part]
+    # Claims compare a direct field (or whole value), including complete nested values.
+    field = path[0] if path and isinstance(path[0], str) else None
+    whole = fact_value(p, key)
+    expected_field = deepcopy(whole[field] if field else whole)
+    bad_field = deepcopy(expected_field)
+    remainder = path[1:] if field else path
+    if remainder:
+        parent = bad_field
+        for part in remainder[:-1]:
+            parent = parent[part]
+        parent[remainder[-1]] = bad
+    else:
+        bad_field = bad
+    good = JudgeFactClaim(fact_ref=key, field=field, value=expected_field)
+    opinion = verdict("The extracellular accessibility implication remains uncertain.")
+    validate_fact_references(opinion.model_copy(update={"fact_claims": [good]}), p)
+    # Negative reviews also cannot submit conflicting facts.
+    for state in ("ready-to-ask", "reject"):
+        wrong = opinion.model_copy(
+            update={
+                "verdict": state,
+                "fact_claims": [good.model_copy(update={"value": bad_field})],
+            }
+        )
+        with pytest.raises(ResearchConclusionMismatch, match="JUDGE_FACT_CONFLICT"):
+            render_judge(wrong, p)
+    assert p == original
+
+
+@pytest.mark.parametrize("field", ["missing", "segments.0", "features[0].location"])
+def test_claim_fields_address_only_existing_direct_object_fields(field):
+    p = fact_packet()
+    claim = JudgeFactClaim(fact_ref=f"{p['fact_revision']}:topology:0", field=field, value="x")
+    with pytest.raises(ResearchConclusionMismatch, match="unknown fact field"):
+        validate_fact_references(verdict("Risk.").model_copy(update={"fact_claims": [claim]}), p)
+
+
+def test_claim_field_contract_does_not_require_model_authored_json_paths():
+    with pytest.raises(ValidationError):
+        JudgeFactClaim.model_validate({"fact_ref": "topology:0", "path": [0], "value": "x"})
+
+
+def test_all_reference_objects_roundtrip_and_legacy_prose_does_not_change_runtime_facts():
+    p = fact_packet()
+    original = deepcopy(p)
+    opinion = verdict("Legacy unverified prose: AINCYANETCCD = 184–196.")
+    for key in fact_paths(p):
+        claim = JudgeFactClaim(fact_ref=key, value=fact_value(p, key))
+        checked = opinion.model_copy(update={"fact_refs": [key], "fact_claims": [claim]})
+        rendered = render_judge(checked, p)
+        assert rendered["reasons"] == opinion.reasons
+        assert rendered["fact_claims"][0] == claim.model_dump(mode="json")
+    assert p == original
+    # A prose assertion is never promoted to the authoritative precise-fact channel.
+    assert p["peptide_facts"][0]["canonical_occurrences"] == [[181, 192]]
+
+
+@pytest.mark.parametrize("field", ["fact_refs", "fact_claims"])
+def test_structured_references_must_exist_and_match_current_revision(field):
+    p = fact_packet()
+    for key in ("0000000000000000:peptide:0", f"{p['fact_revision']}:peptide:999"):
+        entry = key if field == "fact_refs" else JudgeFactClaim(fact_ref=key, value=None)
+        with pytest.raises(ResearchConclusionMismatch, match="unknown or stale"):
+            validate_fact_references(verdict("Risk.").model_copy(update={field: [entry]}), p)
+        with pytest.raises(ResearchConclusionMismatch, match="no supplied fact collection"):
+            validate_fact_references(verdict("Risk.").model_copy(update={field: [entry]}), {})
 
 
 def test_unknown_and_stale_fact_ids_reject_and_scientific_opinions_can_differ():
@@ -228,26 +326,32 @@ def test_current_binding_is_required_for_canonical_reference(packet_case):
         canonical_reference(Reader(), bad)
 
 
-def test_direct_registration_and_legacy_card_cannot_bypass_guard(packet_case):
+def test_registration_and_saved_assessment_cannot_bypass_structured_guard(packet_case):
     b = packet_case["bridge"]
     p = b.judge_evidence()
     token = JUDGE_EVIDENCE.set(
         EvidenceBinding.model_validate({k: p[k] for k in EvidenceBinding.model_fields})
     )
     try:
+        bad_claim = JudgeFactClaim(
+            fact_ref=f"{p['fact_revision']}:candidate:0", field="design_labels", value=[999]
+        )
         with pytest.raises(ResearchConclusionMismatch):
-            b.register_judge(verdict("The hotspot contains 999."))
+            b.register_judge(verdict("Risk.").model_copy(update={"fact_claims": [bad_claim]}))
         assessment = b.register_judge(
-            verdict("The scientific rationale is conditional. " + ref(p, "candidate"))
+            verdict(
+                "The extracellular candidate remains conditional; canonical length 2 is a "
+                "hypothetical example, not a runtime fact. " + ref(p, "candidate")
+            )
         )
     finally:
         JUDGE_EVIDENCE.reset(token)
     card = b.decision_card(ApplyDecision(assessment_id=assessment.assessment_id, option_id="site"))
     facts = card.scientific_summary["independent_review"]["runtime_facts"]
     assert facts and "canonical→design" in str(card.scientific_summary)
-    # An immutable old assessment with literal restatements cannot be reused to create a new card.
+    # Card construction revalidates stored structured assertions instead of trusting persistence.
     legacy = assessment.model_copy(
-        update={"assessment_id": "synthetic-legacy", "reasons": ["The hotspot contains 999."]}
+        update={"assessment_id": "synthetic-invalid-saved", "fact_claims": [bad_claim]}
     )
     b.store.save_assessment(b.thread, legacy)
     with pytest.raises(ResearchConclusionMismatch):
@@ -283,8 +387,12 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
                     }:
                         self.submissions += 1
                         if self.submissions == 1 or repeat_bad:
-                            call["args"]["reasons"] = [
-                                "AINCYANETCCD, ~184-196 supports this choice."
+                            call["args"]["fact_claims"] = [
+                                {
+                                    "fact_ref": "mapping:0",
+                                    "field": "canonical_position",
+                                    "value": 999,
+                                }
                             ]
             return result
 
@@ -306,8 +414,8 @@ async def test_actual_harness_uses_existing_repairs_for_fact_contract(site_bridg
     events = site_bridge.store.events(site_bridge.thread)
     rejected = [e for e in events if e["kind"] == "rejected-submission"]
     assert len(rejected) == (3 if repeat_bad else 1)
-    assert all("JUDGE_FACT_REFERENCE" in e["payload"]["diagnostic"] for e in rejected)
-    assert all("184-196" in str(e["payload"]["submitted_opinion"]) for e in rejected)
+    assert all("JUDGE_FACT_CONFLICT" in e["payload"]["diagnostic"] for e in rejected)
+    assert all("999" in str(e["payload"]["submitted_opinion"]) for e in rejected)
     assert sum(e["kind"] == "contract-repair" for e in events) == (2 if repeat_bad else 1)
     assert sum(e["kind"] == "judge-assessment" for e in events) == (0 if repeat_bad else 1)
     assert not any(e["kind"] == "human-response" for e in events)

@@ -28,7 +28,7 @@ def opinion() -> dict[str, Any]:
     return {
         "verdict": "ready-to-ask",
         "recommendation": "DISCOURAGED",
-        "reasons": ["The hypothesis is reviewable with explicit uncertainty."],
+        "reasons": ["The extracellular candidate still has uncertain whole-VHH accessibility."],
         "uncertainties": ["Whole-binder access and biological function remain untested."],
         "warnings": ["Limited exposure raises a feasibility concern."],
         "alternative": "Revise the selected patch or explicitly acknowledge the risks.",
@@ -59,7 +59,13 @@ class CompactJudgeModel(SiteModel):
         else:
             data = opinion()
             if self.invalid_fact:
-                data["reasons"] = ["AINCYANETCCD maps to 184–196."]
+                data["fact_claims"] = [
+                    {
+                        "fact_ref": "mapping:0",
+                        "field": "canonical_position",
+                        "value": 999,
+                    }
+                ]
             name = (
                 "RecoverySiteJudgeVerdict"
                 if "RecoverySiteJudgeVerdict" in self.offered
@@ -252,13 +258,23 @@ class BrokenJudgeModel(CompactJudgeModel):
             raise RuntimeError("synthetic unexpected implementation fault")
         if self.failure_kind == "timeout":
             raise APITimeoutError(request=httpx.Request("POST", "https://synthetic.invalid"))
-        if self.failure_kind in {"invalid-schema", "invalid-negative"}:
+        if self.failure_kind in {"invalid-schema", "invalid-negative", "invalid-fact-and-schema"}:
             self.calls += 1
-            if self.calls == 1 or self.failure_kind == "invalid-negative":
+            if self.calls == 1 or self.failure_kind != "invalid-schema":
                 data = opinion()
                 if self.failure_kind == "invalid-negative":
                     data["verdict"] = "reject"
                 data["reasons"] = ["x" * 301]
+                if self.failure_kind == "invalid-fact-and-schema":
+                    data["fact_claims"] = [
+                        {"fact_ref": "mapping:0"},
+                        {
+                            "fact_ref": "mapping:0",
+                            "field": "canonical_position",
+                            "value": 999,
+                            "unexpected_field": "cannot mask the conflicting assertion",
+                        },
+                    ]
                 return ChatResult(
                     generations=[
                         ChatGeneration(
@@ -286,7 +302,16 @@ class BrokenJudgeModel(CompactJudgeModel):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["unexpected", "timeout", "invalid-schema", "invalid-negative"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "unexpected",
+        "timeout",
+        "invalid-schema",
+        "invalid-negative",
+        "invalid-fact-and-schema",
+    ],
+)
 async def test_only_known_technical_failure_is_degraded_and_recovery_gets_diagnostic(
     packet_case, kind
 ):
@@ -310,7 +335,7 @@ async def test_only_known_technical_failure_is_degraded_and_recovery_gets_diagno
             execution,
             never_legacy,
         )
-        if kind == "invalid-negative":
+        if kind in {"invalid-negative", "invalid-fact-and-schema"}:
             with pytest.raises(AgentBoundaryError, match="substantive"):
                 await agent.ainvoke({"messages": [HumanMessage(content="Review.")]})
         elif kind == "unexpected":
@@ -323,6 +348,11 @@ async def test_only_known_technical_failure_is_degraded_and_recovery_gets_diagno
     events = bridge.store.events(bridge.thread)
     assert any(e["kind"] == "site-judge-unavailable" for e in events) == (kind == "timeout")
     assert any(e["kind"] == "judge-assessment" for e in events) == (kind == "invalid-schema")
+    if kind == "invalid-fact-and-schema":
+        rejected = [e["payload"] for e in events if e["kind"] == "rejected-submission"]
+        assert len(rejected) == 3
+        assert all("JUDGE_FACT_CONFLICT" in r["diagnostic"] for r in rejected)
+        assert all(r["substantive_finding"] and not r["schema_valid"] for r in rejected)
     if kind == "unexpected":
         assert sum(e["kind"] == "model-call" for e in events) == 1
 
@@ -386,3 +416,56 @@ async def test_unavailable_card_cannot_hide_hard_failure_or_later_negative(
         assert bridge.approved_site() is None
     finally:
         JUDGE_EVIDENCE.reset(token)
+
+
+def test_compact_opinion_binds_structured_claims_without_rewriting_prose(packet_case):
+    from easydesign.agent.site_judge import SiteJudgeVerdict, normalize_opinion
+
+    packet = packet_case["bridge"].judge_evidence()
+    data = opinion()
+    data["fact_claims"] = [
+        {
+            "fact_ref": "candidate:0",
+            "field": "design_labels",
+            "value": packet["candidate_facts"][0]["design_labels"],
+        }
+    ]
+    result = normalize_opinion(SiteJudgeVerdict.model_validate(data), packet)
+    assert result.reasons == data["reasons"]
+    assert result.fact_refs == [f"{packet['fact_revision']}:candidate:0"]
+    assert result.fact_claims[0].fact_ref == result.fact_refs[0]
+    assert result.fact_claims[0].value == data["fact_claims"][0]["value"]
+
+
+def test_all_structured_errors_are_reported_together_with_addressable_fields(packet_case):
+    from easydesign.agent.site_judge import SiteJudgeVerdict, normalize_opinion
+
+    packet = packet_case["bridge"].judge_evidence()
+    data = opinion()
+    data["alternative"] = None
+    data["fact_refs"] = ["reference:0"]
+    data["fact_claims"] = [
+        {"fact_ref": "candidate:0", "field": "invented_location", "value": 113},
+        {"fact_ref": "mapping:0", "field": "canonical_position", "value": 999},
+    ]
+    with pytest.raises(AgentBoundaryError) as caught:
+        normalize_opinion(SiteJudgeVerdict.model_validate(data), packet)
+    diagnostic = str(caught.value)
+    for detail in (
+        "DISCOURAGED requires",
+        "reference:0",
+        "available_collections",
+        "candidate:0",
+        "invented_location",
+        "available_fields",
+        "design_labels",
+        "mapping:0",
+        "canonical_position",
+        "JUDGE_FACT_CONFLICT",
+    ):
+        assert detail in diagnostic
+    fixed = opinion()
+    assert (
+        normalize_opinion(SiteJudgeVerdict.model_validate(fixed), packet).reasons
+        == fixed["reasons"]
+    )

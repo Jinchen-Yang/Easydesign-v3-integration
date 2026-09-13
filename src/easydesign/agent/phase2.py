@@ -1124,6 +1124,14 @@ class Phase2Bridge(TargetBridge):
                     "reasons": rendered["reasons"],
                     "limitations": rendered["limitations"],
                     "claim_corrections": rendered["site_claim_corrections"],
+                    "cited_fact_ids": list(
+                        dict.fromkeys(
+                            [
+                                *rendered.get("fact_refs", []),
+                                *(c["fact_ref"] for c in rendered.get("fact_claims", [])),
+                            ]
+                        )
+                    ),
                     **(
                         {
                             "runtime_facts": {
@@ -1134,7 +1142,9 @@ class Phase2Bridge(TargetBridge):
                             "sequence_mapping_scope": judge_packet["peptide_reference"],
                             "fact_scope": "Runtime-rendered facts; source passages, scopes, exact "
                             "tables and raw Judge opinion remain in the bound evidence audit. "
-                            "Scientific interpretation is not deterministic verification.",
+                            "Judge prose is scientific interpretation, not a verified fact source. "
+                            "Precise ranges, mappings and topology above come from Runtime; "
+                            "only structured fact assertions are checked for exact consistency.",
                         }
                         if "fact_references" in judge_packet
                         else {}

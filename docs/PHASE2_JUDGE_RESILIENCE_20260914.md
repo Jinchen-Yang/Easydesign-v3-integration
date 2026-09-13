@@ -1,5 +1,8 @@
 # Gate 2 Judge availability and normal-path repair
 
+Current amendment: [Structured fact consistency](PHASE2_STRUCTURED_FACTS_20260914.md)
+replaces the Site Judge lexical output grammar; historical validation records below remain unchanged.
+
 This user-authorized amendment separates independent review availability from scientific
 recommendation. It does not declare Phase 2 frozen. It supersedes earlier requirements that
 a completed Judge opinion must exist before every dossier-backed Gate 2 card can be displayed.

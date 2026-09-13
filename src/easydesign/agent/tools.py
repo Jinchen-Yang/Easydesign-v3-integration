@@ -645,7 +645,11 @@ class TargetBridge:
         from .site_fact_integrity import validate_fact_references
 
         validate_fact_references(verdict, current)
-        if facts is not None and verdict.verdict in {"ready-to-ask", "assessed"}:
+        if (
+            facts is not None
+            and "fact_references" not in current
+            and verdict.verdict in {"ready-to-ask", "assessed"}
+        ):
             check_fact_claims(verdict.model_dump(mode="json"), {"hard_facts": facts})
         assessment = EvidenceAssessment(
             **verdict.model_dump(),

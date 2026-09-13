@@ -764,10 +764,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     snapshot.get("approved_target", {}).get("hard_facts"),
                                 ),
                             )
-                            if facts is not None and response.structured_response.verdict in {
-                                "ready-to-ask",
-                                "assessed",
-                            }:
+                            if (
+                                facts is not None
+                                and "fact_references" not in snapshot
+                                and response.structured_response.verdict
+                                in {"ready-to-ask", "assessed"}
+                            ):
                                 check_fact_claims(
                                     response.structured_response.model_dump(mode="json"),
                                     {"hard_facts": facts},

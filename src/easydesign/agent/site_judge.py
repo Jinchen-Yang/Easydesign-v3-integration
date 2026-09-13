@@ -11,12 +11,13 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from .context_policy import context_usage
 from .contracts import (
     AgentBoundaryError,
     EvidenceBinding,
+    JudgeFactClaim,
     JudgeVerdict,
     OptionRecommendation,
     SiteClaimCorrection,
@@ -24,7 +25,11 @@ from .contracts import (
 )
 from .models import ModelConfig
 from .session_store import compact, identity
-from .site_fact_integrity import fact_paths, validate_fact_references
+from .site_fact_integrity import (
+    fact_paths,
+    validate_fact_fields,
+    validate_fact_references,
+)
 from .tools import JUDGE_EVIDENCE
 
 Brief = Annotated[
@@ -32,9 +37,9 @@ Brief = Annotated[
     Field(
         min_length=1,
         max_length=300,
-        description="Interpretation only. No numbers, sequences or topology terms, including "
-        "extracellular, intracellular, transmembrane, ECL or TM. Say selected candidate or "
-        "alternative candidate. Put supporting facts in fact_refs, never in this prose field.",
+        description="Concise scientific interpretation, risk or uncertainty. Ordinary scientific "
+        "vocabulary and numbers are allowed. Cite runtime facts in fact_refs; explicit exact "
+        "factual assertions belong in fact_claims and are checked against those facts.",
     ),
 ]
 
@@ -47,13 +52,16 @@ class SiteJudgeVerdict(StrictDTO):
     """A short early-stage review; runtime binds citations and renders hard facts."""
 
     verdict: Literal["ready-to-ask", "insufficient", "reject"]
-    recommendation: Literal["SUPPORTED", "DISCOURAGED"]
+    recommendation: Literal["SUPPORTED", "DISCOURAGED"] = Field(
+        description="DISCOURAGED requires nonempty warnings and a non-null alternative."
+    )
     reasons: list[Brief] = Field(min_length=1, max_length=2)
     uncertainties: list[Brief] = Field(min_length=1, max_length=3)
     warnings: list[Brief] = Field(default_factory=list, max_length=3)
     alternative: Brief | None = Field(
         default=None,
-        description="A conditional next step or alternative, not a certified better site. "
+        description="Required when DISCOURAGED. A conditional next step or alternative, "
+        "not a certified better site. "
         "Point exposure does not prove whole-binder access. Contact with a disulfide-forming "
         "cysteine is not evidence of disrupting the bond, folding or trafficking; describe "
         "it as a risk to evaluate, never as a demonstrated goal violation.",
@@ -69,7 +77,15 @@ class SiteJudgeVerdict(StrictDTO):
         default_factory=list,
         max_length=4,
         description="Optional short supplied references such as candidate:0 or source:2. "
-        "Do not copy hashes or facts into prose. Runtime supplies the evidence revision.",
+        "Runtime supplies the evidence revision and renders the cited facts.",
+    )
+
+    fact_claims: list[JudgeFactClaim] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Optional exact assertions about supplied facts: use a short fact_ref, "
+        "one direct field name and its exact JSON value. Prefer fact_refs alone "
+        "for interpretation; do not duplicate the fact table.",
     )
 
 
@@ -94,24 +110,18 @@ def review_prompt(*, recovery: bool = False) -> str:
         "site using short exact claim excerpts. Point burial does not prove whole-binder "
         "impossibility; cysteine contact does not prove trafficking damage. A discouraged but "
         "reviewable hypothesis can be ready-to-ask, with a warning and an alternative. "
-        "Keep interpretation in ordinary words: no digits, sequences, chain labels or topology "
-        "classification literals. In prose say 'selected candidate' or 'alternative candidate'; "
-        "do not write ECL, ICL, TM, extracellular, intracellular, cytoplasmic, transmembrane, "
-        "outer_pore, core_pore or chain labels. Do not restate counts, including spelled-out "
-        "counts, or recalculate comparisons from them. Express implications instead. "
-        "For example, 'Limited exposure raises an access concern; full-binder feasibility "
-        "requires validation.' This is a writing example, not a conclusion for this case. "
-        "Put supporting short fact IDs in fact_refs; runtime expands "
-        "them separately. Exact correction claim quotations alone may contain factual literals. "
-        "Do not recalculate facts, audit every residue, enumerate all caveats, or repeat sources. "
+        "Use ordinary scientific language to explain implications and uncertainties. "
+        "Use fact_refs by default; runtime renders their precise values separately. "
+        "Optional fact_claims assert an exact value of one DIRECT field of a referenced "
+        "object, never a nested JSON path. There is no need to restate the supplied facts. "
+        "Prose is not a source of "
+        "verified facts. Do not recalculate facts, audit every residue or repeat sources. "
         + (
             "The previous response was truncated or did not submit. Use the recovery schema: "
             "exactly one reason, at most two uncertainties, and at most one fact_ref. "
             "When a prior typed opinion is supplied, correct that opinion instead of restarting "
-            "the review. Fix ALL prose fields: reasons, uncertainties, warnings, alternative "
-            "and correction qualifications. Do not echo topology labels from the source text; "
-            "even the word extracellular is forbidden outside an exact claim quotation. "
-            "Keep each prose item to one short sentence. Complete the "
+            "the review. Correct the reported structured inconsistency using the supplied "
+            "fact value. Keep each prose item to one short sentence. Complete the "
             "structured submission now. Retain any negative finding; do not change verdict "
             "to satisfy formatting."
             if recovery
@@ -145,31 +155,76 @@ def review_input(packet: dict[str, Any]) -> dict[str, Any]:
     return {
         **{key: packet[key] for key in keys if key in packet},
         "reference_collections": packet["fact_references"],
-        "reference_usage": "Use collection_name:zero_based_index in fact_refs. "
+        "available_fact_ids": [key.split(":", 1)[1] for key in fact_paths(packet)],
+        "reference_usage": "Use collection_name:zero_based_index in fact_refs and "
+        "fact_claims.fact_ref. "
+        "Use only supplied IDs, without counting or inventing indices. A claim field is a "
+        "direct key of that fact object; null means the whole value. Mapping facts use column "
+        "names. An annotation reference is one feature; its fields include location and type. "
+        "Source passage is verbatim text, not a nested object: do not address JSON fields "
+        "inside a passage string. Use annotation references for structured feature assertions. "
         "Source passages expand source_group through decision_evidence.source_metadata. "
         "Their exact original passages and qualifiers are retained.",
     }
 
 
+def bind_fact_ref(short: str, packet: dict[str, Any]) -> str:
+    return f"{packet['fact_revision']}:{short}"
+
+
+def validate_partial_fact_submission(submitted: dict[str, Any], packet: dict[str, Any]) -> None:
+    """A malformed prose field cannot hide an independently readable factual conflict."""
+    refs = submitted.get("fact_refs", [])
+    bound_refs = (
+        [bind_fact_ref(r, packet) for r in refs if isinstance(r, str)]
+        if isinstance(refs, list)
+        else []
+    )
+    claims = submitted.get("fact_claims", [])
+    bound_claims = []
+    for raw in claims if isinstance(claims, list) else []:
+        if isinstance(raw, dict):
+            raw = {k: raw[k] for k in JudgeFactClaim.model_fields if k in raw}
+        try:
+            claim = JudgeFactClaim.model_validate(raw)
+        except ValidationError:
+            continue  # Invalid items cannot mask other, readable conflicting assertions.
+        bound_claims.append(
+            claim.model_copy(update={"fact_ref": bind_fact_ref(claim.fact_ref, packet)})
+        )
+    validate_fact_fields(bound_refs, bound_claims, packet)
+
+
 def normalize_opinion(opinion: SiteJudgeVerdict, packet: dict[str, Any]) -> JudgeVerdict:
-    refs = fact_paths(packet)
-    reasons = list(opinion.reasons)
-    for short in dict.fromkeys(opinion.fact_refs):
-        key = f"{packet['fact_revision']}:{short}"
-        if key not in refs:
-            raise AgentBoundaryError("Invalid Site Judge fact reference")
-        reasons.append(f"Supporting runtime fact: [fact:{key}]")
-    result = JudgeVerdict(
-        verdict=opinion.verdict,
-        reasons=reasons,
-        limitations=list(opinion.uncertainties),
-        recommendation=OptionRecommendation(
+    errors = []
+    recommendation = None
+    try:
+        recommendation = OptionRecommendation(
             option_id="site",
             status=opinion.recommendation,
             warnings=list(opinion.warnings),
             alternative=opinion.alternative,
-        ),
+        )
+    except ValidationError as error:
+        errors.append(str(error))
+    try:
+        validate_partial_fact_submission(opinion.model_dump(mode="json"), packet)
+    except AgentBoundaryError as error:
+        errors.append(str(error))
+    if errors:
+        raise AgentBoundaryError("; ".join(errors))
+    assert recommendation is not None
+    result = JudgeVerdict(
+        verdict=opinion.verdict,
+        reasons=list(opinion.reasons),
+        limitations=list(opinion.uncertainties),
+        recommendation=recommendation,
         site_claim_corrections=list(opinion.corrections),
+        fact_refs=[bind_fact_ref(short, packet) for short in dict.fromkeys(opinion.fact_refs)],
+        fact_claims=[
+            c.model_copy(update={"fact_ref": bind_fact_ref(c.fact_ref, packet)})
+            for c in opinion.fact_claims
+        ],
     )
     validate_fact_references(result, packet)
     return result
@@ -377,8 +432,15 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     None,
                 )
             )
+            fact_error = None
             if submitted is not None:
                 last_opinion = submitted
+                if not isinstance(opinion, SiteJudgeVerdict):
+                    try:
+                        validate_partial_fact_submission(submitted, packet)
+                    except AgentBoundaryError as error:
+                        substantive = True
+                        fact_error = type(error).__name__ + ": " + str(error)
             if isinstance(opinion, SiteJudgeVerdict):
                 try:
                     normalized = normalize_opinion(opinion, packet)
@@ -406,10 +468,14 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     for m in raw
                     for c in m.tool_calls
                 )
-                diagnostic = transport_failure or (
-                    "OUTPUT_TRUNCATED"
-                    if any(r["stop_reason"] in {"max_tokens", "length"} for r in records)
-                    else "MISSING_OR_INVALID_TYPED_SUBMISSION"
+                diagnostic = (
+                    fact_error
+                    or transport_failure
+                    or (
+                        "OUTPUT_TRUNCATED"
+                        if any(r["stop_reason"] in {"max_tokens", "length"} for r in records)
+                        else "MISSING_OR_INVALID_TYPED_SUBMISSION"
+                    )
                 )
             failures.append(diagnostic)
             self.bridge.store.event(

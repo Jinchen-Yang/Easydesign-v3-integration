@@ -5,6 +5,9 @@ Current Gate 2 review availability policy (2026-09-14, under validation):
 a clearly marked Scientist review card after independent review is technically unavailable.
 Continuation requires acknowledgement and a human rationale. Hard contradictions and valid
 negative reviews remain blocking; an unavailable review is never reported as a successful Judge.
+The [structured fact contract](PHASE2_STRUCTURED_FACTS_20260914.md) permits normal scientific
+language. Runtime supplies and renders precise facts; exact structured claims are checked
+against those facts. Free prose remains scientific interpretation, not a verified fact source.
 
 The v3 `easydesign-agent` entry point owns model calls, isolated specialists and human interrupts.
 The v2 `easydesign` CLI and scientific services remain available as the compatibility path.
@@ -132,7 +135,7 @@ candidate structures or run filtering. A rejected proposal leaves the project us
 DISCOURAGED design needs explicit warning acknowledgement and rationale; BLOCKED is never
 eligible for override. Upstream override warnings remain visible downstream.
 
-Each ordinary user turn or validated Phase 2 human acceptance/revision has a bounded 32-call
+Each ordinary user turn or validated Phase 2 human acceptance/revision has a bounded 64-call
 execution. Empty resume, crash recovery and duplicate responses reuse the persisted execution.
 Thread lifetime usage remains telemetry. The immutable research goal, current user message,
 trusted revision instruction and LangGraph conversation history remain separate.
@@ -161,11 +164,13 @@ ambiguity and whether Gate 1 is required. The model cannot supply a residue map 
 retarget an already prepared project. Canonical reference approval does not verify native state,
 physiological mechanism or efficacy.
 
-Full source records do not enter conversation as tool text. The input guard remains 60,000
-characters, with per-call telemetry and separate tool-schema character counts. Judge views
-preserve every item in the delegated scientific projection, including cited contradictions;
-a projection over 32,000 characters is rejected for narrowing rather than silently dropping
-support or counterevidence. The Judge cannot read another delegation's archived result.
+Full source records do not enter conversation as tool text. The configured working-set target
+is 60,000 characters and the hard input guard is 100,000, including tool schemas. Telemetry
+records target overruns; a separate model-profile token guard also applies. Site synthesis
+uses a fresh runtime-built dossier. The Site Judge receives the bound scientific projection,
+including cited contradictions, and submits a compact opinion with bounded recovery. Guard
+failure does not authorize silently dropping support or counterevidence. The Judge cannot
+read another delegation's archived result.
 
 ## Scientist-provided native strategy
 

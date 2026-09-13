@@ -89,13 +89,19 @@ Scientific distinctions:
 
 ## Site hard-fact output references
 
-For a Site packet with fact_references, follow fact_reference_contract: cite
-[fact:REVISION:kind:index], using fact_revision and a zero-based collection index.
-Runtime renders numbers, sequences, chain/source IDs and topology; never retype them
-outside tokens. All opinion fields follow this grammar except exact correction.claim
-quotations. Keep scientific meaning, uncertainty and verdict independent. Source records
-expand source_group through decision_evidence.source_metadata; all original qualifiers
-are retained. Target/Design output contracts remain unchanged.
+For a Site packet with fact_references, cite supplied IDs in fact_refs. Compact Site
+submissions use kind:index; runtime binds the revision. Optional fact_claims contain a
+fact_ref, one direct field name (null for the whole fact), and its exact JSON value.
+Use the supplied available_fact_ids; do not count or invent indices or author JSON paths.
+Claims must match the current runtime object; they cannot replace it. Mapping facts use
+named columns and source facts include expanded source metadata. Prefer references alone
+when interpreting evidence. Legacy [fact:REVISION:kind:index] citations remain supported.
+
+Use normal scientific vocabulary, including numbers and topology terms. Prose expresses
+scientific meaning and uncertainty; it is not a verified fact source. Runtime renders precise
+facts separately on the card. Source records expand source_group through
+decision_evidence.source_metadata; all original qualifiers are retained. Target/Design
+output semantics remain unchanged; do not submit Site fact references at those Gates.
 
 ## Target identity and mapping
 

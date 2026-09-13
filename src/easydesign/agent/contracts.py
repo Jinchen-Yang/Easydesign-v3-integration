@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StrictBool,
+    model_validator,
+)
 
 ShortText = Annotated[str, Field(min_length=1, max_length=1500)]
 Identifier = Annotated[str, Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$")]
@@ -105,6 +112,19 @@ class SiteClaimCorrection(StrictDTO):
     )
 
 
+class JudgeFactClaim(StrictDTO):
+    """An optional exact assertion about an addressed runtime fact, never a fact update."""
+
+    fact_ref: str = Field(min_length=1, max_length=128)
+    field: str | None = Field(
+        default=None,
+        max_length=128,
+        description="One direct field of the referenced object, e.g. canonical_occurrences "
+        "or location. Null means the whole value. No JSON paths or nested indices.",
+    )
+    value: JsonValue = Field(description="Exact JSON value of that field or whole fact.")
+
+
 class JudgeVerdict(StrictDTO):
     """Scientific opinion only; deterministic bindings never come from the model."""
 
@@ -125,6 +145,18 @@ class JudgeVerdict(StrictDTO):
         description="Site Gate 2 only: explicit non-blocking corrections to unsupported "
         "absolute access/causal claims. Preserve original claims for audit; these independent "
         "qualifications accompany the human card and downstream warnings. Empty if unnecessary.",
+    )
+
+    fact_refs: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Site packets only: supplied revision:kind:index fact references.",
+    )
+    fact_claims: list[JudgeFactClaim] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Site packets only: optional exact factual assertions, checked against "
+        "runtime values. Prefer references alone when interpreting evidence.",
     )
 
 

@@ -1,8 +1,7 @@
-"""Bound fact references for Site Judge text, using the existing verified snapshot.
+"""Runtime facts, bound references and exact structured-claim consistency.
 
-This is an output grammar, not a free-text truth/entailment parser. Numeric and
-location literals belong in fact references; unrestricted interpretation still
-requires independent scientific review. Original submissions stay in the audit.
+Scientific prose is interpretation, not an input to deterministic fact validation.
+Original submissions stay in the audit; precise card facts come from the snapshot.
 """
 
 from __future__ import annotations
@@ -11,17 +10,10 @@ import re
 from hashlib import sha256
 from typing import Any, cast
 
-from .contracts import AgentBoundaryError, JudgeVerdict, ResearchConclusionMismatch
-from .session_store import identity
+from .contracts import AgentBoundaryError, JudgeFactClaim, JudgeVerdict, ResearchConclusionMismatch
+from .session_store import compact, identity
 
 _TOKEN = re.compile(r"\[fact:([a-f0-9]{16}:[a-z]+:[0-9]+)\]")
-# Deliberately a lexical output rule, not guessed numerical claim extraction.
-_LITERAL = re.compile(
-    r"\d|\b(?:extracellular|intracellular|cytoplasmic|transmembrane|"
-    r"outer_pore|core_pore|inner_pore|ECL|ICL|TM|chain\s+[A-Za-z])\b|"
-    r"细胞外|细胞内|胞外|胞内|跨膜|残基|编号",
-    re.IGNORECASE,
-)
 _PEPTIDE = re.compile(r"(?<![A-Za-z])[ACDEFGHIKLMNPQRSTVWY]{6,}(?![A-Za-z])")
 
 
@@ -195,15 +187,15 @@ def add_fact_references(packet: dict[str, Any], canonical: dict[str, Any] | None
     packet["fact_references"] = references
     packet["fact_revision"] = fact_revision(packet)
     packet["fact_reference_contract"] = (
-        "In ALL Judge reasons, limitations, warnings, alternatives and correction qualifications, "
-        "use [fact:REVISION:kind:index] with fact_revision and a zero-based index in "
-        "fact_references. Runtime expands the addressed fact. "
-        "Do not type any digits, peptide sequences, residue/chain IDs, source IDs or topology "
-        "classifications outside tokens, even correct ones. Write scientific interpretation, "
-        "evidence strength, risk and uncertainty in words. Exact correction.claim quotations "
-        "alone are exempt and shown as quoted unaccepted Site claims. References cannot assert "
-        "new ranges or memberships. The runtime table remains authoritative; a reference does "
-        "not verify scientific entailment. All references are bound to this evidence revision."
+        "Use supplied REVISION:kind:index IDs in fact_refs to cite runtime facts. Optional "
+        "fact_claims contain fact_ref, a direct field name (null means whole object), "
+        "and the exact JSON value asserted there. Mapping facts use column names; "
+        "source facts include "
+        "expanded source metadata. No nested paths or indices are needed. Claims must match the "
+        "current snapshot; they cannot update it. Legacy [fact:REVISION:kind:index] citations "
+        "remain supported. Scientific prose may use numbers and normal scientific vocabulary; "
+        "it is interpretation, not verified fact. Runtime renders precise facts on the card. "
+        "References establish provenance, not scientific entailment."
     )
     return packet
 
@@ -253,44 +245,115 @@ def _opinion_texts(verdict: JudgeVerdict) -> list[str]:
 
 
 def validate_fact_references(verdict: JudgeVerdict, packet: dict[str, Any]) -> None:
-    """Same check before persistence and before card rendering, including legacy assessments."""
+    """Check the same objects before persistence and rendering, including saved assessments."""
+    keys = list(verdict.fact_refs)
+    for text in _opinion_texts(verdict):
+        # Backward-compatible citation syntax only; never classify prose as a fact claim.
+        keys.extend(_TOKEN.findall(text))
+        if "[fact:" in _TOKEN.sub("", text):
+            raise ResearchConclusionMismatch("JUDGE_FACT_REFERENCE: malformed legacy fact citation")
+    validate_fact_fields(keys, verdict.fact_claims, packet)
+
+
+def validate_fact_fields(
+    keys: list[str], claims: list[JudgeFactClaim], packet: dict[str, Any]
+) -> None:
+    errors = []
+    try:
+        validate_fact_ids(keys, packet)
+    except ResearchConclusionMismatch as error:
+        errors.append(str(error))
+    try:
+        validate_fact_claims(claims, packet)
+    except ResearchConclusionMismatch as error:
+        errors.append(str(error))
+    if errors:
+        raise ResearchConclusionMismatch("; ".join(errors))
+
+
+def validate_fact_ids(keys: list[str], packet: dict[str, Any]) -> None:
     if "fact_references" not in packet:
-        return  # Target/Design and pre-dossier Site contracts retain their existing semantics.
+        if keys:
+            raise ResearchConclusionMismatch("JUDGE_FACT_REFERENCE: no supplied fact collection")
+        return
     if packet["fact_revision"] != fact_revision(packet):
         raise ResearchConclusionMismatch("JUDGE_FACT_REFERENCE: changed referenced fact")
     references = fact_paths(packet)
-    for text in _opinion_texts(verdict):
-        tokens = _TOKEN.findall(text)
-        if any(key not in references for key in tokens):
-            raise ResearchConclusionMismatch("JUDGE_FACT_REFERENCE: unknown or stale fact ID")
-        prose = _TOKEN.sub(" verified fact ", text)
-        if (
-            "[fact:" in prose
-            or _LITERAL.search(prose)
-            or any(p["sequence"] in prose for p in packet["peptide_facts"])
-        ):
-            raise ResearchConclusionMismatch(
-                "JUDGE_FACT_REFERENCE: use supplied [fact:REVISION:kind:index] tokens "
-                "for all numeric, "
-                "peptide, chain, source and topology facts; runtime renders the exact values. "
-                "Keep scientific reasoning and uncertainty in words, with no factual literals. "
-                "Do not change scientific verdict just to satisfy this output grammar. "
-                + f"Unbound opinion text requiring correction: {text[:350]!r}"
+    unknown = [key for key in keys if key not in references]
+    if unknown:
+        raise ResearchConclusionMismatch(
+            "JUDGE_FACT_REFERENCE: unknown or stale fact ID "
+            + compact(
+                {
+                    "unknown": unknown,
+                    "available_collections": {
+                        k: v["count"] for k, v in packet["fact_references"].items()
+                    },
+                    "index_scope": "zero-based, less than collection count",
+                }
             )
-        expanded = _TOKEN.sub(lambda m: render_fact(packet, m[1]), text)
-        limit = 800 if text in [c.qualification for c in verdict.site_claim_corrections] else 1500
-        if len(expanded) > limit:
-            raise ResearchConclusionMismatch(
-                "JUDGE_FACT_REFERENCE: rendered text exceeds the existing field limit; "
-                "use fewer references per field and concise interpretation."
+        )
+
+
+def validate_fact_claims(claims: list[JudgeFactClaim], packet: dict[str, Any]) -> None:
+    validate_fact_ids([], packet)  # Always verify packet integrity, including an empty opinion.
+    errors = []
+    for claim in claims:
+        try:
+            validate_fact_ids([claim.fact_ref], packet)
+        except ResearchConclusionMismatch as error:
+            errors.append(str(error))
+            continue
+        expected = fact_value(packet, claim.fact_ref)
+        if claim.field is not None:
+            if not isinstance(expected, dict) or claim.field not in expected:
+                errors.append(
+                    "JUDGE_FACT_REFERENCE: unknown fact field "
+                    + compact(
+                        {
+                            "fact_ref": claim.fact_ref,
+                            "field": claim.field,
+                            "available_fields": sorted(expected)
+                            if isinstance(expected, dict)
+                            else [],
+                        }
+                    )
+                )
+                continue
+            expected = expected[claim.field]
+        # Exact JSON comparison; no coercion, source-text parsing, alignment or inference.
+        if compact(expected) != compact(claim.value):
+            errors.append(
+                "JUDGE_FACT_CONFLICT: "
+                + compact(
+                    {
+                        "fact_ref": claim.fact_ref,
+                        "field": claim.field,
+                        "expected": expected,
+                        "claimed": claim.value,
+                    }
+                )
             )
+    if errors:
+        raise ResearchConclusionMismatch("; ".join(errors))
+
+
+def fact_value(packet: dict[str, Any], key: str) -> Any:
+    """Read the existing packet, using named mapping columns and full source provenance."""
+    ref = fact_paths(packet)[key]
+    if ref["kind"] == "mapping":
+        return _rows(packet)[ref["path"][-1]]
+    if ref["kind"] == "source":
+        return expand_source_passages(packet)[ref["path"][-1]]
+    value: Any = packet
+    for part in ref["path"]:
+        value = value[part]
+    return value
 
 
 def render_fact(packet: dict[str, Any], key: str) -> str:
     ref = fact_paths(packet)[key]
-    value: Any = packet
-    for part in ref["path"]:
-        value = value[part]
+    value = fact_value(packet, key)
     kind = ref["kind"]
     if kind == "peptide":
         ranges = ", ".join(f"{a}–{b}" for a, b in value["canonical_occurrences"])
@@ -375,7 +438,10 @@ def render_judge(verdict: JudgeVerdict, packet: dict[str, Any]) -> dict[str, Any
         if isinstance(value, list):
             return [render(v) for v in value]
         if isinstance(value, dict):
-            return {k: v if k == "claim" else render(v) for k, v in value.items()}
+            return {
+                k: v if k in {"claim", "fact_refs", "fact_claims"} else render(v)
+                for k, v in value.items()
+            }
         return value
 
     return cast(dict[str, Any], render(result))

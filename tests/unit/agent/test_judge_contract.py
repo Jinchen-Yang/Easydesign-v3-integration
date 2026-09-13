@@ -34,6 +34,8 @@ def test_judge_only_authors_opinion_and_cannot_supply_authority() -> None:
         "limitations",
         "recommendation",
         "site_claim_corrections",
+        "fact_refs",
+        "fact_claims",
     }
     for field in (
         "evidence_id",
@@ -59,6 +61,20 @@ def test_callback_attaches_canonical_binding_and_rejects_stale_snapshot(bridge: 
         assert assessment.request_identity == evidence["request_identity"]
         assert assessment.source_role == "evidence-judge"
         assert bridge.store.assessment(bridge.thread, assessment.assessment_id) == assessment
+        with pytest.raises(AgentBoundaryError, match="no supplied fact collection"):
+            bridge.register_judge(opinion().model_copy(update={"fact_refs": ["candidate:0"]}))
+        from easydesign.agent.target_assessment import HardFactContradiction
+
+        chain = evidence["hard_facts"]["chains"][0]
+        wrong_count = chain["observed_length"] + 1
+        with pytest.raises(HardFactContradiction):
+            bridge.register_judge(
+                opinion().model_copy(
+                    update={
+                        "reasons": [f"chain {chain['auth_chain']} observed length {wrong_count}"],
+                    }
+                )
+            )
         from easydesign.orchestration.decisions import load_pending_decision
 
         root, _ = bridge.run()

@@ -1,5 +1,8 @@
 # Phase 2 Site Judge fact integrity — validation in progress
 
+Current amendment: [Structured fact consistency](PHASE2_STRUCTURED_FACTS_20260914.md)
+replaces the Site Judge lexical output grammar; historical validation records below remain unchanged.
+
 Baseline: `8c4625dadeb447108ea5068ae7916cdfee774f50`.
 
 The preserved GPCR Judge changed AINCYANETCCD to approximately 184–196 in a reason.

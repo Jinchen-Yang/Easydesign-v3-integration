@@ -369,7 +369,8 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 "options": card.options
                 if ranked
                 else [
-                    {k: o[k] for k in ("label", "description", "eligible")} for o in card.options
+                    {k: o[k] for k in ("label", "description", "eligible") if k in o}
+                    for o in card.options
                 ],
                 "evidence_refs": [ref.split("#sha256=")[0] for ref in card.evidence_refs],
                 "limitations": card.limitations

@@ -130,8 +130,12 @@ def test_approved_site_exclusions_bind_and_survive_downstream_compilation(
 
 
 def test_existing_compiler_and_freeze_service_no_pilot(
-    design_bridge: Any, monkeypatch: Any
+    design_bridge: Any, monkeypatch: Any, capsys: Any
 ) -> None:
+    import json
+
+    from easydesign.agent.cli import _display
+
     bridge = design_bridge
     constraints = bridge.read_design_evidence()["constraints"]
     assert constraints["scaffold_evidence_authority"]["official_asset_checksums_verified"] is True
@@ -158,6 +162,17 @@ def test_existing_compiler_and_freeze_service_no_pilot(
         assert payload
     assert bridge.terminal_result("done")["status"] == "incomplete-turn"
     card = design_card(bridge)
+    before = card.model_dump(mode="json")
+    for technical in (False, True):
+        _display(
+            {"status": "awaiting-human-approval", "card": before}, technical_details=technical
+        )
+        displayed = json.loads(capsys.readouterr().out)
+        assert displayed["status"] == "awaiting-human-approval"
+        assert displayed["card"]["options"] == [{"label": card.options[0]["label"]}]
+        assert displayed["card"]["human_actions"] == ["approve", "revise", "reject"]
+        assert displayed["card"]["scientific_summary"] == card.scientific_summary
+    assert card.model_dump(mode="json") == before
     with pytest.raises(AgentBoundaryError, match="human"):
         bridge.apply_decision(card)
     bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")

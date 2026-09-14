@@ -589,13 +589,16 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
         "read_canonical_mapping",
     }
     complete_projection = scientific_projection(value)
-    if role == "judge":
+    complete_design = role == "binder" and message.name == "read_design_evidence"
+    if role == "judge" or complete_design:
         if isinstance(value, dict) and value.get("kind") == "site-judge-review-packet-v1":
             # The packet already has one scientific representation. Preserve its exact
             # source provenance too; no generic metadata stripping or preview is needed.
             complete_projection = value
-        # Judge receives the complete scientific snapshot. The shared model-input
-        # hard guard includes Skill text, history and schemas; a second per-tool
+        # Decision owners receive the complete scientific snapshot. In particular,
+        # a design preview must never reduce approved hotspots or scaffold coverage.
+        # The shared model-input hard guard includes Skill text, history and schemas;
+        # a second per-tool
         # cap must not reject valid reviews or motivate lossy evidence compression.
         return message.model_copy(
             update={
@@ -616,9 +619,8 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                 )
             }
         )
-    complete_design = role == "binder" and message.name == "read_design_evidence"
-    projected = complete_projection if exact_page or complete_design else preview(value)
-    view_limit = 32000 if complete_design else 6000
+    projected = complete_projection if exact_page else preview(value)
+    view_limit = 6000
     if source_artifact is not None:
         projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
         overview = {**projected, **receptor_overview_projection(value)}

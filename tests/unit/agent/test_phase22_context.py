@@ -199,8 +199,13 @@ async def test_judge_projection_retains_counterevidence_and_exact_delegation(bri
 
 
 @pytest.mark.asyncio
-async def test_large_judge_snapshot_keeps_counterevidence_and_uses_shared_hard_guard(
+@pytest.mark.parametrize(
+    "role,tool_name", [("judge", "read_scientific_evidence"), ("binder", "read_design_evidence")]
+)
+async def test_large_owner_snapshot_keeps_counterevidence_and_uses_shared_hard_guard(
     bridge: Any,
+    role: str,
+    tool_name: str,
 ) -> None:
     from langchain.agents.middleware.types import ModelRequest
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -214,11 +219,9 @@ async def test_large_judge_snapshot_keeps_counterevidence_and_uses_shared_hard_g
     value = {"contradictory_evidence": [{"passage": "counterevidence " * 4000}]}
     shown = output_message(
         bridge,
-        "judge",
+        role,
         execution["execution_id"],
-        ToolMessage(
-            content=json.dumps(value), name="read_scientific_evidence", tool_call_id="large-judge"
-        ),
+        ToolMessage(content=json.dumps(value), name=tool_name, tool_call_id="large-owner"),
     )
     visible = json.loads(shown.content)
     assert visible["contradictory_evidence"] == value["contradictory_evidence"]
@@ -228,14 +231,22 @@ async def test_large_judge_snapshot_keeps_counterevidence_and_uses_shared_hard_g
     assert json.loads(stored.read_text()) == value
 
     config = scripted_config()
+    if role == "binder":
+        from easydesign.agent.design import DesignBridge
+        from easydesign.agent.phase2_tools import phase2_tools
+
+        bridge = DesignBridge(bridge.project, bridge.thread, bridge.store)
+        owner_tools = phase2_tools(bridge, role)
+    else:
+        owner_tools = build_tools(bridge, role)
     guard = RoleBoundary(
-        bridge, "judge", config, "Independent critique", execution_id=execution["execution_id"]
+        bridge, role, config, "Complete owner evidence", execution_id=execution["execution_id"]
     )
     messages = [
         HumanMessage(content="Original scientific objective"),
         AIMessage(
             content="",
-            tool_calls=[{"id": "large-judge", "name": "read_scientific_evidence", "args": {}}],
+            tool_calls=[{"id": "large-owner", "name": tool_name, "args": {}}],
         ),
         shown,
     ]
@@ -248,9 +259,9 @@ async def test_large_judge_snapshot_keeps_counterevidence_and_uses_shared_hard_g
     with pytest.raises(AgentBoundaryError, match="hard context guard"):
         await guard.awrap_model_call(
             ModelRequest(
-                model=ScriptedModel(role="judge"),
+                model=ScriptedModel(role=role),
                 tools=[
-                    *build_tools(bridge, "judge"),
+                    *owner_tools,
                     StructuredTool.from_function(
                         lambda file_path: "SYNTHETIC unused Skill loader",
                         name="read_file",
@@ -441,7 +452,8 @@ def test_binder_reads_complete_bounded_design_snapshot_without_fragmenting_scien
     assert value == before
     stored = bridge.store.root / "agent-work" / bridge.thread / result["full_result"][1:]
     assert json.loads(stored.read_text()) == before
-    # An oversized owner view is explicitly incomplete and retains its complete artifact.
+    # Crossing a per-tool preview threshold must not turn a selected hotspot into
+    # a prefix or hide scaffold choices/risks. The shared model guard owns admission.
     oversized = {**value, "extra": "unknown occupancy " * 3000}
     message = output_message(
         bridge,
@@ -454,7 +466,10 @@ def test_binder_reads_complete_bounded_design_snapshot_without_fragmenting_scien
         ),
     )
     result = json.loads(message.content)
-    assert result["scientific_content_complete"] is False and result["partial"] is True
+    assert len(message.content) > 32000
+    assert result["scientific_content_complete"] is True and result["partial"] is False
+    for key, expected in scientific_projection(oversized).items():
+        assert result[key] == expected
     stored = bridge.store.root / "agent-work" / bridge.thread / result["full_result"][1:]
     assert json.loads(stored.read_text()) == oversized
 

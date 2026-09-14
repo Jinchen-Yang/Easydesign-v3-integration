@@ -446,7 +446,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             retained: set[int] = set()
             scopes: set[str] = set()
             detail_chars = 0
-            for i in reversed(detailed):
+            # Keep the current Binder snapshot intact through both presentation
+            # layers. Archiving it at a local size threshold would hide approved
+            # residues/templates again; the shared model guard owns its admission.
+            design_view = next(
+                (
+                    i
+                    for i in reversed(detailed)
+                    if self.role == "binder" and messages[i].name == "read_design_evidence"
+                ),
+                None,
+            )
+            for i in ([design_view] if design_view is not None else []) + list(reversed(detailed)):
                 if i in retained:
                     continue
                 value = json.loads(messages[i].content)
@@ -454,7 +465,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     {k: value.get(k) for k in ("full_result", "path", "fields", "next_offset")}
                 )
                 size = len(str(messages[i].content))
-                if scope not in scopes and len(retained) < 4 and detail_chars + size <= 32000:
+                if scope not in scopes and (
+                    i == design_view or (len(retained) < 4 and detail_chars + size <= 32000)
+                ):
                     retained.add(i)
                     scopes.add(scope)
                     detail_chars += size

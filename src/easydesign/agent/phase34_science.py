@@ -73,6 +73,7 @@ def pilot_working_set(
             summaries[name] = {
                 "available": sum(m.available for m in metrics),
                 "missing": len(candidates) - sum(m.available for m in metrics),
+                "missing_reasons": sorted({m.missing_reason for m in metrics if m.missing_reason}),
                 "units": sorted({m.unit for m in metrics if m.unit is not None}),
                 "median": statistics.median(values) if values else None,
                 "minimum": min(values) if values else None,

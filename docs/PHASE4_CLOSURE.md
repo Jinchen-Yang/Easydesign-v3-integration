@@ -22,6 +22,14 @@ Evidence: `runtime/tmp/phase34-live-final-result-01.json` and
 `runtime/tmp/phase34-live-final-usage-01.json`. These calls validate the real model adapter
 and handoff contract; the input candidates do not establish biological performance.
 
+A subsequent frozen native Harness validation also passes Gate 4→Final Selection→Judge
+→Gate 5→idempotent handoff. Final Selection required one schema repair; Judge explicitly
+identified redundant backup sequences. Three real model calls used 8,506 tokens. The
+two-primary/two-backup package remains validation-only and not ordered
+(`runtime/tmp/phase34-live-native-final-result-01.json`). Real NK2R measurements also pass
+the Scale projection adapter in a read-only replay, without issuing Scale authority or
+launching additional compute (`runtime/tmp/scale-real-measurement-projection-01.json`).
+
 Outstanding closure criteria: completion of the shared real backend micro validation,
 final frozen native E2E/regression and integrity review. Exact sequence clusters are
 currently duplicate groups, not validated structural-diversity clusters. No wet-lab

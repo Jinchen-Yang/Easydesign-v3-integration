@@ -241,8 +241,9 @@ class PilotArmDenominator(FrozenContract):
             raise ValueError("unique sequences cannot exceed valid products")
         if self.legacy_policy_pass_count > self.metric_evaluable_candidates:
             raise ValueError("legacy passes cannot exceed metric-evaluable products")
-        if self.generated_candidates + self.operational_failure_count > self.planned_candidates:
-            raise ValueError("generated plus operational failures exceeds planned candidates")
+        # A generated candidate may subsequently fail prediction. These populations overlap.
+        if self.operational_failure_count > self.planned_candidates:
+            raise ValueError("operational failures exceed planned candidate slots")
         if any(
             value < 0 or value > self.valid_execution_products
             for value in self.missing_by_metric.values()

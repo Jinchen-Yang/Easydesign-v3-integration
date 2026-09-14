@@ -50,6 +50,16 @@ prediction exhaustion retains verified successful predictions and marks failures
 missing; checksum, identity and other hard consistency errors are still errors. A
 terminal measured outcome is immutable and does not silently launch another retry loop.
 
+An experimental reference may resolve only part of the full requested target. v3 verifies
+the shared residue identities and complete predicted chains; it retains backend confidence
+and clashes across the full prediction. The complete-target alignment RMSDs are explicitly
+unavailable in that case. It neither crops away predicted terminal residues nor substitutes
+zero RMSD. The strict complete-reference kernel remains unchanged. Partial-reference
+collection uses one bounded attempt per candidate because repeating the missing-reference
+metric cannot resolve it. All original worker attempts remain auditable. Measurement v2
+is a new immutable projection, preserving earlier records. A generated candidate can still
+fail prediction, so generated counts and operational-failure counts are not disjoint.
+
 ## Gate 4
 
 The Scientist can choose PROMOTE_TO_SCALE, RUN_ANOTHER_PILOT, REVISE_DESIGN,

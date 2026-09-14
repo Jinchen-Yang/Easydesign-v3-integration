@@ -203,3 +203,38 @@ were the expected Harness fingerprint guard after source files changed between t
 turns, not accepted-case failures. The isolated reproduction confirmed the same cause.
 Those runs are not acceptance evidence. Source is frozen before restarting regression;
 no source edits will be made while that regression runs.
+
+## Real backend completion and partial-reference measurement correction
+
+The frozen `d366a903` full regression completed: 1,197 passed, 11 opt-in skips,
+two existing SDK warnings, 2,652.83 seconds (`integration-full-tests-03.log`).
+The browser regression passed five checks with two optional historical-report skips
+(`web-browser-tests-02.log`). Final Selection and Judge also passed a frozen native
+Gate 4→5 validation with synthetic candidates, two primaries/two backups and idempotent
+validation-only handoff: three real DeepSeek v4 Pro calls, 8,506 provider tokens,
+maximum input 7,538 characters (`phase34-live-native-final-result-01.json`).
+
+NK2R generation completed all three candidates on the original resumed micro run.
+The target MSA has 9,330 records and the exact bound target sequence hash. AFO produced
+full 398-residue target predictions, but the experimental/reference and generated target
+contain only residues 25–321 (297 observed residues). All shared residue identities
+agree. The protected complete-target RMSD collector rejected this incomplete reference,
+so each of the three exit-zero backend predictions was retried once by the old collector.
+No production allocation was executed; all six prediction attempts are retained.
+
+The v3 partial-reference adapter now validates the journaled population, input JSON,
+backend command, device, release identity, complete predicted chains and confidence
+token identities before retaining the first complete backend product. It does not crop
+the full prediction or change the protected RMSD kernel. Confidence and full-target
+clashes remain measured; the two alignment RMSDs remain unavailable with explicit reasons.
+Future partial-reference collection uses one attempt per candidate, avoiding a repeated
+complete-reference error. Failed backend slots and missing metrics remain separate.
+
+Measurement v2 preserves the old evidence and publishes a new immutable prediction
+projection. Replaying the saved NK2R outputs passed with 3/3 predictions, explicit RMSD
+missingness and no additional backend invocation. Measurement SHA:
+`42c425244feabb02bfcf34cbaa3d3e2f508956b9c1461725eb4b23b18e7a25d0`.
+The Scale projection adapter also accepted these real measurements without launching
+Scale (`scale-real-measurement-projection-01.json`). Six focused tests pass; whole Ruff
+and the configured mypy check pass (224 source files). Source was edited only after the
+frozen full regression finished. Final post-correction regression/native Gate 4 remain.

@@ -48,13 +48,20 @@ from .phase34_contracts import (
     MetricObservation,
     PilotMeasurement,
 )
+from .phase34_partial_reference import (
+    PartialReferencePrediction,
+    partial_reference_required,
+    recover_partial_reference_predictions,
+)
 from .session_store import confined
+
+MEASUREMENT_VERSION = "verified-prediction-missingness-v2"
 
 
 class PilotPredictionEvidence(FrozenContract):
     authority_id: str
     candidate_index_sha256: str
-    predictions: tuple[FullTargetPredictionRecord, ...]
+    predictions: tuple[FullTargetPredictionRecord | PartialReferencePrediction, ...]
     evidence_refs: tuple[ArtifactRef, ...]
     operational_failure: str | None = None
 
@@ -71,7 +78,8 @@ _PREDICTION_METRICS = {
 
 
 def attach_prediction_metrics(
-    measurement: PilotMeasurement, predictions: tuple[FullTargetPredictionRecord, ...]
+    measurement: PilotMeasurement,
+    predictions: tuple[FullTargetPredictionRecord | PartialReferencePrediction, ...],
 ) -> PilotMeasurement:
     """Keep prediction metrics distinct from generation/refolding metrics and their units."""
     by_id = {p.candidate_id: p for p in predictions}
@@ -89,8 +97,12 @@ def attach_prediction_metrics(
                 metric_id="independent-prediction-" + name,
                 value=getattr(prediction, name) if prediction else None,
                 unit=unit,
-                available=prediction is not None,
-                missing_reason=None if prediction else "Independent prediction not available",
+                available=prediction is not None and getattr(prediction, name) is not None,
+                missing_reason=(
+                    getattr(prediction, "unavailable_metric_reasons", {}).get(name)
+                    if prediction is not None
+                    else "Independent prediction not available"
+                ),
                 source=prediction.backend_identity if prediction else "independent-prediction",
                 definition_version=(
                     prediction.confidence_metric_definition_version
@@ -198,6 +210,7 @@ def evaluate_pilot(bridge: Any) -> dict[str, Any]:
     if (
         existing
         and existing["dependencies"].get("authority") == authority.authority_id
+        and existing["dependencies"].get("measurement_version") == MEASUREMENT_VERSION
         and (
             existing["dependencies"].get("execution_job_id", execution["job_id"])
             == execution["job_id"]
@@ -231,6 +244,7 @@ def evaluate_pilot(bridge: Any) -> dict[str, Any]:
             "authority": authority.authority_id,
             "execution_job_id": execution["job_id"],
             "prediction": result["sources"]["predictions"]["sha256"],
+            "measurement_version": MEASUREMENT_VERSION,
         },
     )
     return {"status": "pilot-measured", "measurement_sha256": canonical_model_sha256(measured)}
@@ -301,9 +315,12 @@ def measure_execution(
                 else PROFILE_SOURCE_SHA256_V1_6,
             )
         report_ref = _save_exact(root, report_path, report, "v3-pilot-filter-report")
-        prediction_path = artifacts / "predictions.json"
-        if prediction_path.exists():
-            evidence = load_model(prediction_path, PilotPredictionEvidence)
+        partial_reference = partial_reference_required(root, upstream)
+        prediction_path = artifacts / "predictions-v2.json"
+        legacy_prediction_path = artifacts / "predictions.json"
+        saved_path = prediction_path if prediction_path.exists() else legacy_prediction_path
+        if saved_path.exists():
+            evidence = load_model(saved_path, PilotPredictionEvidence)
             if (
                 evidence.authority_id != authority_id
                 or evidence.candidate_index_sha256 != upstream.candidate_index_ref.sha256
@@ -336,7 +353,8 @@ def measure_execution(
                         profile, config.full_target_prediction
                     ),
                     devices=kernel_plan.devices,
-                    maximum_attempts=executor.max_task_attempts,
+                    # Missing experimental coordinates cannot improve on retry.
+                    maximum_attempts=1 if partial_reference else executor.max_task_attempts,
                     created_at=now,
                 )
                 evidence = PilotPredictionEvidence(
@@ -355,6 +373,40 @@ def measure_execution(
                     index_sha256=upstream.candidate_index_ref.sha256,
                     error=error,
                 )
+        if partial_reference and not prediction_path.exists():
+            recovered, recovered_refs = recover_partial_reference_predictions(
+                root=root,
+                work=work_root / "work",
+                runtime=runtime,
+                artifacts=artifacts,
+                upstream=upstream,
+                prediction_config=config.full_target_prediction,
+                adapter_builder=_complex_prediction_adapter_builder(
+                    profile, config.full_target_prediction
+                ),
+                devices=load_model(
+                    upstream.pilot_bundle.pilot_plan.verify(root), PilotPlan
+                ).devices,
+            )
+            by_id = {p.candidate_id: p for p in evidence.predictions}
+            for prediction in recovered:
+                if (
+                    prediction.candidate_id in by_id
+                    and by_id[prediction.candidate_id] != prediction
+                ):
+                    raise AgentBoundaryError(
+                        "Verified prediction changed during partial-reference recovery"
+                    )
+                by_id[prediction.candidate_id] = prediction
+            evidence = evidence.model_copy(
+                update={
+                    "predictions": tuple(by_id[i] for i in sorted(by_id)),
+                    "evidence_refs": (*evidence.evidence_refs, *recovered_refs),
+                    "operational_failure": None
+                    if len(by_id) == len(index.candidates)
+                    else evidence.operational_failure,
+                }
+            )
         prediction_ref = _save_exact(root, prediction_path, evidence, "v3-pilot-predictions")
         measured = project_pilot_measurement(
             candidate_index=index,
@@ -377,27 +429,38 @@ def measure_execution(
             )
         candidate_strategy = {c.candidate_id: c.strategy_id for c in index.candidates}
         failed_prediction: Counter[str] = Counter()
+        metric_collection_failures = {
+            p.candidate_id: p.metric_collection_failed_attempts
+            for p in evidence.predictions
+            if isinstance(p, PartialReferencePrediction)
+        }
         for task in prediction_state.tasks:
             if task.strategy_id not in candidate_strategy:
                 raise AgentBoundaryError("Prediction execution log cites a foreign candidate")
-            failed_prediction[candidate_strategy[task.strategy_id]] += sum(
-                a.status == TaskStatus.FAILED for a in task.attempts
+            failed = sum(a.status == TaskStatus.FAILED for a in task.attempts)
+            unavailable_collection = metric_collection_failures.get(task.strategy_id, 0)
+            if unavailable_collection > failed:
+                raise AgentBoundaryError("Prediction recovery lost its source attempt history")
+            failed_prediction[candidate_strategy[task.strategy_id]] += (
+                failed - unavailable_collection
             )
-        measured = measured.model_copy(
-            update={
-                "arms": tuple(
-                    a.model_copy(
-                        update={
-                            "failed_generation_attempts": failed_generation[a.strategy_id],
-                            "failed_prediction_attempts": failed_prediction[a.strategy_id],
-                            "operational_failure_count": a.operational_failure_count
-                            + a.valid_execution_products
-                            - a.predicted_candidates,
-                        }
+        measured = PilotMeasurement.model_validate(
+            measured.model_copy(
+                update={
+                    "arms": tuple(
+                        a.model_copy(
+                            update={
+                                "failed_generation_attempts": failed_generation[a.strategy_id],
+                                "failed_prediction_attempts": failed_prediction[a.strategy_id],
+                                "operational_failure_count": a.operational_failure_count
+                                + a.valid_execution_products
+                                - a.predicted_candidates,
+                            }
+                        )
+                        for a in measured.arms
                     )
-                    for a in measured.arms
-                )
-            }
+                }
+            ).model_dump()
         )
         return {
             "status": "measured",

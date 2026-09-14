@@ -12,11 +12,15 @@ unavailable Judge and validation-only evidence. Protected scientific kernels are
 
 The isolated NK2R micro project reuses the current selected Site B and three-arm GPCR
 Design. All 21 YAMLs passed existing compiler/backend validation. Its first three-candidate
-run reached Stage 04 but all GPUs were occupied; bounded resource wait ended before any
-generation. The actual failure receipt was projected into an operational evidence dossier
-(`runtime/tmp/nk2r-operational-evidence-01.log`). No biological result is inferred.
+run initially exhausted its bounded GPU wait, then resumed on the same authority and
+generated all three candidates. Real AFO 3.1.4 predictions completed. Their full target
+has 398 residues while the experimental reference resolves 297; complete-target alignment
+RMSDs are therefore unavailable. The v3 adapter retains verified confidence and full-target
+clash metrics with explicit missingness, without changing the protected kernel or rerunning
+generation. Measurement v2 replay and idempotency pass
+(`runtime/tmp/nk2r-micro-measurement-02.json`). No biological conclusion is inferred.
 
-Outstanding closure criteria: a successful bounded real BoltzGen/AFO prediction/metrics
-chain, frozen real Diagnosis/Judge to Gate 4, and final regression. No production Pilot or
+Outstanding closure criteria: frozen real Diagnosis/Judge to Gate 4 and final regression
+after the partial-reference correction. No production Pilot or
 new scientific approval has occurred. This document is an active status record, not an
 acceptance certificate.

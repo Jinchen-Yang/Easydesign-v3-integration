@@ -717,7 +717,14 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
 
 def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | None = None) -> Any:
     """Authorization and integrity precede all recoverable argument diagnostics."""
-    if not isinstance(ref, str) or not re.fullmatch(RESULT_REF_PATTERN, ref):
+    # A model may mix a result file's hash with the numeric handle syntax. Treat
+    # that as unissued: offer owned IDs below, never resolve the hash implicitly.
+    malformed_handle = isinstance(ref, str) and bool(
+        re.fullmatch(r"result:[a-f0-9]{32,64}", ref)
+    )
+    if not isinstance(ref, str) or (
+        not re.fullmatch(RESULT_REF_PATTERN, ref) and not malformed_handle
+    ):
         raise AgentBoundaryError("Invalid scoped result reference")
     execution = bridge.store.latest_execution(bridge.thread)
     if execution_id is not None and (
@@ -725,7 +732,7 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
     ):
         raise AgentBoundaryError("Result read is not bound to the current execution")
     handle = ref.startswith("result:")
-    if handle:
+    if handle and not malformed_handle:
         issued = bridge.store.db.execute(
             "SELECT thread,payload FROM events WHERE seq=? AND kind='tool-view'",
             (int(ref.split(":", 1)[1]),),

@@ -66,15 +66,22 @@ class ReferenceRepairModel(ProjectionModel):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reference_kind", ["unknown-id", "hash-as-handle"])
 async def test_actual_harness_recovers_unissued_id_with_explicit_authorized_read(
     bridge: Any,
+    reference_kind: str,
 ) -> None:
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     goal = "Inspect the existing evidence only"
     execution = b.store.begin_execution(b.thread, goal)["execution_id"]
     ref = offload(b, execution)
+    requested = (
+        "result:" + ref.removeprefix("/result-").removesuffix(".json")
+        if reference_kind == "hash-as-handle"
+        else UNKNOWN
+    )
     models = {
-        role: ReferenceRepairModel(role=role, result_ref=UNKNOWN, bad_selector={"fields": KEYS})
+        role: ReferenceRepairModel(role=role, result_ref=requested, bad_selector={"fields": KEYS})
         for role in PHASE2_ALLOWED
     }
     graph = create_harness(

@@ -79,13 +79,14 @@ async def test_native_synthesis_schema_repair_keeps_dossier_and_original_budget(
     from easydesign.agent.contracts import AgentBoundaryError
     from easydesign.agent.harness import RoleBoundary
     from easydesign.agent.session_store import compact
+    from tests.unit.agent.test_site_portfolio import ranked_decision
 
     bridge = site_bridge
     execution = bridge.store.begin_execution(bridge.thread, "SYNTHETIC isolated native repair")
     token = bind(bridge)
     try:
         dossier = persist_dossier(bridge, handoff(), execution["execution_id"])
-        chosen = decision(dossier["candidate_comparison"][0]["candidate_id"])
+        chosen = ranked_decision([dossier["candidate_comparison"][0]["candidate_id"]])
         guard = RoleBoundary(
             bridge,
             "site",
@@ -115,12 +116,12 @@ async def test_native_synthesis_schema_repair_keeps_dossier_and_original_budget(
             assert all(isinstance(message, HumanMessage) for message in current.messages)
             assert all("x" * 80000 not in message.content for message in current.messages)
             if exhausted or len(calls) == 1:
-                diagnostic = guard.contract_error("SYNTHETIC missing SiteDecision fields")
+                diagnostic = guard.contract_error("SYNTHETIC missing RankedSiteDecision fields")
                 return SimpleNamespace(
                     result=[
                         AIMessage(
                             content="x" * 80000,
-                            tool_calls=[{"name": "SiteDecision", "args": {}, "id": "bad"}],
+                            tool_calls=[{"name": "RankedSiteDecision", "args": {}, "id": "bad"}],
                             response_metadata={"stop_reason": "max_tokens"},
                         ),
                         ToolMessage(content=diagnostic, tool_call_id="bad"),
@@ -132,7 +133,11 @@ async def test_native_synthesis_schema_repair_keeps_dossier_and_original_budget(
                     AIMessage(
                         content="",
                         tool_calls=[
-                            {"name": "SiteDecision", "args": chosen.model_dump(), "id": "good"}
+                            {
+                                "name": "RankedSiteDecision",
+                                "args": chosen.model_dump(),
+                                "id": "good",
+                            }
                         ],
                     )
                 ],

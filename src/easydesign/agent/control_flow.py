@@ -230,11 +230,19 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
             "Independently critique the current runtime-bound scientific proposal, "
             "its evidence, uncertainty and limitations for Scientist review.",
         )
-    reviewable = assessment.verdict == "ready-to-ask" or (
-        gate == "target-structure"
-        and assessment.verdict == "reject"
-        and assessment.recommendation is not None
-        and assessment.recommendation.status == "DISCOURAGED"
+    ranked_site = (
+        gate == "site-hotspot"
+        and snapshot.get("final_site_decision", {}).get("kind") == "RankedSiteDecision"
+    )
+    reviewable = (
+        ranked_site
+        or assessment.verdict == "ready-to-ask"
+        or (
+            gate == "target-structure"
+            and assessment.verdict == "reject"
+            and assessment.recommendation is not None
+            and assessment.recommendation.status == "DISCOURAGED"
+        )
     )
     if not reviewable:
         return RuntimeAction(

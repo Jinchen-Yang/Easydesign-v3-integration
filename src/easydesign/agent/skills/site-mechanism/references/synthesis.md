@@ -1,6 +1,6 @@
 # Site scientific decision from a trusted dossier
 
-Research is complete. Return one concise SiteDecision using only supplied candidate IDs.
+Research is complete. Return one concise RankedSiteDecision using only supplied candidate IDs.
 Runtime owns membership, chain, residue numbering, mapping, geometry and evidence binding and
 will hydrate the authoritative SiteIntent. Do not regenerate residue arrays, mapping tables,
 evidence IDs or a research-topic checklist. This also applies to explanatory prose: refer to
@@ -8,14 +8,20 @@ supplied candidate IDs/regions and interpret the implications without re-enumera
 identities, numbering conversions or numerical geometry facts. Runtime attaches those facts.
 Do not search, call scientific tools or reopen Gate 1.
 
-Choose the candidate most defensible for the user's biological objective and delivery route.
-Use the supplied decision-question scope, authoritative runtime facts and scoped source evidence.
-Include at least one other supplied candidate ID in alternative_candidate_ids when multiple
-candidates exist, including rejected/avoid options: comparing them does not recommend them.
-Use an empty list only when the dossier supplies a single candidate. A kernel score or name
-does not choose a winner. Explain why
-the evidence favors your selection and what would falsify it. A qualified DISCOURAGED hypothesis
-is valid; insufficient mechanistic evidence must remain explicit rather than become certainty.
+You are the sole author of candidate ranking. Return every supplied candidate once in
+relative preference order, with its own reason, mechanism, approach, supporting evidence,
+risks, unresolved items and confidence. Runtime labels selectable entries A (Preferred),
+B (Alternative), C (Exploratory), and displays hard-invalid entries separately as Blocked.
+VALID candidates are ranked. INVALID candidates are blocked. Weak exposure, weak evidence,
+high scientific risk and unknown whole-binder access lower rank or confidence; they do not
+remove a candidate from consideration. A can be the best of three weak candidates. Make a
+useful order from the available evidence and state why you might be wrong. Alternative means
+an option worth comparing, not proven feasibility. Do not create a winner-only verdict.
+Order candidates decisively when evidence distinguishes them. Only if you cannot distinguish
+adjacent hard-valid candidates, set tied_with_previous with a specific tie_reason explaining
+which missing information could separate them. Common uncertainty alone is not a tie.
+Judge provides a lightweight second opinion and may flag an issue affecting ranking; Judge
+cannot replace your ordering. Scientist chooses any selectable entry or requests revision.
 
 Use strongest relevant primary evidence and important contradiction. A verified source is not
 proof of entailment. Preserve receptor/species/state/construct/valency/assay transfer limits;

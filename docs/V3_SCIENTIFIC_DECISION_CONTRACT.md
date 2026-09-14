@@ -11,9 +11,10 @@
 Gate 2 主输出为 A / B / C 等完整候选比较，每项绑定自己的 residues、evidence、risks
 和 selection identity。Scientist 明确选择后才推进，Runtime 硬冲突仍不可绕过。
 
-本补充是已确认的产品契约，**portfolio 代码尚未实现**。它优先于下文及所链接历史文档中
+本补充已实现为 `ranked-site-portfolio-v1`，见
+[实现与验证记录](PHASE2_RANKED_SITE_IMPLEMENTATION_20260914.md)。它优先于下文及所链接历史文档中
 Gate 2 的单 winner、以 DISCOURAGED / Judge availability 限制普通选择、或要求额外
-OVERRIDE 的规则；其他 Gate 不受此补充影响。不得把本次文档变更表述为运行时功能已交付。
+OVERRIDE 的规则；其他 Gate 不受此补充影响。
 
 已验收的 Phase 2 实现仍由提交 `0859a5e583b7f44bf417e77741a8914831ca9e25` 和标签
 `easydesign-v3-phase2-frozen-20260914` 固定。旧验收、记录、标签和科学意见保持原样；

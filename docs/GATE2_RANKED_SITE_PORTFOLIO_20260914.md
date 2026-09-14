@@ -1,6 +1,7 @@
 # Gate 2：Ranked Site Portfolio
 
-状态：2026-09-14 用户确认的产品契约；代码实施待完成。
+状态：2026-09-14 产品契约已落地为 `ranked-site-portfolio-v1`；
+实施与验收见 [实现记录](PHASE2_RANKED_SITE_IMPLEMENTATION_20260914.md)。
 适用范围：Gate 2 `site-hotspot`。其他 Gate、Scientist 的最终决策权与 Runtime 事实权不变。
 
 ## 核心原则
@@ -40,7 +41,7 @@ intracellular 而任务明确要求 extracellular。硬冲突不能由模型措�
 - A — Preferred：当前优先尝试。
 - B — Alternative：第二方案。
 - C — Exploratory：较低优先级的探索方案。
-- 更多候选继续按优先级排列；候选数量不足时如实展示实际数量。
+- 当前 Research/kernel 提供 1–3 个候选；数量不足时如实展示，不补造候选。
 
 有比较依据就明确排序。两个候选都有未知，不能成为拒绝排序或反复并列的理由。
 应结合用户目标、现有结构/几何、证据、机制假设和风险，给出最合理的尝试顺序。
@@ -68,7 +69,9 @@ intracellular 而任务明确要求 extracellular。硬冲突不能由模型措�
 ## Site、Judge、Runtime 与 Scientist
 
 Site & Mechanism 提出完整候选比较和明确排序。Judge 检查比较理由、证据解释、重要风险
-及可能改变排序的信息，可以给出有依据的排序调整和 claim qualification。
+及可能改变排序的信息，可以提出有依据的调整建议和 claim qualification。
+SiteDecision 是唯一排序作者；Judge 不直接修改顺序。需要调整时由 SiteDecision 修订，
+Runtime 为新版本重新绑定卡片。
 某句因果推断过强时，保留原 claim 与独立限定，把相关内容转为风险/未知；候选仍合法就
 继续形成可选择卡片。Judge 的不推荐或科学意见分歧不能自行改变 Runtime 合法性。
 Judge 指出的具体硬事实冲突须通过 Runtime 的结构化一致性检查落实。
@@ -111,5 +114,5 @@ portfolio revision/digest。人类响应引用稳定 candidate ID 和当前 card
    重排、重复提交和 restart，保证不越过 Scientist 或其他 Gate。
 7. 可纠正的 claim 进入 qualification/uncertainty，不使合法候选或整张卡失败。
 
-当前文档采纳不宣称这些代码验收已经完成。原 Phase 2 冻结提交与验收保持有效历史记录；
+实现状态与验收证据记录在独立的实现记录中。原 Phase 2 冻结提交与验收保持有效历史记录；
 新 portfolio 的实现与验证另行记录，不修改原 GPCR 运行或伪造新的 frozen PASS。

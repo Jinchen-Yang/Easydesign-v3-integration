@@ -375,7 +375,7 @@ async def test_saved_dossier_resumes_synthesis_without_research(site_bridge: Any
     class SynthesisOnly(HostileCoordinator):
         def answer(self, messages: Any) -> AIMessage:
             if self.role == "site":
-                assert "SiteDecision" in self.offered, "Completed Research was repeated"
+                assert "RankedSiteDecision" in self.offered, "Completed Research was repeated"
             return super().answer(messages)
 
     models = {r: SynthesisOnly(role=r) for r in PHASE2_ALLOWED}

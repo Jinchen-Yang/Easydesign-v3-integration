@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import ConfigDict, Field, model_validator
 
 from .contracts import ResearchConclusionMismatch, StrictDTO
-from .site_contracts import SiteIntent, SiteSelection
+from .site_contracts import SiteIntent, SitePortfolioEntry, SiteSelection
 
 if TYPE_CHECKING:
     from .phase2 import Phase2Bridge
@@ -69,6 +69,63 @@ class SiteDecision(StrictDTO):
         return self
 
 
+class RankedCandidate(StrictDTO):
+    candidate_id: CandidateId
+    tied_with_previous: bool = Field(
+        default=False,
+        description="Only when the evidence cannot "
+        "distinguish this candidate from the preceding hard-valid candidate. Shared uncertainty "
+        "alone is not a tie. Supply the specific missing discriminator in tie_reason.",
+    )
+    tie_reason: DecisionPoint | None = None
+    why_ranked: DecisionText
+    mechanistic_rationale: DecisionText
+    approach_rationale: DecisionText
+    supporting_evidence: list[DecisionPoint] = Field(min_length=1, max_length=3)
+    major_risks: list[DecisionPoint] = Field(default_factory=list, max_length=4)
+    uncertainty: list[DecisionPoint] = Field(min_length=1, max_length=4)
+    confidence: Literal["low", "medium", "high"]
+
+    @model_validator(mode="after")
+    def justified_tie(self) -> RankedCandidate:
+        if self.tied_with_previous != bool(self.tie_reason):
+            raise ValueError("A tie requires its specific missing discriminator")
+        return self
+
+
+class RankedSiteDecision(StrictDTO):
+    """SiteDecision is the sole ranking authority; Runtime supplies exact facts."""
+
+    candidates: list[RankedCandidate] = Field(
+        min_length=1,
+        max_length=3,
+        description="Every supplied candidate exactly once, best first. Rank all hard-valid "
+        "candidates relatively, even if all are weak. Include hard-invalid candidates last for "
+        "explanation; Runtime displays them separately without a rank. Unknown accessibility, "
+        "weak evidence and scientific risks lower rank/confidence, never eligibility.",
+    )
+    avoid_residue_ids: list[CandidateId] = Field(
+        default_factory=list,
+        max_length=40,
+        description="Only explicit residue exclusions from supplied constraint IDs. Do not turn "
+        "scientific uncertainty, cysteine membership or poor exposure into hard exclusions.",
+    )
+
+    @model_validator(mode="after")
+    def distinct(self) -> RankedSiteDecision:
+        ids = [candidate.candidate_id for candidate in self.candidates]
+        if self.candidates[0].tied_with_previous:
+            raise ValueError("The first candidate has no preceding candidate to tie with")
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each supplied candidate must occur exactly once")
+        return self
+
+
+def parse_site_decision(value: dict[str, Any]) -> SiteDecision | RankedSiteDecision:
+    # Historical persisted decisions retain their original contract.
+    return (RankedSiteDecision if "candidates" in value else SiteDecision).model_validate(value)
+
+
 def candidate_name(candidate: dict[str, Any]) -> str:
     """Identify a runtime candidate by its existing ID and verified location, not a claim."""
     segments = candidate.get("location", {}).get("segments", [])
@@ -117,6 +174,7 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
                         )
                     }
                     for label in hypothesis["hotspot_label_seq_ids"]
+                    if label in rows
                 ],
                 "geometry_scope": "Prepared-target calculation with its explicit BiologyContext. "
                 "Its missing-annotation limitations do not negate independently retrieved "
@@ -176,7 +234,7 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
 
 
 def hydrate_site_decision(
-    bridge: Phase2Bridge, decision: SiteDecision, execution_id: str | None
+    bridge: Phase2Bridge, decision: SiteDecision | RankedSiteDecision, execution_id: str | None
 ) -> SiteIntent:
     """Resolve IDs in the exact runtime dossier, without alignment or model fact copying."""
     from .site_dossier import validate_dossier_intent
@@ -197,12 +255,16 @@ def hydrate_site_decision(
     return intent
 
 
-def compile_site_decision(dossier: dict[str, Any], decision: SiteDecision) -> SiteIntent:
+def compile_site_decision(
+    dossier: dict[str, Any], decision: SiteDecision | RankedSiteDecision
+) -> SiteIntent:
     """Pure trusted hydration after the caller verifies the dossier's binding/artifacts.
 
     This is not a model tool. Production enters through hydrate_site_decision;
     read-only validation replays can use an independently verified saved dossier.
     """
+    if isinstance(decision, RankedSiteDecision):
+        return compile_ranked_decision(dossier, decision)
     candidates = {c["candidate_id"]: c for c in dossier["candidate_comparison"]}
     selected_ids = [decision.selected_candidate_id, *decision.alternative_candidate_ids]
     if not set(selected_ids).issubset(candidates):
@@ -253,3 +315,74 @@ def compile_site_decision(dossier: dict[str, Any], decision: SiteDecision) -> Si
         avoid_label_seq_ids=excluded,
     )
     return intent
+
+
+def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecision) -> SiteIntent:
+    candidates = {c["candidate_id"]: c for c in dossier["candidate_comparison"]}
+    if {c.candidate_id for c in decision.candidates} != set(candidates):
+        raise ResearchConclusionMismatch(
+            "Rank every supplied candidate exactly once: " + ", ".join(candidates)
+        )
+    constraints = {c["residue_id"]: c["design_label"] for c in dossier["residue_constraints"]}
+    if not set(decision.avoid_residue_ids).issubset(constraints):
+        raise ResearchConclusionMismatch("Choose only supplied residue constraint IDs")
+    excluded = sorted({constraints[key] for key in decision.avoid_residue_ids})
+    entries: list[SitePortfolioEntry] = []
+    ranked_count = 0
+    preference_group = 0
+    for interpretation in decision.candidates:
+        candidate = candidates[interpretation.candidate_id]
+        evaluation = candidate["deterministic_evaluation"]
+        original = candidate["research_hypothesis"]
+        block = evaluation.get("cause") if evaluation["status"] == "BLOCKED" else None
+        if set(original["hotspot_label_seq_ids"]) & set(excluded):
+            block = "explicit-avoid-residue-constraint"
+        rank = None if block else "ABC"[ranked_count]
+        tied_id = None
+        if interpretation.tied_with_previous:
+            if block or not entries or not entries[-1].selectable:
+                raise ResearchConclusionMismatch(
+                    "A tie must connect adjacent hard-valid candidates"
+                )
+            tied_id = entries[-1].candidate_id
+        if rank:
+            ranked_count += 1
+            if not tied_id:
+                preference_group += 1
+        site = SiteSelection.model_validate(
+            {
+                **original,
+                "name": candidate_name(candidate),
+                "role": "primary" if rank == "A" else "backup",
+                "rationale": interpretation.why_ranked,
+            }
+        )
+        entries.append(
+            SitePortfolioEntry.model_validate(
+                {
+                    **interpretation.model_dump(mode="json", exclude={"tied_with_previous"}),
+                    "tied_with_candidate_id": tied_id,
+                    "preference_group": preference_group if rank else None,
+                    "site": site,
+                    "rank": rank,
+                    "selectable": block is None,
+                    "hard_block": block,
+                }
+            )
+        )
+    entries.sort(key=lambda entry: entry.rank or "Z")
+    primary = entries[0]
+    return SiteIntent(
+        portfolio=entries,
+        selected_site=primary.site,
+        alternatives=[entry.site for entry in entries[1:]],
+        positive_evidence=primary.supporting_evidence,
+        mechanistic_rationale=primary.mechanistic_rationale,
+        accessibility_rationale=primary.approach_rationale,
+        binder_approach=primary.approach_rationale,
+        risks=primary.major_risks,
+        uncertainty=primary.uncertainty,
+        recommendation="SUPPORTED",
+        scope="mechanistic" if dossier["decision_questions"] else "structural-exploration",
+        avoid_label_seq_ids=excluded,
+    )

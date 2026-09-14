@@ -472,6 +472,7 @@ class SessionStore:
         revision_gate: Any = None,
         optional_reason: str | None = None,
         explicit_acknowledgement: str | None = None,
+        selected_option_id: str | None = None,
     ) -> dict[str, Any]:
         proposal = self.card(thread, card)
         if proposal.gate_type not in {"target-structure", "site-hotspot", "design-specification"}:
@@ -499,12 +500,42 @@ class SessionStore:
             raise AgentBoundaryError(
                 "OVERRIDE requires explicit acknowledgement and a human rationale"
             )
+        from .site_portfolio import is_portfolio_card
+
+        ranked = is_portfolio_card(proposal)
+        if ranked and response == "override":
+            raise AgentBoundaryError(
+                "Choose a selectable candidate with APPROVE; no override is required"
+            )
+        candidate_warnings: list[str] = []
+        if ranked and response == "approve":
+            # Explicit APPROVE selects the displayed default; merely displaying A never acts.
+            selected_option_id = selected_option_id or proposal.option_id
+            option = next(
+                (
+                    option
+                    for option in proposal.options
+                    if option["option_id"] == selected_option_id
+                ),
+                None,
+            )
+            if option is None or not option["eligible"]:
+                raise AgentBoundaryError("Choose one selectable candidate from the displayed card")
+            risks = option.get("major_risks", [])
+            assert isinstance(risks, list)
+            candidate_warnings = [str(risk) for risk in risks]
+        elif selected_option_id is not None:
+            raise AgentBoundaryError("Candidate selection requires a ranked Site card and APPROVE")
         if response in {"approve", "override"}:
             if proposal.judge_status == "BLOCKED":
                 raise AgentBoundaryError(
                     "BLOCKED: revise the input or hard constraint; no override"
                 )
-            if response == "approve" and proposal.judge_status in {"DISCOURAGED", None}:
+            if (
+                response == "approve"
+                and proposal.judge_status in {"DISCOURAGED", None}
+                and not ranked
+            ):
                 raise AgentBoundaryError("Review the warning and use explicit OVERRIDE or REVISE")
             if response == "override" and proposal.judge_status not in {"DISCOURAGED", None}:
                 raise AgentBoundaryError("OVERRIDE is only for a warned, discouraged proposal")
@@ -517,7 +548,15 @@ class SessionStore:
                 "revision_gate": revision_gate,
                 "optional_reason": optional_reason,
                 "explicit_acknowledgement": explicit_acknowledgement,
-                "recorded_warnings": proposal.warnings,
+                "selected_option_id": selected_option_id,
+                "recorded_warnings": list(
+                    dict.fromkeys(
+                        [
+                            *proposal.warnings,
+                            *candidate_warnings,
+                        ]
+                    )
+                ),
             }
         )
         previous = self.response(thread, card)

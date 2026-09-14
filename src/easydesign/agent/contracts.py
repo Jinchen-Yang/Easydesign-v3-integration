@@ -9,7 +9,9 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    SerializerFunctionWrapHandler,
     StrictBool,
+    model_serializer,
     model_validator,
 )
 
@@ -253,11 +255,21 @@ class DecisionOutcome(StrictDTO):
     revision_gate: GateType | None = None
     optional_reason: ShortText | None = None
     explicit_acknowledgement: ShortText | None = None
+    selected_option_id: Identifier | None = None
     recorded_warnings: list[ShortText] = Field(default_factory=list, max_length=24)
     source_role: Literal["human-cli"] = "human-cli"
 
+    @model_serializer(mode="wrap")
+    def serialize_choice(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        if self.selected_option_id is None:
+            value.pop("selected_option_id", None)
+        return value
+
     @model_validator(mode="after")
     def validate_steering(self) -> DecisionOutcome:
+        if self.selected_option_id is not None and self.action != "APPROVE":
+            raise ValueError("Candidate selection accompanies ordinary APPROVE only")
         if not self.human_actor.strip():
             raise ValueError("An identified human is required")
         if self.action == "REVISE":

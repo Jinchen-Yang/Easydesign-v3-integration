@@ -101,6 +101,13 @@ class RecoverySiteJudgeVerdict(SiteJudgeVerdict):
 
 def review_prompt(*, recovery: bool = False) -> str:
     return (
+        "For a RankedSiteDecision, provide a lightweight second opinion on the supplied order. "
+        "SiteDecision alone owns ranking; do not replace its order or choose a new winner. "
+        "Flag a material issue that might change ranking in a short reason naming the candidate. "
+        "Qualify overclaims and add risks/uncertainty. Weak evidence, low exposure, unknown "
+        "whole-binder access or high scientific risk affect rank/confidence, not eligibility. "
+        "Runtime alone blocks hard-invalid candidates. Scientist may select any hard-valid "
+        "candidate, including B/C, even with a negative or unavailable independent review. "
         "Independently review this pending Site/Hotspot proposal for a Scientist decision. "
         "This is early selection, not proof of binder efficacy. Runtime owns identity, exact "
         "mapping, membership, source provenance and topology. Treat the supplied Site opinion "

@@ -294,6 +294,39 @@ def summarize_site_facts(
     }
 
 
+def hard_site_conflict(analysis: dict[str, Any], labels: list[int]) -> str | None:
+    """Only existing authoritative membership and explicit constraints determine eligibility."""
+    mapped = {row["label_seq_id"] for row in analysis["observed_facts"]["mapping"]}
+    observed = {
+        row["residue"]["label_seq_id"] for row in analysis["derived_metrics"]["sasa"]["residues"]
+    }
+    if not labels or len(set(labels)) != len(labels) or not set(labels).issubset(mapped):
+        return "invalid-approved-mapping"
+    if not set(labels).issubset(observed):
+        return "missing-required-coordinates"
+    biology = analysis.get("declared_biology") or {}
+    excluded = {
+        n
+        for feature in biology.get("features", [])
+        if feature["kind"] == "exclude"
+        for n in feature["label_seq_ids"]
+    }
+    if set(labels) & excluded:
+        return "explicit-excluded-region"
+    required = biology.get("required_site_compartment")
+    segments = {
+        row["segment"] for row in biology.get("topology", []) if row["label_seq_id"] in labels
+    }
+    # TM/pore membership, exposure and missing annotations never prove sidedness.
+    if required == "extracellular" and any(segment.startswith("ICL") for segment in segments):
+        return "explicit-compartment-conflict"
+    if required == "intracellular" and any(
+        segment.startswith("ECL") or segment == "ECD" for segment in segments
+    ):
+        return "explicit-compartment-conflict"
+    return None
+
+
 def evaluate_site(
     root: Path, bundle_path: Path, analysis: dict[str, Any], labels: list[int]
 ) -> dict[str, Any]:
@@ -322,6 +355,14 @@ def evaluate_site(
             "status": "BLOCKED",
             "cause": "explicit-excluded-region",
             "remedy": "Change the hotspot or explicitly revise the upstream exclusion constraint.",
+        }
+    hard_conflict = hard_site_conflict(analysis, labels)
+    if hard_conflict:
+        return {
+            "status": "BLOCKED",
+            "cause": hard_conflict,
+            "remedy": "Choose a compatible region or explicitly revise "
+            "the upstream hard constraint.",
         }
     regions, _, validation = normalize_manual_regions(
         bundle=bundle,

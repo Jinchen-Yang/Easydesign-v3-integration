@@ -14,7 +14,7 @@ from .contracts import (
     ResearchConclusionMismatch,
 )
 from .site_authority import sequence_topology
-from .site_decision import SiteDecision, compile_site_decision
+from .site_decision import compile_site_decision, parse_site_decision
 
 
 class JudgeReviewPacket(EvidenceBinding):
@@ -70,12 +70,22 @@ def validate_candidate_facts(
     candidate_ids = [c["candidate_id"] for c in dossier["candidate_comparison"]]
     if len(candidate_ids) != len(set(candidate_ids)):
         raise AgentBoundaryError("HARD_FACT_CONTRADICTION: duplicate candidate identity")
+    from .site_evidence import hard_site_conflict
+
     for candidate in dossier["candidate_comparison"]:
         labels = candidate["research_hypothesis"]["hotspot_label_seq_ids"]
-        if len(labels) != len(set(labels)) or not set(labels).issubset(by_label):
+        evaluation = candidate["deterministic_evaluation"]
+        conflict = hard_site_conflict(facts, labels)
+        if evaluation["status"] == "BLOCKED":
+            if conflict != evaluation.get("cause"):
+                raise AgentBoundaryError("HARD_FACT_CONTRADICTION: unsubstantiated candidate block")
+        elif conflict:
+            raise AgentBoundaryError("HARD_FACT_CONTRADICTION: candidate hard error was hidden")
+        known_labels = [label for label in labels if label in by_label]
+        if len(labels) != len(set(labels)) or (not conflict and len(known_labels) != len(labels)):
             raise AgentBoundaryError("HARD_FACT_CONTRADICTION: candidate membership mismatch")
         memberships.append(set(labels))
-        positions = [by_label[label]["canonical_position"] for label in labels]
+        positions = [by_label[label]["canonical_position"] for label in known_labels]
         location = candidate["location"]
         if location["canonical_positions"] != positions:
             raise AgentBoundaryError(
@@ -86,6 +96,14 @@ def validate_candidate_facts(
         ):
             raise AgentBoundaryError("HARD_FACT_CONTRADICTION: authoritative topology mismatch")
         evaluation = candidate["deterministic_evaluation"]
+        if conflict:
+            # No metrics are asserted for a hard-invalid candidate; its exact submitted labels
+            # and verified exclusion cause are retained, without fabricated mapping rows.
+            if evaluation.get("surface_evidence") or evaluation.get("mapped_residues"):
+                raise AgentBoundaryError(
+                    "HARD_FACT_CONTRADICTION: blocked candidate asserts metrics"
+                )
+            continue
         for collection in ("surface_evidence", "mapped_residues"):
             members = [row["label_seq_id"] for row in evaluation.get(collection, [])]
             if len(members) != len(set(members)) or set(members) != set(labels):
@@ -134,7 +152,12 @@ def validate_candidate_facts(
             if feature["kind"] == "exclude"
             for label in feature["label_seq_ids"]
         )
-    if excluded.intersection(intent["selected_site"]["hotspot_label_seq_ids"]):
+    selectable = (
+        [entry["site"] for entry in intent["portfolio"] if entry["selectable"]]
+        if intent.get("portfolio")
+        else [intent["selected_site"]]
+    )
+    if any(excluded.intersection(site["hotspot_label_seq_ids"]) for site in selectable):
         raise AgentBoundaryError(
             "HARD_FACT_CONTRADICTION: selected hotspot violates avoid constraint"
         )
@@ -212,13 +235,14 @@ def build_judge_packet(
         raise AgentBoundaryError("HARD_FACT_CONTRADICTION: approved Target identity mismatch")
     if decision is not None:
         if (
-            compile_site_decision(dossier, SiteDecision.model_validate(decision)).model_dump(
-                mode="json"
-            )
+            compile_site_decision(dossier, parse_site_decision(decision)).model_dump(mode="json")
             != intent
         ):
             raise AgentBoundaryError("HARD_FACT_CONTRADICTION: SiteDecision hydration mismatch")
-        final = {"kind": "SiteDecision", "interpretation": decision}
+        final = {
+            "kind": "RankedSiteDecision" if intent.get("portfolio") else "SiteDecision",
+            "interpretation": decision,
+        }
     else:
         # Old immutable dossier-backed proposals may predate persisted SiteDecision events.
         # Preserve their actual interpretation; do not manufacture a historical model output.

@@ -114,7 +114,8 @@ def add_fact_references(packet: dict[str, Any], canonical: dict[str, Any] | None
                                     "design_residue": rows[label]["amino_acid"],
                                 }
                                 for label in candidate["design_labels"]
-                                if rows[label]["canonical_position"] is not None
+                                if label in rows
+                                and rows[label]["canonical_position"] is not None
                                 and interval[0] <= rows[label]["canonical_position"] <= interval[1]
                             ],
                         }
@@ -123,7 +124,7 @@ def add_fact_references(packet: dict[str, Any], canonical: dict[str, Any] | None
                     "unmapped_design_labels": [
                         label
                         for label in candidate["design_labels"]
-                        if rows[label]["canonical_position"] is None
+                        if label not in rows or rows[label]["canonical_position"] is None
                     ],
                 }
             )
@@ -372,7 +373,12 @@ def render_fact(packet: dict[str, Any], key: str) -> str:
     if kind == "candidate":
         rows = {r["label_seq_id"]: r for r in _rows(packet)}
         pairs = ", ".join(
-            f"{rows[label]['canonical_position']}→{label}" for label in value["design_labels"]
+            (
+                f"{rows[label]['canonical_position']}→{label}"
+                if label in rows
+                else f"unmapped→{label}"
+            )
+            for label in value["design_labels"]
         )
         return f"{value['candidate_id']} (canonical→design: {pairs})"
     if kind == "topology":
@@ -383,7 +389,11 @@ def render_fact(packet: dict[str, Any], key: str) -> str:
         topology = value.get(
             "sequence_topology",
             sequence_topology(
-                [rows[label]["canonical_position"] for label in candidate["design_labels"]],
+                [
+                    rows[label]["canonical_position"]
+                    for label in candidate["design_labels"]
+                    if label in rows
+                ],
                 packet["reference_annotations"],
             ),
         )

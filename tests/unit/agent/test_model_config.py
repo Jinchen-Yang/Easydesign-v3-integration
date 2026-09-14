@@ -190,7 +190,7 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
 
     from easydesign.agent.harness import RoleBoundary
     from easydesign.agent.phase2 import Phase2Bridge
-    from easydesign.agent.site_decision import SiteDecision
+    from easydesign.agent.site_decision import RankedSiteDecision
 
     requests = []
 
@@ -235,7 +235,7 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
     graph = create_agent(
         model,
         tools=site_tools,
-        response_format=ToolStrategy(SiteDecision, handle_errors=boundary.contract_error),
+        response_format=ToolStrategy(RankedSiteDecision, handle_errors=boundary.contract_error),
         middleware=[boundary],
         system_prompt="Submit the test hypothesis",
     )
@@ -245,14 +245,14 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
         )
     assert len(requests) == 1
     if reasoning == "none":
-        assert [t["function"]["name"] for t in requests[0]["tools"]] == ["SiteDecision"]
+        assert [t["function"]["name"] for t in requests[0]["tools"]] == ["RankedSiteDecision"]
         assert requests[0]["tool_choice"] == {
             "type": "function",
-            "function": {"name": "SiteDecision"},
+            "function": {"name": "RankedSiteDecision"},
         }
         assert requests[0]["thinking"] == {"type": "disabled"}
     else:
-        assert [t["name"] for t in requests[0]["tools"]] == ["SiteDecision"]
+        assert [t["name"] for t in requests[0]["tools"]] == ["RankedSiteDecision"]
         assert requests[0]["thinking"]["type"] == "enabled"
         assert requests[0]["output_config"] == {"effort": reasoning}
         assert requests[0].get("tool_choice", {"type": "auto"}) == {"type": "auto"}

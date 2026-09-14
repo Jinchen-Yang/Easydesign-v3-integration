@@ -501,6 +501,19 @@ class Phase2Bridge(TargetBridge):
 
         check_fact_claims(intent.model_dump(mode="json"), target["evidence"])
         research = self.validate_site_research(intent)
+        if intent.portfolio is not None:
+            from .site_decision import hydrate_site_decision, parse_site_decision
+
+            decision_event = self.thread_latest("site-decision")
+            if decision_event is None:
+                raise AgentBoundaryError("Ranked Site requires its bound SiteDecision")
+            bound_intent = hydrate_site_decision(
+                self,
+                parse_site_decision(decision_event["decision"]),
+                decision_event["execution_id"],
+            )
+            if bound_intent != intent:
+                raise AgentBoundaryError("Ranked Site differs from its bound SiteDecision")
         dossier_event = self.thread_latest("site-evidence-dossier")
         execution = self.store.latest_execution(self.thread)
         if (
@@ -531,10 +544,30 @@ class Phase2Bridge(TargetBridge):
             evaluate_site(target["root"], target["bundle_path"], facts, a.hotspot_label_seq_ids)
             for a in intent.alternatives
         ]
-        if any(a["status"] == "BLOCKED" for a in alternatives):
+        if intent.portfolio is None and any(a["status"] == "BLOCKED" for a in alternatives):
             raise AgentBoundaryError(
                 "An alternative site contains a hard mapping/constraint violation"
             )
+        portfolio_evaluations = {}
+        if intent.portfolio is not None:
+            for entry, checked in zip(intent.portfolio, [evaluation, *alternatives], strict=True):
+                conflict = checked.get("cause") if checked["status"] == "BLOCKED" else None
+                if set(entry.site.hotspot_label_seq_ids) & set(intent.avoid_label_seq_ids):
+                    conflict = "explicit-avoid-residue-constraint"
+                if entry.hard_block != conflict or entry.selectable != (conflict is None):
+                    raise AgentBoundaryError(
+                        "Portfolio eligibility contradicts Runtime hard checks"
+                    )
+                portfolio_evaluations[entry.candidate_id] = (
+                    {
+                        "status": "BLOCKED",
+                        "cause": conflict,
+                        "remedy": "Revise the explicit constraint or candidate.",
+                    }
+                    if conflict
+                    else checked
+                )
+            evaluation = portfolio_evaluations[intent.portfolio[0].candidate_id]
         parent = None
         if revision:
             previous_card = self.store.card(self.thread, revision.card_id)
@@ -551,6 +584,8 @@ class Phase2Bridge(TargetBridge):
             "source_role": "site-mechanism",
             "research_ref": self.persist("site-research-snapshot", research),
         }
+        if intent.portfolio is not None:
+            payload["portfolio_evaluations"] = portfolio_evaluations
         proposal_id = identity(payload)
         old = self.current_site()
         if old and old["proposal_id"] == proposal_id:
@@ -566,15 +601,28 @@ class Phase2Bridge(TargetBridge):
                     "source": {
                         "type": "residue-list",
                         "numbering": "label",
-                        "regions": [
-                            {
-                                "id": "A",
-                                "residues": [
-                                    str(n)
-                                    for n in sorted(intent.selected_site.hotspot_label_seq_ids)
-                                ],
-                            }
-                        ],
+                        "regions": (
+                            [
+                                {
+                                    "id": entry.rank,
+                                    "residues": [
+                                        str(n) for n in sorted(entry.site.hotspot_label_seq_ids)
+                                    ],
+                                }
+                                for entry in intent.portfolio
+                                if entry.selectable
+                            ]
+                            if intent.portfolio is not None
+                            else [
+                                {
+                                    "id": "A",
+                                    "residues": [
+                                        str(n)
+                                        for n in sorted(intent.selected_site.hotspot_label_seq_ids)
+                                    ],
+                                }
+                            ]
+                        ),
                     }
                 },
             }
@@ -850,6 +898,9 @@ class Phase2Bridge(TargetBridge):
         if approved is None:
             return None
         proposal = self.approved_proposal("site-proposal", approved)
+        from .site_portfolio import selected_proposal
+
+        proposal = selected_proposal(proposal, approved["outcome"].get("selected_option_id"))
         if not self.site_proposal_is_current(proposal):
             return None
         foundation = _latest_foundation(self.project)
@@ -1028,12 +1079,18 @@ class Phase2Bridge(TargetBridge):
             or (opinion and opinion.status == "DISCOURAGED")
             or bool(assessment and assessment.site_claim_corrections)
         )
-        if assessment is not None and not blocked and assessment.verdict != "ready-to-ask":
+        portfolio = proposal["intent"].get("portfolio")
+        if (
+            assessment is not None
+            and not blocked
+            and not portfolio
+            and assessment.verdict != "ready-to-ask"
+        ):
             raise AgentBoundaryError("Judge has not supplied a reviewable Site question")
         status: Literal["SUPPORTED", "DISCOURAGED", "BLOCKED"] = (
             "BLOCKED" if blocked else "DISCOURAGED" if discouraged else "SUPPORTED"
         )
-        if failure and blocked:
+        if failure and blocked and not portfolio:
             raise AgentBoundaryError("BLOCKED Site cannot use review unavailability to proceed")
         warnings = list(
             dict.fromkeys(
@@ -1162,6 +1219,66 @@ class Phase2Bridge(TargetBridge):
                 )
             ),
         )
+        if portfolio:
+            from .site_portfolio import PORTFOLIO_POLICY, portfolio_options
+
+            options = portfolio_options(proposal, self.document(proposal["facts_ref"]))
+            available = [option for option in options if option["eligible"]]
+            review_summary = card.scientific_summary["independent_review"]
+            assert isinstance(review_summary, dict)
+            independent = dict(review_summary)
+            warnings = list(
+                dict.fromkeys(
+                    [
+                        *((rendered["recommendation"] or {}).get("warnings", [])),
+                        *(
+                            f"Judge qualification of unaccepted Site claim ‘{c['claim']}’: "
+                            f"{c['qualification']}"
+                            for c in rendered["site_claim_corrections"]
+                        ),
+                    ]
+                )
+            )
+            if failure:
+                independent["warning"] = (
+                    "Independent review unavailable; ranking retained. "
+                    "Scientist chooses with lower review confidence."
+                )
+                warnings = [str(independent["warning"]), *warnings]
+            independent.update(
+                {
+                    "ranking_authority": "SiteDecision; Judge cannot reorder candidates",
+                    "verdict": assessment.verdict if assessment else None,
+                    "recommendation": rendered["recommendation"],
+                }
+            )
+            card = DecisionCard.model_validate(
+                {
+                    **card.model_dump(mode="json"),
+                    "option_id": available[0]["option_id"] if available else "site",
+                    "options": options,
+                    "warnings": warnings,
+                    "limitations": rendered["limitations"],
+                    "scientific_summary": {
+                        "selection_policy": PORTFOLIO_POLICY,
+                        "ranking_authority": "SiteDecision",
+                        "independent_review": independent,
+                        "default_candidate_id": available[0]["option_id"] if available else None,
+                        "default_is_approval": False,
+                        "interpretation_scope": "Relative scientific recommendations; "
+                        "exact residue facts "
+                        "are Runtime-owned. Judge qualifications apply to interpretation.",
+                    },
+                    "action": (
+                        "Approve the displayed default A or choose any selectable candidate "
+                        "by its ID; revise/reject remain available. Scientific risks and "
+                        "unavailable review do not require an override."
+                        if available
+                        else "All supplied candidates have hard conflicts. Revise the candidate "
+                        "set or explicit constraints, or reject this proposal."
+                    ),
+                }
+            )
         self.store.save_card(self.thread, card)
         return card
 
@@ -1237,7 +1354,17 @@ class Phase2Bridge(TargetBridge):
                 raise AgentBoundaryError(
                     "BLOCKED: change the input or hard constraint; override cannot execute it"
                 )
-            if card.judge_status in {"DISCOURAGED", None} and outcome.action != "OVERRIDE":
+            from .site_portfolio import is_portfolio_card, selected_proposal
+
+            ranked = is_portfolio_card(card)
+            if ranked != bool(proposal["intent"].get("portfolio")):
+                raise AgentBoundaryError("Site selection policy changed since the displayed card")
+            chosen = selected_proposal(proposal, outcome.selected_option_id)
+            if (
+                card.judge_status in {"DISCOURAGED", None}
+                and outcome.action != "OVERRIDE"
+                and not ranked
+            ):
                 raise AgentBoundaryError(
                     "Discouraged or unreviewed site requires explicit human acknowledgement"
                 )
@@ -1245,7 +1372,7 @@ class Phase2Bridge(TargetBridge):
             template = HotspotReviewRequest.model_validate(
                 yaml.safe_load(review_ref.verify(self.project).read_text())
             )
-            rationale = proposal["intent"]["mechanistic_rationale"]
+            rationale = chosen["intent"]["mechanistic_rationale"]
             if outcome.action == "OVERRIDE":
                 rationale += (
                     " Selected by explicit human decision with Judge review unavailable. "
@@ -1256,10 +1383,11 @@ class Phase2Bridge(TargetBridge):
                 s.model_copy(
                     update={
                         "biological_rationale": rationale,
-                        "structural_rationale": proposal["intent"]["accessibility_rationale"],
+                        "structural_rationale": chosen["intent"]["accessibility_rationale"],
                     }
                 )
                 for s in template.selections
+                if not ranked or s.id == chosen["selected_rank"]
             ]
             request = HotspotReviewRequest.model_validate(
                 {
@@ -1296,15 +1424,24 @@ class Phase2Bridge(TargetBridge):
                 with scientific_environment():
                     site_approve(self.project, input_path=path, confirm=True)
                 self.failpoint("after_site_approval")
-            matched = self._approved_hotspots_match(proposal, request)
+            matched = self._approved_hotspots_match(chosen, request)
             approved = {
                 "proposal_id": proposal["proposal_id"],
                 "target_binding": proposal["target_binding"],
                 "card_id": card.card_id,
                 "outcome": response["outcome"],
-                "warnings": card.warnings,
+                "warnings": outcome.recorded_warnings,
                 "judge_status": card.judge_status,
-                "limitations": card.limitations,
+                "limitations": list(
+                    dict.fromkeys(
+                        [
+                            *card.limitations,
+                            *chosen["intent"]["uncertainty"],
+                        ]
+                    )
+                )
+                if ranked
+                else card.limitations,
                 "judge_review": card.scientific_summary.get("independent_review", {}),
                 **matched,
             }
@@ -1315,7 +1452,7 @@ class Phase2Bridge(TargetBridge):
             self.store.delivered(self.thread, card.card_id)
             return {
                 "status": "hotspot-approved",
-                "site": proposal["intent"]["selected_site"],
-                "warnings": card.warnings,
+                "site": chosen["intent"]["selected_site"],
+                "warnings": outcome.recorded_warnings,
                 "next_specialist": "none" if self.through == "site" else "binder-strategy",
             }

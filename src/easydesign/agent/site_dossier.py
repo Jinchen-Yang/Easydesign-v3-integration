@@ -192,29 +192,14 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             raise ResearchConclusionMismatch("Literature-derived candidates need focused citations")
         labels = candidate.hotspot_label_seq_ids
         evaluation = bridge.evaluate_candidate(candidate_query(labels))
-        if evaluation["status"] == "BLOCKED":
-            observed = {
-                row["residue"]["label_seq_id"]
-                for row in facts["derived_metrics"]["sasa"]["residues"]
-            }
-            raise ResearchConclusionMismatch(
-                "Research candidate is hard-invalid: "
-                + compact(
-                    {
-                        "candidate": candidate.name,
-                        "submitted_design_labels": labels,
-                        "unobserved_or_unmapped_labels": sorted(set(labels) - observed),
-                        "evaluation": evaluation,
-                        "instruction": "Correct this candidate using the approved mapping. "
-                        "Do not shift other candidates or infer a global numbering offset. "
-                        "Kernel canonical/source positions are not design labels.",
-                    }
-                )
-            )
+        observed = {
+            row["residue"]["label_seq_id"] for row in facts["derived_metrics"]["sasa"]["residues"]
+        }
+        known_labels = [label for label in labels if label in observed]
         rows = [
             row
-            for offset in range(0, len(labels), 12)
-            for row in summarize_site_facts(facts, labels=labels, offset=offset)["facts"]
+            for offset in range(0, len(known_labels), 12)
+            for row in summarize_site_facts(facts, labels=known_labels, offset=offset)["facts"]
         ]
         for row in rows:
             residue_facts[row["mapping"]["label_seq_id"]] = row
@@ -298,6 +283,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         mappings = [
             residue_facts[label]["mapping"]
             for label in runtime_candidate["research_hypothesis"]["hotspot_label_seq_ids"]
+            if label in residue_facts
         ]
         positions = [row["canonical_position"] for row in mappings]
         runtime_candidate["location"] = {
@@ -320,7 +306,7 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "centroids.",
         }
     return {
-        "kind": "site-evidence-dossier-v6",
+        "kind": "site-evidence-dossier-v7",
         "reference_annotations": annotations,
         "residue_constraints": [
             {
@@ -376,7 +362,22 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         "candidate_comparison": candidates,
         "trusted_residue_facts": site_page_projection(
             {"facts": [residue_facts[key] for key in sorted(residue_facts)]}
-        ),
+        )
+        if residue_facts
+        else {
+            "facts_table": {
+                "mapping_columns": list(facts["observed_facts"]["mapping"][0]),
+                "metric_columns": [
+                    "raw_sasa",
+                    "rsasa",
+                    "model_presence_fraction",
+                    "surface_eligible",
+                    "declared_topology",
+                ],
+                "rows": [],
+                "row_count": 0,
+            }
+        },
         "receptor_context": receptor,
         "focused_passages": [
             {
@@ -494,11 +495,12 @@ def validate_dossier_intent(bridge: Phase2Bridge, intent: SiteIntent, execution_
         available = {row[label_column] for row in table["rows"]}
     else:
         raise AgentBoundaryError("Current Site dossier requires its runtime fact table")
-    selected = {
-        label
-        for candidate in [intent.selected_site, *intent.alternatives]
-        for label in candidate.hotspot_label_seq_ids
-    }
+    selections = (
+        [entry.site for entry in intent.portfolio if entry.selectable]
+        if intent.portfolio is not None
+        else [intent.selected_site, *intent.alternatives]
+    )
+    selected = {label for candidate in selections for label in candidate.hotspot_label_seq_ids}
     if not selected.issubset(available):
         raise ResearchConclusionMismatch(
             "Synthesis may use only design labels with trusted facts in its dossier: "

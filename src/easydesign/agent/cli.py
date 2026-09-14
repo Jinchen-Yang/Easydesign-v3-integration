@@ -69,6 +69,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--target", type=Path, help="Local PDB/mmCIF input for a new project only")
     result.add_argument("--card", help="Exact card displayed by the prior process")
     result.add_argument("--decision", choices=("approve", "revise", "reject", "override"))
+    result.add_argument(
+        "--candidate", help="Exact selectable candidate ID from a ranked Gate 2 card"
+    )
     result.add_argument("--instruction", help="Required trusted human instruction for REVISE")
     result.add_argument(
         "--revision-gate",
@@ -101,6 +104,7 @@ async def run_session(
     revision_gate: Any = None,
     optional_reason: str | None = None,
     explicit_acknowledgement: str | None = None,
+    selected_option_id: str | None = None,
     technical_details: bool = False,
     emit: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -113,7 +117,13 @@ async def run_session(
     goal = store.thread(thread, fingerprint(config), goal)
     if decision is None and any(
         v is not None
-        for v in (human_instruction, revision_gate, optional_reason, explicit_acknowledgement)
+        for v in (
+            human_instruction,
+            revision_gate,
+            optional_reason,
+            explicit_acknowledgement,
+            selected_option_id,
+        )
     ):
         raise AgentBoundaryError("Steering fields require an explicit decision action")
     if decision is not None and new_message is not None:
@@ -196,6 +206,7 @@ async def run_session(
                     revision_gate=revision_gate,
                     optional_reason=optional_reason,
                     explicit_acknowledgement=explicit_acknowledgement,
+                    selected_option_id=selected_option_id,
                 )
                 bridge.failpoint("after_response_intent")
             intent = store.response(thread, card.card_id)
@@ -235,6 +246,7 @@ async def run_session(
                 revision_gate=revision_gate,
                 optional_reason=optional_reason,
                 explicit_acknowledgement=explicit_acknowledgement,
+                selected_option_id=selected_option_id,
             )
             return {
                 "status": "already-delivered" if prior["delivered"] else "response-persisted",
@@ -342,14 +354,21 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
             value["events"] = [public_event(e) for e in value["events"]]
     if "card" in value:
         card = DecisionCard.model_validate(value["card"])
-        selected = next(o for o in card.options if o["option_id"] == card.option_id)
+        from .site_portfolio import is_portfolio_card
+
+        ranked = is_portfolio_card(card)
+        selected = next((o for o in card.options if o["option_id"] == card.option_id), None)
         value = {
             **value,
             "card": {
                 "card_id": card.card_id,
                 "question": card.question,
-                "selected_option": selected["label"],
-                "options": [
+                "default_option" if ranked else "selected_option": selected["label"]
+                if selected
+                else None,
+                "options": card.options
+                if ranked
+                else [
                     {k: o[k] for k in ("label", "description", "eligible")} for o in card.options
                 ],
                 "evidence_refs": [ref.split("#sha256=")[0] for ref in card.evidence_refs],
@@ -359,11 +378,17 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 "action": card.action,
                 "gate_type": card.gate_type,
                 "scientific_summary": card.scientific_summary,
-                "judge_status": card.judge_status,
+                **(
+                    {"judge_status": card.judge_status, "recommended_alternative": card.alternative}
+                    if not ranked or technical_details
+                    else {}
+                ),
                 "warnings": card.warnings,
-                "recommended_alternative": card.alternative,
-                "human_actions": ["revise", "reject"]
+                "human_actions": ["choose-candidate", "revise", "reject"]
+                if ranked and any(o["eligible"] for o in card.options)
+                else ["revise", "reject"]
                 if card.judge_status == "BLOCKED"
+                or (ranked and not any(o["eligible"] for o in card.options))
                 else ["override", "revise", "reject"]
                 if card.judge_status in {"DISCOURAGED", None}
                 else ["approve", "revise", "reject"],
@@ -400,22 +425,34 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
         revision_gate=args.revision_gate,
         optional_reason=args.reason,
         explicit_acknowledgement=args.acknowledgement,
+        selected_option_id=args.candidate,
         technical_details=args.technical_details,
         emit=emit if args.stream else None,
     )
     _display(result, technical_details=args.technical_details)
     while args.interactive and result["status"] == "awaiting-human-approval":
-        response = (
-            (
-                await asyncio.to_thread(
-                    input, "approve / revise / reject / override (Enter to detach): "
-                )
-            )
-            .strip()
-            .lower()
+        from .site_portfolio import is_portfolio_card
+
+        current_card = DecisionCard.model_validate(result["card"])
+        choices = {
+            str(o["rank"]).lower(): str(o["option_id"])
+            for o in current_card.options
+            if is_portfolio_card(current_card) and o["eligible"]
+        }
+        selected_option_id = None
+        prompt = (
+            " / ".join([*choices, "revise", "reject"]) + " (Enter to detach): "
+            if is_portfolio_card(current_card)
+            else "approve / revise / reject / override (Enter to detach): "
         )
+        response = (await asyncio.to_thread(input, prompt)).strip().lower()
         if not response:
             break
+        if response in choices:
+            selected_option_id, response = choices[response], "approve"
+        elif is_portfolio_card(current_card) and response not in {"revise", "reject"}:
+            print("Choose a displayed selectable rank, revise or reject.", flush=True)
+            continue
         if response not in {"approve", "revise", "reject", "override"}:
             print("Please enter approve, revise, reject or override.", flush=True)
             continue
@@ -453,6 +490,7 @@ async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
             revision_gate=revision_gate,
             explicit_acknowledgement=acknowledgement,
             optional_reason=reason,
+            selected_option_id=selected_option_id,
             technical_details=args.technical_details,
             emit=emit if args.stream else None,
         )

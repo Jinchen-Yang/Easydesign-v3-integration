@@ -116,6 +116,14 @@ class DesignBridge(Phase2Bridge):
             "biology": context["biology"],
             "biology_authority": facts["biology_authority"],
             "upstream_decision": {
+                **(
+                    {
+                        "selected_candidate_id": current["selected_candidate_id"],
+                        "selected_rank": current["selected_rank"],
+                    }
+                    if current.get("selected_candidate_id")
+                    else {}
+                ),
                 "action": site["outcome"]["action"],
                 "warnings": site["warnings"],
                 "limitations": site.get("limitations", []),

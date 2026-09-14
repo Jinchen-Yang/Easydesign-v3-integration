@@ -246,7 +246,7 @@ def test_fresh_synthesis_corrections_are_separate_but_persist_and_share_call_lim
             boundary.contract_error("Still invalid")
     reopened = SessionStore(b.project)
     try:
-        for contract in ("SiteResearchHandoff", "SiteDecision"):
+        for contract in ("SiteResearchHandoff", "RankedSiteDecision"):
             with pytest.raises(AgentBoundaryError, match="contract repair budget"):
                 reopened.reserve_contract_repair(
                     b.thread, "site", eid, "SYNTHETIC restart", contract=contract

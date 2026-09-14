@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from .contracts import ShortText, StrictDTO, TargetTask
 
@@ -33,9 +33,36 @@ class SiteSelection(StrictDTO):
         return self
 
 
+class SitePortfolioEntry(StrictDTO):
+    """Runtime-bound membership with the Site specialist's relative interpretation."""
+
+    candidate_id: str
+    rank: Literal["A", "B", "C"] | None
+    selectable: bool
+    site: SiteSelection
+    why_ranked: ShortText
+    mechanistic_rationale: ShortText
+    approach_rationale: ShortText
+    supporting_evidence: list[ShortText] = Field(min_length=1, max_length=3)
+    major_risks: list[ShortText] = Field(default_factory=list, max_length=4)
+    uncertainty: list[ShortText] = Field(min_length=1, max_length=4)
+    confidence: Literal["low", "medium", "high"]
+    hard_block: str | None = None
+    preference_group: int | None = Field(default=None, ge=1, le=3)
+    tied_with_candidate_id: str | None = None
+    tie_reason: ShortText | None = None
+
+    @model_validator(mode="after")
+    def consistent_eligibility(self) -> SitePortfolioEntry:
+        if self.selectable != (self.rank is not None) or self.selectable == bool(self.hard_block):
+            raise ValueError("Only hard-valid candidates have a rank and are selectable")
+        return self
+
+
 class SiteIntent(StrictDTO):
     """Runtime hydration of the SiteDecision; research opinions live only in its dossier."""
 
+    portfolio: list[SitePortfolioEntry] | None = Field(default=None, min_length=1, max_length=3)
     selected_site: SiteSelection
     positive_evidence: list[ShortText] = Field(min_length=1, max_length=5)
     mechanistic_rationale: ShortText
@@ -48,8 +75,30 @@ class SiteIntent(StrictDTO):
     scope: Literal["structural-exploration", "mechanistic"] = "structural-exploration"
     avoid_label_seq_ids: list[int] = Field(default_factory=list, max_length=40)
 
+    @model_serializer(mode="wrap")
+    def serialize_portfolio(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        if self.portfolio is None:
+            value.pop("portfolio", None)
+        return value
+
     @model_validator(mode="after")
     def exclusion_constraints(self) -> SiteIntent:
+        if self.portfolio is not None:
+            ids = [entry.candidate_id for entry in self.portfolio]
+            ranked = [entry for entry in self.portfolio if entry.selectable]
+            if len(ids) != len(set(ids)) or [entry.rank for entry in ranked] != list(
+                "ABC"[: len(ranked)]
+            ):
+                raise ValueError("Portfolio IDs are unique and selectable ranks are consecutive")
+            if ranked and ranked[0].site != self.selected_site:
+                raise ValueError("Default Site must be the first ranked candidate")
+            if any(
+                set(entry.site.hotspot_label_seq_ids) & set(self.avoid_label_seq_ids)
+                for entry in ranked
+            ):
+                raise ValueError("Selectable candidate violates an explicit exclusion")
+            return self
         if set(self.selected_site.hotspot_label_seq_ids) & set(self.avoid_label_seq_ids):
             raise ValueError("Selected hotspot conflicts with declared avoid-residue constraint")
         return self
@@ -106,10 +155,18 @@ class BiologyContext(StrictDTO):
     target_kind: Literal["soluble", "membrane", "gpcr", "unknown"] = "unknown"
     structural_state: ShortText = "unresolved"
     state_source: ShortText = "not supplied; no state assignment from surface geometry"
+    required_site_compartment: Literal["extracellular", "intracellular"] | None = None
     topology_source: ShortText = "not supplied"
     topology: list[TopologyResidue] = Field(default_factory=list, max_length=3000)
     features: list[BiologyFeature] = Field(default_factory=list, max_length=40)
     limitations: list[ShortText] = Field(default_factory=list, max_length=8)
+
+    @model_serializer(mode="wrap")
+    def serialize_compartment(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        if self.required_site_compartment is None:
+            value.pop("required_site_compartment", None)
+        return value
 
     @model_validator(mode="after")
     def unique_topology(self) -> BiologyContext:

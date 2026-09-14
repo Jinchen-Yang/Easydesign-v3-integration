@@ -70,7 +70,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--card", help="Exact card displayed by the prior process")
     result.add_argument("--decision", choices=("approve", "revise", "reject", "override"))
     result.add_argument(
-        "--candidate", help="Exact selectable candidate ID from a ranked Gate 2 card"
+        "--candidate",
+        "--option",
+        dest="candidate",
+        help="Exact selectable candidate or scientific option ID from the displayed card",
     )
     result.add_argument("--instruction", help="Required trusted human instruction for REVISE")
     result.add_argument(
@@ -369,7 +372,15 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
                 "options": card.options
                 if ranked
                 else [
-                    {k: o[k] for k in ("label", "description", "eligible") if k in o}
+                    {
+                        k: o[k]
+                        for k in (
+                            ("option_id", "label", "description", "eligible", "judge_status")
+                            if card.gate_type in {"pilot-promotion", "wet-lab-handoff"}
+                            else ("label", "description", "eligible")
+                        )
+                        if k in o
+                    }
                     for o in card.options
                 ],
                 "evidence_refs": [ref.split("#sha256=")[0] for ref in card.evidence_refs],

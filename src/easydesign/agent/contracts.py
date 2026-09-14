@@ -233,7 +233,7 @@ class DecisionCard(DecisionProposal):
         if self.assessment_id is None:
             review = self.scientific_summary.get("independent_review", {})
             if (
-                self.gate_type != "site-hotspot"
+                self.gate_type not in {"site-hotspot", "pilot-promotion", "wet-lab-handoff"}
                 or self.judge_status is not None
                 or not isinstance(review, dict)
                 or review.get("availability") != "unavailable"
@@ -268,8 +268,8 @@ class DecisionOutcome(StrictDTO):
 
     @model_validator(mode="after")
     def validate_steering(self) -> DecisionOutcome:
-        if self.selected_option_id is not None and self.action != "APPROVE":
-            raise ValueError("Candidate selection accompanies ordinary APPROVE only")
+        if self.selected_option_id is not None and self.action not in {"APPROVE", "OVERRIDE"}:
+            raise ValueError("Option selection accompanies APPROVE or OVERRIDE only")
         if not self.human_actor.strip():
             raise ValueError("An identified human is required")
         if self.action == "REVISE":

@@ -279,7 +279,7 @@ def test_old_site_revision_is_not_reapplied_after_a_later_event(design_bridge: A
 
 
 @pytest.mark.parametrize(
-    "gate,action",
+    "gate,option",
     [
         ("pilot-promotion", "PROMOTE_TO_SCALE"),
         ("pilot-promotion", "RUN_ANOTHER_PILOT"),
@@ -289,7 +289,9 @@ def test_old_site_revision_is_not_reapplied_after_a_later_event(design_bridge: A
         ("wet-lab-handoff", "APPROVE"),
     ],
 )
-def test_future_gates_are_not_enabled_by_routing(bridge: Any, gate: str, action: str) -> None:
+def test_downstream_gates_are_ledger_enabled_without_phase2_routing(
+    bridge: Any, gate: str, option: str
+) -> None:
     from easydesign.agent.contracts import DecisionCard
 
     card = DecisionCard(
@@ -301,14 +303,21 @@ def test_future_gates_are_not_enabled_by_routing(bridge: Any, gate: str, action:
         request_identity="future",
         evidence_id="future-evidence",
         question="SYNTHETIC future Gate",
-        option_id="future",
-        options=[],
+        option_id=option,
+        options=[{"option_id": option, "label": option, "eligible": True}],
         evidence_refs=[],
         limitations=[],
     )
     bridge.store.save_card(bridge.thread, card)
-    with pytest.raises(AgentBoundaryError, match="Only Gates 1–3"):
-        bridge.store.respond(bridge.thread, card.card_id, action.lower(), "synthetic-scientist")
+    response = bridge.store.respond(
+        bridge.thread,
+        card.card_id,
+        "approve",
+        "synthetic-scientist",
+        selected_option_id=option,
+    )
+    assert response["response"] == "approve"
+    assert response["outcome"]["selected_option_id"] == option
     assert not bridge._jobs()
 
 

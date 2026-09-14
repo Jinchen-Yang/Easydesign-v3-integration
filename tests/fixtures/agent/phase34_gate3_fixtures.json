@@ -1,0 +1,59 @@
+{
+  "schema_version": "0.1",
+  "fixtures": [
+    {
+      "fixture_id": "accepted-standard-gate3-live162",
+      "case_id": "case-4-standard",
+      "strategy_source": "standard",
+      "source_commit": "590281176ce019fbe0a35990cc19ebc90e9f3402",
+      "milestone_tag": "checkpoint/easydesign-v3-standard-gate3-20260912",
+      "gate3_card_id": "a6c8d40581289c1a4aac2b3e939d37ff0b526b5f3ea4ee6029f9bdc88cbb9bfa",
+      "gate3_request_identity": "39b68b04e006d1d076bf4e53bac29d61fae424b6d4651e0cf5d6ea90ec6c2654",
+      "gate3_snapshot_sha256": "5a58cb7e0f51813795b5dffb1a69cc40223724ad0305e7c7d3935c0904845a57",
+      "target_identity": "UniProt:P00698",
+      "target_bundle_sha256": "96243cfdb63c99316a22849e931bfad7cfe5b3e631e2b1317d89c468395dadcc",
+      "site_intent_sha256": "a50960fc471cfb045e9f37571dca91eddf8c1f9f670c1eda5ac40bfa25abf0af",
+      "review_request_sha256": "9b515f9fcb0c30bc22363396d1f6aa101888ee9fe4b947fea4f9da4595e7117d",
+      "review_receipt_sha256": "3e2bc214f9ea8e832d9e2819fab82f19e047397248b068f93a6f8eaf1692ab97",
+      "review_decision": "PASS",
+      "gate3_status": "awaiting-human-approval",
+      "strategy_sha256": "da64195d47ece5d539493234b60b7cd620208a8631a7d2ed0e9789a95ec5b2b0",
+      "compiled_manifest_sha256": "caa973288f906c73444367d94678b761410312a6fd90ff720097507ae6cb93a8",
+      "execution_plan_sha256": "27f141c0ed831ad1f42d9b0c607c78619931af536aabee663dfc8535e20d5b02",
+      "planned_candidates": 280,
+      "generation_started": false,
+      "acceptance_scope": "REAL MODEL standard Design after explicit validation-actor Gate 3 REVISE, with REAL BACKEND YAML CHECK only. No Gate 3 approval, generation, binding or inhibition experiment.",
+      "evidence_refs": [
+        "site:foundation-20260911-222350-93de48a7:hotspots#sha256=a50960fc471cfb045e9f37571dca91eddf8c1f9f670c1eda5ac40bfa25abf0af",
+        "project:metadata/design-0c66683e1d8de59ab1e073fceb6473eee57af5dab2a53279619f7a3659fdd3d9/strategy.yaml#sha256=da64195d47ece5d539493234b60b7cd620208a8631a7d2ed0e9789a95ec5b2b0"
+      ]
+    },
+    {
+      "fixture_id": "accepted-native-gate3-live163",
+      "case_id": "case-5-native",
+      "strategy_source": "expert-native",
+      "source_commit": "e9f411a28303058384c20456a48a111ce07d7045",
+      "milestone_tag": "checkpoint/easydesign-v3-native-gate3-20260912",
+      "gate3_card_id": "58b3f3cc7087ebb2da5cca803c2022b417f1603e0305ae6160f004003bfafbee",
+      "gate3_request_identity": "c742fd227b6f4b9d9a1c47ce773417e1e35475d2e1b89712158cd68067a0d930",
+      "gate3_snapshot_sha256": "367d2ccdcb2a256b200eb15b7756eea8edc091ac1995137b101046f19c5630d0",
+      "target_identity": "UniProt:P00698",
+      "target_bundle_sha256": "96243cfdb63c99316a22849e931bfad7cfe5b3e631e2b1317d89c468395dadcc",
+      "site_intent_sha256": "a50960fc471cfb045e9f37571dca91eddf8c1f9f670c1eda5ac40bfa25abf0af",
+      "review_request_sha256": "2984dd6e8b09aa513f6f5b432de12cc7296668166a9ac557131b4afbc2e0b51f",
+      "review_receipt_sha256": "3d64c4a73b044685781e9efc790498297d777e1e6f439c6ae744c098a8f553a0",
+      "review_decision": "PASS",
+      "gate3_status": "awaiting-human-approval",
+      "strategy_sha256": "747535765efe59e1410fb271fa04eca33823222fba13ca5254976f990d964388",
+      "compiled_manifest_sha256": "2f93e5db1caef83cbc6869a4dad772682232b058826557d0fd9c39e46f4cde94",
+      "execution_plan_sha256": "61c4fe9ec69d2243aa63f5679da4c6023a5965b3a5a30ec5fd24a4d5ee0e9c7c",
+      "planned_candidates": 280,
+      "generation_started": false,
+      "acceptance_scope": "REAL MODEL native Case5 after explicit validation-actor Gate3 REVISE; REAL BACKEND YAML CHECK and exact byte preservation. Case4 inherited from exact accepted pending Design. No Design approval, generation, prediction, efficacy or biological approval.",
+      "evidence_refs": [
+        "site:foundation-20260911-222350-93de48a7:hotspots#sha256=a50960fc471cfb045e9f37571dca91eddf8c1f9f670c1eda5ac40bfa25abf0af",
+        "project:inputs/expert/strategy.yaml#sha256=747535765efe59e1410fb271fa04eca33823222fba13ca5254976f990d964388"
+      ]
+    }
+  ]
+}

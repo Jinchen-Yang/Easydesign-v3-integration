@@ -14,7 +14,9 @@ from .contracts import AgentBoundaryError, StrictDTO
 PHASE2_MODEL_CALL_LIMIT = 64
 
 
-Role = Literal["coordinator", "target", "site", "binder", "judge"]
+Role = Literal[
+    "coordinator", "target", "site", "binder", "judge", "pilot-diagnosis", "final-selection"
+]
 
 
 class LLMConfig(StrictDTO):
@@ -86,6 +88,7 @@ def create_models(
     config: ModelConfig,
     *,
     request_observer: Callable[[dict[str, Any]], None] | None = None,
+    downstream: bool = False,
 ) -> dict[str, Any]:
     """Credentials live in SDK clients only, never DTOs, metadata or worker envs."""
     from langchain.chat_models import init_chat_model
@@ -93,6 +96,10 @@ def create_models(
     configs = {
         role: config.for_role(role) for role in ("coordinator", "target", "site", "binder", "judge")
     }
+    if downstream:
+        configs.update(
+            {role: config.for_role(role) for role in ("pilot-diagnosis", "final-selection")}
+        )
     secrets: dict[str, SecretStr] = {}
     for selected in configs.values():
         value = os.environ.get(selected.secret_env)

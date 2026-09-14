@@ -290,3 +290,21 @@ async def test_unfinished_revision_retains_steering_during_explicit_repair(bridg
         for t in agents["target"].tasks
     )
     assert len(bridge._jobs()) == 1
+
+
+def test_cli_accepts_a_downstream_option_alias() -> None:
+    args = parser().parse_args(
+        [
+            "resume",
+            "target",
+            "--thread",
+            "thread-x",
+            "--card",
+            "card-x",
+            "--decision",
+            "approve",
+            "--option",
+            "REVISE_SITE",
+        ]
+    )
+    assert args.candidate == "REVISE_SITE"

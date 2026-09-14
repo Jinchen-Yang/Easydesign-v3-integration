@@ -475,8 +475,15 @@ class SessionStore:
         selected_option_id: str | None = None,
     ) -> dict[str, Any]:
         proposal = self.card(thread, card)
-        if proposal.gate_type not in {"target-structure", "site-hotspot", "design-specification"}:
-            raise AgentBoundaryError("Only Gates 1–3 are executable in Phase 2")
+        downstream = proposal.gate_type in {"pilot-promotion", "wet-lab-handoff"}
+        if proposal.gate_type not in {
+            "target-structure",
+            "site-hotspot",
+            "design-specification",
+            "pilot-promotion",
+            "wet-lab-handoff",
+        }:
+            raise AgentBoundaryError("Decision card has an unsupported scientific Gate")
         if response not in {"approve", "revise", "reject", "override"} or not user.strip():
             raise AgentBoundaryError("A recognized, identified human action is required")
         if response == "revise" and (not human_instruction or not human_instruction.strip()):
@@ -487,6 +494,10 @@ class SessionStore:
                 revision_gate == proposal.gate_type
                 or (
                     proposal.gate_type == "design-specification" and revision_gate == "site-hotspot"
+                )
+                or (
+                    proposal.gate_type == "pilot-promotion"
+                    and revision_gate in {"design-specification", "site-hotspot"}
                 )
             )
         ):
@@ -508,6 +519,7 @@ class SessionStore:
                 "Choose a selectable candidate with APPROVE; no override is required"
             )
         candidate_warnings: list[str] = []
+        effective_judge_status = proposal.judge_status
         if ranked and response == "approve":
             # Explicit APPROVE selects the displayed default; merely displaying A never acts.
             selected_option_id = selected_option_id or proposal.option_id
@@ -524,20 +536,31 @@ class SessionStore:
             risks = option.get("major_risks", [])
             assert isinstance(risks, list)
             candidate_warnings = [str(risk) for risk in risks]
+        elif downstream and response in {"approve", "override"}:
+            selected_option_id = selected_option_id or proposal.option_id
+            option = next(
+                (o for o in proposal.options if o.get("option_id") == selected_option_id), None
+            )
+            if option is None or option.get("eligible") is not True:
+                raise AgentBoundaryError("Selected scientific Gate option is not eligible")
+            selected_status = option.get("judge_status")
+            if selected_status in {"SUPPORTED", "DISCOURAGED", "BLOCKED"}:
+                effective_judge_status = selected_status
         elif selected_option_id is not None:
             raise AgentBoundaryError("Candidate selection requires a ranked Site card and APPROVE")
         if response in {"approve", "override"}:
-            if proposal.judge_status == "BLOCKED":
+            if effective_judge_status == "BLOCKED":
                 raise AgentBoundaryError(
                     "BLOCKED: revise the input or hard constraint; no override"
                 )
             if (
                 response == "approve"
-                and proposal.judge_status in {"DISCOURAGED", None}
+                and effective_judge_status in {"DISCOURAGED", None}
                 and not ranked
+                and not (downstream and effective_judge_status is None)
             ):
                 raise AgentBoundaryError("Review the warning and use explicit OVERRIDE or REVISE")
-            if response == "override" and proposal.judge_status not in {"DISCOURAGED", None}:
+            if response == "override" and effective_judge_status not in {"DISCOURAGED", None}:
                 raise AgentBoundaryError("OVERRIDE is only for a warned, discouraged proposal")
         outcome = DecisionOutcome.model_validate(
             {

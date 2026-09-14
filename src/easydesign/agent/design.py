@@ -58,6 +58,7 @@ from .design_evidence import (
     resolve_design_intent,
     strategy_from_intent,
 )
+from .design_exclusions import gpcr_design_exclusions
 from .native_strategy import native_input
 from .phase2 import Phase2Bridge
 from .session_store import SessionStore, confined, identity
@@ -94,6 +95,7 @@ class DesignBridge(Phase2Bridge):
         )
         native = native_input(self)
         exclusions = current["intent"].get("avoid_label_seq_ids", [])
+        gpcr_exclusions = gpcr_design_exclusions(self, target, facts, site)
         inputs = {
             "target": target["binding"],
             "hotspot": site["hotspots_sha256"],
@@ -102,6 +104,12 @@ class DesignBridge(Phase2Bridge):
         # An empty exclusion adds no constraint and preserves accepted input identity.
         if exclusions:
             inputs["site_exclusions"] = sorted(exclusions)
+        if gpcr_exclusions is not None:
+            inputs["gpcr_exclusions"] = identity(gpcr_exclusions)
+            refs.extend(
+                f"project:{r['relative_path']}#sha256={r['sha256']}"
+                for r in gpcr_exclusions["source_refs"]
+            )
         binding = identity(inputs)
         if native:
             native_ref = native["strategy_ref"]
@@ -116,6 +124,7 @@ class DesignBridge(Phase2Bridge):
             "approved_hotspots": site["hotspots"]["hotspot_sets"],
             "site_rationale": current["intent"],
             "approved_exclusions": exclusions,
+            "gpcr_exclusions": gpcr_exclusions,
             "site_evidence": context["facts"],
             "next_offset": context.get("next_offset"),
             "biology": context["biology"],
@@ -150,7 +159,10 @@ class DesignBridge(Phase2Bridge):
             "constraints": design_constraints(
                 (context["biology"] or {}).get("target_kind", "unknown")
             ),
-            "limitations": facts["limitations"],
+            "limitations": [
+                *facts["limitations"],
+                *((gpcr_exclusions or {}).get("limitations", [])),
+            ],
         }
 
     def current_design(self) -> dict[str, Any] | None:
@@ -194,7 +206,9 @@ class DesignBridge(Phase2Bridge):
         site = self.approved_site()
         assert site is not None
         _, facts, _ = self.site_facts()
-        upstream_avoid = set(evidence["approved_exclusions"])
+        upstream_avoid = set(evidence["approved_exclusions"]) | set(
+            (evidence.get("gpcr_exclusions") or {}).get("label_seq_ids", [])
+        )
         intent = resolve_design_intent(intent, evidence)
         parent = revision.card_id if revision else None
         native = native_input(self)
@@ -247,11 +261,11 @@ class DesignBridge(Phase2Bridge):
                 )
                 if native:
                     if any(
-                        not upstream_avoid.issubset(variant.avoid_label_seq_ids)
-                        for variant in strategy.variants
+                        not upstream_avoid.issubset(variant["avoid"])
+                        for variant in native["summary"]["variants"]
                     ):
-                        raise AgentBoundaryError(
-                            "Native strategy omits approved Site residue exclusions"
+                        raise ManifestStateError(
+                            "Native strategy omits approved Site or GPCR residue exclusions"
                         )
                     proposal["native_input"] = native
                     evaluation["planned_candidates"] = native["summary"]["planned_candidates"]
@@ -472,6 +486,7 @@ class DesignBridge(Phase2Bridge):
                 "approach": intent.approach_rationale,
                 "target_context": intent.context_rationale,
                 "scaffold_cdr_constraints": intent.scaffold_cdr_rationale,
+                "gpcr_exclusions": snapshot["upstream"].get("gpcr_exclusions"),
                 "design_arms": (
                     proposal["native_input"]["summary"]["variants"]
                     if proposal.get("native_input")

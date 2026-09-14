@@ -23,7 +23,12 @@ class DesignArm(StrictDTO):
     held_constant: list[ShortText] = Field(min_length=1, max_length=5)
     # Empty conditioning means the whole approved set, not an unconditioned binder.
     binding_label_seq_ids: list[int] = Field(default_factory=list, max_length=40)
-    avoid_label_seq_ids: list[int] = Field(default_factory=list, max_length=40)
+    avoid_label_seq_ids: list[int] = Field(
+        default_factory=list,
+        max_length=3000,
+        description="Additional mapped exclusions. Runtime unions approved Site exclusions "
+        "and verified intracellular/transducer exclusions for extracellular GPCR VHH design.",
+    )
     target_crop: TargetCrop | None = None
     scaffold_template: ScaffoldTemplate | None = Field(
         default=None,

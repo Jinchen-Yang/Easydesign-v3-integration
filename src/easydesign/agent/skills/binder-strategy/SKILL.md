@@ -22,6 +22,12 @@ audit portfolio. A backup is not an approved replacement for the selected hotspo
    region must use verified mapped labels and cannot overlap binding. Cropping must preserve
    conditioning/exclusions and enough structural context. A crop can create terminal artifacts;
    an avoid list does not simulate glycans, membrane occlusion or a VHH approach trajectory.
+   For extracellular GPCR VHH design, runtime supplies `gpcr_exclusions`: verified intracellular
+   topology and G-protein/arrestin-facing receptor contacts from the approved source snapshot.
+   Every arm inherits these in actual YAML `not_binding`, in addition to Site exclusions and
+   arm-specific avoidance. Do not drop them or substitute canonical/source numbers for design
+   labels. Missing coordinates stay explicitly unavailable. A binding/crop conflict requires
+   revising the proposal; changing scaffold templates does not remove target exclusions.
 3. Explain how approach geometry, target state and shielding constrain the design hypothesis.
    Do not claim that passing YAML validation predicts binding, function or state specificity.
    Do not infer a biological state, secondary structure or docking result absent from evidence.

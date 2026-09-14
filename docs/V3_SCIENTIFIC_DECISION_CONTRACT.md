@@ -20,6 +20,12 @@ OVERRIDE 的规则；其他 Gate 不受此补充影响。
 `easydesign-v3-phase2-frozen-20260914` 固定。旧验收、记录、标签和科学意见保持原样；
 以下 Phase 1/2 说明描述对应历史实现，不覆盖上述新 Gate 2 产品契约。
 
+## Gate 3 GPCR default exclusions
+
+2026-09-15: [Extracellular GPCR VHH executable not_binding policy](GPCR_EXTRACELLULAR_NOT_BINDING_20260915.md).
+Verified intracellular/transducer-facing receptor residues are inherited by every design arm.
+This Design-only delta preserves approved Site selection and requires a current Gate 3 review.
+
 ## 已冻结实现及历史补充
 
 Gate 2 工程修订（2026-09-14，已纳入 Phase 2 冻结）：

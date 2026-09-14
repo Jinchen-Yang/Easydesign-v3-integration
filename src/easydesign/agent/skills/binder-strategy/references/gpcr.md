@@ -42,7 +42,19 @@ record all changed and held-constant factors and interpret them as a combined hy
 Do not force three arms or present identical executable settings as independent experiments.
 
 Generate target `binding` from the selected Gate 2 hotspot or an explicit nonempty subset.
-Generate `not_binding` from verified avoid residues; inherit all approved Site exclusions.
+For an explicitly extracellular GPCR VHH objective, every arm defaults to the union of
+runtime `gpcr_exclusions.label_seq_ids`, approved Site exclusions and its own verified avoid
+residues. This union reaches actual YAML `not_binding`; it does not depend on the model
+remembering the default. The runtime uses the approved Site's saved official cytoplasmic
+annotations, declared intracellular topology and observed receptor contacts with identified
+G-protein/arrestin partners. Exact target, source-chain, model and numbering correspondences
+are retained. Deposited mmCIF partner entity names supplement already typed kernel interfaces;
+unknown partners are not guessed from chain letters. Only coordinate-present receptor labels
+are emitted. Missing coordinates/source evidence remain visible as limitations.
+This policy is independent of scaffold choice. Non-GPCR and explicitly intracellular designs
+keep their existing defaults. Expert-native input is not rewritten: omissions require revision
+of that imported specification. No arbitrary TM/pore residues are excluded merely for being
+buried, and missing independent evidence does not prove a region safe to contact.
 Unselected portfolio candidates are not automatically forbidden contacts. Binding and avoid
 must not overlap; any crop must retain both. A different Site requires Scientist steering at
 Gate 2 and cannot be introduced as a new arm. An avoid list is not a membrane simulation.

@@ -132,9 +132,7 @@ def template_scaffolds(template: ScaffoldTemplate) -> list[dict[str, Any]]:
     return scaffolds
 
 
-def resolve_design_intent(
-    intent: BinderIntent, evidence: dict[str, Any]
-) -> BinderIntent:
+def resolve_design_intent(intent: BinderIntent, evidence: dict[str, Any]) -> BinderIntent:
     """Resolve Skill defaults before evaluation, persistence and independent review."""
     default = evidence["constraints"]["default_scaffold_template"]
     return intent.model_copy(
@@ -144,7 +142,9 @@ def resolve_design_intent(
                     update={
                         "scaffold_template": arm.scaffold_template or default,
                         "avoid_label_seq_ids": sorted(
-                            set(arm.avoid_label_seq_ids) | set(evidence["approved_exclusions"])
+                            set(arm.avoid_label_seq_ids)
+                            | set(evidence["approved_exclusions"])
+                            | set((evidence.get("gpcr_exclusions") or {}).get("label_seq_ids", []))
                         ),
                     }
                 )
@@ -232,9 +232,7 @@ def evaluate_design(
             # Bounds belong to the selected, SHA-verified Skill template.
             for override in arm.cdr_overrides:
                 within_all_loops = True
-                for scaffold in template_scaffolds(
-                    arm.scaffold_template or "official-vhh7-v1"
-                ):
+                for scaffold in template_scaffolds(arm.scaffold_template or "official-vhh7-v1"):
                     declared = scaffold["designed_residue_ranges"].split(",")[override.cdr - 1]
                     low, high = (int(n) for n in declared.split(".."))
                     for segment in (override.design_res_index or declared).split(","):

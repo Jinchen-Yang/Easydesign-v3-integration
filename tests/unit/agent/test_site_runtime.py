@@ -235,6 +235,61 @@ def test_source_author_numbering_is_not_invented(tmp_path: Any, monkeypatch: Any
         target.store.close()
 
 
+@pytest.mark.parametrize(
+    ("biology_chain", "missing_source_chain", "blocked"),
+    [("R", None, False), ("A", None, True), ("R", "X", True)],
+)
+def test_missing_coordinates_do_not_add_a_prepared_chain_to_source_identity(
+    site_bridge: Any,
+    monkeypatch: Any,
+    biology_chain: str,
+    missing_source_chain: str | None,
+    blocked: bool,
+) -> None:
+    from easydesign.agent import site_evidence
+    from easydesign.agent.site_contracts import BiologyContext
+    from easydesign.stages.s01_target_preparation.models import ResidueMapping
+
+    target = site_bridge.target_state()
+    bundle, geometry, mapping = site_evidence.structure_inputs(
+        target["root"], target["bundle_path"]
+    )
+    entries = [
+        {
+            **entry.model_dump(),
+            "source_author_chain_id": "R",
+            "source_label_chain_id": "B",
+        }
+        for entry in mapping.entries
+    ]
+    missing = len(entries) + 1
+    entries.append(
+        {
+            **entries[-1],
+            "sequence_index": missing,
+            "label_seq_id": missing,
+            "author_residue_id": str(missing),
+            "source_author_chain_id": missing_source_chain,
+            "source_author_residue_id": None,
+            "coordinate_present": False,
+            "model_presence": [],
+        }
+    )
+    padded = ResidueMapping.model_validate({**mapping.model_dump(), "entries": entries})
+    monkeypatch.setattr(
+        site_evidence, "structure_inputs", lambda *_args: (bundle, geometry, padded)
+    )
+    biology = BiologyContext(target_auth_chain=biology_chain, target_kind="soluble")
+    if blocked:
+        with pytest.raises(AgentBoundaryError, match="chain conflicts"):
+            site_evidence.analyze_site_facts(target["root"], target["bundle_path"], biology)
+    else:
+        facts = site_evidence.analyze_site_facts(target["root"], target["bundle_path"], biology)
+        assert facts["observed_facts"]["mapping"][-1]["coordinate_present"] is False
+        assert site_evidence.hard_site_conflict(facts, [missing]) == "missing-required-coordinates"
+        assert site_evidence.hard_site_conflict(facts, [1, 2, 3]) is None
+
+
 def test_context_change_invalidates_site_without_repreparing_target(
     site_bridge: Any, tmp_path: Any
 ) -> None:

@@ -35,7 +35,13 @@ def analyze_site_facts(
 ) -> dict[str, Any]:
     bundle, geometry, mapping = structure_inputs(root, bundle_path)
     mapped = {e.label_seq_id: e for e in mapping.entries}
-    chains = {e.source_author_chain_id or e.author_chain_id for e in mapping.entries}
+    # Unobserved canonical rows may carry only the normalized design chain. That
+    # placeholder is not evidence of another source chain; explicit source IDs are.
+    chains = {
+        e.source_author_chain_id or e.author_chain_id
+        for e in mapping.entries
+        if e.coordinate_present or e.source_author_chain_id is not None
+    }
     if biology is not None:
         if chains != {biology.target_auth_chain}:
             raise AgentBoundaryError(

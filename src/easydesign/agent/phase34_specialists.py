@@ -86,7 +86,7 @@ def downstream_specialist(
             )
             result = {
                 "status": "diagnosis-ready",
-                "diagnosis": diagnosis.model_dump(mode="json"),
+                "diagnosis": diagnosis.model_dump(mode="json", exclude={"design_arms"}),
                 "recommendation": recommendation.model_dump(mode="json"),
             }
         elif role == "final-selection":

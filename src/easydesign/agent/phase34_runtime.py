@@ -85,11 +85,23 @@ class Phase34Runtime(Phase34Bridge):
         feedback = self.project_latest("phase34-design-invalidated")
         if feedback:
             card = self.store.card(feedback["thread"], feedback["card_id"])
+            from .phase34_plan import PilotArmIntent
+            from .phase34_science import compact_arm_intent
+
+            raw_diagnosis = card.scientific_summary.get("diagnosis")
+            if raw_diagnosis is not None and not isinstance(raw_diagnosis, dict):
+                raise AgentBoundaryError("Historical Pilot diagnosis is not a structured object")
+            diagnosis = dict(raw_diagnosis) if isinstance(raw_diagnosis, dict) else {}
+            if "design_arms" in diagnosis:
+                diagnosis["design_arms"] = [
+                    compact_arm_intent(PilotArmIntent.model_validate(arm))
+                    for arm in diagnosis["design_arms"]
+                ]
             packet["pilot_feedback"] = {
                 "source_gate4_card": card.card_id,
                 "scientist_route": feedback["route"],
                 "scientist_instruction": feedback["human_instruction"],
-                "historical_pilot_diagnosis": card.scientific_summary.get("diagnosis"),
+                "historical_pilot_diagnosis": diagnosis,
                 "scope": "Prior Pilot evidence for revision; current Site facts "
                 "remain authoritative.",
             }
@@ -758,7 +770,7 @@ class Phase34Runtime(Phase34Bridge):
                 dossier = self.current_pilot_dossier()
                 assert dossier is not None
                 packet.update(
-                    diagnosis=dossier.diagnosis.model_dump(mode="json"),
+                    diagnosis=dossier.diagnosis.model_dump(mode="json", exclude={"design_arms"}),
                     proposal=dossier.proposed_interpretation.model_dump(mode="json"),
                     dossier_sha256=canonical_model_sha256(dossier),
                 )

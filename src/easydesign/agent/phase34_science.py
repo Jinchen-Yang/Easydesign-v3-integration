@@ -20,6 +20,28 @@ from .phase34_contracts import (
 )
 from .phase34_opinions import FinalSelectionOpinion, PilotDiagnosisOpinion
 from .phase34_plan import PilotArmIntent
+from .session_store import identity
+
+
+def compact_arm_intent(arm: PilotArmIntent) -> dict[str, Any]:
+    """Losslessly factor repeated compiled settings; immutable source DTO stays intact."""
+    payload = arm.model_dump(mode="json")
+    records = payload["compiled_settings"]
+    common = {
+        key: value
+        for key, value in records[0].items()
+        if key not in {"strategy_id", "scaffold_id"}
+        and all(key in record and record[key] == value for record in records)
+    }
+    payload["compiled_settings"] = {
+        "common": common,
+        "strategies": [
+            {key: value for key, value in record.items() if key not in common} for record in records
+        ],
+        "semantics": "Each strategy inherits every common field; merge common with its "
+        "strategy fields to recover the exact compiled configuration.",
+    }
+    return payload
 
 
 def pilot_working_set(
@@ -27,7 +49,12 @@ def pilot_working_set(
 ) -> dict[str, Any]:
     """Summarize all measured rows, retaining denominator and missingness semantics."""
     facts: dict[str, Any] = {}
+    target_contexts: dict[str, Any] = {}
     for arm in arms:
+        context_id = "context-" + identity(arm.target_context)[:24]
+        intent = compact_arm_intent(arm)
+        target_contexts[context_id] = intent["target_context"]
+        intent["target_context"] = {"shared_context_id": context_id}
         candidates = [
             c for c in measurement.candidates if c.lineage.strategy_id in arm.strategy_ids
         ]
@@ -52,7 +79,7 @@ def pilot_working_set(
                 "maximum": max(values) if values else None,
             }
         facts[arm.arm_id] = {
-            "design_intent": arm.model_dump(mode="json"),
+            "design_intent": intent,
             "denominators": [d.model_dump(mode="json") for d in denominators],
             "metrics": summaries,
             "candidate_count": len(candidates),
@@ -70,6 +97,7 @@ def pilot_working_set(
         "measurement_sha256": canonical_model_sha256(measurement),
         "execution": measurement.execution.model_dump(mode="json"),
         "facts": facts,
+        "shared_target_contexts": target_contexts,
         "interpretation_limits": [
             "Legacy thresholds are audit annotations, not calibrated v3 scientific truth.",
             "Development scores are engineering ordering, not biological fitness.",

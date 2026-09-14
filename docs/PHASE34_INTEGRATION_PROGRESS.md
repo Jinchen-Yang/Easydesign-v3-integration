@@ -186,3 +186,20 @@ at `07d2a6a2` with only its original untracked archives.
 
 Still required: real generation/prediction/metrics when a GPU is available, frozen
 Pilot Diagnosis/Judge/native Gate 4 validation, complete regression and final closure.
+
+## Pilot packet correction before live submission
+
+The actual three-arm/seven-scaffold NK2R packet audit measured 146,873 characters,
+so no Pilot model call was made. Repeated compiled evidence/configuration fields are
+now factored losslessly into common settings plus per-strategy values; identical target
+context is referenced once. The real packet is 47,610 characters, with all 21 compiled
+records and target contexts reconstructed exactly (`nk2r-diagnosis-packet-audit-03.json`).
+The original authority and full stored Design/Diagnosis DTOs are unchanged. Judge and
+coordinator messages no longer repeat the full Design arm payload already in runtime facts.
+The preservation test passes (`working-set-tests-02.log`, 1 test).
+
+The mutable-source full test run was interrupted: its three Design restart failures
+were the expected Harness fingerprint guard after source files changed between test
+turns, not accepted-case failures. The isolated reproduction confirmed the same cause.
+Those runs are not acceptance evidence. Source is frozen before restarting regression;
+no source edits will be made while that regression runs.

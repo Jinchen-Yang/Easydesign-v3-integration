@@ -120,6 +120,7 @@ async def run_session(
     from langgraph.types import Command
 
     from .harness import create_harness, fingerprint
+    from .phase34_runtime import Phase34Runtime
 
     store, thread = bridge.store, bridge.thread
     goal = store.thread(thread, fingerprint(config), goal)
@@ -192,10 +193,10 @@ async def run_session(
         )
         interrupts = [i for task in state.tasks for i in task.interrupts]
         superseded_card = None
-        if len(interrupts) == 1 and hasattr(bridge, "downstream_scope"):
+        if len(interrupts) == 1 and isinstance(bridge, Phase34Runtime):
             pending_card = DecisionCard.model_validate(interrupts[0].value)
             if pending_card.gate_type in {"pilot-promotion", "wet-lab-handoff"}:
-                current_card = getattr(bridge, "downstream_card")()
+                current_card = bridge.downstream_card()
                 if current_card is None or current_card.card_id != pending_card.card_id:
                     store.card(thread, pending_card.card_id)
                     if decision is not None or store.response(thread, pending_card.card_id):

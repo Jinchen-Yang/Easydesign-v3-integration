@@ -1,4 +1,6 @@
-# Phase 3/4 integration — active engineering record
+# Phase 3/4 integration — completed engineering record
+
+**Current status: ENGINEERING ACCEPTANCE PASS.** See [the final acceptance record](PHASE34_INTEGRATION_ACCEPTANCE.md), [Phase 3 closure](PHASE3_CLOSURE.md), and [Phase 4 closure](PHASE4_CLOSURE.md). The milestone entries below preserve historical intermediate status; their old pending items are resolved by the final closure entry.
 
 This assignment forward-ports downstream capability onto the current Phase 2
 architecture. It does not merge the historical donor branch or grant scientific
@@ -238,3 +240,34 @@ The Scale projection adapter also accepted these real measurements without launc
 Scale (`scale-real-measurement-projection-01.json`). Six focused tests pass; whole Ruff
 and the configured mypy check pass (224 source files). Source was edited only after the
 frozen full regression finished. Final post-correction regression/native Gate 4 remain.
+
+
+## Final closure — frozen implementation and validated handoff
+
+Implementation: `16fdf2519240e29eb67a575b896f347d6b34b75c`.
+Closure checkpoint: `checkpoint/easydesign-v3-phase34-integration-complete-20260915`.
+
+Frozen real NK2R measurement replay returns the same v2 hash without any backend call.
+Native Pilot Diagnosis submits first try; Judge resolves an unknown fact reference and
+an output-limit repair, then completes a CONCERNS review. Four actual DeepSeek v4 Pro
+calls use 137,188 provider tokens, maximum input 90,629 characters. Gate 4 is reached with
+INCONCLUSIVE and no scientific Scale eligibility. No human choice is synthesized.
+The recommendation to run another Pilot remains unapproved.
+
+Final regression covers all 1,212 collected node IDs: 1,201 passed, 11 skipped. Eleven
+initial setup errors came from fixture resolution under explicit file-list sharding.
+Standard directory collection and exact selection passed all eleven without source
+changes (8/1/2 recovered by shard). The original errors and replays are preserved, not
+presented as a single clean invocation. The checked manifest records disjoint initial
+coverage, each recovery and all final outcomes.
+
+Whole Ruff and configured mypy pass (224 source files). Browser regression is 5 passed,
+2 optional report skips. The 50k synthetic disk/restart stress and real-model native
+Gate 4→5 validation-only handoff passed. Current Phase 2 mainline remains clean at the
+original base, donor remains at its recorded HEAD, all 461 protected files are unchanged,
+accepted Cases 1/3/4/5 identities remain intact, and the original NK2R Gate 3 is pending.
+
+No production generation, scientific Scale run, wet-lab order or experiment occurred.
+Phase 3/4 engineering acceptance is complete within this scope; no later roadmap work
+is started. Detailed results, limitations and evidence hashes are in the acceptance
+record and `docs/validation/phase34-integration-20260915.json`.

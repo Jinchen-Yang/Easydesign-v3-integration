@@ -1,0 +1,415 @@
+{
+  "schema_version": "1",
+  "status": "PHASE34_ENGINEERING_ACCEPTANCE_PASS",
+  "scope": "Current Phase 2 forward-port; real three-candidate micro; synthetic Scale/handoff; no experiments.",
+  "phase2_base": "fce5d886849edf575ec1765f7226064291857d49",
+  "donor": "07d2a6a24d1a3d622f01ac58d3e983aafbcbd3e4",
+  "branch": "codex/easydesign-v3-phase34-integration",
+  "implementation_commit": "16fdf2519240e29eb67a575b896f347d6b34b75c",
+  "final_python_regression": {
+    "collected": 1212,
+    "counts": {
+      "passed": 1201,
+      "skipped": 11
+    },
+    "exact_disjoint_initial_coverage": true,
+    "all_tests_resolved": true,
+    "shards": [
+      {
+        "shard": 1,
+        "initial_counts": {
+          "passed": 359,
+          "skipped": 2,
+          "failed": 8
+        },
+        "effective_counts": {
+          "passed": 367,
+          "skipped": 2
+        },
+        "initial_exit_code": 1,
+        "elapsed_seconds": 699.9703110819682,
+        "evidence": {
+          "path": "runtime/tmp/final-regression-shard-04-1.json",
+          "sha256": "7c600b8c0799ed3fd5fca09d5e84b9fa1efbe673b2f8d3f532f93ab605a02cf3"
+        }
+      },
+      {
+        "shard": 2,
+        "initial_counts": {
+          "passed": 389,
+          "failed": 1
+        },
+        "effective_counts": {
+          "passed": 390
+        },
+        "initial_exit_code": 1,
+        "elapsed_seconds": 1106.5990917021409,
+        "evidence": {
+          "path": "runtime/tmp/final-regression-shard-04-2.json",
+          "sha256": "a208c713f5676490c45336b62e5f57709c5eb874434cb2b1c3129c47e3c6f4a1"
+        }
+      },
+      {
+        "shard": 3,
+        "initial_counts": {
+          "passed": 442,
+          "failed": 2,
+          "skipped": 9
+        },
+        "effective_counts": {
+          "passed": 444,
+          "skipped": 9
+        },
+        "initial_exit_code": 1,
+        "elapsed_seconds": 850.4765742728487,
+        "evidence": {
+          "path": "runtime/tmp/final-regression-shard-04-3.json",
+          "sha256": "9e88e7e6360ddb1df44e5462740da9ace3ff5220d93e60d7ba12b4dcf0ec6a7b"
+        }
+      }
+    ],
+    "setup_recoveries": [
+      {
+        "shard": 1,
+        "reason": "Explicit file-list collection missed fixture scope; normal directory collection restored it.",
+        "source_changed": false,
+        "nodeids": [
+          "tests/unit/agent/test_live_validator_reuse.py::test_live_fixture_reuses_verified_runtime_and_refuses_different_executable",
+          "tests/unit/agent/test_phase34_scale_execution.py::test_scale_exact_batch_dispatch_resume_and_config_tampering",
+          "tests/unit/core/test_attempts.py::test_attempt_cannot_start_before_creation",
+          "tests/unit/core/test_attempts.py::test_failed_attempt_records_typed_error",
+          "tests/unit/core/test_attempts.py::test_failed_attempt_requires_error",
+          "tests/unit/core/test_attempts.py::test_pending_attempt_has_no_execution_times",
+          "tests/unit/core/test_attempts.py::test_running_attempt_cannot_have_end_time",
+          "tests/unit/core/test_attempts.py::test_terminal_attempt_is_frozen"
+        ],
+        "counts": {
+          "passed": 8
+        },
+        "evidence": {
+          "path": "runtime/tmp/final-regression-setup-recovery-05-1.json",
+          "sha256": "f3b8b4d2c579036f2b53fdea12b3c294ea7442bb49f8152242113278aae0c3a3"
+        }
+      },
+      {
+        "shard": 2,
+        "reason": "Explicit file-list collection missed fixture scope; normal directory collection restored it.",
+        "source_changed": false,
+        "nodeids": [
+          "tests/unit/agent/test_phase34_execution.py::test_pilot_dispatch_and_recovery_bind_one_run_and_exact_configuration"
+        ],
+        "counts": {
+          "passed": 1
+        },
+        "evidence": {
+          "path": "runtime/tmp/final-regression-setup-recovery-05-2.json",
+          "sha256": "8327c18323f537a3b53180f02875d3e487a058450fd04fca628fa9efeca07494"
+        }
+      },
+      {
+        "shard": 3,
+        "reason": "Explicit file-list collection missed fixture scope; normal directory collection restored it.",
+        "source_changed": false,
+        "nodeids": [
+          "tests/unit/agent/test_terminal_consistency.py::test_no_preparation_tool_cannot_finish_a_scientific_request",
+          "tests/unit/agent/test_terminal_consistency.py::test_prose_confirmation_cannot_finish_an_authoritative_gate"
+        ],
+        "counts": {
+          "passed": 2
+        },
+        "evidence": {
+          "path": "runtime/tmp/final-regression-setup-recovery-05-3.json",
+          "sha256": "51f3b624cd1cd72eb1dfab76dce7c8206ab620ec4fee9a5f5a019479e385a919"
+        }
+      }
+    ],
+    "skipped_nodes": [
+      "tests/integration/test_agent_target_vertical_slice.py::test_live_model_target_slice",
+      "tests/integration/test_agent_site_vertical_slice.py::test_live_model_site_revision",
+      "tests/integration/test_agent_design_vertical_slice.py::test_live_model_design_cdr_revision",
+      "tests/test_pymol_pse_integration.py::test_synthetic_single_target_pse_publishes_complete_bundle_and_manifests",
+      "tests/test_pymol_pse_integration.py::test_strict_pse_boundaries_fail_explicitly[zero-protein-protein-object-count]",
+      "tests/test_pymol_pse_integration.py::test_strict_pse_boundaries_fail_explicitly[multi-object-protein-object-count]",
+      "tests/test_pymol_pse_integration.py::test_strict_pse_boundaries_fail_explicitly[multi-chain-protein-chain-count]",
+      "tests/test_pymol_pse_integration.py::test_strict_pse_boundaries_fail_explicitly[multi-state-coordinate-state-count]",
+      "tests/test_pymol_pse_integration.py::test_strict_pse_boundaries_fail_explicitly[ligand-non-protein-heavy-atoms]",
+      "tests/test_pymol_pse_integration.py::test_strict_pse_boundaries_fail_explicitly[non-canonical-non-canonical-residue]",
+      "tests/test_pymol_pse_integration.py::test_corrupt_pse_fails_without_fallback"
+    ]
+  },
+  "real_micro": {
+    "commit": "16fdf2519240e29eb67a575b896f347d6b34b75c",
+    "confidence": "INCONCLUSIVE",
+    "recommended_action": "RUN_ANOTHER_PILOT",
+    "model_calls": 4,
+    "total_tokens": 137188,
+    "max_input_chars": 90629,
+    "card_id": "0520c6294159b6a0876869c6050aa98bf2b3dac2d98af4629ffb4c3052d3595a",
+    "human_decision_submitted": false,
+    "arm_denominators": [
+      {
+        "failed_generation_attempts": 0,
+        "failed_prediction_attempts": 0,
+        "generated_candidates": 1,
+        "legacy_policy_pass_count": 0,
+        "metric_evaluable_candidates": 1,
+        "missing_by_metric": {
+          "independent-prediction-binder_pose_rmsd_angstrom": 1,
+          "independent-prediction-target_ca_rmsd_angstrom": 1
+        },
+        "operational_failure_count": 0,
+        "planned_candidates": 1,
+        "predicted_candidates": 1,
+        "strategy_id": "arm-1-scaffold-7eow",
+        "unique_sequences": 1,
+        "valid_execution_products": 1
+      },
+      {
+        "failed_generation_attempts": 0,
+        "failed_prediction_attempts": 0,
+        "generated_candidates": 1,
+        "legacy_policy_pass_count": 0,
+        "metric_evaluable_candidates": 1,
+        "missing_by_metric": {
+          "independent-prediction-binder_pose_rmsd_angstrom": 1,
+          "independent-prediction-target_ca_rmsd_angstrom": 1
+        },
+        "operational_failure_count": 0,
+        "planned_candidates": 1,
+        "predicted_candidates": 1,
+        "strategy_id": "arm-2-scaffold-7eow",
+        "unique_sequences": 1,
+        "valid_execution_products": 1
+      },
+      {
+        "failed_generation_attempts": 0,
+        "failed_prediction_attempts": 0,
+        "generated_candidates": 1,
+        "legacy_policy_pass_count": 0,
+        "metric_evaluable_candidates": 1,
+        "missing_by_metric": {
+          "independent-prediction-binder_pose_rmsd_angstrom": 1,
+          "independent-prediction-target_ca_rmsd_angstrom": 1
+        },
+        "operational_failure_count": 0,
+        "planned_candidates": 1,
+        "predicted_candidates": 1,
+        "strategy_id": "arm-3-scaffold-7eow",
+        "unique_sequences": 1,
+        "valid_execution_products": 1
+      }
+    ],
+    "attempts": [
+      {
+        "role": "pilot-diagnosis",
+        "attempt": 1,
+        "category": "SUCCESS",
+        "diagnostic": null
+      },
+      {
+        "role": "judge",
+        "attempt": 1,
+        "category": "FACT_CONFLICT",
+        "diagnostic": "Independent review cites an unknown runtime fact"
+      },
+      {
+        "role": "judge",
+        "attempt": 2,
+        "category": "MAX_TOKENS",
+        "diagnostic": "Independent review cites an unknown runtime fact"
+      },
+      {
+        "role": "judge",
+        "attempt": 3,
+        "category": "SUCCESS",
+        "diagnostic": "Independent review cites an unknown runtime fact"
+      }
+    ]
+  },
+  "real_micro_review": {
+    "availability": "completed",
+    "review": "CONCERNS"
+  },
+  "measurement_sha256": "42c425244feabb02bfcf34cbaa3d3e2f508956b9c1461725eb4b23b18e7a25d0",
+  "actual_backend_execution": {
+    "boltzgen_generations": 3,
+    "verified_afo_predictions": 3,
+    "historical_afo_attempts": 6,
+    "prediction_backend": "AFO 3.1.4 / OpenFold3 P2",
+    "reference_residues": 297,
+    "full_target_residues": 398,
+    "alignment_rmsds": "unavailable, never zero-filled",
+    "post_correction_gpu_invocations": 0
+  },
+  "synthetic_native_phase4": {
+    "status": "FROZEN_NATIVE_REAL_MODEL_GATE4_TO_GATE5_HANDOFF_PASS",
+    "commit": "d366a903a2b01741639fb492f8fcd9143ed8052b",
+    "evidence_scope": "synthetic-precomputed-control-flow-only",
+    "model_calls": 3,
+    "total_tokens": 8506,
+    "handoff_status": "validation-only-not-authorized-for-experiment",
+    "ordering_status": "not-ordered",
+    "candidate_count": 4
+  },
+  "synthetic_50k": {
+    "status": "PASS",
+    "retained": 50000,
+    "evaluable": 49949,
+    "unevaluable": 51,
+    "persistence": {
+      "all_batches_recovered": true,
+      "checkpoint_directory": "runtime/tmp/phase4-50k-disk-02",
+      "deduplicated_batch_replays": 50,
+      "diversity_cluster_cap": 2,
+      "diversity_note": "Synthetic advisory clusters; no biological or pose-quality inference.",
+      "initial_failed_batches": 1,
+      "initial_resumable_batches": 1,
+      "pass": true,
+      "pool_sha256": "64b582e1f7ce37131c59f46d8b4f3c8fb7d6017e6c67c24fb5c2e6376d21f168",
+      "process_restart": {
+        "count": 50000,
+        "persisted": "64b582e1f7ce37131c59f46d8b4f3c8fb7d6017e6c67c24fb5c2e6376d21f168",
+        "pool": "64b582e1f7ce37131c59f46d8b4f3c8fb7d6017e6c67c24fb5c2e6376d21f168",
+        "shortlist": "ae32210af9cdc0f8cc6aa6490bbfc0f8781815db58a1576b8b09da05dd57a9fc"
+      },
+      "shortlist_count": 30,
+      "shortlist_sha256": "ae32210af9cdc0f8cc6aa6490bbfc0f8781815db58a1576b8b09da05dd57a9fc"
+    },
+    "scope": "Software stress only; not biological or GPU throughput benchmark."
+  },
+  "quality_checks": {
+    "ruff": "PASS",
+    "configured_mypy": "PASS: 224 source files",
+    "browser": {
+      "passed": 5,
+      "skipped": 2
+    },
+    "protected_files": 461
+  },
+  "integrity": {
+    "status": "PASS",
+    "implementation_commit": "16fdf2519240e29eb67a575b896f347d6b34b75c",
+    "integration_branch": "codex/easydesign-v3-phase34-integration",
+    "phase2_base": "fce5d886849edf575ec1765f7226064291857d49",
+    "phase2_clean": true,
+    "donor": "07d2a6a24d1a3d622f01ac58d3e983aafbcbd3e4",
+    "donor_tracked_clean": true,
+    "donor_untracked_preserved": "?? archives/",
+    "protected_files_verified": 461,
+    "protected_paths_diff_empty": true,
+    "accepted_index_sha256": "37292194dc85f515bd7fe84d3aab12de742c2419bbb794cab31db3982aeffa16",
+    "accepted_cases": [
+      {
+        "case": "case-1-soluble",
+        "request_sha256": "29211cd1ad6bc88da75d1b31beaeab54e1ff21c8f0a0d9b4d3409281b884cb47",
+        "receipt_sha256": "bc62c6cecd720c6e2a438aad19fefc8d0f8538cf65c828db90c5816b89999a33",
+        "tag_commit": "82f2f7b33fc8d67dba8115dfd5eec8365811685d",
+        "preserved": true
+      },
+      {
+        "case": "case-3-identity-trap",
+        "request_sha256": "e7fa022a2181974f6eb25549d45a0c2c50bd0306c15b6079846ebfa13e5bb52a",
+        "receipt_sha256": "c920b00f5522e72cdbaf5343a191aef3078833d470464c0ce83e01228471660b",
+        "tag_commit": null,
+        "preserved": true
+      },
+      {
+        "case": "case-4-standard",
+        "request_sha256": "9b515f9fcb0c30bc22363396d1f6aa101888ee9fe4b947fea4f9da4595e7117d",
+        "receipt_sha256": "3e2bc214f9ea8e832d9e2819fab82f19e047397248b068f93a6f8eaf1692ab97",
+        "tag_commit": "06126cb3e50bb42b067e9840119c297d40cae723",
+        "preserved": true
+      },
+      {
+        "case": "case-5-native",
+        "request_sha256": "2984dd6e8b09aa513f6f5b432de12cc7296668166a9ac557131b4afbc2e0b51f",
+        "receipt_sha256": "3d64c4a73b044685781e9efc790498297d777e1e6f439c6ae744c098a8f553a0",
+        "tag_commit": "ecbc15d72a146f811987428db190a7ca1c50ba82",
+        "preserved": true
+      }
+    ],
+    "original_nk2r_gate3_card_id": "d6cefd06f64f72ccd2359af65c6daa18b655fde71a33b2ade6068aaad7bc1d5f",
+    "original_nk2r_gate3_remains_pending": true,
+    "scope": "Read-only integrity verification; no approval or backend dispatch."
+  },
+  "production_generation_performed": false,
+  "wet_lab_action_performed": false,
+  "evidence": [
+    {
+      "path": "runtime/tmp/nk2r-micro-frozen-measurement-03.json",
+      "sha256": "5fd78ce580a36e884d72baf45d2e94397077a5b631ee371fa4d2283eaafac482"
+    },
+    {
+      "path": "runtime/tmp/nk2r-micro-measurement-02.json",
+      "sha256": "9b1ddbe328044e7e009b7d87058d4eb527a634631fbe30d8a4cb92f8193f943c"
+    },
+    {
+      "path": "runtime/tmp/nk2r-micro-gate4-01.json",
+      "sha256": "693e399ad7dbd49e7c77ab8cf378600be715a827f9d2a37593c0c6505b55c283"
+    },
+    {
+      "path": "runtime/tmp/nk2r-micro-gate4-usage-01.json",
+      "sha256": "442f9c5268a7a70cd99455da279a35e7c3f37bade0b110be56b6cf06a7b08a7e"
+    },
+    {
+      "path": "runtime/tmp/nk2r-design-compile-verification-03.log",
+      "sha256": "f29afb2a1eaf803801503be61f612344d4660ea94ad25ddb469db1b90b3cdd07"
+    },
+    {
+      "path": "runtime/tmp/scale-real-measurement-projection-01.json",
+      "sha256": "4ef229dbd8d9e5b3729c8ad540250817f99180dd9a0095939dfb2a1fb2cb9a44"
+    },
+    {
+      "path": "runtime/tmp/phase34-live-native-final-result-01.json",
+      "sha256": "f18078a1bd0e4ad3a6005cc09ec09fc0a1f3a81554f5d61bfe56d9213b4124c9"
+    },
+    {
+      "path": "runtime/tmp/phase34-live-native-final-usage-01.json",
+      "sha256": "94a39d86fd445827370791a11e977419a252a458c8c34b78ada05691ec2ec3a2"
+    },
+    {
+      "path": "runtime/tmp/phase4-50k-stress-02.json",
+      "sha256": "c6b17182fdc6eac8ad5c62abe80d1b8036d623a25362c6727e9cc7174ce762cd"
+    },
+    {
+      "path": "runtime/tmp/phase34-replay-m2-standard.json",
+      "sha256": "b835c8e335f70a8365474e003587fd7dd4224d033ddf6ccb91e0cc08d3dbb77d"
+    },
+    {
+      "path": "runtime/tmp/phase34-replay-m2-native.json",
+      "sha256": "c6d52ba79eae6974ae184bd61360596b55e0ef17af9e5a190b8ca1372370494d"
+    },
+    {
+      "path": "runtime/tmp/final-regression-plan-04.json",
+      "sha256": "a5876dec733dee2f6a655f74dbf742426f31a7d346e66a652739e829e26324c6"
+    },
+    {
+      "path": "runtime/tmp/partial-reference-tests-02.log",
+      "sha256": "dbcb7d0a047915893bfa499b3046a2496a7590f94b4402c92e27181d64d7288b"
+    },
+    {
+      "path": "runtime/tmp/partial-reference-ruff-03.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "runtime/tmp/partial-reference-mypy-04.log",
+      "sha256": "d400cad966584359f5b6618b208dfbcb7a51e6494184573ab950ef867379f332"
+    },
+    {
+      "path": "runtime/tmp/integration-full-tests-03.log",
+      "sha256": "6654ef9997525fb4ebde605e1b35589a0dbb2ca96fd1707d35271cc67c470ac4"
+    },
+    {
+      "path": "runtime/tmp/web-browser-tests-02.log",
+      "sha256": "e22eec584546ee56e2a9a50bb97b2bba3d29b40b85fe88885f6ea9b34c72f7bd"
+    },
+    {
+      "path": "runtime/tmp/phase34-final-integrity-03.json",
+      "sha256": "2076171f34f9201d2dd49357f29a5d1cd464f5449bed5b29ae47bdea4186a364"
+    },
+    {
+      "path": "runtime/tmp/accepted-gate3-fixtures-01.json",
+      "sha256": "25202954c00e2ed2887ba04f668c61de3a03b2e5ed49610a54916db520973c78"
+    }
+  ]
+}

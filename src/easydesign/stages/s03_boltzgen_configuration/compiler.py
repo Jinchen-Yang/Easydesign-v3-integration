@@ -26,6 +26,7 @@ from .models import (
     ScaffoldAsset,
     StrategyRecord,
 )
+from .scaffold_templates import GPCR_TEMPLATE, gpcr_template
 
 SCAFFOLD_IDS = (
     "7eow",
@@ -223,10 +224,13 @@ def _variant_scaffold(
     scaffold_id: str,
     variant: ExplicitStrategyVariant,
 ) -> tuple[str | None, str | None]:
-    if not variant.cdr_overrides:
+    if not variant.cdr_overrides and variant.scaffold_template != GPCR_TEMPLATE:
         return None, None
-    source = artifacts_root / "assets" / "scaffolds" / f"{scaffold_id}.yaml"
-    payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+    if variant.scaffold_template == GPCR_TEMPLATE:
+        payload, _ = gpcr_template(scaffold_id)
+    else:
+        source = artifacts_root / "assets" / "scaffolds" / f"{scaffold_id}.yaml"
+        payload = yaml.safe_load(source.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ManifestStateError(f"scaffold YAML 顶层不是 mapping: {scaffold_id}")
     design = payload.get("design")
@@ -241,7 +245,8 @@ def _variant_scaffold(
         raise ManifestStateError(f"scaffold 必须有三个 CDR range: {scaffold_id}")
     for override in variant.cdr_overrides:
         index = override.cdr - 1
-        ranges[index] = override.design_res_index
+        if override.design_res_index is not None:
+            ranges[index] = override.design_res_index
         insertion = (
             insertions[index].get("insertion") if isinstance(insertions[index], dict) else None
         )
@@ -366,6 +371,7 @@ def compile_vhh_strategy_plan(
                 candidates_per_strategy=variant.candidates_per_strategy,
                 design_specification_path=specification.relative_to(artifacts_root).as_posix(),
                 design_specification_sha256=sha256_file(specification),
+                scaffold_template=variant.scaffold_template,
                 variant_scaffold_path=variant_scaffold_path,
                 variant_scaffold_sha256=variant_scaffold_sha,
                 hypothesis_id=variant.hypothesis_id,
@@ -546,10 +552,12 @@ def write_design_matrix(
         "crop_enabled",
         "target_chain",
         "binding_label_seq_ids",
+        "avoid_label_seq_ids",
         "neutral_residue_policy",
         "candidates_per_strategy",
         "design_specification_path",
         "design_specification_sha256",
+        "scaffold_template",
         "variant_scaffold_path",
         "variant_scaffold_sha256",
         "native_source_sha256",
@@ -569,6 +577,9 @@ def write_design_matrix(
             normalized = dict(row)
             normalized["binding_label_seq_ids"] = ",".join(
                 str(value) for value in normalized["binding_label_seq_ids"]
+            )
+            normalized["avoid_label_seq_ids"] = ",".join(
+                str(value) for value in normalized["avoid_label_seq_ids"]
             )
             for name in ("evidence_refs", "changed_factors", "held_constant"):
                 normalized[name] = " | ".join(normalized[name])

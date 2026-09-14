@@ -1,0 +1,50 @@
+# 7xl0 (CDR3 total length 15-50; CDR1/CDR2 free 1..5)
+path: 7xl0.cif
+include: 
+  - chain: 
+      id: A
+design:
+  - chain:
+      id: A
+      res_index: 25..29,51..57,101..107
+
+structure_groups:
+  - group:
+      id: A
+      visibility: 2
+  - group:
+      id: A
+      visibility: 0
+      res_index: 25..29,51..57,101..107
+
+
+exclude: 
+  - chain:
+      id: A
+      res_index: 25..27 # take out 3
+  - chain:
+      id: A
+      res_index: 51..53 # take out 3
+  - chain:
+      id: A
+      res_index: 101..103 # take out 3
+
+design_insertions:
+  - insertion:
+      id: A
+      res_index: 25 # The res_index'th residue will be a designed one (starting to count from 1)
+      num_residues: 1..5
+  - insertion:
+      id: A
+      res_index: 51 # The res_index'th residue will be a designed one (starting to count from 1)
+      num_residues: 1..5
+  - insertion:
+      id: A
+      res_index: 101 # The res_index'th residue will be a designed one (starting to count from 1)
+      num_residues: 1..46
+  
+
+# reindex the residue index which is used in the positional encoding
+reset_res_index:
+  - chain:
+      id: A

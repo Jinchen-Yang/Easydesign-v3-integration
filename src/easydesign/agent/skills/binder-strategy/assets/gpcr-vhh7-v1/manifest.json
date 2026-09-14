@@ -1,0 +1,23 @@
+{
+  "files": {
+    "7eow-cdr3-50.yaml": "ce46d1d98306f2e2186c5c277a235ee1992ab5b6533892b01323d7c555f57bad",
+    "7eow.cif": "ef264540c42b66a95cc3a39cca4b709f003ca0f33fd4a3f5d6e6a9472e8ed1d6",
+    "7xl0-cdr3-50.yaml": "dbb155e355a8196dbe28cd71b1fe40d73d0e3ffb739f5495e427a4371643e861",
+    "7xl0.cif": "a14a93666d571d48038e56757d9936c0289bcee3a38348b9481dbe0c0ffed0b7",
+    "8coh-cdr3-50.yaml": "5fccebf9ee3a03daec113738b03ecaf12077265ecc0595478c4b859a75ce3975",
+    "8coh.cif": "b67cbce932686235ba501799c88c0740db943521c0606898da07126759c9a332",
+    "8z8v-cdr3-50.yaml": "9e819e22961c711dd93e1a127ca74076653f89a9ead2839c554ee229b8d67dcd",
+    "8z8v.cif": "0da8b60060342660d49ce24db37b72c0e11a527fd4c81a4554852287e64d5f8b",
+    "gontivimab-cdr3-50.yaml": "a1c2d95c45a7f7bb2c1b9b46633de93e723c0cf23b8be61b04bbac08e8e7b2b3",
+    "gontivimab.cif": "c987528ca5704985da6cedf938993c0aef1b1a942710d9d0167068441a90b0c1",
+    "isecarosmab-cdr3-50.yaml": "68b511fc696d91b9a1106f8366a5c8cf15f6443e2d7e852bcbd62131575251c0",
+    "isecarosmab.cif": "5233ef68e139c149c0a76203bab3bda9b573b8adef25edc9d08e21875e2a086c",
+    "sonelokimab-cdr3-50.yaml": "c7231c138ddb0f9d0d89e524d14151847018bf4f5bd750147a5ebb714e9bee0c",
+    "sonelokimab.cif": "4969155fe2bed25f4917412ee7741ef6af05b98884dc6ad4be5737f3983b9994"
+  },
+  "owner_skill": "binder-strategy",
+  "semantics": "User-supplied complete scaffold configurations. Insertion counts are not final CDR lengths; the archive filename is not a validated length contract.",
+  "source_archive": "generic_nanobody_scaffolds_7_cdr3-15-50_complete.tar.gz",
+  "source_archive_sha256": "9b9acd5fc11d69916d2856d3762d07ee12e3ee84cbce62af3c41d06cd3ddfa16",
+  "template_id": "gpcr-vhh7-v1"
+}

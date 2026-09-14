@@ -25,7 +25,11 @@ audit portfolio. A backup is not an approved replacement for the selected hotspo
 3. Explain how approach geometry, target state and shielding constrain the design hypothesis.
    Do not claim that passing YAML validation predicts binding, function or state specificity.
    Do not infer a biological state, secondary structure or docking result absent from evidence.
-4. Preserve official scaffold/framework constraints. CDR modifications use the existing typed
+4. Preserve the selected Skill template/framework constraints. For GPCR VHH design, use the
+   bundled [GPCR templates](references/gpcr.md) as the preferred default shown by
+   read_design_evidence. Each arm can explicitly choose another available scaffold_template
+   or make a justified parameter adjustment. This prior never replaces the approved Site.
+   CDR modifications use the existing typed
    compiler fields and actual template numbering shown by tools. Do not guess indices or freely
    write YAML. Treat a compiler/backend rejection as a hard executable constraint to revise.
    Explain CDR3 exploration versus a restricted approach, including what has not been tested.
@@ -35,7 +39,7 @@ audit portfolio. A backup is not an approved replacement for the selected hotspo
 5. Use one arm when one scientific hypothesis is sufficient. Multiple arms must change concrete
    executable factors to discriminate hypotheses. State held-constant factors, expected results
    and what a negative result would mean. Do not merely rename identical experiments.
-   Default design samples all three CDR regions within their official bounds across seven
+   Default design samples all three CDR regions within the selected template bounds across seven
    scaffold backgrounds. Constant bounds are policies, not constant sequences or loop lengths.
    A CDR3-centered hypothesis does not make this a CDR3-only experiment or isolate CDR3 causality.
    Describe the actual varying factors. A small or zero-yield sample is insufficient evidence
@@ -64,12 +68,13 @@ rejects or explicitly overrides scientific discouragement. Hard mapping/compiler
 cannot be overridden. Carry inherited warnings and human rationale forward; a coherent HOW
 proposal does not erase a risky WHERE decision. Stop at the frozen Design Specification.
 
-The scaffold evidence comes from runtime-verified official VHH assets, with explicit compiler
+The scaffold evidence comes from runtime-verified official VHH assets and Skill-owned GPCR
+templates. read_design_evidence lists each available template separately, with explicit compiler
 residue indices. `cdr_template_validation` states whether a requested range lies inside the
-named loop of all seven scaffolds. A true result is a verified numbering/loop-bounds fact;
+named loop of all seven scaffolds in the selected template. A true result is a verified numbering/loop-bounds fact;
 do not call it an unverified human guess or require an unrelated target/canonical mapping.
 It does not establish cross-scaffold structural alignment, geometric equivalence or binding.
-Only the four supported scientific intent controls are exposed here; unrelated backend feature
+Template selection and the supported scientific intent controls are exposed here; unrelated backend feature
 flags must not be interpreted as absence of the official VHH scaffold assets.
 
 ## Expert native strategy

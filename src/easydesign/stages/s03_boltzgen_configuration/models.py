@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 
+from .scaffold_templates import ScaffoldTemplate
+
 STAGE_ID = "03-boltzgen-configuration"
 BOLTZGEN_VERSION = "0.3.2"
 BOLTZGEN_COMMIT = "a3149cf18eeb58648d1abbb27539bd73f746cdda"
@@ -39,7 +41,9 @@ class CdrOverride(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     cdr: Literal[1, 2, 3]
-    design_res_index: str = Field(pattern=r"^[0-9]+(?:\.\.[0-9]+)?(?:,[0-9]+(?:\.\.[0-9]+)?)*$")
+    design_res_index: str | None = Field(
+        default=None, pattern=r"^[0-9]+(?:\.\.[0-9]+)?(?:,[0-9]+(?:\.\.[0-9]+)?)*$"
+    )
     insertion_num_residues: str = Field(pattern=r"^[0-9]+(?:\.\.[0-9]+)?$")
 
 
@@ -54,6 +58,7 @@ class ExplicitStrategyVariant(BaseModel):
     avoid_label_seq_ids: tuple[int, ...] = ()
     scaffold_ids: tuple[str, ...] = Field(min_length=1)
     target_crop: TargetCrop | None = None
+    scaffold_template: ScaffoldTemplate = "official-vhh7-v1"
     cdr_overrides: tuple[CdrOverride, ...] = ()
     candidates_per_strategy: int = Field(default=40, ge=1)
     hypothesis_id: str | None = Field(default=None, pattern=ID_PATTERN)
@@ -172,6 +177,7 @@ class StrategyRecord(BaseModel):
     candidates_per_strategy: int = Field(ge=1)
     design_specification_path: str = Field(min_length=1)
     design_specification_sha256: str = Field(pattern=SHA256_PATTERN)
+    scaffold_template: ScaffoldTemplate = "official-vhh7-v1"
     variant_scaffold_path: str | None = None
     variant_scaffold_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     native_source_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)

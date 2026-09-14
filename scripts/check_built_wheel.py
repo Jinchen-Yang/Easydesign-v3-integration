@@ -130,6 +130,21 @@ def main(argv: list[str] | None = None) -> int:
                         file=sys.stderr,
                     )
                     return 1
+            skill_prefix = "easydesign/agent/skills/binder-strategy"
+            gpcr_names = [
+                name.replace(".yaml", "-cdr3-50.yaml")
+                for name in EXPECTED_SCAFFOLDS
+                if name.endswith((".yaml", ".cif"))
+            ]
+            for relative in [
+                "SKILL.md",
+                "references/gpcr.md",
+                *[f"assets/gpcr-vhh7-v1/{name}" for name in [*gpcr_names, "manifest.json"]],
+            ]:
+                member = f"{skill_prefix}/{relative}"
+                if archive.read(member) != (ROOT / "src" / member).read_bytes():
+                    print(f"ERROR: wheel GPCR Skill asset differs: {relative}", file=sys.stderr)
+                    return 1
     except (BadZipFile, KeyError, OSError) as error:
         print(f"ERROR: wheel Target Viewer 资源验证失败: {error}", file=sys.stderr)
         return 1

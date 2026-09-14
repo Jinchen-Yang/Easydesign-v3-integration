@@ -7,7 +7,7 @@ from typing import Any
 from .contracts import AgentBoundaryError, EmptyArguments, EvidenceBinding, ShortText, StrictDTO
 from .design import DesignBridge
 from .design_contracts import BinderIntent
-from .design_evidence import evaluate_design
+from .design_evidence import evaluate_design, resolve_design_intent
 from .evidence_corpus import corpus_tools
 from .evidence_output import result_tool
 from .evidence_research import identity_comparison_tool, receptor_analysis_tool, research_tool
@@ -140,7 +140,9 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
             return bridge.store.offload(bridge.thread, bridge.read_design_evidence(query))
 
         async def binder_validate(**arguments: Any) -> str:
-            intent = BinderIntent.model_validate(arguments)
+            intent = resolve_design_intent(
+                BinderIntent.model_validate(arguments), bridge.read_design_evidence()
+            )
             site = bridge.approved_site()
             if site is None:
                 raise AgentBoundaryError("No approved hotspot")

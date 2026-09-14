@@ -1,0 +1,50 @@
+# 8coh (CDR3 total length 15-50; CDR1/CDR2 free 1..5)
+path: 8coh.cif
+include: 
+  - chain: 
+      id: A
+      res_index: ..126
+design:
+  - chain:
+      id: A
+      res_index: 25..33,51..58,99..114
+
+structure_groups:
+  - group:
+      id: A
+      visibility: 2
+  - group:
+      id: A
+      visibility: 0
+      res_index: 25..33,51..58,99..114
+
+
+exclude: 
+  - chain:
+      id: A
+      res_index: 25..27 # take out 3
+  - chain:
+      id: A
+      res_index: 51..53 # take out 3
+  - chain:
+      id: A
+      res_index: 99..101 # take out 3
+
+design_insertions:
+  - insertion:
+      id: A
+      res_index: 25 # The res_index'th residue will be a designed one (starting to count from 1)
+      num_residues: 1..5
+  - insertion:
+      id: A
+      res_index: 51 # The res_index'th residue will be a designed one (starting to count from 1)
+      num_residues: 1..5
+  - insertion:
+      id: A
+      res_index: 98 # The res_index'th residue will be a designed one (starting to count from 1)
+      num_residues: 1..37
+
+# reindex the residue index which is used in the positional encoding
+reset_res_index:
+  - chain:
+      id: A

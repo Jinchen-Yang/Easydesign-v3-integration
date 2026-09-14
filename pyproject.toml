@@ -57,6 +57,9 @@ where = ["src"]
 easydesign = [
   "agent/skills/*/SKILL.md",
   "agent/skills/*/references/*.md",
+  "agent/skills/*/assets/*/*.yaml",
+  "agent/skills/*/assets/*/*.cif",
+  "agent/skills/*/assets/*/*.json",
   "py.typed",
   "reporting/static/target_viewer/*.html",
   "reporting/static/target_viewer/*.js",

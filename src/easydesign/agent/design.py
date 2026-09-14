@@ -52,7 +52,12 @@ from .contracts import (
     ScientificStatus,
 )
 from .design_contracts import BinderIntent
-from .design_evidence import design_constraints, evaluate_design, strategy_from_intent
+from .design_evidence import (
+    design_constraints,
+    evaluate_design,
+    resolve_design_intent,
+    strategy_from_intent,
+)
 from .native_strategy import native_input
 from .phase2 import Phase2Bridge
 from .session_store import SessionStore, confined, identity
@@ -142,7 +147,9 @@ class DesignBridge(Phase2Bridge):
                 ),
                 "planned_candidates": native["summary"]["planned_candidates"],
             },
-            "constraints": design_constraints(),
+            "constraints": design_constraints(
+                (context["biology"] or {}).get("target_kind", "unknown")
+            ),
             "limitations": facts["limitations"],
         }
 
@@ -188,20 +195,7 @@ class DesignBridge(Phase2Bridge):
         assert site is not None
         _, facts, _ = self.site_facts()
         upstream_avoid = set(evidence["approved_exclusions"])
-        intent = intent.model_copy(
-            update={
-                "arms": [
-                    arm.model_copy(
-                        update={
-                            "avoid_label_seq_ids": sorted(
-                                upstream_avoid | set(arm.avoid_label_seq_ids)
-                            )
-                        }
-                    )
-                    for arm in intent.arms
-                ]
-            }
-        )
+        intent = resolve_design_intent(intent, evidence)
         parent = revision.card_id if revision else None
         native = native_input(self)
         if intent.strategy_source == "expert-native" and native is None:
@@ -669,6 +663,7 @@ class DesignBridge(Phase2Bridge):
                                     "candidates_per_scaffold",
                                 )
                             },
+                            "scaffold_template": arm.get("scaffold_template", "official-vhh7-v1"),
                             "binding_label_seq_ids": arm["binding_label_seq_ids"]
                             or site["site"]["hotspots"]["hotspot_sets"][0]["label_seq_ids"],
                         }

@@ -15,13 +15,19 @@ from easydesign.stages.s03_boltzgen_configuration.compiler import (
     EXPECTED_ASSET_SHA256,
     SCAFFOLD_IDS,
 )
+from easydesign.stages.s03_boltzgen_configuration.scaffold_templates import (
+    GPCR_MANIFEST_SHA256,
+    GPCR_TEMPLATE,
+    ScaffoldTemplate,
+    gpcr_template,
+)
 
 from .contracts import AgentBoundaryError
 from .design_contracts import BinderIntent
 from .session_store import identity
 
 
-def design_constraints() -> dict[str, Any]:
+def design_constraints(target_kind: str = "unknown") -> dict[str, Any]:
     root = resources.files(ASSET_PACKAGE)
     scaffolds = []
     for name in SCAFFOLD_IDS:
@@ -39,7 +45,7 @@ def design_constraints() -> dict[str, Any]:
             }
         )
     capability = load_boltzgen_capabilities()
-    return {
+    result: dict[str, Any] = {
         "binder": "VHH",
         "scaffold_policy": "all seven official VHH scaffolds per design arm",
         "first_pilot_candidates_per_scaffold": 40,
@@ -78,6 +84,74 @@ def design_constraints() -> dict[str, Any]:
             ),
         ],
     }
+    result["default_scaffold_template"] = (
+        GPCR_TEMPLATE if target_kind == "gpcr" else "official-vhh7-v1"
+    )
+    result["scaffold_templates"] = {
+        "official-vhh7-v1": {"scaffolds": scaffolds, "owner": "binder-strategy"}
+    }
+    if target_kind == "gpcr":
+        result["scaffolds"] = template_scaffolds(GPCR_TEMPLATE)
+        result["scaffold_evidence_authority"]["residue_indices"] = (
+            "Exact design.res_index values from the default GPCR Skill templates; "
+            "explicit alternative templates have their own bounds below"
+        )
+        result["scaffold_templates"][GPCR_TEMPLATE] = {
+            "owner": "binder-strategy",
+            "skill_asset": "assets/gpcr-vhh7-v1",
+            "manifest_sha256": GPCR_MANIFEST_SHA256,
+            "scaffolds": result["scaffolds"],
+            "policy": "Preferred GPCR VHH prior, not a hard rule. Each arm may explicitly "
+            "select the official template or supply justified CDR/conditioning changes. "
+            "Use the supplied complete configurations; do not replace their insertion "
+            "counts with a uniform 3..50 or infer final CDR lengths from the archive name.",
+        }
+    return result
+
+
+def template_scaffolds(template: ScaffoldTemplate) -> list[dict[str, Any]]:
+    if template == "official-vhh7-v1":
+        return list(design_constraints()["scaffolds"])
+    scaffolds = []
+    for name in SCAFFOLD_IDS:
+        spec, digest = gpcr_template(name)
+        scaffolds.append(
+            {
+                "name": name,
+                "source_sha256": digest,
+                "designed_residue_ranges": spec["design"][0]["chain"]["res_index"],
+                "cdr_insertion_ranges": [
+                    r["insertion"]["num_residues"] for r in spec["design_insertions"]
+                ],
+                "insertion_positions": [
+                    r["insertion"]["res_index"] for r in spec["design_insertions"]
+                ],
+                "exclude": spec["exclude"],
+            }
+        )
+    return scaffolds
+
+
+def resolve_design_intent(
+    intent: BinderIntent, evidence: dict[str, Any]
+) -> BinderIntent:
+    """Resolve Skill defaults before evaluation, persistence and independent review."""
+    default = evidence["constraints"]["default_scaffold_template"]
+    return intent.model_copy(
+        update={
+            "arms": [
+                arm.model_copy(
+                    update={
+                        "scaffold_template": arm.scaffold_template or default,
+                        "avoid_label_seq_ids": sorted(
+                            set(arm.avoid_label_seq_ids) | set(evidence["approved_exclusions"])
+                        ),
+                    }
+                )
+                for arm in intent.arms
+            ]
+        }
+    )
 
 
 def strategy_from_intent(
@@ -95,6 +169,7 @@ def strategy_from_intent(
                 else None,
                 avoid_label_seq_ids=tuple(arm.avoid_label_seq_ids),
                 scaffold_ids=SCAFFOLD_IDS,
+                scaffold_template=arm.scaffold_template or "official-vhh7-v1",
                 target_crop=arm.target_crop,
                 cdr_overrides=tuple(arm.cdr_overrides),
                 candidates=arm.candidates_per_scaffold,
@@ -154,19 +229,21 @@ def evaluate_design(
                 )
         if arm.cdr_overrides:
             # A named CDR override cannot silently turn into framework redesign.
-            # The bounds come from the unchanged, SHA-verified official templates.
+            # Bounds belong to the selected, SHA-verified Skill template.
             for override in arm.cdr_overrides:
                 within_all_loops = True
-                for scaffold in design_constraints()["scaffolds"]:
+                for scaffold in template_scaffolds(
+                    arm.scaffold_template or "official-vhh7-v1"
+                ):
                     declared = scaffold["designed_residue_ranges"].split(",")[override.cdr - 1]
                     low, high = (int(n) for n in declared.split(".."))
-                    for segment in override.design_res_index.split(","):
+                    for segment in (override.design_res_index or declared).split(","):
                         values = [int(n) for n in segment.split("..")]
                         if not low <= values[0] <= values[-1] <= high:
                             within_all_loops = False
                             blockers.append(
                                 f"{arm.name}: CDR{override.cdr} design leaves the declared loop "
-                                f"of official scaffold {scaffold['name']}"
+                                f"of selected scaffold {scaffold['name']}"
                             )
                             break
                 cdr_verification.append(
@@ -176,7 +253,8 @@ def evaluate_design(
                         "design_res_index": override.design_res_index,
                         "insertion_num_residues": override.insertion_num_residues,
                         "within_declared_loop_of_all_seven_scaffolds": within_all_loops,
-                        "authority": "Runtime verification against official scaffold loop bounds",
+                        "scaffold_template": arm.scaffold_template or "official-vhh7-v1",
+                        "authority": "Runtime verification against selected scaffold loop bounds",
                         "scientific_limit": "Geometry and future binding remain untested",
                     }
                 )
@@ -188,6 +266,7 @@ def evaluate_design(
                     "avoid": avoid,
                     "crop": arm.target_crop.model_dump() if arm.target_crop else None,
                     "cdr": [c.model_dump() for c in arm.cdr_overrides],
+                    "scaffold_template": arm.scaffold_template or "official-vhh7-v1",
                 }
             )
         )
@@ -206,6 +285,7 @@ def evaluate_design(
         "arm_count": len(intent.arms),
         "cdr_template_validation": cdr_verification,
         "planned_strategy_count": len(intent.arms) * 7,
+        "effective_arms": [arm.model_dump(mode="json") for arm in intent.arms],
         "compiler_validation": "not performed by this preflight tool",
         "generation_started": False,
     }

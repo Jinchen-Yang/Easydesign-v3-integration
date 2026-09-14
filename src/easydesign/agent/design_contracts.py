@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from easydesign.orchestration.research import CdrOverride, TargetCrop
+from easydesign.stages.s03_boltzgen_configuration.scaffold_templates import ScaffoldTemplate
 
 from .contracts import Identifier, ShortText, StrictDTO
 
@@ -24,6 +25,11 @@ class DesignArm(StrictDTO):
     binding_label_seq_ids: list[int] = Field(default_factory=list, max_length=40)
     avoid_label_seq_ids: list[int] = Field(default_factory=list, max_length=40)
     target_crop: TargetCrop | None = None
+    scaffold_template: ScaffoldTemplate | None = Field(
+        default=None,
+        description="Omit to use the Skill default shown in design evidence; an explicit "
+        "template choice takes precedence. Explain alternatives in the arm rationale.",
+    )
     cdr_overrides: list[CdrOverride] = Field(default_factory=list, max_length=3)
     candidates_per_scaffold: int = Field(default=40, ge=1, le=2000)
 

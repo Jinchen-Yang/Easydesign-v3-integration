@@ -46,6 +46,7 @@ from easydesign.stages.s03_boltzgen_configuration import (
 from easydesign.stages.s03_boltzgen_configuration import (
     TargetCrop as CompiledTargetCrop,
 )
+from easydesign.stages.s03_boltzgen_configuration.scaffold_templates import ScaffoldTemplate
 from easydesign.workspace_context import WorkspaceContext
 
 from .application import RunSummary, list_runs
@@ -190,7 +191,9 @@ class CdrOverride(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     cdr: Literal[1, 2, 3]
-    design_res_index: str = Field(pattern=r"^[0-9]+(?:\.\.[0-9]+)?(?:,[0-9]+(?:\.\.[0-9]+)?)*$")
+    design_res_index: str | None = Field(
+        default=None, pattern=r"^[0-9]+(?:\.\.[0-9]+)?(?:,[0-9]+(?:\.\.[0-9]+)?)*$"
+    )
     insertion_num_residues: str = Field(pattern=r"^[0-9]+(?:\.\.[0-9]+)?$")
 
 
@@ -203,6 +206,7 @@ class StrategyVariant(BaseModel):
     avoid_label_seq_ids: tuple[int, ...] = ()
     scaffold_ids: tuple[str, ...] = SCAFFOLD_IDS
     target_crop: TargetCrop | None = None
+    scaffold_template: ScaffoldTemplate = "official-vhh7-v1"
     cdr_overrides: tuple[CdrOverride, ...] = ()
     candidates: int = Field(default=40, ge=1)
     native_boltzgen_yaml: Path | None = None
@@ -244,6 +248,7 @@ class StrategyVariant(BaseModel):
             self.hotspot_set_id is not None
             or self.binding_label_seq_ids is not None
             or self.avoid_label_seq_ids
+            or self.scaffold_template != "official-vhh7-v1"
         ):
             raise ValueError("native BoltzGen variant 不能同时声明 EasyDesign binding 选择")
         elif len(self.scaffold_ids) != 1:
@@ -1889,6 +1894,7 @@ def _compiled_strategy_variants(
             binding_label_seq_ids=item.binding_label_seq_ids,
             avoid_label_seq_ids=item.avoid_label_seq_ids,
             scaffold_ids=item.scaffold_ids,
+            scaffold_template=item.scaffold_template,
             target_crop=(
                 None
                 if item.target_crop is None

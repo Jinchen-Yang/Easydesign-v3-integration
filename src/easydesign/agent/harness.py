@@ -78,6 +78,7 @@ EXCLUDED_TOOLS = frozenset(
 SKILLS = {"target": "target-intelligence", "judge": "evidence-judge"}
 PHASE2_SKILLS = {**SKILLS, "site": "site-mechanism"}
 DESIGN_SKILLS = {**PHASE2_SKILLS, "binder": "binder-strategy"}
+DOWNSTREAM_SKILLS = {"pilot-diagnosis": "pilot-diagnosis", "final-selection": "final-selection"}
 ALLOWED = {
     "coordinator": {
         "task",
@@ -180,6 +181,10 @@ def fingerprint(config: ModelConfig) -> str:
             "native_strategy": Path(__file__).with_name("native_strategy.py").read_text(),
             "session_store": Path(__file__).with_name("session_store.py").read_text(),
             "control_flow": Path(__file__).with_name("control_flow.py").read_text(),
+            "phase34": {
+                p.name: p.read_text() for p in sorted(Path(__file__).parent.glob("phase3*.py"))
+            },
+            "phase4": Path(__file__).with_name("phase4.py").read_text(),
             "cli": Path(__file__).with_name("cli.py").read_text(),
             "versions": {
                 name: metadata.version(name)
@@ -241,6 +246,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         )
         if site_stage == "synthesis":
             self.allowed = set()
+        if hasattr(bridge, "downstream_scope"):
+            self.skills = {**self.skills, **DOWNSTREAM_SKILLS}
+            if role == "coordinator":
+                from .phase34_tools import NAMES
+
+                self.allowed = self.allowed | NAMES
 
     def _pending_submission_context(self) -> dict[str, Any] | None:
         if self.execution_id is None or not self.structured_output:
@@ -1057,7 +1068,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         )
                     )
                 elif specialist == "evidence-judge":
-                    evidence = self.bridge.judge_evidence()
+                    downstream = (
+                        cast(Any, self.bridge).next_downstream_action()
+                        if hasattr(self.bridge, "downstream_scope")
+                        else None
+                    )
+                    evidence = (
+                        cast(Any, self.bridge).downstream_packet("judge")
+                        if downstream and downstream.stage in {"pilot-review", "final-review"}
+                        else self.bridge.judge_evidence()
+                    )
+                elif specialist in DOWNSTREAM_SKILLS:
+                    evidence = cast(Any, self.bridge).downstream_packet(specialist)
                 elif self.revision:
                     evidence = self.bridge.read_evidence()
                 task_type = ScientificTask
@@ -1387,7 +1409,7 @@ class RuntimeCoordinator(RoleBoundary):
         )
         # Repeated dispatch with unchanged authoritative state cannot spin or recreate
         # scientific work. Observation can resume once in each invocation after waiting.
-        if action.tool == "get_job_status":
+        if action.tool in {"get_job_status", "observe_downstream"}:
             completed = getattr(self, "observed_worker", False)
             self.observed_worker = True
         if action.tool is None or completed:
@@ -1430,7 +1452,7 @@ class RuntimeCoordinator(RoleBoundary):
         call = request.tool_call
         # Gate interrupts must replay their original bound tool to deliver/reconcile the
         # persisted human outcome. Its existing adapter revalidates every authority edge.
-        if call["name"] != "request_scientific_decision":
+        if call["name"] not in {"request_scientific_decision", "request_downstream_decision"}:
             action = next_action(self.bridge)
             if call["name"] != action.tool or call["args"] != action.arguments:
                 # A child published its result before the parent's tool checkpoint. Read
@@ -1623,6 +1645,8 @@ def create_harness(
         if isinstance(bridge, Phase2Bridge)
         else SKILLS
     )
+    if hasattr(bridge, "downstream_scope"):
+        skills = {**skills, **DOWNSTREAM_SKILLS}
     for role in ("coordinator", *skills):
         key = config.for_role(cast(Role, role)).harness_key
         if key not in REGISTERED:
@@ -1644,6 +1668,20 @@ def create_harness(
 
     specialists: list[SubAgent | CompiledSubAgent] = []
     for role, name in skills.items():
+        if role in DOWNSTREAM_SKILLS:
+            from .phase34_specialists import downstream_specialist
+
+            specialists.append(
+                {
+                    "name": name,
+                    "description": "Interpret the current trusted downstream evidence.",
+                    "mode": "isolated",
+                    "runnable": downstream_specialist(
+                        bridge, models[role], config, execution_id, role, goal
+                    ),
+                }
+            )
+            continue
         if role == "site":
             assert isinstance(bridge, Phase2Bridge)
             specialists.append(
@@ -1723,14 +1761,21 @@ def create_harness(
                 response_format=ToolStrategy(schema, handle_errors=boundary.contract_error),
                 name="existing-target-design-judge",
             )
+            judge_runnable = create_site_aware_judge(
+                bridge, models[role], config, execution_id, legacy_judge
+            )
+            if hasattr(bridge, "downstream_scope"):
+                from .phase34_specialists import downstream_aware_judge
+
+                judge_runnable = downstream_aware_judge(
+                    bridge, models[role], config, execution_id, goal, judge_runnable
+                )
             specialists.append(
                 {
                     "name": name,
                     "description": "Independent review of the current scientific proposal.",
                     "mode": "isolated",
-                    "runnable": create_site_aware_judge(
-                        bridge, models[role], config, execution_id, legacy_judge
-                    ),
+                    "runnable": judge_runnable,
                 }
             )
             continue

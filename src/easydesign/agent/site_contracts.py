@@ -177,5 +177,11 @@ class BiologyContext(StrictDTO):
 
 
 class ScientificTask(TargetTask):
-    current_gate: Literal["target-structure", "site-hotspot", "design-specification"]
+    current_gate: Literal[
+        "target-structure",
+        "site-hotspot",
+        "design-specification",
+        "pilot-promotion",
+        "wet-lab-handoff",
+    ]
     scientific_context: dict[str, object] = Field(default_factory=dict)

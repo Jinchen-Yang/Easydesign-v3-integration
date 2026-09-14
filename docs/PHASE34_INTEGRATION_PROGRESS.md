@@ -75,3 +75,69 @@ reader now validates declared compiled records rather than passing envelope fiel
 Still pending: Harness integration, deterministic executable routing, live specialist
 validation, real backend micro chain, 50k integration stress, final full regression and
 Phase 3/4 closure. This checkpoint is not a completed phase or a scientific approval.
+
+## Milestone 2 — native Harness and exact-scope execution
+
+Added `Phase34Runtime`, compiled Pilot Diagnosis and Final Selection nodes, compact
+downstream Judge routing and native interrupt tools. CLI downstream scopes are `pilot`
+and `handoff`; ordinary `design` retains the current Phase 2 route. The shared scientific
+task envelope now accepts Gate 4/5. Gate 4 revisions invalidate the appropriate current
+objects, carry diagnosis back to Binder, and retain explicit response identity. A second
+Pilot requires a new Gate 3 plan approval tied to the accepted Gate 4 request.
+
+The existing Stage 05 service automatically expands candidates after provisional
+thresholds pass. The v3 adapter therefore stops generation at Stage 04 and reuses the
+existing prediction and metric kernels on the exact approved population. Its new plan
+states no additional generation and independent prediction of execution candidates.
+Legacy threshold outputs remain audit evidence. No scientific kernel was rewritten.
+
+The native graph tests now cover STOP, REVISE_SITE, REVISE_DESIGN and
+RUN_ANOTHER_PILOT, including restart and explicit next-plan approval. A separate native
+graph enters Gate 4 promotion with synthetic evidence, runs Final Selection/Judge,
+revises the same panel at Gate 5, creates a new review identity, and approves an
+idempotent validation-only handoff. Read scopes avoid repeated nested verification
+within one synchronous observation and are discarded before each new operation or
+model await; ledger changes invalidate them immediately.
+
+Scale now has an append-only disk batch journal, exact allocation partitioning,
+generation/prediction adapter using the same kernels, resumable worker recognition,
+namespaced candidate lineage and a true global pool. Worker changes invalidate old
+review routing. Failed/unevaluable observations retain operational context. Exact
+sequence clusters are an engineering redundancy signal; pose diversity remains
+explicitly unverified. A failed Pilot generation can still produce an operational
+evidence dossier without invented scores or a scientific failure conclusion.
+
+Latest checks, all under `runtime/tmp/`:
+
+- `runtime-tests-06.log`: 6 passed in 226.08 seconds (native routes and read scope).
+- `final-runtime-tests-05.log`: 1 passed in 62.39 seconds (native Gate 4 to Gate 5).
+- `model-cards-tests-02.log`: 12 passed (compact/recovery/unavailable review contracts).
+- `scale-contract-tests-04.log`: 26 passed (execution recovery, contracts, batch/pool).
+- `failure-scope-tests-01.log`: 10 passed (failed worker evidence and validation scope).
+- `milestone2-ruff.log`: PASS; `milestone2-mypy.log`: PASS, 52 Agent source files.
+
+The stronger `phase4-50k-stress-02.json` persists 50 batches and 50,000 synthetic
+candidates (49,949 evaluated, 51 unavailable), resumes one failed and one incomplete
+batch, rejects duplicate ingestion effects, and reconstructs the same pool in a fresh
+process reading only disk files. Pool SHA:
+`64b582e1f7ce37131c59f46d8b4f3c8fb7d6017e6c67c24fb5c2e6376d21f168`.
+The persisted 30-candidate shortlist uses a synthetic cluster cap of two. This is a
+software stress test, not a biological benchmark or a measured GPU throughput result.
+
+Backend preparation is isolated in this checkout. AFO 3.1.4 / OpenFold3 P2 is installed
+from the verified current release bundle (`runtime/tmp/afo-install-02.log`). BoltzGen
+assets were copied and inventory-verified without borrowing another checkout's model
+paths; Miniforge was installed from the hash-verified pinned installer. BoltzGen's own
+environment installation has passed (`boltzgen-install-03.log`).
+
+An isolated `phase34-nk2r-micro-20260915-01` project reuses verified NK2R input bytes,
+the previously selected Site B and the current three-arm GPCR Design. All 398 mapping
+rows match the source; all 21 compiled YAMLs pass the existing compiler/backend
+validation, retaining 87/87/93 exclusions by arm (`nk2r-design-compile-verification-03.log`).
+The original project and its pending Gate 3 remain untouched. A development authority,
+not fabricated scientific approval, will permit only a few candidates.
+
+Remaining: bounded real BoltzGen/AFO generation/prediction/metrics, real model role
+validation, Scale adapter integration and failure recovery checks, frozen replay/E2E,
+final regression, protected-kernel integrity and closure documents. This checkpoint
+does not establish Phase 3/4 completion or any new scientific/experimental approval.

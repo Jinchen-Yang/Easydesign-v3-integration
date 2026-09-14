@@ -234,12 +234,20 @@ class DecisionCard(DecisionProposal):
             review = self.scientific_summary.get("independent_review", {})
             if (
                 self.gate_type not in {"site-hotspot", "pilot-promotion", "wet-lab-handoff"}
-                or self.judge_status is not None
+                or (
+                    self.judge_status is not None
+                    and not (
+                        self.gate_type in {"pilot-promotion", "wet-lab-handoff"}
+                        and self.judge_status == "BLOCKED"
+                    )
+                )
                 or not isinstance(review, dict)
                 or review.get("availability") != "unavailable"
                 or not review.get("failure_record_id")
             ):
-                raise ValueError("Missing assessment requires an explicit Site review failure")
+                raise ValueError(
+                    "Missing assessment requires an explicit independent review failure"
+                )
         elif self.judge_status is None:
             raise ValueError("A completed Judge assessment requires its scientific status")
         return self

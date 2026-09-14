@@ -56,6 +56,11 @@ def pilot_working_set(
             "denominators": [d.model_dump(mode="json") for d in denominators],
             "metrics": summaries,
             "candidate_count": len(candidates),
+            "unmeasured_candidate_ids": [
+                c.candidate_id
+                for c in measurement.unmeasured_candidates
+                if c.strategy_id in arm.strategy_ids
+            ],
             "representative_candidate_ids": [
                 c.lineage.candidate_id
                 for c in sorted(candidates, key=lambda c: c.development_rank_global)[:5]

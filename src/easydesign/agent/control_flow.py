@@ -49,6 +49,12 @@ def _task(stage: str, binding: str, specialist: str, question: str) -> RuntimeAc
 
 def next_action(bridge: Phase2Bridge) -> RuntimeAction:
     """First unfinished authorized action within the immutable scientific scope."""
+    from .phase34_runtime import Phase34Runtime
+
+    if isinstance(bridge, Phase34Runtime):
+        downstream = bridge.next_downstream_action()
+        if downstream is not None:
+            return downstream
     state = bridge.scientific_state()
     stage = state["scientific_state"]
     execution = bridge.store.latest_execution(bridge.thread)

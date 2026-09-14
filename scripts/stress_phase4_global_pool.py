@@ -6,10 +6,19 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
+import sys
 import time
+from collections import Counter
 from pathlib import Path
 
-from easydesign.agent.phase4 import build_global_candidate_pool
+from easydesign.agent.phase4 import build_global_candidate_pool, build_review_shortlist
+from easydesign.agent.phase34_batches import (
+    ScaleBatchManifest,
+    ScaleBatchPlan,
+    ScaleBatchReceipt,
+    ScaleBatchStore,
+)
 from easydesign.agent.phase34_contracts import (
     DiversityContext,
     ExecutionProjection,
@@ -89,7 +98,9 @@ def _candidate(
     )
 
 
-def run_stress(*, candidate_count: int, batch_count: int) -> dict[str, object]:
+def run_stress(
+    *, candidate_count: int, batch_count: int, checkpoint_dir: Path | None = None
+) -> dict[str, object]:
     if candidate_count < batch_count or candidate_count % batch_count:
         raise ValueError("candidate count must be a positive multiple of batch count")
     candidates_per_batch = candidate_count // batch_count
@@ -173,7 +184,7 @@ def run_stress(*, candidate_count: int, batch_count: int) -> dict[str, object]:
     )
     replay_sha256 = canonical_model_sha256(replay)
     valid_count = len(final_pool.global_ranking_candidate_ids)
-    return {
+    report = {
         "schema_version": "0.1",
         "status": "PASS" if final_sha256 == replay_sha256 else "FAIL",
         "mode": "synthetic-stress",
@@ -208,6 +219,110 @@ def run_stress(*, candidate_count: int, batch_count: int) -> dict[str, object]:
             "are deterministic synthetic fixtures and carry no biological meaning."
         ),
     }
+    if checkpoint_dir is not None:
+        persisted = persistent_stress(checkpoint_dir, campaign, candidates, batch_ids)
+        report["persistence_and_process_restart"] = persisted
+        if not persisted["pass"]:
+            report["status"] = "FAIL"
+    return report
+
+
+def persistent_stress(root, campaign, candidates, batch_ids):
+    from easydesign.orchestration.task_tracking import atomic_dump_runtime_model
+
+    groups = {bid: tuple(c for c in candidates if c.lineage.batch_id == bid) for bid in batch_ids}
+    manifest = ScaleBatchManifest(
+        project_id="synthetic-stress-project",
+        campaign=campaign,
+        batches=tuple(
+            ScaleBatchPlan(
+                batch_id=bid,
+                strategy_allocations=dict(Counter(c.lineage.strategy_id for c in groups[bid])),
+            )
+            for bid in batch_ids
+        ),
+    )
+    journal = ScaleBatchStore(root, manifest)
+    for bid in batch_ids[:-2]:
+        journal.append(
+            ScaleBatchReceipt(
+                manifest_sha256=journal.digest,
+                batch_id=bid,
+                state="completed",
+                candidates=groups[bid],
+            )
+        )
+    for bid, state in zip(batch_ids[-2:], ("failed", "resumable"), strict=True):
+        if journal.read(bid) is None:
+            journal.append(
+                ScaleBatchReceipt(
+                    manifest_sha256=journal.digest,
+                    batch_id=bid,
+                    state=state,
+                    operational_failures=("Synthetic interrupted batch",),
+                )
+            )
+    partial = journal.pool()
+    atomic_dump_runtime_model(partial, root / "partial-pool.json")
+    # Recovery reopens receipts; replaying every completed batch must be a no-op.
+    journal = ScaleBatchStore(root, manifest)
+    duplicate_count = 0
+    for bid in batch_ids:
+        receipt = ScaleBatchReceipt(
+            manifest_sha256=journal.digest, batch_id=bid, state="completed", candidates=groups[bid]
+        )
+        journal.append(receipt)
+        duplicate_count += not journal.append(receipt)
+    pool = journal.pool()
+    shortlist = build_review_shortlist(pool=pool, requested_count=30, sequence_cluster_cap=2)
+    atomic_dump_runtime_model(pool, root / "global-pool.json")
+    atomic_dump_runtime_model(shortlist, root / "shortlist.json")
+    # A fresh interpreter has no access to the parent's in-memory candidates.
+    child = r"""
+import json, sys
+from pathlib import Path
+from easydesign.agent.phase34_batches import ScaleBatchManifest, ScaleBatchStore
+from easydesign.agent.phase34_contracts import GlobalCandidatePool
+from easydesign.agent.phase4 import build_review_shortlist
+from easydesign.core import canonical_model_sha256, load_model
+from easydesign.orchestration.task_tracking import load_latest_runtime_model
+root=Path(sys.argv[1])
+manifest=load_model(root/'manifest.json', ScaleBatchManifest)
+pool=ScaleBatchStore(root, manifest).pool()
+saved=load_latest_runtime_model(root/'global-pool.json', GlobalCandidatePool)
+short=build_review_shortlist(pool=pool, requested_count=30, sequence_cluster_cap=2)
+print(json.dumps({'pool':canonical_model_sha256(pool),'persisted':canonical_model_sha256(saved),
+                 'shortlist':canonical_model_sha256(short),'count':len(pool.candidates)}))
+"""
+    restart = json.loads(
+        subprocess.check_output([sys.executable, "-c", child, str(root)], text=True)
+    )
+    digest, short_digest = canonical_model_sha256(pool), canonical_model_sha256(shortlist)
+    by_id = {c.lineage.candidate_id: c for c in pool.candidates}
+    cluster_counts = Counter(
+        by_id[e.candidate_id].diversity.sequence_cluster_id for e in shortlist.entries
+    )
+    passed = (
+        restart["pool"] == restart["persisted"] == digest
+        and restart["shortlist"] == short_digest
+        and restart["count"] == len(candidates)
+        and duplicate_count == len(batch_ids)
+        and max(cluster_counts.values(), default=0) <= 2
+    )
+    return {
+        "pass": passed,
+        "checkpoint_directory": str(root),
+        "deduplicated_batch_replays": duplicate_count,
+        "initial_failed_batches": len(partial.failed_batch_ids),
+        "initial_resumable_batches": len(partial.resumable_batch_ids),
+        "all_batches_recovered": not pool.failed_batch_ids and not pool.resumable_batch_ids,
+        "pool_sha256": digest,
+        "shortlist_sha256": short_digest,
+        "shortlist_count": len(shortlist.entries),
+        "process_restart": restart,
+        "diversity_cluster_cap": 2,
+        "diversity_note": "Synthetic advisory clusters; no biological or pose-quality inference.",
+    }
 
 
 def main() -> int:
@@ -215,8 +330,13 @@ def main() -> int:
     parser.add_argument("--candidates", type=int, default=50_000)
     parser.add_argument("--batches", type=int, default=50)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--checkpoint-dir", type=Path)
     args = parser.parse_args()
-    report = run_stress(candidate_count=args.candidates, batch_count=args.batches)
+    report = run_stress(
+        candidate_count=args.candidates,
+        batch_count=args.batches,
+        checkpoint_dir=args.checkpoint_dir,
+    )
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)

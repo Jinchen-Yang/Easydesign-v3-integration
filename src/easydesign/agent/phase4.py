@@ -21,6 +21,7 @@ from easydesign.stages.s07_final_filtering_and_selection import (
 
 from .contracts import AgentBoundaryError, DecisionCard, ScientificStatus
 from .phase34_contracts import (
+    ExecutionMode,
     FinalCandidateDossier,
     FinalReviewDossier,
     FinalSelectionProposal,
@@ -342,6 +343,7 @@ def build_candidate_dossiers(
     scientific_scope: Literal["development-evidence-only", "scientist-approved-scale-evidence"] = (
         "development-evidence-only"
         if pool.campaign.promotion_authority.authority_scope == "test-only-control-flow"
+        or pool.campaign.execution.mode is not ExecutionMode.PRODUCTION
         else "scientist-approved-scale-evidence"
     )
     return tuple(
@@ -368,6 +370,7 @@ def build_final_review_dossier(
     candidate_dossiers: tuple[FinalCandidateDossier, ...],
     proposed_selection: FinalSelectionProposal,
     evidence_refs: tuple[str, ...],
+    selection_revision_id: str | None = None,
 ) -> FinalReviewDossier:
     """Bind the full review set and proposed panel for independent final review."""
 
@@ -380,6 +383,7 @@ def build_final_review_dossier(
     if observed_ids != expected_ids:
         raise AgentBoundaryError("final review dossiers must preserve shortlist order and coverage")
     return FinalReviewDossier(
+        selection_revision_id=selection_revision_id,
         project_id=project_id,
         campaign_id=pool.campaign.campaign_id,
         global_pool_sha256=pool_sha256,

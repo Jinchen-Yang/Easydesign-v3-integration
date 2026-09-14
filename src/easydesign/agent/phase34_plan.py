@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core import ArtifactRef, canonical_model_sha256
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
-from easydesign.orchestration.config import PredictionBackend
+from easydesign.orchestration.config import LocalMultiGpuExecutorConfig, PredictionBackend
 from easydesign.orchestration.research import ResearchStrategy
 from easydesign.stages.s03_boltzgen_configuration.models import StrategyRecord
 
@@ -50,9 +50,13 @@ class BoundPilotPlan(PlanContract):
     strategy_sha256: str = Field(pattern=SHA256_PATTERN)
     compiled_manifest_sha256: str = Field(pattern=SHA256_PATTERN)
     prediction_backend: PredictionBackend
+    runtime_policy_sha256: str = Field(pattern=SHA256_PATTERN)
+    executor: LocalMultiGpuExecutorConfig = LocalMultiGpuExecutorConfig()
     mode: Literal["formal-pilot", "validation-micro"]
     production_allocations: dict[str, int]
     execution_allocations: dict[str, int]
+    prediction_selection: Literal["all-execution-candidates"] = "all-execution-candidates"
+    additional_generation: Literal[0] = 0
     arms: tuple[PilotArmIntent, ...] = Field(min_length=1)
     parent_gate4_card_id: str | None = Field(default=None, pattern=SHA256_PATTERN)
     validation_only: bool
@@ -104,6 +108,20 @@ class ApprovedGate3Context(PlanContract):
             or self.planned_candidates != sum(self.plan.production_allocations.values())
         ):
             raise ValueError("Approved Pilot context differs from the reviewed Design")
+        return self
+
+
+class ValidatedDesignContext(ApprovedGate3Context):
+    """Engineering input only: the Design has no fabricated Scientist approval."""
+
+    context_kind: Literal["validation-design"] = "validation-design"  # type: ignore[assignment]
+    gate3_card_id: None = None  # type: ignore[assignment]
+    gate3_outcome_sha256: None = None  # type: ignore[assignment]
+
+    @model_validator(mode="after")
+    def validation_scope(self) -> Self:
+        if not self.plan.validation_only:
+            raise ValueError("Validation context cannot authorize formal Pilot")
         return self
 
 

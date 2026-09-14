@@ -16,8 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from easydesign.core import ArtifactRef, canonical_model_sha256
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
+from easydesign.stages.s04_pilot_generation import CandidateRecord
 
-from .phase34_plan import ApprovedGate3Context, BoundPilotPlan, PilotArmIntent
+from .phase34_plan import (
+    ApprovedGate3Context,
+    BoundPilotPlan,
+    PilotArmIntent,
+    ValidatedDesignContext,
+)
 
 
 class FrozenContract(BaseModel):
@@ -103,6 +109,7 @@ class ScientistPilotAuthority(FrozenContract):
 
     authority_id: str = Field(pattern=ID_PATTERN)
     upstream_gate3_card_id: str = Field(pattern=SHA256_PATTERN)
+    source_design_card_id: str | None = Field(default=None, pattern=SHA256_PATTERN)
     gate3_outcome_id: str = Field(pattern=ID_PATTERN)
     authority_scope: Literal["scientist-approved"] = "scientist-approved"
     outcome: Literal["APPROVE", "OVERRIDE"]
@@ -208,6 +215,8 @@ class PilotArmDenominator(FrozenContract):
     unique_sequences: int = Field(ge=0)
     legacy_policy_pass_count: int = Field(ge=0)
     operational_failure_count: int = Field(ge=0)
+    failed_generation_attempts: int = Field(default=0, ge=0)
+    failed_prediction_attempts: int = Field(default=0, ge=0)
     missing_by_metric: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -246,7 +255,11 @@ class PilotMeasurement(FrozenContract):
     schema_version: Literal["0.1"] = "0.1"
     execution: ExecutionProjection
     source_candidate_index_sha256: str = Field(pattern=SHA256_PATTERN)
-    source_filter_report_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_filter_report_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    source_candidate_index_kind: Literal[
+        "candidate-index", "partial-generation-state", "generation-failure-receipt"
+    ] = "candidate-index"
+    unmeasured_candidates: tuple[CandidateRecord, ...] = ()
     candidates: tuple[PilotCandidateObservation, ...]
     arms: tuple[PilotArmDenominator, ...] = Field(min_length=1)
     scientific_policy: Literal["measure-and-rank-first-filter-calibration-pending"] = (
@@ -270,6 +283,16 @@ class PilotMeasurement(FrozenContract):
             if candidate.lineage.strategy_id not in observed:
                 raise ValueError("candidate belongs to an undeclared pilot arm")
             observed[candidate.lineage.strategy_id] += 1
+        for unmeasured in self.unmeasured_candidates:
+            if unmeasured.candidate_id in ids or unmeasured.strategy_id not in observed:
+                raise ValueError("Unmeasured candidate is duplicate or belongs to another arm")
+            ids.append(unmeasured.candidate_id)
+            observed[unmeasured.strategy_id] += 1
+        if (
+            self.unmeasured_candidates
+            and self.source_candidate_index_kind != "partial-generation-state"
+        ):
+            raise ValueError("Unmeasured products must retain their partial execution provenance")
         for arm in self.arms:
             if arm.valid_execution_products != observed[arm.strategy_id]:
                 raise ValueError("arm denominator does not match retained candidate observations")
@@ -425,7 +448,7 @@ class PilotEvidenceDossier(FrozenContract):
     schema_version: Literal["0.1"] = "0.1"
     project_id: str = Field(pattern=ID_PATTERN)
     pilot_run_id: str = Field(pattern=ID_PATTERN)
-    upstream_fixture: AcceptedGate3Fixture | ApprovedGate3Context
+    upstream_fixture: AcceptedGate3Fixture | ApprovedGate3Context | ValidatedDesignContext
     execution_authority: PilotExecutionAuthority
     measurement: PilotMeasurement
     diagnosis: PilotDiagnosis
@@ -596,6 +619,7 @@ class DiversityContext(FrozenContract):
 
 class ScaleCandidateLineageV3(FrozenContract):
     campaign_id: str = Field(pattern=ID_PATTERN)
+    source_run_id: str | None = Field(default=None, pattern=ID_PATTERN)
     batch_id: str = Field(pattern=ID_PATTERN)
     shard_id: str = Field(pattern=ID_PATTERN)
     candidate_id: str = Field(pattern=ID_PATTERN)
@@ -835,9 +859,29 @@ class FinalSelectionProposal(FrozenContract):
         return self
 
 
+class FinalSelectionInput(FrozenContract):
+    project_id: str = Field(pattern=ID_PATTERN)
+    global_pool_sha256: str = Field(pattern=SHA256_PATTERN)
+    review_shortlist_sha256: str = Field(pattern=SHA256_PATTERN)
+    candidate_dossiers: tuple[FinalCandidateDossier, ...] = Field(min_length=1)
+    primary_count: int = Field(ge=1, le=30)
+    backup_count: int = Field(ge=0, le=30)
+
+    @model_validator(mode="after")
+    def exact_inputs(self) -> Self:
+        if any(
+            d.global_pool_sha256 != self.global_pool_sha256
+            or d.review_shortlist_sha256 != self.review_shortlist_sha256
+            for d in self.candidate_dossiers
+        ):
+            raise ValueError("Selection input contains a stale candidate dossier")
+        return self
+
+
 class FinalReviewDossier(FrozenContract):
     """Evidence-bound candidate set and proposed panel consumed by the final Judge."""
 
+    selection_revision_id: str | None = Field(default=None, pattern=SHA256_PATTERN)
     schema_version: Literal["0.1"] = "0.1"
     project_id: str = Field(pattern=ID_PATTERN)
     campaign_id: str = Field(pattern=ID_PATTERN)

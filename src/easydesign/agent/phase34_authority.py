@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from easydesign.core import (
@@ -11,7 +12,11 @@ from easydesign.core import (
     load_model,
     sha256_file,
 )
-from easydesign.orchestration.config import PredictionBackend
+from easydesign.orchestration.config import (
+    PredictionBackend,
+    Stage04Config,
+    stage05_config_for_backend,
+)
 from easydesign.orchestration.research import load_strategy
 
 from .contracts import AgentBoundaryError, DecisionCard, DecisionOutcome
@@ -34,7 +39,23 @@ def plan_for_design(
     mode: Literal["formal-pilot", "validation-micro"] = "formal-pilot",
     execution_allocations: dict[str, int] | None = None,
     parent_gate4_card_id: str | None = None,
+    executor: Any = None,
 ) -> BoundPilotPlan:
+    if parent_gate4_card_id is not None:
+        event = bridge.project_latest("phase34-gate4-transition")
+        if (
+            event is None
+            or event.get("card_id") != parent_gate4_card_id
+            or (event.get("route") != "RUN_ANOTHER_PILOT")
+        ):
+            raise AgentBoundaryError("Another Pilot requires current Scientist Gate 4 steering")
+        response = bridge.store.response(event["thread"], parent_gate4_card_id)
+        if (
+            response is None
+            or not response["delivered"]
+            or (identity(response["outcome"]) != event.get("outcome_sha256"))
+        ):
+            raise AgentBoundaryError("Another Pilot has no applied Gate 4 outcome")
     snapshot = bridge.design_snapshot(proposal)
     if proposal["evaluation"]["status"] == "BLOCKED":
         raise AgentBoundaryError("Hard-invalid Design cannot authorize Pilot")
@@ -46,6 +67,14 @@ def plan_for_design(
     if site is None:
         raise AgentBoundaryError("Pilot requires the current approved Site")
     production = {r.strategy_id: r.candidates_per_strategy for r in records}
+    generation = Stage04Config(required_complete_candidates_per_strategy=max(production.values()))
+    if executor is not None:
+        generation = Stage04Config.model_validate(
+            {
+                **generation.model_dump(),
+                "executor": executor,
+            }
+        )
     if mode == "validation-micro" and execution_allocations is None:
         raise AgentBoundaryError("Micro validation needs an explicit bounded allocation")
     target_context = {
@@ -65,7 +94,17 @@ def plan_for_design(
         strategy_sha256=proposal["strategy_ref"]["sha256"],
         compiled_manifest_sha256=proposal["compiled_ref"]["sha256"],
         prediction_backend=prediction_backend,
+        runtime_policy_sha256=identity(
+            {
+                "generation": generation.model_dump(mode="json"),
+                "prediction_filtering": stage05_config_for_backend(prediction_backend).model_dump(
+                    mode="json"
+                ),
+                "execution_policy": "v3-pilot-measurement-v1-no-expansion-all-predicted",
+            }
+        ),
         mode=mode,
+        executor=generation.executor,
         production_allocations=production,
         execution_allocations=execution_allocations or production,
         arms=project_arm_intents(strategy, records, target_context=target_context),
@@ -127,32 +166,50 @@ def accept_pilot_plan(bridge: Any, card: DecisionCard) -> ScientistPilotAuthorit
                 proposal,
                 prediction_backend=plan.prediction_backend,
                 parent_gate4_card_id=plan.parent_gate4_card_id,
+                executor=plan.executor,
             )
             != plan
         ):
             raise AgentBoundaryError("Pilot plan is stale or belongs to another Target/Site/Design")
         # The original Phase 2 adapter independently verifies and applies the exact human outcome.
         # Its existing command journal owns freeze recovery.
-    DesignBridge.apply_decision(bridge, card)
+    already_frozen = bridge.approved_design()
+    if already_frozen is None or already_frozen["proposal_id"] != plan.design_proposal_id:
+        DesignBridge.apply_decision(bridge, card)
+    else:
+        # Gate 4 may request another Pilot against the same frozen Design. A new Gate 3
+        # plan approval authorizes that scope; it must not re-freeze or rewrite the Design.
+        bridge.store.delivered(bridge.thread, card.card_id)
     approved = bridge.approved_design()
-    if approved is None or approved["card_id"] != card.card_id:
+    if approved is None or approved["proposal_id"] != plan.design_proposal_id:
         raise AgentBoundaryError("Pilot requires the applied current Gate 3 approval")
     record = load_model(
         ArtifactRef.model_validate(approved["approval_ref"]).verify(bridge.project), DecisionRecord
     )
+    authority_id = identity(
+        {
+            "gate3": card.card_id,
+            "outcome": outcome.model_dump(mode="json"),
+            "plan": canonical_model_sha256(plan),
+        }
+    )
+    previous = bridge.project_latest("phase34-pilot-authority")
+    saved = bridge.document(previous["ref"]) if previous else {}
+    approved_at = (
+        saved["approved_at"]
+        if saved.get("authority_id") == authority_id
+        else record.approved_at
+        if approved["card_id"] == card.card_id
+        else datetime.now(UTC)
+    )
     authority = ScientistPilotAuthority(
-        authority_id=identity(
-            {
-                "gate3": card.card_id,
-                "outcome": outcome.model_dump(mode="json"),
-                "plan": canonical_model_sha256(plan),
-            }
-        ),
+        authority_id=authority_id,
         upstream_gate3_card_id=card.card_id,
+        source_design_card_id=approved["card_id"],
         gate3_outcome_id=identity(outcome.model_dump(mode="json")),
         outcome=outcome.action,
         human_actor=outcome.human_actor,
-        approved_at=record.approved_at,
+        approved_at=approved_at,
         pilot_plan=plan,
     )
     context = ApprovedGate3Context(
@@ -186,9 +243,14 @@ def verify_pilot_authority(bridge: Any, authority: ScientistPilotAuthority) -> B
     if plan is None or plan.project_id != bridge.project_id:
         raise AgentBoundaryError("Pilot authority lacks a bound current project/plan")
     approved = bridge.approved_design()
-    if approved is None or approved["card_id"] != authority.upstream_gate3_card_id:
+    if approved is None or approved["card_id"] != (
+        authority.source_design_card_id or authority.upstream_gate3_card_id
+    ):
         raise AgentBoundaryError("Pilot authority no longer matches current Gate 3")
-    response = bridge.store.response(approved["thread"], authority.upstream_gate3_card_id)
+    event = bridge.project_latest("phase34-pilot-authority")
+    if event is None:
+        raise AgentBoundaryError("Pilot authority has no runtime publication")
+    response = bridge.store.response(event["thread"], authority.upstream_gate3_card_id)
     if (
         response is None
         or not response["delivered"]
@@ -205,6 +267,7 @@ def verify_pilot_authority(bridge: Any, authority: ScientistPilotAuthority) -> B
             approved["proposal"],
             prediction_backend=plan.prediction_backend,
             parent_gate4_card_id=plan.parent_gate4_card_id,
+            executor=plan.executor,
         )
         != plan
     ):

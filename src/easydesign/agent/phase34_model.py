@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from time import perf_counter
 from typing import Any, TypeVar
 
@@ -24,22 +25,32 @@ class StructuredOpinionUnavailable(AgentBoundaryError):
         self.retained_warnings = retained_warnings
 
 
+class ReviewFactConflict(AgentBoundaryError):
+    """An unresolved explicit fact conflict is never an unavailable-review fallback."""
+
+
 def validate_review_facts(raw: dict[str, Any], facts: dict[str, Any]) -> None:
     """Check addressed JSON objects only; ordinary scientific prose stays unrestricted."""
-    for ref in raw.get("fact_refs", []):
+    refs = raw.get("fact_refs", [])
+    claims = raw.get("fact_claims", [])
+    if not isinstance(refs, list) or not isinstance(claims, list):
+        raise AgentBoundaryError("Fact references and claims must be arrays")
+    for ref in refs:
+        if not isinstance(ref, str):
+            raise AgentBoundaryError("Fact references must be strings")
         if ref not in facts:
-            raise AgentBoundaryError("Independent review cites an unknown runtime fact")
-    for value in raw.get("fact_claims", []):
+            raise ReviewFactConflict("Independent review cites an unknown runtime fact")
+    for value in claims:
         claim = JudgeFactClaim.model_validate(value)
         if claim.fact_ref not in facts:
-            raise AgentBoundaryError("Independent review asserts an unknown runtime fact")
+            raise ReviewFactConflict("Independent review asserts an unknown runtime fact")
         fact = facts[claim.fact_ref]
         if claim.field is not None:
             if not isinstance(fact, dict) or claim.field not in fact:
-                raise AgentBoundaryError("Independent review asserts an unknown structured field")
+                raise ReviewFactConflict("Independent review asserts an unknown structured field")
             fact = fact[claim.field]
         if compact(claim.value) != compact(fact):
-            raise AgentBoundaryError("Independent review contradicts a structured runtime fact")
+            raise ReviewFactConflict("Independent review contradicts a structured runtime fact")
 
 
 async def structured_opinion(
@@ -52,6 +63,7 @@ async def structured_opinion(
     schema: type[OpinionT],
     packet: dict[str, Any],
     prompt: str,
+    validate: Callable[[OpinionT], Any] | None = None,
 ) -> OpinionT:
     """One opinion, at most two compact repairs; no action tools or hidden model calls."""
     from anthropic import APIConnectionError as AnthropicConnectionError
@@ -71,7 +83,10 @@ async def structured_opinion(
     ]
     for attempt in previous:
         if attempt.get("opinion") is not None:
-            return schema.model_validate(attempt["opinion"])
+            recovered = schema.model_validate(attempt["opinion"])
+            if validate:
+                validate(recovered)
+            return recovered
     categories = [p["category"] for p in previous]
     retained = [w for p in previous for w in p.get("retained_warnings", [])]
     diagnostic = previous[-1].get("diagnostic") if previous else None
@@ -152,19 +167,30 @@ async def structured_opinion(
             calls = [c for c in response.tool_calls if c["name"] == schema.__name__]
             if len(calls) == 1 and len(response.tool_calls) == 1:
                 submission = calls[0]["args"]
-        opinion = None
+        opinion: OpinionT | None = None
         if isinstance(submission, dict):
             # A malformed opinion must not hide a readable hard-fact conflict in fallback.
-            if role == "judge":
-                validate_review_facts(submission, packet.get("facts", {}))
-                retained.extend(w for w in submission.get("warnings", []) if isinstance(w, str))
             try:
+                if role == "judge":
+                    warnings = submission.get("warnings", [])
+                    if isinstance(warnings, list):
+                        retained.extend(w for w in warnings if isinstance(w, str))
+                    validate_review_facts(submission, packet.get("facts", {}))
                 opinion = schema.model_validate(submission)
+                if validate:
+                    validate(opinion)
             except ValidationError as error:
+                opinion = None
                 category = "SCHEMA_ERROR"
                 diagnostic = error.errors(
                     include_input=False, include_url=False, include_context=False
                 )
+            except AgentBoundaryError as error:
+                opinion = None
+                category = (
+                    "FACT_CONFLICT" if isinstance(error, ReviewFactConflict) else "SCHEMA_ERROR"
+                )
+                diagnostic = str(error)
         bridge.store.event(
             bridge.thread,
             "phase34-model-attempt",
@@ -184,4 +210,6 @@ async def structured_opinion(
             return opinion
         last_submission = submission
         categories.append(category)
+    if "FACT_CONFLICT" in categories:
+        raise ReviewFactConflict("Independent review has an unresolved structured fact conflict")
     raise StructuredOpinionUnavailable(categories, list(dict.fromkeys(retained)))

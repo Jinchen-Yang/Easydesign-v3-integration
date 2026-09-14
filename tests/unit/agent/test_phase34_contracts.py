@@ -273,7 +273,7 @@ def test_zero_support_cannot_be_scientific_promotion() -> None:
         )
 
 
-def test_pilot_dossier_hydrates_test_only_gate4_card() -> None:
+def _pilot_dossier():
     fixture_payload = json.loads(
         Path("tests/fixtures/agent/phase34_gate3_fixtures.json").read_text()
     )["fixtures"][0]
@@ -349,6 +349,11 @@ def test_pilot_dossier_hydrates_test_only_gate4_card() -> None:
         proposed_interpretation=recommendation,
         evidence_refs=("project:pilot-measurement.json#sha256=" + "e" * 64,),
     )
+    return dossier
+
+
+def test_pilot_dossier_hydrates_test_only_gate4_card() -> None:
+    dossier = _pilot_dossier()
     assessment = PilotJudgeAssessment(
         assessment_id="pilot-judge-1",
         dossier_sha256=canonical_model_sha256(dossier),

@@ -49,9 +49,14 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--through",
-        choices=("target", "site", "design"),
+        choices=("target", "site", "design", "pilot", "handoff"),
         default="design",
         help="Scientific scope; target retains the Phase 1 compatibility slice",
+    )
+    result.add_argument(
+        "--prediction-backend",
+        choices=("openfold3-af3-jax", "protenix-v2"),
+        help="Exact downstream backend; otherwise use the sole installed backend",
     )
     result.add_argument(
         "--biology-context",
@@ -412,7 +417,7 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
 async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
     from .models import create_models
 
-    models = create_models(config)
+    models = create_models(config, downstream=hasattr(bridge, "downstream_scope"))
     local_user = f"uid:{os.getuid()}:{pwd.getpwuid(os.getuid()).pw_name}"
 
     def emit(event: dict[str, Any]) -> None:
@@ -522,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
 
         config = ModelConfig.model_validate(yaml.safe_load(args.models.read_text()))
         if args.native_strategy is not None and (
-            args.operation == "status" or args.through != "design"
+            args.operation == "status" or args.through not in {"design", "pilot", "handoff"}
         ):
             raise AgentBoundaryError(
                 "Native strategy import requires start/resume with --through design"
@@ -569,11 +574,41 @@ def main(argv: list[str] | None = None) -> int:
                 from .design import DesignBridge
                 from .phase2 import Phase2Bridge
 
-                phase2 = (
-                    DesignBridge(root, thread, store)
-                    if args.through == "design"
-                    else Phase2Bridge(root, thread, store, through="site")
-                )
+                if args.through in {"pilot", "handoff"}:
+                    from easydesign.orchestration.profile import load_runtime_profile
+
+                    from .phase34_runtime import Phase34Runtime
+
+                    selected_backend = args.prediction_backend
+                    if selected_backend is None:
+                        backends = load_runtime_profile().profile.backends
+                        available = [
+                            name
+                            for name, installed in (
+                                ("openfold3-af3-jax", backends.openfold3_af3_jax),
+                                ("protenix-v2", backends.protenix_v2),
+                            )
+                            if installed is not None
+                        ]
+                        if len(available) != 1:
+                            raise AgentBoundaryError(
+                                "Specify --prediction-backend for the Pilot plan; "
+                                "runtime selection is ambiguous or unavailable"
+                            )
+                        selected_backend = available[0]
+                    phase2: Phase2Bridge = Phase34Runtime(
+                        root,
+                        thread,
+                        store,
+                        through=args.through,
+                        prediction_backend=selected_backend,
+                    )
+                else:
+                    phase2 = (
+                        DesignBridge(root, thread, store)
+                        if args.through == "design"
+                        else Phase2Bridge(root, thread, store, through="site")
+                    )
                 bridge = phase2
             if args.operation == "status":
                 _display(

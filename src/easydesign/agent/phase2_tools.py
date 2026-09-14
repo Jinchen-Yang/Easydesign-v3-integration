@@ -126,6 +126,10 @@ def _scientific_tools(bridge: Phase2Bridge, role: str) -> list[Any]:
                     ),
                 )
             )
+        if hasattr(bridge, "downstream_scope"):
+            from .phase34_tools import downstream_tools
+
+            result.extend(downstream_tools(bridge))
         return result
     if role == "binder":
         if not isinstance(bridge, DesignBridge):

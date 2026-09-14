@@ -283,6 +283,37 @@ def test_candidate_dossiers_cover_shortlist_and_preserve_context() -> None:
     assert review.global_pool_sha256 == canonical_model_sha256(pool)
 
 
+def test_micro_projection_of_scientist_scale_never_becomes_experiment_authority():
+    pool, _, old_dossiers, _ = _final_review()
+    approved = pool.campaign.promotion_authority.model_copy(
+        update={
+            "authority_scope": "scientist-approved",
+            "authorizes_scientific_scale": True,
+            "authorizes_production_compute": True,
+        }
+    )
+    pool = pool.model_copy(
+        update={"campaign": pool.campaign.model_copy(update={"promotion_authority": approved})}
+    )
+    shortlist = build_review_shortlist(pool=pool, requested_count=3, sequence_cluster_cap=1)
+    ds = build_candidate_dossiers(
+        pool=pool,
+        shortlist=shortlist,
+        context=old_dossiers[0].context,
+        sequences_by_candidate={d.candidate.lineage.candidate_id: d.sequence for d in old_dossiers},
+        concerns_by_candidate={
+            d.candidate.lineage.candidate_id: d.known_concerns for d in old_dossiers
+        },
+        uncertainties_by_candidate={
+            d.candidate.lineage.candidate_id: d.uncertainties for d in old_dossiers
+        },
+        provenance_by_candidate={
+            d.candidate.lineage.candidate_id: d.provenance_refs for d in old_dossiers
+        },
+    )
+    assert all(d.scientific_claim_scope == "development-evidence-only" for d in ds)
+
+
 def test_gate5_and_validation_handoff_remain_non_scientific() -> None:
     _, _, dossiers, review = _final_review()
     assessment = Gate5JudgeAssessment(

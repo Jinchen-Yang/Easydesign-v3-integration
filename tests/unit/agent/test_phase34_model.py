@@ -94,9 +94,25 @@ async def test_malformed_negative_opinion_retained_for_unavailable_card(runtime)
 
 @pytest.mark.asyncio
 async def test_hard_fact_conflict_cannot_turn_into_unavailable_review(runtime):
-    model = Responses([good(fact_claims=[dict(fact_ref="arm-1", field="predicted", value=20)])])
-    with pytest.raises(AgentBoundaryError, match="contradicts"):
+    model = Responses(
+        [
+            good(fact_claims=[dict(fact_ref="arm-1", field="predicted", value=20)]),
+            AIMessage(content="failed"),
+            AIMessage(content="failed"),
+        ]
+    )
+    with pytest.raises(AgentBoundaryError, match="unresolved structured fact conflict"):
         await call(runtime, model)
+
+
+@pytest.mark.asyncio
+async def test_hard_fact_repair_can_return_a_valid_critique(runtime):
+    model = Responses(
+        [good(fact_claims=[dict(fact_ref="arm-1", field="predicted", value=20)]), good()]
+    )
+    result = await call(runtime, model)
+    assert result.review == "NO_MATERIAL_ISSUE"
+    assert len(model.calls) == 2
 
 
 @pytest.mark.asyncio

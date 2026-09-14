@@ -1,5 +1,14 @@
 # Gate 2 Judge availability and normal-path repair
 
+Current selection-policy amendment:
+[Ranked Site Portfolio](GATE2_RANKED_SITE_PORTFOLIO_20260914.md) supersedes the single-Site
+OVERRIDE/acknowledgement requirement recorded below. A ranked hard-valid candidate is selected
+with ordinary APPROVE even when review is unavailable or negative; its risks remain visible.
+Bounded technical recovery, explicit failure receipts and Runtime hard checks still apply.
+Target, Design and historical single-Site cards retain their existing policies.
+
+## Original availability amendment and historical selection policy
+
 Current amendment: [Structured fact consistency](PHASE2_STRUCTURED_FACTS_20260914.md)
 replaces the Site Judge lexical output grammar; historical validation records below remain unchanged.
 

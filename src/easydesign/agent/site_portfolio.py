@@ -32,7 +32,7 @@ def selected_proposal(proposal: dict[str, Any], candidate_id: str | None) -> dic
         "alternatives": [
             {**other["site"], "role": "backup"}
             for other in portfolio
-            if other["candidate_id"] != candidate_id
+            if other["candidate_id"] != candidate_id and other["selectable"]
         ],
         "positive_evidence": entry["supporting_evidence"],
         "mechanistic_rationale": entry["mechanistic_rationale"],

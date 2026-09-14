@@ -157,6 +157,14 @@ def test_any_valid_rank_approves_exact_kernel_residues_and_downstream_context(si
     assert downstream["approved_hotspots"][0]["label_seq_ids"] == chosen["design_labels"]
     assert downstream["site_rationale"]["positive_evidence"] == chosen["supporting_evidence"]
     assert downstream["site_rationale"]["risks"] == approved["proposal"]["intent"]["risks"]
+    assert {
+        tuple(alternative["hotspot_label_seq_ids"])
+        for alternative in downstream["site_rationale"]["alternatives"]
+    } == {
+        tuple(option["design_labels"])
+        for option in card.options
+        if option["option_id"] != chosen["option_id"]
+    }
     with pytest.raises(AgentBoundaryError, match="Conflicting duplicate"):
         other = next(option for option in card.options if option["rank"] != rank)
         bridge.store.respond(
@@ -170,6 +178,7 @@ def test_any_valid_rank_approves_exact_kernel_residues_and_downstream_context(si
 
 def test_invalid_candidate_is_disabled_without_poisoning_valid_candidates(site_bridge):
     setup_portfolio(site_bridge, [[999], [3, 4], [5, 6]])
+    original = deepcopy(site_bridge.current_site())
     card = review_card(site_bridge)
     assert [option["rank"] for option in card.options] == ["A", "B", None]
     assert card.options[-1]["design_labels"] == [999]
@@ -192,6 +201,28 @@ def test_invalid_candidate_is_disabled_without_poisoning_valid_candidates(site_b
         selected_option_id=selected["option_id"],
     )
     assert site_bridge.apply_decision(card)["site"]["hotspot_label_seq_ids"] == [5, 6]
+    from easydesign.agent.design import DesignBridge
+    from easydesign.agent.site_contracts import SiteIntent
+
+    downstream = DesignBridge(
+        site_bridge.project, "synthetic-blocked-backup", site_bridge.store
+    ).read_design_evidence()
+    assert downstream["approved_hotspots"][0]["label_seq_ids"] == [5, 6]
+    assert [
+        alternative["hotspot_label_seq_ids"]
+        for alternative in downstream["site_rationale"]["alternatives"]
+    ] == [[3, 4]]
+    assert all(
+        alternative["role"] == "backup"
+        for alternative in downstream["site_rationale"]["alternatives"]
+    )
+    SiteIntent.model_validate(downstream["site_rationale"])
+    approved = site_bridge.approved_site()
+    assert approved["proposal"]["ranked_portfolio"] == original["intent"]["portfolio"]
+    blocked = approved["proposal"]["ranked_portfolio"][-1]
+    assert blocked["site"]["hotspot_label_seq_ids"] == [999]
+    assert not blocked["selectable"] and blocked["hard_block"]
+    assert site_bridge.current_site() == original
 
 
 def test_omitting_candidate_or_forging_structured_facts_is_rejected(site_bridge):

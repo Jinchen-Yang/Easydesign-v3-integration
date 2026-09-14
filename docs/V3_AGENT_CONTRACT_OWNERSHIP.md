@@ -1,5 +1,19 @@
 # EasyDesign v3 consequential Agent contract ownership
 
+Current ranked Gate 2 policy:
+[Ranked Site Portfolio](GATE2_RANKED_SITE_PORTFOLIO_20260914.md) and
+[implementation/validation](PHASE2_RANKED_SITE_IMPLEMENTATION_20260914.md).
+SiteDecision owns ordering; Runtime owns hard eligibility; Judge offers a lightweight second
+opinion. All hard-valid candidates can be selected with ordinary APPROVE, including B/C with
+negative or unavailable review. No OVERRIDE, mandatory reason or additional acknowledgement is
+required. Blocked entries stay in the audit portfolio, never downstream SiteIntent backups.
+Target, Design and historical single-Site cards retain their own policies.
+
+## Earlier amendments and historical implementation notes
+
+The notes below describe their original versions. Their single-Site ranking/approval wording
+does not override the current ranked Gate 2 policy above.
+
 Current Gate 2 availability amendment (2026-09-14, under validation):
 [normal Judge repair and explicit unavailable review](PHASE2_JUDGE_RESILIENCE_20260914.md).
 A dossier-backed Site Judge uses a compact normal/recovery contract with the existing bound

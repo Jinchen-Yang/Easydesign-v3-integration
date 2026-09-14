@@ -95,6 +95,8 @@ Portfolio 与每个选项须绑定当前 target/chain/revision、精确 residues
 portfolio revision/digest。人类响应引用稳定 candidate ID 和当前 card binding。
 选择 B 后，下游使用 B 的 residues、evidence、risks 和 unresolved items；不能只改变
 显示名称而仍使用 A 的 SiteIntent 或 hotspot 文件。
+下游 SiteIntent.alternatives 只保留其他可选候选作为 backup；Blocked 候选仅保留在完整
+ranked_portfolio 中供审计与展示，不能作为下游备选。
 
 排名变化不改变候选身份。重新排序、候选内容变化或 evidence revision 变化时刷新卡片
 绑定；旧卡不能批准新版本。沿用现有可信 human entry、事务、幂等和 revision lineage。

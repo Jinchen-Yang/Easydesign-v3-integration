@@ -1,10 +1,15 @@
 # Phase 2 scientific interaction
 
-Current Gate 2 review availability policy (2026-09-14, under validation):
-[Judge resilience](PHASE2_JUDGE_RESILIENCE_20260914.md). A runtime-validated proposal may reach
-a clearly marked Scientist review card after independent review is technically unavailable.
-Continuation requires acknowledgement and a human rationale. Hard contradictions and valid
-negative reviews remain blocking; an unavailable review is never reported as a successful Judge.
+Current Gate 2 policy (2026-09-14): [Ranked Site Portfolio](GATE2_RANKED_SITE_PORTFOLIO_20260914.md).
+SiteDecision orders every hard-valid candidate; Runtime binds facts and eligibility; Judge
+supplies independent scientific critique. Scientist can select any valid A/B/C candidate with
+ordinary APPROVE. DISCOURAGED, weak evidence and unavailable review do not disable a valid
+candidate or require OVERRIDE, mandatory rationale or additional acknowledgement.
+[Judge resilience](PHASE2_JUDGE_RESILIENCE_20260914.md) still governs bounded recovery and explicit
+unavailability records. Negative opinions remain visible and cannot be replaced by a fabricated
+successful or unavailable review. Only Runtime hard-invalid candidates are disabled.
+The historical single-Site acknowledgement/override policy does not apply to ranked portfolios;
+Target and Design keep their existing policies.
 The [structured fact contract](PHASE2_STRUCTURED_FACTS_20260914.md) permits normal scientific
 language. Runtime supplies and renders precise facts; exact structured claims are checked
 against those facts. Free prose remains scientific interpretation, not a verified fact source.
@@ -26,8 +31,9 @@ easydesign-agent start PROJECT --target /absolute/path/target.cif \
 
 Gate 1 resolves the target/structure question when required by the original target service.
 After that, Site & Mechanism reads the approved mapping and actual structure calculations.
-It proposes a site; the independent Evidence Judge challenges the bound proposal, and Gate 2
-asks which region the scientist wants to target. SASA and geometric scores are not affinity,
+It ranks the supplied candidates, retaining all hard-valid alternatives. The independent
+Evidence Judge critiques the reasoning without rewriting the order, and Gate 2 asks which
+candidate the scientist wants to target. SASA and geometric scores are not affinity,
 functional validation, docking clearance or biological identity.
 
 Optional biology context is an explicit scientist-supplied YAML file, passed with
@@ -58,7 +64,10 @@ is insufficient to calculate a reliable signed membrane frame; the existing GPCR
 adequate TM geometry and orientation evidence. Missing biology stays unknown. Sequence motifs
 indicate possible glycosylation; they do not establish occupancy.
 
-The common decision card offers approve, revise, reject and override. For example:
+A ranked Gate 2 card offers selectable A/B/C candidates, revise and reject. An explicit
+APPROVE selects the displayed default A; merely displaying A does not approve it. To select
+another candidate, use its exact stable ID with --decision approve --candidate CANDIDATE_ID.
+Interactive mode accepts the displayed rank letter. To request a revision:
 
 ```bash
 easydesign-agent resume PROJECT --thread THREAD --through site --models config/llm.yaml \
@@ -70,11 +79,17 @@ without manually entering a card value. A revision preserves the immutable resea
 is delivered separately to the owning specialist. It produces a fresh proposal, Judge opinion
 and card. Rejection leaves the scientific project available for another proposal.
 
-SUPPORTED means support within the stated evidence scope. DISCOURAGED means executable but
-scientifically risky: ordinary approval is refused; explicit override requires acknowledgement
-and rationale. BLOCKED is established by runtime facts such as absent mapped residues or a hard
-exclusion, and cannot be bypassed with override. The original scientific approval service remains
-the authority for published hotspot state.
+For ranked Gate 2, SUPPORTED and DISCOURAGED are independent scientific opinions.
+DISCOURAGED does not remove a valid option or prevent ordinary approval. Runtime establishes
+BLOCKED from facts such as absent mapped residues or a hard exclusion, and that candidate
+cannot be selected. Other valid candidates remain selectable. Selection passes the chosen
+candidate's residues, evidence, risks and uncertainty downstream. Only other selectable
+candidates enter SiteIntent.alternatives as backups; blocked entries remain in ranked_portfolio
+for audit and display. The scientific approval service owns the published hotspot state.
+
+Historical single-Site cards retain their original policy: a discouraged or unreviewed choice
+requires explicit OVERRIDE with acknowledgement and rationale. That legacy rule does not apply
+to ranked-site-portfolio-v1. Gate 1 and Gate 3 retain their own existing approval rules.
 
 A changed target invalidates dependent Site/Design evidence. Re-importing different biology
 context also invalidates the old Site proposal; it does not silently edit the target or reinterpret

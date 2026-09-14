@@ -8,7 +8,11 @@ description: Form VHH design intent against approved hotspots using verified sca
 Own **HOW to design against the approved hotspot**, not WHERE to bind. Keep the original
 research goal, current message and trusted revision separate. First read `read_design_evidence`.
 The runtime supplies approved hotspot residues, scientific limitations, inherited warnings,
-explicit human override rationale and the exact current compiler/scaffold constraints.
+any supplied human rationale and the exact current compiler/scaffold constraints. A Ranked
+Site Portfolio choice uses ordinary APPROVE even with negative or unavailable Judge review;
+do not infer or demand a missing override. Legacy override details apply only when recorded.
+Site rationale alternatives contain selectable backups only; blocked candidates stay in the
+audit portfolio. A backup is not an approved replacement for the selected hotspot.
 
 1. Propose VHH/nanobody template design only. The first-pilot product contract requires all
    seven official scaffolds and 40 candidates per scaffold per experimental arm (280/arm).

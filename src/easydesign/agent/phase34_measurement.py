@@ -9,7 +9,14 @@ from pathlib import Path
 from typing import Any, cast
 
 from easydesign.backends.executors import NvidiaSmiProbe
-from easydesign.core import ArtifactRef, TaskStatus, canonical_model_sha256, dump_model, load_model
+from easydesign.core import (
+    ArtifactRef,
+    ManifestStateError,
+    TaskStatus,
+    canonical_model_sha256,
+    dump_model,
+    load_model,
+)
 from easydesign.filtering import METRIC_DEFINITION_VERSION, evaluate_pilot_candidates_v1_6
 from easydesign.filtering.nanobody_v1_6 import (
     PROFILE_SOURCE_SHA256_V1_6,
@@ -49,6 +56,7 @@ class PilotPredictionEvidence(FrozenContract):
     candidate_index_sha256: str
     predictions: tuple[FullTargetPredictionRecord, ...]
     evidence_refs: tuple[ArtifactRef, ...]
+    operational_failure: str | None = None
 
 
 _PREDICTION_METRICS = {
@@ -126,8 +134,55 @@ def _save_exact(root: Path, path: Path, model: Any, name: str) -> ArtifactRef:
         artifact_id=name,
         role="phase34-pilot-evidence",
         file_format="json",
-        producer_stage="05-pilot-filtering",
-        producer_attempt="v3-measurement",
+    )
+
+
+def incomplete_prediction_evidence(
+    *,
+    root: Path,
+    runtime: Path,
+    artifacts: Path,
+    authority_id: str,
+    index: Any,
+    index_sha256: str,
+    error: ManifestStateError,
+) -> PilotPredictionEvidence:
+    """Retain verified terminal worker outcomes, never downgrade a fact/checksum error."""
+    if str(error) != "Stage 05 Protenix full-target tasks 未全部完成，可使用 runs resume":
+        raise error
+    state = load_latest_runtime_model(runtime / "full-target-state.json", FullTargetExecutionState)
+    if state.progress.status != "incomplete" or not any(
+        t.status == TaskStatus.FAILED for t in state.tasks
+    ):
+        raise error
+    if any(t.status not in {TaskStatus.SUCCEEDED, TaskStatus.FAILED} for t in state.tasks):
+        raise error
+    by_id = {c.candidate_id: c.strategy_id for c in index.candidates}
+    if set(state.selected_candidate_ids) != set(by_id):
+        raise AgentBoundaryError("Incomplete prediction state has a foreign population")
+    for prediction in state.predictions:
+        if by_id[prediction.candidate_id] != prediction.strategy_id:
+            raise AgentBoundaryError("Incomplete prediction changed strategy lineage")
+    refs = tuple(
+        ref
+        for p in state.predictions
+        for ref in (p.predicted_structure, p.summary_confidence, p.full_confidence)
+    )
+    for ref in refs:
+        ref.verify(root)
+    state_ref = _save_exact(
+        root,
+        artifacts / f"prediction-terminal-state-{canonical_model_sha256(state)}.json",
+        state,
+        "v3-prediction-terminal-state",
+    )
+    return PilotPredictionEvidence(
+        authority_id=authority_id,
+        candidate_index_sha256=index_sha256,
+        predictions=state.predictions,
+        evidence_refs=(*refs, state_ref),
+        operational_failure="Independent prediction exhausted its bounded attempt budget; "
+        "failed candidates retain missing metrics, without a biological failure conclusion.",
     )
 
 
@@ -266,29 +321,40 @@ def measure_execution(
                 timeout_seconds=executor.resource_wait_timeout_seconds,
                 poll_seconds=executor.resource_poll_seconds,
             )
-            predictions, prediction_refs, msa_refs = _predict_selected_candidates(
-                root=root,
-                artifacts=artifacts,
-                runtime=runtime,
-                work=work_root / "work",
-                upstream=upstream,
-                candidates=index.candidates,
-                selected_ids={c.candidate_id for c in index.candidates},
-                providers=config.full_target_prediction.target_msa.resolved_providers(),
-                prediction_config=config.full_target_prediction,
-                adapter_builder=_complex_prediction_adapter_builder(
-                    profile, config.full_target_prediction
-                ),
-                devices=kernel_plan.devices,
-                maximum_attempts=executor.max_task_attempts,
-                created_at=now,
-            )
-            evidence = PilotPredictionEvidence(
-                authority_id=authority_id,
-                candidate_index_sha256=upstream.candidate_index_ref.sha256,
-                predictions=predictions,
-                evidence_refs=(*prediction_refs, *msa_refs),
-            )
+            try:
+                predictions, prediction_refs, msa_refs = _predict_selected_candidates(
+                    root=root,
+                    artifacts=artifacts,
+                    runtime=runtime,
+                    work=work_root / "work",
+                    upstream=upstream,
+                    candidates=index.candidates,
+                    selected_ids={c.candidate_id for c in index.candidates},
+                    providers=config.full_target_prediction.target_msa.resolved_providers(),
+                    prediction_config=config.full_target_prediction,
+                    adapter_builder=_complex_prediction_adapter_builder(
+                        profile, config.full_target_prediction
+                    ),
+                    devices=kernel_plan.devices,
+                    maximum_attempts=executor.max_task_attempts,
+                    created_at=now,
+                )
+                evidence = PilotPredictionEvidence(
+                    authority_id=authority_id,
+                    candidate_index_sha256=upstream.candidate_index_ref.sha256,
+                    predictions=predictions,
+                    evidence_refs=(*prediction_refs, *msa_refs),
+                )
+            except ManifestStateError as error:
+                evidence = incomplete_prediction_evidence(
+                    root=root,
+                    runtime=runtime,
+                    artifacts=artifacts,
+                    authority_id=authority_id,
+                    index=index,
+                    index_sha256=upstream.candidate_index_ref.sha256,
+                    error=error,
+                )
         prediction_ref = _save_exact(root, prediction_path, evidence, "v3-pilot-predictions")
         measured = project_pilot_measurement(
             candidate_index=index,
@@ -324,6 +390,9 @@ def measure_execution(
                         update={
                             "failed_generation_attempts": failed_generation[a.strategy_id],
                             "failed_prediction_attempts": failed_prediction[a.strategy_id],
+                            "operational_failure_count": a.operational_failure_count
+                            + a.valid_execution_products
+                            - a.predicted_candidates,
                         }
                     )
                     for a in measured.arms

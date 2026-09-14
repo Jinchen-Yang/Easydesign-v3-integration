@@ -141,3 +141,48 @@ Remaining: bounded real BoltzGen/AFO generation/prediction/metrics, real model r
 validation, Scale adapter integration and failure recovery checks, frozen replay/E2E,
 final regression, protected-kernel integrity and closure documents. This checkpoint
 does not establish Phase 3/4 completion or any new scientific/experimental approval.
+
+## Milestone 3 — recovery boundaries and live final review
+
+Milestone 2: `34feb1d42af9fd9c0d584407a1a87fc3976f82b0`.
+Scale adapter dispatch/recovery passes (`scale-adapter-tests-01.log`, 1 test).
+Terminal prediction exhaustion now preserves verified successful records and missing
+outcomes. Other integrity errors propagate. The new test found an invalid producer
+attempt label in the adapter; its evidence now uses the actual authority path/role
+without claiming a nonexistent Stage 05 attempt. Partial-success/integrity validation
+passes (`measurement-tests-04.log`, 1 test).
+
+Native Gate 5 approval and STOP passed (`downstream-guards-tests-01.log`, first two
+cases; the third fixture was subsequently corrected). External worker recovery now
+invalidates old review authority immediately. Native stale interrupts are retired
+without a fabricated Scientist response; new evidence receives a new review. Both
+new tests pass (`stale-interrupt-tests-01.log`, 2 tests).
+
+The initial full regression found an upstream CLI factory incompatibility: the Phase 2
+path unnecessarily received the new downstream keyword. It now uses the original call.
+Existing new-process CLI recovery passes (`target-cli-tests-02.log`, 2 passed, 1 opt-in
+live skip). Full regression is running in `integration-full-tests-02.log`. Whole-repo
+Ruff, repository structure and mypy pass (`integration-full-ruff-02.log`,
+`integration-repository-check-01.log`, `integration-full-mypy-03.log`; 223 source files).
+
+Real DeepSeek v4 Pro Final Selection and Judge each submitted on their first call over
+a dedicated synthetic pool: 4,918/6,482 input chars including schemas; provider totals
+2,169/2,956 tokens. The two-primary/one-backup Gate 5 package is validation-only and
+not ordered. See `phase34-live-final-result-01.json` and its separate usage record.
+This verifies SDK/review/handoff behavior, not biological performance. Saved standard
+and native replays pass (`phase34-replay-m2-standard.json`, `phase34-replay-m2-native.json`).
+
+NK2R micro worker `job-958e5b5944814abe`, run `pilot-v3-4ada156a63bc109782615809`,
+exhausted its approved 600-second GPU wait before generating any candidate. External
+processes occupied all devices; the same run remains recoverable. Its actual failure
+state was projected successfully (`nk2r-operational-evidence-01.log`). No candidate,
+metric result or biological conclusion was fabricated.
+
+Cases 1/3/4/5 receipts and applicable milestone tags remain intact
+(`accepted-cases-integrity-01.json`, `accepted-gate3-fixtures-01.json`). All 461 protected
+tracked kernel/resource/example files are unchanged from Phase 2
+(`protected-kernel-integrity-01.json`). Mainline is clean at `fce5d886`; donor remains
+at `07d2a6a2` with only its original untracked archives.
+
+Still required: real generation/prediction/metrics when a GPU is available, frozen
+Pilot Diagnosis/Judge/native Gate 4 validation, complete regression and final closure.

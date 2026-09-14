@@ -1,0 +1,100 @@
+# Phase 3/4 execution contract
+
+This additive contract uses Phase 2 at `fce5d886849edf575ec1765f7226064291857d49`
+as authority. Ranked Site Portfolio, Scientist selection of B/C, runtime-owned facts,
+GPCR templates/exclusions and lightweight Judge behavior remain unchanged. The donor
+is a source of standalone downstream contracts, not an alternative Phase 2 runtime.
+
+## Responsibilities
+
+The existing Runtime compiles, dispatches, predicts, measures, persists and recovers.
+Pilot Diagnosis interprets the approved arm hypotheses and measured evidence. Final
+Selection proposes a panel from a global shortlist. Judge supplies concise independent
+critique. Only a persisted Scientist response chooses a consequential Gate route.
+There are no separate generation, prediction, filtering or metrics agents.
+
+`easydesign-agent` accepts `--through pilot` and `--through handoff`; the ordinary
+`--through design` scope preserves the Phase 2 path. Both new specialists use the
+existing model configuration, SDK, context guard and persisted 64-call execution budget.
+They receive one structured submission tool and no execution/approval tools.
+
+## Gate 3 and Pilot
+
+A formal Pilot requires approval of a current Gate 3 card containing the exact Pilot
+plan. An older frozen Design that did not include this plan requires a new plan review;
+its historical approval is not silently expanded. The authority binds project, Target,
+Site, Design, compiled strategies, arm intent, runtime backend policy and allocation.
+Every execution checks these identities again. One authority creates one run; process
+recovery attaches to that run and verifies its original configuration and worker receipt.
+
+Arm intent retains hypothesis, rationale, changed/held factors, expected result, failure
+interpretation, binding/exclusions, scaffold/CDR settings and target context. A micro
+projection changes only candidate counts and selected scaffold membership. It does not
+change the scientific YAML or replace the approved Site.
+
+`formal-pilot` executes the approved allocation. `validation-micro` requires explicit
+trusted harness registration, is limited to six candidates, and has a distinct validation
+context with no fabricated Gate 3 card/decision. It is always scientifically INCONCLUSIVE.
+Zero passing candidates in a micro run cannot establish Site or Design failure.
+
+Generation uses the existing Stage 04 worker. The v3 adapter then invokes the existing
+prediction and metric kernels on all allocated candidates, without Stage 05's historical
+automatic candidate expansion. The prediction backend comes from the current bound plan;
+the integration validation uses AFO 3.1.4 / OpenFold3 P2. Each checkout owns its runtime,
+environment and model assets. Legacy filter thresholds remain labeled audit annotations.
+
+Pilot evidence separates planned, generated, valid, predicted and metric-evaluable
+counts, metric missingness, failed attempts and operational failures. An incomplete
+generation can retain verified partial products without inventing metrics. Terminal
+prediction exhaustion retains verified successful predictions and marks failures as
+missing; checksum, identity and other hard consistency errors are still errors. A
+terminal measured outcome is immutable and does not silently launch another retry loop.
+
+## Gate 4
+
+The Scientist can choose PROMOTE_TO_SCALE, RUN_ANOTHER_PILOT, REVISE_DESIGN,
+REVISE_SITE or STOP. Runtime validates the selected option and applies it idempotently.
+Another Pilot requires a new explicit Gate 3 plan approval. Design/Site revisions return
+through the existing upstream gates. STOP retains evidence and schedules no computation.
+No autonomous multi-Pilot loop is implemented.
+
+Promotion binds the reviewed strategy allocation, total Scale intent and upstream
+identities. Test-only promotion cannot authorize production compute. Judge cannot
+rewrite the route, and technical Judge failure is visible on the card instead of
+removing the Scientist review. An explicit runtime fact conflict is not an unavailable
+review fallback.
+
+## Scale and global selection
+
+An immutable batch manifest partitions exactly the authorized allocation. Batch receipts
+use the existing append-only runtime journal, retain source run and candidate lineage,
+and support original-worker/resume verification. Completed evidence cannot be overwritten
+by a retry. All batches contribute to one global pool; batch-local winners are not
+concatenated. Missing/failed batches remain visible.
+
+The bounded shortlist is review priority, not a scientific hard filter. Development
+score is an engineering ordering signal, never biological fitness. Real adapter sequence
+clusters currently identify exact sequence duplicates; pose diversity is unverified and
+must remain an uncertainty. Synthetic 50k clustering tests validate software behavior,
+not protein-family clustering accuracy, biological performance or GPU throughput.
+
+Final Selection receives candidate metrics, sequence, provenance, risk, uncertainty,
+strategy/diversity context and requested primary/backup counts. Runtime rejects unknown,
+duplicate or overlapping choices. Judge critiques the proposal without reranking it.
+
+## Gate 5, recovery and handoff
+
+Only an explicit current Gate 5 response can publish the selected primary/backup panel.
+REVISE creates a new review identity even if the candidate IDs remain unchanged. STOP
+publishes no handoff. Repeated application of the same outcome is idempotent.
+
+When worker recovery or new measurements supersede an outstanding Gate 4/5 card, Runtime
+rejects responses to that stale card, retires its graph interrupt without inventing a
+human response, and prepares the current evidence for review. Historical pending state
+cannot override current object authority.
+
+Any validation/development input keeps the handoff status
+`validation-only-not-authorized-for-experiment`, even if some upstream authority was
+formally approved. The package contains exact selected sequences and provenance and
+records `not-ordered`. This assignment performs no production-scale generation or
+wet-lab ordering. See the integration progress and closure records for validated scope.

@@ -38,7 +38,22 @@ def downstream_tools(bridge: Any) -> list[Any]:
             or action.tool != "request_downstream_decision"
             or action.arguments != {"card_id": card_id}
         ):
-            raise AgentBoundaryError("Requested card is outside current downstream authority")
+            previous = bridge.store.card(bridge.thread, card_id)
+            if previous.gate_type not in {"pilot-promotion", "wet-lab-handoff"}:
+                raise AgentBoundaryError("Requested card is outside current downstream authority")
+            # A recovery can replace evidence while the graph waits at an old card.
+            # Retire that interrupt without manufacturing approval or applying a route.
+            return cast(
+                str,
+                bridge.store.offload(
+                    bridge.thread,
+                    {
+                        "status": "review-superseded",
+                        "card_id": card_id,
+                        "reason": "Runtime evidence changed; continue through the current review.",
+                    },
+                ),
+            )
         card = (
             bridge.store.card(bridge.thread, card_id)
             if saved_response is not None

@@ -191,6 +191,19 @@ async def run_session(
             and not any(m.id == execution["execution_id"] for m in state.values.get("messages", []))
         )
         interrupts = [i for task in state.tasks for i in task.interrupts]
+        superseded_card = None
+        if len(interrupts) == 1 and hasattr(bridge, "downstream_scope"):
+            pending_card = DecisionCard.model_validate(interrupts[0].value)
+            if pending_card.gate_type in {"pilot-promotion", "wet-lab-handoff"}:
+                current_card = getattr(bridge, "downstream_card")()
+                if current_card is None or current_card.card_id != pending_card.card_id:
+                    store.card(thread, pending_card.card_id)
+                    if decision is not None or store.response(thread, pending_card.card_id):
+                        raise AgentBoundaryError(
+                            "Downstream evidence changed; stale card cannot be approved"
+                        )
+                    superseded_card = pending_card
+                    interrupts = []
         if interrupts:
             if new_message is not None:
                 raise AgentBoundaryError(
@@ -261,6 +274,12 @@ async def run_session(
                 "thread": thread,
                 "job": bridge.get_job_status(),
             }
+        elif superseded_card is not None:
+            # Resume the old tool only to retire its stale interrupt. This is a runtime
+            # notification, not a fabricated Scientist response or a new model budget.
+            inputs = Command(
+                resume={"card_id": superseded_card.card_id, "runtime_status": "superseded"}
+            )
         elif new_message is not None:
             if state.next or pending_input:
                 raise AgentBoundaryError("Recover the unfinished turn before sending a new message")
@@ -417,7 +436,11 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
 async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
     from .models import create_models
 
-    models = create_models(config, downstream=hasattr(bridge, "downstream_scope"))
+    models = (
+        create_models(config, downstream=True)
+        if hasattr(bridge, "downstream_scope")
+        else create_models(config)
+    )
     local_user = f"uid:{os.getuid()}:{pwd.getpwuid(os.getuid()).pw_name}"
 
     def emit(event: dict[str, Any]) -> None:

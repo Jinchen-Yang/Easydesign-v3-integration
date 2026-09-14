@@ -199,6 +199,21 @@ class Phase34Runtime(Phase34Bridge):
             return None
         if dossier.project_id != self.project_id:
             raise AgentBoundaryError("Pilot dossier belongs to a different project")
+        execution = self.project_latest("phase34-pilot-execution")
+        if execution is not None:
+            if execution["run_id"] != dossier.pilot_run_id:
+                return None
+            jobs = [
+                j
+                for j in self.controller.list(project_id=self.project_id)
+                if j.run_id == execution["run_id"]
+            ]
+            current_job = jobs[0].job_id if jobs else execution["job_id"]
+            if (
+                measurement["dependencies"].get("execution_job_id", execution["job_id"])
+                != current_job
+            ):
+                return None
         return dossier
 
     @authority_read
@@ -686,6 +701,7 @@ class Phase34Runtime(Phase34Bridge):
         if (
             inputs.project_id != self.project_id
             or inputs.global_pool_sha256 != canonical_model_sha256(pool)
+            or shortlist.global_pool_sha256 != canonical_model_sha256(pool)
             or (inputs.review_shortlist_sha256 != canonical_model_sha256(shortlist))
         ):
             raise AgentBoundaryError("Final selection input is stale or belongs to another project")
@@ -693,12 +709,22 @@ class Phase34Runtime(Phase34Bridge):
         if ids != tuple(d.candidate.lineage.candidate_id for d in inputs.candidate_dossiers):
             raise AgentBoundaryError("Final input does not cover the current shortlist")
         pilot = self.current_pilot_dossier()
+        authority = self.project_latest("phase34-scale-authority")
         if (
             pilot is None
+            or authority is None
+            or self.document(authority["ref"])
+            != pool.campaign.promotion_authority.model_dump(mode="json")
             or pool.campaign.promotion_authority.pilot_dossier_sha256
             != canonical_model_sha256(pilot)
         ):
             raise AgentBoundaryError("Global pool is outside the current Pilot/Scale authority")
+        review_state = self.project_latest("phase34-scale-review-worker-state")
+        if review_state and review_state.get("pool") == canonical_model_sha256(pool):
+            from .phase34_scale import scale_worker_state
+
+            if review_state["worker_state"] != scale_worker_state(self):
+                raise AgentBoundaryError("Scale worker changed after selection input publication")
         return pool, shortlist, inputs
 
     @authority_read

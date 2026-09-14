@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from easydesign.agent.cli import run_session
+from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.phase3 import build_pilot_diagnosis
 from easydesign.agent.phase4 import build_global_candidate_pool
 from easydesign.agent.phase34_authority import plan_for_design
@@ -245,8 +246,10 @@ class FinalModel(DownstreamModel):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("final_response", ["approve", "reject"])
 async def test_actual_gate4_resume_final_specialist_gate5_revision_and_validation_handoff(
     design_bridge,
+    final_response,
 ):
     bridge, pilot, context = micro_fixture(design_bridge)
     models = {
@@ -296,12 +299,18 @@ async def test_actual_gate4_resume_final_specialist_gate5_revision_and_validatio
         scripted_config(),
         models,
         goal,
-        decision="approve",
+        decision=final_response,
         card_id=revised_card.card_id,
         user="synthetic-scientist",
-        selected_option_id="wet-lab-panel",
+        selected_option_id="wet-lab-panel" if final_response == "approve" else None,
     )
     assert final["status"] == "finished", final
+    if final_response == "reject":
+        assert bridge.project_latest("phase34-wet-lab-handoff") is None
+        assert bridge.project_latest("phase34-gate5-transition")["route"] == "STOP"
+        bridge.apply_decision(revised_card)
+        assert bridge.project_latest("phase34-wet-lab-handoff") is None
+        return
     handoff = bridge.document(bridge.project_latest("phase34-wet-lab-handoff")["ref"])
     assert handoff["handoff_status"] == "validation-only-not-authorized-for-experiment"
     assert handoff["ordering_status"] == "not-ordered"
@@ -320,3 +329,79 @@ async def test_actual_gate4_resume_final_specialist_gate5_revision_and_validatio
         )
         == before
     )
+
+
+def test_saved_gate4_cannot_be_applied_after_an_external_worker_resume(design_bridge):
+    bridge, _, _ = micro_fixture(design_bridge)
+    card = bridge.downstream_card()
+    assert card is not None
+    bridge.controller.list = lambda **_: [
+        SimpleNamespace(
+            run_id="synthetic-pilot", job_id="new-resume-worker", step=4, status="running"
+        )
+    ]
+    assert bridge.current_pilot_dossier() is None
+    assert bridge.downstream_card() is None
+    assert bridge.next_downstream_action().stage == "pilot-reconcile"
+    bridge.store.respond(
+        bridge.thread,
+        card.card_id,
+        "approve",
+        "synthetic-scientist",
+        selected_option_id="PROMOTE_TO_SCALE",
+    )
+    with pytest.raises(AgentBoundaryError):
+        bridge.apply_decision(card)
+    assert bridge.project_latest("phase34-scale-authority") is None
+
+
+@pytest.mark.asyncio
+async def test_native_stale_interrupt_retires_without_approval_after_new_measurements(
+    design_bridge,
+):
+    bridge, pilot, _ = micro_fixture(design_bridge)
+    models = {
+        r: FinalModel(role=r)
+        for r in (
+            "coordinator",
+            "target",
+            "site",
+            "binder",
+            "judge",
+            "pilot-diagnosis",
+            "final-selection",
+        )
+    }
+    goal = "Synthetic measurement recovery; no new generation or scientific approval."
+    pending = await run_session(bridge, scripted_config(), models, goal)
+    old_card = pending["card"]["card_id"]
+    changed = pilot.measurement.model_copy(
+        update={
+            "execution": pilot.measurement.execution.model_copy(
+                update={
+                    "purpose": "Synthetic corrected operational evidence after worker recovery.",
+                }
+            ),
+        }
+    )
+    bridge.publish_contract(
+        kind="phase34-pilot-measurement",
+        contract=changed,
+        dependencies={"authority": pilot.execution_authority.authority_id},
+    )
+    with pytest.raises(AgentBoundaryError, match="stale card"):
+        await run_session(
+            bridge,
+            scripted_config(),
+            models,
+            goal,
+            decision="approve",
+            card_id=old_card,
+            user="synthetic-scientist",
+        )
+    assert bridge.store.response(bridge.thread, old_card) is None
+    resumed = await run_session(bridge, scripted_config(), models, goal)
+    assert resumed["status"] == "awaiting-human-approval", resumed
+    assert resumed["card"]["card_id"] != old_card
+    assert bridge.store.response(bridge.thread, old_card) is None
+    assert bridge.project_latest("phase34-scale-authority") is None

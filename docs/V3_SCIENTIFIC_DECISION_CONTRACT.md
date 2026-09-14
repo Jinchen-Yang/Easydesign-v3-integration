@@ -1,20 +1,41 @@
-# EasyDesign v3 Scientific Decision Contract — Phase 1 freeze
+# EasyDesign v3 Scientific Decision Contract
 
-当前 Gate 2 工程修订（2026-09-14，验收中）：
+## 当前 Gate 2 产品契约：合法候选全部排序
+
+2026-09-14，经用户明确确认，Gate 2 采用
+[Ranked Site Portfolio 契约](GATE2_RANKED_SITE_PORTFOLIO_20260914.md)：
+**VALID candidates are ranked. INVALID candidates are blocked.**
+所有通过 Runtime 硬事实与显式硬约束检查的候选都进入相对排序并可由 Scientist 选择。
+科学风险、证据薄弱、表面暴露差、whole-VHH accessibility 未知影响排序、置信度和说明，
+不得单独取消展示或选择资格；Judge 不可用也不阻塞已有合法候选的排序与选择。
+Gate 2 主输出为 A / B / C 等完整候选比较，每项绑定自己的 residues、evidence、risks
+和 selection identity。Scientist 明确选择后才推进，Runtime 硬冲突仍不可绕过。
+
+本补充是已确认的产品契约，**portfolio 代码尚未实现**。它优先于下文及所链接历史文档中
+Gate 2 的单 winner、以 DISCOURAGED / Judge availability 限制普通选择、或要求额外
+OVERRIDE 的规则；其他 Gate 不受此补充影响。不得把本次文档变更表述为运行时功能已交付。
+
+已验收的 Phase 2 实现仍由提交 `0859a5e583b7f44bf417e77741a8914831ca9e25` 和标签
+`easydesign-v3-phase2-frozen-20260914` 固定。旧验收、记录、标签和科学意见保持原样；
+以下 Phase 1/2 说明描述对应历史实现，不覆盖上述新 Gate 2 产品契约。
+
+## 已冻结实现及历史补充
+
+Gate 2 工程修订（2026-09-14，已纳入 Phase 2 冻结）：
 [Judge 正常路径修复与显式不可用审查](PHASE2_JUDGE_RESILIENCE_20260914.md)。
 有 Dossier 的 Gate 2 在独立审查因已分类技术故障耗尽修复次数后，可以显示明确标注
 “审查未完成”的 Scientist 卡片。必须保留全部硬事实校验与风险；不得伪造 assessment
 或 ready-to-ask。继续仍需人类确认缺失审查并填写理由，已有负面意见不得被降级覆盖。
-Judge 正常完成审查与安全降级是两项独立验收，后者不能替代前者；Phase 2 尚未冻结。
+Judge 正常完成审查与安全降级是两项独立验收，后者不能替代前者。
 
-当前 Phase 2 流程权限补充（2026-09-13，验证中）：
+Phase 2 流程权限补充（2026-09-13，已纳入冻结）：
 [控制流权限审计](V3_CONTROL_FLOW_AUTHORITY.md)。Phase 2 运行时直接派发当前范围内
 尚未完成且获授权的动作；模型文字不能重开已完成 Gate，也不能用提前结束阻止接续。
 Gate 3 REVISE 默认回到 Design；需要回到 Site 时，Scientist 必须通过可信入口明确设置
 `--revision-gate site-hotspot`。新字段只作用于 REVISE，历史 outcome 的缺省值表示原 Gate。
 重启不重置预算、不重做已验证的阶段。未启用的 Gate 4/5 仍不可执行，Phase 3 未开启。
 
-当前 Phase 2 Gate 2 补充（2026-09-13，尚未冻结）：
+Phase 2 Gate 2 补充（2026-09-13，已纳入冻结；其选择策略由上述新契约替代）：
 [Judge / Gate 2 契约审计](PHASE2_JUDGE_GATE2_CONSOLIDATION_20260913.md)。
 Gate 2 保护早期位点选择的科学底线，不要求完整 VHH 的后续功能和空间验证已完成。
 硬事实错误、无效位点或显式约束冲突仍阻断；可纠正的科学夸大通过

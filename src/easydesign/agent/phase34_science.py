@@ -137,6 +137,10 @@ def bind_pilot_opinion(
         raise AgentBoundaryError("Pilot scientific support cites a foreign or duplicate candidate")
     micro = measurement.execution.mode is ExecutionMode.VALIDATION_MICRO
     inconclusive = micro or not opinion.supporting_candidate_ids
+    if ranked is not None:
+        inconclusive = micro or not any(
+            a["complete"] and not a["validation_only"] for a in ranked["arm_leaderboard"]
+        )
     if inconclusive and opinion.recommended_action == "PROMOTE_TO_SCALE":
         raise AgentBoundaryError("Insufficient/micro evidence cannot authorize scientific Scale")
     hypothesis = PilotDiagnosisHypothesis(
@@ -175,6 +179,11 @@ def bind_pilot_opinion(
         production_strategy_allocations=opinion.scale_allocations,
         evidence_sufficiency="INCONCLUSIVE" if inconclusive else "SUFFICIENT_FOR_STEERING",
         scientific_supporting_candidate_count=0 if micro else len(opinion.supporting_candidate_ids),
+        completed_zero_pass_arm_ids=tuple(
+            a["arm_id"]
+            for a in (ranked or {}).get("arm_leaderboard", [])
+            if a["mode"] == "RECOVERY"
+        ),
         observations=tuple(opinion.key_observations),
         interpretations=(opinion.rationale,),
         alternative_explanations=diagnosis.alternative_explanations,

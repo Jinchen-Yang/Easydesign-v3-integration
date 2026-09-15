@@ -53,3 +53,33 @@ source passes Ruff and Mypy. The clone-local BoltzGen environment is installed.
 Still required: complete runtime regressions; bounded controls and actual Specialist calls; exact
 Gate 4 artifact/restart acceptance; final full regression, report and clean commits.
 This document is a progress record, not a Phase 3 completion claim.
+
+## Real positive and bounded-control preparation
+
+Commits `42570757`, `c8dd902d` and `84aa03bb` implement native ranking, the mandatory
+ranked promotion proposal for complete passing Arms, and explicitly approved smaller
+Pilot allocations while preserving the default Phase 2 Design budget.
+
+The first real model attempt ranked all five positives but recommended Design revision;
+it therefore did not satisfy promotion acceptance. This exposed residual diagnosis-first
+semantics. The runtime/Skill contract now requires the ranked Scale proposal, retaining
+all scientific concerns and the Scientist's STOP/revision choices.
+
+`runtime/tmp/product-positive-model-exam-02.json` records successful DeepSeek V4 Pro
+acceptance on `84aa03bb7354d3568d2c5ada411a745fbe251d04`: five candidates ranked,
+one complete PROMOTION Arm, an explicit four-scaffold allocation, and the same Gate 4
+card after restart without another model call. Two calls were used (one compact repair
+after output truncation). No Scale authority or generation was created.
+
+The two controls use insertion ranges `1..3` and `45..55`, not universal final CDR3
+lengths. All 14 actual compiled YAMLs passed backend validation; CDR1/2, insertion anchors,
+remaining design/exclude regions, target, seven hotspots and 87 avoid residues are
+unchanged. The source Design keeps its default 40/scaffold budget; the explicit Pilot
+approval will authorize only 10/scaffold for each Arm (140 total). No control GPU run
+has started at this checkpoint.
+
+Further readiness checks cover pending new Design versus historical approval, completed
+zero-pass recovery evidence, provisional incomplete rankings, candidate-attempt filter
+profiles, optional review access and source integrity on direct approval. These are
+being validated before control dispatch. Original runs and earlier acceptance attempts
+remain preserved, including failed preparation/test attempts.

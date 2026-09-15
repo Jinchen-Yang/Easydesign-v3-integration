@@ -70,8 +70,7 @@ def plan_for_design(
     production = {r.strategy_id: r.candidates_per_strategy for r in records}
     if pilot_allocations is not None:
         if set(pilot_allocations) != set(production) or any(
-            type(n) is not int or n < 1 or n > production[s]
-            for s, n in pilot_allocations.items()
+            type(n) is not int or n < 1 or n > production[s] for s, n in pilot_allocations.items()
         ):
             raise AgentBoundaryError(
                 "Explicit Pilot scope must cover the approved strategies "
@@ -137,11 +136,24 @@ def pilot_review_card(bridge: Any, design_card: DecisionCard, plan: BoundPilotPl
     if plan.mode != "formal-pilot":
         raise AgentBoundaryError("Micro validation cannot masquerade as scientific Gate 3 approval")
     digest = canonical_model_sha256(plan)
+    arm_allocations = {
+        arm.arm_id: sum(plan.execution_allocations.get(s, 0) for s in arm.strategy_ids)
+        for arm in plan.arms
+    }
     card = design_card.model_copy(
         update={
             "card_id": identity({"design_card": design_card.card_id, "pilot_plan": digest}),
             "scientific_summary": {
                 **design_card.scientific_summary,
+                "pilot_scope": {
+                    "planned_candidates": sum(plan.execution_allocations.values()),
+                    "arm_allocations": arm_allocations,
+                    "candidates_per_arm": next(iter(arm_allocations.values()))
+                    if len(set(arm_allocations.values())) == 1
+                    else None,
+                    "strategy_allocations": plan.execution_allocations,
+                    "generation_started": False,
+                },
                 "pilot_plan": plan.model_dump(mode="json"),
                 "pilot_plan_sha256": digest,
             },

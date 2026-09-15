@@ -181,14 +181,19 @@ async def structured_opinion(
                     validate(opinion)
             except ValidationError as error:
                 opinion = None
-                category = "SCHEMA_ERROR"
+                if category != "MAX_TOKENS":
+                    category = "SCHEMA_ERROR"
                 diagnostic = error.errors(
                     include_input=False, include_url=False, include_context=False
                 )
             except AgentBoundaryError as error:
                 opinion = None
                 category = (
-                    "FACT_CONFLICT" if isinstance(error, ReviewFactConflict) else "SCHEMA_ERROR"
+                    "FACT_CONFLICT"
+                    if isinstance(error, ReviewFactConflict)
+                    else "MAX_TOKENS"
+                    if category == "MAX_TOKENS"
+                    else "SCHEMA_ERROR"
                 )
                 diagnostic = str(error)
         bridge.store.event(

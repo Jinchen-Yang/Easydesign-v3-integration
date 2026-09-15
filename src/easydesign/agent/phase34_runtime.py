@@ -47,7 +47,7 @@ class Phase34Runtime(Phase34Bridge):
     ) -> None:
         self.downstream_scope = through
         self.prediction_backend = prediction_backend
-        self.pilot_allocations = pilot_allocations
+        self.pilot_allocations = dict(pilot_allocations) if pilot_allocations is not None else None
         super().__init__(project, thread, store)
         scope: dict[str, Any] = {"through": through, "prediction_backend": prediction_backend}
         if pilot_allocations is not None:
@@ -239,7 +239,8 @@ class Phase34Runtime(Phase34Bridge):
                 != current_job
             ):
                 return None
-            if dossier.measurement.native_evidence is not None:
+            native = dossier.measurement.native_evidence
+            if native is not None and (native.source_refs or native.profiles or native.candidates):
                 from .phase3_native import verify_native_measurement
 
                 root, _ = self.run(execution["run_id"])
@@ -494,7 +495,8 @@ class Phase34Runtime(Phase34Bridge):
             return None
         authority = self.pilot_authority()
         if authority is None:
-            if self.approved_design() is None:
+            approved = self.approved_design()
+            if approved is None or approved["proposal_id"] != proposal["proposal_id"]:
                 return None
             plan_card = self.frozen_pilot_card()
             return RuntimeAction(
@@ -714,7 +716,8 @@ class Phase34Runtime(Phase34Bridge):
         )
         if context.plan != authority.pilot_plan or context.project_id != self.project_id:
             raise AgentBoundaryError("Pilot context differs from the current authorized Design")
-        if measurement.native_evidence is not None:
+        native = measurement.native_evidence
+        if native is not None and (native.source_refs or native.profiles or native.candidates):
             from .phase3_native import verify_native_measurement
 
             execution = self.project_latest("phase34-pilot-execution")
@@ -774,7 +777,9 @@ class Phase34Runtime(Phase34Bridge):
         expected = {"pilot-diagnosis": "pilot-diagnosis", "final-selection": "final-selection"}
         if action is None or (role != "judge" and action.stage != expected.get(role)):
             raise AgentBoundaryError("Cognitive role is outside current downstream authority")
-        if role == "pilot-diagnosis" or (role == "judge" and action.stage == "pilot-review"):
+        if role == "pilot-diagnosis" or (
+            role == "judge" and action.stage in {"pilot-review", "scientist-gate4"}
+        ):
             measurement, context, _ = self.pilot_inputs()
             packet = pilot_working_set(measurement, context.plan.arms)
             execution = self.project_latest("phase34-pilot-execution")

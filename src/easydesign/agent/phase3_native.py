@@ -135,11 +135,18 @@ def project_native_measurement(
     """Project native PASS; optional metrics do not set eligibility."""
     if len({c.candidate_id for c in candidates}) != len(candidates):
         raise AgentBoundaryError("Duplicate native candidate identity")
-    if set(profiles) - set(planned) or {c.strategy_id for c in candidates} - set(profiles):
+    candidate_ids = {c.candidate_id for c in candidates}
+    if set(profiles) - (set(planned) | candidate_ids) or any(
+        c.candidate_id not in profiles and c.strategy_id not in profiles for c in candidates
+    ):
         raise AgentBoundaryError("Native candidate/filter profile has a foreign strategy")
     ordered = sorted(candidates, key=lambda c: (c.strategy_id, c.ordinal_within_strategy))
     native = tuple(
-        native_candidate(c, profiles[c.strategy_id], (additional_metrics or {}).get(c.candidate_id))
+        native_candidate(
+            c,
+            profiles.get(c.candidate_id) or profiles[c.strategy_id],
+            (additional_metrics or {}).get(c.candidate_id),
+        )
         for c in ordered
     )
     observations = []
@@ -254,10 +261,8 @@ def profiles_from_tasks(
             file_format="yaml",
         )
         profile = native_profile(yaml.safe_load(path.read_text()), ref)
-        previous = profiles.get(candidate.strategy_id)
-        if previous and previous != profile:
-            raise AgentBoundaryError("A strategy mixes different native filter profiles")
-        profiles[candidate.strategy_id] = profile
+        # Each candidate keeps the exact attempt profile, including legitimate retries.
+        profiles[candidate.candidate_id] = profile
         refs[ref.relative_path] = ref
     return profiles, tuple(refs.values())
 

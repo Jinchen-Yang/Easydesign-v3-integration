@@ -86,6 +86,8 @@ def test_explicit_bounded_scientific_pilot_keeps_default_design_and_exact_approv
     assert all(s["candidates_per_strategy"] == 40 for a in plan.arms for s in a.compiled_settings)
     assert not plan.validation_only and plan.mode == "formal-pilot"
     card = pilot_review_card(bridge, original_card, plan)
+    assert card.scientific_summary["pilot_scope"]["planned_candidates"] == 70
+    assert card.scientific_summary["pilot_scope"]["candidates_per_arm"] == 70
     with pytest.raises(AgentBoundaryError, match="explicit Scientist"):
         accept_pilot_plan(bridge, card)
     bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")

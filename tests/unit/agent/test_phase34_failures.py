@@ -8,7 +8,8 @@ from easydesign.agent.phase34_failures import project_generation_failure
 from easydesign.orchestration.local_jobs import LocalStepJob
 
 
-def test_worker_boot_failure_is_missing_evidence_not_scientific_failure(tmp_path):
+@pytest.mark.parametrize("mode", ["validation-micro", "formal-pilot"])
+def test_worker_boot_failure_is_missing_evidence_not_scientific_failure(tmp_path, mode):
     now = datetime.now(UTC)
     project = tmp_path / "project"
     job = LocalStepJob(
@@ -32,8 +33,8 @@ def test_worker_boot_failure_is_missing_evidence_not_scientific_failure(tmp_path
         pilot_authority=lambda: SimpleNamespace(
             authority_id="authority",
             pilot_plan=SimpleNamespace(
-                mode="validation-micro",
-                production_allocations={"arm-a": 280},
+                mode=mode,
+                production_allocations={"arm-a": 280 if mode == "validation-micro" else 2},
                 execution_allocations={"arm-a": 2},
             ),
         ),
@@ -56,6 +57,7 @@ def test_worker_boot_failure_is_missing_evidence_not_scientific_failure(tmp_path
     assert measured.arms[0].operational_failure_count == 2
     assert measured.arms[0].predicted_candidates == measured.arms[0].generated_candidates == 0
     assert not measured.execution.uses_real_generation_backend
+    assert (measured.native_evidence is not None) == (mode == "formal-pilot")
     bridge.controller.load = lambda _: job.model_copy(
         update={"project_root": tmp_path / "another-project"}
     )

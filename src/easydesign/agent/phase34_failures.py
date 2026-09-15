@@ -38,6 +38,7 @@ def project_generation_failure(bridge: Any) -> dict[str, Any]:
         "generation-failure-receipt"
     )
     refs = [str(bridge.controller.path(job.job_id))]
+    root = None
     run_path = bridge.context.runs_root / bridge.project_id / execution["run_id"]
     if run_path.exists():
         root, _ = bridge.run(execution["run_id"])
@@ -101,6 +102,68 @@ def project_generation_failure(bridge: Any) -> dict[str, Any]:
         unmeasured_candidates=candidates,
         arms=arms,
     )
+    if plan.mode == "formal-pilot":
+        from .phase3_native_contracts import NativePilotEvidence
+
+        # Empty boot failures have no native measurements, but still use the operational
+        # branch of the new contract. Completed native products retain their real metrics.
+        measurement = measurement.model_copy(
+            update={
+                "native_evidence": NativePilotEvidence(profiles={}, candidates=()),
+            }
+        )
+        if candidates:
+            from easydesign.core import ArtifactRef, StageId
+            from easydesign.orchestration.stage05 import _latest_manifest, _stage_from_run
+            from easydesign.stages.s03_boltzgen_configuration import StrategyBundle
+
+            from .phase3_import import _state_source
+            from .phase3_native import (
+                profiles_from_tasks,
+                project_native_measurement,
+                refold_contact_metrics,
+            )
+
+            assert root is not None
+            run, _ = _latest_manifest(root)
+            stage3, stage3_ref = _stage_from_run(root, run, StageId.BOLTZGEN_CONFIGURATION)
+            bundle_ref = stage3.require_output("strategy-bundle")
+            bundle = load_model(bundle_ref.verify(root), StrategyBundle)
+            if (
+                bundle.hotspots_sha256 != plan.hotspot_sha256
+                or kernel_plan.strategy_bundle_sha256 != bundle_ref.sha256
+            ):
+                raise AgentBoundaryError(
+                    "Partial native evidence differs from its approved Site/Design"
+                )
+            records = {s.strategy_id: s for s in bundle.strategies}
+            profiles, profile_refs = profiles_from_tasks(root, candidates, tasks)
+            state_ref = _state_source(root, state_path, state)
+            kernel_ref = ArtifactRef.from_file(
+                run_root=root,
+                relative_path=kernel_path.relative_to(root).as_posix(),
+                artifact_id="partial-pilot-plan",
+                role="native-pilot-source",
+                file_format="json",
+            )
+            measurement = project_native_measurement(
+                candidates=candidates,
+                profiles=profiles,
+                planned=plan.execution_allocations,
+                execution=measurement.execution.model_copy(
+                    update={
+                        "purpose": "Incomplete Pilot; verified partial native products remain "
+                        "available without final yield claims."
+                    }
+                ),
+                source_sha256=source_sha,
+                source_refs=(stage3_ref, bundle_ref, state_ref, kernel_ref, *profile_refs),
+                additional_metrics={
+                    c.candidate_id: refold_contact_metrics(root, c, records[c.strategy_id])
+                    for c in candidates
+                },
+                failed_attempts=failures,
+            ).model_copy(update={"source_candidate_index_kind": source_kind})
     bridge.store.event(
         bridge.thread,
         "phase34-pilot-operational-sources",

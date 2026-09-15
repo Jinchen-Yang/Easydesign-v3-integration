@@ -8,9 +8,11 @@ is a source of standalone downstream contracts, not an alternative Phase 2 runti
 ## Responsibilities
 
 The existing Runtime compiles, dispatches, predicts, measures, persists and recovers.
-Pilot Diagnosis interprets the approved arm hypotheses and measured evidence. Final
-Selection proposes a panel from a global shortlist. Judge supplies concise independent
-critique. Only a persisted Scientist response chooses a consequential Gate route.
+The Pilot Ranking & Recovery Specialist interprets the approved arm hypotheses and
+native measurements (the historical internal name remains `pilot-diagnosis`). Final
+Selection proposes a panel from a global shortlist. Phase 3 Judge is an optional second
+opinion; Phase 4 review remains unchanged. Only a persisted Scientist response chooses
+a consequential Gate route.
 There are no separate generation, prediction, filtering or metrics agents.
 
 `easydesign-agent` accepts `--through pilot` and `--through handoff`; the ordinary
@@ -37,11 +39,26 @@ trusted harness registration, is limited to six candidates, and has a distinct v
 context with no fabricated Gate 3 card/decision. It is always scientifically INCONCLUSIVE.
 Zero passing candidates in a micro run cannot establish Site or Design failure.
 
-Generation uses the existing Stage 04 worker. The v3 adapter then invokes the existing
-prediction and metric kernels on all allocated candidates, without Stage 05's historical
-automatic candidate expansion. The prediction backend comes from the current bound plan;
-the integration validation uses AFO 3.1.4 / OpenFold3 P2. Each checkout owns its runtime,
-environment and model assets. Legacy filter thresholds remain labeled audit annotations.
+The default Design budget remains unchanged. An explicit runtime `pilot_allocations`
+proposal can reduce the scientific Pilot count within the compiled Design budgets,
+preserving all strategies and equal counts within each standard Arm. Gate 3 displays
+the exact resulting per-strategy/per-Arm counts and total; approval binds that complete
+Pilot scope. It is not a hidden micro projection or permission to execute the larger
+Design budget. A new pending Design is reviewed before any historical frozen plan.
+
+Generation uses the existing Stage 04 worker and native BoltzGen design, inverse folding,
+Boltz2 refold, analysis and filtering. The default Phase 3 adapter consumes those native
+outputs without independent prediction or Stage 05's historical automatic expansion.
+AFO remains available through explicit independent prediction; it is not a prerequisite
+for native PASS, ranking or Gate 4. The bound prediction backend policy remains available
+for that optional path and Phase 4. Each checkout owns its runtime, environment and models.
+
+Active native filters come from each execution attempt's saved configuration and the
+pinned source implementation, reconciled with recorded per-rule and aggregate flags.
+All original native metric names and values are retained. Runtime additionally measures
+refold heavy-atom hotspot/avoid contacts with separate whole-binder and design-mask scopes.
+The calculation-only reference is loaded into the existing Pilot Skill; no lulu policy,
+project heuristic cutoffs or universal biological fitness score are installed.
 
 Pilot evidence separates planned, generated, valid, predicted and metric-evaluable
 counts, metric missingness, failed attempts and operational failures. An incomplete
@@ -50,7 +67,8 @@ prediction exhaustion retains verified successful predictions and marks failures
 missing; checksum, identity and other hard consistency errors are still errors. A
 terminal measured outcome is immutable and does not silently launch another retry loop.
 
-An experimental reference may resolve only part of the full requested target. v3 verifies
+For optional independent prediction and the unchanged Phase 4 adapter, an experimental
+reference may resolve only part of the full requested target. v3 verifies
 the shared residue identities and complete predicted chains; it retains backend confidence
 and clashes across the full prediction. The complete-target alignment RMSDs are explicitly
 unavailable in that case. It neither crops away predicted terminal residues nor substitutes
@@ -62,6 +80,19 @@ fail prediction, so generated counts and operational-failure counts are not disj
 
 ## Gate 4
 
+One scientific Arm can contain all seven scaffold strategies. Complete/evaluable Arms
+with native PASS candidates enter promotion: rank every PASS, compare scientific Arms,
+and propose exact Scale allocations for Scientist review. Weak scientific evidence
+affects ranking, allocation, risks and uncertainty. It does not replace this proposal
+with a model veto. Failed candidates remain denominators and audit evidence.
+
+Only complete/evaluable zero-native-PASS Arms receive deterministic failure dossiers
+and bounded recovery recommendations. Runtime binds their identities in
+`completed_zero_pass_arm_ids`, allowing sufficient evidence for recovery steering
+without fabricating a passing candidate. This never permits zero-support promotion.
+Incomplete Arms receive no final yield or scientific failure conclusion; verified partial
+PASS candidates can be ranked provisionally. Validation-micro remains validation-only.
+
 The Scientist can choose PROMOTE_TO_SCALE, RUN_ANOTHER_PILOT, REVISE_DESIGN,
 REVISE_SITE or STOP. Runtime validates the selected option and applies it idempotently.
 Another Pilot requires a new explicit Gate 3 plan approval. Design/Site revisions return
@@ -72,7 +103,9 @@ Promotion binds the reviewed strategy allocation, total Scale intent and upstrea
 identities. Test-only promotion cannot authorize production compute. Judge cannot
 rewrite the route, and technical Judge failure is visible on the card instead of
 removing the Scientist review. An explicit runtime fact conflict is not an unavailable
-review fallback.
+review fallback. Normal Phase 3 directly publishes its Gate 4 card with optional review
+explicitly marked `not-requested`. An explicitly requested second opinion remains
+available, but does not choose a route or become a prerequisite.
 
 ## Scale and global selection
 

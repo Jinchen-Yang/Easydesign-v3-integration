@@ -20,7 +20,9 @@ from easydesign.stages.s04_pilot_generation import CandidateRecord
 from tests.unit.agent.test_phase34_contracts import _pilot_dossier
 
 
-def population(tmp_path: Path, layouts=(("arm-a", (1, 0, 0, 0, 0, 0, 0)),), incomplete=False):
+def population(
+    tmp_path: Path, layouts=(("arm-a", (1, 0, 0, 0, 0, 0, 0)),), incomplete=False, per_strategy=2
+):
     path = tmp_path / "synthetic-profile.yaml"
     path.write_text("# synthetic fixture, not a scientific result\n")
     ref = ArtifactRef.from_file(
@@ -58,8 +60,8 @@ def population(tmp_path: Path, layouts=(("arm-a", (1, 0, 0, 0, 0, 0, 0)),), inco
             )
         )
         for s, passes in zip(ids, pass_counts, strict=True):
-            profiles[s], planned[s] = profile, 2
-            for i in range(1 if incomplete else 2):
+            profiles[s], planned[s] = profile, per_strategy
+            for i in range(1 if incomplete else per_strategy):
                 passed = i < passes
                 value = 1.0 if passed else 4.0
                 metrics = {
@@ -267,6 +269,49 @@ def test_native_profile_observation_conflict_and_optional_missingness(tmp_path):
     assert all(r.feature != "design_to_target_iptm" for r in profile.rules)
 
 
+def test_candidate_attempt_profile_identity_survives_projection(tmp_path):
+    measured, _, candidates, profile = population(tmp_path, (("arm-a", (1,)),))
+    path = tmp_path / "second-attempt-profile.yaml"
+    path.write_text("# independent saved attempt, identical filter rules\n")
+    ref = ArtifactRef.from_file(
+        run_root=tmp_path,
+        relative_path=path.name,
+        artifact_id="attempt-two-profile",
+        role="synthetic-fixture",
+        file_format="yaml",
+    )
+    second = profile.model_copy(update={"configuration_ref": ref})
+    result = project_native_measurement(
+        candidates=candidates,
+        profiles={candidates[0].candidate_id: profile, candidates[1].candidate_id: second},
+        planned={a.strategy_id: a.planned_candidates for a in measured.arms},
+        execution=measured.execution,
+        source_sha256="a" * 64,
+    )
+    assert len(result.native_evidence.profiles) == 2
+    assert result.native_evidence.candidates[1].profile_sha256 == canonical_model_sha256(second)
+
+
+@pytest.mark.parametrize("passes", [0, 1])
+def test_native_micro_is_validation_only_even_when_complete(tmp_path, passes):
+    from easydesign.agent.phase34_contracts import ExecutionMode
+
+    measured, arms, _, _ = population(tmp_path, (("arm-a", (passes,)),))
+    measured = measured.model_copy(
+        update={
+            "execution": measured.execution.model_copy(
+                update={"mode": ExecutionMode.VALIDATION_MICRO}
+            )
+        }
+    )
+    fact = native_working_set(measured, arms)["scientific_arms"]["arm-a"]
+    assert fact["mode"] == "VALIDATION_ONLY"
+    assert fact["failure_dossier"] is None
+    opinion = opinion_for(measured, arms)
+    assert opinion.recommended_action == "RUN_ANOTHER_PILOT"
+    assert bind_native_ranking(measured, arms, opinion)["arm_leaderboard"][0]["rank"] is None
+
+
 def test_leaderboard_cannot_drop_passes_invent_metrics_or_recover_passing_arm(tmp_path):
     measured, arms, _, _ = population(tmp_path)
     opinion = opinion_for(measured, arms)
@@ -315,3 +360,31 @@ def test_columnar_packet_preserves_the_complete_native_vector(tmp_path):
     assert restored["CYS_fraction"] == 0
     assert packet["scientific_arm_ids"] == ["arm-a"]
     assert packet["native_pass_candidate_ids"] == [native.candidate_id]
+
+
+@pytest.mark.parametrize("passes,incomplete", [(0, False), (1, True)])
+def test_native_steering_sufficiency_uses_completeness_not_presence_of_a_pass(
+    tmp_path, passes, incomplete
+):
+    from easydesign.agent.phase34_science import bind_pilot_opinion
+
+    measured, arms, _, _ = population(tmp_path, (("arm-a", (passes,)),), incomplete=incomplete)
+    diagnosis, recommendation = bind_pilot_opinion(
+        measured, arms, opinion_for(measured, arms), evidence_refs=("synthetic",)
+    )
+    assert diagnosis.confidence == ("INCONCLUSIVE" if incomplete else "BOUNDED")
+    assert recommendation.evidence_sufficiency == (
+        "INCONCLUSIVE" if incomplete else "SUFFICIENT_FOR_STEERING"
+    )
+    assert recommendation.completed_zero_pass_arm_ids == (() if incomplete else ("arm-a",))
+
+
+def test_fabricated_complete_zero_pass_proof_cannot_change_historical_gate4():
+    from easydesign.agent.phase34_contracts import PilotEvidenceDossier
+
+    dossier = _pilot_dossier()
+    assert "completed_zero_pass_arm_ids" not in dossier.proposed_interpretation.model_dump()
+    raw = dossier.model_dump(mode="json")
+    raw["proposed_interpretation"]["completed_zero_pass_arm_ids"] = ["invented"]
+    with pytest.raises(ValueError, match="requires native measurements"):
+        PilotEvidenceDossier.model_validate(raw)

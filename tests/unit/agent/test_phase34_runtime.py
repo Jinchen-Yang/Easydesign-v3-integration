@@ -193,3 +193,15 @@ def test_another_pilot_cannot_invent_parent_gate4(design_bridge):
             prediction_backend="openfold3-af3-jax",
             parent_gate4_card_id="f" * 64,
         )
+
+
+def test_new_pending_design_is_reviewed_before_old_frozen_pilot_plan(design_bridge):
+    from tests.unit.agent.test_design_runtime import binder_intent, propose_design
+
+    bridge = runtime_fixture(design_bridge)
+    approved_id = bridge.approved_design()["proposal_id"]
+    propose_design(bridge, binder_intent(name="new-control", avoid_label_seq_ids=[6]))
+    assert bridge.current_design()["proposal_id"] != approved_id
+    assert bridge.approved_design()["proposal_id"] == approved_id
+    assert bridge.next_downstream_action() is None
+    assert next_action(bridge).stage != "pilot-plan-review"

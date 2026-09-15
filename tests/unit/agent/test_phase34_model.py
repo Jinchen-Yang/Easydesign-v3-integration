@@ -73,6 +73,22 @@ async def test_real_contract_submission_and_truncation_recovery(runtime):
 
 
 @pytest.mark.asyncio
+async def test_truncated_empty_tool_submission_retains_token_exhaustion_cause(runtime):
+    truncated = AIMessage(
+        content="",
+        response_metadata={"stop_reason": "max_tokens"},
+        tool_calls=[dict(name="DownstreamJudgeOpinion", args={}, id="truncated")],
+    )
+    await call(runtime, Responses([truncated, good()]))
+    attempts = [
+        e["payload"]
+        for e in runtime.store.events(runtime.thread)
+        if e["kind"] == "phase34-model-attempt"
+    ]
+    assert [a["category"] for a in attempts] == ["MAX_TOKENS", "SUCCESS"]
+
+
+@pytest.mark.asyncio
 async def test_review_unavailability_is_bounded_and_durable(runtime):
     model = Responses([AIMessage(content="no structured output")] * 3)
     with pytest.raises(StructuredOpinionUnavailable) as error:

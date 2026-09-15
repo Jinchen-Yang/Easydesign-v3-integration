@@ -417,6 +417,14 @@ class Gate4Recommendation(FrozenContract):
     falsifiers_or_next_measurements: tuple[str, ...] = Field(min_length=1)
     evidence_refs: tuple[str, ...] = Field(min_length=1)
     test_only_control_flow_fixture: bool = False
+    completed_zero_pass_arm_ids: tuple[str, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if not self.completed_zero_pass_arm_ids:
+            result.pop("completed_zero_pass_arm_ids", None)
+        return result
 
     @model_validator(mode="after")
     def validate_promotion_claim(self) -> Self:
@@ -456,6 +464,7 @@ class Gate4Recommendation(FrozenContract):
         if (
             self.scientific_supporting_candidate_count == 0
             and not self.test_only_control_flow_fixture
+            and not self.completed_zero_pass_arm_ids
         ):
             if self.evidence_sufficiency != "INCONCLUSIVE":
                 raise ValueError(
@@ -482,6 +491,16 @@ class PilotEvidenceDossier(FrozenContract):
 
     @model_validator(mode="after")
     def validate_authority_and_scope(self) -> Self:
+        recovery_ids = self.proposed_interpretation.completed_zero_pass_arm_ids
+        if recovery_ids:
+            from .phase3_ranking import native_working_set
+
+            if self.measurement.native_evidence is None:
+                raise ValueError("Completed zero-pass recovery requires native measurements")
+            facts = native_working_set(self.measurement, self.diagnosis.design_arms)
+            actual = {a for a, f in facts["scientific_arms"].items() if f["mode"] == "RECOVERY"}
+            if set(recovery_ids) != actual or len(recovery_ids) != len(actual):
+                raise ValueError("Recovery sufficiency differs from the complete zero-pass Arms")
         authority = self.execution_authority
         product_context = isinstance(self.upstream_fixture, ApprovedGate3Context)
         if product_context:

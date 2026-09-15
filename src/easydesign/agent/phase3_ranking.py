@@ -132,6 +132,8 @@ def native_working_set(
         passed = [i for i in group if i in passes]
         complete = planned > 0 and planned == generated == evaluable
         mode = ("PROMOTION" if passed else "RECOVERY") if complete else "OPERATIONAL_INCOMPLETE"
+        if complete and measurement.execution.mode == "validation-micro":
+            mode = "VALIDATION_ONLY"
         all_distributions = {
             k: _distribution([vectors[i].get(k) for i in group]) for k in METRIC_DIRECTIONS
         }
@@ -150,6 +152,7 @@ def native_working_set(
         arm_facts[arm.arm_id] = {
             "design_intent": compact_arm_intent(arm),
             "mode": mode,
+            "validation_only": measurement.execution.mode == "validation-micro",
             "complete": complete,
             "planned": planned,
             "generated": generated,
@@ -209,6 +212,7 @@ def bind_native_ranking(
     measurement: PilotMeasurement, arms: tuple[PilotArmIntent, ...], opinion: Any
 ) -> dict[str, Any]:
     packet = native_working_set(measurement, arms)
+    assert measurement.native_evidence is not None
     candidates, arm_facts = packet["pass_candidates"], packet["scientific_arms"]
     candidate_order = [r.candidate_id for r in opinion.candidate_rankings]
     if len(candidate_order) != len(set(candidate_order)) or set(candidate_order) != set(candidates):
@@ -267,7 +271,13 @@ def bind_native_ranking(
     candidate_board = []
     for rank, entry in enumerate(opinion.candidate_rankings, 1):
         fact = candidates[entry.candidate_id]
-        if any(ref not in fact["metrics"] for ref in entry.metric_refs):
+        native = next(
+            c
+            for c in measurement.native_evidence.candidates
+            if c.candidate_id == entry.candidate_id
+        )
+        known_metrics = set(fact["metrics"]) | set(native.metrics) | set(native.additional_metrics)
+        if any(ref not in known_metrics for ref in entry.metric_refs):
             raise AgentBoundaryError("Ranking explanation cites an unknown metric")
         candidate_board.append({"rank": rank, **fact, **entry.model_dump(mode="json")})
     arm_board = []

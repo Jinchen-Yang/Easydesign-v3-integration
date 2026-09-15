@@ -1,4 +1,4 @@
-# Phase 3 Product Closure — active implementation
+# Phase 3 Product Closure — implementation record (closed)
 
 Authoritative base: `a5d5dead9b572dfa1e65aa6b1c8c4fe824bcd35c` (clean integration HEAD).
 Branch: `codex/easydesign-v3-phase3-product-v1`.
@@ -137,3 +137,29 @@ Whole-source Ruff checks and Mypy on 229 source files passed. A separate optiona
 format audit found 142 unchanged baseline files that the current formatter would
 rewrite, and zero changed files requiring formatting. No unrelated formatting sweep
 was made. The final full suite collected 1,240 tests and is still running at this checkpoint.
+
+## Final closure
+
+The final implementation is `2c013dc5d69772bb4667785e4cc3688dcb785866`. The full
+protected suite completed with 1,232 passed and 11 skipped (1,243 collected), with exact
+disjoint coverage and no failures/collection errors. Ruff and Mypy passed.
+
+Both real controls completed all 70 candidates on their first task attempts: short
+insertion 1..3 produced 1 PASS; aggressive insertion 45..55 produced 2 PASS. Both Arms
+were correctly ranked for promotion. No expansion or manufactured zero-pass outcome
+was used. Independent synthetic zero, mixed and incomplete cases cover Recovery and
+operational routing. The original 5/280 was never regenerated and was reverified on the
+final implementation.
+
+The multi-Arm input and its repair were made smaller through lossless shared filter
+definitions and columnar statistics/ranks. The actual DeepSeek review succeeded with
+one bounded rationale-length repair; the same Gate 4 card returned after restart
+without another model call. No input/output budget or filter threshold was relaxed.
+
+Control Gate 4 card: `f9f27294a677a3a8e361b6b7c927a4ccd3781f9853db26fa730d7df1b5e2b187`.
+Its 15-candidate Scale mix remains a proposal, not an approval or executed job.
+No production Scale or autonomous Pilot loop was started.
+
+See [the final Phase 3 Product Closure report](PHASE3_PRODUCT_CLOSURE_20260916.md) for
+all provenance, contracts, candidate/Arm results, retained failed attempts and scientific
+limits. Earlier sections of this file are chronological checkpoints.

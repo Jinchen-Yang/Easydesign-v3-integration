@@ -43,12 +43,19 @@ class Phase34Runtime(Phase34Bridge):
         *,
         through: Literal["pilot", "handoff"] = "pilot",
         prediction_backend: PredictionBackend = "openfold3-af3-jax",
+        pilot_allocations: dict[str, int] | None = None,
     ) -> None:
         self.downstream_scope = through
         self.prediction_backend = prediction_backend
+        self.pilot_allocations = pilot_allocations
         super().__init__(project, thread, store)
-        scope = {"through": through, "prediction_backend": prediction_backend}
+        scope: dict[str, Any] = {"through": through, "prediction_backend": prediction_backend}
+        if pilot_allocations is not None:
+            scope["pilot_allocations"] = pilot_allocations
         prior = self.thread_latest("phase34-scope")
+        if pilot_allocations is None and prior and "pilot_allocations" in prior:
+            self.pilot_allocations = dict(prior["pilot_allocations"])
+            scope["pilot_allocations"] = self.pilot_allocations
         if prior and any(prior.get(k) != v for k, v in scope.items()):
             raise AgentBoundaryError("Downstream thread scope/backend is immutable")
         if prior is None:
@@ -149,6 +156,7 @@ class Phase34Runtime(Phase34Bridge):
             proposal,
             prediction_backend=self.prediction_backend,
             parent_gate4_card_id=self.parent_pilot_card(proposal),
+            pilot_allocations=self.pilot_allocations,
         )
 
     @authority_read

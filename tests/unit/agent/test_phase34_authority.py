@@ -71,6 +71,36 @@ def test_pilot_authority_cannot_expand_allocation_or_change_backend(design_bridg
         )
 
 
+def test_explicit_bounded_scientific_pilot_keeps_default_design_and_exact_approval(design_bridge):
+    bridge, default_plan, original_card = prepared(design_bridge)
+    selected = {s: 10 for s in default_plan.production_allocations}
+    plan = plan_for_design(
+        bridge,
+        bridge.current_design(),
+        prediction_backend="openfold3-af3-jax",
+        pilot_allocations=selected,
+    )
+    assert sum(default_plan.execution_allocations.values()) == 280
+    assert sum(plan.execution_allocations.values()) == 70
+    assert plan.production_allocations == plan.execution_allocations == selected
+    assert all(s["candidates_per_strategy"] == 40 for a in plan.arms for s in a.compiled_settings)
+    assert not plan.validation_only and plan.mode == "formal-pilot"
+    card = pilot_review_card(bridge, original_card, plan)
+    with pytest.raises(AgentBoundaryError, match="explicit Scientist"):
+        accept_pilot_plan(bridge, card)
+    bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")
+    authority = accept_pilot_plan(bridge, card)
+    assert verify_pilot_authority(bridge, authority) == plan
+    for invalid in ({**selected, next(iter(selected)): 41}, {"foreign-scaffold": 10}):
+        with pytest.raises(AgentBoundaryError, match="Design budgets"):
+            plan_for_design(
+                bridge,
+                bridge.current_design(),
+                prediction_backend="openfold3-af3-jax",
+                pilot_allocations=invalid,
+            )
+
+
 def test_pilot_plan_stale_design_rejected_before_freeze(design_bridge):
     bridge, plan, card = prepared(design_bridge)
     bridge.store.respond(bridge.thread, card.card_id, "approve", "synthetic-scientist")

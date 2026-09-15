@@ -40,6 +40,7 @@ def plan_for_design(
     execution_allocations: dict[str, int] | None = None,
     parent_gate4_card_id: str | None = None,
     executor: Any = None,
+    pilot_allocations: dict[str, int] | None = None,
 ) -> BoundPilotPlan:
     if parent_gate4_card_id is not None:
         event = bridge.project_latest("phase34-gate4-transition")
@@ -67,6 +68,19 @@ def plan_for_design(
     if site is None:
         raise AgentBoundaryError("Pilot requires the current approved Site")
     production = {r.strategy_id: r.candidates_per_strategy for r in records}
+    if pilot_allocations is not None:
+        if set(pilot_allocations) != set(production) or any(
+            type(n) is not int or n < 1 or n > production[s]
+            for s, n in pilot_allocations.items()
+        ):
+            raise AgentBoundaryError(
+                "Explicit Pilot scope must cover the approved strategies "
+                "within their Design budgets"
+            )
+        production = dict(pilot_allocations)
+        for region in {r.region_id for r in records}:
+            if len({production[r.strategy_id] for r in records if r.region_id == region}) > 1:
+                raise AgentBoundaryError("An Arm requires equal per-scaffold Pilot allocations")
     generation = Stage04Config(required_complete_candidates_per_strategy=max(production.values()))
     if executor is not None:
         generation = Stage04Config.model_validate(
@@ -167,6 +181,7 @@ def accept_pilot_plan(bridge: Any, card: DecisionCard) -> ScientistPilotAuthorit
                 prediction_backend=plan.prediction_backend,
                 parent_gate4_card_id=plan.parent_gate4_card_id,
                 executor=plan.executor,
+                pilot_allocations=plan.production_allocations,
             )
             != plan
         ):
@@ -268,6 +283,7 @@ def verify_pilot_authority(bridge: Any, authority: ScientistPilotAuthority) -> B
             prediction_backend=plan.prediction_backend,
             parent_gate4_card_id=plan.parent_gate4_card_id,
             executor=plan.executor,
+            pilot_allocations=plan.production_allocations,
         )
         != plan
     ):

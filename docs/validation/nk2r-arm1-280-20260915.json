@@ -1,0 +1,540 @@
+{
+  "case_id": "NK2R-ARM1-280-20260915",
+  "recorded_at": "2026-09-15T12:39:56.410654+00:00",
+  "title": "NK2R extracellular VHH: agent-assisted design to native Boltz2 structural candidates",
+  "classification": "real-computational-case-with-scientist-steering-and-development-assistance",
+  "generation_code_commit": "5d574de6a46a18fd229ae3a664f613cfcb3d79af",
+  "generation_branch": "codex/easydesign-v3-phase34-integration",
+  "phase2_integration_base": "fce5d886849edf575ec1765f7226064291857d49",
+  "code_identity_evidence": "Both immutable run manifests declare the generation commit and dirty=false; prepared.json matches; both current checkouts verified before documentation changes.",
+  "upstream_reuse": true,
+  "fresh_gate1_to_generation_on_this_commit": false,
+  "project_id": "phase34-nk2r-micro-20260915-01",
+  "runs": {
+    "suzhou2": {
+      "run_id": "pilot-v3-60752a6c76c092f7a69cb950",
+      "job_id": "job-60cdbcb278774f19",
+      "job_status": "incomplete",
+      "run_manifest_status": "running",
+      "config_sha256": "63010e4f63ea4685d1c53d50ce5a600fdf59acd74e0bf806c93a720cdd0f1f21",
+      "run_manifest_sha256": "25ce6170f791645ac695e87de6f67f4e24b3f74dae6b0b281d067dac0a0c5cc5",
+      "capture_sha256": "7667fdaf3d8f342f509a80e8621ea975fd53854f017411d5cc87dfb2fbfd3c9c"
+    },
+    "xiamen": {
+      "run_id": "pilot-v3-60752a6c76c092f7a69cb950-xiamen",
+      "job_id": "job-1e6b0eac008e4538",
+      "job_status": "succeeded",
+      "run_manifest_status": "succeeded",
+      "config_sha256": "85ca02af2c4674d780120cbbdf5dc8aeab2859ae14bc5084a3f7fe70b4936c8d",
+      "run_manifest_sha256": "6bd214af6834e7f98c5779cefa52b9eb97ab5ab774ee33a23ba76f82de12f6cf",
+      "capture_sha256": "ac3239798035f41a74fd952d7b363eb6ba7b442235d3517d205a0fe1f039eba8"
+    }
+  },
+  "target": {
+    "name": "human NK2R / TACR2",
+    "uniprot": "P21452",
+    "source_pdb": "9W2H",
+    "prepared_chain": "A",
+    "full_sequence_length": 398,
+    "coordinate_residues": 297,
+    "coordinate_range": [
+      25,
+      321
+    ],
+    "prepared_target_sha256": "46efc9d728dc7d5ea07fc72febf979595f76985221ed4a6747533480c3597a55"
+  },
+  "design": {
+    "selected_site": "B",
+    "arm": "arm-1",
+    "binding_residues": [
+      "C167",
+      "I202",
+      "Y206",
+      "W263",
+      "Y266",
+      "F270",
+      "Y289"
+    ],
+    "binding_label_seq_ids": [
+      167,
+      202,
+      206,
+      263,
+      266,
+      270,
+      289
+    ],
+    "not_binding_label_seq_ids": [
+      53,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      73,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      215,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230,
+      231,
+      232,
+      233,
+      234,
+      235,
+      236,
+      237,
+      238,
+      239,
+      240,
+      241,
+      242,
+      243,
+      244,
+      245,
+      246,
+      247,
+      248,
+      249,
+      250,
+      251,
+      253,
+      308,
+      310,
+      311,
+      312,
+      313,
+      314,
+      315,
+      316,
+      317,
+      318,
+      319,
+      320,
+      321
+    ],
+    "scaffold_template": "gpcr-vhh7-v1",
+    "scaffolds": [
+      "7eow",
+      "7xl0",
+      "8coh",
+      "8z8v",
+      "gontivimab",
+      "isecarosmab",
+      "sonelokimab"
+    ],
+    "candidates_per_scaffold": 40,
+    "crop": false,
+    "source_design_id": "24b3de03d461d0d9a8c77f98c2f3ca5768fca063e7ce069efba9cfea7093b0b0",
+    "pilot_design_proposal_id": "326ba2b0393e9ac7d1ccbc63ec41c85719bce1d0eb79349f2b0f459ac6c0ae43",
+    "site_hotspots_sha256": "7aa4bdadb0defeb1d125dd32534bc51384636149a05a158fc766c79196c80b97",
+    "yaml_checks": [
+      {
+        "strategy": "arm-1-scaffold-7eow",
+        "scaffold": "7eow",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "67f334a30d19f3d7c178fce5caa05125d1d236487c69f976730861a2aabb1b5f",
+        "unchanged_from_saved_arm1": true
+      },
+      {
+        "strategy": "arm-1-scaffold-7xl0",
+        "scaffold": "7xl0",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "c85ad54ea756fb18524aec4bcd187cde79a4947149bfb0140083c3850b1c9e9a",
+        "unchanged_from_saved_arm1": true
+      },
+      {
+        "strategy": "arm-1-scaffold-8coh",
+        "scaffold": "8coh",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "9dbcb63b8903281480247263d99b40574ae6dd84aa8d39ebe1e9e9bb9b52eac3",
+        "unchanged_from_saved_arm1": true
+      },
+      {
+        "strategy": "arm-1-scaffold-8z8v",
+        "scaffold": "8z8v",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "0de549845cd696a6b7279cd0bfb59105d9e83a824229ccfbd7acfdffbc5167ce",
+        "unchanged_from_saved_arm1": true
+      },
+      {
+        "strategy": "arm-1-scaffold-gontivimab",
+        "scaffold": "gontivimab",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "a5ffbcf3885bd137c9ea430ba9df6b6e8ea84f72f63d33b854f6329b7118cf26",
+        "unchanged_from_saved_arm1": true
+      },
+      {
+        "strategy": "arm-1-scaffold-isecarosmab",
+        "scaffold": "isecarosmab",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "e81abf506a5d1e723f49820b998fdc6c304cf095c2310221a672fcf590592230",
+        "unchanged_from_saved_arm1": true
+      },
+      {
+        "strategy": "arm-1-scaffold-sonelokimab",
+        "scaffold": "sonelokimab",
+        "count": 40,
+        "design_yaml_sha256": "a4b1c96004c69df4b75d941f86071148bd8c650ceb7e11e1a2cedfe6d90cd9aa",
+        "scaffold_yaml_sha256": "f6b3a9b64b16b7b81aceb027a958ab37e257a383d73f9413c1fd8f11518b165c",
+        "unchanged_from_saved_arm1": true
+      }
+    ],
+    "settings_note": "Exact saved scaffold-specific CDR/insertion semantics; no generic 3..50 rewrite."
+  },
+  "backend": {
+    "name": "BoltzGen",
+    "version": "0.3.2",
+    "source_commit": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+    "protocol": "nanobody-anything",
+    "refold": "native Boltz2 / boltz2_conf_final.ckpt",
+    "separate_AFO_run_for_this_280": false,
+    "random_seed_status": "unsupported-by-boltzgen-0.3.2"
+  },
+  "results": {
+    "generated_and_refolded": 280,
+    "native_pass_count": 5,
+    "native_pass_fraction": 0.017857142857142856,
+    "per_scaffold": [
+      {
+        "scaffold": "7eow",
+        "host": "suzhou2",
+        "generated_and_refolded": 40,
+        "native_pass": 1,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:01:43.533327Z",
+        "ended_at": "2026-09-15T03:45:11.870048Z"
+      },
+      {
+        "scaffold": "7xl0",
+        "host": "xiamen",
+        "generated_and_refolded": 40,
+        "native_pass": 0,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:25:10.493491Z",
+        "ended_at": "2026-09-15T04:07:43.600457Z"
+      },
+      {
+        "scaffold": "8coh",
+        "host": "xiamen",
+        "generated_and_refolded": 40,
+        "native_pass": 1,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:25:10.493180Z",
+        "ended_at": "2026-09-15T04:07:55.436948Z"
+      },
+      {
+        "scaffold": "8z8v",
+        "host": "xiamen",
+        "generated_and_refolded": 40,
+        "native_pass": 1,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:25:10.493963Z",
+        "ended_at": "2026-09-15T04:07:21.405345Z"
+      },
+      {
+        "scaffold": "gontivimab",
+        "host": "xiamen",
+        "generated_and_refolded": 40,
+        "native_pass": 2,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:25:10.494360Z",
+        "ended_at": "2026-09-15T04:07:50.320312Z"
+      },
+      {
+        "scaffold": "isecarosmab",
+        "host": "xiamen",
+        "generated_and_refolded": 40,
+        "native_pass": 0,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:25:10.494245Z",
+        "ended_at": "2026-09-15T04:05:58.209015Z"
+      },
+      {
+        "scaffold": "sonelokimab",
+        "host": "xiamen",
+        "generated_and_refolded": 40,
+        "native_pass": 0,
+        "attempts": 1,
+        "started_at": "2026-09-15T03:25:10.494740Z",
+        "ended_at": "2026-09-15T04:07:23.086382Z"
+      }
+    ],
+    "all_candidate_artifact_refs_verified": 840,
+    "native_filters": {
+      "refold_rmsd_threshold_angstrom": 2.5,
+      "design_refold_rmsd_threshold_angstrom": 2.5,
+      "sequence_composition_filters": true,
+      "filter_bindingsite": false,
+      "hard_iptm_or_pae_gate": false
+    },
+    "passed_candidates": [
+      {
+        "scaffold": "8coh",
+        "backend_candidate_id": "design_12",
+        "metrics": {
+          "iptm": 0.56724,
+          "design_to_target_iptm": 0.58583,
+          "design_ptm": 0.75142,
+          "min_design_to_target_pae": 4.21265,
+          "interaction_pae": 14.76412,
+          "filter_rmsd": 1.84629,
+          "filter_rmsd_design": 1.03675,
+          "bb_target_aligned_rmsd_design": 2.87374
+        },
+        "inspection": {
+          "target_identity_verified": true,
+          "target_ca_rmsd_to_prepared_target": 1.8909171142673211,
+          "hotspot_contacts": [
+            "Y266",
+            "F270",
+            "Y289"
+          ],
+          "hotspot_count": 3,
+          "hotspot_coverage": 0.42857142857142855,
+          "avoid_contacts": []
+        },
+        "refolded_structure": {
+          "artifact_id": "arm-1-scaffold-8coh-candidate-0001-refolded",
+          "role": "boltzgen-refolded-complex",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-arm-1-scaffold-8coh/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_12.cif",
+          "file_format": "mmcif",
+          "sha256": "9183e5b682baded4573defad6f1d302151e29b1c0b98cc623a5b49a2a448351f",
+          "size_bytes": 329238,
+          "producer_stage": "04-pilot-generation",
+          "producer_attempt": "attempt-0001"
+        }
+      },
+      {
+        "scaffold": "8z8v",
+        "backend_candidate_id": "design_15",
+        "metrics": {
+          "iptm": 0.45489,
+          "design_to_target_iptm": 0.51448,
+          "design_ptm": 0.70813,
+          "min_design_to_target_pae": 6.12508,
+          "interaction_pae": 16.49186,
+          "filter_rmsd": 2.23908,
+          "filter_rmsd_design": 1.12837,
+          "bb_target_aligned_rmsd_design": 2.38689
+        },
+        "inspection": {
+          "target_identity_verified": true,
+          "target_ca_rmsd_to_prepared_target": 3.8187248802209224,
+          "hotspot_contacts": [
+            "Y266",
+            "F270",
+            "Y289"
+          ],
+          "hotspot_count": 3,
+          "hotspot_coverage": 0.42857142857142855,
+          "avoid_contacts": []
+        },
+        "refolded_structure": {
+          "artifact_id": "arm-1-scaffold-8z8v-candidate-0001-refolded",
+          "role": "boltzgen-refolded-complex",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-arm-1-scaffold-8z8v/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_15.cif",
+          "file_format": "mmcif",
+          "sha256": "006a218a8d1aebea6fae8a7f84ec7019fa060d1f5d7f6462315f849301e2658f",
+          "size_bytes": 324654,
+          "producer_stage": "04-pilot-generation",
+          "producer_attempt": "attempt-0001"
+        }
+      },
+      {
+        "scaffold": "gontivimab",
+        "backend_candidate_id": "design_11",
+        "metrics": {
+          "iptm": 0.43729,
+          "design_to_target_iptm": 0.48349,
+          "design_ptm": 0.75213,
+          "min_design_to_target_pae": 6.15509,
+          "interaction_pae": 16.88542,
+          "filter_rmsd": 2.16841,
+          "filter_rmsd_design": 1.75256,
+          "bb_target_aligned_rmsd_design": 2.86002
+        },
+        "inspection": {
+          "target_identity_verified": true,
+          "target_ca_rmsd_to_prepared_target": 1.6187697102695575,
+          "hotspot_contacts": [
+            "Y266",
+            "F270",
+            "Y289"
+          ],
+          "hotspot_count": 3,
+          "hotspot_coverage": 0.42857142857142855,
+          "avoid_contacts": []
+        },
+        "refolded_structure": {
+          "artifact_id": "arm-1-scaffold-gontivimab-candidate-0001-refolded",
+          "role": "boltzgen-refolded-complex",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-arm-1-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_11.cif",
+          "file_format": "mmcif",
+          "sha256": "488bf8b39444fcad1eea3f074d0770f56161c221ddea1ba71a2ed40b3b065d06",
+          "size_bytes": 315643,
+          "producer_stage": "04-pilot-generation",
+          "producer_attempt": "attempt-0001"
+        }
+      },
+      {
+        "scaffold": "7eow",
+        "backend_candidate_id": "design_07",
+        "metrics": {
+          "iptm": 0.40629,
+          "design_to_target_iptm": 0.46337,
+          "design_ptm": 0.7427,
+          "min_design_to_target_pae": 6.52494,
+          "interaction_pae": 17.26529,
+          "filter_rmsd": 2.33662,
+          "filter_rmsd_design": 2.23039,
+          "bb_target_aligned_rmsd_design": 2.62994
+        },
+        "inspection": {
+          "target_identity_verified": true,
+          "target_ca_rmsd_to_prepared_target": 2.041199388909085,
+          "hotspot_contacts": [
+            "Y266",
+            "F270",
+            "Y289"
+          ],
+          "hotspot_count": 3,
+          "hotspot_coverage": 0.42857142857142855,
+          "avoid_contacts": []
+        },
+        "refolded_structure": {
+          "artifact_id": "arm-1-scaffold-7eow-candidate-0001-refolded",
+          "role": "boltzgen-refolded-complex",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-arm-1-scaffold-7eow/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_07.cif",
+          "file_format": "mmcif",
+          "sha256": "87a86ed247db7dccf758945ee81c6a9e8d9329a3e5985f919951900d04b74c27",
+          "size_bytes": 319538,
+          "producer_stage": "04-pilot-generation",
+          "producer_attempt": "attempt-0001"
+        }
+      },
+      {
+        "scaffold": "gontivimab",
+        "backend_candidate_id": "design_18",
+        "metrics": {
+          "iptm": 0.19079,
+          "design_to_target_iptm": 0.22187,
+          "design_ptm": 0.67526,
+          "min_design_to_target_pae": 16.94727,
+          "interaction_pae": 24.75022,
+          "filter_rmsd": 2.32734,
+          "filter_rmsd_design": 2.12392,
+          "bb_target_aligned_rmsd_design": 3.95436
+        },
+        "inspection": {
+          "target_identity_verified": true,
+          "target_ca_rmsd_to_prepared_target": 1.6171090402431723,
+          "hotspot_contacts": [
+            "Y266",
+            "F270",
+            "Y289"
+          ],
+          "hotspot_count": 3,
+          "hotspot_coverage": 0.42857142857142855,
+          "avoid_contacts": []
+        },
+        "refolded_structure": {
+          "artifact_id": "arm-1-scaffold-gontivimab-candidate-0002-refolded",
+          "role": "boltzgen-refolded-complex",
+          "relative_path": "04-pilot-generation/attempt-0001/tasks/pilot-arm-1-scaffold-gontivimab/attempt-0001/backend-output/intermediate_designs_inverse_folded/refold_cif/design_18.cif",
+          "file_format": "mmcif",
+          "sha256": "383f0b3ca50cd6793f682a6283de5d370c8c51ccd50cf87ebfd5abf0a9bcaf6b",
+          "size_bytes": 329929,
+          "producer_stage": "04-pilot-generation",
+          "producer_attempt": "attempt-0001"
+        }
+      }
+    ]
+  },
+  "representative": {
+    "scaffold": "8coh",
+    "backend_candidate_id": "design_12",
+    "selection_reason": "highest native iPTM among the five native passes; inspection representative, not experimental selection",
+    "refold_sha256": "9183e5b682baded4573defad6f1d302151e29b1c0b98cc623a5b49a2a448351f",
+    "colored_session_sha256": "17ad49bf0cd2c7598a139fbeb152a91429f27dbcadbb6c0e200052d34bb085c1"
+  },
+  "human_and_operator_interventions": [
+    "Scientist specified extracellular NK2R inhibition, selected Site B, and requested Arm 1 seven-scaffold x40 scope.",
+    "Upstream development included compiler-envelope handling, authority/routing recovery, bounded diagnosis packets, partial-prediction/reference handling, and verified GPCR not_binding defaults; see frozen historical integration docs.",
+    "User explicitly replaced planned separate AFO continuation with native Boltz2-only scope; historical plan fields are retained and are not evidence that AFO ran for these 280.",
+    "Operator drained new source scheduling, retained the already-started 7eow x40 on suzhou2, and exported six unchanged strategies to xiamen with environment/input verification; this was an operator relocation, not a product remote executor.",
+    "All seven executed generation/refold tasks completed in one attempt on the recorded frozen code. Source aggregate job remains incomplete because six source allocations were intentionally not launched.",
+    "Current reporting performed read-only artifact/geometry inspection and PSE coloring; no new generation, model inference, Gate decision, or experiment was performed."
+  ],
+  "supported_claims": [
+    "Agent-assisted scientific workflow with explicit Scientist steering produced executable GPCR VHH designs and real candidate structures.",
+    "Frozen-code batch execution completed all 280 approved-scope candidates with auditable provenance.",
+    "Five native-pass predictions retained 3/7 intended hotspot contacts and avoided the listed 87 exclusions at the stated geometric cutoff."
+  ],
+  "not_established": [
+    "experimental binding or inhibition",
+    "a fully uninterrupted or unattended fresh end-to-end run",
+    "superiority over another agent or baseline",
+    "full seven-residue pocket engagement",
+    "formal Gate 4/5 promotion or experimental authorization",
+    "a general success-rate estimate from one Arm 1 case"
+  ],
+  "review": {
+    "user_requested_case_record_on": "2026-09-15",
+    "reviewer_identity": "requesting Scientist; personal name not supplied",
+    "user_assessment": "User considered the representative structure promising and requested preservation as evidence of Agent capability; this is an expert visual impression, separate from measured metrics.",
+    "confidence": {
+      "execution_and_provenance": "verified",
+      "structural_signal": "prediction-supported exploratory evidence",
+      "biological_activity": "unmeasured"
+    },
+    "counterevidence": "275/280 did not pass native filters; all five passes contact only three of seven hotspots, and gontivimab design_18 has iPTM 0.19079."
+  },
+  "archive_scope": "Review evidence extract: exact input/compiled YAML/scaffold assets, source manifests, all 280 candidate records, five passes original/refold/mask files, selected agent evidence and operator receipts, representative PDB/mmCIF/PSE/previews. Not an environment/checkpoint archive or complete archive of all 280 coordinates."
+}

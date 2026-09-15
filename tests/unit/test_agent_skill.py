@@ -26,6 +26,7 @@ def test_research_skill_has_exact_flat_reference_set_and_valid_frontmatter() -> 
         "strategy-yaml.md",
         "vhh-geometry-priors.md",
         "boltzgen-contract.md",
+        "boltzgen-pilot-ranking.md",
         "pilot-diagnosis.md",
         "metric-guide.md",
         "failure-atlas.md",

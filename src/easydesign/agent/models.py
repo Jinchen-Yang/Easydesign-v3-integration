@@ -84,6 +84,19 @@ def request_metadata(role: str, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compact_judge_model(model: Any, config: ModelConfig) -> Any:
+    """Finalize a truncated review without changing the configured scientific model.
+
+    DeepSeek ignores Anthropic's thinking budget. A transient non-thinking copy
+    reserves the unchanged output allowance for the typed review and permits the
+    SDK's forced tool choice. The original client, profile and first call stay intact.
+    """
+    selected = config.for_role("judge")
+    if selected.provider != "deepseek" or selected.reasoning_effort == "none":
+        return model
+    return model.model_copy(update={"thinking": {"type": "disabled"}, "output_config": {}})
+
+
 def create_models(
     config: ModelConfig,
     *,

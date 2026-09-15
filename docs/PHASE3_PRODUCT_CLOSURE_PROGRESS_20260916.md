@@ -83,3 +83,28 @@ zero-pass recovery evidence, provisional incomplete rankings, candidate-attempt 
 profiles, optional review access and source integrity on direct approval. These are
 being validated before control dispatch. Original runs and earlier acceptance attempts
 remain preserved, including failed preparation/test attempts.
+
+## Gate 3 truncation discovered during real control review
+
+On `b7bd8bc9dbd45cf6002de1ef377a115679f0b291`, the prepared controls passed all
+14 backend checks. The actual Gate 3 Judge then exhausted 8,192 output tokens on
+three consecutive review responses (after an initial scoped evidence read), without
+a typed verdict. Its existing two-repair limit correctly stopped execution. No control
+GPU generation or approval occurred. Receipt/log: `product-controls-prepared-02.json`
+and `product-controls-gate3-review-02.log` under `runtime/tmp`.
+
+The correction is restricted to a truncated legacy Judge response: use the same
+delivered evidence and model with only the typed verdict tool, and a transient
+non-thinking DeepSeek adapter for compact recovery. Preserve the configured first call,
+8,192 output limit, shared call budget, two-repair budget, fact/stage validators and
+Scientist authority. The configured model/client remains unchanged. DeepSeek explicitly
+documents that Anthropic `thinking.budget_tokens` is ignored; merely setting it to 1,024
+does not reserve space for a final verdict. See the
+[official compatibility reference](https://api-docs.deepseek.com/guides/anthropic_api/).
+
+Actual-SDK mocked transport tests verify the disabled-thinking recovery, unchanged
+output allowance, verdict-only tool surface, rejection of wrong-stage verdicts and
+continued refusal to publish without delegated evidence authority. The first full
+regression attempt collected 1,238 tests, then was deliberately interrupted for this
+live-discovered fix; it is not a completed regression claim. Failed/interrupted logs
+are retained, and the final frozen implementation requires a new full regression.

@@ -531,6 +531,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 "ranking, hard constraints or major risks. Submit the handoff immediately; "
                 "do not spend remaining calls filling annotation topics or optional pages."
             )
+        compact_judge = self.role == "judge" and any(
+            e["kind"] == "model-response"
+            and e["payload"].get("role") == "judge"
+            and e["payload"].get("execution_id") == self.execution_id
+            and any(
+                r.get("stop_reason") in {"max_tokens", "length"}
+                for r in e["payload"].get("responses", [])
+            )
+            for e in self.bridge.store.events(self.bridge.thread)
+        )
         for attempt in range(3):
             used = self.bridge.store.db.execute(
                 "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "
@@ -538,8 +548,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
             synthesize = self.site_stage == "synthesis"
-            call_tools = [] if synthesize else available
-            if synthesize:
+            call_tools = [] if synthesize or compact_judge else available
+            if synthesize or compact_judge:
                 assert self.output_schema is not None
                 call_tool_chars = len(compact([convert_to_openai_tool(self.output_schema)]))
             else:
@@ -607,6 +617,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "the runtime and independent Judge may reject an insufficient proposal."
                     )
                 )
+            if compact_judge:
+                context_suffix.append(
+                    HumanMessage(
+                        content="The previous review exhausted its output allowance. "
+                        "Submit ONLY a compact JudgeVerdict using the same delivered evidence. "
+                        "No preamble or repeated reads. Preserve material objections, risks and "
+                        "unknowns; reject or mark insufficient when warranted. This is output "
+                        "recovery, not approval. All existing fact and stage checks still apply."
+                    )
+                )
             call_messages.extend(context_suffix)
             chars = len(str(request.system_message)) + sum(
                 len(str(m.content)) for m in call_messages
@@ -639,6 +659,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         len(str(m.content)) for m in request.messages if isinstance(m, ToolMessage)
                     ),
                     "repair_attempt": attempt,
+                    "compact_judge_recovery": compact_judge,
                     "tool_mode": "site-synthesis" if synthesize else "research",
                     "history_projection": "completed-tool-records"
                     if reasoning and self.role != "site"
@@ -652,6 +673,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             call_request = request.override(tools=call_tools, messages=call_messages)
+            if compact_judge:
+                from .models import compact_judge_model
+
+                call_request = call_request.override(
+                    model=compact_judge_model(request.model, self.config)
+                )
             if (
                 synthesize
                 and self.config.for_role("site").provider == "deepseek"
@@ -696,6 +723,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
             if not self.structured_output:
                 return response
+            if self.role == "judge" and any(
+                (m.response_metadata.get("stop_reason") or m.response_metadata.get("finish_reason"))
+                in {"max_tokens", "length"}
+                for m in response.result
+                if isinstance(m, AIMessage)
+            ):
+                compact_judge = True
             schema = self.output_schema
             assert schema is not None
             calls = [call for m in response.result for call in getattr(m, "tool_calls", [])]
@@ -727,9 +761,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
             repair_already_counted = False
-            if synthesize and any(call["name"] != schema.__name__ for call in calls):
+            if (synthesize or compact_judge) and any(
+                call["name"] != schema.__name__ for call in calls
+            ):
                 diagnostic = (
-                    "SITE_SYNTHESIS_BOUNDARY: rejected "
+                    (
+                        "JUDGE_RECOVERY_BOUNDARY: rejected "
+                        if compact_judge
+                        else "SITE_SYNTHESIS_BOUNDARY: rejected "
+                    )
                     + compact([c["name"] for c in calls])
                     + "; no further reading/action was executed. "
                     f"Submit only {schema.__name__} using delivered evidence; "
@@ -827,7 +867,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                     return response
             elif any(isinstance(m, ToolMessage) for m in response.result):
-                if not synthesize:
+                if not (synthesize or compact_judge):
                     return response
                 # ToolStrategy has already recorded/reserved this schema correction.
                 # Isolated synthesis keeps its original evidence input even when native

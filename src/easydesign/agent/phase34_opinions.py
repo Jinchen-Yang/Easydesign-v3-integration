@@ -20,6 +20,21 @@ class ArmHypothesisFinding(StrictDTO):
     alternative_explanation: Brief
 
 
+class CandidateRankingOpinion(StrictDTO):
+    candidate_id: Identifier
+    rationale: Brief
+    risks: list[Brief] = Field(min_length=1, max_length=3)
+    metric_refs: list[str] = Field(min_length=1, max_length=8)
+
+
+class ArmRecoveryOpinion(StrictDTO):
+    arm_id: Identifier
+    action: Literal["RUN_ANOTHER_PILOT", "REVISE_DESIGN", "REVISE_SITE", "STOP"]
+    changes_approved_site: bool = False
+    rationale: Brief
+    proposed_change: Brief
+
+
 class PilotDiagnosisOpinion(StrictDTO):
     key_observations: list[Brief] = Field(min_length=1, max_length=5)
     arm_findings: list[ArmHypothesisFinding] = Field(min_length=1, max_length=21)
@@ -32,6 +47,9 @@ class PilotDiagnosisOpinion(StrictDTO):
     scale_allocations: dict[str, int] = Field(default_factory=dict)
     supporting_candidate_ids: list[Identifier] = Field(default_factory=list, max_length=30)
     rationale: Brief
+    candidate_rankings: list[CandidateRankingOpinion] = Field(default_factory=list, max_length=500)
+    ranked_arm_ids: list[Identifier] = Field(default_factory=list, max_length=21)
+    arm_recovery: list[ArmRecoveryOpinion] = Field(default_factory=list, max_length=21)
 
     @model_validator(mode="after")
     def unique_arm_findings(self) -> PilotDiagnosisOpinion:

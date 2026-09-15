@@ -233,6 +233,14 @@ class DecisionCard(DecisionProposal):
         if self.assessment_id is None:
             review = self.scientific_summary.get("independent_review", {})
             if (
+                self.gate_type == "pilot-promotion"
+                and self.judge_status in {None, "BLOCKED"}
+                and isinstance(review, dict)
+                and review.get("availability") == "not-requested"
+                and review.get("optional") is True
+            ):
+                return self
+            if (
                 self.gate_type not in {"site-hotspot", "pilot-promotion", "wet-lab-handoff"}
                 or (
                     self.judge_status is not None

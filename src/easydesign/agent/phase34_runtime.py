@@ -226,6 +226,11 @@ class Phase34Runtime(Phase34Bridge):
                 != current_job
             ):
                 return None
+            if dossier.measurement.native_evidence is not None:
+                from .phase3_native import verify_native_measurement
+
+                root, _ = self.run(execution["run_id"])
+                verify_native_measurement(root, dossier.measurement)
         return dossier
 
     @authority_read
@@ -508,16 +513,21 @@ class Phase34Runtime(Phase34Bridge):
         execution = self.project_latest("phase34-pilot-execution")
         if execution is None or execution["authority"] != bound:
             return RuntimeAction("pilot-dispatch", bound, "advance_downstream")
-        jobs = [
-            j
-            for j in self.controller.list(project_id=self.project_id)
-            if j.run_id == execution["run_id"]
-        ]
-        if jobs and jobs[0].job_id != execution["job_id"]:
-            return RuntimeAction("pilot-reconcile", bound, "advance_downstream")
-        job = self.controller.load(execution["job_id"])
-        if job.status in ACTIVE_JOB_STATUSES:
-            return RuntimeAction("pilot-running", bound, "observe_downstream")
+        from .phase3_import import current_native_import
+
+        execution_complete = current_native_import(self, execution, bound)
+        if not execution_complete:
+            jobs = [
+                j
+                for j in self.controller.list(project_id=self.project_id)
+                if j.run_id == execution["run_id"]
+            ]
+            if jobs and jobs[0].job_id != execution["job_id"]:
+                return RuntimeAction("pilot-reconcile", bound, "advance_downstream")
+            job = self.controller.load(execution["job_id"])
+            if job.status in ACTIVE_JOB_STATUSES:
+                return RuntimeAction("pilot-running", bound, "observe_downstream")
+            execution_complete = job.status == "succeeded"
         measurement = self.project_latest("phase34-pilot-measurement")
         if (
             measurement is None
@@ -528,7 +538,7 @@ class Phase34Runtime(Phase34Bridge):
             )
         ):
             return RuntimeAction(
-                "pilot-measurement" if job.status == "succeeded" else "pilot-operational-evidence",
+                "pilot-measurement" if execution_complete else "pilot-operational-evidence",
                 bound,
                 "advance_downstream",
             )
@@ -542,12 +552,8 @@ class Phase34Runtime(Phase34Bridge):
             )
         card = self.downstream_card()
         if card is None:
-            return _task(
-                "pilot-review",
-                canonical_model_sha256(dossier),
-                "evidence-judge",
-                "Briefly critique the supplied Pilot diagnosis, "
-                "confounders and overclaims for Scientist Gate 4.",
+            return RuntimeAction(
+                "pilot-card", canonical_model_sha256(dossier), "advance_downstream"
             )
         return RuntimeAction(
             "scientist-gate4",
@@ -695,6 +701,14 @@ class Phase34Runtime(Phase34Bridge):
         )
         if context.plan != authority.pilot_plan or context.project_id != self.project_id:
             raise AgentBoundaryError("Pilot context differs from the current authorized Design")
+        if measurement.native_evidence is not None:
+            from .phase3_native import verify_native_measurement
+
+            execution = self.project_latest("phase34-pilot-execution")
+            if execution is None:
+                raise AgentBoundaryError("Native measurement has no bound Pilot execution")
+            root, _ = self.run(execution["run_id"])
+            verify_native_measurement(root, measurement)
         return measurement, context, authority
 
     @authority_read
@@ -761,7 +775,13 @@ class Phase34Runtime(Phase34Bridge):
             if sources and sources["authority"] == execution["authority"]:
                 packet["evidence_refs"].extend(
                     f"run:{sources['run_id']}:{sources[key]['relative_path']}#{sources[key]['sha256']}"
-                    for key in ("candidate_index", "filter_report", "predictions")
+                    for key in (
+                        "candidate_index",
+                        "filter_report",
+                        "predictions",
+                        "native_evidence",
+                    )
+                    if key in sources
                 )
             operational = self.project_latest("phase34-pilot-operational-sources")
             if operational and operational["authority"] == execution["authority"]:
@@ -824,6 +844,15 @@ class Phase34Runtime(Phase34Bridge):
             from .phase34_failures import project_generation_failure
 
             return project_generation_failure(self)
+        if action.stage == "pilot-card":
+            from .phase34_cards import pilot_card
+
+            dossier = self.current_pilot_dossier()
+            if dossier is None:
+                raise AgentBoundaryError("Pilot evidence changed before Gate 4 publication")
+            card = pilot_card(dossier)
+            self.publish_gate_card(card=card, evidence_contract=dossier)
+            return {"status": "scientist-review-ready", "card_id": card.card_id}
         if action.stage == "pilot-measurement":
             from .phase34_measurement import evaluate_pilot
 

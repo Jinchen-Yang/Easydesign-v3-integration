@@ -198,7 +198,7 @@ def incomplete_prediction_evidence(
     )
 
 
-def evaluate_pilot(bridge: Any) -> dict[str, Any]:
+def evaluate_pilot(bridge: Any, *, independent_prediction: bool = False) -> dict[str, Any]:
     """Idempotent backend operation; never calls a model or invokes legacy expansion."""
     authority = bridge.pilot_authority()
     execution = bridge.project_latest("phase34-pilot-execution")
@@ -206,6 +206,28 @@ def evaluate_pilot(bridge: Any) -> dict[str, Any]:
         raise AgentBoundaryError("Pilot measurements require the current execution authority")
     plan = authority.pilot_plan
     assert plan is not None
+    if not independent_prediction:
+        from .phase3_native import measure_native_execution
+
+        result = measure_native_execution(
+            bridge, authority_id=authority.authority_id, plan=plan, execution=execution
+        )
+        measured = result["measurement"]
+        existing = bridge.project_latest("phase34-pilot-measurement")
+        digest = canonical_model_sha256(measured)
+        if existing and existing["contract_sha256"] == digest:
+            return {"status": "pilot-measured", "measurement_sha256": digest}
+        bridge.store.event(bridge.thread, "phase34-pilot-measurement-sources", result["sources"])
+        bridge.publish_contract(
+            kind="phase34-pilot-measurement",
+            contract=measured,
+            dependencies={
+                "authority": authority.authority_id,
+                "execution_job_id": execution["job_id"],
+                "measurement_version": "native-boltz2-pilot-v1",
+            },
+        )
+        return {"status": "pilot-measured", "measurement_sha256": digest}
     existing = bridge.project_latest("phase34-pilot-measurement")
     if (
         existing

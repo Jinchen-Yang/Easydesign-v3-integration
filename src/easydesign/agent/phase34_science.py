@@ -48,6 +48,10 @@ def pilot_working_set(
     measurement: PilotMeasurement, arms: tuple[PilotArmIntent, ...]
 ) -> dict[str, Any]:
     """Summarize all measured rows, retaining denominator and missingness semantics."""
+    if measurement.native_evidence is not None:
+        from .phase3_ranking import compact_native_packet
+
+        return compact_native_packet(measurement, arms)
     facts: dict[str, Any] = {}
     target_contexts: dict[str, Any] = {}
     for arm in arms:
@@ -118,6 +122,11 @@ def bind_pilot_opinion(
 ) -> tuple[PilotDiagnosis, Gate4Recommendation]:
     if {f.arm_id for f in opinion.arm_findings} != {a.arm_id for a in arms}:
         raise AgentBoundaryError("Pilot diagnosis must interpret each approved Design arm")
+    ranked = None
+    if measurement.native_evidence is not None:
+        from .phase3_ranking import bind_native_ranking
+
+        ranked = bind_native_ranking(measurement, arms, opinion)
     strategies = {a.strategy_id for a in measurement.arms}
     if set(opinion.selected_strategy_ids) - strategies:
         raise AgentBoundaryError("Pilot diagnosis recommends an unmeasured strategy")
@@ -147,6 +156,7 @@ def bind_pilot_opinion(
     ).model_copy(
         update={
             "design_arms": arms,
+            "ranked_pilot": ranked,
             "arm_comparisons": tuple(opinion.arm_comparisons),
             "alternative_explanations": tuple(
                 f.alternative_explanation for f in opinion.arm_findings

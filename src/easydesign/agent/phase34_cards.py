@@ -50,12 +50,19 @@ def _review(
 
 def pilot_card(
     dossier: PilotEvidenceDossier,
-    review: DownstreamJudgeOpinion | DownstreamReviewFailure,
+    review: DownstreamJudgeOpinion | DownstreamReviewFailure | None = None,
     *,
     hard_errors: tuple[str, ...] = (),
 ) -> DecisionCard:
     binding = canonical_model_sha256(dossier)
-    assessment, review_state, warnings, limitations = _review(review, binding, "pilot-promotion")
+    warnings: list[str]
+    if review is None:
+        assessment, review_state = None, {"availability": "not-requested", "optional": True}
+        warnings, limitations = [], ["Optional independent second opinion was not requested."]
+    else:
+        assessment, review_state, warnings, limitations = _review(
+            review, binding, "pilot-promotion"
+        )
     proposal = dossier.proposed_interpretation
     test_only = isinstance(dossier.execution_authority, ValidationExecutionAuthority)
     promote = proposal.outcome == "PROMOTE_TO_SCALE" and not hard_errors
@@ -80,7 +87,11 @@ def pilot_card(
         gate_type="pilot-promotion",
         owner_specialist="pilot-diagnosis",
         card_id=identity(
-            {"dossier": binding, "review": review.model_dump(mode="json"), "hard": hard_errors}
+            {
+                "dossier": binding,
+                "review": review.model_dump(mode="json") if review else None,
+                "hard": hard_errors,
+            }
         ),
         assessment_id=assessment,
         project_id=dossier.project_id,
@@ -112,6 +123,11 @@ def pilot_card(
             "diagnosis": dossier.diagnosis.model_dump(mode="json"),
             "arm_denominators": [a.model_dump(mode="json") for a in dossier.measurement.arms],
             "proposed_interpretation": proposal.model_dump(mode="json"),
+            **(
+                {"ranked_pilot": dossier.diagnosis.ranked_pilot}
+                if dossier.diagnosis.ranked_pilot is not None
+                else {}
+            ),
             "scale_execution_intent": {
                 "strategy_allocations": proposal.production_strategy_allocations,
                 "all_candidates_independently_predicted": True,

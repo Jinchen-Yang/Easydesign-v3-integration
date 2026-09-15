@@ -12,12 +12,13 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Self, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from easydesign.core import ArtifactRef, canonical_model_sha256
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 from easydesign.stages.s04_pilot_generation import CandidateRecord
 
+from .phase3_native_contracts import NativePilotEvidence
 from .phase34_plan import (
     ApprovedGate3Context,
     BoundPilotPlan,
@@ -263,9 +264,17 @@ class PilotMeasurement(FrozenContract):
     unmeasured_candidates: tuple[CandidateRecord, ...] = ()
     candidates: tuple[PilotCandidateObservation, ...]
     arms: tuple[PilotArmDenominator, ...] = Field(min_length=1)
+    native_evidence: NativePilotEvidence | None = None
     scientific_policy: Literal["measure-and-rank-first-filter-calibration-pending"] = (
         "measure-and-rank-first-filter-calibration-pending"
     )
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if self.native_evidence is None:
+            result.pop("native_evidence", None)
+        return result
 
     @model_validator(mode="after")
     def validate_population(self) -> Self:
@@ -300,6 +309,10 @@ class PilotMeasurement(FrozenContract):
         ranks = sorted(item.development_rank_global for item in self.candidates)
         if ranks != list(range(1, len(ranks) + 1)):
             raise ValueError("global development ranks must be contiguous")
+        if self.native_evidence is not None and {
+            c.candidate_id for c in self.native_evidence.candidates
+        } != {c.lineage.candidate_id for c in self.candidates}:
+            raise ValueError("Native evidence must cover the exact measured population")
         return self
 
 
@@ -358,6 +371,14 @@ class PilotDiagnosis(FrozenContract):
     operational_confounders: tuple[str, ...] = ()
     next_discriminating_experiment: tuple[str, ...] = ()
     arm_hypothesis_findings: tuple[dict[str, Any], ...] = ()
+    ranked_pilot: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if self.ranked_pilot is None:
+            result.pop("ranked_pilot", None)
+        return result
 
     @model_validator(mode="after")
     def validate_hypotheses(self) -> Self:

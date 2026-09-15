@@ -53,6 +53,14 @@ def downstream_specialist(
                     measurement, context.plan.arms, opinion, evidence_refs=refs
                 )
 
+            prompt = (skill_root() / "pilot-diagnosis/SKILL.md").read_text()
+            if measurement.native_evidence is not None:
+                prompt += (
+                    "\n"
+                    + (
+                        skill_root() / "pilot-diagnosis/references/boltzgen-pilot-ranking.md"
+                    ).read_text()
+                )
             opinion = await structured_opinion(
                 bridge=bridge,
                 model=model,
@@ -61,7 +69,7 @@ def downstream_specialist(
                 role="pilot-diagnosis",
                 schema=PilotDiagnosisOpinion,
                 packet=packet,
-                prompt=(skill_root() / "pilot-diagnosis/SKILL.md").read_text(),
+                prompt=prompt,
                 validate=validate_pilot,
             )
             diagnosis, recommendation = validate_pilot(opinion)
@@ -84,6 +92,8 @@ def downstream_specialist(
                     "authority": authority.authority_id,
                 },
             )
+            # The Scientist can review immediately; a critic is an optional supplement.
+            bridge.publish_gate_card(card=pilot_card(dossier), evidence_contract=dossier)
             result = {
                 "status": "diagnosis-ready",
                 "diagnosis": diagnosis.model_dump(mode="json", exclude={"design_arms"}),

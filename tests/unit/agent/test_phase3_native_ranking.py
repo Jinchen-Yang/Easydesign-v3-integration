@@ -413,6 +413,31 @@ def test_compact_profiles_preserve_attempt_identity_and_distinct_rules(tmp_path)
         )
 
 
+def test_columnar_arm_distributions_preserve_zero_missingness_and_pass_ranks(tmp_path):
+    from easydesign.agent.phase3_ranking import compact_native_packet
+
+    measured, arms, _, _ = population(tmp_path, (("arm-a", (1,)), ("arm-b", (0,))))
+    full = native_working_set(measured, arms)
+    packet = compact_native_packet(measured, arms)
+    metrics = packet["distribution_metric_columns"]
+    statistics_columns = packet["distribution_statistic_columns"]
+    for arm_id in packet["scientific_arm_ids"]:
+        for field in ("all_candidate_distributions", "pass_candidate_distributions"):
+            restored = {
+                metric: dict(zip(statistics_columns, values, strict=True))
+                for metric, values in zip(metrics, packet["facts"][arm_id][field], strict=True)
+            }
+            assert restored == full["scientific_arms"][arm_id][field]
+    for candidate_id in packet["native_pass_candidate_ids"]:
+        encoded = packet["facts"][candidate_id]["within_pilot_pass_rank_values"]
+        restored = {
+            metric: dict(zip(("rank", "population", "fraction_strictly_worse"), value, strict=True))
+            for metric, value in zip(metrics, encoded, strict=True)
+            if value is not None
+        }
+        assert restored == full["pass_candidates"][candidate_id]["within_pilot_pass_ranks"]
+
+
 @pytest.mark.parametrize("passes,incomplete", [(0, False), (1, True)])
 def test_native_steering_sufficiency_uses_completeness_not_presence_of_a_pass(
     tmp_path, passes, incomplete

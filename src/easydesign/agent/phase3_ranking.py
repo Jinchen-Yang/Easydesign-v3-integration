@@ -322,6 +322,7 @@ def compact_native_packet(
     ids = sorted(packet["pass_candidates"])
     columns = sorted({k for i in ids for k in native[i].metrics})
     directions = list(METRIC_DIRECTIONS)
+    statistics_columns = ["available", "missing", "minimum", "q25", "median", "q75", "maximum"]
     facts: dict[str, Any] = {}
     contexts = {}
     for arm, fact in packet["scientific_arms"].items():
@@ -333,10 +334,12 @@ def compact_native_packet(
         facts[arm] = {
             **fact,
             "all_candidate_distributions": [
-                fact["all_candidate_distributions"][m] for m in directions
+                [fact["all_candidate_distributions"][m][s] for s in statistics_columns]
+                for m in directions
             ],
             "pass_candidate_distributions": [
-                fact["pass_candidate_distributions"][m] for m in directions
+                [fact["pass_candidate_distributions"][m][s] for s in statistics_columns]
+                for m in directions
             ],
         }
     for i, fact in packet["pass_candidates"].items():
@@ -348,10 +351,12 @@ def compact_native_packet(
             "profile_sha256": fact["profile_sha256"],
             "native_metric_values": [native[i].metrics.get(k) for k in columns],
             "runtime_metrics": native[i].additional_metrics,
-            "within_pilot_pass_ranks": {
-                k: [v["rank"], v["population"], v["fraction_strictly_worse"]]
-                for k, v in ranks.items()
-            },
+            "within_pilot_pass_rank_values": [
+                [ranks[k]["rank"], ranks[k]["population"], ranks[k]["fraction_strictly_worse"]]
+                if k in ranks
+                else None
+                for k in directions
+            ],
             "missing_metrics": fact["missing_metrics"],
         }
     filter_definitions = {}
@@ -373,11 +378,14 @@ def compact_native_packet(
         "native_pass_candidate_ids": ids,
         "native_metric_columns": columns,
         "distribution_metric_columns": directions,
+        "distribution_statistic_columns": statistics_columns,
         "metric_directions": METRIC_DIRECTIONS,
         "shared_target_contexts": contexts,
         "vector_semantics": "Each native_metric_values position names the matching "
-        "native_metric_columns entry. Distribution arrays use distribution_metric_columns. "
-        "Each rank tuple is [rank, population, fraction_strictly_worse]. Null is missing. "
+        "native_metric_columns entry. Distribution rows use distribution_metric_columns; "
+        "each row's values use distribution_statistic_columns. "
+        "within_pilot_pass_rank_values uses distribution_metric_columns; each non-null "
+        "entry is [rank, population, fraction_strictly_worse]. Null is missing. "
         "Each filter profile keeps its exact configuration_ref and inherits rules/source "
         "from shared_filter_definitions[shared_filter_definition_id].",
         "filter_profiles": filter_profiles,

@@ -354,6 +354,16 @@ def compact_native_packet(
             },
             "missing_metrics": fact["missing_metrics"],
         }
+    filter_definitions = {}
+    filter_profiles = {}
+    for profile_id, profile in packet["filter_profiles"].items():
+        definition = {k: v for k, v in profile.items() if k != "configuration_ref"}
+        definition_id = identity(definition)
+        filter_definitions[definition_id] = definition
+        filter_profiles[profile_id] = {
+            "shared_filter_definition_id": definition_id,
+            "configuration_ref": profile["configuration_ref"],
+        }
     return {
         "version": packet["version"],
         "measurement_sha256": packet["measurement_sha256"],
@@ -367,7 +377,10 @@ def compact_native_packet(
         "shared_target_contexts": contexts,
         "vector_semantics": "Each native_metric_values position names the matching "
         "native_metric_columns entry. Distribution arrays use distribution_metric_columns. "
-        "Each rank tuple is [rank, population, fraction_strictly_worse]. Null is missing.",
-        "filter_profiles": packet["filter_profiles"],
+        "Each rank tuple is [rank, population, fraction_strictly_worse]. Null is missing. "
+        "Each filter profile keeps its exact configuration_ref and inherits rules/source "
+        "from shared_filter_definitions[shared_filter_definition_id].",
+        "filter_profiles": filter_profiles,
+        "shared_filter_definitions": filter_definitions,
         "interpretation_limits": packet["interpretation_limits"],
     }

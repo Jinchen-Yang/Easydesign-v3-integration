@@ -362,6 +362,57 @@ def test_columnar_packet_preserves_the_complete_native_vector(tmp_path):
     assert packet["native_pass_candidate_ids"] == [native.candidate_id]
 
 
+def test_compact_profiles_preserve_attempt_identity_and_distinct_rules(tmp_path):
+    from easydesign.agent.phase3_ranking import compact_native_packet
+    from easydesign.agent.session_store import compact
+
+    measured, arms, candidates, original = population(
+        tmp_path, (("arm-a", (1,) * 7), ("arm-b", (1,) * 7)), per_strategy=1
+    )
+    profiles = {}
+    for index, candidate in enumerate(candidates):
+        path = tmp_path / f"attempt-{index}.yaml"
+        path.write_text(f"# independent attempt {index}\n")
+        ref = ArtifactRef.from_file(
+            run_root=tmp_path,
+            relative_path=path.name,
+            artifact_id=f"profile-{index}",
+            role="synthetic-fixture",
+            file_format="yaml",
+        )
+        config = {**original.configuration, "refolding_rmsd_threshold": 1.5 if index == 13 else 2.5}
+        profiles[candidate.candidate_id] = native_profile(config, ref)
+    measured = project_native_measurement(
+        candidates=candidates,
+        profiles=profiles,
+        planned={c.strategy_id: 1 for c in candidates},
+        source_sha256="a" * 64,
+        execution=measured.execution,
+    )
+    full = native_working_set(measured, arms)
+    packet = compact_native_packet(measured, arms)
+    definitions = packet["shared_filter_definitions"]
+    assert len(packet["filter_profiles"]) == 14
+    assert len(definitions) == 2
+    for profile_id, encoded in packet["filter_profiles"].items():
+        restored = {
+            **definitions[encoded["shared_filter_definition_id"]],
+            "configuration_ref": encoded["configuration_ref"],
+        }
+        assert restored == full["filter_profiles"][profile_id]
+    assert len(compact([packet["filter_profiles"], definitions])) < len(
+        compact(full["filter_profiles"])
+    )
+    assert set(packet["native_pass_candidate_ids"]) == {c.candidate_id for c in candidates}
+    for candidate in measured.native_evidence.candidates:
+        fact = packet["facts"][candidate.candidate_id]
+        assert fact["profile_sha256"] == candidate.profile_sha256
+        assert (
+            dict(zip(packet["native_metric_columns"], fact["native_metric_values"], strict=True))
+            == candidate.metrics
+        )
+
+
 @pytest.mark.parametrize("passes,incomplete", [(0, False), (1, True)])
 def test_native_steering_sufficiency_uses_completeness_not_presence_of_a_pass(
     tmp_path, passes, incomplete

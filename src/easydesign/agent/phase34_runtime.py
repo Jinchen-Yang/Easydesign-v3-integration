@@ -211,6 +211,11 @@ class Phase34Runtime(Phase34Bridge):
             return None
         if dossier.project_id != self.project_id:
             raise AgentBoundaryError("Pilot dossier belongs to a different project")
+        if dossier.measurement.native_evidence is not None:
+            from .phase3_ranking import NATIVE_RANKING_POLICY
+
+            if (dossier.diagnosis.ranked_pilot or {}).get("policy") != NATIVE_RANKING_POLICY:
+                return None
         execution = self.project_latest("phase34-pilot-execution")
         if execution is not None:
             if execution["run_id"] != dossier.pilot_run_id:

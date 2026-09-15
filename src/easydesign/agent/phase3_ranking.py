@@ -13,6 +13,8 @@ from .contracts import AgentBoundaryError
 from .phase34_contracts import PilotMeasurement
 from .phase34_plan import PilotArmIntent
 
+NATIVE_RANKING_POLICY = "native-ranking-first-v2"
+
 # Direction organizes observations; it is neither a cutoff nor a fitness equation.
 METRIC_DIRECTIONS = {
     "bb_rmsd": "lower",
@@ -212,6 +214,12 @@ def bind_native_ranking(
     if len(candidate_order) != len(set(candidate_order)) or set(candidate_order) != set(candidates):
         raise AgentBoundaryError("Candidate leaderboard must cover every native PASS exactly once")
     eligible = {a for a, fact in arm_facts.items() if fact["mode"] == "PROMOTION"}
+    if eligible and opinion.recommended_action != "PROMOTE_TO_SCALE":
+        raise AgentBoundaryError(
+            "Complete native-PASS Arms require a ranked Scale proposal for Scientist review. "
+            "Scientific weaknesses affect selection, allocation and risks; the Scientist "
+            "can choose revision or STOP. Recovery is reserved for complete zero-pass Arms."
+        )
     if len(opinion.ranked_arm_ids) != len(set(opinion.ranked_arm_ids)) or (
         set(opinion.ranked_arm_ids) != eligible
     ):
@@ -283,6 +291,7 @@ def bind_native_ranking(
         )
     return {
         "version": "ranked-pilot-v1",
+        "policy": NATIVE_RANKING_POLICY,
         "candidate_leaderboard": candidate_board,
         "arm_leaderboard": arm_board,
         "metric_directions": METRIC_DIRECTIONS,

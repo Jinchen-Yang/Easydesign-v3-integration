@@ -195,6 +195,20 @@ def test_scale_allocation_obeys_existing_scaffold_executor(tmp_path):
         )
 
 
+def test_passing_arm_scientific_caveats_do_not_replace_promotion_with_recovery(tmp_path):
+    measured, arms, _, _ = population(tmp_path)
+    opinion = opinion_for(measured, arms).model_copy(
+        update={
+            "recommended_action": "REVISE_DESIGN",
+            "selected_strategy_ids": [],
+            "scale_allocations": {},
+            "supporting_candidate_ids": [],
+        }
+    )
+    with pytest.raises(AgentBoundaryError, match="ranked Scale proposal"):
+        bind_native_ranking(measured, arms, opinion)
+
+
 def test_complete_zero_pass_and_mixed_arm_routing(tmp_path):
     measured, arms, _, _ = population(tmp_path, (("arm-a", (1,)), ("arm-b", (0,))))
     packet = native_working_set(measured, arms)

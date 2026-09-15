@@ -7,6 +7,25 @@ from pydantic import ValidationError
 from easydesign.agent.models import LLMConfig, ModelConfig, create_models
 
 
+def test_transport_source_changes_invalidate_the_harness_fingerprint(monkeypatch: Any) -> None:
+    from pathlib import Path
+
+    from easydesign.agent.harness import fingerprint
+
+    config = ModelConfig(
+        default=LLMConfig(provider="deepseek", model="test-model", secret_env="TEST_KEY")
+    )
+    before = fingerprint(config)
+    original = Path.read_text
+
+    def changed(path: Path, *args: Any, **kwargs: Any) -> str:
+        text = original(path, *args, **kwargs)
+        return text + "\n# Synthetic adapter change\n" if path.name == "models.py" else text
+
+    monkeypatch.setattr(Path, "read_text", changed)
+    assert fingerprint(config) != before
+
+
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "deepseek"])
 def test_explicit_factory_and_no_secret_in_config(provider: str, monkeypatch: Any) -> None:
     calls = []

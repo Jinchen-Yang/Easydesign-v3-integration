@@ -1,6 +1,11 @@
 # Pilot diagnosis：从结果到可证伪的下一轮
 
-本章是 `pilot` phase 核心。目标不是挑最高分，而是先确认数据可比较，再解释 target、binder、site、interface、CDR、scaffold 与实验因素，最后提出能区分竞争解释的下一轮。
+本章保留旧 Stage 05 诊断工作流和通用分析资料。当前 v3 原生 Pilot 优先遵循
+[排序与恢复契约](boltzgen-pilot-ranking.md)：完整且有原生 PASS 的 Arm 进入排序和 Gate 4 分配建议，
+不能因候选失败较多而转成 Arm Recovery；只有完整零 PASS Arm 才采用恢复分支。
+
+通用分析先确认数据可比较，再解释 target、binder、site、interface、CDR、scaffold 与实验因素。
+需要恢复时，提出能区分竞争解释的有边界下一轮；不自动执行。
 
 ## 目录
 

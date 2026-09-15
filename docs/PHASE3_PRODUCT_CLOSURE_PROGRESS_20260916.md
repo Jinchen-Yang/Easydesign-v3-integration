@@ -108,3 +108,32 @@ continued refusal to publish without delegated evidence authority. The first ful
 regression attempt collected 1,238 tests, then was deliberately interrupted for this
 live-discovered fix; it is not a completed regression claim. Failed/interrupted logs
 are retained, and the final frozen implementation requires a new full regression.
+
+## Control dispatch checkpoint
+
+`ca3bd3bd35d2bfe211cebd5f37a16c95cea6b8f1` passed 31 Judge/model/stage tests.
+The live control Gate 3 review then succeeded: after one truncated review response,
+compact recovery submitted the verdict in 6.83 seconds with 551 output tokens. The
+Judge retained DISCOURAGED scientific cautions about altered loop geometry, buried
+hotspots and unresolved approach; no risk was erased to obtain a card.
+
+An attempted cross-thread reuse in helper v5 was correctly rejected because the old
+Gate 4 card belonged to another task. Helper v6 registered identical scientific YAMLs
+within its own review task. This changed review provenance, not the tested design factors.
+
+The user's explicit bounded-control authorization was applied to the exact reviewed
+140-candidate card, acknowledging those intended control risks. No production Scale
+was authorized. Live receipts: `product-controls-prepared-03.json`,
+`product-controls-gate3-review-04.json`, `product-controls-dispatch-04.json`.
+
+- Control task: `phase3-nk2r-cdr3-controls-v6-20260916`.
+- Authority: `b8d3e15f03772c9c312c6da85a32314e729bd20916ecc8b7cdfa77967fbf14bd`.
+- Run: `pilot-v3-b8d3e15f03772c9c312c6da8`.
+- Worker: `job-f55763bdb7734717`.
+- Run manifest records clean generation commit `ca3bd3bd35d2bfe211cebd5f37a16c95cea6b8f1`.
+- All eight Suzhou2 GPUs are executing the native pipeline; results remain pending.
+
+Whole-source Ruff checks and Mypy on 229 source files passed. A separate optional
+format audit found 142 unchanged baseline files that the current formatter would
+rewrite, and zero changed files requiring formatting. No unrelated formatting sweep
+was made. The final full suite collected 1,240 tests and is still running at this checkpoint.

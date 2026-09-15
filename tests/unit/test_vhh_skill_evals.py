@@ -83,7 +83,7 @@ def test_suite_directly_covers_product_policy_and_backend_default() -> None:
 def test_live_references_are_one_hop_reachable_and_long_files_have_toc() -> None:
     skill_text = (RESEARCH_SKILL / "SKILL.md").read_text(encoding="utf-8")
     references = sorted((RESEARCH_SKILL / "references").glob("*.md"))
-    assert len(references) == 15
+    assert len(references) == 16
     for reference in references:
         assert f"references/{reference.name}" in skill_text
         if len(reference.read_text(encoding="utf-8").splitlines()) > 100:

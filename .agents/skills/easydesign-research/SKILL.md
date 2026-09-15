@@ -64,7 +64,13 @@ adapter/backend/asset 或进入 expert native path 时，再读取
 
 不要从 prepare 阶段的“大 site”直接复制全部 residue 为 conditioning hotspot。不要把科学计划字段写入 native BoltzGen YAML。
 
-### `pilot`：结果 → 失败归因 → 下一轮
+### `pilot`：结果 → 排序或有边界的恢复
+
+当前 EasyDesign v3 原生 BoltzGen/Boltz2 Pilot 必须先读
+[boltzgen-pilot-ranking.md](references/boltzgen-pilot-ranking.md)。完整且有原生 PASS 的科学 Arm
+进入全部 PASS 排序、Arm 比较和 Gate 4 分配建议；只有完整零 PASS Arm 才进入 Recovery。
+未完成执行不能形成科学失败结论。AFO 与 Phase 3 Judge 为可选证据，不能阻塞该路径。
+以下 Stage 05 Dashboard/Observation/Interpretation 操作仅用于仍明确绑定旧 Stage 05 的项目。
 
 必须读取：
 

@@ -2,6 +2,10 @@
 
 本章只解释当前 artifact 实际字段。所有metric都是模型或几何proxy，不是实验affinity、specificity、function或developability证明。最终以run中frozen `FilterDecision`、profile identity和source为准。
 
+当前 v3 原生 BoltzGen/Boltz2 Pilot 的计算定义和使用边界见
+[boltzgen-pilot-ranking.md](boltzgen-pilot-ranking.md)。本章旧 Stage 05 hard gate、Tier、
+独立预测和 score 说明只解释对应的历史 artifact，不作为 v3 原生过滤或排名的新增规则。
+
 ## 目录
 
 1. 固定 profile identity

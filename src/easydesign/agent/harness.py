@@ -157,6 +157,7 @@ def fingerprint(config: ModelConfig) -> str:
                 for path in sorted(skill_root().rglob("*.md"))
             },
             "harness": Path(__file__).read_text(),
+            "model_adapter": Path(__file__).with_name("models.py").read_text(),
             "contracts": Path(__file__).with_name("contracts.py").read_text(),
             "tools": Path(__file__).with_name("tools.py").read_text(),
             "phase2": {

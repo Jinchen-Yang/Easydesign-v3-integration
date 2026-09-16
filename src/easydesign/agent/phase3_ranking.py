@@ -211,12 +211,33 @@ def native_working_set(
 def bind_native_ranking(
     measurement: PilotMeasurement, arms: tuple[PilotArmIntent, ...], opinion: Any
 ) -> dict[str, Any]:
+    from .phase3_capacity import expand_candidate_references
+
+    opinion = expand_candidate_references(measurement, opinion)
     packet = native_working_set(measurement, arms)
     assert measurement.native_evidence is not None
     candidates, arm_facts = packet["pass_candidates"], packet["scientific_arms"]
-    candidate_order = [r.candidate_id for r in opinion.candidate_rankings]
+    compact_order = opinion.candidate_order
+    candidate_order = compact_order or [r.candidate_id for r in opinion.candidate_rankings]
     if len(candidate_order) != len(set(candidate_order)) or set(candidate_order) != set(candidates):
-        raise AgentBoundaryError("Candidate leaderboard must cover every native PASS exactly once")
+        raise AgentBoundaryError(
+            "Candidate leaderboard must cover every native PASS exactly once; "
+            f"unknown={sorted(set(candidate_order) - set(candidates))[:8]}; "
+            f"missing={sorted(set(candidates) - set(candidate_order))[:8]}"
+        )
+    details = {r.candidate_id: r for r in opinion.candidate_rankings}
+    if len(details) != len(opinion.candidate_rankings) or set(details) - set(candidates):
+        raise AgentBoundaryError("Candidate notes contain a duplicate or unknown candidate")
+    if compact_order:
+        from .phase3_capacity import validate_compact_ranking_output
+
+        validate_compact_ranking_output(opinion.model_dump(mode="json"))
+        required = set(candidate_order[:3]) | set(opinion.supporting_candidate_ids)
+        if required - set(details):
+            raise AgentBoundaryError(
+                "Detailed notes must cover top 3 and every promotion-support candidate; "
+                f"missing={sorted(required - set(details))[:12]}"
+            )
     eligible = {a for a, fact in arm_facts.items() if fact["mode"] == "PROMOTION"}
     if eligible and opinion.recommended_action != "PROMOTE_TO_SCALE":
         raise AgentBoundaryError(
@@ -269,17 +290,27 @@ def bind_native_ranking(
         )
     findings = {f.arm_id: f for f in opinion.arm_findings}
     candidate_board = []
-    for rank, entry in enumerate(opinion.candidate_rankings, 1):
-        fact = candidates[entry.candidate_id]
+    for rank, candidate_id in enumerate(candidate_order, 1):
+        fact = candidates[candidate_id]
         native = next(
-            c
-            for c in measurement.native_evidence.candidates
-            if c.candidate_id == entry.candidate_id
+            c for c in measurement.native_evidence.candidates if c.candidate_id == candidate_id
         )
         known_metrics = set(fact["metrics"]) | set(native.metrics) | set(native.additional_metrics)
-        if any(ref not in known_metrics for ref in entry.metric_refs):
+        entry = details.get(candidate_id)
+        if entry and any(ref not in known_metrics for ref in entry.metric_refs):
             raise AgentBoundaryError("Ranking explanation cites an unknown metric")
-        candidate_board.append({"rank": rank, **fact, **entry.model_dump(mode="json")})
+        note = (
+            entry.model_dump(mode="json")
+            if entry
+            else {
+                "candidate_id": candidate_id,
+                "rationale": None,
+                "risks": [],
+                "metric_refs": [],
+                "explanation_status": "rank-only; exact metrics and provenance retained",
+            }
+        )
+        candidate_board.append({"rank": rank, **fact, **note})
     arm_board = []
     for arm_id in [*opinion.ranked_arm_ids, *sorted(set(arm_facts) - eligible)]:
         fact = arm_facts[arm_id]
@@ -322,7 +353,15 @@ def compact_native_packet(
     ids = sorted(packet["pass_candidates"])
     columns = sorted({k for i in ids for k in native[i].metrics})
     directions = list(METRIC_DIRECTIONS)
-    statistics_columns = ["available", "missing", "minimum", "q25", "median", "q75", "maximum"]
+    statistics_columns = [
+        "available",
+        "missing",
+        "minimum",
+        "q25",
+        "median",
+        "q75",
+        "maximum",
+    ]
     facts: dict[str, Any] = {}
     contexts = {}
     for arm, fact in packet["scientific_arms"].items():
@@ -352,7 +391,11 @@ def compact_native_packet(
             "native_metric_values": [native[i].metrics.get(k) for k in columns],
             "runtime_metrics": native[i].additional_metrics,
             "within_pilot_pass_rank_values": [
-                [ranks[k]["rank"], ranks[k]["population"], ranks[k]["fraction_strictly_worse"]]
+                [
+                    ranks[k]["rank"],
+                    ranks[k]["population"],
+                    ranks[k]["fraction_strictly_worse"],
+                ]
                 if k in ranks
                 else None
                 for k in directions

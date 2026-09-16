@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from time import perf_counter
 from typing import Any, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, create_model
 
 from .context_policy import context_usage
 from .contracts import AgentBoundaryError, JudgeFactClaim
@@ -16,6 +17,17 @@ from .models import ModelConfig, Role
 from .session_store import compact, identity
 
 OpinionT = TypeVar("OpinionT", bound=BaseModel)
+
+
+def _patch_schema(schema: type[BaseModel]) -> type[BaseModel]:
+    """Same tool identity, optional replacement fields; final validation uses the original."""
+    fields: dict[str, Any] = {}
+    for name, field in schema.model_fields.items():
+        optional = deepcopy(field)
+        optional.default = None
+        optional.default_factory = None
+        fields[name] = (field.annotation, optional)
+    return create_model(schema.__name__, __config__=schema.model_config, **fields)
 
 
 class StructuredOpinionUnavailable(AgentBoundaryError):
@@ -64,6 +76,7 @@ async def structured_opinion(
     packet: dict[str, Any],
     prompt: str,
     validate: Callable[[OpinionT], Any] | None = None,
+    delta_repair: bool = False,
 ) -> OpinionT:
     """One opinion, at most two compact repairs; no action tools or hidden model calls."""
     from anthropic import APIConnectionError as AnthropicConnectionError
@@ -92,6 +105,15 @@ async def structured_opinion(
     diagnostic = previous[-1].get("diagnostic") if previous else None
     last_submission = previous[-1].get("submission") if previous else None
     for attempt in range(len(previous), 3):
+        use_patch = (
+            delta_repair
+            and role == "pilot-diagnosis"
+            and attempt > 0
+            and isinstance(last_submission, dict)
+            and bool(last_submission)
+            and not (set(last_submission) - set(schema.model_fields))
+        )
+        wire_schema: type[BaseModel] = _patch_schema(schema) if use_patch else schema
         recovery = (
             {}
             if attempt == 0
@@ -103,12 +125,31 @@ async def structured_opinion(
                 "Correct the specified field; keep valid observations and critical warnings.",
             }
         )
+        if delta_repair and role == "pilot-diagnosis" and attempt > 0:
+            from .phase3_capacity import ranking_repair_context
+
+            repair_context = ranking_repair_context(
+                last_submission if isinstance(last_submission, dict) else {}, diagnostic
+            )
+            if not use_patch:
+                repair_context["instruction"] = (
+                    "Return ONLY the complete corrected structured opinion. "
+                    "The previous submission cannot be merged; all required fields are needed."
+                )
+            recovery = {
+                "repair": categories[-1],
+                "delta_repair" if use_patch else "compact_recovery": repair_context,
+            }
         messages = [
             SystemMessage(content=prompt),
             HumanMessage(content=compact({**packet, **recovery})),
         ]
         usage = context_usage(
-            model, config, role, messages, len(compact(convert_to_openai_tool(schema)))
+            model,
+            config,
+            role,
+            messages,
+            len(compact(convert_to_openai_tool(wire_schema))),
         )
         bridge.store.reserve_model_call(bridge.thread, role, config.max_model_calls, execution_id)
         bridge.store.event(
@@ -122,13 +163,14 @@ async def structured_opinion(
                 "repair_attempt": attempt,
                 "structured_output_tool": schema.__name__,
                 "offered_action_tools": [],
+                "delta_repair": use_patch,
             },
         )
         start = perf_counter()
         response = None
         category = "NO_SUBMISSION"
         try:
-            response = await model.bind_tools([schema], tool_choice="auto").ainvoke(messages)
+            response = await model.bind_tools([wire_schema], tool_choice="auto").ainvoke(messages)
         except (
             AnthropicConnectionError,
             AnthropicServerError,
@@ -158,6 +200,7 @@ async def structured_opinion(
             },
         )
         submission = None
+        wire_submission = None
         if response is not None:
             stop = response.response_metadata.get("stop_reason") or response.response_metadata.get(
                 "finish_reason"
@@ -166,17 +209,36 @@ async def structured_opinion(
                 category = "MAX_TOKENS"
             calls = [c for c in response.tool_calls if c["name"] == schema.__name__]
             if len(calls) == 1 and len(response.tool_calls) == 1:
-                submission = calls[0]["args"]
+                wire_submission = calls[0]["args"]
+                submission = (
+                    {**last_submission, **wire_submission}
+                    if use_patch
+                    and isinstance(wire_submission, dict)
+                    and isinstance(last_submission, dict)
+                    else wire_submission
+                )
         opinion: OpinionT | None = None
         if isinstance(submission, dict):
             # A malformed opinion must not hide a readable hard-fact conflict in fallback.
             try:
+                if use_patch:
+                    wire_schema.model_validate(wire_submission)
                 if role == "judge":
                     warnings = submission.get("warnings", [])
                     if isinstance(warnings, list):
                         retained.extend(w for w in warnings if isinstance(w, str))
                     validate_review_facts(submission, packet.get("facts", {}))
                 opinion = schema.model_validate(submission)
+                if delta_repair and role == "pilot-diagnosis":
+                    from .phase3_capacity import VIEW_VERSION, validate_compact_ranking_output
+
+                    if packet.get("version") == VIEW_VERSION:
+                        if packet.get("candidate_count") and not submission.get("candidate_order"):
+                            raise AgentBoundaryError(
+                                "The decision view requires candidate_order for all PASS IDs; "
+                                "candidate_rankings is only for bounded detailed notes"
+                            )
+                        validate_compact_ranking_output(submission)
                 if validate:
                     validate(opinion)
             except ValidationError as error:
@@ -207,6 +269,8 @@ async def structured_opinion(
                 "category": "SUCCESS" if opinion else category,
                 "opinion": opinion.model_dump(mode="json") if opinion else None,
                 "submission": submission,
+                "wire_submission": wire_submission if use_patch else None,
+                "delta_repair": use_patch,
                 "diagnostic": diagnostic,
                 "retained_warnings": list(dict.fromkeys(retained)),
             },

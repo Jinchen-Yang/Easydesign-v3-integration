@@ -47,6 +47,12 @@ class PilotDiagnosisOpinion(StrictDTO):
     scale_allocations: dict[str, int] = Field(default_factory=dict)
     supporting_candidate_ids: list[Identifier] = Field(default_factory=list, max_length=30)
     rationale: Brief
+    candidate_order: list[Identifier] = Field(
+        default_factory=list,
+        description="Complete native-PASS ranking, strongest first, IDs only. "
+        "Use candidate_rankings only for up to 12 detailed notes: top 3, promotion support "
+        "and material tradeoffs. Legacy saved opinions may omit candidate_order.",
+    )
     candidate_rankings: list[CandidateRankingOpinion] = Field(default_factory=list)
     ranked_arm_ids: list[Identifier] = Field(default_factory=list, max_length=21)
     arm_recovery: list[ArmRecoveryOpinion] = Field(default_factory=list, max_length=21)

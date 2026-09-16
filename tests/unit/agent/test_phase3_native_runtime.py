@@ -5,6 +5,7 @@ import json
 import pytest
 
 from easydesign.agent.cli import run_session
+from easydesign.agent.phase3_capacity import VIEW_VERSION
 from easydesign.agent.phase3_native import project_native_measurement
 from easydesign.agent.phase34_opinions import PilotDiagnosisOpinion
 from easydesign.core.errors import ArtifactIntegrityError
@@ -23,7 +24,8 @@ class NativeRankingModel(ScriptedModel):
 
     def answer(self, messages):
         packet = json.loads(messages[-1].content)
-        assert packet["version"] == "ranked-pilot-v1"
+        assert packet["version"] == VIEW_VERSION
+        assert packet["candidate_count"] == len(self.opinion.candidate_order)
         return self.call("PilotDiagnosisOpinion", **self.opinion.model_dump(mode="json"))
 
 
@@ -70,6 +72,9 @@ async def test_native_graph_gate4_and_restart_without_judge_or_prediction(
         lambda run_id=None: (tmp_path, None) if run_id == "synthetic-pilot" else actual_run(run_id),
     )
     opinion = opinion_for(measured, plan.arms)
+    opinion = opinion.model_copy(
+        update={"candidate_order": [r.candidate_id for r in opinion.candidate_rankings]}
+    )
     models = {
         r: NativeRankingModel(role=r, opinion=opinion)
         for r in (

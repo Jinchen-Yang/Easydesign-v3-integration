@@ -25,7 +25,12 @@ from .session_store import compact, identity
 
 
 def downstream_specialist(
-    bridge: Any, model: Any, config: ModelConfig, execution_id: str | None, role: str, goal: str
+    bridge: Any,
+    model: Any,
+    config: ModelConfig,
+    execution_id: str | None,
+    role: str,
+    goal: str,
 ) -> Any:
     """A compiled node has one submission schema, no action tools, no workflow vote."""
 
@@ -55,6 +60,9 @@ def downstream_specialist(
 
             prompt = (skill_root() / "pilot-diagnosis/SKILL.md").read_text()
             if measurement.native_evidence is not None:
+                from .phase3_capacity import ranking_decision_view
+
+                packet = ranking_decision_view(packet)
                 prompt += (
                     "\n"
                     + (
@@ -71,6 +79,7 @@ def downstream_specialist(
                 packet=packet,
                 prompt=prompt,
                 validate=validate_pilot,
+                delta_repair=measurement.native_evidence is not None,
             )
             diagnosis, recommendation = validate_pilot(opinion)
             still_current()
@@ -142,7 +151,10 @@ def downstream_specialist(
                     "shortlist": canonical_model_sha256(shortlist),
                 },
             )
-            result = {"status": "panel-ready", "proposal": proposal.model_dump(mode="json")}
+            result = {
+                "status": "panel-ready",
+                "proposal": proposal.model_dump(mode="json"),
+            }
         elif role == "judge":
             reviewed = bridge.current_final_dossier() or bridge.current_pilot_dossier()
             if reviewed is None:
@@ -204,7 +216,12 @@ def downstream_specialist(
 
 
 def downstream_aware_judge(
-    bridge: Any, model: Any, config: ModelConfig, execution_id: str | None, goal: str, upstream: Any
+    bridge: Any,
+    model: Any,
+    config: ModelConfig,
+    execution_id: str | None,
+    goal: str,
+    upstream: Any,
 ) -> Any:
     compact_judge = downstream_specialist(bridge, model, config, execution_id, "judge", goal)
 

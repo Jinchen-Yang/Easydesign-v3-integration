@@ -124,8 +124,10 @@ def bind_pilot_opinion(
         raise AgentBoundaryError("Pilot diagnosis must interpret each approved Design arm")
     ranked = None
     if measurement.native_evidence is not None:
+        from .phase3_capacity import expand_candidate_references
         from .phase3_ranking import bind_native_ranking
 
+        opinion = expand_candidate_references(measurement, opinion)
         ranked = bind_native_ranking(measurement, arms, opinion)
     strategies = {a.strategy_id for a in measurement.arms}
     if set(opinion.selected_strategy_ids) - strategies:

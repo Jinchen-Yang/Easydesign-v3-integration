@@ -12,7 +12,8 @@ Their identities bind the view and the existing stale-evidence check remains in 
 
 - Shared Design/scaffold settings and target context are sent once; Arms carry exact
   recursive deltas. Lists are atomic, null is distinct from absence.
-- The matrix contains every native-PASS candidate, all 29 existing ranking dimensions
+- The matrix names each candidate's Arm directly and groups metrics into short vectors
+  with at most six named values each, avoiding a single unbroken 41-column vector. They retain every native-PASS candidate, all 29 existing ranking dimensions
   and 12 chemistry/contact context dimensions. Numeric values are not rounded/rescaled.
   Repeated categorical strings are shared through exact indexed tables.
 - Exact sequence-equality groups replace long sequences in the model view; they are
@@ -53,10 +54,12 @@ transport exhausted 8192 tokens before a valid opinion, despite a 54k input. Nat
 now uses the same DeepSeek model through a transient non-thinking client copy and forced
 submission of the one existing opinion tool. Provider/model, evidence, criteria and token
 limit stay fixed; Phase 2, Phase 4 and other roles retain their clients. The explicit
-`native-ranking-tool-first-v2` protocol participates in cache binding and audit telemetry.
+`native-ranking-tool-first-v3` protocol participates in cache binding and audit telemetry.
 The wire schema requires every proposal field explicitly and exactly the current PASS count;
 it does not change the persisted opinion schema. Repair groups errors without dropping later
-malformed rows and reports correlated detail coverage before the full binder can run.
+malformed rows and reports correlated detail coverage before the full binder can run. It also
+identifies selected Arms missing support with their allowed references, and missing/foreign
+ranking references. These are validation hints, never an automatic scientific selection.
 The failed exams and interrupted earlier regression remain in the audit records.
 
 ## Acceptance scope

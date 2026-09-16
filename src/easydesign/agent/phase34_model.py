@@ -183,7 +183,9 @@ async def structured_opinion(
             from .phase3_capacity import ranking_repair_context
 
             repair_context = ranking_repair_context(
-                last_submission if isinstance(last_submission, dict) else {}, diagnostic
+                last_submission if isinstance(last_submission, dict) else {},
+                diagnostic,
+                packet if native_decision else None,
             )
             if not use_patch:
                 repair_context["instruction"] = (

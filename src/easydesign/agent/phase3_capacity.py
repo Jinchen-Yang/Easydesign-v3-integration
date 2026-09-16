@@ -10,7 +10,7 @@ from .phase3_ranking import METRIC_DIRECTIONS
 from .session_store import compact, identity
 
 VIEW_VERSION = "pilot-ranking-decision-view-v1"
-SUBMISSION_PROTOCOL = "native-ranking-tool-first-v2"
+SUBMISSION_PROTOCOL = "native-ranking-tool-first-v3"
 
 
 def ranking_submission_model(model: Any, config: Any) -> Any:
@@ -207,7 +207,7 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
         for k in variable_columns
         if all(values[i][k] is None or isinstance(values[i][k], str) for i in ids)
     }
-    rows = [
+    rows: list[list[Any]] = [
         [
             candidate_refs[i],
             strategies[packet["facts"][i]["strategy_id"]],
@@ -221,6 +221,23 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
             ],
         ]
         for i in ids
+    ]
+    metric_groups = [
+        {
+            "column": f"metrics_{start // 6 + 1}",
+            "metrics": variable_columns[start : start + 6],
+            "directions": [METRIC_DIRECTIONS.get(k) for k in variable_columns[start : start + 6]],
+        }
+        for start in range(0, len(variable_columns), 6)
+    ]
+    identities = [
+        [
+            row[0],
+            strategy_rows[row[1]][1],
+            *row[1:4],
+            *[row[4 + start : 4 + start + 6] for start in range(0, len(variable_columns), 6)],
+        ]
+        for row in rows
     ]
     return {
         "version": VIEW_VERSION,
@@ -250,14 +267,16 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
         "strategy_denominators": denominator_rows,
         "candidate_columns": [
             "candidate_id",
+            "arm_id",
             "strategy_index",
             "profile_index",
             "sequence_group",
-            *variable_columns,
+            *[g["column"] for g in metric_groups],
         ],
+        "metric_groups": metric_groups,
         "candidate_common_metrics": shared_values,
         "metric_value_tables": value_tables,
-        "candidates": rows,
+        "candidates": identities,
         "candidate_count": len(rows),
         "filter_profile_count": len(profile_ids),
         "filter_profile_binding": identity(profile_ids),
@@ -274,26 +293,19 @@ def ranking_decision_view(packet: dict[str, Any]) -> dict[str, Any]:
         "metric_directions": [
             packet["metric_directions"][m] for m in packet["distribution_metric_columns"]
         ],
-        "interpretation_limits": packet["interpretation_limits"],
         "view_semantics": (
-            "Every candidate row is native PASS; none omitted. Indices are zero-based. "
-            "Use the short candidate_id references in output. They resolve to canonical IDs "
-            "in sorted PASS order under this measurement_sha256; Runtime expands them before "
-            "validation and publishing. These references are scoped to this evidence only. "
-            "Each row inherits candidate_common_metrics; null is unavailable, never zero. "
-            "Columns named in metric_value_tables contain indices into that exact string table. "
-            "sequence_group means exact full-binder sequence equality, not sequence distance. "
-            "filter_definition_by_profile contains indices into filter_definition_ids. "
-            "Profile indices follow sorted source profile IDs under filter_profile_binding. "
-            "metric_directions follows distribution_metric_columns order. "
-            "Merge shared_design_intent recursively with each design_delta, then merge "
-            "shared_compiled_settings, compiled_settings.arm_common and each strategy delta "
-            "to recover scientific settings. Context refs resolve in shared_target_contexts. "
-            "All metric dimensions have their original values/scopes; no new score or cutoff. "
-            "Full raw metrics, per-metric ranks, sequences, masks, structures and provenance "
-            "remain in Runtime: measurement_sha256/native_evidence.candidates:<candidate_id>; "
-            "profile IDs resolve exact configurations; design_intent_ref resolves source intent. "
-            "This is an explicit decision projection, not the complete raw evidence object."
+            "All PASS rows retained. Short candidate IDs resolve in sorted canonical PASS order "
+            "under measurement_sha256; Runtime expands before validation/publishing. "
+            "Indices are zero-based. metrics_N values/directions follow metric_groups names. "
+            "Inherit candidate_common_metrics; null means unavailable. metric_value_tables "
+            "indices resolve exact strings. sequence_group = exact full-binder equality. "
+            "Profiles follow sorted source IDs bound by filter_profile_binding; "
+            "filter_definition_by_profile indexes filter_definition_ids. "
+            "metric_directions follows distribution_metric_columns. Merge shared_design_intent "
+            "with design_delta, and shared_compiled_settings with arm_common then strategy deltas. "
+            "Context refs resolve in shared_target_contexts. Full raw metrics, sequences, masks, "
+            "structures/provenance remain at measurement_sha256/native_evidence.candidates:<ID>; "
+            "design_intent_ref resolves the source intent. Values/scopes are unchanged."
         ),
     }
 
@@ -311,7 +323,9 @@ def validate_compact_ranking_output(raw: dict[str, Any]) -> None:
             )
 
 
-def ranking_repair_context(submission: dict[str, Any], diagnostic: Any) -> dict[str, Any]:
+def ranking_repair_context(
+    submission: dict[str, Any], diagnostic: Any, packet: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Bound only the model view of a failed proposal; the ledger retains it verbatim."""
     preview: dict[str, Any] = {}
     retained = []
@@ -346,8 +360,39 @@ def ranking_repair_context(submission: dict[str, Any], diagnostic: Any) -> dict[
         required_notes = list(
             dict.fromkeys(i for i in [*order[:3], *support] if isinstance(i, str))
         )
+    context: dict[str, Any] = {}
+    if packet is not None:
+        by_arm: dict[str, list[str]] = {}
+        for row in packet.get("candidates", []):
+            by_arm.setdefault(row[1], []).append(row[0])
+        strategy_arms = {row[0]: row[1] for row in packet.get("strategies", [])}
+        selected = submission.get("selected_strategy_ids", [])
+        allowed = {i for ids in by_arm.values() for i in ids}
+        if (
+            isinstance(selected, list)
+            and isinstance(support, list)
+            and all(isinstance(i, str) and i in allowed for i in support)
+        ):
+            missing_arms = sorted(
+                {strategy_arms[s] for s in selected if isinstance(s, str) and s in strategy_arms}
+                - {
+                    a
+                    for a, ids in by_arm.items()
+                    if set(ids) & {s for s in support if isinstance(s, str)}
+                }
+            )
+            context["selected_arms_missing_support"] = {
+                a: {"allowed_candidate_refs": by_arm.get(a, [])} for a in missing_arms
+            }
+        if isinstance(order, list) and any(isinstance(i, str) and i in allowed for i in order):
+            supplied = {i for i in order if isinstance(i, str)}
+            context["candidate_order_set_errors"] = {
+                "missing_refs": sorted(allowed - supplied),
+                "unknown_refs": sorted(supplied - allowed),
+            }
     text = compact(errors)
     return {
+        **context,
         "errors": errors if len(text) <= 2500 else text[:2500],
         "required_detailed_candidate_ids": required_notes[:33],
         "previous_unvalidated_fields": preview,

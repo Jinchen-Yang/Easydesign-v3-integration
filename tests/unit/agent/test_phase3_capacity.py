@@ -187,6 +187,10 @@ def test_sixty_pass_projection_keeps_every_id_value_context_and_source(tmp_path)
     for row in view["candidates"]:
         d = dict(zip(view["candidate_columns"], row, strict=True))
         metric_view = {**view["candidate_common_metrics"], **d}
+        for group in view["metric_groups"]:
+            metric_view.update(dict(zip(group["metrics"], d[group["column"]], strict=True)))
+            assert len(group["metrics"]) <= 6
+            assert group["directions"] == [METRIC_DIRECTIONS.get(k) for k in group["metrics"]]
         for key, table in view["metric_value_tables"].items():
             if metric_view[key] is not None:
                 metric_view[key] = table[metric_view[key]]
@@ -505,3 +509,38 @@ def test_repair_reports_all_malformed_rows_and_correlated_required_notes():
     assert len(recovery["errors"]) == 2
     assert "candidate_rankings.6.metric_refs" in recovery["errors"][0]["fields"]
     assert recovery["errors"][1]["fields"] == ["key_observations"]
+
+
+def test_repair_names_missing_arm_support_and_allowed_refs(tmp_path):
+    _, _, packet = capacity_population(tmp_path)
+    view = ranking_decision_view(packet)
+    order = [r[0] for r in view["candidates"]]
+    second_arm = next(r[0] for r in view["candidates"] if r[1] == "arm-2")
+    recovery = ranking_repair_context(
+        {
+            "candidate_order": ["foreign", *order[1:]],
+            "selected_strategy_ids": ["arm-1-scaffold-0", "arm-2-scaffold-0"],
+            "supporting_candidate_ids": [second_arm],
+        },
+        "Each selected scientific Arm needs native-PASS support",
+        view,
+    )
+    assert recovery["candidate_order_set_errors"] == {
+        "missing_refs": [order[0]],
+        "unknown_refs": ["foreign"],
+    }
+    assert set(recovery["selected_arms_missing_support"]) == {"arm-1"}
+    assert (
+        recovery["selected_arms_missing_support"]["arm-1"]["allowed_candidate_refs"] == order[:20]
+    )
+
+
+def test_repair_does_not_mislabel_canonical_support_as_missing(tmp_path):
+    measured, arms, packet = capacity_population(tmp_path)
+    recovery = ranking_repair_context(
+        opinion_for_capacity(measured, arms).model_dump(mode="json"),
+        "Another error",
+        ranking_decision_view(packet),
+    )
+    assert "selected_arms_missing_support" not in recovery
+    assert "candidate_order_set_errors" not in recovery

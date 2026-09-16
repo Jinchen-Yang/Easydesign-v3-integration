@@ -116,3 +116,27 @@ Validation records (relative to the authoritative repository):
 - `runtime/tmp/ranking-capacity-legacy-replay-05.json`: independent legacy replay receipt.
 - Earlier failed calls and the interrupted first regression remain preserved; they are not
   counted as successful acceptance. The final full-suite result is recorded below.
+
+### Final regression closure
+
+The frozen `9bf7d341` production code collected 1261 tests. The three disjoint full-suite
+shards reported 1246 passed, 11 skipped, and four failures in the old native-runtime test
+double. All four failures were the assertion that the tool schema was the original Python
+class object, whereas the native wire contract intentionally creates a same-name schema
+with the current population length. They were not failures in the Gate/restart behavior.
+
+Commit `2a67223975d4bee9064bcd3a69cec16038cd38df` changed only this test double and this document.
+The replacement assertions verify tool name, complete field set, required field set and
+forced submission; the original Gate 4, restart, absence-of-Judge/AFO and tamper checks remain.
+All four affected cases then passed in two disjoint rechecks. Exact collected-node coverage
+was reconciled: **1250 passed, 11 skipped, no unresolved failures**. This is the full-suite
+run plus the four corrected test-double rechecks, not a claim that the initial run had no failures.
+No production source changed after the frozen live exam and full-suite run.
+
+Final receipts:
+- `runtime/tmp/ranking-capacity-native-recheck-06-1.json`
+- `runtime/tmp/ranking-capacity-native-recheck-06-2.json`
+- `runtime/tmp/ranking-capacity-final-acceptance-07.json`
+
+All tests in the original collection are accounted for exactly once in the reconciled result.
+Ruff passed again after the test-double change. Earlier failures remain in their original logs.

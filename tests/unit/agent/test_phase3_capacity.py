@@ -444,17 +444,7 @@ def test_projection_preserves_zero_pass_and_incomplete_modes(tmp_path, incomplet
 
 
 def test_native_tool_first_uses_same_deepseek_without_mutating_shared_client():
-    class Copyable:
-        def __init__(self):
-            self.thinking = {"type": "enabled", "budget_tokens": 1024}
-            self.output_config = {"effort": "low"}
-            self.max_tokens = 8192
-            self.model = "deepseek-v4-pro"
-
-        def model_copy(self, update):
-            copied = deepcopy(self)
-            copied.__dict__.update(update)
-            return copied
+    from langchain.chat_models import init_chat_model
 
     config = capacity_config()
     config = config.model_copy(
@@ -468,11 +458,23 @@ def test_native_tool_first_uses_same_deepseek_without_mutating_shared_client():
             )
         }
     )
-    original = Copyable()
+    original = init_chat_model(
+        "deepseek-v4-pro",
+        model_provider="anthropic",
+        api_key="synthetic-test-key",
+        base_url="https://api.deepseek.com/anthropic",
+        thinking={"type": "enabled", "budget_tokens": 1024},
+        output_config={"effort": "low"},
+        max_tokens=8192,
+    )
     selected = ranking_submission_model(original, config)
-    assert selected.model == original.model and selected.max_tokens == 8192
-    assert selected.thinking == {"type": "disabled"} and selected.output_config == {}
+    assert selected.model_name == original.model == "deepseek-v4-pro"
+    assert selected.extra_body == {"thinking": {"type": "disabled"}, "max_tokens": 8192}
+    assert selected.openai_api_base == "https://api.deepseek.com"
+    assert selected.openai_api_key == original.anthropic_api_key
+    assert selected.max_retries == 0
     assert original.thinking["type"] == "enabled" and original.output_config == {"effort": "low"}
+    assert ranking_submission_model(selected, config) is selected
     assert ranking_submission_model(original, capacity_config()) is original
 
 

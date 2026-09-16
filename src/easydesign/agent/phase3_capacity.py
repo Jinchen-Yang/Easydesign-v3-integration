@@ -10,16 +10,29 @@ from .phase3_ranking import METRIC_DIRECTIONS
 from .session_store import compact, identity
 
 VIEW_VERSION = "pilot-ranking-decision-view-v1"
-SUBMISSION_PROTOCOL = "native-ranking-tool-first-v3"
+SUBMISSION_PROTOCOL = "native-ranking-tool-first-v4"
 
 
 def ranking_submission_model(model: Any, config: Any) -> Any:
     """Reserve the fixed output allowance for the actual ranked proposal, on the same model."""
     selected = config.for_role("pilot-diagnosis")
-    if selected.provider == "deepseek" and selected.reasoning_effort != "none":
-        # DeepSeek does not honor the Anthropic thinking budget. A transient client
-        # copy permits forced tool submission without an open-ended thinking stream.
-        return model.model_copy(update={"thinking": {"type": "disabled"}, "output_config": {}})
+    credential = getattr(model, "anthropic_api_key", None)
+    if selected.provider == "deepseek" and credential is not None:
+        # The compatibility endpoint returned empty tool input despite billed output.
+        # Use the provider's native tools transport for this bounded submission only.
+        # Reuse the SDK-held credential; never restore it into environment or evidence.
+        from langchain.chat_models import init_chat_model
+
+        return init_chat_model(
+            selected.model,
+            model_provider="openai",
+            api_key=credential,
+            base_url="https://api.deepseek.com",
+            use_responses_api=False,
+            timeout=selected.timeout_seconds,
+            max_retries=0,
+            extra_body={"thinking": {"type": "disabled"}, "max_tokens": selected.max_output_tokens},
+        )
     return model
 
 

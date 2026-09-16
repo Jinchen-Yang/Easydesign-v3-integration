@@ -19,7 +19,12 @@ class NativeRankingModel(ScriptedModel):
 
     def bind_tools(self, tools, **kwargs):
         assert self.role == "pilot-diagnosis", "No Judge/AFO/upstream model is required"
-        assert tools == [PilotDiagnosisOpinion]
+        assert len(tools) == 1 and tools[0].__name__ == PilotDiagnosisOpinion.__name__
+        assert set(tools[0].model_fields) == set(PilotDiagnosisOpinion.model_fields)
+        assert set(tools[0].model_json_schema()["required"]) == set(
+            PilotDiagnosisOpinion.model_fields
+        )
+        assert kwargs["tool_choice"] == "PilotDiagnosisOpinion"
         return self
 
     def answer(self, messages):

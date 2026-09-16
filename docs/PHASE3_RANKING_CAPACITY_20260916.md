@@ -52,8 +52,9 @@ Phase 4 and Judge do not opt into this repair protocol.
 The real 60-PASS exam exposed a further output bottleneck: the configured DeepSeek thinking
 transport exhausted 8192 tokens before a valid opinion, despite a 54k input. Native ranking
 now uses the same DeepSeek model with non-thinking, forced submission of the one existing
-opinion tool through the native DeepSeek tools endpoint. The compatibility endpoint had
-returned empty tool input despite billing thousands of output tokens. The transient native
+opinion tool through the native DeepSeek tools endpoint. The compatibility transport had
+yielded empty tool input despite billing thousands of output tokens; this identifies the
+failing transport path, not a proven defect in a particular provider or SDK component. The transient native
 client reuses the SDK-held credential without restoring it to environment or audit data. Provider/model, evidence, criteria and token
 limit stay fixed; Phase 2, Phase 4 and other roles retain their clients. The explicit
 `native-ranking-tool-first-v4` protocol participates in cache binding and audit telemetry.
@@ -78,5 +79,40 @@ expanded candidate populations are capacity tests, not new biological results.
   oversized malformed prose and exhausted repair budgets remain rejected.
 - Legacy opinions and real saved NK2R evidence must replay without modifying old records.
 
-Measured results and exact tested commits are recorded in the completion section when
-the frozen implementation finishes its live-model and regression checks.
+## Measured acceptance (frozen code `9bf7d341fb005dd65d2ecbb08270a603b7e1f819`)
+
+All expanded populations below are synthetic engineering cases with realistic saved NK2R
+context. They are not new biological NK2R PASS results.
+
+| Case | Input characters including prompt and schema | Provider output tokens | Result |
+| --- | ---: | --- | --- |
+| 60 PASS, real initial proposal | 53,610 | 2,786 | Required bounded repair |
+| Repair overlong rationale | 63,699 | 120 | Required detail coverage repair |
+| Repair missing candidate details | 63,712 | 930 | PASS: 60 ranked, 3 Arms compared, Scale proposal bound |
+| Inject foreign ID into the successful proposal; real delta repair | 64,676 | 1,193 | PASS in one real repair call |
+| 200 PASS, deterministic packet/schema stress | 99,822 | No model call | PASS under existing 100k guard |
+
+The correct-first-response path also passes the scripted 60-PASS test. The real initial
+proposal needed two bounded repairs; this patch does not claim that the model is flawless
+on its first response. Malformed output remains invalid until all original schema and
+scientific checks pass. Every repair preserves the full proposal in Runtime and publishes
+only a validated merge. Successful durable restart uses no additional model call.
+
+60 PASS has substantial input/output headroom. The 200-PASS stress case is close to the
+100k guard and is not a promise that arbitrary larger backgrounds or populations fit.
+No candidate was dropped to make either case fit.
+
+Saved real NK2R replay preserves the entire serialized candidate/Arm ranking and Scale
+proposal. Comparison uses canonical JSON to normalize Python tuples versus saved JSON arrays.
+The source record remains SHA-256
+`12ba49d7567daaf6d69d912969d52f909fb6642c5e72fce830e583b1f71d2f27`.
+No GPU generation/refold or Scale execution was started.
+
+Validation records (relative to the authoritative repository):
+- `runtime/tmp/ranking-capacity-tests-16.log`: 45 targeted tests; Ruff and mypy (230 source files).
+- `runtime/tmp/ranking-capacity-live-05/real-first-call.json`: complete real call/repair history.
+- `runtime/tmp/ranking-capacity-live-remaining-05/summary.json`: controlled foreign-ID repair,
+  200-PASS construction and saved NK2R replay.
+- `runtime/tmp/ranking-capacity-legacy-replay-05.json`: independent legacy replay receipt.
+- Earlier failed calls and the interrupted first regression remain preserved; they are not
+  counted as successful acceptance. The final full-suite result is recorded below.

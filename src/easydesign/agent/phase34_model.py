@@ -9,7 +9,8 @@ from typing import Any, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from pydantic import BaseModel, ValidationError, create_model
+from pydantic import BaseModel, Field, ValidationError, create_model
+from pydantic_core import PydanticUndefined
 
 from .context_policy import context_usage
 from .contracts import AgentBoundaryError, JudgeFactClaim
@@ -28,6 +29,43 @@ def _patch_schema(schema: type[BaseModel]) -> type[BaseModel]:
         optional.default_factory = None
         fields[name] = (field.annotation, optional)
     return create_model(schema.__name__, __config__=schema.model_config, **fields)
+
+
+def _ranking_schema(schema: type[BaseModel], packet: dict[str, Any]) -> type[BaseModel]:
+    """Explicit native wire contract; persisted opinion and final validators stay unchanged."""
+    fields: dict[str, Any] = {}
+    for name, field in schema.model_fields.items():
+        required = deepcopy(field)
+        required.default = PydanticUndefined
+        required.default_factory = None
+        fields[name] = (field.annotation, required)
+    count = packet["candidate_count"]
+    fields["candidate_order"] = (
+        list[str],
+        Field(
+            description=f"Exactly {count} distinct PASS candidate_id references, strongest first. "
+            "Include every matrix row once; check the count before submission.",
+            min_length=count,
+            max_length=count,
+        ),
+    )
+    fields["candidate_rankings"] = (
+        schema.model_fields["candidate_rankings"].annotation,
+        Field(
+            description="Detailed objects for the top 3 in candidate_order and EVERY ID in "
+            "supporting_candidate_ids, plus material tradeoffs; at most 12 objects. "
+            "Each object needs candidate_id, rationale, risks and metric_refs.",
+            max_length=12,
+        ),
+    )
+    return create_model(
+        schema.__name__,
+        __config__=schema.model_config,
+        __doc__="Submit a complete compact ranked proposal. All fields are required, "
+        "including ranked_arm_ids, arm_recovery and empty arrays when applicable. "
+        "Use short explanations; rationale must be under 450 characters.",
+        **fields,
+    )
 
 
 class StructuredOpinionUnavailable(AgentBoundaryError):
@@ -126,7 +164,10 @@ async def structured_opinion(
             and bool(last_submission)
             and not (set(last_submission) - set(schema.model_fields))
         )
-        wire_schema: type[BaseModel] = _patch_schema(schema) if use_patch else schema
+        full_wire_schema = _ranking_schema(schema, packet) if native_decision else schema
+        wire_schema: type[BaseModel] = (
+            _patch_schema(full_wire_schema) if use_patch else full_wire_schema
+        )
         recovery = (
             {}
             if attempt == 0
@@ -237,7 +278,7 @@ async def structured_opinion(
         if isinstance(submission, dict):
             # A malformed opinion must not hide a readable hard-fact conflict in fallback.
             try:
-                if use_patch:
+                if use_patch or native_decision:
                     wire_schema.model_validate(wire_submission)
                 if role == "judge":
                     warnings = submission.get("warnings", [])

@@ -17,12 +17,14 @@ from easydesign.agent.phase3_capacity import (
     PROVENANCE_FIELDS,
     candidate_reference_map,
     ranking_decision_view,
+    ranking_repair_context,
     ranking_submission_model,
 )
 from easydesign.agent.phase3_native import native_profile, project_native_measurement
 from easydesign.agent.phase3_ranking import METRIC_DIRECTIONS, compact_native_packet
 from easydesign.agent.phase34_model import (
     StructuredOpinionUnavailable,
+    _ranking_schema,
     structured_opinion,
 )
 from easydesign.agent.phase34_opinions import PilotDiagnosisOpinion
@@ -223,7 +225,7 @@ def input_usage(view):
         capacity_config(),
         "pilot-diagnosis",
         [SystemMessage(content=prompt()), HumanMessage(content=compact(view))],
-        len(compact(convert_to_openai_tool(PilotDiagnosisOpinion))),
+        len(compact(convert_to_openai_tool(_ranking_schema(PilotDiagnosisOpinion, view)))),
     )
 
 
@@ -468,3 +470,38 @@ def test_native_tool_first_uses_same_deepseek_without_mutating_shared_client():
     assert selected.thinking == {"type": "disabled"} and selected.output_config == {}
     assert original.thinking["type"] == "enabled" and original.output_config == {"effort": "low"}
     assert ranking_submission_model(original, capacity_config()) is original
+
+
+def test_native_wire_requires_all_fields_and_exact_population_size(tmp_path):
+    measured, arms, packet = capacity_population(tmp_path)
+    raw = opinion_for_capacity(measured, arms).model_dump(mode="json")
+    wire = _ranking_schema(PilotDiagnosisOpinion, ranking_decision_view(packet))
+    assert set(wire.model_json_schema()["required"]) == set(PilotDiagnosisOpinion.model_fields)
+    wire.model_validate(raw)
+    from pydantic import ValidationError
+
+    missing = dict(raw)
+    missing.pop("ranked_arm_ids")
+    with pytest.raises(ValidationError):
+        wire.model_validate(missing)
+    with pytest.raises(ValidationError):
+        wire.model_validate({**raw, "candidate_order": raw["candidate_order"][:-1]})
+    # Persisted legacy opinions still accept their historical defaults.
+    PilotDiagnosisOpinion.model_validate(missing)
+
+
+def test_repair_reports_all_malformed_rows_and_correlated_required_notes():
+    # Regression: real provider returned two malformed detail rows after valid notes.
+    errors = [
+        {"loc": ("candidate_rankings", row, field), "msg": "Field required", "type": "missing"}
+        for row in (5, 6)
+        for field in ("candidate_id", "rationale", "risks", "metric_refs")
+    ]
+    errors.append({"loc": ("key_observations",), "msg": "At most 5 items", "type": "too_long"})
+    recovery = ranking_repair_context(
+        {"candidate_order": ["c1", "c2", "c3"], "supporting_candidate_ids": ["c6"]}, errors
+    )
+    assert recovery["required_detailed_candidate_ids"] == ["c1", "c2", "c3", "c6"]
+    assert len(recovery["errors"]) == 2
+    assert "candidate_rankings.6.metric_refs" in recovery["errors"][0]["fields"]
+    assert recovery["errors"][1]["fields"] == ["key_observations"]

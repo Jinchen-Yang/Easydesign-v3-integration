@@ -10,7 +10,7 @@ from .phase3_ranking import METRIC_DIRECTIONS
 from .session_store import compact, identity
 
 VIEW_VERSION = "pilot-ranking-decision-view-v1"
-SUBMISSION_PROTOCOL = "native-ranking-tool-first-v1"
+SUBMISSION_PROTOCOL = "native-ranking-tool-first-v2"
 
 
 def ranking_submission_model(model: Any, config: Any) -> Any:
@@ -331,10 +331,25 @@ def ranking_repair_context(submission: dict[str, Any], diagnostic: Any) -> dict[
             preview[key] = value
         else:
             retained.append(key)
-    errors = diagnostic[:8] if isinstance(diagnostic, list) else diagnostic
+    errors = diagnostic
+    if isinstance(diagnostic, list) and all(isinstance(e, dict) for e in diagnostic):
+        grouped: dict[str, list[str]] = {}
+        for error in diagnostic:
+            message = str(error.get("msg", error.get("type", "invalid")))
+            grouped.setdefault(message, []).append(".".join(map(str, error.get("loc", []))))
+        errors = [{"message": message, "fields": fields} for message, fields in grouped.items()]
+    # Show correlated note coverage even when a schema error prevents the scientific
+    # binder from running. This is advice only; the complete binder still decides.
+    order, support = submission.get("candidate_order"), submission.get("supporting_candidate_ids")
+    required_notes = []
+    if isinstance(order, list) and isinstance(support, list):
+        required_notes = list(
+            dict.fromkeys(i for i in [*order[:3], *support] if isinstance(i, str))
+        )
     text = compact(errors)
     return {
         "errors": errors if len(text) <= 2500 else text[:2500],
+        "required_detailed_candidate_ids": required_notes[:33],
         "previous_unvalidated_fields": preview,
         "fields_retained_only_in_runtime": retained,
         "instruction": (

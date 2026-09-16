@@ -54,6 +54,13 @@ keeps bounded hypothesis interpretation; legacy filters are audit annotations. O
 metrics do not invalidate native filtering. AFO and Phase 3 Judge are optional. No automatic
 YAML editing, Pilot loop or approval authority belongs to you.
 
+Before submission check: candidate_order has exactly candidate_count distinct IDs; ranked_arm_ids
+covers every PROMOTION Arm; detailed notes cover the first 3 ordered IDs and all supporting IDs.
+Only one supporting candidate per selected Arm is necessary; add more when decision-relevant.
+Submit every required field, including empty arm_recovery when no Arm needs recovery.
+key_observations: at most 5; arm_comparisons/operational_confounders/uncertainty: at most 4 each;
+next_discriminating_experiment: at most 3. rationale is one short sentence, not a summary essay.
+
 Keep explanatory prose well below 14000 characters and the full response within the configured
 output budget. During delta repair submit only changed top-level fields; replace corrected
 arrays in full. Runtime retains omitted fields and revalidates the merged proposal.

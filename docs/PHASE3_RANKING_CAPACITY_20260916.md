@@ -53,8 +53,11 @@ transport exhausted 8192 tokens before a valid opinion, despite a 54k input. Nat
 now uses the same DeepSeek model through a transient non-thinking client copy and forced
 submission of the one existing opinion tool. Provider/model, evidence, criteria and token
 limit stay fixed; Phase 2, Phase 4 and other roles retain their clients. The explicit
-`native-ranking-tool-first-v1` protocol participates in cache binding and audit telemetry.
-The failed exam and interrupted earlier regression remain in the audit records.
+`native-ranking-tool-first-v2` protocol participates in cache binding and audit telemetry.
+The wire schema requires every proposal field explicitly and exactly the current PASS count;
+it does not change the persisted opinion schema. Repair groups errors without dropping later
+malformed rows and reports correlated detail coverage before the full binder can run.
+The failed exams and interrupted earlier regression remain in the audit records.
 
 ## Acceptance scope
 

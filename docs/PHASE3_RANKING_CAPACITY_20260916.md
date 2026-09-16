@@ -48,6 +48,14 @@ the next prompt. The existing initial call plus two repairs, shared call ledger,
 behavior, 100,000-character guard and configured 8192 output-token limit are not increased.
 Phase 4 and Judge do not opt into this repair protocol.
 
+The real 60-PASS exam exposed a further output bottleneck: the configured DeepSeek thinking
+transport exhausted 8192 tokens before a valid opinion, despite a 54k input. Native ranking
+now uses the same DeepSeek model through a transient non-thinking client copy and forced
+submission of the one existing opinion tool. Provider/model, evidence, criteria and token
+limit stay fixed; Phase 2, Phase 4 and other roles retain their clients. The explicit
+`native-ranking-tool-first-v1` protocol participates in cache binding and audit telemetry.
+The failed exam and interrupted earlier regression remain in the audit records.
+
 ## Acceptance scope
 
 Fixtures use realistic seven-scaffold NK2R Design context and varied synthetic measurements;

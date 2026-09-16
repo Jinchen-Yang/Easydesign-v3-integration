@@ -17,6 +17,7 @@ from easydesign.agent.phase3_capacity import (
     PROVENANCE_FIELDS,
     candidate_reference_map,
     ranking_decision_view,
+    ranking_submission_model,
 )
 from easydesign.agent.phase3_native import native_profile, project_native_measurement
 from easydesign.agent.phase3_ranking import METRIC_DIRECTIONS, compact_native_packet
@@ -263,6 +264,7 @@ class CapacityResponses:
     def bind_tools(self, tools, **kwargs):
         self.tools.append(tools[0])
         assert tools[0].__name__ == "PilotDiagnosisOpinion"
+        assert kwargs["tool_choice"] == "PilotDiagnosisOpinion"
         return self
 
     async def ainvoke(self, messages):
@@ -433,3 +435,36 @@ def test_projection_preserves_zero_pass_and_incomplete_modes(tmp_path, incomplet
     assert view["candidates"] == []
     assert view["arms"]["arm-a"]["mode"] == ("OPERATIONAL_INCOMPLETE" if incomplete else "RECOVERY")
     assert view["arms"]["arm-a"]["failure_dossier"] == packet["facts"]["arm-a"]["failure_dossier"]
+
+
+def test_native_tool_first_uses_same_deepseek_without_mutating_shared_client():
+    class Copyable:
+        def __init__(self):
+            self.thinking = {"type": "enabled", "budget_tokens": 1024}
+            self.output_config = {"effort": "low"}
+            self.max_tokens = 8192
+            self.model = "deepseek-v4-pro"
+
+        def model_copy(self, update):
+            copied = deepcopy(self)
+            copied.__dict__.update(update)
+            return copied
+
+    config = capacity_config()
+    config = config.model_copy(
+        update={
+            "default": config.default.model_copy(
+                update={
+                    "provider": "deepseek",
+                    "model": "deepseek-v4-pro",
+                    "reasoning_effort": "low",
+                }
+            )
+        }
+    )
+    original = Copyable()
+    selected = ranking_submission_model(original, config)
+    assert selected.model == original.model and selected.max_tokens == 8192
+    assert selected.thinking == {"type": "disabled"} and selected.output_config == {}
+    assert original.thinking["type"] == "enabled" and original.output_config == {"effort": "low"}
+    assert ranking_submission_model(original, capacity_config()) is original

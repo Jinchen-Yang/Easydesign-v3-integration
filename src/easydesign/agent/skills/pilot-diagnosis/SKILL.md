@@ -17,6 +17,8 @@ candidate_rankings contains detailed notes for the top 3, every supporting_candi
 and material tradeoffs/anomalies, at most 12 notes. Cite supplied metric names in metric_refs.
 Usually one short advantage and risk suffice. Other candidates remain in the full ranking
 and Runtime-rendered leaderboard with exact metrics and provenance; never truncate them.
+Aim for under 180 characters per explanation and under 240 for the overall rationale.
+The tool is the answer: no separate thinking essay or restatement of the input matrix.
 
 Read the decision view's column/inheritance definitions. Background is shared; Arms carry
 deltas; every PASS has a matrix row. Strategy/profile/string-table indices are zero-based

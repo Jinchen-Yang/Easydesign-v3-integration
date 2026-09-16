@@ -86,7 +86,19 @@ async def structured_opinion(
     from openai import InternalServerError as OpenAIServerError
     from openai import RateLimitError as OpenAIRateLimit
 
-    binding = identity({"packet": packet, "role": role, "schema": schema.__name__})
+    from .phase3_capacity import SUBMISSION_PROTOCOL, VIEW_VERSION, ranking_submission_model
+
+    native_decision = (
+        delta_repair and role == "pilot-diagnosis" and packet.get("version") == VIEW_VERSION
+    )
+    binding = identity(
+        {
+            "packet": packet,
+            "role": role,
+            "schema": schema.__name__,
+            **({"submission_protocol": SUBMISSION_PROTOCOL} if native_decision else {}),
+        }
+    )
     previous = [
         e["payload"]
         for e in bridge.store.events(bridge.thread)
@@ -104,6 +116,7 @@ async def structured_opinion(
     retained = [w for p in previous for w in p.get("retained_warnings", [])]
     diagnostic = previous[-1].get("diagnostic") if previous else None
     last_submission = previous[-1].get("submission") if previous else None
+    call_model = ranking_submission_model(model, config) if native_decision else model
     for attempt in range(len(previous), 3):
         use_patch = (
             delta_repair
@@ -164,13 +177,16 @@ async def structured_opinion(
                 "structured_output_tool": schema.__name__,
                 "offered_action_tools": [],
                 "delta_repair": use_patch,
+                "submission_protocol": SUBMISSION_PROTOCOL if native_decision else None,
             },
         )
         start = perf_counter()
         response = None
         category = "NO_SUBMISSION"
         try:
-            response = await model.bind_tools([wire_schema], tool_choice="auto").ainvoke(messages)
+            response = await call_model.bind_tools(
+                [wire_schema], tool_choice=schema.__name__ if native_decision else "auto"
+            ).ainvoke(messages)
         except (
             AnthropicConnectionError,
             AnthropicServerError,
@@ -230,7 +246,7 @@ async def structured_opinion(
                     validate_review_facts(submission, packet.get("facts", {}))
                 opinion = schema.model_validate(submission)
                 if delta_repair and role == "pilot-diagnosis":
-                    from .phase3_capacity import VIEW_VERSION, validate_compact_ranking_output
+                    from .phase3_capacity import validate_compact_ranking_output
 
                     if packet.get("version") == VIEW_VERSION:
                         if packet.get("candidate_count") and not submission.get("candidate_order"):

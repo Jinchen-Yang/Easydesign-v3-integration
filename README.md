@@ -9,8 +9,13 @@ v3 的主要用户智能位于 **EasyDesign 内部**：`easydesign-agent` 直接
 由 Design Scientist 协调独立 specialist，通过 Evidence Judge 和科学审批 Gate 与研究者协作。
 外部 Codex 是开发工具及兼容交互入口，不是 v3 的概念主 runtime。
 
-Phase 1 已冻结；Phase 2 在独立 migration 分支推进 Site/Hotspot 与 Design Specification，
-终点是 Gate 3 approved spec，不启动 pilot。当前能力、安装与配置见
+Phase 1/2 已冻结；默认 `--through design` 的终点仍是 Gate 3 approved spec。
+`--through pilot` 已支持 native Pilot 排名与 Gate 4；`--through handoff` 接入
+Scale 全局候选池、Final Selection、Gate 5 和交付。Phase 3/4 的 AFO 与 Judge
+均为可选补充，真实计算与实验交付仍受相应 Scientist Gate 授权约束。当前验收范围见
+[Phase 3 product closure](docs/PHASE3_PRODUCT_CLOSURE_20260916.md)、
+[Phase 4 product closure](docs/PHASE4_PRODUCT_CLOSURE_20260917.md)
+及 [执行契约](docs/PHASE34_EXECUTION_CONTRACT.md)。安装与配置见
 [模型安装指南](docs/AGENT_PHASE1.md)、[Phase 2 科学操作](docs/V3_PHASE2_SCIENTIFIC_GUIDE.md)
 与 [Phase 2 closure](docs/PHASE2_CLOSURE.md)，科学权限以
 [v3 decision contract](docs/V3_SCIENTIFIC_DECISION_CONTRACT.md)为准。

@@ -57,6 +57,7 @@ where = ["src"]
 easydesign = [
   "agent/skills/*/SKILL.md",
   "agent/skills/*/references/*.md",
+  "agent/skills/shared/*.md",
   "agent/skills/*/assets/*/*.yaml",
   "agent/skills/*/assets/*/*.cif",
   "agent/skills/*/assets/*/*.json",

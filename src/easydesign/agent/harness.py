@@ -185,7 +185,9 @@ def fingerprint(config: ModelConfig) -> str:
             "phase34": {
                 p.name: p.read_text() for p in sorted(Path(__file__).parent.glob("phase3*.py"))
             },
-            "phase4": Path(__file__).with_name("phase4.py").read_text(),
+            "phase4": {
+                p.name: p.read_text() for p in sorted(Path(__file__).parent.glob("phase4*.py"))
+            },
             "cli": Path(__file__).with_name("cli.py").read_text(),
             "versions": {
                 name: metadata.version(name)

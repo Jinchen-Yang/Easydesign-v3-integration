@@ -228,6 +228,25 @@ def final_card(
             "independent_review": review_state,
             "proposed_selection": dossier.proposed_selection.model_dump(mode="json"),
             "filtering_policy": dossier.filtering_policy,
+            **(
+                {
+                    "ranking_review": {
+                        "mode": dossier.ranking_audit["mode"],
+                        "source_candidate_count": len(
+                            dossier.ranking_audit["source_candidate_ids"]
+                        ),
+                        "reviewed_candidate_count": len(
+                            dossier.ranking_audit["reviewed_candidate_ids"]
+                        ),
+                        "final_comparison_count": len(
+                            dossier.ranking_audit["final_comparison_ids"]
+                        ),
+                        "limitation": dossier.ranking_audit["limitation"],
+                    }
+                }
+                if dossier.ranking_audit
+                else {}
+            ),
             "candidate_dossiers": [d.model_dump(mode="json") for d in dossier.candidate_dossiers],
             "test_only_control_flow_fixture": test_only,
             "hard_errors": list(hard_errors),

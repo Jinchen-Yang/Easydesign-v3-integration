@@ -985,6 +985,7 @@ class FinalSelectionInput(FrozenContract):
 class FinalReviewDossier(FrozenContract):
     """Evidence-bound candidate set and proposed panel consumed by the final Judge."""
 
+    ranking_audit: dict[str, Any] | None = None
     selection_revision_id: str | None = Field(default=None, pattern=SHA256_PATTERN)
     schema_version: Literal["0.1"] = "0.1"
     project_id: str = Field(pattern=ID_PATTERN)
@@ -998,6 +999,13 @@ class FinalReviewDossier(FrozenContract):
     filtering_policy: Literal["calibration-pending", "boltzgen-native-profile-v1"] = (
         "calibration-pending"
     )
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_ranking_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if self.ranking_audit is None:
+            result.pop("ranking_audit", None)
+        return result
 
     @model_validator(mode="after")
     def validate_review_set(self) -> Self:
@@ -1020,6 +1028,16 @@ class FinalReviewDossier(FrozenContract):
         )
         if not selected.issubset(candidate_ids):
             raise ValueError("final selection refers to a candidate outside final review")
+        if self.ranking_audit is not None:
+            audit = self.ranking_audit
+            if audit.get("global_pool_sha256") != self.global_pool_sha256:
+                raise ValueError("Ranking audit is bound to a different global pool")
+            for key in ("source_candidate_ids", "reviewed_candidate_ids"):
+                values = audit.get(key, [])
+                if len(values) != len(candidate_ids) or set(values) != set(candidate_ids):
+                    raise ValueError("Ranking audit must cover every review candidate exactly once")
+            if not selected <= set(audit.get("final_comparison_ids", [])):
+                raise ValueError("Selected panel is outside the final scientific comparison")
         return self
 
 

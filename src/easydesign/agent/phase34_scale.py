@@ -77,10 +77,11 @@ def publish_review_inputs(
     strategy_groups = {
         s: arm.arm_id for arm in pilot.diagnosis.design_arms for s in arm.strategy_ids
     }
+    native = pool.campaign.evidence_policy == "boltzgen-native-v1"
     shortlist = build_review_shortlist(
         pool=pool,
-        requested_count=review_count,
-        sequence_cluster_cap=1 if pool.campaign.evidence_policy == "boltzgen-native-v1" else 2,
+        requested_count=len(pool.global_ranking_candidate_ids) if native else review_count,
+        sequence_cluster_cap=None if native else 2,
         strategy_groups=strategy_groups,
     )
     ids = {e.candidate_id for e in shortlist.entries}
@@ -362,17 +363,19 @@ def finalize_scale_inputs(bridge: Any, journal: ScaleBatchStore) -> dict[str, An
             canonical_model_sha256(pilot),
         ),
     )
-    count = min(30, len(pool.global_ranking_candidate_ids))
-    # Declare achievable panel sizes before the model selects; shortlist diversity can reduce it.
-    actual = len(
-        build_review_shortlist(
-            pool=pool,
-            requested_count=count,
-            sequence_cluster_cap=1 if pool.campaign.evidence_policy == "boltzgen-native-v1" else 2,
-            strategy_groups={
-                s: arm.arm_id for arm in pilot.diagnosis.design_arms for s in arm.strategy_ids
-            },
-        ).entries
+    native = pool.campaign.evidence_policy == "boltzgen-native-v1"
+    count = (
+        len(pool.global_ranking_candidate_ids)
+        if native
+        else min(30, len(pool.global_ranking_candidate_ids))
+    )
+    # All native PASS rows are reviewed. Deduplication limits the panel, not evidence visibility.
+    actual = (
+        len({c.lineage.sequence_sha256 for c in pool.candidates if c.competition_eligible})
+        if native
+        else len(
+            build_review_shortlist(pool=pool, requested_count=count, sequence_cluster_cap=2).entries
+        )
     )
     primary = min(6, max(1, actual // 2))
     publish_review_inputs(

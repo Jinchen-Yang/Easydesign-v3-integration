@@ -115,6 +115,7 @@ async def structured_opinion(
     prompt: str,
     validate: Callable[[OpinionT], Any] | None = None,
     delta_repair: bool = False,
+    resume_across_executions: bool = False,
 ) -> OpinionT:
     """One opinion, at most two compact repairs; no action tools or hidden model calls."""
     from anthropic import APIConnectionError as AnthropicConnectionError
@@ -134,6 +135,7 @@ async def structured_opinion(
             "packet": packet,
             "role": role,
             "schema": schema.__name__,
+            **({"prompt_sha256": identity(prompt)} if resume_across_executions else {}),
             **({"submission_protocol": SUBMISSION_PROTOCOL} if native_decision else {}),
         }
     )
@@ -142,7 +144,10 @@ async def structured_opinion(
         for e in bridge.store.events(bridge.thread)
         if e["kind"] == "phase34-model-attempt"
         and e["payload"].get("binding") == binding
-        and e["payload"].get("execution_id") == execution_id
+        and (
+            e["payload"].get("execution_id") == execution_id
+            or (resume_across_executions and e["payload"].get("opinion") is not None)
+        )
     ]
     for attempt in previous:
         if attempt.get("opinion") is not None:
@@ -165,6 +170,15 @@ async def structured_opinion(
             and not (set(last_submission) - set(schema.model_fields))
         )
         full_wire_schema = _ranking_schema(schema, packet) if native_decision else schema
+        native_selection = (
+            delta_repair
+            and role == "final-selection"
+            and packet.get("ranking_protocol") == "native-global-comparison-v1"
+        )
+        if native_selection:
+            from .phase4_ranking import comparison_schema
+
+            full_wire_schema = comparison_schema(schema, packet)
         wire_schema: type[BaseModel] = (
             _patch_schema(full_wire_schema) if use_patch else full_wire_schema
         )
@@ -195,6 +209,15 @@ async def structured_opinion(
             recovery = {
                 "repair": categories[-1],
                 "delta_repair" if use_patch else "compact_recovery": repair_context,
+            }
+        if delta_repair and role == "final-selection" and attempt > 0:
+            recovery = {
+                "repair": categories[-1],
+                "diagnostic": compact(diagnostic)[:1500],
+                "previous_submission_excerpt": compact(last_submission)[:1500],
+                "instruction": "Submit the complete corrected structured output only. "
+                "Allowed IDs and all scientific facts remain in candidate_matrix. "
+                "Keep explanations short; do not repeat facts or add a preamble.",
             }
         messages = [
             SystemMessage(content=prompt),
@@ -280,7 +303,7 @@ async def structured_opinion(
         if isinstance(submission, dict):
             # A malformed opinion must not hide a readable hard-fact conflict in fallback.
             try:
-                if use_patch or native_decision:
+                if use_patch or native_decision or native_selection:
                     wire_schema.model_validate(wire_submission)
                 if role == "judge":
                     warnings = submission.get("warnings", [])

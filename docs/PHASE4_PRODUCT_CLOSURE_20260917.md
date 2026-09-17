@@ -1,5 +1,9 @@
 # Phase 4 product closure — 2026-09-17
 
+Historical flow-closure receipt for `ea8e5b2b`. Its RMSD/Top30 review entry is superseded
+by [global ranking hardening](PHASE4_GLOBAL_RANKING_20260917.md); the acceptance results below
+remain evidence of the original implementation, not of the later ranking patch.
+
 Status: **PHASE 4 V1 PRODUCT FLOW ACCEPTANCE PASS**. Current-mainline precomputed E2E,
 real-model Final Selection and full protected regression pass. No production Scale or
 experimental action has been authorized. This closes the requested engineering scope.

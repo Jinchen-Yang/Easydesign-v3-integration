@@ -63,12 +63,9 @@ def downstream_specialist(
                 from .phase3_capacity import ranking_decision_view
 
                 packet = ranking_decision_view(packet)
-                prompt += (
-                    "\n"
-                    + (
-                        skill_root() / "pilot-diagnosis/references/boltzgen-pilot-ranking.md"
-                    ).read_text()
-                )
+                from .phase4_ranking import shared_ranking_reference
+
+                prompt += "\n" + shared_ranking_reference()
             opinion = await structured_opinion(
                 bridge=bridge,
                 model=model,
@@ -121,17 +118,38 @@ def downstream_specialist(
                     backup_count=inputs.backup_count,
                 )
 
-            selected = await structured_opinion(
-                bridge=bridge,
-                model=model,
-                config=config,
-                execution_id=execution_id,
-                role="final-selection",
-                schema=FinalSelectionOpinion,
-                packet=packet,
-                prompt=(skill_root() / "final-selection/SKILL.md").read_text(),
-                validate=validate_selection,
-            )
+            ranking_audit = None
+            prompt = (skill_root() / "final-selection/SKILL.md").read_text()
+            if pool.campaign.evidence_policy == "boltzgen-native-v1":
+                from .phase4_ranking import select_native_panel
+
+                if set(packet["facts"]) != set(pool.global_ranking_candidate_ids):
+                    raise AgentBoundaryError(
+                        "Native selection input omits eligible candidates; republish current "
+                        "Scale review inputs before scientific comparison"
+                    )
+                selected, ranking_audit = await select_native_panel(
+                    bridge=bridge,
+                    model=model,
+                    config=config,
+                    execution_id=execution_id,
+                    packet=packet,
+                    prompt=prompt,
+                    validate=validate_selection,
+                    still_current=still_current,
+                )
+            else:
+                selected = await structured_opinion(
+                    bridge=bridge,
+                    model=model,
+                    config=config,
+                    execution_id=execution_id,
+                    role="final-selection",
+                    schema=FinalSelectionOpinion,
+                    packet=packet,
+                    prompt=prompt,
+                    validate=validate_selection,
+                )
             proposal = validate_selection(selected)
             still_current()
             final = build_final_review_dossier(
@@ -143,6 +161,12 @@ def downstream_specialist(
                 proposed_selection=proposal,
                 evidence_refs=tuple(packet["evidence_refs"]),
             )
+            if ranking_audit is not None:
+                from .phase34_contracts import FinalReviewDossier
+
+                final = FinalReviewDossier.model_validate(
+                    {**final.model_dump(mode="json"), "ranking_audit": ranking_audit}
+                )
             bridge.publish_contract(
                 kind="phase34-final-review-dossier",
                 contract=final,

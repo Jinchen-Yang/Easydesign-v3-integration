@@ -10,7 +10,7 @@ is a source of standalone downstream contracts, not an alternative Phase 2 runti
 The existing Runtime compiles, dispatches, predicts, measures, persists and recovers.
 The Pilot Ranking & Recovery Specialist interprets the approved arm hypotheses and
 native measurements (the historical internal name remains `pilot-diagnosis`). Final
-Selection proposes a panel from a global shortlist. Phase 3 and Phase 4 Judge are optional
+Selection proposes a panel after capacity-aware scientific comparison of the global population. Phase 3 and Phase 4 Judge are optional
 second opinions. Only a persisted Scientist response chooses
 a consequential Gate route.
 There are no separate generation, prediction, filtering or metrics agents.
@@ -130,17 +130,34 @@ and final scores remain advisory evidence in their legacy path, never a second n
 hard filter. New native Scale ordering uses `bb_rmsd_design`, then `bb_rmsd`, then stable
 candidate identity; it does not use legacy score thresholds.
 
-The bounded shortlist is review priority, not a scientific hard filter. Development
-score is an engineering ordering signal, never biological fitness. Real adapter sequence
-clusters currently identify exact sequence duplicates; pose diversity is unverified and
-must remain an uncertainty. Synthetic 50k clustering tests validate software behavior,
-not protein-family clustering accuracy, biological performance or GPU throughput.
+Native review publishes every eligible source observation, with no fixed Top30 cutoff and
+no RMSD-based admission filter. Exact-sequence duplicates retain their individual poses,
+metrics and provenance through comparison; the final panel selects one representative.
+Runtime's historical engineering order is retained for audit only. Pilot and Final Selection
+load the same `skills/shared/candidate-ranking.md` definitions and comparison principles.
+There is no new weighted score or native eligibility threshold.
 
-Native review retains all source rows in the global pool, deduplicates exact sequences
-in the shortlist and reserves available cross-Arm review visibility before filling by
-global rank. It imposes no per-batch winners or final per-Arm quota. The shortlist is
-bounded to 30; full facts/provenance remain in Runtime while the Specialist receives
-shared profile/context and compact candidate metrics with stable dossier references.
+Final Selection receives a losslessly dictionary-encoded decision matrix. Capacity planning
+includes prompt/schema, a bounded repair reserve, output-ID volume and the provider context
+limit. If the complete population fits, one scientific comparison proposes the panel. Only
+oversized populations enter deterministic hash-mixed groups independent of source batches.
+Each group receives the same science reference, ranks every supplied ID, and advances leaders
+plus explicit material tradeoffs. Subsequent rounds compare survivors across groups until a
+final comparison fits. The model chooses survivors; Runtime validates membership and counts.
+
+Every source candidate must be covered by a successful scientific comparison before Gate 5.
+The evidence-bound ranking audit records all groups, complete local orders, advancing IDs,
+tradeoff IDs, rationales, final comparison membership and reference identity. Gate 5 displays
+coverage and whether comparison was direct or hierarchical. Hierarchy is explicitly an
+approximation: early exclusions are not proof of biological inferiority or equivalence to
+an exhaustive global ranking. Completed opinions survive restart under identical evidence,
+configuration, prompt and implementation identities; stale inputs invalidate reuse. All calls
+and repairs use the existing persisted execution budget. Insufficient capacity or exhausted
+budget is an operational stop, never a silent truncation or a claimed complete panel.
+
+Real adapter sequence groups identify exact duplicates; pose diversity is unverified and
+must remain an uncertainty. Synthetic stress validates software behavior, not clustering
+accuracy, biological performance or GPU throughput. No per-batch winner quota is imposed.
 
 Final Selection receives candidate metrics, sequence, provenance, risk, uncertainty,
 strategy/diversity context and requested primary/backup counts. Runtime rejects unknown,

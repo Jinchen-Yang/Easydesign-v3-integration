@@ -53,6 +53,7 @@ def pilot_card(
     review: DownstreamJudgeOpinion | DownstreamReviewFailure | None = None,
     *,
     hard_errors: tuple[str, ...] = (),
+    validation_only: bool = False,
 ) -> DecisionCard:
     binding = canonical_model_sha256(dossier)
     warnings: list[str]
@@ -64,7 +65,9 @@ def pilot_card(
             review, binding, "pilot-promotion"
         )
     proposal = dossier.proposed_interpretation
-    test_only = isinstance(dossier.execution_authority, ValidationExecutionAuthority)
+    test_only = validation_only or isinstance(
+        dossier.execution_authority, ValidationExecutionAuthority
+    )
     promote = proposal.outcome == "PROMOTE_TO_SCALE" and not hard_errors
     descriptions = {
         "PROMOTE_TO_SCALE": "Scale the exact reviewed strategies and allocation.",
@@ -91,6 +94,7 @@ def pilot_card(
                 "dossier": binding,
                 "review": review.model_dump(mode="json") if review else None,
                 "hard": hard_errors,
+                **({"validation_only": True} if validation_only else {}),
             }
         ),
         assessment_id=assessment,
@@ -130,7 +134,15 @@ def pilot_card(
             ),
             "scale_execution_intent": {
                 "strategy_allocations": proposal.production_strategy_allocations,
-                "all_candidates_independently_predicted": True,
+                **(
+                    {
+                        "all_candidates_independently_predicted": False,
+                        "independent_prediction": "optional-enrichment",
+                        "scale_evidence_policy": "boltzgen-native-v1",
+                    }
+                    if dossier.measurement.native_evidence is not None
+                    else {"all_candidates_independently_predicted": True}
+                ),
                 "inherits_approved_design_and_pilot_backend_policy": True,
                 "authorizes_production_compute_on_approve": bool(promote and not test_only),
             },
@@ -145,12 +157,19 @@ def pilot_card(
 
 def final_card(
     dossier: FinalReviewDossier,
-    review: DownstreamJudgeOpinion | DownstreamReviewFailure,
+    review: DownstreamJudgeOpinion | DownstreamReviewFailure | None = None,
     *,
     hard_errors: tuple[str, ...] = (),
 ) -> DecisionCard:
     binding = canonical_model_sha256(dossier)
-    assessment, review_state, warnings, limitations = _review(review, binding, "wet-lab-handoff")
+    warnings: list[str]
+    if review is None:
+        assessment, review_state = None, {"availability": "not-requested", "optional": True}
+        warnings, limitations = [], ["Optional independent second opinion was not requested."]
+    else:
+        assessment, review_state, warnings, limitations = _review(
+            review, binding, "wet-lab-handoff"
+        )
     test_only = all(
         d.scientific_claim_scope == "development-evidence-only" for d in dossier.candidate_dossiers
     )
@@ -164,7 +183,11 @@ def final_card(
         gate_type="wet-lab-handoff",
         owner_specialist="final-selection",
         card_id=identity(
-            {"dossier": binding, "review": review.model_dump(mode="json"), "hard": hard_errors}
+            {
+                "dossier": binding,
+                "review": review.model_dump(mode="json") if review else None,
+                "hard": hard_errors,
+            }
         ),
         assessment_id=assessment,
         project_id=dossier.project_id,
@@ -204,6 +227,7 @@ def final_card(
         scientific_summary={
             "independent_review": review_state,
             "proposed_selection": dossier.proposed_selection.model_dump(mode="json"),
+            "filtering_policy": dossier.filtering_policy,
             "candidate_dossiers": [d.model_dump(mode="json") for d in dossier.candidate_dossiers],
             "test_only_control_flow_fixture": test_only,
             "hard_errors": list(hard_errors),

@@ -283,6 +283,9 @@ class Phase34Runtime(Phase34Bridge):
         ] != canonical_model_sha256(pilot):
             return None
         invalid = self.project_latest("phase34-selection-invalidated")
+        from .phase4_native import verify_native_dossiers
+
+        verify_native_dossiers(self, dossier.candidate_dossiers)
         return None if invalid and invalid["seq"] > event["seq"] else dossier
 
     @authority_read
@@ -599,13 +602,7 @@ class Phase34Runtime(Phase34Bridge):
                     "request_downstream_decision",
                     {"card_id": card.card_id},
                 )
-            return _task(
-                "final-review",
-                canonical_model_sha256(final),
-                "evidence-judge",
-                "Critique the proposed final panel's risk, diversity "
-                "and unsupported claims without reranking it.",
-            )
+            return RuntimeAction("final-card", canonical_model_sha256(final), "advance_downstream")
         shortlist = self.project_latest("phase34-review-shortlist")
         pool = self.project_latest("phase34-global-candidate-pool")
         authority = self.project_latest("phase34-scale-authority")
@@ -643,10 +640,13 @@ class Phase34Runtime(Phase34Bridge):
 
             if inconclusive["worker_state"] == scale_worker_state(self):
                 return RuntimeAction(
-                    "scale-operationally-inconclusive",
+                    inconclusive.get("status", "scale-operationally-inconclusive"),
                     manifest["contract_sha256"],
-                    message="No evaluable Scale candidates. Retain the failed batches and resume "
-                    "their original jobs; no biological conclusion or handoff is authorized.",
+                    message=inconclusive.get(
+                        "message",
+                        "Scale is incomplete or has no eligible candidates; "
+                        "no final handoff is authorized.",
+                    ),
                 )
         if (
             execution
@@ -750,6 +750,9 @@ class Phase34Runtime(Phase34Bridge):
         ids = tuple(e.candidate_id for e in shortlist.entries)
         if ids != tuple(d.candidate.lineage.candidate_id for d in inputs.candidate_dossiers):
             raise AgentBoundaryError("Final input does not cover the current shortlist")
+        from .phase4_native import verify_native_dossiers
+
+        verify_native_dossiers(self, inputs.candidate_dossiers)
         pilot = self.current_pilot_dossier()
         authority = self.project_latest("phase34-scale-authority")
         if (
@@ -812,7 +815,9 @@ class Phase34Runtime(Phase34Bridge):
                     proposal=dossier.proposed_interpretation.model_dump(mode="json"),
                     dossier_sha256=canonical_model_sha256(dossier),
                 )
-        elif role == "final-selection" or (role == "judge" and action.stage == "final-review"):
+        elif role == "final-selection" or (
+            role == "judge" and action.stage in {"final-review", "scientist-gate5"}
+        ):
             pool, shortlist, inputs = self.selection_inputs()
             packet = selection_working_set(
                 inputs.candidate_dossiers,
@@ -821,6 +826,36 @@ class Phase34Runtime(Phase34Bridge):
             )
             pilot = self.current_pilot_dossier()
             assert pilot is not None
+            if pool.campaign.evidence_policy == "boltzgen-native-v1":
+                approved_allocations = (
+                    pool.campaign.promotion_authority.production_strategy_allocations
+                )
+                packet["campaign_summary"] = {
+                    "execution_mode": pool.campaign.execution.mode.value,
+                    "approved_allocations": approved_allocations,
+                    "validation_or_execution_allocations": pool.campaign.strategy_allocations,
+                    "observed": len(pool.candidates),
+                    "native_pass": len(pool.global_ranking_candidate_ids),
+                    "native_fail": sum(
+                        c.native_evidence is not None and c.native_evidence.native_pass is False
+                        for c in pool.candidates
+                    ),
+                    "failed_batches": pool.failed_batch_ids,
+                    "resumable_batches": pool.resumable_batch_ids,
+                }
+                packet["arm_context"] = {
+                    arm.arm_id: {
+                        "strategy_ids": arm.strategy_ids,
+                        "hypothesis": arm.hypothesis,
+                        "changed_factors": arm.changed_factors,
+                        "held_constant": arm.held_constant,
+                        "scaffolds": {
+                            s.get("strategy_id"): s.get("scaffold_id")
+                            for s in arm.compiled_settings
+                        },
+                    }
+                    for arm in pilot.diagnosis.design_arms
+                }
             packet.update(
                 run_id=pool.campaign.campaign_id,
                 gate_type="wet-lab-handoff",
@@ -875,6 +910,15 @@ class Phase34Runtime(Phase34Bridge):
             from .phase34_measurement import evaluate_pilot
 
             return evaluate_pilot(self)
+        if action.stage == "final-card":
+            from .phase34_cards import final_card
+
+            final = self.current_final_dossier()
+            if final is None:
+                raise AgentBoundaryError("Final evidence changed before Gate 5 publication")
+            card = final_card(final)
+            self.publish_gate_card(card=card, evidence_contract=final)
+            return {"status": "scientist-review-ready", "card_id": card.card_id}
         from .phase34_scale import advance_scale
 
         return advance_scale(self)

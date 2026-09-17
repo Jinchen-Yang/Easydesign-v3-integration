@@ -18,7 +18,11 @@ from easydesign.core import ArtifactRef, canonical_model_sha256
 from easydesign.core.artifacts import ID_PATTERN, SHA256_PATTERN
 from easydesign.stages.s04_pilot_generation import CandidateRecord
 
-from .phase3_native_contracts import NativePilotEvidence
+from .phase3_native_contracts import (
+    NativeCandidateEvidence,
+    NativeFilterProfile,
+    NativePilotEvidence,
+)
 from .phase34_plan import (
     ApprovedGate3Context,
     BoundPilotPlan,
@@ -577,6 +581,15 @@ class Gate4PromotionAuthority(FrozenContract):
     """Exact Gate 4 authority consumed by one Scale campaign."""
 
     authority_id: str = Field(pattern=ID_PATTERN)
+    evidence_policy: Literal["legacy-independent", "boltzgen-native-v1"] = "legacy-independent"
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if self.evidence_policy == "legacy-independent":
+            result.pop("evidence_policy", None)
+        return result
+
     gate4_card_id: str = Field(pattern=SHA256_PATTERN)
     pilot_dossier_sha256: str = Field(pattern=SHA256_PATTERN)
     selected_strategy_ids: tuple[str, ...] = Field(min_length=1)
@@ -616,9 +629,19 @@ class ScaleCampaignSpecification(FrozenContract):
     generation_backend: str = Field(min_length=1, max_length=128)
     prediction_backend: str = Field(min_length=1, max_length=128)
     allocation_policy: str = Field(min_length=1, max_length=128)
+    evidence_policy: Literal["legacy-independent", "boltzgen-native-v1"] = "legacy-independent"
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if self.evidence_policy == "legacy-independent":
+            result.pop("evidence_policy", None)
+        return result
 
     @model_validator(mode="after")
     def validate_campaign(self) -> Self:
+        if self.evidence_policy != self.promotion_authority.evidence_policy:
+            raise ValueError("Scale evidence policy differs from its Gate 4 authority")
         if self.execution.requested_production_candidates != (
             self.promotion_authority.requested_scale_candidates
         ):
@@ -700,12 +723,51 @@ class ScaleCandidateObservation(FrozenContract):
     failure_reason: str | None = Field(default=None, max_length=2048)
     diversity: DiversityContext = DiversityContext()
     evaluation_level: Literal["refold", "deep", "multi-seed", "unavailable"] = "unavailable"
+    native_evidence: NativeCandidateEvidence | None = None
+    native_profile: NativeFilterProfile | None = None
+    independent_prediction_status: Literal[
+        "legacy-unspecified", "not-requested", "available", "unavailable"
+    ] = "legacy-unspecified"
     ranking_semantics: Literal["development-ordering-not-biological-fitness"] = (
         "development-ordering-not-biological-fitness"
     )
 
+    @property
+    def competition_eligible(self) -> bool:
+        return self.validity is ScaleCandidateValidity.VALID_EVALUATED and (
+            self.native_evidence is None or self.native_evidence.native_pass is True
+        )
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_identity(self, handler: Any) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        for name in ("native_evidence", "native_profile"):
+            if getattr(self, name) is None:
+                result.pop(name, None)
+        if self.independent_prediction_status == "legacy-unspecified":
+            result.pop("independent_prediction_status", None)
+        return result
+
     @model_validator(mode="after")
     def validate_rankability(self) -> Self:
+        if (self.native_evidence is None) != (self.native_profile is None):
+            raise ValueError("Native Scale evidence requires its exact source profile")
+        if self.native_evidence is not None:
+            assert self.native_profile is not None
+            NativePilotEvidence(
+                profiles={canonical_model_sha256(self.native_profile): self.native_profile},
+                candidates=(self.native_evidence,),
+            )
+            sequence = self.native_evidence.metrics.get("designed_chain_sequence")
+            if not isinstance(sequence, str) or hashlib.sha256(sequence.encode()).hexdigest() != (
+                self.lineage.sequence_sha256
+            ):
+                raise ValueError("Native Scale sequence differs from its candidate lineage")
+            evaluated = self.native_evidence.native_pass is not None
+            if evaluated != (self.validity is ScaleCandidateValidity.VALID_EVALUATED):
+                raise ValueError("Native completeness must determine evaluability, not AFO")
+        if self.global_development_rank is not None and not self.competition_eligible:
+            raise ValueError("Only eligible candidates can have a competition rank")
         rankable = self.validity is ScaleCandidateValidity.VALID_EVALUATED
         if rankable and (self.development_score is None or self.failure_reason is not None):
             raise ValueError("valid evaluated candidates need a score and no failure reason")
@@ -762,6 +824,11 @@ class GlobalCandidatePool(FrozenContract):
             strategy_id: 0 for strategy_id in self.campaign.strategy_allocations
         }
         for candidate in self.candidates:
+            if (
+                self.campaign.evidence_policy == "boltzgen-native-v1"
+                and candidate.native_evidence is None
+            ):
+                raise ValueError("Native Scale campaign cannot substitute legacy eligibility")
             if candidate.lineage.campaign_id != self.campaign.campaign_id:
                 raise ValueError("Scale candidate belongs to a different campaign")
             if candidate.lineage.batch_id not in declared_batches:
@@ -781,11 +848,7 @@ class GlobalCandidatePool(FrozenContract):
             len(self.candidates) != self.campaign.execution.execution_candidates
         ):
             raise ValueError("a complete Scale campaign must retain every allocated candidate")
-        ranked = [
-            item
-            for item in self.candidates
-            if item.validity is ScaleCandidateValidity.VALID_EVALUATED
-        ]
+        ranked = [item for item in self.candidates if item.competition_eligible]
         ranked.sort(key=lambda item: item.global_development_rank or 0)
         if [item.global_development_rank for item in ranked] != list(range(1, len(ranked) + 1)):
             raise ValueError("global Scale ranks must be contiguous")
@@ -859,7 +922,7 @@ class FinalCandidateDossier(FrozenContract):
         sequence_sha256 = hashlib.sha256(self.sequence.encode()).hexdigest()
         if sequence_sha256 != self.candidate.lineage.sequence_sha256:
             raise ValueError("candidate dossier sequence does not match its lineage hash")
-        if self.candidate.validity is not ScaleCandidateValidity.VALID_EVALUATED:
+        if not self.candidate.competition_eligible:
             raise ValueError("only valid evaluated candidates can enter final review")
         if self.candidate.global_development_rank is None:
             raise ValueError("final review candidate lacks a global development rank")
@@ -932,7 +995,9 @@ class FinalReviewDossier(FrozenContract):
     proposed_selection: FinalSelectionProposal
     evidence_refs: tuple[str, ...] = Field(min_length=1)
     full_ranked_pool_preserved: Literal[True] = True
-    filtering_policy: Literal["calibration-pending"] = "calibration-pending"
+    filtering_policy: Literal["calibration-pending", "boltzgen-native-profile-v1"] = (
+        "calibration-pending"
+    )
 
     @model_validator(mode="after")
     def validate_review_set(self) -> Self:

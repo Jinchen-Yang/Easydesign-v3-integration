@@ -121,7 +121,10 @@ class Phase34Bridge(DesignBridge):
         requested_scale_candidates = dossier.proposed_interpretation.requested_scale_candidates
         if requested_scale_candidates is None:
             raise AgentBoundaryError("Reviewed Gate 4 promotion has no Scale production intent")
-        test_only = isinstance(dossier.execution_authority, ValidationExecutionAuthority)
+        test_only = (
+            isinstance(dossier.execution_authority, ValidationExecutionAuthority)
+            or card.scientific_summary.get("test_only_control_flow_fixture") is True
+        )
         scale_intent = card.scientific_summary.get("scale_execution_intent")
         compute_authorized = isinstance(scale_intent, dict) and scale_intent == {
             "strategy_allocations": dossier.proposed_interpretation.production_strategy_allocations,
@@ -129,7 +132,16 @@ class Phase34Bridge(DesignBridge):
             "inherits_approved_design_and_pilot_backend_policy": True,
             "authorizes_production_compute_on_approve": True,
         }
+        native_intent = isinstance(scale_intent, dict) and scale_intent == {
+            "strategy_allocations": dossier.proposed_interpretation.production_strategy_allocations,
+            "all_candidates_independently_predicted": False,
+            "independent_prediction": "optional-enrichment",
+            "scale_evidence_policy": "boltzgen-native-v1",
+            "inherits_approved_design_and_pilot_backend_policy": True,
+            "authorizes_production_compute_on_approve": not test_only,
+        }
         return Gate4PromotionAuthority(
+            evidence_policy="boltzgen-native-v1" if native_intent else "legacy-independent",
             authority_id=identity(
                 {
                     "card": card.card_id,
@@ -147,7 +159,7 @@ class Phase34Bridge(DesignBridge):
             authority_scope=("test-only-control-flow" if test_only else "scientist-approved"),
             human_actor=outcome.human_actor,
             authorizes_scientific_scale=not test_only,
-            authorizes_production_compute=not test_only and compute_authorized,
+            authorizes_production_compute=not test_only and (compute_authorized or native_intent),
         )
 
     def gate4_route(self, card: DecisionCard) -> str:

@@ -280,6 +280,11 @@ async def test_actual_gate4_resume_final_specialist_gate5_revision_and_validatio
     result = await run_session(bridge, scripted_config(), models, goal)
     assert result["card"]["gate_type"] == "wet-lab-handoff", result
     card5 = bridge.downstream_card()
+    assert card5.scientific_summary["independent_review"]["availability"] == "not-requested"
+    assert not any(
+        e["kind"] == "model-call" and e["payload"]["role"] == "judge"
+        for e in bridge.store.events(bridge.thread)
+    )
     revised = await run_session(
         bridge,
         scripted_config(),
@@ -405,3 +410,26 @@ async def test_native_stale_interrupt_retires_without_approval_after_new_measure
     assert resumed["card"]["card_id"] != old_card
     assert bridge.store.response(bridge.thread, old_card) is None
     assert bridge.project_latest("phase34-scale-authority") is None
+
+
+@pytest.mark.asyncio
+async def test_final_dossier_without_card_recovers_without_judge():
+    from types import SimpleNamespace
+
+    from easydesign.agent.phase34_cards import final_card
+    from tests.unit.agent.test_phase4_pool import _final_review
+
+    dossier = _final_review()[-1]
+    published = []
+    bridge = SimpleNamespace(
+        current_final_dossier=lambda: dossier,
+        project_latest=lambda _: None,
+        downstream_card=lambda: None,
+        publish_gate_card=lambda **kwargs: published.append(kwargs),
+    )
+    bridge.next_downstream_action = lambda: Phase34Runtime.next_scale_action(bridge)
+    action = bridge.next_downstream_action()
+    assert action.stage == "final-card" and action.tool == "advance_downstream"
+    result = await Phase34Runtime.advance(bridge)
+    assert result["card_id"] == final_card(dossier).card_id
+    assert published[0]["card"].assessment_id is None

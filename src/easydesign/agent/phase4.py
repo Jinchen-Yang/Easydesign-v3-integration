@@ -219,6 +219,18 @@ def project_scale_observations(
     return tuple(observations)
 
 
+def native_ordering_key(candidate: ScaleCandidateObservation) -> tuple[float, float, str]:
+    """Refold consistency orders review effort; missing metrics sort last, never fail."""
+    evidence = candidate.native_evidence
+    assert evidence is not None
+
+    def numeric(name: str) -> float:
+        value = evidence.metrics.get(name)
+        return float(value) if isinstance(value, (int, float)) else float("inf")
+
+    return numeric("bb_rmsd_design"), numeric("bb_rmsd"), candidate.lineage.candidate_id
+
+
 def build_global_candidate_pool(
     *,
     campaign: ScaleCampaignSpecification,
@@ -236,10 +248,15 @@ def build_global_candidate_pool(
         raise AgentBoundaryError("Scale candidate belongs to a different campaign")
     if any(item.global_development_rank is not None for item in candidates):
         raise AgentBoundaryError("Input candidates must not supply their own global rank")
-    rankable = sorted(
-        (item for item in candidates if item.validity is ScaleCandidateValidity.VALID_EVALUATED),
-        key=lambda item: (-(item.development_score or 0.0), item.lineage.candidate_id),
-    )
+    eligible = [item for item in candidates if item.competition_eligible]
+    if campaign.evidence_policy == "boltzgen-native-v1":
+        if any(item.native_evidence is None for item in candidates):
+            raise AgentBoundaryError("Native Scale campaign requires native evidence for every row")
+        rankable = sorted(eligible, key=native_ordering_key)
+    else:
+        rankable = sorted(
+            eligible, key=lambda item: (-(item.development_score or 0.0), item.lineage.candidate_id)
+        )
     rank_by_id = {item.lineage.candidate_id: rank for rank, item in enumerate(rankable, 1)}
     hydrated = tuple(
         item.model_copy(
@@ -267,13 +284,36 @@ def build_review_shortlist(
     pool: GlobalCandidatePool,
     requested_count: int,
     sequence_cluster_cap: int | None = None,
+    strategy_groups: dict[str, str] | None = None,
 ) -> ReviewShortlist:
     """Prioritize global candidates for review while preserving the complete pool."""
 
     by_id = {item.lineage.candidate_id: item for item in pool.candidates}
     selected: list[ReviewShortlistEntry] = []
     cluster_counts: Counter[str] = Counter()
-    for candidate_id in pool.global_ranking_candidate_ids:
+    review_order = list(pool.global_ranking_candidate_ids)
+    arm_representatives: set[str] = set()
+    if pool.campaign.evidence_policy == "boltzgen-native-v1" and strategy_groups:
+        # Reserve review visibility for available Arms before filling by global rank.
+        # This is shortlist coverage, not a per-Arm final selection quota.
+        representatives: dict[str, str] = {}
+        representative_clusters: Counter[str] = Counter()
+        for cid in review_order:
+            candidate = by_id[cid]
+            group = strategy_groups.get(candidate.lineage.strategy_id)
+            cluster = candidate.diversity.sequence_cluster_id or cid
+            if group is None or group in representatives:
+                continue
+            if sequence_cluster_cap is not None and (
+                representative_clusters[cluster] >= sequence_cluster_cap
+            ):
+                continue
+            representatives[group] = cid
+            representative_clusters[cluster] += 1
+        first = list(representatives.values())
+        arm_representatives = set(first)
+        review_order = first + [cid for cid in review_order if cid not in arm_representatives]
+    for candidate_id in review_order:
         candidate = by_id[candidate_id]
         rank = candidate.global_development_rank
         if rank is None:
@@ -291,7 +331,11 @@ def build_review_shortlist(
                 global_development_rank=rank,
                 review_role=role,
                 reason=(
-                    "Highest remaining development rank within the advisory sequence-cluster cap."
+                    "Best available nonduplicate representative for Arm review coverage; "
+                    "global engineering rank is retained, with no final panel quota."
+                    if candidate_id in arm_representatives
+                    else "Highest remaining development rank within the advisory "
+                    "sequence-cluster cap."
                     if sequence_cluster_cap is not None
                     else "Selected by deterministic global development ordering."
                 ),
@@ -383,6 +427,9 @@ def build_final_review_dossier(
     if observed_ids != expected_ids:
         raise AgentBoundaryError("final review dossiers must preserve shortlist order and coverage")
     return FinalReviewDossier(
+        filtering_policy="boltzgen-native-profile-v1"
+        if pool.campaign.evidence_policy == "boltzgen-native-v1"
+        else "calibration-pending",
         selection_revision_id=selection_revision_id,
         project_id=project_id,
         campaign_id=pool.campaign.campaign_id,

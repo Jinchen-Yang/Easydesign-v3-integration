@@ -64,8 +64,24 @@ def publish_review_inputs(
         raise AgentBoundaryError(
             "Scale scientific context differs from the approved upstream facts"
         )
+    if pool.campaign.evidence_policy == "boltzgen-native-v1" and (
+        pool.failed_batch_ids
+        or pool.resumable_batch_ids
+        or len(pool.completed_batch_ids) != pool.planned_batches
+        or any(
+            c.native_evidence is None or c.native_evidence.native_pass is None
+            for c in pool.candidates
+        )
+    ):
+        raise AgentBoundaryError("Incomplete native Scale campaign cannot publish a final panel")
+    strategy_groups = {
+        s: arm.arm_id for arm in pilot.diagnosis.design_arms for s in arm.strategy_ids
+    }
     shortlist = build_review_shortlist(
-        pool=pool, requested_count=review_count, sequence_cluster_cap=2
+        pool=pool,
+        requested_count=review_count,
+        sequence_cluster_cap=1 if pool.campaign.evidence_policy == "boltzgen-native-v1" else 2,
+        strategy_groups=strategy_groups,
     )
     ids = {e.candidate_id for e in shortlist.entries}
     if not ids:
@@ -135,6 +151,12 @@ def advance_scale(bridge: Any) -> dict[str, Any]:
             and execution["status"] not in {*ACTIVE_JOB_STATUSES, "succeeded"}
         ):
             continue
+        if (
+            receipt
+            and receipt.state == "failed"
+            and (f"incomplete-native-worker:{execution.get('job_id')}" in receipt.source_refs)
+        ):
+            continue
         bridge.store.event(bridge.thread, "phase34-scale-execution", execution)
         if execution["status"] == "succeeded":
             return measure_batch(bridge, journal, batch, execution)
@@ -174,6 +196,8 @@ def register_scale_campaign(
         or authority.pilot_dossier_sha256 != canonical_model_sha256(pilot)
     ):
         raise AgentBoundaryError("Scale campaign differs from the current Gate 4 authority")
+    if campaign.evidence_policy != authority.evidence_policy:
+        raise AgentBoundaryError("Scale evidence policy differs from the reviewed Gate 4 intent")
     plan = bridge.pilot_authority().pilot_plan
     if (
         campaign.execution.uses_real_generation_backend
@@ -241,13 +265,14 @@ def current_batch_store(bridge: Any) -> ScaleBatchStore:
                 requested_production_candidates=authority.requested_scale_candidates,
                 execution_candidates=authority.requested_scale_candidates,
                 uses_real_generation_backend=True,
-                uses_real_prediction_backend=True,
+                uses_real_prediction_backend=authority.evidence_policy == "legacy-independent",
                 purpose="Exact Scientist Gate 4 approved Scale allocation; global competition.",
             ),
             strategy_allocations=authority.production_strategy_allocations,
             generation_backend="boltzgen-0.3.2",
             prediction_backend=plan.prediction_backend,
             allocation_policy="exact-scientist-approved-strategy-counts",
+            evidence_policy=authority.evidence_policy,
         ),
     )
 
@@ -256,7 +281,27 @@ def finalize_scale_inputs(bridge: Any, journal: ScaleBatchStore) -> dict[str, An
     pool = journal.pool()
     if pool.resumable_batch_ids:
         return {"status": "scale-awaiting-batches", "batch_ids": pool.resumable_batch_ids}
-    if not pool.global_ranking_candidate_ids:
+    incomplete_native = pool.campaign.evidence_policy == "boltzgen-native-v1" and (
+        bool(pool.failed_batch_ids)
+        or any(
+            c.native_evidence is None or c.native_evidence.native_pass is None
+            for c in pool.candidates
+        )
+    )
+    if not pool.global_ranking_candidate_ids or incomplete_native:
+        complete_zero_pass = (
+            pool.campaign.evidence_policy == "boltzgen-native-v1" and not incomplete_native
+        )
+        status = (
+            "scale-no-native-pass" if complete_zero_pass else "scale-operationally-inconclusive"
+        )
+        message = (
+            "The complete native campaign contains no PASS candidates. Preserve all FAIL "
+            "evidence for Scientist review; no panel or automatic retry is authorized."
+            if complete_zero_pass
+            else "The campaign is incomplete or has no evaluable candidates. Recover missing "
+            "evidence without interpreting operational failure as scientific FAIL."
+        )
         bridge.store.event(
             bridge.thread,
             "phase34-scale-inconclusive",
@@ -264,12 +309,15 @@ def finalize_scale_inputs(bridge: Any, journal: ScaleBatchStore) -> dict[str, An
                 "manifest": journal.digest,
                 "worker_state": scale_worker_state(bridge),
                 "failed_batch_ids": pool.failed_batch_ids,
+                "incomplete_native_campaign": incomplete_native,
+                "status": status,
+                "message": message,
             },
         )
         return {
-            "status": "scale-operationally-inconclusive",
+            "status": status,
             "failed_batches": pool.failed_batch_ids,
-            "message": "No evaluable global candidates; no biological conclusion or handoff.",
+            "message": message,
         }
     sequences, provenance = {}, {}
     rows = bridge.store.db.execute(
@@ -317,7 +365,14 @@ def finalize_scale_inputs(bridge: Any, journal: ScaleBatchStore) -> dict[str, An
     count = min(30, len(pool.global_ranking_candidate_ids))
     # Declare achievable panel sizes before the model selects; shortlist diversity can reduce it.
     actual = len(
-        build_review_shortlist(pool=pool, requested_count=count, sequence_cluster_cap=2).entries
+        build_review_shortlist(
+            pool=pool,
+            requested_count=count,
+            sequence_cluster_cap=1 if pool.campaign.evidence_policy == "boltzgen-native-v1" else 2,
+            strategy_groups={
+                s: arm.arm_id for arm in pilot.diagnosis.design_arms for s in arm.strategy_ids
+            },
+        ).entries
     )
     primary = min(6, max(1, actual // 2))
     publish_review_inputs(

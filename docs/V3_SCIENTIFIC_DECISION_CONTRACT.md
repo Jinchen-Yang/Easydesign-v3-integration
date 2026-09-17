@@ -67,7 +67,7 @@ policy 可以不同；不能因此创建五套 workflow、scheduler 或独立 re
 | 2 · `site-hotspot` | 我们到底要打哪里？Site / Hotspot Approval | 当前 site 与 hotspot residues / region | Structure Decision → Site Intelligence → Hotspot Selection → Gate 2 → Design Specification；owner 为 Site & Mechanism / Hotspot reasoning |
 | 3 · `design-specification` | 我们具体准备怎么设计？Design Specification / YAML Approval | binder 类型、设计约束、hotspot conditioning、排除区域、scaffold/CDR 条件、design arms、generation scale 与设计参数 | Hotspot Approval → Design Specification / YAML → Gate 3 → Pilot Generation；owner 为 Binder Strategy / Design Specification |
 | 4 · `pilot-promotion` | 这个方案值得放大吗？Pilot → Scale Promotion Approval | 基于真实 pilot evidence，哪些 strategy/arm promote、哪些停止，以及是否投入更大计算规模 | Pilot → prediction → validation/filtering → Evidence Judge → Gate 4 → Scale；owner 为 Pilot strategy / promotion planning |
-| 5 · `wet-lab-handoff` | 哪些最终候选真正进入实验？Final Candidates → Wet Lab Approval | 哪些 candidates 进入 synthesis、experimental validation 或 wet-lab handoff | Scale → prediction → validation/filtering → Final Candidates → Evidence Judge → Gate 5 → Wet Lab；owner 为 Final candidate selection / experimental handoff |
+| 5 · `wet-lab-handoff` | 哪些最终候选真正进入实验？Final Candidates → Wet Lab Approval | 哪些 candidates 进入 synthesis、experimental validation 或 wet-lab handoff | Scale native evidence → global PASS pool → Final Selection → Gate 5 → Wet Lab；独立预测和 Judge 为可选补充；owner 为 Final candidate selection / experimental handoff |
 
 Gate 1 可以 conditional：identity、construct、chain、state、mapping 没有 consequential ambiguity
 时，可由经过验证的确定性 policy 自动继续；存在真实歧义时必须人工决定。Agent 的自然语言

@@ -1,5 +1,8 @@
 # Phase 4 — engineering closure
 
+Historical 2026-09-15 acceptance. Current native Scale product semantics and acceptance
+are recorded in [Phase 4 product closure](PHASE4_PRODUCT_CLOSURE_20260917.md).
+
 Status: **ENGINEERING ACCEPTANCE PASS** for the bounded scope documented below.
 Closure checkpoint: `checkpoint/easydesign-v3-phase34-integration-complete-20260915`.
 

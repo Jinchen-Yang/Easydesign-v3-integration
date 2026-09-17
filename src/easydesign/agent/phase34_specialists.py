@@ -151,6 +151,7 @@ def downstream_specialist(
                     "shortlist": canonical_model_sha256(shortlist),
                 },
             )
+            bridge.publish_gate_card(card=final_card(final), evidence_contract=final)
             result = {
                 "status": "panel-ready",
                 "proposal": proposal.model_dump(mode="json"),

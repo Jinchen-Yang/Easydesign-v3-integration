@@ -10,8 +10,8 @@ is a source of standalone downstream contracts, not an alternative Phase 2 runti
 The existing Runtime compiles, dispatches, predicts, measures, persists and recovers.
 The Pilot Ranking & Recovery Specialist interprets the approved arm hypotheses and
 native measurements (the historical internal name remains `pilot-diagnosis`). Final
-Selection proposes a panel from a global shortlist. Phase 3 Judge is an optional second
-opinion; Phase 4 review remains unchanged. Only a persisted Scientist response chooses
+Selection proposes a panel from a global shortlist. Phase 3 and Phase 4 Judge are optional
+second opinions. Only a persisted Scientist response chooses
 a consequential Gate route.
 There are no separate generation, prediction, filtering or metrics agents.
 
@@ -51,7 +51,8 @@ Boltz2 refold, analysis and filtering. The default Phase 3 adapter consumes thos
 outputs without independent prediction or Stage 05's historical automatic expansion.
 AFO remains available through explicit independent prediction; it is not a prerequisite
 for native PASS, ranking or Gate 4. The bound prediction backend policy remains available
-for that optional path and Phase 4. Each checkout owns its runtime, environment and models.
+for that optional path, including Scale enrichment. Each checkout owns its runtime,
+environment and models.
 
 Active native filters come from each execution attempt's saved configuration and the
 pinned source implementation, reconciled with recorded per-rule and aggregate flags.
@@ -67,7 +68,7 @@ prediction exhaustion retains verified successful predictions and marks failures
 missing; checksum, identity and other hard consistency errors are still errors. A
 terminal measured outcome is immutable and does not silently launch another retry loop.
 
-For optional independent prediction and the unchanged Phase 4 adapter, an experimental
+For optional independent prediction, an experimental
 reference may resolve only part of the full requested target. v3 verifies
 the shared residue identities and complete predicted chains; it retains backend confidence
 and clashes across the full prediction. The complete-target alignment RMSDs are explicitly
@@ -115,15 +116,38 @@ and support original-worker/resume verification. Completed evidence cannot be ov
 by a retry. All batches contribute to one global pool; batch-local winners are not
 concatenated. Missing/failed batches remain visible.
 
+New native Gate 4 approvals explicitly bind `boltzgen-native-v1`. Scale calls the same
+native evidence adapter as Pilot with the exact batch allocation, using each run's own
+recorded profile/hash/rules. Complete native evidence is evaluable; only native PASS
+enters global competition. FAIL remains in the full audit pool. Missing native evidence
+is operationally incomplete and cannot silently finalize a partial campaign. A complete
+zero-PASS campaign is a distinct result, with no automatic retry or handoff.
+
+AFO is optional enrichment. Absence or unavailability does not remove native eligibility.
+Historical Gate 4 approvals retain their serialized legacy policy; new semantics do not
+silently enlarge old authority. Legacy Stage 07 `S_refold`, `S_deep`, `S_full`, consensus
+and final scores remain advisory evidence in their legacy path, never a second native
+hard filter. New native Scale ordering uses `bb_rmsd_design`, then `bb_rmsd`, then stable
+candidate identity; it does not use legacy score thresholds.
+
 The bounded shortlist is review priority, not a scientific hard filter. Development
 score is an engineering ordering signal, never biological fitness. Real adapter sequence
 clusters currently identify exact sequence duplicates; pose diversity is unverified and
 must remain an uncertainty. Synthetic 50k clustering tests validate software behavior,
 not protein-family clustering accuracy, biological performance or GPU throughput.
 
+Native review retains all source rows in the global pool, deduplicates exact sequences
+in the shortlist and reserves available cross-Arm review visibility before filling by
+global rank. It imposes no per-batch winners or final per-Arm quota. The shortlist is
+bounded to 30; full facts/provenance remain in Runtime while the Specialist receives
+shared profile/context and compact candidate metrics with stable dossier references.
+
 Final Selection receives candidate metrics, sequence, provenance, risk, uncertainty,
 strategy/diversity context and requested primary/backup counts. Runtime rejects unknown,
-duplicate or overlapping choices. Judge critiques the proposal without reranking it.
+duplicate or overlapping choices. Normal flow publishes Gate 5 directly, explicitly
+marking independent review `not-requested`. An optional Judge can critique the proposal
+without reranking it; technical review failure leaves the Scientist card available.
+Recovery after a persisted final dossier also creates the card without requiring Judge.
 
 ## Gate 5, recovery and handoff
 

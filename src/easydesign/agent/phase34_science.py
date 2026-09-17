@@ -204,6 +204,10 @@ def selection_working_set(
 ) -> dict[str, Any]:
     if not dossiers:
         raise AgentBoundaryError("Final selection needs a nonempty evaluated shortlist")
+    if all(d.candidate.native_evidence is not None for d in dossiers):
+        from .phase4_native import selection_decision_view
+
+        return selection_decision_view(dossiers, primary_count, backup_count)
     return {
         "requested_primary_count": primary_count,
         "requested_backup_count": backup_count,

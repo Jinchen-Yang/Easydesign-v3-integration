@@ -354,8 +354,15 @@ def verify_native_measurement(root: Path, measurement: PilotMeasurement) -> None
 
 
 def measure_native_execution(
-    bridge: Any, *, authority_id: str, plan: Any, execution: dict[str, Any]
+    bridge: Any,
+    *,
+    authority_id: str,
+    plan: Any,
+    execution: dict[str, Any],
+    allocations: dict[str, int] | None = None,
+    projection: ExecutionProjection | None = None,
 ) -> dict[str, Any]:
+    """One native evidence adapter for an approved Pilot or exact Scale batch."""
     from easydesign.orchestration.stage05 import _load_upstream
     from easydesign.orchestration.workspace import load_resolved_run_config
 
@@ -365,12 +372,11 @@ def measure_native_execution(
     upstream = _load_upstream(root)
     resolved, _ = load_resolved_run_config(root)
     if canonical_model_sha256(resolved.user_config) != execution["config_sha256"]:
-        raise AgentBoundaryError("Native Pilot run configuration changed")
+        raise AgentBoundaryError("Native run configuration changed")
+    planned = plan.execution_allocations if allocations is None else allocations
     index = upstream.candidate_index
-    if dict(Counter(c.strategy_id for c in index.candidates)) != plan.execution_allocations:
-        raise AgentBoundaryError(
-            "Native Pilot population differs from its exact approved allocation"
-        )
+    if dict(Counter(c.strategy_id for c in index.candidates)) != planned:
+        raise AgentBoundaryError("Native population differs from its exact approved allocation")
     profiles, refs = task_filter_profiles(root, upstream)
     strategies = {s.strategy_id: s for s in upstream.strategy_bundle.strategies}
     tasks = load_model(upstream.pilot_bundle.task_table.verify(root), TaskTable)
@@ -382,12 +388,13 @@ def measure_native_execution(
     measurement = project_native_measurement(
         candidates=index.candidates,
         profiles=profiles,
-        planned=plan.execution_allocations,
+        planned=planned,
         source_sha256=upstream.candidate_index_ref.sha256,
         source_refs=refs,
         additional_metrics=additions,
         failed_attempts=failed,
-        execution=ExecutionProjection(
+        execution=projection
+        or ExecutionProjection(
             mode=plan.mode,
             requested_production_candidates=sum(plan.production_allocations.values()),
             execution_candidates=sum(plan.execution_allocations.values()),
@@ -397,8 +404,12 @@ def measure_native_execution(
         ),
     )
     artifacts = confined(root, root / "phase34" / authority_id / "native-measurement")
-    artifacts.mkdir(parents=True, exist_ok=True)
     assert measurement.native_evidence is not None
+    if allocations is not None:
+        # Scale recovery can add a new complete measurement without overwriting
+        # the earlier incomplete evidence from the same immutable batch.
+        artifacts = artifacts / canonical_model_sha256(measurement.native_evidence)
+    artifacts.mkdir(parents=True, exist_ok=True)
     ref = _save_exact(
         root,
         artifacts / "native-evidence-v1.json",

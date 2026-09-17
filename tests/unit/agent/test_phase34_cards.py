@@ -83,3 +83,27 @@ def test_stale_review_failure_cannot_make_a_new_gate_card():
     stale = failure(dossier, "pilot-promotion").model_copy(update={"input_binding": "a" * 64})
     with pytest.raises(AgentBoundaryError, match="different Gate dossier"):
         pilot_card(dossier, stale)
+
+
+def test_gate5_without_judge_keeps_exact_panel_and_scientist_authority(tmp_path):
+    dossier = _final_review()[-1]
+    card = final_card(dossier)
+    assert card.scientific_summary["independent_review"] == {
+        "availability": "not-requested",
+        "optional": True,
+    }
+    assert card.scientific_summary["proposed_selection"] == dossier.proposed_selection.model_dump(
+        mode="json"
+    )
+    assert card.judge_status is None and card.assessment_id is None
+    store = SessionStore(tmp_path)
+    try:
+        store.thread("validation", "test", "Synthetic Gate 5 without review")
+        store.save_card("validation", card)
+        assert store.response("validation", card.card_id) is None
+        store.respond("validation", card.card_id, "approve", "validation-human")
+        assert store.response("validation", card.card_id)["outcome"]["selected_option_id"] == (
+            "wet-lab-panel"
+        )
+    finally:
+        store.close()

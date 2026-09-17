@@ -112,6 +112,10 @@ def dispatch_batch(bridge: Any, journal: ScaleBatchStore, batch: ScaleBatchPlan)
 def measure_batch(
     bridge: Any, journal: ScaleBatchStore, batch: ScaleBatchPlan, execution: dict[str, Any]
 ) -> dict[str, Any]:
+    if journal.manifest.campaign.evidence_policy == "boltzgen-native-v1":
+        from .phase4_native import measure_native_batch
+
+        return measure_native_batch(bridge, journal, batch, execution)
     campaign = journal.manifest.campaign
     authority = bridge.pilot_authority()
     assert authority is not None and authority.pilot_plan is not None

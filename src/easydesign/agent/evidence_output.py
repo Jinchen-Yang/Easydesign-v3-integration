@@ -623,9 +623,29 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
     projected = complete_projection if exact_page else preview(value)
     view_limit = 6000
     if source_artifact is not None:
-        projected = {"fields": list(value), "card_id": "receptor-" + source_artifact.sha256[:24]}
+        receptor_card_id = "receptor-" + source_artifact.sha256[:24]
+        projected = {"fields": list(value), "card_id": receptor_card_id}
         overview = {**projected, **receptor_overview_projection(value)}
         if role == "site":
+            # The kernel artifact contains fine-grained claim identifiers named
+            # ``evidence-*``. They are useful within the deterministic analysis but
+            # are not EvidenceResearch cards and therefore cannot populate a
+            # SiteResearchHandoff.evidence_card_ids field. Make that distinction
+            # explicit in the decision view instead of asking the model to infer it
+            # from two similarly named identifier families.
+            overview["citation_contract"] = {
+                "citable_evidence_card_ids": [receptor_card_id],
+                "instruction": "For any candidate supported by this deterministic receptor "
+                "analysis, cite the receptor-* card_id in SiteResearchHandoff.evidence_card_ids. "
+                "kernel_claim_ids are internal claim handles and are not citable card IDs.",
+            }
+            for candidates in overview.get("candidate_overview", {}).values():
+                for candidate in candidates:
+                    if "evidence" in candidate:
+                        candidate["kernel_claims"] = candidate.pop("evidence")
+                    if "evidence_ids" in candidate:
+                        candidate["kernel_claim_ids"] = candidate.pop("evidence_ids")
+                    candidate["citable_evidence_card_ids"] = [receptor_card_id]
             # This declared scientific view includes exact candidate membership.
             # Do not silently downgrade it to a partial preview at an unrelated
             # per-tool threshold. The shared model-input hard guard owns admission.

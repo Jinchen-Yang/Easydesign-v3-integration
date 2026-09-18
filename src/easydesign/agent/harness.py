@@ -636,6 +636,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 and self.site_stage == "research"
                 and (research_query_budget_complete or site_call_budget_complete)
             )
+            # A bounded research phase has already done its scientific work. Its final
+            # provider call exists only to serialize the typed handoff, so extended
+            # thinking can no longer add evidence and may prevent the SDK from forcing
+            # the submission tool. Use the same compact, non-thinking model view both
+            # for the first forced finalization and for a later truncation recovery.
+            compact_site_submission = compact_site_handoff or finalize_research
             submission_only = (
                 synthesize or compact_judge or compact_site_handoff or finalize_research
             )
@@ -788,6 +794,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "repair_attempt": attempt,
                     "compact_judge_recovery": compact_judge,
                     "compact_site_handoff_recovery": compact_site_handoff,
+                    "compact_site_handoff_finalization": finalize_research,
                     "site_research_finalization_reason": (
                         "query-budget"
                         if research_query_budget_complete
@@ -816,7 +823,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             call_request = request.override(tools=call_tools, messages=call_messages)
-            if compact_judge or compact_site_handoff:
+            if compact_judge or compact_site_submission:
                 from .models import compact_submission_model
 
                 call_request = call_request.override(

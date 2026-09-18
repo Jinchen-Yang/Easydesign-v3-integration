@@ -29,6 +29,7 @@ def receptor() -> dict[str, Any]:
                     "id": f"candidate-{n}",
                     "unique_warning": f"Unique limitation {n}",
                     "evidence": evidence,
+                    "evidence_ids": [f"evidence-{n}"],
                     "a/b~c": evidence,
                     "classification": "primary" if n == 0 else "backup",
                     "residues": [
@@ -76,7 +77,14 @@ async def test_complete_display_and_scoped_reads_preserve_plain_scientific_value
     )
     shown = json.loads(result.content)
     assert shown["declared_scope_complete"] is True
-    assert shown["candidate_overview"] == original["candidate_overview"]
+    assert shown["citation_contract"]["citable_evidence_card_ids"] == [shown["card_id"]]
+    shown_candidate = shown["candidate_overview"]["inhibit"][0]
+    source_candidate = original["candidate_overview"]["inhibit"][0]
+    assert "evidence" not in shown_candidate and "evidence_ids" not in shown_candidate
+    assert shown_candidate["kernel_claims"] == source_candidate["evidence"]
+    assert shown_candidate["kernel_claim_ids"] == source_candidate.get("evidence_ids", [])
+    assert shown_candidate["citable_evidence_card_ids"] == [shown["card_id"]]
+    assert "not citable card IDs" in shown["citation_contract"]["instruction"]
     assert "value_encoding" not in shown and "value_same_as" not in compact(shown)
     assert verified_result(bridge, "site", shown["full_result"], execution_id=execution) == before
     read = result_tool(bridge, "site")

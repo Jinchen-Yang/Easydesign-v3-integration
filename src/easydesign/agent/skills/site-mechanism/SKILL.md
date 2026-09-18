@@ -93,6 +93,9 @@ Provide at most three meaningfully distinct candidates with exact supplied desig
 provisional primary/backup/avoid roles, honest origins and concise rationales. Cite exact focused
 passage IDs; a source/acquisition ID is not a passage. Preserve the strongest supporting evidence,
 important opposition and transfer limits. A source's verified identity does not prove entailment.
+For a deterministic receptor-kernel candidate, use the supplied `receptor-*` card ID in
+`evidence_card_ids`. Values named `kernel_claim_ids` or `evidence-*` inside that receptor card are
+internal claim handles, not citable EvidenceResearch card IDs.
 
 For each decision_question bind the actual query_ids, including cross-topic queries. The question
 is the scientific unit; topic is only an index. VERIFIED needs scoped support; SEARCHED_NO_EVIDENCE

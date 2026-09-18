@@ -984,14 +984,52 @@ class EvidenceResearch:
                 }
             ]
         # Existing adapter verifies receptor identity/family; no arbitrary endpoint tool.
-        context = GpcrdbAdapter(client).fetch_receptor_context(
-            entry=q.identifier, pdb_code=q.pdb_id
-        )
-        projection = context.legacy_projection()
+        # GPCRdb entry names are database-specific (for example NK2R_HUMAN rather than
+        # the HGNC mnemonic TACR2_HUMAN). When an Agent-supplied entry is absent, use
+        # the already approved canonical accession as a deterministic identity lookup.
+        # The adapter independently verifies that the resolved record has that accession.
+        approved_accession = None
+        try:
+            target, _, _ = self.bridge.site_facts()
+            value = target["evidence"]["hard_facts"].get("canonical_accession")
+            if isinstance(value, str) and value:
+                approved_accession = value
+        except (AttributeError, AgentBoundaryError, KeyError, TypeError):
+            pass
+        adapter = GpcrdbAdapter(client)
+        resolution = {
+            "requested_identifier": q.identifier,
+            "method": "entry",
+            "approved_accession_fallback": None,
+        }
+        if approved_accession and q.identifier.upper() == approved_accession.upper():
+            context = adapter.fetch_receptor_context(
+                accession=approved_accession, pdb_code=q.pdb_id
+            )
+            resolution["method"] = "approved-accession"
+        else:
+            try:
+                context = adapter.fetch_receptor_context(entry=q.identifier, pdb_code=q.pdb_id)
+            except BackendContractError as error:
+                if approved_accession is None or "status=404" not in str(error):
+                    raise
+                context = adapter.fetch_receptor_context(
+                    accession=approved_accession, pdb_code=q.pdb_id
+                )
+                resolution.update(
+                    method="approved-accession-after-entry-404",
+                    approved_accession_fallback=approved_accession,
+                )
+        projection = {
+            **context.legacy_projection(),
+            "identifier_resolution": resolution,
+        }
         return [
             {
                 "provider": "GPCRdb",
                 "identifier": q.identifier,
+                "resolved_identifier": projection["identity"]["entry_name"],
+                "identifier_resolution": resolution,
                 "primary_eligible": True,
                 "evidence_level": "curated-receptor-context",
                 "passage": compact(projection),
@@ -1163,6 +1201,8 @@ def research_tool(bridge: Any, role: str) -> Any:
                     "card_id",
                     "provider",
                     "identifier",
+                    "resolved_identifier",
+                    "identifier_resolution",
                     "title",
                     "year",
                     "doi",

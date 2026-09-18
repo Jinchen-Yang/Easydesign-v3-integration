@@ -85,9 +85,7 @@ def request_metadata(role: str, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def compact_summary_model(
-    model: Any, config: ModelConfig, *, role: Role = "site"
-) -> Any:
+def compact_summary_model(model: Any, config: ModelConfig, *, role: Role = "site") -> Any:
     """Use the configured Site model for memory compression without costly reasoning.
 
     A framework summary is fallible working memory, not a scientific decision. It does not
@@ -114,17 +112,22 @@ def compact_summary_model(
     return model.model_copy(update=update)
 
 
-def compact_judge_model(model: Any, config: ModelConfig) -> Any:
-    """Finalize a truncated review without changing the configured scientific model.
+def compact_submission_model(model: Any, config: ModelConfig, *, role: Role) -> Any:
+    """Finalize a truncated typed submission without changing its scientific model.
 
     DeepSeek ignores Anthropic's thinking budget. A transient non-thinking copy
-    reserves the unchanged output allowance for the typed review and permits the
+    reserves the unchanged output allowance for the typed payload and permits the
     SDK's forced tool choice. The original client, profile and first call stay intact.
     """
-    selected = config.for_role("judge")
+    selected = config.for_role(role)
     if selected.provider != "deepseek" or selected.reasoning_effort == "none":
         return model
     return model.model_copy(update={"thinking": {"type": "disabled"}, "output_config": {}})
+
+
+def compact_judge_model(model: Any, config: ModelConfig) -> Any:
+    """Backward-compatible Judge recovery helper."""
+    return compact_submission_model(model, config, role="judge")
 
 
 def create_models(

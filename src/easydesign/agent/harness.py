@@ -465,9 +465,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             else t
             for t in available
         ]
-        if self.role == "target" and not loaded_skill_paths and not any(
-            isinstance(m, ToolMessage) and m.name == "read_file" and m.status != "error"
-            for m in request.messages
+        if (
+            self.role == "target"
+            and not loaded_skill_paths
+            and not any(
+                isinstance(m, ToolMessage) and m.name == "read_file" and m.status != "error"
+                for m in request.messages
+            )
         ):
             # Preparation fixes the run's identity inputs. Do not offer it in the
             # initial call that is still loading those prerequisites from the Skill.
@@ -600,6 +604,21 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             )
             for e in self.bridge.store.events(self.bridge.thread)
         )
+        compact_site_handoff = (
+            self.role == "site"
+            and self.site_stage == "research"
+            and any(
+                e["kind"] == "model-response"
+                and e["payload"].get("role") == "site"
+                and e["payload"].get("site_stage") == "research"
+                and e["payload"].get("execution_id") == self.execution_id
+                and any(
+                    r.get("stop_reason") in {"max_tokens", "length"}
+                    for r in e["payload"].get("responses", [])
+                )
+                for e in self.bridge.store.events(self.bridge.thread)
+            )
+        )
         for attempt in range(3):
             used = self.bridge.store.db.execute(
                 "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "
@@ -617,7 +636,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 and self.site_stage == "research"
                 and (research_query_budget_complete or site_call_budget_complete)
             )
-            submission_only = synthesize or compact_judge or finalize_research
+            submission_only = (
+                synthesize or compact_judge or compact_site_handoff or finalize_research
+            )
             call_tools = [] if submission_only else available
             if submission_only:
                 assert self.output_schema is not None
@@ -722,6 +743,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "recovery, not approval. All existing fact and stage checks still apply."
                     )
                 )
+            if compact_site_handoff:
+                context_suffix.append(
+                    HumanMessage(
+                        content="The previous Site research handoff exhausted its output "
+                        "allowance. Submit ONLY one concise SiteResearchHandoff tool call now. "
+                        "Put the required candidates, stopping_reason and unresolved_questions "
+                        "in the tool arguments before any explanation. Preserve exact evidence "
+                        "references, material opposition and unknowns; omit narrative preamble "
+                        "and repeated background. This is output recovery, not approval."
+                    )
+                )
             call_messages.extend(context_suffix)
             chars = len(str(request.system_message)) + sum(
                 len(str(m.content)) for m in call_messages
@@ -755,6 +787,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ),
                     "repair_attempt": attempt,
                     "compact_judge_recovery": compact_judge,
+                    "compact_site_handoff_recovery": compact_site_handoff,
                     "site_research_finalization_reason": (
                         "query-budget"
                         if research_query_budget_complete
@@ -765,6 +798,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "tool_mode": (
                         "site-synthesis"
                         if synthesize
+                        else "site-research-recovery"
+                        if compact_site_handoff
                         else "site-research-finalization"
                         if finalize_research
                         else "research"
@@ -781,11 +816,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             call_request = request.override(tools=call_tools, messages=call_messages)
-            if compact_judge:
-                from .models import compact_judge_model
+            if compact_judge or compact_site_handoff:
+                from .models import compact_submission_model
 
                 call_request = call_request.override(
-                    model=compact_judge_model(request.model, self.config)
+                    model=compact_submission_model(
+                        request.model,
+                        self.config,
+                        role=cast(Role, self.role),
+                    )
                 )
             if (
                 (synthesize or finalize_research)
@@ -838,6 +877,20 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 if isinstance(m, AIMessage)
             ):
                 compact_judge = True
+            if (
+                self.role == "site"
+                and self.site_stage == "research"
+                and any(
+                    (
+                        m.response_metadata.get("stop_reason")
+                        or m.response_metadata.get("finish_reason")
+                    )
+                    in {"max_tokens", "length"}
+                    for m in response.result
+                    if isinstance(m, AIMessage)
+                )
+            ):
+                compact_site_handoff = True
             schema = self.output_schema
             assert schema is not None
             calls = [call for m in response.result for call in getattr(m, "tool_calls", [])]

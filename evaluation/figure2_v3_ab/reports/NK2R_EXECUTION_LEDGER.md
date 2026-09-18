@@ -90,3 +90,27 @@ This ledger records operator-visible execution defects and repairs for the fresh
 - Verification before rerun: a focused regression proves that a Site `gpcrdb-context` acquisition automatically derives the receptor-analysis card with the approved auth chain and labels the result as deterministic evidence rather than approval. A no-model replay on an isolated copy of the real R5 project generated the deterministic 9W2H receptor card and recovered both the outer-vestibule primary hypothesis and the transmembrane/outer-pore backup hypothesis. Existing GPCR mapping, Site dossier, Harness and benchmark-control tests pass before the fresh run.
 - Measurement disposition: R5 is a deliberate EasyDesign development/human-repair run and is excluded from formal Figure 2A effectiveness and efficiency measurements. The repair is counted as one human repair. R6 must start from the raw 9W2H input with a fresh project, thread and execution; no R5 prompt history, evidence selection, candidates or prose may be imported.
 - Scientific-state disposition: the R5 Gate 2 card is an audit artifact only and remains unapproved. No R5 Site answer is reused by R6 or either frozen control.
+
+## F2-HARNESS-005 — R6 required the model to guess a GPCRdb-specific receptor slug
+
+- Project: `figure2-nk2r-full-r6`
+- Thread: `thread-figure2-nk2r-full-r6`
+- Gate 2 execution: `turn-dc8d087a069544ef88c89ba769e8f044`
+- Failure boundary: GPCR context acquisition before deterministic receptor analysis.
+- Before: fresh Gate 1 completed and chain R was approved. Site research then tried the biologically reasonable identifiers `TACR2_HUMAN` and `tacr2_human`; GPCRdb returned 404 because its receptor entry is `nk2r_human`. Runtime already held the approved canonical accession P21452, but the research contract required an exact database-specific entry and did not use that authoritative identifier to resolve the record. The Site research budget ended without a GPCR kernel card.
+- Root cause: a database routing key was treated as model knowledge even though the approved target bundle already contained a stable cross-database accession and the GPCRdb adapter supports accession lookup with identity verification.
+- Repair: on a GPCRdb entry 404 during Site research, Runtime retries once through the Scientist-approved canonical accession. The adapter must resolve exactly one record and independently verify its accession; the requested alias, resolved entry and resolution method are all retained. Non-404 source/network errors do not use this fallback.
+- Verification before rerun: 115 related GPCR, Site, Harness, recovery and model-transport tests pass. A no-model replay on an isolated R6 copy resolved the exact failed request `TACR2_HUMAN` through P21452 to `nk2r_human`, atomically produced the receptor-analysis artifact, and recovered the outer-vestibule, transmembrane/outer-pore and intracellular-avoid candidate families with mapped design labels.
+- Measurement disposition: this is one Codex-operated development/human-repair action. R6 remains excluded and no resolved entry or candidate is injected into a later run.
+
+## F2-HARNESS-006 — R6 Site handoff spent every retry on hidden reasoning
+
+- Project: `figure2-nk2r-full-r6`
+- Thread: `thread-figure2-nk2r-full-r6`
+- Gate 2 execution: `turn-dc8d087a069544ef88c89ba769e8f044`
+- Failure boundary: required `SiteResearchHandoff` submission after the deterministic Site reading ceiling.
+- Before: three consecutive finalization calls each consumed the full 16,384-token output allowance. The first and third returned no typed submission; the second reached `SiteResearchHandoff` only with an empty argument object. Each call retained about 77-82k input characters and thinking remained enabled. Two contract repairs were exhausted, so the run failed before dossier synthesis or a Gate 2 card.
+- Root cause: max-token recovery was implemented for Judge but not for the equally structured Site research handoff. Repeating the same reasoning-enabled request could reproduce the same failure without reserving output capacity for the typed payload.
+- Repair: after a Site research finalization stops for `max_tokens` or `length`, subsequent bounded corrections use a transient non-thinking copy of the same configured model and output allowance, expose only `SiteResearchHandoff`, and instruct the model to place required fields in the tool arguments before prose. The original model client/settings and all scientific validators remain unchanged.
+- Verification before rerun: an SDK-level regression reproduces a first-call `max_tokens` response, verifies that the second request disables thinking while preserving the same model and 8,192-token output allowance, exposes only `SiteResearchHandoff`, and accepts a complete typed recovery. The broader related suite passes.
+- Measurement disposition: this is a second Codex-operated development/human-repair action. R6 produced no Site handoff, SiteDecision or Gate 2 card and is excluded. R7 must start from raw 9W2H with no R6 evidence, prompt history or prose.

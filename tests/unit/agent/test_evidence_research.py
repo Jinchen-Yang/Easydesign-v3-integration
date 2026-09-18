@@ -16,7 +16,7 @@ from easydesign.agent.evidence_research import (
 )
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.session_store import SessionStore
-from easydesign.core import ArtifactIntegrityError
+from easydesign.core import ArtifactIntegrityError, BackendContractError
 
 
 @pytest.fixture
@@ -167,6 +167,72 @@ def test_rcsb_chain_inventory_keeps_entities_separate_and_preserves_sources(
     refs = acquired["cards"][0]["source_refs"]
     saved = [(research.bridge.project / ref["relative_path"]).read_bytes() for ref in refs]
     assert all(raw in saved for raw in responses)
+
+
+def test_gpcrdb_missing_entry_falls_back_to_approved_canonical_accession(
+    research: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent import evidence_research as module
+
+    calls = []
+    monkeypatch.setattr(
+        research.bridge,
+        "site_facts",
+        lambda: (
+            {"evidence": {"hard_facts": {"canonical_accession": "P21452"}}},
+            {},
+            {},
+        ),
+        raising=False,
+    )
+
+    class Context:
+        status = "resolved"
+
+        @staticmethod
+        def legacy_projection() -> dict[str, Any]:
+            return {
+                "identity": {
+                    "status": "resolved",
+                    "entry_name": "nk2r_human",
+                    "accession": "P21452",
+                },
+                "topology": {},
+            }
+
+    class Adapter:
+        def __init__(self, client: Any) -> None:
+            pass
+
+        def fetch_receptor_context(self, **kwargs: Any) -> Any:
+            calls.append(kwargs)
+            if kwargs.get("entry"):
+                raise BackendContractError("remote request failed: status=404, body=not found")
+            assert kwargs["accession"] == "P21452"
+            return Context()
+
+    monkeypatch.setattr(module, "GpcrdbAdapter", Adapter)
+    card = research.retrieve(
+        SimpleNamespace(),
+        ResearchQuery(
+            topic="state",
+            question="Resolve receptor topology",
+            operation="gpcrdb-context",
+            identifier="TACR2_HUMAN",
+        ),
+    )[0]
+
+    assert calls == [
+        {"entry": "TACR2_HUMAN", "pdb_code": None},
+        {"accession": "P21452", "pdb_code": None},
+    ]
+    assert card["identifier"] == "TACR2_HUMAN"
+    assert card["resolved_identifier"] == "nk2r_human"
+    assert card["identifier_resolution"] == {
+        "requested_identifier": "TACR2_HUMAN",
+        "method": "approved-accession-after-entry-404",
+        "approved_accession_fallback": "P21452",
+    }
 
 
 def read_primary(worker: Any, identifier: str) -> dict[str, Any]:

@@ -464,3 +464,31 @@ async def test_actual_harness_can_inspect_then_read_without_guessing_schema(brid
     assert models["target"].observed == {key: SNAPSHOT[key] for key in KEYS}
     assert not [e for e in b.store.events(b.thread) if "repair" in e["kind"]]
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_successful_tool_call_resets_only_its_consecutive_repair_streak(
+    bridge: Any,
+) -> None:
+    bridge = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = bridge.store.begin_execution(bridge.thread, "Repair, succeed, continue")[
+        "execution_id"
+    ]
+    ref = offload(bridge, execution)
+
+    first = json.loads(
+        (await guarded_read(bridge, execution, ref=ref, field="missing")).content
+    )
+    second = json.loads(
+        (await guarded_read(bridge, execution, ref=ref, field="still_missing")).content
+    )
+    assert (first["repair_attempt"], second["repair_attempt"]) == (1, 2)
+
+    valid = await guarded_read(bridge, execution, ref=ref, field="options")
+    assert valid.status != "error"
+
+    after_success = json.loads(
+        (await guarded_read(bridge, execution, ref=ref, field="missing_again")).content
+    )
+    assert after_success["repair_attempt"] == 1
+    assert after_success["repair_unit"] == "consecutive-tool-operation"

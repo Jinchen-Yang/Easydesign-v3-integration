@@ -1249,6 +1249,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     self.role,
                     self.execution_id,
                     round_id=self.repair_round_id(request),
+                    scope=name,
                 )
                 result = ToolMessage(
                     content=compact(
@@ -1256,7 +1257,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             **error.result(),
                             "repair_attempt": attempt,
                             "repair_limit": TOOL_REPAIR_LIMIT,
-                            "repair_unit": "model-tool-batch",
+                            "repair_unit": "consecutive-tool-operation",
                         }
                     ),
                     status="error",
@@ -1292,6 +1293,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     self.execution_id,
                     required["source_id"],
                     round_id=self.repair_round_id(request),
+                    scope=name,
                 )
                 result = ToolMessage(
                     content=compact(
@@ -1299,7 +1301,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             **required,
                             "repair_attempt": attempt,
                             "repair_limit": TOOL_REPAIR_LIMIT,
-                            "repair_unit": "model-tool-batch",
+                            "repair_unit": "consecutive-tool-operation",
                         }
                     ),
                     status="error",
@@ -1309,6 +1311,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             raw_chars = len(str(result.content)) if isinstance(result, ToolMessage) else None
             if isinstance(self.bridge, Phase2Bridge) and self.execution_id:
                 result = output_message(self.bridge, self.role, self.execution_id, result)
+                if not isinstance(result, ToolMessage) or result.status != "error":
+                    self.bridge.store.mark_tool_repair_success(
+                        self.bridge.thread,
+                        self.role,
+                        self.execution_id,
+                        name,
+                        round_id=self.repair_round_id(request),
+                    )
             supplied_cards = 0
             if (
                 name in {"retrieve_evidence", "continue_evidence", "read_evidence_result"}

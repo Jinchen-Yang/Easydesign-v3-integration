@@ -155,3 +155,89 @@ def test_repair_rounds_preserve_legacy_counts_and_replay_across_restart(bridge: 
         )
     finally:
         reopened.close()
+
+
+def test_scoped_repairs_do_not_share_one_execution_budget(bridge: Any) -> None:
+    store = bridge.store
+    execution = store.begin_execution(bridge.thread, "Inspect independent tools")["execution_id"]
+
+    for index in range(7):
+        assert (
+            store.reserve_tool_argument_repair(
+                bridge.thread,
+                "site",
+                execution,
+                round_id=f"batch-{index}",
+                scope=f"tool-{index}",
+            )
+            == 1
+        )
+
+
+def test_scoped_repair_streak_resets_after_success_and_survives_restart(bridge: Any) -> None:
+    store = bridge.store
+    execution = store.begin_execution(bridge.thread, "Repair one tool")["execution_id"]
+    def reserve(batch: str) -> int:
+        return store.reserve_tool_argument_repair(
+            bridge.thread,
+            "site",
+            execution,
+            round_id=batch,
+            scope="retrieve_evidence",
+        )
+
+    assert reserve("batch-a") == 1
+    assert reserve("batch-b") == 2
+    assert reserve("batch-b") == 2
+
+    reopened = SessionStore(bridge.project)
+    try:
+        assert (
+            reopened.reserve_tool_argument_repair(
+                bridge.thread,
+                "site",
+                execution,
+                round_id="batch-c",
+                scope="retrieve_evidence",
+            )
+            == 3
+        )
+        reopened.mark_tool_repair_success(
+            bridge.thread,
+            "site",
+            execution,
+            "retrieve_evidence",
+            round_id="batch-success",
+        )
+        for attempt, batch in enumerate(("batch-d", "batch-e", "batch-f", "batch-g"), 1):
+            assert (
+                reopened.reserve_tool_argument_repair(
+                    bridge.thread,
+                    "site",
+                    execution,
+                    round_id=batch,
+                    scope="retrieve_evidence",
+                )
+                == attempt
+            )
+        with pytest.raises(AgentBoundaryError, match="consecutive rounds"):
+            reopened.reserve_tool_argument_repair(
+                bridge.thread,
+                "site",
+                execution,
+                round_id="batch-h",
+                scope="retrieve_evidence",
+            )
+        assert (
+            reopened.reserve_prerequisite_repair(
+                bridge.thread,
+                "site",
+                execution,
+                "GPCRdb:TACR2_HUMAN",
+                round_id="batch-other",
+                scope="research_evidence",
+            )
+            == 1
+        )
+    finally:
+        reopened.close()

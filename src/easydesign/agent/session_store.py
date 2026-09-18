@@ -245,8 +245,9 @@ class SessionStore:
         source_id: str,
         *,
         round_id: str | None = None,
+        scope: str | None = None,
     ) -> int:
-        """Compatibility entry point; selection and argument repairs share one limit."""
+        """Reserve a bounded correction for one tool operation."""
         return self._reserve_repair(
             thread,
             role,
@@ -255,10 +256,17 @@ class SessionStore:
             "SOURCE_NOT_SELECTED",
             source_id=source_id,
             **({"round_id": round_id} if round_id else {}),
+            **({"scope": scope} if scope else {}),
         )
 
     def reserve_tool_argument_repair(
-        self, thread: str, role: str, execution_id: str, *, round_id: str | None = None
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        *,
+        round_id: str | None = None,
+        scope: str | None = None,
     ) -> int:
         return self._reserve_repair(
             thread,
@@ -267,7 +275,65 @@ class SessionStore:
             "tool-argument-repair",
             "INVALID_FIELD_PROJECTION",
             **({"round_id": round_id} if round_id else {}),
+            **({"scope": scope} if scope else {}),
         )
+
+    def mark_tool_repair_success(
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        scope: str,
+        *,
+        round_id: str | None = None,
+    ) -> None:
+        """End a tool's correction streak after a successful invocation.
+
+        A marker is written only when this role/tool scope has an outstanding
+        repair. The durable marker keeps restart behavior bounded without making
+        unrelated errors in a long research turn consume one global allowance.
+        """
+        execution = self.latest_execution(thread)
+        if execution is None or execution["execution_id"] != execution_id:
+            raise AgentBoundaryError("Tool success is outside the current execution")
+        rows = self.db.execute(
+            "SELECT kind,payload FROM events WHERE thread=? "
+            "AND kind IN ('prerequisite-repair', 'tool-argument-repair', "
+            "'tool-repair-success') "
+            "AND json_extract(payload, '$.execution_id')=? ORDER BY seq DESC",
+            (thread, execution_id),
+        ).fetchall()
+        outstanding = False
+        for kind, raw in rows:
+            prior = json.loads(raw)
+            if kind == "tool-repair-success":
+                if prior.get("role") == role and prior.get("scope") == scope:
+                    break
+                continue
+            prior_scope = prior.get("scope")
+            if prior_scope is None or (
+                prior.get("role") == role and prior_scope == scope
+            ):
+                outstanding = True
+                break
+        if not outstanding:
+            return
+        with self.db:
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) "
+                "VALUES(?, 'tool-repair-success', ?)",
+                (
+                    thread,
+                    compact(
+                        {
+                            "role": role,
+                            "execution_id": execution_id,
+                            "scope": scope,
+                            **({"round_id": round_id} if round_id else {}),
+                        }
+                    ),
+                ),
+            )
 
     def reserve_contract_repair(
         self,
@@ -324,40 +390,84 @@ class SessionStore:
         error_code: str,
         **details: str,
     ) -> int:
-        """Four shared model correction rounds; every diagnostic remains an event.
+        """Reserve one of four consecutive correction rounds.
 
-        Errors from one native tool batch share its runtime-derived round identity.
-        A replay of that batch retains its attempt; a new model message spends another.
-        Legacy calls without a round identity each spend one, preserving old ledgers.
+        Native harness calls are isolated by role and tool scope. A successful
+        invocation of that tool resets its streak, while replaying one native
+        model batch retains the same attempt. Legacy unscoped callers preserve
+        the original execution-wide accounting.
         """
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
             raise AgentBoundaryError("Repair is not bound to the current execution")
         with self.db:
-            rows = self.db.execute(
-                "SELECT seq,payload FROM events WHERE thread=? "
-                "AND kind IN ('prerequisite-repair', 'tool-argument-repair') "
-                "AND json_extract(payload, '$.execution_id')=? ORDER BY seq",
-                (thread, execution_id),
-            ).fetchall()
-            rounds: dict[tuple[str, str], int] = {}
-            for seq, raw in rows:
-                prior = json.loads(raw)
-                key = (
-                    (prior["role"], prior["round_id"])
-                    if prior.get("round_id")
-                    else ("legacy-event", str(seq))
+            scope = details.get("scope")
+            if scope:
+                rows = self.db.execute(
+                    "SELECT seq,kind,payload FROM events WHERE thread=? "
+                    "AND kind IN ('prerequisite-repair', 'tool-argument-repair', "
+                    "'tool-repair-success') "
+                    "AND json_extract(payload, '$.execution_id')=? ORDER BY seq",
+                    (thread, execution_id),
+                ).fetchall()
+                rounds: dict[tuple[str, str], int] = {}
+                current_round = details.get("round_id")
+                for seq, event_kind, raw in rows:
+                    prior = json.loads(raw)
+                    if event_kind == "tool-repair-success":
+                        if (
+                            prior.get("role") == role
+                            and prior.get("scope") == scope
+                            and (
+                                current_round is None
+                                or prior.get("round_id") != current_round
+                            )
+                        ):
+                            rounds = {}
+                        continue
+                    prior_scope = prior.get("scope")
+                    if prior_scope is not None and (
+                        prior.get("role") != role or prior_scope != scope
+                    ):
+                        continue
+                    key = (
+                        (prior.get("role", "legacy"), prior["round_id"])
+                        if prior.get("round_id")
+                        else ("legacy-event", str(seq))
+                    )
+                    rounds.setdefault(key, len(rounds) + 1)
+                current_key = (
+                    (role, current_round) if current_round is not None else None
                 )
-                rounds.setdefault(key, int(prior["attempt"]))
-            current_key = (role, details["round_id"]) if details.get("round_id") else None
-            attempt = rounds.get(current_key) if current_key is not None else None
+                attempt = rounds.get(current_key) if current_key is not None else None
+                limit_label = f"{TOOL_REPAIR_LIMIT} consecutive rounds for {scope}"
+            else:
+                rows = self.db.execute(
+                    "SELECT seq,payload FROM events WHERE thread=? "
+                    "AND kind IN ('prerequisite-repair', 'tool-argument-repair') "
+                    "AND json_extract(payload, '$.execution_id')=? ORDER BY seq",
+                    (thread, execution_id),
+                ).fetchall()
+                rounds = {}
+                for seq, raw in rows:
+                    prior = json.loads(raw)
+                    key = (
+                        (prior["role"], prior["round_id"])
+                        if prior.get("round_id")
+                        else ("legacy-event", str(seq))
+                    )
+                    rounds.setdefault(key, int(prior["attempt"]))
+                current_key = (
+                    (role, details["round_id"]) if details.get("round_id") else None
+                )
+                attempt = rounds.get(current_key) if current_key is not None else None
+                limit_label = f"{TOOL_REPAIR_LIMIT} shared correction rounds per execution"
             if attempt is None:
                 if len(rounds) >= TOOL_REPAIR_LIMIT:
                     label = "prerequisite" if kind == "prerequisite-repair" else "tool argument"
                     raise AgentBoundaryError(
                         f"{error_code}: {label} repair budget exhausted "
-                        f"({TOOL_REPAIR_LIMIT} shared correction rounds per execution); "
-                        "inspect the tool arguments and prerequisites."
+                        f"({limit_label}); inspect the tool arguments and prerequisites."
                     )
                 attempt = len(rounds) + 1
             self.db.execute(

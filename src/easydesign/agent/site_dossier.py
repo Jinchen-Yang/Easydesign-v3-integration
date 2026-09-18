@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from pydantic import Field
@@ -21,6 +22,35 @@ from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .session_store import compact, identity
 from .site_contracts import SiteIntent, SiteSelection
 from .site_evidence import summarize_site_facts
+
+
+def explicit_site_compartment(goal: str) -> str | None:
+    """Read only an explicit delivery/site constraint from the immutable user objective."""
+    value = goal.casefold()
+    binder = r"(?:vhh|nanobod(?:y|ies)|antibod(?:y|ies)|binder|纳米抗体|抗体|结合剂|设计)"
+    extracellular = any(
+        re.search(pattern, value, re.IGNORECASE)
+        for pattern in (
+            rf"(?:胞外|细胞外).{{0,24}}{binder}",
+            rf"{binder}.{{0,24}}(?:胞外|细胞外)",
+            rf"extracellular.{{0,60}}{binder}",
+            rf"{binder}.{{0,60}}extracellular",
+            r"required[_ -]?site[_ -]?compartment\s*[:=]\s*extracellular",
+        )
+    )
+    intracellular = any(
+        re.search(pattern, value, re.IGNORECASE)
+        for pattern in (
+            rf"(?:胞内|细胞内).{{0,24}}{binder}",
+            rf"{binder}.{{0,24}}(?:胞内|细胞内)",
+            rf"intracellular.{{0,60}}{binder}",
+            rf"{binder}.{{0,60}}intracellular",
+            r"required[_ -]?site[_ -]?compartment\s*[:=]\s*intracellular",
+        )
+    )
+    if extracellular == intracellular:
+        return None
+    return "extracellular" if extracellular else "intracellular"
 
 
 class DecisionEvidenceQuestion(ResearchAssessment):
@@ -114,6 +144,14 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
     if SITE_EVIDENCE.get() != binding:
         raise AgentBoundaryError("Site dossier lacks its runtime-delegated Target binding")
     target, facts, facts_ref = bridge.site_facts()
+    owner = bridge.store.db.execute(
+        "SELECT goal FROM threads WHERE id=?", (bridge.thread,)
+    ).fetchone()
+    # Historical/synthetic callers may construct the scientific dossier directly without a
+    # Harness thread. They receive no inferred compartment requirement. Product runs always
+    # create the immutable thread goal before reaching this boundary.
+    objective = str(owner["goal"]) if owner is not None else ""
+    required_compartment = explicit_site_compartment(objective)
     research = EvidenceResearch(bridge).snapshot()
     cards = {c["card_id"]: c for q in research["queries"] for c in q["cards"]}
     all_passages = [c for key, c in cards.items() if key.startswith("passage-")]
@@ -305,6 +343,19 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "does not establish framework/CDR clearance. Do not recalculate geometry from "
             "centroids.",
         }
+        from .site_decision import verified_location_conflict
+
+        conflict = verified_location_conflict(
+            runtime_candidate["location"], required_compartment
+        )
+        runtime_candidate["runtime_eligibility"] = {
+            "status": "BLOCKED" if conflict else "ELIGIBLE",
+            "cause": conflict,
+            "required_site_compartment": required_compartment,
+            "authority": "Immutable user objective plus verified canonical topology, GPCRdb "
+            "segments and/or signed kernel membrane geometry. Exposure and scientific risk do "
+            "not determine eligibility.",
+        }
     return {
         "kind": "site-evidence-dossier-v7",
         "reference_annotations": annotations,
@@ -339,6 +390,12 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "Target preparation succeeded and Gate 1 has no pending request. Conditional "
             "mapping and source limitations remain scientific constraints; fallible research "
             "notes cannot reopen Gate 1 or create Site approval.",
+        },
+        "objective_requirements": {
+            "required_site_compartment": required_compartment,
+            "source": "immutable-user-objective",
+            "scope": "Only an explicit extracellular/intracellular binder objective becomes a "
+            "hard compartment constraint. Ambiguous wording remains unresolved.",
         },
         "scientific_context": {
             key: overview[key]

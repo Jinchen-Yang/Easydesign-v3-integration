@@ -14,7 +14,11 @@ from easydesign.agent.contracts import (
 )
 from easydesign.agent.phase2 import SITE_EVIDENCE, Phase2Bridge
 from easydesign.agent.session_store import identity
-from easydesign.agent.site_decision import RankedSiteDecision, compile_site_decision
+from easydesign.agent.site_decision import (
+    RankedSiteDecision,
+    compile_site_decision,
+    verified_location_conflict,
+)
 from easydesign.agent.site_dossier import persist_dossier
 from easydesign.agent.site_judge import SiteJudgeUnavailable, create_site_judge
 from easydesign.agent.tools import JUDGE_EVIDENCE
@@ -42,6 +46,67 @@ def ranked_decision(candidate_ids: list[str]) -> RankedSiteDecision:
             for index, candidate_id in enumerate(candidate_ids)
         ]
     )
+
+
+def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_conflicts():
+    from easydesign.agent.site_dossier import explicit_site_compartment
+
+    assert explicit_site_compartment("为 NK2R 开展胞外抑制性 VHH 设计") == "extracellular"
+    assert (
+        explicit_site_compartment("Design an intracellular nanobody against the receptor")
+        == "intracellular"
+    )
+    assert explicit_site_compartment("Compare extracellular and intracellular evidence") is None
+
+    inner = {
+        "segments": ["TM2", "TM3", "TM7"],
+        "sequence_topology": [
+            {
+                "canonical_position": 68,
+                "annotations": [{"type": "Topological domain", "description": "Cytoplasmic"}],
+            }
+        ],
+        "membrane_geometry": [
+            {"region": "inner_pore", "axial_distance": value}
+            for value in (-18.8, -11.9, -10.5)
+        ],
+    }
+    outer_pore = {
+        "segments": ["TM2", "TM6", "TM7"],
+        "sequence_topology": [],
+        "membrane_geometry": [
+            {"region": "outer_pore", "axial_distance": value}
+            for value in (7.1, 10.2, 17.3)
+        ],
+    }
+    ambiguous = {
+        "segments": ["TM3"],
+        "sequence_topology": [],
+        "membrane_geometry": [{"region": "inner_pore", "axial_distance": -12.0}],
+    }
+    assert verified_location_conflict(inner, "extracellular") == (
+        "verified-compartment-conflict"
+    )
+    assert verified_location_conflict(outer_pore, "extracellular") is None
+    assert verified_location_conflict(ambiguous, "extracellular") is None
+    assert verified_location_conflict(inner, None) is None
+
+
+def test_runtime_compartment_block_is_removed_from_abc_but_retained_for_audit(site_bridge):
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    blocked_id = dossier["candidate_comparison"][0]["candidate_id"]
+    dossier["candidate_comparison"][0]["runtime_eligibility"] = {
+        "status": "BLOCKED",
+        "cause": "verified-compartment-conflict",
+        "required_site_compartment": "extracellular",
+    }
+    intent = compile_site_decision(dossier, case["decision"])
+    blocked = next(entry for entry in intent.portfolio if entry.candidate_id == blocked_id)
+    assert blocked.rank is None
+    assert not blocked.selectable
+    assert blocked.hard_block == "verified-compartment-conflict"
+    assert [entry.rank for entry in intent.portfolio] == ["A", "B", None]
 
 
 def setup_portfolio(bridge: Any, labels: list[list[int]] | None = None) -> dict[str, Any]:

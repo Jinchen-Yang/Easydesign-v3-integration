@@ -27,6 +27,7 @@ from .models import ModelConfig
 from .session_store import compact, identity
 from .site_fact_integrity import (
     fact_paths,
+    fact_value,
     validate_fact_fields,
     validate_fact_references,
 )
@@ -134,7 +135,8 @@ def review_prompt(*, recovery: bool = False) -> str:
             "exactly one reason, at most two uncertainties, and at most one fact_ref. "
             "When a prior typed opinion is supplied, correct that opinion instead of restarting "
             "the review. Correct the reported structured inconsistency using the supplied "
-            "fact value. Keep each prose item to one short sentence. Complete the "
+            "fact value. Keep each prose item to one short sentence under 240 characters. "
+            "Complete the "
             "structured submission now. Retain any negative finding; do not change verdict "
             "to satisfy formatting."
             if recovery
@@ -147,6 +149,7 @@ def review_input(packet: dict[str, Any]) -> dict[str, Any]:
     """Exact scientific working set; omit transport/navigation instructions, not evidence."""
     keys = (
         "user_objective",
+        "objective_requirements",
         "approved_target",
         "runtime_status",
         "residue_facts",
@@ -178,6 +181,133 @@ def review_input(packet: dict[str, Any]) -> dict[str, Any]:
         "inside a passage string. Use annotation references for structured feature assertions. "
         "Source passages expand source_group through decision_evidence.source_metadata. "
         "Their exact original passages and qualifiers are retained.",
+    }
+
+
+def recovery_review_input(
+    packet: dict[str, Any],
+    *,
+    failure: str,
+    prior_opinion: dict[str, Any] | None,
+    schema_diagnostic: str | None,
+) -> dict[str, Any]:
+    """Small decision view for typed recovery; the full packet remains validation authority.
+
+    The first review receives the complete evidence packet. A retry exists to finish or repair
+    that review, so it must not resend every passage, annotation and mapping namespace. Exact
+    candidate facts, the full ranked interpretation and any fact cited by a prior typed opinion
+    are retained. The eventual submission is still validated against ``packet``.
+    """
+    table = packet["residue_facts"]["facts_table"]
+    columns = table["mapping_columns"] + table["metric_columns"]
+    rows = [dict(zip(columns, values, strict=True)) for values in table["rows"]]
+    by_label = {row["label_seq_id"]: row for row in rows}
+    residue_fields = (
+        "label_seq_id",
+        "canonical_position",
+        "canonical_residue",
+        "amino_acid",
+        "mapping_status",
+        "rsasa",
+        "surface_eligible",
+    )
+    decision = packet["final_site_decision"]
+    interpretations = {
+        candidate.get("candidate_id"): candidate
+        for candidate in decision.get("interpretation", {}).get("candidates", [])
+        if isinstance(candidate, dict)
+    }
+    candidates = []
+    for candidate in packet["candidate_facts"]:
+        labels = candidate["design_labels"]
+        candidates.append(
+            {
+                **candidate,
+                "residue_summary": [
+                    {key: by_label[label].get(key) for key in residue_fields}
+                    for label in labels
+                    if label in by_label
+                ],
+                "ranking_interpretation": interpretations.get(candidate["candidate_id"]),
+            }
+        )
+
+    target = packet["approved_target"]
+    hard = target.get("hard_facts", {})
+    identity_facts = target.get("identity", {})
+    concise_target = {
+        "identity": identity_facts,
+        "hard_facts": {
+            key: hard[key]
+            for key in (
+                "canonical_accession",
+                "canonical_length",
+                "selected_chain",
+            )
+            if key in hard
+        },
+        "bundle": target.get("bundle"),
+    }
+
+    prior_refs: list[str] = []
+    if isinstance(prior_opinion, dict):
+        refs = prior_opinion.get("fact_refs", [])
+        if isinstance(refs, list):
+            prior_refs.extend(ref for ref in refs if isinstance(ref, str))
+        claims = prior_opinion.get("fact_claims", [])
+        if isinstance(claims, list):
+            prior_refs.extend(
+                claim["fact_ref"]
+                for claim in claims
+                if isinstance(claim, dict) and isinstance(claim.get("fact_ref"), str)
+            )
+    full_paths = fact_paths(packet)
+    prior_facts = {}
+    prior_kinds = set()
+    for short in dict.fromkeys(prior_refs):
+        bound = bind_fact_ref(short, packet)
+        if bound in full_paths:
+            prior_facts[short] = fact_value(packet, bound)
+            prior_kinds.add(full_paths[bound]["kind"])
+
+    offered_kinds = {"target", "candidate", "topology", "exclusions", *prior_kinds}
+    offered = {
+        kind: value
+        for kind, value in packet["fact_references"].items()
+        if kind in offered_kinds
+    }
+    available = [
+        key.split(":", 1)[1]
+        for key, ref in full_paths.items()
+        if ref["kind"] in offered_kinds
+    ]
+    available.extend(short for short in prior_facts if short not in available)
+    return {
+        "kind": "site-judge-recovery-view-v1",
+        "user_objective": packet["user_objective"],
+        "objective_requirements": packet.get("objective_requirements", {}),
+        "approved_target": concise_target,
+        "runtime_status": packet["runtime_status"],
+        "candidate_facts": candidates,
+        "final_site_decision": decision,
+        "candidate_evaluation_scope": packet["candidate_evaluation_scope"],
+        "downstream_validation": packet["downstream_validation"],
+        "authority": packet["authority"],
+        "avoid_design_labels": packet.get("avoid_design_labels", []),
+        "reference_collections": offered,
+        "available_fact_ids": list(dict.fromkeys(available)),
+        "prior_referenced_facts": prior_facts,
+        "submission_correction": {
+            "failure": failure,
+            "prior_unvalidated_submission_to_correct": prior_opinion,
+            "schema_diagnostic": schema_diagnostic,
+            "instruction": "Correct and submit only the compact typed verdict. The failed "
+            "output is not evidence. Preserve substantive negative findings.",
+        },
+        "recovery_scope": "The immutable full evidence packet remains Runtime authority and "
+        "will validate every fact reference and claim. This retry view removes repeated source "
+        "passages and mapping metadata after the complete first review; it does not remove or "
+        "change candidates, their order, their exact membership or their verified location.",
     }
 
 
@@ -331,22 +461,24 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                 raise AgentBoundaryError("Site Judge snapshot changed during review")
             recovery = attempt > 0
             schema = RecoverySiteJudgeVerdict if recovery else SiteJudgeVerdict
-            working = review_input(packet)
-            if recovery:
-                working["submission_correction"] = {
-                    "failure": failures[-1],
-                    "prior_unvalidated_submission_to_correct": last_opinion,
-                    "schema_diagnostic": self.schema_diagnostic
-                    or next(
-                        (
-                            p.get("schema_diagnostic")
-                            for p in reversed(previous)
-                            if p.get("schema_diagnostic")
-                        ),
-                        None,
-                    ),
-                    "instruction": "Correct the submission; failed output is not evidence.",
-                }
+            diagnostic = self.schema_diagnostic or next(
+                (
+                    p.get("schema_diagnostic")
+                    for p in reversed(previous)
+                    if p.get("schema_diagnostic")
+                ),
+                None,
+            )
+            working = (
+                recovery_review_input(
+                    packet,
+                    failure=failures[-1],
+                    prior_opinion=last_opinion,
+                    schema_diagnostic=diagnostic,
+                )
+                if recovery
+                else review_input(packet)
+            )
             messages = [HumanMessage(content=compact(working))]
             system = SystemMessage(content=review_prompt(recovery=recovery))
             schema_chars = len(compact([convert_to_openai_tool(schema)]))
@@ -373,6 +505,14 @@ class SiteJudgeBoundary(AgentMiddleware[Any, Any, Any]):
                     "tool_mode": "site-judge-recovery" if recovery else "site-judge",
                     "structured_output_tool": schema.__name__,
                     "offered_action_tools": [],
+                    **(
+                        {
+                            "full_review_input_chars": len(compact(review_input(packet))),
+                            "recovery_review_input_chars": len(compact(working)),
+                        }
+                        if recovery
+                        else {}
+                    ),
                 },
             )
             call = request.override(

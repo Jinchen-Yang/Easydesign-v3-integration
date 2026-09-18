@@ -26,6 +26,7 @@ class JudgeReviewPacket(EvidenceBinding):
     run_id: str
     status: str
     user_objective: str
+    objective_requirements: dict[str, Any] = Field(default_factory=dict)
     approved_target: dict[str, Any]
     runtime_status: dict[str, Any]
     residue_facts: dict[str, Any]
@@ -70,11 +71,29 @@ def validate_candidate_facts(
     candidate_ids = [c["candidate_id"] for c in dossier["candidate_comparison"]]
     if len(candidate_ids) != len(set(candidate_ids)):
         raise AgentBoundaryError("HARD_FACT_CONTRADICTION: duplicate candidate identity")
+    from .site_decision import verified_location_conflict
     from .site_evidence import hard_site_conflict
+
+    required_compartment = dossier.get("objective_requirements", {}).get(
+        "required_site_compartment"
+    )
 
     for candidate in dossier["candidate_comparison"]:
         labels = candidate["research_hypothesis"]["hotspot_label_seq_ids"]
         evaluation = candidate["deterministic_evaluation"]
+        verified_conflict = verified_location_conflict(
+            candidate.get("location", {}), required_compartment
+        )
+        eligibility = candidate.get("runtime_eligibility", {})
+        expected_status = "BLOCKED" if verified_conflict else "ELIGIBLE"
+        if eligibility and (
+            eligibility.get("status") != expected_status
+            or eligibility.get("cause") != verified_conflict
+            or eligibility.get("required_site_compartment") != required_compartment
+        ):
+            raise AgentBoundaryError(
+                "HARD_FACT_CONTRADICTION: candidate compartment eligibility mismatch"
+            )
         conflict = hard_site_conflict(facts, labels)
         if evaluation["status"] == "BLOCKED":
             if conflict != evaluation.get("cause"):
@@ -264,6 +283,14 @@ def build_judge_packet(
             {
                 "candidate_id": candidate["candidate_id"],
                 "design_labels": candidate["research_hypothesis"]["hotspot_label_seq_ids"],
+                "runtime_eligibility": candidate.get(
+                    "runtime_eligibility",
+                    {
+                        "status": "ELIGIBLE",
+                        "cause": None,
+                        "required_site_compartment": None,
+                    },
+                ),
                 # Correspondence and canonical annotation are already in the single complete
                 # residue table and source annotations. Keep kernel membrane geometry distinct.
                 "location": {
@@ -291,6 +318,7 @@ def build_judge_packet(
         run_id=snapshot["run_id"],
         status=snapshot["status"],
         user_objective=goal,
+        objective_requirements=dossier.get("objective_requirements", {}),
         approved_target=dossier["approved_target"],
         runtime_status=dossier["runtime_status"],
         residue_facts=dossier["trusted_residue_facts"],

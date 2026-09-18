@@ -1,5 +1,7 @@
 """Normal Site review and classified failure are separately observable outcomes."""
 
+import json
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -12,6 +14,7 @@ from easydesign.agent.contracts import (
     EvidenceBinding,
     JudgeVerdict,
 )
+from easydesign.agent.session_store import compact
 from easydesign.agent.site_judge import SiteJudgeUnavailable, create_site_judge
 from easydesign.agent.tools import JUDGE_EVIDENCE
 from tests.agent_support import scripted_config
@@ -35,6 +38,39 @@ def opinion() -> dict[str, Any]:
         "corrections": [],
         "fact_refs": ["candidate:0"],
     }
+
+
+def test_recovery_packet_removes_repeated_corpus_but_keeps_every_candidate_and_prior_fact(
+    packet_case,
+):
+    from easydesign.agent.site_judge import recovery_review_input, review_input
+
+    packet = deepcopy(packet_case["bridge"].judge_evidence())
+    packet["decision_evidence"]["source_passages"].append(
+        {
+            "card_id": "synthetic-large-passage",
+            "passage": "SYNTHETIC repeated source corpus " * 4000,
+            "source_verified": True,
+        }
+    )
+    full_chars = len(compact(review_input(packet)))
+    prior = opinion()
+    recovery = recovery_review_input(
+        packet,
+        failure="MISSING_OR_INVALID_TYPED_SUBMISSION",
+        prior_opinion=prior,
+        schema_diagnostic="reasons.0 must contain at most 300 characters",
+    )
+    recovery_chars = len(compact(recovery))
+    assert recovery_chars < 30_000
+    assert recovery_chars < full_chars // 3
+    assert [candidate["candidate_id"] for candidate in recovery["candidate_facts"]] == [
+        candidate["candidate_id"] for candidate in packet["candidate_facts"]
+    ]
+    assert "decision_evidence" not in recovery
+    assert recovery["submission_correction"]["prior_unvalidated_submission_to_correct"] == prior
+    assert recovery["prior_referenced_facts"]["candidate:0"] == packet["candidate_facts"][0]
+    assert json.dumps(recovery, ensure_ascii=False).count("SYNTHETIC repeated source corpus") == 0
 
 
 class CompactJudgeModel(SiteModel):

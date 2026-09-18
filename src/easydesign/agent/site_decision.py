@@ -133,6 +133,65 @@ def candidate_name(candidate: dict[str, Any]) -> str:
     return f"{candidate['candidate_id']}" + (f" ({location})" if location else "")
 
 
+def verified_location_conflict(
+    location: dict[str, Any], required_compartment: str | None
+) -> str | None:
+    """Return a hard conflict only when independent verified sidedness agrees.
+
+    TM membership, point burial, low exposure and an uncertain whole-binder approach remain
+    ranking penalties. A block requires an explicit user compartment plus decisive topology or
+    concordant canonical annotation and signed membrane geometry.
+    """
+    if required_compartment not in {"extracellular", "intracellular"}:
+        return None
+    segments = {str(value) for value in location.get("segments", [])}
+    annotations = {
+        str(annotation.get("description", "")).casefold()
+        for row in location.get("sequence_topology", [])
+        for annotation in row.get("annotations", [])
+        if annotation.get("type") == "Topological domain"
+    }
+    has_extra = bool(annotations & {"extracellular", "outside"})
+    has_cyto = bool(annotations & {"cytoplasmic", "intracellular", "cytosolic"})
+    geometry = location.get("membrane_geometry", [])
+    regions = {str(row.get("region", "")) for row in geometry}
+    axial = [row.get("axial_distance") for row in geometry]
+    signed = bool(axial) and all(isinstance(value, (int, float)) for value in axial)
+
+    if required_compartment == "extracellular":
+        declared_conflict = bool(segments) and segments <= {"ICL1", "ICL2", "ICL3", "C-term"}
+        geometric_conflict = bool(geometry) and (
+            regions <= {"intracellular", "intracellular_tm_surface"}
+            or (
+                regions <= {"inner_pore"}
+                and signed
+                and all(value < 0 for value in axial)
+                and has_cyto
+                and not has_extra
+            )
+        )
+        if declared_conflict or geometric_conflict:
+            return "verified-compartment-conflict"
+    else:
+        declared_conflict = bool(segments) and segments <= {
+            "N-term",
+            "ECD",
+            "ECL1",
+            "ECL2",
+            "ECL3",
+        }
+        geometric_conflict = bool(geometry) and (
+            regions <= {"extracellular", "extracellular_tm_surface", "outer_vestibule"}
+            and signed
+            and all(value > 0 for value in axial)
+            and has_extra
+            and not has_cyto
+        )
+        if declared_conflict or geometric_conflict:
+            return "verified-compartment-conflict"
+    return None
+
+
 def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
     """Scientific projection of a verified dossier, not a message/history compressor.
 
@@ -335,6 +394,9 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
         evaluation = candidate["deterministic_evaluation"]
         original = candidate["research_hypothesis"]
         block = evaluation.get("cause") if evaluation["status"] == "BLOCKED" else None
+        eligibility = candidate.get("runtime_eligibility", {})
+        if eligibility.get("status") == "BLOCKED":
+            block = eligibility.get("cause") or "verified-compartment-conflict"
         if set(original["hotspot_label_seq_ids"]) & set(excluded):
             block = "explicit-avoid-residue-constraint"
         rank = None if block else "ABC"[ranked_count]

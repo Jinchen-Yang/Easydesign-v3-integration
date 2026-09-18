@@ -53,3 +53,15 @@ This ledger records operator-visible execution defects and repairs for the fresh
 - Verification before rerun: focused tests prove the Site research call ceiling forces a typed handoff before the global execution limit, records `model-call-budget` as the transition reason, retains the pre-existing query ceiling, and preserves durable Skill receipts.
 - Measurement disposition: R4 is a deliberate EasyDesign development/repair run under the investigator-authorized policy. It is excluded from formal Figure 2A measurements. The next EasyDesign result must be a fresh project from raw input; this checkpoint will not be resumed.
 - Scientific-state disposition: R4 stopped before SiteResearchHandoff, SiteDecision or Gate 2. No R4 scientific output is imported into a fresh run or either control.
+
+## F2-CONTROL-001 — Control runner reused the Gate 1 thread scope
+
+- Project: `figure2-nk2r-source-r2`
+- Requested measurement thread: `thread-be3ccf84de9f42a5855f600fc269d865`
+- Failure boundary: Generic Agent runner initialization, before `begin_execution` and before any model or scientific tool call.
+- Before: the source thread had correctly been frozen with scientific scope `target`. The control runner attempted to reopen that same thread as scope `site`, and Runtime rejected it with `Thread scientific scope is immutable; create a new thread to extend it`. The runner would also have reached a second scope mismatch when moving from its initial `site` bridge to the Gate 3 `design` bridge.
+- Root cause: the runner confused a project-level approved Target snapshot with the conversation thread that originally created it. Target authority is project-level, while pending Site/Design state and scientific scope are thread-local.
+- Repair: create a new method/replicate-specific thread with a control-specific immutable fingerprint, initialize its scope as `design` from the start, and reuse only the project-level approved Target state. Site and Design remain isolated in that new thread.
+- Verification before rerun: static checks, a direct initialization smoke against the approved Target snapshot, and the benchmark control regressions must pass before starting a new thread.
+- Measurement disposition: no formal Generic Agent run started. The failed command made zero model calls and emitted no Site or Design proposal, so it is an infrastructure preflight failure rather than a first-pass scientific result. The replacement run uses a new thread and a new code commit.
+- Scientific-state disposition: no control scientific state was created and nothing is imported into the replacement thread.

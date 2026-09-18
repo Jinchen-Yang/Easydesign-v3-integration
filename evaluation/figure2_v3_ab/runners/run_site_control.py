@@ -115,7 +115,15 @@ async def run(arguments: argparse.Namespace) -> dict[str, Any]:
     config = ModelConfig.model_validate(yaml.safe_load(arguments.models.read_text()))
     store = SessionStore(project)
     try:
-        bridge = Phase2Bridge(project, arguments.thread, store, through="site")
+        control_fingerprint = identity(
+            {
+                "contract": "figure2-pilot-ready-control-v1",
+                "method": arguments.method,
+                "models": config.model_dump(mode="json"),
+            }
+        )
+        store.thread(arguments.thread, control_fingerprint, arguments.goal)
+        bridge = Phase2Bridge(project, arguments.thread, store, through="design")
         if bridge.current_site() is not None:
             raise ValueError("Control clone must stop after approved Target and before Site")
         target_evidence = bridge.read_site_evidence()

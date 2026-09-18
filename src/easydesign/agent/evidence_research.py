@@ -79,9 +79,7 @@ class ResearchBudgetExhausted(AgentBoundaryError):
 
     def __init__(self, used: int) -> None:
         self.used = used
-        super().__init__(
-            f"This execution used its {RESEARCH_QUERY_LIMIT} bounded research queries"
-        )
+        super().__init__(f"This execution used its {RESEARCH_QUERY_LIMIT} bounded research queries")
 
     def result(self, *, role: str) -> dict[str, Any]:
         return {
@@ -1106,9 +1104,55 @@ def research_tool(bridge: Any, role: str) -> Any:
     from langchain_core.tools import StructuredTool
 
     async def acquire(**arguments: Any) -> str:
-        result = EvidenceResearch(bridge).acquire(
-            ResearchQuery.model_validate(arguments), role=role
-        )
+        query = ResearchQuery.model_validate(arguments)
+        worker = EvidenceResearch(bridge)
+        result = worker.acquire(query, role=role)
+        receptor_analysis = None
+        if role == "site" and query.operation == "gpcrdb-context" and not result["errors"]:
+            context_cards = [
+                card
+                for card in result["cards"]
+                if card["provider"] == "GPCRdb" and card.get("context_ref")
+            ]
+            if len(context_cards) != 1:
+                raise AgentBoundaryError(
+                    "A verified GPCRdb acquisition must resolve one receptor context card"
+                )
+            target, _, _ = bridge.site_facts()
+            auth_chain = target["evidence"]["hard_facts"].get("selected_chain")
+            if not isinstance(auth_chain, str) or not auth_chain:
+                raise AgentBoundaryError(
+                    "Automatic receptor analysis requires the approved original auth chain"
+                )
+            source = context_cards[0]
+            source_refs = source.get("source_refs", [])
+            existing = next(
+                (
+                    card
+                    for evidence_query in worker.snapshot()["queries"]
+                    for card in evidence_query["cards"]
+                    if card["provider"] == "EasyDesign GPCR kernel"
+                    and all(ref in card.get("source_refs", []) for ref in source_refs)
+                ),
+                None,
+            )
+            if existing is None:
+                analysis = worker.analyze_receptor(
+                    ReceptorAnalysis(gpcrdb_card_id=source["card_id"], auth_chain=auth_chain)
+                )
+                receptor_analysis = {
+                    "card_id": analysis["card_id"],
+                    "analysis_ref": analysis["analysis_ref"],
+                    "auth_chain": auth_chain,
+                    "reused": False,
+                }
+            else:
+                receptor_analysis = {
+                    "card_id": existing["card_id"],
+                    "analysis_ref": existing["source_refs"][-1],
+                    "auth_chain": auth_chain,
+                    "reused": True,
+                }
         # The raw source and complete index remain in existing project artifacts.
         # Return only leads or acquisition receipts, never a record/full text.
         cards = []
@@ -1163,6 +1207,20 @@ def research_tool(bridge: Any, role: str) -> Any:
                 "need": NEEDS[result["topic"]],
                 "cards": cards,
                 "errors": result["errors"],
+                **(
+                    {
+                        "automatic_receptor_analysis": {
+                            **receptor_analysis,
+                            "authority": (
+                                "Deterministic topology, membrane-frame, chain-graph and "
+                                "candidate derivation only; Site still owns ranking and the "
+                                "Scientist still owns approval."
+                            ),
+                        }
+                    }
+                    if receptor_analysis is not None
+                    else {}
+                ),
                 "next": (
                     "Select relevant search leads before acquisition. For acquired cards, "
                     "retrieve_evidence uses their retrieval_need; original_acquisition_need "

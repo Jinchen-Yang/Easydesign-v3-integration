@@ -498,6 +498,96 @@ async def test_explicit_query_binding_reuses_cross_topic_evidence_without_taxono
         research.validate_questions([conclusion.model_copy(update={"query_ids": []})])
 
 
+@pytest.mark.asyncio
+async def test_site_gpcr_context_atomically_runs_deterministic_receptor_analysis(
+    research: Any, monkeypatch: Any
+) -> None:
+    import json
+
+    from easydesign.agent.evidence_research import research_tool
+
+    context_ref = {"artifact_id": "gpcrdb-context", "sha256": "a" * 64}
+    source_ref = {"artifact_id": "gpcrdb-source", "sha256": "b" * 64}
+    captured = []
+
+    monkeypatch.setattr(
+        research.bridge,
+        "site_facts",
+        lambda: (
+            {"evidence": {"hard_facts": {"selected_chain": "R"}}},
+            {},
+            {"artifact_id": "site-facts", "sha256": "c" * 64},
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "acquire",
+        lambda self, query, *, role: {
+            "query_id": "gpcrdb-query",
+            "status": "UNRESOLVED",
+            "topic": "structure-complex",
+            "cards": [
+                {
+                    "card_id": "gpcrdb-nk2r",
+                    "provider": "GPCRdb",
+                    "identifier": "nk2r_human",
+                    "context_ref": context_ref,
+                    "source_refs": [source_ref],
+                }
+            ],
+            "errors": [],
+        },
+    )
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "snapshot",
+        lambda self: {
+            "queries": [
+                {
+                    "cards": [
+                        {
+                            "card_id": "gpcrdb-nk2r",
+                            "provider": "GPCRdb",
+                            "identifier": "nk2r_human",
+                            "context_ref": context_ref,
+                            "source_refs": [source_ref],
+                        }
+                    ]
+                }
+            ]
+        },
+    )
+
+    def analyze(self: Any, request: Any) -> dict[str, Any]:
+        captured.append(request)
+        return {
+            "card_id": "receptor-nk2r",
+            "analysis_ref": {"artifact_id": "receptor-analysis", "sha256": "d" * 64},
+        }
+
+    monkeypatch.setattr(EvidenceResearch, "analyze_receptor", analyze)
+    result = json.loads(
+        await research_tool(research.bridge, "site").ainvoke(
+            {
+                "topic": "structure-complex",
+                "question": "Resolve the approved receptor context",
+                "operation": "gpcrdb-context",
+                "identifier": "nk2r_human",
+                "pdb_id": "9W2H",
+                "selection_reason": "Obtain deterministic receptor topology and candidates",
+            }
+        )
+    )
+
+    assert len(captured) == 1
+    assert captured[0].gpcrdb_card_id == "gpcrdb-nk2r"
+    assert captured[0].auth_chain == "R"
+    assert result["automatic_receptor_analysis"]["card_id"] == "receptor-nk2r"
+    assert result["automatic_receptor_analysis"]["reused"] is False
+    assert "approval" in result["automatic_receptor_analysis"]["authority"]
+
+
 def test_acquisition_is_not_an_empty_search_and_failed_search_can_remain_unresolved(
     research: Any,
     monkeypatch: Any,

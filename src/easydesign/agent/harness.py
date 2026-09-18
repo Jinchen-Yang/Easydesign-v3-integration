@@ -52,7 +52,13 @@ from .evidence_output import (
     reasoning_working_view,
     verified_result,
 )
-from .evidence_research import EvidenceResearch, ReceptorAnalysis, ResearchQuery
+from .evidence_research import (
+    RESEARCH_QUERY_LIMIT,
+    EvidenceResearch,
+    ReceptorAnalysis,
+    ResearchBudgetExhausted,
+    ResearchQuery,
+)
 from .models import ModelConfig, Role
 from .phase2 import SITE_EVIDENCE, Phase2Bridge
 from .phase2_tools import DESIGN_ALLOWED, PHASE2_ALLOWED, phase2_tools
@@ -344,6 +350,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if t.name != "continue_evidence" or cursors[1:]
         ]
         research_progress = None
+        research_query_budget_complete = False
+        if self.role in {"target", "site"} and isinstance(self.bridge, Phase2Bridge):
+            used_queries = self.bridge.store.db.execute(
+                "SELECT COUNT(*) FROM events WHERE thread=? "
+                "AND kind='research-reservation' "
+                "AND json_extract(payload,'$.execution_id')=?",
+                (self.bridge.thread, self.execution_id),
+            ).fetchone()[0]
+            research_query_budget_complete = used_queries >= RESEARCH_QUERY_LIMIT
+            if research_query_budget_complete:
+                available = [t for t in available if t.name != "research_evidence"]
         if self.role == "site" and isinstance(self.bridge, Phase2Bridge):
             research = EvidenceResearch(self.bridge).snapshot()
             if self.site_stage == "research":
@@ -551,8 +568,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
             synthesize = self.site_stage == "synthesis"
-            call_tools = [] if synthesize or compact_judge else available
-            if synthesize or compact_judge:
+            finalize_research = (
+                self.role == "site"
+                and self.site_stage == "research"
+                and research_query_budget_complete
+            )
+            submission_only = synthesize or compact_judge or finalize_research
+            call_tools = [] if submission_only else available
+            if submission_only:
                 assert self.output_schema is not None
                 call_tool_chars = len(compact([convert_to_openai_tool(self.output_schema)]))
             else:
@@ -581,6 +604,21 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "This creates no approval; unchanged research/fact checks and independent "
                         "Judge can reject insufficient evidence. Do not invent support."
                         if synthesize
+                        else ""
+                    )
+                    + (
+                        " The bounded Site acquisition budget is complete. No new source query "
+                        f"can run. Submit {submission_name} now using already delivered evidence; "
+                        "retain missing or unresolved evidence explicitly. Do not interpret the "
+                        "budget boundary as negative scientific evidence."
+                        if finalize_research
+                        else ""
+                    )
+                    + (
+                        " The bounded Target acquisition budget is complete. New research queries "
+                        "are unavailable; use the already acquired evidence and remaining "
+                        "deterministic Target tools to finish the typed interpretation."
+                        if self.role == "target" and research_query_budget_complete
                         else ""
                     )
                     + (
@@ -618,6 +656,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         "evidence already delivered. Do not call previous reading tools. "
                         "Keep unknowns, conflicting evidence and alternatives explicit; "
                         "the runtime and independent Judge may reject an insufficient proposal."
+                    )
+                )
+            if finalize_research:
+                context_suffix.append(
+                    HumanMessage(
+                        content="Runtime acquisition limit (not a scientific conclusion): "
+                        f"{RESEARCH_QUERY_LIMIT} bounded Site queries are complete. Submit "
+                        f"{submission_name} now from delivered evidence. Keep every material "
+                        "unknown, source limitation and alternative explicit."
                     )
                 )
             if compact_judge:
@@ -663,7 +710,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ),
                     "repair_attempt": attempt,
                     "compact_judge_recovery": compact_judge,
-                    "tool_mode": "site-synthesis" if synthesize else "research",
+                    "tool_mode": (
+                        "site-synthesis"
+                        if synthesize
+                        else "site-research-finalization"
+                        if finalize_research
+                        else "research"
+                    ),
                     "history_projection": "completed-tool-records"
                     if reasoning and self.role != "site"
                     else "native",
@@ -683,7 +736,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     model=compact_judge_model(request.model, self.config)
                 )
             if (
-                synthesize
+                (synthesize or finalize_research)
                 and self.config.for_role("site").provider == "deepseek"
                 and self.config.for_role("site").reasoning_effort == "none"
             ):
@@ -764,7 +817,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
             repair_already_counted = False
-            if (synthesize or compact_judge) and any(
+            if submission_only and any(
                 call["name"] != schema.__name__ for call in calls
             ):
                 diagnostic = (
@@ -870,7 +923,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                     return response
             elif any(isinstance(m, ToolMessage) for m in response.result):
-                if not (synthesize or compact_judge):
+                if not submission_only:
                     return response
                 # ToolStrategy has already recorded/reserved this schema correction.
                 # Isolated synthesis keeps its original evidence input even when native
@@ -1213,6 +1266,22 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     )
                     read_query(args)
                 result = await handler(request)
+            except ResearchBudgetExhausted as error:
+                if (
+                    name != "research_evidence"
+                    or self.role not in {"target", "site"}
+                    or not isinstance(self.bridge, Phase2Bridge)
+                    or self.execution_id is None
+                ):
+                    raise AgentBoundaryError(
+                        "Research budget recovery is outside this role"
+                    ) from error
+                result = ToolMessage(
+                    content=compact(error.result(role=self.role)),
+                    status="error",
+                    tool_call_id=request.tool_call["id"],
+                    name=name,
+                )
             except InvalidFieldProjection as error:
                 if (
                     (

@@ -1297,6 +1297,149 @@ async def test_research_uses_shared_budget_without_legacy_forced_synthesis(bridg
 
 
 @pytest.mark.asyncio
+async def test_research_query_ceiling_returns_finalization_diagnostic_without_fetch(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.evidence_research import RESEARCH_QUERY_LIMIT
+
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Finish bounded Site research")["execution_id"]
+    for index in range(RESEARCH_QUERY_LIMIT):
+        b.store.event(
+            b.thread,
+            "research-reservation",
+            {"execution_id": eid, "query_id": f"synthetic-{index}"},
+        )
+    guard = RoleBoundary(b, "site", scripted_config(), "Research", execution_id=eid)
+    worker = EvidenceResearch(b)
+    monkeypatch.setattr(
+        worker,
+        "client",
+        lambda _: pytest.fail("The query ceiling must be checked before any network client"),
+    )
+    value = ResearchQuery(
+        topic="function",
+        question="Does the bounded evidence support inhibition?",
+        operation="literature-search",
+        query="synthetic bounded evidence",
+    )
+    request = SimpleNamespace(
+        tool_call={
+            "name": "research_evidence",
+            "id": "over-budget",
+            "args": value.model_dump(mode="json"),
+        }
+    )
+
+    async def handler(current: Any) -> Any:
+        return worker.acquire(
+            ResearchQuery.model_validate(current.tool_call["args"]), role="site"
+        )
+
+    result = await guard.awrap_tool_call(request, handler)
+    diagnostic = json.loads(result.content)
+    assert result.status == "error"
+    assert diagnostic["error_code"] == "RESEARCH_QUERY_BUDGET_COMPLETE"
+    assert diagnostic["used_queries"] == diagnostic["query_limit"] == RESEARCH_QUERY_LIMIT
+    assert diagnostic["required_action"] == "submit_site_research_handoff"
+    events = b.store.events(b.thread)
+    assert len(
+        [
+            event
+            for event in events
+            if event["kind"] == "research-reservation"
+            and event["payload"]["execution_id"] == eid
+        ]
+    ) == RESEARCH_QUERY_LIMIT
+    assert not [event for event in events if event["kind"] == "tool-argument-repair"]
+
+
+@pytest.mark.asyncio
+async def test_site_query_ceiling_forces_typed_handoff_from_existing_evidence(
+    site_bridge: Any,
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    from easydesign.agent.evidence_research import RESEARCH_QUERY_LIMIT
+    from tests.unit.agent.test_site_dossier import bind, handoff
+
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Finalize bounded Site research")["execution_id"]
+    for index in range(RESEARCH_QUERY_LIMIT):
+        b.store.event(
+            b.thread,
+            "research-reservation",
+            {"execution_id": eid, "query_id": f"synthetic-{index}"},
+        )
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Research",
+        execution_id=eid,
+        site_stage="research",
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+    calls = []
+
+    async def handler(current: Any) -> Any:
+        calls.append(current)
+        assert current.tools == []
+        assert "bounded Site acquisition budget is complete" in current.system_message.text
+        assert any(
+            "Submit SiteResearchHandoff now from delivered evidence" in str(message.content)
+            for message in current.messages
+        )
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": handoff().model_dump(mode="json"),
+                            "id": "handoff",
+                        }
+                    ],
+                )
+            ],
+            structured_response=handoff(),
+        )
+
+    request = Request(
+        tools=tools,
+        messages=[],
+        model_settings={},
+        system_message=SystemMessage(content="Research"),
+    )
+    token = bind(b)
+    try:
+        result = await guard.awrap_model_call(request, handler)
+    finally:
+        from easydesign.agent.phase2 import SITE_EVIDENCE
+
+        SITE_EVIDENCE.reset(token)
+    assert result.structured_response == handoff()
+    assert len(calls) == 1
+    context = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "model-context"
+    ]
+    assert context[-1]["tool_mode"] == "site-research-finalization"
+    assert context[-1]["offered_action_tools"] == []
+
+
+@pytest.mark.asyncio
 async def test_unknown_model_tool_is_recorded_and_rejected_before_execution(bridge: Any) -> None:
     from langchain_core.tools import StructuredTool
 

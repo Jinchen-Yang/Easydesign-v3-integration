@@ -71,6 +71,34 @@ TOPICS: tuple[str, ...] = (
 )
 HOSTS = {"www.ebi.ac.uk", "rest.uniprot.org", "search.rcsb.org", "data.rcsb.org", "gpcrdb.org"}
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+RESEARCH_QUERY_LIMIT = 12
+
+
+class ResearchBudgetExhausted(AgentBoundaryError):
+    """The durable acquisition ceiling was reached; existing evidence remains usable."""
+
+    def __init__(self, used: int) -> None:
+        self.used = used
+        super().__init__(
+            f"This execution used its {RESEARCH_QUERY_LIMIT} bounded research queries"
+        )
+
+    def result(self, *, role: str) -> dict[str, Any]:
+        return {
+            "error_code": "RESEARCH_QUERY_BUDGET_COMPLETE",
+            "used_queries": self.used,
+            "query_limit": RESEARCH_QUERY_LIMIT,
+            "required_action": (
+                "submit_site_research_handoff"
+                if role == "site"
+                else "continue_without_new_research_queries"
+            ),
+            "message": (
+                "The bounded acquisition budget is complete. No query ran and no absence of "
+                "scientific evidence is implied. Use already acquired and focused evidence, "
+                "preserve unresolved questions, and finish the current typed assessment."
+            ),
+        }
 
 
 class ResearchQuery(StrictDTO):
@@ -501,8 +529,8 @@ class EvidenceResearch:
             "AND json_extract(payload,'$.execution_id')=?",
             (bridge.thread, execution_id),
         ).fetchone()[0]
-        if used >= 12:
-            raise AgentBoundaryError("This execution used its 12 bounded research queries")
+        if used >= RESEARCH_QUERY_LIMIT:
+            raise ResearchBudgetExhausted(used)
         bridge.store.event(
             bridge.thread,
             "research-reservation",

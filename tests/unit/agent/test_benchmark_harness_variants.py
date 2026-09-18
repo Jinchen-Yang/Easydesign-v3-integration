@@ -90,6 +90,39 @@ def test_generic_control_disables_structured_output_repair(bridge) -> None:
     assert bridge.store.events(bridge.thread)[-1]["kind"] == "benchmark-repair-disabled"
 
 
+def test_skill_free_control_tool_surface_does_not_require_read_file(
+    site_bridge, design_bridge
+) -> None:
+    from easydesign.agent.harness import RoleBoundary
+
+    execution = site_bridge.store.begin_execution(
+        site_bridge.thread, "Synthetic skill-free control surface"
+    )
+    site = RoleBoundary(
+        site_bridge,
+        "site",
+        scripted_config(),
+        "Synthetic control",
+        execution_id=execution["execution_id"],
+        domain_skills=False,
+        allow_repairs=False,
+    )
+    design_execution = design_bridge.store.begin_execution(
+        design_bridge.thread, "Synthetic skill-free Binder control surface"
+    )
+    design = RoleBoundary(
+        design_bridge,
+        "binder",
+        scripted_config(),
+        "Synthetic control",
+        execution_id=design_execution["execution_id"],
+        domain_skills=False,
+        allow_repairs=False,
+    )
+    assert "read_file" not in site.allowed
+    assert "read_file" not in design.allowed
+
+
 def test_base_llm_tool_packet_binds_exact_inputs_and_outputs() -> None:
     from easydesign.agent.benchmark_controls import freeze_base_tool_packet
 

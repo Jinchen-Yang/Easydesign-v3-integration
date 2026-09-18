@@ -65,3 +65,15 @@ This ledger records operator-visible execution defects and repairs for the fresh
 - Verification before rerun: static checks, a direct initialization smoke against the approved Target snapshot, and the benchmark control regressions must pass before starting a new thread.
 - Measurement disposition: no formal Generic Agent run started. The failed command made zero model calls and emitted no Site or Design proposal, so it is an infrastructure preflight failure rather than a first-pass scientific result. The replacement run uses a new thread and a new code commit.
 - Scientific-state disposition: no control scientific state was created and nothing is imported into the replacement thread.
+
+## F2-CONTROL-002 — Skill-free control expected a Skill loader
+
+- Project: `figure2-nk2r-source-r2`
+- Thread: `thread-figure2-nk2r-generic-r1`
+- Failure boundary: Generic Agent Site middleware admission, before the provider/model call.
+- Before: the Generic control correctly supplied only scientific tools and no domain Skill loader. `RoleBoundary`, however, inherited the production Site allowlist containing `read_file` and required the actual tool surface to equal that set. Runtime therefore rejected the correctly reduced control surface as unexpected.
+- Root cause: `domain_skills=False` disabled Skill paths and prompts but did not remove `read_file` from the authoritative allowed-tool set. The same latent mismatch existed for the skill-free Binder control.
+- Repair: copy the role allowlist into an instance-owned set and remove `read_file` whenever `domain_skills=False`, for both Site and Binder roles. No scientific tool, validator or model prompt is added.
+- Verification before rerun: explicit Site and Binder control tests assert the skill-free allowlist excludes `read_file`; benchmark control regressions, static checks and type checks pass.
+- Measurement disposition: no provider call occurred (`model-call=0`); the thread contains only setup/execution metadata and no scientific proposal. It is excluded as infrastructure preflight. A new code commit and fresh thread are required.
+- Scientific-state disposition: no Site/Design output exists and nothing is reused.

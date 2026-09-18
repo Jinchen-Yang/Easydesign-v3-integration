@@ -263,6 +263,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if isinstance(bridge, Phase2Bridge)
             else ALLOWED[role]
         )
+        self.allowed = set(self.allowed)
+        if not domain_skills:
+            self.allowed.discard("read_file")
         if site_stage == "synthesis":
             self.allowed = set()
         if hasattr(bridge, "downstream_scope"):

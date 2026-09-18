@@ -140,6 +140,44 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Developer repair after start: `NK2R-E2E-004` below.
 - Final autonomy eligibility: no. The routing repair requires a new Gate-1-to-Gate-5 attempt.
 
+
+### Attempt 004
+
+- Project: `nk2r-fresh-e2e-20260918-a04`
+- Thread: `thread-ca24e4c59e6847fa8ef5186789539dfa`
+- Start commit: `32f404155652ae15e8d45af00e465ee58b1a76ae`
+- Status: invalidated at Gate 2; retained as read-only acquisition-boundary evidence
+- Gate 1: independently resolved the correct receptor author chain `R`; the first independent
+  Judge review returned `SUPPORTED`. Scientist approval created card
+  `48b33c68466bb924ce2fd0f040c3af838d341f836a5ed8bc258262cf151dca4c`.
+- Target preparation: run `20260918t074803z`, job `job-4340138b82814cec`, succeeded.
+- Gate 2 research: progressed through approximately 34 Site model calls and all 12 allowed remote
+  research reservations, including independent source selection and focused source reads. No old
+  NK2R dossier, candidate membership or rank was supplied. The Site had not yet submitted its
+  typed research handoff.
+- Terminal defect: the model's final native batch first completed a valid `retrieve_evidence`
+  read and then requested a thirteenth `research_evidence` acquisition. Runtime rejected the
+  acquisition with `This execution used its 12 bounded research queries` and terminated the
+  entire execution, discarding the opportunity to synthesize the evidence already collected.
+- Operational interruptions: two external interactive SSH frontends disconnected, and one
+  provider call stalled before the abandoned frontend process was cleanly terminated. Durable
+  checkpoint recovery preserved the same execution and did not mutate scientific state. These
+  events exposed neither the defect nor its repair; the deterministic query-ceiling exception did.
+- Start log SHA-256:
+  `a9253f22b4b5c9a655cac096c3837aea6319322f8f2136f5198d5a20fa36d28f`.
+- Gate 1 approval log SHA-256:
+  `da7d13df479e6fd97ec4bae9d9b721fa68aab3cf4b8b1d330234888ae9b30d11`.
+- Gate 2 initial/resume log SHA-256 values:
+  `5a3d581e47b1a2ee8340fe9e2bec9ad0f7ca783dbcc1c0ed609d3b0794131825`,
+  `516086f53049918821d73f891ac69d406722615a30030c5dd8f5fad0189af3cf`,
+  `35ddb36bc8b8441138696e012a359c4e0144b5946fbaa1c230bb6fd195447f67`,
+  `fba51fe543a02b65f3603bb66e7d146acda8cb62727ddede4787aaf00217cf2e`,
+  and `338acd1f0c6a83c9361e3510a50fcac84ecee19227b2abb4ccf942f7ac148311`.
+- Developer repair after start: `NK2R-E2E-005` below.
+- Final autonomy eligibility: no. The acquisition-boundary control-flow repair requires a new
+  Gate-1-to-Gate-5 attempt.
+
+
 ## Repairs
 
 ### NK2R-E2E-001 — Site Judge recovery repeated the full evidence packet
@@ -276,6 +314,46 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Manual project-state changes: none.
 - Attempt invalidated: yes.
 
+
+### NK2R-E2E-005 — research acquisition ceiling terminated a completed evidence-gathering phase
+
+- Attempt / stage: Attempt 004, Gate 2 Site research.
+- Trigger: after 12 durable acquisitions and substantial focused reading, a thirteenth acquisition
+  in the same native batch raised the generic execution boundary error.
+- Expected: 12 remains a hard acquisition ceiling, but reaching it is a convergence boundary.
+  Existing evidence and explicit unknowns must remain usable for the typed
+  `SiteResearchHandoff`; no thirteenth remote request may run.
+- Before state: `EvidenceResearch.acquire()` raised a generic `AgentBoundaryError`. Harness had
+  no semantic distinction between a forbidden query and normal completion of the bounded
+  acquisition phase, so the error escaped and killed the whole Gate 2 execution before dossier
+  construction.
+- Root cause: acquisition accounting and scientific finalization were disconnected. The worker
+  correctly enforced a durable limit, but the model-call boundary continued advertising
+  `research_evidence`, and the tool boundary could not convert an in-flight parallel overflow
+  into a typed convergence diagnostic.
+- Generic fix: the limit is now one shared constant. At the model boundary, a Site execution with
+  12 reservations removes every action tool and enters submission-only
+  `site-research-finalization`, explicitly requiring `SiteResearchHandoff` from delivered
+  evidence with unknowns retained. A thirteenth request that crosses the limit inside an already
+  emitted native batch performs no network access and returns
+  `RESEARCH_QUERY_BUDGET_COMPLETE` with `submit_site_research_handoff`; it does not consume the
+  tool-argument repair budget. Target research also loses the acquisition tool at the same
+  ceiling while retaining its deterministic Target tools.
+- Safety behavior: the limit was not increased; budget exhaustion is not negative scientific
+  evidence; existing dossier, hard-fact, source-citation, Judge and Gate validation remain
+  unchanged.
+- Regression coverage: a thirteenth query cannot instantiate a network client and returns the
+  finalization diagnostic; the next Site model call sees zero action tools and must submit a
+  typed handoff; adjacent research, Site Harness, shared model-budget, native batch and contract
+  suites passed `110` tests. Ruff and `git diff --check` passed.
+- Changed files: `src/easydesign/agent/evidence_research.py`,
+  `src/easydesign/agent/harness.py`,
+  `tests/unit/agent/test_progress_and_pages.py`.
+- Fix commit: `c2c4fc5e937a90d601f2943c796cb08335e76ba0`.
+- Manual project-state changes: none.
+- Attempt invalidated: yes.
+
+
 ## Validation after repairs
 
 - Focused Site Judge, ranked portfolio, dossier and fact-integrity suite: 92 passed before the
@@ -293,8 +371,10 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
   by `NK2R-E2E-003`.
 - Attempt 003 restarted from Gate 1 after the repair-budget commit and was invalidated at Gate 1
   by `NK2R-E2E-004`.
-- The next accepted run is a new Attempt 004 project and thread, restarted from Gate 1 after
-  commit `c746ba3545593845012eeb279c315fc23ec632ea`.
+- Attempt 004 restarted from Gate 1 after the Target-review routing repair and was invalidated
+  at Gate 2 by `NK2R-E2E-005`.
+- The next accepted run is a new Attempt 005 project and thread, restarted from Gate 1 after
+  commit `c2c4fc5e937a90d601f2943c796cb08335e76ba0`.
 
 ## Issue template
 

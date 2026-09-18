@@ -112,6 +112,34 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Final autonomy eligibility: no. The generic recovery-budget code repair requires a new
   Gate-1-to-Gate-5 attempt.
 
+### Attempt 003
+
+- Project: `nk2r-fresh-e2e-20260918-a03`
+- Thread: `thread-7d8fb0ed52a04e57948844ccda17eca8`
+- Start commit: `08d4883561bc7af095206145770d0a96d448d07e`
+- Status: invalidated at Gate 1; retained as read-only routing-defect evidence
+- Target owner: independently verified UniProt `P21452` and the deposited receptor entity, but
+  conflated label chain B with auth chain B. It recommended `chain-b` even though option IDs use
+  the auth namespace and the receptor is auth chain R / label chain B.
+- Independent Judge: correctly rejected the owner interpretation, identified auth chain B as
+  Gβ1, and recommended the existing eligible `chain-r` option for auth chain R. This is a
+  successful scientific safety catch, not the defect.
+- Deadlocked state: the negative assessment created no decision card (`cards = 0`) and no
+  owner-revision action. Runtime nevertheless reported `awaiting-human-approval`. A normal
+  `--message` containing the Scientist's already authorized chain-R correction was persisted but
+  merely returned the same terminal state, so neither APPROVE nor REVISE was possible.
+- Read-only post-fix replay on the frozen Attempt 003 database resolves the next action to
+  `target-judge-revision` for `target-intelligence` and carries the bound review finding and
+  runtime-eligible `chain-r` alternative.
+- Start log SHA-256:
+  `aa9d8ae685ebfc82332051209e8e889ff0d0b5bf927ec5f6f6367a054836332d`.
+- Technical status SHA-256:
+  `30eb832b32cbb308db139aa98cd11c70530a7837c600b91e4f82517c3a724567`.
+- Follow-up log SHA-256:
+  `a619fec5025afcccb8f40ff280195dd5bdfd366262bc6ba85bbd180835d18079`.
+- Developer repair after start: `NK2R-E2E-004` below.
+- Final autonomy eligibility: no. The routing repair requires a new Gate-1-to-Gate-5 attempt.
+
 ## Repairs
 
 ### NK2R-E2E-001 — Site Judge recovery repeated the full evidence packet
@@ -210,6 +238,44 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Manual project-state changes: none.
 - Attempt invalidated: yes.
 
+### NK2R-E2E-004 — actionable Target Judge rejection had no owner-revision route
+
+- Attempt / stage: Attempt 003, Gate 1 Target review.
+- Trigger: Judge rejected the owner's wrong chain namespace and supplied a different,
+  runtime-eligible option with `status=SUPPORTED`.
+- Expected: the wrong owner proposal cannot reach a Scientist approval card; the actionable
+  review must return to the Target owner for a fresh evidence-based interpretation, followed by a
+  fresh independent review.
+- Before state: `next_action()` only allowed Target `reject` assessments through when the Judge
+  marked the same option `DISCOURAGED`. A supported alternative fell into
+  `scientific-review-blocked`. The surrounding terminal API still described the scientific state
+  as `awaiting-human-approval` even though no card existed, creating an unrecoverable interface
+  state.
+- Root cause: control flow tracked the current evidence binding and human revisions, but did not
+  model an actionable owner revision arising from a bound independent review. It also searched
+  Judge assessments only after the human-revision boundary, so a new owner submission could have
+  reused an older review.
+- Generic fix: for Target Gate only, a `reject` assessment with a `SUPPORTED` recommendation for
+  an existing runtime-eligible option routes back to `target-intelligence`. The owner must reread
+  evidence and submit a fresh `TargetInterpretation`. Judge selection is now bounded after the
+  latest owner-assessment sequence, forcing fresh review. At most two Judge-directed owner
+  revisions are allowed for one evidence request; a third conflict stops without a tool action.
+- Authority boundaries: Judge does not directly select or approve the alternative; Runtime checks
+  eligibility, Target remains proposal owner, a new Judge reviews the new proposal, and the
+  Scientist still owns Gate 1 approval.
+- Regression coverage: actionable supported alternative dispatches Target; old Judge opinion is
+  not reused after a new owner result; three repeated conflicts end in
+  `scientific-review-blocked`; existing control-flow suite 23 passed; adjacent Target, Judge,
+  Scientist steering, terminal consistency and state ownership suite 30 passed; Ruff and
+  `git diff --check` passed.
+- Real-state read-only replay: Attempt 003 now selects `target-judge-revision` and names
+  `chain-r` from the current bound assessment.
+- Changed files: `src/easydesign/agent/control_flow.py`,
+  `tests/unit/agent/test_control_flow.py`.
+- Fix commit: `c746ba3545593845012eeb279c315fc23ec632ea`.
+- Manual project-state changes: none.
+- Attempt invalidated: yes.
+
 ## Validation after repairs
 
 - Focused Site Judge, ranked portfolio, dossier and fact-integrity suite: 92 passed before the
@@ -224,8 +290,11 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Final post-adjustment focused rerun: 3 passed; Ruff passed.
 - Fix commit: `29a475924ce3ee19a005505ba444f7adb03a2c40`.
 - Attempt 002 restarted from Gate 1 after the first repair commit and was invalidated at Gate 2
-  by `NK2R-E2E-003`. The next accepted run is a new Attempt 003 project and thread, restarted
-  from Gate 1 after commit `38cbd14b8997491807544cff883807355b27191a`.
+  by `NK2R-E2E-003`.
+- Attempt 003 restarted from Gate 1 after the repair-budget commit and was invalidated at Gate 1
+  by `NK2R-E2E-004`.
+- The next accepted run is a new Attempt 004 project and thread, restarted from Gate 1 after
+  commit `c746ba3545593845012eeb279c315fc23ec632ea`.
 
 ## Issue template
 

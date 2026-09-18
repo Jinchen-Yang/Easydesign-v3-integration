@@ -109,6 +109,73 @@ def test_runtime_compartment_block_is_removed_from_abc_but_retained_for_audit(si
     assert [entry.rank for entry in intent.portfolio] == ["A", "B", None]
 
 
+def test_phase2_registration_preserves_runtime_compartment_block(site_bridge):
+    bridge = site_bridge
+    bridge.store.thread(
+        bridge.thread, "synthetic-runtime-blocked-portfolio", "SYNTHETIC structural exploration"
+    )
+    execution = bridge.store.begin_execution(bridge.thread, "SYNTHETIC runtime block review")
+    token = bind(bridge)
+    try:
+        selection = handoff()
+        selection = selection.model_copy(
+            update={
+                "candidates": [
+                    selection.candidates[0].model_copy(
+                        update={"hotspot_label_seq_ids": members}
+                    )
+                    for members in ([1, 2], [3, 4], [5, 6])
+                ]
+            }
+        )
+        dossier = deepcopy(persist_dossier(bridge, selection, execution["execution_id"]))
+        blocked_id = dossier["candidate_comparison"][0]["candidate_id"]
+        dossier["candidate_comparison"][0]["runtime_eligibility"] = {
+            "status": "BLOCKED",
+            "cause": "verified-compartment-conflict",
+            "required_site_compartment": "extracellular",
+        }
+        ref = bridge.persist("site-evidence-dossier", dossier)
+        bridge.store.event(
+            bridge.thread,
+            "site-evidence-dossier",
+            {
+                "execution_id": execution["execution_id"],
+                "target_binding": dossier["target_binding"],
+                "dossier_id": identity(dossier),
+                "ref": ref,
+                "chars": len(str(dossier)),
+                "passage_count": len(dossier["focused_passages"]),
+            },
+        )
+        decision = ranked_decision(
+            [candidate["candidate_id"] for candidate in dossier["candidate_comparison"]]
+        )
+        intent = compile_site_decision(dossier, decision)
+        bridge.store.event(
+            bridge.thread,
+            "site-decision",
+            {
+                "execution_id": execution["execution_id"],
+                "decision": decision.model_dump(mode="json"),
+                "dossier_ref": ref,
+                "hydrated_intent_sha256": identity(intent.model_dump(mode="json")),
+            },
+        )
+        bridge.register_site(intent, None)
+        proposal = bridge.current_site()
+        blocked = next(
+            entry for entry in proposal["intent"]["portfolio"]
+            if entry["candidate_id"] == blocked_id
+        )
+        assert blocked["rank"] is None
+        assert not blocked["selectable"]
+        assert blocked["hard_block"] == "verified-compartment-conflict"
+        assert proposal["portfolio_evaluations"][blocked_id]["status"] == "BLOCKED"
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
 def setup_portfolio(bridge: Any, labels: list[list[int]] | None = None) -> dict[str, Any]:
     bridge.store.thread(
         bridge.thread, "synthetic-ranked-portfolio", "SYNTHETIC structural exploration"

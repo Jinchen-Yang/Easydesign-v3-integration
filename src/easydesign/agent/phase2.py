@@ -516,6 +516,7 @@ class Phase2Bridge(TargetBridge):
                 raise AgentBoundaryError("Ranked Site differs from its bound SiteDecision")
         dossier_event = self.thread_latest("site-evidence-dossier")
         execution = self.store.latest_execution(self.thread)
+        dossier_eligibility: dict[str, dict[str, Any]] = {}
         if (
             dossier_event
             and execution
@@ -523,6 +524,10 @@ class Phase2Bridge(TargetBridge):
             and dossier_event["target_binding"] == target["binding"]
         ):
             dossier = self.document(dossier_event["ref"])
+            dossier_eligibility = {
+                candidate["candidate_id"]: candidate.get("runtime_eligibility", {})
+                for candidate in dossier.get("candidate_comparison", [])
+            }
             # Keep decision-critical opposing evidence visible to Judge even if the
             # final SiteIntent does not cite it. Existing refs verify all originals.
             cards = {
@@ -552,6 +557,11 @@ class Phase2Bridge(TargetBridge):
         if intent.portfolio is not None:
             for entry, checked in zip(intent.portfolio, [evaluation, *alternatives], strict=True):
                 conflict = checked.get("cause") if checked["status"] == "BLOCKED" else None
+                runtime_eligibility = dossier_eligibility.get(entry.candidate_id, {})
+                if runtime_eligibility.get("status") == "BLOCKED":
+                    conflict = (
+                        runtime_eligibility.get("cause") or "verified-compartment-conflict"
+                    )
                 if set(entry.site.hotspot_label_seq_ids) & set(intent.avoid_label_seq_ids):
                     conflict = "explicit-avoid-residue-constraint"
                 if entry.hard_block != conflict or entry.selectable != (conflict is None):

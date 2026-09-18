@@ -12,7 +12,7 @@ from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, scientific_projection
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchQuery
-from easydesign.agent.harness import RoleBoundary
+from easydesign.agent.harness import SITE_RESEARCH_MODEL_CALL_LIMIT, RoleBoundary
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase2_tools import phase2_tools
 from easydesign.agent.session_store import compact
@@ -96,6 +96,71 @@ async def test_status_tool_follows_runtime_receipt_without_creating_work(
     ]
     await guard.awrap_model_call(request, handler)
     assert "read_evidence_result" in names[-1]
+
+
+@pytest.mark.asyncio
+async def test_successful_skill_reads_are_durable_across_summarized_history(bridge: Any) -> None:
+    """A compacted checkpoint must not make a specialist reload immutable Skills."""
+    from langchain_core.tools import StructuredTool
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution_id = b.store.begin_execution(b.thread, "Inspect site")["execution_id"]
+    guard = RoleBoundary(
+        b, "site", scripted_config(), "Inspect site", execution_id=execution_id
+    )
+    skill_paths = guard._skill_paths()
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def tool_handler(request: Any) -> ToolMessage:
+        return ToolMessage(
+            name="read_file",
+            tool_call_id=request.tool_call["id"],
+            content=f"Loaded {request.tool_call['args']['file_path']}",
+        )
+
+    for index, path in enumerate(skill_paths):
+        await guard.awrap_tool_call(
+            Request(
+                tool_call={
+                    "name": "read_file",
+                    "id": f"skill-{index}",
+                    "args": {"file_path": path},
+                }
+            ),
+            tool_handler,
+        )
+
+    rows = b.store.db.execute(
+        "SELECT json_extract(payload,'$.path') FROM events "
+        "WHERE thread=? AND kind='skill-read' ORDER BY seq",
+        (b.thread,),
+    ).fetchall()
+    assert [row[0] for row in rows] == skill_paths
+
+    tools = phase2_tools(b, "site") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+
+    async def model_handler(request: Any) -> Any:
+        assert "read_file" not in {tool.name for tool in request.tools}
+        assert "every required Skill file" in request.system_message.text
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "read_site_evidence", "args": {}, "id": "inspect"}],
+                )
+            ],
+            structured_response=None,
+        )
+
+    request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Inspect"))
+    await guard.awrap_model_call(request, model_handler)
 
 
 def test_passage_pages_fit_adapter_and_cursor_never_skips_or_truncates(
@@ -1249,14 +1314,20 @@ async def test_focused_residue_rows_fit_without_repeating_large_approved_backgro
 
 
 @pytest.mark.asyncio
-async def test_research_uses_shared_budget_without_legacy_forced_synthesis(bridge: Any) -> None:
+async def test_site_research_call_ceiling_forces_handoff_before_global_budget(
+    site_bridge: Any,
+) -> None:
     from langchain_core.tools import StructuredTool
 
-    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    from tests.unit.agent.test_site_dossier import bind, handoff
+
+    b = site_bridge
     cfg = scripted_config()
     eid = b.store.begin_execution(b.thread, "Bounded site research")["execution_id"]
-    guard = RoleBoundary(b, "site", cfg, "Research", execution_id=eid)
-    for _ in range(cfg.max_model_calls - 8):
+    guard = RoleBoundary(
+        b, "site", cfg, "Research", execution_id=eid, site_stage="research"
+    )
+    for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT):
         b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
 
     class Request(SimpleNamespace):
@@ -1270,30 +1341,44 @@ async def test_research_uses_shared_budget_without_legacy_forced_synthesis(bridg
     ]
 
     async def handler(request: Any) -> Any:
-        assert "read_site_evidence" in {tool.name for tool in request.tools}
-        assert "Only the SiteIntent submission tool" not in request.system_message.text
+        assert request.tools == []
+        assert "bounded Site reading budget is complete" in request.system_message.text
         return SimpleNamespace(
             result=[
                 AIMessage(
                     content="",
-                    tool_calls=[{"name": "read_site_evidence", "args": {}, "id": "current-read"}],
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": handoff().model_dump(mode="json"),
+                            "id": "handoff",
+                        }
+                    ],
                 )
             ],
-            structured_response=None,
+            structured_response=handoff(),
         )
 
-    request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Research"))
-    await guard.awrap_model_call(request, handler)
-    for _ in range(7):
-        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
-    with pytest.raises(AgentBoundaryError, match="budget"):
-        await guard.awrap_model_call(request, handler)
-    assert b.current_site() is None and not b._jobs()
-    assert b.store.db.execute("SELECT count(*) FROM cards").fetchone()[0] == 0
-    assert (
-        len([e for e in b.store.events(b.thread) if e["kind"] == "model-call"])
-        == cfg.max_model_calls
+    request = Request(
+        tools=tools,
+        messages=[],
+        model_settings={},
+        system_message=SystemMessage(content="Research"),
     )
+    token = bind(b)
+    try:
+        result = await guard.awrap_model_call(request, handler)
+    finally:
+        from easydesign.agent.phase2 import SITE_EVIDENCE
+
+        SITE_EVIDENCE.reset(token)
+    assert result.structured_response == handoff()
+    context = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "model-context"
+    ]
+    assert context[-1]["site_research_finalization_reason"] == "model-call-budget"
 
 
 @pytest.mark.asyncio
@@ -1394,7 +1479,7 @@ async def test_site_query_ceiling_forces_typed_handoff_from_existing_evidence(
     async def handler(current: Any) -> Any:
         calls.append(current)
         assert current.tools == []
-        assert "bounded Site acquisition budget is complete" in current.system_message.text
+        assert "bounded Site reading budget is complete" in current.system_message.text
         assert any(
             "Submit SiteResearchHandoff now from delivered evidence" in str(message.content)
             for message in current.messages

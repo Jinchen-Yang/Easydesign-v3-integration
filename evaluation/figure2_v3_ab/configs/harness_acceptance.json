@@ -1,0 +1,25 @@
+{
+  "schema_version": "figure2-v3-harness-acceptance-v1",
+  "measurement_scope": "Gate 2 from approved Target through ranked Site card, including independent Judge",
+  "required_scientific_checks": {
+    "hard_fact_integrity": "PASS",
+    "candidate_membership_and_mapping": "PASS",
+    "ranked_portfolio_complete": "PASS",
+    "runtime_rendered_facts": "PASS",
+    "judge_failure_degrades_safely": "PASS",
+    "restart_and_idempotency": "PASS"
+  },
+  "efficiency_targets_per_successful_run": {
+    "total_model_calls_max": 30,
+    "site_research_model_calls_max": 24,
+    "framework_summary_calls_max": 2,
+    "framework_summary_output_tokens_max": 2048,
+    "tool_calls_max": 60,
+    "read_file_calls_max": 8,
+    "read_evidence_result_calls_max": 18,
+    "max_input_chars_with_schemas": 90000,
+    "hard_context_guard_events": 0
+  },
+  "freeze_rule": "Three successful runs must satisfy every scientific check. Efficiency uses the median of three runs, while no individual run may hit the hard context guard or lose a valid scientific state.",
+  "failure_rule": "Iterate the Harness or report the miss. Do not relax a threshold after seeing outcomes without a versioned protocol change."
+}

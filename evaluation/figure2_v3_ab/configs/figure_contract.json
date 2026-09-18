@@ -1,0 +1,63 @@
+{
+  "schema_version": "figure2-v3-figure-contract-v1",
+  "panels": {
+    "A1": {
+      "metric": "empirical cumulative fraction reaching valid_project by wall_seconds",
+      "unit": "fraction",
+      "denominator": "all prospectively started method-case-replicates"
+    },
+    "A2": {
+      "metric": "mean(first_pass_valid)",
+      "unit": "percent",
+      "denominator": "all prospectively started method-case-replicates"
+    },
+    "A3": {
+      "metric": "active_human_repair_seconds under the declared Codex-operated repair policy",
+      "unit": "minutes per task",
+      "denominator": "all prospectively started method-case-replicates",
+      "operator_disclosure": "Codex occupies the human-repair slot by investigator instruction; report this in Methods."
+    },
+    "A4": {
+      "metric": "mean(first_pass_valid) for full and declared ablations",
+      "unit": "percent",
+      "denominator": "all prospectively started ablation replicates"
+    },
+    "B1": {
+      "metric": "mean(native_pass == true)",
+      "unit": "percent",
+      "denominator": "all 280 requested candidates, including generation/incomplete failures"
+    },
+    "B2": {
+      "metric": "interface_confidence distribution",
+      "unit": "score",
+      "population": "native-evidence-complete candidates; PASS and FAIL shown or annotated separately"
+    },
+    "B3": {
+      "metric": "target_aligned_rmsd_angstrom distribution",
+      "unit": "angstrom",
+      "population": "native-evidence-complete candidates"
+    },
+    "B4": {
+      "metric": "at least one qualified candidate among the top 10 shared-evaluator ranks",
+      "unit": "binary per campaign; descriptive fraction across campaigns",
+      "denominator": "method-case campaigns"
+    },
+    "B_supplement": {
+      "metrics": [
+        "interface_pae",
+        "iptm",
+        "ipsae",
+        "delta_sasa_angstrom2",
+        "hotspot_coverage_fraction",
+        "interface_hbond_count",
+        "interface_salt_bridge_count",
+        "clash_count",
+        "cdr3_interface_fraction",
+        "sequence/structure diversity",
+        "native-interface precision/recall for retrospective case"
+      ]
+    }
+  },
+  "plotting_rule": "No placeholder number enters a rendered panel. PLANNED and UNAVAILABLE values remain blank and visibly labelled.",
+  "uncertainty_rule": "With two cases and three agent replicates, report raw points and descriptive intervals; do not claim population-level significance. Candidate-level rows are nested outcomes, not independent target replicates."
+}

@@ -14,6 +14,7 @@ from .contracts import AgentBoundaryError, InvalidFieldProjection, StrictDTO, Un
 from .session_store import compact, confined
 
 RESULT_REF_PATTERN = r"^(?:/result-[a-f0-9]+\.json|result:[1-9][0-9]{0,17})$"
+TARGET_DECISION_VIEW_LIMIT = 24000
 
 
 class ReadEvidenceResult(StrictDTO):
@@ -638,7 +639,25 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                         projected = candidate
     if message.name == "read_target_evidence":
         complete_facts = target_page_projection(scientific_projection(value))
-        if len(compact(complete_facts)) <= view_limit:
+        decision_view = (
+            isinstance(complete_facts, dict)
+            and complete_facts.get("decision_kind") is not None
+            and isinstance(complete_facts.get("options"), list)
+            and isinstance(complete_facts.get("hard_facts"), dict)
+        )
+        if decision_view and len(compact(complete_facts)) <= TARGET_DECISION_VIEW_LIMIT:
+            # A pending Target gate is already a bounded decision packet. Supplying its
+            # complete, losslessly range-encoded facts once avoids a model paging every
+            # field of the same immutable result and exhausting the shared context guard.
+            projected = {
+                **complete_facts,
+                "declared_scope_complete": True,
+                "projection_scope": "target-gate-decision",
+                "scope_limits": "Scientific decision fields are complete. Provenance hashes and "
+                "the original uncompressed coordinate-missing lists remain in full_result.",
+            }
+            view_limit = len(compact(projected))
+        elif len(compact(complete_facts)) <= view_limit:
             projected = complete_facts
         elif isinstance(complete_facts, dict) and "deposited_entities" in complete_facts:
             # Source segments are a single factual inventory. A prefix can hide a
@@ -692,8 +711,16 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                     "stored_fields": list(value) if isinstance(value, dict) else None,
                     "navigation": result_navigation(value),
                     **alias_navigation(value, source=True),
-                    "partial": projected != complete_projection,
-                    "scientific_content_complete": projected == complete_projection,
+                    "partial": not (
+                        isinstance(projected, dict)
+                        and projected.get("declared_scope_complete") is True
+                    )
+                    and projected != complete_projection,
+                    "scientific_content_complete": (
+                        isinstance(projected, dict)
+                        and projected.get("declared_scope_complete") is True
+                    )
+                    or projected == complete_projection,
                     "read": (
                         "Use supplied scientific content directly when complete, or the "
                         "declared fields when declared_scope_complete=true. Other analysis "

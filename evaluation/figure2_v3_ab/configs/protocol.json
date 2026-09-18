@@ -1,0 +1,117 @@
+{
+  "schema_version": "figure2-v3-ab-protocol-v1",
+  "protocol_version": "0.2.0-pre-freeze",
+  "status": "development",
+  "frozen_commit": null,
+  "panels": [
+    "2A",
+    "2B"
+  ],
+  "claims": {
+    "2A": "Project-formation validity, turnaround and human correction burden in a two-case proof-of-concept cohort.",
+    "2B": "Matched-budget computational candidate quality in the same small case series.",
+    "generalization": "NOT CLAIMED",
+    "experimental_binding_success": "NOT MEASURED"
+  },
+  "methods": [
+    {
+      "method_id": "expert_curated_reference",
+      "kind": "human_reference",
+      "description": "Real named human-authored plan, independently reviewed by a second named human. Never synthesized or role-played by an LLM; unavailable data stay unavailable."
+    },
+    {
+      "method_id": "base_llm_tools",
+      "kind": "llm_control",
+      "description": "Same model receives one frozen packet produced by declared atomic scientific tools at each Site and Binder stage, then makes one structured submission per stage; no autonomous loop, domain Skills, scientific memory, specialist decomposition, scientific Judge or automatic recovery."
+    },
+    {
+      "method_id": "generic_agent",
+      "kind": "agent_control",
+      "description": "Same model and scientific tools in standard autonomous Site and Binder tool-calling loops with the same hard budgets and shared Runtime validators; no EasyDesign domain Skills, specialist decomposition, evidence dossier synthesis, scientific Judge or automatic recovery."
+    },
+    {
+      "method_id": "easydesign_v3_full",
+      "kind": "agent",
+      "description": "Current v3 runtime, domain Skills, persistent scientific state, deterministic validators, specialist decomposition, runtime dossier, independent Judge and recovery."
+    },
+    {
+      "method_id": "native_interface_oracle",
+      "kind": "retrospective_upper_bound",
+      "description": "Hidden deposited nanobody interface converted deterministically to a reference site. Not an expert and not an autonomous method."
+    }
+  ],
+  "fairness": {
+    "agent_model_identity": "identical",
+    "agent_model_settings": "identical",
+    "initial_request": "identical within case",
+    "source_snapshot": "identical within case",
+    "atomic_tools": "Identical scientific evidence tool implementations and source snapshot. Base LLM + Tools receives a prospectively frozen standard tool manifest; autonomous methods choose calls within the same source and query budget.",
+    "research_query_budget": "identical",
+    "generation_backend": "BoltzGen 0.3.2",
+    "refold_backend": "Boltz2 native Phase 3 flow",
+    "primary_candidate_budget_per_method_case": 280,
+    "scaffolds": 7,
+    "candidates_per_scaffold": 40,
+    "independent_evaluator": "shared frozen native metric adapter and qualification rules",
+    "extra_retries": "Method-specific automatic retries are forbidden for controls. After first-pass scoring, the declared Codex human-repair operator may perform at most two uniformly logged correction rounds for every method.",
+    "post_outcome_threshold_changes": "require new protocol version and complete rerun"
+  },
+  "replication": {
+    "agent_runs_per_case_panel_2A": 3,
+    "generation_campaigns_per_method_case_panel_2B": 1,
+    "candidate_is_not_independent_target_replicate": true,
+    "inference": "descriptive case series; no population-level generalization claim"
+  },
+  "data_status_values": [
+    "MEASURED",
+    "DERIVED",
+    "CONTROLLED_SIMULATION",
+    "PLANNED",
+    "UNAVAILABLE"
+  ],
+  "missing_value_policy": "blank plus explicit status; never imputed and never estimated as an observed result",
+  "ablations": [
+    {
+      "method_id": "minus_scientific_state",
+      "panel": "2A4"
+    },
+    {
+      "method_id": "minus_domain_skills",
+      "panel": "2A4"
+    },
+    {
+      "method_id": "minus_evidence_judge",
+      "panel": "2A4"
+    },
+    {
+      "method_id": "minus_recovery",
+      "panel": "2A4"
+    }
+  ],
+  "repair_policy": {
+    "policy_id": "figure2-codex-human-repair-v1",
+    "assigned_role": "human_repair",
+    "operator_type": "codex",
+    "operator_identity": "OpenAI Codex in the authoritative benchmark task",
+    "measurement_rule": "Codex repair actions and active repair time are counted in the human-repair fields by explicit investigator instruction.",
+    "first_pass_rule": "Freeze and score the first method output before any repair.",
+    "maximum_repair_rounds": 2,
+    "available_information": [
+      "released task",
+      "method output",
+      "shared deterministic validator diagnostics"
+    ],
+    "forbidden_information": [
+      "hidden native interface",
+      "other method outputs for the same replicate",
+      "unreleased gold answer"
+    ],
+    "code_change_rule": "A code or Harness change invalidates the current measurement run; record it in the repair ledger and restart from the raw input.",
+    "method_policy": {
+      "base_llm_tools": "Freeze architecture before case execution; run directly without case-specific tuning.",
+      "generic_agent": "Freeze architecture before case execution; run directly without case-specific tuning.",
+      "easydesign_v3_full": "Development runs may expose and repair Harness defects; only a later fresh run from raw input is measured."
+    },
+    "disclosure": "The human-repair slot is operated by Codex rather than a biological human; retain this identity in machine-readable records and manuscript methods."
+  }
+}

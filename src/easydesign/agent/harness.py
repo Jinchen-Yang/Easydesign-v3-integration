@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from importlib import metadata, resources
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend
@@ -85,6 +85,9 @@ SKILLS = {"target": "target-intelligence", "judge": "evidence-judge"}
 PHASE2_SKILLS = {**SKILLS, "site": "site-mechanism"}
 DESIGN_SKILLS = {**PHASE2_SKILLS, "binder": "binder-strategy"}
 DOWNSTREAM_SKILLS = {"pilot-diagnosis": "pilot-diagnosis", "final-selection": "final-selection"}
+SiteHarnessVariant = Literal["full", "no-domain-skill"]
+SITE_HARNESS_VARIANTS = frozenset({"full", "no-domain-skill"})
+SITE_RESEARCH_MODEL_CALL_LIMIT = 12
 ALLOWED = {
     "coordinator": {
         "task",
@@ -153,10 +156,13 @@ def skill_root() -> Path:
     return Path(str(resources.files("easydesign.agent").joinpath("skills")))
 
 
-def fingerprint(config: ModelConfig) -> str:
+def fingerprint(config: ModelConfig, harness_variant: SiteHarnessVariant = "full") -> str:
+    if harness_variant not in SITE_HARNESS_VARIANTS:
+        raise AgentBoundaryError(f"Unknown Site Harness variant: {harness_variant}")
     return identity(
         {
             "contract": "phase2-design-1",
+            "site_harness_variant": harness_variant,
             "models": config.model_dump(mode="json"),
             "skills": {
                 str(path.relative_to(skill_root())): path.read_text()
@@ -222,10 +228,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         execution_id: str | None = None,
         revision: DecisionOutcome | None = None,
         site_stage: str | None = None,
+        domain_skills: bool = True,
+        allow_repairs: bool = True,
     ) -> None:
         self.bridge, self.role, self.config, self.goal = bridge, role, config, goal
         self.current_user_message = current_user_message or goal
         self.execution_id = execution_id
+        self.domain_skills = domain_skills
+        self.allow_repairs = allow_repairs
         self.site_stage = "research" if role == "site" and site_stage is None else site_stage
         self.revision = revision
         self.structured_output = self.role != "coordinator"
@@ -285,30 +295,50 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             "available within the original execution budget. Do not restart completed work.",
         }
 
+    def _skill_paths(self) -> list[str]:
+        paths = (
+            [f"/skills/{self.skills[self.role]}/SKILL.md"]
+            if self.domain_skills and self.role in self.skills
+            else []
+        )
+        if self.role == "site" and self.domain_skills:
+            paths.extend(
+                f"/skills/site-mechanism/references/{name}.md"
+                for name in ("research", "membrane", "shielding")
+            )
+        return paths
+
+    def _loaded_skill_paths(self) -> set[str]:
+        if self.execution_id is None:
+            return set()
+        rows = self.bridge.store.db.execute(
+            "SELECT json_extract(payload,'$.path') FROM events "
+            "WHERE thread=? AND kind='skill-read' "
+            "AND json_extract(payload,'$.role')=? "
+            "AND json_extract(payload,'$.execution_id')=?",
+            (self.bridge.thread, self.role, self.execution_id),
+        ).fetchall()
+        return {row[0] for row in rows if isinstance(row[0], str)}
+
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         submission_name = self.output_schema.__name__ if self.output_schema else ""
         available = [t for t in request.tools if getattr(t, "name", None) in self.allowed]
         # Fail closed even if a future profile merge adds unexpected middleware tools.
         if {getattr(t, "name", None) for t in available} != self.allowed:
             raise AgentBoundaryError(f"Unexpected final tool surface for {self.role}")
-        skill_paths = (
-            [f"/skills/{self.skills[self.role]}/SKILL.md"] if self.role in self.skills else []
-        )
-        if self.role == "site":
-            skill_paths.extend(
-                f"/skills/site-mechanism/references/{name}.md"
-                for name in ("research", "membrane", "shielding")
-            )
+        skill_paths = self._skill_paths()
+        loaded_skill_paths = self._loaded_skill_paths()
+        unread_skill_paths = [path for path in skill_paths if path not in loaded_skill_paths]
         # Filesystem access is a Skill loader, not a scientific artifact reader.
         # Show the same fixed paths the authority guard permits. Legacy scoped
         # result-index reads remain compatible, but are not advertised as file IO.
-        available = [t for t in available if t.name != "read_file" or skill_paths]
+        available = [t for t in available if t.name != "read_file" or unread_skill_paths]
         for index, tool in enumerate(available):
             if tool.name != "read_file":
                 continue
             # Preserve native pagination; constrain authority, not Skill length.
             parameters = convert_to_openai_tool(tool)["function"]["parameters"]
-            parameters["properties"]["file_path"]["enum"] = skill_paths
+            parameters["properties"]["file_path"]["enum"] = unread_skill_paths
             available[index] = tool.model_copy(
                 update={
                     "description": "Read an allowed Skill. Set limit to include the needed "
@@ -432,7 +462,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             else t
             for t in available
         ]
-        if self.role == "target" and not any(
+        if self.role == "target" and not loaded_skill_paths and not any(
             isinstance(m, ToolMessage) and m.name == "read_file" and m.status != "error"
             for m in request.messages
         ):
@@ -537,6 +567,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         from langchain_core.messages import SystemMessage
 
         base_system = request.system_message.text
+        if skill_paths and not unread_skill_paths:
+            base_system += (
+                "\nRuntime receipt: every required Skill file for this role was successfully "
+                "loaded earlier in this execution. Continue from the retained working state; "
+                "do not request or reconstruct those immutable Skill files again."
+            )
         if research_progress is not None:
             base_system += (
                 "\nVerified research activity (source actions, not scientific conclusions): "
@@ -568,10 +604,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
             synthesize = self.site_stage == "synthesis"
+            site_call_budget_complete = (
+                self.role == "site"
+                and self.site_stage == "research"
+                and used >= SITE_RESEARCH_MODEL_CALL_LIMIT
+            )
             finalize_research = (
                 self.role == "site"
                 and self.site_stage == "research"
-                and research_query_budget_complete
+                and (research_query_budget_complete or site_call_budget_complete)
             )
             submission_only = synthesize or compact_judge or finalize_research
             call_tools = [] if submission_only else available
@@ -607,8 +648,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         else ""
                     )
                     + (
-                        " The bounded Site acquisition budget is complete. No new source query "
-                        f"can run. Submit {submission_name} now using already delivered evidence; "
+                        " The bounded Site reading budget is complete. No further scientific "
+                        f"tool call can run. Submit {submission_name} now using already delivered "
+                        "evidence; "
                         "retain missing or unresolved evidence explicitly. Do not interpret the "
                         "budget boundary as negative scientific evidence."
                         if finalize_research
@@ -661,8 +703,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if finalize_research:
                 context_suffix.append(
                     HumanMessage(
-                        content="Runtime acquisition limit (not a scientific conclusion): "
-                        f"{RESEARCH_QUERY_LIMIT} bounded Site queries are complete. Submit "
+                        content="Runtime Site reading limit (not a scientific conclusion): "
+                        "the fixed query or model-call budget is complete. Submit "
                         f"{submission_name} now from delivered evidence. Keep every material "
                         "unknown, source limitation and alternative explicit."
                     )
@@ -710,6 +752,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ),
                     "repair_attempt": attempt,
                     "compact_judge_recovery": compact_judge,
+                    "site_research_finalization_reason": (
+                        "query-budget"
+                        if research_query_budget_complete
+                        else "model-call-budget"
+                        if site_call_budget_complete
+                        else None
+                    ),
                     "tool_mode": (
                         "site-synthesis"
                         if synthesize
@@ -817,9 +866,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
             repair_already_counted = False
-            if submission_only and any(
-                call["name"] != schema.__name__ for call in calls
-            ):
+            if submission_only and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
                     (
                         "JUDGE_RECOVERY_BOUNDARY: rejected "
@@ -985,6 +1032,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         if self.execution_id is None:
             raise AgentBoundaryError("Structured correction requires an execution")
         diagnostic = str(error)
+        if not self.allow_repairs:
+            self.bridge.store.event(
+                self.bridge.thread,
+                "benchmark-repair-disabled",
+                {
+                    "role": self.role,
+                    "execution_id": self.execution_id,
+                    "diagnostic": diagnostic[:6000],
+                },
+            )
+            raise AgentBoundaryError("Benchmark control has no structured-output repair")
         if isinstance(error, (MultipleStructuredOutputsError, StructuredOutputValidationError)):
             message = error.ai_message
             # The framework parses before our model-response hook returns. Preserve
@@ -1388,6 +1446,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         name,
                         round_id=self.repair_round_id(request),
                     )
+                    if name == "read_file":
+                        path = args.get("file_path")
+                        if path in self._skill_paths() and path not in self._loaded_skill_paths():
+                            self.bridge.store.event(
+                                self.bridge.thread,
+                                "skill-read",
+                                {
+                                    "role": self.role,
+                                    "execution_id": self.execution_id,
+                                    "path": path,
+                                },
+                            )
             supplied_cards = 0
             if (
                 name in {"retrieve_evidence", "continue_evidence", "read_evidence_result"}
@@ -1591,8 +1661,16 @@ class RuntimeCoordinator(RoleBoundary):
         return result
 
 
-def site_synthesis_prompt() -> str:
-    """One shared scientific decision prompt for the live stage and bounded replay."""
+def site_synthesis_prompt(
+    harness_variant: SiteHarnessVariant = "full",
+) -> str:
+    """One scientific decision prompt, with an explicit benchmark-only Skill ablation."""
+    if harness_variant == "no-domain-skill":
+        return (
+            "Use only the supplied runtime dossier. Submit one RankedSiteDecision with "
+            "candidate IDs from that dossier. Do not invent facts, sources, residues or "
+            "approval. Follow the structured schema and keep text concise."
+        )
     return (
         "You are EasyDesign Site synthesis. Research is complete. Your fresh "
         "input is the original goal/current trusted revision and runtime-built Site Evidence "
@@ -1615,8 +1693,12 @@ def create_site_pipeline(
     current_user_message: str | None,
     execution_id: str | None,
     revision: DecisionOutcome | None,
+    harness_variant: SiteHarnessVariant = "full",
 ) -> Any:
     """Compose native subgraphs in the existing saver; only the dossier crosses stages."""
+    if harness_variant not in SITE_HARNESS_VARIANTS:
+        raise AgentBoundaryError(f"Unknown Site Harness variant: {harness_variant}")
+    domain_skills = harness_variant == "full"
     from typing import TypedDict
 
     from langchain.agents.structured_output import ToolStrategy
@@ -1635,6 +1717,7 @@ def create_site_pipeline(
         execution_id,
         revision,
         site_stage="research",
+        domain_skills=domain_skills,
     )
     synthesis_boundary = RoleBoundary(
         bridge,
@@ -1645,30 +1728,39 @@ def create_site_pipeline(
         execution_id,
         revision,
         site_stage="synthesis",
+        domain_skills=domain_skills,
     )
     research = create_deep_agent(
         model=model,
-        system_prompt="You are EasyDesign Site Evidence Research. Read the site-mechanism "
-        "Skill and do its scientific source/structure research. Submit SiteResearchHandoff, "
-        "not SiteIntent: a few mapped candidate hypotheses, decision_questions, "
-        "a decision stopping reason and unresolved questions. Runtime will bind decision-critical "
-        "evidence, primary counterevidence, source failures and candidate facts into a dossier "
-        "for a "
-        "fresh synthesis agent. Standard Research seeks decision sufficiency, not literature "
-        "completeness. Form usually 3-6 questions from the biological goal, approved Target "
-        "and Gate 2. After initial candidate ranking, perform one targeted contradiction/"
-        "alternative search. Stop when more searching is unlikely to change ranking, hard "
-        "constraints or major risk; explicit UNRESOLVED findings are legitimate. "
-        "Finish the handoff immediately once this decision evidence is sufficient; "
-        "do not write the final Site conclusion or enumerate every residue. For mechanistic "
-        "goals actively research the material mechanism/state/access/alternative questions. "
-        "Use actual verified source passages, preserve contradictory evidence and distinguish "
-        "source numbering from approved design labels. Choose focused observed patches. "
-        "Candidate preferences and your notes are unaccepted opinions. Keep each rationale "
-        "and decision finding to a few sentences, citations to short exact excerpts and "
-        "stopping_reason to 2-4 short sentences. Submit a compact handoff, not another review.",
+        system_prompt=(
+            "You are an evidence research agent. Use the available scientific evidence tools "
+            "for the supplied request and submit SiteResearchHandoff. Use verified evidence, "
+            "preserve material counterevidence and unknowns, and do not invent facts. "
+            "Keep the handoff concise and follow its structured schema."
+            if not domain_skills
+            else "You are EasyDesign Site Evidence Research. Read the site-mechanism "
+            "Skill and do its scientific source/structure research. Submit SiteResearchHandoff, "
+            "not SiteIntent: a few mapped candidate hypotheses, decision_questions, "
+            "a decision stopping reason and unresolved questions. Runtime will bind "
+            "decision-critical "
+            "evidence, primary counterevidence, source failures and candidate facts into a dossier "
+            "for a "
+            "fresh synthesis agent. Standard Research seeks decision sufficiency, not literature "
+            "completeness. Form usually 3-6 questions from the biological goal, approved Target "
+            "and Gate 2. After initial candidate ranking, perform one targeted contradiction/"
+            "alternative search. Stop when more searching is unlikely to change ranking, hard "
+            "constraints or major risk; explicit UNRESOLVED findings are legitimate. "
+            "Finish the handoff immediately once this decision evidence is sufficient; "
+            "do not write the final Site conclusion or enumerate every residue. For mechanistic "
+            "goals actively research the material mechanism/state/access/alternative questions. "
+            "Use actual verified source passages, preserve contradictory evidence and distinguish "
+            "source numbering from approved design labels. Choose focused observed patches. "
+            "Candidate preferences and your notes are unaccepted opinions. Keep each rationale "
+            "and decision finding to a few sentences, citations to short exact excerpts and "
+            "stopping_reason to 2-4 short sentences. Submit a compact handoff, not another review."
+        ),
         tools=phase2_tools(bridge, "site"),
-        skills=["/skills/site-mechanism/"],
+        skills=["/skills/site-mechanism/"] if domain_skills else [],
         backend=backend,
         middleware=[
             research_memory(bridge, config, model, backend, execution_id),
@@ -1681,7 +1773,7 @@ def create_site_pipeline(
     )
     synthesis = create_agent(
         model=model,
-        system_prompt=site_synthesis_prompt(),
+        system_prompt=site_synthesis_prompt(harness_variant),
         tools=[],
         middleware=[synthesis_boundary],
         response_format=ToolStrategy(
@@ -1759,7 +1851,10 @@ def create_harness(
     execution_id: str | None = None,
     technical_details: bool = False,
     revision: DecisionOutcome | None = None,
+    harness_variant: SiteHarnessVariant = "full",
 ) -> Any:
+    if harness_variant not in SITE_HARNESS_VARIANTS:
+        raise AgentBoundaryError(f"Unknown Site Harness variant: {harness_variant}")
     skills = (
         DESIGN_SKILLS
         if isinstance(bridge, DesignBridge)
@@ -1821,6 +1916,7 @@ def create_harness(
                         current_user_message,
                         execution_id,
                         revision,
+                        harness_variant,
                     ),
                 }
             )
@@ -1844,7 +1940,12 @@ def create_harness(
             "as authoritative data in your interpretation. "
             "Judge independently compares opinions with facts."
         )
-        if role == "target" and isinstance(bridge, Phase2Bridge):
+        if harness_variant != "full":
+            prompt = (
+                f"Use only the supplied runtime facts and available typed tools. Submit "
+                f"{schema.__name__} with concise text. Do not invent facts, sources or approval."
+            )
+        if harness_variant == "full" and role == "target" and isinstance(bridge, Phase2Bridge):
             prompt += (
                 " Before prepare_target, resolve any canonical reference requested by the "
                 "user: select/acquire/read the official source, propose_canonical_identity, "
@@ -1852,7 +1953,7 @@ def create_harness(
                 "cannot later add or replace a canonical reference. Read your Skill before "
                 "starting preparation; never parallelize those dependent operations."
             )
-        if role == "judge":
+        if harness_variant == "full" and role == "judge":
             prompt += (
                 " The complete delegated scientific snapshot remains in your working set. "
                 "Review its actual keys: a Target gate uses hard_facts, identity_evidence, "
@@ -1868,7 +1969,14 @@ def create_harness(
                 "facts suffice, submit your independent critique through JudgeVerdict."
             )
         boundary = RoleBoundary(
-            bridge, role, config, goal, current_user_message, execution_id, revision
+            bridge,
+            role,
+            config,
+            goal,
+            current_user_message,
+            execution_id,
+            revision,
+            domain_skills=harness_variant == "full",
         )
         if role == "judge" and isinstance(bridge, Phase2Bridge):
             from .site_judge import create_site_aware_judge
@@ -1877,7 +1985,7 @@ def create_harness(
                 model=models[role],
                 system_prompt=prompt,
                 tools=phase2_tools(bridge, role),
-                skills=[f"/skills/{name}/"],
+                skills=[f"/skills/{name}/"] if harness_variant == "full" else [],
                 backend=backend,
                 middleware=[boundary],
                 response_format=ToolStrategy(schema, handle_errors=boundary.contract_error),
@@ -1901,6 +2009,22 @@ def create_harness(
                 }
             )
             continue
+        specialist_middleware: list[Any] = [boundary]
+        if role == "target":
+            # Target preparation can expose one bounded but information-dense decision packet.
+            # Compact only replayed working history before the independent hard guard;
+            # immutable runtime artifacts and runtime-rendered facts stay authoritative.
+            specialist_middleware = [
+                research_memory(
+                    bridge,
+                    config,
+                    models[role],
+                    backend,
+                    execution_id,
+                    role="target",
+                ),
+                boundary,
+            ]
         specialists.append(
             {
                 "name": name,
@@ -1911,8 +2035,8 @@ def create_harness(
                 "tools": phase2_tools(bridge, role)
                 if isinstance(bridge, Phase2Bridge)
                 else build_tools(bridge, role),
-                "skills": [f"/skills/{name}/"],
-                "middleware": [boundary],
+                "skills": [f"/skills/{name}/"] if harness_variant == "full" else [],
+                "middleware": specialist_middleware,
                 "interrupt_on": {},
             }
         )

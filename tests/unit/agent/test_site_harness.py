@@ -49,6 +49,7 @@ class SiteModel(ScriptedModel):
             "read_evidence_result",
             "analyze_receptor_context",
             "continue_evidence",
+            "read_file",
         }
         return self
 

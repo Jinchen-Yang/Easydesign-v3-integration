@@ -1,0 +1,62 @@
+{
+  "efficiency_checks": [
+    {
+      "maximum": 30,
+      "metric": "total_model_calls_max",
+      "observed": 52,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 24,
+      "metric": "site_research_model_calls_max",
+      "observed": 50,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 2,
+      "metric": "framework_summary_calls_max",
+      "observed": 13,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 2048,
+      "metric": "framework_summary_output_tokens_max",
+      "observed": 94457,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 60,
+      "metric": "tool_calls_max",
+      "observed": 96,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 8,
+      "metric": "read_file_calls_max",
+      "observed": 16,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 18,
+      "metric": "read_evidence_result_calls_max",
+      "observed": 36,
+      "status": "FAIL"
+    },
+    {
+      "maximum": 90000,
+      "metric": "max_input_chars_with_schemas",
+      "observed": 86016,
+      "status": "PASS"
+    },
+    {
+      "maximum": 0,
+      "metric": "hard_context_guard_events",
+      "observed": 0,
+      "status": "PASS"
+    }
+  ],
+  "schema_version": "figure2-v3-harness-trace-evaluation-v1",
+  "scientific_checks": "SEPARATE_REQUIRED_INPUT",
+  "status": "FAIL",
+  "trace_digest_sha256": "ba5ecd1ea723108d36d97de7e89d79801349fac3ea301c55b029bb7f104a781d"
+}

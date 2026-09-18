@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "figure2-v3-run-metrics-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_id",
+    "method_id",
+    "replicate",
+    "data_status",
+    "source_snapshot_id",
+    "code_commit",
+    "started_at",
+    "finished_at",
+    "wall_seconds",
+    "terminal_stage",
+    "valid_project",
+    "first_pass_valid",
+    "human_correction_count",
+    "silent_failure",
+    "repair_policy_id",
+    "repair_operator_type",
+    "repair_operator_id"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "method_id": {
+      "enum": [
+        "expert_curated_reference",
+        "base_llm_tools",
+        "generic_agent",
+        "easydesign_v3_full"
+      ]
+    },
+    "replicate": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "data_status": {
+      "enum": [
+        "MEASURED",
+        "DERIVED",
+        "CONTROLLED_SIMULATION",
+        "PLANNED",
+        "UNAVAILABLE"
+      ]
+    },
+    "source_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "code_commit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_config_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "wall_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "active_human_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "terminal_stage": {
+      "enum": [
+        "target",
+        "site",
+        "design",
+        "pilot-ready",
+        "failed",
+        "unavailable"
+      ]
+    },
+    "valid_project": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "first_pass_valid": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "human_correction_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "model_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tool_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "framework_summary_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "framework_summary_output_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "maximum_input_chars": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "hard_context_guard_events": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "scientific_validator_failures": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "silent_failure": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "failure_category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "repair_policy_id": {
+      "const": "figure2-codex-human-repair-v1"
+    },
+    "repair_operator_type": {
+      "const": "codex"
+    },
+    "repair_operator_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repair_rounds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "round",
+          "started_at",
+          "finished_at",
+          "active_seconds",
+          "validator_errors_before",
+          "repair_action",
+          "validation_after"
+        ],
+        "properties": {
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "active_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "validator_errors_before": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "repair_action": {
+            "type": "string",
+            "minLength": 1
+          },
+          "validation_after": {
+            "enum": [
+              "VALID",
+              "INVALID",
+              "INCOMPLETE"
+            ]
+          }
+        }
+      },
+      "maxItems": 2
+    }
+  }
+}

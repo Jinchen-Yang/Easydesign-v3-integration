@@ -12,7 +12,7 @@ import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 import yaml  # type: ignore[import-untyped]
@@ -115,6 +115,7 @@ async def run_session(
     selected_option_id: str | None = None,
     technical_details: bool = False,
     emit: Callable[[dict[str, Any]], None] | None = None,
+    harness_variant: Literal["full", "no-domain-skill"] = "full",
 ) -> dict[str, Any]:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     from langgraph.types import Command
@@ -123,7 +124,7 @@ async def run_session(
     from .phase34_runtime import Phase34Runtime
 
     store, thread = bridge.store, bridge.thread
-    goal = store.thread(thread, fingerprint(config), goal)
+    goal = store.thread(thread, fingerprint(config, harness_variant), goal)
     if decision is None and any(
         v is not None
         for v in (
@@ -166,6 +167,7 @@ async def run_session(
                 revision=DecisionOutcome.model_validate(execution["revision"])
                 if execution and execution.get("revision")
                 else None,
+                harness_variant=harness_variant,
             )
 
         def execution_input() -> dict[str, Any]:

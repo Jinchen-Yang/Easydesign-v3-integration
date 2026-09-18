@@ -1,0 +1,130 @@
+{
+  "context": {
+    "estimated_input_tokens": {
+      "count": 39,
+      "max": 21363,
+      "median": 12071,
+      "sum": 467549
+    },
+    "hard_guard_events": 0,
+    "input_chars_with_schemas": {
+      "count": 39,
+      "max": 86016,
+      "median": 48459,
+      "sum": 1883664
+    },
+    "soft_target_exceeded_calls": 10
+  },
+  "events": {
+    "by_kind": {
+      "agent-execution": 1,
+      "command-ref": 1,
+      "contract-repair": 3,
+      "evidence-research": 13,
+      "evidence-selection": 18,
+      "evidence-view": 21,
+      "framework-summary-call": 13,
+      "framework-summary-response": 13,
+      "judge-assessment": 1,
+      "model-call": 52,
+      "model-context": 39,
+      "model-response": 39,
+      "prerequisite-repair": 1,
+      "rejected-submission": 3,
+      "research-reservation": 10,
+      "runtime-dispatch": 4,
+      "site-decision": 1,
+      "site-evidence-dossier": 1,
+      "site-facts": 1,
+      "site-judge-submission": 1,
+      "site-proposal": 1,
+      "structured-output-error": 1,
+      "submission-preflight-passed": 3,
+      "tool": 96,
+      "tool-repair-success": 1,
+      "tool-view": 28
+    },
+    "total": 366
+  },
+  "framework_summaries": {
+    "calls": 13,
+    "latency_seconds": {
+      "count": 13,
+      "max": 165.80232187267393,
+      "median": 82.5262589501217,
+      "sum": 1213.8677632370964
+    },
+    "responses": 13,
+    "usage": {
+      "input_tokens": 156102,
+      "output_tokens": 94457,
+      "total_tokens": 250559
+    }
+  },
+  "model_calls": {
+    "by_role": {
+      "judge": 2,
+      "site": 50
+    },
+    "response_latency_seconds": {
+      "count": 39,
+      "max": 195.17734389845282,
+      "median": 32.536833841353655,
+      "sum": 2011.071739045903
+    },
+    "total": 52,
+    "usage": {
+      "input_tokens": 515743,
+      "output_tokens": 133778,
+      "total_tokens": 649521
+    }
+  },
+  "quality_control": {
+    "contract_repairs": 3,
+    "decision_cards": 0,
+    "rejected_submissions": 3,
+    "research_reservations": 10,
+    "scientific_consistency_findings": 0,
+    "submission_preflight_passed": 3
+  },
+  "schema_version": "figure2-trace-metrics-v1",
+  "source": {
+    "after_seq": 204,
+    "before_seq": 570,
+    "database": "nk2r-fresh-e2e-20260918-a05:gate2:attempt005",
+    "event_digest_sha256": "ba5ecd1ea723108d36d97de7e89d79801349fac3ea301c55b029bb7f104a781d",
+    "execution_id": "turn-4e818866044f48f19bf31b05ed3e6199",
+    "first_seq": 205,
+    "last_seq": 570,
+    "thread": "thread-b3cfade56967467c94787d16cb01d594"
+  },
+  "tools": {
+    "by_name": {
+      "analyze_receptor_context": 1,
+      "continue_evidence": 3,
+      "get_job_status": 1,
+      "read_evidence_result": 36,
+      "read_file": 16,
+      "read_site_evidence": 4,
+      "request_scientific_decision": 1,
+      "research_evidence": 13,
+      "retrieve_evidence": 18,
+      "select_evidence": 1,
+      "task": 2
+    },
+    "by_role_and_name": {
+      "coordinator:get_job_status": 1,
+      "coordinator:request_scientific_decision": 1,
+      "coordinator:task": 2,
+      "site:analyze_receptor_context": 1,
+      "site:continue_evidence": 3,
+      "site:read_evidence_result": 36,
+      "site:read_file": 16,
+      "site:read_site_evidence": 4,
+      "site:research_evidence": 13,
+      "site:retrieve_evidence": 18,
+      "site:select_evidence": 1
+    },
+    "total": 96
+  }
+}

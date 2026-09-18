@@ -119,6 +119,70 @@ def test_target_preview_keeps_all_deposited_segments(bridge: Any) -> None:
     assert result["deposited_entities"]["entities"][0]["source_segments"][2] == segments[2]
 
 
+def test_target_gate_receives_one_complete_bounded_decision_view(bridge: Any) -> None:
+    import json
+
+    from langchain_core.messages import ToolMessage
+
+    from easydesign.agent.evidence_output import output_message
+    from easydesign.agent.session_store import compact
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Review a multi-chain target gate")
+    missing = list(range(1, 31)) + list(range(236, 402))
+    options = [
+        {
+            "option_id": f"chain-{chain.lower()}",
+            "label": f"chain {chain}",
+            "eligible": True,
+            "description": "Scientist selection required",
+        }
+        for chain in ("G", "R", "A", "N", "B", "C")
+    ]
+    chains = [
+        {
+            "auth_chain": option["label"].split()[-1],
+            "construct_length": 406,
+            "observed_length": 297,
+            "missing_construct_positions": missing,
+        }
+        for option in options
+    ]
+    value = {
+        "status": "awaiting-human-approval",
+        "decision_kind": "chain-selection",
+        "question": "Choose the receptor chain.",
+        "options": options,
+        "chains": chains,
+        "hard_facts": {"canonical_accession": "P21452", "chains": chains},
+        "identity_evidence": {
+            "construct_comparisons": chains,
+            "decision_context": "x" * 6500,
+        },
+        "limitations": ["Identity does not establish function."],
+    }
+    rendered = json.loads(
+        output_message(
+            b,
+            "target",
+            execution["execution_id"],
+            ToolMessage(content=compact(value), name="read_target_evidence", tool_call_id="gate"),
+        ).content
+    )
+    assert rendered["projection_scope"] == "target-gate-decision"
+    assert rendered["declared_scope_complete"]
+    assert rendered["scientific_content_complete"] and not rendered["partial"]
+    assert rendered["options"] == options
+    encoded = rendered["hard_facts"]["chains"][0]
+    assert encoded["missing_construct_position_count"] == len(missing)
+    assert [
+        position
+        for start, end in encoded["missing_construct_position_ranges_inclusive"]
+        for position in range(start, end + 1)
+    ] == missing
+    assert len(compact(rendered)) < 30000
+
+
 def test_target_position_ranges_are_lossless_and_distinct_from_alignment_deletions() -> None:
     from easydesign.agent.evidence_output import target_page_projection
 

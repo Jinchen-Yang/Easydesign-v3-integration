@@ -12,6 +12,7 @@ from pydantic import Field, SecretStr, model_validator
 from .contracts import AgentBoundaryError, StrictDTO
 
 PHASE2_MODEL_CALL_LIMIT = 64
+SUMMARY_OUTPUT_TOKEN_LIMIT = 1024
 
 
 Role = Literal[
@@ -82,6 +83,35 @@ def request_metadata(role: str, body: dict[str, Any]) -> dict[str, Any]:
         "tool_names": [t.get("function", t).get("name") for t in body.get("tools", [])],
         "message_count": len(body.get("messages", [])),
     }
+
+
+def compact_summary_model(
+    model: Any, config: ModelConfig, *, role: Role = "site"
+) -> Any:
+    """Use the configured Site model for memory compression without costly reasoning.
+
+    A framework summary is fallible working memory, not a scientific decision. It does not
+    benefit from an extended reasoning trace and must not consume the full scientific output
+    allowance. Keep the provider/model identity unchanged while bounding its visible output.
+    """
+    selected = config.for_role(role)
+    limit = min(selected.max_output_tokens, SUMMARY_OUTPUT_TOKEN_LIMIT)
+    update: dict[str, Any] = {}
+    if selected.provider == "deepseek" and selected.reasoning_effort != "none":
+        update.update(
+            max_tokens=limit,
+            thinking={"type": "disabled"},
+            output_config={},
+        )
+    elif selected.provider == "deepseek":
+        update["extra_body"] = {
+            **(getattr(model, "extra_body", None) or {}),
+            "thinking": {"type": "disabled"},
+            "max_tokens": limit,
+        }
+    else:
+        update["max_tokens"] = limit
+    return model.model_copy(update=update)
 
 
 def compact_judge_model(model: Any, config: ModelConfig) -> Any:

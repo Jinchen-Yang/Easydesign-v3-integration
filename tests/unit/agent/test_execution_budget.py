@@ -12,7 +12,12 @@ from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from easydesign.agent.context_policy import SummaryAccounting, context_usage, research_memory
+from easydesign.agent.context_policy import (
+    SummaryAccounting,
+    context_usage,
+    input_context_tokens,
+    research_memory,
+)
 from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.models import PHASE2_MODEL_CALL_LIMIT, ModelConfig
 from easydesign.agent.session_store import SessionStore
@@ -79,6 +84,41 @@ async def test_reopened_execution_crosses_32_with_summary_and_all_roles(tmp_path
                 {}, [[HumanMessage(content="Must not run")]], run_id="65"
             )
         assert store.events(thread) == events
+    finally:
+        store.close()
+
+
+def test_research_memory_does_not_treat_hidden_reasoning_as_replayed_context(
+    tmp_path: Path,
+) -> None:
+    config = scripted_config()
+    store = SessionStore(tmp_path)
+    bridge = SimpleNamespace(store=store, thread="reported-token-control")
+    execution = store.begin_execution(bridge.thread, "Synthetic reported-token control")
+    model = FakeListChatModel(responses=["unused"])
+    memory = research_memory(
+        bridge,
+        config,
+        model,
+        FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True),
+        execution["execution_id"],
+    )
+    messages = [
+        HumanMessage(content="Short request context."),
+        AIMessage(
+            content="Short response.",
+            usage_metadata={
+                "input_tokens": 100,
+                "output_tokens": 50000,
+                "total_tokens": 50100,
+            },
+            response_metadata={"model_provider": "openai"},
+        ),
+    ]
+    try:
+        total = input_context_tokens(messages)
+        assert total < 100
+        assert memory._should_summarize(messages, total) is False
     finally:
         store.close()
 

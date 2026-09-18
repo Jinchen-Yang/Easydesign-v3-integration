@@ -1,0 +1,52 @@
+[
+  {
+    "case_id": "nk2r_extracellular_inhibition",
+    "status": "selected",
+    "design_type": "nanobody",
+    "target_family": "GPCR-class-A",
+    "mode": "prospective",
+    "target": "human TACR2/NK2R",
+    "goal": "Extracellular inhibitory VHH design with Scientist-selected deeper outer-pore strategy.",
+    "gold_scope": [
+      "target identity",
+      "chain",
+      "construct mapping",
+      "hard validity",
+      "YAML/compiler validity"
+    ],
+    "native_interface_oracle_available": false
+  },
+  {
+    "case_id": "lysozyme_d2_l24_retrospective",
+    "status": "selected-before-method-execution",
+    "design_type": "nanobody",
+    "target_family": "soluble-enzyme",
+    "mode": "retrospective-hidden-binder",
+    "target": "hen egg-white lysozyme C",
+    "pdb_id": "1ZVH",
+    "experimental_method": "X-RAY DIFFRACTION",
+    "resolution_angstrom": 1.5,
+    "target_auth_chain": "L",
+    "hidden_nanobody_auth_chain": "A",
+    "target_uniprot": "P00698",
+    "task_release": "Target chain L only; the PDB identifier, nanobody chain and native interface remain hidden from computational methods until scoring.",
+    "selection_rule": "Deposited target-nanobody complex with unambiguous target chain, resolvable canonical mapping, experimentally observed interface and a target-only task that can be released identically to every computational method.",
+    "selection_rationale": "Satisfies the predeclared rule with two protein entities, an unambiguous lysozyme target chain and VHH chain, and 1.5 A diffraction data; selected without inspecting any benchmark method output.",
+    "official_sources": [
+      "https://www.rcsb.org/structure/1ZVH",
+      "https://data.rcsb.org/rest/v1/core/entry/1ZVH",
+      "https://data.rcsb.org/rest/v1/core/polymer_entity/1ZVH/1",
+      "https://data.rcsb.org/rest/v1/core/polymer_entity/1ZVH/2"
+    ],
+    "gold_scope": [
+      "target identity",
+      "chain",
+      "construct mapping",
+      "native interface",
+      "hotspot recovery",
+      "YAML/compiler validity"
+    ],
+    "native_interface_oracle_available": true,
+    "leakage_limit": "Lysozyme/VHH structures may occur in model training. The method input hides the complex identity, and the native interface is used only for post hoc scoring; this remains a retrospective case, not a leakage-free prospective test."
+  }
+]

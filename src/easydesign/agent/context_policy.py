@@ -14,8 +14,18 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from .contracts import AgentBoundaryError
-from .models import ModelConfig, Role
+from .models import ModelConfig, Role, compact_summary_model
 from .session_store import compact
+
+
+def input_context_tokens(messages: list[Any]) -> int:
+    """Count actual request content without scaling from prior response usage.
+
+    Provider usage may include hidden reasoning and generated output. Those tokens are billed,
+    but they are not replayed input context and must not repeatedly trigger working-memory
+    summaries. The hard request guard still accounts for the exact projected messages.
+    """
+    return int(count_tokens_approximately(messages))
 
 
 def context_usage(
@@ -105,6 +115,17 @@ class ResearchMemory(SummarizationMiddleware):
     Native history offload, checkpoint events and model accounting remain unchanged.
     """
 
+    def _should_summarize_based_on_reported_tokens(
+        self, messages: list[Any], threshold: float
+    ) -> bool:
+        """Ignore prior response totals when deciding whether request history needs compaction.
+
+        Provider totals include generated output and hidden reasoning from the previous call.
+        They measure cost, not the input messages currently being replayed. The explicit token
+        counter and hard request guard remain authoritative for context capacity.
+        """
+        return False
+
     @property
     def name(self) -> str:
         # DeepAgents replaces middleware by name. Preserve its single summary
@@ -151,11 +172,21 @@ class ResearchMemory(SummarizationMiddleware):
 
 
 def research_memory(
-    bridge: Any, config: ModelConfig, model: Any, backend: Any, execution_id: str | None
+    bridge: Any,
+    config: ModelConfig,
+    model: Any,
+    backend: Any,
+    execution_id: str | None,
+    *,
+    role: Role = "site",
 ) -> SummarizationMiddleware:
-    # A public model copy preserves the provider, adapter and reasoning settings.
-    summary_model = model.model_copy(
-        update={"callbacks": [SummaryAccounting(bridge, config, "site", execution_id, model)]}
+    # A summary is fallible working memory, not scientific reasoning. Preserve the configured
+    # provider/model identity, but disable extended reasoning and cap its visible output.
+    compact_model = compact_summary_model(model, config, role=role)
+    summary_model = compact_model.model_copy(
+        update={
+            "callbacks": [SummaryAccounting(bridge, config, role, execution_id, compact_model)]
+        }
     )
     profile_limit = (getattr(model, "profile", None) or {}).get("max_input_tokens")
     # The soft target is telemetry, not a demand to summarize each crossing.
@@ -163,8 +194,16 @@ def research_memory(
     trigger = (config.max_input_chars + config.hard_input_chars) // 8
     if isinstance(profile_limit, int) and profile_limit > 0:
         trigger = min(
-            trigger, max(1000, (profile_limit - config.for_role("site").max_output_tokens) // 2)
+            trigger, max(1000, (profile_limit - config.for_role(role).max_output_tokens) // 2)
         )
+    role_focus = (
+        "For Target work retain canonical identity, construct relationship, chain alternatives, "
+        "current preparation status, decisive limitations and exact source/result identifiers. "
+        "Do not expand coordinate inventories already preserved in verified artifacts. "
+        if role == "target"
+        else "For Site work retain the provisional ranking, contradiction-check result and "
+        "consequential findings/unknowns. "
+    )
     return ResearchMemory(
         model=summary_model,
         backend=backend,
@@ -181,18 +220,19 @@ def research_memory(
         # summary; leave headroom for actual research within the shared call budget.
         retained_tokens=max(200, min(trigger // 4, config.max_input_chars // 16)),
         trim_tokens_to_summarize=config.hard_input_chars // 4,
+        token_counter=input_context_tokens,
         summary_prompt=DEEPAGENTS_DEFAULT_SUMMARY_PROMPT + "\n"
-        "Keep this working summary within 1200 words. Retain the current scientific questions, "
-        "provisional ranking, contradiction-check result, consequential findings/unknowns "
-        "and exact query/passage identifiers needed "
+        "Keep this working summary within 700 words. Retain the current scientific questions. "
+        + role_focus
+        + "and exact query/passage identifiers needed "
         "for a decision or the next necessary inquiry. Preserve why more search would or would not "
         "change ranking, constraints or major risk; do not expand a topic checklist. "
         "Do not reproduce full tool bodies, residue tables, "
         "sequences, schemas or Skill text: their original verified artifacts are durable and "
         "are rehydrated independently for final synthesis. "
-        "This is fallible research working memory, not verified source evidence, a Site "
+        "This is fallible research working memory, not verified source evidence, a scientific "
         "proposal or approval. Preserve source/card identifiers, failed access, opposing "
         "evidence, numbering qualifications and unresolved questions. Never infer missing "
-        "facts or turn a failed search into global absence. Final synthesis receives a "
+        "facts or turn a failed search into global absence. Site synthesis receives a "
         "separate runtime-built dossier from original verified artifacts, not this summary.",
     )

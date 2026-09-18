@@ -4,7 +4,78 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from easydesign.agent.models import LLMConfig, ModelConfig, create_models
+from easydesign.agent.models import (
+    SUMMARY_OUTPUT_TOKEN_LIMIT,
+    LLMConfig,
+    ModelConfig,
+    compact_summary_model,
+    create_models,
+)
+
+
+class _CopyableModel:
+    def __init__(self, **values: Any) -> None:
+        self.__dict__.update(values)
+
+    def model_copy(self, *, update: dict[str, Any]) -> Any:
+        return _CopyableModel(**{**self.__dict__, **update})
+
+
+@pytest.mark.parametrize("reasoning", ["none", "high"])
+def test_framework_summary_keeps_model_identity_but_caps_non_scientific_output(
+    reasoning: str,
+) -> None:
+    selected = LLMConfig(
+        provider="deepseek",
+        model="deepseek-v4-pro",
+        secret_env="TEST_KEY",
+        reasoning_effort=reasoning,
+        max_output_tokens=8192,
+    )
+    original = _CopyableModel(
+        model_name="deepseek-v4-pro",
+        max_tokens=8192,
+        thinking={"type": "enabled"},
+        output_config={"effort": "high"},
+        extra_body={"vendor": "preserved"},
+    )
+    compact = compact_summary_model(original, ModelConfig(default=selected))
+    assert compact.model_name == original.model_name
+    assert compact is not original
+    if reasoning == "high":
+        assert compact.max_tokens == SUMMARY_OUTPUT_TOKEN_LIMIT
+        assert compact.thinking == {"type": "disabled"}
+        assert compact.output_config == {}
+    else:
+        assert compact.extra_body == {
+            "vendor": "preserved",
+            "thinking": {"type": "disabled"},
+            "max_tokens": SUMMARY_OUTPUT_TOKEN_LIMIT,
+        }
+    assert original.max_tokens == 8192
+    assert original.thinking == {"type": "enabled"}
+
+
+def test_framework_summary_uses_the_active_role_budget() -> None:
+    default = LLMConfig(
+        provider="deepseek",
+        model="deepseek-v4-pro",
+        secret_env="TEST_KEY",
+        reasoning_effort="high",
+        max_output_tokens=8192,
+    )
+    target = default.model_copy(update={"max_output_tokens": 512})
+    original = _CopyableModel(
+        model_name="deepseek-v4-pro",
+        max_tokens=8192,
+        thinking={"type": "enabled"},
+        output_config={"effort": "high"},
+    )
+    compact = compact_summary_model(
+        original, ModelConfig(default=default, roles={"target": target}), role="target"
+    )
+    assert compact.max_tokens == 512
+    assert compact.thinking == {"type": "disabled"}
 
 
 def test_transport_source_changes_invalidate_the_harness_fingerprint(monkeypatch: Any) -> None:

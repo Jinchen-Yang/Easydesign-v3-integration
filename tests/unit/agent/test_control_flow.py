@@ -439,3 +439,111 @@ finally:s.close()
     assert restarted["card"]["gate_type"] == "site-hotspot"
     assert len(b._jobs()) == before_jobs
     assert len([e for e in b.store.events(b.thread) if e["kind"] == "site-proposal"]) == 1
+
+
+def test_supported_judge_alternative_routes_back_to_target_owner(bridge: Any) -> None:
+    from easydesign.agent.contracts import EvidenceBinding, JudgeVerdict, TargetInterpretation
+    from easydesign.agent.target_assessment import register_target
+    from easydesign.agent.tools import JUDGE_EVIDENCE
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.prepare_target()
+    terminal(b)
+    register_target(
+        b,
+        TargetInterpretation(
+            interpretation=["SYNTHETIC owner confused the selectable chain namespace."],
+            unresolved_identity=["SYNTHETIC namespace needs independent review."],
+            limitations=["SYNTHETIC fixture has no biological identity."],
+            recommended_action="Select chain B.",
+            recommended_option="chain-b",
+        ),
+        None,
+    )
+    snapshot = b.judge_evidence()
+    token = JUDGE_EVIDENCE.set(
+        EvidenceBinding.model_validate({k: snapshot[k] for k in EvidenceBinding.model_fields})
+    )
+    try:
+        b.register_judge(
+            JudgeVerdict(
+                verdict="reject",
+                reasons=["SYNTHETIC chain B is not the requested target."],
+                limitations=["SYNTHETIC identity remains for Scientist review."],
+                recommendation={"option_id": "chain-a", "status": "SUPPORTED"},
+            )
+        )
+    finally:
+        JUDGE_EVIDENCE.reset(token)
+
+    revision = next_action(b)
+    assert revision.stage == "target-judge-revision"
+    assert revision.arguments["subagent_type"] == "target-intelligence"
+    assert "chain-a" in revision.arguments["description"]
+
+    register_target(
+        b,
+        TargetInterpretation(
+            interpretation=["SYNTHETIC owner rechecked the runtime chain namespace."],
+            unresolved_identity=["SYNTHETIC biological identity remains unconfirmed."],
+            limitations=["SYNTHETIC fixture supports only a chain choice."],
+            recommended_action="Select chain A.",
+            recommended_option="chain-a",
+        ),
+        None,
+    )
+    fresh_review = next_action(b)
+    assert fresh_review.stage == "judge"
+    assert fresh_review.arguments["subagent_type"] == "evidence-judge"
+
+
+def test_target_judge_revision_is_bounded_across_restartable_state(bridge: Any) -> None:
+    from easydesign.agent.contracts import EvidenceBinding, JudgeVerdict, TargetInterpretation
+    from easydesign.agent.target_assessment import register_target
+    from easydesign.agent.tools import JUDGE_EVIDENCE
+
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.prepare_target()
+    terminal(b)
+
+    def owner() -> None:
+        register_target(
+            b,
+            TargetInterpretation(
+                interpretation=["SYNTHETIC owner proposal."],
+                unresolved_identity=["SYNTHETIC identity unresolved."],
+                limitations=["SYNTHETIC fixture limitation."],
+                recommended_action="Select chain B.",
+                recommended_option="chain-b",
+            ),
+            None,
+        )
+
+    def reject() -> None:
+        snapshot = b.judge_evidence()
+        token = JUDGE_EVIDENCE.set(
+            EvidenceBinding.model_validate({k: snapshot[k] for k in EvidenceBinding.model_fields})
+        )
+        try:
+            b.register_judge(
+                JudgeVerdict(
+                    verdict="reject",
+                    reasons=["SYNTHETIC owner proposal remains contradictory."],
+                    limitations=["SYNTHETIC correction is bounded."],
+                    recommendation={"option_id": "chain-a", "status": "SUPPORTED"},
+                )
+            )
+        finally:
+            JUDGE_EVIDENCE.reset(token)
+
+    owner()
+    reject()
+    assert next_action(b).stage == "target-judge-revision"
+    owner()
+    reject()
+    assert next_action(b).stage == "target-judge-revision"
+    owner()
+    reject()
+    blocked = next_action(b)
+    assert blocked.stage == "scientific-review-blocked"
+    assert blocked.tool is None

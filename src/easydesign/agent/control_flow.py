@@ -146,17 +146,17 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
     revision_event = bridge.store.revision_for(bridge.thread, snapshot["request_identity"])
     after = revision_event["seq"] if revision_event else 0
     events = bridge.store.events(bridge.thread)
+    owner_seq = after
+    target_owners: list[dict[str, Any]] = []
     if gate == "target-structure":
-        owner = next(
-            (
-                e
-                for e in reversed(events)
-                if e["kind"] == "target-assessment"
-                and e["payload"].get("source_evidence_id") == snapshot["source_evidence_id"]
-                and e["seq"] > after
-            ),
-            None,
-        )
+        target_owners = [
+            e
+            for e in events
+            if e["kind"] == "target-assessment"
+            and e["payload"].get("source_evidence_id") == snapshot["source_evidence_id"]
+            and e["seq"] > after
+        ]
+        owner = target_owners[-1] if target_owners else None
         if owner is None:
             return _task(
                 "target-interpretation",
@@ -166,6 +166,7 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
                 "chain option in recommended_option for independent review, respecting "
                 "the original goal and the scientist's trusted revision.",
             )
+        owner_seq = owner["seq"]
         option = owner["payload"]["interpretation"].get("recommended_option")
         if not option:
             return RuntimeAction(
@@ -207,8 +208,9 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
                     ),
                 )
     assessment = None
+    review_after = max(after, owner_seq)
     for event in reversed(events):
-        if event["kind"] == "judge-assessment" and event["seq"] > after:
+        if event["kind"] == "judge-assessment" and event["seq"] > review_after:
             candidate = bridge.store.assessment(bridge.thread, event["payload"]["assessment_id"])
             if (
                 candidate.model_dump(mode="json", include=set(EvidenceBinding.model_fields))
@@ -236,6 +238,47 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
             "Independently critique the current runtime-bound scientific proposal, "
             "its evidence, uncertainty and limitations for Scientist review.",
         )
+    if (
+        gate == "target-structure"
+        and assessment.verdict == "reject"
+        and assessment.recommendation is not None
+        and assessment.recommendation.status == "SUPPORTED"
+    ):
+        recommended = assessment.recommendation.option_id
+        eligible = any(
+            item["option_id"] == recommended and item["eligible"]
+            for item in snapshot.get("options", [])
+        )
+        if eligible and len(target_owners) < 3:
+            findings = " ".join(assessment.reasons)
+            return _task(
+                "target-judge-revision",
+                identity(
+                    {
+                        "bound": bound,
+                        "assessment": assessment.assessment_id,
+                        "owner_seq": owner_seq,
+                    }
+                ),
+                "target-intelligence",
+                (
+                    "Re-read the current Target evidence and submit a fresh TargetInterpretation. "
+                    "The independent review rejected the current interpretation and identified "
+                    f"runtime-eligible option {recommended} as its supported alternative. "
+                    "Resolve the review findings rather than copying its conclusion without "
+                    f"evidence: {findings}"
+                )[:1500],
+            )
+        return RuntimeAction(
+            "scientific-review-blocked",
+            binding,
+            message=(
+                "Independent review rejected the Target interpretation, but no bounded "
+                "runtime-eligible owner revision remains. "
+                + " ".join(assessment.reasons)
+            ),
+        )
+
     ranked_site = (
         gate == "site-hotspot"
         and snapshot.get("final_site_decision", {}).get("kind") == "RankedSiteDecision"

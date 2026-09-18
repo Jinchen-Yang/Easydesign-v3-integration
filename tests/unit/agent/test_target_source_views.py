@@ -34,6 +34,14 @@ A 1
 B 2
 C 1
 D 3
+loop_
+_struct_ref.id
+_struct_ref.db_name
+_struct_ref.db_code
+_struct_ref.pdbx_db_accession
+_struct_ref.pdbx_db_isoform
+_struct_ref.entity_id
+1 UNP RECEPTOR_HUMAN P12345 ? 1
 """)
     before = source.read_bytes()
     value = deposited_polymer_metadata(source)
@@ -43,6 +51,14 @@ D 3
             "entity_id": "1",
             "deposited_description": "Receptor, fusion partner",
             "deposited_source_segments": [],
+            "deposited_database_references": [
+                {
+                    "database_name": "UNP",
+                    "database_code": "RECEPTOR_HUMAN",
+                    "accession": "P12345",
+                    "isoform": None,
+                }
+            ],
             "polymer_type": "polypeptide(L)",
             "source_label_chain_ids": ["A", "C"],
             "source_auth_chain_ids": ["R", "S"],
@@ -51,6 +67,7 @@ D 3
             "entity_id": "2",
             "deposited_description": "Antibody fragment",
             "deposited_source_segments": [],
+            "deposited_database_references": [],
             "polymer_type": "polypeptide(L)",
             "source_label_chain_ids": ["B"],
             "source_auth_chain_ids": ["N"],

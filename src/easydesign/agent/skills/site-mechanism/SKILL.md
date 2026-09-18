@@ -104,10 +104,15 @@ opposition; UNRESOLVED retains missing evidence or transfer limits. Do not call 
 inquiry performed. Short exact excerpts must meet the citation schema, rather than abbreviating a
 source down to an isolated residue token. Keep distinct evidence states even for one shared topic.
 
-Include actual contradiction_search_query_ids, a 2–4 sentence stopping_reason, and meaningful
+When a contradiction search was completed, include its actual contradiction_search_query_ids.
+Always include a 2–4 sentence stopping_reason and meaningful
 unresolved_questions with their decision impact or next discriminating test. Do not repeat the
 full candidate inventory or create a literature review. Budget pressure never certifies sufficiency
 or waives source/fact checks; an insufficient Handoff may be rejected.
+If the bounded reading phase ends before any `literature-search` query was executed, do not copy an
+acquisition query ID into `contradiction_search_query_ids`. Keep the decision questions bound to
+their actual query IDs, leave `contradiction_search_query_ids=[]`, and state the missing challenge
+search explicitly in the stopping reason and unresolved questions.
 
 Use already delivered complete views. read_evidence_result uses fields for top-level siblings OR
 path for nested traversal; use only names actually listed in stored_fields. A stored patch contains

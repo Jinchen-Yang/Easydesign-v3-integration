@@ -79,6 +79,13 @@ references in model context. Re-read a needed field explicitly; do not infer omi
 
 ## Canonical reference before preparation
 
+Before the first preparation, read the target evidence once. For an mmCIF input this preflight
+view includes depositor entity/chain annotations and `_struct_ref` database cross-references. A
+UniProt accession attached to the entity that matches the user's named target is an identity lead:
+acquire and read that official UniProt record, then use `propose_canonical_identity` before
+`prepare_target`. Do not promote a depositor reference by itself, and do not substitute a
+different entity's cross-reference merely because it is present in the same complex.
+
 When the task supplies a UniProt accession or requires resolving canonical identity, acquire
 that selected UniProt record before prepare_target. Use propose_canonical_identity with the
 acquisition card. Runtime binds accession/species; do not invent mappings. Already configured

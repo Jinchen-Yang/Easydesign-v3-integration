@@ -488,6 +488,65 @@ def test_research_handoff_requires_real_contradiction_inquiry_but_accepts_unreso
         SITE_EVIDENCE.reset(token)
 
 
+def test_acquisition_only_research_retains_questions_without_inventing_search_id(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    acquisition = {
+        "query_id": "synthetic-uniprot-acquisition",
+        "topic": "identity",
+        "question": "SYNTHETIC which official identity record applies?",
+        "query": {"operation": "uniprot-record", "identifier": "P00000"},
+        "status": "UNRESOLVED",
+        "cards": [],
+        "errors": [],
+    }
+    ref = b.persist("evidence-research", acquisition)
+    b.store.event(
+        b.thread,
+        "evidence-research",
+        {"target_binding": identity(b.binding()), "ref": ref},
+    )
+    question = DecisionEvidenceQuestion.model_validate(
+        {
+            "query_ids": [acquisition["query_id"]],
+            "question": "SYNTHETIC can the acquired identity resolve the Site mapping?",
+            "status": "UNRESOLVED",
+            "evidence": [],
+            "limitations": ["SYNTHETIC acquisition was not a contradiction search."],
+            "decision_impact": "SYNTHETIC ranking remains provisional.",
+        }
+    )
+    selection = handoff().model_copy(
+        update={
+            "decision_questions": [question],
+            "contradiction_search_query_ids": [],
+            "stopping_reason": "SYNTHETIC reading budget ended before a contradiction search; "
+            "the gap remains unresolved.",
+        }
+    )
+    token = bind(b)
+    try:
+        from easydesign.agent.contracts import ResearchConclusionMismatch
+
+        with pytest.raises(ResearchConclusionMismatch, match="No literature-search"):
+            site_dossier(
+                b,
+                selection.model_copy(
+                    update={"contradiction_search_query_ids": [acquisition["query_id"]]}
+                ),
+            )
+        result = site_dossier(b, selection)
+        assert result["decision_questions"][0]["query_ids"] == [acquisition["query_id"]]
+        assert result["evidence_selection"]["literature_searches_available"] == 0
+        assert result["evidence_selection"]["contradiction_search_performed"] is False
+        assert "unresolved evidence gap" in result["evidence_selection"][
+            "contradiction_search_gap"
+        ]
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
 def test_membrane_facts_use_exact_source_identity_not_design_or_canonical_numbers() -> None:
     from copy import deepcopy
 

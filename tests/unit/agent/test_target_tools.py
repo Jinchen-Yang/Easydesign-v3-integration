@@ -72,6 +72,12 @@ async def test_unprepared_inspection_is_read_only(bridge: Any, role: str) -> Non
     result = json.loads(await tool.ainvoke({}))
     assert result["status"] == "not-prepared"
     assert result["evidence_refs"] == []
+    assert len(result["source_input"]["sha256"]) == 64
+    assert result["source_input"]["deposited_entities"]["status"] in {
+        "reported",
+        "not-reported-in-input",
+    }
+    assert "official source" in result["next_action"]
     assert "evidence_id" not in result and "bundle" not in result
     assert not bridge._jobs()
     assert bridge.store.db.execute("SELECT count(*) FROM commands").fetchone()[0] == 0

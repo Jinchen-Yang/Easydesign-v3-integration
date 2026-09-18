@@ -73,6 +73,20 @@ def deposited_polymer_metadata(source: Path) -> dict[str, Any]:
                 values = source_annotations.get(key, [])
                 annotation[key] = values[i] if i < len(values) else None
             segments.setdefault(entity, []).append(annotation)
+        deposited_references = block.get_mmcif_category("_struct_ref.")
+        references: dict[str, list[dict[str, Any]]] = {}
+        for i, entity in enumerate(deposited_references.get("entity_id", [])):
+            reference = {}
+            for source_key, output_key in (
+                ("db_name", "database_name"),
+                ("db_code", "database_code"),
+                ("pdbx_db_accession", "accession"),
+                ("pdbx_db_isoform", "isoform"),
+            ):
+                values = deposited_references.get(source_key, [])
+                value = values[i] if i < len(values) else None
+                reference[output_key] = None if value in {None, "?", "."} else value
+            references.setdefault(entity, []).append(reference)
         types = polymers.get("type", [])
         all_strands = polymers.get("pdbx_strand_id", [])
         for i, entity in enumerate(polymers.get("entity_id", [])):
@@ -82,6 +96,7 @@ def deposited_polymer_metadata(source: Path) -> dict[str, Any]:
                     "entity_id": entity,
                     "deposited_description": descriptions.get(entity),
                     "deposited_source_segments": segments.get(entity, []),
+                    "deposited_database_references": references.get(entity, []),
                     "polymer_type": types[i] if i < len(types) else None,
                     "source_label_chain_ids": [
                         label for label, parent in labels if parent == entity

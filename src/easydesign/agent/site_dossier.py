@@ -86,11 +86,13 @@ class SiteResearchHandoff(StrictDTO):
         max_length=3,
         description="Exact query_id of the targeted literature search challenging the "
         "initial ranking or testing a meaningful alternative. Record an actual search, "
-        "not a named-paper acquisition. Required when decision_questions are present.",
+        "not a named-paper acquisition. When bounded research ends before any literature "
+        "search, leave this empty and retain that gap in stopping_reason and uncertainties.",
     )
     stopping_reason: ShortText = Field(
         description="Why further Standard Research is unlikely to change the Gate 2 ranking, "
-        "hard constraints or main risks after the contradiction/alternative check. State "
+        "hard constraints or main risks. State whether a contradiction/alternative search "
+        "was completed or remains an explicit evidence gap. Also state "
         "whether ranking changed, remaining uncertainties and the next discriminating test. "
         "An unresolved question does not require endless searching or justify approval. "
         "Use 2-4 short sentences, at most 1500 characters; do not repeat the candidate inventory.",
@@ -208,12 +210,21 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         for q in research["queries"]
         if q.get("query", {}).get("operation") == "literature-search"
     }
-    if (handoff.decision_questions and not handoff.contradiction_search_query_ids) or not set(
-        handoff.contradiction_search_query_ids
-    ).issubset(searches):
+    contradiction_ids = set(handoff.contradiction_search_query_ids)
+    if searches and (
+        (handoff.decision_questions and not contradiction_ids)
+        or not contradiction_ids.issubset(searches)
+    ):
         raise ResearchConclusionMismatch(
             "Bind an actual targeted contradiction/alternative literature search query_id. "
             "Acquisition is not discovery. Available search IDs: " + compact(sorted(searches))
+        )
+    if not searches and contradiction_ids:
+        raise ResearchConclusionMismatch(
+            "No literature-search query was executed, so no contradiction search ID can be "
+            "claimed. Use contradiction_search_query_ids=[]; keep decision_questions bound "
+            "to their actual acquisition/read query IDs and record the missing contradiction "
+            "search in stopping_reason and unresolved_questions. Acquisition is not discovery."
         )
     EvidenceResearch(bridge).validate_questions(list(handoff.decision_questions))
     memberships = [
@@ -412,6 +423,14 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         "evidence_selection": {
             "read_focused_passages": len(all_passages),
             "decision_passages": len(passages),
+            "literature_searches_available": len(searches),
+            "contradiction_search_performed": bool(contradiction_ids),
+            "contradiction_search_gap": (
+                "No targeted contradiction/alternative literature search was completed; "
+                "the specialist retained this as an unresolved evidence gap."
+                if handoff.decision_questions and not contradiction_ids
+                else None
+            ),
             "policy": "Decision-cited official evidence plus read primary publication passages, "
             "including uncited opposition. No sentiment filtering. All other exact source "
             "records remain in the durable Evidence Store.",

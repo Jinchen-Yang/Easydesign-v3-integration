@@ -77,6 +77,41 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Developer repairs after start: `NK2R-E2E-001` and `NK2R-E2E-002` below.
 - Final autonomy eligibility: no. Any code repair after the attempt starts invalidates it.
 
+### Attempt 002
+
+- Project: `nk2r-fresh-e2e-20260918-a02`
+- Thread: `thread-030272aab5fe4e138435489b6386eecd`
+- Start commit: `0e8d603bdd26a120623efe31e8584ed1c15de505`
+- Status: invalidated at Gate 2; retained as read-only defect evidence
+- Gate 1: independently resolved human NK2R UniProt `P21452`, receptor author chain `R`
+  (label chain `B`) after 23 target model calls. One product-native typed-contract repair was
+  used. The independent Judge returned `SUPPORTED` on its first review.
+- Gate 1 card: `b392026e7da080014d2a280dd0fc2f0fa82f4e90cf68a6f1ac5fbc4d6000e23d`;
+  the Scientist approved chain `R`.
+- Operator event: the first approval command mistakenly supplied `--candidate chain-r`.
+  Runtime rejected it atomically with `Candidate selection requires a ranked Site card and
+  APPROVE`; no state changed. The same displayed card was then approved without `--candidate`.
+  This was an operator CLI error, not a scientific-Agent repair.
+- Target preparation: job `job-572f212e78ae496d`, run `20260918t053203z`, succeeded.
+- Gate 2 research: executed about 45 Site model calls and independently acquired and read remote
+  UniProt, RCSB, GPCRdb and literature evidence. No prior dossier, site proposal, rank or residue
+  answer was supplied.
+- Terminal defect: four widely separated native tool correction rounds at event sequences 214,
+  277, 438/442/444 and 457 consumed the execution-global limit. Resume then failed before Site
+  dossier submission with `INVALID_FIELD_PROJECTION: tool argument repair budget exhausted
+  (4 shared correction rounds per execution)`.
+- Evidence separation: the four rounds involved two different tool operations and were separated
+  by many successful calls; parallel errors at 438/442/444 correctly shared one native batch.
+- Start log SHA-256:
+  `b6be2ff6166eb5b6f4a34d35ab5b4bbd968903461f64300ef08c08b732c17f9a`.
+- Gate 2 log SHA-256:
+  `bd70791d0c669c3a8f1988ebb7b390dfe39f0a8003e8e6f61eee3ecc7a40641c`.
+- Resume log SHA-256:
+  `6236d86cbb5e769d5f8cad541f8dd2240f76829a74f2c3b206855f587938302b`.
+- Developer repair after start: `NK2R-E2E-003` below.
+- Final autonomy eligibility: no. The generic recovery-budget code repair requires a new
+  Gate-1-to-Gate-5 attempt.
+
 ## Repairs
 
 ### NK2R-E2E-001 — Site Judge recovery repeated the full evidence packet
@@ -137,6 +172,44 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - Manual project-state changes: none.
 - Attempt invalidated: yes.
 
+### NK2R-E2E-003 — unrelated Site tool corrections exhausted one global budget
+
+- Attempt / stage: Attempt 002, long-running Gate 2 Site research.
+- Trigger: after four correctable model-tool batches over roughly 45 Site model calls, a later
+  source-selection prerequisite could no longer return its deterministic correction payload.
+- Expected: repeated consecutive failure of one tool operation remains bounded, while an earlier
+  repaired and subsequently successful operation cannot consume the allowance of a later,
+  independent research action.
+- Before state: prerequisite repair, field-projection repair and parallel projection errors for
+  different tools all shared `TOOL_REPAIR_LIMIT = 4` across the entire execution. Successful tool
+  invocations did not close a repair streak. A long but progressing research turn therefore
+  became less recoverable over time.
+- Root cause: `_reserve_repair()` keyed native batches for parallel deduplication but counted every
+  distinct batch in one execution-wide dictionary. The implementation had no role/tool scope and
+  no durable success boundary.
+- Generic fix: native Harness repairs are now isolated by role and tool operation. At most four
+  consecutive model batches may fail for the same operation; all errors in one native batch share
+  one attempt; a successful invocation durably closes that operation's streak; restart preserves
+  both failures and success boundaries. Legacy unscoped API callers retain execution-wide
+  accounting for compatibility. The independent model-call ceiling remains unchanged.
+- Safety behavior: five consecutive failed batches for the same operation are still rejected;
+  replaying an already delivered batch does not obtain another attempt; using a different tool
+  cannot reset a failing tool's streak.
+- Regression coverage: seven independent tool scopes can each receive their first correction;
+  same-batch parallel errors share an attempt; the streak survives store reopen; success resets
+  only its own scope; four post-reset failures are accepted and the fifth is rejected; an
+  end-to-end `RoleBoundary` tool call verifies automatic success reset.
+- Changed files: `src/easydesign/agent/session_store.py`,
+  `src/easydesign/agent/harness.py`, `tests/unit/agent/test_repair_rounds.py`,
+  `tests/unit/agent/test_tool_argument_recovery.py`.
+- Targeted affected-module suite: 75 passed. Focused new/store/harness suite: 25 passed. Ruff and
+  `git diff --check`: passed. A broader `tests/unit/agent` run progressed beyond 10% with no
+  failure before it was stopped because unrelated slow Agent scenarios made it unsuitable as a
+  pre-restart blocker.
+- Fix commit: `38cbd14b8997491807544cff883807355b27191a`.
+- Manual project-state changes: none.
+- Attempt invalidated: yes.
+
 ## Validation after repairs
 
 - Focused Site Judge, ranked portfolio, dossier and fact-integrity suite: 92 passed before the
@@ -150,7 +223,9 @@ Run a new human-NK2R extracellular inhibitory VHH case from Gate 1 through Gate 
 - `git diff --check`: passed.
 - Final post-adjustment focused rerun: 3 passed; Ruff passed.
 - Fix commit: `29a475924ce3ee19a005505ba444f7adb03a2c40`.
-- Next accepted run: a new Attempt 002 project and thread, restarted from Gate 1 after commit.
+- Attempt 002 restarted from Gate 1 after the first repair commit and was invalidated at Gate 2
+  by `NK2R-E2E-003`. The next accepted run is a new Attempt 003 project and thread, restarted
+  from Gate 1 after commit `38cbd14b8997491807544cff883807355b27191a`.
 
 ## Issue template
 

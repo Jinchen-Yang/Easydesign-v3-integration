@@ -212,6 +212,8 @@ def test_finalization_packet_does_not_replay_prior_tool_calls(
     value = packet.content
     assert '"reading_closed":true' in value
     assert "Candidate interpretation remains provisional." in value
+    assert "Every decision_questions item must include" in value
+    assert "unresolved_questions is a list of plain strings" in value
     assert '"name":"research_evidence"' not in value
     assert '"args":{"query":"old"}' not in value
     assert len(value) < 60000

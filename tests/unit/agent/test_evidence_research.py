@@ -235,6 +235,56 @@ def test_gpcrdb_missing_entry_falls_back_to_approved_canonical_accession(
     }
 
 
+def test_site_runtime_selects_approved_gpcr_context_without_model_reason(
+    research: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(
+        research.bridge,
+        "site_facts",
+        lambda: (
+            {"evidence": {"hard_facts": {"canonical_accession": "P21452"}}},
+            {},
+            {},
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        research,
+        "retrieve",
+        lambda _client, _query: [
+            {
+                "provider": "GPCRdb",
+                "identifier": "nk2r_human",
+                "primary_eligible": True,
+                "evidence_level": "curated-receptor-context",
+                "passage": '{"identity":{"accession":"P21452"}}',
+                "_sections": [],
+                "truncated": False,
+                "status": "resolved",
+            }
+        ],
+    )
+    result = research.acquire(
+        ResearchQuery(
+            topic="state",
+            question="Resolve the approved receptor topology",
+            operation="gpcrdb-context",
+            identifier="nk2r_human",
+            pdb_id="9W2H",
+        ),
+        role="site",
+    )
+
+    assert result["cards"][0]["provider"] == "GPCRdb"
+    selection = next(
+        event["payload"]
+        for event in reversed(research.bridge.store.events(research.bridge.thread))
+        if event["kind"] == "evidence-selection"
+    )
+    assert selection["source_id"] == "GPCRdb:NK2R_HUMAN"
+    assert "Runtime-required deterministic GPCR context" in selection["reason"]
+
+
 def read_primary(worker: Any, identifier: str) -> dict[str, Any]:
     select(worker, identifier)
     worker.acquire(query(operation="primary-record", identifier=identifier), role="site")

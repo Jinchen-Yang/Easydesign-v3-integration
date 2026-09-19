@@ -803,7 +803,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         content="Runtime Site reading limit (not a scientific conclusion): "
                         "the fixed query or model-call budget is complete. Submit "
                         f"{submission_name} now from delivered evidence. Keep every material "
-                        "unknown, source limitation and alternative explicit."
+                        "unknown, source limitation and alternative explicit. Every "
+                        "decision_questions item must include decision_impact; "
+                        "unresolved_questions must contain plain strings."
                     )
                 )
             if compact_judge:

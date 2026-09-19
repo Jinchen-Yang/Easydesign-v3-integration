@@ -116,7 +116,10 @@ class ResearchQuery(StrictDTO):
         default=None,
         description="For record/fulltext acquisition: explicitly SELECT this exact source "
         "for this query topic with a scientific reason, then acquire it in the same call. "
-        "Omit only if already selected for this exact topic. Not scientific approval.",
+        "Omit only if already selected for this exact topic. The Site Runtime also binds "
+        "gpcrdb-context to the approved canonical receptor, because this deterministic "
+        "structured context is a required input rather than a literature choice. Not "
+        "scientific approval.",
     )
     query: str = Field(
         default="",
@@ -479,7 +482,27 @@ class EvidenceResearch:
                 "gpcrdb-context": "GPCRdb",
             }[query.operation]
             corpus = EvidenceCorpus(self.bridge)
-            if query.selection_reason is not None:
+            selection_reason = query.selection_reason
+            if role == "site" and query.operation == "gpcrdb-context":
+                # The approved Target and the adapter's accession check make this one
+                # acquisition deterministic. Requiring the research model to separately
+                # SELECT the same mandatory receptor context caused repeated
+                # SOURCE_NOT_SELECTED turns before the already-defined kernel could run.
+                # Other records/full text still require an explicit scientific selection.
+                try:
+                    target, _, _ = self.bridge.site_facts()
+                    approved_accession = target["evidence"]["hard_facts"].get(
+                        "canonical_accession"
+                    )
+                except (AttributeError, AgentBoundaryError, KeyError, TypeError):
+                    approved_accession = None
+                if isinstance(approved_accession, str) and approved_accession:
+                    selection_reason = selection_reason or (
+                        "Runtime-required deterministic GPCR context for the approved "
+                        f"canonical receptor {approved_accession}; identity is independently "
+                        "verified by the GPCRdb adapter."
+                    )
+            if selection_reason is not None:
                 corpus.select(
                     SelectEvidence.model_validate(
                         {
@@ -487,7 +510,7 @@ class EvidenceResearch:
                             "identifier": query.identifier,
                             "need": NEEDS[query.topic],
                             "selection": "SELECTED",
-                            "reason": query.selection_reason,
+                            "reason": selection_reason,
                         }
                     )
                 )
@@ -1369,7 +1392,9 @@ def research_tool(bridge: Any, role: str) -> Any:
             "Search literature/structures; "
             "retrieve primary PMID/PMCID, PDB complexes, UniProt or applicable GPCRdb context. "
             "For acquisition include selection_reason to explicitly select this source for "
-            "the exact topic and acquire it atomically through the existing corpus. "
+            "the exact topic and acquire it atomically through the existing corpus. The one "
+            "exception is Site gpcrdb-context for the approved canonical receptor: Runtime "
+            "binds that mandatory deterministic context and the adapter verifies identity. "
             "Alternatively call select_evidence first. Full records stay in the corpus; "
             "Use identifier for the source key (PMID/PMCID/accession/PDB code). "
             "Selection need must match query topic: identity=TARGET_IDENTITY, "

@@ -391,7 +391,9 @@ def site_research_working_packet(
         "instruction": (
             "Reading is closed. Submit one concise SiteResearchHandoff. Preserve exact card and "
             "query IDs, exact quoted passage text, material counterevidence and unresolved "
-            "questions. Do not request another action."
+            "questions. Every decision_questions item must include question, decision_impact, "
+            "query_ids, status, evidence and limitations. unresolved_questions is a list of "
+            "plain strings. Do not request another action."
             if reading_closed
             else "Continue only work that can change candidate order, a hard constraint or a "
             "major risk. Exact facts and source text come from this Runtime packet; specialist "

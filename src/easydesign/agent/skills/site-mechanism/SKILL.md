@@ -21,8 +21,10 @@ work. Several questions may share one topic. Do not add questions to cover adver
    use the Runtime-published receptor kernel card. GPCRdb acquisition normally performs this
    analysis atomically. Runtime automatically projects the compact current-binding kernel on the
    next decision call and preserves that delivery in the execution lifecycle; do not spend a
-   model-selected tool call claiming or rediscovering it. This supplies topology, signed membrane
-   frame and candidate inventory.
+   model-selected tool call claiming or rediscovering it. For this approved-receptor
+   `gpcrdb-context` acquisition only, Runtime binds the deterministic source selection even when
+   `selection_reason` is omitted; all literature and other records retain explicit scientific
+   source selection. This supplies topology, signed membrane frame and candidate inventory.
    Do not reconstruct those facts by paging raw topology or repeatedly reading the overview.
 2. Use that context to identify a provisional comparison. Read the strongest primary evidence
    for the intended or forbidden functional effect early. A kernel score, mode name, source
@@ -51,7 +53,8 @@ PMC ANDs bare words and does not expand synonyms: use a short target plus one de
 with parenthesized OR alternatives. Search titles/snippets are leads, not verified residue or
 causal evidence. Acquire a relevant primary record/full text before making claims from it.
 
-For every new source/need, include selection_reason in research_evidence acquisition or in
+For every new source/need other than the Runtime-bound approved-receptor `gpcrdb-context`, include
+selection_reason in research_evidence acquisition or in
 retrieve_evidence with exact source_id: this explicitly SELECTS that source for that need and
 performs the operation in one call. When unsure of the prior selection, include the reason again;
 do not spend a call guessing whether another need's selection applies. Separate select_evidence

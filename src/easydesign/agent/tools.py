@@ -214,6 +214,37 @@ class TargetBridge:
 
     def prepare_target(self) -> dict[str, Any]:
         with self.store.writer():
+            loaded = self.validate_project()
+            source = loaded.config.target.source
+            if not isinstance(source, LocalFileSourceConfig):
+                raise AgentBoundaryError("Target source must remain a local file")
+            source_identity = source.identity
+            if source_identity.uniprot_accession is None:
+                from .target_identity import (
+                    deposited_polymer_metadata,
+                    deposited_uniprot_leads,
+                    explicit_canonical_identity_request,
+                )
+
+                owner = self.store.db.execute(
+                    "SELECT goal FROM threads WHERE id=?", (self.thread,)
+                ).fetchone()
+                execution = self.store.latest_execution(self.thread)
+                request_text = str(owner["goal"] if owner is not None else "")
+                if execution is not None:
+                    request_text += " " + str(execution.get("current_user_message", ""))
+                leads = deposited_uniprot_leads(
+                    deposited_polymer_metadata(loaded.source_path)
+                )
+                if leads and explicit_canonical_identity_request(request_text):
+                    raise AgentBoundaryError(
+                        "TARGET_IDENTITY_SOURCE_REQUIRED: the user explicitly requested target "
+                        "identity resolution and the frozen input supplies UniProt lead(s) "
+                        f"{', '.join(leads)}. Select, acquire and read the matching official "
+                        "UniProt record, call propose_canonical_identity, read the current "
+                        "identity view, then retry prepare_target. A depositor cross-reference "
+                        "alone is not canonical identity evidence."
+                    )
             binding = self.binding()
             command = self.store.prepare(
                 self.thread, "prepare", binding, baseline=[j.job_id for j in self._jobs()]

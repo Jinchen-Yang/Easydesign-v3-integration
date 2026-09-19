@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,35 @@ from .session_store import compact, confined, identity
 class CanonicalProposal(StrictDTO):
     uniprot_card_id: str = Field(min_length=1, max_length=80)
     reason: ShortText
+
+
+def explicit_canonical_identity_request(text: str) -> bool:
+    """Recognize an explicit request to resolve the target against a canonical source."""
+    value = text.casefold()
+    return any(
+        re.search(pattern, value, re.IGNORECASE)
+        for pattern in (
+            r"(?:resolve|verify|confirm|establish).{0,32}(?:target|biological|canonical).{0,16}identity",
+            r"canonical.{0,16}(?:identity|reference|sequence)",
+            r"(?:target|biological).{0,16}identity.{0,16}(?:resolution|verification)",
+            r"(?:解析|确认|核实|验证).{0,16}(?:目标|靶标|生物学|规范).{0,8}(?:身份|序列)",
+            r"(?:目标|靶标).{0,8}(?:身份|规范序列).{0,16}(?:解析|确认|核实|验证)",
+        )
+    )
+
+
+def deposited_uniprot_leads(metadata: dict[str, Any]) -> list[str]:
+    """Return distinct depositor-supplied UniProt accessions without treating them as proof."""
+    leads: list[str] = []
+    for entity in metadata.get("entities", []):
+        for reference in entity.get("deposited_database_references", []):
+            database = str(reference.get("database_name", "")).casefold()
+            accession = reference.get("accession")
+            if database in {"unp", "uniprot", "uniprotkb"} and isinstance(accession, str):
+                value = accession.strip()
+                if value and value not in leads:
+                    leads.append(value)
+    return leads
 
 
 def constant_canonical_offset(report: TargetIdentityReport) -> int | None:

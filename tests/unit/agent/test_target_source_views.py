@@ -3,10 +3,15 @@
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.session_store import identity
 from easydesign.agent.target_identity import (
     deposited_polymer_metadata,
+    deposited_uniprot_leads,
+    explicit_canonical_identity_request,
     pending_canonical_source_read,
 )
 
@@ -78,6 +83,53 @@ _struct_ref.entity_id
         deposited_polymer_metadata(tmp_path / "unannotated.pdb")["status"]
         == "not-reported-in-input"
     )
+
+
+def test_explicit_identity_request_and_depositor_uniprot_leads_are_bounded() -> None:
+    assert explicit_canonical_identity_request(
+        "Resolve the target identity and structure chain before site ranking"
+    )
+    assert explicit_canonical_identity_request("请先确认靶标身份，再做位点设计")
+    assert not explicit_canonical_identity_request("Prepare this local structure")
+    assert deposited_uniprot_leads(
+        {
+            "entities": [
+                {
+                    "deposited_database_references": [
+                        {"database_name": "UNP", "accession": "P21452"},
+                        {"database_name": "UniProtKB", "accession": "P21452"},
+                        {"database_name": "PDB", "accession": "9W2H"},
+                    ]
+                }
+            ]
+        }
+    ) == ["P21452"]
+
+
+def test_prepare_blocks_explicit_identity_request_until_depositor_lead_is_resolved(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
+    b.store.thread(
+        b.thread,
+        "target-identity-prerequisite",
+        "Resolve the target identity and structure chain before Site.",
+    )
+    monkeypatch.setattr(
+        "easydesign.agent.target_identity.deposited_polymer_metadata",
+        lambda _source: {
+            "entities": [
+                {
+                    "deposited_database_references": [
+                        {"database_name": "UNP", "accession": "P21452"}
+                    ]
+                }
+            ]
+        },
+    )
+    with pytest.raises(AgentBoundaryError, match="TARGET_IDENTITY_SOURCE_REQUIRED"):
+        b.prepare_target()
+    assert not b._jobs()
 
 
 def test_canonical_view_prerequisite_needs_current_binding_and_identity_scope(bridge: Any) -> None:

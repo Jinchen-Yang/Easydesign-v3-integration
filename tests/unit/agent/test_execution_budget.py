@@ -140,8 +140,11 @@ def history(rounds: int, total_chars: int) -> list[Any]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rounds,chars,summaries", [(2, 82000, 0), (6, 82000, 1), (2, 94000, 1)])
-async def test_native_summary_waits_for_more_history_unless_near_guard(
+@pytest.mark.parametrize(
+    "rounds,chars,summaries",
+    [(2, 60000, 0), (2, 82000, 1), (6, 82000, 1), (2, 94000, 1)],
+)
+async def test_native_summary_preserves_one_large_batch_of_guard_headroom(
     tmp_path: Path, rounds: int, chars: int, summaries: int
 ) -> None:
     config = scripted_config()

@@ -189,9 +189,11 @@ def research_memory(
         }
     )
     profile_limit = (getattr(model, "profile", None) or {}).get("max_input_tokens")
-    # The soft target is telemetry, not a demand to summarize each crossing.
-    # Use framework memory between the working target and the independent guard.
-    trigger = (config.max_input_chars + config.hard_input_chars) // 8
+    # Trigger near the configured working target, leaving room for one complete
+    # multi-tool result batch before the independent hard guard. A high-water mark
+    # near 90k characters let a normal 25-30k Site batch jump past a 100k guard
+    # before the framework could summarize it.
+    trigger = max(1000, config.max_input_chars // 4)
     if isinstance(profile_limit, int) and profile_limit > 0:
         trigger = min(
             trigger, max(1000, (profile_limit - config.for_role(role).max_output_tokens) // 2)

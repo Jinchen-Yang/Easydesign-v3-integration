@@ -313,3 +313,43 @@ Repair:
 
 R15 is invalidated because product code changed after it failed. R16 must begin in a new project
 and thread at Gate 1.
+
+## Attempt R16 — invalidated
+
+- Project: `figure2-nk2r-site-fast-r16`
+- Thread: `thread-5d50e25da4bf4c2d9547dcb3b6d4988c`
+- Start commit: `5155f7e8685075f53a03a29e20edcbe054f06db2`
+- Gate 1: independently resolved human NK2R P21452 and auth chain R / label chain B.
+- Gate 1 wall time: 108.60 seconds.
+- Gate 2 failed safely after 189.75 seconds.
+- Manual scientific answer injection: none.
+
+### Confirmed improvement
+
+- GPCRdb acquisition was followed immediately by exactly one 2.77-second model-facing kernel
+  delivery; no generic result paging or repeated delivery occurred.
+- The Agent performed three focused literature discoveries, then selected/read stronger leads and
+  evaluated concrete candidates. The isolated handoff path was not reached before the context
+  capacity failure, so R15's finalization repair remains covered by unit/wire regression only.
+
+### SITE-LATENCY-008 — summary high-water mark left less than one batch of guard headroom
+
+Trigger:
+
+- After one framework summary, a Site call entered at 72,905 characters and returned four normal
+  tool operations. Their bounded projections brought the next summary input to 101,965 characters.
+- The 100k hard guard correctly rejected that request before provider transmission.
+- The prior summary high-water mark was about 90k characters, leaving less space than one observed
+  25-30k multi-tool batch, so framework summarization could be scheduled too late.
+
+Repair:
+
+- Research memory now starts its normal trigger near the configured 60k working target (about 15k
+  approximate tokens) and its hysteresis high-water mark near 67.5k characters.
+- This leaves about 32.5k characters before the unchanged 100k hard guard, enough for the observed
+  complete multi-tool batch. Complete tool transactions remain atomic and durable.
+- Regression coverage now asserts 60k remains below the low-message high-water path while 82k and
+  94k histories summarize before reaching the hard boundary.
+
+R16 is invalidated because product code changed after it failed. R17 must begin in a new project
+and thread at Gate 1.

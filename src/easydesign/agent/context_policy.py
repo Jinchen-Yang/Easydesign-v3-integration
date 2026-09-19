@@ -33,6 +33,13 @@ def admit_site_research_request(
 
     if role != "site" or execution_id is None or not isinstance(bridge, Phase2Bridge):
         return request
+    if any(
+        '"runtime_site_research_packet":"v1"' in str(message.content)
+        for message in request.messages
+    ):
+        # RoleBoundary may already have replaced the raw transcript. Nested research-memory
+        # middleware must not rebuild the same durable packet or double-count admission.
+        return request
     messages = [request.system_message, *request.messages]
     measured = context_usage(
         request.model,
@@ -287,9 +294,7 @@ def research_memory(
     # provider/model identity, but disable extended reasoning and cap its visible output.
     compact_model = compact_summary_model(model, config, role=role)
     summary_model = compact_model.model_copy(
-        update={
-            "callbacks": [SummaryAccounting(bridge, config, role, execution_id, compact_model)]
-        }
+        update={"callbacks": [SummaryAccounting(bridge, config, role, execution_id, compact_model)]}
     )
     profile_limit = (getattr(model, "profile", None) or {}).get("max_input_tokens")
     # Trigger near the configured working target, leaving room for one complete

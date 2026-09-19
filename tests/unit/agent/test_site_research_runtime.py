@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -7,12 +8,17 @@ from langchain.agents.middleware import ModelRequest, ModelResponse
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from easydesign.agent.context_policy import context_usage, research_memory
+from easydesign.agent.context_policy import (
+    admit_site_research_request,
+    context_usage,
+    research_memory,
+)
 from easydesign.agent.evidence_research import EvidenceResearch
 from easydesign.agent.harness import RoleBoundary
 from easydesign.agent.phase2_tools import phase2_tools
 from easydesign.agent.session_store import SessionStore, compact
 from easydesign.agent.site_research_runtime import (
+    _compact_receptor_kernel,
     receptor_kernel_message,
     refresh_site_research_activity,
     site_research_packet_message,
@@ -86,16 +92,22 @@ def test_kernel_projection_is_runtime_owned_idempotent_and_restart_safe(
     assert "receptor-kernel-ready" in state.milestones
     assert "receptor-kernel-projected" in state.milestones
     events = site_bridge.store.events(site_bridge.thread)
-    assert sum(
-        event["kind"] == "tool-view"
-        and event["payload"].get("tool_call_id") == "runtime-receptor-kernel-projection"
-        for event in events
-    ) == 1
-    assert sum(
-        event["kind"] == "site-research-lifecycle"
-        and event["payload"].get("milestone") == "receptor-kernel-projected"
-        for event in events
-    ) == 1
+    assert (
+        sum(
+            event["kind"] == "tool-view"
+            and event["payload"].get("tool_call_id") == "runtime-receptor-kernel-projection"
+            for event in events
+        )
+        == 1
+    )
+    assert (
+        sum(
+            event["kind"] == "site-research-lifecycle"
+            and event["payload"].get("milestone") == "receptor-kernel-projected"
+            for event in events
+        )
+        == 1
+    )
 
     reopened = SessionStore(site_bridge.project)
     try:
@@ -140,13 +152,176 @@ def test_lifecycle_does_not_count_gate1_passages_as_site_reading(
     assert "decision-relevant-reading" not in state.milestones
 
 
+def test_compact_kernel_preserves_candidate_rows_and_scientific_fields() -> None:
+    columns = ["gpcrdb_sequence_number", "source_label_seq_id", "mapping_status"]
+    projection = {
+        "card_id": "receptor-test",
+        "identity": {
+            "accession": "P21452",
+            "receptor_chain": "R",
+            "chains": [{"id": str(i), "description": "x" * 100} for i in range(20)],
+        },
+        "approved_design_mapping": {
+            "canonical_accession": "P21452",
+            "target_binding": "target-binding",
+            "limitations": ["review-required mapping"],
+            "facts_table": {"columns": ["x"], "rows": [["y" * 1000]]},
+        },
+        "candidate_overview": {
+            "inhibit": [
+                {
+                    "id": "outer-pore",
+                    "hypothesis": "Block the extracellular vestibule.",
+                    "risks": ["Whole-VHH access remains unverified."],
+                    "approved_design_membership": {
+                        "hotspot_label_seq_ids": [183, 184],
+                        "mapping_statuses": ["review-required"],
+                        "authority": "Repeated mapping authority " * 20,
+                    },
+                    "residue_table": {
+                        "columns": columns,
+                        "rows": [[175, 183, "exact"], [176, 184, "exact"]],
+                        "encoding": "Repeated table explanation " * 20,
+                    },
+                    "kernel_claims": [
+                        {
+                            "id": "claim-1",
+                            "claim": "Extracellular mouth geometry.",
+                            "detail": "Extracellular mouth geometry.",
+                            "source": "local structure analysis",
+                        }
+                    ],
+                    "citable_evidence_card_ids": ["receptor-test"],
+                }
+            ]
+        },
+        "citation_contract": {"citable_evidence_card_ids": ["receptor-test"]},
+    }
+
+    compacted = _compact_receptor_kernel(projection)
+
+    assert "chains" not in compacted["identity"]
+    assert "facts_table" not in compacted["approved_design_mapping"]
+    assert compacted["candidate_residue_columns"] == columns[:2]
+    assert compacted["candidate_residue_constants"] == {"mapping_status": "exact"}
+    candidate = compacted["candidate_overview"]["inhibit"][0]
+    assert candidate["residue_table"]["rows"] == [
+        [175, 183],
+        [176, 184],
+    ]
+    assert candidate["approved_design_membership"]["hotspot_label_seq_ids"] == [183, 184]
+    assert candidate["hypothesis"] == "Block the extracellular vestibule."
+    assert candidate["risks"] == ["Whole-VHH access remains unverified."]
+    assert candidate["kernel_claims"][0]["claim"] == "Extracellular mouth geometry."
+    assert "detail" not in candidate["kernel_claims"][0]
+    assert "citable_evidence_card_ids" not in candidate
+    assert compacted["citation_contract"]["citable_evidence_card_ids"] == ["receptor-test"]
+    assert len(compact(compacted)) < len(compact(projection)) * 0.6
+
+
+def test_working_packet_keeps_all_search_leads_without_replaying_snippets(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    research = {
+        "queries": [
+            {
+                "query_id": "literature-leads",
+                "topic": "site-mechanism",
+                "question": "Which evidence can change candidate order?",
+                "status": "RESOLVED",
+                "errors": [],
+                "query": {"operation": "literature-search"},
+                "cards": [
+                    {
+                        "card_id": f"lead-{index}",
+                        "provider": "PubMed",
+                        "identifier": str(1000 + index),
+                        "title": f"Decision-relevant lead {index}",
+                        "year": 2020 + index,
+                        "passage": f"Search snippet {index} " + "x" * 5000,
+                        "limitations": ["Discovery result; acquire before citing."],
+                    }
+                    for index in range(5)
+                ],
+            }
+        ],
+        "topics": {},
+        "authority": "Synthetic durable research fixture.",
+    }
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: research)
+    eid = site_bridge.store.begin_execution(site_bridge.thread, "Compact search leads")[
+        "execution_id"
+    ]
+
+    packet = json.loads(
+        site_research_packet_message(site_bridge, eid, [], reading_closed=False).content
+    )
+
+    inquiry = packet["research_inquiries"][0]
+    assert inquiry["discovery_lead_count"] == 5
+    assert inquiry["evidence_card_ids"] == [
+        "lead-0",
+        "lead-1",
+        "lead-2",
+        "lead-3",
+        "lead-4",
+    ]
+    lead_table = packet["discovery_lead_table"]
+    assert len(lead_table["rows"]) == 5
+    assert [row[0] for row in lead_table["rows"]] == inquiry["evidence_card_ids"]
+    assert "passage" not in lead_table["columns"]
+    assert "limitations" not in lead_table["columns"]
+    assert packet["evidence_card_catalog"] == []
+    assert packet["packet_chars"] < 10000
+
+
+def test_existing_runtime_packet_is_not_reprojected_or_double_counted(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
+    config = scripted_config()
+    eid = site_bridge.store.begin_execution(site_bridge.thread, "Single admission")["execution_id"]
+    model = FakeListChatModel(responses=["unused"])
+    request = ModelRequest(
+        model=model,
+        system_message=SystemMessage(content="Synthetic Site research"),
+        messages=[HumanMessage(content="x" * 100500)],
+        state={"messages": []},
+        tools=[],
+    )
+
+    first = admit_site_research_request(
+        request,
+        bridge=site_bridge,
+        config=config,
+        role="site",
+        execution_id=eid,
+        tool_chars=0,
+    )
+    second = admit_site_research_request(
+        first,
+        bridge=site_bridge,
+        config=config,
+        role="site",
+        execution_id=eid,
+        tool_chars=0,
+    )
+
+    assert second.messages == first.messages
+    assert (
+        sum(
+            event["kind"] == "site-research-context-admission"
+            for event in site_bridge.store.events(site_bridge.thread)
+        )
+        == 1
+    )
+
+
 @pytest.mark.asyncio
 async def test_site_context_admission_builds_runtime_packet_before_summary_guard(
     site_bridge: Any, monkeypatch: Any, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(
-        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
-    )
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
     config = scripted_config()
     execution = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic admission")
     eid = execution["execution_id"]
@@ -192,9 +367,7 @@ async def test_site_context_admission_builds_runtime_packet_before_summary_guard
 async def test_site_role_boundary_admits_oversized_first_request_before_hard_guard(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(
-        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
-    )
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
     config = scripted_config()
     eid = site_bridge.store.begin_execution(site_bridge.thread, "Oversized first Site call")[
         "execution_id"
@@ -250,9 +423,7 @@ async def test_site_role_boundary_admits_oversized_first_request_before_hard_gua
 def test_finalization_packet_does_not_replay_prior_tool_calls(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(
-        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
-    )
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
     eid = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic finalization")[
         "execution_id"
     ]
@@ -267,9 +438,7 @@ def test_finalization_packet_does_not_replay_prior_tool_calls(
             tool_call_id="old",
         ),
     ]
-    packet = site_research_packet_message(
-        site_bridge, eid, messages, reading_closed=True
-    )
+    packet = site_research_packet_message(site_bridge, eid, messages, reading_closed=True)
     value = packet.content
     assert '"reading_closed":true' in value
     assert "Candidate interpretation remains provisional." in value

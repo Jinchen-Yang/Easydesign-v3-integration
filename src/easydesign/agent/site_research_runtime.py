@@ -101,9 +101,7 @@ def mark_site_research_milestone(
             )
 
 
-def _kernel_record(
-    bridge: Phase2Bridge, execution_id: str
-) -> dict[str, Any] | None:
+def _kernel_record(bridge: Phase2Bridge, execution_id: str) -> dict[str, Any] | None:
     """Resolve the current Target-bound deterministic kernel from durable artifacts."""
     from .evidence_research import EvidenceResearch
 
@@ -163,9 +161,7 @@ def refresh_site_research_activity(
     return site_research_state(bridge, execution_id)
 
 
-def site_research_state(
-    bridge: Phase2Bridge, execution_id: str
-) -> SiteResearchExecutionState:
+def site_research_state(bridge: Phase2Bridge, execution_id: str) -> SiteResearchExecutionState:
     """Read the current state from durable events and verified evidence only."""
     from .evidence_research import EvidenceResearch
 
@@ -204,7 +200,8 @@ def site_research_state(
         (
             row
             for row in reversed(lifecycle)
-            if row["milestone"] in {
+            if row["milestone"]
+            in {
                 "finalization-pending",
                 "budget-exhausted-with-open-uncertainty",
             }
@@ -236,9 +233,7 @@ def site_research_state(
     )
 
 
-def _ensure_kernel_view(
-    bridge: Phase2Bridge, execution_id: str, kernel: dict[str, Any]
-) -> str:
+def _ensure_kernel_view(bridge: Phase2Bridge, execution_id: str, kernel: dict[str, Any]) -> str:
     ref = f"/result-{str(kernel['ref']['sha256'])[:32]}.json"
     with bridge.store.db:
         row = bridge.store.db.execute(
@@ -275,15 +270,15 @@ def _ensure_kernel_view(
     return ref
 
 
-def receptor_kernel_message(
-    bridge: Phase2Bridge, execution_id: str
-) -> HumanMessage | None:
+def receptor_kernel_message(bridge: Phase2Bridge, execution_id: str) -> HumanMessage | None:
     """Project the already-computed kernel without a model-selected tool round trip."""
     kernel = _kernel_record(bridge, execution_id)
     if kernel is None:
         return None
     ref = _ensure_kernel_view(bridge, execution_id, kernel)
-    projection = receptor_research_projection(kernel["value"], kernel["card_id"])
+    projection = _compact_receptor_kernel(
+        receptor_research_projection(kernel["value"], kernel["card_id"])
+    )
     return HumanMessage(
         content=compact(
             {
@@ -297,7 +292,161 @@ def receptor_kernel_message(
     )
 
 
+def _compact_receptor_kernel(projection: dict[str, Any]) -> dict[str, Any]:
+    """Deduplicate one exact Site working view without changing the durable kernel.
+
+    The full receptor artifact remains addressable through ``full_result``.  This view keeps
+    every candidate, candidate residue row, mapping qualification and scientific assessment;
+    it removes whole-receptor tables that are not needed to compare the supplied candidates
+    and moves repeated table metadata to one shared declaration.
+    """
+    result = dict(projection)
+    result.pop("fields", None)
+    result.pop("query_scope", None)
+    result.pop("declared_scope_complete", None)
+    result.pop("scope_limits", None)
+    identity = result.get("identity")
+    if isinstance(identity, dict):
+        result["identity"] = {key: value for key, value in identity.items() if key != "chains"}
+    mapping = result.get("approved_design_mapping")
+    if isinstance(mapping, dict):
+        result["approved_design_mapping"] = {
+            key: value for key, value in mapping.items() if key != "facts_table"
+        }
+
+    shared_columns: list[str] | None = None
+    shared_original_columns: list[str] | None = None
+    shared_constant_indexes: list[int] = []
+    shared_variable_indexes: list[int] = []
+    shared_constants: dict[str, Any] = {}
+    overview = result.get("candidate_overview")
+    if isinstance(overview, dict):
+        tables = [
+            candidate["residue_table"]
+            for candidates in overview.values()
+            if isinstance(candidates, list)
+            for candidate in candidates
+            if isinstance(candidate, dict)
+            and isinstance(candidate.get("residue_table"), dict)
+            and isinstance(candidate["residue_table"].get("columns"), list)
+            and isinstance(candidate["residue_table"].get("rows"), list)
+        ]
+        if tables and all(table["columns"] == tables[0]["columns"] for table in tables):
+            original_columns = list(tables[0]["columns"])
+            all_rows = [row for table in tables for row in table["rows"]]
+            if all_rows and all(len(row) == len(original_columns) for row in all_rows):
+                shared_constant_indexes = [
+                    index
+                    for index in range(len(original_columns))
+                    if all(row[index] == all_rows[0][index] for row in all_rows)
+                ]
+                shared_variable_indexes = [
+                    index
+                    for index in range(len(original_columns))
+                    if index not in shared_constant_indexes
+                ]
+                shared_columns = [original_columns[index] for index in shared_variable_indexes]
+                shared_original_columns = original_columns
+                shared_constants = {
+                    original_columns[index]: all_rows[0][index] for index in shared_constant_indexes
+                }
+        compact_overview: dict[str, Any] = {}
+        for mode, candidates in overview.items():
+            if not isinstance(candidates, list):
+                compact_overview[mode] = candidates
+                continue
+            compact_candidates: list[Any] = []
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    compact_candidates.append(candidate)
+                    continue
+                item = dict(candidate)
+                # The root citation contract applies to every candidate.
+                item.pop("citable_evidence_card_ids", None)
+                membership = item.get("approved_design_membership")
+                if isinstance(membership, dict):
+                    item["approved_design_membership"] = {
+                        key: value for key, value in membership.items() if key != "authority"
+                    }
+                claims = item.get("kernel_claims")
+                if isinstance(claims, list):
+                    item["kernel_claims"] = [
+                        {
+                            key: value
+                            for key, value in claim.items()
+                            if key != "detail" or value != claim.get("claim")
+                        }
+                        if isinstance(claim, dict)
+                        else claim
+                        for claim in claims
+                    ]
+                table = item.get("residue_table")
+                if isinstance(table, dict) and isinstance(table.get("columns"), list):
+                    columns = table["columns"]
+                    if shared_columns is None:
+                        shared_columns = list(columns)
+                        shared_original_columns = list(columns)
+                        shared_variable_indexes = list(range(len(columns)))
+                    if not shared_constants and columns == shared_original_columns:
+                        # No cross-candidate constants were found.
+                        item["residue_table"] = {
+                            "columns_ref": "candidate_residue_columns",
+                            "rows": table.get("rows", []),
+                        }
+                    elif columns == shared_original_columns:
+                        item["residue_table"] = {
+                            "columns_ref": "candidate_residue_columns",
+                            "constant_columns_ref": "candidate_residue_constants",
+                            "rows": [
+                                [row[index] for index in shared_variable_indexes]
+                                for row in table.get("rows", [])
+                            ],
+                        }
+                    else:
+                        item["residue_table"] = {
+                            "columns": columns,
+                            "rows": table.get("rows", []),
+                        }
+                compact_candidates.append(item)
+            compact_overview[mode] = compact_candidates
+        result["candidate_overview"] = compact_overview
+    if shared_columns is not None:
+        result["candidate_residue_columns"] = shared_columns
+        if shared_constants:
+            result["candidate_residue_constants"] = shared_constants
+        result["candidate_residue_encoding"] = (
+            "Every source member remains in order. Each residue_table row follows the shared "
+            "variable columns; candidate_residue_constants applies to every row and retains "
+            "exact common values. source_* values are provenance; "
+            "approved_design_membership contains the usable design labels."
+        )
+    result["working_view_scope"] = (
+        "Exact candidate comparison view with no reranking. Full receptor chain rows, the "
+        "approved mapping facts table, topology arrays and provenance remain in full_result. "
+        "source_* numbers are provenance, not design labels; use approved_design_membership. "
+        "Never infer a global offset. Kernel candidates and confidence are scoped heuristics, "
+        "not curated epitopes, measured effects, full-VHH access, efficacy or approval."
+    )
+    return result
+
+
 def _evidence_card_view(card: dict[str, Any], *, operation: str | None) -> dict[str, Any]:
+    if operation and operation.endswith("search"):
+        # Discovery results are leads, not evidence. Keep every selectable lead and its stable
+        # identifiers, but do not replay snippets or provisional limitations after each read.
+        lead_keys = (
+            "card_id",
+            "provider",
+            "identifier",
+            "resolved_identifier",
+            "title",
+            "year",
+            "doi",
+            "pmcid",
+            "evidence_level",
+            "primary_eligible",
+        )
+        return {key: scientific_projection(card[key]) for key in lead_keys if key in card}
     keys = (
         "card_id",
         "provider",
@@ -319,8 +468,6 @@ def _evidence_card_view(card: dict[str, Any], *, operation: str | None) -> dict[
     if card_id.startswith("passage-") and isinstance(passage, str):
         # Exact text is required by citation validation; never summarize it here.
         result["passage"] = passage
-    elif operation and operation.endswith("search") and isinstance(passage, str):
-        result["search_lead_snippet"] = passage[:450]
     if card.get("corpus_ref"):
         result["full_source_acquired"] = True
         result["focused_passage_required_for_claim"] = True
@@ -335,8 +482,8 @@ def _scientific_notes(messages: list[Any]) -> list[str]:
         note = message.text.strip()
         if not note or note in notes:
             continue
-        notes.append(note[:2000])
-        if len(notes) == 4:
+        notes.append(note[:1000])
+        if len(notes) == 2:
             break
     return list(reversed(notes))
 
@@ -360,10 +507,38 @@ def site_research_working_packet(
     kernel_ref = None
     if kernel is not None:
         kernel_ref = _ensure_kernel_view(bridge, execution_id, kernel)
-        kernel_view = receptor_research_projection(kernel["value"], kernel["card_id"])
+        kernel_view = _compact_receptor_kernel(
+            receptor_research_projection(kernel["value"], kernel["card_id"])
+        )
     inquiries = []
+    evidence_card_catalog: dict[str, dict[str, Any]] = {}
+    lead_columns = (
+        "card_id",
+        "provider",
+        "identifier",
+        "title",
+        "year",
+    )
+    discovery_lead_rows: list[list[Any]] = []
+    discovery_lead_ids: set[str] = set()
     for query in research["queries"]:
         operation = query.get("query", {}).get("operation")
+        cards = [
+            card for card in query["cards"] if card.get("provider") != "EasyDesign GPCR kernel"
+        ]
+        card_ids: list[str] = []
+        for card in cards:
+            view = _evidence_card_view(card, operation=operation)
+            card_id = str(view.get("card_id", card.get("card_id", "")))
+            if not card_id:
+                continue
+            card_ids.append(card_id)
+            if operation and operation.endswith("search"):
+                if card_id not in discovery_lead_ids:
+                    discovery_lead_rows.append([view.get(key) for key in lead_columns])
+                    discovery_lead_ids.add(card_id)
+            else:
+                evidence_card_catalog.setdefault(card_id, view)
         inquiries.append(
             {
                 "query_id": query["query_id"],
@@ -372,11 +547,10 @@ def site_research_working_packet(
                 "operation": operation,
                 "status": query.get("status"),
                 "errors": query.get("errors", []),
-                "evidence_cards": [
-                    _evidence_card_view(card, operation=operation)
-                    for card in query["cards"]
-                    if card.get("provider") != "EasyDesign GPCR kernel"
-                ],
+                "discovery_lead_count": (
+                    len(cards) if operation and operation.endswith("search") else None
+                ),
+                "evidence_card_ids": card_ids,
             }
         )
     packet: dict[str, Any] = {
@@ -387,6 +561,13 @@ def site_research_working_packet(
         "receptor_kernel": kernel_view,
         "receptor_kernel_full_result": kernel_ref,
         "research_inquiries": inquiries,
+        "evidence_card_catalog": list(evidence_card_catalog.values()),
+        "discovery_lead_table": {
+            "columns": list(lead_columns),
+            "rows": discovery_lead_rows,
+            "authority": "Discovery metadata only, not citable evidence. Acquire and read a "
+            "source before using it for a claim.",
+        },
         "specialist_working_notes": _scientific_notes(messages),
         "instruction": (
             "Reading is closed. Submit one concise SiteResearchHandoff. Preserve exact card and "
@@ -404,14 +585,10 @@ def site_research_working_packet(
         "deduplicates their decision-relevant projection; it creates no scientific fact, "
         "ranking or approval.",
     }
-    # Search lead snippets and fallible notes are the only optional prose. Preserve exact
-    # focused passages, kernel membership and approved Target facts if the packet is unusually
-    # large.
+    # Fallible notes are the only optional prose. Preserve exact focused passages, kernel
+    # membership and approved Target facts if the packet is unusually large.
     if len(compact(packet)) > 56000:
-        for inquiry in packet["research_inquiries"]:
-            for card in inquiry["evidence_cards"]:
-                card.pop("search_lead_snippet", None)
-        packet["specialist_working_notes"] = packet["specialist_working_notes"][-2:]
+        packet["specialist_working_notes"] = packet["specialist_working_notes"][-1:]
     packet["packet_chars"] = len(compact(packet))
     return packet
 

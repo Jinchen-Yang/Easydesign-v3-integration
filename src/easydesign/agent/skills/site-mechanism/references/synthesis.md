@@ -74,7 +74,10 @@ Use reference_annotations and candidate sequence_topology for canonical domains;
 or scan label cannot turn an annotated intracellular region into an extracellular loop.
 When approach_validation is not-performed, whole-VHH feasibility remains UNRESOLVED. Reject any
 absolute impossibility/feasibility claim based only on point exposure or pore geometry.
-Residue exclusions must be recorded through the supplied residue constraint IDs; check them
-against selected membership. A contradictory exclusion cannot be waived by a warning.
+Residue exclusions are advisory downstream not-binding suggestions and must use supplied residue
+constraint IDs. They cannot make a Runtime-hard-valid candidate ineligible, remove it from A/B/C,
+or rerank it. Do not use exclusions to encode activation risk, weak exposure or uncertainty;
+describe those as ranking penalties. Runtime discards exclusion suggestions overlapping any
+hard-valid candidate and retains verified hard-invalid regions separately.
 Do not propose an unverified fourth candidate in prose; recommend review of an upstream
 hypothesis if the supplied alternatives are inadequate.

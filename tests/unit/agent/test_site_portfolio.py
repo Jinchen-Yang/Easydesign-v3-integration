@@ -132,6 +132,44 @@ def test_runtime_compartment_block_is_removed_from_abc_but_retained_for_audit(si
     assert [entry.rank for entry in intent.portfolio] == ["A", "B", None]
 
 
+def test_ranked_advisory_avoidance_cannot_block_hard_valid_alternative(site_bridge):
+    case = setup_portfolio(site_bridge)
+    dossier = deepcopy(case["dossier"])
+    valid_alternative = dossier["candidate_comparison"][1]
+    blocked_candidate = dossier["candidate_comparison"][2]
+    blocked_candidate["runtime_eligibility"] = {
+        "status": "BLOCKED",
+        "cause": "verified-compartment-conflict",
+        "required_site_compartment": "extracellular",
+    }
+    constraint_ids = {
+        item["design_label"]: item["residue_id"]
+        for item in dossier["residue_constraints"]
+    }
+    valid_label = valid_alternative["research_hypothesis"]["hotspot_label_seq_ids"][0]
+    blocked_label = blocked_candidate["research_hypothesis"]["hotspot_label_seq_ids"][0]
+    decision = case["decision"].model_copy(
+        update={
+            "avoid_residue_ids": [
+                constraint_ids[valid_label],
+                constraint_ids[blocked_label],
+            ]
+        }
+    )
+
+    intent = compile_site_decision(dossier, decision)
+
+    assert [entry.rank for entry in intent.portfolio] == ["A", "B", None]
+    alternative = next(
+        entry
+        for entry in intent.portfolio
+        if entry.candidate_id == valid_alternative["candidate_id"]
+    )
+    assert alternative.selectable
+    assert alternative.hard_block is None
+    assert intent.avoid_label_seq_ids == [blocked_label]
+
+
 def test_phase2_registration_preserves_runtime_compartment_block(site_bridge):
     bridge = site_bridge
     bridge.store.thread(

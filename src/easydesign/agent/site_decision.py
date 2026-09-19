@@ -107,8 +107,10 @@ class RankedSiteDecision(StrictDTO):
     avoid_residue_ids: list[CandidateId] = Field(
         default_factory=list,
         max_length=40,
-        description="Only explicit residue exclusions from supplied constraint IDs. Do not turn "
-        "scientific uncertainty, cysteine membership or poor exposure into hard exclusions.",
+        description="Advisory downstream not-binding residues from supplied residue IDs. Do not "
+        "turn scientific uncertainty, activation risk, cysteine membership or poor exposure "
+        "into candidate ineligibility. Runtime removes every exclusion that overlaps a "
+        "hard-valid candidate, so this field cannot block or rerank the supplied portfolio.",
     )
 
     @model_validator(mode="after")
@@ -677,20 +679,35 @@ def compile_ranked_decision(dossier: dict[str, Any], decision: RankedSiteDecisio
     constraints = {c["residue_id"]: c["design_label"] for c in dossier["residue_constraints"]}
     if not set(decision.avoid_residue_ids).issubset(constraints):
         raise ResearchConclusionMismatch("Choose only supplied residue constraint IDs")
-    excluded = sorted({constraints[key] for key in decision.avoid_residue_ids})
+    proposed_exclusions = {constraints[key] for key in decision.avoid_residue_ids}
+
+    def runtime_block(candidate: dict[str, Any]) -> str | None:
+        evaluation = candidate["deterministic_evaluation"]
+        block = evaluation.get("cause") if evaluation["status"] == "BLOCKED" else None
+        eligibility = candidate.get("runtime_eligibility", {})
+        if eligibility.get("status") == "BLOCKED":
+            block = eligibility.get("cause") or "verified-compartment-conflict"
+        return block
+
+    # Ranked Site synthesis owns relative preference, not hard eligibility. In particular, a
+    # model-authored not-binding suggestion for the default candidate must not silently remove a
+    # different hard-valid candidate from A/B/C. Preserve suggestions only where they cannot
+    # conflict with any selectable portfolio member (for example, a verified intracellular
+    # transducer-facing candidate that Runtime already blocked).
+    selectable_labels = {
+        label
+        for candidate in candidates.values()
+        if runtime_block(candidate) is None
+        for label in candidate["research_hypothesis"]["hotspot_label_seq_ids"]
+    }
+    excluded = sorted(proposed_exclusions - selectable_labels)
     entries: list[SitePortfolioEntry] = []
     ranked_count = 0
     preference_group = 0
     for interpretation in decision.candidates:
         candidate = candidates[interpretation.candidate_id]
-        evaluation = candidate["deterministic_evaluation"]
         original = candidate["research_hypothesis"]
-        block = evaluation.get("cause") if evaluation["status"] == "BLOCKED" else None
-        eligibility = candidate.get("runtime_eligibility", {})
-        if eligibility.get("status") == "BLOCKED":
-            block = eligibility.get("cause") or "verified-compartment-conflict"
-        if set(original["hotspot_label_seq_ids"]) & set(excluded):
-            block = "explicit-avoid-residue-constraint"
+        block = runtime_block(candidate)
         rank = None if block else "ABC"[ranked_count]
         tied_id = None
         if interpretation.tied_with_previous:

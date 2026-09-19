@@ -9,6 +9,20 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from tests.agent_support import ScriptedModel, scripted_config
 
 
+def test_latest_complete_tool_batch_only_returns_unconsumed_tail() -> None:
+    from easydesign.agent.context_policy import _latest_complete_tool_batch
+
+    request = AIMessage(
+        content="",
+        tool_calls=[{"id": "current", "name": "retrieve_evidence", "args": {}}],
+    )
+    result = ToolMessage(name="retrieve_evidence", tool_call_id="current", content="{}")
+
+    assert _latest_complete_tool_batch([request, result]) == [request, result]
+    assert _latest_complete_tool_batch([request, result, AIMessage(content="consumed")]) == []
+    assert _latest_complete_tool_batch([request, result, HumanMessage(content="next")]) == []
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning", [False, True])
 async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
@@ -145,6 +159,12 @@ async def test_site_boundary_delivers_whole_latest_batch_under_total_budget(
     assert [m.model_dump() for m in messages] == original
     events = site_bridge.store.events(site_bridge.thread)
     assert not any(e["kind"] == "context-compaction" for e in events)
+    admission = [
+        e["payload"] for e in events if e["kind"] == "site-research-context-admission"
+    ]
+    assert len(admission) == 1
+    assert admission[0]["preserved_latest_tool_batch_calls"] == len(calls)
+    assert admission[0]["projected_input_chars_with_schemas"] <= 100000
     context = [e["payload"] for e in events if e["kind"] == "model-context"]
-    assert len(context) == 1 and 60000 < context[0]["context_chars"] <= 100000
-    assert context[0]["soft_target_exceeded"] and context[0]["history_projection"] == "native"
+    assert len(context) == 1 and context[0]["context_chars"] <= 100000
+    assert context[0]["history_projection"] == "runtime-site-research-working-packet"

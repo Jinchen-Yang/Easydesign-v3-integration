@@ -155,6 +155,7 @@ class ScriptedModel(BaseChatModel):
                 interpretation=["Frozen local structure supports a bounded structural assessment."],
                 unresolved_identity=["Canonical identity unconfirmed"],
                 limitations=value["limitations"],
+                recommended_option="chain-a" if value.get("options") else None,
                 recommended_action="Ask the user to confirm chain A"
                 if value.get("options")
                 else "Report the target bundle",

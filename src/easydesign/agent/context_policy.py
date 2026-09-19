@@ -19,6 +19,24 @@ from .models import ModelConfig, Role, compact_summary_model
 from .session_store import compact
 
 
+def _latest_complete_tool_batch(messages: list[Any]) -> list[Any]:
+    """Return a complete, not-yet-consumed tool batch at the transcript tail."""
+    index = len(messages) - 1
+    while index >= 0 and isinstance(messages[index], ToolMessage):
+        index -= 1
+    if index < 0 or index == len(messages) - 1:
+        return []
+    request = messages[index]
+    calls = getattr(request, "tool_calls", None)
+    if not calls:
+        return []
+    call_ids = {str(call.get("id")) for call in calls if call.get("id") is not None}
+    results = messages[index + 1 :]
+    if call_ids and {str(message.tool_call_id) for message in results} == call_ids:
+        return [request, *results]
+    return []
+
+
 def admit_site_research_request(
     request: Any,
     *,
@@ -67,11 +85,31 @@ def admit_site_research_request(
         list(request.messages),
         reading_closed=False,
     )
+    latest_batch = _latest_complete_tool_batch(list(request.messages))
+    projected_messages = [packet, *latest_batch]
+    candidate = context_usage(
+        request.model,
+        config,
+        role,
+        [request.system_message, *projected_messages],
+        tool_chars,
+        enforce=False,
+    )
+    token_guard = candidate["model_profile_token_guard"]
+    preserve_latest_batch = bool(latest_batch) and (
+        candidate["input_chars_with_schemas"] <= config.hard_input_chars
+        and (
+            token_guard is None
+            or candidate["estimated_input_tokens"] <= token_guard
+        )
+    )
+    if not preserve_latest_batch:
+        projected_messages = [packet]
     projected = context_usage(
         request.model,
         config,
         role,
-        [request.system_message, packet],
+        [request.system_message, *projected_messages],
         tool_chars,
     )
     bridge.store.event(
@@ -85,10 +123,19 @@ def admit_site_research_request(
             "admission_limit_chars": admission_limit,
             "hard_limit_chars": config.hard_input_chars,
             "reserve_chars": reserve,
-            "projection": "runtime-site-research-packet-v1",
+            "projection": (
+                "runtime-site-research-packet-v1+latest-complete-batch"
+                if preserve_latest_batch
+                else "runtime-site-research-packet-v1"
+            ),
+            "preserved_latest_tool_batch_calls": (
+                len(getattr(latest_batch[0], "tool_calls", []))
+                if preserve_latest_batch
+                else 0
+            ),
         },
     )
-    return request.override(messages=[packet])
+    return request.override(messages=projected_messages)
 
 
 def input_context_tokens(messages: list[Any]) -> int:

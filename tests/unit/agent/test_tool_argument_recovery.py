@@ -316,7 +316,9 @@ async def test_large_existing_receptor_artifact_is_scoped_without_summary_copy(b
             ),
         ).content
     )
-    assert len(json.dumps(result)) < 6600 and result["partial"]
+    assert len(json.dumps(result)) < 6600
+    assert result["declared_scope_complete"] and not result["partial"]
+    assert "chain_graph" not in result
     assert result["identity"] == full["identity"]
     readable = result["full_result"]
     page = json.loads(

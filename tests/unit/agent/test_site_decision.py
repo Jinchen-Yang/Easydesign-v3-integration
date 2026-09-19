@@ -112,13 +112,20 @@ def test_real_adapter_hydration_preserves_candidates_and_scoped_facts(site_bridg
         assert "stale preliminary" not in str(working)
         assert "stale research narrative" not in str(working)
         assert "unresolved_research_questions" not in working
-        assert all(set(q) == {"question"} for q in working["decision_questions"])
+        assert working["kind"] == "site-decision-working-set-v2"
+        assert all(
+            {"question", "status", "decision_impact", "limitations", "query_ids", "evidence"}
+            <= set(question)
+            for question in working["research_findings"]
+        )
         assert working["approach_validation"]["scientific_status"] == "UNRESOLVED"
         assert working["candidates"][0]["candidate_id"] == chosen.selected_candidate_id
         assert "trusted_residue_facts" not in working
         assert "research_outcomes" not in working
         assert "hotspot_label_seq_ids" not in str(working)
-        assert working["candidates"][0]["residue_facts"][0]["rsasa"] is not None
+        candidate = working["candidates"][0]
+        rsasa_index = candidate["residue_fact_columns"].index("rsasa")
+        assert candidate["residue_facts"][0][rsasa_index] is not None
         snap = b.register_site(intent, None)
         assert snap["proposal"]["selected_site"]["hotspot_label_seq_ids"] == [1, 2, 3]
         assert snap["target_facts"] == b.read_evidence()["hard_facts"]

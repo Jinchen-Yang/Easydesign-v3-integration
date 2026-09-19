@@ -944,7 +944,10 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
         return bridge.store.offload(bridge.thread, evidence)
 
     async def decision_tool(
-        option_id: str, assessment_id: str | None = None, review_failure_id: str | None = None
+        option_id: str,
+        assessment_id: str | None = None,
+        review_failure_id: str | None = None,
+        review_not_requested: bool = False,
     ) -> str:
         if role != "coordinator":
             raise AgentBoundaryError("Only coordinator can present a decision")
@@ -953,6 +956,7 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                 assessment_id=assessment_id,
                 option_id=option_id,
                 review_failure_id=review_failure_id,
+                review_not_requested=review_not_requested,
             )
         )
         response = interrupt(card.model_dump(mode="json"))

@@ -184,13 +184,24 @@ class ApplyDecision(StrictDTO):
     assessment_id: Identifier | None = None
     option_id: Identifier
     review_failure_id: Identifier | None = None
+    review_not_requested: StrictBool = False
 
     @model_validator(mode="after")
     def one_review_record(self) -> ApplyDecision:
-        if (self.assessment_id is None) == (self.review_failure_id is None):
-            raise ValueError("Provide exactly one assessment or review failure record")
-        if self.review_failure_id is not None and self.option_id != "site":
-            raise ValueError("Review unavailability belongs only to Site Gate 2")
+        supplied = sum(
+            (
+                self.assessment_id is not None,
+                self.review_failure_id is not None,
+                self.review_not_requested,
+            )
+        )
+        if supplied != 1:
+            raise ValueError(
+                "Provide exactly one assessment, review failure, or explicit optional-review record"
+            )
+        site_only_review = self.review_failure_id is not None or self.review_not_requested
+        if site_only_review and self.option_id != "site":
+            raise ValueError("Optional or unavailable review belongs only to Site Gate 2")
         return self
 
 
@@ -238,6 +249,15 @@ class DecisionCard(DecisionProposal):
                 and isinstance(review, dict)
                 and review.get("availability") == "not-requested"
                 and review.get("optional") is True
+            ):
+                return self
+            if (
+                self.gate_type == "site-hotspot"
+                and self.judge_status is None
+                and isinstance(review, dict)
+                and review.get("availability") == "not-requested"
+                and review.get("optional") is True
+                and review.get("policy_id")
             ):
                 return self
             if (

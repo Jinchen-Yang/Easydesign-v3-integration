@@ -659,3 +659,33 @@ def test_alternative_selection_reaches_real_strategy_compiler(
         bindings = collect(payload)
         assert bindings == [",".join(map(str, chosen["design_labels"]))]
     assert downstream.approved_design() is None  # No Gate 3 approval or generation.
+
+
+def test_ranked_site_can_reach_scientist_gate_without_routine_judge(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    bridge = site_bridge
+    setup_portfolio(bridge)
+    from easydesign.agent import site_review_policy
+    from easydesign.agent.control_flow import next_action
+
+    policy = {
+        "policy_id": site_review_policy.SITE_REVIEW_POLICY,
+        "required": False,
+        "reasons": [],
+    }
+    monkeypatch.setattr(site_review_policy, "site_review_requirement", lambda *_: policy)
+    action = next_action(bridge)
+    assert action.tool == "request_scientific_decision"
+    assert action.arguments == {"review_not_requested": True, "option_id": "site"}
+    card = bridge.decision_card(ApplyDecision(**action.arguments))
+    review = card.scientific_summary["independent_review"]
+    assert card.assessment_id is None
+    assert card.judge_status is None
+    assert review == {
+        **review,
+        "availability": "not-requested",
+        "optional": True,
+        "policy_id": site_review_policy.SITE_REVIEW_POLICY,
+    }
+    assert [option["rank"] for option in card.options] == ["A", "B", "C"]

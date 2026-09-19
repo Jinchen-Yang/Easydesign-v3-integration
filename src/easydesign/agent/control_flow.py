@@ -219,6 +219,16 @@ def next_action(bridge: Phase2Bridge) -> RuntimeAction:
                 assessment = candidate
                 break
     if assessment is None and gate == "site-hotspot":
+        from .site_review_policy import site_review_requirement
+
+        review_policy = site_review_requirement(bridge, snapshot)
+        if not review_policy["required"]:
+            return RuntimeAction(
+                "scientist-gate",
+                binding,
+                "request_scientific_decision",
+                {"review_not_requested": True, "option_id": "site"},
+            )
         from .site_review_availability import checked_failure, matching_failure
 
         unavailable = matching_failure(bridge, snapshot)

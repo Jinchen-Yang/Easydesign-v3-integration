@@ -1031,19 +1031,39 @@ class Phase2Bridge(TargetBridge):
         return bool(current and current["request_identity"] == card.request_identity)
 
     def decision_card(self, args: ApplyDecision) -> DecisionCard:
-        existing_id = (
-            identity({"assessment": args.assessment_id, "option": args.option_id})
-            if args.assessment_id
-            else identity({"review_failure": args.review_failure_id, "option": args.option_id})
-        )
-        if self.store.response(self.thread, existing_id) is not None:
-            return self.store.card(self.thread, existing_id)
+        # An interrupted Gate tool may replay after its response was already applied.
+        # Preserve the original review-record identity before reading current stage state.
+        if args.assessment_id or args.review_failure_id:
+            prior_id = (
+                identity({"assessment": args.assessment_id, "option": args.option_id})
+                if args.assessment_id
+                else identity(
+                    {"review_failure": args.review_failure_id, "option": args.option_id}
+                )
+            )
+            if self.store.response(self.thread, prior_id) is not None:
+                return self.store.card(self.thread, prior_id)
         if self.read_evidence()["request_identity"] is not None:
             return super().decision_card(args)
         proposal = self.current_site()
         if proposal is None:
             raise AgentBoundaryError("No current trusted Site proposal")
         snapshot = self.site_snapshot(proposal)
+        existing_id = (
+            identity({"assessment": args.assessment_id, "option": args.option_id})
+            if args.assessment_id
+            else identity({"review_failure": args.review_failure_id, "option": args.option_id})
+            if args.review_failure_id
+            else identity(
+                {
+                    "review": "not-requested",
+                    "request_identity": snapshot["request_identity"],
+                    "option": args.option_id,
+                }
+            )
+        )
+        if self.store.response(self.thread, existing_id) is not None:
+            return self.store.card(self.thread, existing_id)
         assessment = (
             self.store.assessment(self.thread, args.assessment_id) if args.assessment_id else None
         )
@@ -1061,11 +1081,20 @@ class Phase2Bridge(TargetBridge):
 
         judge_packet = self.site_snapshot(proposal, for_judge=True)
         failure = None
-        if assessment is None:
+        review_policy = None
+        if assessment is None and args.review_failure_id is not None:
             from .site_review_availability import checked_failure
 
-            assert args.review_failure_id is not None
             failure = checked_failure(self, judge_packet, args.review_failure_id)
+        elif assessment is None:
+            from .site_review_policy import site_review_requirement
+
+            review_policy = site_review_requirement(self, judge_packet)
+            if not args.review_not_requested or review_policy["required"]:
+                raise AgentBoundaryError(
+                    "Independent review is required for this Site proposal: "
+                    + ", ".join(str(item) for item in review_policy["reasons"])
+                )
         rendered = (
             render_judge(assessment, judge_packet)
             if assessment is not None
@@ -1145,7 +1174,7 @@ class Phase2Bridge(TargetBridge):
         card = DecisionCard(
             gate_type="site-hotspot",
             owner_specialist="site-mechanism",
-            judge_status=None if failure else status,
+            judge_status=None if assessment is None else status,
             card_id=existing_id,
             assessment_id=assessment.assessment_id if assessment else None,
             project_id=self.project_id,
@@ -1186,7 +1215,14 @@ class Phase2Bridge(TargetBridge):
                             "warning": warnings[0],
                         }
                         if failure
-                        else {}
+                        else {
+                            "availability": "not-requested",
+                            "optional": True,
+                            "policy_id": review_policy["policy_id"],
+                            "source_role": "verified-runtime",
+                        }
+                        if review_policy
+                        else {"availability": "completed"}
                     ),
                     "reasons": rendered["reasons"],
                     "limitations": rendered["limitations"],
@@ -1222,6 +1258,8 @@ class Phase2Bridge(TargetBridge):
                 "Independent review did not complete. Review the original Site evidence, revise, "
                 "reject, or acknowledge the missing review and provide a rationale to continue."
                 if failure
+                else "Review the ranked Site evidence and select, revise or reject a candidate."
+                if review_policy
                 else (
                     "Review this proposed region and structural-only limitations. Approve "
                     "its explicit residue choices, revise, reject, or acknowledge warnings "
@@ -1353,13 +1391,28 @@ class Phase2Bridge(TargetBridge):
                     "scientific_gate": "still-pending",
                 }
             if card.assessment_id is None:
-                from .site_review_availability import checked_failure
-
                 review = card.scientific_summary["independent_review"]
                 assert isinstance(review, dict)
-                checked_failure(
-                    self, self.site_snapshot(proposal, for_judge=True), review["failure_record_id"]
-                )
+                if review.get("availability") == "unavailable":
+                    from .site_review_availability import checked_failure
+
+                    checked_failure(
+                        self,
+                        self.site_snapshot(proposal, for_judge=True),
+                        review["failure_record_id"],
+                    )
+                elif review.get("availability") == "not-requested":
+                    from .site_review_policy import site_review_requirement
+
+                    policy = site_review_requirement(
+                        self, self.site_snapshot(proposal, for_judge=True)
+                    )
+                    if policy["required"] or review.get("policy_id") != policy["policy_id"]:
+                        raise AgentBoundaryError(
+                            "Site independent-review policy changed before approval"
+                        )
+                else:
+                    raise AgentBoundaryError("Site card lacks a valid review disposition")
             if card.judge_status == "BLOCKED" or proposal["evaluation"]["status"] == "BLOCKED":
                 raise AgentBoundaryError(
                     "BLOCKED: change the input or hard constraint; override cannot execute it"

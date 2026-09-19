@@ -109,8 +109,9 @@ class SiteModel(ScriptedModel):
             task = ScientificTask.model_validate_json(human.text)
             if not results:
                 self.tasks.append(task.model_dump())
-                skill = "site-mechanism" if self.role == "site" else "evidence-judge"
-                return self.call("read_file", file_path=f"/skills/{skill}/SKILL.md")
+                if "read_file" in self.offered:
+                    skill = "site-mechanism" if self.role == "site" else "evidence-judge"
+                    return self.call("read_file", file_path=f"/skills/{skill}/SKILL.md")
             if self.role == "site":
                 labels = [4, 5, 6] if task.current_revision_instruction else [1, 2, 3]
                 if not any(n == "read_site_evidence" for n, _, _ in named):
@@ -416,7 +417,7 @@ async def test_invalid_provider_json_repair_is_budgeted_and_has_no_duplicate_job
     assert all(c["context_chars"] <= c["limit"] for c in contexts)
     assert (
         len([e for e in events if e["kind"] == "model-call" and e["payload"]["role"] == "site"])
-        == 6
+        == 5  # Site Skill is preloaded, so no separate Skill-reading model call.
     )
     assert (
         len(

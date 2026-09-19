@@ -281,10 +281,12 @@ def test_complete_receptor_membership_is_not_replaced_by_a_tool_size_preview(
     )
     page = json.loads(shown.content)
     assert len(shown.content) > 32000 and page["declared_scope_complete"]
-    assert page["candidate_overview"] == receptor_overview_projection(value)["candidate_overview"]
+    expected = receptor_overview_projection(value)["candidate_overview"]["inhibit"][0]
     candidate = page["candidate_overview"]["inhibit"][0]
+    assert candidate["approved_design_membership"] == expected["approved_design_membership"]
     assert candidate["approved_design_membership"]["hotspot_label_seq_ids"] == [414]
-    assert candidate["counterevidence"] == value["candidates"]["inhibit"][0]["counterevidence"]
+    assert candidate["counterevidence"]
+    assert candidate["full_residues_path"] == ["candidates", "inhibit", 0, "residues"]
     stored = verified_result(
         bridge, "site", page["full_result"], execution_id=execution["execution_id"]
     )
@@ -293,3 +295,70 @@ def test_complete_receptor_membership_is_not_replaced_by_a_tool_size_preview(
     config = scripted_config().model_copy(update={"hard_input_chars": 32000})
     with pytest.raises(AgentBoundaryError, match="hard context guard"):
         context_usage(ScriptedModel(role="site"), config, "site", [shown])
+
+
+@pytest.mark.asyncio
+async def test_completed_atomic_gpcr_analysis_hides_duplicate_analysis_tool(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from easydesign.agent.evidence_research import EvidenceResearch
+
+    bridge = site_bridge
+    execution = bridge.store.begin_execution(bridge.thread, "SYNTHETIC atomic GPCR context")
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "snapshot",
+        lambda _self: {
+            "queries": [
+                {
+                    "query_id": "gpcr-query",
+                    "question": "SYNTHETIC receptor context",
+                    "status": "VERIFIED",
+                    "errors": [],
+                    "query": {"operation": "gpcrdb-context"},
+                    "cards": [
+                        {
+                            "card_id": "gpcr-card",
+                            "provider": "GPCRdb",
+                            "context_ref": "synthetic-context-ref",
+                        },
+                        {
+                            "card_id": "kernel-card",
+                            "provider": "EasyDesign GPCR kernel",
+                        },
+                    ],
+                }
+            ]
+        },
+    )
+    guard = RoleBoundary(
+        bridge,
+        "site",
+        scripted_config(),
+        "Inspect a GPCR site",
+        execution_id=execution["execution_id"],
+        site_stage="research",
+        preloaded_domain_skills=True,
+    )
+    tools = phase2_tools(bridge, "site")
+    offered: set[str] = set()
+
+    class ObservedTools(Exception):
+        pass
+
+    async def handler(request: Any) -> Any:
+        offered.update(tool.name for tool in request.tools)
+        raise ObservedTools
+
+    with pytest.raises(ObservedTools):
+        await guard.awrap_model_call(
+            ModelRequest(
+                model=ScriptedModel(role="site"),
+                tools=tools,
+                messages=[],
+                system_message=SystemMessage(content="Synthetic Site research"),
+            ),
+            handler,
+        )
+    assert "analyze_receptor_context" not in offered
+    assert "research_evidence" in offered

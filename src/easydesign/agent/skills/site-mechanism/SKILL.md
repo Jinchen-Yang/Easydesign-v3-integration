@@ -18,8 +18,10 @@ work. Several questions may share one topic. Do not add questions to cover adver
 
 1. Read the approved Target/candidate overview once. It is a complete overview, not the first
    residue page. For a verified GPCR, acquire its gpcrdb-context (receptor entry plus pdb_id) and
-   immediately call analyze_receptor_context with its card_id and original auth chain. This
-   supplies the existing kernel's topology, signed membrane frame and candidate inventory.
+   use the Runtime-published receptor kernel card. GPCRdb acquisition normally performs this
+   analysis atomically; call analyze_receptor_context only if Runtime offers it for a legacy
+   context card that lacks kernel analysis. This supplies topology, signed membrane frame and
+   candidate inventory.
    Do not reconstruct those facts by paging raw topology or repeatedly reading the overview.
 2. Use that context to identify a provisional comparison. Read the strongest primary evidence
    for the intended or forbidden functional effect early. A kernel score, mode name, source
@@ -28,7 +30,8 @@ work. Several questions may share one topic. Do not add questions to cover adver
 3. Check only consequential source gaps at those candidates. Once topology/state/access is
    supplied, move to the unresolved mechanism or adverse-effect question. Do not finish all
    helices, loops, binding-site annotations or bibliography before reading functional evidence.
-4. Make one targeted contradiction/alternative literature search against the provisional choice.
+4. When a focused contradiction/alternative search could change the provisional ranking, do
+   it. It is not mandatory when verified evidence and explicit uncertainty are already sufficient.
    Include the forbidden effect, without requiring the exact future binder format. Activating
    antibody/autoantibody evidence may reveal risk even for a planned monovalent VHH; preserve
    modality, valency, species and assay transfer limits. Read a strong relevant lead. For empty
@@ -78,9 +81,10 @@ computational hypotheses, not curated epitopes or demonstrated functional effect
 records may report folding/expression effects rather than a causal epitope. Scan candidates are
 not an exhaustive epitope inventory. Exact numbering cannot turn a weak mechanism into evidence.
 
-For consequential mechanism details read references/research.md; for verified membrane targets
-read references/membrane.md; for shielding/PTM questions read references/shielding.md. General
-protein reasoning remains the default. Preserve ligand/state/partner/assembly/construct context.
+The Runtime preloads references/research.md, references/membrane.md and
+references/shielding.md for the normal Site path. Do not spend model calls reading them again.
+General protein reasoning remains the default. Preserve ligand/state/partner/assembly/construct
+context.
 No docking, dynamics or whole-binder clearance is performed here. Missing glycan coordinates do
 not imply absence; sequons do not establish occupancy. Avoiding a known activating epitope does
 not establish no activation, and avoiding disulfides does not establish intact trafficking.
@@ -120,11 +124,11 @@ its requested rows, not the whole target. Correct source/argument diagnostics wi
 four shared rounds; integrity and foreign-reference errors remain fatal. Each typed submission
 has two bounded corrections. Only the structured tool submits; free text/fenced JSON does not.
 
-On a trusted Gate 2 REVISE, reassess locally with valid Target evidence and obtain new independent
-review. Do not prepare Target again, choose Binder/CDR strategy, author executable YAML or write
-approvals/actors/IDs/SHAs. Runtime builds Dossier and authoritative SiteIntent; Judge critiques it;
-only the Scientist can approve Gate 2. Final synthesis receives its own instructions and no Research
-history or research tools.
+On a trusted Gate 2 REVISE, reassess locally with valid Target evidence and produce a fresh ranked
+SiteDecision. Independent review runs only when the deterministic review policy requires it. Do not
+prepare Target again, choose Binder/CDR strategy, author executable YAML or write approvals/actors/
+IDs/SHAs. Runtime builds Dossier and authoritative SiteIntent; only the Scientist can approve Gate 2.
+Final synthesis receives its own instructions and no Research history or research tools.
 
 Current Handoff questions bind actual query_ids, not taxonomy coverage. Topic labels are only
 source acquisition/retrieval metadata. Supply the question, decision impact, status, evidence and

@@ -462,7 +462,7 @@ async def test_resume_between_durable_dossier_and_synthesis_reuses_research(
         reopened.close()
 
 
-def test_research_handoff_requires_real_contradiction_inquiry_but_accepts_unresolved(
+def test_research_handoff_accepts_sufficient_evidence_without_mandatory_contradiction_search(
     site_bridge: Any,
 ) -> None:
     from easydesign.agent.contracts import ResearchConclusionMismatch
@@ -473,9 +473,13 @@ def test_research_handoff_requires_real_contradiction_inquiry_but_accepts_unreso
     try:
         with pytest.raises(ResearchConclusionMismatch, match="decision-critical"):
             site_dossier(b, handoff())
-        with pytest.raises(ResearchConclusionMismatch, match="actual targeted"):
-            site_dossier(b, selection.model_copy(update={"contradiction_search_query_ids": []}))
-        with pytest.raises(ResearchConclusionMismatch, match="actual targeted"):
+        without_contradiction = site_dossier(
+            b, selection.model_copy(update={"contradiction_search_query_ids": []})
+        )
+        assert without_contradiction["evidence_selection"][
+            "contradiction_search_performed"
+        ] is False
+        with pytest.raises(ResearchConclusionMismatch, match="actual literature-search"):
             site_dossier(
                 b, selection.model_copy(update={"contradiction_search_query_ids": ["invented-id"]})
             )

@@ -16,12 +16,12 @@ Standard Research sequence (decision sufficiency, not a literature review):
    construct/state/assay transfer limits. Prefer strongest relevant evidence over page count.
 3. Map literature positions through the approved mapping. Compare initial literature/scan
    candidates and meaningful alternatives, including full-binder access and hard constraints.
-4. Make one focused contradiction/alternative literature search against the initial ranking.
-   Read important opposing evidence. If it changes the recommendation, update the comparison.
+4. If a focused contradiction/alternative literature search can change the initial ranking,
+   run it and read important opposing evidence. Otherwise retain the gap explicitly and stop.
 5. Stop when additional inquiry is unlikely to change ranking, a hard constraint or major
    risk. Explicit unresolved issues after reasonable inquiry are valid; say what experiment
    could discriminate them. Do not fill unused calls or unread annotation pages.
-6. Handoff decision_questions, exact query/passage citations, contradiction-search query IDs,
+6. Handoff decision_questions, exact query/passage citations, any actual contradiction-search IDs,
    stopping reason and consequential uncertainty. Full sources stay durable; fresh synthesis
    receives the trusted dossier, without research/tool history. No stopping claim is approval.
 
@@ -56,7 +56,7 @@ Compare target/counterstate, ligand/transducer, construct fusions/mutations and 
 access. Family rules may generate hypotheses, not assign a fused score or choose a winner.
 
 Hard mapping/coordinate/exclusion failures block executable hotspots. Scientific access or
-mechanism uncertainty remains visible for Judge and scientist; an override does not create
+mechanism uncertainty remains visible for the Scientist and optional Judge; an override does not create
 missing evidence or validate an impossible representation. If the existing backend cannot
 represent necessary ensemble, multichain, glycan or ligand semantics, explicitly report the
 capability gap instead of silently deleting that context.

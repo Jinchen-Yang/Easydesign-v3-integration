@@ -192,14 +192,162 @@ def verified_location_conflict(
     return None
 
 
-def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
-    """Scientific projection of a verified dossier, not a message/history compressor.
+def _compact_target(target: dict[str, Any]) -> dict[str, Any]:
+    identity_facts = target.get("identity", {})
+    hard = target.get("hard_facts", {})
+    return {
+        "target_id": target.get("bundle", {}).get("target_id"),
+        "canonical_accession": hard.get("canonical_accession"),
+        "canonical_length": hard.get("canonical_length"),
+        "selected_chain": hard.get("selected_chain"),
+        "identity": {
+            key: identity_facts.get(key)
+            for key in (
+                "auth_chain",
+                "biological_identity_status",
+                "mapping_status",
+                "relationship",
+                "canonical",
+                "ambiguities",
+            )
+        },
+        "limitations": target.get("limitations", []),
+    }
 
-    The immutable dossier retains exact membership/evaluations for hydration. The
-    inference receives only the chosen candidate facts and consequential evidence;
-    no binding hashes, query receipts, duplicate mapping namespaces or taxonomy forms
-    need to be regenerated in its answer.
-    """
+
+def _compact_location(location: dict[str, Any]) -> dict[str, Any]:
+    membrane_rows: list[dict[str, Any]] = []
+    seen_membrane: set[tuple[Any, ...]] = set()
+    keys = (
+        "canonical_position",
+        "region",
+        "protein_segment",
+        "axial_distance",
+        "radial_distance",
+        "pore_lining",
+    )
+    for row in location.get("membrane_geometry", []):
+        signature = tuple(row.get(key) for key in keys)
+        if signature in seen_membrane:
+            continue
+        seen_membrane.add(signature)
+        membrane_rows.append({key: row.get(key) for key in keys})
+    topology = []
+    for row in location.get("sequence_topology", []):
+        topology.append(
+            {
+                "canonical_position": row.get("canonical_position"),
+                "annotations": [
+                    {
+                        "type": item.get("type"),
+                        "description": item.get("description"),
+                    }
+                    for item in row.get("annotations", [])
+                ],
+            }
+        )
+    return {
+        "canonical_positions": location.get("canonical_positions", []),
+        "segments": location.get("segments", []),
+        "membrane_geometry": membrane_rows,
+        "sequence_topology": topology,
+    }
+
+
+def _compact_receptor_context(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep decision-bearing receptor facts once; full kernel cards stay in the dossier."""
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for card in cards:
+        identity_facts = card.get("identity", {})
+        membrane = card.get("membrane", {})
+        context_key = repr(
+            (
+                identity_facts.get("accession"),
+                identity_facts.get("receptor_chain"),
+                identity_facts.get("entry_name"),
+                membrane.get("status"),
+                membrane.get("extracellular_boundary"),
+                membrane.get("intracellular_boundary"),
+                card.get("state", {}).get("assignment"),
+            )
+        )
+        if context_key in seen:
+            continue
+        seen.add(context_key)
+        receptor_chain = identity_facts.get("receptor_chain")
+        interfaces = card.get("complex_interfaces", {})
+        receptor_edges = [
+            {
+                key: edge.get(key)
+                for key in (
+                    "chain_a",
+                    "chain_b",
+                    "interface_type",
+                    "geometry_observed",
+                    "minimum_distance",
+                    "residue_count_a",
+                    "residue_count_b",
+                    "residue_pair_count",
+                )
+            }
+            for edge in interfaces.get("edges", [])
+            if receptor_chain in {edge.get("chain_a"), edge.get("chain_b")}
+        ]
+        self_occlusion = interfaces.get("self_occlusion", {})
+        result.append(
+            {
+                "identity": {
+                    key: identity_facts.get(key)
+                    for key in (
+                        "status",
+                        "accession",
+                        "entry_name",
+                        "family",
+                        "family_slug",
+                        "receptor_class",
+                        "species",
+                        "receptor_chain",
+                    )
+                },
+                "membrane": {
+                    key: membrane.get(key)
+                    for key in (
+                        "status",
+                        "reliable",
+                        "topology_reliable",
+                        "confidence",
+                        "direction_source",
+                        "extracellular_boundary",
+                        "intracellular_boundary",
+                        "helix_count",
+                        "helix_direction_consistency",
+                        "reasons",
+                    )
+                },
+                "state": card.get("state", {}),
+                "topology_qualifications": card.get("topology_qualifications", {}),
+                "receptor_interfaces": receptor_edges,
+                "self_occlusion": {
+                    key: self_occlusion.get(key)
+                    for key in (
+                        "observed",
+                        "reason",
+                        "ecd_residue_count",
+                        "ecd_total_residue_count",
+                        "mouth_residue_count",
+                        "residue_pair_count",
+                    )
+                },
+                "warnings": card.get("warnings", []),
+                "avoid": card.get("avoid", []),
+            }
+        )
+    return result
+
+
+def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
+    """Compact decision view; the immutable dossier remains the exact audit authority."""
     table = dossier["trusted_residue_facts"]["facts_table"]
     columns = table["mapping_columns"] + table["metric_columns"]
     rows = {
@@ -208,60 +356,200 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
         for r in [dict(zip(columns, values, strict=True))]
     }
     candidates = []
+    candidate_positions: set[int] = set()
     for candidate in dossier["candidate_comparison"]:
         hypothesis = candidate["research_hypothesis"]
         evaluation = candidate["deterministic_evaluation"]
+        location = _compact_location(candidate.get("location", {}))
+        candidate_positions.update(location["canonical_positions"])
         candidates.append(
             {
                 "candidate_id": candidate["candidate_id"],
                 "name": candidate_name(candidate),
-                "research_declared_origin": hypothesis["origin"],
-                "origin_scope": "Research classification, not proof of an experimentally "
-                "established epitope. Assess the actual bound evidence below.",
-                "location": candidate.get("location", {"topology": "unresolved"}),
+                "research_hypothesis": {
+                    key: hypothesis.get(key)
+                    for key in (
+                        "origin",
+                        "role",
+                        "evidence_card_ids",
+                    )
+                },
+                "location": {
+                    "canonical_positions": location["canonical_positions"],
+                    "segments": location["segments"],
+                },
+                "residue_fact_columns": [
+                    "label_seq_id",
+                    "canonical_position",
+                    "canonical_residue",
+                    "amino_acid",
+                    "mapping_status",
+                    "model_presence",
+                    "rsasa",
+                    "surface_eligible",
+                    "membrane_region",
+                    "protein_segment",
+                    "axial_distance",
+                    "radial_distance",
+                    "pore_lining",
+                    "topology_annotations",
+                ],
                 "residue_facts": [
-                    {
-                        key: rows[label][key]
-                        for key in (
-                            "canonical_position",
-                            "canonical_residue",
-                            "amino_acid",
-                            "mapping_status",
-                            "model_presence",
-                            "rsasa",
-                            "surface_eligible",
-                        )
-                    }
+                    [
+                        rows[label].get("label_seq_id"),
+                        rows[label].get("canonical_position"),
+                        rows[label].get("canonical_residue"),
+                        rows[label].get("amino_acid"),
+                        rows[label].get("mapping_status"),
+                        rows[label].get("model_presence"),
+                        rows[label].get("rsasa"),
+                        rows[label].get("surface_eligible"),
+                        next(
+                            (
+                                item.get("region")
+                                for item in location["membrane_geometry"]
+                                if item.get("canonical_position")
+                                == rows[label].get("canonical_position")
+                            ),
+                            None,
+                        ),
+                        next(
+                            (
+                                item.get("protein_segment")
+                                for item in location["membrane_geometry"]
+                                if item.get("canonical_position")
+                                == rows[label].get("canonical_position")
+                            ),
+                            None,
+                        ),
+                        next(
+                            (
+                                item.get("axial_distance")
+                                for item in location["membrane_geometry"]
+                                if item.get("canonical_position")
+                                == rows[label].get("canonical_position")
+                            ),
+                            None,
+                        ),
+                        next(
+                            (
+                                item.get("radial_distance")
+                                for item in location["membrane_geometry"]
+                                if item.get("canonical_position")
+                                == rows[label].get("canonical_position")
+                            ),
+                            None,
+                        ),
+                        next(
+                            (
+                                item.get("pore_lining")
+                                for item in location["membrane_geometry"]
+                                if item.get("canonical_position")
+                                == rows[label].get("canonical_position")
+                            ),
+                            None,
+                        ),
+                        [
+                            f"{item.get('type')}: {item.get('description')}"
+                            for topology in location["sequence_topology"]
+                            if topology.get("canonical_position")
+                            == rows[label].get("canonical_position")
+                            for item in topology.get("annotations", [])
+                        ],
+                    ]
                     for label in hypothesis["hotspot_label_seq_ids"]
                     if label in rows
                 ],
-                "geometry_scope": "Prepared-target calculation with its explicit BiologyContext. "
-                "Its missing-annotation limitations do not negate independently retrieved "
-                "receptor topology/state or literature supplied elsewhere in this dossier.",
-                "geometry_and_constraints": {
-                    key: value
-                    for key, value in evaluation.items()
-                    if key not in {"mapped_residues", "surface_evidence", "centroid_angstrom"}
+                "evaluation": {
+                    key: evaluation.get(key)
+                    for key in (
+                        "status",
+                        "hard_constraints",
+                        "warnings",
+                        "motif_warnings",
+                        "overlapping_features",
+                        "radius_gyration_angstrom",
+                        "spatial_components",
+                    )
                 },
+                "runtime_eligibility": candidate.get("runtime_eligibility", {}),
+            }
+        )
+    reference_annotations = []
+    for annotation in dossier["reference_annotations"]:
+        reference_annotations.append(
+            {
+                "accession": annotation.get("accession"),
+                "numbering": annotation.get("numbering"),
+                "disulfide_assignments": annotation.get("disulfide_assignments", {}),
+                "features": [
+                    feature
+                    for feature in annotation.get("features", [])
+                    if any(
+                        feature.get("location", {}).get("start", {}).get("value", position)
+                        <= position
+                        <= feature.get("location", {}).get("end", {}).get("value", position)
+                        for position in candidate_positions
+                    )
+                ],
             }
         )
     return {
-        "kind": "site-decision-working-set-v1",
-        "approved_target": dossier["approved_target"],
+        "kind": "site-decision-working-set-v2",
+        "approved_target": _compact_target(dossier["approved_target"]),
         "runtime_status": dossier["runtime_status"],
-        "scientific_context": dossier["scientific_context"],
+        "scientific_context": {
+            "biology": dossier["scientific_context"].get("biology"),
+            "geometry_warnings": dossier["scientific_context"].get("geometry_warnings", []),
+        },
         "candidates": candidates,
-        "receptor_context": dossier["receptor_context"],
+        "receptor_context": _compact_receptor_context(dossier["receptor_context"]),
         "approach_validation": dossier["approach_validation"],
-        "reference_annotations": dossier["reference_annotations"],
-        "residue_constraints": dossier["residue_constraints"],
-        "decision_questions": [{"question": q["question"]} for q in dossier["decision_questions"]],
+        "reference_annotations": reference_annotations,
+        "residue_constraint_columns": [
+            "residue_id",
+            "design_label",
+            "canonical_position",
+            "canonical_residue",
+        ],
+        "residue_constraints": [
+            [
+                item.get("residue_id"),
+                item.get("design_label"),
+                item.get("canonical_position"),
+                item.get("canonical_residue"),
+            ]
+            for item in dossier["residue_constraints"]
+        ],
+        "research_findings": [
+            {
+                key: question.get(key)
+                for key in (
+                    "question",
+                    "status",
+                    "decision_impact",
+                    "limitations",
+                    "query_ids",
+                )
+            }
+            | {
+                "evidence": [
+                    {
+                        key: use.get(key)
+                        for key in ("card_id", "claim", "relation", "strength", "transfer_limit")
+                    }
+                    for use in question.get("evidence", [])
+                ]
+            }
+            for question in dossier["decision_questions"]
+        ],
         "evidence": [
             {
                 key: value
                 for key, value in card.items()
                 if key
                 in {
+                    "card_id",
                     "provider",
                     "identifier",
                     "source_id",
@@ -285,12 +573,10 @@ def decision_working_set(dossier: dict[str, Any]) -> dict[str, Any]:
             if q.get("errors")
         ],
         "authority": "Runtime owns exact candidate membership, chain, canonical/design mapping "
-        "and evidence bindings. Choose candidate IDs only. Decision questions define inquiry "
-        "scope, not scientific conclusions. Assess candidate hypotheses against the supplied "
-        "runtime facts, scoped source evidence and access failures. "
-        "A source passage supports only its actual claim and scope. No approval is implied.",
+        "and evidence bindings. The full immutable dossier remains available for audit. Rank every "
+        "supplied hard-valid candidate by ID; scientific risk lowers rank or confidence, while "
+        "only Runtime hard-invalid status removes selectability.",
     }
-
 
 def hydrate_site_decision(
     bridge: Phase2Bridge, decision: SiteDecision | RankedSiteDecision, execution_id: str | None

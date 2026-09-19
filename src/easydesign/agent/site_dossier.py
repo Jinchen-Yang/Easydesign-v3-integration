@@ -211,20 +211,18 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
         if q.get("query", {}).get("operation") == "literature-search"
     }
     contradiction_ids = set(handoff.contradiction_search_query_ids)
-    if searches and (
-        (handoff.decision_questions and not contradiction_ids)
-        or not contradiction_ids.issubset(searches)
-    ):
-        raise ResearchConclusionMismatch(
-            "Bind an actual targeted contradiction/alternative literature search query_id. "
-            "Acquisition is not discovery. Available search IDs: " + compact(sorted(searches))
-        )
     if not searches and contradiction_ids:
         raise ResearchConclusionMismatch(
             "No literature-search query was executed, so no contradiction search ID can be "
             "claimed. Use contradiction_search_query_ids=[]; keep decision_questions bound "
             "to their actual acquisition/read query IDs and record the missing contradiction "
             "search in stopping_reason and unresolved_questions. Acquisition is not discovery."
+        )
+    if contradiction_ids and not contradiction_ids.issubset(searches):
+        raise ResearchConclusionMismatch(
+            "Every claimed contradiction/alternative search must be an actual literature-search "
+            "query_id. Acquisition is not discovery. Available search IDs: "
+            + compact(sorted(searches))
         )
     EvidenceResearch(bridge).validate_questions(list(handoff.decision_questions))
     memberships = [

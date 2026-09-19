@@ -9,6 +9,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from easydesign.agent.context_policy import context_usage, research_memory
 from easydesign.agent.evidence_research import EvidenceResearch
+from easydesign.agent.harness import RoleBoundary
+from easydesign.agent.phase2_tools import phase2_tools
 from easydesign.agent.session_store import SessionStore, compact
 from easydesign.agent.site_research_runtime import (
     receptor_kernel_message,
@@ -184,6 +186,65 @@ async def test_site_context_admission_builds_runtime_packet_before_summary_guard
     assert not [e for e in events if e["kind"] == "framework-summary-call"]
     assert len([e for e in events if e["kind"] == "model-call"]) == 1
     assert not [e for e in events if e["kind"] == "auxiliary-model-call"]
+
+
+@pytest.mark.asyncio
+async def test_site_role_boundary_admits_oversized_first_request_before_hard_guard(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
+    config = scripted_config()
+    eid = site_bridge.store.begin_execution(site_bridge.thread, "Oversized first Site call")[
+        "execution_id"
+    ]
+    model = FakeListChatModel(responses=["unused"])
+    boundary = RoleBoundary(
+        site_bridge,
+        "site",
+        config,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        preloaded_domain_skills=True,
+    )
+    # This test targets pre-provider admission rather than structured submission parsing.
+    boundary.structured_output = False
+    boundary.output_schema = None
+    received: list[Any] = []
+
+    async def handler(request: Any) -> ModelResponse:
+        received.extend(request.messages)
+        context_usage(
+            model,
+            config,
+            "site",
+            [request.system_message, *request.messages],
+        )
+        return ModelResponse(result=[AIMessage(content="Continue")])
+
+    await boundary.awrap_model_call(
+        ModelRequest(
+            model=model,
+            system_message=SystemMessage(content="Synthetic Site research"),
+            messages=[HumanMessage(content="x" * 100500)],
+            state={"messages": []},
+            tools=phase2_tools(site_bridge, "site"),
+        ),
+        handler,
+    )
+
+    assert len(received) == 1
+    assert '"runtime_site_research_packet":"v1"' in received[0].content
+    admission = [
+        event["payload"]
+        for event in site_bridge.store.events(site_bridge.thread)
+        if event["kind"] == "site-research-context-admission"
+    ]
+    assert len(admission) == 1
+    assert admission[0]["original_input_chars_with_schemas"] > config.hard_input_chars
+    assert admission[0]["projected_input_chars_with_schemas"] < config.hard_input_chars
 
 
 def test_finalization_packet_does_not_replay_prior_tool_calls(

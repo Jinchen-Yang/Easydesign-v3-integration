@@ -19,6 +19,71 @@ from .models import ModelConfig, Role, compact_summary_model
 from .session_store import compact
 
 
+def admit_site_research_request(
+    request: Any,
+    *,
+    bridge: Any,
+    config: ModelConfig,
+    role: Role,
+    execution_id: str | None,
+    tool_chars: int,
+) -> Any:
+    """Replace an oversized Site transcript before any middleware hard guard runs."""
+    from .phase2 import Phase2Bridge
+
+    if role != "site" or execution_id is None or not isinstance(bridge, Phase2Bridge):
+        return request
+    messages = [request.system_message, *request.messages]
+    measured = context_usage(
+        request.model,
+        config,
+        role,
+        messages,
+        tool_chars,
+        enforce=False,
+    )
+    # Reserve one observed large Site result batch plus output/repair overhead.
+    # The 60k working target remains a trigger, while this deterministic boundary
+    # prevents a 25-30k batch from jumping directly over the 100k hard guard.
+    reserve = min(32000, max(16000, config.hard_input_chars // 3))
+    admission_limit = min(
+        config.max_input_chars + config.max_input_chars // 8,
+        config.hard_input_chars - reserve,
+    )
+    if measured["input_chars_with_schemas"] <= admission_limit:
+        return request
+    from .site_research_runtime import site_research_packet_message
+
+    packet = site_research_packet_message(
+        bridge,
+        execution_id,
+        list(request.messages),
+        reading_closed=False,
+    )
+    projected = context_usage(
+        request.model,
+        config,
+        role,
+        [request.system_message, packet],
+        tool_chars,
+    )
+    bridge.store.event(
+        bridge.thread,
+        "site-research-context-admission",
+        {
+            "role": role,
+            "execution_id": execution_id,
+            "original_input_chars_with_schemas": measured["input_chars_with_schemas"],
+            "projected_input_chars_with_schemas": projected["input_chars_with_schemas"],
+            "admission_limit_chars": admission_limit,
+            "hard_limit_chars": config.hard_input_chars,
+            "reserve_chars": reserve,
+            "projection": "runtime-site-research-packet-v1",
+        },
+    )
+    return request.override(messages=[packet])
+
+
 def input_context_tokens(messages: list[Any]) -> int:
     """Count actual request content without scaling from prior response usage.
 
@@ -161,68 +226,17 @@ class ResearchMemory(SummarizationMiddleware):
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         """Admit a bounded Runtime packet before native summarization can hit the guard."""
-        from .phase2 import Phase2Bridge
-
-        if (
-            self.role == "site"
-            and self.execution_id is not None
-            and isinstance(self.bridge, Phase2Bridge)
-        ):
-            tool_chars = len(
-                compact([convert_to_openai_tool(tool) for tool in getattr(request, "tools", [])])
-            )
-            messages = [request.system_message, *request.messages]
-            measured = context_usage(
-                request.model,
-                self.config,
-                self.role,
-                messages,
-                tool_chars,
-                enforce=False,
-            )
-            # Reserve one observed large Site result batch plus output/repair overhead.
-            # The 60k working target remains a trigger, while this deterministic boundary
-            # prevents a 25-30k batch from jumping directly over the 100k hard guard.
-            reserve = min(32000, max(16000, self.config.hard_input_chars // 3))
-            admission_limit = min(
-                self.config.max_input_chars + self.config.max_input_chars // 8,
-                self.config.hard_input_chars - reserve,
-            )
-            if measured["input_chars_with_schemas"] > admission_limit:
-                from .site_research_runtime import site_research_packet_message
-
-                packet = site_research_packet_message(
-                    self.bridge,
-                    self.execution_id,
-                    list(request.messages),
-                    reading_closed=False,
-                )
-                projected = context_usage(
-                    request.model,
-                    self.config,
-                    self.role,
-                    [request.system_message, packet],
-                    tool_chars,
-                )
-                self.bridge.store.event(
-                    self.bridge.thread,
-                    "site-research-context-admission",
-                    {
-                        "role": self.role,
-                        "execution_id": self.execution_id,
-                        "original_input_chars_with_schemas": measured[
-                            "input_chars_with_schemas"
-                        ],
-                        "projected_input_chars_with_schemas": projected[
-                            "input_chars_with_schemas"
-                        ],
-                        "admission_limit_chars": admission_limit,
-                        "hard_limit_chars": self.config.hard_input_chars,
-                        "reserve_chars": reserve,
-                        "projection": "runtime-site-research-packet-v1",
-                    },
-                )
-                request = request.override(messages=[packet])
+        tool_chars = len(
+            compact([convert_to_openai_tool(tool) for tool in getattr(request, "tools", [])])
+        )
+        request = admit_site_research_request(
+            request,
+            bridge=self.bridge,
+            config=self.config,
+            role=self.role,
+            execution_id=self.execution_id,
+            tool_chars=tool_chars,
+        )
         return await super().awrap_model_call(request, handler)
 
     def _create_summary(self, messages_to_summarize: list[Any]) -> str:

@@ -21,7 +21,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ValidationError
 
-from .context_policy import context_usage, research_memory
+from .context_policy import admit_site_research_request, context_usage, research_memory
 from .contracts import (
     AgentBoundaryError,
     DecisionOutcome,
@@ -578,6 +578,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         tool_chars = len(compact(tool_schemas))
         if self.execution_id is None:
             raise AgentBoundaryError("Model call requires a persisted agent execution")
+        if self.role == "site" and self.site_stage == "research":
+            # RoleBoundary is the inner hard-guard owner in the composed graph. Admit
+            # the Runtime packet here as well as in ResearchMemory so an oversized
+            # first Site request cannot fail before the outer middleware runs.
+            request = admit_site_research_request(
+                request,
+                bridge=self.bridge,
+                config=self.config,
+                role="site",
+                execution_id=self.execution_id,
+                tool_chars=tool_chars,
+            )
         from langchain_core.messages import SystemMessage
 
         base_system = request.system_message.text

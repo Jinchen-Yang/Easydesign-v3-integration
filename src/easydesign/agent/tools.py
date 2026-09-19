@@ -219,7 +219,7 @@ class TargetBridge:
             if not isinstance(source, LocalFileSourceConfig):
                 raise AgentBoundaryError("Target source must remain a local file")
             source_identity = source.identity
-            if source_identity.uniprot_accession is None:
+            if getattr(self, "is_phase2", False) and source_identity.uniprot_accession is None:
                 from .target_identity import (
                     deposited_polymer_metadata,
                     deposited_uniprot_leads,

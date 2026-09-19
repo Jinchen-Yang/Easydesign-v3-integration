@@ -326,6 +326,23 @@ def test_model_cannot_supply_runtime_fields_and_open_interpretation_is_allowed()
     )
 
 
+def test_target_interpretation_requires_an_option_when_runtime_offers_choices() -> None:
+    evidence = {
+        **runtime_evidence(),
+        "options": [
+            {"option_id": "chain-a", "eligible": True},
+            {"option_id": "chain-b", "eligible": True},
+        ],
+    }
+    with pytest.raises(AgentBoundaryError, match="must name one eligible option"):
+        check_interpretation(TargetInterpretation.model_validate(opinion()), evidence)
+
+    check_interpretation(
+        TargetInterpretation.model_validate({**opinion(), "recommended_option": "chain-a"}),
+        evidence,
+    )
+
+
 def test_public_target_facts_are_rendered_without_coordinator_restatement() -> None:
     from easydesign.agent.target_assessment import present_target
 
@@ -350,12 +367,19 @@ def test_gate_payload_uses_runtime_facts_and_old_judge_cannot_approve_new_interp
     bridge.prepare_target()
     terminal(bridge)
     before = bridge.read_evidence()
-    owner = register_target(bridge, TargetInterpretation.model_validate(opinion()), None)
+    owner = register_target(
+        bridge,
+        TargetInterpretation.model_validate({**opinion(), "recommended_option": "chain-a"}),
+        None,
+    )
     first = judge_card(bridge)
     assert first.scientific_summary["hard_facts"] == before["hard_facts"] == owner["hard_facts"]
     assert first.scientific_summary["interpretation"] == owner["interpretation"]
     changed = TargetInterpretation.model_validate(
-        opinion("The alternative chain warrants a separate review.")
+        {
+            **opinion("The alternative chain warrants a separate review."),
+            "recommended_option": "chain-a",
+        }
     )
     register_target(bridge, changed, None)
     with pytest.raises(AgentBoundaryError, match="Evidence/request changed"):

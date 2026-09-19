@@ -45,7 +45,10 @@ before Judge review; the runtime card is the confirmation mechanism.
 Single-chain inputs may finish directly; do not invent an approval gate.
 
 Submit only through the TargetInterpretation tool: interpretation, unresolved_identity,
-limitations, recommended_option (optional eligible option ID), and recommended_action.
+limitations, recommended_option, and recommended_action. When Runtime supplies eligible chain
+options, recommended_option is required and must be one exact eligible option ID; a prose
+recommendation with a null structured option is invalid. It may be null only when no chain choice
+is required, such as a directly completable single-chain target.
 Runtime supplies hard_facts, all source identities, options and mapping. Do not regenerate
 lengths/chain facts as authoritative fields or restate entire factual tables in prose. The UI
 uses runtime facts directly. Explain biological implications, alternatives and uncertainty.

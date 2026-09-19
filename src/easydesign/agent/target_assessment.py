@@ -93,6 +93,11 @@ def check_fact_claims(value: Any, evidence: dict[str, Any]) -> None:
 
 def check_interpretation(value: TargetInterpretation, evidence: dict[str, Any]) -> None:
     check_fact_claims(value.model_dump(mode="json"), evidence)
+    eligible = [option["option_id"] for option in evidence.get("options", []) if option["eligible"]]
+    if eligible and value.recommended_option is None:
+        raise AgentBoundaryError(
+            "Target recommendation must name one eligible option in recommended_option"
+        )
     if value.recommended_option and not any(
         o["option_id"] == value.recommended_option and o["eligible"]
         for o in evidence.get("options", [])

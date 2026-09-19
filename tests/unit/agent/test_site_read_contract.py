@@ -298,7 +298,7 @@ def test_complete_receptor_membership_is_not_replaced_by_a_tool_size_preview(
 
 
 @pytest.mark.asyncio
-async def test_completed_atomic_gpcr_analysis_offers_one_reuse_then_hides_tool(
+async def test_completed_atomic_gpcr_analysis_never_requires_model_delivery_tool(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
     from easydesign.agent.evidence_research import EvidenceResearch
@@ -360,11 +360,11 @@ async def test_completed_atomic_gpcr_analysis_offers_one_reuse_then_hides_tool(
             ),
             handler,
         )
-    assert offered == {"analyze_receptor_context"}
+    assert "analyze_receptor_context" not in offered
+    assert "research_evidence" in offered
 
-    # Framework summarization can remove the ToolMessage from live history. The
-    # durable model-facing view must still prove that this execution received the
-    # kernel and prevent a second delivery.
+    # A legacy delivery receipt cannot re-expose the model-selected adapter after
+    # framework summarization or restart.
     bridge.store.event(
         bridge.thread,
         "tool-view",

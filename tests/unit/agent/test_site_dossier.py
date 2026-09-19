@@ -409,7 +409,8 @@ async def test_framework_summary_preserves_trace_and_consumes_shared_budget(
     retained = tmp_path / "memory" / event["file_path"].lstrip("/")
     assert retained.is_file() and "SYNTHETIC evidence 0" in retained.read_text()
     events = bridge.store.events(bridge.thread)
-    assert len([e for e in events if e["kind"] == "model-call"]) == 2
+    assert len([e for e in events if e["kind"] == "model-call"]) == 1
+    assert len([e for e in events if e["kind"] == "auxiliary-model-call"]) == 1
     assert len([e for e in events if e["kind"] == "framework-summary-call"]) == 1
     assert len([e for e in events if e["kind"] == "framework-summary-response"]) == 1
     summary_event = next(e for e in events if e["kind"] == "framework-summary-response")

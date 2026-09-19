@@ -1275,9 +1275,9 @@ def research_tool(bridge: Any, role: str) -> Any:
                 )
             if card["provider"] == "GPCRdb" and card.get("context_ref"):
                 view["available_analysis"] = (
-                    "analyze_receptor_context using this card_id "
-                    "and original auth_chain: obtain complete verified topology, membrane "
-                    "frame, chain graph and mapped candidates before epitope interpretation."
+                    "Runtime has computed the deterministic receptor kernel for this card and "
+                    "will project its verified topology, membrane frame, chain graph and mapped "
+                    "candidates automatically on the next Site research decision call."
                 )
             if arguments["operation"].endswith("search"):
                 view["snippet"] = card["passage"][:450]

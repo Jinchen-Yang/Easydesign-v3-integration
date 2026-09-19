@@ -664,8 +664,8 @@ async def test_site_followup_reads_require_focus_and_share_existing_call_budget(
         4,
         7,
     ]
-    assert '"used_model_calls":0' in snapshots[0][1]
-    assert '"used_model_calls":1' in snapshots[1][1]
+    assert '"used_scientific_model_calls":0' in snapshots[0][1]
+    assert '"used_scientific_model_calls":1' in snapshots[1][1]
     assert not b._jobs()
 
 
@@ -794,7 +794,7 @@ async def test_known_source_citation_is_repaired_before_site_registration(
         if defect == "not-searched"
         else "SEARCHED_NO_EVIDENCE"
     )
-    assert diagnostic in seen[1] and '"used_model_calls":1' in seen[1]
+    assert diagnostic in seen[1] and '"used_scientific_model_calls":1' in seen[1]
     assert len([e for e in b.store.events(b.thread) if e["kind"] == "contract-repair"]) == 1
     assert not [e for e in b.store.events(b.thread) if e["kind"] == "site-proposal"]
     with pytest.raises(AgentBoundaryError, match="not retrieved"):
@@ -1196,7 +1196,6 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
     bridge: Any, monkeypatch: Any
 ) -> None:
     from langchain_core.tools import StructuredTool
-    from langchain_core.utils.function_calling import convert_to_openai_tool
 
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     eid = b.store.begin_execution(b.thread, "Inspect receptor context")["execution_id"]
@@ -1217,10 +1216,6 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
     async def handler(request: Any) -> Any:
         analysis = [t for t in request.tools if t.name == "analyze_receptor_context"]
         seen.append(analysis)
-        if analysis:
-            assert convert_to_openai_tool(analysis[0])["function"]["parameters"]["properties"][
-                "gpcrdb_card_id"
-            ]["enum"] == ["source-context"]
         return SimpleNamespace(
             result=[
                 AIMessage(
@@ -1256,7 +1251,9 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
         }
     )
     await guard.awrap_model_call(request, handler)
-    assert not seen[0] and not seen[1] and len(seen[2]) == 1
+    # Kernel computation remains tied to a complete GPCRdb context, but delivery is
+    # now a Runtime projection rather than a model-selected navigation tool.
+    assert not seen[0] and not seen[1] and not seen[2]
     assert not b._jobs()
 
 

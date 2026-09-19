@@ -50,13 +50,11 @@ from .evidence_output import (
     output_message,
     read_query,
     reasoning_working_view,
-    submission_working_view,
     verified_result,
 )
 from .evidence_research import (
     RESEARCH_QUERY_LIMIT,
     EvidenceResearch,
-    ReceptorAnalysis,
     ResearchBudgetExhausted,
     ResearchQuery,
 )
@@ -70,6 +68,12 @@ from .site_dossier import (
     SiteResearchHandoff,
     persist_dossier,
     site_dossier,
+)
+from .site_research_runtime import (
+    mark_site_research_milestone,
+    receptor_kernel_message,
+    refresh_site_research_activity,
+    site_research_packet_message,
 )
 from .target_assessment import (
     HardFactContradiction,
@@ -408,6 +412,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         if self.role == "site" and isinstance(self.bridge, Phase2Bridge):
             research = EvidenceResearch(self.bridge).snapshot()
             if self.site_stage == "research":
+                if self.execution_id is None:
+                    raise AgentBoundaryError("Site Research requires a persisted execution")
+                lifecycle = refresh_site_research_activity(self.bridge, self.execution_id)
                 research_progress = {
                     "inquiry_count": len(research["queries"]),
                     "literature_discovery": [
@@ -423,48 +430,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             if c["card_id"].startswith("passage-")
                         }
                     ),
+                    "runtime_lifecycle": lifecycle.model_dump(mode="json"),
                 }
-            receptor_cards = sorted(
-                {
-                    c["card_id"]
-                    for q in research["queries"]
-                    for c in q["cards"]
-                    if c["provider"] == "GPCRdb" and c.get("context_ref")
-                }
-            )
-            receptor_analysis_delivered = any(
-                isinstance(message, ToolMessage)
-                and message.name == "analyze_receptor_context"
-                and message.status != "error"
-                for message in request.messages
-            ) or bool(
-                self.bridge.store.db.execute(
-                    "SELECT 1 FROM events WHERE thread=? AND kind='tool-view' "
-                    "AND json_extract(payload,'$.role')='site' "
-                    "AND json_extract(payload,'$.execution_id')=? "
-                    "AND json_extract(payload,'$.artifact.artifact_id')="
-                    "'research-receptor-analysis' LIMIT 1",
-                    (self.bridge.thread, self.execution_id),
-                ).fetchone()
-            )
-            if receptor_cards and not receptor_analysis_delivered:
-                receptor_schema = ReceptorAnalysis.model_json_schema()
-                receptor_schema["properties"]["gpcrdb_card_id"]["enum"] = receptor_cards
-                # Acquisition has already computed the deterministic receptor kernel.
-                # Deliver that compact current-binding view before offering generic
-                # result navigation or more research. Otherwise the model can spend
-                # serial calls paging a megabyte-scale acquisition artifact whose
-                # authoritative topology, geometry and candidates are already in the
-                # kernel. This is sequencing, not a scientific stopping decision.
-                available = [
-                    t.model_copy(update={"args_schema": receptor_schema})
-                    for t in available
-                    if t.name == "analyze_receptor_context"
-                ]
-            else:
-                # Acquisition may already have computed the kernel. Offer one scoped
-                # model-facing read, then hide the tool after successful delivery.
-                available = [t for t in available if t.name != "analyze_receptor_context"]
+            # GPCRdb acquisition already computes the deterministic kernel. Runtime
+            # projects that current-binding card on every subsequent research request;
+            # normal progress no longer depends on the model selecting a delivery tool.
+            # Keep the tool implementation as a legacy/internal adapter only.
+            available = [t for t in available if t.name != "analyze_receptor_context"]
         result_schema = ModelEvidenceScope.model_json_schema()
         if isinstance(self.bridge, Phase2Bridge):
             rows = self.bridge.store.db.execute(
@@ -658,14 +630,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 "AND json_extract(payload,'$.execution_id')=?",
                 (self.bridge.thread, self.execution_id),
             ).fetchone()[0]
+            auxiliary_used = self.bridge.store.db.execute(
+                "SELECT COUNT(*) FROM events WHERE thread=? AND kind='auxiliary-model-call' "
+                "AND json_extract(payload,'$.execution_id')=?",
+                (self.bridge.thread, self.execution_id),
+            ).fetchone()[0]
             synthesize = self.site_stage == "synthesis"
             site_call_budget_complete = (
                 self.role == "site"
                 and self.site_stage == "research"
                 # Reserve the final counted provider call for the typed handoff.
-                # Framework summary calls share this counter, so waiting until the
-                # limit is already reached makes an eight-call policy spill to nine
-                # or ten calls before it can serialize its result.
+                # Auxiliary summaries have a separate category and total safeguard;
+                # only scientific Site calls consume this semantic allowance.
                 and used >= SITE_RESEARCH_MODEL_CALL_LIMIT - 1
             )
             finalize_research = (
@@ -673,6 +649,24 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 and self.site_stage == "research"
                 and (research_query_budget_complete or site_call_budget_complete)
             )
+            if finalize_research:
+                assert isinstance(self.bridge, Phase2Bridge)
+                assert self.execution_id is not None
+                finalization_reason = (
+                    "query-budget" if research_query_budget_complete else "model-call-budget"
+                )
+                mark_site_research_milestone(
+                    self.bridge,
+                    self.execution_id,
+                    "budget-exhausted-with-open-uncertainty",
+                    reason=finalization_reason,
+                )
+                mark_site_research_milestone(
+                    self.bridge,
+                    self.execution_id,
+                    "finalization-pending",
+                    reason=finalization_reason,
+                )
             # A bounded research phase has already done its scientific work. Its final
             # provider call exists only to serialize the typed handoff, so extended
             # thinking can no longer add evidence and may prevent the SDK from forcing
@@ -699,12 +693,17 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     + "\nCurrent shared execution budget: "
                     + compact(
                         {
-                            "used_model_calls": used,
-                            "remaining_including_this_call": self.config.max_model_calls - used,
-                            "total_model_calls": self.config.max_model_calls,
+                            "used_scientific_model_calls": used,
+                            "used_auxiliary_summary_calls": auxiliary_used,
+                            "remaining_total_provider_calls_including_this_call": (
+                                self.config.max_model_calls - used - auxiliary_used
+                            ),
+                            "total_provider_call_safeguard": self.config.max_model_calls,
                         }
                     )
-                    + ". This budget includes Coordinator, all specialists and independent Judge. "
+                    + ". Scientific and auxiliary calls are accounted separately; the hard "
+                    "provider safeguard includes both. It also includes Coordinator, all "
+                    "specialists and independent Judge. "
                     "Use focused scientific questions, batch independent reads, and leave capacity "
                     "for typed synthesis, independent review and the Gate. Do not exhaust it by "
                     "enumerating the target or repeating delivered pages. Missing evidence stays "
@@ -753,12 +752,34 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # A beginning-only system addition was repeatedly ignored in long live traces.
             reasoning = self.config.for_role(cast(Role, self.role)).reasoning_effort != "none"
             call_messages = (
-                submission_working_view(list(request.messages))
+                [
+                    site_research_packet_message(
+                        cast(Phase2Bridge, self.bridge),
+                        self.execution_id,
+                        list(request.messages),
+                        reading_closed=True,
+                    )
+                ]
                 if finalize_research
                 else reasoning_working_view(list(request.messages))
                 if reasoning and self.role != "site"
                 else list(request.messages)
             )
+            if (
+                self.role == "site"
+                and self.site_stage == "research"
+                and not finalize_research
+                and not any(
+                    isinstance(message, HumanMessage)
+                    and '"runtime_site_research_packet":"v1"' in str(message.content)
+                    for message in call_messages
+                )
+            ):
+                assert isinstance(self.bridge, Phase2Bridge)
+                assert self.execution_id is not None
+                kernel_message = receptor_kernel_message(self.bridge, self.execution_id)
+                if kernel_message is not None:
+                    call_messages.append(kernel_message)
             context_suffix = []
             pending_submission = self._pending_submission_context()
             if pending_submission is not None:
@@ -832,6 +853,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     **usage,
                     "site_stage": self.site_stage,
                     "message_count": len(call_messages),
+                    "used_scientific_model_calls_before_request": used,
+                    "used_auxiliary_model_calls_before_request": auxiliary_used,
                     "tool_message_chars": sum(
                         len(str(m.content)) for m in request.messages if isinstance(m, ToolMessage)
                     ),
@@ -857,6 +880,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     ),
                     "history_projection": "completed-tool-records"
                     if reasoning and self.role != "site"
+                    else "runtime-site-research-finalization-packet"
+                    if finalize_research
+                    else "runtime-site-research-working-packet"
+                    if any(
+                        isinstance(message, HumanMessage)
+                        and '"runtime_site_research_packet":"v1"' in str(message.content)
+                        for message in call_messages
+                    )
                     else "native",
                     "exact_history_value_references": any(
                         isinstance(m, HumanMessage) and '"history_encoding":' in str(m.content)
@@ -1070,6 +1101,22 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             },
                         )
                 if not diagnostic:
+                    if self.role == "site" and self.site_stage == "research":
+                        assert isinstance(self.bridge, Phase2Bridge)
+                        assert self.execution_id is not None
+                        if not finalize_research:
+                            mark_site_research_milestone(
+                                self.bridge,
+                                self.execution_id,
+                                "evidence-sufficient",
+                                reason="specialist-submitted-valid-handoff",
+                            )
+                            mark_site_research_milestone(
+                                self.bridge,
+                                self.execution_id,
+                                "finalization-pending",
+                                reason="evidence-sufficient",
+                            )
                     self.bridge.store.event(
                         self.bridge.thread,
                         "submission-preflight-passed",
@@ -1909,7 +1956,16 @@ def create_site_pipeline(
         if execution_id is None:
             raise AgentBoundaryError("Dossier assembly requires a persisted execution")
         selection = SiteResearchHandoff.model_validate(state["structured_response"])
-        return synthesis_input(persist_dossier(bridge, selection, execution_id))
+        dossier = persist_dossier(bridge, selection, execution_id)
+        event = bridge.thread_latest("site-evidence-dossier")
+        mark_site_research_milestone(
+            bridge,
+            execution_id,
+            "handoff-committed",
+            details={"dossier_ref": event["ref"] if event else None},
+        )
+        mark_site_research_milestone(bridge, execution_id, "site-synthesis-ready")
+        return synthesis_input(dossier)
 
     def current_dossier() -> dict[str, Any] | None:
         event = bridge.thread_latest("site-evidence-dossier")

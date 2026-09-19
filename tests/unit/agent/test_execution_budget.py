@@ -51,7 +51,8 @@ async def test_reopened_execution_crosses_32_with_summary_and_all_roles(tmp_path
     b = SimpleNamespace(store=store, thread=thread)
     callback = SummaryAccounting(b, config, "site", eid, SimpleNamespace(profile=None))
     try:
-        # Summary 33 is charged once in the same ledger, separately observable.
+        # Summary 33 is charged once in the total provider ledger without consuming
+        # the scientific-call allowance.
         await callback.on_chat_model_start(
             {}, [[HumanMessage(content="Synthetic summary")]], run_id="33"
         )
@@ -63,23 +64,23 @@ async def test_reopened_execution_crosses_32_with_summary_and_all_roles(tmp_path
             store.reserve_model_call(thread, roles[i % len(roles)], config.max_model_calls, eid)
         events = store.events(thread)
         calls = [e["payload"] for e in events if e["kind"] == "model-call"]
-        assert [c["call"] for c in calls] == list(range(1, 65))
-        assert [c["lifetime_call"] for c in calls] == list(range(1, 65))
+        auxiliary = [e["payload"] for e in events if e["kind"] == "auxiliary-model-call"]
+        assert [c["call"] for c in calls] == list(range(1, 64))
+        assert [c["lifetime_call"] for c in calls] == [*range(1, 33), *range(34, 65)]
+        assert [c["provider_call"] for c in auxiliary] == [33]
         assert {c["execution_id"] for c in calls} == {eid}
-        expected = Counter(roles[i % len(roles)] for i in range(64))
-        expected[roles[32 % len(roles)]] -= 1
-        expected["site"] += 1
+        expected = Counter(roles[i % len(roles)] for i in [*range(32), *range(33, 64)])
         assert Counter(c["role"] for c in calls) == expected
         assert len([e for e in events if e["kind"] == "framework-summary-call"]) == 1
         assert len([e for e in events if e["kind"] == "framework-summary-response"]) == 1
         for role in roles:
-            with pytest.raises(AgentBoundaryError, match="model-call budget"):
+            with pytest.raises(AgentBoundaryError, match="provider-call safeguard"):
                 store.reserve_model_call(thread, role, config.max_model_calls, eid)
         b.store = store
         restarted_callback = SummaryAccounting(
             b, config, "site", eid, SimpleNamespace(profile=None)
         )
-        with pytest.raises(AgentBoundaryError, match="model-call budget"):
+        with pytest.raises(AgentBoundaryError, match="provider-call safeguard"):
             await restarted_callback.on_chat_model_start(
                 {}, [[HumanMessage(content="Must not run")]], run_id="65"
             )
@@ -179,7 +180,8 @@ async def test_native_summary_preserves_one_large_batch_of_guard_headroom(
         )
         events = store.events(b.thread)
         assert len([e for e in events if e["kind"] == "framework-summary-call"]) == summaries
-        assert len([e for e in events if e["kind"] == "model-call"]) == 1 + summaries
+        assert len([e for e in events if e["kind"] == "model-call"]) == 1
+        assert len([e for e in events if e["kind"] == "auxiliary-model-call"]) == summaries
         assert [m.model_dump() for m in messages] == original
         if not summaries:
             assert received == messages
@@ -232,7 +234,8 @@ async def test_native_summary_checkpoint_reopen_keeps_cutoff_and_small_tail(tmp_
         events = store.events(b.thread)
         assert len([e for e in events if e["kind"] == "framework-summary-call"]) == 1
         calls = [e["payload"] for e in events if e["kind"] == "model-call"]
-        assert [c["call"] for c in calls] == [1, 2, 3]
+        assert [c["call"] for c in calls] == [1, 2]
+        assert len([e for e in events if e["kind"] == "auxiliary-model-call"]) == 1
         assert {c["execution_id"] for c in calls} == {eid}
     finally:
         store.close()
@@ -302,7 +305,8 @@ async def test_large_completed_batch_is_summarized_before_guard_without_losing_t
         assert [message.model_dump() for message in messages] == original
         events = store.events(bridge.thread)
         assert sum(e["kind"] == "framework-summary-call" for e in events) == 1
-        assert sum(e["kind"] == "model-call" for e in events) == 2
+        assert sum(e["kind"] == "model-call" for e in events) == 1
+        assert sum(e["kind"] == "auxiliary-model-call" for e in events) == 1
     finally:
         store.close()
 
@@ -455,7 +459,8 @@ async def test_complete_agent_summary_keeps_new_tool_results_and_checkpoint_tail
         assert archive.read_bytes() == saved
         events = store.events(bridge.thread)
         assert sum(e["kind"] == "framework-summary-call" for e in events) == 1
-        assert sum(e["kind"] == "model-call" for e in events) == 4
+        assert sum(e["kind"] == "model-call" for e in events) == 3
+        assert sum(e["kind"] == "auxiliary-model-call" for e in events) == 1
     finally:
         store.close()
 

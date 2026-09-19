@@ -540,6 +540,33 @@ def receptor_overview_projection(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def receptor_research_projection(value: dict[str, Any], card_id: str) -> dict[str, Any]:
+    """One canonical model view for a deterministic receptor kernel.
+
+    Tool delivery and Runtime delivery use this same projection, so moving lifecycle
+    bookkeeping out of the transcript cannot change candidate membership or citation rules.
+    """
+    overview = {
+        "fields": list(value),
+        "card_id": card_id,
+        **receptor_overview_projection(value),
+        "citation_contract": {
+            "citable_evidence_card_ids": [card_id],
+            "instruction": "For any candidate supported by this deterministic receptor "
+            "analysis, cite the receptor-* card_id in SiteResearchHandoff.evidence_card_ids. "
+            "kernel_claim_ids are internal claim handles and are not citable card IDs.",
+        },
+    }
+    for candidates in overview.get("candidate_overview", {}).values():
+        for candidate in candidates:
+            if "evidence" in candidate:
+                candidate["kernel_claims"] = candidate.pop("evidence")
+            if "evidence_ids" in candidate:
+                candidate["kernel_claim_ids"] = candidate.pop("evidence_ids")
+            candidate["citable_evidence_card_ids"] = [card_id]
+    return overview
+
+
 def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> Any:
     from langchain_core.messages import ToolMessage
 
@@ -684,19 +711,7 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
             # SiteResearchHandoff.evidence_card_ids field. Make that distinction
             # explicit in the decision view instead of asking the model to infer it
             # from two similarly named identifier families.
-            overview["citation_contract"] = {
-                "citable_evidence_card_ids": [receptor_card_id],
-                "instruction": "For any candidate supported by this deterministic receptor "
-                "analysis, cite the receptor-* card_id in SiteResearchHandoff.evidence_card_ids. "
-                "kernel_claim_ids are internal claim handles and are not citable card IDs.",
-            }
-            for candidates in overview.get("candidate_overview", {}).values():
-                for candidate in candidates:
-                    if "evidence" in candidate:
-                        candidate["kernel_claims"] = candidate.pop("evidence")
-                    if "evidence_ids" in candidate:
-                        candidate["kernel_claim_ids"] = candidate.pop("evidence_ids")
-                    candidate["citable_evidence_card_ids"] = [receptor_card_id]
+            overview = receptor_research_projection(value, receptor_card_id)
             # This declared scientific view includes exact candidate membership.
             # Do not silently downgrade it to a partial preview at an unrelated
             # per-tool threshold. The shared model-input hard guard owns admission.

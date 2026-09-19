@@ -30,6 +30,8 @@ def test_collect_trace_metrics_keeps_summary_cost_separate(tmp_path: Path) -> No
             "model-response",
             {
                 "execution_id": "e",
+                "role": "site",
+                "site_stage": "research",
                 "latency_seconds": 4.5,
                 "responses": [
                     {
@@ -42,7 +44,7 @@ def test_collect_trace_metrics_keeps_summary_cost_separate(tmp_path: Path) -> No
                 ],
             },
         ),
-        (4, "t", "model-call", {"role": "site", "execution_id": "e"}),
+        (4, "t", "auxiliary-model-call", {"role": "site", "execution_id": "e"}),
         (5, "t", "framework-summary-call", {"role": "site", "execution_id": "e"}),
         (
             6,
@@ -50,6 +52,7 @@ def test_collect_trace_metrics_keeps_summary_cost_separate(tmp_path: Path) -> No
             "framework-summary-response",
             {
                 "execution_id": "e",
+                "role": "site",
                 "latency_seconds": 2.0,
                 "usage": [
                     {
@@ -82,11 +85,21 @@ def test_collect_trace_metrics_keeps_summary_cost_separate(tmp_path: Path) -> No
     assert result["source"]["database"] == "nk2r-attempt005"
     assert len(result["source"]["event_digest_sha256"]) == 64
     assert result["source"]["first_seq"] == 1
-    assert result["model_calls"]["total"] == 2
-    assert result["model_calls"]["by_role"] == {"site": 2}
+    assert result["model_calls"]["total"] == 1
+    assert result["model_calls"]["by_role"] == {"site": 1}
     assert result["model_calls"]["usage"]["total_tokens"] == 120
     assert result["framework_summaries"]["calls"] == 1
+    assert result["framework_summaries"]["reserved_calls"] == 1
     assert result["framework_summaries"]["usage"]["output_tokens"] == 30
+    assert result["provider_calls"] == {
+        "total": 2,
+        "scientific": 1,
+        "auxiliary": 1,
+        "usage": {"input_tokens": 180, "output_tokens": 50, "total_tokens": 230},
+    }
+    assert result["site_timing"]["research_model_wall_seconds"]["sum"] == 4.5
+    assert result["site_timing"]["auxiliary_summary_wall_seconds"]["sum"] == 2.0
+    assert result["site_timing"]["observed_provider_wall_seconds"] == 6.5
     assert result["tools"]["by_name"] == {"read_evidence_result": 1}
     assert result["context"]["input_chars_with_schemas"]["max"] == 42000
     assert result["quality_control"]["submission_preflight_passed"] == 1

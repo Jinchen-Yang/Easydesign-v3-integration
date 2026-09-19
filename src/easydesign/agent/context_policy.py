@@ -12,6 +12,7 @@ from deepagents.middleware.summarization import (
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from .contracts import AgentBoundaryError
 from .models import ModelConfig, Role, compact_summary_model
@@ -29,7 +30,13 @@ def input_context_tokens(messages: list[Any]) -> int:
 
 
 def context_usage(
-    model: Any, config: ModelConfig, role: Role, messages: list[Any], tool_chars: int = 0
+    model: Any,
+    config: ModelConfig,
+    role: Role,
+    messages: list[Any],
+    tool_chars: int = 0,
+    *,
+    enforce: bool = True,
 ) -> dict[str, Any]:
     argument_chars = sum(
         len(compact(m.tool_calls)) for m in messages if getattr(m, "tool_calls", None)
@@ -53,7 +60,9 @@ def context_usage(
         "model_profile_token_guard": token_limit,
         "token_metric": "LangChain approximate count; not provider billing tokens",
     }
-    if chars > config.hard_input_chars or (token_limit is not None and tokens > token_limit):
+    if enforce and (
+        chars > config.hard_input_chars or (token_limit is not None and tokens > token_limit)
+    ):
         raise AgentBoundaryError("Model hard context guard exceeded: " + compact(usage))
     return usage
 
@@ -78,7 +87,7 @@ class SummaryAccounting(AsyncCallbackHandler):
             raise AgentBoundaryError("Framework summary requires a persisted execution")
         for batch in messages:
             usage = context_usage(self.model, self.config, self.role, batch)
-            self.bridge.store.reserve_model_call(
+            self.bridge.store.reserve_auxiliary_model_call(
                 self.bridge.thread, self.role, self.config.max_model_calls, self.execution_id
             )
             self.bridge.store.event(
@@ -132,9 +141,89 @@ class ResearchMemory(SummarizationMiddleware):
         # slot: two wrappers would apply the shared checkpoint cutoff twice.
         return "SummarizationMiddleware"
 
-    def __init__(self, model: Any, *, retained_tokens: int, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        model: Any,
+        *,
+        retained_tokens: int,
+        bridge: Any,
+        config: ModelConfig,
+        role: Role,
+        execution_id: str | None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(model=model, keep=("tokens", retained_tokens), **kwargs)
         self.retained_tokens = retained_tokens
+        self.bridge = bridge
+        self.config = config
+        self.role = role
+        self.execution_id = execution_id
+
+    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+        """Admit a bounded Runtime packet before native summarization can hit the guard."""
+        from .phase2 import Phase2Bridge
+
+        if (
+            self.role == "site"
+            and self.execution_id is not None
+            and isinstance(self.bridge, Phase2Bridge)
+        ):
+            tool_chars = len(
+                compact([convert_to_openai_tool(tool) for tool in getattr(request, "tools", [])])
+            )
+            messages = [request.system_message, *request.messages]
+            measured = context_usage(
+                request.model,
+                self.config,
+                self.role,
+                messages,
+                tool_chars,
+                enforce=False,
+            )
+            # Reserve one observed large Site result batch plus output/repair overhead.
+            # The 60k working target remains a trigger, while this deterministic boundary
+            # prevents a 25-30k batch from jumping directly over the 100k hard guard.
+            reserve = min(32000, max(16000, self.config.hard_input_chars // 3))
+            admission_limit = min(
+                self.config.max_input_chars + self.config.max_input_chars // 8,
+                self.config.hard_input_chars - reserve,
+            )
+            if measured["input_chars_with_schemas"] > admission_limit:
+                from .site_research_runtime import site_research_packet_message
+
+                packet = site_research_packet_message(
+                    self.bridge,
+                    self.execution_id,
+                    list(request.messages),
+                    reading_closed=False,
+                )
+                projected = context_usage(
+                    request.model,
+                    self.config,
+                    self.role,
+                    [request.system_message, packet],
+                    tool_chars,
+                )
+                self.bridge.store.event(
+                    self.bridge.thread,
+                    "site-research-context-admission",
+                    {
+                        "role": self.role,
+                        "execution_id": self.execution_id,
+                        "original_input_chars_with_schemas": measured[
+                            "input_chars_with_schemas"
+                        ],
+                        "projected_input_chars_with_schemas": projected[
+                            "input_chars_with_schemas"
+                        ],
+                        "admission_limit_chars": admission_limit,
+                        "hard_limit_chars": self.config.hard_input_chars,
+                        "reserve_chars": reserve,
+                        "projection": "runtime-site-research-packet-v1",
+                    },
+                )
+                request = request.override(messages=[packet])
+        return await super().awrap_model_call(request, handler)
 
     def _create_summary(self, messages_to_summarize: list[Any]) -> str:
         from .evidence_output import reasoning_working_view
@@ -208,6 +297,10 @@ def research_memory(
     )
     return ResearchMemory(
         model=summary_model,
+        bridge=bridge,
+        config=config,
+        role=role,
+        execution_id=execution_id,
         backend=backend,
         # Native AND/OR trigger clauses provide a small hysteresis: after a
         # summary, accumulate more conversation before summarizing again unless

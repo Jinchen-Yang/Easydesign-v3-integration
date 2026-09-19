@@ -60,12 +60,18 @@ def collect_trace_metrics(
 
     kinds = Counter(kind for _, kind, _ in events)
     roles: Counter[str] = Counter()
+    auxiliary_roles: Counter[str] = Counter()
     tools: Counter[str] = Counter()
     tools_by_role: Counter[str] = Counter()
     model_latency: list[float] = []
     summary_latency: list[float] = []
     model_usage: Counter[str] = Counter()
     summary_usage: Counter[str] = Counter()
+    single_call_input_tokens: list[int] = []
+    single_call_output_tokens: list[int] = []
+    site_research_latency: list[float] = []
+    site_synthesis_latency: list[float] = []
+    site_summary_latency: list[float] = []
     context_chars: list[int] = []
     context_tokens: list[int] = []
     soft_target_exceeded = 0
@@ -73,6 +79,8 @@ def collect_trace_metrics(
     for _, kind, payload in events:
         if kind == "model-call":
             roles[str(payload.get("role", "unknown"))] += 1
+        elif kind == "auxiliary-model-call":
+            auxiliary_roles[str(payload.get("role", "unknown"))] += 1
         elif kind == "tool":
             role = str(payload.get("role", "unknown"))
             name = str(payload.get("name", "unknown"))
@@ -82,12 +90,23 @@ def collect_trace_metrics(
             latency = payload.get("latency_seconds")
             if isinstance(latency, (int, float)):
                 model_latency.append(float(latency))
+                if payload.get("role") == "site" and payload.get("site_stage") == "research":
+                    site_research_latency.append(float(latency))
+                elif payload.get("role") == "site" and payload.get("site_stage") == "synthesis":
+                    site_synthesis_latency.append(float(latency))
             for response in payload.get("responses", []):
-                model_usage.update(_usage_totals(response.get("usage")))
+                usage = _usage_totals(response.get("usage"))
+                model_usage.update(usage)
+                if "input_tokens" in usage:
+                    single_call_input_tokens.append(usage["input_tokens"])
+                if "output_tokens" in usage:
+                    single_call_output_tokens.append(usage["output_tokens"])
         elif kind == "framework-summary-response":
             latency = payload.get("latency_seconds")
             if isinstance(latency, (int, float)):
                 summary_latency.append(float(latency))
+                if payload.get("role") == "site":
+                    site_summary_latency.append(float(latency))
             summary_usage.update(_usage_totals(payload.get("usage")))
         elif kind == "model-context":
             chars = payload.get("input_chars_with_schemas")
@@ -112,6 +131,7 @@ def collect_trace_metrics(
     event_digest = hashlib.sha256(
         json.dumps(events, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+    provider_usage = model_usage + summary_usage
     return {
         "schema_version": "figure2-trace-metrics-v1",
         "source": {
@@ -127,15 +147,37 @@ def collect_trace_metrics(
         "events": {"total": len(events), "by_kind": dict(sorted(kinds.items()))},
         "model_calls": {
             "total": kinds["model-call"],
+            "category": "scientific",
             "by_role": dict(sorted(roles.items())),
             "response_latency_seconds": distribution(model_latency),
             "usage": dict(sorted(model_usage.items())),
+            "single_call_input_tokens": distribution(single_call_input_tokens),
+            "single_call_output_tokens": distribution(single_call_output_tokens),
         },
         "framework_summaries": {
+            "category": "auxiliary",
+            "reserved_calls": kinds["auxiliary-model-call"],
+            "by_role": dict(sorted(auxiliary_roles.items())),
             "calls": kinds["framework-summary-call"],
             "responses": kinds["framework-summary-response"],
             "latency_seconds": distribution(summary_latency),
             "usage": dict(sorted(summary_usage.items())),
+        },
+        "provider_calls": {
+            "total": kinds["model-call"] + kinds["auxiliary-model-call"],
+            "scientific": kinds["model-call"],
+            "auxiliary": kinds["auxiliary-model-call"],
+            "usage": dict(sorted(provider_usage.items())),
+        },
+        "site_timing": {
+            "research_model_wall_seconds": distribution(site_research_latency),
+            "synthesis_model_wall_seconds": distribution(site_synthesis_latency),
+            "auxiliary_summary_wall_seconds": distribution(site_summary_latency),
+            "observed_provider_wall_seconds": (
+                sum(site_research_latency)
+                + sum(site_synthesis_latency)
+                + sum(site_summary_latency)
+            ),
         },
         "tools": {
             "total": kinds["tool"],
@@ -147,6 +189,7 @@ def collect_trace_metrics(
             "estimated_input_tokens": distribution(context_tokens),
             "soft_target_exceeded_calls": soft_target_exceeded,
             "hard_guard_events": kinds["hard-context-guard"],
+            "runtime_admission_events": kinds["site-research-context-admission"],
         },
         "quality_control": {
             "rejected_submissions": kinds["rejected-submission"],
@@ -155,5 +198,6 @@ def collect_trace_metrics(
             "scientific_consistency_findings": kinds["scientific-consistency-finding"],
             "research_reservations": kinds["research-reservation"],
             "decision_cards": kinds["decision-card"],
+            "site_research_lifecycle_events": kinds["site-research-lifecycle"],
         },
     }

@@ -206,6 +206,7 @@ class SessionStore:
         return None
 
     def reserve_model_call(self, thread: str, role: str, maximum: int, execution_id: str) -> None:
+        """Reserve one scientific provider call under scientific and total safeguards."""
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
             raise AgentBoundaryError("Model call is not bound to the current agent execution")
@@ -219,8 +220,20 @@ class SessionStore:
                 raise AgentBoundaryError(
                     "Current turn model-call budget exhausted; worker remains detached"
                 )
+            provider_count = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? "
+                "AND kind IN ('model-call','auxiliary-model-call') "
+                "AND json_extract(payload, '$.execution_id')=?",
+                (thread, execution_id),
+            ).fetchone()[0]
+            if provider_count >= maximum:
+                raise AgentBoundaryError(
+                    "Current turn total provider-call safeguard exhausted; worker remains detached"
+                )
             lifetime = self.db.execute(
-                "SELECT count(*) FROM events WHERE thread=? AND kind='model-call'", (thread,)
+                "SELECT count(*) FROM events WHERE thread=? "
+                "AND kind IN ('model-call','auxiliary-model-call')",
+                (thread,),
             ).fetchone()[0]
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?, 'model-call', ?)",
@@ -230,8 +243,55 @@ class SessionStore:
                         {
                             "role": role,
                             "call": count + 1,
+                            "provider_call": provider_count + 1,
                             "execution_id": execution_id,
                             "lifetime_call": lifetime + 1,
+                            "call_category": "scientific",
+                        }
+                    ),
+                ),
+            )
+
+    def reserve_auxiliary_model_call(
+        self, thread: str, role: str, maximum: int, execution_id: str
+    ) -> None:
+        """Reserve framework maintenance without consuming the scientific allowance."""
+        execution = self.latest_execution(thread)
+        if execution is None or execution["execution_id"] != execution_id:
+            raise AgentBoundaryError("Auxiliary call is not bound to the current execution")
+        with self.db:
+            provider_count = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? "
+                "AND kind IN ('model-call','auxiliary-model-call') "
+                "AND json_extract(payload, '$.execution_id')=?",
+                (thread, execution_id),
+            ).fetchone()[0]
+            if provider_count >= maximum:
+                raise AgentBoundaryError(
+                    "Current turn total provider-call safeguard exhausted; worker remains detached"
+                )
+            auxiliary_count = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? AND kind='auxiliary-model-call' "
+                "AND json_extract(payload, '$.execution_id')=?",
+                (thread, execution_id),
+            ).fetchone()[0]
+            lifetime = self.db.execute(
+                "SELECT count(*) FROM events WHERE thread=? "
+                "AND kind IN ('model-call','auxiliary-model-call')",
+                (thread,),
+            ).fetchone()[0]
+            self.db.execute(
+                "INSERT INTO events(thread,kind,payload) VALUES(?, 'auxiliary-model-call', ?)",
+                (
+                    thread,
+                    compact(
+                        {
+                            "role": role,
+                            "call": auxiliary_count + 1,
+                            "provider_call": provider_count + 1,
+                            "execution_id": execution_id,
+                            "lifetime_call": lifetime + 1,
+                            "call_category": "auxiliary-summary",
                         }
                     ),
                 ),

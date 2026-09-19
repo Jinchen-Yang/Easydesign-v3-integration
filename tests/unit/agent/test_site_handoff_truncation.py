@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import pytest
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from easydesign.agent.contracts import EmptyArguments
@@ -93,6 +94,12 @@ async def test_truncated_site_handoff_uses_nonthinking_typed_recovery(
         domain_skills=False,
     )
     monkeypatch.setattr("easydesign.agent.harness.site_dossier", lambda *args: {})
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"synthetic-finalization"}'
+        ),
+    )
 
     class Arguments(BaseModel):
         value: str | None = None
@@ -215,6 +222,12 @@ async def test_bounded_site_handoff_finalizes_nonthinking_on_first_submission(
         domain_skills=False,
     )
     monkeypatch.setattr("easydesign.agent.harness.site_dossier", lambda *args: {})
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"synthetic-finalization"}'
+        ),
+    )
 
     class Arguments(BaseModel):
         value: str | None = None

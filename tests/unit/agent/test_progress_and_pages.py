@@ -105,9 +105,7 @@ async def test_successful_skill_reads_are_durable_across_summarized_history(brid
 
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     execution_id = b.store.begin_execution(b.thread, "Inspect site")["execution_id"]
-    guard = RoleBoundary(
-        b, "site", scripted_config(), "Inspect site", execution_id=execution_id
-    )
+    guard = RoleBoundary(b, "site", scripted_config(), "Inspect site", execution_id=execution_id)
     skill_paths = guard._skill_paths()
 
     class Request(SimpleNamespace):
@@ -1227,7 +1225,20 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
             result=[
                 AIMessage(
                     content="",
-                    tool_calls=[{"name": "read_site_evidence", "args": {}, "id": "inspect"}],
+                    tool_calls=[
+                        {
+                            "name": "analyze_receptor_context"
+                            if analysis
+                            else "read_site_evidence",
+                            "args": {
+                                "gpcrdb_card_id": "source-context",
+                                "auth_chain": "A",
+                            }
+                            if analysis
+                            else {},
+                            "id": "inspect",
+                        }
+                    ],
                 )
             ],
             structured_response=None,
@@ -1324,10 +1335,8 @@ async def test_site_research_call_ceiling_forces_handoff_before_global_budget(
     b = site_bridge
     cfg = scripted_config()
     eid = b.store.begin_execution(b.thread, "Bounded site research")["execution_id"]
-    guard = RoleBoundary(
-        b, "site", cfg, "Research", execution_id=eid, site_stage="research"
-    )
-    for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT):
+    guard = RoleBoundary(b, "site", cfg, "Research", execution_id=eid, site_stage="research")
+    for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
         b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
 
     class Request(SimpleNamespace):
@@ -1374,9 +1383,7 @@ async def test_site_research_call_ceiling_forces_handoff_before_global_budget(
         SITE_EVIDENCE.reset(token)
     assert result.structured_response == handoff()
     context = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "model-context"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "model-context"
     ]
     assert context[-1]["site_research_finalization_reason"] == "model-call-budget"
 
@@ -1417,9 +1424,7 @@ async def test_research_query_ceiling_returns_finalization_diagnostic_without_fe
     )
 
     async def handler(current: Any) -> Any:
-        return worker.acquire(
-            ResearchQuery.model_validate(current.tool_call["args"]), role="site"
-        )
+        return worker.acquire(ResearchQuery.model_validate(current.tool_call["args"]), role="site")
 
     result = await guard.awrap_tool_call(request, handler)
     diagnostic = json.loads(result.content)
@@ -1428,14 +1433,17 @@ async def test_research_query_ceiling_returns_finalization_diagnostic_without_fe
     assert diagnostic["used_queries"] == diagnostic["query_limit"] == RESEARCH_QUERY_LIMIT
     assert diagnostic["required_action"] == "submit_site_research_handoff"
     events = b.store.events(b.thread)
-    assert len(
-        [
-            event
-            for event in events
-            if event["kind"] == "research-reservation"
-            and event["payload"]["execution_id"] == eid
-        ]
-    ) == RESEARCH_QUERY_LIMIT
+    assert (
+        len(
+            [
+                event
+                for event in events
+                if event["kind"] == "research-reservation"
+                and event["payload"]["execution_id"] == eid
+            ]
+        )
+        == RESEARCH_QUERY_LIMIT
+    )
     assert not [event for event in events if event["kind"] == "tool-argument-repair"]
 
 
@@ -1516,9 +1524,7 @@ async def test_site_query_ceiling_forces_typed_handoff_from_existing_evidence(
     assert result.structured_response == handoff()
     assert len(calls) == 1
     context = [
-        event["payload"]
-        for event in b.store.events(b.thread)
-        if event["kind"] == "model-context"
+        event["payload"] for event in b.store.events(b.thread) if event["kind"] == "model-context"
     ]
     assert context[-1]["tool_mode"] == "site-research-finalization"
     assert context[-1]["offered_action_tools"] == []

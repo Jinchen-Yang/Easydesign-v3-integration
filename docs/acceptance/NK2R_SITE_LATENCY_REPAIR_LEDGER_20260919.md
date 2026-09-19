@@ -167,3 +167,69 @@ After:
   switches to typed handoff finalization with no further action tools.
 - R12 is invalidated because product code changed after it started. R13 must begin in
   a new project and thread at Gate 1.
+
+## Attempt R13 — completed Gate 2, superseded for latency validation
+
+- Project: `figure2-nk2r-site-fast-r13`
+- Thread: `thread-1579c54250e04591ae1537d16efa3fb7`
+- Start commit: `a246785d4efe6684df1d1725f9ce052da6d20430`
+- Gate 1: independently resolved human NK2R P21452 and auth chain R / label chain B.
+- Gate 1 wall time: 112.84 seconds.
+- Gate 2 wall time after approval: 344.35 seconds.
+- Gate 2 result: successful ranked Site card
+  `cfce11f3599f05e1d6ab4935e17617cf8f0e744d99d5247121f5f13e138845d5`.
+- Manual scientific answer injection: none. The standing Scientist authorization approved
+  the freshly resolved Gate 1 recommendation.
+- One initial CLI approval command incorrectly supplied `--candidate chain-r`. The CLI
+  rejected it before state mutation or model execution because candidate selection applies
+  only to ranked Site cards. The same unconsumed card was then approved correctly.
+
+### Successful scientific and integrity checks
+
+- Runtime produced three selectable, exactly mapped candidates: ECL2/ECL3 outer vestibule,
+  TM2/TM6/TM7 outer pore, and TM2/TM3/TM6/TM7 core pore.
+- Site synthesis used a 30,081-character packet and submitted `RankedSiteDecision` on its
+  first 16.20-second call with no repair.
+- The Site Judge was not invoked on the normal hard-valid path.
+- The 67,964-byte durable dossier and full Runtime residue facts remain available for audit.
+- GPCRdb, UniProt and two targeted literature discoveries were retained; no old NK2R answer,
+  dossier, candidate membership or ranking was supplied to the Agent.
+
+### SITE-LATENCY-004 — kernel delivery competed with generic acquisition navigation
+
+Trigger:
+
+- GPCRdb acquisition had already atomically computed the receptor kernel.
+- On the next two calls, the model chose `read_evidence_result` twice before eventually
+  choosing `analyze_receptor_context`.
+- The generic acquisition artifact was durable but did not add a second authoritative
+  topology or candidate interpretation.
+
+Repair:
+
+- When a complete GPCRdb card has a current-binding kernel that has not yet been delivered,
+  the Harness offers only the scoped `analyze_receptor_context` action.
+- After that one successful compact delivery, the full research tool surface returns and the
+  analyze action is removed. Full acquisitions remain durable and readable for audit.
+
+### SITE-LATENCY-005 — the eight-call policy did not reserve its handoff call
+
+Trigger:
+
+- The R13 Site path recorded eight normal Research responses, two framework-summary calls,
+  and one synthesis response. The bounded Research session reached call 10 before its typed
+  handoff because finalization began only after eight calls had already been reserved.
+- Site provider wall time, including summaries and synthesis, was 258.83 seconds; input/output
+  usage was 121,305 / 21,030 tokens. No repair or Judge call occurred.
+
+Repair:
+
+- The eight-call Site Research policy now reserves its final counted provider call for the
+  typed handoff. Seven prior counted calls, including framework summaries, trigger compact
+  finalization on the eighth call.
+- This changes orchestration only. Evidence validation, citation requirements, hard-fact
+  checks, Runtime dossier construction and independent synthesis remain unchanged.
+
+R13 proves scientific completion but is superseded for latency acceptance because these two
+orchestration defects were repaired afterward. R14 must start from Gate 1 in a new project and
+thread.

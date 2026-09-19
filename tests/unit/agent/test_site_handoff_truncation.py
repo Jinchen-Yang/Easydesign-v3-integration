@@ -203,7 +203,7 @@ async def test_bounded_site_handoff_finalizes_nonthinking_on_first_submission(
     model = create_models(cfg)["site"]
     b = Phase2Bridge(bridge.project, bridge.thread, bridge.store)
     eid = b.store.begin_execution(b.thread, "Finalize bounded Site research")["execution_id"]
-    for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT):
+    for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
         b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
     boundary = RoleBoundary(
         b,

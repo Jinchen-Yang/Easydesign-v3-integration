@@ -440,11 +440,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if receptor_cards and not receptor_analysis_delivered:
                 receptor_schema = ReceptorAnalysis.model_json_schema()
                 receptor_schema["properties"]["gpcrdb_card_id"]["enum"] = receptor_cards
+                # Acquisition has already computed the deterministic receptor kernel.
+                # Deliver that compact current-binding view before offering generic
+                # result navigation or more research. Otherwise the model can spend
+                # serial calls paging a megabyte-scale acquisition artifact whose
+                # authoritative topology, geometry and candidates are already in the
+                # kernel. This is sequencing, not a scientific stopping decision.
                 available = [
                     t.model_copy(update={"args_schema": receptor_schema})
-                    if t.name == "analyze_receptor_context"
-                    else t
                     for t in available
+                    if t.name == "analyze_receptor_context"
                 ]
             else:
                 # Acquisition may already have computed the kernel. Offer one scoped
@@ -647,7 +652,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             site_call_budget_complete = (
                 self.role == "site"
                 and self.site_stage == "research"
-                and used >= SITE_RESEARCH_MODEL_CALL_LIMIT
+                # Reserve the final counted provider call for the typed handoff.
+                # Framework summary calls share this counter, so waiting until the
+                # limit is already reached makes an eight-call policy spill to nine
+                # or ten calls before it can serialize its result.
+                and used >= SITE_RESEARCH_MODEL_CALL_LIMIT - 1
             )
             finalize_research = (
                 self.role == "site"

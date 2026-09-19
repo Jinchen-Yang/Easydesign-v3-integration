@@ -360,8 +360,7 @@ async def test_completed_atomic_gpcr_analysis_offers_one_reuse_then_hides_tool(
             ),
             handler,
         )
-    assert "analyze_receptor_context" in offered
-    assert "research_evidence" in offered
+    assert offered == {"analyze_receptor_context"}
 
     offered.clear()
     with pytest.raises(ObservedTools):

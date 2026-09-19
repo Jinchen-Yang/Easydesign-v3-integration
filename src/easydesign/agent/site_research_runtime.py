@@ -101,7 +101,9 @@ def mark_site_research_milestone(
             )
 
 
-def _kernel_record(bridge: Phase2Bridge, execution_id: str) -> dict[str, Any] | None:
+def _kernel_record(
+    bridge: Phase2Bridge, execution_id: str
+) -> dict[str, Any] | None:
     """Resolve the current Target-bound deterministic kernel from durable artifacts."""
     from .evidence_research import EvidenceResearch
 
@@ -161,7 +163,9 @@ def refresh_site_research_activity(
     return site_research_state(bridge, execution_id)
 
 
-def site_research_state(bridge: Phase2Bridge, execution_id: str) -> SiteResearchExecutionState:
+def site_research_state(
+    bridge: Phase2Bridge, execution_id: str
+) -> SiteResearchExecutionState:
     """Read the current state from durable events and verified evidence only."""
     from .evidence_research import EvidenceResearch
 
@@ -200,8 +204,7 @@ def site_research_state(bridge: Phase2Bridge, execution_id: str) -> SiteResearch
         (
             row
             for row in reversed(lifecycle)
-            if row["milestone"]
-            in {
+            if row["milestone"] in {
                 "finalization-pending",
                 "budget-exhausted-with-open-uncertainty",
             }
@@ -233,7 +236,9 @@ def site_research_state(bridge: Phase2Bridge, execution_id: str) -> SiteResearch
     )
 
 
-def _ensure_kernel_view(bridge: Phase2Bridge, execution_id: str, kernel: dict[str, Any]) -> str:
+def _ensure_kernel_view(
+    bridge: Phase2Bridge, execution_id: str, kernel: dict[str, Any]
+) -> str:
     ref = f"/result-{str(kernel['ref']['sha256'])[:32]}.json"
     with bridge.store.db:
         row = bridge.store.db.execute(
@@ -270,7 +275,9 @@ def _ensure_kernel_view(bridge: Phase2Bridge, execution_id: str, kernel: dict[st
     return ref
 
 
-def receptor_kernel_message(bridge: Phase2Bridge, execution_id: str) -> HumanMessage | None:
+def receptor_kernel_message(
+    bridge: Phase2Bridge, execution_id: str
+) -> HumanMessage | None:
     """Project the already-computed kernel without a model-selected tool round trip."""
     kernel = _kernel_record(bridge, execution_id)
     if kernel is None:
@@ -348,7 +355,8 @@ def _compact_receptor_kernel(projection: dict[str, Any]) -> dict[str, Any]:
                 shared_columns = [original_columns[index] for index in shared_variable_indexes]
                 shared_original_columns = original_columns
                 shared_constants = {
-                    original_columns[index]: all_rows[0][index] for index in shared_constant_indexes
+                    original_columns[index]: all_rows[0][index]
+                    for index in shared_constant_indexes
                 }
         compact_overview: dict[str, Any] = {}
         for mode, candidates in overview.items():
@@ -446,7 +454,9 @@ def _evidence_card_view(card: dict[str, Any], *, operation: str | None) -> dict[
             "evidence_level",
             "primary_eligible",
         )
-        return {key: scientific_projection(card[key]) for key in lead_keys if key in card}
+        return {
+            key: scientific_projection(card[key]) for key in lead_keys if key in card
+        }
     keys = (
         "card_id",
         "provider",
@@ -488,6 +498,56 @@ def _scientific_notes(messages: list[Any]) -> list[str]:
     return list(reversed(notes))
 
 
+def site_handoff_repair_outline(value: Any) -> dict[str, Any] | None:
+    """Keep exact handoff choices for repair without replaying rejected scientific prose."""
+    if not isinstance(value, dict):
+        return None
+    candidates = [
+        {
+            key: candidate.get(key)
+            for key in (
+                "name",
+                "role",
+                "origin",
+                "hotspot_label_seq_ids",
+                "evidence_card_ids",
+            )
+        }
+        for candidate in value.get("candidates", [])
+        if isinstance(candidate, dict)
+    ]
+    questions = []
+    for question in value.get("decision_questions", []):
+        if not isinstance(question, dict):
+            continue
+        questions.append(
+            {
+                "question": question.get("question"),
+                "status": question.get("status"),
+                "query_ids": question.get("query_ids", []),
+                "evidence_refs": [
+                    {
+                        key: use.get(key)
+                        for key in ("card_id", "relation", "strength")
+                    }
+                    for use in question.get("evidence", [])
+                    if isinstance(use, dict)
+                ],
+            }
+        )
+    return {
+        "kind": "rejected-site-handoff-repair-outline-v1",
+        "candidates": candidates,
+        "decision_questions": questions,
+        "contradiction_search_query_ids": value.get(
+            "contradiction_search_query_ids", []
+        ),
+        "unresolved_questions": value.get("unresolved_questions", []),
+        "instruction": "Preserve these exact choices and identifiers. Rebuild concise prose and "
+        "exact excerpts from the Runtime finalization packet; do not copy rejected wording.",
+    }
+
+
 def site_research_working_packet(
     bridge: Phase2Bridge,
     execution_id: str,
@@ -524,7 +584,9 @@ def site_research_working_packet(
     for query in research["queries"]:
         operation = query.get("query", {}).get("operation")
         cards = [
-            card for card in query["cards"] if card.get("provider") != "EasyDesign GPCR kernel"
+            card
+            for card in query["cards"]
+            if card.get("provider") != "EasyDesign GPCR kernel"
         ]
         card_ids: list[str] = []
         for card in cards:
@@ -548,7 +610,9 @@ def site_research_working_packet(
                 "status": query.get("status"),
                 "errors": query.get("errors", []),
                 "discovery_lead_count": (
-                    len(cards) if operation and operation.endswith("search") else None
+                    len(cards)
+                    if operation and operation.endswith("search")
+                    else None
                 ),
                 "evidence_card_ids": card_ids,
             }

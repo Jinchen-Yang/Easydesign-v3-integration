@@ -73,6 +73,7 @@ from .site_research_runtime import (
     mark_site_research_milestone,
     receptor_kernel_message,
     refresh_site_research_activity,
+    site_handoff_repair_outline,
     site_research_packet_message,
 )
 from .target_assessment import (
@@ -298,8 +299,11 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         if row is None or row[0] == "submission-preflight-passed":
             return None
         value = json.loads(row[1])
+        rejected = value.get("submitted_opinion")
+        if self.role == "site" and self.site_stage == "research":
+            rejected = site_handoff_repair_outline(rejected)
         return {
-            "last_rejected_submission": value.get("submitted_opinion"),
+            "last_rejected_submission": rejected,
             "diagnostic": value["diagnostic"],
             "authority": "Runtime correction of an unaccepted model-authored opinion. "
             "The opinion is not a hard fact, approved proposal or scientist instruction. "

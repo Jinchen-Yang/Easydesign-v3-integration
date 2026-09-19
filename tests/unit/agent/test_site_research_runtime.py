@@ -21,6 +21,7 @@ from easydesign.agent.site_research_runtime import (
     _compact_receptor_kernel,
     receptor_kernel_message,
     refresh_site_research_activity,
+    site_handoff_repair_outline,
     site_research_packet_message,
     site_research_state,
 )
@@ -72,6 +73,51 @@ def _kernel_research(site_bridge: Any) -> dict[str, Any]:
     }
 
 
+def test_site_handoff_repair_outline_preserves_choices_without_rejected_prose() -> None:
+    long_text = "unsupported prose " * 1000
+    value = {
+        "candidates": [
+            {
+                "name": "outer vestibule",
+                "role": "primary",
+                "origin": "scan-derived",
+                "hotspot_label_seq_ids": [175, 176, 281],
+                "evidence_card_ids": ["receptor-1"],
+                "rationale": long_text,
+            }
+        ],
+        "decision_questions": [
+            {
+                "question": "Which site blocks ligand entry?",
+                "status": "UNRESOLVED",
+                "query_ids": ["query-1"],
+                "decision_impact": long_text,
+                "evidence": [
+                    {
+                        "card_id": "passage-1",
+                        "relation": "supports",
+                        "strength": "E2",
+                        "claim": long_text,
+                        "excerpt": long_text,
+                    }
+                ],
+                "limitations": [long_text],
+            }
+        ],
+        "contradiction_search_query_ids": ["query-2"],
+        "unresolved_questions": ["Whole-VHH clearance remains unresolved."],
+        "stopping_reason": long_text,
+    }
+    outline = site_handoff_repair_outline(value)
+    assert outline is not None
+    assert outline["candidates"][0]["hotspot_label_seq_ids"] == [175, 176, 281]
+    assert outline["decision_questions"][0]["evidence_refs"] == [
+        {"card_id": "passage-1", "relation": "supports", "strength": "E2"}
+    ]
+    assert "unsupported prose" not in compact(outline)
+    assert len(compact(outline)) < 2000
+
+
 def test_kernel_projection_is_runtime_owned_idempotent_and_restart_safe(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
@@ -92,22 +138,16 @@ def test_kernel_projection_is_runtime_owned_idempotent_and_restart_safe(
     assert "receptor-kernel-ready" in state.milestones
     assert "receptor-kernel-projected" in state.milestones
     events = site_bridge.store.events(site_bridge.thread)
-    assert (
-        sum(
-            event["kind"] == "tool-view"
-            and event["payload"].get("tool_call_id") == "runtime-receptor-kernel-projection"
-            for event in events
-        )
-        == 1
-    )
-    assert (
-        sum(
-            event["kind"] == "site-research-lifecycle"
-            and event["payload"].get("milestone") == "receptor-kernel-projected"
-            for event in events
-        )
-        == 1
-    )
+    assert sum(
+        event["kind"] == "tool-view"
+        and event["payload"].get("tool_call_id") == "runtime-receptor-kernel-projection"
+        for event in events
+    ) == 1
+    assert sum(
+        event["kind"] == "site-research-lifecycle"
+        and event["payload"].get("milestone") == "receptor-kernel-projected"
+        for event in events
+    ) == 1
 
     reopened = SessionStore(site_bridge.project)
     try:
@@ -278,9 +318,13 @@ def test_working_packet_keeps_all_search_leads_without_replaying_snippets(
 def test_existing_runtime_packet_is_not_reprojected_or_double_counted(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
     config = scripted_config()
-    eid = site_bridge.store.begin_execution(site_bridge.thread, "Single admission")["execution_id"]
+    eid = site_bridge.store.begin_execution(site_bridge.thread, "Single admission")[
+        "execution_id"
+    ]
     model = FakeListChatModel(responses=["unused"])
     request = ModelRequest(
         model=model,
@@ -308,20 +352,19 @@ def test_existing_runtime_packet_is_not_reprojected_or_double_counted(
     )
 
     assert second.messages == first.messages
-    assert (
-        sum(
-            event["kind"] == "site-research-context-admission"
-            for event in site_bridge.store.events(site_bridge.thread)
-        )
-        == 1
-    )
+    assert sum(
+        event["kind"] == "site-research-context-admission"
+        for event in site_bridge.store.events(site_bridge.thread)
+    ) == 1
 
 
 @pytest.mark.asyncio
 async def test_site_context_admission_builds_runtime_packet_before_summary_guard(
     site_bridge: Any, monkeypatch: Any, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
     config = scripted_config()
     execution = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic admission")
     eid = execution["execution_id"]
@@ -367,7 +410,9 @@ async def test_site_context_admission_builds_runtime_packet_before_summary_guard
 async def test_site_role_boundary_admits_oversized_first_request_before_hard_guard(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
     config = scripted_config()
     eid = site_bridge.store.begin_execution(site_bridge.thread, "Oversized first Site call")[
         "execution_id"
@@ -423,7 +468,9 @@ async def test_site_role_boundary_admits_oversized_first_request_before_hard_gua
 def test_finalization_packet_does_not_replay_prior_tool_calls(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research())
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
     eid = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic finalization")[
         "execution_id"
     ]
@@ -438,7 +485,9 @@ def test_finalization_packet_does_not_replay_prior_tool_calls(
             tool_call_id="old",
         ),
     ]
-    packet = site_research_packet_message(site_bridge, eid, messages, reading_closed=True)
+    packet = site_research_packet_message(
+        site_bridge, eid, messages, reading_closed=True
+    )
     value = packet.content
     assert '"reading_closed":true' in value
     assert "Candidate interpretation remains provisional." in value

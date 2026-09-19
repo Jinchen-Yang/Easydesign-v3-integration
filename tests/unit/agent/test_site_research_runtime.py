@@ -68,7 +68,7 @@ def test_kernel_projection_is_runtime_owned_idempotent_and_restart_safe(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
     research = _kernel_research(site_bridge)
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self: research)
+    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self, **_kwargs: research)
     execution = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic Site lifecycle")
     eid = execution["execution_id"]
 
@@ -107,11 +107,44 @@ def test_kernel_projection_is_runtime_owned_idempotent_and_restart_safe(
         reopened.close()
 
 
+def test_lifecycle_does_not_count_gate1_passages_as_site_reading(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    prior_thread_evidence = {
+        "queries": [
+            {
+                "query_id": "gate1-passage",
+                "query": {"operation": "primary-fulltext"},
+                "cards": [{"card_id": "passage-gate1", "passage": "Target identity text"}],
+            }
+        ],
+        "topics": {},
+        "authority": "Synthetic Gate 1 evidence",
+    }
+    observed_execution_ids: list[str | None] = []
+
+    def snapshot(_self: Any, *, execution_id: str | None = None) -> dict[str, Any]:
+        observed_execution_ids.append(execution_id)
+        return _empty_research() if execution_id is not None else prior_thread_evidence
+
+    monkeypatch.setattr(EvidenceResearch, "snapshot", snapshot)
+    eid = site_bridge.store.begin_execution(site_bridge.thread, "Fresh Site execution")[
+        "execution_id"
+    ]
+
+    state = refresh_site_research_activity(site_bridge, eid)
+    assert observed_execution_ids and all(item == eid for item in observed_execution_ids)
+    assert state.focused_passage_count == 0
+    assert "decision-relevant-reading" not in state.milestones
+
+
 @pytest.mark.asyncio
 async def test_site_context_admission_builds_runtime_packet_before_summary_guard(
     site_bridge: Any, monkeypatch: Any, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self: _empty_research())
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
     config = scripted_config()
     execution = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic admission")
     eid = execution["execution_id"]
@@ -156,7 +189,9 @@ async def test_site_context_admission_builds_runtime_packet_before_summary_guard
 def test_finalization_packet_does_not_replay_prior_tool_calls(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda _self: _empty_research())
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
     eid = site_bridge.store.begin_execution(site_bridge.thread, "Synthetic finalization")[
         "execution_id"
     ]

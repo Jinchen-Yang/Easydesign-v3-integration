@@ -608,7 +608,7 @@ async def test_site_gpcr_context_atomically_runs_deterministic_receptor_analysis
     monkeypatch.setattr(
         EvidenceResearch,
         "snapshot",
-        lambda self: {
+        lambda self, **_kwargs: {
             "queries": [
                 {
                     "cards": [

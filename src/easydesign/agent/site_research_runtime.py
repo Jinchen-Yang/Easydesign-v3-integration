@@ -101,11 +101,13 @@ def mark_site_research_milestone(
             )
 
 
-def _kernel_record(bridge: Phase2Bridge) -> dict[str, Any] | None:
+def _kernel_record(
+    bridge: Phase2Bridge, execution_id: str
+) -> dict[str, Any] | None:
     """Resolve the current Target-bound deterministic kernel from durable artifacts."""
     from .evidence_research import EvidenceResearch
 
-    research = EvidenceResearch(bridge).snapshot()
+    research = EvidenceResearch(bridge).snapshot(execution_id=execution_id)
     possible: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for query in reversed(research["queries"]):
         for card in reversed(query["cards"]):
@@ -141,8 +143,8 @@ def refresh_site_research_activity(
 
     mark_site_research_milestone(bridge, execution_id, "initialized")
     mark_site_research_milestone(bridge, execution_id, "structured-context-acquired")
-    research = EvidenceResearch(bridge).snapshot()
-    kernel = _kernel_record(bridge)
+    research = EvidenceResearch(bridge).snapshot(execution_id=execution_id)
+    kernel = _kernel_record(bridge, execution_id)
     if kernel is not None:
         mark_site_research_milestone(
             bridge,
@@ -177,8 +179,8 @@ def site_research_state(
     present = {row["milestone"] for row in lifecycle}
     milestones = [item for item in MILESTONE_ORDER if item in present]
     current = milestones[-1] if milestones else "initialized"
-    kernel = _kernel_record(bridge)
-    research = EvidenceResearch(bridge).snapshot()
+    kernel = _kernel_record(bridge, execution_id)
+    research = EvidenceResearch(bridge).snapshot(execution_id=execution_id)
     queries = research["queries"]
     focused_passages = {
         card["card_id"]
@@ -277,7 +279,7 @@ def receptor_kernel_message(
     bridge: Phase2Bridge, execution_id: str
 ) -> HumanMessage | None:
     """Project the already-computed kernel without a model-selected tool round trip."""
-    kernel = _kernel_record(bridge)
+    kernel = _kernel_record(bridge, execution_id)
     if kernel is None:
         return None
     ref = _ensure_kernel_view(bridge, execution_id, kernel)
@@ -350,10 +352,10 @@ def site_research_working_packet(
     from .evidence_research import EvidenceResearch
 
     state = refresh_site_research_activity(bridge, execution_id)
-    research = EvidenceResearch(bridge).snapshot()
+    research = EvidenceResearch(bridge).snapshot(execution_id=execution_id)
     site_context = bridge.read_site_evidence(FocusedSiteQuery())
     site_context.pop("research", None)
-    kernel = _kernel_record(bridge)
+    kernel = _kernel_record(bridge, execution_id)
     kernel_view = None
     kernel_ref = None
     if kernel is not None:

@@ -410,10 +410,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             if research_query_budget_complete:
                 available = [t for t in available if t.name != "research_evidence"]
         if self.role == "site" and isinstance(self.bridge, Phase2Bridge):
-            research = EvidenceResearch(self.bridge).snapshot()
             if self.site_stage == "research":
                 if self.execution_id is None:
                     raise AgentBoundaryError("Site Research requires a persisted execution")
+                research = EvidenceResearch(self.bridge).snapshot(
+                    execution_id=self.execution_id
+                )
                 lifecycle = refresh_site_research_activity(self.bridge, self.execution_id)
                 research_progress = {
                     "inquiry_count": len(research["queries"]),

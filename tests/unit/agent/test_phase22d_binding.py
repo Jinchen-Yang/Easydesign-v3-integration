@@ -142,6 +142,17 @@ def test_canonical_revision_keeps_exact_source_and_scoped_cards(acquired: Any) -
         )
     ids = {c["identifier"] for q in EvidenceResearch(b).snapshot()["queries"] for c in q["cards"]}
     assert ids == {"P00698"}
+    execution_id = b.store.latest_execution(b.thread)["execution_id"]
+    scoped_ids = {
+        c["identifier"]
+        for q in EvidenceResearch(b).snapshot(execution_id=execution_id)["queries"]
+        for c in q["cards"]
+    }
+    assert scoped_ids == ids
+    research_events = [e for e in b.store.events(b.thread) if e["kind"] == "evidence-research"]
+    assert research_events
+    assert all(e["payload"].get("execution_id") == execution_id for e in research_events)
+    assert all(e["payload"].get("role") == "target" for e in research_events)
     assert not b._jobs()
 
 

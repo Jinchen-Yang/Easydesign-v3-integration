@@ -404,15 +404,23 @@ class EvidenceResearch:
     def __init__(self, bridge: Any) -> None:
         self.bridge = bridge
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, *, execution_id: str | None = None) -> dict[str, Any]:
+        """Return current-binding evidence, optionally scoped to one execution.
+
+        The unscoped view preserves the historical project-wide evidence behavior used by
+        Target identity and source reuse. Site lifecycle/accounting passes an execution ID so
+        Gate 1 reads cannot masquerade as Gate 2 research progress.
+        """
         binding = identity(self.bridge.binding())
-        rows = self.bridge.store.db.execute(
-            (
-                "SELECT kind,payload FROM events WHERE thread=? AND kind IN ('evidence-res"
-                "earch','evidence-view') ORDER BY seq"
-            ),
-            (self.bridge.thread,),
+        query = (
+            "SELECT kind,payload FROM events WHERE thread=? "
+            "AND kind IN ('evidence-research','evidence-view')"
         )
+        arguments: list[Any] = [self.bridge.thread]
+        if execution_id is not None:
+            query += " AND json_extract(payload,'$.execution_id')=?"
+            arguments.append(execution_id)
+        rows = self.bridge.store.db.execute(query + " ORDER BY seq", arguments)
         latest: dict[str, Any] = {}
         for row in rows:
             event = json.loads(row[1])
@@ -493,7 +501,22 @@ class EvidenceResearch:
         query_id = identity(query.model_dump(mode="json"))
         for previous in self.snapshot()["queries"]:
             if previous["query_id"] == query_id and not previous["errors"]:
-                return dict(previous)  # Replay does not refetch or consume network budget.
+                # Replay does not refetch or consume network budget, but it is an explicit
+                # current-execution evidence use so lifecycle state remains restart-safe.
+                replayed = dict(previous)
+                ref = bridge.persist("evidence-research", replayed)
+                bridge.store.event(
+                    bridge.thread,
+                    "evidence-research",
+                    {
+                        "target_binding": target_binding,
+                        "ref": ref,
+                        "execution_id": execution_id,
+                        "role": role,
+                        "replayed_verified_result": True,
+                    },
+                )
+                return replayed
         # A full verified source is project durable, independent of the question/topic.
         # Selection above is still required. Reuse exact source/corpus bytes, not old claims.
         if not query.operation.endswith("search"):
@@ -519,7 +542,12 @@ class EvidenceResearch:
                 bridge.store.event(
                     bridge.thread,
                     "evidence-research",
-                    {"target_binding": target_binding, "ref": ref},
+                    {
+                        "target_binding": target_binding,
+                        "ref": ref,
+                        "execution_id": execution_id,
+                        "role": role,
+                    },
                 )
                 return reused
         used = bridge.store.db.execute(
@@ -576,7 +604,14 @@ class EvidenceResearch:
             result["retrieval_records"] = [r.model_dump(mode="json") for r in client.records]
         ref = bridge.persist("evidence-research", result)
         bridge.store.event(
-            bridge.thread, "evidence-research", {"target_binding": target_binding, "ref": ref}
+            bridge.thread,
+            "evidence-research",
+            {
+                "target_binding": target_binding,
+                "ref": ref,
+                "execution_id": execution_id,
+                "role": role,
+            },
         )
         return result
 
@@ -676,10 +711,16 @@ class EvidenceResearch:
             ],
         }
         result_ref = self.bridge.persist("evidence-research", result)
+        execution = self.bridge.store.latest_execution(self.bridge.thread)
         self.bridge.store.event(
             self.bridge.thread,
             "evidence-research",
-            {"target_binding": identity(self.bridge.binding()), "ref": result_ref},
+            {
+                "target_binding": identity(self.bridge.binding()),
+                "ref": result_ref,
+                "execution_id": execution["execution_id"] if execution else None,
+                "role": "target",
+            },
         )
         return {**summary, "card_id": card_id}
 
@@ -796,10 +837,16 @@ class EvidenceResearch:
             ],
         }
         result_ref = self.bridge.persist("evidence-research", result)
+        execution = self.bridge.store.latest_execution(self.bridge.thread)
         self.bridge.store.event(
             self.bridge.thread,
             "evidence-research",
-            {"target_binding": identity(self.bridge.binding()), "ref": result_ref},
+            {
+                "target_binding": identity(self.bridge.binding()),
+                "ref": result_ref,
+                "execution_id": execution["execution_id"] if execution else None,
+                "role": "site",
+            },
         )
         return {
             **summary_value,

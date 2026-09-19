@@ -1201,7 +1201,11 @@ async def test_receptor_analysis_model_surface_requires_a_complete_context_card(
     eid = b.store.begin_execution(b.thread, "Inspect receptor context")["execution_id"]
     guard = RoleBoundary(b, "site", scripted_config(), "Inspect", execution_id=eid)
     cards = []
-    monkeypatch.setattr(EvidenceResearch, "snapshot", lambda self: {"queries": [{"cards": cards}]})
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "snapshot",
+        lambda self, **_kwargs: {"queries": [{"cards": cards}]},
+    )
     tools = phase2_tools(b, "site") + [
         StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
     ]

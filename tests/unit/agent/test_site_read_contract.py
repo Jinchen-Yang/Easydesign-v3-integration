@@ -308,7 +308,7 @@ async def test_completed_atomic_gpcr_analysis_never_requires_model_delivery_tool
     monkeypatch.setattr(
         EvidenceResearch,
         "snapshot",
-        lambda _self: {
+        lambda _self, **_kwargs: {
             "queries": [
                 {
                     "query_id": "gpcr-query",

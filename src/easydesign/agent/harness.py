@@ -88,7 +88,7 @@ DOWNSTREAM_SKILLS = {"pilot-diagnosis": "pilot-diagnosis", "final-selection": "f
 SiteHarnessVariant = Literal["full", "no-domain-skill"]
 SITE_HARNESS_VARIANTS = frozenset({"full", "no-domain-skill"})
 SITE_RESEARCH_MODEL_CALL_LIMIT = 8
-SITE_RESEARCH_QUERY_LIMIT = 4
+SITE_RESEARCH_QUERY_LIMIT = 8
 ALLOWED = {
     "coordinator": {
         "task",

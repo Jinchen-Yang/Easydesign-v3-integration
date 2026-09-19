@@ -1445,12 +1445,12 @@ async def test_site_query_ceiling_forces_typed_handoff_from_existing_evidence(
 ) -> None:
     from langchain_core.tools import StructuredTool
 
-    from easydesign.agent.evidence_research import RESEARCH_QUERY_LIMIT
+    from easydesign.agent.harness import SITE_RESEARCH_QUERY_LIMIT
     from tests.unit.agent.test_site_dossier import bind, handoff
 
     b = site_bridge
     eid = b.store.begin_execution(b.thread, "Finalize bounded Site research")["execution_id"]
-    for index in range(RESEARCH_QUERY_LIMIT):
+    for index in range(SITE_RESEARCH_QUERY_LIMIT):
         b.store.event(
             b.thread,
             "research-reservation",

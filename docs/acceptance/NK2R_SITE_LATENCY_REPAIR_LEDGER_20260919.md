@@ -118,3 +118,52 @@ After:
 - R11 is invalidated because product code changed after it started.
 - The next accepted validation must use a new project and thread from Gate 1.
 
+
+## Attempt R12 — invalidated
+
+- Project: `figure2-nk2r-site-fast-r12`
+- Thread: `thread-ded53e34f2a3408da1483bf70b568128`
+- Start commit: `ec7374b996c68826e435b16abc1909bdf7f159ae`
+- Gate 1: independently resolved human NK2R P21452 and auth chain R / label chain B.
+- Gate 1 wall time: 130.98 seconds.
+- Status: stopped during Gate 2 Site research; retained as budget-tuning evidence.
+- Manual scientific answer injection: none. Gate 1 chain R approval used the standing
+  Scientist authorization.
+
+### SITE-LATENCY-003 — Site evidence budget converged before discovered sources could be read
+
+Trigger:
+
+- The first Site call selected and acquired GPCRdb in 6.21 seconds.
+- The second call received the compact deterministic receptor kernel in 3.76 seconds,
+  reusing the acquisition-time analysis rather than recomputing it.
+- The third call launched three parallel targeted literature searches in 27.80 seconds.
+- Those four reservations exhausted the Site-specific limit before the discovered
+  literature records or focused passages could be acquired and read.
+
+Before:
+
+- Site Research inherited an initial latency reduction from 12 source operations to 4.
+- Search and acquisition both consume reservations because both are real external
+  evidence operations with recorded provenance.
+
+Root cause:
+
+- Four operations can cover one structured receptor source and three literature
+  discoveries, but leave no capacity to resolve decision-relevant search leads.
+  The limit optimized latency past the minimum evidence needed for accurate ranking.
+
+Repair:
+
+- The Site-specific evidence-operation budget is 8: one structured receptor context,
+  one or more focused searches, and enough source acquisitions to read the strongest
+  leads. This remains one third below the former generic limit of 12.
+- The Site model-call ceiling remains 8, compact kernel reuse remains mandatory, and
+  deterministic finalization still begins as soon as either bounded budget is complete.
+
+After:
+
+- A focused regression fills exactly eight Site reservations and verifies the Harness
+  switches to typed handoff finalization with no further action tools.
+- R12 is invalidated because product code changed after it started. R13 must begin in
+  a new project and thread at Gate 1.

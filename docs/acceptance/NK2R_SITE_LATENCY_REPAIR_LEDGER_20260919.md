@@ -273,3 +273,43 @@ Repair:
 
 R14 is invalidated because product code changed after it started. R15 must begin in a new project
 and thread at Gate 1.
+
+## Attempt R15 — invalidated
+
+- Project: `figure2-nk2r-site-fast-r15`
+- Thread: `thread-27517c16dbba43588c6e60cd6e9cea08`
+- Start commit: `696fab1311ada38ab9888b3b5582b248a4b5d7c8`
+- Gate 1: independently resolved human NK2R P21452 and auth chain R / label chain B.
+- Gate 1 wall time: 113.09 seconds.
+- Gate 2 failed safely after 194.11 seconds.
+- Manual scientific answer injection: none.
+
+### Confirmed improvement
+
+- Exactly one model-facing receptor-kernel delivery occurred, and it reused the
+  acquisition-time analysis. Framework summarization did not re-offer the tool.
+- The normal evidence phase stayed within the intended seven pre-finalization counted calls,
+  including one framework summary, then entered compact handoff finalization on call eight.
+
+### SITE-LATENCY-007 — typed finalization replayed withdrawn acquisition actions
+
+Trigger:
+
+- Finalization correctly exposed no action tools and only the `SiteResearchHandoff` schema.
+- Its message history still contained prior assistant tool-call structures. Across three bounded
+  submission attempts, the model copied withdrawn `retrieve_evidence`, `research_evidence`, then
+  `acquire_evidence` actions instead of submitting the handoff.
+- The role boundary rejected the unavailable action; no unauthorized source operation ran and no
+  dossier or Site decision was created.
+
+Repair:
+
+- Submission-only Site Research now receives an inert projection of completed visible scientific
+  notes and exact tool results. Prior assistant tool-call structures and arguments are excluded.
+- Query IDs, evidence result contents, limitations and model-visible scientific notes remain in
+  the projection; the original checkpoint and durable evidence are unchanged.
+- The isolated message explicitly states that reading is closed and unresolved evidence belongs
+  in the typed handoff rather than another operation.
+
+R15 is invalidated because product code changed after it failed. R16 must begin in a new project
+and thread at Gate 1.

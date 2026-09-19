@@ -92,3 +92,45 @@ def test_reasoning_view_preserves_evidence_and_user_turns_without_mutating_check
     assert len(str(view)) < len(str(messages)) / 4
     assert reasoning_working_view([user, assistant]) == [user, assistant]
     assert reasoning_working_view([user, result]) == [user, result]
+
+
+def test_submission_view_keeps_results_without_replaying_tool_requests() -> None:
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from easydesign.agent.evidence_output import submission_working_view
+
+    messages = [
+        HumanMessage(content="Research NK2R inhibition."),
+        AIMessage(
+            content="The functional transfer remains uncertain.",
+            tool_calls=[
+                {
+                    "id": "search-1",
+                    "name": "research_evidence",
+                    "args": {"query": "NK2R antagonist"},
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        ToolMessage(
+            name="research_evidence",
+            tool_call_id="search-1",
+            content=json.dumps(
+                {
+                    "query_id": "query-1",
+                    "status": "UNRESOLVED",
+                    "limitations": ["No primary passage acquired"],
+                }
+            ),
+        ),
+    ]
+    original = [message.model_dump() for message in messages]
+    view = submission_working_view(messages)
+    assert [message.model_dump() for message in messages] == original
+    assert len(view) == 1 and isinstance(view[0], HumanMessage)
+    record = json.loads(view[0].content)
+    assert record["submission_evidence_record"][-1]["content"]["query_id"] == "query-1"
+    assert "tool_call_id" not in view[0].content
+    assert "requested_tools" not in view[0].content
+    assert "NK2R antagonist" not in view[0].content
+    assert "The reading phase is closed" in record["authority"]

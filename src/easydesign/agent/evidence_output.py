@@ -172,6 +172,57 @@ def reasoning_working_view(messages: list[Any]) -> list[Any]:
     return output
 
 
+def submission_working_view(messages: list[Any]) -> list[Any]:
+    """Build an inert evidence record for a typed submission-only call.
+
+    Completed results and visible scientific notes remain exact, while prior tool-call
+    structures are removed. This prevents a bounded finalization call from copying an
+    earlier acquisition action after those tools have been deliberately withdrawn.
+    Original checkpoint messages remain unchanged.
+    """
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    records: list[dict[str, Any]] = []
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            tool_content: Any = message.content
+            if isinstance(tool_content, str):
+                try:
+                    tool_content = json.loads(tool_content)
+                except (ValueError, TypeError):
+                    pass
+            records.append(
+                {
+                    "kind": "completed-evidence-result",
+                    "source_operation": message.name,
+                    "status": message.status,
+                    "content": tool_content,
+                }
+            )
+        elif isinstance(message, AIMessage):
+            if message.text:
+                records.append({"kind": "prior-scientific-note", "content": message.text})
+        else:
+            context_content: Any = getattr(message, "content", None)
+            if context_content:
+                records.append({"kind": "research-context", "content": context_content})
+    return [
+        HumanMessage(
+            content=compact(
+                {
+                    "submission_evidence_record": records,
+                    "authority": (
+                        "Inert projection of completed research context and evidence results. "
+                        "It contains no pending tool request, approval or new scientific fact. "
+                        "The reading phase is closed; preserve unresolved items in the typed "
+                        "submission instead of requesting another operation."
+                    ),
+                }
+            )
+        )
+    ]
+
+
 def preview(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, dict):
         return {

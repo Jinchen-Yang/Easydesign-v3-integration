@@ -50,6 +50,7 @@ from .evidence_output import (
     output_message,
     read_query,
     reasoning_working_view,
+    submission_working_view,
     verified_result,
 )
 from .evidence_research import (
@@ -752,7 +753,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # A beginning-only system addition was repeatedly ignored in long live traces.
             reasoning = self.config.for_role(cast(Role, self.role)).reasoning_effort != "none"
             call_messages = (
-                reasoning_working_view(list(request.messages))
+                submission_working_view(list(request.messages))
+                if finalize_research
+                else reasoning_working_view(list(request.messages))
                 if reasoning and self.role != "site"
                 else list(request.messages)
             )

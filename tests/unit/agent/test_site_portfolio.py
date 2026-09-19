@@ -84,11 +84,34 @@ def test_explicit_objective_and_verified_sidedness_block_only_hard_compartment_c
         "sequence_topology": [],
         "membrane_geometry": [{"region": "inner_pore", "axial_distance": -12.0}],
     }
+    mixed_inner = {
+        "segments": ["TM5", "ICL3", "TM6"],
+        "sequence_topology": [
+            {
+                "canonical_position": position,
+                "annotations": [
+                    {"type": "Topological domain", "description": "Cytoplasmic"}
+                ],
+            }
+            for position in (227, 228, 229)
+        ],
+        "membrane_geometry": [
+            {"region": region, "axial_distance": axial}
+            for region, axial in (
+                ("inner_pore", -26.8),
+                ("intracellular_tm_surface", -31.1),
+                ("intracellular", -38.9),
+            )
+        ],
+    }
     assert verified_location_conflict(inner, "extracellular") == (
         "verified-compartment-conflict"
     )
     assert verified_location_conflict(outer_pore, "extracellular") is None
     assert verified_location_conflict(ambiguous, "extracellular") is None
+    assert verified_location_conflict(mixed_inner, "extracellular") == (
+        "verified-compartment-conflict"
+    )
     assert verified_location_conflict(inner, None) is None
 
 

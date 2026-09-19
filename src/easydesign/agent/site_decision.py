@@ -160,15 +160,14 @@ def verified_location_conflict(
 
     if required_compartment == "extracellular":
         declared_conflict = bool(segments) and segments <= {"ICL1", "ICL2", "ICL3", "C-term"}
-        geometric_conflict = bool(geometry) and (
-            regions <= {"intracellular", "intracellular_tm_surface"}
-            or (
-                regions <= {"inner_pore"}
-                and signed
-                and all(value < 0 for value in axial)
-                and has_cyto
-                and not has_extra
-            )
+        geometric_conflict = (
+            bool(geometry)
+            and regions
+            <= {"inner_pore", "intracellular", "intracellular_tm_surface"}
+            and signed
+            and all(value < 0 for value in axial)
+            and has_cyto
+            and not has_extra
         )
         if declared_conflict or geometric_conflict:
             return "verified-compartment-conflict"
@@ -180,8 +179,15 @@ def verified_location_conflict(
             "ECL2",
             "ECL3",
         }
-        geometric_conflict = bool(geometry) and (
-            regions <= {"extracellular", "extracellular_tm_surface", "outer_vestibule"}
+        geometric_conflict = (
+            bool(geometry)
+            and regions
+            <= {
+                "outer_pore",
+                "extracellular",
+                "extracellular_tm_surface",
+                "outer_vestibule",
+            }
             and signed
             and all(value > 0 for value in axial)
             and has_extra

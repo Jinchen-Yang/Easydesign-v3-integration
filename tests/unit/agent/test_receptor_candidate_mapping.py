@@ -119,7 +119,14 @@ def test_receptor_tool_persists_and_delivers_approved_correspondence(
     target = deepcopy(target)
     target["evidence"]["hard_facts"].update(canonical_accession="SYNTHETIC", selected_chain="A")
     monkeypatch.setattr(site_bridge, "site_facts", lambda: (target, facts, fact_ref))
-    monkeypatch.setattr(module, "analyze_structure", lambda *args: {})
+    analysis_calls = 0
+
+    def analyze_structure(*args: Any) -> dict[str, Any]:
+        nonlocal analysis_calls
+        analysis_calls += 1
+        return {}
+
+    monkeypatch.setattr(module, "analyze_structure", analyze_structure)
     monkeypatch.setattr(module, "generate_candidates", lambda *args: deepcopy(receptor))
     worker = EvidenceResearch(site_bridge)
     monkeypatch.setattr(
@@ -164,3 +171,37 @@ def test_receptor_tool_persists_and_delivers_approved_correspondence(
     assert table["row_count"] == 5
     assert table["rows"][1][table["mapping_columns"].index("label_seq_id")] == 148
     assert supplied["candidate_overview"]["inhibit"][0]["id"] == "synthetic-candidate"
+    assert analysis_calls == 1
+
+    # The model-facing kernel read must reuse the analysis atomically published by
+    # acquisition instead of repeating structure/topology calculation.
+    monkeypatch.setattr(
+        worker,
+        "snapshot",
+        lambda: {
+            "queries": [
+                {
+                    "cards": [
+                        {
+                            "card_id": "synthetic-source",
+                            "provider": "GPCRdb",
+                            "context_ref": context,
+                            "source_refs": [context],
+                        },
+                        {
+                            "card_id": result["card_id"],
+                            "provider": "EasyDesign GPCR kernel",
+                            "source_refs": [context, fact_ref, result["analysis_ref"]],
+                        },
+                    ]
+                }
+            ]
+        },
+    )
+    reused = worker.analyze_receptor(
+        ReceptorAnalysis(gpcrdb_card_id="synthetic-source", auth_chain="A")
+    )
+    assert reused["reused"] is True
+    assert reused["analysis_ref"] == result["analysis_ref"]
+    assert reused["card_id"] == result["card_id"]
+    assert analysis_calls == 1

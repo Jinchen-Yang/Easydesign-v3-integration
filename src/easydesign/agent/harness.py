@@ -431,12 +431,13 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     if c["provider"] == "GPCRdb" and c.get("context_ref")
                 }
             )
-            receptor_analysis_complete = any(
-                c.get("provider") == "EasyDesign GPCR kernel"
-                for q in research["queries"]
-                for c in q["cards"]
+            receptor_analysis_delivered = any(
+                isinstance(message, ToolMessage)
+                and message.name == "analyze_receptor_context"
+                and message.status != "error"
+                for message in request.messages
             )
-            if receptor_cards and not receptor_analysis_complete:
+            if receptor_cards and not receptor_analysis_delivered:
                 receptor_schema = ReceptorAnalysis.model_json_schema()
                 receptor_schema["properties"]["gpcrdb_card_id"]["enum"] = receptor_cards
                 available = [
@@ -446,8 +447,8 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     for t in available
                 ]
             else:
-                # gpcrdb-context atomically publishes the deterministic kernel card.
-                # Do not offer a second analysis of the same structure to the model.
+                # Acquisition may already have computed the kernel. Offer one scoped
+                # model-facing read, then hide the tool after successful delivery.
                 available = [t for t in available if t.name != "analyze_receptor_context"]
         result_schema = ModelEvidenceScope.model_json_schema()
         if isinstance(self.bridge, Phase2Bridge):
@@ -658,7 +659,12 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # thinking can no longer add evidence and may prevent the SDK from forcing
             # the submission tool. Use the same compact, non-thinking model view both
             # for the first forced finalization and for a later truncation recovery.
-            compact_site_submission = compact_site_handoff or finalize_research
+            # Site synthesis is a bounded serialization step over the Runtime-built
+            # dossier. Extended thinking cannot add evidence here and, on the
+            # DeepSeek Anthropic-compatible endpoint, causes the SDK to drop forced
+            # tool choice. Use the same non-thinking submission model from the first
+            # synthesis call rather than waiting for a 16k-token truncation.
+            compact_site_submission = synthesize or compact_site_handoff or finalize_research
             submission_only = (
                 synthesize or compact_judge or compact_site_handoff or finalize_research
             )

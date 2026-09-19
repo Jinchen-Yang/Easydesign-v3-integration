@@ -19,9 +19,10 @@ work. Several questions may share one topic. Do not add questions to cover adver
 1. Read the approved Target/candidate overview once. It is a complete overview, not the first
    residue page. For a verified GPCR, acquire its gpcrdb-context (receptor entry plus pdb_id) and
    use the Runtime-published receptor kernel card. GPCRdb acquisition normally performs this
-   analysis atomically; call analyze_receptor_context only if Runtime offers it for a legacy
-   context card that lacks kernel analysis. This supplies topology, signed membrane frame and
-   candidate inventory.
+   analysis atomically. When Runtime offers analyze_receptor_context, call it once to receive
+   the compact current-binding kernel view; Runtime reuses the stored analysis and then removes
+   the tool for that execution. This supplies topology, signed membrane frame and candidate
+   inventory.
    Do not reconstruct those facts by paging raw topology or repeatedly reading the overview.
 2. Use that context to identify a provisional comparison. Read the strongest primary evidence
    for the intended or forbidden functional effect early. A kernel score, mode name, source

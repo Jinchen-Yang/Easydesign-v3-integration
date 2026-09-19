@@ -343,9 +343,9 @@ async def test_site_finalization_filters_the_actual_sdk_tool_payload(
         assert requests[0]["thinking"] == {"type": "disabled"}
     else:
         assert [t["name"] for t in requests[0]["tools"]] == ["RankedSiteDecision"]
-        assert requests[0]["thinking"]["type"] == "enabled"
-        assert requests[0]["output_config"] == {"effort": reasoning}
-        assert requests[0].get("tool_choice", {"type": "auto"}) == {"type": "auto"}
+        assert requests[0]["thinking"] == {"type": "disabled"}
+        assert "output_config" not in requests[0]
+        assert requests[0]["tool_choice"] == {"type": "any"}
     assert requests[0]["max_tokens"] == 2048
     last = requests[0]["messages"][-1]
     assert last["role"] == "user"

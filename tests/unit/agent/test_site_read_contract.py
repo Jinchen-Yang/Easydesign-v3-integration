@@ -298,7 +298,7 @@ def test_complete_receptor_membership_is_not_replaced_by_a_tool_size_preview(
 
 
 @pytest.mark.asyncio
-async def test_completed_atomic_gpcr_analysis_hides_duplicate_analysis_tool(
+async def test_completed_atomic_gpcr_analysis_offers_one_reuse_then_hides_tool(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
     from easydesign.agent.evidence_research import EvidenceResearch
@@ -360,5 +360,25 @@ async def test_completed_atomic_gpcr_analysis_hides_duplicate_analysis_tool(
             ),
             handler,
         )
-    assert "analyze_receptor_context" not in offered
+    assert "analyze_receptor_context" in offered
     assert "research_evidence" in offered
+
+    offered.clear()
+    with pytest.raises(ObservedTools):
+        await guard.awrap_model_call(
+            ModelRequest(
+                model=ScriptedModel(role="site"),
+                tools=tools,
+                messages=[
+                    ToolMessage(
+                        content='{"analysis_ref":{"artifact_id":"research-receptor-analysis"}}',
+                        name="analyze_receptor_context",
+                        tool_call_id="synthetic-analysis",
+                        status="success",
+                    )
+                ],
+                system_message=SystemMessage(content="Synthetic Site research"),
+            ),
+            handler,
+        )
+    assert "analyze_receptor_context" not in offered

@@ -702,12 +702,61 @@ class EvidenceResearch:
             raise AgentBoundaryError(
                 "GPCR identity is not resolved; cannot select a family playbook"
             )
+        target, facts, facts_ref = self.bridge.site_facts()
+
+        def summary(value: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "identity": value["identity"],
+                "topology": value["topology"],
+                "membrane": value["membrane"],
+                "state": value["state"],
+                "chain_graph": value["chain_graph"],
+                "candidates": value["candidates"],
+                "warnings": value["warnings"],
+                "avoid": value["avoid"],
+                "approved_design_mapping": value["approved_design_mapping"],
+            }
+
+        # GPCRdb acquisition atomically creates this deterministic kernel. A later
+        # analyze_receptor_context call is the model-facing read of that artifact,
+        # not permission to recompute it. Reuse only the current Target binding and
+        # requested original auth chain.
+        for evidence_query in self.snapshot()["queries"]:
+            for existing in evidence_query["cards"]:
+                if existing.get("provider") != "EasyDesign GPCR kernel":
+                    continue
+                analysis_ref = next(
+                    (
+                        ref
+                        for ref in reversed(existing.get("source_refs", []))
+                        if ref.get("artifact_id") == "research-receptor-analysis"
+                    ),
+                    None,
+                )
+                if analysis_ref is None or card["context_ref"] not in existing.get(
+                    "source_refs", []
+                ):
+                    continue
+                candidates = self.bridge.document(analysis_ref)
+                if (
+                    candidates.get("identity", {}).get("receptor_chain")
+                    != request.auth_chain
+                    or candidates.get("approved_design_mapping", {}).get("target_binding")
+                    != target["binding"]
+                ):
+                    continue
+                return {
+                    **summary(candidates),
+                    "card_id": existing["card_id"],
+                    "analysis_ref": analysis_ref,
+                    "reused": True,
+                }
+
         path = self.bridge.validate_project().source_path
         analysis = analyze_structure(path, request.auth_chain, context["topology"])
         candidates = generate_candidates(analysis, context)
         from .site_evidence import receptor_candidate_mapping
 
-        target, facts, facts_ref = self.bridge.site_facts()
         hard_facts = target["evidence"]["hard_facts"]
         candidates = {
             **candidates,
@@ -723,17 +772,7 @@ class EvidenceResearch:
             },
         }
         ref = self.bridge.persist("research-receptor-analysis", candidates)
-        summary = {
-            "identity": candidates["identity"],
-            "topology": candidates["topology"],
-            "membrane": candidates["membrane"],
-            "state": candidates["state"],
-            "chain_graph": candidates["chain_graph"],
-            "candidates": candidates["candidates"],
-            "warnings": candidates["warnings"],
-            "avoid": candidates["avoid"],
-            "approved_design_mapping": candidates["approved_design_mapping"],
-        }
+        summary_value = summary(candidates)
         card_id = "receptor-" + ref["sha256"][:24]
         result = {
             "query_id": card_id,
@@ -749,7 +788,7 @@ class EvidenceResearch:
                     "identifier": context["identity"]["entry_name"],
                     "primary_eligible": False,
                     "evidence_level": "deterministic-structure-analysis",
-                    "passage": json.dumps(summary),
+                    "passage": json.dumps(summary_value),
                     "source_verified": True,
                     "source_refs": [*card["source_refs"], facts_ref, ref],
                     "does_not_support": ["Automatic site approval or binding efficacy"],
@@ -762,7 +801,12 @@ class EvidenceResearch:
             "evidence-research",
             {"target_binding": identity(self.bridge.binding()), "ref": result_ref},
         )
-        return {**summary, "card_id": card_id, "analysis_ref": ref}
+        return {
+            **summary_value,
+            "card_id": card_id,
+            "analysis_ref": ref,
+            "reused": False,
+        }
 
     def client(self, directory: Path) -> ScientificHttpClient:
         return ResearchHttpClient(

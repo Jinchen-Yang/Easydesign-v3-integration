@@ -362,22 +362,28 @@ async def test_completed_atomic_gpcr_analysis_offers_one_reuse_then_hides_tool(
         )
     assert offered == {"analyze_receptor_context"}
 
+    # Framework summarization can remove the ToolMessage from live history. The
+    # durable model-facing view must still prove that this execution received the
+    # kernel and prevent a second delivery.
+    bridge.store.event(
+        bridge.thread,
+        "tool-view",
+        {
+            "role": "site",
+            "execution_id": execution["execution_id"],
+            "artifact": {"artifact_id": "research-receptor-analysis"},
+        },
+    )
     offered.clear()
     with pytest.raises(ObservedTools):
         await guard.awrap_model_call(
             ModelRequest(
                 model=ScriptedModel(role="site"),
                 tools=tools,
-                messages=[
-                    ToolMessage(
-                        content='{"analysis_ref":{"artifact_id":"research-receptor-analysis"}}',
-                        name="analyze_receptor_context",
-                        tool_call_id="synthetic-analysis",
-                        status="success",
-                    )
-                ],
-                system_message=SystemMessage(content="Synthetic Site research"),
+                messages=[],
+                system_message=SystemMessage(content="Synthetic summarized Site research"),
             ),
             handler,
         )
     assert "analyze_receptor_context" not in offered
+    assert "research_evidence" in offered

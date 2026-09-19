@@ -233,3 +233,43 @@ Repair:
 R13 proves scientific completion but is superseded for latency acceptance because these two
 orchestration defects were repaired afterward. R14 must start from Gate 1 in a new project and
 thread.
+
+## Attempt R14 — invalidated
+
+- Project: `figure2-nk2r-site-fast-r14`
+- Thread: `thread-49dfee0bf21a4090bb72d207dd4db300`
+- Start commit: `599272399a8ee0e9a05286ef5150428d460d1882`
+- Gate 1: independently resolved human NK2R P21452 and auth chain R / label chain B.
+- Gate 1 wall time: 142.81 seconds.
+- Status: stopped during Gate 2 Site research after a durable-delivery defect was proven.
+- Manual scientific answer injection: none.
+
+### Confirmed improvement
+
+- The first Site call acquired GPCRdb in 4.46 seconds.
+- The second call offered only `analyze_receptor_context`, returned the already-computed
+  current-binding kernel in 2.71 seconds, and did not page the acquisition artifact.
+- The third call used the delivered kernel to launch focused evidence work. The R13 generic
+  result-navigation detour was removed.
+
+### SITE-LATENCY-006 — framework summary forgot that the kernel was delivered
+
+Trigger:
+
+- A framework summary compressed the Site message history after the first successful kernel
+  delivery.
+- Delivery detection inspected only live `ToolMessage` objects. Once that message was absent,
+  the fifth counted call offered `analyze_receptor_context` again and the model called it.
+- Runtime correctly reused the existing analysis, so no structure computation or hard fact was
+  duplicated, but one model call and a 30k-character projection were wasted.
+
+Repair:
+
+- Kernel delivery is now recognized from the execution-scoped durable `tool-view` event whose
+  artifact is `research-receptor-analysis`, with the live successful ToolMessage retained as an
+  immediate-path check.
+- Framework summaries and restart projections therefore cannot make the same execution forget
+  that the authoritative kernel was already delivered.
+
+R14 is invalidated because product code changed after it started. R15 must begin in a new project
+and thread at Gate 1.

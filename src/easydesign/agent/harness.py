@@ -436,6 +436,15 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 and message.name == "analyze_receptor_context"
                 and message.status != "error"
                 for message in request.messages
+            ) or bool(
+                self.bridge.store.db.execute(
+                    "SELECT 1 FROM events WHERE thread=? AND kind='tool-view' "
+                    "AND json_extract(payload,'$.role')='site' "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND json_extract(payload,'$.artifact.artifact_id')="
+                    "'research-receptor-analysis' LIMIT 1",
+                    (self.bridge.thread, self.execution_id),
+                ).fetchone()
             )
             if receptor_cards and not receptor_analysis_delivered:
                 receptor_schema = ReceptorAnalysis.model_json_schema()

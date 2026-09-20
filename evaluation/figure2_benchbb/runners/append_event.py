@@ -30,10 +30,45 @@ def main() -> None:
     parser.add_argument("--ledger", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--case-id", required=True)
-    parser.add_argument("--method-id", required=True, choices=("base_llm_tools", "generic_agent", "easydesign_v3_full", "expert_curated_reference"))
+    parser.add_argument(
+        "--method-id",
+        required=True,
+        choices=(
+            "base_llm_tools",
+            "generic_agent",
+            "easydesign_v3_full",
+            "expert_curated_reference",
+        ),
+    )
     parser.add_argument("--replicate", type=int, required=True)
-    parser.add_argument("--actor", required=True, choices=("model", "method_framework", "easydesign", "operator", "transport", "validator", "backend"))
-    parser.add_argument("--stage", required=True, choices=("discovery", "target", "structure", "site", "design", "compiler", "backend-validation", "pilot-ready", "run"))
+    parser.add_argument(
+        "--actor",
+        required=True,
+        choices=(
+            "model",
+            "method_framework",
+            "easydesign",
+            "operator",
+            "transport",
+            "validator",
+            "backend",
+        ),
+    )
+    parser.add_argument(
+        "--stage",
+        required=True,
+        choices=(
+            "discovery",
+            "target",
+            "structure",
+            "site",
+            "design",
+            "compiler",
+            "backend-validation",
+            "pilot-ready",
+            "run",
+        ),
+    )
     parser.add_argument("--event-type", required=True)
     parser.add_argument("--status", required=True)
     parser.add_argument("--attempt-id")

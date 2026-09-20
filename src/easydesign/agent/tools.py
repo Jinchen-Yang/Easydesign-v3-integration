@@ -700,7 +700,9 @@ class TargetBridge:
             and "fact_references" not in current
             and verdict.verdict in {"ready-to-ask", "assessed"}
         ):
-            check_fact_claims(verdict.model_dump(mode="json"), {"hard_facts": facts})
+            check_fact_claims(
+                verdict.model_dump(mode="json"), {**current, "hard_facts": facts}
+            )
         assessment = EvidenceAssessment(
             **verdict.model_dump(),
             **binding.model_dump(),

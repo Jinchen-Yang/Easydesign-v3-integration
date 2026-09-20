@@ -717,7 +717,15 @@ class SessionStore:
             if selected_status in {"SUPPORTED", "DISCOURAGED", "BLOCKED"}:
                 effective_judge_status = selected_status
         elif selected_option_id is not None:
-            raise AgentBoundaryError("Candidate selection requires a ranked Site card and APPROVE")
+            if proposal.gate_type == "target-structure" and response == "approve":
+                if selected_option_id != proposal.option_id:
+                    raise AgentBoundaryError(
+                        "Gate 1 approval must match the Target option reviewed on this card"
+                    )
+            else:
+                raise AgentBoundaryError(
+                    "Candidate selection requires a ranked Site card and APPROVE"
+                )
         if response in {"approve", "override"}:
             if effective_judge_status == "BLOCKED":
                 raise AgentBoundaryError(

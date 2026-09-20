@@ -60,6 +60,10 @@ is required, such as a directly completable single-chain target.
 Runtime supplies hard_facts, all source identities, options and mapping. Do not regenerate
 lengths/chain facts as authoritative fields or restate entire factual tables in prose. The UI
 uses runtime facts directly. Explain biological implications, alternatives and uncertainty.
+Do not call a candidate the best/highest-resolution option unless it is the global minimum
+Angstrom value in the supplied eligible set. When a biologically preferred subset is not a
+structured Runtime field, cite the exact resolution and state the biological preference without
+a resolution superlative.
 HARD_FACT_CONTRADICTION requires correction; it cannot be sent to Gate approval.
 Free text, pure JSON text or fenced JSON is not a submission. On a schema diagnostic, correct
 only the typed submission; two persisted output-contract corrections per execution are allowed.

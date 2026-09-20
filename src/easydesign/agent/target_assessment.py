@@ -87,6 +87,48 @@ def check_fact_claims(value: Any, evidence: dict[str, Any]) -> None:
                             "statement": match[0],
                         }
                     )
+    options = [option for option in evidence.get("options", []) if option.get("eligible")]
+    recommended_option = None
+    if isinstance(value, dict):
+        recommended_option = value.get("recommended_option")
+        recommendation = value.get("recommendation")
+        if recommended_option is None and isinstance(recommendation, dict):
+            recommended_option = recommendation.get("option_id")
+    resolutions: dict[str, float] = {}
+    for option in options:
+        summary = option.get("payload", {}).get("candidate_summary", {})
+        resolution = summary.get("resolution_angstrom")
+        if isinstance(resolution, int | float) and not isinstance(resolution, bool):
+            resolutions[str(option.get("option_id"))] = float(resolution)
+    resolution_superlative = re.compile(
+        r"\b(?:best|highest|finest|top)[ -](?:nominal[ -])?resolution\b|"
+        r"(?:最高|最佳)(?:名义)?分辨率|分辨率(?:最高|最佳|最好)",
+        re.IGNORECASE,
+    )
+    if recommended_option in resolutions and resolutions:
+        selected_resolution = resolutions[recommended_option]
+        minimum_resolution = min(resolutions.values())
+        for text in texts:
+            superlative_match = resolution_superlative.search(text)
+            if superlative_match and selected_resolution > minimum_resolution + 1e-9:
+                findings.append(
+                    {
+                        "field": "structure_resolution_superlative",
+                        "expected_minimum_angstrom": minimum_resolution,
+                        "minimum_option_ids": sorted(
+                            option_id
+                            for option_id, resolution in resolutions.items()
+                            if abs(resolution - minimum_resolution) <= 1e-9
+                        ),
+                        "claimed_option_id": recommended_option,
+                        "claimed_option_angstrom": selected_resolution,
+                        "statement": superlative_match[0],
+                        "guidance": (
+                            "Use the exact Runtime value and a non-superlative scientific reason "
+                            "when a qualified comparison is not deterministically represented."
+                        ),
+                    }
+                )
     if findings:
         raise HardFactContradiction(findings)
 

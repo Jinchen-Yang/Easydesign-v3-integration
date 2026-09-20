@@ -16,7 +16,7 @@ from easydesign.agent.contracts import (
 )
 from easydesign.agent.session_store import SessionStore, identity
 from easydesign.agent.tools import JUDGE_EVIDENCE, TargetBridge
-from tests.agent_support import ScriptedModel, scripted_config, terminal
+from tests.agent_support import ScriptedModel, judge_card, scripted_config, terminal
 from tests.unit.agent.test_command_recovery import Crash, crash_at
 
 
@@ -169,6 +169,31 @@ def discouraged_card(bridge: Any) -> Any:
     return bridge.decision_card(
         ApplyDecision(assessment_id=assessment.assessment_id, option_id="chain-a")
     )
+
+
+def test_target_approval_accepts_only_the_option_reviewed_on_the_card(bridge: Any) -> None:
+    bridge.prepare_target()
+    terminal(bridge)
+    card = judge_card(bridge, "chain-a")
+
+    with pytest.raises(AgentBoundaryError, match="must match the Target option reviewed"):
+        bridge.store.respond(
+            bridge.thread,
+            card.card_id,
+            "approve",
+            "scientist",
+            selected_option_id="chain-b",
+        )
+    assert bridge.store.response(bridge.thread, card.card_id) is None
+
+    intent = bridge.store.respond(
+        bridge.thread,
+        card.card_id,
+        "approve",
+        "scientist",
+        selected_option_id="chain-a",
+    )
+    assert intent["outcome"]["selected_option_id"] == "chain-a"
 
 
 def test_discouraged_choice_requires_explicit_recorded_override(bridge: Any) -> None:

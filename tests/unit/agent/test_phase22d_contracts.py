@@ -14,6 +14,7 @@ from easydesign.agent.phase2_tools import PHASE2_ALLOWED
 from easydesign.agent.session_store import SessionStore
 from easydesign.agent.target_assessment import (
     HardFactContradiction,
+    check_fact_claims,
     check_interpretation,
     register_target,
 )
@@ -303,6 +304,51 @@ def test_count_guard_does_not_treat_residue_positions_as_sequence_lengths(claim:
     from easydesign.agent.target_assessment import check_fact_claims
 
     check_fact_claims(claim, runtime_evidence())
+
+
+def test_structure_resolution_superlative_must_match_runtime_options() -> None:
+    evidence = {
+        **runtime_evidence(),
+        "options": [
+            {
+                "option_id": "pdb-9w1j-entity-5",
+                "eligible": True,
+                "payload": {"candidate_summary": {"resolution_angstrom": 2.97}},
+            },
+            {
+                "option_id": "pdb-9w2j-entity-4",
+                "eligible": True,
+                "payload": {"candidate_summary": {"resolution_angstrom": 2.82}},
+            },
+        ],
+    }
+    bad = TargetInterpretation.model_validate(
+        {
+            **opinion(),
+            "recommended_option": "pdb-9w1j-entity-5",
+            "recommended_action": "Select 9W1J because it has the best resolution.",
+        }
+    )
+    with pytest.raises(HardFactContradiction, match="structure_resolution_superlative"):
+        check_interpretation(bad, evidence)
+
+    good = bad.model_copy(
+        update={
+            "recommended_action": (
+                "Select 9W1J at 2.97 Angstrom because its endogenous-ligand context is preferred."
+            )
+        }
+    )
+    check_interpretation(good, evidence)
+
+    with pytest.raises(HardFactContradiction, match="structure_resolution_superlative"):
+        check_fact_claims(
+            {
+                "reasons": ["9W1J has the highest resolution in the eligible set."],
+                "recommendation": {"option_id": "pdb-9w1j-entity-5"},
+            },
+            evidence,
+        )
 
 
 def test_model_cannot_supply_runtime_fields_and_open_interpretation_is_allowed() -> None:

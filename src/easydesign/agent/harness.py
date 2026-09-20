@@ -1105,7 +1105,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                             ):
                                 check_fact_claims(
                                     response.structured_response.model_dump(mode="json"),
-                                    {"hard_facts": facts},
+                                    {**snapshot, "hard_facts": facts},
                                 )
                     except (
                         EvidenceCitationMismatch,

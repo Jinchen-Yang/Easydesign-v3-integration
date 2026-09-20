@@ -111,16 +111,23 @@ def test_cli_start_accepts_goal_only_and_preserves_optional_structure_path(
             limitations=["Identity remains subject to native Stage 01 review."],
         )
 
-    async def drive(_args, bridge, _config, _goal):
+    created_models: list[dict[str, object]] = []
+
+    async def drive(_args, bridge, _config, _goal, *, models=None):
         bridge.validate_project()
+        if models is not None:
+            assert models is created_models[-1]
         return 0
 
     monkeypatch.setattr(bootstrap, "resolve_goal_target", resolve)
     monkeypatch.setattr(cli, "_drive", drive)
-    monkeypatch.setattr(
-        "easydesign.agent.models.create_models",
-        lambda *_args, **_kwargs: {"target": object()},
-    )
+
+    def create_models(*_args, **_kwargs):
+        value = {"target": object()}
+        created_models.append(value)
+        return value
+
+    monkeypatch.setattr("easydesign.agent.models.create_models", create_models)
     goal = "Please design an inhibitory nanobody against human NK2R."
     assert (
         cli.main(
@@ -142,6 +149,7 @@ def test_cli_start_accepts_goal_only_and_preserves_optional_structure_path(
     ).config.target.source
     assert isinstance(goal_source, UniProtSearchSourceConfig)
     assert goal_source.query == "TACR2" and goal_source.organism_taxon_id == 9606
+    assert len(created_models) == 1
 
     target = context.runtime_root / "tmp/optional-seed.pdb"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +175,7 @@ def test_cli_start_accepts_goal_only_and_preserves_optional_structure_path(
         project_config_path(context.projects_root / "optional-seed")
     ).config.target.source
     assert isinstance(local_source, LocalFileSourceConfig)
+    assert len(created_models) == 1
 
 
 def test_remote_target_source_enters_existing_downstream_runtime(

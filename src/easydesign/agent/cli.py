@@ -436,14 +436,22 @@ def _display(value: dict[str, Any], *, technical_details: bool = False) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2), flush=True)
 
 
-async def _drive(args: Any, bridge: Any, config: ModelConfig, goal: str) -> int:
+async def _drive(
+    args: Any,
+    bridge: Any,
+    config: ModelConfig,
+    goal: str,
+    *,
+    models: dict[str, Any] | None = None,
+) -> int:
     from .models import create_models
 
-    models = (
-        create_models(config, downstream=True)
-        if hasattr(bridge, "downstream_scope")
-        else create_models(config)
-    )
+    if models is None:
+        models = (
+            create_models(config, downstream=True)
+            if hasattr(bridge, "downstream_scope")
+            else create_models(config)
+        )
     local_user = f"uid:{os.getuid()}:{pwd.getpwuid(os.getuid()).pw_name}"
 
     def emit(event: dict[str, Any]) -> None:
@@ -583,6 +591,7 @@ def main(argv: list[str] | None = None) -> int:
         confined(context.projects_root, root)
         if not root.exists() and args.operation != "start":
             raise AgentBoundaryError("Unknown project; use start with --goal")
+        bootstrap_models: dict[str, Any] | None = None
         if not (root / "PROJECT.yaml").is_file() and args.target is not None:
             if args.operation != "start":
                 raise AgentBoundaryError("An input cannot be replaced during resume")
@@ -607,7 +616,9 @@ def main(argv: list[str] | None = None) -> int:
                         technical_details=args.technical_details,
                     )
                     return 0
-                bootstrap_models = create_models(config)
+                bootstrap_models = create_models(
+                    config, downstream=args.through in {"pilot", "handoff"}
+                )
                 intent = asyncio.run(
                     resolve_goal_target(
                         store=bootstrap_store,
@@ -697,7 +708,7 @@ def main(argv: list[str] | None = None) -> int:
                     from .native_strategy import import_native
 
                     import_native(bridge, args.native_strategy.resolve(strict=True))
-                return asyncio.run(_drive(args, bridge, config, goal))
+                return asyncio.run(_drive(args, bridge, config, goal, models=bootstrap_models))
         finally:
             store.close()
     except KeyboardInterrupt:

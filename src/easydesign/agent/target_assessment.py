@@ -46,20 +46,24 @@ def check_fact_claims(value: Any, evidence: dict[str, Any]) -> None:
         r"\b" + count + r"[ -]" + units + r"\s+canonical\b",
         r"canonical\s*(?:长度|序列长度|蛋白长度)\s*(?:为|是|：|:|=)?\s*" + count,
     ]
-    if facts.canonical_length is not None:
-        for pattern in canonical_patterns:
-            for match in (
-                match for text in texts for match in re.finditer(pattern, text, re.IGNORECASE)
+    for pattern in canonical_patterns:
+        for match in (
+            match for text in texts for match in re.finditer(pattern, text, re.IGNORECASE)
+        ):
+            claimed = [int(number) for number in match[1].split("/")]
+            if facts.canonical_length is None or any(
+                number != facts.canonical_length for number in claimed
             ):
-                if any(int(n) != facts.canonical_length for n in match[1].split("/")):
-                    findings.append(
-                        {
-                            "field": "canonical_length",
-                            "expected": facts.canonical_length,
-                            "claimed": match[1],
-                            "statement": match[0],
-                        }
-                    )
+                findings.append(
+                    {
+                        "field": "canonical_length",
+                        "expected": facts.canonical_length
+                        if facts.canonical_length is not None
+                        else "unresolved",
+                        "claimed": match[1],
+                        "statement": match[0],
+                    }
+                )
     for chain in facts.chains:
         for label, expected in (
             ("construct", chain.construct_length),

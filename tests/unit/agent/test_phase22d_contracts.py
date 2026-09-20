@@ -306,6 +306,18 @@ def test_count_guard_does_not_treat_residue_positions_as_sequence_lengths(claim:
     check_fact_claims(claim, runtime_evidence())
 
 
+def test_unresolved_canonical_length_cannot_be_invented_from_construct_length() -> None:
+    evidence = runtime_evidence()
+    evidence["hard_facts"] = {**evidence["hard_facts"], "canonical_length": None}
+    with pytest.raises(HardFactContradiction, match='"expected":"unresolved"'):
+        check_interpretation(
+            TargetInterpretation.model_validate(
+                opinion("The canonical sequence contains 406 aa."),
+            ),
+            evidence,
+        )
+
+
 def test_structure_resolution_superlative_must_match_runtime_options() -> None:
     evidence = {
         **runtime_evidence(),

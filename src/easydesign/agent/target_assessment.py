@@ -232,7 +232,7 @@ def present_target(result: dict[str, Any], evidence: dict[str, Any]) -> dict[str
     facts = TargetFacts.model_validate(evidence["hard_facts"])
     if not facts.chains:
         return result
-    sentences = re.split(r"(?<=[.!?。！？])\s*|\n", result.get("message", ""))
+    sentences = re.split(r"(?<=[。！？])\s*|(?<=[.!?])\s+(?=\S)|\n+", result.get("message", ""))
     commentary = [
         s
         for s in sentences

@@ -482,6 +482,24 @@ def test_public_target_facts_are_rendered_without_coordinator_restatement() -> N
     assert "132" in raw["message"]  # Original diagnostic message retained independently.
 
 
+def test_public_target_fact_filter_does_not_split_decimals_or_file_extensions() -> None:
+    from easydesign.agent.target_assessment import present_target
+
+    public = present_target(
+        {
+            "status": "finished",
+            "message": (
+                "Selected chain R uses the 9W1J structure at 2.97 Å. "
+                "Viewer: results/report/index.html. Binding needs experiments."
+            ),
+        },
+        runtime_evidence(),
+    )
+    assert "97 Å" not in public["message"]
+    assert "index.html" in public["message"]
+    assert "Binding needs experiments" in public["message"]
+
+
 def test_gate_payload_uses_runtime_facts_and_old_judge_cannot_approve_new_interpretation(
     bridge: Any,
 ) -> None:

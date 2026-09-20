@@ -183,6 +183,39 @@ non-fused/single-source subset. Exact saved-submission replay passes both R9 cla
 rejecting the false R7 claim that 9W1J was best within the clean 9W series. This refinement reduces
 repair overhead without relaxing the original fact guard.
 
+### R10 uninterrupted goal-only acceptance
+
+Three consecutive fresh attempts (R7-R9) created the goal intent and then failed on the first
+Coordinator request, while resume succeeded. The cause was local rather than provider-random:
+CLI used one `asyncio.run()` for goal bootstrap and a second for the Harness while reusing the same
+asynchronous HTTP/model clients. Closing the bootstrap event loop invalidated the client lifecycle
+used by the second call. CLI now uses one `asyncio.Runner` across both phases; a regression asserts
+that bootstrap and `_drive` execute on the same event loop.
+
+R10 is the uninterrupted acceptance on that patch:
+
+- project: `backend-baseline-nk2r-goal-only-20260920-r10`
+- thread: `thread-50070c169ce9451bbe53d61e6857ddd1`
+- Stage 1 run: `20260920t080429z`
+- source commit: `8867faba97823c41e5ec10767d5fc4b564031f61`, clean
+- one natural-language start process reached Gate 1 without connection failure or resume
+- Gate 1 card: `07b498de5f7ade99addd519630f5bfea72414816d530504c33fff72a36d72b90`
+- recommended and explicitly approved option: 9W1J chain R (`pdb-9w1j-entity-5`)
+- completed TargetBundle: P21452 canonical 398 aa, engineered construct 406 aa, chain R,
+  `mapping_status=review-required`
+
+The final recommendation is factually calibrated: it explicitly states that 9W1J at 2.97 Å is not
+the numerical minimum, that 7XWO is 2.70 Å globally and 9W2J is 2.82 Å among single-source
+candidates, and chooses 9W1J for the endogenous NKA-bound context. Target required two malformed
+JSON repairs before submitting a valid typed opinion; this was recovered within the existing
+contract budget and did not create a fact or control-flow error. It remains a provider-format
+performance item, not a Stage 1 closure blocker.
+
+Post-run display review found that the public fact filter split on every period, including decimal
+values and file extensions, leaving fragments such as `97 Å` and `index. html`. Sentence splitting
+now treats an English period as a boundary only when followed by whitespace, while retaining
+Chinese punctuation and newline boundaries. Runtime facts remain separately rendered.
+
 ## Timing
 
 R4 remains the original goal-bootstrap acceptance:
@@ -216,6 +249,16 @@ R9 timing on clean commit `eeaa8d7c`:
   29.44 seconds and three calls were the now-removed over-strict resolution repairs
 - post-approval successful provider latency: 38.14 seconds across six responses
 
+R10 timing on clean commit `8867faba`:
+
+- native run creation to structure-selection boundary: 19.17 seconds
+- run creation to persisted approval intent: 129.36 seconds
+- approval intent to completed TargetBundle: 18.93 seconds
+- run creation to completed TargetBundle: 148.29 seconds
+- successful provider latency through the Gate 1 card: 111.79 seconds across 15 responses,
+  including two typed-JSON repair responses
+- post-approval successful provider latency: 38.19 seconds across six responses
+
 The SQLite event stream does not persist a wall-clock timestamp for card creation, so this record
 does not invent an exact end-to-end Gate 1 wall time. It reports manifest timestamps and provider
 latencies separately. The 27.32-second native boundary time demonstrates that R5/R6 slowness came
@@ -236,6 +279,8 @@ from Agent loops rather than UniProt/RCSB acquisition itself.
 | R7 CLI | Passing the exact displayed Gate 1 option with `--candidate` was rejected even though CLI help permits an exact scientific option ID. | `SessionStore.respond()` accepted explicit options only for ranked Site and downstream cards. | Gate 1 `APPROVE` now accepts only the exact option already reviewed on that card. A different option is still rejected and requires a new reviewed card, so approval cannot silently switch structures. |
 | R8 | Target called the 406-residue construct/entity sequence the canonical sequence while Runtime canonical length was unresolved. | The count checker rejected mismatches only when a canonical length was already known; it did not reject invention of an unresolved value. | Treat an explicit canonical length as a contradiction when Runtime says unresolved. Preserve construct/entity/canonical semantics. R8 was not approved. |
 | R9 | The fresh run produced a correct 9W2J card and completed an explicitly selected Gate 1 approval, but the first resolution comparator spent three repairs rejecting correct qualified statements. | The guard attributed every superlative to the recommended option and compared only with the global pool, even when prose explicitly named 7XWO or a non-fused subset. | Bind a claim to its explicit PDB mention and recognize the Runtime-verifiable non-fused/single-source subset. Exact R9 replay passes; exact R7 false-claim replay still rejects. |
+| R10 startup | Goal intent succeeded but R7-R9 then failed on the first Coordinator call and required resume. | Bootstrap and Harness used separate `asyncio.run()` event loops while reusing asynchronous SDK/HTTP clients. | Reuse one `asyncio.Runner` for both phases. R10 reached Gate 1 in one start process with no connection error. |
+| R10 display | Final prose showed decimal/path fragments such as `97 Å` and `index. html`. | Fact filtering split sentences after every period even without whitespace. | Preserve decimal and file-extension periods; split English full stops only at whitespace and retain Chinese/newline boundaries. |
 
 ## Verification
 
@@ -244,7 +289,7 @@ from Agent loops rather than UniProt/RCSB acquisition itself.
 - final Target tool regression: `10 passed` in `16.03s`.
 - post-baseline R6 Stage 1 hardening regression: `78 passed` in `29.53s`.
 - final Stage 1 focused regression, including Target/Judge fact integrity and explicit Gate 1 option
-  approval and scoped resolution comparison: `134 passed`.
+  approval, scoped resolution comparison, bootstrap-loop reuse and display rendering: `138 passed`.
 - Ruff: PASS.
 - strict mypy: PASS for the changed source modules.
 - at tag `BACKEND_PRODUCT_BASELINE_V1`, `src/easydesign/agent/harness.py` was byte-identical to R28.
@@ -263,7 +308,8 @@ source commit `0ffcc4a8` and the ignored runtime profile, then completed Stage 1
 provider connection failure and same-project resume. R9 records clean source commit `eeaa8d7c`,
 accepted the exact displayed option ID and completed the corrected 398-aa canonical / 406-aa
 construct bundle. The final scoped-comparator refinement is validated against the exact saved R7
-and R9 submissions as well as the focused regression suite.
+and R9 submissions as well as the focused regression suite. R10 records clean source commit
+`8867faba` and is the first final-code goal-only run to reach Gate 1 without a bootstrap resume.
 
 This closure establishes the product entry and canonical architecture documentation. It does not
 experimentally validate any NK2R structure as the uniquely best epitope-design input, guarantee

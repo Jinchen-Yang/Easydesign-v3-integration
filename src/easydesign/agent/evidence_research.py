@@ -46,7 +46,7 @@ from .contracts import (
     SourceCardArgumentMismatch,
     StrictDTO,
 )
-from .evidence_corpus import NEEDS, EvidenceCorpus, SelectEvidence, source_key
+from .evidence_corpus import NEEDS, EvidenceCorpus, RetrieveEvidence, SelectEvidence, source_key
 from .session_store import compact, confined, identity
 
 EvidenceStatus = Literal[
@@ -391,6 +391,77 @@ def _polymer_accessions(polymer: dict[str, Any]) -> set[str]:
     }
 
 
+def _polymer_canonical_positions(
+    polymer: dict[str, Any], approved_accession: str
+) -> dict[int, list[int]]:
+    """Map deposited entity-label positions to the approved canonical sequence via SIFTS."""
+
+    approved = _canonical_accession(approved_accession)
+    positions: dict[int, set[int]] = {}
+    for alignment in polymer.get("rcsb_polymer_entity_align") or []:
+        if (
+            str(alignment.get("reference_database_name") or "").upper() != "UNIPROT"
+            or _canonical_accession(alignment.get("reference_database_accession")) != approved
+        ):
+            continue
+        for region in alignment.get("aligned_regions") or []:
+            try:
+                entity_start = int(region["entity_beg_seq_id"])
+                reference_start = int(region["ref_beg_seq_id"])
+                length = int(region["length"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if entity_start < 1 or reference_start < 1 or length < 1:
+                continue
+            for offset in range(length):
+                positions.setdefault(entity_start + offset, set()).add(
+                    reference_start + offset
+                )
+    return {key: sorted(value) for key, value in positions.items()}
+
+
+def _approved_design_correspondence(
+    residues: list[dict[str, Any]], approved_mapping: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Join reference-complex contacts to current design labels without inferring offsets."""
+
+    mapping_by_canonical: dict[int, list[dict[str, Any]]] = {}
+    for row in approved_mapping:
+        position = row.get("canonical_position")
+        if isinstance(position, int):
+            mapping_by_canonical.setdefault(position, []).append(row)
+    result = []
+    for residue in residues:
+        canonical_positions = residue.get("canonical_positions") or []
+        rows = [
+            row
+            for position in canonical_positions
+            for row in mapping_by_canonical.get(position, [])
+        ]
+        result.append(
+            {
+                "reference_auth_asym_id": residue.get("auth_asym_id"),
+                "reference_auth_seq_id": residue.get("auth_seq_id"),
+                "reference_insertion_code": residue.get("insertion_code"),
+                "reference_label_seq_id": residue.get("label_seq_id"),
+                "resname": residue.get("resname"),
+                "canonical_positions": canonical_positions,
+                "current_design_label_seq_ids": sorted(
+                    {
+                        int(row["label_seq_id"])
+                        for row in rows
+                        if isinstance(row.get("label_seq_id"), int)
+                        and bool(row.get("coordinate_present", row.get("model_presence")))
+                    }
+                ),
+                "mapping_statuses": sorted(
+                    {str(row["mapping_status"]) for row in rows if row.get("mapping_status")}
+                ),
+            }
+        )
+    return result
+
+
 def _interface_residue_summary(
     contacts: list[dict[str, Any]],
     *,
@@ -441,6 +512,7 @@ def _pdb_complex_interface_view(
     pdb_id: str,
     polymers: list[dict[str, Any]],
     approved_accession: str,
+    approved_mapping: list[dict[str, Any]] | None = None,
     contact_cutoff: float = 5.0,
 ) -> dict[str, Any]:
     """Project source-bound target/partner contacts from one deposited coordinate model."""
@@ -463,6 +535,9 @@ def _pdb_complex_interface_view(
                 "entity_id": entity_id,
                 "description": description,
                 "reference_accessions": accessions,
+                "canonical_positions_by_label": _polymer_canonical_positions(
+                    polymer, approved_accession
+                ),
                 "is_target": is_target,
             }
             if is_target:
@@ -521,30 +596,41 @@ def _pdb_complex_interface_view(
             target_field, target_name = "residue_b", "resname_b"
             partner_field, partner_name = "residue_a", "resname_a"
         partner = chain_entities.get(partner_chain, {})
-        interfaces.append(
-            {
-                "target_chain": target_chain,
-                "target_entity_id": chain_entities.get(target_chain, {}).get("entity_id"),
-                "partner_chain": partner_chain,
-                "partner_entity_id": partner.get("entity_id"),
-                "partner_description": partner.get("description"),
-                "partner_reference_accessions": partner.get("reference_accessions", []),
-                "geometry_observed": edge["geometry_observed"],
-                "contact_pair_count": edge["residue_pair_count"],
-                "minimum_distance_angstrom": edge["minimum_distance"],
-                "target_contact_residues": _interface_residue_summary(
-                    edge["contacts"],
-                    residue_field=target_field,
-                    resname_field=target_name,
-                ),
-                "partner_contact_residues": _interface_residue_summary(
-                    edge["contacts"],
-                    residue_field=partner_field,
-                    resname_field=partner_name,
-                ),
-                "scope": scope,
-            }
+        target_residues = _interface_residue_summary(
+            edge["contacts"],
+            residue_field=target_field,
+            resname_field=target_name,
         )
+        canonical_by_label = chain_entities.get(target_chain, {}).get(
+            "canonical_positions_by_label", {}
+        )
+        for residue in target_residues:
+            residue["canonical_positions"] = canonical_by_label.get(
+                residue.get("label_seq_id"), []
+            )
+        interface = {
+            "target_chain": target_chain,
+            "target_entity_id": chain_entities.get(target_chain, {}).get("entity_id"),
+            "partner_chain": partner_chain,
+            "partner_entity_id": partner.get("entity_id"),
+            "partner_description": partner.get("description"),
+            "partner_reference_accessions": partner.get("reference_accessions", []),
+            "geometry_observed": edge["geometry_observed"],
+            "contact_pair_count": edge["residue_pair_count"],
+            "minimum_distance_angstrom": edge["minimum_distance"],
+            "target_contact_residues": target_residues,
+            "partner_contact_residues": _interface_residue_summary(
+                edge["contacts"],
+                residue_field=partner_field,
+                resname_field=partner_name,
+            ),
+            "scope": scope,
+        }
+        if approved_mapping is not None:
+            interface["current_design_correspondence"] = _approved_design_correspondence(
+                target_residues, approved_mapping
+            )
+        interfaces.append(interface)
     return {
         "status": "observed" if interfaces else "no-non-target-protein-contact",
         "pdb_id": pdb_id,
@@ -581,6 +667,52 @@ def _pdb_interface_sections(analysis: dict[str, Any]) -> list[dict[str, str]]:
         }
     ]
     for index, interface in enumerate(analysis.get("interfaces") or []):
+        correspondence = interface.get("current_design_correspondence") or []
+        columns = (
+            "reference_auth_residue",
+            "reference_label_seq_id",
+            "resname",
+            "canonical_positions",
+            "current_design_label_seq_ids",
+            "mapping_statuses",
+        )
+        sections.append(
+            {
+                "location": (
+                    "complex interface analysis / target contact mapping / "
+                    f"{index} / {interface['target_chain']}:{interface['partner_chain']}"
+                ),
+                "text": compact(
+                    {
+                        "pdb_id": analysis.get("pdb_id"),
+                        "approved_accession": analysis.get("approved_accession"),
+                        "partner_chain": interface["partner_chain"],
+                        "partner_description": interface.get("partner_description"),
+                        "partner_reference_accessions": interface.get(
+                            "partner_reference_accessions", []
+                        ),
+                        "contact_pair_count": interface.get("contact_pair_count"),
+                        "columns": list(columns),
+                        "rows": [
+                            [
+                                (
+                                    f"{row.get('reference_auth_asym_id')}:"
+                                    f"{row.get('reference_auth_seq_id')}"
+                                    f"{row.get('reference_insertion_code') or ''}"
+                                ),
+                                row.get("reference_label_seq_id"),
+                                row.get("resname"),
+                                row.get("canonical_positions"),
+                                row.get("current_design_label_seq_ids"),
+                                row.get("mapping_statuses"),
+                            ]
+                            for row in correspondence
+                        ],
+                        "scope": interface.get("scope"),
+                    }
+                ),
+            }
+        )
         sections.append(
             {
                 "location": (
@@ -1321,11 +1453,15 @@ class EvidenceResearch:
                 "Deposited assembly and partners are not proof of physiological context."
             ]
             approved_accession = None
+            approved_mapping: list[dict[str, Any]] | None = None
             try:
-                target, _, _ = self.bridge.site_facts()
+                target, target_facts, _ = self.bridge.site_facts()
                 value = target["evidence"]["hard_facts"].get("canonical_accession")
                 if isinstance(value, str) and value:
                     approved_accession = value
+                rows = target_facts.get("observed_facts", {}).get("mapping")
+                if isinstance(rows, list):
+                    approved_mapping = [row for row in rows if isinstance(row, dict)]
             except (AttributeError, AgentBoundaryError, KeyError, TypeError):
                 pass
             if q.topic == "structure-complex" and approved_accession:
@@ -1336,6 +1472,7 @@ class EvidenceResearch:
                         pdb_id=code,
                         polymers=polymers,
                         approved_accession=approved_accession,
+                        approved_mapping=approved_mapping,
                     )
                     limitations.append(
                         "Interface residues are coordinate-derived heavy-atom contacts, not "
@@ -1533,6 +1670,33 @@ def research_tool(bridge: Any, role: str) -> Any:
         worker = EvidenceResearch(bridge)
         result = worker.acquire(query, role=role)
         receptor_analysis = None
+        automatic_interface_read = None
+        if (
+            role == "site"
+            and query.operation == "structure-record"
+            and query.topic == "structure-complex"
+            and not result["errors"]
+        ):
+            interface_cards = [
+                card
+                for card in result["cards"]
+                if card.get("provider") == "RCSB"
+                and card.get("evidence_level")
+                == "deposition-polymer-entities-and-coordinate-contacts"
+            ]
+            if len(interface_cards) == 1:
+                source = interface_cards[0]
+                automatic_interface_read = EvidenceCorpus(bridge).retrieve(
+                    RetrieveEvidence(
+                        need="PPI_INTERFACE",
+                        question=(
+                            "target contact mapping canonical positions current design labels "
+                            "partner identity coordinate interface"
+                        ),
+                        source_id=source_key(source["provider"], source["identifier"]),
+                        page_size=1,
+                    )
+                )
         if role == "site" and query.operation == "gpcrdb-context" and not result["errors"]:
             context_cards = [
                 card
@@ -1636,6 +1800,20 @@ def research_tool(bridge: Any, role: str) -> Any:
                 "errors": result["errors"],
                 **(
                     {
+                        "automatic_interface_read": {
+                            **automatic_interface_read,
+                            "authority": (
+                                "Runtime-derived source-bound coordinate contacts and exact "
+                                "mapping correspondence only; Site still owns scientific "
+                                "ranking and the Scientist still owns approval."
+                            ),
+                        }
+                    }
+                    if automatic_interface_read is not None
+                    else {}
+                ),
+                **(
+                    {
                         "automatic_receptor_analysis": {
                             **receptor_analysis,
                             "authority": (
@@ -1673,7 +1851,10 @@ def research_tool(bridge: Any, role: str) -> Any:
             "Selection need must match query topic: identity=TARGET_IDENTITY, "
             "state=STRUCTURE_STATE, structure-complex=PPI_INTERFACE, "
             "function=FUNCTIONAL_MECHANISM, epitope=KNOWN_EPITOPE. "
-            "use retrieve_evidence for passages and source card IDs in scientific synthesis. "
+            "For a selected Site structure-complex with observed target-partner contacts, "
+            "the same call returns an automatic focused interface passage and records it for "
+            "scientific synthesis; do not rediscover or manually remap those Runtime facts. "
+            "Otherwise use retrieve_evidence for passages and source card IDs. "
             "Failures are unresolved, never negative biology. "
             "No arbitrary URLs, shell, scientific approval or target identity mutation."
         ),

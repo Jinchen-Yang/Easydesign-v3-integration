@@ -795,3 +795,148 @@ def test_acquisition_is_not_an_empty_search_and_failed_search_can_remain_unresol
     )
     assert c.status == "UNRESOLVED" and "conclusions" not in result
     assert len(calls) == 1
+
+
+def test_reference_interface_mapping_uses_sifts_then_current_target_mapping() -> None:
+    from easydesign.agent.evidence_research import (
+        _approved_design_correspondence,
+        _polymer_canonical_positions,
+    )
+
+    polymer = {
+        "rcsb_polymer_entity_align": [
+            {
+                "provenance_source": "SIFTS",
+                "reference_database_name": "UniProt",
+                "reference_database_accession": "QTARGET-2",
+                "aligned_regions": [
+                    {"entity_beg_seq_id": 1, "ref_beg_seq_id": 18, "length": 3}
+                ],
+            }
+        ]
+    }
+    canonical = _polymer_canonical_positions(polymer, "QTARGET")
+    assert canonical == {1: [18], 2: [19], 3: [20]}
+
+    residues = [
+        {
+            "auth_asym_id": "A",
+            "auth_seq_id": 901,
+            "insertion_code": None,
+            "label_seq_id": 2,
+            "resname": "TYR",
+            "canonical_positions": canonical[2],
+        },
+        {
+            "auth_asym_id": "A",
+            "auth_seq_id": 902,
+            "insertion_code": None,
+            "label_seq_id": 3,
+            "resname": "GLU",
+            "canonical_positions": canonical[3],
+        },
+    ]
+    projected = _approved_design_correspondence(
+        residues,
+        [
+            {
+                "canonical_position": 19,
+                "label_seq_id": 41,
+                "mapping_status": "unique",
+                "model_presence": ["1"],
+            },
+            {
+                "canonical_position": 20,
+                "label_seq_id": 42,
+                "mapping_status": "ambiguous",
+                "model_presence": [],
+            },
+        ],
+    )
+    assert projected[0]["reference_auth_seq_id"] == 901
+    assert projected[0]["canonical_positions"] == [19]
+    assert projected[0]["current_design_label_seq_ids"] == [41]
+    assert projected[1]["canonical_positions"] == [20]
+    assert projected[1]["current_design_label_seq_ids"] == []
+    assert projected[1]["mapping_statuses"] == ["ambiguous"]
+
+
+@pytest.mark.asyncio
+async def test_site_structure_complex_atomically_reads_mapped_interface(
+    research: Any, monkeypatch: Any
+) -> None:
+    import json
+
+    from easydesign.agent.evidence_research import research_tool
+
+    captured = []
+
+    monkeypatch.setattr(
+        EvidenceResearch,
+        "acquire",
+        lambda self, query, *, role: {
+            "query_id": "complex-query",
+            "status": "UNRESOLVED",
+            "topic": "structure-complex",
+            "cards": [
+                {
+                    "card_id": "source-complex",
+                    "provider": "RCSB",
+                    "identifier": "1ABC",
+                    "evidence_level": (
+                        "deposition-polymer-entities-and-coordinate-contacts"
+                    ),
+                    "chunk_count": 4,
+                    "source_refs": [],
+                }
+            ],
+            "errors": [],
+        },
+    )
+
+    def retrieve(self: Any, request: Any) -> dict[str, Any]:
+        captured.append(request)
+        return {
+            "query_id": "focused-interface-view",
+            "page_size": 1,
+            "topic": "structure-complex",
+            "question": request.question,
+            "source_id": request.source_id,
+            "feature_types": [],
+            "need": request.need,
+            "status": "UNRESOLVED",
+            "cards": [
+                {
+                    "card_id": "passage-interface",
+                    "passage": (
+                        '{"columns":["canonical_positions",'
+                        '"current_design_label_seq_ids"],"rows":[[[19],[41]]]}'
+                    ),
+                }
+            ],
+            "source_scope": {"project_documents": 1, "selected_documents": 1},
+            "errors": [],
+            "matching_chunks": 1,
+            "next_cursor": "",
+            "authority": "synthetic",
+        }
+
+    monkeypatch.setattr(EvidenceCorpus, "retrieve", retrieve)
+    result = json.loads(
+        await research_tool(research.bridge, "site").ainvoke(
+            {
+                "topic": "structure-complex",
+                "question": "Which target residues contact the partner?",
+                "operation": "structure-record",
+                "identifier": "1ABC",
+                "selection_reason": "Use the deposited target-partner complex",
+            }
+        )
+    )
+
+    assert len(captured) == 1
+    assert captured[0].need == "PPI_INTERFACE"
+    assert captured[0].source_id == "RCSB:1ABC"
+    assert captured[0].page_size == 1
+    assert result["automatic_interface_read"]["cards"][0]["card_id"] == "passage-interface"
+    assert "ranking" in result["automatic_interface_read"]["authority"]

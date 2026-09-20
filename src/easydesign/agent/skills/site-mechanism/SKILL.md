@@ -72,10 +72,13 @@ Full original sources stay durable. A missing or unread full text is not evidenc
 For a selected RCSB structure-record under structure-complex, Runtime may attach a source-bound
 complex-interface target-partner passage. It identifies the approved target entity by its
 deposited UniProt cross-reference and reports 5 Angstrom heavy-atom contacts to non-target protein
-chains. For competition objectives, read this passage before falling back to a generic surface
-scan. Treat the contacts as deposited asymmetric-unit geometry, not as proof of physiological
-assembly, binding energy or inhibition. Map target author numbers through read_canonical_mapping;
-never assume they equal current design labels.
+chains. When coordinate contacts are observed, the acquisition receipt atomically includes the
+focused passage plus a Runtime mapping table from reference author/label numbering through RCSB
+SIFTS canonical positions to current approved design labels. Use that table before falling back to
+a generic surface scan; do not spend another research call rediscovering or remapping it. Empty or
+qualified design correspondence remains unresolved. Treat contacts as deposited asymmetric-unit
+geometry, not as proof of physiological assembly, binding energy or inhibition. Never assume
+reference author numbers, canonical positions and current design labels are equal.
 
 ## Authoritative candidate facts
 

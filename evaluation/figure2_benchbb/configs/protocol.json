@@ -1,0 +1,64 @@
+{
+  "benchmark_label": "BenchBB-derived computational project-formation evaluation",
+  "computational_replicates_per_target_method": 3,
+  "development_base_commit": "27d2aa41eaa2656f99811c74098a8d3a24aad9b9",
+  "endpoint": "pilot-ready",
+  "entry_policy": {
+    "method_receives_other_method_output": false,
+    "natural_language_goal": "target-specific frozen task",
+    "site_or_hotspot_supplied": false,
+    "structure": "exact catalog mmCIF supplied identically to every computational method"
+  },
+  "formal_targets": [
+    "BHRF1",
+    "PDL1",
+    "BBF14",
+    "MBP",
+    "IL7RA",
+    "EGFR",
+    "CAS9"
+  ],
+  "frozen_commit": null,
+  "gate_policy": {
+    "non_routine_correction": "record as operator intervention",
+    "routine_approval": "approve the method's highest-ranked selectable option without scientific editing",
+    "routine_approval_is_not_operator_repair": true
+  },
+  "measurement": {
+    "append_only_event_ledger": true,
+    "missing_values": "explicitly unavailable; never imputed",
+    "no_post_outcome_metric_selection_for_advantage": true,
+    "primary_statistical_unit": "target",
+    "record_all_prospectively_defined_metrics": true,
+    "target_macro_average": true
+  },
+  "methods": [
+    "base_llm_tools",
+    "generic_agent",
+    "easydesign_v3_full",
+    "expert_curated_reference"
+  ],
+  "model_config_sha256": "8c42d066d6de3235b8893f2b5fb99124b8c329bda73d8622b81f26453a3be929",
+  "official_benchbb_endpoint_measured": false,
+  "preflight_targets": [
+    "BHRF1",
+    "PDL1"
+  ],
+  "protocol_version": "0.3.0-pre-freeze",
+  "repair_policy": {
+    "code_change_invalidates_run": true,
+    "cross_method_information_forbidden": true,
+    "first_pass_frozen_before_repair": true,
+    "maximum_rounds": 2,
+    "operator_type": "codex",
+    "policy_id": "figure2-codex-human-repair-v1"
+  },
+  "schema_version": "figure2-benchbb-protocol-v1",
+  "scope": {
+    "experimental_binding": "not measured",
+    "figure2a": "all seven targets",
+    "figure2b_generation": "not started by this protocol"
+  },
+  "source_snapshot_id": "41d76e2bab8d6386d19d1bcb9dc77a3cc3a1e37a162d8f1a86f139396ce68119",
+  "status": "development-preflight"
+}

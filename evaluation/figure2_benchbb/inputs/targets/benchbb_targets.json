@@ -1,0 +1,76 @@
+{
+  "benchmark": "BenchBB",
+  "retrieved": "2026-09-20",
+  "targets": [
+    {
+      "order": 1,
+      "target_id": "EGFR",
+      "name": "Epidermal growth factor receptor ectodomain",
+      "pdb": "8HGO",
+      "target_class": "human receptor ectodomain",
+      "challenge": "Large multidomain extracellular target with substantial public binder data",
+      "bench_role": "Established reference target; connects to the two Adaptyv EGFR competition datasets",
+      "priority": "expanded"
+    },
+    {
+      "order": 2,
+      "target_id": "IL7RA",
+      "name": "Interleukin-7 receptor alpha (CD127)",
+      "pdb": "3DI3",
+      "target_class": "human cytokine receptor ectodomain",
+      "challenge": "Therapeutically relevant receptor ectodomain with prior de novo binder benchmarks",
+      "bench_role": "Tests recovery of a tractable but biologically meaningful receptor target",
+      "priority": "expanded"
+    },
+    {
+      "order": 3,
+      "target_id": "PDL1",
+      "name": "Programmed death-ligand 1",
+      "pdb": "4Z18",
+      "target_class": "human immune checkpoint protein",
+      "challenge": "Relatively flat interaction surface that is difficult for small molecules",
+      "bench_role": "Hard-interface primary case for early Figure 2 experiments",
+      "priority": "primary"
+    },
+    {
+      "order": 4,
+      "target_id": "BBF14",
+      "name": "BBF-14 de novo beta-barrel",
+      "pdb": "9HAG",
+      "target_class": "de novo designed protein",
+      "challenge": "Novel non-natural target with no evolved epitope or natural binder prior",
+      "bench_role": "Structure-only generalization and leakage-resistant stress test",
+      "priority": "expanded"
+    },
+    {
+      "order": 5,
+      "target_id": "BHRF1",
+      "name": "Epstein–Barr virus BHRF1",
+      "pdb": "2WH6",
+      "target_class": "viral Bcl-2-like protein",
+      "challenge": "Known hydrophobic BH3-binding cleft narrows the site-search problem",
+      "bench_role": "Tractable primary case for rapid end-to-end VHH benchmarking",
+      "priority": "primary"
+    },
+    {
+      "order": 6,
+      "target_id": "MBP",
+      "name": "Maltose-binding protein",
+      "pdb": "1PEB",
+      "target_class": "bacterial soluble protein",
+      "challenge": "Stable, well-expressed protein with a characterized ligand-binding site",
+      "bench_role": "Accessible soluble-protein control and assay-friendly target",
+      "priority": "expanded"
+    },
+    {
+      "order": 7,
+      "target_id": "CAS9",
+      "name": "CRISPR-associated protein Cas9",
+      "pdb": "4OO8",
+      "target_class": "large bacterial nuclease",
+      "challenge": "Large multidomain target with conformational motion and several possible binding regions",
+      "bench_role": "Large-target and conformational-complexity stress test",
+      "priority": "expanded"
+    }
+  ]
+}

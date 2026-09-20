@@ -1,0 +1,8 @@
+order,target_id,name,pdb,target_class,challenge,bench_role,priority
+1,EGFR,Epidermal growth factor receptor ectodomain,8HGO,human receptor ectodomain,Large multidomain extracellular target with substantial public binder data,Established reference target; connects to the two Adaptyv EGFR competition datasets,expanded
+2,IL7RA,Interleukin-7 receptor alpha (CD127),3DI3,human cytokine receptor ectodomain,Therapeutically relevant receptor ectodomain with prior de novo binder benchmarks,Tests recovery of a tractable but biologically meaningful receptor target,expanded
+3,PDL1,Programmed death-ligand 1,4Z18,human immune checkpoint protein,Relatively flat interaction surface that is difficult for small molecules,Hard-interface primary case for early Figure 2 experiments,primary
+4,BBF14,BBF-14 de novo beta-barrel,9HAG,de novo designed protein,Novel non-natural target with no evolved epitope or natural binder prior,Structure-only generalization and leakage-resistant stress test,expanded
+5,BHRF1,Epstein–Barr virus BHRF1,2WH6,viral Bcl-2-like protein,Known hydrophobic BH3-binding cleft narrows the site-search problem,Tractable primary case for rapid end-to-end VHH benchmarking,primary
+6,MBP,Maltose-binding protein,1PEB,bacterial soluble protein,"Stable, well-expressed protein with a characterized ligand-binding site",Accessible soluble-protein control and assay-friendly target,expanded
+7,CAS9,CRISPR-associated protein Cas9,4OO8,large bacterial nuclease,Large multidomain target with conformational motion and several possible binding regions,Large-target and conformational-complexity stress test,expanded

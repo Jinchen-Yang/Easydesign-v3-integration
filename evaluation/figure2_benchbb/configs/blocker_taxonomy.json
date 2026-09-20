@@ -1,0 +1,21 @@
+[
+  "schema",
+  "required_field",
+  "artifact_reference",
+  "path_or_handle",
+  "provenance",
+  "identity",
+  "structure_mapping",
+  "residue_numbering",
+  "hard_constraint",
+  "stage_handoff",
+  "compiler",
+  "backend_input",
+  "context_limit",
+  "model_budget",
+  "tool_budget",
+  "no_progress",
+  "transport",
+  "infrastructure",
+  "other"
+]

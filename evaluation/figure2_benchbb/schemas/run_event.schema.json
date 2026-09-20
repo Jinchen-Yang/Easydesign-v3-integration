@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "figure2-benchbb-run-event-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "run_id", "case_id", "method_id", "replicate", "timestamp_utc", "monotonic_ns", "actor", "stage", "event_type", "status", "payload"],
+  "properties": {
+    "schema_version": {"const": "figure2-benchbb-run-event-v1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "case_id": {"type": "string", "minLength": 1},
+    "method_id": {"enum": ["base_llm_tools", "generic_agent", "easydesign_v3_full", "expert_curated_reference"]},
+    "replicate": {"type": "integer", "minimum": 1},
+    "timestamp_utc": {"type": "string", "format": "date-time"},
+    "monotonic_ns": {"type": "integer", "minimum": 0},
+    "actor": {"enum": ["model", "method_framework", "easydesign", "operator", "transport", "validator", "backend"]},
+    "stage": {"enum": ["discovery", "target", "structure", "site", "design", "compiler", "backend-validation", "pilot-ready", "run"]},
+    "event_type": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "minLength": 1},
+    "attempt_id": {"type": ["string", "null"]},
+    "self_recovery_episode_id": {"type": ["string", "null"]},
+    "operator_episode_id": {"type": ["string", "null"]},
+    "input_artifact": {"type": ["string", "null"]},
+    "input_sha256": {"type": ["string", "null"]},
+    "output_artifact": {"type": ["string", "null"]},
+    "output_sha256": {"type": ["string", "null"]},
+    "error_type": {"type": ["string", "null"]},
+    "blocker_category": {"type": ["string", "null"]},
+    "payload": {"type": "object"}
+  }
+}

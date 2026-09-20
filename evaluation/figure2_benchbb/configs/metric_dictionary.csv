@@ -1,0 +1,55 @@
+metric_id,layer,definition,direction,raw_source,main_or_supporting
+time_to_first_submission_seconds,time,goal release to first complete project submission,lower,external ledger + runtime events,main
+time_to_valid_seconds,time,goal release to first mechanically valid pilot-ready project,lower,external ledger + validators,main
+time_to_first_operator_handoff_seconds,time,goal release to awaiting_operator_repair,lower,external ledger,supporting
+autonomous_elapsed_seconds,time,elapsed autonomous execution excluding operator activity,lower,external ledger,main
+self_recovery_seconds,time,time in framework-native recovery,contextual,runtime events,supporting
+active_operator_seconds,time,hands-on Codex diagnosis edit and immediate validation,lower,operator ledger,main
+operator_queue_seconds,time,awaiting operator minus active operator time,lower,external ledger,supporting
+transport_wait_seconds,time,provider transport waits and bounded retries,lower,runtime events,supporting
+backend_wait_seconds,time,deterministic worker/backend waiting,lower,runtime events,supporting
+stage_duration_seconds,time,duration by discovery target structure site design compiler backend-validation,lower,external ledger + runtime manifests,main
+first_submission_valid,validity,first complete submission passes without correction,higher,validator receipts,main
+zero_self_recovery_valid,validity,valid with no framework-native recovery,higher,runtime events,main
+zero_operator_valid,validity,eventual valid without operator intervention,higher,operator ledger + validators,main
+self_recovered_valid,validity,first submission failed then native recovery reached valid,higher,runtime events + validators,main
+operator_assisted_valid,validity,valid only after operator intervention,lower,operator ledger + validators,main
+eventual_mechanical_valid,validity,reaches pilot-ready deterministic endpoint,higher,validators,main
+agent_claimed_success,integrity,method claimed completion,higher,runtime output,supporting
+validator_confirmed_success,integrity,deterministic validator confirmed completion,higher,validator receipts,main
+false_success_claim_rate,integrity,claimed success without validator confirmation,lower,derived,main
+hard_fact_integrity,integrity,target chain mapping residue and constraint facts pass checks,higher,validators,main
+silent_failure_rate,integrity,invalid output accepted without explicit warning,lower,audit + validators,main
+self_recovery_count,recovery,framework-native recovery episodes,contextual,runtime events,supporting
+self_recovery_success_rate,recovery,resolved blockers divided by attempted recoveries,higher,runtime events,main
+same_blocker_repeat_count,recovery,repeated recovery with unchanged blocker,lower,runtime events,supporting
+no_progress_recovery_count,recovery,recovery episodes with no auditable progress,lower,runtime events,supporting
+context_compaction_count,recovery,working-memory compactions,contextual,runtime events,supporting
+checkpoint_resume_count,recovery,framework-native checkpoint resumes,contextual,runtime events,supporting
+budget_exhaustion_count,recovery,model tool query or context budgets exhausted,lower,runtime events,supporting
+operator_intervention_count,operator,distinct minimal repair episodes,lower,operator ledger,main
+operator_intervention_incidence,operator,runs needing any operator repair,lower,derived,main
+operator_engineering_intervention_count,operator,engineering repair episodes,lower,operator ledger,main
+operator_scientific_intervention_count,operator,scientific-minimal repair episodes,lower,operator ledger,main
+operator_corrected_field_count,operator,unique normalized structured fields changed,lower,operator ledger,main
+operator_corrected_artifact_count,operator,artifacts directly edited by operator,lower,operator ledger,supporting
+operator_repair_success_count,operator,operator episodes restoring autonomous execution,higher,operator ledger,supporting
+same_blocker_recurrence_after_handoff,operator,repaired blocker recurs after handoff,lower,runtime + operator ledger,supporting
+autonomous_stage_reach,progress,maximum stage reached before operator action,higher,runtime events,main
+stage_wise_completion,progress,per-stage outcome classification,higher,runtime events + validators,main
+submission_count,efficiency,complete submissions to validators,lower,runtime events,supporting
+validation_failure_count,efficiency,deterministic validation failures,lower,validator receipts,supporting
+model_call_count,efficiency,scientific model calls to endpoint,lower,runtime events,supporting
+tool_call_count,efficiency,scientific tool calls to endpoint,lower,runtime events,supporting
+invalid_tool_call_count,efficiency,rejected or malformed tool calls,lower,runtime events,supporting
+repeated_tool_call_count,efficiency,repeated equivalent calls without new evidence,lower,runtime events,supporting
+input_tokens,efficiency,provider reported input tokens,lower,runtime events,supporting
+output_tokens,efficiency,provider reported output tokens,lower,runtime events,supporting
+peak_input_chars,efficiency,maximum actual request characters including schemas,lower,runtime events,supporting
+provider_api_cost,efficiency,provider cost when available,lower,provider receipt,supporting
+acquired_source_count,efficiency,unique accepted source artifacts,contextual,runtime evidence,supporting
+cache_hit_miss,efficiency,cache outcomes for deterministic sources,contextual,runtime events,supporting
+transport_retry_count,infrastructure,bounded physical provider retries,lower,runtime events,supporting
+infrastructure_incident_count,infrastructure,incidents outside scientific behavior,lower,external ledger,supporting
+blocker_category_composition,failure,blockers by frozen taxonomy,contextual,external + runtime ledger,main
+final_outcome_category,outcome,first-submission self-recovered operator-assisted or invalid,contextual,derived,main

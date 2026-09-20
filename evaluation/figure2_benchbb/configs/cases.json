@@ -1,0 +1,72 @@
+[
+  {
+    "case_id": "benchbb_bhrf1_2wh6",
+    "target_id": "BHRF1",
+    "pdb_id": "2WH6",
+    "structure": "inputs/targets/BHRF1_2WH6/2WH6.cif",
+    "task": "Design a VHH nanobody against Epstein-Barr virus BHRF1 that targets the accessible BH3-binding cleft and is intended to inhibit pro-survival ligand engagement.",
+    "design_type": "VHH",
+    "target_family": "viral-soluble-protein",
+    "preflight": true
+  },
+  {
+    "case_id": "benchbb_pdl1_4z18",
+    "target_id": "PDL1",
+    "pdb_id": "4Z18",
+    "structure": "inputs/targets/PDL1_4Z18/4Z18.cif",
+    "task": "Design a VHH nanobody against the human PD-L1 extracellular domain that is intended to inhibit PD-1 engagement.",
+    "design_type": "VHH",
+    "target_family": "immune-checkpoint-protein",
+    "preflight": true
+  },
+  {
+    "case_id": "benchbb_bbf14_9hag",
+    "target_id": "BBF14",
+    "pdb_id": "9HAG",
+    "structure": "inputs/targets/BBF14_9HAG/9HAG.cif",
+    "task": "Design a VHH nanobody binder against the de novo beta-barrel protein BBF-14 using an accessible, structurally coherent surface epitope.",
+    "design_type": "VHH",
+    "target_family": "de-novo-protein",
+    "preflight": false
+  },
+  {
+    "case_id": "benchbb_mbp_1peb",
+    "target_id": "MBP",
+    "pdb_id": "1PEB",
+    "structure": "inputs/targets/MBP_1PEB/1PEB.cif",
+    "task": "Design a VHH nanobody binder against maltose-binding protein using an accessible, structurally coherent epitope.",
+    "design_type": "VHH",
+    "target_family": "bacterial-soluble-protein",
+    "preflight": false
+  },
+  {
+    "case_id": "benchbb_il7ra_3di3",
+    "target_id": "IL7RA",
+    "pdb_id": "3DI3",
+    "structure": "inputs/targets/IL7RA_3DI3/3DI3.cif",
+    "task": "Design a VHH nanobody against the human IL-7 receptor alpha extracellular domain that is intended to inhibit IL-7 receptor engagement.",
+    "design_type": "VHH",
+    "target_family": "cytokine-receptor-ectodomain",
+    "preflight": false
+  },
+  {
+    "case_id": "benchbb_egfr_8hgo",
+    "target_id": "EGFR",
+    "pdb_id": "8HGO",
+    "structure": "inputs/targets/EGFR_8HGO/8HGO.cif",
+    "task": "Design a VHH nanobody against the human EGFR ectodomain that is intended to inhibit ligand-driven receptor activation.",
+    "design_type": "VHH",
+    "target_family": "receptor-ectodomain",
+    "preflight": false
+  },
+  {
+    "case_id": "benchbb_cas9_4oo8",
+    "target_id": "CAS9",
+    "pdb_id": "4OO8",
+    "structure": "inputs/targets/CAS9_4OO8/4OO8.cif",
+    "task": "Design an inhibitory VHH nanobody against Streptococcus pyogenes Cas9 using an accessible, functionally relevant surface site.",
+    "design_type": "VHH",
+    "target_family": "large-bacterial-nuclease",
+    "preflight": false
+  }
+]

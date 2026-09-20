@@ -66,7 +66,6 @@ async def test_unprepared_inspection_is_read_only(bridge: Any, role: str) -> Non
     import json
 
     from easydesign.agent.tools import build_tools
-    from easydesign.core import ConfigurationError
 
     tool = next(t for t in build_tools(bridge, role) if t.name == "read_target_evidence")
     result = json.loads(await tool.ainvoke({}))
@@ -81,6 +80,34 @@ async def test_unprepared_inspection_is_read_only(bridge: Any, role: str) -> Non
     assert "evidence_id" not in result and "bundle" not in result
     assert not bridge._jobs()
     assert bridge.store.db.execute("SELECT count(*) FROM commands").fetchone()[0] == 0
-    # An explicit invalid run must still fail, not be downgraded to a preparation hint.
-    with pytest.raises(ConfigurationError):
-        await tool.ainvoke({"run_id": "nonexistent-run"})
+    invalid = json.loads(await tool.ainvoke({"run_id": bridge.project_id}))
+    assert invalid == {
+        "allowed_run_id": None,
+        "next_action": (
+            "Call read_target_evidence without run_id to use the sole current project-bound "
+            "Target run. Do not use a project ID as a run ID."
+        ),
+        "provided_run_id": bridge.project_id,
+        "status": "invalid-run-id",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["target", "coordinator"])
+async def test_invalid_target_run_id_is_repairable_without_weakening_binding(
+    bridge: Any, role: str
+) -> None:
+    import json
+
+    from easydesign.agent.tools import build_tools
+
+    bridge.prepare_target()
+    terminal(bridge)
+    current = bridge.read_evidence()["run_id"]
+    tool = next(t for t in build_tools(bridge, role) if t.name == "read_target_evidence")
+    invalid = json.loads(await tool.ainvoke({"run_id": bridge.project_id}))
+    assert invalid["status"] == "invalid-run-id"
+    assert invalid["provided_run_id"] == bridge.project_id
+    assert invalid["allowed_run_id"] == current
+    repaired = json.loads(await tool.ainvoke({}))
+    assert repaired["run_id"] == current

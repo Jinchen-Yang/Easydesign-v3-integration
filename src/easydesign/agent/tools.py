@@ -131,8 +131,10 @@ class TargetBridge:
                 "Existing project must already be review-gated and stop after target preparation"
             )
         if isinstance(source, LocalFileSourceConfig) and (
-            config.structure_prediction is not None or (
-            source.identity.uniprot_accession is not None and not getattr(self, "is_phase2", False)
+            config.structure_prediction is not None
+            or (
+                source.identity.uniprot_accession is not None
+                and not getattr(self, "is_phase2", False)
             )
         ):
             raise AgentBoundaryError(
@@ -228,10 +230,7 @@ class TargetBridge:
             source = loaded.config.target.source
             if isinstance(source, LocalFileSourceConfig):
                 source_identity = source.identity
-                if (
-                    getattr(self, "is_phase2", False)
-                    and source_identity.uniprot_accession is None
-                ):
+                if getattr(self, "is_phase2", False) and source_identity.uniprot_accession is None:
                     from .target_identity import (
                         deposited_polymer_metadata,
                         deposited_uniprot_leads,
@@ -246,9 +245,7 @@ class TargetBridge:
                     if execution is not None:
                         request_text += " " + str(execution.get("current_user_message", ""))
                     assert loaded.source_path is not None
-                    leads = deposited_uniprot_leads(
-                        deposited_polymer_metadata(loaded.source_path)
-                    )
+                    leads = deposited_uniprot_leads(deposited_polymer_metadata(loaded.source_path))
                     if leads and explicit_canonical_identity_request(request_text):
                         raise AgentBoundaryError(
                             "TARGET_IDENTITY_SOURCE_REQUIRED: the user explicitly requested "
@@ -451,11 +448,7 @@ class TargetBridge:
                 )
             request_hash = canonical_model_sha256(request)
             refs.append(f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}")
-            inventory = (
-                inventory_structure(source)
-                if current.source_path is not None
-                else None
-            )
+            inventory = inventory_structure(source) if current.source_path is not None else None
             if inventory is not None and len(inventory.chains) > 32:
                 raise AgentBoundaryError(
                     "Too many chains for this slice; provide a narrower explicit input"
@@ -1014,6 +1007,21 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                             "call prepare_target. If the input has no relevant unambiguous "
                             "reference, preserve that limitation and prepare the structural-only "
                             "target. After preparation use get_job_status before reading evidence."
+                        ),
+                    },
+                )
+        if role in {"target", "coordinator"} and run_id is not None:
+            current = resolve_project_run(bridge.project, required=False)
+            if current is None or current.run_id != run_id:
+                return bridge.store.offload(
+                    bridge.thread,
+                    {
+                        "status": "invalid-run-id",
+                        "provided_run_id": run_id,
+                        "allowed_run_id": None if current is None else current.run_id,
+                        "next_action": (
+                            "Call read_target_evidence without run_id to use the sole current "
+                            "project-bound Target run. Do not use a project ID as a run ID."
                         ),
                     },
                 )

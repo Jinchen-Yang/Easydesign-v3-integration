@@ -95,3 +95,33 @@ uses Python 3.11.15. It remains untouched as an auditable unused staging directo
 - Disposition: development preflight only. R1 is excluded from formal effectiveness and efficiency
   estimates and remains pending at its unapproved Gate 2 card. R2 must start fresh from the frozen
   raw `4Z18.cif` input and may not resume or read R1.
+
+## F2BB-EVIDENCE-002 — coordinate contacts were durable but absent from the Site handoff
+
+- Case: PD-L1 / 4Z18.
+- Run: `preflight-pdl1-easydesign-r2-20260920`.
+- Boundary: Site Research handoff after successful acquisition of the selected `4ZQK` complex.
+- Before: a transient first RCSB entity request failed, then the Agent retried successfully.
+  Runtime derived 56 PD-L1/PD-1 residue-contact pairs and 22 PD-L1 contact residues from the
+  deposited coordinates. The acquisition receipt exposed only source metadata, however, and the
+  bounded Research loop reached its query limit before issuing a separate focused passage read.
+  The durable evidence contained the contacts, but `SiteResearchHandoff` did not. Site synthesis
+  consequently stated that the 4ZQK contact set was unresolved and again ranked generic
+  solvent-exposed patches.
+- Cause: selected complex acquisition, deterministic interface analysis, focused evidence reading,
+  and current-target mapping were separate cognitive steps. The model had to spend another turn to
+  rediscover Runtime facts that already existed. Reference PDB author/label numbering also lacked
+  an atomic, explicit path through SIFTS canonical positions to the current approved design labels.
+- Repair: commit `3ad38c986818ca9f4dd751188c6b0cc169744132` makes an observed Site
+  `structure-complex` acquisition return and persist a focused interface passage in the same
+  call. Runtime uses the selected RCSB polymer entity's SIFTS alignment to map reference label
+  positions to the approved UniProt sequence, then joins those positions to the existing Target
+  mapping without inferring offsets. A compact table preserves reference author/label identifiers,
+  canonical positions, current coordinate-bearing design labels, mapping qualifications, partner
+  identity, and the deposited-geometry scope. Empty correspondence remains empty.
+- Validation: the real saved 4ZQK/4Z18 fixture produces 56 pairs, 22 PD-L1 contact rows and 21
+  current design labels; canonical position 18 has no current observed correspondence and stays
+  empty. Ruff and mypy pass. Evidence/Site/Harness regression passes 89 tests in 214.17 seconds.
+- Disposition: development preflight only. R2 is excluded from formal effectiveness and efficiency
+  estimates and remains unapproved at Gate 2. R3 must start fresh from the frozen raw `4Z18.cif`
+  input and may not resume or read R1/R2 state.

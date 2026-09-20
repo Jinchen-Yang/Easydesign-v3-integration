@@ -945,7 +945,7 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                     "sources, then call prepare_target. The Coordinator must delegate to Target."
                 ),
             }
-        for _ in range(40):
+        for _ in range(120):
             if result["status"] not in ACTIVE_JOB_STATUSES:
                 break
             await asyncio.sleep(0.25)
@@ -1010,21 +1010,45 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                         ),
                     },
                 )
-        if role in {"target", "coordinator"} and run_id is not None:
-            current = resolve_project_run(bridge.project, required=False)
-            if current is None or current.run_id != run_id:
+        if role in {"target", "coordinator"}:
+            operational = bridge.get_job_status()
+            if operational["status"] in ACTIVE_JOB_STATUSES:
                 return bridge.store.offload(
                     bridge.thread,
                     {
-                        "status": "invalid-run-id",
-                        "provided_run_id": run_id,
-                        "allowed_run_id": None if current is None else current.run_id,
+                        **operational,
+                        "status": "job-active",
                         "next_action": (
-                            "Call read_target_evidence without run_id to use the sole current "
-                            "project-bound Target run. Do not use a project ID as a run ID."
+                            "The bound scientific worker is still active. Call get_job_status "
+                            "again before reading target evidence; do not infer failure or "
+                            "submit another job."
                         ),
                     },
                 )
+        argument_repair: dict[str, str] | None = None
+        if run_id is not None:
+            current = resolve_project_run(bridge.project, required=False)
+            if current is not None and current.run_id != run_id and run_id == bridge.project_id:
+                argument_repair = {
+                    "kind": "project-id-used-as-run-id",
+                    "provided_run_id": run_id,
+                    "resolved_run_id": current.run_id,
+                }
+                run_id = current.run_id
+            elif current is None or current.run_id != run_id:
+                if role in {"target", "coordinator"}:
+                    return bridge.store.offload(
+                        bridge.thread,
+                        {
+                            "status": "invalid-run-id",
+                            "provided_run_id": run_id,
+                            "allowed_run_id": None if current is None else current.run_id,
+                            "next_action": (
+                                "Call read_target_evidence without run_id to use the sole current "
+                                "project-bound Target run. Do not use a project ID as a run ID."
+                            ),
+                        },
+                    )
         evidence = bridge.read_evidence(run_id)
         if role == "judge":
             binding = EvidenceBinding.model_validate(
@@ -1032,6 +1056,8 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
             )
             if binding != JUDGE_EVIDENCE.get():
                 raise AgentBoundaryError("Judge may read only its delegated evidence snapshot")
+        if argument_repair is not None:
+            evidence["argument_repair"] = argument_repair
         return bridge.store.offload(bridge.thread, evidence)
 
     async def decision_tool(
@@ -1076,7 +1102,7 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                 "get_job_status",
                 status_tool,
                 EmptyArguments,
-                "Observe an existing bound job for up to ten seconds. Requires a job receipt "
+                "Observe an existing bound job for up to thirty seconds. Requires a job receipt "
                 "from prepare_target or a Gate response; no-bound-job is not a running job.",
             )
         )

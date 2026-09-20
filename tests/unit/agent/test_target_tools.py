@@ -94,7 +94,7 @@ async def test_unprepared_inspection_is_read_only(bridge: Any, role: str) -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("role", ["target", "coordinator"])
-async def test_invalid_target_run_id_is_repairable_without_weakening_binding(
+async def test_project_id_run_argument_is_repaired_without_weakening_binding(
     bridge: Any, role: str
 ) -> None:
     import json
@@ -105,9 +105,62 @@ async def test_invalid_target_run_id_is_repairable_without_weakening_binding(
     terminal(bridge)
     current = bridge.read_evidence()["run_id"]
     tool = next(t for t in build_tools(bridge, role) if t.name == "read_target_evidence")
-    invalid = json.loads(await tool.ainvoke({"run_id": bridge.project_id}))
-    assert invalid["status"] == "invalid-run-id"
-    assert invalid["provided_run_id"] == bridge.project_id
-    assert invalid["allowed_run_id"] == current
-    repaired = json.loads(await tool.ainvoke({}))
+    repaired = json.loads(await tool.ainvoke({"run_id": bridge.project_id}))
     assert repaired["run_id"] == current
+    assert repaired["argument_repair"] == {
+        "kind": "project-id-used-as-run-id",
+        "provided_run_id": bridge.project_id,
+        "resolved_run_id": current,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["target", "coordinator"])
+async def test_active_target_job_returns_retryable_evidence_state(
+    bridge: Any, role: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from easydesign.agent.tools import build_tools
+
+    bridge.prepare_target()
+    terminal(bridge)
+    monkeypatch.setattr(
+        bridge,
+        "get_job_status",
+        lambda: {"status": "running", "job_id": "job-active", "phase": "prepare"},
+    )
+    monkeypatch.setattr(
+        bridge,
+        "read_evidence",
+        lambda *_args, **_kwargs: pytest.fail("active evidence must not be read"),
+    )
+    tool = next(t for t in build_tools(bridge, role) if t.name == "read_target_evidence")
+    result = json.loads(await tool.ainvoke({}))
+    assert result["status"] == "job-active"
+    assert result["job_id"] == "job-active"
+    assert "get_job_status" in result["next_action"]
+
+
+@pytest.mark.asyncio
+async def test_judge_project_id_run_argument_repairs_to_delegated_evidence(bridge: Any) -> None:
+    import json
+
+    from easydesign.agent.contracts import EvidenceBinding
+    from easydesign.agent.tools import JUDGE_EVIDENCE, build_tools
+
+    bridge.prepare_target()
+    terminal(bridge)
+    current = bridge.read_evidence()
+    delegated = EvidenceBinding.model_validate(
+        {name: current[name] for name in EvidenceBinding.model_fields}
+    )
+    token = JUDGE_EVIDENCE.set(delegated)
+    try:
+        tool = next(t for t in build_tools(bridge, "judge") if t.name == "read_target_evidence")
+        repaired = json.loads(await tool.ainvoke({"run_id": bridge.project_id}))
+    finally:
+        JUDGE_EVIDENCE.reset(token)
+    assert repaired["run_id"] == current["run_id"]
+    assert repaired["argument_repair"]["kind"] == "project-id-used-as-run-id"
+    assert repaired["argument_repair"]["resolved_run_id"] == current["run_id"]

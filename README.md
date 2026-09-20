@@ -1,7 +1,7 @@
 # EasyDesign Local
 
 [产品理念](docs/PRODUCT_PHILOSOPHY.md) · [开发指南](DEVELOPMENT.md) ·
-[数据安全](DATA_SAFETY.md)
+[数据安全](DATA_SAFETY.md) · [Canonical architecture](docs/ARCHITECTURE.md)
 
 ## Current v3 primary architecture
 
@@ -58,6 +58,23 @@ set +a
 不要把真实 key 提交到 Git。使用 OpenAI 或 Anthropic 时，按
 [模型配置](docs/AGENT_PHASE1.md#配置一个可用模型)同时修改 `provider`、`model` 和 `secret_env`，
 不要只替换环境变量名。Phase 1 的启动、人工确认、进程恢复及可选 live smoke 也见该指南。
+
+
+### Goal-only quick start
+
+PDB/mmCIF 是可选 seed，不是新项目的准入条件。下面的命令只从自然语言启动 Target
+Intelligence，并在 Gate 1 停止：
+
+```bash
+easydesign-agent start nk2r-goal-only \
+  --goal 'Design an extracellular inhibitory VHH against human NK2R.' \
+  --through target
+```
+
+需要固定本地结构时加入 `--target /absolute/path/to/target.pdb`。两种入口都由 native Stage 1
+核验 identity、structure、mapping、scope 和 chain；goal bootstrap 只有 discovery-input
+权限，不能替代 Gate 1。完整后端可用 `--through site|design|pilot|handoff`，每个 consequential
+transition 仍等待相应 Scientist Gate。
 
 ## 从全新机器开始
 

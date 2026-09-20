@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from easydesign.core import canonical_model_sha256
-from easydesign.orchestration.config import LoadedStructureRunConfig, PredictionBackend
+from easydesign.orchestration.config import LoadedRunConfig, PredictionBackend
 from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES
 
 from .contracts import AgentBoundaryError, ApplyDecision, DecisionCard, DecisionOutcome
@@ -61,7 +61,7 @@ class Phase34Runtime(Phase34Bridge):
         if prior is None:
             store.event(thread, "phase34-scope", scope)
 
-    def validate_project(self) -> LoadedStructureRunConfig:
+    def validate_project(self) -> LoadedRunConfig:
         return validate_downstream_project(self) or super().validate_project()
 
     def _design_invalidated(self, event: dict[str, Any]) -> bool:

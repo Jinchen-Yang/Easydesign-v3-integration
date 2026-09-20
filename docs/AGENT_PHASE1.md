@@ -1,11 +1,15 @@
-# EasyDesign Agent：Phase 1 frozen
+# EasyDesign Agent：Backend Product Baseline V1
 
-`easydesign-agent` 直接调用模型 API，协调 Target Intelligence 和只读 Evidence Judge，
-并复用原来的 target preparation、manifest、DecisionRequest/Record 和 local worker。
-Scientific Approval Gates 和 Scientist Steering 的正式定义见
-[统一 v3 decision contract](V3_SCIENTIFIC_DECISION_CONTRACT.md)。
-v2 的 `easydesign` 命令继续可用。此 migration 分支只支持本地 PDB/mmCIF、review-gated、
-stop-after-target 项目；不进行远端身份检索、结构预测、site/binder 设计或 Stage 02–07。
+`easydesign-agent` 直接调用模型 API，协调 Target、Site、Binder、Pilot Ranking 和 Final
+Selection specialist，并复用 target preparation、manifest、DecisionRequest/Record、scientific
+runtime 和 local worker。Scientific Approval Gates 与 Scientist Steering 的正式定义见
+[统一 v3 decision contract](V3_SCIENTIFIC_DECISION_CONTRACT.md)，完整流程见
+[canonical architecture](ARCHITECTURE.md)。v2 的 `easydesign` 命令继续可用。
+
+新项目支持两种入口：只给自然语言目标，或额外提供本地 PDB/mmCIF seed。Goal bootstrap 只把
+目标解释为受限的 UniProt search input；identity、structure、scope、chain 和 mapping 仍由
+native Stage 1 核验并进入 Gate 1。`--through target|site|design|pilot|handoff` 控制本次运行的
+授权终点，不会自动批准后续 Gate。
 
 ## 安装 optional agent 环境
 
@@ -102,14 +106,25 @@ DeepSeek 默认使用官方固定 endpoint 和非 thinking 工具调用。202609
 
 ## 运行与恢复
 
-为新项目选择一个小型本地双链结构。CLI 的问题应包含研究者真正想准备的链；没有偏好时
-Agent 应先澄清。输入文件只读，项目由旧初始化入口冻结输入。
+自然语言目标可以直接创建项目并进入 native Target Intelligence：
 
 ```bash
-easydesign-agent start my-target \
-  --target /absolute/path/to/two-chain.pdb \
-  --goal '准备这份本地结构中的链 A；显示证据和局限，等待我确认。'
+easydesign-agent start nk2r-goal-only \
+  --goal 'Design an extracellular inhibitory VHH against human NK2R.' \
+  --through target
 ```
+
+需要固定实验结构作为 seed 时再提供 `--target`。输入文件只读，项目会冻结本地 source：
+
+```bash
+easydesign-agent start my-seeded-target \
+  --target /absolute/path/to/two-chain.pdb \
+  --goal '准备这份本地结构中的链 A；显示证据和局限，等待我确认。' \
+  --through target
+```
+
+两条路径最终都使用同一 Stage 1 fact/decision authority。自然语言解析结果不直接选择
+UniProt、PDB、scope 或 chain。
 
 终端输出 `thread` 与决定卡。关闭进程后可以恢复同一个 thread：
 
@@ -196,4 +211,4 @@ EASYDESIGN_AGENT_LIVE=1 EASYDESIGN_AGENT_MODEL_CONFIG="$PWD/config/llm.yaml" \
 
 Phase 1 final contract 更新会改变运行时 fingerprint；旧 Phase 1 / 1.1 thread 的 checkpoint 不做迁移，
 恢复时会拒绝不兼容版本，应使用新 thread。既有 scientific job、run 和 decision record 不变。
-Phase 1 正式冻结；Gate 2–5 仅有 architecture contract，不会自动启动 Phase 2。
+Backend Product Baseline V1 的五个 Gate handler 均已实现；任何一次运行仍只执行 `--through` 授权的范围。日期化 Phase 1 测试继续证明 Target vertical slice，不代表当前后端只支持 Gate 1。

@@ -88,6 +88,42 @@ def test_initialize_project_refuses_nonempty_destination(tmp_path: Path) -> None
     assert (destination / "keep.txt").read_text() == "keep"
 
 
+def test_initialize_project_allows_only_explicit_bootstrap_metadata(tmp_path: Path) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    destination = tmp_path / "bootstrap"
+    metadata = destination / "metadata"
+    metadata.mkdir(parents=True)
+    ledger = metadata / "agent.sqlite"
+    ledger.write_bytes(b"persistent bootstrap identity")
+
+    initialized = initialize_project(
+        project_root=destination,
+        target=fasta,
+        allow_existing_metadata=True,
+    )
+
+    assert initialized.config_path.is_file()
+    assert ledger.read_bytes() == b"persistent bootstrap identity"
+
+
+def test_initialize_project_bootstrap_allowance_rejects_extra_content(tmp_path: Path) -> None:
+    fasta = tmp_path / "target.fasta"
+    fasta.write_text(">target\nACDEFGHIKLMNPQRSTVWY\n", encoding="utf-8")
+    destination = tmp_path / "bootstrap"
+    (destination / "metadata").mkdir(parents=True)
+    (destination / "unexpected.txt").write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="非空"):
+        initialize_project(
+            project_root=destination,
+            target=fasta,
+            allow_existing_metadata=True,
+        )
+
+    assert (destination / "unexpected.txt").read_text() == "keep"
+
+
 def test_initialize_target_bundle_project_inherits_identity_and_source_root(
     tmp_path: Path,
 ) -> None:

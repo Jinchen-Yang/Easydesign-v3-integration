@@ -1,7 +1,12 @@
 # Workflow authority audit — Phase 2, 2026-09-13
 
-Baseline: `a2c17ce50a182474bb3ccbf9ac69aa44faf678c9`. This audit does not declare
-scientific acceptance or enable Phase 3. Runtime owns state and authorized dispatch;
+> **Historical audit with current consolidation (2026-09-20).** The original baseline was
+> `a2c17ce50a182474bb3ccbf9ac69aa44faf678c9`. Its Phase 2 findings remain regression requirements,
+> while Gate 4/5 are now active through the Phase 3/4 runtime. For the current end-to-end topology,
+> Judge optionality and enabled scopes, use [ARCHITECTURE.md](ARCHITECTURE.md) and
+> [PHASE34_EXECUTION_CONTRACT.md](PHASE34_EXECUTION_CONTRACT.md).
+
+This audit did not itself declare scientific acceptance or enable Phase 3. Runtime owns state and authorized dispatch;
 specialists own scientific interpretation; Judge independently critiques; Scientist
 decides consequential Gates. A model's final message is not a workflow transition.
 
@@ -45,15 +50,15 @@ binding invalidation. Resume never grants a new approval or renews an execution 
 | Judge → Gate 2 | `ready-to-ask`, valid site and current assessment | Existing Gate 2 adapter | Present warned card as appropriate | Hard BLOCKED cannot be overridden; existing qualification semantics unchanged | Reuse exact review/card; do not resynthesize | Recommend / no |
 | Gate 2 → Binder | Applied current hotspot approval; design in scope and unfinished | Verified hotspot artifact + bound site approval | Dispatch Binder; otherwise finish site scope | Site invalidation invalidates dependent Design | Accepted project Site reused across threads | Scientific design strategy / no |
 | Binder → Judge → Gate 3 | Valid compiled specification, current Site, independent review | Existing Design/compiler service + Gate adapter | Present Gate 3 | REVISE stays in Design by default; explicit Scientist Site target reopens Site | Reuse valid proposal/review; frozen receipt checked against compiler output | Propose HOW / no |
-| Gate 3 → Pilot | Valid frozen Design and separate enabled execution scope/resource authorization | Existing scientific execution-plan/approval services | **Disabled in Phase 2 harness**; finish design scope | Changed Design requires a new valid plan/approval | Phase 2 restart never starts generation | Recommend future Pilot / no |
-| Pilot → Gate 4 | Actual completed prediction/filter evidence and eligible strategies | Existing pilot evidence/manifests; future v3 Gate 4 adapter | **No active v3 handler** | Failed job differs from scientific negative result | Existing compute recovery owns job resume | Recommend promotion / no |
-| Gate 4 PROMOTE_TO_SCALE → Scale | Explicit bound promotion, eligible strategies, resource plan approval | Existing promotion/scale services; future v3 adapter | **Disabled in Phase 2** | Changed selection/evidence/plan invalidates authorization | Existing receipt/plan identities prevent stale reuse | Recommend / no |
-| Gate 4 RUN_ANOTHER_PILOT → Pilot | Explicit new Pilot decision and valid plan | Future v3 adapter + existing Pilot service | **Disabled in Phase 2** | Preserve old Pilot evidence; new attempt requires authorization | Do not repeat old Pilot on restart | Recommend / no |
-| Gate 4 REVISE_DESIGN → Binder | Explicit Scientist revision target, valid upstream Site | Future v3 adapter | **Disabled in Phase 2** | Invalidate dependent execution plans, preserve Target/Site | Resume revision, not old generation | Recommend / no |
-| Gate 4 REVISE_SITE → Site | Explicit Scientist revision target | Future v3 adapter | **Disabled in Phase 2** | Invalidate dependent Design/plans, preserve valid Target | Resume explicit revision lineage | Recommend / no |
-| Gate 4 STOP → terminal | Explicit bound stop decision | Future v3 adapter | **Disabled in Phase 2** | A new request cannot overwrite old stop | Remains stopped until new authorized intent | Recommend / no |
-| Scale → Final Selection → Gate 5 | Actual scale/selection artifacts, valid selection plan and independent review | Existing selection service; future v3 Gate 5 adapter | **No active v3 handler** | Changed candidate set invalidates review/approval | Reuse exact candidates/evidence, never infer approval from ranking | Recommend candidates / no |
-| Gate 5 APPROVE → wet-lab handoff | Explicit Scientist acceptance of exact final candidates; enabled scope | Future v3 adapter; external experimental authority | **Disabled in Phase 2** | Changed candidates require new approval | Handoff receipt must be idempotent; no experiment triggered here | Recommend / no |
+| Gate 3 → Pilot | Valid frozen Design, `through=pilot|handoff`, and separate resource authorization | Phase34 runtime + execution-plan/approval services | Execute the approved Pilot plan; never infer authorization from Gate 3 prose | Changed Design requires a new plan/approval | Resume exact plan/job and preserve completed work | Recommend Pilot composition / no |
+| Pilot → Gate 4 | Completed native evidence with explicit evaluable/eligible states | Native evidence adapter + Ranking & Recovery Specialist | Rank the complete context-safe PASS population and present Gate 4; Judge is optional | Failed job differs from native scientific FAIL or missing optional AFO | Existing compute recovery owns job resume | Recommend promotion/recovery / no |
+| Gate 4 PROMOTE_TO_SCALE → Scale | Explicit bound promotion, eligible strategies and approved production intent | Gate 4 outcome + Phase34 scale runtime | Execute exact production intent or an explicit validation projection | Evidence/plan change invalidates authorization | Exact receipt/plan prevents stale reuse | Recommend / no |
+| Gate 4 RUN_ANOTHER_PILOT → Pilot | Explicit bound Scientist decision and valid new plan | Gate 4 outcome + Pilot runtime | Create a new authorized Pilot attempt | Preserve old evidence; new attempt has new identity | Never repeat the old Pilot on restart | Recommend / no |
+| Gate 4 REVISE_DESIGN → Binder | Explicit Scientist revision target, valid upstream Site | Gate 4 outcome + Design owner | Reopen Design with bound instruction | Invalidate dependent plans, preserve Target/Site | Resume revision lineage | Recommend / no |
+| Gate 4 REVISE_SITE → Site | Explicit Scientist revision target | Gate 4 outcome + Site owner | Reopen Site with bound instruction | Invalidate dependent Design/plans, preserve Target | Resume revision lineage | Recommend / no |
+| Gate 4 STOP → terminal | Explicit bound stop decision | Gate 4 outcome | End the authorized campaign scope | A later request cannot overwrite the stop receipt | Remains stopped until a new authorized intent | Recommend / no |
+| Scale → Final Selection → Gate 5 | Native-complete global PASS pool, dedup/provenance and valid final selection | Phase34 runtime + Final Selection Specialist | Compare all eligible candidates with shared multi-metric semantics and present Gate 5; Judge optional | Changed pool/profile/provenance invalidates review and card | Reuse exact global pool; partial batches remain explicit | Recommend candidates / no |
+| Gate 5 APPROVE → wet-lab handoff | Explicit Scientist acceptance of exact primary/backup panel | Gate 5 outcome + idempotent handoff service | Publish the bound handoff package; do not trigger an experiment | Changed candidates require a new Gate 5 | Exact handoff receipt is idempotent | Recommend / no |
 
 ## Active-path findings and fix boundary
 
@@ -75,20 +80,11 @@ binding invalidation. Resume never grants a new approval or renews an execution 
    cannot revoke approval. Machine-verifiable binding/integrity failures block; scientific
    disagreements require independent review or Scientist input. No automatic Target
    revision creation is introduced in this task.
-6. Gate 4/5 are architectural contracts, not active v3 handlers. Existing legacy scientific
-   Pilot/Scale/Selection services remain protected. Test Phase 2 rejection of these actions;
-   do not implement new handlers to satisfy a hypothetical happy-path arrow.
+6. The original audit correctly required Phase 2 scope to reject Gate 4/5 actions. Phase 3/4 later enabled those handlers behind explicit `through` scope, plan binding and Scientist outcomes. Compatibility tests must still prove that target/site/design-only runs cannot cross their authorized boundary.
 
 ## Validation boundary
 
-Offline tests precede any live run: applied/pending/stale Target approval, stale history,
-same-execution checkpoint and process restart, continuation thread, actual Site/Binder
-dispatch, reused Dossier/proposal/Judge, duplicate delivery/publication, explicit rollback,
-and all five Gate scope boundaries. Preserve 64 shared model calls, 100k hard input guard,
-Judge scientific standards, protected kernel and Golden truth. Tests must distinguish
-runtime dispatch from model calls and cannot claim scientific acceptance.
-
-Only after targeted/resume/compatibility and shared-code full regression pass: commit,
-verify a clean tree, run ONE frozen fresh GPCR Case 2. Failure preserves all evidence and
-stops. Success requires Cases 1/3/4/5, final full regression and protected/parity checks
-before a formal Phase 2 milestone. No Phase 3 execution.
+The original Phase 2 validation record is preserved in its acceptance documents. Current changes must run
+focused control-flow/restart tests and the full automated suite before a frozen live case. A live acceptance
+may intentionally stop at its declared `--through` boundary; a goal-only Gate 1 test does not claim that
+Pilot or Scale ran in that case. Existing Phase 3/4 regression artifacts validate their handlers separately.

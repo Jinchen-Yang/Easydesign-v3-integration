@@ -1,5 +1,11 @@
 # EasyDesign v3 Scientific Decision Contract
 
+> **Current status (2026-09-20):** all five Gates are active in the backend. Goal-only Target
+> bootstrap and optional local structure seed both enter the same native Stage 1 authority. Phase 3
+> Pilot/Gate 4 and Phase 4 Scale/Final Selection/Gate 5 are implemented. The date-specific Phase 1/2
+> passages below are historical implementation records where explicitly marked; current architecture is
+> defined by [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## 当前 Gate 2 产品契约：合法候选全部排序
 
 2026-09-14，经用户明确确认，Gate 2 采用
@@ -32,24 +38,21 @@ Gate 2 工程修订（2026-09-14，已纳入 Phase 2 冻结）：
 [Judge 正常路径修复与显式不可用审查](PHASE2_JUDGE_RESILIENCE_20260914.md)。
 有 Dossier 的 Gate 2 在独立审查因已分类技术故障耗尽修复次数后，可以显示明确标注
 “审查未完成”的 Scientist 卡片。必须保留全部硬事实校验与风险；不得伪造 assessment
-或 ready-to-ask。继续仍需人类确认缺失审查并填写理由，已有负面意见不得被降级覆盖。
-Judge 正常完成审查与安全降级是两项独立验收，后者不能替代前者。
+或 ready-to-ask。对 ranked Site portfolio，Judge 不可用会降低置信度并明确显示 `review-unavailable`，但不要求额外 override，也不取消 hard-valid candidate 的选择资格。已有真实负面意见与 Runtime hard error 仍不得由 fallback 覆盖。Judge 正常完成审查与安全降级是两项独立验收，后者不能替代前者。
 
 Phase 2 流程权限补充（2026-09-13，已纳入冻结）：
 [控制流权限审计](V3_CONTROL_FLOW_AUTHORITY.md)。Phase 2 运行时直接派发当前范围内
 尚未完成且获授权的动作；模型文字不能重开已完成 Gate，也不能用提前结束阻止接续。
 Gate 3 REVISE 默认回到 Design；需要回到 Site 时，Scientist 必须通过可信入口明确设置
 `--revision-gate site-hotspot`。新字段只作用于 REVISE，历史 outcome 的缺省值表示原 Gate。
-重启不重置预算、不重做已验证的阶段。未启用的 Gate 4/5 仍不可执行，Phase 3 未开启。
+重启不重置预算、不重做已验证的阶段。该段记录 Phase 2 冻结时的边界；当前 Gate 4/5 已由 Phase 3/4 runtime 实现，权限以本文件当前表格和 Phase34 execution contract 为准。
 
 Phase 2 Gate 2 补充（2026-09-13，已纳入冻结；其选择策略由上述新契约替代）：
 [Judge / Gate 2 契约审计](PHASE2_JUDGE_GATE2_CONSOLIDATION_20260913.md)。
 Gate 2 保护早期位点选择的科学底线，不要求完整 VHH 的后续功能和空间验证已完成。
 硬事实错误、无效位点或显式约束冲突仍阻断；可纠正的科学夸大通过
 `site_claim_corrections` 保留原断言和独立限定，随 warnings/limitations 进入人工卡片及下游。
-合理位点可在风险、未知项明确的前提下获得 `ready-to-ask`；有警告的 DISCOURAGED 仍需
-显式 OVERRIDE。当前 Site adapter 的 `reject/insufficient` 不能通过 DISCOURAGED 自动
-变为 readiness。下文 Phase 1 的历史实现说明不覆盖此 Gate 2 规则，五 Gate 架构不变。
+合理位点可在风险、未知项明确的前提下获得 `ready-to-ask`；有警告的 hard-valid candidate 仍进入排序并可由 Scientist 正常选择，不要求 Gate 2 OVERRIDE。当前 Site adapter 的 `reject/insufficient` 不能伪装 Runtime hard fact 或自动取消合法候选。下文 Phase 1 的历史实现说明不覆盖此 Gate 2 规则，五 Gate 架构不变。
 
 本文件是 v3 的正式 Scientific Approval Gate 与 Scientist Steering contract。
 它细化 v3 architecture contract 的 human approval 原则；研究者批准科学问题及 consequential
@@ -57,7 +60,7 @@ Gate 2 保护早期位点选择的科学底线，不要求完整 VHH 的后续�
 
 五个 Gate 共用 decision infrastructure。Gate type、scientific payload、owner specialist 和
 policy 可以不同；不能因此创建五套 workflow、scheduler 或独立 recovery engine。
-本轮仅有 Gate 1 的本地 chain-selection adapter；下表不注册或执行 Gate 2–5 handler。
+五个 Gate 均复用这一套 decision infrastructure；各 Gate 的 specialist、科学 payload、可选 Judge 和执行成本不同，但 human authority、revision binding、幂等性与 stale-state 防护保持一致。
 
 ## 五个 Scientific Approval Gates
 
@@ -66,13 +69,10 @@ policy 可以不同；不能因此创建五套 workflow、scheduler 或独立 re
 | 1 · `target-structure` | 我们设计的到底是谁？Target / Structure Decision | biological target、construct/chain mapping、结构状态和 target interpretation 是否可作为设计依据 | Input → Target Intelligence → Canonical Target Bundle → Structure Decision → Gate 1；owner 为 Target Intelligence / Structure Decision |
 | 2 · `site-hotspot` | 我们到底要打哪里？Site / Hotspot Approval | 当前 site 与 hotspot residues / region | Structure Decision → Site Intelligence → Hotspot Selection → Gate 2 → Design Specification；owner 为 Site & Mechanism / Hotspot reasoning |
 | 3 · `design-specification` | 我们具体准备怎么设计？Design Specification / YAML Approval | binder 类型、设计约束、hotspot conditioning、排除区域、scaffold/CDR 条件、design arms、generation scale 与设计参数 | Hotspot Approval → Design Specification / YAML → Gate 3 → Pilot Generation；owner 为 Binder Strategy / Design Specification |
-| 4 · `pilot-promotion` | 这个方案值得放大吗？Pilot → Scale Promotion Approval | 基于真实 pilot evidence，哪些 strategy/arm promote、哪些停止，以及是否投入更大计算规模 | Pilot → prediction → validation/filtering → Evidence Judge → Gate 4 → Scale；owner 为 Pilot strategy / promotion planning |
+| 4 · `pilot-promotion` | 这个方案值得放大吗？Pilot → Scale Promotion Approval | 基于真实 pilot evidence，哪些 strategy/arm promote、哪些停止，以及是否投入更大计算规模 | Pilot → native evidence → Ranking & Recovery Specialist → Gate 4 → Scale；Judge 为可选 second opinion；owner 为 Pilot strategy / promotion planning |
 | 5 · `wet-lab-handoff` | 哪些最终候选真正进入实验？Final Candidates → Wet Lab Approval | 哪些 candidates 进入 synthesis、experimental validation 或 wet-lab handoff | Scale native evidence → global PASS pool → Final Selection → Gate 5 → Wet Lab；独立预测和 Judge 为可选补充；owner 为 Final candidate selection / experimental handoff |
 
-Gate 1 可以 conditional：identity、construct、chain、state、mapping 没有 consequential ambiguity
-时，可由经过验证的确定性 policy 自动继续；存在真实歧义时必须人工决定。Agent 的自然语言
-判断不创建“无歧义”policy。本轮继续复用旧 Stage 01 的 chain gate；单链自动准备不意味着
-已确认 canonical biological identity，也不新增完整 target identity reasoning。
+Gate 1 可以 conditional：identity、construct、chain、state、mapping 没有 consequential ambiguity 时，可由经过验证的确定性 policy 自动继续；存在真实歧义时必须人工决定。Agent 的自然语言判断不创建“无歧义”policy。Goal bootstrap 也只创建 discovery input；native Stage 1 的 identity/structure/mapping evidence 与当前 Gate 1 decision 才具有科学 authority。
 
 Gate 2 与 Gate 3 永久分开：Hotspot 是“选择打哪里”；Design Specification 是“准备怎么打”。
 生成 YAML 不能自动批准 hotspot，批准 hotspot 也不能授权正式 pilot。Gate 3 通过后才允许
@@ -112,7 +112,7 @@ Gate 5 是进入现实实验行动前的最终人工 gate；计算筛选成功�
 | Status | 含义 | 人类行动边界 |
 | --- | --- | --- |
 | SUPPORTED | 当前证据支持在明确局限下提出该选择 | 可 APPROVE、REVISE、REJECT；Gate 1 的支持是结构选择问题可执行，不是生物学身份确认 |
-| DISCOURAGED | 有科学风险或不是推荐方案，但仍可执行、可检验 | 显示不推荐原因和推荐 alternative；可 REVISE、REJECT，或明确 OVERRIDE；普通 APPROVE 不能悄悄忽略 warning |
+| DISCOURAGED | 有科学风险或不是推荐方案，但仍可执行、可检验 | 显示不推荐原因和推荐 alternative；可 REVISE、REJECT，或明确 OVERRIDE；普通 APPROVE 是否需要额外 acknowledgement 由具体 Gate policy 决定；Gate 2 ranked portfolio 不因该状态要求 OVERRIDE |
 | BLOCKED | 与已验证硬事实或不可满足约束冲突 | 不能用普通 override 伪装成功；解释需要修订的 upstream assumption/input/constraint |
 
 例如 accessibility 差、membrane clash 风险高、pilot 成功概率低、geometry 不理想或替代方案更强，
@@ -167,13 +167,10 @@ finalization guard。该 guard 从原 project/run 解析入口读取并校验 au
 该检查只是终态校验，不创建 scheduler、DAG、polling loop 或第二套 orchestration。
 外部旧 CLI 与 Agent 仍不得并发写同一项目；本轮没有引入跨入口锁或修改旧 compute recovery。
 
-## 冻结范围与 Phase 2 起点
+## Current implementation boundary
 
-Phase 1 冻结：first-class harness、Model API、Target Intelligence、Evidence Judge、Gate/HITL runtime、
-四类 Scientist Steering、可信 human input/provenance、interrupt/resume、terminal consistency。
-Gate 1 实现的是本地结构 chain-choice 子集；Gate 2–5 只有本 contract，没有科学 handler。
-
-Phase 2 从 Site & Mechanism / Site Intelligence / Hotspot reasoning 与 Gate 2 科学实现开始，
-再连接 Binder Strategy / Design Specification reasoning 与独立的 Gate 3。它负责真正的
-SUPPORTED/DISCOURAGED/BLOCKED protein-design 判断。Gate 4/5 在各自后续阶段接入。
-不提前实现 Stage 02–07、hotspot/YAML redesign、storage migration、Workbench 或 Figure 2。
+Backend Product Baseline V1 包含从 goal-only / optional structure seed 到 Gate 1，以及 Site、Design、
+Pilot、Scale、Final Selection 和 Gate 2–5 的已实现 handler。`--through` 决定本次运行的授权范围，
+不会使后续阶段自动获批。Runtime hard facts、plan/revision binding、人类 outcome、幂等恢复和
+optional Judge degradation 是当前共同边界。日期化 Phase 1/2 freeze 文档继续作为历史证据，
+不能用来判断当前 Gate 4/5 尚未实现。

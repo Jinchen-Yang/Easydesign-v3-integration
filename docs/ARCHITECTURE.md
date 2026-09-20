@@ -1,20 +1,75 @@
 # EasyDesign Local 架构
 
-## Current v3 primary architecture
+## Canonical backend architecture — Backend Product Baseline V1
 
-v3 primary user-facing intelligence lives inside EasyDesign。`easydesign-agent` 的
-Design Scientist 通过公共 DeepAgents Harness 委派独立科学 specialist；LangGraph 只保存
-Agent execution/checkpoint/interrupt/resume，既有 scientific runtime 继续拥有真实科学状态。
-Evidence Judge 独立审阅受绑定的科学证据，研究者经统一 APPROVE/REVISE/REJECT/OVERRIDE
-作决定；模型文本不能解除科学 Gate。详见
-[v3 Scientific Decision Contract](V3_SCIENTIFIC_DECISION_CONTRACT.md)及
-[Agent 使用与实现边界](AGENT_PHASE1.md)。Phase 2 推进到 Gate 3，后续 generation 不在本轮。
+本文件是当前后端架构的唯一 canonical source。日期化 acceptance、closure 和 audit 文档保留
+当时的证据与变更历史；它们若与本节冲突，以本节和当前 typed runtime contract 为准。
 
-外部 Codex 是开发工具及迁移期兼容入口，不是 v3 的主智能 runtime。
-后续代码开发须以 v3 contracts 为架构依据；下面保留的 v2 控制入口和科学执行层说明
-不取代 v3 primary architecture。科学 kernel 不依赖 Agent framework。
+`easydesign-agent` 是 v3 的主智能入口。Design Scientist 通过公共 DeepAgents Harness 委派
+独立 specialist；LangGraph 保存 Agent execution/checkpoint/interrupt/resume，既有 scientific
+runtime 拥有真实科学状态、事实校验、artifact 和 Gate transition。模型可以研究、排序和解释，
+但不能创建人类批准，也不能覆盖 Runtime 硬事实。
 
-## V2 compatibility / legacy Codex-driven path
+新项目可以只提供自然语言目标。Goal bootstrap 只生成受限的 UniProt 搜索输入和物种假设，
+其 authority 为 `discovery-input-only`；Target Intelligence 仍须通过原生 Stage 1 核验 identity、
+结构候选、mapping、scope 和 chain，Gate 1 才能批准。PDB/mmCIF 是可选 seed，不是项目准入条件。
+
+```text
+Natural-language goal ───────────────┐
+Optional local PDB/mmCIF seed ───────┤
+                                     ▼
+Target Intelligence → Runtime identity / structure facts → Target Judge → Gate 1
+                                     │
+                                     ▼
+Site Research → Handoff → Dossier → SiteDecision → Runtime fact hydration → Gate 2
+                                      └──── optional Site Judge ────────────────┘
+                                     │
+                                     ▼
+Binder Strategy → Design YAML → compiler/backend validation → Design Judge → Gate 3
+                                     │
+                                     ▼
+Pilot → BoltzGen-native evidence → Ranking & Recovery Specialist → Gate 4
+                                      └──── optional second opinion ────────────┘
+                                     │
+                                     ▼
+Scale → global PASS pool → deduplication → multi-metric Final Selection → Gate 5
+                                      └──── optional second opinion ────────────┘
+                                     │
+                                     ▼
+                              Wet-lab handoff
+```
+
+### Five Gates and authority
+
+| Gate | Scientist approves | Runtime boundary | Judge role |
+| --- | --- | --- | --- |
+| 1 · Target / Structure | biological target、construct、structure、scope、chain | verified Stage 1 identity/mapping/structure evidence | required independent review on the current path |
+| 2 · Site / Hotspot | one selectable candidate from the complete ranked portfolio | candidate membership、residue/mapping、topology、hard constraints | optional second opinion; cannot rerank or block valid candidates by availability alone |
+| 3 · Design Specification | exact executable design arms and YAML | approved Site inheritance、scaffold registry、binding/not_binding、compiler/backend validation | required review of the compiled specification |
+| 4 · Pilot Promotion | promote、another pilot、revise or stop, plus resource intent | completed native evidence、eligible candidates、plan binding | optional second opinion |
+| 5 · Wet-lab Handoff | exact primary/backup final candidates | global pool provenance、dedup、selection identity、artifact completeness | optional second opinion |
+
+Gate 2 is ranking-first: every hard-valid candidate remains selectable as A/B/C (or a longer portfolio);
+risks and uncertainty change rank, confidence and explanation. Only deterministic invalidity blocks a
+candidate. Gate 4 and Gate 5 reuse the Phase 3 multi-metric candidate evidence semantics. AFO is optional
+enrichment and does not turn native-complete evidence into unevaluable evidence. Scale adds batch/shard
+recovery, a global candidate pool, cross-arm competition, diversity and panel selection; it does not create
+a second filter science.
+
+`--through target|site|design|pilot|handoff` defines the authorized stopping scope. A transition occurs only
+when the preceding current Gate has an applied Scientist outcome and the runtime validates the exact bound
+revision. Restart/resume reuses verified work and never converts model prose, a stale card or a prior pending
+state into approval. Technical failure, scientific FAIL and missing optional review remain separate states.
+
+External Codex is a development and compatibility tool, not the product's scientific authority. The pure
+backend can be used from VS Code/terminal without the Workbench UI; UI/Product API integration is a separate
+consumer of these same contracts.
+
+## Lower-level scientific kernel and compatibility path
+
+The sections below describe the durable kernel, data layout and the older `easydesign`/Codex compatibility
+entry used by v3. They remain implementation background; they do not replace the canonical v3 flow above.
+
 
 下述产品模型描述 v2 兼容入口，以及 v3 复用的现有科学执行与数据基础。
 

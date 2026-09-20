@@ -16,7 +16,7 @@ from easydesign.core import (
     canonical_model_sha256,
     load_model,
 )
-from easydesign.orchestration.config import LoadedStructureRunConfig, load_run_config
+from easydesign.orchestration.config import LoadedRunConfig, load_run_config
 from easydesign.orchestration.hotspots import export_hotspot_review
 from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES, LocalStepJob
 from easydesign.orchestration.local_project import project_config_path, resolve_project_run
@@ -83,14 +83,12 @@ class Phase2Bridge(TargetBridge):
         if prior is None:
             store.event(thread, "scientific-scope", {"through": through})
 
-    def validate_project(self) -> LoadedStructureRunConfig:
+    def validate_project(self) -> LoadedRunConfig:
         # Original site_propose advances CONFIG_CURRENT to a stop-after-site revision.
         # Keep Target evidence bound to the original preparation config, while verifying
         # that the only permitted downstream changes are site config and stop boundary.
         path = confined(self.project, project_config_path(self.project))
         loaded = load_run_config(path, source_base_dir=self.project)
-        if not isinstance(loaded, LoadedStructureRunConfig):
-            raise AgentBoundaryError("Phase 2 requires the approved local structure source")
         if loaded.config.workflow.stop_after_stage == 1:
             return super().validate_project()
         if loaded.config.workflow.stop_after_stage != 2:
@@ -111,7 +109,8 @@ class Phase2Bridge(TargetBridge):
         )
         if canonical_model_sha256(comparable) != canonical_model_sha256(target):
             raise AgentBoundaryError("Upstream target/project configuration changed")
-        confined(self.project, loaded.source_path)
+        if loaded.source_path is not None:
+            confined(self.project, loaded.source_path)
         return replace(loaded, config=target)
 
     def project_latest(self, kind: str) -> dict[str, Any] | None:

@@ -1,6 +1,6 @@
 ---
 name: target-intelligence
-description: Prepare and assess a bound local PDB/mmCIF target using existing scientific tools.
+description: Prepare and assess a bound local structure or canonical remote target source using existing scientific tools.
 ---
 
 When `research_evidence` is available, delegate missing identity, construct, state and source
@@ -27,9 +27,7 @@ If canonical identity is requested, select/acquire/read/propose the reference be
 as described below. Then call prepare_target once. Only after a job receipt exists may
 get_job_status observe it; no-bound-job means no work is running and polling cannot help.
 Read target evidence when the worker reaches its boundary. Do not poll absent or terminal jobs.
-Only stop-after-target, review-gated local structures are supported. Source research is available
-through the bounded worker; proposed references still require old deterministic resolution. Do not predict
-structures, invent residue mappings, select a chain silently, or enter site/binder design.
+Only stop-after-target, review-gated local structures and canonical UniProt/UniProt-search sources are supported. For a goal-derived remote source, its query and taxon are discovery configuration only: call `prepare_target` once and let native Stage 01 verify identity, compare RCSB candidates and publish any identity/structure/scope/chain decision. Do not replace that path with model-selected identity or structure. For local structures, source research remains available through the bounded worker and proposed references still require deterministic resolution. Do not invent residue mappings, select a chain silently, or enter site/binder design.
 If the old worker is still active after bounded observation, report its job ID and stop observing.
 
 A pending chain-selection gate is a real scientific question. There is no successful bundle yet:
@@ -81,6 +79,8 @@ page through all raw JSON. Ordinary tool outputs and old detailed views may be r
 references in model context. Re-read a needed field explicitly; do not infer omitted values.
 
 ## Canonical reference before preparation
+
+For a goal-only project whose Runtime already supplies `source_type=uniprot-search` or `uniprot`, do not perform a second model-owned target search and do not choose a PDB in prose. The configured query/accession is only a discovery input. Call `prepare_target` once; native Stage 01 acquires official UniProt/RCSB evidence and owns every identity, structure, scope and chain decision before Gate 1.
 
 Before the first preparation, read the target evidence once. For an mmCIF input this preflight
 view includes depositor entity/chain annotations and `_struct_ref` database cross-references. A

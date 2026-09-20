@@ -166,6 +166,7 @@ def initialize_project(
     stage07_target_conditioned_backend: PredictionBackend | None = None,
     source_transfer: Literal["copy", "move"] = "copy",
     quarantine_on_error: bool = True,
+    allow_existing_metadata: bool = False,
 ) -> InitializedProject:
     """Create a project whose prediction choices are explicit at each consuming stage."""
 
@@ -266,7 +267,14 @@ def initialize_project(
             raise ConfigurationError(f"预计算 A3M 必须是文件: {msa_source}")
 
     destination = project_root.resolve()
-    if destination.exists() and any(destination.iterdir()):
+    existing = tuple(destination.iterdir()) if destination.exists() else ()
+    if existing and not (
+        allow_existing_metadata
+        and len(existing) == 1
+        and existing[0].name == "metadata"
+        and existing[0].is_dir()
+        and not existing[0].is_symlink()
+    ):
         raise ConfigurationError(f"项目目录非空，禁止覆盖: {destination}")
     selected_project_id = project_id or _slug(destination.name, label="项目目录名")
     source_label = (

@@ -29,6 +29,8 @@ from easydesign.core.target_identity import TargetIdentityReport
 from easydesign.orchestration.application import show_run
 from easydesign.orchestration.config import (
     EasyDesignRunConfig,
+    LoadedRemoteRunConfig,
+    LoadedRunConfig,
     LoadedStructureRunConfig,
     LocalFileSourceConfig,
     load_run_config,
@@ -106,20 +108,21 @@ class TargetBridge:
         loaded = self.validate_project()
         self.project_id = loaded.config.project_id
 
-    def validate_project(self) -> LoadedStructureRunConfig:
+    def validate_project(self) -> LoadedRunConfig:
         path = project_config_path(self.project)
         confined(self.project, path)
         loaded = load_run_config(path, source_base_dir=self.project)
-        if not isinstance(loaded, LoadedStructureRunConfig):
-            raise AgentBoundaryError("Phase 1 supports explicit local PDB/mmCIF inputs only")
+        if not isinstance(loaded, (LoadedStructureRunConfig, LoadedRemoteRunConfig)):
+            raise AgentBoundaryError(
+                "Phase 1 supports local structures or the canonical remote target sources"
+            )
         config = loaded.config
         source = config.target.source
-        if not isinstance(source, LocalFileSourceConfig):
-            raise AgentBoundaryError("Target source must remain a local file")
-        raw_source = source.path
-        confined(
-            self.project, raw_source if raw_source.is_absolute() else self.project / raw_source
-        )
+        if isinstance(source, LocalFileSourceConfig):
+            raw_source = source.path
+            confined(
+                self.project, raw_source if raw_source.is_absolute() else self.project / raw_source
+            )
         if (
             config.workflow.stop_after_stage != 1
             or str(config.workflow.execution_mode) != "review-gated"
@@ -127,22 +130,29 @@ class TargetBridge:
             raise AgentBoundaryError(
                 "Existing project must already be review-gated and stop after target preparation"
             )
-        if config.structure_prediction is not None or (
+        if isinstance(source, LocalFileSourceConfig) and (
+            config.structure_prediction is not None or (
             source.identity.uniprot_accession is not None and not getattr(self, "is_phase2", False)
+            )
         ):
             raise AgentBoundaryError(
                 "Remote identity lookup and prediction are outside this vertical slice"
             )
-        confined(self.project, loaded.source_path)
+        if loaded.source_path is not None:
+            confined(self.project, loaded.source_path)
         return loaded
 
     def binding(self) -> dict[str, Any]:
         loaded = self.validate_project()
-        return {
+        value = {
             "project_id": loaded.config.project_id,
             "config_sha": canonical_model_sha256(loaded.config),
-            "source_sha": sha256_file(loaded.source_path),
         }
+        if loaded.source_path is not None:
+            value["source_sha"] = sha256_file(loaded.source_path)
+        else:
+            value["source_identity"] = canonical_model_sha256(loaded.config.target.source)
+        return value
 
     def _jobs(self) -> tuple[LocalStepJob, ...]:
         return self.controller.list(project_id=self.project_id)
@@ -216,35 +226,38 @@ class TargetBridge:
         with self.store.writer():
             loaded = self.validate_project()
             source = loaded.config.target.source
-            if not isinstance(source, LocalFileSourceConfig):
-                raise AgentBoundaryError("Target source must remain a local file")
-            source_identity = source.identity
-            if getattr(self, "is_phase2", False) and source_identity.uniprot_accession is None:
-                from .target_identity import (
-                    deposited_polymer_metadata,
-                    deposited_uniprot_leads,
-                    explicit_canonical_identity_request,
-                )
-
-                owner = self.store.db.execute(
-                    "SELECT goal FROM threads WHERE id=?", (self.thread,)
-                ).fetchone()
-                execution = self.store.latest_execution(self.thread)
-                request_text = str(owner["goal"] if owner is not None else "")
-                if execution is not None:
-                    request_text += " " + str(execution.get("current_user_message", ""))
-                leads = deposited_uniprot_leads(
-                    deposited_polymer_metadata(loaded.source_path)
-                )
-                if leads and explicit_canonical_identity_request(request_text):
-                    raise AgentBoundaryError(
-                        "TARGET_IDENTITY_SOURCE_REQUIRED: the user explicitly requested target "
-                        "identity resolution and the frozen input supplies UniProt lead(s) "
-                        f"{', '.join(leads)}. Select, acquire and read the matching official "
-                        "UniProt record, call propose_canonical_identity, read the current "
-                        "identity view, then retry prepare_target. A depositor cross-reference "
-                        "alone is not canonical identity evidence."
+            if isinstance(source, LocalFileSourceConfig):
+                source_identity = source.identity
+                if (
+                    getattr(self, "is_phase2", False)
+                    and source_identity.uniprot_accession is None
+                ):
+                    from .target_identity import (
+                        deposited_polymer_metadata,
+                        deposited_uniprot_leads,
+                        explicit_canonical_identity_request,
                     )
+
+                    owner = self.store.db.execute(
+                        "SELECT goal FROM threads WHERE id=?", (self.thread,)
+                    ).fetchone()
+                    execution = self.store.latest_execution(self.thread)
+                    request_text = str(owner["goal"] if owner is not None else "")
+                    if execution is not None:
+                        request_text += " " + str(execution.get("current_user_message", ""))
+                    assert loaded.source_path is not None
+                    leads = deposited_uniprot_leads(
+                        deposited_polymer_metadata(loaded.source_path)
+                    )
+                    if leads and explicit_canonical_identity_request(request_text):
+                        raise AgentBoundaryError(
+                            "TARGET_IDENTITY_SOURCE_REQUIRED: the user explicitly requested "
+                            "target identity resolution and the frozen input supplies UniProt "
+                            f"lead(s) {', '.join(leads)}. Select, acquire and read the matching "
+                            "official UniProt record, call propose_canonical_identity, read the "
+                            "current identity view, then retry prepare_target. A depositor "
+                            "cross-reference alone is not canonical identity evidence."
+                        )
             binding = self.binding()
             command = self.store.prepare(
                 self.thread, "prepare", binding, baseline=[j.job_id for j in self._jobs()]
@@ -403,7 +416,10 @@ class TargetBridge:
         ):
             raise AgentBoundaryError("Frozen run is outside Phase 1")
         source = confined(root, resolved.input_snapshot.verify(root))
-        if sha256_file(source) != sha256_file(self.validate_project().source_path):
+        current = self.validate_project()
+        if current.source_path is not None and sha256_file(source) != sha256_file(
+            current.source_path
+        ):
             raise AgentBoundaryError("Project source has drifted from frozen run input")
         refs = [
             self._ref(manifest.config_snapshot),
@@ -421,17 +437,26 @@ class TargetBridge:
         if manifest.workflow_state is not None:
             request, path = load_pending_decision(root)
             confined(root, path)
-            allowed_gates = {"chain-selection"}
+            allowed_gates = {
+                "identity-selection",
+                "scope-selection",
+                "structure-selection",
+                "chain-selection",
+            }
             if getattr(self, "is_phase2", False):
                 allowed_gates |= {"target-identity-review", "scope-selection"}
             if request.stage_id != STAGE or request.gate not in allowed_gates:
                 raise AgentBoundaryError(
-                    "Only the existing target chain-selection gate is supported"
+                    "Only the existing Stage 1 identity/structure decision gates are supported"
                 )
             request_hash = canonical_model_sha256(request)
             refs.append(f"{path.relative_to(root).as_posix()}#sha256={sha256_file(path)}")
-            inventory = inventory_structure(source)
-            if len(inventory.chains) > 32:
+            inventory = (
+                inventory_structure(source)
+                if current.source_path is not None
+                else None
+            )
+            if inventory is not None and len(inventory.chains) > 32:
                 raise AgentBoundaryError(
                     "Too many chains for this slice; provide a narrower explicit input"
                 )
@@ -439,6 +464,7 @@ class TargetBridge:
                 status="awaiting-human-approval",
                 request_identity=request_hash,
                 request_path=path.relative_to(root).as_posix(),
+                decision_kind=request.gate,
                 question=request.message,
                 options=[o.model_dump(mode="json") for o in request.options],
                 chains=[
@@ -453,10 +479,10 @@ class TargetBridge:
                         if c.deposited_sequence
                         else None,
                     }
-                    for c in inventory.chains
+                    for c in (inventory.chains if inventory is not None else ())
                 ],
             )
-            if getattr(self, "is_phase2", False):
+            if getattr(self, "is_phase2", False) and inventory is not None:
                 from .target_identity import deposited_polymer_metadata, pending_canonical
 
                 result["deposited_entities"] = deposited_polymer_metadata(source)
@@ -939,6 +965,32 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
         if role in {"target", "coordinator"} and run_id is None:
             loaded = bridge.validate_project()
             if resolve_project_run(bridge.project, required=False) is None:
+                if loaded.source_path is None:
+                    source = loaded.config.target.source
+                    return bridge.store.offload(
+                        bridge.thread,
+                        {
+                            "status": "not-prepared",
+                            "project_id": bridge.project_id,
+                            "evidence_refs": [],
+                            "source_input": {
+                                "source_type": str(source.type),
+                                "source_identity": canonical_model_sha256(source),
+                                "configured_source": source.model_dump(mode="json"),
+                                "authority": (
+                                    "Goal-derived discovery configuration only. Native Stage 01 "
+                                    "must verify official identity, structure candidates and "
+                                    "mapping before Gate 1."
+                                ),
+                            },
+                            "next_action": (
+                                "Call prepare_target once. Native Stage 01 performs the bounded "
+                                "UniProt/RCSB acquisition and publishes any identity, structure, "
+                                "scope or chain decision; then use get_job_status before reading "
+                                "the resulting evidence."
+                            ),
+                        },
+                    )
                 from .target_identity import deposited_polymer_metadata
 
                 deposited = deposited_polymer_metadata(loaded.source_path)

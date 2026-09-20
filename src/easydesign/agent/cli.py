@@ -581,12 +581,51 @@ def main(argv: list[str] | None = None) -> int:
         context = WorkspaceContext.discover()
         root = resolve_project_path(args.project, must_exist=False)
         confined(context.projects_root, root)
-        if not root.exists():
-            if args.operation != "start" or args.target is None:
-                raise AgentBoundaryError("New projects require start, --goal and --target")
+        if not root.exists() and args.operation != "start":
+            raise AgentBoundaryError("Unknown project; use start with --goal")
+        if not (root / "PROJECT.yaml").is_file() and args.target is not None:
+            if args.operation != "start":
+                raise AgentBoundaryError("An input cannot be replaced during resume")
             if args.target.suffix.lower() not in {".pdb", ".cif", ".mmcif"}:
                 raise AgentBoundaryError("Only explicit local PDB/mmCIF input is supported")
             initialize_research_project(project_root=root, target=args.target.resolve(strict=True))
+        elif not (root / "PROJECT.yaml").is_file():
+            from .bootstrap import resolve_goal_target
+            from .models import create_models
+
+            root.mkdir(parents=True, exist_ok=True)
+            bootstrap_store = SessionStore(root)
+            try:
+                bootstrap_goal = bootstrap_store.thread(thread, fingerprint(config), args.goal)
+                if args.operation == "status":
+                    _display(
+                        {
+                            "thread": thread,
+                            "lifecycle": "target-resolution-pending",
+                            "events": bootstrap_store.events(thread),
+                        },
+                        technical_details=args.technical_details,
+                    )
+                    return 0
+                bootstrap_models = create_models(config)
+                intent = asyncio.run(
+                    resolve_goal_target(
+                        store=bootstrap_store,
+                        thread=thread,
+                        goal=bootstrap_goal,
+                        model=bootstrap_models["target"],
+                        config=config,
+                    )
+                )
+                initialize_research_project(
+                    project_root=root,
+                    uniprot_query=intent.uniprot_query,
+                    taxon_id=intent.taxon_id,
+                    allow_existing_metadata=True,
+                    quarantine_on_error=False,
+                )
+            finally:
+                bootstrap_store.close()
         elif args.target is not None:
             raise AgentBoundaryError("Existing project input is immutable; omit --target")
         store = SessionStore(root)

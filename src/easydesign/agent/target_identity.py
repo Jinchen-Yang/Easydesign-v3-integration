@@ -16,7 +16,11 @@ from easydesign.core.target_identity import (
     TargetIdentityReport,
     resolve_target_identity,
 )
-from easydesign.orchestration.config import EasyDesignRunConfig
+from easydesign.orchestration.config import (
+    EasyDesignRunConfig,
+    UniProtSearchSourceConfig,
+    UniProtSourceConfig,
+)
 from easydesign.orchestration.local_project import publish_config_revision, resolve_project_run
 from easydesign.orchestration.stage01_sources import _scope, _uniprot_identity
 
@@ -182,6 +186,31 @@ def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]
     """Configure a verified reference before preparation; this is not an approval."""
     with bridge.store.writer():
         loaded = bridge.validate_project()
+        source = loaded.config.target.source
+        if isinstance(source, UniProtSearchSourceConfig):
+            return {
+                "status": "native-source-configured",
+                "source_type": source.type,
+                "query": source.query,
+                "taxon_id": source.organism_taxon_id,
+                "authority": (
+                    "Discovery configuration only; the existing Stage 01 identity-selection "
+                    "and structure-selection decisions remain authoritative."
+                ),
+                "next": "prepare_target; native Stage 01 resolves identity and structure",
+            }
+        if isinstance(source, UniProtSourceConfig):
+            return {
+                "status": "native-source-configured",
+                "source_type": source.type,
+                "accession": source.accession,
+                "taxon_id": source.organism_taxon_id,
+                "authority": (
+                    "Configured source only; native Stage 01 evidence and decisions remain "
+                    "authoritative."
+                ),
+                "next": "prepare_target; native Stage 01 verifies the configured source",
+            }
         cards = [
             c
             for q in EvidenceResearch(bridge).snapshot()["queries"]
@@ -194,7 +223,7 @@ def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]
         # verify the exact prior source and confirm the already configured value.
         # An old-binding source is never allowed to change a different reference.
         replay = not cards
-        if replay and loaded.config.target.source.identity.uniprot_accession:
+        if replay and loaded.config.target.identity.uniprot_accession:
             cards = [
                 card
                 for event in bridge.store.events(bridge.thread)
@@ -214,7 +243,7 @@ def propose_canonical(bridge: Any, request: CanonicalProposal) -> dict[str, Any]
         if len(records) != 1:
             raise AgentBoundaryError("Canonical source record is not unique")
         accession, _, source_identity = _uniprot_identity(records[0])
-        current = loaded.config.target.source.identity
+        current = loaded.config.target.identity
         if current.taxon_id and current.taxon_id != source_identity["taxonomy_id"]:
             raise AgentBoundaryError(
                 "Canonical source conflicts with the scientist-configured species"

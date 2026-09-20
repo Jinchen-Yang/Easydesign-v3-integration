@@ -9,7 +9,7 @@ from typing import Any
 from easydesign.core import ArtifactRef, canonical_model_sha256, sha256_file
 from easydesign.orchestration.config import (
     EasyDesignRunConfig,
-    LoadedStructureRunConfig,
+    LoadedRunConfig,
     load_run_config,
 )
 from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES
@@ -25,14 +25,12 @@ from .session_store import confined, identity
 from .tools import scientific_environment
 
 
-def validate_downstream_project(bridge: Any) -> LoadedStructureRunConfig | None:
+def validate_downstream_project(bridge: Any) -> LoadedRunConfig | None:
     """Accept only a journaled downstream config while preserving original Target binding."""
     loaded = load_run_config(
         confined(bridge.project, project_config_path(bridge.project)),
         source_base_dir=bridge.project,
     )
-    if not isinstance(loaded, LoadedStructureRunConfig):
-        raise AgentBoundaryError("Downstream execution requires the prepared structure source")
     if loaded.config.workflow.stop_after_stage in {1, 2}:
         return None
     digest = canonical_model_sha256(loaded.config)
@@ -67,7 +65,8 @@ def validate_downstream_project(bridge: Any) -> LoadedStructureRunConfig | None:
     )
     if canonical_model_sha256(original) != canonical_model_sha256(target):
         raise AgentBoundaryError("Downstream execution changed the original Target configuration")
-    confined(bridge.project, loaded.source_path)
+    if loaded.source_path is not None:
+        confined(bridge.project, loaded.source_path)
     return replace(loaded, config=target)
 
 

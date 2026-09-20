@@ -99,40 +99,94 @@ def check_fact_claims(value: Any, evidence: dict[str, Any]) -> None:
         if recommended_option is None and isinstance(recommendation, dict):
             recommended_option = recommendation.get("option_id")
     resolutions: dict[str, float] = {}
+    summaries: dict[str, dict[str, Any]] = {}
+    option_tokens: dict[str, set[str]] = {}
     for option in options:
+        option_id = str(option.get("option_id"))
         summary = option.get("payload", {}).get("candidate_summary", {})
+        summaries[option_id] = summary
         resolution = summary.get("resolution_angstrom")
         if isinstance(resolution, int | float) and not isinstance(resolution, bool):
-            resolutions[str(option.get("option_id"))] = float(resolution)
+            resolutions[option_id] = float(resolution)
+        tokens = {option_id.lower()}
+        pdb_id = option.get("payload", {}).get("pdb_id")
+        if isinstance(pdb_id, str):
+            tokens.add(pdb_id.lower())
+        option_tokens[option_id] = tokens
     resolution_superlative = re.compile(
         r"\b(?:best|highest|finest|top)[ -](?:nominal[ -])?resolution\b|"
         r"(?:最高|最佳)(?:名义)?分辨率|分辨率(?:最高|最佳|最好)",
         re.IGNORECASE,
     )
-    if recommended_option in resolutions and resolutions:
-        selected_resolution = resolutions[recommended_option]
-        minimum_resolution = min(resolutions.values())
-        for text in texts:
-            superlative_match = resolution_superlative.search(text)
-            if superlative_match and selected_resolution > minimum_resolution + 1e-9:
-                findings.append(
-                    {
-                        "field": "structure_resolution_superlative",
-                        "expected_minimum_angstrom": minimum_resolution,
-                        "minimum_option_ids": sorted(
-                            option_id
-                            for option_id, resolution in resolutions.items()
-                            if abs(resolution - minimum_resolution) <= 1e-9
-                        ),
-                        "claimed_option_id": recommended_option,
-                        "claimed_option_angstrom": selected_resolution,
-                        "statement": superlative_match[0],
-                        "guidance": (
-                            "Use the exact Runtime value and a non-superlative scientific reason "
-                            "when a qualified comparison is not deterministically represented."
-                        ),
-                    }
-                )
+    subset_qualifier = re.compile(
+        r"\b(?:non[- ]fused|single[- ]source|clean(?:[ -]9w)?[ -]series)\b|"
+        r"非融合|单一来源|干净(?:的)?(?:[ -]9w)?系列",
+        re.IGNORECASE,
+    )
+    for text in texts:
+        superlative_match = resolution_superlative.search(text)
+        if superlative_match is None:
+            continue
+        lower_text = text.lower()
+        prefix = lower_text[: superlative_match.start()]
+        preceding = [
+            (prefix.rfind(token), option_id)
+            for option_id, tokens in option_tokens.items()
+            for token in tokens
+            if prefix.rfind(token) >= 0
+        ]
+        claimed_option: str | None
+        if preceding:
+            claimed_option = max(preceding)[1]
+        else:
+            mentioned = {
+                option_id
+                for option_id, tokens in option_tokens.items()
+                if any(token in lower_text for token in tokens)
+            }
+            claimed_option = (
+                next(iter(mentioned))
+                if len(mentioned) == 1
+                else str(recommended_option)
+                if recommended_option is not None
+                else None
+            )
+        if claimed_option not in resolutions:
+            continue
+        comparison = resolutions
+        comparison_scope = "all eligible options"
+        if subset_qualifier.search(text):
+            verified_subset = {
+                option_id: resolution
+                for option_id, resolution in resolutions.items()
+                if summaries[option_id].get("source_part_count") == 1
+                and summaries[option_id].get("multiple_source_flag") != "Y"
+            }
+            if claimed_option in verified_subset and verified_subset:
+                comparison = verified_subset
+                comparison_scope = "Runtime-verified non-fused/single-source options"
+        claimed_resolution = resolutions[claimed_option]
+        minimum_resolution = min(comparison.values())
+        if claimed_resolution > minimum_resolution + 1e-9:
+            findings.append(
+                {
+                    "field": "structure_resolution_superlative",
+                    "comparison_scope": comparison_scope,
+                    "expected_minimum_angstrom": minimum_resolution,
+                    "minimum_option_ids": sorted(
+                        option_id
+                        for option_id, resolution in comparison.items()
+                        if abs(resolution - minimum_resolution) <= 1e-9
+                    ),
+                    "claimed_option_id": claimed_option,
+                    "claimed_option_angstrom": claimed_resolution,
+                    "statement": superlative_match[0],
+                    "guidance": (
+                        "Use the exact Runtime value and a non-superlative scientific reason "
+                        "when the intended comparison subset is not deterministically represented."
+                    ),
+                }
+            )
     if findings:
         raise HardFactContradiction(findings)
 

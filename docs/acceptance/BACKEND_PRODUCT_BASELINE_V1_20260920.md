@@ -148,6 +148,41 @@ the Gate 1 card at model-call 14, accepted human approval, and completed the Tar
 is a successful recovery-path acceptance, while uninterrupted provider availability remains an
 external condition.
 
+### R8/R9 fact-integrity closure
+
+R8 confirmed that the resolution guard removed the R7 false superlative, then exposed a separate
+identity wording error: while pre-approval `hard_facts.canonical_length` was still null, the Target
+relabeled the 406-residue construct/entity length as a canonical sequence length. R8 was stopped
+before approval. Runtime now rejects any explicit canonical-length claim while that fact is
+unresolved; entity and construct lengths cannot be promoted to canonical facts.
+
+R9 exercised the resulting code from the same goal-only input:
+
+- project: `backend-baseline-nk2r-goal-only-20260920-r9`
+- thread: `thread-0b3f0e3209ee47eda9e9a081dac004b4`
+- Stage 1 run: `20260920t075027z`
+- source commit: `eeaa8d7c96c8cdcff84742b118248fddefb98e64`, clean
+- Gate 1 card: `658949badff5045fc6e428ba56c7e415856ba4fd424d5a1f981b20b496410227`
+- recommended and approved option: 9W2J chain R (`pdb-9w2j-entity-4`)
+- approval command explicitly supplied the displayed option ID; it succeeded and persisted
+  `selected_option_id=pdb-9w2j-entity-4`
+- completed TargetBundle: P21452 canonical 398 aa, engineered construct 406 aa, chain R,
+  `mapping_status=review-required`
+
+R9 chose 9W2J rather than R7's 9W1J. Both belong to the clean single-source, full-alignment 9W
+series. R7 prioritized the endogenous NKA-bound context; R9 prioritized 9W2J's 2.82 Å value among
+the non-fused candidates. This is a scientific preference at a human Gate rather than a changed
+Runtime fact. 7XWO remained deprioritized because its globally lower 2.70 Å value comes with the
+two-source cytochrome-b562 fusion and lower canonical coverage.
+
+The first resolution guard treated every superlative as global and caused three unnecessary R9
+repairs: two Target submissions correctly said 9W2J was best among non-fused entries, and one Judge
+submission correctly said 7XWO had the best global nominal resolution. The final comparator now
+binds the claim to the PDB ID named before the superlative and recognizes a Runtime-verifiable
+non-fused/single-source subset. Exact saved-submission replay passes both R9 claims while still
+rejecting the false R7 claim that 9W1J was best within the clean 9W series. This refinement reduces
+repair overhead without relaxing the original fact guard.
+
 ## Timing
 
 R4 remains the original goal-bootstrap acceptance:
@@ -171,6 +206,16 @@ R7 separates native Runtime work from model reasoning:
 - post-approval successful provider response latency: 38.21 seconds across seven responses,
   including the final Judge repair and report
 
+R9 timing on clean commit `eeaa8d7c`:
+
+- native run creation to structure-selection boundary: 21.01 seconds
+- run creation to persisted approval intent: 130.66 seconds
+- approval intent to completed TargetBundle: 20.63 seconds
+- run creation to completed TargetBundle: 151.30 seconds
+- successful provider latency through the Gate 1 card: 106.85 seconds across 16 responses; about
+  29.44 seconds and three calls were the now-removed over-strict resolution repairs
+- post-approval successful provider latency: 38.14 seconds across six responses
+
 The SQLite event stream does not persist a wall-clock timestamp for card creation, so this record
 does not invent an exact end-to-end Gate 1 wall time. It reports manifest timestamps and provider
 latencies separately. The 27.32-second native boundary time demonstrates that R5/R6 slowness came
@@ -189,6 +234,8 @@ from Agent loops rather than UniProt/RCSB acquisition itself.
 | R6 | The Skill read fell from 56 calls to one, and native Stage 1 reached `awaiting-human-approval` in about 17 seconds, but the Target then made 55 `get_job_status` calls and exhausted the 64-call safeguard. | The enriched six-candidate packet exceeded the generic 8 KB offload threshold and became a `/result-*.json` reference. Stage 1 has no scoped result navigator. The terminal job also continued to advertise both preparation and status tools, so the model repeatedly polled instead of receiving the decision packet. | Keep the bounded Stage 1 Gate 1 packet inline up to 60 KB. Make its operational tool surface finite-state: before dispatch expose prepare; while active expose observation; after any terminal boundary expose evidence only. Phase 2 tool routing and its scoped result navigator are unchanged. |
 | R7 | The final R6 code completed a fresh goal-only Stage 1 without either loop and selected 9W1J, but post-run review found the prose incorrectly called 2.97 Å the best resolution in the clean series; 9W2J is 2.82 Å. | Runtime projected the exact per-option values, but the narrow Target/Judge fact validator checked lengths and not comparative resolution superlatives. | Reject a best/highest-resolution claim unless the selected option has the minimum Runtime value. Apply the same deterministic check to Target and Judge; keep biologically justified preferences legal when written with the exact value and without a false metric superlative. |
 | R7 CLI | Passing the exact displayed Gate 1 option with `--candidate` was rejected even though CLI help permits an exact scientific option ID. | `SessionStore.respond()` accepted explicit options only for ranked Site and downstream cards. | Gate 1 `APPROVE` now accepts only the exact option already reviewed on that card. A different option is still rejected and requires a new reviewed card, so approval cannot silently switch structures. |
+| R8 | Target called the 406-residue construct/entity sequence the canonical sequence while Runtime canonical length was unresolved. | The count checker rejected mismatches only when a canonical length was already known; it did not reject invention of an unresolved value. | Treat an explicit canonical length as a contradiction when Runtime says unresolved. Preserve construct/entity/canonical semantics. R8 was not approved. |
+| R9 | The fresh run produced a correct 9W2J card and completed an explicitly selected Gate 1 approval, but the first resolution comparator spent three repairs rejecting correct qualified statements. | The guard attributed every superlative to the recommended option and compared only with the global pool, even when prose explicitly named 7XWO or a non-fused subset. | Bind a claim to its explicit PDB mention and recognize the Runtime-verifiable non-fused/single-source subset. Exact R9 replay passes; exact R7 false-claim replay still rejects. |
 
 ## Verification
 
@@ -197,7 +244,7 @@ from Agent loops rather than UniProt/RCSB acquisition itself.
 - final Target tool regression: `10 passed` in `16.03s`.
 - post-baseline R6 Stage 1 hardening regression: `78 passed` in `29.53s`.
 - final Stage 1 focused regression, including Target/Judge fact integrity and explicit Gate 1 option
-  approval: `132 passed`.
+  approval and scoped resolution comparison: `134 passed`.
 - Ruff: PASS.
 - strict mypy: PASS for the changed source modules.
 - at tag `BACKEND_PRODUCT_BASELINE_V1`, `src/easydesign/agent/harness.py` was byte-identical to R28.
@@ -213,9 +260,10 @@ Phase 3/4 compatibility boundaries were exercised by the focused suite.
 The R4 manifest records commit `0d0b4dfa` and `dirty: true` because the live model configuration
 was an untracked local file during execution. No tracked source diff was present. R7 records clean
 source commit `0ffcc4a8` and the ignored runtime profile, then completed Stage 1 after one external
-provider connection failure and same-project resume. The later CLI and resolution-superlative
-patches are deterministic regressions validated by the focused suite; no second live scientific
-run was needed to prove those exact guards.
+provider connection failure and same-project resume. R9 records clean source commit `eeaa8d7c`,
+accepted the exact displayed option ID and completed the corrected 398-aa canonical / 406-aa
+construct bundle. The final scoped-comparator refinement is validated against the exact saved R7
+and R9 submissions as well as the focused regression suite.
 
 This closure establishes the product entry and canonical architecture documentation. It does not
 experimentally validate any NK2R structure as the uniquely best epitope-design input, guarantee

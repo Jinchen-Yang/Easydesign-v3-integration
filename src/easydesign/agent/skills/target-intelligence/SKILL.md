@@ -62,10 +62,10 @@ lengths/chain facts as authoritative fields or restate entire factual tables in 
 uses runtime facts directly. Explain biological implications, alternatives and uncertainty.
 When Runtime leaves canonical length unresolved, keep it unresolved: an entity or construct
 length is not a canonical sequence length and must never be relabeled as one.
-Do not call a candidate the best/highest-resolution option unless it is the global minimum
-Angstrom value in the supplied eligible set. When a biologically preferred subset is not a
-structured Runtime field, cite the exact resolution and state the biological preference without
-a resolution superlative.
+Do not call a candidate the best/highest-resolution option unless it is the minimum Angstrom
+value in the supplied eligible set or in an explicitly named Runtime-verifiable non-fused /
+single-source subset. When the intended subset is not a structured Runtime field, cite the exact
+resolution and state the biological preference without a resolution superlative.
 HARD_FACT_CONTRADICTION requires correction; it cannot be sent to Gate approval.
 Free text, pure JSON text or fenced JSON is not a submission. On a schema diagnostic, correct
 only the typed submission; two persisted output-contract corrections per execution are allowed.

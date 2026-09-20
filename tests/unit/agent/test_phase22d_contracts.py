@@ -363,6 +363,72 @@ def test_structure_resolution_superlative_must_match_runtime_options() -> None:
         )
 
 
+def test_resolution_superlative_honors_explicit_runtime_verifiable_subset() -> None:
+    evidence = {
+        **runtime_evidence(),
+        "options": [
+            {
+                "option_id": "pdb-9w1j-entity-5",
+                "eligible": True,
+                "payload": {
+                    "pdb_id": "9W1J",
+                    "candidate_summary": {
+                        "resolution_angstrom": 2.97,
+                        "source_part_count": 1,
+                        "multiple_source_flag": "N",
+                    },
+                },
+            },
+            {
+                "option_id": "pdb-9w2j-entity-4",
+                "eligible": True,
+                "payload": {
+                    "pdb_id": "9W2J",
+                    "candidate_summary": {
+                        "resolution_angstrom": 2.82,
+                        "source_part_count": 1,
+                        "multiple_source_flag": "N",
+                    },
+                },
+            },
+            {
+                "option_id": "pdb-7xwo-entity-1",
+                "eligible": True,
+                "payload": {
+                    "pdb_id": "7XWO",
+                    "candidate_summary": {
+                        "resolution_angstrom": 2.70,
+                        "source_part_count": 2,
+                        "multiple_source_flag": "Y",
+                    },
+                },
+            },
+        ],
+    }
+    check_fact_claims(
+        {
+            "recommended_action": "9W2J has the best resolution among non-fused entries.",
+            "recommended_option": "pdb-9w2j-entity-4",
+        },
+        evidence,
+    )
+    check_fact_claims(
+        {
+            "reasons": ["7XWO has the best nominal resolution, but it is a fusion."],
+            "recommendation": {"option_id": "pdb-9w2j-entity-4"},
+        },
+        evidence,
+    )
+    with pytest.raises(HardFactContradiction, match="structure_resolution_superlative"):
+        check_fact_claims(
+            {
+                "reasons": ["9W1J has the best resolution in the clean 9W series."],
+                "recommendation": {"option_id": "pdb-9w1j-entity-5"},
+            },
+            evidence,
+        )
+
+
 def test_model_cannot_supply_runtime_fields_and_open_interpretation_is_allowed() -> None:
     for key in (
         "canonical_length",

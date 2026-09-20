@@ -135,13 +135,14 @@ native Stage 1 execution time.
 | R4 | Goal-only discovery, Gate 1 card, human approval and TargetBundle succeeded. The approval CLI then read the manifest before the detached worker completed. | The worker required about 15 seconds; the status tool waited only 10 seconds. Historical model calls also repeated the project-ID/run-ID mistake during a later resume. | This run is the live scientific acceptance. Follow-up patch makes active reads retryable, waits up to 30 seconds and deterministically maps the current project ID to the sole current run ID without weakening evidence binding. |
 | R5 | Final-code revalidation exhausted the 64-call turn safeguard before Target submitted an interpretation. | The Target made 56 `read_file` calls. Successful Skill reads were persisted only for `Phase2Bridge`; Stage 1 uses `TargetBridge`, so the immutable Target Skill remained advertised after every read. | Persist successful Skill-read state for every bridge/execution and remove `read_file` after the one required read. Add a Stage 1 regression proving the tool is not reoffered. The failure is a Harness state bug, not provider latency. |
 | R5 structure audit | The six structure options contained only method and resolution; 7XWO was recommended mainly for 2.70 Å. | Runtime had acquired richer RCSB evidence but did not project it into the Gate 1 comparison packet. | Add the compact deposited construct/state/coverage packet described above. Resolution remains one quality signal rather than the sole comparison input. |
+| R6 | The Skill read fell from 56 calls to one, and native Stage 1 reached `awaiting-human-approval` in about 17 seconds, but the Target then made 55 `get_job_status` calls and exhausted the 64-call safeguard. | The enriched six-candidate packet exceeded the generic 8 KB offload threshold and became a `/result-*.json` reference. Stage 1 has no scoped result navigator. The terminal job also continued to advertise both preparation and status tools, so the model repeatedly polled instead of receiving the decision packet. | Keep the bounded Stage 1 Gate 1 packet inline up to 60 KB. Make its operational tool surface finite-state: before dispatch expose prepare; while active expose observation; after any terminal boundary expose evidence only. Phase 2 tool routing and its scoped result navigator are unchanged. |
 
 ## Verification
 
 - focused implementation suite before the final operational patch: `34 passed, 1 skipped` in
   `310.57s`; the skip is the explicitly opt-in live-model integration test.
 - final Target tool regression: `10 passed` in `16.03s`.
-- post-baseline Stage 1 hardening regression: `77 passed` in `37.55s`.
+- post-baseline Stage 1 hardening regression after R6: `78 passed` in `29.53s`.
 - Ruff: PASS.
 - strict mypy: PASS for the changed source modules.
 - at tag `BACKEND_PRODUCT_BASELINE_V1`, `src/easydesign/agent/harness.py` was byte-identical to R28.

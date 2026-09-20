@@ -163,7 +163,9 @@ async def test_successful_skill_reads_are_durable_across_summarized_history(brid
 
 
 @pytest.mark.asyncio
-async def test_stage1_target_skill_read_is_recorded_and_not_reoffered(bridge: Any) -> None:
+async def test_stage1_target_skill_read_is_recorded_and_not_reoffered(
+    bridge: Any, monkeypatch: Any
+) -> None:
     """The Stage 1 TargetBridge must not loop over its immutable Skill."""
     from langchain_core.tools import StructuredTool
 
@@ -206,14 +208,26 @@ async def test_stage1_target_skill_read_is_recorded_and_not_reoffered(bridge: An
         StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
     ]
 
+    offered: list[set[str]] = []
+
     async def model_handler(request: Any) -> Any:
-        assert "read_file" not in {tool.name for tool in request.tools}
+        names = {tool.name for tool in request.tools}
+        offered.append(names)
+        assert "read_file" not in names
         assert "every required Skill file" in request.system_message.text
         return SimpleNamespace(
             result=[
                 AIMessage(
                     content="",
-                    tool_calls=[{"name": "prepare_target", "args": {}, "id": "prepare"}],
+                    tool_calls=[
+                        {
+                            "name": "prepare_target"
+                            if "prepare_target" in names
+                            else "read_target_evidence",
+                            "args": {},
+                            "id": "next",
+                        }
+                    ],
                 )
             ],
             structured_response=None,
@@ -221,6 +235,54 @@ async def test_stage1_target_skill_read_is_recorded_and_not_reoffered(bridge: An
 
     request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Prepare"))
     await guard.awrap_model_call(request, model_handler)
+    assert "prepare_target" in offered[-1] and "get_job_status" not in offered[-1]
+
+    monkeypatch.setattr(
+        bridge,
+        "get_job_status",
+        lambda: {"status": "awaiting-human-approval", "job_id": "job-test"},
+    )
+    await guard.awrap_model_call(request, model_handler)
+    assert "prepare_target" not in offered[-1] and "get_job_status" not in offered[-1]
+    assert "read_target_evidence" in offered[-1]
+
+
+@pytest.mark.asyncio
+async def test_stage1_structure_decision_packet_remains_inline(
+    bridge: Any, monkeypatch: Any
+) -> None:
+    """Stage 1 has no result navigator, so a rich Gate 1 packet must stay readable."""
+    packet = {
+        "status": "awaiting-human-approval",
+        "run_id": "run-test",
+        "options": [
+            {
+                "option_id": f"candidate-{index}",
+                "description": "verified construct and state facts " + "x" * 2400,
+            }
+            for index in range(6)
+        ],
+    }
+    monkeypatch.setattr(
+        "easydesign.agent.tools.resolve_project_run",
+        lambda *_args, **_kwargs: SimpleNamespace(run_id="run-test"),
+    )
+    monkeypatch.setattr(
+        bridge,
+        "get_job_status",
+        lambda: {"status": "awaiting-human-approval", "job_id": "job-test"},
+    )
+    monkeypatch.setattr(bridge, "read_evidence", lambda _run_id=None: packet)
+    reader = next(
+        tool
+        for tool in build_tools(bridge, "target")
+        if tool.name == "read_target_evidence"
+    )
+
+    result = json.loads(await reader.ainvoke({}))
+
+    assert result == packet
+    assert "ref" not in result
 
 
 def test_passage_pages_fit_adapter_and_cursor_never_skips_or_truncates(

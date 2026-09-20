@@ -1058,7 +1058,12 @@ def build_tools(bridge: TargetBridge, role: str) -> list[Any]:
                 raise AgentBoundaryError("Judge may read only its delegated evidence snapshot")
         if argument_repair is not None:
             evidence["argument_repair"] = argument_repair
-        return bridge.store.offload(bridge.thread, evidence)
+        # The Phase 1 slice has no scoped result-navigation tool. Keep its bounded
+        # Gate 1 comparison packet inline so an enriched multi-structure decision
+        # cannot degrade into an unreadable /result-*.json reference. Phase 2 keeps
+        # the lower offload threshold and its verified field/page navigation.
+        inline_limit = 8192 if getattr(bridge, "is_phase2", False) else 60000
+        return bridge.store.offload(bridge.thread, evidence, limit=inline_limit)
 
     async def decision_tool(
         option_id: str,

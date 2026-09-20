@@ -21,6 +21,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ValidationError
 
+from easydesign.orchestration.local_jobs import ACTIVE_JOB_STATUSES
+
 from .context_policy import admit_site_research_request, context_usage, research_memory
 from .contracts import (
     AgentBoundaryError,
@@ -487,14 +489,20 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             # Preparation fixes the run's identity inputs. Do not offer it in the
             # initial call that is still loading those prerequisites from the Skill.
             available = [t for t in available if t.name != "prepare_target"]
-        # An absent job cannot advance by observation. Tool availability follows the
-        # original runtime receipt; this does not schedule work or choose science.
-        if (
-            self.role == "target"
-            and "get_job_status" in self.allowed
-            and self.bridge.get_job_status()["status"] == "no-bound-job"
-        ):
-            available = [t for t in available if t.name != "get_job_status"]
+        # Stage 1 has a finite operational tool surface. Before dispatch, preparation
+        # is available and observation is not. While active, only bounded observation
+        # is useful. At a terminal worker boundary, the model must read evidence rather
+        # than resubmit or repeatedly poll. Phase 2 keeps its existing state dispatcher.
+        if self.role == "target" and "get_job_status" in self.allowed:
+            job_status = self.bridge.get_job_status()["status"]
+            if isinstance(self.bridge, Phase2Bridge):
+                if job_status == "no-bound-job":
+                    available = [t for t in available if t.name != "get_job_status"]
+            else:
+                if job_status != "no-bound-job":
+                    available = [t for t in available if t.name != "prepare_target"]
+                if job_status not in ACTIVE_JOB_STATUSES:
+                    available = [t for t in available if t.name != "get_job_status"]
         if self.role == "target" and isinstance(self.bridge, Phase2Bridge):
             from langchain_core.messages import SystemMessage
 

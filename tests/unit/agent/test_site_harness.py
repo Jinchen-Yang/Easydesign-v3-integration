@@ -9,7 +9,7 @@ from easydesign.agent.cli import run_session
 from easydesign.agent.contracts import AgentBoundaryError
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase2_tools import PHASE2_ALLOWED, phase2_tools
-from easydesign.agent.session_store import SessionStore
+from easydesign.agent.session_store import SessionStore, identity
 from easydesign.agent.site_contracts import ScientificTask
 from tests.agent_support import ScriptedModel, scripted_config
 from tests.unit.agent.test_site_runtime import site_intent
@@ -361,6 +361,156 @@ async def test_site_structured_output_retries_before_any_scientific_submission(
         )
         == 1
     )
+
+
+class CitationRecoverySiteModel(SiteModel):
+    handoff_submissions: int = 0
+
+    def answer(self, messages: Any) -> AIMessage:
+        if (
+            self.role != "site"
+            or "SiteResearchHandoff" not in self.offered
+            or "RankedSiteDecision" in self.offered
+        ):
+            return super().answer(messages)
+        calls = {c["id"]: c for m in messages if isinstance(m, AIMessage) for c in m.tool_calls}
+        results = [
+            (calls.get(m.tool_call_id, {}), m)
+            for m in messages
+            if isinstance(m, ToolMessage)
+        ]
+        named = [(call.get("name"), message) for call, message in results]
+        if not any(name == "read_site_evidence" for name, _ in named):
+            return self.call("read_site_evidence")
+        if not any(name == "evaluate_candidate_site" for name, _ in named):
+            return self.call("evaluate_candidate_site", label_seq_ids=[1, 2, 3])
+
+        self.handoff_submissions += 1
+        if self.handoff_submissions == 1:
+            return AIMessage(
+                content="The typed handoff was truncated before serialization.",
+                response_metadata={"stop_reason": "max_tokens"},
+            )
+
+        decision_questions = []
+        if self.handoff_submissions >= 3:
+            excerpt = (
+                "A paraphrase of the measured partner-engagement outcome."
+                if self.handoff_submissions == 3
+                else "measured partner engagement at the mapped protein interface"
+            )
+            decision_questions = [
+                {
+                    "query_ids": ["synthetic-citation-query"],
+                    "question": "Does the focused result bear on the intended interface?",
+                    "status": "VERIFIED",
+                    "evidence": [
+                        {
+                            "card_id": "passage-citation-repair",
+                            "excerpt": excerpt,
+                            "claim": "The synthetic experiment bears on the intended interface.",
+                            "relation": "supports",
+                            "strength": "E3",
+                            "transfer_limit": "Synthetic recovery fixture only.",
+                        }
+                    ],
+                    "limitations": ["No binding affinity or in vivo efficacy was measured."],
+                    "decision_impact": "Retain the mapped interface as a provisional candidate.",
+                }
+            ]
+        return self.call(
+            "SiteResearchHandoff",
+            candidates=[site_intent([1, 2, 3]).selected_site.model_dump(mode="json")],
+            decision_questions=decision_questions,
+            contradiction_search_query_ids=["synthetic-citation-query"],
+            stopping_reason=(
+                "The bounded synthetic interface check is complete and did not change the "
+                "ranking. Binding affinity remains unresolved and is the next discriminating "
+                "test."
+            ),
+            research_notes=["Synthetic evidence exercises citation serialization only."],
+            unresolved_questions=["Binding affinity and in vivo efficacy remain untested."],
+        )
+
+
+@pytest.mark.asyncio
+async def test_known_citation_repair_is_independent_after_two_shape_repairs(
+    site_bridge: Any,
+) -> None:
+    source = site_bridge.persist(
+        "synthetic-source",
+        {"text": "A direct synthetic experiment measured an interface outcome."},
+    )
+    query = {
+        "query_id": "synthetic-citation-query",
+        "topic": "function",
+        "question": "Synthetic interface experiment",
+        "query": {
+            "operation": "literature-search",
+            "query": "synthetic mapped protein interface experiment",
+        },
+        "status": "VERIFIED",
+        "cards": [
+            {
+                "card_id": "passage-citation-repair",
+                "provider": "Europe PMC",
+                "identifier": "SYNTHETIC-CITATION",
+                "passage": (
+                    "A direct synthetic experiment measured partner engagement at the mapped "
+                    "protein interface."
+                ),
+                "source_refs": [source],
+                "source_verified": True,
+                "selection_provenance": {"reason": "Synthetic recovery fixture"},
+                "binding_context": {
+                    "acquired_binding": "synthetic-binding",
+                    "relation": "current-state-selection",
+                    "relevance": "decision-focused",
+                },
+                "partial": True,
+                "limitations": ["Synthetic fixture; no biological conclusion."],
+                "evidence_level": "primary-abstract",
+                "primary_eligible": True,
+                "does_not_support": ["Binding affinity or in vivo efficacy"],
+            }
+        ],
+        "errors": [],
+    }
+    ref = site_bridge.persist("evidence-research", query)
+    site_bridge.store.event(
+        site_bridge.thread,
+        "evidence-research",
+        {"target_binding": identity(site_bridge.binding()), "ref": ref},
+    )
+    research_before = len(
+        [
+            e
+            for e in site_bridge.store.events(site_bridge.thread)
+            if e["kind"] == "evidence-research"
+        ]
+    )
+    models = {role: CitationRecoverySiteModel(role=role) for role in PHASE2_ALLOWED}
+
+    result = await run_session(
+        site_bridge,
+        scripted_config(),
+        models,
+        "Assess a mapped exploratory protein interface without generation.",
+    )
+
+    assert result["status"] == "awaiting-human-approval"
+    assert models["site"].handoff_submissions == 4
+    events = site_bridge.store.events(site_bridge.thread)
+    repairs = [e["payload"] for e in events if e["kind"] == "contract-repair"]
+    assert [repair["contract"] for repair in repairs] == [
+        "SiteResearchHandoff",
+        "SiteResearchHandoff",
+        "SiteResearchHandoff:evidence-citation",
+    ]
+    assert repairs[-1]["repair_limit"] == 1
+    assert len([e for e in events if e["kind"] == "site-evidence-dossier"]) == 1
+    assert len([e for e in events if e["kind"] == "site-proposal"]) == 1
+    assert len([e for e in events if e["kind"] == "evidence-research"]) == research_before
 
 
 class InvalidJsonSiteModel(SiteModel):

@@ -1037,6 +1037,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             diagnostic = ""
             repair_already_counted = False
             evidence_role_repair = False
+            evidence_citation_repair = False
             if submission_only and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
                     (
@@ -1115,11 +1116,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     except EvidenceRoleMismatch as error:
                         diagnostic = str(error)
                         evidence_role_repair = True
-                    except (
-                        EvidenceCitationMismatch,
-                        ResearchConclusionMismatch,
-                        JudgeStageMismatch,
-                    ) as error:
+                    except EvidenceCitationMismatch as error:
+                        diagnostic = str(error)
+                        evidence_citation_repair = True
+                    except (ResearchConclusionMismatch, JudgeStageMismatch) as error:
                         diagnostic = str(error)
                     except HardFactContradiction as error:
                         diagnostic = str(error)
@@ -1200,6 +1200,16 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         self.execution_id,
                         diagnostic,
                         contract=f"{schema.__name__}:evidence-role",
+                        max_repairs=1,
+                    )
+                elif evidence_citation_repair:
+                    assert self.execution_id is not None
+                    self.bridge.store.reserve_contract_repair(
+                        self.bridge.thread,
+                        self.role,
+                        self.execution_id,
+                        diagnostic,
+                        contract=f"{schema.__name__}:evidence-citation",
                         max_repairs=1,
                     )
                 else:

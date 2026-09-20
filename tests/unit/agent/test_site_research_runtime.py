@@ -408,6 +408,105 @@ async def test_site_context_admission_builds_runtime_packet_before_summary_guard
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tool_count", [1, 3])
+async def test_persisted_summary_cutoff_precedes_site_runtime_projection_without_orphans(
+    site_bridge: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    caplog: Any,
+    tool_count: int,
+) -> None:
+    monkeypatch.setattr(
+        EvidenceResearch, "snapshot", lambda _self, **_kwargs: _empty_research()
+    )
+    config = scripted_config()
+    eid = site_bridge.store.begin_execution(
+        site_bridge.thread, "Synthetic summarized admission"
+    )["execution_id"]
+    model = FakeListChatModel(responses=["unused"])
+    memory = research_memory(
+        site_bridge,
+        config,
+        model,
+        FilesystemBackend(root_dir=tmp_path / "history", virtual_mode=True),
+        eid,
+    )
+    # Exercise application of an already-persisted event without creating a new
+    # summary in this call. The effective tail remains large enough for Runtime
+    # admission to replace it with its durable packet.
+    monkeypatch.setattr(memory, "_should_summarize", lambda _messages, _tokens: False)
+
+    messages: list[Any] = [
+        HumanMessage(content="Original request"),
+        AIMessage(
+            content="",
+            tool_calls=[{"id": "prefix", "name": "read_site_evidence", "args": {}}],
+        ),
+        ToolMessage(
+            content="{}",
+            name="read_site_evidence",
+            tool_call_id="prefix",
+        ),
+        AIMessage(content="Prefix evidence consumed."),
+        HumanMessage(content="Oversized transient history " + "x" * 70000),
+    ]
+    calls = [
+        {"id": f"current-{index}", "name": "retrieve_evidence", "args": {}}
+        for index in range(tool_count)
+    ]
+    messages.append(AIMessage(content="", tool_calls=calls))
+    messages.extend(
+        ToolMessage(
+            content=f'{{"result":"current-{index}"}}',
+            name="retrieve_evidence",
+            tool_call_id=call["id"],
+        )
+        for index, call in enumerate(calls)
+    )
+    summary = HumanMessage(content="Fallible summary of the first four state messages.")
+    received: list[Any] = []
+
+    async def handler(request: Any) -> Any:
+        received.extend(request.messages)
+        return ModelResponse(result=[AIMessage(content="Continue")])
+
+    await memory.awrap_model_call(
+        ModelRequest(
+            model=model,
+            system_message=SystemMessage(content="Synthetic Site research"),
+            messages=messages,
+            state={
+                "messages": messages,
+                "_summarization_event": {
+                    "cutoff_index": 4,
+                    "summary_message": summary,
+                    "file_path": "/conversation_history/synthetic.md",
+                },
+            },
+            tools=[],
+        ),
+        handler,
+    )
+
+    call_ids = [call["id"] for call in calls]
+    assert len(received) == tool_count + 2
+    assert '"runtime_site_research_packet":"v1"' in received[0].content
+    assert isinstance(received[1], AIMessage)
+    assert [call["id"] for call in received[1].tool_calls] == call_ids
+    assert [
+        message.tool_call_id for message in received[2:] if isinstance(message, ToolMessage)
+    ] == call_ids
+    assert "Summarization cutoff_index" not in caplog.text
+    admission = [
+        event["payload"]
+        for event in site_bridge.store.events(site_bridge.thread)
+        if event["kind"] == "site-research-context-admission"
+    ]
+    assert len(admission) == 1
+    assert admission[0]["preserved_latest_tool_batch_calls"] == tool_count
+
+
+@pytest.mark.asyncio
 async def test_site_role_boundary_admits_oversized_first_request_before_hard_guard(
     site_bridge: Any, monkeypatch: Any
 ) -> None:

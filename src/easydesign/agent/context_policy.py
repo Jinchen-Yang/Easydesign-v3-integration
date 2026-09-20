@@ -279,19 +279,30 @@ class ResearchMemory(SummarizationMiddleware):
         self.execution_id = execution_id
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        """Admit a bounded Runtime packet before native summarization can hit the guard."""
+        """Apply native history state before projecting a bounded Runtime packet.
+
+        A persisted summarization cutoff is an absolute index into the checkpoint's
+        original message list. Runtime admission creates a transient replacement list,
+        so applying that cutoff after admission can split or discard its latest tool
+        batch. Let the native middleware reconstruct/summarize the original history
+        first, then project only the effective request passed downstream.
+        """
         tool_chars = len(
             compact([convert_to_openai_tool(tool) for tool in getattr(request, "tools", [])])
         )
-        request = admit_site_research_request(
-            request,
-            bridge=self.bridge,
-            config=self.config,
-            role=self.role,
-            execution_id=self.execution_id,
-            tool_chars=tool_chars,
-        )
-        return await super().awrap_model_call(request, handler)
+
+        async def admitted_handler(effective_request: Any) -> Any:
+            admitted = admit_site_research_request(
+                effective_request,
+                bridge=self.bridge,
+                config=self.config,
+                role=self.role,
+                execution_id=self.execution_id,
+                tool_chars=tool_chars,
+            )
+            return await handler(admitted)
+
+        return await super().awrap_model_call(request, admitted_handler)
 
     def _create_summary(self, messages_to_summarize: list[Any]) -> str:
         from .evidence_output import reasoning_working_view

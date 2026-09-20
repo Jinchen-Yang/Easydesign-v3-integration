@@ -8,14 +8,18 @@ import pytest
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
 
-from easydesign.agent.contracts import AgentBoundaryError, EvidenceRoleMismatch
+from easydesign.agent.contracts import (
+    AgentBoundaryError,
+    EvidenceCitationMismatch,
+    EvidenceRoleMismatch,
+)
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, scientific_projection
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchQuery
 from easydesign.agent.harness import SITE_RESEARCH_MODEL_CALL_LIMIT, RoleBoundary
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase2_tools import phase2_tools
-from easydesign.agent.session_store import compact
+from easydesign.agent.session_store import SessionStore, compact
 from easydesign.agent.tools import build_tools
 from tests.agent_support import scripted_config
 from tests.unit.agent.test_prerequisite_recovery import ACQUIRE, source_transport
@@ -1909,3 +1913,105 @@ async def test_site_role_mismatch_has_one_semantic_repair_after_shape_repairs(
         "SiteResearchHandoff:evidence-role",
     ]
     assert repairs[-1]["repair_limit"] == 1
+
+
+@pytest.mark.asyncio
+async def test_site_citation_repair_slot_is_durable_and_exhausts_fatally(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from tests.unit.agent.test_site_dossier import handoff
+
+    b = site_bridge
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Reject repeated known-source citation mismatch")[
+        "execution_id"
+    ]
+    for index in range(2):
+        b.store.reserve_contract_repair(
+            b.thread,
+            "site",
+            eid,
+            f"Synthetic prior shape error {index}",
+            contract="SiteResearchHandoff",
+        )
+
+    guard = RoleBoundary(
+        b,
+        "site",
+        cfg,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    attempts = 0
+
+    def reject_citation(*_args: Any) -> dict[str, Any]:
+        raise EvidenceCitationMismatch(
+            "CITATION_MISMATCH for known source passage-synthetic: use the exact passage."
+        )
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", reject_citation)
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            assert "CITATION_MISMATCH" in current.system_message.text
+        value = handoff()
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    request = Request(
+        tools=phase2_tools(b, "site"),
+        messages=[],
+        model_settings={},
+        system_message=SystemMessage(content="Finalize Site research"),
+    )
+    with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+        await guard.awrap_model_call(request, handler)
+
+    assert attempts == 2
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        "SiteResearchHandoff",
+        "SiteResearchHandoff",
+        "SiteResearchHandoff:evidence-citation",
+    ]
+    assert repairs[-1]["repair_limit"] == 1
+    reopened = SessionStore(b.project)
+    try:
+        with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+            reopened.reserve_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "CITATION_MISMATCH after restart",
+                contract="SiteResearchHandoff:evidence-citation",
+                max_repairs=1,
+            )
+    finally:
+        reopened.close()

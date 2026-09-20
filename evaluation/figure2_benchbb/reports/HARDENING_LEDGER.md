@@ -40,6 +40,17 @@ may diagnose recovery but cannot prove the repair.
   - the diagnostic names both the invalid review and eligible direct passage;
   - finalization succeeds after two pre-existing shape repairs and one evidence-role repair;
   - direct and review cards expose `E1-E4` versus `E3-E4` ceilings respectively.
-- Validation: 92 focused Evidence/Site/finalization tests pass; Ruff passes; mypy passes for all
-  changed source modules. A fresh PD-L1 run is required before this entry is closed.
-- Disposition: implementation validated locally; fresh-run validation pending.
+- Validation:
+  - 92 focused Evidence/Site/finalization tests pass;
+  - a broader Gate 2/Judge/fact-integrity/contract-repair selection adds 133 passing tests;
+  - Ruff passes, and mypy passes for all changed source modules;
+  - fresh project `figure2-benchbb-hardening-pdl1-r2`, thread
+    `thread-7354e93a4a9e481293df4ab358715a01`, started from frozen deposited input `4Z18`;
+  - Site Research committed its dossier after one ordinary exact-citation correction; no
+    `EVIDENCE_ROLE_MISMATCH` occurred and no evidence-role correction was consumed;
+  - Site synthesis produced the ranked A/B/C portfolio; the optional Judge recovered from one
+    output truncation using its existing compact contract; Runtime then created Gate 2 card
+    `ae2afa4beeb37876a9c86b5a3c9a397137745a881454f3d5aace0eef3826d6ff`.
+- Disposition: closed. The original fatal evidence-role failure is covered by regression and did
+  not recur in the independent fresh validation. This run remains engineering hardening data and
+  is excluded from formal Figure 2 estimates.

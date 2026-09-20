@@ -592,6 +592,7 @@ def main(argv: list[str] | None = None) -> int:
         if not root.exists() and args.operation != "start":
             raise AgentBoundaryError("Unknown project; use start with --goal")
         bootstrap_models: dict[str, Any] | None = None
+        bootstrap_runner: asyncio.Runner | None = None
         if not (root / "PROJECT.yaml").is_file() and args.target is not None:
             if args.operation != "start":
                 raise AgentBoundaryError("An input cannot be replaced during resume")
@@ -619,22 +620,28 @@ def main(argv: list[str] | None = None) -> int:
                 bootstrap_models = create_models(
                     config, downstream=args.through in {"pilot", "handoff"}
                 )
-                intent = asyncio.run(
-                    resolve_goal_target(
-                        store=bootstrap_store,
-                        thread=thread,
-                        goal=bootstrap_goal,
-                        model=bootstrap_models["target"],
-                        config=config,
+                bootstrap_runner = asyncio.Runner()
+                try:
+                    intent = bootstrap_runner.run(
+                        resolve_goal_target(
+                            store=bootstrap_store,
+                            thread=thread,
+                            goal=bootstrap_goal,
+                            model=bootstrap_models["target"],
+                            config=config,
+                        )
                     )
-                )
-                initialize_research_project(
-                    project_root=root,
-                    uniprot_query=intent.uniprot_query,
-                    taxon_id=intent.taxon_id,
-                    allow_existing_metadata=True,
-                    quarantine_on_error=False,
-                )
+                    initialize_research_project(
+                        project_root=root,
+                        uniprot_query=intent.uniprot_query,
+                        taxon_id=intent.taxon_id,
+                        allow_existing_metadata=True,
+                        quarantine_on_error=False,
+                    )
+                except BaseException:
+                    bootstrap_runner.close()
+                    bootstrap_runner = None
+                    raise
             finally:
                 bootstrap_store.close()
         elif args.target is not None:
@@ -708,9 +715,14 @@ def main(argv: list[str] | None = None) -> int:
                     from .native_strategy import import_native
 
                     import_native(bridge, args.native_strategy.resolve(strict=True))
-                return asyncio.run(_drive(args, bridge, config, goal, models=bootstrap_models))
+                operation = _drive(args, bridge, config, goal, models=bootstrap_models)
+                if bootstrap_runner is not None:
+                    return bootstrap_runner.run(operation)
+                return asyncio.run(operation)
         finally:
             store.close()
+            if bootstrap_runner is not None:
+                bootstrap_runner.close()
     except KeyboardInterrupt:
         _display(
             {

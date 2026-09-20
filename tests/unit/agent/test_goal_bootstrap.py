@@ -101,7 +101,10 @@ def test_cli_start_accepts_goal_only_and_preserves_optional_structure_path(
     models = tmp_path / "models.json"
     models.write_text(json.dumps(scripted_config().model_dump(mode="json")), encoding="utf-8")
 
+    goal_only_loops: list[int] = []
+
     async def resolve(**_kwargs):
+        goal_only_loops.append(id(asyncio.get_running_loop()))
         return GoalTargetIntent(
             target_label="NK2R",
             uniprot_query="TACR2",
@@ -117,6 +120,7 @@ def test_cli_start_accepts_goal_only_and_preserves_optional_structure_path(
         bridge.validate_project()
         if models is not None:
             assert models is created_models[-1]
+            goal_only_loops.append(id(asyncio.get_running_loop()))
         return 0
 
     monkeypatch.setattr(bootstrap, "resolve_goal_target", resolve)
@@ -144,6 +148,8 @@ def test_cli_start_accepts_goal_only_and_preserves_optional_structure_path(
         )
         == 0
     )
+    assert len(goal_only_loops) == 2
+    assert goal_only_loops[0] == goal_only_loops[1]
     goal_source = load_run_config(
         project_config_path(context.projects_root / "goal-only")
     ).config.target.source

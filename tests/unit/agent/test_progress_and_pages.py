@@ -8,7 +8,7 @@ import pytest
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
 
-from easydesign.agent.contracts import AgentBoundaryError
+from easydesign.agent.contracts import AgentBoundaryError, EvidenceRoleMismatch
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, scientific_projection
 from easydesign.agent.evidence_research import EvidenceResearch, ResearchQuery
@@ -1800,3 +1800,112 @@ async def test_acquired_source_for_another_need_is_not_reported_as_empty_evidenc
     result = await guard.awrap_tool_call(request, handler)
     assert result.status == "success" and json.loads(result.content)["cards"]
     assert len(fetches) == 1 and not b._jobs()
+
+
+
+@pytest.mark.asyncio
+async def test_site_role_mismatch_has_one_semantic_repair_after_shape_repairs(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from tests.unit.agent.test_site_dossier import bind, handoff
+
+    b = site_bridge
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Repair a known evidence-role mismatch")[
+        "execution_id"
+    ]
+    for _ in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
+        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
+    for index in range(2):
+        b.store.reserve_contract_repair(
+            b.thread,
+            "site",
+            eid,
+            f"Synthetic prior shape error {index}",
+            contract="SiteResearchHandoff",
+        )
+
+    guard = RoleBoundary(
+        b,
+        "site",
+        cfg,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    attempts = 0
+
+    def validate(*_args: Any) -> dict[str, Any]:
+        if attempts == 1:
+            raise EvidenceRoleMismatch(
+                "EVIDENCE_ROLE_MISMATCH: passage-review is primary_eligible=false "
+                "but was assigned strength=E2."
+            )
+        return {}
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate)
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"semantic-repair"}'
+        ),
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            assert "EVIDENCE_ROLE_MISMATCH" in current.system_message.text
+        value = handoff()
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    request = Request(
+        tools=phase2_tools(b, "site"),
+        messages=[],
+        model_settings={},
+        system_message=SystemMessage(content="Finalize Site research"),
+    )
+    token = bind(b)
+    try:
+        result = await guard.awrap_model_call(request, handler)
+    finally:
+        from easydesign.agent.phase2 import SITE_EVIDENCE
+
+        SITE_EVIDENCE.reset(token)
+
+    assert result.structured_response == handoff()
+    assert attempts == 2
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        "SiteResearchHandoff",
+        "SiteResearchHandoff",
+        "SiteResearchHandoff:evidence-role",
+    ]
+    assert repairs[-1]["repair_limit"] == 1

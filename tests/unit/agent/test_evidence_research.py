@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from easydesign.agent.contracts import AgentBoundaryError
+from easydesign.agent.contracts import AgentBoundaryError, EvidenceRoleMismatch
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import (
     EvidenceResearch,
@@ -511,27 +511,68 @@ def test_wrong_pmid_and_review_never_become_primary_evidence(
             }
         },
     )
-    review = research.acquire(query(query="different review search"), role="site")["cards"][0]
+    research.acquire(query(query="different review search"), role="site")
+    review = read_primary(research, "55")
     assert review["primary_eligible"] is False
+
+    transport(
+        research,
+        monkeypatch,
+        {
+            "resultList": {
+                "result": [
+                    {
+                        "id": "56",
+                        "source": "MED",
+                        "pubTypeList": {"pubType": ["Journal Article"]},
+                        "abstractText": (
+                            "A direct synthetic experiment measured enzyme inhibition."
+                        ),
+                    }
+                ]
+            }
+        },
+    )
+    research.acquire(query(query="direct experiment search"), role="site")
+    direct = read_primary(research, "56")
+    assert direct["primary_eligible"] is True
+
     conclusion = ResearchAssessment.model_validate(
         {
-            "query_ids": [q["query_id"] for q in research.snapshot()["queries"]],
+            "query_ids": [
+                item["query_id"]
+                for item in research.snapshot()["queries"]
+                if {direct["card_id"], review["card_id"]}
+                & {card["card_id"] for card in item["cards"]}
+            ],
             "status": "VERIFIED",
-            "limitations": ["Review is a discovery lead"],
+            "limitations": ["Review remains background beside a direct experiment"],
             "evidence": [
+                {
+                    "card_id": direct["card_id"],
+                    "excerpt": "measured enzyme inhibition",
+                    "claim": "Direct synthetic experiment claim",
+                    "relation": "supports",
+                    "strength": "E1",
+                    "transfer_limit": "Synthetic direct fixture",
+                },
                 {
                     "card_id": review["card_id"],
                     "excerpt": "discusses enzyme inhibition mechanisms",
                     "claim": "Synthetic review claim",
                     "relation": "supports",
-                    "strength": "E1",
-                    "transfer_limit": "Unverified transfer",
-                }
+                    "strength": "E2",
+                    "transfer_limit": "Unverified review transfer",
+                },
             ],
         }
     )
-    with pytest.raises(AgentBoundaryError, match="discovery lead/review"):
+    with pytest.raises(EvidenceRoleMismatch, match="EVIDENCE_ROLE_MISMATCH") as caught:
         research.validate_questions([conclusion])
+    diagnostic = str(caught.value)
+    assert review["card_id"] in diagnostic
+    assert direct["card_id"] in diagnostic
+    assert "primary_eligible=false" in diagnostic
     with pytest.raises(AgentBoundaryError, match="Only Target or Site"):
         research.acquire(query(), role="coordinator")
     with pytest.raises(ValueError):

@@ -403,12 +403,16 @@ class SessionStore:
         diagnostic: str,
         *,
         contract: str | None = None,
+        max_repairs: int = 2,
     ) -> int:
-        """Two corrections per typed contract/execution, durable across delegation/replay.
+        """Bounded corrections per typed contract/execution, durable across replay.
 
-        Legacy unscoped records count against every contract. All calls still consume
-        the independent execution-wide model-call budget.
+        Legacy unscoped records count against every contract. Syntax/shape corrections use the
+        default two slots. A separately named semantic contract may reserve one focused repair.
+        All calls still consume the independent execution-wide model-call budget.
         """
+        if max_repairs not in {1, 2}:
+            raise AgentBoundaryError("Contract repair limit must be one or two")
         execution = self.latest_execution(thread)
         if execution is None or execution["execution_id"] != execution_id:
             raise AgentBoundaryError("Contract repair is outside the current execution")
@@ -420,9 +424,10 @@ class SessionStore:
                 "OR json_extract(payload,'$.contract')=?)",
                 (thread, execution_id, contract, contract),
             ).fetchone()[0]
-            if count >= 2:
+            if count >= max_repairs:
                 raise AgentBoundaryError(
-                    "Structured contract repair budget exhausted (2 per contract per execution)"
+                    "Structured contract repair budget exhausted "
+                    f"({max_repairs} per contract per execution)"
                 )
             self.db.execute(
                 "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
@@ -434,6 +439,7 @@ class SessionStore:
                             "execution_id": execution_id,
                             "contract": contract,
                             "attempt": count + 1,
+                            "repair_limit": max_repairs,
                             "diagnostic": diagnostic[:6000],
                         }
                     ),

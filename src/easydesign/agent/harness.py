@@ -31,6 +31,7 @@ from .contracts import (
     EvidenceCitationMismatch,
     EvidenceCursorQueryMismatch,
     EvidenceRetrievalQueryMismatch,
+    EvidenceRoleMismatch,
     InvalidFieldProjection,
     JudgeStageMismatch,
     JudgeVerdict,
@@ -650,7 +651,10 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 for e in self.bridge.store.events(self.bridge.thread)
             )
         )
-        for attempt in range(3):
+        max_submission_attempts = (
+            4 if self.role == "site" and self.site_stage == "research" else 3
+        )
+        for attempt in range(max_submission_attempts):
             used = self.bridge.store.db.execute(
                 "SELECT COUNT(*) FROM events WHERE thread=? AND kind='model-call' "
                 "AND json_extract(payload,'$.execution_id')=?",
@@ -1032,6 +1036,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 raise AgentBoundaryError("Malformed non-submission tool call remains fatal")
             diagnostic = ""
             repair_already_counted = False
+            evidence_role_repair = False
             if submission_only and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
                     (
@@ -1107,6 +1112,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     response.structured_response.model_dump(mode="json"),
                                     {**snapshot, "hard_facts": facts},
                                 )
+                    except EvidenceRoleMismatch as error:
+                        diagnostic = str(error)
+                        evidence_role_repair = True
                     except (
                         EvidenceCitationMismatch,
                         ResearchConclusionMismatch,
@@ -1184,7 +1192,18 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             if not repair_already_counted:
-                self.contract_error(diagnostic)
+                if evidence_role_repair:
+                    assert self.execution_id is not None
+                    self.bridge.store.reserve_contract_repair(
+                        self.bridge.thread,
+                        self.role,
+                        self.execution_id,
+                        diagnostic,
+                        contract=f"{schema.__name__}:evidence-role",
+                        max_repairs=1,
+                    )
+                else:
+                    self.contract_error(diagnostic)
             from langchain_core.messages import SystemMessage
 
             request = request.override(

@@ -473,6 +473,11 @@ def _evidence_card_view(card: dict[str, Any], *, operation: str | None) -> dict[
         "source_verified",
     )
     result = {key: scientific_projection(card[key]) for key in keys if key in card}
+    result["allowed_strengths"] = (
+        ["E1", "E2", "E3", "E4"]
+        if card.get("primary_eligible") is True
+        else ["E3", "E4"]
+    )
     card_id = str(card.get("card_id", ""))
     passage = card.get("passage")
     if card_id.startswith("passage-") and isinstance(passage, str):
@@ -638,7 +643,10 @@ def site_research_working_packet(
             "query IDs, exact quoted passage text, material counterevidence and unresolved "
             "questions. Every decision_questions item must include question, decision_impact, "
             "query_ids, status, evidence and limitations. unresolved_questions is a list of "
-            "plain strings. Do not request another action."
+            "plain strings. Each evidence card's allowed_strengths is an immutable "
+            "Runtime ceiling: never assign E1/E2 to a primary_eligible=false source. "
+            "Use such sources only as E3/E4 context/scope, or keep the claim unresolved. "
+            "Do not request another action."
             if reading_closed
             else "Continue only work that can change candidate order, a hard constraint or a "
             "major risk. Exact facts and source text come from this Runtime packet; specialist "

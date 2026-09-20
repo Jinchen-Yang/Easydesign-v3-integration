@@ -337,6 +337,10 @@ class ResearchConclusionMismatch(AgentBoundaryError):
     """A proposed evidence status conflicts with actual research state, not authority."""
 
 
+class EvidenceRoleMismatch(ResearchConclusionMismatch):
+    """A known source was assigned a claim strength above its Runtime-owned ceiling."""
+
+
 class JudgeStageMismatch(AgentBoundaryError):
     """A typed Judge result is inadmissible for its current runtime-bound stage."""
 

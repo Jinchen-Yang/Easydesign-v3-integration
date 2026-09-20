@@ -19,6 +19,7 @@ from easydesign.agent.phase2_tools import phase2_tools
 from easydesign.agent.session_store import SessionStore, compact
 from easydesign.agent.site_research_runtime import (
     _compact_receptor_kernel,
+    _evidence_card_view,
     receptor_kernel_message,
     refresh_site_research_activity,
     site_handoff_repair_outline,
@@ -496,3 +497,26 @@ def test_finalization_packet_does_not_replay_prior_tool_calls(
     assert '"name":"research_evidence"' not in value
     assert '"args":{"query":"old"}' not in value
     assert len(value) < 60000
+
+
+
+def test_evidence_card_view_exposes_runtime_owned_strength_ceiling() -> None:
+    direct = _evidence_card_view(
+        {
+            "card_id": "passage-direct",
+            "primary_eligible": True,
+            "passage": "Direct deposited coordinate evidence for the synthetic interface.",
+        },
+        operation="structure-record",
+    )
+    review = _evidence_card_view(
+        {
+            "card_id": "passage-review",
+            "primary_eligible": False,
+            "passage": "A review summarizes the synthetic interface literature.",
+        },
+        operation="primary-record",
+    )
+
+    assert direct["allowed_strengths"] == ["E1", "E2", "E3", "E4"]
+    assert review["allowed_strengths"] == ["E3", "E4"]

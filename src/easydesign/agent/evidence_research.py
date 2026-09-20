@@ -41,6 +41,7 @@ from easydesign.stages.s02_hotspot_discovery.gpcr import (
 from .contracts import (
     AgentBoundaryError,
     EvidenceCitationMismatch,
+    EvidenceRoleMismatch,
     ResearchConclusionMismatch,
     ShortText,
     SourceCardArgumentMismatch,
@@ -212,7 +213,12 @@ class EvidenceUse(StrictDTO):
     )
     claim: ShortText
     relation: Literal["supports", "contradicts", "scope-limit"]
-    strength: Literal["E1", "E2", "E3", "E4"]
+    strength: Literal["E1", "E2", "E3", "E4"] = Field(
+        description="Claim-specific evidence strength within the Runtime-owned source ceiling. "
+        "E1/E2 require a focused passage whose card says primary_eligible=true. "
+        "A review or other primary_eligible=false source may be used only as E3/E4 context, "
+        "scope or uncertainty and cannot be promoted by the model."
+    )
     transfer_limit: ShortText
 
 
@@ -1577,6 +1583,7 @@ class EvidenceResearch:
         unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
         errors = []
         citation_errors = []
+        role_errors = []
         if unknown:
             errors.append(
                 "Unknown evidence query IDs: "
@@ -1638,10 +1645,27 @@ class EvidenceResearch:
                         )
                     )
                 if use.strength in {"E1", "E2"} and not card["primary_eligible"]:
-                    raise AgentBoundaryError(
-                        "A discovery lead/review cannot become direct primary evidence"
+                    role_errors.append(
+                        scope
+                        + f"EVIDENCE_ROLE_MISMATCH: {use.card_id} has "
+                        + "primary_eligible=false but was assigned "
+                        + f"strength={use.strength}. Keep this source at E3/E4 for background, "
+                        + "scope or uncertainty, or cite an eligible focused passage. If no "
+                        + "eligible direct support exists, keep the claim unresolved."
                     )
                 used_refs.extend(card["source_refs"])
+        if role_errors:
+            eligible = sorted(
+                card_id
+                for card_id, card in cards.items()
+                if card.get("primary_eligible") and card_id.startswith("passage-")
+            )
+            raise EvidenceRoleMismatch(
+                "\n".join(role_errors)
+                + "\nRuntime-owned primary-eligible focused passage card_ids: "
+                + compact(eligible)
+                + ". Do not change source identity or invent support."
+            )
         if errors or citation_errors:
             # Validate the whole opinion in one pass. Serial first-error feedback spent
             # the unchanged two corrections on independent mistakes in the same DTO.

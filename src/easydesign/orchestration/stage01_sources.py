@@ -537,6 +537,156 @@ def _entry_method(entry: dict[str, Any]) -> tuple[str, float | None]:
     return method, resolution
 
 
+def _candidate_deposition_facts(
+    entry_payload: dict[str, Any], entity_payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Project exact RCSB annotations needed for a bounded structure decision."""
+
+    struct = entry_payload.get("struct", {})
+    keywords = entry_payload.get("struct_keywords", {})
+    polymer = entity_payload.get("rcsb_polymer_entity", {})
+    entity_poly = entity_payload.get("entity_poly", {})
+    identifiers = entity_payload.get("rcsb_polymer_entity_container_identifiers", {})
+    citations = entry_payload.get("citation", [])
+    if not isinstance(struct, dict):
+        struct = {}
+    if not isinstance(keywords, dict):
+        keywords = {}
+    if not isinstance(polymer, dict):
+        polymer = {}
+    if not isinstance(entity_poly, dict):
+        entity_poly = {}
+    if not isinstance(identifiers, dict):
+        identifiers = {}
+    if not isinstance(citations, list):
+        citations = []
+    primary = next(
+        (
+            item
+            for item in citations
+            if isinstance(item, dict) and str(item.get("rcsb_is_primary", "")).upper() == "Y"
+        ),
+        next((item for item in citations if isinstance(item, dict)), {}),
+    )
+    reference_identifiers = identifiers.get("reference_sequence_identifiers", [])
+    if not isinstance(reference_identifiers, list):
+        reference_identifiers = []
+    references = [
+        {
+            "database_name": item.get("database_name"),
+            "database_accession": item.get("database_accession"),
+            "entity_sequence_coverage": item.get("entity_sequence_coverage"),
+            "reference_sequence_coverage": item.get("reference_sequence_coverage"),
+            "provenance_source": item.get("provenance_source"),
+        }
+        for item in reference_identifiers
+        if isinstance(item, dict)
+    ]
+    uniprot_ids = identifiers.get("uniprot_ids", [])
+    if not isinstance(uniprot_ids, list):
+        uniprot_ids = []
+    return {
+        "deposited_title": struct.get("title"),
+        "deposited_keywords": keywords.get("text") or keywords.get("pdbx_keywords"),
+        "entity_description": polymer.get("pdbx_description"),
+        "multiple_source_flag": polymer.get("rcsb_multiple_source_flag"),
+        "source_part_count": polymer.get("rcsb_source_part_count"),
+        "uniprot_ids": [str(value) for value in uniprot_ids],
+        "reference_sequence_identifiers": references,
+        "artifact_monomer_count": entity_poly.get("rcsb_artifact_monomer_count"),
+        "mutation_count": entity_poly.get("rcsb_mutation_count"),
+        "conflict_count": entity_poly.get("rcsb_conflict_count"),
+        "deletion_count": entity_poly.get("rcsb_deletion_count"),
+        "insertion_count": entity_poly.get("rcsb_insertion_count"),
+        "primary_citation_title": primary.get("title") if isinstance(primary, dict) else None,
+        "primary_citation_doi": (
+            primary.get("pdbx_database_id_DOI") if isinstance(primary, dict) else None
+        ),
+        "primary_citation_pubmed": (
+            primary.get("pdbx_database_id_PubMed") if isinstance(primary, dict) else None
+        ),
+    }
+
+
+def _structure_selection_option(item: dict[str, Any]) -> DecisionOption:
+    """Build a compact decision card without reducing quality to resolution alone."""
+
+    def short(value: Any, limit: int = 280) -> str:
+        text = str(value).replace("\n", " ").strip()
+        return text if len(text) <= limit else text[: limit - 1] + "…"
+
+    references = [
+        {
+            key: reference.get(key)
+            for key in (
+                "database_accession",
+                "entity_sequence_coverage",
+                "reference_sequence_coverage",
+                "provenance_source",
+            )
+        }
+        for reference in item.get("reference_sequence_identifiers", [])
+        if isinstance(reference, dict)
+    ]
+    summary = {
+        key: item.get(key)
+        for key in (
+            "method",
+            "resolution_angstrom",
+            "deposited_title",
+            "deposited_keywords",
+            "entity_description",
+            "entity_sequence_length",
+            "scope_sequence_coverage",
+            "scope_identity",
+            "scope_coordinate_coverage",
+            "target_structure_status",
+            "multiple_source_flag",
+            "source_part_count",
+            "uniprot_ids",
+            "artifact_monomer_count",
+            "mutation_count",
+            "conflict_count",
+            "deletion_count",
+            "insertion_count",
+            "primary_citation_title",
+            "primary_citation_doi",
+            "primary_citation_pubmed",
+            "warnings",
+        )
+    }
+    summary["reference_sequence_identifiers"] = references
+    description_parts = [
+        f"method={short(item.get('method'))}",
+        f"resolution={short(item.get('resolution_angstrom'))} Å",
+        f"construct_length={short(item.get('entity_sequence_length'))}",
+        f"canonical_alignment_coverage={short(item.get('scope_sequence_coverage'))}",
+        f"coordinate_coverage={short(item.get('scope_coordinate_coverage'))}",
+        f"entity={short(item.get('entity_description'))}",
+        f"source_parts={short(item.get('source_part_count'))}",
+        f"artifacts={short(item.get('artifact_monomer_count'))}",
+        f"mutations={short(item.get('mutation_count'))}",
+        f"deposited_title={short(item.get('deposited_title'))}",
+        f"deposited_keywords={short(item.get('deposited_keywords'))}",
+    ]
+    return DecisionOption(
+        option_id=(
+            f"pdb-{str(item['pdb_id']).lower()}-"
+            f"entity-{str(item['entity_id']).lower()}"
+        ),
+        label=f"{item['pdb_id']} chain {item['chain']}",
+        description="; ".join(description_parts),
+        payload={
+            "action": "select-experimental",
+            "pdb_id": item["pdb_id"],
+            "entity_id": item["entity_id"],
+            "chain": item["chain"],
+            "candidate_summary": summary,
+        },
+        eligible=True,
+    )
+
+
 def _quality_eligible(method: str, resolution: float | None) -> tuple[bool, list[str]]:
     normalized = method.upper()
     reasons: list[str] = []
@@ -695,6 +845,7 @@ def _candidate(
         "warnings": warnings,
         "identity_report": identity.model_dump(mode="json"),
         "design_scope_sequence": design_sequence,
+        **_candidate_deposition_facts(entry_payload, entity_payload),
     }, structure_path
 
 
@@ -1178,26 +1329,7 @@ def _remote_selection(
             _require_prediction_backend(config)
             return fallback
         prediction_presentation = _prediction_backend_presentation(config)
-        options = tuple(
-            DecisionOption(
-                option_id=(
-                    f"pdb-{str(item['pdb_id']).lower()}-"
-                    f"entity-{str(item['entity_id']).lower()}"
-                ),
-                label=f"{item['pdb_id']} chain {item['chain']}",
-                description=(
-                    f"method={item['method']}; resolution={item['resolution_angstrom']}"
-                ),
-                payload={
-                    "action": "select-experimental",
-                    "pdb_id": item["pdb_id"],
-                    "entity_id": item["entity_id"],
-                    "chain": item["chain"],
-                },
-                eligible=True,
-            )
-            for item in selectable
-        )
+        options = tuple(_structure_selection_option(item) for item in selectable)
         if prediction_presentation is not None:
             prediction_option_id, prediction_label = prediction_presentation
             options += (
@@ -1453,25 +1585,7 @@ def _sequence_selection(
         _require_prediction_backend(config)
         return fallback
     prediction_presentation = _prediction_backend_presentation(config)
-    options = tuple(
-        DecisionOption(
-            option_id=(
-                f"pdb-{str(item['pdb_id']).lower()}-"
-                f"entity-{str(item['entity_id']).lower()}"
-            ),
-            label=f"{item['pdb_id']} chain {item['chain']}",
-            description=(
-                f"method={item['method']}; resolution={item['resolution_angstrom']}"
-            ),
-            payload={
-                "action": "select-experimental",
-                "pdb_id": item["pdb_id"],
-                "entity_id": item["entity_id"],
-                "chain": item["chain"],
-            },
-        )
-        for item in selectable
-    )
+    options = tuple(_structure_selection_option(item) for item in selectable)
     if prediction_presentation is not None:
         prediction_option_id, prediction_label = prediction_presentation
         options += (

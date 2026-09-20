@@ -22,6 +22,7 @@ from easydesign.orchestration.project import initialize_project
 from easydesign.orchestration.stage01_sources import (
     _candidate,
     _search_matches,
+    _structure_selection_option,
     _uniprot_identity,
     execute_stage01_source,
 )
@@ -152,6 +153,15 @@ def test_rcsb_candidate_keeps_identity_eligible_when_coordinates_are_partial(
             json=lambda: {
                 "exptl": [{"method": "X-RAY DIFFRACTION"}],
                 "rcsb_entry_info": {"resolution_combined": [2.0]},
+                "struct": {"title": "Deposited target in a bound active-state complex"},
+                "struct_keywords": {"text": "TARGET, ACTIVE STATE"},
+                "citation": [
+                    {
+                        "rcsb_is_primary": "Y",
+                        "title": "Primary structure report",
+                        "pdbx_database_id_DOI": "10.1000/example",
+                    }
+                ],
             }
         ),
     )
@@ -162,6 +172,21 @@ def test_rcsb_candidate_keeps_identity_eligible_when_coordinates_are_partial(
                 "entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
                 "rcsb_polymer_entity_container_identifiers": {
                     "auth_asym_ids": ["X"],
+                    "uniprot_ids": ["P00001"],
+                    "reference_sequence_identifiers": [
+                        {
+                            "database_name": "UniProt",
+                            "database_accession": "P00001",
+                            "entity_sequence_coverage": 1.0,
+                            "reference_sequence_coverage": 1.0,
+                            "provenance_source": "SIFTS",
+                        }
+                    ],
+                },
+                "rcsb_polymer_entity": {
+                    "pdbx_description": "Deposited target entity",
+                    "rcsb_multiple_source_flag": "N",
+                    "rcsb_source_part_count": 1,
                 },
             }
         ),
@@ -185,6 +210,28 @@ def test_rcsb_candidate_keeps_identity_eligible_when_coordinates_are_partial(
     assert candidate["warnings"] == ["scope-coordinate-coverage-partial"]
     assert candidate["missing_coordinate_ranges"] == [
         {"start": 2, "end": 2, "kind": "internal"}
+    ]
+    assert candidate["deposited_title"] == "Deposited target in a bound active-state complex"
+    assert candidate["deposited_keywords"] == "TARGET, ACTIVE STATE"
+    assert candidate["entity_description"] == "Deposited target entity"
+    assert candidate["uniprot_ids"] == ["P00001"]
+    assert candidate["reference_sequence_identifiers"][0][
+        "reference_sequence_coverage"
+    ] == 1.0
+    option = _structure_selection_option(candidate)
+    assert "canonical_alignment_coverage=1.0" in option.description
+    assert "coordinate_coverage=0.75" in option.description
+    assert "deposited_title=Deposited target" in option.description
+    assert option.payload["candidate_summary"]["entity_description"] == (
+        "Deposited target entity"
+    )
+    assert option.payload["candidate_summary"]["reference_sequence_identifiers"] == [
+        {
+            "database_accession": "P00001",
+            "entity_sequence_coverage": 1.0,
+            "reference_sequence_coverage": 1.0,
+            "provenance_source": "SIFTS",
+        }
     ]
 
 

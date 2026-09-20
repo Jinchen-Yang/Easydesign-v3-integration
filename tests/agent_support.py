@@ -110,7 +110,11 @@ class ScriptedModel(BaseChatModel):
         expected = ALLOWED[self.role] | ({output[self.role]} if self.role in output else set())
         if self.role == "coordinator":
             expected -= {"read_file"}
-        assert names <= expected and expected - names <= {"get_job_status", "prepare_target"}, names
+        assert names <= expected and expected - names <= {
+            "get_job_status",
+            "prepare_target",
+            "read_file",
+        }, names
         return self
 
     def _generate(

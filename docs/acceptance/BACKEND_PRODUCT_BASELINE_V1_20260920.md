@@ -87,7 +87,29 @@ resolution candidate, 7XWO-B (2.70 Å). Therefore the two runs do not test the s
 This acceptance proves autonomous discovery and a human-governed choice; it does not prove that
 7XWO is scientifically superior to 9W2H for an extracellular inhibitory VHH. Receptor state,
 construct engineering and extracellular-loop completeness should receive explicit weight in a
-future structure-selection policy. They are currently visible limitations on the Gate 1 card.
+structure-selection policy.
+
+### Post-baseline Stage 1 hardening
+
+The R5 audit showed that the original structure options exposed only experimental method and
+nominal resolution. The Target specialist therefore lacked the verified construct/state packet
+needed to compare 7XWO with the newer NK2R structures and over-weighted 2.70 Å. The Stage 1 option
+packet now also projects exact RCSB deposited title/keywords, entity description, construct length,
+UniProt/SIFTS reference coverage, canonical alignment coverage, observed-coordinate coverage,
+source-part/fusion indicators, artifact/mutation/conflict counts and primary citation identifiers.
+These are Runtime facts; the model still recommends and Gate 1 remains human authority.
+
+An offline replay of the accepted R4 evidence demonstrates the material distinction:
+
+| Candidate | Construct | P21452 reference coverage | Source parts | Deposited context |
+|---|---:|---:|---:|---|
+| 7XWO-B | 505 aa | 0.8668 | 2 | cytochrome-b562/NK2R fusion; NKA-bound active complex |
+| 9W2H-R | 406 aa | 1.0000 | 1 | EB1002-bound active NK2R/miniGs-q70 complex |
+| 9W2J-R | 406 aa | 1.0000 | 1 | P383-bound active NK2R/miniGs-q70 complex |
+
+The Target Skill now compares identity/construct burden and coverage before deposited state and
+resolution. It must not select a structure solely because it has the smallest nominal resolution.
+No candidate ID is hard-coded as the winner.
 
 ## Timing
 
@@ -111,18 +133,20 @@ native Stage 1 execution time.
 | R2 | Resume reached Target preparation but the local worker failed before producing scientific output. | The new worktree lacked its own runtime profile. A provider connection also failed transiently. | Add a worktree-local, Target-only runtime profile. No backend release is required for Stage 1. |
 | R3 | Six candidates were discovered, but the coordinator passed the project ID as `run_id`; the read raised a fatal boundary error. | Model-formatted operational identifier error. | Return a bounded repairable response for an invalid ID while retaining the project binding. |
 | R4 | Goal-only discovery, Gate 1 card, human approval and TargetBundle succeeded. The approval CLI then read the manifest before the detached worker completed. | The worker required about 15 seconds; the status tool waited only 10 seconds. Historical model calls also repeated the project-ID/run-ID mistake during a later resume. | This run is the live scientific acceptance. Follow-up patch makes active reads retryable, waits up to 30 seconds and deterministically maps the current project ID to the sole current run ID without weakening evidence binding. |
-| R5 | Final-code revalidation did not reach a new Stage 1 worker and exhausted the provider-call safeguard. | DeepSeek connection/response stalled inside the delegated Target call after goal parsing. | Classified as provider operational failure, not a scientific or Stage 1 failure. No state or result from R4 was reused. The post-R4 operational patch is covered by deterministic tests. |
+| R5 | Final-code revalidation exhausted the 64-call turn safeguard before Target submitted an interpretation. | The Target made 56 `read_file` calls. Successful Skill reads were persisted only for `Phase2Bridge`; Stage 1 uses `TargetBridge`, so the immutable Target Skill remained advertised after every read. | Persist successful Skill-read state for every bridge/execution and remove `read_file` after the one required read. Add a Stage 1 regression proving the tool is not reoffered. The failure is a Harness state bug, not provider latency. |
+| R5 structure audit | The six structure options contained only method and resolution; 7XWO was recommended mainly for 2.70 Å. | Runtime had acquired richer RCSB evidence but did not project it into the Gate 1 comparison packet. | Add the compact deposited construct/state/coverage packet described above. Resolution remains one quality signal rather than the sole comparison input. |
 
 ## Verification
 
 - focused implementation suite before the final operational patch: `34 passed, 1 skipped` in
   `310.57s`; the skip is the explicitly opt-in live-model integration test.
 - final Target tool regression: `10 passed` in `16.03s`.
+- post-baseline Stage 1 hardening regression: `77 passed` in `37.55s`.
 - Ruff: PASS.
-- strict mypy: PASS over 215 source files before the final tool-only patch; the patched module
-  separately passes strict mypy.
-- tracked working tree after implementation commits: clean.
-- `src/easydesign/agent/harness.py`: byte-identical to R28.
+- strict mypy: PASS for the changed source modules.
+- at tag `BACKEND_PRODUCT_BASELINE_V1`, `src/easydesign/agent/harness.py` was byte-identical to R28.
+  The subsequent Stage 1 hardening intentionally changes only Skill-read persistence in that
+  shared file; Site routing, research budgets and Phase 2–4 control flow are unchanged.
 
 The 1.5-hour full repository suite was not rerun for this Gate-1-only acceptance. R28 remains the
 last full-regression authority (`1330 passed, 11 skipped`). The changed entry, Target, project and
@@ -136,5 +160,6 @@ baseline commit is clean. R5 moved the live model profile under ignored runtime 
 at the provider before Stage 1.
 
 This closure establishes the product entry and canonical architecture documentation. It does not
-experimentally validate 7XWO-B as an epitope-design structure, guarantee provider availability, or
-revalidate Gates 2 to 5. Those statements remain separate from the accepted engineering result.
+experimentally validate any NK2R structure as the uniquely best epitope-design input, guarantee
+provider availability, or revalidate Gates 2 to 5. Those statements remain separate from the
+accepted engineering result.

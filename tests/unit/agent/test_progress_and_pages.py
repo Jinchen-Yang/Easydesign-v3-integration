@@ -16,6 +16,7 @@ from easydesign.agent.harness import SITE_RESEARCH_MODEL_CALL_LIMIT, RoleBoundar
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase2_tools import phase2_tools
 from easydesign.agent.session_store import compact
+from easydesign.agent.tools import build_tools
 from tests.agent_support import scripted_config
 from tests.unit.agent.test_prerequisite_recovery import ACQUIRE, source_transport
 
@@ -158,6 +159,67 @@ async def test_successful_skill_reads_are_durable_across_summarized_history(brid
         )
 
     request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Inspect"))
+    await guard.awrap_model_call(request, model_handler)
+
+
+@pytest.mark.asyncio
+async def test_stage1_target_skill_read_is_recorded_and_not_reoffered(bridge: Any) -> None:
+    """The Stage 1 TargetBridge must not loop over its immutable Skill."""
+    from langchain_core.tools import StructuredTool
+
+    execution_id = bridge.store.begin_execution(bridge.thread, "Prepare target")["execution_id"]
+    guard = RoleBoundary(
+        bridge,
+        "target",
+        scripted_config(),
+        "Prepare target",
+        execution_id=execution_id,
+    )
+    skill_path = "/skills/target-intelligence/SKILL.md"
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def tool_handler(request: Any) -> ToolMessage:
+        return ToolMessage(
+            name="read_file",
+            tool_call_id=request.tool_call["id"],
+            content="Loaded Target Skill",
+        )
+
+    await guard.awrap_tool_call(
+        Request(
+            tool_call={
+                "name": "read_file",
+                "id": "stage1-skill",
+                "args": {"file_path": skill_path},
+            }
+        ),
+        tool_handler,
+    )
+    assert guard._loaded_skill_paths() == {skill_path}
+
+    tools = build_tools(bridge, "target") + [
+        StructuredTool.from_function(lambda file_path: "", name="read_file", description="Skill")
+    ]
+
+    async def model_handler(request: Any) -> Any:
+        assert "read_file" not in {tool.name for tool in request.tools}
+        assert "every required Skill file" in request.system_message.text
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "prepare_target", "args": {}, "id": "prepare"}],
+                )
+            ],
+            structured_response=None,
+        )
+
+    request = Request(tools=tools, messages=[], system_message=SystemMessage(content="Prepare"))
     await guard.awrap_model_call(request, model_handler)
 
 

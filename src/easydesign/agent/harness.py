@@ -1620,18 +1620,27 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         name,
                         round_id=self.repair_round_id(request),
                     )
-                    if name == "read_file":
-                        path = args.get("file_path")
-                        if path in self._skill_paths() and path not in self._loaded_skill_paths():
-                            self.bridge.store.event(
-                                self.bridge.thread,
-                                "skill-read",
-                                {
-                                    "role": self.role,
-                                    "execution_id": self.execution_id,
-                                    "path": path,
-                                },
-                            )
+            # Stage 1 uses TargetBridge rather than Phase2Bridge. Skill-read state is
+            # execution state, so persist it for every bridge after a successful read.
+            # Otherwise read_file remains visible forever and the Target specialist can
+            # spend its entire provider-call budget rereading the same immutable Skill.
+            if (
+                name == "read_file"
+                and self.execution_id
+                and isinstance(result, ToolMessage)
+                and result.status != "error"
+            ):
+                path = args.get("file_path")
+                if path in self._skill_paths() and path not in self._loaded_skill_paths():
+                    self.bridge.store.event(
+                        self.bridge.thread,
+                        "skill-read",
+                        {
+                            "role": self.role,
+                            "execution_id": self.execution_id,
+                            "path": path,
+                        },
+                    )
             supplied_cards = 0
             if (
                 name in {"retrieve_evidence", "continue_evidence", "read_evidence_result"}

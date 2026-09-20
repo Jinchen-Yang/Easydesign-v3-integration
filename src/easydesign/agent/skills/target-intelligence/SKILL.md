@@ -30,6 +30,16 @@ Read target evidence when the worker reaches its boundary. Do not poll absent or
 Only stop-after-target, review-gated local structures and canonical UniProt/UniProt-search sources are supported. For a goal-derived remote source, its query and taxon are discovery configuration only: call `prepare_target` once and let native Stage 01 verify identity, compare RCSB candidates and publish any identity/structure/scope/chain decision. Do not replace that path with model-selected identity or structure. For local structures, source research remains available through the bounded worker and proposed references still require deterministic resolution. Do not invent residue mappings, select a chain silently, or enter site/binder design.
 If the old worker is still active after bounded observation, report its job ID and stop observing.
 
+For a pending remote structure-selection gate, compare the Runtime candidate summaries directly.
+First assess target identity and construct burden, then canonical alignment and observed-coordinate
+coverage, then deposited state/ligand/partner annotations relative to the user goal, and finally
+resolution or local quality. Never choose solely because one candidate has the smallest nominal
+resolution. Treat deposited titles, keywords and entity descriptions as depositor annotations,
+not independent proof of biological state. Prefer the candidate whose verified construct and
+coverage best support the requested design while stating state or partner limitations. Runtime
+already supplies this bounded comparison packet; do not search files or perform downstream
+literature research before submitting the Target interpretation.
+
 A pending chain-selection gate is a real scientific question. There is no successful bundle yet:
 compare the frozen source, chain inventory and eligible options. Read deposited_entities from
 the checksum-verified original input when supplied: it links source entity descriptions to

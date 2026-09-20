@@ -1,6 +1,7 @@
 """An unknown ID can be repaired without granting or widening evidence access."""
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -8,8 +9,9 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from easydesign.agent.contracts import AgentBoundaryError, UnknownEvidenceResult
-from easydesign.agent.evidence_output import verified_result
-from easydesign.agent.harness import create_harness
+from easydesign.agent.design import DesignBridge
+from easydesign.agent.evidence_output import result_tool, verified_result
+from easydesign.agent.harness import RoleBoundary, create_harness
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.phase2_tools import PHASE2_ALLOWED
 from tests.agent_support import scripted_config
@@ -96,6 +98,50 @@ async def test_actual_harness_recovers_unissued_id_with_explicit_authorized_read
     assert len(models["target"].repairs) == 1
     assert models["target"].observed == {key: SNAPSHOT[key] for key in KEYS}
     assert not b._jobs()
+
+
+@pytest.mark.asyncio
+async def test_binder_repairs_hash_as_handle_with_current_owned_reference(bridge: Any) -> None:
+    b = DesignBridge(bridge.project, bridge.thread, bridge.store)
+    execution = b.store.begin_execution(b.thread, "Inspect design evidence")["execution_id"]
+    original = offload(b, execution, role="binder")
+    malformed = "result:" + original.removeprefix("/result-").removesuffix(".json")
+    guard = RoleBoundary(
+        b, "binder", scripted_config(), "Inspect design evidence", execution_id=execution
+    )
+
+    async def call(ref: str) -> ToolMessage:
+        request = SimpleNamespace(
+            tool_call={
+                "name": "read_evidence_result",
+                "args": {"ref": ref, "fields": KEYS},
+                "id": "read",
+            }
+        )
+
+        async def handler(request: Any) -> ToolMessage:
+            return ToolMessage(
+                content=await result_tool(b, "binder").ainvoke(request.tool_call["args"]),
+                name="read_evidence_result",
+                tool_call_id="read",
+            )
+
+        return await guard.awrap_tool_call(request, handler)
+
+    repair = await call(malformed)
+    payload = json.loads(repair.content)
+    assert repair.status == "error"
+    assert payload["error_code"] == "UNKNOWN_EVIDENCE_RESULT"
+    assert payload["available_result_refs"] == [original]
+    handle = payload["available_result_handles"][0]["ref"]
+    assert handle.startswith("result:") and handle != malformed
+
+    read = await call(handle)
+    assert read.status == "success"
+    assert json.loads(read.content)["value"] == {key: SNAPSHOT[key] for key in KEYS}
+    assert len(
+        [e for e in b.store.events(b.thread) if e["kind"] == "tool-argument-repair"]
+    ) == 1
 
 
 @pytest.mark.asyncio

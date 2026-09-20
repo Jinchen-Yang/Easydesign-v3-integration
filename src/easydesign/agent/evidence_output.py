@@ -811,7 +811,9 @@ def output_message(bridge: Any, role: str, execution_id: str, message: Any) -> A
                         "Use supplied scientific content directly when complete, or the "
                         "declared fields when declared_scope_complete=true. Other analysis "
                         "fields are optional scoped reads, not required full-file paging. "
-                        "If field types are unknown, call read_evidence_result(ref) with no "
+                        "Pass full_result exactly as displayed; do not rewrite it as a "
+                        "result:<hash> handle. If field types are unknown, call "
+                        "read_evidence_result(ref) with no "
                         "selector to inspect navigation; do not guess another tool's fields. "
                         "read_evidence_result(ref, path=['key']) for one top-level field; "
                         "fields=['a','b'] for siblings; path=['a','b'] for nested traversal. "
@@ -878,7 +880,7 @@ def verified_result(bridge: Any, role: str, ref: Any, *, execution_id: str | Non
         if (
             known
             or execution is None
-            or role not in {"target", "site"}
+            or role not in {"target", "site", "binder"}
             or (not handle and (unregistered.exists() or unregistered.is_symlink()))
         ):
             raise AgentBoundaryError("Result was not supplied to this role/execution")
@@ -1109,7 +1111,9 @@ def result_tool(bridge: Any, role: str) -> Any:
         coroutine=read,
         args_schema=ReadEvidenceResult,
         description=(
-            "Read a verified full_result supplied to this role/execution. Choose keys from "
+            "Read a verified full_result supplied to this role/execution. Pass the supplied "
+            "full_result exactly; result:N is valid only when Runtime explicitly issued that "
+            "short handle. Never construct result:<hash>. Choose keys from "
             "that actual result, not from another gate's schema. With only ref, inspect "
             "its field types/navigation without source content. Otherwise use one of field "
             "(one top-level key), fields (sibling keys), or path (nested traversal). "

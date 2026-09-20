@@ -17,3 +17,26 @@
 
 The separately created Python 3.12 staging environment is not adopted because the product baseline
 uses Python 3.11.15. It remains untouched as an auditable unused staging directory.
+
+## F2BB-HARNESS-001 — Binder rewrote a full-result reference as an unissued handle
+
+- Case: BHRF1 / 2WH6.
+- Run: `preflight-bhrf1-easydesign-r4-20260920`.
+- Boundary: Gate 3 Binder Strategy, after design evidence and deterministic constraint evaluation.
+- Before: Runtime supplied `/result-e007…json`; the model submitted
+  `result:e007…`. The latter resembles a short handle but contains a content hash instead of a
+  Runtime-issued event sequence. Runtime correctly refused it, while the Binder lacked the bounded
+  unknown-reference repair already available to Target and Site, so the run terminated with
+  `AgentBoundaryError`.
+- Cause: result-reference syntax was under-specified for the Binder and its recoverable-role list
+  omitted `binder`. No scientific evidence, approved site, constraint result, or artifact checksum
+  was wrong.
+- Repair: instructions now require the supplied `full_result` verbatim and forbid constructing
+  `result:<hash>`. A Binder that still submits an unknown hash-like handle receives only recent
+  references owned by that same role, thread, and execution, expressed as Runtime-issued
+  `result:N` handles. Foreign, stale, cross-role, cross-thread, and tampered references remain fatal.
+- Validation: 11 result-reference recovery tests pass, including a Binder hash-as-handle regression
+  and the existing Judge/unregistered-file denial; the broader tool-argument and Gate 3 suite had
+  36 existing tests pass. Ruff and mypy pass for the changed modules.
+- Disposition: development preflight only. R4 is excluded from formal effectiveness and efficiency
+  estimates. The next attempt is a fresh R5 from the frozen raw target input, never a resume of R4.

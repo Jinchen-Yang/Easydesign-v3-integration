@@ -1,0 +1,25 @@
+default:
+  provider: deepseek
+  model: deepseek-v4-pro
+  reasoning_effort: low
+  secret_env: DEEPSEEK_API_KEY
+  timeout_seconds: 90
+  max_output_tokens: 8192
+roles:
+  site:
+    provider: deepseek
+    model: deepseek-v4-pro
+    reasoning_effort: high
+    secret_env: DEEPSEEK_API_KEY
+    timeout_seconds: 90
+    max_output_tokens: 16384
+  coordinator:
+    provider: deepseek
+    model: deepseek-v4-pro
+    reasoning_effort: none
+    secret_env: DEEPSEEK_API_KEY
+    timeout_seconds: 90
+    max_output_tokens: 8192
+# Phase 2 uses ModelConfig shared execution default (64).
+max_input_chars: 60000
+hard_input_chars: 100000

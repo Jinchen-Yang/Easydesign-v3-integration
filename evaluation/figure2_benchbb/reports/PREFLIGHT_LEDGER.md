@@ -40,3 +40,31 @@ uses Python 3.11.15. It remains untouched as an auditable unused staging directo
   36 existing tests pass. Ruff and mypy pass for the changed modules.
 - Disposition: development preflight only. R4 is excluded from formal effectiveness and efficiency
   estimates. The next attempt is a fresh R5 from the frozen raw target input, never a resume of R4.
+
+## F2BB-INFRA-002 — clone-local profile lacked the BoltzGen validation backend
+
+- Case: BHRF1 / 2WH6.
+- Run: `preflight-bhrf1-easydesign-r5-20260920`.
+- Boundary: final Gate 3 callback, after a valid `BinderIntent`, deterministic constraint
+  evaluation, compilation of two Arms across all seven VHH scaffolds, and successful result-
+  reference reads.
+- Before: `runtime/profile.yaml` was the Target-only baseline and resolved neither
+  `boltzgen_validation` nor the full generation backend. The callback therefore stopped with
+  `AgentBoundaryError: runtime profile 未配置 boltzgen-validation backend` before it could certify
+  the compiled YAML.
+- Cause: this isolated backend-product clone had never installed its own locked BoltzGen runtime.
+  This was an operational dependency gap, not a scientific, Agent, compiler, or Harness failure.
+- Repair: installed the repository-locked BoltzGen 0.3.2 environment under the current clone's
+  `runtime/`, plus only the two assets required for validation: source commit
+  `a3149cf18eeb58648d1abbb27539bd73f746cdda` and the inference molecule dataset with SHA256
+  `3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53`. The five generation
+  checkpoints were deliberately not installed because Figure 2A stops at a validated pilot-ready
+  project.
+- Validation: the immutable environment probe passed at lock
+  `016440a47ff80466ead66417de866dc463018ca5ac599095c7cf50b22afb2fac`; the formal adapter probe
+  reported capability `yaml-validation`; all 14 R5 compiled YAML files (2 Arms × 7 scaffolds)
+  passed real `boltzgen check` with return code 0. The profile resolves `boltzgen_validation` while
+  leaving the full generation backend unset.
+- Disposition: infrastructure preflight only. R5 is excluded from formal effectiveness and
+  efficiency estimates. It proves that `F2BB-HARNESS-001` is fixed and that the proposed design is
+  backend-valid, but R6 still starts fresh from the original input and does not resume R5.

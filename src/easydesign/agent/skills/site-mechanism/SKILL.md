@@ -69,6 +69,14 @@ for current candidates. continue_evidence(cursor=exact_next_cursor) continues th
 question/source/filter. Never reconstruct cursors. matching_chunks is a count, not evidence.
 Full original sources stay durable. A missing or unread full text is not evidence of absence.
 
+For a selected RCSB structure-record under structure-complex, Runtime may attach a source-bound
+complex-interface target-partner passage. It identifies the approved target entity by its
+deposited UniProt cross-reference and reports 5 Angstrom heavy-atom contacts to non-target protein
+chains. For competition objectives, read this passage before falling back to a generic surface
+scan. Treat the contacts as deposited asymmetric-unit geometry, not as proof of physiological
+assembly, binding energy or inhibition. Map target author numbers through read_canonical_mapping;
+never assume they equal current design labels.
+
 ## Authoritative candidate facts
 
 For a kernel candidate, copy the exact hotspot_label_seq_ids from its approved_design_membership.

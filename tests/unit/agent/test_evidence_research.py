@@ -13,6 +13,8 @@ from easydesign.agent.evidence_research import (
     ResearchAssessment,
     ResearchHttpClient,
     ResearchQuery,
+    _pdb_complex_interface_view,
+    _pdb_interface_sections,
 )
 from easydesign.agent.phase2 import Phase2Bridge
 from easydesign.agent.session_store import SessionStore
@@ -82,6 +84,69 @@ def select(worker: Any, identifier: str, need: str = "FUNCTIONAL_MECHANISM") -> 
             }
         )
     )
+
+
+def test_pdb_complex_interface_projects_target_partner_contact_residues(tmp_path: Any) -> None:
+    structure = tmp_path / "complex.pdb"
+    structure.write_text(
+        "\n".join(
+            [
+                "ATOM      1  N   ALA A  10       0.000   0.000   0.000  1.00 20.00           N",
+                "ATOM      2  CA  ALA A  10       1.000   0.000   0.000  1.00 20.00           C",
+                "ATOM      3  N   SER A  11       0.000   2.000   0.000  1.00 20.00           N",
+                "ATOM      4  CA  SER A  11       1.000   2.000   0.000  1.00 20.00           C",
+                "ATOM      5  N   GLY B  20       3.000   0.000   0.000  1.00 20.00           N",
+                "ATOM      6  CA  GLY B  20       4.000   0.000   0.000  1.00 20.00           C",
+                "ATOM      7  N   TYR B  21       3.000   2.000   0.000  1.00 20.00           N",
+                "ATOM      8  CA  TYR B  21       4.000   2.000   0.000  1.00 20.00           C",
+                "TER",
+                "END",
+            ]
+        )
+        + "\n"
+    )
+    polymers = [
+        {
+            "rcsb_id": "1ABC_1",
+            "rcsb_polymer_entity": {"pdbx_description": "Synthetic target"},
+            "rcsb_polymer_entity_container_identifiers": {
+                "auth_asym_ids": ["A"],
+                "reference_sequence_identifiers": [
+                    {"database_name": "UniProt", "database_accession": "QTARGET-2"}
+                ],
+            },
+        },
+        {
+            "rcsb_id": "1ABC_2",
+            "rcsb_polymer_entity": {"pdbx_description": "Synthetic partner"},
+            "rcsb_polymer_entity_container_identifiers": {
+                "auth_asym_ids": ["B"],
+                "reference_sequence_identifiers": [
+                    {"database_name": "UniProt", "database_accession": "QPARTNER"}
+                ],
+            },
+        },
+    ]
+
+    analysis = _pdb_complex_interface_view(
+        structure,
+        pdb_id="1ABC",
+        polymers=polymers,
+        approved_accession="QTARGET",
+    )
+
+    assert analysis["status"] == "observed"
+    assert analysis["target_chains"] == ["A"]
+    interface = analysis["interfaces"][0]
+    assert interface["partner_chain"] == "B"
+    assert interface["partner_description"] == "Synthetic partner"
+    assert interface["geometry_observed"] is True
+    assert [r["auth_seq_id"] for r in interface["target_contact_residues"]] == [10, 11]
+    assert [r["auth_seq_id"] for r in interface["partner_contact_residues"]] == [20, 21]
+    assert "does not establish" in interface["scope"]
+    sections = _pdb_interface_sections(analysis)
+    assert any("target-partner interface" in section["location"] for section in sections)
+    assert any('"auth_seq_id":10' in section["text"] for section in sections)
 
 
 def test_rcsb_chain_inventory_keeps_entities_separate_and_preserves_sources(

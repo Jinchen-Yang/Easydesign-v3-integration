@@ -22,6 +22,7 @@ from easydesign.backends.target_sources.remote import (
     RetrievedResponse,
     ScientificHttpClient,
     rcsb_entry,
+    rcsb_mmcif,
     rcsb_polymer_entity,
     uniprot_accession,
     uniprot_search,
@@ -29,7 +30,13 @@ from easydesign.backends.target_sources.remote import (
 from easydesign.backends.target_sources.structure import inventory_structure
 from easydesign.core import ArtifactRef, BackendContractError
 from easydesign.core.target_identity import resolve_target_identity
-from easydesign.stages.s02_hotspot_discovery.gpcr import analyze_structure, generate_candidates
+from easydesign.stages.s02_hotspot_discovery.gpcr import (
+    StructureAnalysisError,
+    analyze_structure,
+    build_chain_graph,
+    generate_candidates,
+    parse_structure,
+)
 
 from .contracts import (
     AgentBoundaryError,
@@ -69,7 +76,14 @@ TOPICS: tuple[str, ...] = (
     "ptm-glycan",
     "conservation",
 )
-HOSTS = {"www.ebi.ac.uk", "rest.uniprot.org", "search.rcsb.org", "data.rcsb.org", "gpcrdb.org"}
+HOSTS = {
+    "www.ebi.ac.uk",
+    "rest.uniprot.org",
+    "search.rcsb.org",
+    "data.rcsb.org",
+    "files.rcsb.org",
+    "gpcrdb.org",
+}
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 RESEARCH_QUERY_LIMIT = 12
 
@@ -362,6 +376,223 @@ def _pdb_view(entry: dict[str, Any], polymers: list[dict[str, Any]]) -> dict[str
     }
 
 
+def _canonical_accession(value: Any) -> str:
+    return str(value or "").strip().upper().split("-", 1)[0]
+
+
+def _polymer_accessions(polymer: dict[str, Any]) -> set[str]:
+    identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
+    refs = identifiers.get("reference_sequence_identifiers") or []
+    return {
+        accession
+        for row in refs
+        if isinstance(row, dict)
+        and (accession := _canonical_accession(row.get("database_accession")))
+    }
+
+
+def _interface_residue_summary(
+    contacts: list[dict[str, Any]],
+    *,
+    residue_field: str,
+    resname_field: str,
+) -> list[dict[str, Any]]:
+    residues: dict[tuple[str, int, str, str, int | None], dict[str, Any]] = {}
+    for contact in contacts:
+        identity_value = contact[residue_field]
+        key = (
+            str(identity_value.get("auth_asym_id") or identity_value.get("chain_id") or ""),
+            int(identity_value.get("auth_seq_id") or identity_value.get("seq_num")),
+            str(identity_value.get("insertion_code") or ""),
+            str(identity_value.get("label_chain_id") or ""),
+            identity_value.get("label_seq_id"),
+        )
+        item = residues.setdefault(
+            key,
+            {
+                "auth_asym_id": key[0],
+                "auth_seq_id": key[1],
+                "insertion_code": key[2] or None,
+                "label_asym_id": key[3] or None,
+                "label_seq_id": key[4],
+                "resname": contact[resname_field],
+                "minimum_distance_angstrom": float("inf"),
+            },
+        )
+        item["minimum_distance_angstrom"] = min(
+            item["minimum_distance_angstrom"], float(contact["minimum_distance"])
+        )
+    result = list(residues.values())
+    for item in result:
+        item["minimum_distance_angstrom"] = round(item["minimum_distance_angstrom"], 4)
+    return sorted(
+        result,
+        key=lambda item: (
+            item["auth_asym_id"],
+            item["auth_seq_id"],
+            item["insertion_code"] or "",
+        ),
+    )
+
+
+def _pdb_complex_interface_view(
+    structure_path: Path,
+    *,
+    pdb_id: str,
+    polymers: list[dict[str, Any]],
+    approved_accession: str,
+    contact_cutoff: float = 5.0,
+) -> dict[str, Any]:
+    """Project source-bound target/partner contacts from one deposited coordinate model."""
+
+    target_accession = _canonical_accession(approved_accession)
+    chain_entities: dict[str, dict[str, Any]] = {}
+    target_chains: set[str] = set()
+    target_entity_ids: list[str] = []
+    for polymer in polymers:
+        identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
+        entity_id = str(polymer.get("rcsb_id") or "")
+        description = (polymer.get("rcsb_polymer_entity") or {}).get("pdbx_description")
+        accessions = sorted(_polymer_accessions(polymer))
+        is_target = target_accession in accessions
+        if is_target:
+            target_entity_ids.append(entity_id)
+        for chain in identifiers.get("auth_asym_ids") or []:
+            normalized_chain = str(chain)
+            chain_entities[normalized_chain] = {
+                "entity_id": entity_id,
+                "description": description,
+                "reference_accessions": accessions,
+                "is_target": is_target,
+            }
+            if is_target:
+                target_chains.add(normalized_chain)
+
+    scope = (
+        f"Heavy-atom contacts <= {contact_cutoff:.1f} Angstrom in model 1 of the deposited "
+        "asymmetric unit. Geometric contact does not establish physiological assembly, "
+        "binding energy, competition, or inhibitory efficacy."
+    )
+    if not target_chains:
+        return {
+            "status": "target-entity-unresolved",
+            "pdb_id": pdb_id,
+            "approved_accession": approved_accession,
+            "target_entity_ids": [],
+            "target_chains": [],
+            "interfaces": [],
+            "scope": scope,
+        }
+
+    parsed = parse_structure(structure_path)
+    present_chains = set(parsed.chain_ids(polymer_only=True))
+    observed_target_chains = sorted(target_chains & present_chains)
+    if not observed_target_chains:
+        return {
+            "status": "target-chain-unresolved",
+            "pdb_id": pdb_id,
+            "approved_accession": approved_accession,
+            "target_entity_ids": sorted(target_entity_ids),
+            "target_chains": sorted(target_chains),
+            "interfaces": [],
+            "scope": scope,
+        }
+
+    graph = build_chain_graph(
+        parsed,
+        observed_target_chains[0],
+        receptor_like_chains=tuple(observed_target_chains),
+        contact_cutoff=contact_cutoff,
+    )
+    interfaces: list[dict[str, Any]] = []
+    for edge in graph["edges"]:
+        chain_a = edge["chain_a"]
+        chain_b = edge["chain_b"]
+        a_is_target = chain_a in target_chains
+        b_is_target = chain_b in target_chains
+        if a_is_target == b_is_target:
+            continue
+        if a_is_target:
+            target_chain, partner_chain = chain_a, chain_b
+            target_field, target_name = "residue_a", "resname_a"
+            partner_field, partner_name = "residue_b", "resname_b"
+        else:
+            target_chain, partner_chain = chain_b, chain_a
+            target_field, target_name = "residue_b", "resname_b"
+            partner_field, partner_name = "residue_a", "resname_a"
+        partner = chain_entities.get(partner_chain, {})
+        interfaces.append(
+            {
+                "target_chain": target_chain,
+                "target_entity_id": chain_entities.get(target_chain, {}).get("entity_id"),
+                "partner_chain": partner_chain,
+                "partner_entity_id": partner.get("entity_id"),
+                "partner_description": partner.get("description"),
+                "partner_reference_accessions": partner.get("reference_accessions", []),
+                "geometry_observed": edge["geometry_observed"],
+                "contact_pair_count": edge["residue_pair_count"],
+                "minimum_distance_angstrom": edge["minimum_distance"],
+                "target_contact_residues": _interface_residue_summary(
+                    edge["contacts"],
+                    residue_field=target_field,
+                    resname_field=target_name,
+                ),
+                "partner_contact_residues": _interface_residue_summary(
+                    edge["contacts"],
+                    residue_field=partner_field,
+                    resname_field=partner_name,
+                ),
+                "scope": scope,
+            }
+        )
+    return {
+        "status": "observed" if interfaces else "no-non-target-protein-contact",
+        "pdb_id": pdb_id,
+        "approved_accession": approved_accession,
+        "target_entity_ids": sorted(target_entity_ids),
+        "target_chains": observed_target_chains,
+        "contact_cutoff_angstrom": contact_cutoff,
+        "interfaces": sorted(
+            interfaces,
+            key=lambda item: (item["target_chain"], item["partner_chain"]),
+        ),
+        "scope": scope,
+    }
+
+
+def _pdb_interface_sections(analysis: dict[str, Any]) -> list[dict[str, str]]:
+    sections = [
+        {
+            "location": "complex interface analysis / scope",
+            "text": compact(
+                {
+                    key: analysis.get(key)
+                    for key in (
+                        "status",
+                        "pdb_id",
+                        "approved_accession",
+                        "target_entity_ids",
+                        "target_chains",
+                        "contact_cutoff_angstrom",
+                        "scope",
+                    )
+                }
+            ),
+        }
+    ]
+    for index, interface in enumerate(analysis.get("interfaces") or []):
+        sections.append(
+            {
+                "location": (
+                    "complex interface analysis / target-partner interface / "
+                    f"{index} / {interface['target_chain']}:{interface['partner_chain']}"
+                ),
+                "text": compact(interface),
+            }
+        )
+    return sections
+
+
 def _pdb_sections(view: dict[str, Any]) -> list[dict[str, str]]:
     """Index source entities separately so a passage does not splice different chains."""
     sections = []
@@ -396,8 +627,10 @@ def _pdb_sections(view: dict[str, Any]) -> list[dict[str, str]]:
     sections.extend(
         {"location": name, "text": compact(value)}
         for name, value in view.items()
-        if name != "polymers"
+        if name not in {"polymers", "complex_interface_analysis"}
     )
+    if isinstance(view.get("complex_interface_analysis"), dict):
+        sections.extend(_pdb_interface_sections(view["complex_interface_analysis"]))
     return sections
 
 
@@ -1083,18 +1316,58 @@ class EvidenceResearch:
                 "polymer_entity_ids", []
             )
             polymers = [rcsb_polymer_entity(client, code, str(i)).json() for i in entities[:8]]
+            view = _pdb_view(entry, polymers)
+            limitations = [
+                "Deposited assembly and partners are not proof of physiological context."
+            ]
+            approved_accession = None
+            try:
+                target, _, _ = self.bridge.site_facts()
+                value = target["evidence"]["hard_facts"].get("canonical_accession")
+                if isinstance(value, str) and value:
+                    approved_accession = value
+            except (AttributeError, AgentBoundaryError, KeyError, TypeError):
+                pass
+            if q.topic == "structure-complex" and approved_accession:
+                try:
+                    coordinates = rcsb_mmcif(client, code)
+                    view["complex_interface_analysis"] = _pdb_complex_interface_view(
+                        coordinates.artifact_path,
+                        pdb_id=code,
+                        polymers=polymers,
+                        approved_accession=approved_accession,
+                    )
+                    limitations.append(
+                        "Interface residues are coordinate-derived heavy-atom contacts, not "
+                        "independent functional or competition evidence."
+                    )
+                except (BackendContractError, FileNotFoundError, StructureAnalysisError) as error:
+                    view["complex_interface_analysis"] = {
+                        "status": "analysis-unavailable",
+                        "pdb_id": code,
+                        "approved_accession": approved_accession,
+                        "interfaces": [],
+                        "scope": "Coordinate-derived interface analysis was unavailable.",
+                        "error_type": type(error).__name__,
+                    }
+                    limitations.append(
+                        "Coordinate-derived interface analysis was unavailable; no interface "
+                        "absence may be inferred."
+                    )
             return [
                 {
                     "provider": "RCSB",
                     "identifier": code,
                     "primary_eligible": True,
-                    "evidence_level": "deposition-and-polymer-entities",
-                    "passage": compact(_pdb_view(entry, polymers)),
-                    "_sections": _pdb_sections(_pdb_view(entry, polymers)),
+                    "evidence_level": (
+                        "deposition-polymer-entities-and-coordinate-contacts"
+                        if view.get("complex_interface_analysis", {}).get("status") == "observed"
+                        else "deposition-and-polymer-entities"
+                    ),
+                    "passage": compact(view),
+                    "_sections": _pdb_sections(view),
                     "truncated": False,
-                    "limitations": [
-                        "Deposited assembly and partners are not proof of physiological context."
-                    ],
+                    "limitations": limitations,
                 }
             ]
         # Existing adapter verifies receptor identity/family; no arbitrary endpoint tool.

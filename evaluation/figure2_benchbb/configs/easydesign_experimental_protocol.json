@@ -1,1 +1,64 @@
-{"schema_version":"figure2a-easydesign-experimental-protocol-v1","status":"freeze-candidate","scope":{"method":"easydesign_v3_full","panel":"Figure 2A project formation","generation":"not run","candidate_quality_metrics":"out of scope"},"agent_baseline_commit":"c8545570b30d279fa05b1fbb56a64e86e7c59291","allowed_development_prefix":"evaluation/figure2_benchbb/","endpoint":{"name":"pilot-ready","candidate_generation_required":false,"requirements":["verified target, chain and mapping","ranked and approved selectable site","approved Design strategy","real Design YAML","compiler validation passed","BoltzGen backend-input validation passed"]},"entry_policy":{"natural_language_goal":"frozen target-specific task","structure":"frozen BenchBB catalog mmCIF supplied as an identical seed","site_or_hotspot_supplied":false,"prior_run_state_visible":false},"target_order":["PDL1","BHRF1","BBF14","MBP","IL7RA","EGFR","CAS9"],"replicates_per_target":1,"model_config":"configs/easydesign-models.yaml","gate_policy":{"routine":"immediately approve the highest-ranked selectable option without scientific editing","routine_is_operator_repair":false,"non_routine":"record a minimal operator episode and modify only the current blocking artifact","user_authorization":"pre-authorized for this experimental campaign"},"measurement":{"dictionary":"configs/metric_dictionary.csv","missing_value":"not_available","event_schema":"schemas/run_event.schema.json","immutable_ledger":true,"derive_every_declared_metric":true},"repair_policy":{"harness_changes_during_formal_runs":false,"prompt_or_skill_changes_during_formal_runs":false,"validator_changes_during_formal_runs":false,"code_change_invalidates_current_run":true,"development_fixture_is_formal_data":false}}
+{
+  "agent_baseline_commit": "c8545570b30d279fa05b1fbb56a64e86e7c59291",
+  "allowed_development_prefix": "evaluation/figure2_benchbb/",
+  "endpoint": {
+    "candidate_generation_required": false,
+    "name": "pilot-ready",
+    "requirements": [
+      "verified target, chain and mapping",
+      "ranked and approved selectable site",
+      "approved Design strategy",
+      "real Design YAML",
+      "compiler validation passed",
+      "BoltzGen backend-input validation passed"
+    ]
+  },
+  "entry_policy": {
+    "natural_language_goal": "frozen target-specific task",
+    "prior_run_state_visible": false,
+    "site_or_hotspot_supplied": false,
+    "structure": "frozen BenchBB catalog mmCIF supplied as an identical seed"
+  },
+  "formal_run_rule": "Each run manifest must record the exact clean evaluation HEAD and protected Agent baseline.",
+  "freeze_tag": "figure2a-easydesign-experimental-v1",
+  "gate_policy": {
+    "non_routine": "record a minimal operator episode and modify only the current blocking artifact",
+    "routine": "immediately approve the highest-ranked selectable option without scientific editing",
+    "routine_is_operator_repair": false,
+    "user_authorization": "pre-authorized for this experimental campaign"
+  },
+  "measurement": {
+    "derive_every_declared_metric": true,
+    "dictionary": "configs/metric_dictionary.csv",
+    "event_schema": "schemas/run_event.schema.json",
+    "immutable_ledger": true,
+    "missing_value": "not_available"
+  },
+  "measurement_implementation_commit": "7993f89969307fa5a11c2afa9674c7c9fcb85006",
+  "model_config": "configs/easydesign-models.yaml",
+  "repair_policy": {
+    "code_change_invalidates_current_run": true,
+    "development_fixture_is_formal_data": false,
+    "harness_changes_during_formal_runs": false,
+    "prompt_or_skill_changes_during_formal_runs": false,
+    "validator_changes_during_formal_runs": false
+  },
+  "replicates_per_target": 1,
+  "schema_version": "figure2a-easydesign-experimental-protocol-v1",
+  "scope": {
+    "candidate_quality_metrics": "out of scope",
+    "generation": "not run",
+    "method": "easydesign_v3_full",
+    "panel": "Figure 2A project formation"
+  },
+  "status": "frozen",
+  "target_order": [
+    "PDL1",
+    "BHRF1",
+    "BBF14",
+    "MBP",
+    "IL7RA",
+    "EGFR",
+    "CAS9"
+  ]
+}

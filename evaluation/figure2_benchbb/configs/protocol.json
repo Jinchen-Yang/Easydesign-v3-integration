@@ -1,4 +1,8 @@
 {
+  "benchmark_environment_receipt": {
+    "path": "reports/BENCHMARK_ENVIRONMENT.json",
+    "sha256": "a13004119b380f20f57493fb24f2d78c96caaf08034b710b84e593fe44833a6c"
+  },
   "benchmark_label": "BenchBB-derived computational project-formation evaluation",
   "computational_replicates_per_target_method": 3,
   "development_base_commit": "27d2aa41eaa2656f99811c74098a8d3a24aad9b9",

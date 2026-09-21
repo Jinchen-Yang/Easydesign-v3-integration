@@ -413,39 +413,189 @@ class SessionStore:
         """
         if max_repairs not in {1, 2}:
             raise AgentBoundaryError("Contract repair limit must be one or two")
-        execution = self.latest_execution(thread)
-        if execution is None or execution["execution_id"] != execution_id:
-            raise AgentBoundaryError("Contract repair is outside the current execution")
-        with self.db:
-            count = self.db.execute(
-                "SELECT count(*) FROM events WHERE thread=? AND kind='contract-repair' "
-                "AND json_extract(payload,'$.execution_id')=? "
-                "AND (? IS NULL OR json_extract(payload,'$.contract') IS NULL "
-                "OR json_extract(payload,'$.contract')=?)",
-                (thread, execution_id, contract, contract),
-            ).fetchone()[0]
-            if count >= max_repairs:
-                raise AgentBoundaryError(
-                    "Structured contract repair budget exhausted "
-                    f"({max_repairs} per contract per execution)"
-                )
-            self.db.execute(
-                "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
-                (
-                    thread,
-                    compact(
-                        {
-                            "role": role,
-                            "execution_id": execution_id,
-                            "contract": contract,
-                            "attempt": count + 1,
-                            "repair_limit": max_repairs,
-                            "diagnostic": diagnostic[:6000],
-                        }
+        # Use the same project writer lock as keyed/composite reservations. Otherwise an
+        # isolated reservation can race a composite read-before-insert transaction and both
+        # consume the same semantic allowance.
+        with self.writer():
+            execution = self.latest_execution(thread)
+            if execution is None or execution["execution_id"] != execution_id:
+                raise AgentBoundaryError("Contract repair is outside the current execution")
+            with self.db:
+                count = self.db.execute(
+                    "SELECT count(*) FROM events WHERE thread=? AND kind='contract-repair' "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND (? IS NULL OR json_extract(payload,'$.contract') IS NULL "
+                    "OR json_extract(payload,'$.contract')=?)",
+                    (thread, execution_id, contract, contract),
+                ).fetchone()[0]
+                if count >= max_repairs:
+                    raise AgentBoundaryError(
+                        "Structured contract repair budget exhausted "
+                        f"({max_repairs} per contract per execution)"
+                    )
+                self.db.execute(
+                    "INSERT INTO events(thread,kind,payload) VALUES(?, 'contract-repair', ?)",
+                    (
+                        thread,
+                        compact(
+                            {
+                                "role": role,
+                                "execution_id": execution_id,
+                                "contract": contract,
+                                "attempt": count + 1,
+                                "repair_limit": max_repairs,
+                                "diagnostic": diagnostic[:6000],
+                            }
+                        ),
                     ),
-                ),
-            )
+                )
         return int(count) + 1
+
+    def reserve_question_citation_contract_repair(
+        self,
+        thread: str,
+        role: str,
+        execution_id: str,
+        diagnostic: str,
+        *,
+        question_contract: str,
+        citation_contract: str,
+        citation_repair_keys: list[str] | tuple[str, ...] = (),
+        citation_unkeyed: bool = False,
+    ) -> dict[str, int]:
+        """Atomically consume the existing question and citation repair allowances.
+
+        A mixed handoff still gets one feedback round. It does not create a composite allowance:
+        the two inserted events use the existing contract names and limits, so either component
+        repeats exactly as it would after an isolated rejection. All checks precede both inserts.
+        """
+        keys = tuple(sorted(set(citation_repair_keys)))
+        if question_contract == citation_contract:
+            raise AgentBoundaryError("Mixed repair component contracts must be distinct")
+        if citation_unkeyed and keys:
+            raise AgentBoundaryError("Unkeyed citation repair cannot carry focused passage keys")
+        if not citation_unkeyed and not keys:
+            raise AgentBoundaryError("Keyed contract repair requires Runtime-owned repair keys")
+        with self.writer():
+            execution = self.latest_execution(thread)
+            if execution is None or execution["execution_id"] != execution_id:
+                raise AgentBoundaryError("Contract repair is outside the current execution")
+            with self.db:
+                rows = self.db.execute(
+                    "SELECT payload FROM events WHERE thread=? AND kind='contract-repair' "
+                    "AND json_extract(payload,'$.execution_id')=? "
+                    "AND (json_extract(payload,'$.contract') IS NULL "
+                    "OR json_extract(payload,'$.contract') IN (?,?)) ORDER BY seq",
+                    (thread, execution_id, question_contract, citation_contract),
+                ).fetchall()
+                prior = [json.loads(row["payload"]) for row in rows]
+                question_prior = [
+                    item
+                    for item in prior
+                    if item.get("contract") is None
+                    or item.get("contract") == question_contract
+                ]
+                if question_prior:
+                    raise AgentBoundaryError(
+                        "Structured contract repair budget exhausted "
+                        "(1 per contract per execution)"
+                    )
+                citation_prior = [
+                    item
+                    for item in prior
+                    if item.get("contract") is None
+                    or item.get("contract") == citation_contract
+                ]
+                if citation_unkeyed:
+                    if citation_prior:
+                        raise AgentBoundaryError(
+                            "Structured contract repair budget exhausted "
+                            "(1 per contract per execution)"
+                        )
+                    citation_attempt = 1
+                    citation_payload: dict[str, Any] = {
+                        "repair_limit": 1,
+                    }
+                else:
+                    if any(not item.get("repair_keys") for item in citation_prior):
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted: an earlier unkeyed "
+                            "repair cannot safely be attributed to a different evidence card"
+                        )
+                    used = {
+                        key
+                        for item in citation_prior
+                        for key in item.get("repair_keys", [])
+                        if isinstance(key, str)
+                    }
+                    repeated = sorted(used.intersection(keys))
+                    if repeated:
+                        raise AgentBoundaryError(
+                            "Structured citation repair already used for the same evidence card: "
+                            + compact(repeated)
+                        )
+                    if len(citation_prior) >= 2:
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted "
+                            "(2 rounds per contract per execution)"
+                        )
+                    if len(used.union(keys)) > 2:
+                        raise AgentBoundaryError(
+                            "Structured citation repair budget exhausted "
+                            "(2 distinct evidence cards per contract per execution)"
+                        )
+                    citation_attempt = len(citation_prior) + 1
+                    citation_payload = {
+                        "repair_limit": 2,
+                        "repair_key_limit": 1,
+                        "repair_distinct_key_limit": 2,
+                        "repair_keys": list(keys),
+                    }
+                round_id = identity(
+                    {
+                        "execution_id": execution_id,
+                        "question_contract": question_contract,
+                        "citation_contract": citation_contract,
+                        "citation_repair_keys": keys,
+                        "citation_unkeyed": citation_unkeyed,
+                        "diagnostic": diagnostic,
+                    }
+                )
+                common = {
+                    "role": role,
+                    "execution_id": execution_id,
+                    "composite_round_id": round_id,
+                    "diagnostic": diagnostic[:6000],
+                }
+                self.db.executemany(
+                    "INSERT INTO events(thread,kind,payload) "
+                    "VALUES(?, 'contract-repair', ?)",
+                    [
+                        (
+                            thread,
+                            compact(
+                                {
+                                    **common,
+                                    "contract": question_contract,
+                                    "attempt": 1,
+                                    "repair_limit": 1,
+                                }
+                            ),
+                        ),
+                        (
+                            thread,
+                            compact(
+                                {
+                                    **common,
+                                    "contract": citation_contract,
+                                    "attempt": citation_attempt,
+                                    **citation_payload,
+                                }
+                            ),
+                        ),
+                    ],
+                )
+        return {"question_attempt": 1, "citation_attempt": citation_attempt}
 
     def reserve_keyed_contract_repair(
         self,

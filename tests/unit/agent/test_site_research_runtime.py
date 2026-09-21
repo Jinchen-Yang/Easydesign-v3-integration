@@ -115,12 +115,61 @@ def test_site_handoff_repair_outline_preserves_choices_without_rejected_prose() 
     assert outline["decision_questions"][0]["evidence_refs"] == [
         {"card_id": "passage-1", "relation": "supports", "strength": "E2"}
     ]
-    assert "Preserve valid candidate choices, unaffected questions" in outline["instruction"]
+    assert "Preserve every unaffected question status and query_ids" in outline["instruction"]
     assert "genuinely relevant issued query IDs" in outline["instruction"]
-    assert "Never invent an ID" in outline["instruction"]
+    assert "Never invent or normalize query IDs or card IDs" in outline["instruction"]
     assert "Preserve these exact choices" not in outline["instruction"]
     assert "unsupported prose" not in compact(outline)
-    assert len(compact(outline)) < 2000
+    assert len(compact(outline)) < 2600
+
+    typed = site_handoff_repair_outline(
+        value,
+        repair_findings={
+            "question_binding": [{"question_index": 3}],
+            "citation": [
+                {
+                    "question_index": 0,
+                    "card_id": "passage-1",
+                    "source_kind": "focused-passage",
+                }
+            ],
+        },
+    )
+    assert typed is not None
+    assert typed["runtime_repair_findings"] == {
+        "question_binding": [{"question_index": 3}],
+        "citation": [
+            {
+                "question_index": 0,
+                "card_id": "passage-1",
+                "source_kind": "focused-passage",
+            }
+        ],
+    }
+    assert typed["decision_questions"][0]["status"] == "UNRESOLVED"
+    assert typed["decision_questions"][0]["query_ids"] == ["query-1"]
+    assert typed["decision_questions"][0]["evidence_refs"] == [
+        {"card_id": "passage-1", "relation": "supports", "strength": "E2"}
+    ]
+    assert "change no unrelated field" in typed["instruction"]
+    assert "Do not change UNRESOLVED to CONFLICTING_EVIDENCE" in typed["instruction"]
+
+    citation_only = site_handoff_repair_outline(
+        value,
+        repair_findings={
+            "citation": [
+                {
+                    "question_index": 0,
+                    "card_id": "passage-1",
+                    "source_kind": "focused-passage",
+                }
+            ]
+        },
+    )
+    assert citation_only is not None
+    assert "focused-passage citation" in citation_only["instruction"]
+    assert "question-binding finding" not in citation_only["instruction"]
+    assert "acquisition receipt" not in citation_only["instruction"]
 
 
 def test_kernel_projection_is_runtime_owned_idempotent_and_restart_safe(

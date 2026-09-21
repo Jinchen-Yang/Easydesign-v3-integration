@@ -355,6 +355,52 @@ class ResearchQuestionBindingMismatch(ResearchConclusionMismatch):
     """A question status is inconsistent with its Runtime-issued query bindings."""
 
 
+class ResearchQuestionCitationMismatch(ResearchConclusionMismatch):
+    """One handoff has both Runtime-known query-binding and citation defects.
+
+    The component identities are produced by Runtime validation, never by the model. They let
+    the harness reserve the existing question-binding and citation allowances atomically instead
+    of losing the mixed submission in the generic contract allowance.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        question_indices: list[int] | tuple[int, ...],
+        citation_findings: list[tuple[int, str, bool]]
+        | tuple[tuple[int, str, bool], ...],
+        citation_repair_keys: list[str] | tuple[str, ...] = (),
+        citation_unkeyed: bool = False,
+    ) -> None:
+        self.question_indices = tuple(sorted(set(question_indices)))
+        self.citation_findings = tuple(sorted(set(citation_findings)))
+        self.citation_repair_keys = tuple(sorted(set(citation_repair_keys)))
+        self.citation_unkeyed = citation_unkeyed
+        if not self.question_indices or not self.citation_findings:
+            raise ValueError("Mixed handoff mismatch requires both typed finding classes")
+        if citation_unkeyed and self.citation_repair_keys:
+            raise ValueError("Unkeyed citation repair cannot carry focused passage keys")
+        if not citation_unkeyed and not self.citation_repair_keys:
+            raise ValueError("Focused citation repair requires Runtime-owned passage keys")
+        super().__init__(message)
+
+    def repair_findings(self) -> dict[str, Any]:
+        return {
+            "question_binding": [
+                {"question_index": index} for index in self.question_indices
+            ],
+            "citation": [
+                {
+                    "question_index": index,
+                    "card_id": card_id,
+                    "source_kind": "acquisition-receipt" if receipt else "focused-passage",
+                }
+                for index, card_id, receipt in self.citation_findings
+            ],
+        }
+
+
 class TargetRecommendationMismatch(AgentBoundaryError):
     """A typed Target opinion omitted or misnamed a Runtime-offered eligible option."""
 
@@ -376,9 +422,31 @@ class EvidenceCitationMismatch(AgentBoundaryError):
     single repair slot.
     """
 
-    def __init__(self, message: str, *, repair_keys: list[str] | tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        repair_keys: list[str] | tuple[str, ...] = (),
+        citation_findings: list[tuple[int, str, bool]]
+        | tuple[tuple[int, str, bool], ...] = (),
+    ) -> None:
         self.repair_keys = tuple(sorted(set(repair_keys)))
+        self.citation_findings = tuple(sorted(set(citation_findings)))
         super().__init__(message)
+
+    def repair_findings(self) -> dict[str, Any] | None:
+        if not self.citation_findings:
+            return None
+        return {
+            "citation": [
+                {
+                    "question_index": index,
+                    "card_id": card_id,
+                    "source_kind": "acquisition-receipt" if receipt else "focused-passage",
+                }
+                for index, card_id, receipt in self.citation_findings
+            ]
+        }
 
 
 class CanonicalReferenceMismatch(RuntimeError):

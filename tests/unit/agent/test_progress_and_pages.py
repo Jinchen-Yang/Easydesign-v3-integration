@@ -15,7 +15,9 @@ from easydesign.agent.contracts import (
     CanonicalReferenceMismatch,
     EvidenceCitationMismatch,
     EvidenceRoleMismatch,
+    ResearchConclusionMismatch,
     ResearchQuestionBindingMismatch,
+    ResearchQuestionCitationMismatch,
 )
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_output import output_message, scientific_projection
@@ -1081,6 +1083,14 @@ async def test_known_source_citation_is_repaired_before_site_registration(
         with pytest.raises(EvidenceCitationMismatch) as mixed_error:
             worker.validate_questions([mixed])
         assert mixed_error.value.repair_keys == ()
+        with pytest.raises(ResearchQuestionCitationMismatch) as composite_error:
+            worker.validate_questions([mixed.model_copy(update={"query_ids": []})])
+        assert composite_error.value.citation_unkeyed is True
+        assert composite_error.value.citation_repair_keys == ()
+        assert {item[2] for item in composite_error.value.citation_findings} == {
+            False,
+            True,
+        }
     with pytest.raises(AgentBoundaryError, match="not retrieved"):
         worker.validate_questions([opinion("foreign-source")])
     assert not b._jobs()
@@ -2073,6 +2083,156 @@ async def test_site_question_binding_has_independent_semantic_repair_after_shape
 
 
 @pytest.mark.asyncio
+async def test_site_mixed_question_citation_repair_converges_within_four_submissions(
+    site_bridge: Any, monkeypatch: Any
+) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from tests.unit.agent.test_site_dossier import bind, handoff
+
+    b = site_bridge
+    cfg = scripted_config()
+    eid = b.store.begin_execution(b.thread, "Repair one mixed Site handoff")["execution_id"]
+    for _index in range(SITE_RESEARCH_MODEL_CALL_LIMIT - 1):
+        b.store.reserve_model_call(b.thread, "site", cfg.max_model_calls, eid)
+    guard = RoleBoundary(
+        b,
+        "site",
+        cfg,
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    attempts = 0
+    validations = 0
+
+    def validate(*_args: Any) -> dict[str, Any]:
+        nonlocal validations
+        validations += 1
+        if validations == 1:
+            raise ResearchQuestionCitationMismatch(
+                "question[3]: no relevant issued query\n"
+                "question[1]: CITATION_MISMATCH for known source passage-mixed",
+                question_indices=(3,),
+                citation_findings=((1, "passage-mixed", False),),
+                citation_repair_keys=("known-source:passage-mixed",),
+            )
+        if validations == 2:
+            raise ResearchConclusionMismatch(
+                "question[0]: Conflict requires both supporting and contradicting source passages"
+            )
+        return {}
+
+    monkeypatch.setattr("easydesign.agent.harness.site_dossier", validate)
+    monkeypatch.setattr(
+        "easydesign.agent.harness.site_research_packet_message",
+        lambda *args, **kwargs: HumanMessage(
+            content='{"runtime_site_research_packet":"mixed-repair"}'
+        ),
+    )
+
+    class Request(SimpleNamespace):
+        model = SimpleNamespace(profile={})
+
+        def override(self, **kwargs: Any) -> Any:
+            return Request(**{**vars(self), **kwargs})
+
+    async def handler(current: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            b.store.reserve_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "Synthetic framework shape failure",
+                contract="SiteResearchHandoff",
+            )
+            return SimpleNamespace(
+                result=[
+                    ToolMessage(
+                        content="INVALID_STRUCTURED_SUBMISSION: excerpt exceeds 700 characters",
+                        name="SiteResearchHandoff",
+                        tool_call_id="invalid-shape",
+                    )
+                ],
+                structured_response=None,
+            )
+        if attempts == 3:
+            assert "no relevant issued query" in current.system_message.text
+            assert "CITATION_MISMATCH" in current.system_message.text
+            assert "runtime_repair_findings" in "\n".join(
+                str(message.content) for message in current.messages
+            )
+        if attempts == 4:
+            assert "Conflict requires both supporting" in current.system_message.text
+        value = handoff()
+        return SimpleNamespace(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SiteResearchHandoff",
+                            "args": value.model_dump(mode="json"),
+                            "id": f"handoff-{attempts}",
+                        }
+                    ],
+                )
+            ],
+            structured_response=value,
+        )
+
+    token = bind(b)
+    try:
+        result = await guard.awrap_model_call(
+            Request(
+                tools=phase2_tools(b, "site"),
+                messages=[],
+                model_settings={},
+                system_message=SystemMessage(content="Finalize Site research"),
+            ),
+            handler,
+        )
+    finally:
+        from easydesign.agent.phase2 import SITE_EVIDENCE
+
+        SITE_EVIDENCE.reset(token)
+
+    assert result.structured_response == handoff()
+    assert attempts == 4 and validations == 3
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == eid
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        "SiteResearchHandoff",
+        "SiteResearchHandoff:research-question-binding",
+        "SiteResearchHandoff:evidence-citation",
+        "SiteResearchHandoff",
+    ]
+    assert [repairs[0]["attempt"], repairs[-1]["attempt"]] == [1, 2]
+    assert len({repairs[1]["composite_round_id"], repairs[2]["composite_round_id"]}) == 1
+    assert len(
+        [
+            event
+            for event in b.store.events(b.thread)
+            if event["kind"] == "model-call"
+            and event["payload"].get("execution_id") == eid
+        ]
+    ) == SITE_RESEARCH_MODEL_CALL_LIMIT - 1 + 4
+    assert not [
+        event
+        for event in b.store.events(b.thread)
+        if event["kind"] in {"research-reservation", "evidence-research"}
+        and event["payload"].get("execution_id") == eid
+    ]
+
+
+@pytest.mark.asyncio
 async def test_repeated_site_question_binding_mismatch_is_fatal_without_new_research(
     site_bridge: Any, monkeypatch: Any
 ) -> None:
@@ -2771,3 +2931,284 @@ def test_concurrent_keyed_citation_reservation_is_fail_closed(site_bridge: Any) 
     ]
     assert len(repairs) == 1
     assert repairs[0]["repair_keys"] == ["known-source:passage-race"]
+
+
+def test_mixed_question_citation_reservation_is_atomic_and_restart_durable(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    question_contract = "SiteResearchHandoff:research-question-binding"
+    citation_contract = "SiteResearchHandoff:evidence-citation"
+    eid = b.store.begin_execution(b.thread, "Persist one mixed handoff repair")["execution_id"]
+    with pytest.raises(AgentBoundaryError, match="contracts must be distinct"):
+        b.store.reserve_question_citation_contract_repair(
+            b.thread,
+            "site",
+            eid,
+            "invalid aliased contracts",
+            question_contract=question_contract,
+            citation_contract=question_contract,
+            citation_repair_keys=("known-source:passage-a",),
+        )
+    assert not any(
+        event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == eid
+        for event in b.store.events(b.thread)
+    )
+    assert b.store.reserve_question_citation_contract_repair(
+        b.thread,
+        "site",
+        eid,
+        "question[3] binding mismatch\nquestion[1] citation mismatch",
+        question_contract=question_contract,
+        citation_contract=citation_contract,
+        citation_repair_keys=("known-source:passage-a",),
+    ) == {"question_attempt": 1, "citation_attempt": 1}
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == eid
+    ]
+    assert [repair["contract"] for repair in repairs] == [
+        question_contract,
+        citation_contract,
+    ]
+    assert len({repair["composite_round_id"] for repair in repairs}) == 1
+
+    reopened = SessionStore(b.project)
+    try:
+        with pytest.raises(AgentBoundaryError, match="repair budget exhausted"):
+            reopened.reserve_question_citation_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "same findings after restart",
+                question_contract=question_contract,
+                citation_contract=citation_contract,
+                citation_repair_keys=("known-source:passage-a",),
+            )
+    finally:
+        reopened.close()
+    assert len(
+        [
+            event
+            for event in b.store.events(b.thread)
+            if event["kind"] == "contract-repair"
+            and event["payload"].get("execution_id") == eid
+        ]
+    ) == 2
+
+    failed_eid = b.store.begin_execution(b.thread, "Reject one failed mixed component")[
+        "execution_id"
+    ]
+    b.store.reserve_keyed_contract_repair(
+        b.thread,
+        "site",
+        failed_eid,
+        "prior citation repair",
+        contract=citation_contract,
+        repair_keys=("known-source:passage-a",),
+    )
+    before = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == failed_eid
+    ]
+    with pytest.raises(AgentBoundaryError, match="same evidence card"):
+        b.store.reserve_question_citation_contract_repair(
+            b.thread,
+            "site",
+            failed_eid,
+            "question plus repeated citation",
+            question_contract=question_contract,
+            citation_contract=citation_contract,
+            citation_repair_keys=("known-source:passage-a",),
+        )
+    after = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == failed_eid
+    ]
+    assert after == before
+    assert not any(item.get("contract") == question_contract for item in after)
+
+
+def test_concurrent_mixed_question_citation_reservation_is_one_round(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Race one mixed handoff repair")["execution_id"]
+    question_contract = "SiteResearchHandoff:research-question-binding"
+    citation_contract = "SiteResearchHandoff:evidence-citation"
+    barrier = Barrier(2)
+
+    def reserve() -> dict[str, int] | str:
+        store = SessionStore(b.project)
+        try:
+            barrier.wait()
+            return store.reserve_question_citation_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "concurrent mixed mismatch",
+                question_contract=question_contract,
+                citation_contract=citation_contract,
+                citation_repair_keys=("known-source:passage-race",),
+            )
+        except AgentBoundaryError as error:
+            return str(error)
+        finally:
+            store.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _index: reserve(), range(2)))
+
+    assert outcomes.count({"question_attempt": 1, "citation_attempt": 1}) == 1
+    assert len([outcome for outcome in outcomes if isinstance(outcome, str)]) == 1
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == eid
+    ]
+    assert len(repairs) == 2
+    assert {repair["contract"] for repair in repairs} == {
+        question_contract,
+        citation_contract,
+    }
+    assert len({repair["composite_round_id"] for repair in repairs}) == 1
+
+
+def test_unpaired_rejected_submission_is_terminal_across_restart(
+    site_bridge: Any,
+) -> None:
+    b = site_bridge
+    eid = b.store.begin_execution(b.thread, "Reject an exhausted mixed repair")[
+        "execution_id"
+    ]
+    question_contract = "SiteResearchHandoff:research-question-binding"
+    citation_contract = "SiteResearchHandoff:evidence-citation"
+    guard = RoleBoundary(
+        b,
+        "site",
+        scripted_config(),
+        "Synthetic Site research",
+        execution_id=eid,
+        site_stage="research",
+        domain_skills=False,
+    )
+    b.store.event(
+        b.thread,
+        "rejected-submission",
+        {
+            "role": "site",
+            "execution_id": eid,
+            "diagnostic": "mixed repair budget exhausted",
+            "repair_contracts": [question_contract, citation_contract],
+            "repair_already_counted": False,
+            "submitted_opinion": None,
+            "model_text": [],
+        },
+    )
+
+    with pytest.raises(AgentBoundaryError, match="has no reserved correction"):
+        guard._pending_submission_context()
+    b.store.reserve_contract_repair(
+        b.thread,
+        "site",
+        eid,
+        "question component",
+        contract=question_contract,
+        max_repairs=1,
+    )
+    with pytest.raises(AgentBoundaryError, match="evidence-citation"):
+        guard._pending_submission_context()
+    b.store.reserve_contract_repair(
+        b.thread,
+        "site",
+        eid,
+        "citation component",
+        contract=citation_contract,
+        max_repairs=1,
+    )
+    assert guard._pending_submission_context() is not None
+
+
+@pytest.mark.parametrize("isolated_component", ["question", "citation-unkeyed"])
+def test_mixed_reservation_races_isolated_reservation_without_duplicate_slot(
+    site_bridge: Any,
+    isolated_component: str,
+) -> None:
+    b = site_bridge
+    eid = b.store.begin_execution(
+        b.thread, f"Race mixed against isolated {isolated_component} repair"
+    )["execution_id"]
+    question_contract = "SiteResearchHandoff:research-question-binding"
+    citation_contract = "SiteResearchHandoff:evidence-citation"
+    barrier = Barrier(2)
+
+    def mixed() -> dict[str, int] | str:
+        store = SessionStore(b.project)
+        try:
+            barrier.wait()
+            return store.reserve_question_citation_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "concurrent mixed mismatch",
+                question_contract=question_contract,
+                citation_contract=citation_contract,
+                citation_unkeyed=isolated_component == "citation-unkeyed",
+                citation_repair_keys=(
+                    ()
+                    if isolated_component == "citation-unkeyed"
+                    else ("known-source:passage-race",)
+                ),
+            )
+        except AgentBoundaryError as error:
+            return str(error)
+        finally:
+            store.close()
+
+    def isolated() -> int | str:
+        store = SessionStore(b.project)
+        try:
+            barrier.wait()
+            contract = (
+                question_contract
+                if isolated_component == "question"
+                else citation_contract
+            )
+            return store.reserve_contract_repair(
+                b.thread,
+                "site",
+                eid,
+                "concurrent isolated mismatch",
+                contract=contract,
+                max_repairs=1,
+            )
+        except AgentBoundaryError as error:
+            return str(error)
+        finally:
+            store.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = [pool.submit(mixed), pool.submit(isolated)]
+        results = [outcome.result() for outcome in outcomes]
+
+    assert len([result for result in results if not isinstance(result, str)]) == 1
+    repairs = [
+        event["payload"]
+        for event in b.store.events(b.thread)
+        if event["kind"] == "contract-repair"
+        and event["payload"].get("execution_id") == eid
+    ]
+    raced_contract = (
+        question_contract if isolated_component == "question" else citation_contract
+    )
+    assert len(
+        [repair for repair in repairs if repair.get("contract") == raced_contract]
+    ) == 1

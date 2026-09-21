@@ -44,6 +44,7 @@ from .contracts import (
     EvidenceRoleMismatch,
     ResearchConclusionMismatch,
     ResearchQuestionBindingMismatch,
+    ResearchQuestionCitationMismatch,
     ShortText,
     SourceCardArgumentMismatch,
     StrictDTO,
@@ -1662,7 +1663,9 @@ class EvidenceResearch:
         unknown = {key for c in conclusions for key in c.query_ids if key not in query_by_id}
         errors = []
         question_binding_errors = []
+        question_binding_indices = []
         citation_errors = []
+        citation_findings = []
         citation_repair_keys = []
         has_unkeyed_citation_error = False
         role_errors = []
@@ -1685,6 +1688,7 @@ class EvidenceResearch:
             if not bounded_without_queries and (
                 conclusion.status == "NOT_SEARCHED" or not relevant
             ):
+                question_binding_indices.append(index)
                 question_binding_errors.append(
                     scope
                     + "Decision question has status NOT_SEARCHED or no relevant issued query. "
@@ -1724,6 +1728,8 @@ class EvidenceResearch:
                         "Evidence source identifier was not retrieved in this thread"
                     )
                 if card.get("corpus_ref") or _text(use.excerpt) not in _text(card["passage"]):
+                    is_receipt = bool(card.get("corpus_ref"))
+                    citation_findings.append((index, use.card_id, is_receipt))
                     citation_errors.append(
                         scope + "CITATION_MISMATCH for known source " + use.card_id + ": "
                         "Use a verbatim substring of the exact focused retrieved passage, "
@@ -1770,12 +1776,28 @@ class EvidenceResearch:
             diagnostic = "\n".join(errors + question_binding_errors + citation_errors)
             if unknown:
                 diagnostic += "\nAvailable complete query_ids: " + compact(sorted(query_by_id))
+            if question_binding_errors and citation_errors and not errors:
+                raise ResearchQuestionCitationMismatch(
+                    diagnostic,
+                    question_indices=question_binding_indices,
+                    citation_findings=citation_findings,
+                    citation_repair_keys=(
+                        []
+                        if has_unkeyed_citation_error
+                        else sorted(set(citation_repair_keys))
+                    ),
+                    citation_unkeyed=has_unkeyed_citation_error,
+                )
             if question_binding_errors and not errors and not citation_errors:
                 raise ResearchQuestionBindingMismatch(diagnostic)
             if errors or question_binding_errors:
                 raise ResearchConclusionMismatch(diagnostic)
             repair_keys = [] if has_unkeyed_citation_error else sorted(set(citation_repair_keys))
-            raise EvidenceCitationMismatch(diagnostic, repair_keys=repair_keys)
+            raise EvidenceCitationMismatch(
+                diagnostic,
+                repair_keys=repair_keys,
+                citation_findings=citation_findings,
+            )
         return {
             "source_snapshot": snapshot,
             "source_refs": used_refs,

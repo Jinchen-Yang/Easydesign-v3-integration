@@ -11,6 +11,7 @@ from easydesign.agent.contracts import (
     EvidenceRoleMismatch,
     ResearchConclusionMismatch,
     ResearchQuestionBindingMismatch,
+    ResearchQuestionCitationMismatch,
 )
 from easydesign.agent.evidence_corpus import EvidenceCorpus, RetrieveEvidence, SelectEvidence
 from easydesign.agent.evidence_research import (
@@ -477,6 +478,33 @@ def test_source_identity_passage_and_conflict_contract(research: Any, monkeypatc
     assert card["passage"] in diagnostic
     assert result["query_id"] in diagnostic
     assert before == [item.model_dump(mode="json") for item in [invalid, unsupported]]
+    mixed = conclusion.model_copy(
+        update={
+            "query_ids": [],
+            "evidence": [
+                conclusion.evidence[0].model_copy(
+                    update={"excerpt": "did not inhibit activity"}
+                )
+            ],
+        }
+    )
+    with pytest.raises(ResearchQuestionCitationMismatch) as mixed_error:
+        research.validate_questions([mixed])
+    assert "no relevant issued query" in str(mixed_error.value)
+    assert "CITATION_MISMATCH" in str(mixed_error.value)
+    assert mixed_error.value.question_indices == (0,)
+    assert mixed_error.value.citation_findings == ((0, card["card_id"], False),)
+    assert mixed_error.value.citation_repair_keys == (
+        "known-source:" + card["card_id"],
+    )
+    assert mixed_error.value.citation_unkeyed is False
+    assert mixed_error.value.repair_findings()["citation"] == [
+        {
+            "question_index": 0,
+            "card_id": card["card_id"],
+            "source_kind": "focused-passage",
+        }
+    ]
     # Integrity/foreign identity errors still fail immediately, rather than being
     # converted into an ordinary correctable opinion problem.
     foreign = invalid.model_copy(

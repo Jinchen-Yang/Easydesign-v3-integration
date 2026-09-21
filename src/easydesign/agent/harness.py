@@ -39,6 +39,7 @@ from .contracts import (
     ResearchConclusionMismatch,
     ResearchQueryMismatch,
     ResearchQuestionBindingMismatch,
+    ResearchQuestionCitationMismatch,
     SiteResidueQueryMismatch,
     SourceCardArgumentMismatch,
     SourceSelectionRequired,
@@ -296,18 +297,42 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
         if self.execution_id is None or not self.structured_output:
             return None
         row = self.bridge.store.db.execute(
-            "SELECT kind,payload FROM events WHERE thread=? "
+            "SELECT seq,kind,payload FROM events WHERE thread=? "
             "AND kind IN ('rejected-submission','submission-preflight-passed') "
             "AND json_extract(payload,'$.role')=? "
             "AND json_extract(payload,'$.execution_id')=? ORDER BY seq DESC LIMIT 1",
             (self.bridge.thread, self.role, self.execution_id),
         ).fetchone()
-        if row is None or row[0] == "submission-preflight-passed":
+        if row is None or row[1] == "submission-preflight-passed":
             return None
-        value = json.loads(row[1])
+        value = json.loads(row[2])
+        repair_contracts = value.get("repair_contracts")
+        if (
+            isinstance(repair_contracts, list)
+            and repair_contracts
+            and not value.get("repair_already_counted")
+        ):
+            reserved = {
+                json.loads(item[0]).get("contract")
+                for item in self.bridge.store.db.execute(
+                    "SELECT payload FROM events WHERE thread=? AND seq>? "
+                    "AND kind='contract-repair' "
+                    "AND json_extract(payload,'$.role')=? "
+                    "AND json_extract(payload,'$.execution_id')=?",
+                    (self.bridge.thread, row[0], self.role, self.execution_id),
+                ).fetchall()
+            }
+            missing = sorted(set(repair_contracts).difference(reserved))
+            if missing:
+                raise AgentBoundaryError(
+                    "Structured contract repair budget exhausted: rejected submission has no "
+                    "reserved correction for " + compact(missing)
+                )
         rejected = value.get("submitted_opinion")
         if self.role == "site" and self.site_stage == "research":
-            rejected = site_handoff_repair_outline(rejected)
+            rejected = site_handoff_repair_outline(
+                rejected, repair_findings=value.get("repair_findings")
+            )
         return {
             "last_rejected_submission": rejected,
             "diagnostic": value["diagnostic"],
@@ -1051,6 +1076,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
             evidence_citation_repair = False
             research_question_binding_repair = False
             evidence_citation_repair_keys: tuple[str, ...] = ()
+            mixed_question_citation_repair = False
+            mixed_citation_unkeyed = False
+            repair_findings: dict[str, Any] | None = None
             if submission_only and any(call["name"] != schema.__name__ for call in calls):
                 diagnostic = (
                     (
@@ -1126,6 +1154,14 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                                     response.structured_response.model_dump(mode="json"),
                                     {**snapshot, "hard_facts": facts},
                                 )
+                    except ResearchQuestionCitationMismatch as error:
+                        if self.role != "site" or self.site_stage != "research":
+                            raise
+                        diagnostic = str(error)
+                        mixed_question_citation_repair = True
+                        mixed_citation_unkeyed = error.citation_unkeyed
+                        evidence_citation_repair_keys = error.citation_repair_keys
+                        repair_findings = error.repair_findings()
                     except ResearchQuestionBindingMismatch as error:
                         if self.role != "site" or self.site_stage != "research":
                             raise
@@ -1138,6 +1174,7 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                         diagnostic = str(error)
                         evidence_citation_repair = True
                         evidence_citation_repair_keys = error.repair_keys
+                        repair_findings = error.repair_findings()
                     except (
                         ResearchConclusionMismatch,
                         JudgeStageMismatch,
@@ -1199,6 +1236,19 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     f"MISSING_TYPED_SUBMISSION: call {schema.__name__}; explanatory prose, "
                     "pure JSON text and fenced JSON are not accepted submissions."
                 )
+            if mixed_question_citation_repair:
+                repair_contracts = [
+                    f"{schema.__name__}:research-question-binding",
+                    f"{schema.__name__}:evidence-citation",
+                ]
+            elif research_question_binding_repair:
+                repair_contracts = [f"{schema.__name__}:research-question-binding"]
+            elif evidence_role_repair:
+                repair_contracts = [f"{schema.__name__}:evidence-role"]
+            elif evidence_citation_repair:
+                repair_contracts = [f"{schema.__name__}:evidence-citation"]
+            else:
+                repair_contracts = [schema.__name__]
             self.bridge.store.event(
                 self.bridge.thread,
                 "rejected-submission",
@@ -1206,6 +1256,9 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                     "role": self.role,
                     "execution_id": self.execution_id,
                     "diagnostic": diagnostic[:6000],
+                    "repair_contracts": repair_contracts,
+                    "repair_already_counted": repair_already_counted,
+                    **({"repair_findings": repair_findings} if repair_findings else {}),
                     "submitted_opinion": response.structured_response.model_dump(mode="json")
                     if response.structured_response is not None
                     else None,
@@ -1215,7 +1268,21 @@ class RoleBoundary(AgentMiddleware[Any, Any, Any]):
                 },
             )
             if not repair_already_counted:
-                if research_question_binding_repair:
+                if mixed_question_citation_repair:
+                    assert self.execution_id is not None
+                    self.bridge.store.reserve_question_citation_contract_repair(
+                        self.bridge.thread,
+                        self.role,
+                        self.execution_id,
+                        diagnostic,
+                        question_contract=(
+                            f"{schema.__name__}:research-question-binding"
+                        ),
+                        citation_contract=f"{schema.__name__}:evidence-citation",
+                        citation_repair_keys=evidence_citation_repair_keys,
+                        citation_unkeyed=mixed_citation_unkeyed,
+                    )
+                elif research_question_binding_repair:
                     assert self.execution_id is not None
                     self.bridge.store.reserve_contract_repair(
                         self.bridge.thread,

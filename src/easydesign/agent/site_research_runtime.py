@@ -503,7 +503,9 @@ def _scientific_notes(messages: list[Any]) -> list[str]:
     return list(reversed(notes))
 
 
-def site_handoff_repair_outline(value: Any) -> dict[str, Any] | None:
+def site_handoff_repair_outline(
+    value: Any, *, repair_findings: Any = None
+) -> dict[str, Any] | None:
     """Keep exact handoff choices for repair without replaying rejected scientific prose."""
     if not isinstance(value, dict):
         return None
@@ -540,6 +542,67 @@ def site_handoff_repair_outline(value: Any) -> dict[str, Any] | None:
                 ],
             }
         )
+    typed_findings: dict[str, list[dict[str, Any]]] = {
+        "question_binding": [],
+        "citation": [],
+    }
+    if isinstance(repair_findings, dict):
+        for finding in repair_findings.get("question_binding", []):
+            if (
+                isinstance(finding, dict)
+                and isinstance(finding.get("question_index"), int)
+                and not isinstance(finding["question_index"], bool)
+            ):
+                typed_findings["question_binding"].append(
+                    {"question_index": finding["question_index"]}
+                )
+        for finding in repair_findings.get("citation", []):
+            if (
+                isinstance(finding, dict)
+                and isinstance(finding.get("question_index"), int)
+                and not isinstance(finding["question_index"], bool)
+                and isinstance(finding.get("card_id"), str)
+                and finding.get("source_kind")
+                in {"focused-passage", "acquisition-receipt"}
+            ):
+                typed_findings["citation"].append(
+                    {
+                        "question_index": finding["question_index"],
+                        "card_id": finding["card_id"],
+                        "source_kind": finding["source_kind"],
+                    }
+                )
+    has_typed_findings = any(typed_findings.values())
+    instructions = [
+        "Correct every Runtime-listed diagnostic in one submission and change no unrelated "
+        "field. Preserve every unaffected question status and query_ids, and preserve every "
+        "unaffected evidence card_id, relation and strength."
+    ]
+    if not has_typed_findings or typed_findings["question_binding"]:
+        instructions.append(
+            "For a listed question-binding finding, either bind genuinely relevant issued "
+            "query IDs with an honest searched status, or remove that question and preserve "
+            "its material gap in stopping_reason and unresolved_questions."
+        )
+    citation_kinds = {
+        finding["source_kind"] for finding in typed_findings["citation"]
+    }
+    if not has_typed_findings or "focused-passage" in citation_kinds:
+        instructions.append(
+            "For a listed focused-passage citation, copy an exact verbatim excerpt from that "
+            "card in the Runtime finalization packet and keep its card_id, relation, strength, "
+            "question status and query_ids unchanged."
+        )
+    if not has_typed_findings or "acquisition-receipt" in citation_kinds:
+        instructions.append(
+            "For a listed acquisition receipt, remove its unsupported evidence use and keep "
+            "the claim unresolved."
+        )
+    instructions.append(
+        "Do not change UNRESOLVED to CONFLICTING_EVIDENCE unless both supporting and "
+        "contradicting passages were already present. Never invent or normalize query IDs or "
+        "card IDs, issue new research, or copy rejected prose."
+    )
     return {
         "kind": "rejected-site-handoff-repair-outline-v1",
         "candidates": candidates,
@@ -548,15 +611,8 @@ def site_handoff_repair_outline(value: Any) -> dict[str, Any] | None:
             "contradiction_search_query_ids", []
         ),
         "unresolved_questions": value.get("unresolved_questions", []),
-        "instruction": (
-            "Preserve valid candidate choices, unaffected questions and Runtime-issued "
-            "identifiers. Correct the diagnosed question only by binding genuinely relevant "
-            "issued query IDs with an honest searched status, or remove it from "
-            "decision_questions and preserve the material gap in stopping_reason and "
-            "unresolved_questions. Never invent an ID, relabel an unperformed inquiry or issue "
-            "new research. Rebuild concise prose and exact excerpts from the Runtime "
-            "finalization packet; do not copy rejected wording."
-        ),
+        **({"runtime_repair_findings": typed_findings} if has_typed_findings else {}),
+        "instruction": " ".join(instructions),
     }
 
 

@@ -13,6 +13,7 @@ from .contracts import (
     EvidenceBinding,
     EvidenceCitationMismatch,
     ResearchConclusionMismatch,
+    ResearchQuestionCitationMismatch,
     ShortText,
     StrictDTO,
 )
@@ -184,13 +185,8 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
     unknown_citations = {
         key for c in handoff.candidates for key in c.evidence_card_ids if key not in citable_ids
     }
-    if unknown_citations:
-        # A known acquisition receipt is source material, but it is not a focused passage that
-        # can support a handoff claim. Route this narrow, correctable citation misuse through the
-        # independent one-shot citation slot instead of consuming a schema/shape repair. Truly
-        # foreign identifiers remain bounded by that unkeyed one-shot; no model-supplied key is
-        # trusted or minted here.
-        raise EvidenceCitationMismatch(
+    candidate_citation_diagnostic = (
+        (
             "Research handoff evidence mismatch: "
             + compact(
                 {
@@ -207,6 +203,9 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
                 }
             )
         )
+        if unknown_citations
+        else None
+    )
     if research["queries"] and not handoff.decision_questions:
         raise ResearchConclusionMismatch(
             "Research needs a few decision-critical questions and a stopping reason; "
@@ -231,7 +230,39 @@ def site_dossier(bridge: Phase2Bridge, handoff: SiteResearchHandoff) -> dict[str
             "query_id. Acquisition is not discovery. Available search IDs: "
             + compact(sorted(searches))
         )
-    EvidenceResearch(bridge).validate_questions(list(handoff.decision_questions))
+    try:
+        EvidenceResearch(bridge).validate_questions(list(handoff.decision_questions))
+    except ResearchQuestionCitationMismatch as error:
+        if candidate_citation_diagnostic is None:
+            raise
+        # Candidate citations and decision-question citations belong to the same submitted
+        # handoff. Report both defects atomically and consume the existing unkeyed citation
+        # allowance together with the existing question-binding allowance. A model-provided
+        # identifier never creates a repair key or an additional retry.
+        raise ResearchQuestionCitationMismatch(
+            candidate_citation_diagnostic + "\n" + str(error),
+            question_indices=error.question_indices,
+            citation_findings=error.citation_findings,
+            citation_unkeyed=True,
+        ) from error
+    except EvidenceCitationMismatch as error:
+        if candidate_citation_diagnostic is None:
+            raise
+        # A focused passage typo used to surface only after the model removed an acquisition
+        # receipt from candidate evidence. That serialized two defects in one DTO across the
+        # same citation budget. Preserve fail-closed validation, but return one complete,
+        # unkeyed citation correction so the single retry must fix the whole handoff.
+        raise EvidenceCitationMismatch(
+            candidate_citation_diagnostic + "\n" + str(error),
+            citation_findings=error.citation_findings,
+        ) from error
+    if candidate_citation_diagnostic is not None:
+        # A known acquisition receipt is source material, but it is not a focused passage that
+        # can support a handoff claim. Route this narrow, correctable citation misuse through the
+        # independent one-shot citation slot instead of consuming a schema/shape repair. Truly
+        # foreign identifiers remain bounded by that unkeyed one-shot; no model-supplied key is
+        # trusted or minted here.
+        raise EvidenceCitationMismatch(candidate_citation_diagnostic)
     memberships = [
         tuple(sorted(candidate.hotspot_label_seq_ids)) for candidate in handoff.candidates
     ]

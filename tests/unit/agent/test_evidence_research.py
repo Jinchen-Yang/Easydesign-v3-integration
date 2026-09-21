@@ -155,6 +155,136 @@ def test_pdb_complex_interface_projects_target_partner_contact_residues(tmp_path
     assert any('"auth_seq_id":10' in section["text"] for section in sections)
 
 
+def test_pdb_complex_interface_uses_exact_approved_source_chain(tmp_path: Any) -> None:
+    structure = tmp_path / "complex.pdb"
+    structure.write_text(
+        "\n".join(
+            [
+                "ATOM      1  N   ALA A  10       0.000   0.000   0.000  1.00 20.00           N",
+                "ATOM      2  CA  ALA A  10       1.000   0.000   0.000  1.00 20.00           C",
+                "ATOM      3  N   GLY B  20       3.000   0.000   0.000  1.00 20.00           N",
+                "ATOM      4  CA  GLY B  20       4.000   0.000   0.000  1.00 20.00           C",
+                "TER",
+                "END",
+            ]
+        )
+        + "\n"
+    )
+    polymers = [
+        {
+            "rcsb_id": "1ABC_1",
+            "rcsb_polymer_entity": {"pdbx_description": "Synthetic target strain"},
+            "rcsb_polymer_entity_container_identifiers": {
+                "auth_asym_ids": ["A"],
+                "reference_sequence_identifiers": [
+                    {"database_name": "UniProt", "database_accession": "QSTRAIN"}
+                ],
+            },
+        },
+        {
+            "rcsb_id": "1ABC_2",
+            "rcsb_polymer_entity": {"pdbx_description": "Synthetic partner"},
+            "rcsb_polymer_entity_container_identifiers": {
+                "auth_asym_ids": ["B"],
+                "reference_sequence_identifiers": [
+                    {"database_name": "UniProt", "database_accession": "QPARTNER"}
+                ],
+            },
+        },
+    ]
+    approved_mapping = [
+        {
+            "canonical_position": 50,
+            "label_seq_id": 101,
+            "mapping_status": "ambiguous",
+            "source_author_chain_id": "A",
+            "source_author_residue_id": "10",
+            "insertion_code": None,
+            "model_presence": ["1"],
+        }
+    ]
+
+    analysis = _pdb_complex_interface_view(
+        structure,
+        pdb_id="1ABC",
+        polymers=polymers,
+        approved_accession="QCANON",
+        approved_mapping=approved_mapping,
+        approved_source_pdb_id="1ABC",
+        approved_source_auth_chain="A",
+        approved_source_coordinates=True,
+    )
+
+    assert analysis["status"] == "observed"
+    assert analysis["target_chains"] == ["A"]
+    interface = analysis["interfaces"][0]
+    assert interface["target_resolution"] == "approved-source-auth-chain"
+    assert interface["current_design_correspondence_status"] == (
+        "complete-source-correspondence"
+    )
+    assert interface["target_contact_residues"][0]["canonical_positions"] == [50]
+    assert interface["current_design_correspondence"][0] == {
+        "reference_auth_asym_id": "A",
+        "reference_auth_seq_id": 10,
+        "reference_insertion_code": None,
+        "reference_label_seq_id": None,
+        "resname": "ALA",
+        "canonical_positions": [50],
+        "current_design_label_seq_ids": [101],
+        "mapping_statuses": ["ambiguous"],
+        "mapping_basis": "approved-source-residue-identity",
+    }
+
+    wrong_source = _pdb_complex_interface_view(
+        structure,
+        pdb_id="1ABC",
+        polymers=polymers,
+        approved_accession="QCANON",
+        approved_mapping=approved_mapping,
+        approved_source_pdb_id="9XYZ",
+        approved_source_auth_chain="A",
+    )
+    assert wrong_source["status"] == "target-entity-unresolved"
+
+    unverified_snapshot = _pdb_complex_interface_view(
+        structure,
+        pdb_id="1ABC",
+        polymers=polymers,
+        approved_accession="QCANON",
+        approved_mapping=approved_mapping,
+        approved_source_pdb_id="1ABC",
+        approved_source_auth_chain="A",
+    )
+    assert unverified_snapshot["status"] == "target-entity-unresolved"
+
+    missing_mapping = _pdb_complex_interface_view(
+        structure,
+        pdb_id="1ABC",
+        polymers=polymers,
+        approved_accession="QCANON",
+        approved_mapping=[],
+        approved_source_pdb_id="1ABC",
+        approved_source_auth_chain="A",
+    )
+    assert missing_mapping["status"] == "target-entity-unresolved"
+
+
+def test_deposited_structure_identity_comes_from_source_bytes(tmp_path: Any) -> None:
+    from easydesign.agent.evidence_research import _verified_deposited_structure_id
+
+    disguised = tmp_path / "1ABC.cif"
+    disguised.write_text("data_9XYZ\n_entry.id 9XYZ\n")
+    assert _verified_deposited_structure_id(disguised) == "9XYZ"
+
+    missing = tmp_path / "2DEF.cif"
+    missing.write_text("data_local_model\n_entry.id model\n")
+    assert _verified_deposited_structure_id(missing) is None
+
+    conflicting = tmp_path / "3GHI.cif"
+    conflicting.write_text("data_first\nloop_\n_entry.id\n3GHI\n4JKL\n")
+    assert _verified_deposited_structure_id(conflicting) is None
+
+
 def test_rcsb_chain_inventory_keeps_entities_separate_and_preserves_sources(
     research: Any, monkeypatch: Any
 ) -> None:
@@ -976,6 +1106,35 @@ def test_reference_interface_mapping_uses_sifts_then_current_target_mapping() ->
     assert projected[1]["canonical_positions"] == [20]
     assert projected[1]["current_design_label_seq_ids"] == []
     assert projected[1]["mapping_statuses"] == ["ambiguous"]
+
+    source_only = _approved_design_correspondence(
+        [
+            {
+                "auth_asym_id": "A",
+                "auth_seq_id": 11,
+                "insertion_code": None,
+                "label_seq_id": 11,
+                "resname": "ALA",
+                "canonical_positions": [50],
+            }
+        ],
+        [
+            {
+                "canonical_position": 50,
+                "label_seq_id": 99,
+                "mapping_status": "unique",
+                "source_author_chain_id": "A",
+                "source_author_residue_id": "99",
+                "insertion_code": None,
+                "source_residue_name": "ALA",
+                "model_presence": ["1"],
+            }
+        ],
+        reference_is_approved_source=True,
+    )
+    assert source_only[0]["canonical_positions"] == [50]
+    assert source_only[0]["current_design_label_seq_ids"] == []
+    assert source_only[0]["mapping_basis"] == "unresolved"
 
 
 @pytest.mark.asyncio

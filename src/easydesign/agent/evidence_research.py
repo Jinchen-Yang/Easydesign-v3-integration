@@ -14,6 +14,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 from pydantic import Field, model_validator
 
 from easydesign.backends.gpcrdb import GpcrdbAdapter
@@ -452,6 +453,36 @@ def _canonical_accession(value: Any) -> str:
     return str(value or "").strip().upper().split("-", 1)[0]
 
 
+def _normalized_insertion_code(value: Any) -> str:
+    normalized = str(value or "").strip()
+    return "" if normalized in {".", "?"} else normalized
+
+
+def _mapping_row_has_model_one(row: dict[str, Any]) -> bool:
+    model_presence = {str(value) for value in row.get("model_presence") or []}
+    coordinate_present = row.get("coordinate_present")
+    return "1" in model_presence and coordinate_present is not False
+
+
+def _verified_deposited_structure_id(path: Path) -> str | None:
+    """Read a deposited PDB identity from source bytes, never from a user filename/target ID."""
+
+    if path.suffix.casefold() not in {".cif", ".mmcif"}:
+        return None
+    try:
+        raw: dict[str, Any] = MMCIF2Dict(str(path))  # type: ignore[no-untyped-call]
+    except Exception:
+        return None
+    value = raw.get("_entry.id")
+    values = value if isinstance(value, list) else [value]
+    identifiers = {
+        str(item or "").strip().upper()
+        for item in values
+        if re.fullmatch(r"[0-9][A-Za-z0-9]{3}", str(item or "").strip())
+    }
+    return next(iter(identifiers)) if len(identifiers) == 1 else None
+
+
 def _polymer_accessions(polymer: dict[str, Any]) -> set[str]:
     identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
     refs = identifiers.get("reference_sequence_identifiers") or []
@@ -493,7 +524,10 @@ def _polymer_canonical_positions(
 
 
 def _approved_design_correspondence(
-    residues: list[dict[str, Any]], approved_mapping: list[dict[str, Any]]
+    residues: list[dict[str, Any]],
+    approved_mapping: list[dict[str, Any]],
+    *,
+    reference_is_approved_source: bool = False,
 ) -> list[dict[str, Any]]:
     """Join reference-complex contacts to current design labels without inferring offsets."""
 
@@ -505,11 +539,47 @@ def _approved_design_correspondence(
     result = []
     for residue in residues:
         canonical_positions = residue.get("canonical_positions") or []
-        rows = [
+        canonical_rows = [
             row
             for position in canonical_positions
             for row in mapping_by_canonical.get(position, [])
         ]
+        source_rows: list[dict[str, Any]] = []
+        if reference_is_approved_source:
+            source_rows = [
+                row
+                for row in approved_mapping
+                if str(row.get("source_author_chain_id") or "")
+                == str(residue.get("auth_asym_id") or "")
+                and str(row.get("source_author_residue_id") or "")
+                == str(residue.get("auth_seq_id") or "")
+                and _normalized_insertion_code(row.get("insertion_code"))
+                == _normalized_insertion_code(residue.get("insertion_code"))
+                and _mapping_row_has_model_one(row)
+                and (
+                    not row.get("source_residue_name")
+                    or str(row["source_residue_name"]).upper()
+                    == str(residue.get("resname") or "").upper()
+                )
+            ]
+        rows = source_rows if reference_is_approved_source else canonical_rows
+        if reference_is_approved_source and len(
+            {
+                int(row["label_seq_id"])
+                for row in source_rows
+                if isinstance(row.get("label_seq_id"), int)
+            }
+        ) > 1:
+            raise AgentBoundaryError(
+                "Approved source residue maps to conflicting current design labels"
+            )
+        resolved_canonical_positions = sorted(
+            {
+                int(position)
+                for row in source_rows
+                if isinstance((position := row.get("canonical_position")), int)
+            }
+        ) or canonical_positions
         result.append(
             {
                 "reference_auth_asym_id": residue.get("auth_asym_id"),
@@ -517,7 +587,7 @@ def _approved_design_correspondence(
                 "reference_insertion_code": residue.get("insertion_code"),
                 "reference_label_seq_id": residue.get("label_seq_id"),
                 "resname": residue.get("resname"),
-                "canonical_positions": canonical_positions,
+                "canonical_positions": resolved_canonical_positions,
                 "current_design_label_seq_ids": sorted(
                     {
                         int(row["label_seq_id"])
@@ -528,6 +598,15 @@ def _approved_design_correspondence(
                 ),
                 "mapping_statuses": sorted(
                     {str(row["mapping_status"]) for row in rows if row.get("mapping_status")}
+                ),
+                "mapping_basis": (
+                    "approved-source-residue-identity"
+                    if source_rows
+                    else "unresolved"
+                    if reference_is_approved_source
+                    else "canonical-position"
+                    if canonical_rows
+                    else "unresolved"
                 ),
             }
         )
@@ -585,24 +664,71 @@ def _pdb_complex_interface_view(
     polymers: list[dict[str, Any]],
     approved_accession: str,
     approved_mapping: list[dict[str, Any]] | None = None,
+    approved_source_pdb_id: str | None = None,
+    approved_source_auth_chain: str | None = None,
+    approved_source_coordinates: bool = False,
     contact_cutoff: float = 5.0,
 ) -> dict[str, Any]:
     """Project source-bound target/partner contacts from one deposited coordinate model."""
 
     target_accession = _canonical_accession(approved_accession)
+    coordinate_source = (
+        "approved-target-source" if approved_source_coordinates else "retrieved-rcsb"
+    )
+    scope = (
+        f"Heavy-atom contacts <= {contact_cutoff:.1f} Angstrom in model 1 of the deposited "
+        "asymmetric unit. Geometric contact does not establish physiological assembly, "
+        "binding energy, competition, or inhibitory efficacy."
+    )
     chain_entities: dict[str, dict[str, Any]] = {}
     target_chains: set[str] = set()
     target_entity_ids: list[str] = []
+    source_pdb_matches = bool(
+        approved_source_pdb_id
+        and str(approved_source_pdb_id).strip().upper() == str(pdb_id).strip().upper()
+    )
+    approved_source_chain = str(approved_source_auth_chain or "")
+    mapped_source_chains = {
+        str(row.get("source_author_chain_id") or "")
+        for row in approved_mapping or []
+        if row.get("source_author_chain_id") and _mapping_row_has_model_one(row)
+    }
+    identity_conflicts = []
     for polymer in polymers:
         identifiers = polymer.get("rcsb_polymer_entity_container_identifiers") or {}
         entity_id = str(polymer.get("rcsb_id") or "")
         description = (polymer.get("rcsb_polymer_entity") or {}).get("pdbx_description")
         accessions = sorted(_polymer_accessions(polymer))
-        is_target = target_accession in accessions
-        if is_target:
-            target_entity_ids.append(entity_id)
+        accession_is_target = target_accession in accessions
+        entity_is_target = False
         for chain in identifiers.get("auth_asym_ids") or []:
             normalized_chain = str(chain)
+            source_chain_is_target = bool(
+                approved_source_coordinates
+                and source_pdb_matches
+                and approved_source_chain
+                and normalized_chain == approved_source_chain
+                and normalized_chain in mapped_source_chains
+            )
+            if normalized_chain in chain_entities:
+                identity_conflicts.append(
+                    f"auth chain {normalized_chain} belongs to multiple polymer entities"
+                )
+            if (
+                approved_source_coordinates
+                and source_pdb_matches
+                and accession_is_target
+                and normalized_chain != approved_source_chain
+            ):
+                identity_conflicts.append(
+                    "approved accession and approved source chain identify different entities"
+                )
+            is_target = (
+                source_chain_is_target
+                if approved_source_coordinates and source_pdb_matches
+                else accession_is_target
+            )
+            entity_is_target = entity_is_target or is_target
             chain_entities[normalized_chain] = {
                 "entity_id": entity_id,
                 "description": description,
@@ -611,15 +737,30 @@ def _pdb_complex_interface_view(
                     polymer, approved_accession
                 ),
                 "is_target": is_target,
+                "target_resolution": (
+                    "approved-source-auth-chain"
+                    if source_chain_is_target
+                    else "approved-accession"
+                    if accession_is_target and is_target
+                    else None
+                ),
             }
             if is_target:
                 target_chains.add(normalized_chain)
-
-    scope = (
-        f"Heavy-atom contacts <= {contact_cutoff:.1f} Angstrom in model 1 of the deposited "
-        "asymmetric unit. Geometric contact does not establish physiological assembly, "
-        "binding energy, competition, or inhibitory efficacy."
-    )
+        if entity_is_target:
+            target_entity_ids.append(entity_id)
+    if identity_conflicts:
+        return {
+            "status": "target-identity-conflict",
+            "pdb_id": pdb_id,
+            "approved_accession": approved_accession,
+            "target_entity_ids": [],
+            "target_chains": [],
+            "interfaces": [],
+            "coordinate_source": coordinate_source,
+            "identity_conflicts": sorted(set(identity_conflicts)),
+            "scope": scope,
+        }
     if not target_chains:
         return {
             "status": "target-entity-unresolved",
@@ -628,6 +769,7 @@ def _pdb_complex_interface_view(
             "target_entity_ids": [],
             "target_chains": [],
             "interfaces": [],
+            "coordinate_source": coordinate_source,
             "scope": scope,
         }
 
@@ -642,6 +784,7 @@ def _pdb_complex_interface_view(
             "target_entity_ids": sorted(target_entity_ids),
             "target_chains": sorted(target_chains),
             "interfaces": [],
+            "coordinate_source": coordinate_source,
             "scope": scope,
         }
 
@@ -683,6 +826,9 @@ def _pdb_complex_interface_view(
         interface = {
             "target_chain": target_chain,
             "target_entity_id": chain_entities.get(target_chain, {}).get("entity_id"),
+            "target_resolution": chain_entities.get(target_chain, {}).get(
+                "target_resolution"
+            ),
             "partner_chain": partner_chain,
             "partner_entity_id": partner.get("entity_id"),
             "partner_description": partner.get("description"),
@@ -699,9 +845,30 @@ def _pdb_complex_interface_view(
             "scope": scope,
         }
         if approved_mapping is not None:
-            interface["current_design_correspondence"] = _approved_design_correspondence(
-                target_residues, approved_mapping
+            reference_is_approved_source = (
+                chain_entities.get(target_chain, {}).get("target_resolution")
+                == "approved-source-auth-chain"
             )
+            correspondence = _approved_design_correspondence(
+                target_residues,
+                approved_mapping,
+                reference_is_approved_source=reference_is_approved_source,
+            )
+            interface["current_design_correspondence"] = correspondence
+            if reference_is_approved_source:
+                for residue, projected in zip(target_residues, correspondence, strict=True):
+                    residue["canonical_positions"] = projected["canonical_positions"]
+                mapped_count = sum(
+                    len(projected["current_design_label_seq_ids"]) == 1
+                    for projected in correspondence
+                )
+                interface["current_design_correspondence_status"] = (
+                    "complete-source-correspondence"
+                    if mapped_count == len(correspondence)
+                    else "partial-source-correspondence"
+                )
+                interface["mapped_target_contact_count"] = mapped_count
+                interface["unmapped_target_contact_count"] = len(correspondence) - mapped_count
         interfaces.append(interface)
     return {
         "status": "observed" if interfaces else "no-non-target-protein-contact",
@@ -709,6 +876,7 @@ def _pdb_complex_interface_view(
         "approved_accession": approved_accession,
         "target_entity_ids": sorted(target_entity_ids),
         "target_chains": observed_target_chains,
+        "coordinate_source": coordinate_source,
         "contact_cutoff_angstrom": contact_cutoff,
         "interfaces": sorted(
             interfaces,
@@ -747,6 +915,7 @@ def _pdb_interface_sections(analysis: dict[str, Any]) -> list[dict[str, str]]:
             "canonical_positions",
             "current_design_label_seq_ids",
             "mapping_statuses",
+            "mapping_basis",
         )
         sections.append(
             {
@@ -758,12 +927,23 @@ def _pdb_interface_sections(analysis: dict[str, Any]) -> list[dict[str, str]]:
                     {
                         "pdb_id": analysis.get("pdb_id"),
                         "approved_accession": analysis.get("approved_accession"),
+                        "coordinate_source": analysis.get("coordinate_source"),
+                        "target_resolution": interface.get("target_resolution"),
                         "partner_chain": interface["partner_chain"],
                         "partner_description": interface.get("partner_description"),
                         "partner_reference_accessions": interface.get(
                             "partner_reference_accessions", []
                         ),
                         "contact_pair_count": interface.get("contact_pair_count"),
+                        "correspondence_status": interface.get(
+                            "current_design_correspondence_status"
+                        ),
+                        "mapped_target_contact_count": interface.get(
+                            "mapped_target_contact_count"
+                        ),
+                        "unmapped_target_contact_count": interface.get(
+                            "unmapped_target_contact_count"
+                        ),
                         "columns": list(columns),
                         "rows": [
                             [
@@ -777,6 +957,7 @@ def _pdb_interface_sections(analysis: dict[str, Any]) -> list[dict[str, str]]:
                                 row.get("canonical_positions"),
                                 row.get("current_design_label_seq_ids"),
                                 row.get("mapping_statuses"),
+                                row.get("mapping_basis"),
                             ]
                             for row in correspondence
                         ],
@@ -1540,11 +1721,23 @@ class EvidenceResearch:
             ]
             approved_accession = None
             approved_mapping: list[dict[str, Any]] | None = None
+            approved_source_pdb_id = None
+            approved_source_auth_chain = None
+            approved_target_ref = None
+            approved_source_path: Path | None = None
             try:
-                target, target_facts, _ = self.bridge.site_facts()
-                value = target["evidence"]["hard_facts"].get("canonical_accession")
+                target, target_facts, approved_target_ref = self.bridge.site_facts()
+                hard_facts = target["evidence"]["hard_facts"]
+                value = hard_facts.get("canonical_accession")
                 if isinstance(value, str) and value:
                     approved_accession = value
+                approved_source_path = self.bridge.validate_project().source_path
+                approved_source_pdb_id = _verified_deposited_structure_id(
+                    approved_source_path
+                )
+                selected_chain = hard_facts.get("selected_chain")
+                if isinstance(selected_chain, str) and selected_chain:
+                    approved_source_auth_chain = selected_chain
                 rows = target_facts.get("observed_facts", {}).get("mapping")
                 if isinstance(rows, list):
                     approved_mapping = [row for row in rows if isinstance(row, dict)]
@@ -1553,12 +1746,25 @@ class EvidenceResearch:
             if q.topic == "structure-complex" and approved_accession:
                 try:
                     coordinates = rcsb_mmcif(client, code)
+                    analysis_path = coordinates.artifact_path
+                    use_approved_source_coordinates = bool(
+                        approved_source_pdb_id
+                        and code == str(approved_source_pdb_id).strip().upper()
+                        and approved_source_auth_chain
+                        and approved_source_path is not None
+                    )
+                    if use_approved_source_coordinates:
+                        assert approved_source_path is not None
+                        analysis_path = approved_source_path
                     view["complex_interface_analysis"] = _pdb_complex_interface_view(
-                        coordinates.artifact_path,
+                        analysis_path,
                         pdb_id=code,
                         polymers=polymers,
                         approved_accession=approved_accession,
                         approved_mapping=approved_mapping,
+                        approved_source_pdb_id=approved_source_pdb_id,
+                        approved_source_auth_chain=approved_source_auth_chain,
+                        approved_source_coordinates=use_approved_source_coordinates,
                     )
                     limitations.append(
                         "Interface residues are coordinate-derived heavy-atom contacts, not "
@@ -1588,6 +1794,13 @@ class EvidenceResearch:
                         else "deposition-and-polymer-entities"
                     ),
                     "passage": compact(view),
+                    **(
+                        {"context_ref": approved_target_ref}
+                        if approved_target_ref is not None
+                        and view.get("complex_interface_analysis", {}).get("coordinate_source")
+                        == "approved-target-source"
+                        else {}
+                    ),
                     "_sections": _pdb_sections(view),
                     "truncated": False,
                     "limitations": limitations,

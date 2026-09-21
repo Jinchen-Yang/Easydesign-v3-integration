@@ -339,6 +339,105 @@ def test_dossier_keeps_existing_nonprimary_kernel_citation_semantics(site_bridge
         SITE_EVIDENCE.reset(token)
 
 
+def test_dossier_reports_candidate_and_question_citation_defects_atomically(
+    site_bridge: Any,
+) -> None:
+    from easydesign.agent.contracts import EvidenceCitationMismatch
+
+    b = site_bridge
+    source = b.persist("synthetic-source", {"text": "SYNTHETIC source material"})
+    focused = {
+        "card_id": "passage-focused",
+        "provider": "Europe PMC",
+        "identifier": "SYNTHETIC",
+        "passage": "SYNTHETIC exact focused passage for the candidate mechanism.",
+        "source_refs": [source],
+        "source_verified": True,
+        "evidence_level": "primary-abstract",
+        "primary_eligible": True,
+        "does_not_support": ["Binding efficacy"],
+    }
+    receipt = {
+        "card_id": "source-acquisition-receipt",
+        "provider": "Europe PMC",
+        "identifier": "SYNTHETIC",
+        "passage": "SYNTHETIC acquisition metadata, not focused evidence.",
+        "source_refs": [source],
+        "source_verified": True,
+        "evidence_level": "acquisition-receipt",
+        "primary_eligible": False,
+        "does_not_support": ["Any scientific claim"],
+        "corpus_ref": source,
+    }
+    query = {
+        "query_id": "synthetic-focused-query",
+        "topic": "function",
+        "status": "UNRESOLVED",
+        "question": "SYNTHETIC candidate mechanism",
+        "cards": [receipt, focused],
+        "errors": [],
+    }
+    ref = b.persist("evidence-research", query)
+    b.store.event(
+        b.thread,
+        "evidence-view",
+        {"target_binding": identity(b.binding()), "ref": ref},
+    )
+    selection = decision_scope(b, handoff(), "function", query["query_id"])
+    candidate = selection.candidates[0].model_copy(
+        update={"evidence_card_ids": [receipt["card_id"]]}
+    )
+    question = DecisionEvidenceQuestion.model_validate(
+        {
+            **selection.decision_questions[0].model_dump(mode="json"),
+            "evidence": [
+                {
+                    "card_id": focused["card_id"],
+                    "excerpt": "A paraphrase rather than exact retrieved text.",
+                    "claim": "SYNTHETIC candidate mechanism claim.",
+                    "relation": "supports",
+                    "strength": "E1",
+                    "transfer_limit": "SYNTHETIC boundary test only.",
+                }
+            ],
+        }
+    )
+    selection = selection.model_copy(
+        update={"candidates": [candidate], "decision_questions": [question]}
+    )
+    token = bind(b)
+    try:
+        with pytest.raises(EvidenceCitationMismatch) as captured:
+            site_dossier(b, selection)
+        error = captured.value
+        assert error.repair_keys == ()
+        assert error.citation_findings == ((0, focused["card_id"], False),)
+        assert receipt["card_id"] in str(error)
+        assert "Exact already-read passage" in str(error)
+
+        corrected = selection.model_copy(
+            update={
+                "candidates": [
+                    candidate.model_copy(update={"evidence_card_ids": [focused["card_id"]]})
+                ],
+                "decision_questions": [
+                    question.model_copy(
+                        update={
+                            "evidence": [
+                                question.evidence[0].model_copy(
+                                    update={"excerpt": "exact focused passage"}
+                                )
+                            ]
+                        }
+                    )
+                ],
+            }
+        )
+        assert site_dossier(b, corrected)["candidate_comparison"]
+    finally:
+        SITE_EVIDENCE.reset(token)
+
+
 def test_soft_working_target_and_model_aware_hard_guard() -> None:
     config = scripted_config()
     model = SimpleNamespace(profile=None)
